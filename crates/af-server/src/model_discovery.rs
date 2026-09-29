@@ -166,6 +166,25 @@ async fn discover_openai(
 ) -> Result<Vec<DiscoveredModelRecord>, UpstreamModelDiscoveryError> {
     let target = openai_models_url(context)?;
     let body = send_page(adaptor, context, headers, target).await?;
+    if context.is_codex_oauth() {
+        let wire = serde_json::from_slice::<CodexModelsWire>(&body)
+            .map_err(|_| UpstreamModelDiscoveryError::InvalidResponse)?;
+        return collect_models(
+            wire.models
+                .into_iter()
+                .filter(|model| model.visibility.as_deref().unwrap_or("list") != "hide")
+                .map(|model| DiscoveredEvidence {
+                    upstream_model: model.slug,
+                    display_name: normalize_optional_text(model.display_name),
+                    description: normalize_optional_text(model.description),
+                    context_window: model.context_window,
+                    input_token_limit: None,
+                    output_token_limit: None,
+                    supported_methods: Vec::new(),
+                }),
+            reverse,
+        );
+    }
     let wire = serde_json::from_slice::<OpenAiModelsWire>(&body)
         .map_err(|_| UpstreamModelDiscoveryError::InvalidResponse)?;
     collect_models(
@@ -191,7 +210,12 @@ fn openai_models_url(context: &RelayContext) -> Result<Url, UpstreamModelDiscove
                 "backend-api/codex/models",
             )
             .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?;
-        return Url::parse(&target).map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable);
+        let mut target =
+            Url::parse(&target).map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?;
+        target
+            .query_pairs_mut()
+            .append_pair("client_version", OpenAiAdaptor::CODEX_CLIENT_VERSION);
+        return Ok(target);
     }
     versioned_models_url(context, OpenAiAdaptor::DEFAULT_BASE_URL, "v1")
 }
@@ -563,6 +587,21 @@ struct OpenAiModelWire {
 }
 
 #[derive(Deserialize)]
+struct CodexModelsWire {
+    #[serde(default)]
+    models: Vec<CodexModelWire>,
+}
+
+#[derive(Deserialize)]
+struct CodexModelWire {
+    slug: String,
+    display_name: Option<String>,
+    description: Option<String>,
+    context_window: Option<i64>,
+    visibility: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct AnthropicModelsWire {
     #[serde(default)]
     data: Vec<AnthropicModelWire>,
@@ -645,8 +684,43 @@ mod tests {
             .with_oauth_identity(Some("codex"), Some("org-codex-test"));
         assert_eq!(
             openai_models_url(&context).unwrap().as_str(),
-            "https://chatgpt.com/backend-api/codex/models"
+            "https://chatgpt.com/backend-api/codex/models?client_version=0.146.0"
         );
+    }
+
+    #[test]
+    fn codex_models_wire_keeps_listed_models_and_explicit_metadata() {
+        let wire: CodexModelsWire = serde_json::from_value(serde_json::json!({
+            "models": [
+                {
+                    "slug": "gpt-5.6-luna",
+                    "display_name": "GPT-5.6 Luna",
+                    "description": "Fast model",
+                    "context_window": 200000,
+                    "visibility": "list"
+                },
+                {"slug": "gpt-reserve", "visibility": "hide"}
+            ]
+        }))
+        .unwrap();
+        let models = collect_models(
+            wire.models
+                .into_iter()
+                .filter(|model| model.visibility.as_deref().unwrap_or("list") != "hide")
+                .map(|model| DiscoveredEvidence {
+                    upstream_model: model.slug,
+                    display_name: normalize_optional_text(model.display_name),
+                    description: normalize_optional_text(model.description),
+                    context_window: model.context_window,
+                    input_token_limit: None,
+                    output_token_limit: None,
+                    supported_methods: Vec::new(),
+                }),
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        assert_eq!(models.len(), 1);
+        assert!(format!("{:?}", models[0]).contains("has_context_window_hint: true"));
     }
 
     #[test]

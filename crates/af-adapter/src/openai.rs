@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use crate::credential::clear_authentication_headers;
 use crate::{
     Adaptor, AdaptorError, AdaptorResult, AdaptorTarget, Bytes, Credential, RelayContext,
-    UpstreamRequest,
+    ResponseMode, UpstreamRequest,
 };
 
 /// OpenAI Chat Completions、Responses、Responses Compact、Embeddings、Images 与 Audio 兼容渠道适配器。
@@ -34,6 +34,8 @@ impl OpenAiAdaptor {
     pub const DEFAULT_BASE_URL: &'static str = "https://api.openai.com";
     /// ChatGPT/Codex OAuth 使用的内部 Responses 根地址。
     pub const CODEX_OAUTH_BASE_URL: &'static str = "https://chatgpt.com";
+    /// Codex backend 要求的客户端版本查询参数。
+    pub const CODEX_CLIENT_VERSION: &'static str = "0.146.0";
     /// Audio multipart 使用的固定高熵边界；编码器会拒绝正文中的碰撞。
     pub const AUDIO_MULTIPART_BOUNDARY: &'static str =
         "anyflows-audio-6f4d2e1c9b8a7350d4e6f1a2c3b5d798";
@@ -243,7 +245,7 @@ impl Adaptor for OpenAiAdaptor {
             return Ok(request);
         }
 
-        let (method, target, headers, body, response_mode, response_body_limit) =
+        let (method, target, mut headers, body, response_mode, response_body_limit) =
             request.into_parts();
         let body = body.ok_or(AdaptorError::InvalidTaskRequest)?;
         let mut value: serde_json::Value =
@@ -261,8 +263,32 @@ impl Adaptor for OpenAiAdaptor {
             "top_p",
             "frequency_penalty",
             "presence_penalty",
+            "chat_template_kwargs",
+            "user",
+            "metadata",
+            "prompt_cache_retention",
+            "safety_identifier",
+            "stream_options",
+            "truncation",
+            "stop_sequences",
         ] {
             object.remove(key);
+        }
+        let is_compact = target.ends_with("/responses/compact");
+        let mut response_mode = response_mode;
+        if is_compact {
+            object.remove("stream");
+            object.remove("store");
+        } else if target.ends_with("/responses") {
+            // The Codex backend only exposes Responses as SSE, including when the
+            // client requested a full JSON response. The relay aggregates it later.
+            object.insert("stream".to_owned(), serde_json::Value::Bool(true));
+            object.insert("store".to_owned(), serde_json::Value::Bool(false));
+            headers.insert(
+                HeaderName::from_static("accept"),
+                HeaderValue::from_static("text/event-stream"),
+            );
+            response_mode = ResponseMode::Stream;
         }
         let body = serde_json::to_vec(&value).map_err(|_| AdaptorError::InvalidTaskRequest)?;
         UpstreamRequest::new(method, target, headers, Some(Bytes::from(body)))
@@ -480,7 +506,11 @@ mod tests {
                 Some(Bytes::from(body.to_string())),
             )
             .unwrap()
-            .with_response_mode(crate::ResponseMode::Stream)
+            .with_response_mode(if operation == Operation::Responses {
+                crate::ResponseMode::Full
+            } else {
+                crate::ResponseMode::Stream
+            })
             .with_response_body_limit(4096)
             .unwrap();
             let request = adaptor
@@ -488,7 +518,15 @@ mod tests {
                 .await
                 .unwrap();
             let value: serde_json::Value = serde_json::from_slice(request.body().unwrap()).unwrap();
-            assert_eq!(value, supported);
+            let expected = if operation == Operation::ResponsesCompact {
+                let mut expected = supported.clone();
+                expected.as_object_mut().unwrap().remove("stream");
+                expected.as_object_mut().unwrap().remove("store");
+                expected
+            } else {
+                supported.clone()
+            };
+            assert_eq!(value, expected);
             assert_eq!(request.target(), url);
             assert_eq!(request.method(), crate::Method::POST);
             assert_eq!(request.response_mode(), crate::ResponseMode::Stream);

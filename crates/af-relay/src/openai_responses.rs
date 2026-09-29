@@ -2,7 +2,10 @@ use std::{fmt, time::Duration};
 
 use af_adapter::{Method, Operation, ResponseMode, StatusCode};
 use af_domain::{AfError, UpstreamError};
-use af_protocol::{CanonicalRequestEnvelope, CanonicalResponse, openai_responses};
+use af_protocol::{
+    CanonicalRequestEnvelope, CanonicalResponse, openai_responses,
+    openai_responses::OpenAiResponsesStreamDecoder,
+};
 
 use crate::attempt_gate::permit_completion_hook;
 use crate::error::{classify_upstream_status, map_adaptor_error, parse_retry_after};
@@ -122,7 +125,7 @@ pub async fn relay_openai_responses_with_report(
             return RelayOpenAiResponsesOutcome::new(Err(error.into()), report);
         }
     };
-    let upstream_response = match openai_responses::parse_response(&body) {
+    let upstream_response = match parse_full_response_body(&body) {
         Ok(response) => response,
         Err(_) => {
             report.reject_success(UpstreamError::ProtocolError);
@@ -164,6 +167,19 @@ pub async fn relay_openai_responses_with_report(
         }),
         report,
     )
+}
+
+fn parse_full_response_body(body: &[u8]) -> Result<CanonicalResponse, ()> {
+    if let Ok(response) = openai_responses::parse_response(body) {
+        return Ok(response);
+    }
+
+    // Codex OAuth always returns Responses as SSE. Aggregate it for a client that
+    // requested a non-streaming response while retaining the same strict decoder.
+    let mut decoder = OpenAiResponsesStreamDecoder::new();
+    decoder.push(body).map_err(|_| ())?;
+    decoder.finish().map_err(|_| ())?;
+    decoder.take_terminal_response().ok_or(())
 }
 
 /// OpenAI Responses 业务结果及其脱敏候选报告。

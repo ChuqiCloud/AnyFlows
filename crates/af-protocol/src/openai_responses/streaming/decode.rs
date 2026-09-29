@@ -37,6 +37,8 @@ pub struct OpenAiResponsesStreamDecoder {
     done: bool,
     compatibility_done_seen: bool,
     failed: bool,
+    verified_output_items: Vec<Value>,
+    terminal_response: Option<CanonicalResponse>,
 }
 
 impl OpenAiResponsesStreamDecoder {
@@ -60,6 +62,8 @@ impl OpenAiResponsesStreamDecoder {
             done: false,
             compatibility_done_seen: false,
             failed: false,
+            verified_output_items: Vec::new(),
+            terminal_response: None,
         })
     }
 
@@ -155,10 +159,23 @@ impl OpenAiResponsesStreamDecoder {
             return Err(ParseStreamError::UnsupportedFeature);
         }
         let event: StreamEventWire =
-            serde_json::from_value(value).map_err(|_| ParseStreamError::InvalidValue)?;
+            serde_json::from_value(value.clone()).map_err(|_| ParseStreamError::InvalidValue)?;
+        let verified_item = if event_name == "response.output_item.done" {
+            // Preserve only the item whose full lifecycle has just passed validation.
+            value
+                .as_object()
+                .and_then(|object| object.get("item"))
+                .cloned()
+        } else {
+            None
+        };
         self.current_event = Some(kind.clone());
         self.accept_sequence(event.sequence_number(), &kind)?;
-        self.decode_event(event, output)
+        self.decode_event(event, output)?;
+        if let Some(item) = verified_item {
+            self.verified_output_items.push(item);
+        }
+        Ok(())
     }
 
     fn decode_event(
@@ -372,6 +389,17 @@ impl OpenAiResponsesStreamDecoder {
             self.outputs
                 .complete_active_message_from_terminal(&response, output)?;
         }
+        if !self.outputs.has_active_item()
+            && response
+                .get("output")
+                .and_then(Value::as_array)
+                .is_some_and(Vec::is_empty)
+            && !self.verified_output_items.is_empty()
+        {
+            // Codex may omit the terminal output snapshot after output_item.done.
+            // Reuse only items already validated by the lifecycle state machine.
+            response["output"] = Value::Array(self.verified_output_items.clone());
+        }
         self.current_stage = "terminal_item_identity";
         self.outputs
             .fill_missing_terminal_item_identity(&mut response)?;
@@ -395,6 +423,7 @@ impl OpenAiResponsesStreamDecoder {
         };
         self.current_stage = "terminal_canonical";
         self.validate_terminal_canonical(&canonical)?;
+        self.terminal_response = Some(canonical.clone());
         self.current_stage = "terminal_finish_reason";
         let choice = canonical
             .choices
@@ -557,7 +586,16 @@ impl Default for OpenAiResponsesStreamDecoder {
             done: false,
             compatibility_done_seen: false,
             failed: false,
+            verified_output_items: Vec::new(),
+            terminal_response: None,
         }
+    }
+}
+
+impl OpenAiResponsesStreamDecoder {
+    /// 取出已完成全部流式校验的终态响应，供非流式客户端聚合 Codex SSE。
+    pub fn take_terminal_response(&mut self) -> Option<CanonicalResponse> {
+        self.terminal_response.take()
     }
 }
 
@@ -630,6 +668,7 @@ fn parse_lifecycle_snapshot(
         output_text,
         moderation,
         usage,
+        _access_programs,
         extra,
     } = wire;
     if !matches!(object, ResponseObjectWire::Response)
