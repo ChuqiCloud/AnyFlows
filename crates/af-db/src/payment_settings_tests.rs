@@ -190,8 +190,8 @@ async fn invalid_enabled_shapes_and_stale_versions_roll_back() -> Result<(), Box
         PaymentSecretUpdate::Keep,
         true,
         true,
-        true,
         false,
+        true,
         false,
         500_000,
     );
@@ -214,8 +214,8 @@ async fn invalid_enabled_shapes_and_stale_versions_roll_back() -> Result<(), Box
         true,
         true,
         false,
-        true,
         false,
+        true,
         500_000,
     );
     assert_eq!(
