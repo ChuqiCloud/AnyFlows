@@ -10,8 +10,8 @@ use crate::{
 };
 use af_domain::{PlatformPermission, UserId};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter,
-    QueryOrder, QuerySelect, Set, TransactionTrait, sea_query::LockType,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, FromQueryResult,
+    QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait, sea_query::LockType,
 };
 use serde::{Deserialize, Serialize};
 use std::{future::Future, time::Duration};
@@ -20,6 +20,9 @@ use thiserror::Error;
 #[cfg(test)]
 #[path = "account_verification_tests.rs"]
 mod tests;
+
+// AnyFlows authorization window, independent of Alipay's upstream token lifetime.
+const ALIPAY_AUTHORIZATION_SECONDS: i64 = 600;
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum AccountVerificationError {
@@ -45,6 +48,7 @@ pub struct AccountVerificationRecord {
     pub provider: String,
     pub(crate) provider_reference: Option<String>,
     pub provider_action_url: Option<String>,
+    pub provider_expires_at: Option<i64>,
     pub provider_status: Option<String>,
     pub document_country: String,
     pub document_type: String,
@@ -165,7 +169,30 @@ impl AccountVerificationRepository {
                 query = query.filter(cases::Column::Id.lt(before));
             }
             if let Some(status) = status {
-                query = query.filter(cases::Column::Status.eq(status));
+                // Expiry is exposed in whole Unix seconds. Use an exclusive next-second
+                // bound so timestamp fractions cannot put expired rows in the pending page.
+                let cutoff = DatabaseTimestamp::from_unix_timestamp(
+                    DatabaseTimestamp::now_utc().unix_timestamp() - ALIPAY_AUTHORIZATION_SECONDS
+                        + 1,
+                )
+                .map_err(|_| AccountVerificationError::Unavailable)?;
+                let expired = Condition::all()
+                    .add(cases::Column::Status.eq(1))
+                    .add(cases::Column::Provider.eq("alipay"))
+                    .add(cases::Column::CreatedAt.lt(cutoff));
+                query = match status {
+                    1 => query.filter(cases::Column::Status.eq(1)).filter(
+                        Condition::any()
+                            .add(cases::Column::Provider.ne("alipay"))
+                            .add(cases::Column::CreatedAt.gte(cutoff)),
+                    ),
+                    5 => query.filter(
+                        Condition::any()
+                            .add(cases::Column::Status.eq(5))
+                            .add(expired),
+                    ),
+                    _ => query.filter(cases::Column::Status.eq(status)),
+                };
             }
             Ok(query
                 .order_by_desc(cases::Column::Id)
@@ -217,31 +244,51 @@ impl AccountVerificationRepository {
         &self,
         state: &str,
     ) -> Result<(UserId, i64, String, String), AccountVerificationError> {
-        if !valid_text(state, 64) || !state.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        if state.len() != 32 || !state.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return Err(AccountVerificationError::Invalid);
         }
         self.run(async {
-            let cases = cases::Entity::find()
+            let case = cases::Entity::find()
                 .filter(cases::Column::Provider.eq("alipay"))
+                .filter(cases::Column::ProviderReference.ends_with(format!(".{state}")))
+                .one(self.pool.connection())
+                .await
+                .map_err(unavailable)?
+                .ok_or(AccountVerificationError::NotFound)?;
+            if case.status != 1 || alipay_expired(&case, DatabaseTimestamp::now_utc()) {
+                return Err(AccountVerificationError::Conflict);
+            }
+            let reference = case
+                .provider_reference
+                .ok_or(AccountVerificationError::Invalid)?;
+            let user = UserId::new(case.user_id).map_err(|_| AccountVerificationError::Invalid)?;
+            Ok((user, case.id, case.provider, reference))
+        })
+        .await
+    }
+
+    /// Avoid starting another upstream flow for an application that cannot be submitted.
+    /// submit() repeats this check under the user lock to handle concurrent requests.
+    pub async fn ensure_can_submit(
+        &self,
+        user: UserId,
+        kind: &str,
+    ) -> Result<(), AccountVerificationError> {
+        self.run(async {
+            let current = cases::Entity::find()
+                .filter(cases::Column::UserId.eq(user.get()))
+                .filter(cases::Column::Kind.eq(kind))
                 .order_by_desc(cases::Column::Id)
-                .limit(32)
-                .all(self.pool.connection())
+                .one(self.pool.connection())
                 .await
                 .map_err(unavailable)?;
-            for case in cases {
-                let Some(reference) = case.provider_reference else {
-                    continue;
-                };
-                let Some((_, reference_state)) = reference.rsplit_once('.') else {
-                    continue;
-                };
-                if reference_state == state {
-                    let user =
-                        UserId::new(case.user_id).map_err(|_| AccountVerificationError::Invalid)?;
-                    return Ok((user, case.id, case.provider, reference));
-                }
+            if current
+                .as_ref()
+                .is_some_and(|c| blocks_submission(c, DatabaseTimestamp::now_utc()))
+            {
+                return Err(AccountVerificationError::Conflict);
             }
-            Err(AccountVerificationError::NotFound)
+            Ok(())
         })
         .await
     }
@@ -317,13 +364,28 @@ impl AccountVerificationRepository {
                 .filter(cases::Column::UserId.eq(user.get()))
                 .filter(cases::Column::Kind.eq(&write.kind))
                 .order_by_desc(cases::Column::Id)
+                .lock(LockType::Update)
                 .one(&tx)
                 .await
                 .map_err(unavailable)?;
-            if current.is_some_and(|c| [1, 4].contains(&c.status)) {
+            let now = DatabaseTimestamp::now_utc();
+            if current.as_ref().is_some_and(|c| blocks_submission(c, now)) {
                 return Err(AccountVerificationError::Conflict);
             }
-            let now = DatabaseTimestamp::now_utc();
+            if let Some(expired) = current.filter(|c| c.status == 1 && alipay_expired(c, now)) {
+                cases::ActiveModel {
+                    id: Set(expired.id),
+                    status: Set(5),
+                    provider_status: Set(Some("expired".to_owned())),
+                    provider_action_url: Set(None),
+                    version: Set(expired.version + 1),
+                    updated_at: Set(now),
+                    ..Default::default()
+                }
+                .update(&tx)
+                .await
+                .map_err(unavailable)?;
+            }
             let case = cases::ActiveModel {
                 user_id: Set(user.get()),
                 kind: Set(write.kind),
@@ -397,7 +459,10 @@ impl AccountVerificationRepository {
                 .await
                 .map_err(unavailable)?
                 .ok_or(AccountVerificationError::NotFound)?;
-            if case.provider == "manual" || ![1, 3].contains(&case.status) {
+            if case.provider == "manual"
+                || ![1, 3].contains(&case.status)
+                || alipay_expired(&case, DatabaseTimestamp::now_utc())
+            {
                 return Err(AccountVerificationError::Conflict);
             }
             let now = DatabaseTimestamp::now_utc();
@@ -549,26 +614,44 @@ async fn load_case<C: ConnectionTrait>(
 }
 
 fn record(c: cases::Model) -> AccountVerificationRecord {
+    let expired = c.status == 1 && alipay_expired(&c, DatabaseTimestamp::now_utc());
+    let provider_expires_at = (c.provider == "alipay")
+        .then(|| c.created_at.unix_timestamp() + ALIPAY_AUTHORIZATION_SECONDS);
+    let actionable = c.status == 1 && !expired;
     AccountVerificationRecord {
         id: c.id,
         user_id: c.user_id,
         kind: c.kind,
         provider: c.provider,
         provider_reference: c.provider_reference,
-        provider_action_url: c.provider_action_url,
-        provider_status: c.provider_status,
+        provider_action_url: c.provider_action_url.filter(|_| actionable),
+        provider_expires_at,
+        provider_status: if expired {
+            Some("expired".to_owned())
+        } else {
+            c.provider_status
+        },
         document_country: c.document_country,
         document_type: c.document_type,
         document_number_masked: c.document_number_masked,
         subject_name: c.subject_name.as_str().to_owned(),
         summary: c.summary.as_str().to_owned(),
-        status: c.status,
+        status: if expired { 5 } else { c.status },
         version: c.version,
         review_reason: c.review_reason.map(|r| r.as_str().to_owned()),
         reviewer_user_id: c.reviewer_user_id,
         created_at: c.created_at.unix_timestamp(),
         updated_at: c.updated_at.unix_timestamp(),
     }
+}
+
+fn alipay_expired(case: &cases::Model, now: DatabaseTimestamp) -> bool {
+    case.provider == "alipay"
+        && now.unix_timestamp() >= case.created_at.unix_timestamp() + ALIPAY_AUTHORIZATION_SECONDS
+}
+
+fn blocks_submission(case: &cases::Model, now: DatabaseTimestamp) -> bool {
+    case.status == 4 || (case.status == 1 && !alipay_expired(case, now))
 }
 
 fn valid_text(value: &str, max: usize) -> bool {

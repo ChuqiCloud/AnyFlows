@@ -7475,7 +7475,7 @@
     "provider": "Verification method",
     "providers": { "manual": "Manual review", "alipay": "Alipay verification" },
     "noProvider": "No verification method is currently available. Contact an administrator.",
-    "alipayHint": "Alipay verification does not require document uploads. Complete the identity check in Alipay after submitting; the result updates automatically when you return.",
+    "alipayHint": "After submitting, scan with your own Alipay account before the code expires. On mobile, this page will try to open Alipay.",
     "alipayCallbackHint": "The verification result updates automatically after Alipay authorization.",
     "alipayDocumentTypeHint": "The current Alipay identity verification API accepts mainland China ID cards only.",
     "personName": "Full name",
@@ -7507,7 +7507,12 @@
     "openProvider": "Continue with Alipay",
     "syncProvider": "Check verification result",
     "providerStatus": "Provider status",
-    "providerStatuses": { "pending": "Pending", "approved": "Approved", "rejected": "Rejected" },
+    "providerStatuses": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "expired": "Expired"
+    },
     "preview": "Preview",
     "hidePreview": "Hide preview",
     "download": "Download",
@@ -7541,7 +7546,27 @@
     "organizations": "Workspace verification records",
     "pdfHint": "If your browser cannot display the PDF inline, download it to view.",
     "legacyMissing": "This legacy record has no stored file content.",
-    "legacyHistoryHint": "Submission and review versions are retained from this upgrade onward. Older history is shown only where records actually exist."
+    "legacyHistoryHint": "Submission and review versions are retained from this upgrade onward. Older history is shown only where records actually exist.",
+    "alipayScan": {
+      "title": "Verify with Alipay",
+      "instructions": "Scan with your own Alipay account and authorize in the Alipay app.",
+      "qrLabel": "Alipay identity verification QR code",
+      "privateHint": "For your use only. Do not share this QR code.",
+      "opening": "Opening Alipay…",
+      "openApp": "Open Alipay",
+      "fallbackHint": "If Alipay did not open, try again. You can also save a screenshot and select it from the album in Alipay Scan. In embedded browsers such as WeChat, choose Open in browser first.",
+      "showQr": "Show QR code",
+      "expiresIn": "Expires in {{time}}",
+      "expiredHint": "This QR code has expired. Enter and submit your identity details again to get a new code.",
+      "unavailable": "This authorization link is no longer available. Check the result or start a new verification.",
+      "restart": "Enter details again",
+      "checkResult": "Check verification result",
+      "autoRefresh": "This page updates automatically after you authorize.",
+      "checkError": "Could not retrieve your verification result. Select Check verification result to retry.",
+      "qrError": "Could not load the QR code. Please retry.",
+      "completed": "Identity verified",
+      "completedHint": "Your verification result has been saved. No further scan is needed."
+    }
   },
   "enterpriseEntitlement": {
     "title": "Organization entitlements",

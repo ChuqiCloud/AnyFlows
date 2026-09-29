@@ -41,6 +41,9 @@ importers:
       '@lobehub/icons':
         specifier: ^5.19.3
         version: 5.19.3(@lobehub/ui@5.23.5)(@types/react@19.2.17)(antd@6.5.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@rc-component/qrcode':
+        specifier: 2.0.0
+        version: 2.0.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@stripe/react-stripe-js':
         specifier: 6.8.0
         version: 6.8.0(@stripe/stripe-js@9.13.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)

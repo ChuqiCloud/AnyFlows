@@ -198,6 +198,9 @@ impl AccountVerificationService {
         if !provider.available().await {
             return Err(AccountVerificationError::Unavailable);
         }
+        self.repository
+            .ensure_can_submit(principal.user_id(), &write.kind)
+            .await?;
         if write.provider != "manual" {
             let document_number = write
                 .document_number

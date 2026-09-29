@@ -62,6 +62,9 @@ importers:
       '@lobehub/icons':
         specifier: ^5.19.3
         version: 5.19.3(@lobehub/ui@5.48.2)(@types/react@19.3.0)(antd@6.6.5(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@rc-component/qrcode':
+        specifier: 2.0.0
+        version: 2.0.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@react-aria/visually-hidden':
         specifier: 3.9.0
         version: 3.9.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)

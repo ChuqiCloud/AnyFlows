@@ -1,9 +1,11 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect } from 'react'
+import { alipayRemainingSeconds } from './alipay-authorization'
 import { apiClient } from '@/lib/api'
 
 export type VerificationKind = 'individual' | 'enterprise'
 export type VerificationProvider = 'manual' | 'alipay'
-export type VerificationRecord = { id: number; user_id: number; kind: VerificationKind; provider: VerificationProvider; provider_action_url?: string | null; provider_status?: string | null; document_country: string; document_type: string; document_number_masked?: string | null; subject_name: string; summary: string; status: number; version: number; review_reason?: string | null; reviewer_user_id?: number | null; created_at: number; updated_at: number }
+export type VerificationRecord = { id: number; user_id: number; kind: VerificationKind; provider: VerificationProvider; provider_action_url?: string | null; provider_expires_at?: number | null; server_time?: number; provider_status?: string | null; document_country: string; document_type: string; document_number_masked?: string | null; subject_name: string; summary: string; status: number; version: number; review_reason?: string | null; reviewer_user_id?: number | null; created_at: number; updated_at: number }
 export type VerificationMaterial = { id: number; kind: string; file_name: string; content_type: string; size_bytes: number; content_available?: boolean }
 export type VerificationDetail = { case: VerificationRecord; materials: VerificationMaterial[] }
 export const verificationKey = ['account-verification'] as const
@@ -35,8 +37,23 @@ export function useAccountVerifications(admin: boolean, status?: number) {
     }, getNextPageParam: (page) => page.next_cursor ?? undefined })
 }
 export function useVerificationDetail(id: number | undefined, admin: boolean) {
-  return useQuery({ queryKey: [...verificationKey, 'detail', admin, id], enabled: id !== undefined, gcTime: 0, retry: false,
+  const client = useQueryClient()
+  const query = useQuery<VerificationDetail>({ queryKey: [...verificationKey, 'detail', admin, id], enabled: id !== undefined, gcTime: 0, staleTime: 0, retry: false,
+    refetchIntervalInBackground: false,
+    refetchInterval: (query) => {
+      const record = query.state.data?.case
+      return !admin && query.state.status !== 'error' && record
+        && alipayRemainingSeconds(record, query.state.dataUpdatedAt, Date.now()) > 0 ? 3000 : false
+    },
     queryFn: ({ signal }) => verificationGet<VerificationDetail>(`${verificationBase(admin)}/${id}`, signal) })
+  const status = query.data?.case.status
+  const providerStatus = query.data?.case.provider_status
+  useEffect(() => {
+    if (status !== undefined && (status !== 1 || providerStatus === 'expired')) {
+      void client.invalidateQueries({ queryKey: verificationKey, predicate: (query) => query.queryKey[1] !== 'detail' })
+    }
+  }, [client, id, status, providerStatus])
+  return query
 }
 export function useSubmitAccountVerification() {
   const client = useQueryClient()

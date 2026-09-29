@@ -7,6 +7,7 @@ import { Textarea } from '@heroui/react'
 import { ApiError } from '@/lib/api'
 import { useAccountEligibility, useAccountVerifications, useVerificationDetail, useSubmitAccountVerification,
   useReviewAccountVerification, materialBlob, verificationBase, type VerificationKind, type VerificationProvider } from './account-verification-api'
+import { AlipayVerification } from './alipay-verification'
 import { VerificationAttachment } from './verification-attachment'
 
 const countryOptions = ['CN', 'HK', 'MO', 'TW', 'US', 'CA', 'GB', 'JP', 'KR', 'SG', 'AU', 'DE', 'FR'] as const
@@ -22,24 +23,28 @@ export function AccountVerificationPage({ admin = false }: { admin?: boolean }) 
   const { t } = useTranslation()
   const [status, setStatus] = useState<number>()
   const [selected, setSelected] = useState<number>()
+  const [formRestart, setFormRestart] = useState(0)
   const query = useAccountVerifications(admin, status)
   const entries = query.data?.pages.flatMap((p) => p.cases) ?? []
+  useEffect(() => {
+    if (selected !== undefined && !query.isFetching) document.getElementById(`verification-case-${selected}`)?.scrollIntoView({ block: 'nearest' })
+  }, [selected, query.isFetching])
   return <div className="grid min-w-0 gap-5">
     <header className="flex items-start justify-between gap-3"><div><h2 className="flex items-center gap-2 text-xl font-semibold"><FileCheck2 className="size-5 text-primary" />{t(admin ? 'verificationCenter.adminTitle' : 'verificationCenter.title')}</h2><p className="mt-2 text-sm text-default-500">{t(admin ? 'verificationCenter.adminDescription' : 'verificationCenter.description')}</p></div><Button type="button" size="sm" variant="bordered" isDisabled={query.isFetching} onClick={() => void query.refetch()}><RefreshCw className="size-4" />{t('verificationCenter.refresh')}</Button></header>
-    {!admin ? <AccountVerificationForm onSubmitted={setSelected} /> : null}
+    {!admin ? <AccountVerificationForm key={formRestart} restartSignal={formRestart} onSubmitted={(id) => { setStatus(undefined); setSelected(id) }} /> : null}
     <section className="grid gap-3"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">{t('verificationCenter.history')}</h3><select aria-label={t('verificationCenter.filter')} className="rounded-lg border border-default-200 bg-content1 p-2 text-sm" value={status ?? ''} onChange={(e) => { setStatus(e.target.value ? Number(e.target.value) : undefined); setSelected(undefined) }}><option value="">{t('verificationCenter.all')}</option>{[1, 3, 4, 5].map((s) => <option key={s} value={s}>{t(`verificationCenter.status.${s}`)}</option>)}</select></div>
-      {query.isPending ? <p role="status">{t('verificationCenter.loading')}</p> : query.isError ? <p role="alert" className="text-danger">{t('verificationCenter.loadError')}</p> : entries.length === 0 ? <p className="rounded-xl border border-dashed border-default-200 p-8 text-center text-sm text-default-500">{t('verificationCenter.empty')}</p> : entries.map((item) => <article key={item.id} className="rounded-2xl border border-default-200 bg-content1 p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-medium">{item.subject_name} <span className="ml-2 text-xs text-default-500">{t(`verificationCenter.${item.kind}`)} · #{item.id}{admin ? ` · UID ${item.user_id}` : ''}</span></p><p className="mt-1 text-xs text-default-500">{new Date(item.created_at * 1000).toLocaleString()}</p>{item.provider_status ? <p className="mt-1 text-xs text-default-500">{t('verificationCenter.providerStatus')}: {t(`verificationCenter.providerStatuses.${item.provider_status}`, { defaultValue: item.provider_status })}</p> : null}</div><div className="flex items-center gap-3"><span className={item.status === 4 ? 'text-sm text-success' : item.status === 5 ? 'text-sm text-danger' : 'text-sm text-default-500'}>{t(`verificationCenter.status.${item.status}`)}</span><Button type="button" size="sm" variant="bordered" onClick={() => setSelected(selected === item.id ? undefined : item.id)}>{t('verificationCenter.details')}</Button></div></div>{selected === item.id ? <VerificationDetailPanel key={`${admin}-${item.id}`} id={item.id} admin={admin} /> : null}</article>)}
+      {query.isPending ? <p role="status">{t('verificationCenter.loading')}</p> : query.isError ? <p role="alert" className="text-danger">{t('verificationCenter.loadError')}</p> : entries.length === 0 ? <p className="rounded-xl border border-dashed border-default-200 p-8 text-center text-sm text-default-500">{t('verificationCenter.empty')}</p> : entries.map((item) => <article id={`verification-case-${item.id}`} key={item.id} className="rounded-2xl border border-default-200 bg-content1 p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-medium">{item.subject_name} <span className="ml-2 text-xs text-default-500">{t(`verificationCenter.${item.kind}`)} · #{item.id}{admin ? ` · UID ${item.user_id}` : ''}</span></p><p className="mt-1 text-xs text-default-500">{new Date(item.created_at * 1000).toLocaleString()}</p>{item.provider_status ? <p className="mt-1 text-xs text-default-500">{t('verificationCenter.providerStatus')}: {t(`verificationCenter.providerStatuses.${item.provider_status}`, { defaultValue: item.provider_status })}</p> : null}</div><div className="flex items-center gap-3"><span className={item.status === 4 ? 'text-sm text-success' : item.status === 5 ? 'text-sm text-danger' : 'text-sm text-default-500'}>{t(item.provider_status === 'expired' ? 'verificationCenter.providerStatuses.expired' : `verificationCenter.status.${item.status}`)}</span><Button type="button" size="sm" variant="bordered" onClick={() => setSelected(selected === item.id ? undefined : item.id)}>{t('verificationCenter.details')}</Button></div></div>{selected === item.id ? <VerificationDetailPanel key={`${admin}-${item.id}`} id={item.id} admin={admin} onRestart={() => { setStatus(undefined); setSelected(undefined); setFormRestart((value) => value + 1) }} /> : null}</article>)}
       {query.hasNextPage ? <Button type="button" variant="bordered" isDisabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>{t('verificationCenter.more')}</Button> : null}
     </section>
   </div>
 }
 
-function AccountVerificationForm({ onSubmitted }: { onSubmitted: (id: number) => void }) {
+function AccountVerificationForm({ restartSignal, onSubmitted }: { restartSignal: number; onSubmitted: (id: number) => void }) {
   const { t } = useTranslation()
   const eligibility = useAccountEligibility()
   const mutation = useSubmitAccountVerification()
   const [kind, setKind] = useState<VerificationKind>('individual')
-  const [provider, setProvider] = useState<VerificationProvider>('manual')
+  const [provider, setProvider] = useState<VerificationProvider>(restartSignal > 0 ? 'alipay' : 'manual')
   const [name, setName] = useState('')
   const [country, setCountry] = useState('CN')
   const [documentType, setDocumentType] = useState('national_id')
@@ -54,6 +59,12 @@ function AccountVerificationForm({ onSubmitted }: { onSubmitted: (id: number) =>
   useEffect(() => {
     if (eligibility.data && providerOptions.length > 0 && !providerOptions.includes(provider)) setProvider(providerOptions[0])
   }, [eligibility.data, kind, providerOptions, provider])
+  useEffect(() => {
+    if (restartSignal === 0) return
+    const form = document.getElementById('verification-form')
+    form?.scrollIntoView({ block: 'start' })
+    form?.focus({ preventScroll: true })
+  }, [restartSignal])
   useEffect(() => {
     setFiles([])
     setFileError(false)
@@ -71,7 +82,7 @@ function AccountVerificationForm({ onSubmitted }: { onSubmitted: (id: number) =>
     if (!valid) return
     try { const record = await mutation.mutateAsync({ kind, provider, document_country: country, document_type: kind === 'enterprise' ? 'business_registration' : documentType, document_number: documentNumber.trim() || undefined, subject_name: name.trim(), summary: summary.trim(), files }); setFiles([]); setName(''); setDocumentNumber(''); setSummary(''); onSubmitted(record.id) } catch { /* Keep the form for correction. */ }
   }
-  return <section className="rounded-2xl border border-default-200 bg-content1 p-6">
+  return <section id="verification-form" tabIndex={-1} className="rounded-2xl border border-default-200 bg-content1 p-6">
     {eligibility.data?.enterprise_verified ? <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-success/10 p-3"><p className="flex items-center gap-2 text-sm text-success"><CheckCircle2 className="size-4" />{t('verificationCenter.enterpriseGranted')}</p><a href="/console/organization-provisioning" className="text-sm font-medium text-primary">{t('verificationCenter.applyWorkspace')}</a></div> : null}
     <div className="mb-4 flex gap-2" role="tablist" aria-label={t('verificationCenter.kind')}>{(['individual', 'enterprise'] as const).map((value) => <Button key={value} type="button" role="tab" aria-selected={kind === value} variant={kind === value ? 'solid' : 'bordered'} color={kind === value ? 'primary' : 'default'} onClick={() => { setKind(value); if (value === 'enterprise') setProvider('manual'); mutation.reset() }}>{value === 'individual' ? <UserRound className="size-4" /> : <Building2 className="size-4" />}{t(`verificationCenter.${value}`)}</Button>)}</div>
     {eligibility.isPending ? <p role="status">{t('verificationCenter.loading')}</p> : eligibility.isError ? <p role="alert" className="text-sm text-danger">{t('verificationCenter.loadError')}</p> : null}
@@ -93,7 +104,7 @@ function AccountVerificationForm({ onSubmitted }: { onSubmitted: (id: number) =>
   </section>
 }
 
-function VerificationDetailPanel({ id, admin }: { id: number; admin: boolean }) {
+function VerificationDetailPanel({ id, admin, onRestart }: { id: number; admin: boolean; onRestart: () => void }) {
   const { t } = useTranslation()
   const query = useVerificationDetail(id, admin)
   const mutation = useReviewAccountVerification()
@@ -103,14 +114,14 @@ function VerificationDetailPanel({ id, admin }: { id: number; admin: boolean }) 
     try { await mutation.mutateAsync({ id, expected_version: query.data.case.version, status, reason: reason.trim() || undefined }); setReason('') } catch { /* Render the error beside the action. */ }
   }
   if (query.isPending) return <p role="status" className="pt-4">{t('verificationCenter.loading')}</p>
-  if (!query.data || query.isError) return <p role="alert" className="pt-4 text-danger">{t('verificationCenter.loadError')}</p>
+  if (!query.data) return <p role="alert" className="pt-4 text-danger">{t('verificationCenter.loadError')}</p>
   return <div className="mt-4 grid gap-4 border-t border-default-200 pt-4"><p className="whitespace-pre-wrap text-sm">{query.data.case.summary}</p>
-    {query.data.case.provider_action_url && !admin ? <div className="flex flex-wrap items-center gap-3 text-sm"><a className="text-primary underline" href={query.data.case.provider_action_url} target="_blank" rel="noreferrer">{t('verificationCenter.openProvider')}</a>{query.data.case.provider === 'alipay' ? <span className="text-xs text-default-500">{t('verificationCenter.alipayCallbackHint')}</span> : null}</div> : null}
+    {!admin && query.data.case.provider === 'alipay' ? <AlipayVerification key={id} record={query.data.case} receivedAt={query.dataUpdatedAt} checking={query.isFetching} checkError={query.isError} onCheck={() => void query.refetch()} onRestart={onRestart} /> : null}
     <p className="text-xs text-default-500">{query.data.case.document_country} · {t(`verificationCenter.documentTypes.${query.data.case.document_type}`, { defaultValue: query.data.case.document_type })}{query.data.case.document_number_masked ? ` · ${query.data.case.document_number_masked}` : ''}</p>
     {query.data.case.review_reason ? <p className="rounded-lg bg-default-100 p-3 text-sm">{t('verificationCenter.reviewReason')}: {query.data.case.review_reason}</p> : null}
     <p className="text-xs text-default-500">{t('verificationCenter.updated')}: {new Date(query.data.case.updated_at * 1000).toLocaleString()}</p>
     <div className="grid gap-3 md:grid-cols-2">{query.data.materials.map((m) => <VerificationAttachment key={m.id} name={m.file_name} contentType={m.content_type} size={m.size_bytes} load={(signal) => materialBlob(`${verificationBase(admin)}/${id}/materials/${m.id}`, signal)} />)}</div>
-    {admin && query.data.case.status === 1 ? <div className="grid gap-3"><Textarea aria-label={t('verificationCenter.reviewReason')} maxLength={512} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t('verificationCenter.reasonHint')} /><div className="flex flex-wrap gap-2"><Button type="button" isDisabled={mutation.isPending} onClick={() => void review(4)}>{t('verificationCenter.approve')}</Button><Button type="button" variant="bordered" isDisabled={mutation.isPending || !reason.trim()} onClick={() => void review(3)}>{t('verificationCenter.supplement')}</Button><Button type="button" variant="bordered" isDisabled={mutation.isPending || !reason.trim()} onClick={() => void review(5)}>{t('verificationCenter.reject')}</Button></div>{mutation.isError ? <MutationError error={mutation.error} /> : null}</div> : null}
+    {admin && query.data.case.provider === 'manual' && query.data.case.status === 1 ? <div className="grid gap-3"><Textarea aria-label={t('verificationCenter.reviewReason')} maxLength={512} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t('verificationCenter.reasonHint')} /><div className="flex flex-wrap gap-2"><Button type="button" isDisabled={mutation.isPending} onClick={() => void review(4)}>{t('verificationCenter.approve')}</Button><Button type="button" variant="bordered" isDisabled={mutation.isPending || !reason.trim()} onClick={() => void review(3)}>{t('verificationCenter.supplement')}</Button><Button type="button" variant="bordered" isDisabled={mutation.isPending || !reason.trim()} onClick={() => void review(5)}>{t('verificationCenter.reject')}</Button></div>{mutation.isError ? <MutationError error={mutation.error} /> : null}</div> : null}
   </div>
 }
 function MutationError({ error }: { error: unknown }) {
