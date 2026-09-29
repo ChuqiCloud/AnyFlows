@@ -1,9 +1,8 @@
+import { Button } from '@heroui/react'
 import type { QRCodeSVG } from '@rc-component/qrcode'
 import { ExternalLink, QrCode, RefreshCw, Smartphone } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-
-import { Button } from '@/components/ui/button'
 
 export function EpayQrPayment({ url, paymentMethod, refreshing, onRefresh }: {
   url: string
