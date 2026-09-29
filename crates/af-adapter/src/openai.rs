@@ -243,7 +243,7 @@ impl Adaptor for OpenAiAdaptor {
             return Ok(request);
         }
 
-        let (method, target, mut headers, body, response_mode, response_body_limit) =
+        let (method, target, headers, body, response_mode, response_body_limit) =
             request.into_parts();
         let body = body.ok_or(AdaptorError::InvalidTaskRequest)?;
         let mut value: serde_json::Value =
@@ -265,8 +265,6 @@ impl Adaptor for OpenAiAdaptor {
             object.remove(key);
         }
         let body = serde_json::to_vec(&value).map_err(|_| AdaptorError::InvalidTaskRequest)?;
-        // 正文重编码后由 HTTP Client 重新计算长度。
-        headers.remove("content-length");
         UpstreamRequest::new(method, target, headers, Some(Bytes::from(body)))
             .and_then(|request| request.with_response_body_limit(response_body_limit))
             .map(|request| request.with_response_mode(response_mode))
@@ -475,7 +473,6 @@ mod tests {
             adaptor
                 .setup_headers(&mut headers, &credential, &context)
                 .unwrap();
-            headers.insert("content-length", HeaderValue::from_static("999"));
             let request = UpstreamRequest::new(
                 crate::Method::POST,
                 &url,
@@ -498,7 +495,6 @@ mod tests {
             assert_eq!(request.response_body_limit(), 4096);
             assert_eq!(request.headers()["authorization"], "Bearer oauth-test");
             assert_eq!(request.headers()["chatgpt-account-id"], "account-test");
-            assert!(!request.headers().contains_key("content-length"));
         }
     }
 
