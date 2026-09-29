@@ -590,7 +590,9 @@ impl Default for OpenAiResponsesStreamDecoder {
             terminal_response: None,
         }
     }
+}
 
+impl OpenAiResponsesStreamDecoder {
     /// 取出已完成全部流式校验的终态响应，供非流式客户端聚合 Codex SSE。
     pub fn take_terminal_response(&mut self) -> Option<CanonicalResponse> {
         self.terminal_response.take()
