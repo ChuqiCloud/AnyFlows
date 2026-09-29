@@ -245,7 +245,7 @@ impl Adaptor for OpenAiAdaptor {
             return Ok(request);
         }
 
-        let (method, target, headers, body, response_mode, response_body_limit) =
+        let (method, target, mut headers, body, response_mode, response_body_limit) =
             request.into_parts();
         let body = body.ok_or(AdaptorError::InvalidTaskRequest)?;
         let mut value: serde_json::Value =
