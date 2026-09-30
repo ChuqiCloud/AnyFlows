@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use af_domain::UserId;
+use af_domain::{ChannelId, UserId};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait, QueryFilter,
     QueryOrder, QuerySelect, TransactionTrait,
@@ -12,6 +12,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     AdminModelLifecycleRecord, AdminModelRecord, AdminModelVisibilityRecord,
+    ability_write::append_channel_models,
     admin_model_write::valid_write_fields,
     entity::{model_sync_items, model_sync_runs, models},
 };
@@ -108,8 +109,16 @@ impl ModelSyncRepository {
             .iter()
             .map(|item| item.canonical_model.clone())
             .collect::<Vec<_>>();
+        let channel_models_to_add = selected
+            .iter()
+            .filter_map(|item| {
+                (ModelSyncRelationRecord::try_from_database(item.relation).ok()
+                    == Some(ModelSyncRelationRecord::DiscoveredUnconfigured))
+                .then(|| item.canonical_model.clone())
+            })
+            .collect::<Vec<_>>();
         if models::Entity::find()
-            .filter(models::Column::Model.is_in(canonical_models))
+            .filter(models::Column::Model.is_in(canonical_models.clone()))
             .filter(models::Column::DeletedAt.is_null())
             .one(&transaction)
             .with_subscriber(NoSubscriber::default())
@@ -150,6 +159,14 @@ impl ModelSyncRepository {
         if !commands.is_empty() {
             return Err(ModelSyncRepositoryError::Invariant);
         }
+        // 应用发现结果时同步加入当前渠道路由；已有分组、权重和权限由能力同步逻辑保留。
+        let routing_at = TimeDateTimeWithTimeZone::from_unix_timestamp(now)
+            .map_err(|_| ModelSyncRepositoryError::Invariant)?;
+        let channel_id =
+            ChannelId::new(run.channel_id).map_err(|_| ModelSyncRepositoryError::Invariant)?;
+        append_channel_models(&transaction, channel_id, &channel_models_to_add, routing_at)
+            .await
+            .map_err(|_| ModelSyncRepositoryError::Query)?;
         let applied_at = TimeDateTimeWithTimeZone::from_unix_timestamp(now)
             .map_err(|_| ModelSyncRepositoryError::Invariant)?;
         let updated = model_sync_runs::Entity::update_many()

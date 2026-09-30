@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { apiClient, ApiError } from '@/lib/api'
+import { adminChannelsQueryKey } from '@/features/channels/channel-api'
 import {
   applyAdminModelSyncPreview,
   createAdminModelSyncPreview,
@@ -63,6 +64,8 @@ export function useApplyModelSyncPreview() {
         queryClient.invalidateQueries({ queryKey: adminMissingModelsQueryKey }),
         queryClient.invalidateQueries({ queryKey: adminModelMetadataQueryKey }),
         queryClient.invalidateQueries({ queryKey: ['model-catalog'] }),
+        queryClient.invalidateQueries({ queryKey: adminChannelsQueryKey }),
+        queryClient.invalidateQueries({ queryKey: ['admin-channel'] }),
       ])
     },
   })
