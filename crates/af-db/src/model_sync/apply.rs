@@ -111,11 +111,11 @@ impl ModelSyncRepository {
             .collect::<Vec<_>>();
         let channel_models_to_add = selected
             .iter()
-            .filter_map(|item| {
-                (ModelSyncRelationRecord::try_from_database(item.relation).ok()
-                    == Some(ModelSyncRelationRecord::DiscoveredUnconfigured))
-                .then(|| item.canonical_model.clone())
+            .filter(|item| {
+                ModelSyncRelationRecord::try_from_database(item.relation).ok()
+                    == Some(ModelSyncRelationRecord::DiscoveredUnconfigured)
             })
+            .map(|item| item.canonical_model.clone())
             .collect::<Vec<_>>();
         if models::Entity::find()
             .filter(models::Column::Model.is_in(canonical_models.clone()))
