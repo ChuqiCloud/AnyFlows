@@ -4,7 +4,13 @@ use af_domain::{ChannelId, Protocol};
 
 mod export;
 mod reader;
+mod service_levels;
 mod storage;
+
+pub use service_levels::{
+    ServiceLevelDimension, ServiceLevelPoint, ServiceLevelQuery, ServiceLevelReadFuture,
+    ServiceLevelReport, ServiceLevelRow, ServiceLevelStorage, ServiceLevelStorageFuture,
+};
 
 pub use export::{
     AnalyticsExportControl, AnalyticsExportControlError, AnalyticsExportQueueSnapshot,

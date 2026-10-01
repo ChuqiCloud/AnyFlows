@@ -346,7 +346,7 @@ fn map_read_error(error: AdminDashboardReadError) -> ManagementError {
     }
 }
 
-fn no_store_json(value: impl Serialize) -> Response {
+pub(crate) fn no_store_json(value: impl Serialize) -> Response {
     let mut response = Json(value).into_response();
     response
         .headers_mut()

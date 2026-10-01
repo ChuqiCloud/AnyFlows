@@ -27,6 +27,11 @@ mod admin_channel_write;
 mod admin_channel_write_tests;
 mod admin_credential;
 mod admin_dashboard;
+mod admin_dashboard_sla;
+pub use admin_dashboard_sla::{
+    DashboardServiceLevelPoint, DashboardServiceLevelQuery, DashboardServiceLevelReport,
+    DashboardServiceLevelRow,
+};
 mod admin_dashboard_observability;
 mod admin_dashboard_outcomes;
 #[cfg(test)]

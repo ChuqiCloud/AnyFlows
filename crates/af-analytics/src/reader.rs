@@ -39,6 +39,17 @@ pub type AdminDashboardReadFuture<'a> =
 pub trait AdminDashboardReader: Send + Sync {
     /// 校验管理员权限并读取最近 24 小时的真实快照。
     fn read(&self, access: AdminDashboardAccess) -> AdminDashboardReadFuture<'_>;
+
+    fn service_levels(
+        &self,
+        access: AdminDashboardAccess,
+        _query: crate::ServiceLevelQuery,
+    ) -> crate::ServiceLevelReadFuture<'_> {
+        Box::pin(async move {
+            require_admin(access)?;
+            Err(AdminDashboardReadError::Internal)
+        })
+    }
 }
 
 type DashboardClock = Arc<dyn Fn() -> Result<i64, AdminDashboardReadError> + Send + Sync>;
@@ -48,6 +59,7 @@ type DashboardClock = Arc<dyn Fn() -> Result<i64, AdminDashboardReadError> + Sen
 pub struct StorageAdminDashboardReader {
     storage: Arc<dyn AdminDashboardStorage>,
     clock: DashboardClock,
+    service_level_storage: Option<Arc<dyn crate::ServiceLevelStorage>>,
 }
 
 impl StorageAdminDashboardReader {
@@ -57,16 +69,50 @@ impl StorageAdminDashboardReader {
         Self {
             storage,
             clock: Arc::new(system_unix_seconds),
+            service_level_storage: None,
         }
     }
 
     #[cfg(test)]
     fn with_clock(storage: Arc<dyn AdminDashboardStorage>, clock: DashboardClock) -> Self {
-        Self { storage, clock }
+        Self {
+            storage,
+            clock,
+            service_level_storage: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_service_level_storage(
+        mut self,
+        storage: Arc<dyn crate::ServiceLevelStorage>,
+    ) -> Self {
+        self.service_level_storage = Some(storage);
+        self
     }
 }
 
 impl AdminDashboardReader for StorageAdminDashboardReader {
+    fn service_levels(
+        &self,
+        access: AdminDashboardAccess,
+        query: crate::ServiceLevelQuery,
+    ) -> crate::ServiceLevelReadFuture<'_> {
+        Box::pin(async move {
+            require_admin(access)?;
+            if !query.is_valid() {
+                return Err(AdminDashboardReadError::Internal);
+            }
+            let (start, end) = period_ending_at((self.clock)()?)?;
+            self.service_level_storage
+                .as_ref()
+                .ok_or(AdminDashboardReadError::Internal)?
+                .report(start, end, query)
+                .await
+                .map_err(map_storage_error)
+        })
+    }
+
     fn read(&self, access: AdminDashboardAccess) -> AdminDashboardReadFuture<'_> {
         Box::pin(async move {
             require_admin(access)?;
