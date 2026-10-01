@@ -14,7 +14,10 @@ export function DashboardChart({ points, label, color, formatTime, formatValue }
   const id = useId().replaceAll(':', '')
   const [active, setActive] = useState<number | null>(null)
   const maximum = Math.max(1, ...points.map(point => point.value))
-  const ceiling = Math.ceil(maximum / 4) * 4
+  const magnitude = 10 ** Math.floor(Math.log10(maximum / 4))
+  const step = Math.max(1, ([1, 2, 5, 10].find(value => value * magnitude >= maximum / 4) ?? 10) * magnitude)
+  const ceiling = Math.ceil(maximum / step) * step
+  const ticks = Array.from({ length: Math.round(ceiling / step) + 1 }, (_, index) => ceiling - index * step)
   const x = (index: number) => 8 + index / Math.max(1, points.length - 1) * 784
   const y = (value: number) => 180 - value / ceiling * 160
   const coordinates = points.map((point, index) => `${x(index)},${y(point.value)}`)
@@ -31,12 +34,12 @@ export function DashboardChart({ points, label, color, formatTime, formatValue }
       </div>
       <div className="report-chart-plot">
         <div className="report-chart-scale" aria-hidden="true">
-          {[1, 0.75, 0.5, 0.25, 0].map(ratio => <span key={ratio}>{formatValue(ceiling * ratio)}</span>)}
+          {ticks.map(value => <span key={value}>{formatValue(value)}</span>)}
         </div>
         <div className="report-chart-canvas">
           <svg viewBox="0 0 800 200" preserveAspectRatio="none" role="img" aria-label={label}>
             <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.24" /><stop offset="100%" stopColor={color} stopOpacity="0.015" /></linearGradient></defs>
-            {[20, 60, 100, 140, 180].map(value => <line key={value} x1="0" x2="800" y1={value} y2={value} stroke="var(--hairline)" strokeDasharray="3 5" />)}
+            {ticks.map(value => <line key={value} x1="0" x2="800" y1={y(value)} y2={y(value)} stroke="var(--hairline)" strokeDasharray="3 5" />)}
             <path d={area} fill={`url(#${id})`} />
             <path d={line} fill="none" stroke={color} strokeWidth="2.5" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
             {selected && <>

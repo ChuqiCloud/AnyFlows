@@ -30,7 +30,7 @@ export function DashboardTrendBody({ dashboard, formatHour, formatNumber, format
         </div>
       </header>
       <div className="report-trend-body">
-        <div className="report-trend-stats"><div><span>{t('dashboard.charts.total')}</span><strong>{format(total)}</strong></div><div><span>{t('dashboard.charts.peak')}</span><strong>{format(maximum)}</strong></div><div><span>{t('dashboard.charts.average')}</span><strong>{format(values.length ? total / values.length : 0)}</strong></div></div>
+        <div className="report-trend-stats"><div><span>{t('dashboard.charts.total')}</span><strong>{format(total)}</strong></div><div><span>{t('dashboard.charts.peak')}</span><strong>{format(maximum)}</strong></div><div><span>{t('dashboard.charts.average')}</span><strong>{format(values.length ? Math.round(total / values.length * 10) / 10 : 0)}</strong></div></div>
         <DashboardChart points={values} label={t(`dashboard.trend.${metric}`)} color={requestMetric ? 'var(--report-teal)' : 'var(--report-blue)'} formatTime={formatHour} formatValue={format} />
       </div>
     </>

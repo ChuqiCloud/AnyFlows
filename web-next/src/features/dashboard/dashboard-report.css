@@ -7,6 +7,7 @@
 }
 .report-page[data-report-theme="next"] { --report-teal: #18b49d; --report-blue: #6c99ec; }
 .report-page .report-summary-metric { border-top: 2px solid var(--report-teal); }
+.report-summary-value { overflow-wrap: anywhere; }
 .report-page .report-summary-metric[data-report-metric="quota"] { border-top-color: var(--report-blue); }
 .report-page .report-summary-metric[data-report-metric="channels"] { border-top-color: var(--report-amber); }
 .report-page .report-summary-metric[data-report-metric="confirmed"] { border-top-color: var(--report-coral); }
@@ -103,6 +104,7 @@
   .report-sla-duration, .report-sla-head > span:nth-child(4) { display: none; }
 }
 @media (max-width: 639px) {
+  .report-summary-value { font-size: 18px; }
   .report-section-header { padding: 14px; }
   .report-trend-body { padding: 14px; }
   .report-trend-stats { column-gap: 24px; }

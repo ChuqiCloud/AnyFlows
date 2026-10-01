@@ -95,7 +95,15 @@ try {
     const url = new URL(route.request().url())
     let response
     if (url.pathname === '/api/admin/dashboard') {
-      response = failureOnly ? { ...dashboard, request_count: 0, enabled_channel_count: 0, disabled_channel_count: 0, auto_disabled_channel_count: 0, hourly: hourly.map(point => ({ ...point, request_count: 0, quota_consumed: 0 })) } : dashboard
+      response = failureOnly ? {
+        ...dashboard, request_count: 0, quota_consumed: 0, upstream_usage_count: 0, estimated_usage_count: 0,
+        per_token_request_count: 0, per_call_request_count: 0, free_request_count: 0,
+        enabled_channel_count: 0, disabled_channel_count: 0, auto_disabled_channel_count: 0,
+        outcome_request_count: 20, successful_request_count: 0,
+        channel_flows: [], flow_request_count: 0, flow_quota_consumed: 0, flow_paths: [],
+        hourly: hourly.map(point => ({ ...point, request_count: 0, quota_consumed: 0 })),
+        performance: { ...dashboard.performance, first_token_sample_count: 0, average_first_token_ms: null, slow_first_token_count: 0, duration_sample_count: 0, average_duration_ms: null, slow_request_count: 0 },
+      } : dashboard
     } else if (url.pathname === '/api/site') {
       response = { balance_display: { mode: 'quota', unit_name: '', unit_symbol: '', quota_units_per_display_unit: '10000', symbol_position: 'suffix', fraction_digits: 0 } }
     } else if (url.pathname === '/api/admin/analytics/export-status') {
