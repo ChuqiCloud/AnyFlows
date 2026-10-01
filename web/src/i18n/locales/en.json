@@ -293,7 +293,14 @@
         "chartLabel": "Request and funds flow from users through groups and channels to models",
         "chartTitle": "User, group, channel, and model flow",
         "chartDescription": "Line width scales by the selected request count or settled quota. Users are identified only by stable IDs.",
-        "edge": "Segment volume: {{value}}"
+        "edge": "Segment volume: {{value}}",
+        "topLimit": "Nodes per layer",
+        "topOptions": {
+          "6": "Compact",
+          "10": "Standard",
+          "14": "Expanded"
+        },
+        "highlightHint": "Hover a node to trace its flow"
       },
       "protocols": {
         "openai_chat": "OpenAI Chat",

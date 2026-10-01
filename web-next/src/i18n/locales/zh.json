@@ -351,7 +351,14 @@
         "chartLabel": "用户到分组、渠道和模型的请求与资金流向图",
         "chartTitle": "用户、分组、渠道与模型流向",
         "chartDescription": "连线宽度随所选指标变化，用户以编号显示。",
-        "edge": "流量：{{value}}"
+        "edge": "流量：{{value}}",
+        "topLimit": "每层展开",
+        "topOptions": {
+          "6": "精简",
+          "10": "标准",
+          "14": "完整"
+        },
+        "highlightHint": "悬停节点查看关联流向"
       },
       "protocols": {
         "openai_chat": "OpenAI Chat",
