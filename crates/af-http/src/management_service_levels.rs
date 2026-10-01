@@ -4,23 +4,13 @@ use af_analytics::{
 };
 use af_domain::PlatformPermission;
 use axum::{
-    extract::{Extension, Query, State},
+    extract::{Extension, RawQuery, State},
     response::Response,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::{chat_completions::HttpState, management_error::ManagementError};
-
-#[derive(Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ServiceLevelParameters {
-    dimension: Option<String>,
-    search: Option<String>,
-    page: Option<u32>,
-    page_size: Option<u32>,
-    sort: Option<String>,
-}
 
 #[derive(Serialize, ToSchema)]
 #[schema(as = ServiceLevelPoint)]
@@ -57,7 +47,7 @@ pub(crate) struct ServiceLevelReportResponse {
 pub(crate) async fn get_service_levels(
     State(state): State<HttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
-    parameters: Result<Query<ServiceLevelParameters>, axum::extract::rejection::QueryRejection>,
+    RawQuery(raw_query): RawQuery,
 ) -> Result<Response, ManagementError> {
     if !PlatformPolicy::allows(
         authentication.principal(),
@@ -65,27 +55,7 @@ pub(crate) async fn get_service_levels(
     ) {
         return Err(ManagementError::Forbidden);
     }
-    let Query(parameters) = parameters.map_err(|_| ManagementError::InvalidRequest)?;
-    let dimension = match parameters.dimension.as_deref().unwrap_or("model") {
-        "model" => ServiceLevelDimension::Model,
-        "channel" => ServiceLevelDimension::Channel,
-        _ => return Err(ManagementError::InvalidRequest),
-    };
-    let failures_first = match parameters.sort.as_deref().unwrap_or("requests") {
-        "requests" => false,
-        "failures" => true,
-        _ => return Err(ManagementError::InvalidRequest),
-    };
-    let query = ServiceLevelQuery {
-        dimension,
-        search: parameters.search.unwrap_or_default().trim().to_owned(),
-        page: parameters.page.unwrap_or(1),
-        page_size: parameters.page_size.unwrap_or(10),
-        failures_first,
-    };
-    if !query.is_valid() {
-        return Err(ManagementError::InvalidRequest);
-    }
+    let query = parse_query(raw_query.as_deref())?;
     let reader = state
         .admin_dashboard_reader
         .as_deref()
@@ -128,4 +98,104 @@ pub(crate) async fn get_service_levels(
                 .collect(),
         },
     ))
+}
+
+fn parse_query(raw_query: Option<&str>) -> Result<ServiceLevelQuery, ManagementError> {
+    let raw_query = raw_query.unwrap_or_default();
+    let bytes = raw_query.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            if index + 2 >= bytes.len()
+                || !bytes[index + 1].is_ascii_hexdigit()
+                || !bytes[index + 2].is_ascii_hexdigit()
+            {
+                return Err(ManagementError::InvalidRequest);
+            }
+            index += 3;
+        } else {
+            index += 1;
+        }
+    }
+    let mut query = ServiceLevelQuery {
+        dimension: ServiceLevelDimension::Model,
+        search: String::new(),
+        page: 1,
+        page_size: 10,
+        failures_first: false,
+    };
+    let mut seen = std::collections::HashSet::new();
+    for (key, value) in url::form_urlencoded::parse(bytes) {
+        if key.contains('\u{fffd}') || value.contains('\u{fffd}') || !seen.insert(key.to_string()) {
+            return Err(ManagementError::InvalidRequest);
+        }
+        match key.as_ref() {
+            "dimension" => {
+                query.dimension = match value.as_ref() {
+                    "model" => ServiceLevelDimension::Model,
+                    "channel" => ServiceLevelDimension::Channel,
+                    _ => return Err(ManagementError::InvalidRequest),
+                };
+            }
+            "search" => query.search = value.trim().to_owned(),
+            "page" => query.page = parse_number(&value)?,
+            "page_size" => query.page_size = parse_number(&value)?,
+            "sort" => {
+                query.failures_first = match value.as_ref() {
+                    "requests" => false,
+                    "failures" => true,
+                    _ => return Err(ManagementError::InvalidRequest),
+                };
+            }
+            _ => return Err(ManagementError::InvalidRequest),
+        }
+    }
+    if !query.is_valid() {
+        return Err(ManagementError::InvalidRequest);
+    }
+    Ok(query)
+}
+
+fn parse_number(value: &str) -> Result<u32, ManagementError> {
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(ManagementError::InvalidRequest);
+    }
+    value.parse().map_err(|_| ManagementError::InvalidRequest)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_service_level_filters_and_bounds() {
+        let query = parse_query(Some(
+            "dimension=channel&search=+%E6%B8%A0%E9%81%93+&page=2&page_size=5&sort=failures",
+        ))
+        .unwrap();
+        assert_eq!(query.dimension, ServiceLevelDimension::Channel);
+        assert_eq!(query.search, "渠道");
+        assert_eq!(query.page, 2);
+        assert_eq!(query.page_size, 5);
+        assert!(query.failures_first);
+        assert!(parse_query(None).is_ok());
+        for invalid in [
+            "dimension=user",
+            "sort=name",
+            "page=0",
+            "page=10001",
+            "page=-1",
+            "page_size=21",
+            "page_size=0",
+            "page=1&page=2",
+            "extra=true",
+            "search=%",
+            "search=%ZZ",
+            "search=%FF",
+            "page=%2B1",
+        ] {
+            assert!(parse_query(Some(invalid)).is_err(), "accepted {invalid}");
+        }
+        assert!(parse_query(Some(&format!("search={}", "a".repeat(129)))).is_err());
+    }
 }
