@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight, RefreshCw, Search, ShieldCheck } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -8,6 +9,7 @@ import { serviceLevelMetrics, serviceLevelTone } from './dashboard-sla-model'
 
 export function DashboardSla() {
   const { t, i18n } = useTranslation()
+  const queryClient = useQueryClient()
   const [dimension, setDimension] = useState<'model' | 'channel'>('model')
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('')
@@ -27,8 +29,11 @@ export function DashboardSla() {
     return () => window.clearTimeout(timer)
   }, [search])
   useEffect(() => {
-    if (report.data && !report.isFetching && page > pages) setPage(pages)
-  }, [report.data, report.isFetching, page, pages])
+    if (report.data && !report.isFetching && page > pages) {
+      void queryClient.invalidateQueries({ queryKey: ['admin-service-levels', dimension, filter, pages, size, sort], exact: true, refetchType: 'none' })
+      setPage(pages)
+    }
+  }, [report.data, report.isFetching, page, pages, dimension, filter, size, sort, queryClient])
 
   return (
     <section className="report-sla" aria-label={t('dashboard.sla.title')}>

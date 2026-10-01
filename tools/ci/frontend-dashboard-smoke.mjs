@@ -157,7 +157,7 @@ try {
   await sla.getByText('unknown-only', { exact: true }).waitFor()
   shrink = true
   await sla.getByRole('button', { name: '刷新', exact: true }).click()
-  await sla.getByText('OpenAI Production', { exact: true }).waitFor()
+  await sla.getByText('第 1 / 1 页 · 共 1 项', { exact: true }).waitFor()
   assert.equal(requests.at(-1).page, '1', 'Shrinking results clamp pagination')
   shrink = false
   failSla = true
@@ -174,7 +174,7 @@ try {
       await page.evaluate(() => document.fonts.ready)
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${frontend} ${theme} overflow at ${width}px`)
       const visibleOverlap = await sla.evaluate(node => {
-        const parts = [...node.querySelectorAll('.report-sla-row:first-of-type > div')].map(element => element.getBoundingClientRect()).filter(rect => rect.width && rect.height)
+        const parts = [...node.querySelector('.report-sla-row').children].map(element => element.getBoundingClientRect()).filter(rect => rect.width && rect.height)
         return parts.some((a, index) => parts.slice(index + 1).some(b => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1))
       })
       assert.equal(visibleOverlap, false, `SLA columns overlap at ${width}px`)
