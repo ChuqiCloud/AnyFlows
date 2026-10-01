@@ -303,7 +303,7 @@ async fn service_levels_cover_full_outcomes_and_paginate_independently()
             operation: Set("chat".to_owned()),
             model: Set(format!("model-{id}")),
             outcome: Set(2),
-            error_kind: Set(None),
+            error_kind: Set(Some("invalid_request".to_owned())),
             channel_id: Set(None),
             duration_ms: Set(100),
             created_at: Set(start),
