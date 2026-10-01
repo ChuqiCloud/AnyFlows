@@ -5,35 +5,43 @@ import type { SiteSidebarLink } from '@/lib/api/generated/types.gen'
 
 type IconOption = { key: string; Icon: ComponentType<{ className?: string }> }
 type Node = { link: SiteSidebarLink; children: Node[] }
-type Position = { parent: number | null; index: number }
+type Position = { path: number[] }
 
 const fieldClass = 'h-9 min-w-0 w-full rounded-md border border-[var(--hairline)] bg-background px-3 text-sm outline-none focus:border-primary'
 const emptyLink = (): SiteSidebarLink => ({ label: '', label_en: null, url: '', icon: 'link', kind: 'link', level: 1, style: 'default', audience: 'all' })
 
 function toTree(links: SiteSidebarLink[]): Node[] {
   const roots: Node[] = []
+  const parents: Node[] = []
   for (const item of links) {
     const link = { ...item, kind: item.kind ?? 'link' }
-    if ((item.level ?? 1) > 1 && roots.length > 0) {
-      const parent = roots.at(-1)!
+    const level = Math.min(3, Math.max(1, item.level ?? 1))
+    if (level > 1 && roots.length > 0) {
+      const parent = parents[level - 2] ?? parents.at(-1) ?? roots.at(-1)!
       // Legacy parents were links; keep their destination when turning them into menus.
       if (parent.link.kind !== 'group' && parent.link.url) {
-        parent.children.push({ link: { ...parent.link, level: 2 }, children: [] })
+        parent.children.push({ link: { ...parent.link, level: level - 1 }, children: [] })
       }
       parent.link.kind = 'group'
       parent.link.url = ''
-      parent.children.push({ link: { ...link, kind: 'link' }, children: [] })
+      const node = { link: { ...link, kind: 'link', level }, children: [] }
+      parent.children.push(node)
+      parents[level - 1] = node
+      parents.length = level
     } else {
-      roots.push({ link, children: [] })
+      const node = { link, children: [] }
+      roots.push(node)
+      parents.length = 0
+      parents.push(node)
     }
   }
   return roots
 }
 
-function flatten(nodes: Node[]): SiteSidebarLink[] {
+function flatten(nodes: Node[], level = 1): SiteSidebarLink[] {
   return nodes.flatMap(({ link, children }) => [
-    { ...link, kind: children.length > 0 || link.kind === 'group' ? 'group' : 'link', level: 1, url: link.kind === 'group' ? '' : link.url },
-    ...children.map((child) => ({ ...child.link, kind: 'link', level: 2 })),
+    { ...link, kind: level === 1 && (children.length > 0 || link.kind === 'group') ? 'group' : 'link', level, url: level === 1 && (children.length > 0 || link.kind === 'group') ? '' : link.url },
+    ...flatten(children, Math.min(3, level + 1)),
   ])
 }
 
@@ -64,65 +72,71 @@ export function SidebarNavigationEditor({ links, onChange, icons, en }: {
   const nodes = toTree(links)
   const commit = (next: Node[]) => onChange(flatten(next))
   const clone = () => toTree(links)
-  const getList = (tree: Node[], parent: number | null) => parent === null ? tree : tree[parent].children
+  const getList = (tree: Node[], parentPath: number[]) => parentPath.reduce((list, index) => list[index].children, tree)
+  const nodeAt = (tree: Node[], position: Position) => getList(tree, position.path.slice(0, -1))[position.path.at(-1)!]
   const update = (position: Position, change: Partial<SiteSidebarLink>) => {
     const next = clone()
-    const node = getList(next, position.parent)[position.index]
+    const node = nodeAt(next, position)
     node.link = { ...node.link, ...change }
     commit(next)
   }
-  const relocate = (source: Position, target: Position) => {
+  const relocate = (source: Position, target: { parentPath: number[]; index: number }) => {
     const next = clone()
-    const sourceList = getList(next, source.parent)
-    const [node] = sourceList.splice(source.index, 1)
-    if (!node || (target.parent !== null && node.link.kind === 'group')) return
-    let parent = target.parent
-    if (source.parent === null && parent !== null && source.index < parent) parent--
-    const targetList = getList(next, parent)
-    const index = source.parent === parent && source.index < target.index ? target.index - 1 : target.index
+    const sourceParentPath = source.path.slice(0, -1)
+    const sourceIndex = source.path.at(-1)!
+    if (target.parentPath.length >= source.path.length && source.path.every((value, index) => target.parentPath[index] === value)) return
+    const sourceList = getList(next, sourceParentPath)
+    const [node] = sourceList.splice(sourceIndex, 1)
+    if (!node || (target.parentPath.length > 0 && node.link.kind === 'group')) return
+    const sameList = sourceParentPath.length === target.parentPath.length && sourceParentPath.every((value, index) => target.parentPath[index] === value)
+    const targetList = getList(next, target.parentPath)
+    const index = sameList && sourceIndex < target.index ? target.index - 1 : target.index
     targetList.splice(index, 0, node)
     commit(next)
   }
   const changeKind = (position: Position, kind: 'link' | 'group') => {
     if (kind === 'group' && links.length >= 48) return
     const next = clone()
-    const node = next[position.index]
+    if (position.path.length !== 1) return
+    const node = next[position.path[0]]
     if (kind === 'group') {
       const previous = node.link
       node.link = { ...node.link, kind, url: '' }
       node.children = [{ link: { ...previous, kind: 'link', level: 2 }, children: [] }]
     } else {
       node.link = { ...node.link, kind, url: '' }
-      next.splice(position.index + 1, 0, ...node.children)
+      next.splice(position.path[0] + 1, 0, ...node.children)
       node.children = []
     }
     commit(next)
   }
   const remove = (position: Position) => {
     const next = clone()
-    if (position.parent === null) {
-      const [node] = next.splice(position.index, 1)
-      if (node) next.splice(position.index, 0, ...node.children)
-    } else next[position.parent].children.splice(position.index, 1)
+    const parentPath = position.path.slice(0, -1)
+    const index = position.path.at(-1)!
+    const list = getList(next, parentPath)
+    const [node] = list.splice(index, 1)
+    if (parentPath.length === 0 && node) list.splice(index, 0, ...node.children)
     commit(next)
   }
-  const dropZone = (target: Position) => <div
+  const dropZone = (target: { parentPath: number[]; index: number }) => <div
     className={`flex h-3 items-center rounded border border-dashed transition-all ${drag ? 'my-1 h-8 border-primary/60 bg-primary/5 text-primary' : 'border-transparent'}`}
-    onDragOver={(event) => { if (drag && (target.parent === null || getList(nodes, drag.parent)[drag.index]?.link.kind !== 'group')) event.preventDefault() }}
+    onDragOver={(event) => { if (drag && (target.parentPath.length === 0 || nodeAt(nodes, drag).link.kind !== 'group')) event.preventDefault() }}
     onDrop={(event) => { event.preventDefault(); if (drag) relocate(drag, target); setDrag(null) }}
   >{drag && <span className="px-3 text-xs">{words.drop}</span>}</div>
   const renderNode = (node: Node, position: Position) => {
     const { link } = node
-    const list = getList(nodes, position.parent)
-    const group = position.parent === null && link.kind === 'group'
-    return <div key={position.index} className={`min-w-0 rounded-md border border-[var(--hairline)] bg-background/50 ${group ? 'border-l-2 border-l-primary/60' : ''}`}>
+    const list = getList(nodes, position.path.slice(0, -1))
+    const group = position.path.length === 1 && link.kind === 'group'
+    const hasChildren = group || node.children.length > 0
+    return <div key={position.path.join('.')} className={`min-w-0 rounded-md border border-[var(--hairline)] bg-background/50 ${group ? 'border-l-2 border-l-primary/60' : ''}`}>
       <div className="flex min-w-0 items-start gap-2 p-3">
-        <button type="button" draggable title={words.drag} aria-label={words.drag} className="mt-1 grid size-8 shrink-0 cursor-grab place-items-center rounded text-muted-foreground hover:bg-primary/10 hover:text-primary" onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', `${position.parent ?? 'root'}:${position.index}`); setDrag(position) }} onDragEnd={() => setDrag(null)}><GripVertical className="size-4" /></button>
+        <button type="button" draggable title={words.drag} aria-label={words.drag} className="mt-1 grid size-8 shrink-0 cursor-grab place-items-center rounded text-muted-foreground hover:bg-primary/10 hover:text-primary" onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', position.path.join('.')); setDrag(position) }} onDragEnd={() => setDrag(null)}><GripVertical className="size-4" /></button>
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold text-foreground">{group ? words.group : words.link}</span>
-            {position.parent === null && <select className="rounded border border-[var(--hairline)] bg-background px-2 py-1 text-xs" aria-label={words.placement} value={group ? 'group' : 'link'} onChange={(event) => changeKind(position, event.target.value as 'link' | 'group')}><option value="link">{words.link}</option><option value="group" disabled={!group && links.length >= 48}>{words.group}</option></select>}
-            {!group && <select className="max-w-full rounded border border-[var(--hairline)] bg-background px-2 py-1 text-xs" aria-label={words.placement} value={position.parent ?? 'top'} onChange={(event) => relocate(position, { parent: event.target.value === 'top' ? null : Number(event.target.value), index: event.target.value === 'top' ? nodes.length : nodes[Number(event.target.value)].children.length })}><option value="top">{words.top}</option>{nodes.map((root, index) => root.link.kind === 'group' && (position.parent !== null || position.index !== index) ? <option key={index} value={index}>{root.link.label || words.group}</option> : null)}</select>}
+            {position.path.length === 1 && <select className="rounded border border-[var(--hairline)] bg-background px-2 py-1 text-xs" aria-label={words.placement} value={group ? 'group' : 'link'} onChange={(event) => changeKind(position, event.target.value as 'link' | 'group')}><option value="link">{words.link}</option><option value="group" disabled={!group && links.length >= 48}>{words.group}</option></select>}
+            {!group && <select className="max-w-full rounded border border-[var(--hairline)] bg-background px-2 py-1 text-xs" aria-label={words.placement} value={position.path.length === 1 ? 'top' : String(position.path[0])} onChange={(event) => relocate(position, { parentPath: event.target.value === 'top' ? [] : [Number(event.target.value)], index: event.target.value === 'top' ? nodes.length : nodes[Number(event.target.value)].children.length })}><option value="top">{words.top}</option>{nodes.map((root, index) => root.link.kind === 'group' && (position.path.length > 1 || position.path[0] !== index) ? <option key={index} value={index}>{root.link.label || words.group}</option> : null)}</select>}
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             <input className={fieldClass} aria-label={words.name} placeholder={words.name} maxLength={64} value={link.label} onChange={(event) => update(position, { label: event.target.value })} />
@@ -135,16 +149,16 @@ export function SidebarNavigationEditor({ links, onChange, icons, en }: {
           </div>
         </div>
         <div className="flex shrink-0 flex-col gap-1 sm:flex-row">
-          <button type="button" title={words.up} aria-label={words.up} disabled={position.index === 0} className="grid size-8 place-items-center rounded hover:bg-primary/10 disabled:opacity-30" onClick={() => relocate(position, { parent: position.parent, index: position.index - 1 })}><ArrowUp className="size-4" /></button>
-          <button type="button" title={words.down} aria-label={words.down} disabled={position.index === list.length - 1} className="grid size-8 place-items-center rounded hover:bg-primary/10 disabled:opacity-30" onClick={() => relocate(position, { parent: position.parent, index: position.index + 2 })}><ArrowDown className="size-4" /></button>
+          <button type="button" title={words.up} aria-label={words.up} disabled={position.path.at(-1) === 0} className="grid size-8 place-items-center rounded hover:bg-primary/10 disabled:opacity-30" onClick={() => relocate(position, { parentPath: position.path.slice(0, -1), index: position.path.at(-1)! - 1 })}><ArrowUp className="size-4" /></button>
+          <button type="button" title={words.down} aria-label={words.down} disabled={position.path.at(-1) === list.length - 1} className="grid size-8 place-items-center rounded hover:bg-primary/10 disabled:opacity-30" onClick={() => relocate(position, { parentPath: position.path.slice(0, -1), index: position.path.at(-1)! + 2 })}><ArrowDown className="size-4" /></button>
           <button type="button" title={words.remove} aria-label={words.remove} className="grid size-8 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => remove(position)}><Trash2 className="size-4" /></button>
         </div>
       </div>
-      {group && <div className="border-t border-[var(--hairline)] bg-surface-1/35 py-1 pl-4 pr-2 sm:pl-10">
+      {hasChildren && <div className="border-t border-[var(--hairline)] bg-surface-1/35 py-1 pl-4 pr-2 sm:pl-10">
         {node.children.length === 0 && <p className="px-2 py-2 text-xs text-destructive">{words.emptyGroup}</p>}
-        {node.children.map((child, index) => <div key={index}>{dropZone({ parent: position.index, index })}{renderNode(child, { parent: position.index, index })}</div>)}
-        {dropZone({ parent: position.index, index: node.children.length })}
-        <button type="button" className="my-1 flex items-center gap-1 rounded px-2 py-1 text-xs text-primary hover:bg-primary/10 disabled:opacity-40" disabled={links.length >= 48} onClick={() => { const next = clone(); next[position.index].children.push({ link: emptyLink(), children: [] }); commit(next) }}><Plus className="size-3.5" />{words.addLink}</button>
+        {node.children.map((child, index) => <div key={index}>{dropZone({ parentPath: position.path, index })}{renderNode(child, { path: [...position.path, index] })}</div>)}
+        {dropZone({ parentPath: position.path, index: node.children.length })}
+        {group ? <button type="button" className="my-1 flex items-center gap-1 rounded px-2 py-1 text-xs text-primary hover:bg-primary/10 disabled:opacity-40" disabled={links.length >= 48} onClick={() => { const next = clone(); nodeAt(next, position).children.push({ link: emptyLink(), children: [] }); commit(next) }}><Plus className="size-3.5" />{words.addLink}</button> : null}
       </div>}
     </div>
   }
@@ -153,8 +167,8 @@ export function SidebarNavigationEditor({ links, onChange, icons, en }: {
       <button type="button" className="flex h-8 items-center gap-1 rounded-md border border-[var(--hairline)] px-3 text-xs font-medium hover:bg-primary/5 disabled:opacity-40" disabled={links.length >= 48} onClick={() => commit([...clone(), { link: emptyLink(), children: [] }])}><Plus className="size-4" />{words.addLink}</button>
       <button type="button" className="flex h-8 items-center gap-1 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-40" disabled={links.length >= 47} onClick={() => commit([...clone(), { link: { ...emptyLink(), kind: 'group' }, children: [{ link: emptyLink(), children: [] }] }])}><Plus className="size-4" />{words.addGroup}</button>
     </div>
-    {nodes.map((node, index) => <div key={index}>{dropZone({ parent: null, index })}{renderNode(node, { parent: null, index })}</div>)}
-    {dropZone({ parent: null, index: nodes.length })}
+    {nodes.map((node, index) => <div key={index}>{dropZone({ parentPath: [], index })}{renderNode(node, { path: [index] })}</div>)}
+    {dropZone({ parentPath: [], index: nodes.length })}
     {nodes.length === 0 && <p className="py-4 text-center text-xs text-muted-foreground">{words.empty}</p>}
   </div>
 }

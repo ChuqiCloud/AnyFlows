@@ -69,7 +69,7 @@ export function UserPage() {
       <EnterpriseManagementGuide />
 
       <div className="flex items-center justify-between border-t border-[var(--hairline)] py-2 text-xs text-muted-foreground">
-        <span>{t('users.count', { count: users.length })}</span>
+        <span>{t('users.pageCount', { count: users.length })}</span>
         <span>{t('users.pages', { count: pagination.currentPage })}</span>
       </div>
 

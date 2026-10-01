@@ -125,11 +125,11 @@ export async function downloadAdminOrganizationProvisioningMaterial(requestKey: 
 }
 
 /** 平台管理员读取申请队列，筛选和游标均交由服务端校验。 */
-export function useAdminOrganizationProvisioning(status?: OrganizationProvisioningStatus) {
+export function useAdminOrganizationProvisioning(status?: OrganizationProvisioningStatus, before?: number, limit = 50) {
   return useQuery({
-    queryKey: [...organizationProvisioningAdminQueryKey, status ?? 'all'],
+    queryKey: [...organizationProvisioningAdminQueryKey, status ?? 'all', before ?? null, limit],
     queryFn: async ({ signal }) => {
-      const result = await listAdminOrganizationProvisioningRequests({ client: apiClient, query: { limit: 50, status }, signal }) as unknown as { data: OrganizationProvisioningRequestListResponse }
+      const result = await listAdminOrganizationProvisioningRequests({ client: apiClient, query: { before, limit, status }, signal }) as unknown as { data: OrganizationProvisioningRequestListResponse }
       return result.data
     },
   })

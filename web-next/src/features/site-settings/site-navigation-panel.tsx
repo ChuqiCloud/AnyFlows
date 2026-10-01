@@ -82,8 +82,13 @@ export function SiteNavigationPanel({ settings }: { settings: AdminSiteSettings 
   const save = async () => {
     const sidebarValid = draft.sidebar_links.every((link, index) => {
       if (!link.label.trim()) return false
-      if (link.kind === 'group') return link.level === 1 && !link.url && draft.sidebar_links[index + 1]?.level === 2
-      return validLink(link) && ((link.level ?? 1) === 1 || (link.level === 2 && draft.sidebar_links.slice(0, index).reverse().find((parent) => parent.level === 1)?.kind === 'group'))
+      const level = link.level ?? 1
+      if (!(level >= 1 && level <= 3)) return false
+      if (link.kind === 'group') return level === 1 && !link.url && draft.sidebar_links[index + 1]?.level === 2
+      if (!validLink(link)) return false
+      if (level === 1) return true
+      const parent = draft.sidebar_links.slice(0, index).reverse().find((candidate) => (candidate.level ?? 1) === level - 1)
+      return Boolean(parent) && (level !== 2 || parent?.kind === 'group')
     })
     if (!sidebarValid || draft.header_links.some((link) => !validLink(link)) || draft.footer_groups.some((group) => !group.title.trim() || group.links.length === 0 || group.links.some((link) => !validLink(link)))) {
       setLocalError(true)

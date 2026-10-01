@@ -1,5 +1,5 @@
 import { Filter, RefreshCw, Search, SlidersHorizontal } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button, Input, Select, SelectItem, Skeleton } from '@heroui/react'
@@ -40,6 +40,10 @@ export function DebugTracePage() {
   const tracesQuery = useAdminDebugTraces(pagination.cursor, filters, pagination.pageSize)
   const traces = tracesQuery.data?.traces ?? EMPTY_TRACES
   const nextCursor = tracesQuery.data?.next_cursor
+
+  useEffect(() => {
+    if (selectedId === undefined && filters.requestId && traces.length > 0) setSelectedId(traces[0].id)
+  }, [filters.requestId, selectedId, traces])
 
   const applyFilters = () => {
     pagination.reset()
