@@ -137,6 +137,56 @@
     "organizationBalanceValue": "Organization available balance: {{value}} quota"
   },
   "dashboard": {
+    "charts": {
+      "total": "Total",
+      "peak": "Hourly peak",
+      "average": "Hourly average"
+    },
+    "sla": {
+      "title": "Model & channel SLA",
+      "dimension": "Dimension",
+      "model": "Models",
+      "channel": "Channels",
+      "search": "Search models or channels",
+      "sort": "Sort",
+      "sorts": {
+        "requests": "Most requests",
+        "failures": "Most failures"
+      },
+      "target": "Target",
+      "rate": "Request success",
+      "requests": "Requests",
+      "duration": "Avg. duration",
+      "history": "24-hour health",
+      "noMatches": "No matching request records",
+      "empty": "No requests in this window",
+      "perPage": "Rows",
+      "page": "{{page}} / {{pages}} · {{total}} items",
+      "previous": "Previous page",
+      "next": "Next page",
+      "states": {
+        "healthy": "On target",
+        "degraded": "Below target",
+        "critical": "Below 95%",
+        "unknown": "Unknown",
+        "empty": "No samples"
+      },
+      "status": {
+        "healthy": "Target met",
+        "degraded": "Below target",
+        "unknown": "No resolved samples"
+      },
+      "basis": "Success rate uses resolved requests over the last 24 hours. Unknown outcomes are excluded; this is not continuous uptime.",
+      "unattributed": "{{count}} requests without an assigned channel are excluded from channel statistics.",
+      "coverage": "{{rate}} resolved",
+      "budget": "Failure budget left: {{count}}",
+      "exceeded": "Over failure budget: {{count}}",
+      "budgetDefinition": "Allowed failures at the current sample size and selected target. Applies only to this report.",
+      "failed": "{{count}} failed",
+      "successDuration": "Successful requests",
+      "hour": "{{success}} success / {{failed}} failed / {{unknown}} unknown",
+      "historyRange": "24h ago → Now"
+    },
     "title": "Operations overview",
     "subtitle": "Confirmed usage from the last 24 hours and current channel status",
     "period": "{{start}} to {{end}}",

@@ -60,7 +60,7 @@ export function DashboardSummary({ dashboard, formatNumber, formatPercent, forma
   return (
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label={t('dashboard.summary.label')}>
       {items.map(({ key, icon: Icon, value, hint }) => (
-        <Card key={key} className="min-h-28 border border-[var(--hairline)] bg-card p-3.5" shadow="none">
+        <Card key={key} data-report-metric={key} className="report-summary-metric min-h-28 border border-[var(--hairline)] bg-card p-3.5" shadow="none">
           <div className="flex items-start justify-between gap-3">
             <span className="text-xs text-muted-foreground">{t(`dashboard.summary.${key}.label`)}</span>
             <span className="grid size-7 shrink-0 place-items-center rounded-lg border border-[var(--hairline)] bg-surface-2/45 text-muted-foreground">

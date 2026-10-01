@@ -14,9 +14,12 @@ import { DashboardPerformance } from './dashboard-performance'
 import { DashboardOutcomes } from './dashboard-outcomes'
 import { DashboardSummary } from './dashboard-summary'
 import { DashboardTrend } from './dashboard-trend'
+import { DashboardSla } from './dashboard-sla'
+import './dashboard-report.css'
 
 function isEmptyDashboard(dashboard: AdminDashboardResponse) {
   return dashboard.request_count === 0
+    && dashboard.outcome_request_count === 0
     && dashboard.enabled_channel_count === 0
     && dashboard.disabled_channel_count === 0
     && dashboard.auto_disabled_channel_count === 0
@@ -45,7 +48,7 @@ export function DashboardPage() {
   }).format(value * 1000)
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="report-page flex flex-col gap-5" data-report-theme="classic">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold">{t('dashboard.title')}</h2>
@@ -112,6 +115,7 @@ export function DashboardPage() {
             <DashboardTrend dashboard={dashboard} formatHour={formatHour} formatNumber={formatNumber} formatQuota={formatQuota} />
             <DashboardPerformance dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
           </section>
+          <DashboardSla />
           <section className="grid gap-3 xl:grid-cols-[minmax(0,1.55fr)_minmax(15rem,0.75fr)]">
             <DashboardComposition dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
             <DashboardAvailability

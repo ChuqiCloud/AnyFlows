@@ -3156,6 +3156,29 @@ export type ScimUserWriteRequest = {
     active: boolean;
     meta: ScimUserMeta;
 };
+export type ServiceLevelPoint = {
+    period_start: number;
+    successful_request_count: number;
+    failed_request_count: number;
+    unknown_request_count: number;
+};
+export type ServiceLevelReport = {
+    period_start: number;
+    period_end: number;
+    total: number;
+    unattributed_request_count: number;
+    items: Array<ServiceLevelRow>;
+};
+export type ServiceLevelRow = {
+    key: string;
+    name: string;
+    request_count: number;
+    successful_request_count: number;
+    failed_request_count: number;
+    unknown_request_count: number;
+    average_duration_ms?: number | null;
+    hourly: Array<ServiceLevelPoint>;
+};
 export type ServiceProviderConfigResponse = {
     schemas: Array<string>;
     patch: ScimSupportResponse;
@@ -6499,6 +6522,29 @@ export type GetAdminDashboardResponses = {
     200: AdminDashboardResponse;
 };
 export type GetAdminDashboardResponse = GetAdminDashboardResponses[keyof GetAdminDashboardResponses];
+export type GetAdminServiceLevelsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        dimension?: string;
+        search?: string;
+        page?: number;
+        page_size?: number;
+        sort?: string;
+    };
+    url: '/api/admin/dashboard/service-levels';
+};
+export type GetAdminServiceLevelsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminServiceLevelsError = GetAdminServiceLevelsErrors[keyof GetAdminServiceLevelsErrors];
+export type GetAdminServiceLevelsResponses = {
+    200: ServiceLevelReport;
+};
+export type GetAdminServiceLevelsResponse = GetAdminServiceLevelsResponses[keyof GetAdminServiceLevelsResponses];
 export type GetAdminAnalyticsExportStatusData = {
     body?: never;
     path?: never;
