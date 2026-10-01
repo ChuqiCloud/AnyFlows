@@ -291,7 +291,7 @@ pub(crate) async fn create_admin_model_sync_preview(
     ))
 }
 
-/// 原子应用固定预览中的明确选择，并仅返回新建的隐藏草稿。
+/// 原子应用固定预览中的明确选择，并返回新建的隐藏草稿；适用候选同时加入来源渠道路由。
 pub(crate) async fn apply_admin_model_sync_preview(
     State(state): State<HttpState>,
     Path(preview_id): Path<String>,

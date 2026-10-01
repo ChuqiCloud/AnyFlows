@@ -85,13 +85,13 @@ fn create_admin_model_sync_preview() {}
     path = "/api/admin/models/sync-previews/{preview_id}/apply",
     operation_id = "applyAdminModelSyncPreview",
     tag = "模型管理",
-    summary = "原子应用同步预览并创建隐藏草稿",
+    summary = "原子应用同步预览、创建隐藏草稿并加入渠道路由",
     params(
         ("preview_id" = String, Path, min_length = 36, max_length = 36, description = "同步预览 UUID")
     ),
     request_body = AdminModelSyncApplyRequest,
     responses(
-        (status = 200, description = "所选模型已创建为隐藏草稿", body = AdminModelSyncApplyResponse),
+        (status = 200, description = "所选模型已创建为隐藏草稿并加入来源渠道路由", body = AdminModelSyncApplyResponse),
         (status = 400, description = "预览 ID 或结构化元数据无效", body = ManagementErrorBody),
         (status = 401, description = "会话无效", body = ManagementErrorBody),
         (status = 403, description = "需要管理员权限", body = ManagementErrorBody),

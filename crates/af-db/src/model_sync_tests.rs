@@ -151,6 +151,25 @@ async fn apply_creates_hidden_drafts_atomically_and_rejects_replay() -> Result<(
         model.visibility() == AdminModelVisibilityRecord::Hidden
             && model.lifecycle() == AdminModelLifecycleRecord::Draft
     }));
+    assert_eq!(
+        channel_models::Entity::find()
+            .filter(channel_models::Column::ChannelId.eq(fixture.channel_id.get()))
+            .count(fixture.pool.connection())
+            .await?,
+        2,
+        "应用同步结果必须同时加入来源渠道路由"
+    );
+    for model in ["configured-missing", "upstream-new"] {
+        assert!(
+            channel_models::Entity::find()
+                .filter(channel_models::Column::ChannelId.eq(fixture.channel_id.get()))
+                .filter(channel_models::Column::Model.eq(model))
+                .one(fixture.pool.connection())
+                .await?
+                .is_some(),
+            "同步后的渠道路由缺少 {model}"
+        );
+    }
     let run = model_sync_runs::Entity::find()
         .filter(model_sync_runs::Column::PreviewId.eq(PREVIEW_ID))
         .one(fixture.pool.connection())

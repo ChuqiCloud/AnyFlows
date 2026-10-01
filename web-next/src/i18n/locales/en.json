@@ -1971,7 +1971,7 @@
         "selectItem": "Select model {{model}}",
         "editItem": "Enter metadata",
         "confirmItem": "Confirm item",
-        "apply": "Create hidden drafts"
+        "apply": "Import and add to channel"
       },
       "missing": {
         "title": "Missing model metadata",
@@ -2044,12 +2044,12 @@
         "use": "Use {{label}} evidence"
       },
       "apply": {
-        "title": "Create hidden model drafts",
-        "description_one": "Write the selected {{count}} model to the product catalog as a hidden draft.",
-        "description_other": "Write the selected {{count}} models to the product catalog as hidden drafts.",
-        "boundary": "This does not change channel models, prices, capability indexes, model mappings, or credentials. Every item is applied in one transaction, and any conflict fails the whole operation.",
-        "success_one": "Created {{count}} hidden model draft. Continue its review in the model catalog.",
-        "success_other": "Created {{count}} hidden model drafts. Continue their review in the model catalog."
+        "title": "Import models and add to channel",
+        "description_one": "Create the selected {{count}} model as a hidden draft and add it to this channel's routable models.",
+        "description_other": "Create the selected {{count}} models as hidden drafts and add them to this channel's routable models.",
+        "boundary": "Existing channel groups, weights, priorities, and permissions are preserved. Model metadata remains a hidden draft and is not priced or published automatically. Every item is applied in one transaction, and any conflict fails the whole operation.",
+        "success_one": "Imported {{count}} model and added it to the channel route. Continue reviewing its metadata in the model catalog.",
+        "success_other": "Imported {{count}} models and added them to the channel route. Continue reviewing their metadata in the model catalog."
       },
       "errors": {
         "invalid_request": "The sync request is invalid. Check the selected items and entered metadata.",
