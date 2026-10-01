@@ -63,7 +63,7 @@ export function ChannelPage() {
       </header>
 
       <div className="flex items-center justify-between border-t border-[var(--hairline)] py-2 text-xs text-muted-foreground">
-        <span>{t('channels.count', { count: channels.length })}</span>
+        <span>{t('channels.pageCount', { count: channels.length })}</span>
         <span>{t('channels.scope')}</span>
       </div>
 

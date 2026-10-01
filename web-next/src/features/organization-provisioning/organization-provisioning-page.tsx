@@ -6,6 +6,9 @@ import type { FormEvent, ReactNode } from 'react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { LucideIcon } from 'lucide-react'
+import { DataTablePagination, DEFAULT_TABLE_PAGE_SIZE } from '@/components/data-table/data-table-pagination'
+import { useCursorPagination } from '@/components/data-table/use-table-pagination'
+import { useAdminUser } from '@/features/users/user-api'
 
 import {
   organizationProvisioningErrorCode,
@@ -174,7 +177,8 @@ function ProvisioningMaterialFields({ index, material, canRemove, onChange, onRe
 function AdminProvisioningWorkspace() {
   const { t } = useTranslation()
   const [status, setStatus] = useState<OrganizationProvisioningStatus | undefined>()
-  const query = useAdminOrganizationProvisioning(status)
+  const pagination = useCursorPagination<number>(DEFAULT_TABLE_PAGE_SIZE)
+  const query = useAdminOrganizationProvisioning(status, pagination.cursor, pagination.pageSize)
   const [selected, setSelected] = useState<OrganizationProvisioningRequest>()
   const [reason, setReason] = useState('')
   const [seatLimit, setSeatLimit] = useState('10')
@@ -228,7 +232,7 @@ function AdminProvisioningWorkspace() {
       <ProvisioningFlow current="review" />
       <div className="flex flex-wrap items-center gap-2">
         {(['all', 'pending', 'approved', 'rejected'] as const).map((value) => (
-          <Button key={value} type="button" size="sm" variant={(status ?? 'all') === value ? 'bordered' : 'light'} onClick={() => setStatus(value === 'all' ? undefined : value)}>{t(`organizationProvisioning.admin.filters.${value}`)}</Button>
+          <Button key={value} type="button" size="sm" variant={(status ?? 'all') === value ? 'bordered' : 'light'} onClick={() => { setStatus(value === 'all' ? undefined : value); pagination.reset() }}>{t(`organizationProvisioning.admin.filters.${value}`)}</Button>
         ))}
         <Button isIconOnly type="button" size="sm" variant="light" className="ml-auto" aria-label={t('organizationProvisioning.actions.retry')} onClick={() => void query.refetch()}><RefreshCw className="size-3.5" aria-hidden="true" /></Button>
       </div>
@@ -250,6 +254,7 @@ function AdminProvisioningWorkspace() {
           ))}
         </section>
       )}
+      {!query.isPending && !query.isError ? <DataTablePagination currentPage={pagination.currentPage} availablePageCount={pagination.availablePageCount} pageSize={pagination.pageSize} itemCount={requests.length} hasNextPage={pagination.hasLoadedNextPage || query.data?.next_before != null} fetching={query.isFetching} onFirstPage={pagination.goToFirstPage} onPreviousPage={pagination.goToPreviousPage} onPageSelect={pagination.selectPage} onNextPage={() => pagination.goToNextPage(query.data?.next_before)} onPageSizeChange={pagination.setPageSize} /> : null}
     </div>
   )
 }
@@ -334,6 +339,7 @@ function DecisionPanel({
   onCancel,
 }: DecisionPanelProps) {
   const { t } = useTranslation()
+  const applicantQuery = useAdminUser(request.applicant_user_id)
   const materialsQuery = useAdminOrganizationProvisioningMaterials(request.request_key)
   const validUntilSeconds = datetimeLocalToSeconds(validUntil)
   const graceUntilSeconds = graceUntil ? datetimeLocalToSeconds(graceUntil) : undefined
@@ -345,6 +351,10 @@ function DecisionPanel({
 
   return (
     <div className="mt-4 grid gap-4 border-t border-[var(--hairline)] pt-4">
+      <div className="grid gap-2">
+        <h4 className="text-xs font-semibold">{t('organizationProvisioning.admin.applicant', { id: request.applicant_user_id })}</h4>
+        <p className="text-xs text-muted-foreground">{applicantQuery.isPending ? `#${request.applicant_user_id}` : applicantQuery.data ? `${applicantQuery.data.username}${applicantQuery.data.email ? ` · ${applicantQuery.data.email}` : ''} · #${request.applicant_user_id}` : `#${request.applicant_user_id}`}</p>
+      </div>
       <div className="grid gap-2">
         <h4 className="text-xs font-semibold">{t('organizationProvisioning.admin.materials')}</h4>
         {materialsQuery.isPending ? <p className="text-xs text-muted-foreground">{t('organizationProvisioning.admin.materialsLoading')}</p> : materialsQuery.isError ? <p role="alert" className="text-xs text-destructive">{t('organizationProvisioning.admin.materialsError')}</p> : materialsQuery.data?.length ? <div className="divide-y divide-[var(--hairline)] rounded-lg border border-[var(--hairline)]">{materialsQuery.data.map((material) => <ProvisioningMaterialRow key={material.id} requestKey={request.request_key} material={material} />)}</div> : <p className="text-xs text-muted-foreground">{t('organizationProvisioning.admin.materialsEmpty')}</p>}

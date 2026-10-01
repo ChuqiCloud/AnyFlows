@@ -10,6 +10,7 @@ import {
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { useTranslation } from "react-i18next";
+import { navigateTo } from "@/lib/router-navigation";
 
 interface NavSearchProps {
   className?: string;
@@ -26,9 +27,10 @@ export const NavSearch: React.FC<NavSearchProps> = ({ className }) => {
   const [searchValue, setSearchValue] = useState("");
 
   const handleSearch = useCallback(() => {
-    if (searchValue.trim()) {
-      // TODO: 实现搜索逻辑
-    }
+    const query = searchValue.trim();
+    if (!query) return;
+    navigateTo(`/console/models?search=${encodeURIComponent(query)}`);
+    setIsModalOpen(false);
   }, [searchValue]);
 
   const handleKeyDown = useCallback(

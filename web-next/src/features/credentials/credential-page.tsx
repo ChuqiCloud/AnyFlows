@@ -97,10 +97,10 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
     <div className="flex flex-col gap-4">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div><h2 className="text-lg font-semibold">{t('credentials.title')}</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{t('credentials.subtitle')}</p></div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Button type="button" size="sm" variant="bordered" isDisabled={channelsQuery.isFetching || credentialsQuery.isFetching} onClick={refreshAll}><RefreshCw className={`size-3.5 ${channelsQuery.isFetching || credentialsQuery.isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />{t('credentials.actions.refresh')}</Button>
           <Button type="button" color="primary" size="sm" isDisabled={!selectedChannel} onClick={() => setEditor('create')}><Plus className="size-3.5" aria-hidden="true" />{t('credentials.actions.add')}</Button>
-          {canImportCodex ? <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-default-200 px-3 py-1.5 text-sm focus-within:ring-2 focus-within:ring-primary"><FileUp className="size-3.5" aria-hidden="true" />{t(importing ? 'credentials.fileTransfer.importing' : 'credentials.fileTransfer.import')}<input type="file" className="sr-only" multiple accept=".json,.txt" disabled={importing} onChange={importFiles} /></label> : null}
+          {canImportCodex ? <label className="inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md border border-default-200 px-3 py-1.5 text-sm focus-within:ring-2 focus-within:ring-primary"><FileUp className="size-3.5" aria-hidden="true" />{t(importing ? 'credentials.fileTransfer.importing' : 'credentials.fileTransfer.import')}<input type="file" className="sr-only" multiple accept=".json,.txt" disabled={importing} onChange={importFiles} /></label> : null}
           {canImportCodex ? <Button type="button" size="sm" variant="flat" isDisabled={exporting} onClick={() => void exportFiles()}><Download className="size-3.5" aria-hidden="true" />{t(exporting ? 'credentials.fileTransfer.exporting' : 'credentials.fileTransfer.export')}</Button> : null}
         </div>
       </header>

@@ -119,33 +119,33 @@ function groupNode(
 
 function customNavigationTree(links: SiteSidebarLink[], english: boolean, role: 'admin' | 'user'): SidebarNode[] {
   const roots: SidebarNode[] = []
-  let parent: SidebarNode | undefined
-  let parentVisible = false
+  const parents: Array<{ node: SidebarNode; visible: boolean }> = []
   for (const [index, link] of links.entries()) {
-    if ((link.level ?? 1) > 1) {
-      if (!parent || !parentVisible) continue
-      if (parent.href && parent.children?.length === 0) {
-        parent.children?.push({ ...parent, key: `${parent.key}:overview`, children: undefined })
-        delete parent.href
-      }
-      if (link.audience !== 'all' && role !== 'admin') continue
-      parent.children?.push({
-        key: `custom:${index}:${link.url}`,
-        title: english && link.label_en ? link.label_en : link.label,
-        href: link.url,
-        icon: customIcons[link.icon] ?? customIcons.link,
-      })
-      continue
-    }
-    parentVisible = link.audience === 'all' || role === 'admin'
-    parent = {
+    const level = Math.min(3, Math.max(1, link.level ?? 1))
+    const visible = link.audience === 'all' || role === 'admin'
+    const node: SidebarNode = {
       key: `custom:${index}:${link.url}`,
       title: english && link.label_en ? link.label_en : link.label,
       href: link.kind === 'group' ? undefined : link.url,
       icon: customIcons[link.icon] ?? customIcons.link,
       children: [],
     }
-    if (parentVisible) roots.push(parent)
+    if (level === 1) {
+      parents.length = 0
+      parents.push({ node, visible })
+      if (visible) roots.push(node)
+      continue
+    }
+    const parent = parents[level - 2]
+    if (!parent) continue
+    parents.length = level
+    parents[level - 1] = { node, visible: parent.visible && visible }
+    if (!parent.visible || !visible) continue
+    if (parent.node.href && parent.node.children?.length === 0) {
+      parent.node.children.push({ ...parent.node, key: `${parent.node.key}:overview`, children: undefined })
+      delete parent.node.href
+    }
+    parent.node.children?.push(node)
   }
   return roots.filter((node) => node.href || (node.children?.length ?? 0) > 0)
 }

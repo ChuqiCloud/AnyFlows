@@ -108,17 +108,17 @@ export const Navbar = ({ currentUser, onLogout }: NavbarProps) => {
             </RouterLink>
             <Button
               as={RouterLink}
-              className="ml-1 hidden font-medium text-default-600 sm:flex"
+              className="ml-1 hidden shrink-0 font-medium text-default-600 sm:flex"
               radius="full"
               size="sm"
               startContent={<Icon icon="solar:widget-2-linear" width={16} />}
-              to="/"
+              to="/console"
               variant="light"
             >
               {t("nav.console")}
             </Button>
             <Button
-              className="hidden sm:flex"
+              className="hidden shrink-0 sm:flex"
               radius="full"
               size="sm"
               startContent={<Icon icon="solar:widget-5-linear" width={16} />}
