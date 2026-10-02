@@ -47,7 +47,7 @@ use crate::debug_traces::build_debug_trace_router;
 use crate::email_settings::build_email_settings_router;
 use crate::frontend_assets::{FrontendAssetSource, frontend_fallback};
 use crate::gemini_generate_content::gemini_generate_content;
-use crate::http_extensions::HttpExtensions;
+use crate::http_extensions::{HttpExtensions, build_extension_catalog_router};
 use crate::invitations::build_user_invitation_router;
 use crate::management_analytics_export::{
     get_admin_analytics_export_status, replay_admin_analytics_export,
@@ -1198,12 +1198,19 @@ pub fn build_router(
         }
         None => management_routes,
     };
+    let extension_catalog_routes = build_extension_catalog_router(
+        http_extensions
+            .as_ref()
+            .map(HttpExtensions::descriptors)
+            .unwrap_or_default(),
+    );
     let extension_routes = http_extensions
         .map(HttpExtensions::into_routes)
         .unwrap_or_default();
     HttpRouter::new(build_router_with_routes_and_frontend(
         public_routes
             .merge(api_explorer_routes)
+            .merge(extension_catalog_routes)
             .merge(playground_routes)
             .merge(management_routes)
             .merge(extension_routes.public)

@@ -41,3 +41,9 @@ management, and webhook routers plus a stable capability descriptor. The legacy
 in-tree routes remain enabled during migration; they can be removed only after
 the private enterprise implementation supplies the same route and capability
 coverage.
+
+The capability catalog is available at `GET /api/extensions`. It contains only
+extension identifiers, display names, and feature keys, so both built-in
+frontends can decide which navigation and controls to render without receiving
+private service configuration. `openapi_document_with_extensions` is the
+composition hook for merging private API documents into the generated contract.

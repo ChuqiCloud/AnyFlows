@@ -11,6 +11,7 @@ mod custom_oauth2;
 mod dashboard;
 mod debug_traces;
 mod email_settings;
+mod extensions;
 mod frontend_templates;
 mod gateway_models;
 mod groups;
@@ -101,6 +102,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(user_topups::document());
     document.merge(invitations::document());
     document.merge(email_settings::document());
+    document.merge(extensions::document());
     document.merge(network_settings::document());
     document.merge(payment_settings::document());
     document.merge(oauth_connections::document());
@@ -269,6 +271,21 @@ pub fn openapi_document() -> OpenApi {
     document
 }
 
+/// Builds the core OpenAPI document and merges documents supplied by private
+/// extensions. The default [`openapi_document`] remains deterministic for
+/// public builds and generated contract checks.
+pub fn openapi_document_with_extensions(
+    extensions: Option<&crate::http_extensions::HttpExtensions>,
+) -> OpenApi {
+    let mut document = openapi_document();
+    if let Some(extensions) = extensions {
+        for extension_document in extensions.openapi_documents() {
+            document.merge(extension_document);
+        }
+    }
+    document
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -278,7 +295,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 279);
+        assert_eq!(document.paths.paths.len(), 280);
         let operation_count = document
             .paths
             .paths
@@ -300,7 +317,7 @@ mod tests {
             })
             .sum::<usize>();
         // 保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 362);
+        assert_eq!(operation_count, 363);
         assert!(
             document
                 .components
@@ -353,6 +370,7 @@ mod tests {
             "getSelfVerificationHistory",
             "listAccountVerifications",
             "listAdminAccountVerifications",
+            "listExtensionCatalog",
             "listSelfOrganizationProvisioning",
             "listSelfProvisioningMaterials",
             "submitAccountVerification",
