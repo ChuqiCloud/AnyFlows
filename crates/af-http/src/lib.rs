@@ -173,7 +173,9 @@ pub use payment_webhook::{PaymentWebhookProcessorRegistry, build_payment_webhook
 pub use refund_webhook::{RefundReceiptProcessorRegistry, build_refund_receipt_webhook_router};
 pub use rerank_service::{RerankService, RerankServiceFuture};
 pub use responses_compact_service::{ResponsesCompactService, ResponsesCompactServiceFuture};
-pub use router::{DEFAULT_REQUEST_BODY_LIMIT_BYTES, HttpRouter, build_router};
+pub use router::{
+    DEFAULT_REQUEST_BODY_LIMIT_BYTES, HttpRouter, OrganizationHttpServices, build_router,
+};
 pub use serve::{HttpListener, ServeError, ServeOutcome, serve_with_graceful_shutdown};
 pub use speech_service::{SpeechService, SpeechServiceFuture};
 pub use turnstile::{TurnstileVerification, TurnstileVerificationFuture, TurnstileVerifier};

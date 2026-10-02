@@ -150,7 +150,7 @@ use af_db::{
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, AudioService, ChatService, EmbeddingService,
     FrontendAssetSource, HttpExtensions, HttpListener, HttpRouter, ImageService,
-    PaymentWebhookProcessorRegistry, QueryApiKeyPolicy, ReadinessHandle,
+    OrganizationHttpServices, PaymentWebhookProcessorRegistry, QueryApiKeyPolicy, ReadinessHandle,
     RefundReceiptProcessorRegistry, RerankService, ResponsesCompactService, ServeError,
     ServeOutcome, SpeechService, TurnstileVerifier, VideoTaskService,
     build_frontend_template_router, build_organization_credit_terms_router,
@@ -3115,6 +3115,125 @@ impl Bootstrap<Supervised> {
                 .frontend_template_id
                 .clone(),
         );
+        let organization_services = OrganizationHttpServices {
+            approval_notification: Arc::clone(
+                &self
+                    .stage
+                    .infrastructure
+                    .organization_approval_notification_service,
+            ),
+            authorization: Some(Arc::clone(
+                &self.stage.infrastructure.organization_authorization_service,
+            )),
+            activity: Some(Arc::clone(
+                &self.stage.infrastructure.organization_activity_service,
+            )),
+            wallet: Some(Arc::clone(
+                &self.stage.infrastructure.organization_wallet_service,
+            )),
+            budget: Some(Arc::clone(
+                &self.stage.infrastructure.organization_budget_service,
+            )),
+            contract_price: Some(Arc::clone(
+                &self
+                    .stage
+                    .infrastructure
+                    .organization_contract_price_service,
+            )),
+            token: Some(Arc::clone(
+                &self.stage.infrastructure.organization_token_service,
+            )),
+            scim: Some(Arc::clone(
+                &self.stage.infrastructure.organization_scim_service,
+            )),
+            approval: Some(Arc::clone(
+                &self.stage.infrastructure.organization_approval_service,
+            )),
+            provisioning: Some(Arc::clone(
+                &self.stage.infrastructure.organization_provisioning_service,
+            )),
+            verification: Some(Arc::clone(
+                &self.stage.infrastructure.organization_verification_service,
+            )),
+            plan: Some(Arc::clone(
+                &self.stage.infrastructure.organization_plan_service,
+            )),
+            plan_order: Some(organization_plan_order_service),
+            invitation: Some(Arc::clone(
+                &self.stage.infrastructure.organization_invitation_service,
+            )),
+            management: Some(Arc::clone(
+                &self.stage.infrastructure.organization_management_service,
+            )),
+            custom_role: Some(Arc::clone(
+                &self.stage.infrastructure.organization_custom_role_service,
+            )),
+            custom_role_binding: Some(Arc::clone(
+                &self
+                    .stage
+                    .infrastructure
+                    .organization_custom_role_binding_service,
+            )),
+            service_account: Some(Arc::clone(
+                &self
+                    .stage
+                    .infrastructure
+                    .organization_service_account_service,
+            )),
+            service_account_runtime_authenticator: Some(Arc::clone(
+                &self
+                    .stage
+                    .infrastructure
+                    .organization_service_account_runtime_authenticator,
+            )),
+            platform_audit: Some(Arc::clone(
+                &self.stage.infrastructure.platform_audit_service,
+            )),
+            platform_organization_services: Some((
+                platform_organization_directory_service,
+                platform_organization_management_service,
+            )),
+            sso_provider: Some(Arc::clone(
+                &self.stage.infrastructure.organization_sso_provider_service,
+            )),
+            sso_policy: Some(Arc::clone(
+                &self.stage.infrastructure.organization_sso_policy_service,
+            )),
+            sso_domain: Some(Arc::clone(
+                &self.stage.infrastructure.organization_sso_domain_service,
+            )),
+            sso_login: Some({
+                let service: Arc<dyn OrganizationSsoLoginTransactionService> = self
+                    .stage
+                    .infrastructure
+                    .organization_sso_login_service
+                    .clone();
+                service
+            }),
+            sso_public_login_rate_limit_store: self
+                .stage
+                .infrastructure
+                .infrastructure
+                .organization_sso_public_login_rate_limit_store
+                .clone(),
+            sso_public_login_fingerprint_secret: self
+                .stage
+                .infrastructure
+                .infrastructure
+                .organization_sso_public_login_fingerprint_secret,
+            sso_session: Some(Arc::clone(
+                &self.stage.infrastructure.organization_sso_session_service,
+            )),
+            sso_identity_binding: Some(Arc::clone(
+                &self
+                    .stage
+                    .infrastructure
+                    .organization_sso_identity_binding_service,
+            )),
+            sso_recovery: Some(Arc::clone(
+                &self.stage.infrastructure.organization_sso_recovery_service,
+            )),
+        };
         let router = build_router(
             self.config.server(),
             self.stage.chat.clone(),
@@ -3142,49 +3261,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.user_profile_service),
             Arc::clone(&self.stage.infrastructure.user_wallet_service),
             Arc::clone(&self.stage.infrastructure.user_notification_service),
-            Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization_approval_notification_service,
-            ),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_authorization_service,
-            )),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_activity_service,
-            )),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_wallet_service,
-            )),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_budget_service,
-            )),
-            Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization_contract_price_service,
-            )),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_token_service,
-            )),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_scim_service,
-            )),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_approval_service,
-            )),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_provisioning_service,
-            )),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_verification_service,
-            )),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_plan_service,
-            )),
-            Some(organization_plan_order_service),
+            organization_services,
             Some(user_topup_service),
             Arc::clone(&self.stage.infrastructure.redemption_service),
             Arc::clone(&self.stage.infrastructure.subscription_service),
@@ -3238,79 +3315,6 @@ impl Bootstrap<Supervised> {
             Some(Arc::clone(&frontend_template_manager) as Arc<dyn FrontendAssetSource>),
             Some(self.http_extensions.clone()),
             Some(payment_webhook_routes),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_invitation_service,
-            )),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_management_service,
-            )),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_custom_role_service,
-            )),
-            Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization_custom_role_binding_service,
-            )),
-            Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization_service_account_service,
-            )),
-            Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization_service_account_runtime_authenticator,
-            )),
-            Some(Arc::clone(
-                &self.stage.infrastructure.platform_audit_service,
-            )),
-            Some((
-                platform_organization_directory_service,
-                platform_organization_management_service,
-            )),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_sso_provider_service,
-            )),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_sso_policy_service,
-            )),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_sso_domain_service,
-            )),
-            // 路由只暴露事务服务契约，具体实现仍由启动阶段保留以注入共享 Client。
-            Some({
-                let service: Arc<dyn OrganizationSsoLoginTransactionService> = self
-                    .stage
-                    .infrastructure
-                    .organization_sso_login_service
-                    .clone();
-                service
-            }),
-            self.stage
-                .infrastructure
-                .infrastructure
-                .organization_sso_public_login_rate_limit_store
-                .clone(),
-            self.stage
-                .infrastructure
-                .infrastructure
-                .organization_sso_public_login_fingerprint_secret,
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_sso_session_service,
-            )),
-            Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization_sso_identity_binding_service,
-            )),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_sso_recovery_service,
-            )),
         );
         let router = router
             .merge(af_http::build_platform_entitlement_router(
