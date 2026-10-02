@@ -370,7 +370,7 @@ mod tests {
             "getSelfVerificationHistory",
             "listAccountVerifications",
             "listAdminAccountVerifications",
-            "listExtensionCatalog",
+            "list_extension_catalog",
             "listSelfOrganizationProvisioning",
             "listSelfProvisioningMaterials",
             "submitAccountVerification",

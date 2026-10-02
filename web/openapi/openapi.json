@@ -5793,6 +5793,29 @@
         ]
       }
     },
+    "/api/extensions": {
+      "get": {
+        "tags": [
+          "crate::http_extensions"
+        ],
+        "operationId": "list_extension_catalog",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HttpExtensionDescriptor"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/network-settings": {
       "get": {
         "tags": [
@@ -41878,6 +41901,32 @@
           }
         },
         "additionalProperties": false
+      },
+      "HttpExtensionDescriptor": {
+        "type": "object",
+        "description": "Metadata exposed by an extension to the distribution and frontend shells.",
+        "required": [
+          "id",
+          "name",
+          "capabilities"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable identifier used in capability payloads and release manifests."
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable display name for administration surfaces."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Feature keys implemented by this extension."
+          }
+        }
       },
       "IssuedAdminRedemptionBatch": {
         "type": "object",
