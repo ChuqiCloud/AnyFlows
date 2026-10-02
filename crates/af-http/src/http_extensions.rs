@@ -78,7 +78,7 @@ pub trait HttpExtension: Send + Sync {
     /// Returns the OpenAPI fragment owned by this extension.
     ///
     /// The distribution merges the returned documents into the core document
-    /// before exporting it or exposing it to the API explorer.
+    /// before exporting it or passing it to an API explorer.
     fn openapi_document(&self) -> Option<utoipa::openapi::OpenApi> {
         None
     }
