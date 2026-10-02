@@ -2053,6 +2053,22 @@ async fn extension_migrations_use_an_independent_registry() -> Result<(), Box<dy
 }
 
 #[tokio::test]
+async fn migration_extension_adapter_uses_the_extension_registry() -> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    let extension = MigratorExtension::<ExtensionMigrator>::new();
+
+    extension
+        .run_pending(&pool, MigrationOptions::default())
+        .await?;
+
+    let manager = SchemaManager::new(pool.connection());
+    assert!(manager.has_table("anyflows_extension_migrations").await?);
+    assert!(!manager.has_table("seaql_migrations").await?);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn generated_active_models_redact_sensitive_payloads() {
     let credential = credential_active_model(1, "credential-ciphertext");
     let user = user_active_model(1, "user", "user@example.com", "invite-a");

@@ -92,12 +92,12 @@ use af_db::{
     ChannelStateRepository, CredentialProxyRepository, CredentialProxyRepositoryConfigError,
     CredentialStateRepository, CustomOAuth2LoginRepository, CustomOAuth2LoginRepositoryError,
     CustomOAuth2ProviderRepository, CustomOAuth2ProviderRepositoryError, DatabaseError,
-    DatabaseOptions, DatabaseOptionsError, DatabasePool, DebugTraceRepository,
-    DebugTraceRepositoryConfigError, DebugTraceRepositoryError, DebugTraceSnapshotCipherError,
-    EmailSettingsRepository, EmailSettingsRepositoryConfigError, InitialSetupRepository,
-    InitialSetupRepositoryConfigError, MigrationOptions, ModelPriceRepository,
-    ModelProviderCatalogRepository, ModelProviderCatalogRepositoryError, ModelSyncRepository,
-    NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
+    DatabaseMigrationExtension, DatabaseOptions, DatabaseOptionsError, DatabasePool,
+    DebugTraceRepository, DebugTraceRepositoryConfigError, DebugTraceRepositoryError,
+    DebugTraceSnapshotCipherError, EmailSettingsRepository, EmailSettingsRepositoryConfigError,
+    InitialSetupRepository, InitialSetupRepositoryConfigError, MigrationOptions,
+    ModelPriceRepository, ModelProviderCatalogRepository, ModelProviderCatalogRepositoryError,
+    ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
     NetworkSettingsRepositoryConfigError, OAuthLoginRepository, OAuthLoginRepositoryError,
     OrganizationApprovalNotificationRepository,
     OrganizationApprovalNotificationRepositoryConfigError, OrganizationApprovalRepository,
@@ -145,7 +145,7 @@ use af_db::{
     UserNotificationRepositoryConfigError, UserProfileRepository, UserProfileRepositoryConfigError,
     UserSessionRepository, UserSessionRepositoryConfigError, UserTokenRepository,
     UserTokenRepositoryConfigError, WalletLedgerRepository, WalletLedgerRepositoryConfigError,
-    connect_and_migrate,
+    connect_and_migrate_with_extension,
 };
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, AudioService, ChatService, EmbeddingService,
@@ -452,6 +452,7 @@ pub struct Bootstrap<S> {
     shutdown_timeout: Duration,
     shutdown: ShutdownController,
     http_extensions: HttpExtensions,
+    database_migration_extension: Option<Arc<dyn DatabaseMigrationExtension>>,
     stage: S,
 }
 
@@ -886,6 +887,7 @@ impl Bootstrap<Configured> {
             shutdown_timeout,
             shutdown: ShutdownController::new(),
             http_extensions: HttpExtensions::default(),
+            database_migration_extension: None,
             stage: Configured,
         })
     }
@@ -897,6 +899,19 @@ impl Bootstrap<Configured> {
     #[must_use]
     pub fn with_http_extensions(mut self, extensions: HttpExtensions) -> Self {
         self.http_extensions = extensions;
+        self
+    }
+
+    /// 注册由发行版提供的数据库迁移扩展。
+    ///
+    /// 扩展迁移会在公共迁移完成后、同一迁移连接上执行。公共版本默认不注册扩展，
+    /// 因此不会改变现有数据库启动路径。
+    #[must_use]
+    pub fn with_database_migration_extension(
+        mut self,
+        extension: Arc<dyn DatabaseMigrationExtension>,
+    ) -> Self {
+        self.database_migration_extension = Some(extension);
         self
     }
 
@@ -916,9 +931,13 @@ impl Bootstrap<TelemetryReady> {
     pub async fn connect_database(self) -> Result<Bootstrap<DatabaseReady>, BootstrapError> {
         let database_options = database_options(&self.config)?;
         let migration_options = migration_options(&self.config)?;
-        let database = connect_and_migrate(&database_options, migration_options)
-            .await
-            .map_err(BootstrapError::Database)?;
+        let database = connect_and_migrate_with_extension(
+            &database_options,
+            migration_options,
+            self.database_migration_extension.as_deref(),
+        )
+        .await
+        .map_err(BootstrapError::Database)?;
         let site_settings_repository = SiteSettingsRepository::new(
             database.clone(),
             Duration::from_secs(self.config.auth().lookup_timeout_secs()),
@@ -967,6 +986,7 @@ impl Bootstrap<TelemetryReady> {
             shutdown_timeout,
             shutdown,
             http_extensions,
+            database_migration_extension: _,
             stage,
         } = self;
         Ok(Bootstrap {
@@ -974,6 +994,7 @@ impl Bootstrap<TelemetryReady> {
             shutdown_timeout,
             shutdown,
             http_extensions,
+            database_migration_extension: None,
             stage: DatabaseReady {
                 _telemetry: stage,
                 database,
@@ -1497,6 +1518,7 @@ impl Bootstrap<DatabaseReady> {
             shutdown_timeout,
             shutdown,
             http_extensions,
+            database_migration_extension: _,
             stage,
         } = self;
         let organization_scim_rate_limit_store = stage.organization_scim_rate_limit_store.clone();
@@ -1569,6 +1591,7 @@ impl Bootstrap<DatabaseReady> {
             shutdown_timeout,
             shutdown,
             http_extensions,
+            database_migration_extension: None,
             stage: AuthenticationReady {
                 infrastructure: stage,
                 authenticator: Arc::new(TokenRequestAdmissionAuthenticator::new(
@@ -1783,6 +1806,7 @@ impl Bootstrap<AuthenticationReady> {
             shutdown_timeout,
             shutdown,
             http_extensions,
+            database_migration_extension: _,
             stage: mut authentication,
         } = self;
         let (startup_config, max_cached_clients) = build_http_client_parts(&config)?;
@@ -1895,6 +1919,7 @@ impl Bootstrap<AuthenticationReady> {
             shutdown_timeout,
             shutdown,
             http_extensions,
+            database_migration_extension: None,
             stage: RelayReady {
                 infrastructure: authentication,
                 upstream_clients,
@@ -2357,6 +2382,7 @@ impl Bootstrap<RelayReady> {
             shutdown_timeout,
             shutdown,
             http_extensions,
+            database_migration_extension: _,
             stage,
         } = self;
         let mut infrastructure = stage.infrastructure;
@@ -2375,6 +2401,7 @@ impl Bootstrap<RelayReady> {
             shutdown_timeout,
             shutdown,
             http_extensions,
+            database_migration_extension: None,
             stage: BillingReady {
                 infrastructure,
                 chat,
@@ -2426,6 +2453,7 @@ impl Bootstrap<BillingReady> {
             shutdown_timeout,
             shutdown,
             http_extensions,
+            database_migration_extension: _,
             stage,
         } = self;
         let mut supervisor = BackgroundTaskSupervisor::new(shutdown.clone());
@@ -2633,6 +2661,7 @@ impl Bootstrap<BillingReady> {
             shutdown_timeout,
             shutdown,
             http_extensions,
+            database_migration_extension: None,
             stage: Supervised {
                 infrastructure,
                 chat,
@@ -3345,6 +3374,7 @@ impl Bootstrap<Supervised> {
             shutdown_timeout,
             shutdown,
             http_extensions,
+            database_migration_extension: _,
             stage,
         } = self;
         Bootstrap {
@@ -3352,6 +3382,7 @@ impl Bootstrap<Supervised> {
             shutdown_timeout,
             shutdown,
             http_extensions,
+            database_migration_extension: None,
             stage: RouterReady {
                 runtime: stage,
                 router,
@@ -3371,6 +3402,7 @@ impl Bootstrap<RouterReady> {
             shutdown_timeout,
             shutdown,
             http_extensions,
+            database_migration_extension: _,
             stage,
         } = self;
         let RouterReady {
@@ -3384,6 +3416,7 @@ impl Bootstrap<RouterReady> {
             shutdown_timeout,
             shutdown,
             http_extensions,
+            database_migration_extension: None,
             stage: ListenerReady {
                 runtime,
                 router,
@@ -3416,6 +3449,7 @@ impl Bootstrap<ListenerReady> {
             shutdown_timeout,
             shutdown,
             http_extensions: _,
+            database_migration_extension: _,
             stage,
         } = self;
         let ListenerReady {
@@ -3588,6 +3622,7 @@ impl<S> Bootstrap<S> {
             shutdown_timeout: self.shutdown_timeout,
             shutdown: self.shutdown,
             http_extensions: self.http_extensions,
+            database_migration_extension: self.database_migration_extension,
             stage,
         }
     }
@@ -3812,6 +3847,7 @@ mod tests {
         UsageRecordQueue, UsageRecordSink, UsageRecordSinkFuture, UserBillingDelta,
     };
     use af_config::CREDENTIAL_ENCRYPTION_KEY_BYTES;
+    use af_db::connect_and_migrate;
     use af_domain::{BillingReservationId, GatewayPrincipal, GroupId, QuotaDelta, TokenId, UserId};
     use af_http::{ReadinessFuture, ReadinessProbe};
     use af_protocol::{TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource};

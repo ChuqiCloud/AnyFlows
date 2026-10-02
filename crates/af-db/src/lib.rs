@@ -487,7 +487,10 @@ pub use invite_rebate::{
     InviteRebateRejection, InviteRebateRepository, InviteRebateRepositoryConfigError,
     InviteRebateRepositoryError,
 };
-pub use migration::{MigrationOptions, run_pending_migrations, run_pending_migrations_with};
+pub use migration::{
+    DatabaseMigrationExtension, MigrationOptions, MigratorExtension, run_pending_migrations,
+    run_pending_migrations_with,
+};
 pub use model_catalog_metadata::ModelCatalogMetadataPageRecord;
 pub use model_price::{
     MAX_MODEL_PRICE_ENTRIES, MAX_MODEL_PRICE_EXPRESSION_BYTES, ModelPriceBillingMode,
@@ -928,9 +931,29 @@ pub async fn connect_and_migrate(
     database_options: &DatabaseOptions,
     migration_options: MigrationOptions,
 ) -> Result<DatabasePool, DatabaseError> {
+    connect_and_migrate_with_extension(database_options, migration_options, None).await
+}
+
+/// 连接数据库并依次执行公共核心与可选扩展迁移。
+///
+/// 扩展迁移接收与公共迁移相同的迁移连接，并在公共迁移完成后执行。扩展必须使用
+/// 独立迁移表；迁移失败时不会返回连接池，调用方必须拒绝启动。
+pub async fn connect_and_migrate_with_extension(
+    database_options: &DatabaseOptions,
+    migration_options: MigrationOptions,
+    extension: Option<&dyn DatabaseMigrationExtension>,
+) -> Result<DatabasePool, DatabaseError> {
     if let Some(dedicated_options) = database_options.dedicated_migration_options() {
         let migration_pool = connect(&dedicated_options).await?;
         if let Err(error) = run_pending_migrations(&migration_pool, migration_options).await {
+            let _ = migration_pool.close().await;
+            return Err(error);
+        }
+        if let Some(extension) = extension
+            && let Err(error) = extension
+                .run_pending(&migration_pool, migration_options)
+                .await
+        {
             let _ = migration_pool.close().await;
             return Err(error);
         }
@@ -940,6 +963,12 @@ pub async fn connect_and_migrate(
     let pool = connect(database_options).await?;
     if let Err(error) = run_pending_migrations(&pool, migration_options).await {
         // 迁移失败时主动执行有界关闭，同时保留原始迁移错误供启动层判定。
+        let _ = pool.close().await;
+        return Err(error);
+    }
+    if let Some(extension) = extension
+        && let Err(error) = extension.run_pending(&pool, migration_options).await
+    {
         let _ = pool.close().await;
         return Err(error);
     }
@@ -956,32 +985,8 @@ pub async fn connect_and_migrate_with<M>(
     migration_options: MigrationOptions,
 ) -> Result<DatabasePool, DatabaseError>
 where
-    M: MigratorTrait,
+    M: MigratorTrait + 'static,
 {
-    if let Some(dedicated_options) = database_options.dedicated_migration_options() {
-        let migration_pool = connect(&dedicated_options).await?;
-        if let Err(error) = run_pending_migrations(&migration_pool, migration_options).await {
-            let _ = migration_pool.close().await;
-            return Err(error);
-        }
-        if let Err(error) =
-            run_pending_migrations_with::<M>(&migration_pool, migration_options).await
-        {
-            let _ = migration_pool.close().await;
-            return Err(error);
-        }
-        migration_pool.close().await?;
-        return connect(database_options).await;
-    }
-
-    let pool = connect(database_options).await?;
-    if let Err(error) = run_pending_migrations(&pool, migration_options).await {
-        let _ = pool.close().await;
-        return Err(error);
-    }
-    if let Err(error) = run_pending_migrations_with::<M>(&pool, migration_options).await {
-        let _ = pool.close().await;
-        return Err(error);
-    }
-    Ok(pool)
+    let extension = MigratorExtension::<M>::new();
+    connect_and_migrate_with_extension(database_options, migration_options, Some(&extension)).await
 }
