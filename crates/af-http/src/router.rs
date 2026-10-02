@@ -47,6 +47,7 @@ use crate::debug_traces::build_debug_trace_router;
 use crate::email_settings::build_email_settings_router;
 use crate::frontend_assets::{FrontendAssetSource, frontend_fallback};
 use crate::gemini_generate_content::gemini_generate_content;
+use crate::http_extensions::HttpExtensions;
 use crate::invitations::build_user_invitation_router;
 use crate::management_analytics_export::{
     get_admin_analytics_export_status, replay_admin_analytics_export,
@@ -267,6 +268,7 @@ pub fn build_router(
     admin_refund_service: Option<Arc<dyn af_admin::AdminRefundService>>,
     query_api_key_policy: QueryApiKeyPolicy,
     frontend_assets: Option<Arc<dyn FrontendAssetSource>>,
+    http_extensions: Option<HttpExtensions>,
     payment_webhook_routes: Option<Router>,
     organization_invitation_service: Option<Arc<dyn af_admin::OrganizationInvitationService>>,
     organization_management_service: Option<Arc<dyn af_admin::OrganizationManagementService>>,
@@ -1196,11 +1198,17 @@ pub fn build_router(
         }
         None => management_routes,
     };
+    let extension_routes = http_extensions
+        .map(HttpExtensions::into_routes)
+        .unwrap_or_default();
     HttpRouter::new(build_router_with_routes_and_frontend(
         public_routes
             .merge(api_explorer_routes)
             .merge(playground_routes)
             .merge(management_routes)
+            .merge(extension_routes.public)
+            .merge(extension_routes.management)
+            .merge(extension_routes.webhook)
             .merge(payment_webhook_routes.unwrap_or_else(Router::new)),
         operations_router(readiness),
         config,

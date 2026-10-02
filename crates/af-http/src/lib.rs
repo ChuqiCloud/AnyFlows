@@ -21,6 +21,7 @@ mod error_response;
 mod frontend_assets;
 mod frontend_templates;
 mod gemini_generate_content;
+mod http_extensions;
 mod image_service;
 mod invitations;
 #[cfg(test)]
@@ -136,6 +137,9 @@ pub use frontend_templates::{
     FrontendTemplateCatalog, FrontendTemplateError, FrontendTemplateFuture,
     FrontendTemplatePreview, FrontendTemplateService, FrontendTemplateSummary,
     build_frontend_template_router,
+};
+pub use http_extensions::{
+    HttpExtension, HttpExtensionDescriptor, HttpExtensionRoutes, HttpExtensions,
 };
 pub use image_service::{ImageService, ImageServiceFuture};
 pub use middleware::REQUEST_ID_HEADER_NAME;

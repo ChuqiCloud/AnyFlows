@@ -3184,6 +3184,7 @@ impl Bootstrap<Supervised> {
             Some(Arc::clone(&self.stage.admin_refund_service)),
             self.stage.infrastructure.query_api_key_policy,
             Some(Arc::clone(&frontend_template_manager) as Arc<dyn FrontendAssetSource>),
+            None,
             Some(payment_webhook_routes),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_invitation_service,
