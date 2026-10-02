@@ -96,14 +96,13 @@ impl HttpExtensions {
     }
 
     pub fn into_routes(self) -> HttpExtensionRoutes {
-        self.extensions.into_iter().fold(
-            HttpExtensionRoutes::default(),
-            |mut routes, extension| {
+        self.extensions
+            .into_iter()
+            .fold(HttpExtensionRoutes::default(), |mut routes, extension| {
                 routes.public = routes.public.merge(extension.public_routes());
                 routes.management = routes.management.merge(extension.management_routes());
                 routes.webhook = routes.webhook.merge(extension.webhook_routes());
                 routes
-            },
-        )
+            })
     }
 }
