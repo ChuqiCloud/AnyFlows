@@ -247,6 +247,45 @@ pub struct DatabaseReady {
     organization_sso_public_login_fingerprint_secret: [u8; 32],
 }
 
+/// 企业组织运行时依赖的组合边界。
+///
+/// 发行版可以围绕该组合对象迁出企业服务装配，同时继续复用公共认证、计费和转发
+/// 基础设施。具体实现仍通过现有服务 trait 注入，路由行为不由该类型改变。
+pub struct OrganizationRuntimeServices {
+    pub organization_approval_notification_service:
+        Arc<dyn OrganizationApprovalNotificationService>,
+    pub organization_wallet_service: Arc<dyn OrganizationWalletService>,
+    pub organization_budget_service: Arc<dyn OrganizationBudgetService>,
+    pub organization_credit_terms_service: Arc<dyn OrganizationCreditTermsService>,
+    pub organization_contract_price_repository: Arc<OrganizationContractPriceRepository>,
+    pub organization_contract_price_service: Arc<dyn OrganizationContractPriceService>,
+    pub organization_token_service: Arc<dyn OrganizationTokenService>,
+    pub organization_scim_service: Arc<dyn OrganizationScimService>,
+    pub organization_approval_service: Arc<dyn OrganizationApprovalService>,
+    pub organization_provisioning_service: Arc<dyn af_admin::OrganizationProvisioningService>,
+    pub organization_verification_service: Arc<dyn OrganizationVerificationService>,
+    pub organization_plan_service: Arc<dyn af_admin::OrganizationPlanService>,
+    pub organization_plan_order_repository: OrganizationPlanOrderRepository,
+    pub organization_repository: Arc<OrganizationRepository>,
+    pub organization_activity_service: Arc<dyn OrganizationActivityService>,
+    pub platform_audit_service: Arc<dyn PlatformAuditService>,
+    pub organization_authorization_service: Arc<dyn af_admin::OrganizationAuthorizationService>,
+    pub organization_invitation_service: Arc<dyn af_admin::OrganizationInvitationService>,
+    pub organization_management_service: Arc<dyn af_admin::OrganizationManagementService>,
+    pub organization_custom_role_service: Arc<dyn OrganizationCustomRoleService>,
+    pub organization_custom_role_binding_service: Arc<dyn OrganizationCustomRoleBindingService>,
+    pub organization_service_account_service: Arc<dyn af_admin::OrganizationServiceAccountService>,
+    pub organization_service_account_runtime_authenticator:
+        Arc<dyn af_admin::OrganizationServiceAccountRuntimeAuthenticator>,
+    pub organization_sso_provider_service: Arc<dyn OrganizationSsoProviderService>,
+    pub organization_sso_domain_service: Arc<dyn OrganizationSsoDomainService>,
+    pub organization_sso_login_service: Arc<DatabaseOrganizationSsoLoginTransactionService>,
+    pub organization_sso_session_service: Arc<dyn af_admin::OrganizationSsoSessionService>,
+    pub organization_sso_identity_binding_service: Arc<dyn OrganizationSsoIdentityBindingService>,
+    pub organization_sso_policy_service: Arc<dyn OrganizationSsoPolicyService>,
+    pub organization_sso_recovery_service: Arc<dyn OrganizationSsoRecoveryService>,
+}
+
 /// 已使用数据库连接池装配令牌认证服务。
 pub struct AuthenticationReady {
     infrastructure: DatabaseReady,
@@ -261,41 +300,11 @@ pub struct AuthenticationReady {
     account_verification_provider: Arc<dyn af_admin::AccountVerificationProvider>,
     verification_settings_service: Option<Arc<af_admin::DatabaseVerificationSettingsService>>,
     user_notification_service: Arc<dyn af_admin::UserNotificationService>,
-    organization_approval_notification_service: Arc<dyn OrganizationApprovalNotificationService>,
-    organization_wallet_service: Arc<dyn OrganizationWalletService>,
-    organization_budget_service: Arc<dyn OrganizationBudgetService>,
-    organization_credit_terms_service: Arc<dyn OrganizationCreditTermsService>,
-    organization_contract_price_repository: Arc<OrganizationContractPriceRepository>,
-    organization_contract_price_service: Arc<dyn OrganizationContractPriceService>,
-    organization_token_service: Arc<dyn OrganizationTokenService>,
-    organization_scim_service: Arc<dyn OrganizationScimService>,
-    organization_approval_service: Arc<dyn OrganizationApprovalService>,
-    organization_provisioning_service: Arc<dyn af_admin::OrganizationProvisioningService>,
-    organization_verification_service: Arc<dyn af_admin::OrganizationVerificationService>,
-    organization_plan_service: Arc<dyn af_admin::OrganizationPlanService>,
-    organization_plan_order_repository: OrganizationPlanOrderRepository,
-    organization_repository: Arc<OrganizationRepository>,
-    organization_activity_service: Arc<dyn OrganizationActivityService>,
-    platform_audit_service: Arc<dyn PlatformAuditService>,
+    organization: OrganizationRuntimeServices,
     redemption_service: Arc<dyn RedemptionService>,
     subscription_service: Arc<dyn SubscriptionService>,
     subscription_repository: SubscriptionRepository,
     user_invitation_service: Arc<dyn UserInvitationService>,
-    organization_authorization_service: Arc<dyn af_admin::OrganizationAuthorizationService>,
-    organization_invitation_service: Arc<dyn af_admin::OrganizationInvitationService>,
-    organization_management_service: Arc<dyn af_admin::OrganizationManagementService>,
-    organization_custom_role_service: Arc<dyn OrganizationCustomRoleService>,
-    organization_custom_role_binding_service: Arc<dyn OrganizationCustomRoleBindingService>,
-    organization_service_account_service: Arc<dyn af_admin::OrganizationServiceAccountService>,
-    organization_service_account_runtime_authenticator:
-        Arc<dyn af_admin::OrganizationServiceAccountRuntimeAuthenticator>,
-    organization_sso_provider_service: Arc<dyn OrganizationSsoProviderService>,
-    organization_sso_domain_service: Arc<dyn OrganizationSsoDomainService>,
-    organization_sso_login_service: Arc<DatabaseOrganizationSsoLoginTransactionService>,
-    organization_sso_session_service: Arc<dyn af_admin::OrganizationSsoSessionService>,
-    organization_sso_identity_binding_service: Arc<dyn OrganizationSsoIdentityBindingService>,
-    organization_sso_policy_service: Arc<dyn OrganizationSsoPolicyService>,
-    organization_sso_recovery_service: Arc<dyn OrganizationSsoRecoveryService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     site_settings_repository: SiteSettingsRepository,
     announcement_service: Arc<dyn af_admin::AnnouncementService>,
@@ -1614,65 +1623,106 @@ impl Bootstrap<DatabaseReady> {
                 user_notification_service: Arc::new(DatabaseUserNotificationService::new(
                     user_notification_repository,
                 )),
-                organization_approval_notification_service: Arc::new(
-                    DatabaseOrganizationApprovalNotificationService::new(
-                        organization_approval_notification_repository,
+                organization: OrganizationRuntimeServices {
+                    organization_approval_notification_service: Arc::new(
+                        DatabaseOrganizationApprovalNotificationService::new(
+                            organization_approval_notification_repository,
+                        ),
                     ),
-                ),
-                organization_wallet_service: Arc::new(DatabaseOrganizationWalletService::new(
-                    organization_wallet_repository,
-                )),
-                organization_budget_service: Arc::new(DatabaseOrganizationBudgetService::new(
-                    organization_budget_repository,
-                )),
-                organization_credit_terms_service: Arc::new(
-                    DatabaseOrganizationCreditTermsService::new(
-                        organization_credit_terms_repository,
-                    )
-                    .with_ledger_repositories(
-                        organization_credit_invoice_repository,
-                        organization_credit_repayment_repository,
+                    organization_wallet_service: Arc::new(DatabaseOrganizationWalletService::new(
+                        organization_wallet_repository,
+                    )),
+                    organization_budget_service: Arc::new(DatabaseOrganizationBudgetService::new(
+                        organization_budget_repository,
+                    )),
+                    organization_credit_terms_service: Arc::new(
+                        DatabaseOrganizationCreditTermsService::new(
+                            organization_credit_terms_repository,
+                        )
+                        .with_ledger_repositories(
+                            organization_credit_invoice_repository,
+                            organization_credit_repayment_repository,
+                        ),
                     ),
-                ),
-                organization_contract_price_repository: Arc::clone(
-                    &organization_contract_price_repository,
-                ),
-                organization_contract_price_service: Arc::new(
-                    DatabaseOrganizationContractPriceService::new(
-                        organization_contract_price_repository,
+                    organization_contract_price_repository: Arc::clone(
+                        &organization_contract_price_repository,
                     ),
-                ),
-                organization_token_service: Arc::new(DatabaseOrganizationTokenService::new(
-                    organization_token_repository,
-                )),
-                organization_scim_service: Arc::new(DatabaseOrganizationScimService::new(
-                    organization_scim_token_repository,
-                    organization_scim_user_repository,
-                    organization_scim_group_repository,
-                    organization_scim_audit_repository,
-                    organization_scim_rate_limit_store,
-                )),
-                organization_approval_service: Arc::new(DatabaseOrganizationApprovalService::new(
-                    organization_approval_repository,
-                )),
-                organization_provisioning_service: Arc::new(
-                    af_admin::DatabaseOrganizationProvisioningService::new(
-                        organization_provisioning_repository,
-                        Arc::clone(&platform_audit_service),
+                    organization_contract_price_service: Arc::new(
+                        DatabaseOrganizationContractPriceService::new(
+                            organization_contract_price_repository,
+                        ),
                     ),
-                ),
-                organization_verification_service: Arc::new(
-                    DatabaseOrganizationVerificationService::new(
-                        organization_verification_repository,
-                        Arc::clone(&organization_authorization_service),
-                        Arc::clone(&platform_audit_service),
+                    organization_token_service: Arc::new(DatabaseOrganizationTokenService::new(
+                        organization_token_repository,
+                    )),
+                    organization_scim_service: Arc::new(DatabaseOrganizationScimService::new(
+                        organization_scim_token_repository,
+                        organization_scim_user_repository,
+                        organization_scim_group_repository,
+                        organization_scim_audit_repository,
+                        organization_scim_rate_limit_store,
+                    )),
+                    organization_approval_service: Arc::new(
+                        DatabaseOrganizationApprovalService::new(organization_approval_repository),
                     ),
-                ),
-                organization_plan_service,
-                organization_plan_order_repository,
-                organization_repository: Arc::clone(&organization_repository),
-                organization_activity_service,
-                platform_audit_service,
+                    organization_provisioning_service: Arc::new(
+                        af_admin::DatabaseOrganizationProvisioningService::new(
+                            organization_provisioning_repository,
+                            Arc::clone(&platform_audit_service),
+                        ),
+                    ),
+                    organization_verification_service: Arc::new(
+                        DatabaseOrganizationVerificationService::new(
+                            organization_verification_repository,
+                            Arc::clone(&organization_authorization_service),
+                            Arc::clone(&platform_audit_service),
+                        ),
+                    ),
+                    organization_plan_service,
+                    organization_plan_order_repository,
+                    organization_repository: Arc::clone(&organization_repository),
+                    organization_activity_service,
+                    platform_audit_service,
+                    organization_authorization_service,
+                    organization_invitation_service: Arc::new(
+                        af_admin::DatabaseOrganizationInvitationService::new(
+                            Arc::clone(&organization_repository),
+                            organization_invitation_cipher.clone(),
+                        ),
+                    ),
+                    organization_management_service: Arc::new(
+                        af_admin::DatabaseOrganizationManagementService::new(Arc::clone(
+                            &organization_repository,
+                        ))
+                        .with_department_repository(organization_department_repository)
+                        .with_department_membership_repository(
+                            organization_department_membership_repository,
+                        ),
+                    ),
+                    organization_custom_role_service,
+                    organization_custom_role_binding_service,
+                    organization_service_account_service: organization_service_account_service
+                        .clone(),
+                    organization_service_account_runtime_authenticator:
+                        organization_service_account_service.clone(),
+                    organization_sso_provider_service: Arc::new(
+                        DatabaseOrganizationSsoProviderService::new(
+                            organization_sso_provider_repository.clone(),
+                            system_secret_cipher.clone(),
+                        ),
+                    ),
+                    organization_sso_domain_service: Arc::new(
+                        DatabaseOrganizationSsoDomainService::new(
+                            organization_sso_provider_repository.clone(),
+                            organization_sso_dns_resolver,
+                        ),
+                    ),
+                    organization_sso_login_service,
+                    organization_sso_session_service,
+                    organization_sso_identity_binding_service,
+                    organization_sso_policy_service,
+                    organization_sso_recovery_service,
+                },
                 redemption_service: Arc::new(DatabaseRedemptionService::new(redemption_repository)),
                 subscription_service: Arc::new(DatabaseSubscriptionService::new(
                     subscription_repository.clone(),
@@ -1681,44 +1731,6 @@ impl Bootstrap<DatabaseReady> {
                 user_invitation_service: Arc::new(DatabaseUserInvitationService::new(
                     user_invitation_repository,
                 )),
-                organization_authorization_service,
-                organization_invitation_service: Arc::new(
-                    af_admin::DatabaseOrganizationInvitationService::new(
-                        Arc::clone(&organization_repository),
-                        organization_invitation_cipher.clone(),
-                    ),
-                ),
-                organization_management_service: Arc::new(
-                    af_admin::DatabaseOrganizationManagementService::new(Arc::clone(
-                        &organization_repository,
-                    ))
-                    .with_department_repository(organization_department_repository)
-                    .with_department_membership_repository(
-                        organization_department_membership_repository,
-                    ),
-                ),
-                organization_custom_role_service,
-                organization_custom_role_binding_service,
-                organization_service_account_service: organization_service_account_service.clone(),
-                organization_service_account_runtime_authenticator:
-                    organization_service_account_service.clone(),
-                organization_sso_provider_service: Arc::new(
-                    DatabaseOrganizationSsoProviderService::new(
-                        organization_sso_provider_repository.clone(),
-                        system_secret_cipher.clone(),
-                    ),
-                ),
-                organization_sso_domain_service: Arc::new(
-                    DatabaseOrganizationSsoDomainService::new(
-                        organization_sso_provider_repository.clone(),
-                        organization_sso_dns_resolver,
-                    ),
-                ),
-                organization_sso_login_service,
-                organization_sso_session_service,
-                organization_sso_identity_binding_service,
-                organization_sso_policy_service,
-                organization_sso_recovery_service,
                 site_settings_service: Arc::new(DatabaseSiteSettingsService::new(
                     site_settings_repository.clone(),
                 )),
@@ -1834,6 +1846,7 @@ impl Bootstrap<AuthenticationReady> {
         authentication.verification_settings_service = Some(verification_settings_service);
         // 回调编排只复用已完成 SSRF、代理和超时基线的共享 Client。
         authentication
+            .organization
             .organization_sso_login_service
             .set_http_clients(upstream_clients.clone());
         if let Some(settings) = config.clickhouse_analytics() {
@@ -2206,6 +2219,7 @@ impl Bootstrap<RelayReady> {
                     &self
                         .stage
                         .infrastructure
+                        .organization
                         .organization_contract_price_repository,
                 )),
         );
@@ -3056,15 +3070,40 @@ impl Bootstrap<Supervised> {
         let user_topup_service: Arc<dyn UserTopupService> = self.stage.payment_runtime.clone();
         let organization_plan_order_service: Arc<dyn af_admin::OrganizationPlanOrderService> =
             Arc::new(af_admin::DatabaseOrganizationPlanOrderService::new(
-                Arc::clone(&self.stage.infrastructure.organization_authorization_service),
-                Arc::clone(&self.stage.infrastructure.organization_plan_service),
+                Arc::clone(
+                    &self
+                        .stage
+                        .infrastructure
+                        .organization
+                        .organization_authorization_service,
+                ),
+                Arc::clone(
+                    &self
+                        .stage
+                        .infrastructure
+                        .organization
+                        .organization_plan_service,
+                ),
                 Arc::clone(&user_topup_service),
                 self.stage
                     .infrastructure
+                    .organization
                     .organization_plan_order_repository
                     .clone(),
-                Arc::clone(&self.stage.infrastructure.organization_repository),
-                Arc::clone(&self.stage.infrastructure.organization_activity_service),
+                Arc::clone(
+                    &self
+                        .stage
+                        .infrastructure
+                        .organization
+                        .organization_repository,
+                ),
+                Arc::clone(
+                    &self
+                        .stage
+                        .infrastructure
+                        .organization
+                        .organization_activity_service,
+                ),
             ));
         let custom_oauth2_provider_service: Arc<dyn AdminCustomOAuth2ProviderService> =
             Arc::new(DatabaseAdminCustomOAuth2ProviderService::new(
@@ -3084,15 +3123,45 @@ impl Bootstrap<Supervised> {
         let platform_organization_directory_service: Arc<
             dyn af_admin::PlatformOrganizationDirectoryService,
         > = Arc::new(DatabasePlatformOrganizationDirectoryService::new(
-            Arc::clone(&self.stage.infrastructure.organization_repository),
-            Arc::clone(&self.stage.infrastructure.platform_audit_service),
+            Arc::clone(
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_repository,
+            ),
+            Arc::clone(
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .platform_audit_service,
+            ),
         ));
         let platform_organization_management_service: Arc<
             dyn af_admin::PlatformOrganizationManagementService,
         > = Arc::new(DatabasePlatformOrganizationManagementService::new(
-            Arc::clone(&self.stage.infrastructure.organization_repository),
-            Arc::clone(&self.stage.infrastructure.organization_invitation_service),
-            Arc::clone(&self.stage.infrastructure.platform_audit_service),
+            Arc::clone(
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_repository,
+            ),
+            Arc::clone(
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_invitation_service,
+            ),
+            Arc::clone(
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .platform_audit_service,
+            ),
         ));
         let payment_webhook_registry: Arc<dyn PaymentWebhookProcessorRegistry> =
             self.stage.payment_runtime.clone();
@@ -3120,92 +3189,166 @@ impl Bootstrap<Supervised> {
                 &self
                     .stage
                     .infrastructure
+                    .organization
                     .organization_approval_notification_service,
             ),
             authorization: Some(Arc::clone(
-                &self.stage.infrastructure.organization_authorization_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_authorization_service,
             )),
             activity: Some(Arc::clone(
-                &self.stage.infrastructure.organization_activity_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_activity_service,
             )),
             wallet: Some(Arc::clone(
-                &self.stage.infrastructure.organization_wallet_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_wallet_service,
             )),
             budget: Some(Arc::clone(
-                &self.stage.infrastructure.organization_budget_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_budget_service,
             )),
             contract_price: Some(Arc::clone(
                 &self
                     .stage
                     .infrastructure
+                    .organization
                     .organization_contract_price_service,
             )),
             token: Some(Arc::clone(
-                &self.stage.infrastructure.organization_token_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_token_service,
             )),
             scim: Some(Arc::clone(
-                &self.stage.infrastructure.organization_scim_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_scim_service,
             )),
             approval: Some(Arc::clone(
-                &self.stage.infrastructure.organization_approval_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_approval_service,
             )),
             provisioning: Some(Arc::clone(
-                &self.stage.infrastructure.organization_provisioning_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_provisioning_service,
             )),
             verification: Some(Arc::clone(
-                &self.stage.infrastructure.organization_verification_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_verification_service,
             )),
             plan: Some(Arc::clone(
-                &self.stage.infrastructure.organization_plan_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_plan_service,
             )),
             plan_order: Some(organization_plan_order_service),
             invitation: Some(Arc::clone(
-                &self.stage.infrastructure.organization_invitation_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_invitation_service,
             )),
             management: Some(Arc::clone(
-                &self.stage.infrastructure.organization_management_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_management_service,
             )),
             custom_role: Some(Arc::clone(
-                &self.stage.infrastructure.organization_custom_role_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_custom_role_service,
             )),
             custom_role_binding: Some(Arc::clone(
                 &self
                     .stage
                     .infrastructure
+                    .organization
                     .organization_custom_role_binding_service,
             )),
             service_account: Some(Arc::clone(
                 &self
                     .stage
                     .infrastructure
+                    .organization
                     .organization_service_account_service,
             )),
             service_account_runtime_authenticator: Some(Arc::clone(
                 &self
                     .stage
                     .infrastructure
+                    .organization
                     .organization_service_account_runtime_authenticator,
             )),
             platform_audit: Some(Arc::clone(
-                &self.stage.infrastructure.platform_audit_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .platform_audit_service,
             )),
             platform_organization_services: Some((
                 platform_organization_directory_service,
                 platform_organization_management_service,
             )),
             sso_provider: Some(Arc::clone(
-                &self.stage.infrastructure.organization_sso_provider_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_sso_provider_service,
             )),
             sso_policy: Some(Arc::clone(
-                &self.stage.infrastructure.organization_sso_policy_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_sso_policy_service,
             )),
             sso_domain: Some(Arc::clone(
-                &self.stage.infrastructure.organization_sso_domain_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_sso_domain_service,
             )),
             sso_login: Some({
                 let service: Arc<dyn OrganizationSsoLoginTransactionService> = self
                     .stage
                     .infrastructure
+                    .organization
                     .organization_sso_login_service
                     .clone();
                 service
@@ -3222,16 +3365,25 @@ impl Bootstrap<Supervised> {
                 .infrastructure
                 .organization_sso_public_login_fingerprint_secret,
             sso_session: Some(Arc::clone(
-                &self.stage.infrastructure.organization_sso_session_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_sso_session_service,
             )),
             sso_identity_binding: Some(Arc::clone(
                 &self
                     .stage
                     .infrastructure
+                    .organization
                     .organization_sso_identity_binding_service,
             )),
             sso_recovery: Some(Arc::clone(
-                &self.stage.infrastructure.organization_sso_recovery_service,
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_sso_recovery_service,
             )),
         };
         let router = build_router(
@@ -3319,7 +3471,11 @@ impl Bootstrap<Supervised> {
         let router = router
             .merge(af_http::build_platform_entitlement_router(
                 Arc::new(af_admin::PlatformEntitlementService::new(Arc::clone(
-                    &self.stage.infrastructure.organization_repository,
+                    &self
+                        .stage
+                        .infrastructure
+                        .organization
+                        .organization_repository,
                 ))),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))
@@ -3329,7 +3485,13 @@ impl Bootstrap<Supervised> {
                         af_db::AccountVerificationRepository::new(
                             self.stage.infrastructure.infrastructure.database.clone(),
                         ),
-                        Arc::clone(&self.stage.infrastructure.platform_audit_service),
+                        Arc::clone(
+                            &self
+                                .stage
+                                .infrastructure
+                                .organization
+                                .platform_audit_service,
+                        ),
                     )
                     .with_provider(Arc::new(
                         af_admin::DatabaseManualAccountVerificationProvider::new(Arc::clone(
@@ -3368,9 +3530,27 @@ impl Bootstrap<Supervised> {
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))
             .merge(build_organization_credit_terms_router(
-                Arc::clone(&self.stage.infrastructure.organization_authorization_service),
-                Arc::clone(&self.stage.infrastructure.organization_credit_terms_service),
-                Arc::clone(&self.stage.infrastructure.organization_activity_service),
+                Arc::clone(
+                    &self
+                        .stage
+                        .infrastructure
+                        .organization
+                        .organization_authorization_service,
+                ),
+                Arc::clone(
+                    &self
+                        .stage
+                        .infrastructure
+                        .organization
+                        .organization_credit_terms_service,
+                ),
+                Arc::clone(
+                    &self
+                        .stage
+                        .infrastructure
+                        .organization
+                        .organization_activity_service,
+                ),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ));
         let Bootstrap {
