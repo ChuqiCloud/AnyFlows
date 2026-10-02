@@ -180,6 +180,49 @@ impl HttpRouter {
     }
 }
 
+/// 企业 HTTP 路由所需的服务集合。
+///
+/// 将组织、企业 SSO、服务账号和平台组织服务集中在一个注入对象中，
+/// 让公共路由组合只依赖一个稳定边界。发行版可以在自己的启动模块中构造
+/// 该集合，也可以完全绕过内置企业路由并通过 `HttpExtension` 提供替代实现。
+pub struct OrganizationHttpServices {
+    pub approval_notification: Arc<dyn OrganizationApprovalNotificationService>,
+    pub authorization: Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
+    pub activity: Option<Arc<dyn OrganizationActivityService>>,
+    pub wallet: Option<Arc<dyn OrganizationWalletService>>,
+    pub budget: Option<Arc<dyn OrganizationBudgetService>>,
+    pub contract_price: Option<Arc<dyn OrganizationContractPriceService>>,
+    pub token: Option<Arc<dyn OrganizationTokenService>>,
+    pub scim: Option<Arc<dyn OrganizationScimService>>,
+    pub approval: Option<Arc<dyn OrganizationApprovalService>>,
+    pub provisioning: Option<Arc<dyn af_admin::OrganizationProvisioningService>>,
+    pub verification: Option<Arc<dyn af_admin::OrganizationVerificationService>>,
+    pub plan: Option<Arc<dyn OrganizationPlanService>>,
+    pub plan_order: Option<Arc<dyn af_admin::OrganizationPlanOrderService>>,
+    pub invitation: Option<Arc<dyn af_admin::OrganizationInvitationService>>,
+    pub management: Option<Arc<dyn af_admin::OrganizationManagementService>>,
+    pub custom_role: Option<Arc<dyn af_admin::OrganizationCustomRoleService>>,
+    pub custom_role_binding: Option<Arc<dyn af_admin::OrganizationCustomRoleBindingService>>,
+    pub service_account: Option<Arc<dyn af_admin::OrganizationServiceAccountService>>,
+    pub service_account_runtime_authenticator:
+        Option<Arc<dyn af_admin::OrganizationServiceAccountRuntimeAuthenticator>>,
+    pub platform_audit: Option<Arc<dyn PlatformAuditService>>,
+    pub platform_organization_services: Option<(
+        Arc<dyn PlatformOrganizationDirectoryService>,
+        Arc<dyn PlatformOrganizationManagementService>,
+    )>,
+    pub sso_provider: Option<Arc<dyn af_admin::OrganizationSsoProviderService>>,
+    pub sso_policy: Option<Arc<dyn af_admin::OrganizationSsoPolicyService>>,
+    pub sso_domain: Option<Arc<dyn af_admin::OrganizationSsoDomainService>>,
+    pub sso_login: Option<Arc<dyn af_admin::OrganizationSsoLoginTransactionService>>,
+    pub sso_public_login_rate_limit_store:
+        Option<Arc<dyn af_domain::OrganizationSsoPublicLoginRateLimitStore>>,
+    pub sso_public_login_fingerprint_secret: [u8; 32],
+    pub sso_session: Option<Arc<dyn af_admin::OrganizationSsoSessionService>>,
+    pub sso_identity_binding: Option<Arc<dyn af_admin::OrganizationSsoIdentityBindingService>>,
+    pub sso_recovery: Option<Arc<dyn af_admin::OrganizationSsoRecoveryService>>,
+}
+
 /// 构建包含已鉴权模型网关入口、管理端接口及健康检查的 HTTP Router。
 ///
 /// 后续业务与运维路由应分别加入 `public_routes` 和 `operations_routes`，确保
@@ -212,19 +255,7 @@ pub fn build_router(
     user_profile_service: Arc<dyn af_admin::UserProfileService>,
     user_wallet_service: Arc<dyn UserWalletService>,
     user_notification_service: Arc<dyn UserNotificationService>,
-    organization_approval_notification_service: Arc<dyn OrganizationApprovalNotificationService>,
-    organization_authorization_service: Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
-    organization_activity_service: Option<Arc<dyn OrganizationActivityService>>,
-    organization_wallet_service: Option<Arc<dyn OrganizationWalletService>>,
-    organization_budget_service: Option<Arc<dyn OrganizationBudgetService>>,
-    organization_contract_price_service: Option<Arc<dyn OrganizationContractPriceService>>,
-    organization_token_service: Option<Arc<dyn OrganizationTokenService>>,
-    organization_scim_service: Option<Arc<dyn OrganizationScimService>>,
-    organization_approval_service: Option<Arc<dyn OrganizationApprovalService>>,
-    organization_provisioning_service: Option<Arc<dyn af_admin::OrganizationProvisioningService>>,
-    organization_verification_service: Option<Arc<dyn af_admin::OrganizationVerificationService>>,
-    organization_plan_service: Option<Arc<dyn OrganizationPlanService>>,
-    organization_plan_order_service: Option<Arc<dyn af_admin::OrganizationPlanOrderService>>,
+    organization_services: OrganizationHttpServices,
     user_topup_service: Option<Arc<dyn UserTopupService>>,
     redemption_service: Arc<dyn RedemptionService>,
     subscription_service: Arc<dyn SubscriptionService>,
@@ -270,39 +301,40 @@ pub fn build_router(
     frontend_assets: Option<Arc<dyn FrontendAssetSource>>,
     http_extensions: Option<HttpExtensions>,
     payment_webhook_routes: Option<Router>,
-    organization_invitation_service: Option<Arc<dyn af_admin::OrganizationInvitationService>>,
-    organization_management_service: Option<Arc<dyn af_admin::OrganizationManagementService>>,
-    organization_custom_role_service: Option<Arc<dyn af_admin::OrganizationCustomRoleService>>,
-    organization_custom_role_binding_service: Option<
-        Arc<dyn af_admin::OrganizationCustomRoleBindingService>,
-    >,
-    organization_service_account_service: Option<
-        Arc<dyn af_admin::OrganizationServiceAccountService>,
-    >,
-    organization_service_account_runtime_authenticator: Option<
-        Arc<dyn af_admin::OrganizationServiceAccountRuntimeAuthenticator>,
-    >,
-    platform_audit_service: Option<Arc<dyn PlatformAuditService>>,
-    platform_organization_services: Option<(
-        Arc<dyn PlatformOrganizationDirectoryService>,
-        Arc<dyn PlatformOrganizationManagementService>,
-    )>,
-    organization_sso_provider_service: Option<Arc<dyn af_admin::OrganizationSsoProviderService>>,
-    organization_sso_policy_service: Option<Arc<dyn af_admin::OrganizationSsoPolicyService>>,
-    organization_sso_domain_service: Option<Arc<dyn af_admin::OrganizationSsoDomainService>>,
-    organization_sso_login_service: Option<
-        Arc<dyn af_admin::OrganizationSsoLoginTransactionService>,
-    >,
-    organization_sso_public_login_rate_limit_store: Option<
-        Arc<dyn af_domain::OrganizationSsoPublicLoginRateLimitStore>,
-    >,
-    organization_sso_public_login_fingerprint_secret: [u8; 32],
-    organization_sso_session_service: Option<Arc<dyn af_admin::OrganizationSsoSessionService>>,
-    organization_sso_identity_binding_service: Option<
-        Arc<dyn af_admin::OrganizationSsoIdentityBindingService>,
-    >,
-    organization_sso_recovery_service: Option<Arc<dyn af_admin::OrganizationSsoRecoveryService>>,
 ) -> HttpRouter {
+    let OrganizationHttpServices {
+        approval_notification: organization_approval_notification_service,
+        authorization: organization_authorization_service,
+        activity: organization_activity_service,
+        wallet: organization_wallet_service,
+        budget: organization_budget_service,
+        contract_price: organization_contract_price_service,
+        token: organization_token_service,
+        scim: organization_scim_service,
+        approval: organization_approval_service,
+        provisioning: organization_provisioning_service,
+        verification: organization_verification_service,
+        plan: organization_plan_service,
+        plan_order: organization_plan_order_service,
+        invitation: organization_invitation_service,
+        management: organization_management_service,
+        custom_role: organization_custom_role_service,
+        custom_role_binding: organization_custom_role_binding_service,
+        service_account: organization_service_account_service,
+        service_account_runtime_authenticator,
+        platform_audit: platform_audit_service,
+        platform_organization_services,
+        sso_provider: organization_sso_provider_service,
+        sso_policy: organization_sso_policy_service,
+        sso_domain: organization_sso_domain_service,
+        sso_login: organization_sso_login_service,
+        sso_public_login_rate_limit_store: organization_sso_public_login_rate_limit_store,
+        sso_public_login_fingerprint_secret: organization_sso_public_login_fingerprint_secret,
+        sso_session: organization_sso_session_service,
+        sso_identity_binding: organization_sso_identity_binding_service,
+        sso_recovery: organization_sso_recovery_service,
+    } = organization_services;
+    let organization_service_account_runtime_authenticator = service_account_runtime_authenticator;
     let openai_authentication = middleware::from_fn_with_state(
         AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config),
         authenticate_api_key,
