@@ -15,10 +15,13 @@ import { DashboardOutcomes } from './dashboard-outcomes'
 import { DashboardStatusBar } from './dashboard-status-bar'
 import { DashboardSummary } from './dashboard-summary'
 import { DashboardTrend } from './dashboard-trend'
+import { DashboardSla } from './dashboard-sla'
+import './dashboard-report.css'
 import { UserOverviewPage } from './user-overview-page'
 
 function isEmptyDashboard(dashboard: AdminDashboardResponse) {
   return dashboard.request_count === 0
+    && dashboard.outcome_request_count === 0
     && dashboard.enabled_channel_count === 0
     && dashboard.disabled_channel_count === 0
     && dashboard.auto_disabled_channel_count === 0
@@ -35,7 +38,7 @@ export function DashboardPage() {
   return <AdminDashboardView />
 }
 
-function AdminDashboardView() {
+export function AdminDashboardView() {
   const { t, i18n } = useTranslation()
   const dashboardQuery = useAdminDashboard()
   const { formatQuota } = useBalanceDisplay()
@@ -59,7 +62,7 @@ function AdminDashboardView() {
   }).format(value * 1000)
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="report-page flex flex-col gap-5" data-report-theme="next">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold">{t('dashboard.title')}</h2>
@@ -124,7 +127,8 @@ function AdminDashboardView() {
             <DashboardTrend dashboard={dashboard} formatHour={formatHour} formatNumber={formatNumber} formatQuota={formatQuota} />
             <DashboardPerformance dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
           </section>
-          <Card className="border border-[var(--hairline)]" shadow="none">
+          <DashboardSla />
+          <section>
             <Tabs
               fullWidth
               size="sm"
@@ -153,7 +157,7 @@ function AdminDashboardView() {
                 <DashboardOutcomes dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} formatQuota={formatQuota} />
               </Tab>
             </Tabs>
-          </Card>
+          </section>
         </>
       ) : null}
     </div>

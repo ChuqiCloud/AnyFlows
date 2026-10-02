@@ -16,6 +16,8 @@ for (const path of [
   'src/features/usage-logs/usage-log-model.ts',
   'src/features/site-settings/frontend-template-model.ts',
   'src/features/site-settings/frontend-template-api.ts',
+  'src/features/dashboard/dashboard-sla-api.ts',
+  'src/features/dashboard/dashboard-sla-model.ts',
 ]) {
   const read = (frontend) => readFileSync(resolve(root, frontend, path), 'utf8').replaceAll('\r\n', '\n')
   assert.equal(read('web-next'), read('web'), `Shared frontend contract or behavior drifted: ${path}`)

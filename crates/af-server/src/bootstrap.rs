@@ -1711,11 +1711,18 @@ impl Bootstrap<DatabaseReady> {
                     DatabaseAdminChannelWriter::new(admin_channel_repository, credential_encryptor)
                         .with_decryptor(credential_decryptor),
                 ),
-                admin_dashboard_reader: Arc::new(StorageAdminDashboardReader::new(Arc::new(
-                    crate::admin_dashboard_storage::DatabaseAdminDashboardStorage::new(
-                        admin_dashboard_repository,
-                    ),
-                ))),
+                admin_dashboard_reader: Arc::new(
+                    StorageAdminDashboardReader::new(Arc::new(
+                        crate::admin_dashboard_storage::DatabaseAdminDashboardStorage::new(
+                            admin_dashboard_repository.clone(),
+                        ),
+                    ))
+                    .with_service_level_storage(Arc::new(
+                        crate::admin_dashboard_storage::DatabaseAdminDashboardStorage::new(
+                            admin_dashboard_repository,
+                        ),
+                    )),
+                ),
                 admin_dashboard_channel_storage,
                 admin_group_reader: Arc::new(DatabaseAdminGroupReader::new(
                     admin_group_repository.clone(),
@@ -1807,8 +1814,20 @@ impl Bootstrap<AuthenticationReady> {
                 ),
                 Arc::clone(&authentication.admin_dashboard_channel_storage),
             );
-            authentication.admin_dashboard_reader =
-                Arc::new(StorageAdminDashboardReader::new(Arc::new(storage)));
+            let sla_repository = AdminDashboardRepository::new(
+                authentication.infrastructure.database.clone(),
+                Duration::from_secs(config.auth().lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::AdminDashboardRepository)?;
+            authentication.admin_dashboard_reader = Arc::new(
+                StorageAdminDashboardReader::new(Arc::new(storage)).with_service_level_storage(
+                    Arc::new(
+                        crate::admin_dashboard_storage::DatabaseAdminDashboardStorage::new(
+                            sla_repository,
+                        ),
+                    ),
+                ),
+            );
             tracing::info!("已启用 ClickHouse 管理看板分析事实读取");
         }
         authentication.turnstile_verifier = config.turnstile().secret_key().map(|secret| {

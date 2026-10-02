@@ -210,6 +210,226 @@ async fn snapshot_uses_half_open_window_and_excludes_deleted_channels() -> Resul
 }
 
 #[tokio::test]
+async fn service_levels_cover_full_outcomes_and_paginate_independently()
+-> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let start = TimeDateTimeWithTimeZone::from_unix_timestamp(1_000)?;
+    for id in [1, 2] {
+        channels::ActiveModel {
+            id: Set(id),
+            name: Set(format!("channel-{id}")),
+            r#type: Set("openai".to_owned()),
+            protocol: Set("openai_chat".to_owned()),
+            base_url: Set(None),
+            timeout_secs: Set(None),
+            status: Set(1),
+            weight: Set(1),
+            priority: Set(0),
+            auto_ban: Set(false),
+            model_mapping: Set(JsonValue::Object(Default::default())),
+            param_override: Set(JsonValue::Object(Default::default())),
+            header_override: Set(HeaderOverrides::validate(JsonValue::Object(
+                Default::default(),
+            ))?),
+            balance: Set(None),
+            used_quota: Set(0),
+            settings: Set(SensitiveJson::from(JsonValue::Object(Default::default()))),
+            tag: Set(None),
+            created_at: Set(start),
+            updated_at: Set(start),
+            deleted_at: Set((id == 2).then_some(start)),
+        }
+        .insert(pool.connection())
+        .await?;
+    }
+    for (id, timestamp, model, outcome, error_kind, duration, channel) in [
+        (1, 1_000, "gpt-test", 1, None, 1_000, Some(1)),
+        (2, 4_600, "gpt-test", 1, None, 3_000, Some(1)),
+        (
+            3,
+            1_000,
+            "gpt-test",
+            2,
+            Some("upstream_network"),
+            9_000,
+            Some(1),
+        ),
+        (
+            4,
+            1_000,
+            "gpt-test",
+            2,
+            Some("outcome_unknown"),
+            9_000,
+            Some(1),
+        ),
+        (
+            5,
+            1_000,
+            "unknown-only",
+            2,
+            Some("outcome_unknown"),
+            9_000,
+            Some(2),
+        ),
+        (6, 999, "outside", 1, None, 1, Some(1)),
+        (7, 87_400, "outside", 1, None, 1, Some(1)),
+    ] {
+        request_outcome_logs::ActiveModel {
+            id: Set(id),
+            request_id: Set(format!("sla-{id}")),
+            protocol: Set("openai_chat".to_owned()),
+            operation: Set("chat".to_owned()),
+            model: Set(model.to_owned()),
+            outcome: Set(outcome),
+            error_kind: Set(error_kind.map(str::to_owned)),
+            channel_id: Set(channel),
+            duration_ms: Set(duration),
+            created_at: Set(TimeDateTimeWithTimeZone::from_unix_timestamp(timestamp)?),
+            ..Default::default()
+        }
+        .insert(pool.connection())
+        .await?;
+    }
+    for id in 10..35 {
+        request_outcome_logs::ActiveModel {
+            id: Set(id),
+            request_id: Set(format!("sla-{id}")),
+            protocol: Set("openai_chat".to_owned()),
+            operation: Set("chat".to_owned()),
+            model: Set(format!("model-{id}")),
+            outcome: Set(2),
+            error_kind: Set(Some("invalid_request".to_owned())),
+            channel_id: Set(None),
+            duration_ms: Set(100),
+            created_at: Set(start),
+            ..Default::default()
+        }
+        .insert(pool.connection())
+        .await?;
+    }
+    let repository = AdminDashboardRepository::new(pool.clone(), Duration::from_secs(2))?;
+    let query = crate::DashboardServiceLevelQuery {
+        channels: false,
+        search: String::new(),
+        page: 1,
+        page_size: 5,
+        failures_first: false,
+    };
+    let report = repository
+        .service_levels(1_000, 87_400, query.clone())
+        .await?;
+    assert_eq!(report.total, 27);
+    assert_eq!(report.items.len(), 5);
+    assert_eq!(report.unattributed_request_count, 25);
+    let gpt = &report.items[0];
+    assert_eq!(gpt.name, "gpt-test");
+    assert_eq!(gpt.request_count, 4);
+    assert_eq!(gpt.successful_request_count, 2);
+    assert_eq!(gpt.failed_request_count, 1);
+    assert_eq!(gpt.unknown_request_count, 1);
+    assert_eq!(gpt.average_duration_ms, Some(2_000));
+    assert_eq!(gpt.hourly.len(), 24);
+    assert_eq!(gpt.hourly[0].successful_request_count, 1);
+    assert_eq!(gpt.hourly[0].failed_request_count, 1);
+    assert_eq!(gpt.hourly[0].unknown_request_count, 1);
+    assert_eq!(gpt.hourly[1].successful_request_count, 1);
+    assert!(
+        gpt.hourly[2..]
+            .iter()
+            .all(|point| point.successful_request_count == 0)
+    );
+    let next = repository
+        .service_levels(
+            1_000,
+            87_400,
+            crate::DashboardServiceLevelQuery {
+                page: 2,
+                ..query.clone()
+            },
+        )
+        .await?;
+    assert_eq!(next.total, 27);
+    assert!(
+        next.items
+            .iter()
+            .all(|row| !report.items.iter().any(|first| first.key == row.key))
+    );
+    let unknown = repository
+        .service_levels(
+            1_000,
+            87_400,
+            crate::DashboardServiceLevelQuery {
+                search: "UNKNOWN".to_owned(),
+                ..query.clone()
+            },
+        )
+        .await?;
+    assert_eq!(unknown.total, 1);
+    assert_eq!(unknown.items[0].failed_request_count, 0);
+    assert_eq!(unknown.items[0].unknown_request_count, 1);
+    assert_eq!(unknown.items[0].average_duration_ms, None);
+    let channels = repository
+        .service_levels(
+            1_000,
+            87_400,
+            crate::DashboardServiceLevelQuery {
+                channels: true,
+                ..query.clone()
+            },
+        )
+        .await?;
+    assert_eq!(channels.total, 2);
+    assert_eq!(channels.items[0].name, "channel-1");
+    assert_eq!(channels.items[0].request_count, 4);
+    assert_eq!(
+        channels.items[1].name, "channel-2",
+        "deleted channels retain historical attribution"
+    );
+    let sorted = repository
+        .service_levels(
+            1_000,
+            87_400,
+            crate::DashboardServiceLevelQuery {
+                failures_first: true,
+                page: 6,
+                ..query.clone()
+            },
+        )
+        .await?;
+    assert_eq!(sorted.items.len(), 2);
+    assert_eq!(
+        sorted.items[1].name, "unknown-only",
+        "unknown outcomes are not known failures"
+    );
+    let empty = repository
+        .service_levels(
+            1_000,
+            87_400,
+            crate::DashboardServiceLevelQuery {
+                search: "no-match".to_owned(),
+                ..query.clone()
+            },
+        )
+        .await?;
+    assert_eq!(empty.total, 0);
+    assert!(empty.items.is_empty());
+    assert_eq!(
+        repository
+            .service_levels(1_000, 87_399, query)
+            .await
+            .unwrap_err(),
+        AdminDashboardRepositoryError::Invariant
+    );
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn invalid_window_and_closed_pool_fail_closed() -> Result<(), Box<dyn Error>> {
     let pool = crate::connect_and_migrate(
         &DatabaseOptions::new("sqlite::memory:")?,

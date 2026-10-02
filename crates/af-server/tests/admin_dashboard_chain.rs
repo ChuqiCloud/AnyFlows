@@ -218,6 +218,55 @@ async fn admin_dashboard_uses_real_aggregates_and_role_boundary() {
     assert_eq!(forbidden.status, 403);
     assert_eq!(response_json(&forbidden)["code"], "forbidden");
 
+    let service_levels = send_request(
+        address,
+        "GET",
+        "/api/admin/dashboard/service-levels?dimension=model&page_size=5",
+        b"",
+        &[("Authorization", &admin_authorization)],
+    )
+    .await;
+    assert_eq!(service_levels.status, 200);
+    assert_eq!(service_levels.headers["cache-control"], "no-store");
+    let report = response_json(&service_levels);
+    assert_eq!(
+        report["period_end"].as_i64().unwrap() - report["period_start"].as_i64().unwrap(),
+        86_400
+    );
+    assert_eq!(report["total"], 1);
+    assert_eq!(report["items"][0]["successful_request_count"], 1);
+    assert_eq!(report["items"][0]["failed_request_count"], 1);
+    assert_eq!(report["items"][0]["unknown_request_count"], 1);
+    for invalid in ["page=0", "page_size=21", "dimension=user", "page=1&page=2"] {
+        let response = send_request(
+            address,
+            "GET",
+            &format!("/api/admin/dashboard/service-levels?{invalid}"),
+            b"",
+            &[("Authorization", &admin_authorization)],
+        )
+        .await;
+        assert_eq!(response.status, 400);
+    }
+    let forbidden_sla = send_request(
+        address,
+        "GET",
+        "/api/admin/dashboard/service-levels",
+        b"",
+        &[("Authorization", &member_authorization)],
+    )
+    .await;
+    assert_eq!(forbidden_sla.status, 403);
+    let anonymous_sla = send_request(
+        address,
+        "GET",
+        "/api/admin/dashboard/service-levels",
+        b"",
+        &[],
+    )
+    .await;
+    assert_eq!(anonymous_sla.status, 401);
+
     shutdown.send(()).unwrap();
     let report = timeout(IO_TIMEOUT, server).await.unwrap().unwrap().unwrap();
     assert_eq!(report.http, ServeOutcome::Drained);
@@ -699,6 +748,17 @@ async fn seed_dashboard(database_url: &str) {
                 "openai_chat".into(), status.into(), 1_i32.into(), 0_i32.into(), false.into(),
                 "{}".into(), "{}".into(), "{}".into(), 0_i64.into(), "{}".into(),
             ],
+        )).await.unwrap();
+    }
+    for (id, outcome, error_kind) in [
+        (7_512_i64, 1_i16, None),
+        (7_513, 2, Some("upstream_network")),
+        (7_514, 2, Some("outcome_unknown")),
+    ] {
+        connection.execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO request_outcome_logs (id, request_id, protocol, operation, model, outcome, error_kind, channel_id, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [id.into(), format!("sla-http-{id}").into(), "openai_chat".into(), "chat".into(), "gpt-test".into(), outcome.into(), error_kind.into(), 7_508_i64.into(), 1_000_i64.into(), TimeDateTimeWithTimeZone::from_unix_timestamp(usage_time - 60).unwrap().into()],
         )).await.unwrap();
     }
     connection.close().await.unwrap();

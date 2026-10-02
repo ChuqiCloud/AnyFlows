@@ -907,6 +907,12 @@ pub fn build_router(
                 .route_layer(dashboard_authentication.clone()),
         )
         .route(
+            "/api/admin/dashboard/service-levels",
+            get(crate::management_service_levels::get_service_levels)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(dashboard_authentication.clone()),
+        )
+        .route(
             "/api/admin/analytics/export-status",
             get(get_admin_analytics_export_status)
                 .route_layer(middleware::from_fn(authorize_management_admin))

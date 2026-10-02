@@ -21,6 +21,8 @@ on:
       - 'crates/af-server/src/frontend.rs'
       - 'crates/af-server/build.rs'
       - 'tools/xtask/src/main.rs'
+      - 'crates/af-http/src/management_service_levels.rs'
+      - 'crates/af-http/src/openapi/dashboard.rs'
 
 permissions:
   contents: read

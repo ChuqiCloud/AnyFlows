@@ -48,6 +48,62 @@ impl AdminDashboardStorage for DatabaseAdminDashboardStorage {
     }
 }
 
+impl af_analytics::ServiceLevelStorage for DatabaseAdminDashboardStorage {
+    fn report(
+        &self,
+        start: i64,
+        end: i64,
+        query: af_analytics::ServiceLevelQuery,
+    ) -> af_analytics::ServiceLevelStorageFuture<'_> {
+        Box::pin(async move {
+            let record = self
+                .repository
+                .service_levels(
+                    start,
+                    end,
+                    af_db::DashboardServiceLevelQuery {
+                        channels: query.dimension == af_analytics::ServiceLevelDimension::Channel,
+                        search: query.search,
+                        page: query.page,
+                        page_size: query.page_size,
+                        failures_first: query.failures_first,
+                    },
+                )
+                .await
+                .map_err(map_repository_error)?;
+            Ok(af_analytics::ServiceLevelReport {
+                period_start: start,
+                period_end: end,
+                total: record.total,
+                unattributed_request_count: record.unattributed_request_count,
+                items: record
+                    .items
+                    .into_iter()
+                    .map(|row| af_analytics::ServiceLevelRow {
+                        key: row.key,
+                        name: row.name,
+                        request_count: row.request_count,
+                        successful_request_count: row.successful_request_count,
+                        failed_request_count: row.failed_request_count,
+                        unknown_request_count: row.unknown_request_count,
+                        average_duration_ms: row.average_duration_ms,
+                        hourly: row
+                            .hourly
+                            .into_iter()
+                            .map(|point| af_analytics::ServiceLevelPoint {
+                                period_start: point.period_start,
+                                successful_request_count: point.successful_request_count,
+                                failed_request_count: point.failed_request_count,
+                                unknown_request_count: point.unknown_request_count,
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+            })
+        })
+    }
+}
+
 impl fmt::Debug for DatabaseAdminDashboardStorage {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("DatabaseAdminDashboardStorage(<redacted>)")

@@ -11755,6 +11755,123 @@
         ]
       }
     },
+    "/api/admin/dashboard/service-levels": {
+      "get": {
+        "tags": [
+          "管理看板"
+        ],
+        "summary": "分页读取模型与渠道请求 SLA",
+        "operationId": "getAdminServiceLevels",
+        "parameters": [
+          {
+            "name": "dimension",
+            "in": "query",
+            "description": "model 或 channel，默认 model",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "名称筛选，最多 128 个字符",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "页码，1 到 10000",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "description": "每页 1 到 20 条，默认 10",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "requests 或 failures，默认 requests",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "最近 24 小时的请求终态与小时健康分布；未知结果不计入成功率",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceLevelReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "筛选参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "统计暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/analytics/export-status": {
       "get": {
         "tags": [
@@ -50015,6 +50132,116 @@
           }
         },
         "additionalProperties": false
+      },
+      "ServiceLevelPoint": {
+        "type": "object",
+        "required": [
+          "period_start",
+          "successful_request_count",
+          "failed_request_count",
+          "unknown_request_count"
+        ],
+        "properties": {
+          "period_start": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "successful_request_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "failed_request_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unknown_request_count": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ServiceLevelReport": {
+        "type": "object",
+        "required": [
+          "period_start",
+          "period_end",
+          "total",
+          "unattributed_request_count",
+          "items"
+        ],
+        "properties": {
+          "period_start": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "period_end": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unattributed_request_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceLevelRow"
+            }
+          }
+        }
+      },
+      "ServiceLevelRow": {
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "request_count",
+          "successful_request_count",
+          "failed_request_count",
+          "unknown_request_count",
+          "hourly"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "request_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "successful_request_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "failed_request_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unknown_request_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "average_duration_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "hourly": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceLevelPoint"
+            }
+          }
+        }
       },
       "ServiceProviderConfigResponse": {
         "type": "object",

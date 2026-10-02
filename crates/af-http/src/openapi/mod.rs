@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 278);
+        assert_eq!(document.paths.paths.len(), 279);
         let operation_count = document
             .paths
             .paths
@@ -300,7 +300,7 @@ mod tests {
             })
             .sum::<usize>();
         // 保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 361);
+        assert_eq!(operation_count, 362);
         assert!(
             document
                 .components
@@ -569,6 +569,7 @@ mod tests {
             "getAdminCredentialProxy",
             "getAdminCredentialUsage",
             "getAdminDashboard",
+            "getAdminServiceLevels",
             "getAdminAnalyticsExportStatus",
             "getAdminDebugTrace",
             "getAdminDebugTraceSettings",
@@ -708,7 +709,14 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 582);
+        assert_eq!(schemas.len(), 585);
+        assert!(schemas.contains_key("ServiceLevelPoint"));
+        assert!(schemas.contains_key("ServiceLevelRow"));
+        assert!(schemas.contains_key("ServiceLevelReport"));
+        assert_eq!(
+            document["paths"]["/api/admin/dashboard/service-levels"]["get"]["security"],
+            serde_json::json!([{"bearerAuth": []}])
+        );
         assert!(schemas.contains_key("AdminCredentialImportRequest"));
         assert!(schemas.contains_key("AdminCredentialImportResponse"));
         assert!(schemas.contains_key("CredentialUsageSnapshot"));

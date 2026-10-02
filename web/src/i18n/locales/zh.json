@@ -139,6 +139,56 @@
     "organizationBalanceValue": "企业可用余额 {{value}} 额度"
   },
   "dashboard": {
+    "charts": {
+      "total": "累计",
+      "peak": "小时峰值",
+      "average": "小时均值"
+    },
+    "sla": {
+      "title": "模型与渠道 SLA",
+      "dimension": "统计维度",
+      "model": "模型",
+      "channel": "渠道",
+      "search": "搜索模型或渠道",
+      "sort": "排序",
+      "sorts": {
+        "requests": "请求量优先",
+        "failures": "失败数优先"
+      },
+      "target": "目标",
+      "rate": "请求成功率",
+      "requests": "请求数",
+      "duration": "平均耗时",
+      "history": "24 小时健康分布",
+      "noMatches": "未找到匹配的调用记录",
+      "empty": "当前窗口暂无调用记录",
+      "perPage": "每页",
+      "page": "第 {{page}} / {{pages}} 页 · 共 {{total}} 项",
+      "previous": "上一页",
+      "next": "下一页",
+      "states": {
+        "healthy": "达标",
+        "degraded": "低于目标",
+        "critical": "低于 95%",
+        "unknown": "结果未知",
+        "empty": "无样本"
+      },
+      "status": {
+        "healthy": "达到目标",
+        "degraded": "未达到目标",
+        "unknown": "暂无可判定样本"
+      },
+      "basis": "按最近 24 小时可判定请求计算成功率，未知结果不计入分母；不代表持续在线率。",
+      "unattributed": "另有 {{count}} 个未分配渠道的请求，未归入渠道统计。",
+      "coverage": "可判定 {{rate}}",
+      "budget": "剩余失败预算 {{count}}",
+      "exceeded": "超出失败预算 {{count}}",
+      "budgetDefinition": "当前样本量与所选目标下可容许的失败次数，仅用于本报表分析。",
+      "failed": "失败 {{count}}",
+      "successDuration": "成功请求均值",
+      "hour": "成功 {{success}} / 失败 {{failed}} / 未知 {{unknown}}",
+      "historyRange": "24 小时前 → 当前"
+    },
     "title": "运行概览",
     "subtitle": "最近 24 小时的已确认用量与当前渠道状态",
     "period": "{{start}} 至 {{end}}",
@@ -245,7 +295,14 @@
         "chartLabel": "用户到分组、渠道和模型的请求与资金流向图",
         "chartTitle": "用户、分组、渠道与模型流向",
         "chartDescription": "连线宽度按当前选择的请求量或已结算额度缩放，用户仅显示稳定编号。",
-        "edge": "该段流量：{{value}}"
+        "edge": "该段流量：{{value}}",
+        "topLimit": "每层展开",
+        "topOptions": {
+          "6": "精简",
+          "10": "标准",
+          "14": "完整"
+        },
+        "highlightHint": "悬停节点查看关联流向"
       },
       "protocols": {
         "openai_chat": "OpenAI Chat",

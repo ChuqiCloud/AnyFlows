@@ -196,6 +196,22 @@ pub struct AdminDashboardRepository {
 }
 
 impl AdminDashboardRepository {
+    pub async fn service_levels(
+        &self,
+        start: i64,
+        end: i64,
+        query: crate::DashboardServiceLevelQuery,
+    ) -> Result<crate::DashboardServiceLevelReport, AdminDashboardRepositoryError> {
+        crate::admin_dashboard_sla::service_level_report(
+            &self.pool,
+            self.lookup_timeout,
+            start,
+            end,
+            query,
+        )
+        .await
+    }
+
     /// 使用共享连接池和整次快照查询截止时间构造仓储。
     pub fn new(
         pool: DatabasePool,
