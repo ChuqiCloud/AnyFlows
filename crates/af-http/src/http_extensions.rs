@@ -8,11 +8,11 @@
 use std::sync::Arc;
 
 use axum::{Json, Router, extract::State, routing::get};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 /// Metadata exposed by an extension to the distribution and frontend shells.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct HttpExtensionDescriptor {
     /// Stable identifier used in capability payloads and release manifests.
