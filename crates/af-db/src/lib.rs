@@ -487,7 +487,7 @@ pub use invite_rebate::{
     InviteRebateRejection, InviteRebateRepository, InviteRebateRepositoryConfigError,
     InviteRebateRepositoryError,
 };
-pub use migration::{MigrationOptions, run_pending_migrations};
+pub use migration::{MigrationOptions, run_pending_migrations, run_pending_migrations_with};
 pub use model_catalog_metadata::ModelCatalogMetadataPageRecord;
 pub use model_price::{
     MAX_MODEL_PRICE_ENTRIES, MAX_MODEL_PRICE_EXPRESSION_BYTES, ModelPriceBillingMode,
@@ -847,6 +847,7 @@ pub use scheduler_runtime::{
     SchedulerRuntimeRepositoryError, SchedulerRuntimeTargetRecord,
     SchedulerRuntimeTargetRecordError, validate_channel_header_overrides,
 };
+pub use sea_orm_migration::{MigrationTrait, MigratorTrait};
 pub use site_settings::{
     BalanceDisplayModeRecord, BalanceDisplayPolicyRecord, BalanceSymbolPositionRecord,
     SiteNavigationGroupRecord, SiteNavigationLinkRecord, SiteNavigationRecord, SiteSettingsRecord,
@@ -939,6 +940,46 @@ pub async fn connect_and_migrate(
     let pool = connect(database_options).await?;
     if let Err(error) = run_pending_migrations(&pool, migration_options).await {
         // 迁移失败时主动执行有界关闭，同时保留原始迁移错误供启动层判定。
+        let _ = pool.close().await;
+        return Err(error);
+    }
+    Ok(pool)
+}
+
+/// 连接数据库并依次执行公共核心与扩展迁移。
+///
+/// 扩展迁移由调用方通过 [`MigratorTrait`] 提供，并且必须使用独立的迁移表。
+/// 公共迁移和扩展迁移会在同一个迁移连接上按顺序执行；对于文件 SQLite，这一点
+/// 可以避免两套迁移分别获取连接后产生写锁竞争。迁移全部成功后才返回业务连接池。
+pub async fn connect_and_migrate_with<M>(
+    database_options: &DatabaseOptions,
+    migration_options: MigrationOptions,
+) -> Result<DatabasePool, DatabaseError>
+where
+    M: MigratorTrait,
+{
+    if let Some(dedicated_options) = database_options.dedicated_migration_options() {
+        let migration_pool = connect(&dedicated_options).await?;
+        if let Err(error) = run_pending_migrations(&migration_pool, migration_options).await {
+            let _ = migration_pool.close().await;
+            return Err(error);
+        }
+        if let Err(error) =
+            run_pending_migrations_with::<M>(&migration_pool, migration_options).await
+        {
+            let _ = migration_pool.close().await;
+            return Err(error);
+        }
+        migration_pool.close().await?;
+        return connect(database_options).await;
+    }
+
+    let pool = connect(database_options).await?;
+    if let Err(error) = run_pending_migrations(&pool, migration_options).await {
+        let _ = pool.close().await;
+        return Err(error);
+    }
+    if let Err(error) = run_pending_migrations_with::<M>(&pool, migration_options).await {
         let _ = pool.close().await;
         return Err(error);
     }

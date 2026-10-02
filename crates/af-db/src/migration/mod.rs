@@ -368,7 +368,22 @@ pub async fn run_pending_migrations(
     pool: &DatabasePool,
     options: MigrationOptions,
 ) -> Result<(), DatabaseError> {
-    run_with::<Migrator>(pool, options).await
+    run_pending_migrations_with::<Migrator>(pool, options).await
+}
+
+/// 执行扩展注册表中的全部待处理迁移。
+///
+/// 扩展迁移必须由扩展仓库提供自己的 [`MigratorTrait`] 实现，并覆盖
+/// [`MigratorTrait::migration_table_name`] 使用独立的迁移表。这样公共核心的
+/// `seaql_migrations` 记录不会包含企业模块的迁移，两个仓库可以分别演进。
+pub async fn run_pending_migrations_with<M>(
+    pool: &DatabasePool,
+    options: MigrationOptions,
+) -> Result<(), DatabaseError>
+where
+    M: MigratorTrait,
+{
+    run_with::<M>(pool, options).await
 }
 
 async fn run_with<M>(pool: &DatabasePool, options: MigrationOptions) -> Result<(), DatabaseError>

@@ -254,6 +254,28 @@ impl MigratorTrait for SlowMigrator {
     }
 }
 
+struct ExtensionMigrator;
+
+impl MigratorTrait for ExtensionMigrator {
+    fn migrations() -> Vec<Box<dyn MigrationTrait>> {
+        vec![Box::new(ExtensionMigration)]
+    }
+
+    fn migration_table_name() -> sea_orm::sea_query::DynIden {
+        Alias::new("anyflows_extension_migrations").into_iden()
+    }
+}
+
+#[derive(DeriveMigrationName)]
+struct ExtensionMigration;
+
+#[async_trait::async_trait]
+impl MigrationTrait for ExtensionMigration {
+    async fn up(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+        Ok(())
+    }
+}
+
 #[derive(DeriveMigrationName)]
 struct SlowMigration;
 
@@ -2005,6 +2027,26 @@ async fn migration_deadline_fails_without_retrying() -> Result<(), Box<dyn Error
         .await
         .unwrap_err();
     assert!(matches!(error, DatabaseError::MigrationTimeout { .. }));
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn extension_migrations_use_an_independent_registry() -> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+
+    run_pending_migrations_with::<ExtensionMigrator>(&pool, MigrationOptions::default()).await?;
+
+    let manager = SchemaManager::new(pool.connection());
+    assert!(manager.has_table("anyflows_extension_migrations").await?);
+    assert!(!manager.has_table("seaql_migrations").await?);
+    assert_eq!(
+        ExtensionMigrator::get_applied_migrations(pool.connection())
+            .await?
+            .len(),
+        1
+    );
 
     pool.close().await?;
     Ok(())

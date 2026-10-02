@@ -16,11 +16,22 @@ The private distribution repository owns the selected public core revision, the 
 
 ## Extraction rules
 
-1. Enterprise database migrations remain outside the public migration chain.
+1. Enterprise database migrations remain outside the public migration chain. The
+   public `af-db` crate exposes `run_pending_migrations_with` and
+   `connect_and_migrate_with` for an extension-owned `MigratorTrait`; the
+   extension must override `migration_table_name` and use its own migration
+   table.
 2. Enterprise routes and OpenAPI documents are registered through an extension boundary.
 3. Frontend navigation is driven by server capabilities; hiding a menu is not a source boundary.
 4. Public history must start from a clean root and must not contain enterprise source or private configuration.
 5. Every private release records the public core revision and enterprise revision used to build it.
+
+The standard startup path runs the public migration registry against
+`seaql_migrations`. An enterprise distribution runs its own registry after the
+public registry on the same migration connection, then opens the application
+pool. This keeps migration ordering and SQLite write-lock handling inside the
+database boundary while preventing enterprise migration records from entering
+the public registry.
 
 ## First migration candidates
 
