@@ -7,10 +7,13 @@
 
 use std::sync::Arc;
 
-use axum::Router;
+use axum::{Json, Router, extract::State, routing::get};
+use serde::Serialize;
+use utoipa::ToSchema;
 
 /// Metadata exposed by an extension to the distribution and frontend shells.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct HttpExtensionDescriptor {
     /// Stable identifier used in capability payloads and release manifests.
     pub id: String,
@@ -71,6 +74,14 @@ pub trait HttpExtension: Send + Sync {
     fn webhook_routes(&self) -> Router {
         Router::new()
     }
+
+    /// Returns the OpenAPI fragment owned by this extension.
+    ///
+    /// The distribution merges the returned documents into the core document
+    /// before exporting it or passing it to an API explorer.
+    fn openapi_document(&self) -> Option<utoipa::openapi::OpenApi> {
+        None
+    }
 }
 
 /// Collection of optional extensions assembled by a distribution.
@@ -95,6 +106,13 @@ impl HttpExtensions {
             .collect()
     }
 
+    pub fn openapi_documents(&self) -> Vec<utoipa::openapi::OpenApi> {
+        self.extensions
+            .iter()
+            .filter_map(|extension| extension.openapi_document())
+            .collect()
+    }
+
     pub fn into_routes(self) -> HttpExtensionRoutes {
         self.extensions
             .into_iter()
@@ -105,4 +123,22 @@ impl HttpExtensions {
                 routes
             })
     }
+}
+
+/// Builds the public capability catalog consumed by both frontend shells.
+pub fn build_extension_catalog_router(descriptors: Vec<HttpExtensionDescriptor>) -> Router {
+    Router::new()
+        .route("/api/extensions", get(list_extension_catalog))
+        .with_state(Arc::new(descriptors))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/extensions",
+    responses((status = 200, body = [HttpExtensionDescriptor]))
+)]
+pub(crate) async fn list_extension_catalog(
+    State(descriptors): State<Arc<Vec<HttpExtensionDescriptor>>>,
+) -> Json<Vec<HttpExtensionDescriptor>> {
+    Json(descriptors.as_ref().clone())
 }

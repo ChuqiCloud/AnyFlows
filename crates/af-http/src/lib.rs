@@ -140,6 +140,7 @@ pub use frontend_templates::{
 };
 pub use http_extensions::{
     HttpExtension, HttpExtensionDescriptor, HttpExtensionRoutes, HttpExtensions,
+    build_extension_catalog_router,
 };
 pub use image_service::{ImageService, ImageServiceFuture};
 pub use middleware::REQUEST_ID_HEADER_NAME;
@@ -151,7 +152,7 @@ pub use oauth_connections::{
     OAuthLoopbackBindingError, build_admin_oauth_connection_router,
     build_oauth_loopback_callback_router,
 };
-pub use openapi::openapi_document;
+pub use openapi::{openapi_document, openapi_document_with_extensions};
 pub use operations::{
     HEALTH_PATH, READINESS_PATH, ReadinessFuture, ReadinessHandle, ReadinessProbe,
 };

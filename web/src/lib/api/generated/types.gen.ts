@@ -1615,6 +1615,11 @@ export type FrontendTemplateSummary = {
     valid: boolean;
     error?: string | null;
 };
+export type HttpExtensionDescriptor = {
+    id: string;
+    name: string;
+    capabilities: Array<string>;
+};
 export type IssuedAdminRedemptionBatch = {
     batch: AdminRedemptionBatch;
     codes: Array<string>;
@@ -5236,6 +5241,16 @@ export type SendAdminEmailTestResponses = {
     204: void;
 };
 export type SendAdminEmailTestResponse = SendAdminEmailTestResponses[keyof SendAdminEmailTestResponses];
+export type ListExtensionCatalogData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/extensions';
+};
+export type ListExtensionCatalogResponses = {
+    200: Array<HttpExtensionDescriptor>;
+};
+export type ListExtensionCatalogResponse = ListExtensionCatalogResponses[keyof ListExtensionCatalogResponses];
 export type GetAdminNetworkSettingsData = {
     body?: never;
     path?: never;
