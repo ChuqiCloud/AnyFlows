@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{future::Future, marker::PhantomData, pin::Pin, time::Duration};
 
 use sea_orm_migration::{MigrationTrait, MigratorTrait};
 use tokio::time::timeout;
@@ -166,6 +166,50 @@ const DEFAULT_MIGRATION_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MigrationOptions {
     timeout: Duration,
+}
+
+/// 动态数据库扩展的迁移执行契约。
+///
+/// 公共服务负责创建并持有迁移连接，扩展只提供自己的注册表执行逻辑。这样企业
+/// 仓库可以实现独立迁移表，同时避免再次建立连接或把扩展迁移混入公共注册表。
+pub trait DatabaseMigrationExtension: Send + Sync {
+    fn run_pending<'a>(
+        &'a self,
+        pool: &'a DatabasePool,
+        options: MigrationOptions,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DatabaseError>> + Send + 'a>>;
+}
+
+/// 将一个 SeaORM `MigratorTrait` 适配为数据库扩展迁移执行器。
+///
+/// 企业仓库只需将自己的 `Migrator` 包装为
+/// `MigratorExtension::<EnterpriseMigrator>::new()`，并覆盖该 Migrator 的
+/// `migration_table_name`。
+pub struct MigratorExtension<M>(PhantomData<fn() -> M>);
+
+impl<M> MigratorExtension<M> {
+    pub const fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<M> Default for MigratorExtension<M> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<M> DatabaseMigrationExtension for MigratorExtension<M>
+where
+    M: MigratorTrait + 'static,
+{
+    fn run_pending<'a>(
+        &'a self,
+        pool: &'a DatabasePool,
+        options: MigrationOptions,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DatabaseError>> + Send + 'a>> {
+        Box::pin(run_pending_migrations_with::<M>(pool, options))
+    }
 }
 
 impl MigrationOptions {

@@ -66,3 +66,10 @@ bootstrap; the registry is carried through the staged startup and consumed when
 the final router is built. The public binary leaves the registry empty, so
 enterprise routes and capabilities are not linked into the public build by
 default.
+
+Database migrations use a separate startup hook,
+`Bootstrap::with_database_migration_extension`. The extension implements
+`af_db::DatabaseMigrationExtension`, normally by wrapping its own
+`MigratorTrait` with `af_db::MigratorExtension`. The bootstrap runs the public
+registry first and the extension registry second on the same migration
+connection, including when a dedicated migration connection is configured.
