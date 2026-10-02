@@ -263,7 +263,7 @@ pub struct OrganizationRuntimeServices {
     pub organization_scim_service: Arc<dyn OrganizationScimService>,
     pub organization_approval_service: Arc<dyn OrganizationApprovalService>,
     pub organization_provisioning_service: Arc<dyn af_admin::OrganizationProvisioningService>,
-    pub organization_verification_service: Arc<dyn OrganizationVerificationService>,
+    pub organization_verification_service: Arc<dyn af_admin::OrganizationVerificationService>,
     pub organization_plan_service: Arc<dyn af_admin::OrganizationPlanService>,
     pub organization_plan_order_repository: OrganizationPlanOrderRepository,
     pub organization_repository: Arc<OrganizationRepository>,
