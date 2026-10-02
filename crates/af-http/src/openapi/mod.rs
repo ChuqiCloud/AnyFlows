@@ -727,7 +727,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 585);
+        assert_eq!(schemas.len(), 586);
         assert!(schemas.contains_key("ServiceLevelPoint"));
         assert!(schemas.contains_key("ServiceLevelRow"));
         assert!(schemas.contains_key("ServiceLevelReport"));
