@@ -488,7 +488,6 @@ pub use invite_rebate::{
     InviteRebateRepositoryError,
 };
 pub use migration::{MigrationOptions, run_pending_migrations, run_pending_migrations_with};
-pub use sea_orm_migration::{MigrationTrait, MigratorTrait};
 pub use model_catalog_metadata::ModelCatalogMetadataPageRecord;
 pub use model_price::{
     MAX_MODEL_PRICE_ENTRIES, MAX_MODEL_PRICE_EXPRESSION_BYTES, ModelPriceBillingMode,
@@ -848,6 +847,7 @@ pub use scheduler_runtime::{
     SchedulerRuntimeRepositoryError, SchedulerRuntimeTargetRecord,
     SchedulerRuntimeTargetRecordError, validate_channel_header_overrides,
 };
+pub use sea_orm_migration::{MigrationTrait, MigratorTrait};
 pub use site_settings::{
     BalanceDisplayModeRecord, BalanceDisplayPolicyRecord, BalanceSymbolPositionRecord,
     SiteNavigationGroupRecord, SiteNavigationLinkRecord, SiteNavigationRecord, SiteSettingsRecord,
@@ -964,8 +964,8 @@ where
             let _ = migration_pool.close().await;
             return Err(error);
         }
-        if let Err(error) = run_pending_migrations_with::<M>(&migration_pool, migration_options)
-            .await
+        if let Err(error) =
+            run_pending_migrations_with::<M>(&migration_pool, migration_options).await
         {
             let _ = migration_pool.close().await;
             return Err(error);
