@@ -85,7 +85,7 @@ pub trait HttpExtension: Send + Sync {
 }
 
 /// Collection of optional extensions assembled by a distribution.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct HttpExtensions {
     extensions: Vec<Arc<dyn HttpExtension>>,
 }
@@ -141,4 +141,56 @@ pub(crate) async fn list_extension_catalog(
     State(descriptors): State<Arc<Vec<HttpExtensionDescriptor>>>,
 ) -> Json<Vec<HttpExtensionDescriptor>> {
     Json(descriptors.as_ref().clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{
+        body::{Body, to_bytes},
+        http::Request,
+    };
+    use tower::ServiceExt as _;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn catalog_returns_registered_extension_metadata() {
+        let mut extensions = HttpExtensions::default();
+        extensions.register(Arc::new(TestExtension));
+        let cloned = extensions.clone();
+
+        assert_eq!(
+            cloned.descriptors(),
+            vec![HttpExtensionDescriptor::new(
+                "enterprise",
+                "Enterprise",
+                ["organizations", "sso"],
+            )]
+        );
+
+        let response = build_extension_catalog_router(extensions.descriptors())
+            .oneshot(
+                Request::builder()
+                    .uri("/api/extensions")
+                    .body(Body::empty())
+                    .expect("valid catalog request"),
+            )
+            .await
+            .expect("catalog route should respond");
+        assert!(response.status().is_success());
+        let body = to_bytes(response.into_body(), 8 * 1024)
+            .await
+            .expect("catalog body should be readable");
+        let payload: Vec<HttpExtensionDescriptor> =
+            serde_json::from_slice(&body).expect("catalog body should be JSON");
+        assert_eq!(payload, cloned.descriptors());
+    }
+
+    struct TestExtension;
+
+    impl HttpExtension for TestExtension {
+        fn descriptor(&self) -> HttpExtensionDescriptor {
+            HttpExtensionDescriptor::new("enterprise", "Enterprise", ["organizations", "sso"])
+        }
+    }
 }

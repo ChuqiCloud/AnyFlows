@@ -149,10 +149,11 @@ use af_db::{
 };
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, AudioService, ChatService, EmbeddingService,
-    FrontendAssetSource, HttpListener, HttpRouter, ImageService, PaymentWebhookProcessorRegistry,
-    QueryApiKeyPolicy, ReadinessHandle, RefundReceiptProcessorRegistry, RerankService,
-    ResponsesCompactService, ServeError, ServeOutcome, SpeechService, TurnstileVerifier,
-    VideoTaskService, build_frontend_template_router, build_organization_credit_terms_router,
+    FrontendAssetSource, HttpExtensions, HttpListener, HttpRouter, ImageService,
+    PaymentWebhookProcessorRegistry, QueryApiKeyPolicy, ReadinessHandle,
+    RefundReceiptProcessorRegistry, RerankService, ResponsesCompactService, ServeError,
+    ServeOutcome, SpeechService, TurnstileVerifier, VideoTaskService,
+    build_frontend_template_router, build_organization_credit_terms_router,
     build_payment_webhook_router, build_refund_receipt_webhook_router, build_router,
     serve_with_graceful_shutdown,
 };
@@ -450,6 +451,7 @@ pub struct Bootstrap<S> {
     config: AppConfig,
     shutdown_timeout: Duration,
     shutdown: ShutdownController,
+    http_extensions: HttpExtensions,
     stage: S,
 }
 
@@ -883,8 +885,19 @@ impl Bootstrap<Configured> {
             config,
             shutdown_timeout,
             shutdown: ShutdownController::new(),
+            http_extensions: HttpExtensions::default(),
             stage: Configured,
         })
+    }
+
+    /// 注册由发行版提供的可选 HTTP 扩展。
+    ///
+    /// 扩展在数据库、认证和后台任务完成装配后统一加入公共路由。公共服务默认不注册
+    /// 扩展，因此同一套启动链既可用于开源核心，也可用于包含企业模块的发行版。
+    #[must_use]
+    pub fn with_http_extensions(mut self, extensions: HttpExtensions) -> Self {
+        self.http_extensions = extensions;
+        self
     }
 
     /// 安装 stdout JSON tracing 与进程级 Prometheus recorder。
@@ -3184,7 +3197,7 @@ impl Bootstrap<Supervised> {
             Some(Arc::clone(&self.stage.admin_refund_service)),
             self.stage.infrastructure.query_api_key_policy,
             Some(Arc::clone(&frontend_template_manager) as Arc<dyn FrontendAssetSource>),
-            None,
+            Some(self.http_extensions.clone()),
             Some(payment_webhook_routes),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_invitation_service,
@@ -3559,6 +3572,7 @@ impl<S> Bootstrap<S> {
             config: self.config,
             shutdown_timeout: self.shutdown_timeout,
             shutdown: self.shutdown,
+            http_extensions: self.http_extensions,
             stage,
         }
     }

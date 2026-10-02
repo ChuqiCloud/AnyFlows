@@ -58,3 +58,11 @@ extension identifiers, display names, and feature keys, so both built-in
 frontends can decide which navigation and controls to render without receiving
 private service configuration. `openapi_document_with_extensions` is the
 composition hook for merging private API documents into the generated contract.
+
+The server bootstrap exposes the same boundary through
+`Bootstrap::with_http_extensions`. A distribution constructs its
+`HttpExtensions` registry before initializing telemetry and passes it into the
+bootstrap; the registry is carried through the staged startup and consumed when
+the final router is built. The public binary leaves the registry empty, so
+enterprise routes and capabilities are not linked into the public build by
+default.
