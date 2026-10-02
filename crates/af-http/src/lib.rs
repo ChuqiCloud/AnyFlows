@@ -22,6 +22,7 @@ mod frontend_assets;
 mod frontend_templates;
 mod gemini_generate_content;
 mod image_service;
+mod http_extensions;
 mod invitations;
 #[cfg(test)]
 mod invitations_tests;
@@ -138,6 +139,9 @@ pub use frontend_templates::{
     build_frontend_template_router,
 };
 pub use image_service::{ImageService, ImageServiceFuture};
+pub use http_extensions::{
+    HttpExtension, HttpExtensionDescriptor, HttpExtensionRoutes, HttpExtensions,
+};
 pub use middleware::REQUEST_ID_HEADER_NAME;
 pub use oauth_connections::{
     AdminOAuthAuthorizationStart, AdminOAuthBeginFuture, AdminOAuthCompleteFuture,
