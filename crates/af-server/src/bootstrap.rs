@@ -966,12 +966,14 @@ impl Bootstrap<TelemetryReady> {
             config,
             shutdown_timeout,
             shutdown,
+            http_extensions,
             stage,
         } = self;
         Ok(Bootstrap {
             config,
             shutdown_timeout,
             shutdown,
+            http_extensions,
             stage: DatabaseReady {
                 _telemetry: stage,
                 database,
@@ -1494,6 +1496,7 @@ impl Bootstrap<DatabaseReady> {
             config,
             shutdown_timeout,
             shutdown,
+            http_extensions,
             stage,
         } = self;
         let organization_scim_rate_limit_store = stage.organization_scim_rate_limit_store.clone();
@@ -1565,6 +1568,7 @@ impl Bootstrap<DatabaseReady> {
             config,
             shutdown_timeout,
             shutdown,
+            http_extensions,
             stage: AuthenticationReady {
                 infrastructure: stage,
                 authenticator: Arc::new(TokenRequestAdmissionAuthenticator::new(
@@ -1778,6 +1782,7 @@ impl Bootstrap<AuthenticationReady> {
             config,
             shutdown_timeout,
             shutdown,
+            http_extensions,
             stage: mut authentication,
         } = self;
         let (startup_config, max_cached_clients) = build_http_client_parts(&config)?;
@@ -1889,6 +1894,7 @@ impl Bootstrap<AuthenticationReady> {
             config,
             shutdown_timeout,
             shutdown,
+            http_extensions,
             stage: RelayReady {
                 infrastructure: authentication,
                 upstream_clients,
@@ -2350,6 +2356,7 @@ impl Bootstrap<RelayReady> {
             config,
             shutdown_timeout,
             shutdown,
+            http_extensions,
             stage,
         } = self;
         let mut infrastructure = stage.infrastructure;
@@ -2367,6 +2374,7 @@ impl Bootstrap<RelayReady> {
             config,
             shutdown_timeout,
             shutdown,
+            http_extensions,
             stage: BillingReady {
                 infrastructure,
                 chat,
@@ -2417,6 +2425,7 @@ impl Bootstrap<BillingReady> {
             config,
             shutdown_timeout,
             shutdown,
+            http_extensions,
             stage,
         } = self;
         let mut supervisor = BackgroundTaskSupervisor::new(shutdown.clone());
@@ -2623,6 +2632,7 @@ impl Bootstrap<BillingReady> {
             config,
             shutdown_timeout,
             shutdown,
+            http_extensions,
             stage: Supervised {
                 infrastructure,
                 chat,
@@ -3334,12 +3344,14 @@ impl Bootstrap<Supervised> {
             config,
             shutdown_timeout,
             shutdown,
+            http_extensions,
             stage,
         } = self;
         Bootstrap {
             config,
             shutdown_timeout,
             shutdown,
+            http_extensions,
             stage: RouterReady {
                 runtime: stage,
                 router,
@@ -3358,6 +3370,7 @@ impl Bootstrap<RouterReady> {
             config,
             shutdown_timeout,
             shutdown,
+            http_extensions,
             stage,
         } = self;
         let RouterReady {
@@ -3370,6 +3383,7 @@ impl Bootstrap<RouterReady> {
             config,
             shutdown_timeout,
             shutdown,
+            http_extensions,
             stage: ListenerReady {
                 runtime,
                 router,
@@ -3401,6 +3415,7 @@ impl Bootstrap<ListenerReady> {
             config: _,
             shutdown_timeout,
             shutdown,
+            http_extensions: _,
             stage,
         } = self;
         let ListenerReady {
