@@ -145,7 +145,7 @@ use af_db::{
     UserNotificationRepositoryConfigError, UserProfileRepository, UserProfileRepositoryConfigError,
     UserSessionRepository, UserSessionRepositoryConfigError, UserTokenRepository,
     UserTokenRepositoryConfigError, WalletLedgerRepository, WalletLedgerRepositoryConfigError,
-    connect_and_migrate, connect_and_migrate_with_extension,
+    connect_and_migrate_with_extension,
 };
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, AudioService, ChatService, EmbeddingService,
@@ -3847,6 +3847,7 @@ mod tests {
         UsageRecordQueue, UsageRecordSink, UsageRecordSinkFuture, UserBillingDelta,
     };
     use af_config::CREDENTIAL_ENCRYPTION_KEY_BYTES;
+    use af_db::connect_and_migrate;
     use af_domain::{BillingReservationId, GatewayPrincipal, GroupId, QuotaDelta, TokenId, UserId};
     use af_http::{ReadinessFuture, ReadinessProbe};
     use af_protocol::{TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource};
