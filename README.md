@@ -38,4 +38,4 @@ Do not report security issues in public issues. Use the repository's private sec
 
 ## License
 
-The project license will be included before the first public source release.
+AnyFlows is licensed under the GNU Affero General Public License, version 3 or later. See [`LICENSE`](LICENSE) for the full text.
