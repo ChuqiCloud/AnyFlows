@@ -2089,6 +2089,7 @@ async fn start_server(
             sso_identity_binding: None,
             sso_recovery: None,
         },
+        None,
         Arc::new(RejectRedemptions),
         Arc::new(RejectSubscriptions),
         Arc::new(RejectUserInvitations),
