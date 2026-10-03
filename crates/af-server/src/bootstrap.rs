@@ -4,8 +4,8 @@ use af_account::{
     ControlledOrganizationSsoDnsResolver, CredentialDecryptionError, CredentialDecryptor,
     CredentialEncryptionError, CredentialEncryptor, DiagnosticSnapshotCipher,
     OAuthConnectionCoordinator, OAuthLoginClient, OAuthProviderProfile, OAuthRefreshSupervisor,
-    OrganizationInvitationCipher, OrganizationSsoDnsResolverConfigError, PlainSystemSecret,
-    SystemSecretCipher, SystemSecretError, SystemSecretKind,
+    OrganizationSsoDnsResolverConfigError, PlainSystemSecret, SystemSecretCipher,
+    SystemSecretError, SystemSecretKind,
 };
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
@@ -24,17 +24,7 @@ use af_admin::{
     DatabaseAdminRouteWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
     DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
     DatabaseAdminWalletService, DatabaseAnnouncementService, DatabaseInitialSetup,
-    DatabaseOAuthLoginService, DatabaseOrganizationActivityService,
-    DatabaseOrganizationApprovalNotificationService, DatabaseOrganizationApprovalService,
-    DatabaseOrganizationBudgetService, DatabaseOrganizationContractPriceService,
-    DatabaseOrganizationCreditTermsService, DatabaseOrganizationCustomRoleBindingService,
-    DatabaseOrganizationCustomRoleService, DatabaseOrganizationScimService,
-    DatabaseOrganizationSsoDomainService, DatabaseOrganizationSsoIdentityBindingService,
-    DatabaseOrganizationSsoLoginTransactionService, DatabaseOrganizationSsoPolicyService,
-    DatabaseOrganizationSsoProviderService, DatabaseOrganizationSsoRecoveryService,
-    DatabaseOrganizationTokenService, DatabaseOrganizationVerificationService,
-    DatabaseOrganizationWalletService, DatabasePasskeyAuthenticationService,
-    DatabasePasswordResetService, DatabasePlatformAuditService,
+    DatabaseOAuthLoginService, DatabasePasskeyAuthenticationService, DatabasePasswordResetService,
     DatabasePlatformOrganizationDirectoryService, DatabasePlatformOrganizationManagementService,
     DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
     DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
@@ -42,17 +32,11 @@ use af_admin::{
     DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
     DatabaseUserTokenService, DatabaseUserWalletService, EmailBindingService, EmailDelivery,
     InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
-    OAuthLoginService, OrganizationActivityService, OrganizationActivityServiceConfigError,
-    OrganizationApprovalNotificationService, OrganizationApprovalService,
-    OrganizationBudgetService, OrganizationContractPriceService, OrganizationCreditTermsService,
-    OrganizationCustomRoleBindingService, OrganizationCustomRoleService, OrganizationScimService,
-    OrganizationSsoDomainService, OrganizationSsoIdentityBindingService,
-    OrganizationSsoLoginTransactionService, OrganizationSsoPolicyService,
-    OrganizationSsoProviderService, OrganizationSsoRecoveryService, OrganizationTokenService,
-    OrganizationWalletService, PasskeyAuthenticationService,
+    OAuthLoginService, OrganizationActivityServiceConfigError,
+    OrganizationSsoLoginTransactionService, PasskeyAuthenticationService,
     PasskeyAuthenticationServiceConfigError, PasswordResetService, PasswordResetServiceConfigError,
-    PlatformAuditService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
-    RegistrationService, RegistrationServiceConfigError, RuntimeRefreshingAdminGroupWriter,
+    PlaygroundConversationService, PlaygroundShareService, RedemptionService, RegistrationService,
+    RegistrationServiceConfigError, RuntimeRefreshingAdminGroupWriter,
     RuntimeRefreshingInitialSetup, SessionAuthenticator, SessionAuthenticatorConfigError,
     SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
     UserProfileService, UserTokenService, UserTopupService, UserWalletService,
@@ -99,53 +83,40 @@ use af_db::{
     ModelPriceRepository, ModelProviderCatalogRepository, ModelProviderCatalogRepositoryError,
     ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
     NetworkSettingsRepositoryConfigError, OAuthLoginRepository, OAuthLoginRepositoryError,
-    OrganizationApprovalNotificationRepository,
     OrganizationApprovalNotificationRepositoryConfigError, OrganizationApprovalRepository,
-    OrganizationApprovalRepositoryConfigError, OrganizationAuditRepository,
-    OrganizationBudgetRepository, OrganizationBudgetRepositoryConfigError,
-    OrganizationContractPriceRepository, OrganizationContractPriceRepositoryConfigError,
-    OrganizationCreditInvoiceRepository, OrganizationCreditInvoiceRepositoryConfigError,
-    OrganizationCreditRepaymentRepository, OrganizationCreditRepaymentRepositoryConfigError,
-    OrganizationCreditTermsRepository, OrganizationCreditTermsRepositoryConfigError,
-    OrganizationCustomRoleBindingRepository, OrganizationCustomRoleBindingRepositoryConfigError,
-    OrganizationCustomRoleRepository, OrganizationCustomRoleRepositoryConfigError,
-    OrganizationDepartmentMembershipRepository,
-    OrganizationDepartmentMembershipRepositoryConfigError, OrganizationDepartmentRepository,
-    OrganizationDepartmentRepositoryConfigError, OrganizationPlanOrderRepository,
-    OrganizationPlanOrderRepositoryConfigError, OrganizationPlanRepository,
-    OrganizationPlanRepositoryConfigError, OrganizationProvisioningRepository,
-    OrganizationProvisioningRepositoryConfigError, OrganizationRepository,
-    OrganizationRepositoryConfigError, OrganizationScimAuditRepository,
-    OrganizationScimAuditRepositoryError, OrganizationScimGroupRepository,
-    OrganizationScimGroupRepositoryError, OrganizationScimTokenRepository,
-    OrganizationScimTokenRepositoryError, OrganizationScimUserRepository,
+    OrganizationApprovalRepositoryConfigError, OrganizationBudgetRepositoryConfigError,
+    OrganizationContractPriceRepositoryConfigError, OrganizationCreditInvoiceRepositoryConfigError,
+    OrganizationCreditRepaymentRepositoryConfigError, OrganizationCreditTermsRepositoryConfigError,
+    OrganizationCustomRoleBindingRepositoryConfigError,
+    OrganizationCustomRoleRepositoryConfigError,
+    OrganizationDepartmentMembershipRepositoryConfigError,
+    OrganizationDepartmentRepositoryConfigError, OrganizationPlanOrderRepositoryConfigError,
+    OrganizationPlanRepositoryConfigError, OrganizationProvisioningRepositoryConfigError,
+    OrganizationRepositoryConfigError, OrganizationScimAuditRepositoryError,
+    OrganizationScimGroupRepositoryError, OrganizationScimTokenRepositoryError,
     OrganizationScimUserRepositoryError, OrganizationServiceAccountAuditRepository,
-    OrganizationServiceAccountBudgetBindingRepository,
     OrganizationServiceAccountBudgetBindingRepositoryConfigError,
-    OrganizationServiceAccountRepository, OrganizationServiceAccountRepositoryError,
-    OrganizationSsoProviderRepository, OrganizationSsoProviderRepositoryConfigError,
-    OrganizationTokenRepository, OrganizationTokenRepositoryConfigError,
-    OrganizationVerificationRepository, OrganizationVerificationRepositoryConfigError,
-    OrganizationWalletRepository, OrganizationWalletRepositoryConfigError, PasskeyRepository,
-    PasswordResetRepository, PasswordResetRepositoryConfigError, PaymentSecretUpdate,
-    PaymentSettingsRepository, PaymentSettingsRepositoryConfigError,
-    PaymentSettingsRepositoryError, PaymentSettingsWriteRecord, PlatformAuditRepository,
-    PlaygroundConversationRepository, PlaygroundConversationRepositoryConfigError,
-    PlaygroundShareRepository, PlaygroundShareRepositoryConfigError, QuotaRepository,
-    RedemptionRepository, RedemptionRepositoryConfigError, RefundRepository,
-    RefundRepositoryConfigError, RegistrationRepository, RegistrationRepositoryConfigError,
-    RequestOutcomeRepository, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
-    SiteSettingsRepositoryError, SmartRouteRuntimeRepository,
-    SmartRouteRuntimeRepositoryConfigError, SubscriptionBalanceAlertRepository,
-    SubscriptionBalanceAlertRepositoryConfigError, SubscriptionRepository,
-    SubscriptionRepositoryConfigError, TokenAuthRepository, TokenAuthRepositoryConfigError,
-    TokenRequestAdmissionRepository, TokenRequestAdmissionRepositoryConfigError, TopupRepository,
-    TopupRepositoryConfigError, UsageLogRepository, UserInvitationRepository,
-    UserInvitationRepositoryConfigError, UserNotificationRepository,
-    UserNotificationRepositoryConfigError, UserProfileRepository, UserProfileRepositoryConfigError,
-    UserSessionRepository, UserSessionRepositoryConfigError, UserTokenRepository,
-    UserTokenRepositoryConfigError, WalletLedgerRepository, WalletLedgerRepositoryConfigError,
-    connect_and_migrate_with_extension,
+    OrganizationServiceAccountRepositoryError, OrganizationSsoProviderRepository,
+    OrganizationSsoProviderRepositoryConfigError, OrganizationTokenRepositoryConfigError,
+    OrganizationVerificationRepositoryConfigError, OrganizationWalletRepositoryConfigError,
+    PasskeyRepository, PasswordResetRepository, PasswordResetRepositoryConfigError,
+    PaymentSecretUpdate, PaymentSettingsRepository, PaymentSettingsRepositoryConfigError,
+    PaymentSettingsRepositoryError, PaymentSettingsWriteRecord, PlaygroundConversationRepository,
+    PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
+    PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
+    RedemptionRepositoryConfigError, RefundRepository, RefundRepositoryConfigError,
+    RegistrationRepository, RegistrationRepositoryConfigError, RequestOutcomeRepository,
+    SiteSettingsRepository, SiteSettingsRepositoryConfigError, SiteSettingsRepositoryError,
+    SmartRouteRuntimeRepository, SmartRouteRuntimeRepositoryConfigError,
+    SubscriptionBalanceAlertRepository, SubscriptionBalanceAlertRepositoryConfigError,
+    SubscriptionRepository, SubscriptionRepositoryConfigError, TokenAuthRepository,
+    TokenAuthRepositoryConfigError, TokenRequestAdmissionRepository,
+    TokenRequestAdmissionRepositoryConfigError, TopupRepository, TopupRepositoryConfigError,
+    UsageLogRepository, UserInvitationRepository, UserInvitationRepositoryConfigError,
+    UserNotificationRepository, UserNotificationRepositoryConfigError, UserProfileRepository,
+    UserProfileRepositoryConfigError, UserSessionRepository, UserSessionRepositoryConfigError,
+    UserTokenRepository, UserTokenRepositoryConfigError, WalletLedgerRepository,
+    WalletLedgerRepositoryConfigError, connect_and_migrate_with_extension,
 };
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, AudioService, ChatService, EmbeddingService,
@@ -186,9 +157,10 @@ use crate::{
     AudioRoutePlanner, BackgroundTaskSupervisor, BillingAudioService, BillingChatService,
     BillingEmbeddingService, BillingFlushReport, BillingImageService, BillingRerankService,
     BillingResponsesCompactService, BillingRuntime, BillingRuntimeError, BillingSpeechService,
-    ChatRoutePlanner, EmbeddingRoutePlanner, ImageRoutePlanner, RequestOutcomeRuntime,
-    RerankRoutePlanner, ResponsesCompactRoutePlanner, ShutdownController, SpeechRoutePlanner,
-    SupervisorError, SupervisorShutdown,
+    ChatRoutePlanner, EmbeddingRoutePlanner, ImageRoutePlanner, OrganizationRuntimeContext,
+    OrganizationRuntimeServices, RequestOutcomeRuntime, RerankRoutePlanner,
+    ResponsesCompactRoutePlanner, ShutdownController, SpeechRoutePlanner, SupervisorError,
+    SupervisorShutdown,
     balance_alert_runtime::BalanceAlertRuntime,
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
     concurrency_runtime::{ConcurrencyCleanupWorker, ConcurrencyReleaseWorker, ConcurrencyRuntime},
@@ -245,45 +217,6 @@ pub struct DatabaseReady {
     organization_sso_public_login_rate_limit_store:
         Option<Arc<dyn af_domain::OrganizationSsoPublicLoginRateLimitStore>>,
     organization_sso_public_login_fingerprint_secret: [u8; 32],
-}
-
-/// 企业组织运行时依赖的组合边界。
-///
-/// 发行版可以围绕该组合对象迁出企业服务装配，同时继续复用公共认证、计费和转发
-/// 基础设施。具体实现仍通过现有服务 trait 注入，路由行为不由该类型改变。
-pub struct OrganizationRuntimeServices {
-    pub organization_approval_notification_service:
-        Arc<dyn OrganizationApprovalNotificationService>,
-    pub organization_wallet_service: Arc<dyn OrganizationWalletService>,
-    pub organization_budget_service: Arc<dyn OrganizationBudgetService>,
-    pub organization_credit_terms_service: Arc<dyn OrganizationCreditTermsService>,
-    pub organization_contract_price_repository: Arc<OrganizationContractPriceRepository>,
-    pub organization_contract_price_service: Arc<dyn OrganizationContractPriceService>,
-    pub organization_token_service: Arc<dyn OrganizationTokenService>,
-    pub organization_scim_service: Arc<dyn OrganizationScimService>,
-    pub organization_approval_service: Arc<dyn OrganizationApprovalService>,
-    pub organization_provisioning_service: Arc<dyn af_admin::OrganizationProvisioningService>,
-    pub organization_verification_service: Arc<dyn af_admin::OrganizationVerificationService>,
-    pub organization_plan_service: Arc<dyn af_admin::OrganizationPlanService>,
-    pub organization_plan_order_repository: OrganizationPlanOrderRepository,
-    pub organization_repository: Arc<OrganizationRepository>,
-    pub organization_activity_service: Arc<dyn OrganizationActivityService>,
-    pub platform_audit_service: Arc<dyn PlatformAuditService>,
-    pub organization_authorization_service: Arc<dyn af_admin::OrganizationAuthorizationService>,
-    pub organization_invitation_service: Arc<dyn af_admin::OrganizationInvitationService>,
-    pub organization_management_service: Arc<dyn af_admin::OrganizationManagementService>,
-    pub organization_custom_role_service: Arc<dyn OrganizationCustomRoleService>,
-    pub organization_custom_role_binding_service: Arc<dyn OrganizationCustomRoleBindingService>,
-    pub organization_service_account_service: Arc<dyn af_admin::OrganizationServiceAccountService>,
-    pub organization_service_account_runtime_authenticator:
-        Arc<dyn af_admin::OrganizationServiceAccountRuntimeAuthenticator>,
-    pub organization_sso_provider_service: Arc<dyn OrganizationSsoProviderService>,
-    pub organization_sso_domain_service: Arc<dyn OrganizationSsoDomainService>,
-    pub organization_sso_login_service: Arc<DatabaseOrganizationSsoLoginTransactionService>,
-    pub organization_sso_session_service: Arc<dyn af_admin::OrganizationSsoSessionService>,
-    pub organization_sso_identity_binding_service: Arc<dyn OrganizationSsoIdentityBindingService>,
-    pub organization_sso_policy_service: Arc<dyn OrganizationSsoPolicyService>,
-    pub organization_sso_recovery_service: Arc<dyn OrganizationSsoRecoveryService>,
 }
 
 /// 已使用数据库连接池装配令牌认证服务。
@@ -483,6 +416,9 @@ pub enum BootstrapError {
     /// 静态配置加载或校验失败。
     #[error("加载服务配置失败")]
     Config(#[source] ConfigError),
+    /// 发行版提供的企业运行时装配失败。
+    #[error("企业运行时服务装配失败")]
+    OrganizationRuntime(#[source] Box<dyn std::error::Error + Send + Sync>),
     /// tracing 或 metrics 初始化失败。
     #[error("初始化可观测性失败")]
     Telemetry(#[source] TelemetryError),
@@ -1020,6 +956,39 @@ impl Bootstrap<TelemetryReady> {
 impl Bootstrap<DatabaseReady> {
     /// 使用同一数据库连接池装配令牌认证，并固定查询截止时间与 carrier 策略。
     pub fn init_authentication(self) -> Result<Bootstrap<AuthenticationReady>, BootstrapError> {
+        self.init_authentication_with_organization(OrganizationRuntimeServices::from_database)
+    }
+
+    /// 使用发行版提供的装配函数初始化企业运行时服务。
+    ///
+    /// 装配函数在数据库迁移和公共认证服务初始化后调用一次；返回的服务将用于后续
+    /// 转发、计费和 HTTP 路由装配。装配失败会直接终止启动，不会回退到内置实现。
+    ///
+    /// ```no_run
+    /// use af_server::{AuthenticationReady, Bootstrap, BootstrapError, DatabaseReady,
+    ///     OrganizationRuntimeContext, OrganizationRuntimeServices};
+    ///
+    /// fn enterprise_services(context: OrganizationRuntimeContext<'_>)
+    ///     -> Result<OrganizationRuntimeServices, BootstrapError>
+    /// {
+    ///     OrganizationRuntimeServices::from_database(context)
+    /// }
+    ///
+    /// fn initialize(bootstrap: Bootstrap<DatabaseReady>)
+    ///     -> Result<Bootstrap<AuthenticationReady>, BootstrapError>
+    /// {
+    ///     bootstrap.init_authentication_with_organization(enterprise_services)
+    /// }
+    /// ```
+    pub fn init_authentication_with_organization<F>(
+        self,
+        build_organization: F,
+    ) -> Result<Bootstrap<AuthenticationReady>, BootstrapError>
+    where
+        F: FnOnce(
+            OrganizationRuntimeContext<'_>,
+        ) -> Result<OrganizationRuntimeServices, BootstrapError>,
+    {
         let auth = self.config.auth();
         let repository = TokenAuthRepository::new(
             self.stage.database.clone(),
@@ -1173,191 +1142,6 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::UserInvitationRepository)?;
-        let organization_repository = OrganizationRepository::new(
-            self.stage.database.clone(),
-            Duration::from_secs(auth.lookup_timeout_secs()),
-        )
-        .map_err(BootstrapError::OrganizationRepository)?;
-        let organization_repository = Arc::new(organization_repository);
-        let organization_approval_repository = Arc::new(
-            OrganizationApprovalRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationApprovalRepository)?,
-        );
-        let organization_provisioning_repository = Arc::new(
-            OrganizationProvisioningRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationProvisioningRepository)?,
-        );
-        let organization_verification_repository = Arc::new(
-            OrganizationVerificationRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationVerificationRepository)?,
-        );
-        let organization_plan_repository = Arc::new(
-            OrganizationPlanRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationPlanRepository)?,
-        );
-        let organization_plan_order_repository = OrganizationPlanOrderRepository::new(
-            self.stage.database.clone(),
-            Duration::from_secs(auth.lookup_timeout_secs()),
-        )
-        .map_err(BootstrapError::OrganizationPlanOrderRepository)?;
-        let organization_approval_notification_repository = Arc::new(
-            OrganizationApprovalNotificationRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationApprovalNotificationRepository)?,
-        );
-        let organization_department_repository = Arc::new(
-            OrganizationDepartmentRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationDepartmentRepository)?,
-        );
-        let organization_department_membership_repository = Arc::new(
-            OrganizationDepartmentMembershipRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationDepartmentMembershipRepository)?,
-        );
-        let organization_custom_role_repository = Arc::new(
-            OrganizationCustomRoleRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationCustomRoleRepository)?,
-        );
-        let organization_custom_role_binding_repository = Arc::new(
-            OrganizationCustomRoleBindingRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationCustomRoleBindingRepository)?,
-        );
-        let organization_service_account_repository = Arc::new(
-            OrganizationServiceAccountRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationServiceAccountRepository)?,
-        );
-        let organization_service_account_budget_binding_repository = Arc::new(
-            OrganizationServiceAccountBudgetBindingRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationServiceAccountBudgetBindingRepository)?,
-        );
-        let organization_wallet_repository = Arc::new(
-            OrganizationWalletRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationWalletRepository)?,
-        );
-        let organization_budget_repository = Arc::new(
-            OrganizationBudgetRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-                Duration::from_secs(15 * 60),
-            )
-            .map_err(BootstrapError::OrganizationBudgetRepository)?,
-        );
-        let organization_credit_terms_repository = Arc::new(
-            OrganizationCreditTermsRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationCreditTermsRepository)?,
-        );
-        let organization_credit_invoice_repository = Arc::new(
-            OrganizationCreditInvoiceRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationCreditInvoiceRepository)?,
-        );
-        let organization_credit_repayment_repository = Arc::new(
-            OrganizationCreditRepaymentRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationCreditRepaymentRepository)?,
-        );
-        let organization_contract_price_repository = Arc::new(
-            OrganizationContractPriceRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationContractPriceRepository)?,
-        );
-        let organization_token_repository = Arc::new(
-            OrganizationTokenRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationTokenRepository)?,
-        );
-        let organization_scim_token_repository = Arc::new(
-            OrganizationScimTokenRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationScimTokenRepository)?,
-        );
-        let organization_scim_user_repository = Arc::new(
-            OrganizationScimUserRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationScimUserRepository)?,
-        );
-        let organization_scim_group_repository = Arc::new(
-            OrganizationScimGroupRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationScimGroupRepository)?,
-        );
-        let organization_scim_audit_repository = Arc::new(
-            OrganizationScimAuditRepository::new(
-                self.stage.database.clone(),
-                Duration::from_secs(auth.lookup_timeout_secs()),
-            )
-            .map_err(BootstrapError::OrganizationScimAuditRepository)?,
-        );
-        let organization_sso_provider_repository = OrganizationSsoProviderRepository::new(
-            self.stage.database.clone(),
-            Duration::from_secs(auth.lookup_timeout_secs()),
-        )
-        .map_err(BootstrapError::OrganizationSsoProviderRepository)?;
-        // 使用显式公共 nameserver，解析器关闭系统 hosts、缓存和 search 域影响。
-        let organization_sso_dns_resolver = Arc::new(
-            ControlledOrganizationSsoDnsResolver::new(
-                &[
-                    std::net::SocketAddr::from(([1, 1, 1, 1], 53)),
-                    std::net::SocketAddr::from(([8, 8, 8, 8], 53)),
-                ],
-                Duration::from_secs(5),
-            )
-            .map_err(BootstrapError::OrganizationSsoDnsResolver)?,
-        );
-        let organization_invitation_cipher =
-            OrganizationInvitationCipher::new(self.config.credential_encryption())
-                .map_err(BootstrapError::OrganizationInvitationCipher)?;
         let system_secret_cipher = SystemSecretCipher::new(self.config.credential_encryption())
             .map_err(BootstrapError::SystemSecret)?;
         let session_authenticator =
@@ -1476,29 +1260,6 @@ impl Bootstrap<DatabaseReady> {
         .map_err(BootstrapError::AdminUsageLogRepository)?;
         let request_outcome_read_repository =
             RequestOutcomeRepository::new(self.stage.database.clone());
-        let organization_authorization_service: Arc<
-            dyn af_admin::OrganizationAuthorizationService,
-        > = Arc::new(af_admin::DatabaseOrganizationAuthorizationService::new(
-            Arc::clone(&organization_repository),
-        ));
-        let organization_plan_service: Arc<dyn af_admin::OrganizationPlanService> =
-            Arc::new(af_admin::DatabaseOrganizationPlanService::new(Arc::clone(
-                &organization_plan_repository,
-            )));
-        let organization_activity_service: Arc<dyn OrganizationActivityService> = Arc::new(
-            DatabaseOrganizationActivityService::new(
-                Arc::clone(&organization_authorization_service),
-                admin_usage_log_repository.clone(),
-                OrganizationAuditRepository::new(self.stage.database.clone()),
-                auth.session_signing_key().map(|key| key.expose()),
-            )
-            .map_err(BootstrapError::OrganizationActivityService)?
-            .with_request_outcomes(request_outcome_read_repository.clone()),
-        );
-        let platform_audit_service: Arc<dyn PlatformAuditService> =
-            Arc::new(DatabasePlatformAuditService::new(
-                PlatformAuditRepository::new(self.stage.database.clone()),
-            ));
         let admin_dashboard_repository = AdminDashboardRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -1530,7 +1291,6 @@ impl Bootstrap<DatabaseReady> {
             database_migration_extension: _,
             stage,
         } = self;
-        let organization_scim_rate_limit_store = stage.organization_scim_rate_limit_store.clone();
         let database_authenticator: Arc<dyn TokenAuthenticator> =
             Arc::new(DatabaseTokenAuthenticator::new(repository));
         let user_profile_service: Arc<dyn UserProfileService> =
@@ -1542,59 +1302,18 @@ impl Bootstrap<DatabaseReady> {
                 stage.passkey_public_base_url.as_deref(),
                 email_binding_service,
             ));
-        // 角色目录与成员绑定共用同一服务实例，保证授权边界和配置一致。
-        let organization_custom_role_service: Arc<dyn OrganizationCustomRoleService> =
-            Arc::new(DatabaseOrganizationCustomRoleService::new(Arc::clone(
-                &organization_custom_role_repository,
-            )));
-        let organization_custom_role_binding_service: Arc<
-            dyn OrganizationCustomRoleBindingService,
-        > = Arc::new(DatabaseOrganizationCustomRoleBindingService::new(
-            organization_custom_role_binding_repository,
-            Arc::clone(&organization_custom_role_service),
-        ));
-        let organization_service_account_service =
-            Arc::new(af_admin::DatabaseOrganizationServiceAccountService::new(
-                organization_service_account_repository,
-                organization_service_account_budget_binding_repository,
-            ));
-        let organization_sso_identity_binding_service: Arc<
-            dyn OrganizationSsoIdentityBindingService,
-        > = Arc::new({
-            let service = DatabaseOrganizationSsoIdentityBindingService::new(
-                Arc::clone(&user_profile_service),
-                organization_sso_provider_repository.clone(),
-            );
-            match passkey_authentication_service.clone() {
-                Some(passkey) => service.with_passkey_authentication_service(passkey),
-                None => service,
-            }
-        });
-        let organization_sso_recovery_service: Arc<dyn OrganizationSsoRecoveryService> =
-            Arc::new(DatabaseOrganizationSsoRecoveryService::new(
-                Arc::clone(&user_profile_service),
-                organization_sso_provider_repository.clone(),
-            ));
-        let organization_sso_policy_service: Arc<dyn OrganizationSsoPolicyService> = Arc::new(
-            DatabaseOrganizationSsoPolicyService::new(organization_sso_provider_repository.clone()),
-        );
         let session_authenticator: Arc<dyn SessionAuthenticator> = Arc::new(session_authenticator);
-        let organization_sso_login_service = Arc::new(
-            DatabaseOrganizationSsoLoginTransactionService::new_with_organization_repository(
-                organization_sso_provider_repository.clone(),
-                organization_repository.as_ref().clone(),
-                system_secret_cipher.clone(),
-                organization_invitation_cipher.clone(),
-            ),
-        );
-        let organization_sso_login_service_trait: Arc<
-            dyn af_admin::OrganizationSsoLoginTransactionService,
-        > = organization_sso_login_service.clone();
-        let organization_sso_session_service: Arc<dyn af_admin::OrganizationSsoSessionService> =
-            Arc::new(af_admin::DatabaseOrganizationSsoSessionService::new(
-                organization_sso_login_service_trait,
-                Arc::clone(&session_authenticator),
-            ));
+        let organization = build_organization(OrganizationRuntimeContext {
+            config: &config,
+            database: &stage.database,
+            session_authenticator: &session_authenticator,
+            user_profile_service: &user_profile_service,
+            passkey_authentication_service: passkey_authentication_service.as_ref(),
+            system_secret_cipher: &system_secret_cipher,
+            usage_log_repository: &admin_usage_log_repository,
+            request_outcome_repository: &request_outcome_read_repository,
+            scim_rate_limit_store: stage.organization_scim_rate_limit_store.clone(),
+        })?;
         Ok(Bootstrap {
             config,
             shutdown_timeout,
@@ -1623,106 +1342,7 @@ impl Bootstrap<DatabaseReady> {
                 user_notification_service: Arc::new(DatabaseUserNotificationService::new(
                     user_notification_repository,
                 )),
-                organization: OrganizationRuntimeServices {
-                    organization_approval_notification_service: Arc::new(
-                        DatabaseOrganizationApprovalNotificationService::new(
-                            organization_approval_notification_repository,
-                        ),
-                    ),
-                    organization_wallet_service: Arc::new(DatabaseOrganizationWalletService::new(
-                        organization_wallet_repository,
-                    )),
-                    organization_budget_service: Arc::new(DatabaseOrganizationBudgetService::new(
-                        organization_budget_repository,
-                    )),
-                    organization_credit_terms_service: Arc::new(
-                        DatabaseOrganizationCreditTermsService::new(
-                            organization_credit_terms_repository,
-                        )
-                        .with_ledger_repositories(
-                            organization_credit_invoice_repository,
-                            organization_credit_repayment_repository,
-                        ),
-                    ),
-                    organization_contract_price_repository: Arc::clone(
-                        &organization_contract_price_repository,
-                    ),
-                    organization_contract_price_service: Arc::new(
-                        DatabaseOrganizationContractPriceService::new(
-                            organization_contract_price_repository,
-                        ),
-                    ),
-                    organization_token_service: Arc::new(DatabaseOrganizationTokenService::new(
-                        organization_token_repository,
-                    )),
-                    organization_scim_service: Arc::new(DatabaseOrganizationScimService::new(
-                        organization_scim_token_repository,
-                        organization_scim_user_repository,
-                        organization_scim_group_repository,
-                        organization_scim_audit_repository,
-                        organization_scim_rate_limit_store,
-                    )),
-                    organization_approval_service: Arc::new(
-                        DatabaseOrganizationApprovalService::new(organization_approval_repository),
-                    ),
-                    organization_provisioning_service: Arc::new(
-                        af_admin::DatabaseOrganizationProvisioningService::new(
-                            organization_provisioning_repository,
-                            Arc::clone(&platform_audit_service),
-                        ),
-                    ),
-                    organization_verification_service: Arc::new(
-                        DatabaseOrganizationVerificationService::new(
-                            organization_verification_repository,
-                            Arc::clone(&organization_authorization_service),
-                            Arc::clone(&platform_audit_service),
-                        ),
-                    ),
-                    organization_plan_service,
-                    organization_plan_order_repository,
-                    organization_repository: Arc::clone(&organization_repository),
-                    organization_activity_service,
-                    platform_audit_service,
-                    organization_authorization_service,
-                    organization_invitation_service: Arc::new(
-                        af_admin::DatabaseOrganizationInvitationService::new(
-                            Arc::clone(&organization_repository),
-                            organization_invitation_cipher.clone(),
-                        ),
-                    ),
-                    organization_management_service: Arc::new(
-                        af_admin::DatabaseOrganizationManagementService::new(Arc::clone(
-                            &organization_repository,
-                        ))
-                        .with_department_repository(organization_department_repository)
-                        .with_department_membership_repository(
-                            organization_department_membership_repository,
-                        ),
-                    ),
-                    organization_custom_role_service,
-                    organization_custom_role_binding_service,
-                    organization_service_account_service: organization_service_account_service
-                        .clone(),
-                    organization_service_account_runtime_authenticator:
-                        organization_service_account_service.clone(),
-                    organization_sso_provider_service: Arc::new(
-                        DatabaseOrganizationSsoProviderService::new(
-                            organization_sso_provider_repository.clone(),
-                            system_secret_cipher.clone(),
-                        ),
-                    ),
-                    organization_sso_domain_service: Arc::new(
-                        DatabaseOrganizationSsoDomainService::new(
-                            organization_sso_provider_repository.clone(),
-                            organization_sso_dns_resolver,
-                        ),
-                    ),
-                    organization_sso_login_service,
-                    organization_sso_session_service,
-                    organization_sso_identity_binding_service,
-                    organization_sso_policy_service,
-                    organization_sso_recovery_service,
-                },
+                organization,
                 redemption_service: Arc::new(DatabaseRedemptionService::new(redemption_repository)),
                 subscription_service: Arc::new(DatabaseSubscriptionService::new(
                     subscription_repository.clone(),
@@ -4155,6 +3775,11 @@ mod tests {
         assert!(
             BootstrapError::Supervisor(SupervisorError::ForceStopTimeout).requires_immediate_exit()
         );
+
+        let error =
+            BootstrapError::OrganizationRuntime(Box::new(std::io::Error::other(SECRET_CANARY)));
+        assert!(!error.to_string().contains(SECRET_CANARY));
+        assert!(std::error::Error::source(&error).is_some());
     }
 
     #[test]
@@ -4238,6 +3863,118 @@ mod tests {
         assert_eq!(report.background, SupervisorShutdown::Drained);
         assert_eq!(report.billing, BillingFlushReport::default());
         let _ = fs::remove_dir_all(wal_directory);
+    }
+
+    #[tokio::test]
+    async fn organization_factory_reuses_public_auth_and_preserves_injected_services() {
+        let path = config_file("sqlite::memory:");
+        let config = af_config::load_from(&path).unwrap();
+        let _ = fs::remove_file(&path);
+        let mut database_ready = Bootstrap::new(config)
+            .unwrap()
+            .init_telemetry()
+            .unwrap()
+            .connect_database()
+            .await
+            .unwrap();
+        database_ready.stage.passkey_public_base_url = Some("https://console.example".to_owned());
+        let mut calls = 0;
+        let mut shared_auth = None;
+        let mut injected_audit = None;
+
+        let authenticated = database_ready
+            .init_authentication_with_organization(|context| {
+                calls += 1;
+                shared_auth = Some((
+                    Arc::clone(context.session_authenticator),
+                    Arc::clone(context.user_profile_service),
+                    Arc::clone(context.passkey_authentication_service.unwrap()),
+                ));
+                assert!(context.scim_rate_limit_store.is_none());
+                let audit: Arc<dyn af_admin::PlatformAuditService> =
+                    Arc::new(af_admin::DatabasePlatformAuditService::new(
+                        af_db::PlatformAuditRepository::new(context.database.clone()),
+                    ));
+                let mut services = OrganizationRuntimeServices::from_database(context)?;
+                services.platform_audit_service = Arc::clone(&audit);
+                injected_audit = Some(audit);
+                Ok(services)
+            })
+            .unwrap();
+
+        assert_eq!(calls, 1);
+        let (session, profile, passkey) = shared_auth.unwrap();
+        assert!(Arc::ptr_eq(
+            &session,
+            &authenticated.stage.session_authenticator
+        ));
+        assert!(Arc::ptr_eq(
+            &profile,
+            &authenticated.stage.user_profile_service
+        ));
+        assert!(Arc::ptr_eq(
+            &passkey,
+            authenticated
+                .stage
+                .passkey_authentication_service
+                .as_ref()
+                .unwrap(),
+        ));
+        let audit = injected_audit.unwrap();
+        assert!(Arc::ptr_eq(
+            &audit,
+            &authenticated.stage.organization.platform_audit_service,
+        ));
+
+        let relay = authenticated.init_relay().unwrap();
+        assert!(Arc::ptr_eq(
+            &audit,
+            &relay
+                .stage
+                .infrastructure
+                .organization
+                .platform_audit_service,
+        ));
+        let database = relay.stage.infrastructure.infrastructure.database.clone();
+        drop(relay);
+        database.close().await.unwrap();
+        let _ = fs::remove_dir_all(billing_wal_directory(&path));
+    }
+
+    #[tokio::test]
+    async fn organization_factory_error_aborts_authentication_without_fallback() {
+        let path = config_file("sqlite::memory:");
+        let config = af_config::load_from(&path).unwrap();
+        let _ = fs::remove_file(&path);
+        let bootstrap = Bootstrap::new(config)
+            .unwrap()
+            .init_telemetry()
+            .unwrap()
+            .connect_database()
+            .await
+            .unwrap();
+        let database = bootstrap.stage.database.clone();
+        let mut calls = 0;
+
+        let result = bootstrap.init_authentication_with_organization(|_| {
+            calls += 1;
+            Err(BootstrapError::OrganizationRuntime(Box::new(
+                std::io::Error::other("enterprise-factory-error-canary"),
+            )))
+        });
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("企业服务装配失败时必须终止启动"),
+        };
+        assert_eq!(calls, 1);
+        assert!(matches!(error, BootstrapError::OrganizationRuntime(_)));
+        assert!(
+            !error
+                .to_string()
+                .contains("enterprise-factory-error-canary")
+        );
+        database.close().await.unwrap();
+        let _ = fs::remove_dir_all(billing_wal_directory(&path));
     }
 
     #[tokio::test]
@@ -4411,7 +4148,9 @@ mod tests {
             .connect_database()
             .await
             .unwrap();
-        let error = match bootstrap.init_authentication() {
+        let error = match bootstrap.init_authentication_with_organization(|_| {
+            panic!("公共认证尚未初始化时不得调用企业装配函数")
+        }) {
             Ok(_) => panic!("缺失管理会话密钥时不应进入认证就绪阶段"),
             Err(error) => error,
         };
