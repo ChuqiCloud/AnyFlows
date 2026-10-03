@@ -2064,6 +2064,7 @@ async fn start_server(
             wallet: None,
             budget: None,
             contract_price: None,
+            credit_terms: None,
             token: None,
             scim: None,
             approval: None,

@@ -123,8 +123,8 @@ use af_http::{
     OrganizationHttpServices, PaymentWebhookProcessorRegistry, QueryApiKeyPolicy, ReadinessHandle,
     RefundReceiptProcessorRegistry, RerankService, ResponsesCompactService, ServeError,
     ServeOutcome, SpeechService, TurnstileVerifier, VideoTaskService,
-    build_frontend_template_router, build_organization_credit_terms_router,
-    build_payment_webhook_router, build_refund_receipt_webhook_router, build_router,
+    build_frontend_template_router, build_payment_webhook_router,
+    build_refund_receipt_webhook_router, build_router,
     serve_with_graceful_shutdown,
 };
 use af_httpclient::{
@@ -2695,6 +2695,13 @@ impl Bootstrap<Supervised> {
                     .organization
                     .organization_contract_price_service,
             )),
+            credit_terms: Some(Arc::clone(
+                &self
+                    .stage
+                    .infrastructure
+                    .organization
+                    .organization_credit_terms_service,
+            )),
             token: Some(Arc::clone(
                 &self
                     .stage
@@ -2995,30 +3002,6 @@ impl Bootstrap<Supervised> {
             ))
             .merge(build_frontend_template_router(
                 frontend_template_manager.clone() as Arc<dyn af_http::FrontendTemplateService>,
-                Arc::clone(&self.stage.infrastructure.session_authenticator),
-            ))
-            .merge(build_organization_credit_terms_router(
-                Arc::clone(
-                    &self
-                        .stage
-                        .infrastructure
-                        .organization
-                        .organization_authorization_service,
-                ),
-                Arc::clone(
-                    &self
-                        .stage
-                        .infrastructure
-                        .organization
-                        .organization_credit_terms_service,
-                ),
-                Arc::clone(
-                    &self
-                        .stage
-                        .infrastructure
-                        .organization
-                        .organization_activity_service,
-                ),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ));
         let Bootstrap {

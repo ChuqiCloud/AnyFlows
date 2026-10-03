@@ -9,7 +9,8 @@ use af_admin::{
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
     InitialSetup, ModelCatalogReader, OAuthLoginService, OrganizationActivityService,
     OrganizationApprovalNotificationService, OrganizationApprovalService,
-    OrganizationBudgetService, OrganizationContractPriceService, OrganizationPlanService,
+    OrganizationBudgetService, OrganizationContractPriceService, OrganizationCreditTermsService,
+    OrganizationPlanService,
     OrganizationScimService, OrganizationTokenService, OrganizationWalletService,
     PasskeyAuthenticationService, PasswordResetService, PlatformAuditService,
     PlatformOrganizationDirectoryService, PlatformOrganizationManagementService,
@@ -120,6 +121,7 @@ use crate::organization_approval::build_organization_approval_router;
 use crate::organization_approval_notifications::build_organization_approval_notification_router;
 use crate::organization_budget::build_organization_budget_router;
 use crate::organization_contract_price::build_organization_contract_price_router;
+use crate::organization_credit_terms::build_organization_credit_terms_router;
 use crate::organization_plan::build_organization_plan_router;
 use crate::organization_provisioning::build_organization_provisioning_router;
 use crate::organization_scim_audit::build_organization_scim_audit_router;
@@ -192,6 +194,7 @@ pub struct OrganizationHttpServices {
     pub wallet: Option<Arc<dyn OrganizationWalletService>>,
     pub budget: Option<Arc<dyn OrganizationBudgetService>>,
     pub contract_price: Option<Arc<dyn OrganizationContractPriceService>>,
+    pub credit_terms: Option<Arc<dyn OrganizationCreditTermsService>>,
     pub token: Option<Arc<dyn OrganizationTokenService>>,
     pub scim: Option<Arc<dyn OrganizationScimService>>,
     pub approval: Option<Arc<dyn OrganizationApprovalService>>,
@@ -309,6 +312,7 @@ pub fn build_router(
         wallet: organization_wallet_service,
         budget: organization_budget_service,
         contract_price: organization_contract_price_service,
+        credit_terms: organization_credit_terms_service,
         token: organization_token_service,
         scim: organization_scim_service,
         approval: organization_approval_service,
@@ -1112,6 +1116,21 @@ pub fn build_router(
             management_routes.merge(build_organization_contract_price_router(
                 authorization_service,
                 contract_price_service,
+                activity_service,
+                Arc::clone(&http_state.session_authenticator),
+            ))
+        }
+        _ => management_routes,
+    };
+    let management_routes = match (
+        http_state.organization_authorization_service.clone(),
+        organization_credit_terms_service,
+        organization_activity_service.clone(),
+    ) {
+        (Some(authorization_service), Some(credit_terms_service), Some(activity_service)) => {
+            management_routes.merge(build_organization_credit_terms_router(
+                authorization_service,
+                credit_terms_service,
                 activity_service,
                 Arc::clone(&http_state.session_authenticator),
             ))
