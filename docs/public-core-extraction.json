@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Track the source boundary before publishing the community repository.",
+  "publicRepository": "https://github.com/ChuqiCloud/AnyFlows.git",
+  "enterpriseRepository": "https://gitea.acmecloud.cn/acmecloud/AnyFlows-enterprise.git",
+  "distributionRepository": "https://gitea.acmecloud.cn/acmecloud/AnyFlows-distribution.git",
+  "publicRoots": [
+    "crates/af-domain/src",
+    "crates/af-protocol/src",
+    "crates/af-adapter/src",
+    "crates/af-relay/src",
+    "crates/af-billing/src",
+    "crates/af-analytics/src",
+    "web/src",
+    "web-next/src"
+  ],
+  "enterpriseGroups": [
+    {
+      "id": "domain",
+      "order": 1,
+      "paths": ["crates/af-domain/src/organization*.rs"],
+      "dependsOn": [],
+      "status": "planned"
+    },
+    {
+      "id": "database",
+      "order": 2,
+      "paths": [
+        "crates/af-db/src/organization*.rs",
+        "crates/af-db/src/migration/m20260815_000061*",
+        "crates/af-db/src/migration/m20260815_000062*",
+        "crates/af-db/src/migration/m20260816_000063*",
+        "crates/af-db/src/migration/m20260816_000064*",
+        "crates/af-db/src/migration/m20260816_000065*",
+        "crates/af-db/src/migration/m20260817_000066*",
+        "crates/af-db/src/migration/m20260817_000067*",
+        "crates/af-db/src/migration/m20260823_000093*",
+        "crates/af-db/src/migration/m20260823_000094*",
+        "crates/af-db/src/migration/m20260824_000095*",
+        "crates/af-db/src/migration/m20260825_000096*",
+        "crates/af-db/src/migration/m20260825_000097*",
+        "crates/af-db/src/migration/m20260826_000098*",
+        "crates/af-db/src/migration/m20260827_000099*",
+        "crates/af-db/src/migration/m20260827_000100*",
+        "crates/af-db/src/migration/m20260827_000101*",
+        "crates/af-db/src/migration/m20260828_000102*",
+        "crates/af-db/src/migration/m20260828_000103*",
+        "crates/af-db/src/migration/m20260828_000104*",
+        "crates/af-db/src/migration/m20260828_000105*",
+        "crates/af-db/src/migration/m20260829_000106*",
+        "crates/af-db/src/migration/m20260829_000107*",
+        "crates/af-db/src/migration/m20260829_000108*",
+        "crates/af-db/src/migration/m20260829_000109*",
+        "crates/af-db/src/migration/m20260830_000110*",
+        "crates/af-db/src/migration/m20260830_000111*",
+        "crates/af-db/src/migration/m20260830_000112*",
+        "crates/af-db/src/migration/m20260830_000113*",
+        "crates/af-db/src/migration/m20260830_000114*",
+        "crates/af-db/src/migration/m20260830_000115*",
+        "crates/af-db/src/migration/m20260830_000116*",
+        "crates/af-db/src/migration/m20260830_000117*",
+        "crates/af-db/src/migration/m20260830_000118*",
+        "crates/af-db/src/migration/m20260830_000119*",
+        "crates/af-db/src/migration/m20260830_000120*",
+        "crates/af-db/src/migration/m20260830_000121*",
+        "crates/af-db/src/migration/m20260831_000122*",
+        "crates/af-db/src/migration/m20260831_000129*",
+        "crates/af-db/src/migration/m20260904_000130*",
+        "crates/af-db/src/migration/m20260904_000131*",
+        "crates/af-db/src/migration/m20260905_000132*",
+        "crates/af-db/src/migration/m20260905_000133*",
+        "crates/af-db/src/migration/m20260907_000136*",
+        "crates/af-db/src/migration/m20260907_000137*",
+        "crates/af-db/src/migration/m20260907_000138*"
+      ],
+      "dependsOn": ["domain"],
+      "status": "planned"
+    },
+    {
+      "id": "services",
+      "order": 3,
+      "paths": [
+        "crates/af-account/src/organization_*.rs",
+        "crates/af-admin/src/organization*.rs",
+        "crates/af-admin/src/platform_organization*.rs",
+        "crates/af-cache/src/organization_*.rs",
+        "crates/af-scheduler/src/organization_*.rs",
+        "crates/af-server/src/organization_runtime.rs"
+      ],
+      "dependsOn": ["domain", "database"],
+      "status": "planned"
+    },
+    {
+      "id": "http",
+      "order": 4,
+      "paths": [
+        "crates/af-http/src/organization*.rs",
+        "crates/af-http/src/organizations.rs",
+        "crates/af-http/src/platform_organization*.rs",
+        "crates/af-http/src/scim.rs"
+      ],
+      "dependsOn": ["services"],
+      "status": "planned"
+    },
+    {
+      "id": "frontends",
+      "order": 5,
+      "paths": [
+        "web/src/features/organization*",
+        "web/src/features/platform-organizations",
+        "web-next/src/features/organization*",
+        "web-next/src/features/platform-organizations"
+      ],
+      "dependsOn": ["http"],
+      "status": "planned"
+    }
+  ],
+  "sharedContracts": [
+    "crates/af-db/src/migration/mod.rs",
+    "crates/af-http/src/http_extensions.rs",
+    "crates/af-http/src/organization_routes.rs",
+    "crates/af-server/src/bootstrap.rs",
+    "docs/repository-boundary.md"
+  ]
+}

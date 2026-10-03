@@ -50,6 +50,19 @@ the public registry.
 
 ## First migration candidates
 
+The machine-readable inventory in `docs/public-core-extraction.json` is the
+source of truth for the first extraction order. Run
+`python tools/ci/verify-public-core-boundary.py --mode inventory` from this
+checkout to review the current footprint. The command does not modify files or
+run a build. Once a public checkout has been assembled, run the same checker
+with `--mode public`; it fails closed if any listed enterprise path remains.
+
+The first pass is intentionally staged. Domain values and migration ownership
+must move before repositories and services, then HTTP routes, and finally the
+two frontend feature trees. Shared contracts stay in the public core and are
+reviewed independently. A path is not considered extracted merely because the
+frontend hides its navigation entry.
+
 The first enterprise extraction should move these implementation areas together:
 
 - `crates/af-account/src/organization_*` for enterprise login and invitation flows.
