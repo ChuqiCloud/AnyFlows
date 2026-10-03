@@ -488,8 +488,8 @@ pub use invite_rebate::{
     InviteRebateRepositoryError,
 };
 pub use migration::{
-    DatabaseMigrationExtension, EXTENSION_MIGRATION_TABLE_NAME, MigrationOptions,
-    MigratorExtension, PUBLIC_MIGRATION_TABLE_NAME, run_pending_migrations,
+    DatabaseMigrationExtension, EXTENSION_MIGRATION_TABLE_NAME, MigrationHistoryAdoption,
+    MigrationOptions, MigratorExtension, PUBLIC_MIGRATION_TABLE_NAME, run_pending_migrations,
     run_pending_migrations_with,
 };
 pub use model_catalog_metadata::ModelCatalogMetadataPageRecord;

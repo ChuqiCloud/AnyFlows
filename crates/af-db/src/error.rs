@@ -66,6 +66,9 @@ pub enum DatabaseError {
     /// 扩展迁移误用了公共迁移表。
     #[error("数据库扩展迁移必须使用独立迁移表：{table}")]
     MigrationTableConflict { table: String },
+    /// 历史迁移接管声明引用了扩展注册表中不存在的版本。
+    #[error("数据库迁移历史接管版本不存在：{version}")]
+    MigrationAdoptionVersionUnknown { version: String },
     /// 关闭数据库连接池失败。
     #[error("数据库连接池关闭失败")]
     Close(#[source] DbErr),
