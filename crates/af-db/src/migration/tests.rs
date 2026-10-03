@@ -266,6 +266,14 @@ impl MigratorTrait for ExtensionMigrator {
     }
 }
 
+struct PublicTableMigrator;
+
+impl MigratorTrait for PublicTableMigrator {
+    fn migrations() -> Vec<Box<dyn MigrationTrait>> {
+        vec![Box::new(ExtensionMigration)]
+    }
+}
+
 #[derive(DeriveMigrationName)]
 struct ExtensionMigration;
 
@@ -2064,6 +2072,31 @@ async fn migration_extension_adapter_uses_the_extension_registry() -> Result<(),
     let manager = SchemaManager::new(pool.connection());
     assert!(manager.has_table("anyflows_extension_migrations").await?);
     assert!(!manager.has_table("seaql_migrations").await?);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn migration_extension_adapter_rejects_the_public_registry_table()
+-> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    let extension = MigratorExtension::<PublicTableMigrator>::new();
+
+    let error = extension
+        .run_pending(&pool, MigrationOptions::default())
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        crate::DatabaseError::MigrationTableConflict { table }
+            if table == PUBLIC_MIGRATION_TABLE_NAME
+    ));
+    assert!(
+        !SchemaManager::new(pool.connection())
+            .has_table(PUBLIC_MIGRATION_TABLE_NAME)
+            .await?
+    );
     pool.close().await?;
     Ok(())
 }

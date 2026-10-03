@@ -16,11 +16,15 @@ The private distribution repository owns the selected public core revision, the 
 
 ## Extraction rules
 
-1. Enterprise database migrations remain outside the public migration chain. The
-   public `af-db` crate exposes `run_pending_migrations_with` and
+1. New enterprise database migrations remain outside the public migration chain.
+   The public `af-db` crate exposes `run_pending_migrations_with` and
    `connect_and_migrate_with` for an extension-owned `MigratorTrait`; the
    extension must override `migration_table_name` and use its own migration
-   table.
+   table. `MigratorExtension` rejects the historical public table at runtime so
+   a distribution cannot silently write enterprise history into
+   `seaql_migrations`. Existing installations still contain earlier enterprise
+   records in that historical table and require an explicit adoption step before
+   the remaining enterprise migrations are moved out of the in-tree registry.
 2. Enterprise routes and OpenAPI documents are registered through an extension boundary.
    The built-in route composition accepts `af_http::OrganizationHttpServices` as one
    dependency bundle, and `af-http` assembles those services in a dedicated organization
