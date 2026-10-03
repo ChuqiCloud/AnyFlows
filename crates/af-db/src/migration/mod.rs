@@ -561,11 +561,15 @@ where
         .all(pool.connection())
         .await
         .map_err(DatabaseError::Migration)?;
-    let versions = adoption.versions().iter().collect::<HashSet<_>>();
+    let versions = adoption
+        .versions()
+        .iter()
+        .map(String::as_str)
+        .collect::<HashSet<_>>();
 
     for record in source
         .into_iter()
-        .filter(|record| versions.contains(&record.version))
+        .filter(|record| versions.contains(record.version.as_str()))
     {
         let target_exists = Query::select()
             .column(sea_orm_migration::seaql_migrations::Column::Version)
@@ -590,8 +594,7 @@ where
                 sea_orm_migration::seaql_migrations::Column::Version,
                 sea_orm_migration::seaql_migrations::Column::AppliedAt,
             ])
-            .values([record.version.into(), record.applied_at.into()])
-            .map_err(DatabaseError::Migration)?
+            .values_panic([record.version.into(), record.applied_at.into()])
             .to_owned();
         pool.connection()
             .execute(backend.build(&insert))
