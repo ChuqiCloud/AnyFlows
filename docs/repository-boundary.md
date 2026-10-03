@@ -99,5 +99,9 @@ The default `init_authentication` entry point delegates to
 now lives in `crates/af-server/src/organization_runtime.rs`; a distribution can
 replace the factory or use it during a staged migration. The service bundle
 still contains concrete organization repositories and an SSO transaction service,
-and enterprise background jobs still use in-tree implementations. These remaining
-dependencies must be extracted before publishing the public core.
+and enterprise background jobs still use in-tree implementations. The bundle now
+also exposes `OrganizationBackgroundTaskRegistrar`: the default registrar keeps
+approval timeout handling, SSO domain re-verification, and SSO login transaction
+cleanup unchanged, while a distribution can replace or omit those registrations.
+These remaining concrete service dependencies must be extracted before publishing
+the public core.
