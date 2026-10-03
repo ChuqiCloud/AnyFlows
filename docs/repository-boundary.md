@@ -23,8 +23,10 @@ The private distribution repository owns the selected public core revision, the 
    table.
 2. Enterprise routes and OpenAPI documents are registered through an extension boundary.
    The built-in route composition accepts `af_http::OrganizationHttpServices` as one
-   dependency bundle, so a distribution can assemble enterprise services in its own
-   startup module without expanding the public router function signature.
+   dependency bundle, and `af-http` assembles those services in a dedicated organization
+   route module. A distribution can assemble enterprise services in its own startup
+   module without expanding the public router function signature or placing enterprise
+   route wiring in the shared router composition.
 3. Frontend navigation is driven by server capabilities; hiding a menu is not a source boundary.
 4. Public history must start from a clean root and must not contain enterprise source or private configuration.
 5. Every private release records the public core revision and enterprise revision used to build it.

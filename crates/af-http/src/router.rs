@@ -7,16 +7,11 @@ use af_admin::{
     AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsService,
     AdminPaymentSettingsService, AdminRouteReader, AdminRouteWriter, AdminTokenReader,
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
-    InitialSetup, ModelCatalogReader, OAuthLoginService, OrganizationActivityService,
-    OrganizationApprovalNotificationService, OrganizationApprovalService,
-    OrganizationBudgetService, OrganizationContractPriceService, OrganizationCreditTermsService,
-    OrganizationPlanService, OrganizationScimService, OrganizationTokenService,
-    OrganizationWalletService, PasskeyAuthenticationService, PasswordResetService,
-    PlatformAuditService, PlatformOrganizationDirectoryService,
-    PlatformOrganizationManagementService, PlaygroundConversationService, PlaygroundShareService,
-    RedemptionService, RegistrationService, SessionAuthenticator, SiteSettingsService,
-    SubscriptionService, TokenAuthenticator, UserInvitationService, UserNotificationService,
-    UserTopupService, UserWalletService,
+    InitialSetup, ModelCatalogReader, OAuthLoginService, PasskeyAuthenticationService,
+    PasswordResetService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
+    RegistrationService, SessionAuthenticator, SiteSettingsService, SubscriptionService,
+    TokenAuthenticator, UserInvitationService, UserNotificationService, UserTopupService,
+    UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -116,34 +111,18 @@ use crate::openai_responses::openai_responses;
 use crate::openai_responses_compact::openai_responses_compact;
 use crate::openai_speech::openai_speech;
 use crate::operations::{ReadinessHandle, operations_router};
-use crate::organization_activity::{PLATFORM_REASON_HEADER, build_organization_activity_router};
-use crate::organization_approval::build_organization_approval_router;
-use crate::organization_approval_notifications::build_organization_approval_notification_router;
-use crate::organization_budget::build_organization_budget_router;
-use crate::organization_contract_price::build_organization_contract_price_router;
-use crate::organization_credit_terms::build_organization_credit_terms_router;
-use crate::organization_plan::build_organization_plan_router;
-use crate::organization_provisioning::build_organization_provisioning_router;
-use crate::organization_scim_audit::build_organization_scim_audit_router;
-use crate::organization_service_account_runtime::build_organization_service_account_runtime_router;
-use crate::organization_sso_login::{
-    OrganizationSsoPublicLoginProtection, build_organization_sso_login_router_with_protection,
+use crate::organization_activity::PLATFORM_REASON_HEADER;
+use crate::organization_routes::{
+    OrganizationHttpRoutes, OrganizationHttpServices, build_organization_routes,
 };
-use crate::organization_tokens::build_organization_token_router;
-use crate::organization_verification::build_organization_verification_router;
-use crate::organization_wallet::build_organization_wallet_router;
-use crate::organizations::build_organization_router_with_domain;
 use crate::passkey_auth::build_passkey_authentication_router;
 use crate::password_reset::build_password_reset_router;
 use crate::payment_settings::build_payment_settings_router;
-use crate::platform_audit::build_platform_audit_router;
-use crate::platform_organizations::build_platform_organization_router;
 use crate::playground_conversations::build_playground_conversation_router;
 use crate::playground_shares::build_playground_share_router;
 use crate::redemption::build_redemption_router;
 use crate::registration::build_registration_router;
 use crate::rerank::rerank as rerank_request;
-use crate::scim::build_scim_router;
 use crate::site_settings::build_site_settings_router;
 use crate::subscriptions::build_subscription_router;
 use crate::user_profile::build_user_profile_router;
@@ -180,50 +159,6 @@ impl HttpRouter {
     pub fn merge(self, router: Router) -> Self {
         Self(self.0.merge(router))
     }
-}
-
-/// 企业 HTTP 路由所需的服务集合。
-///
-/// 将组织、企业 SSO、服务账号和平台组织服务集中在一个注入对象中，
-/// 让公共路由组合只依赖一个稳定边界。发行版可以在自己的启动模块中构造
-/// 该集合，也可以完全绕过内置企业路由并通过 `HttpExtension` 提供替代实现。
-pub struct OrganizationHttpServices {
-    pub approval_notification: Arc<dyn OrganizationApprovalNotificationService>,
-    pub authorization: Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
-    pub activity: Option<Arc<dyn OrganizationActivityService>>,
-    pub wallet: Option<Arc<dyn OrganizationWalletService>>,
-    pub budget: Option<Arc<dyn OrganizationBudgetService>>,
-    pub contract_price: Option<Arc<dyn OrganizationContractPriceService>>,
-    pub credit_terms: Option<Arc<dyn OrganizationCreditTermsService>>,
-    pub token: Option<Arc<dyn OrganizationTokenService>>,
-    pub scim: Option<Arc<dyn OrganizationScimService>>,
-    pub approval: Option<Arc<dyn OrganizationApprovalService>>,
-    pub provisioning: Option<Arc<dyn af_admin::OrganizationProvisioningService>>,
-    pub verification: Option<Arc<dyn af_admin::OrganizationVerificationService>>,
-    pub plan: Option<Arc<dyn OrganizationPlanService>>,
-    pub plan_order: Option<Arc<dyn af_admin::OrganizationPlanOrderService>>,
-    pub invitation: Option<Arc<dyn af_admin::OrganizationInvitationService>>,
-    pub management: Option<Arc<dyn af_admin::OrganizationManagementService>>,
-    pub custom_role: Option<Arc<dyn af_admin::OrganizationCustomRoleService>>,
-    pub custom_role_binding: Option<Arc<dyn af_admin::OrganizationCustomRoleBindingService>>,
-    pub service_account: Option<Arc<dyn af_admin::OrganizationServiceAccountService>>,
-    pub service_account_runtime_authenticator:
-        Option<Arc<dyn af_admin::OrganizationServiceAccountRuntimeAuthenticator>>,
-    pub platform_audit: Option<Arc<dyn PlatformAuditService>>,
-    pub platform_organization_services: Option<(
-        Arc<dyn PlatformOrganizationDirectoryService>,
-        Arc<dyn PlatformOrganizationManagementService>,
-    )>,
-    pub sso_provider: Option<Arc<dyn af_admin::OrganizationSsoProviderService>>,
-    pub sso_policy: Option<Arc<dyn af_admin::OrganizationSsoPolicyService>>,
-    pub sso_domain: Option<Arc<dyn af_admin::OrganizationSsoDomainService>>,
-    pub sso_login: Option<Arc<dyn af_admin::OrganizationSsoLoginTransactionService>>,
-    pub sso_public_login_rate_limit_store:
-        Option<Arc<dyn af_domain::OrganizationSsoPublicLoginRateLimitStore>>,
-    pub sso_public_login_fingerprint_secret: [u8; 32],
-    pub sso_session: Option<Arc<dyn af_admin::OrganizationSsoSessionService>>,
-    pub sso_identity_binding: Option<Arc<dyn af_admin::OrganizationSsoIdentityBindingService>>,
-    pub sso_recovery: Option<Arc<dyn af_admin::OrganizationSsoRecoveryService>>,
 }
 
 /// 构建包含已鉴权模型网关入口、管理端接口及健康检查的 HTTP Router。
@@ -305,40 +240,6 @@ pub fn build_router(
     http_extensions: Option<HttpExtensions>,
     payment_webhook_routes: Option<Router>,
 ) -> HttpRouter {
-    let OrganizationHttpServices {
-        approval_notification: organization_approval_notification_service,
-        authorization: organization_authorization_service,
-        activity: organization_activity_service,
-        wallet: organization_wallet_service,
-        budget: organization_budget_service,
-        contract_price: organization_contract_price_service,
-        credit_terms: organization_credit_terms_service,
-        token: organization_token_service,
-        scim: organization_scim_service,
-        approval: organization_approval_service,
-        provisioning: organization_provisioning_service,
-        verification: organization_verification_service,
-        plan: organization_plan_service,
-        plan_order: organization_plan_order_service,
-        invitation: organization_invitation_service,
-        management: organization_management_service,
-        custom_role: organization_custom_role_service,
-        custom_role_binding: organization_custom_role_binding_service,
-        service_account: organization_service_account_service,
-        service_account_runtime_authenticator,
-        platform_audit: platform_audit_service,
-        platform_organization_services,
-        sso_provider: organization_sso_provider_service,
-        sso_policy: organization_sso_policy_service,
-        sso_domain: organization_sso_domain_service,
-        sso_login: organization_sso_login_service,
-        sso_public_login_rate_limit_store: organization_sso_public_login_rate_limit_store,
-        sso_public_login_fingerprint_secret: organization_sso_public_login_fingerprint_secret,
-        sso_session: organization_sso_session_service,
-        sso_identity_binding: organization_sso_identity_binding_service,
-        sso_recovery: organization_sso_recovery_service,
-    } = organization_services;
-    let organization_service_account_runtime_authenticator = service_account_runtime_authenticator;
     let openai_authentication = middleware::from_fn_with_state(
         AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config),
         authenticate_api_key,
@@ -422,10 +323,19 @@ pub fn build_router(
     .with_admin_usage_log_reader(admin_usage_log_reader)
     .with_admin_wallet_service(admin_wallet_service)
     .with_admin_refund_service(admin_refund_service)
-    .with_platform_audit_service(platform_audit_service.clone())
-    .with_organization_authorization_service(organization_authorization_service)
-    .with_organization_invitation_service(organization_invitation_service)
-    .with_organization_management_service(organization_management_service);
+    .with_platform_audit_service(organization_services.platform_audit.clone())
+    .with_organization_authorization_service(organization_services.authorization.clone())
+    .with_organization_invitation_service(organization_services.invitation.clone())
+    .with_organization_management_service(organization_services.management.clone());
+    let OrganizationHttpRoutes {
+        public: organization_public_routes,
+        management: organization_management_routes,
+    } = build_organization_routes(
+        organization_services,
+        Arc::clone(&http_state.session_authenticator),
+        user_topup_service.clone(),
+        config,
+    );
     let api_explorer_routes = build_api_explorer_router(
         Arc::clone(&http_state.session_authenticator),
         http_state.clone(),
@@ -501,7 +411,8 @@ pub fn build_router(
             // Google 风格动作与模型共享一个路径段，由 handler 严格拆分两个已实现动作。
             post(gemini_generate_content).route_layer(gemini_authentication),
         )
-        .with_state(http_state.clone());
+        .with_state(http_state.clone())
+        .merge(organization_public_routes);
     let playground_session_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
         authenticate_management_session,
@@ -652,10 +563,6 @@ pub fn build_router(
     );
     let user_notification_routes = crate::user_notifications::build_user_notification_router(
         user_notification_service,
-        Arc::clone(&http_state.session_authenticator),
-    );
-    let organization_approval_notification_routes = build_organization_approval_notification_router(
-        organization_approval_notification_service,
         Arc::clone(&http_state.session_authenticator),
     );
     let user_topup_routes = build_user_topup_router(
@@ -1036,7 +943,6 @@ pub fn build_router(
         .merge(user_profile_routes)
         .merge(user_wallet_routes)
         .merge(user_notification_routes)
-        .merge(organization_approval_notification_routes)
         .merge(user_topup_routes)
         .merge(redemption_routes)
         .merge(subscription_routes)
@@ -1053,200 +959,10 @@ pub fn build_router(
         Some(routes) => management_routes.merge(routes),
         None => management_routes,
     };
-    let management_routes = match organization_sso_login_service.clone() {
-        Some(service) => {
-            let router = build_organization_sso_login_router_with_protection(
-                service,
-                organization_sso_session_service,
-                Some(OrganizationSsoPublicLoginProtection::new(
-                    crate::client_ip::ClientIpResolver::from_config(config),
-                    organization_sso_public_login_rate_limit_store,
-                    organization_sso_public_login_fingerprint_secret,
-                )),
-            );
-            management_routes.merge(router)
-        }
-        None => management_routes,
-    };
+    let management_routes = management_routes.merge(organization_management_routes);
     let management_routes = management_routes.merge(debug_trace_routes);
-    let management_routes = match (
-        http_state.organization_authorization_service.clone(),
-        organization_activity_service.clone(),
-    ) {
-        (Some(authorization_service), Some(activity_service)) => {
-            management_routes.merge(build_organization_router_with_domain(
-                authorization_service,
-                http_state.organization_invitation_service.clone(),
-                http_state.organization_management_service.clone(),
-                organization_custom_role_service,
-                organization_custom_role_binding_service,
-                activity_service,
-                Arc::clone(&http_state.session_authenticator),
-                organization_sso_provider_service,
-                organization_sso_policy_service,
-                organization_sso_domain_service,
-                organization_sso_login_service,
-                organization_sso_identity_binding_service,
-                organization_sso_recovery_service,
-                organization_service_account_service,
-            ))
-        }
-        _ => management_routes,
-    };
-    let management_routes = management_routes.merge(build_organization_provisioning_router(
-        organization_provisioning_service,
-        Arc::clone(&http_state.session_authenticator),
-    ));
-    let management_routes = management_routes.merge(build_organization_verification_router(
-        organization_verification_service,
-        Arc::clone(&http_state.session_authenticator),
-    ));
-    let management_routes = management_routes.merge(build_organization_plan_router(
-        organization_plan_service,
-        organization_plan_order_service,
-        Arc::clone(&http_state.session_authenticator),
-        user_topup_service.clone(),
-    ));
-    let management_routes = match (
-        http_state.organization_authorization_service.clone(),
-        organization_contract_price_service,
-        organization_activity_service.clone(),
-    ) {
-        (Some(authorization_service), Some(contract_price_service), Some(activity_service)) => {
-            management_routes.merge(build_organization_contract_price_router(
-                authorization_service,
-                contract_price_service,
-                activity_service,
-                Arc::clone(&http_state.session_authenticator),
-            ))
-        }
-        _ => management_routes,
-    };
-    let management_routes = match (
-        http_state.organization_authorization_service.clone(),
-        organization_credit_terms_service,
-        organization_activity_service.clone(),
-    ) {
-        (Some(authorization_service), Some(credit_terms_service), Some(activity_service)) => {
-            management_routes.merge(build_organization_credit_terms_router(
-                authorization_service,
-                credit_terms_service,
-                activity_service,
-                Arc::clone(&http_state.session_authenticator),
-            ))
-        }
-        _ => management_routes,
-    };
-    let management_routes = match (
-        http_state.organization_authorization_service.clone(),
-        organization_wallet_service,
-        organization_activity_service.clone(),
-    ) {
-        (Some(authorization_service), Some(wallet_service), Some(activity_service)) => {
-            management_routes.merge(build_organization_wallet_router(
-                authorization_service,
-                wallet_service,
-                user_topup_service,
-                activity_service,
-                Arc::clone(&http_state.session_authenticator),
-            ))
-        }
-        _ => management_routes,
-    };
-    let management_routes = match (
-        http_state.organization_authorization_service.clone(),
-        organization_token_service,
-        organization_activity_service.clone(),
-    ) {
-        (Some(authorization_service), Some(token_service), Some(activity_service)) => {
-            management_routes.merge(build_organization_token_router(
-                authorization_service,
-                token_service,
-                activity_service,
-                Arc::clone(&http_state.session_authenticator),
-            ))
-        }
-        _ => management_routes,
-    };
-    let management_routes = match (
-        http_state.organization_authorization_service.clone(),
-        organization_budget_service,
-        organization_activity_service.clone(),
-    ) {
-        (Some(authorization_service), Some(budget_service), Some(activity_service)) => {
-            management_routes.merge(build_organization_budget_router(
-                authorization_service,
-                budget_service,
-                activity_service,
-                Arc::clone(&http_state.session_authenticator),
-            ))
-        }
-        _ => management_routes,
-    };
-    let management_routes = match (
-        http_state.organization_authorization_service.clone(),
-        organization_approval_service,
-        organization_activity_service.clone(),
-    ) {
-        (Some(authorization_service), Some(approval_service), Some(activity_service)) => {
-            management_routes.merge(build_organization_approval_router(
-                authorization_service,
-                approval_service,
-                activity_service,
-                Arc::clone(&http_state.session_authenticator),
-            ))
-        }
-        _ => management_routes,
-    };
-    let management_routes = match organization_activity_service {
-        Some(service) => management_routes.merge(build_organization_activity_router(
-            service,
-            Arc::clone(&http_state.session_authenticator),
-        )),
-        None => management_routes,
-    };
-    let management_routes = match (
-        organization_scim_service.clone(),
-        http_state.organization_authorization_service.clone(),
-    ) {
-        (Some(service), Some(authorization)) => {
-            management_routes.merge(build_organization_scim_audit_router(
-                service,
-                authorization,
-                Arc::clone(&http_state.session_authenticator),
-            ))
-        }
-        _ => management_routes,
-    };
-    let public_routes = match organization_scim_service {
-        Some(service) => public_routes.merge(build_scim_router(service)),
-        None => public_routes,
-    };
-    let public_routes = match organization_service_account_runtime_authenticator {
-        Some(authenticator) => public_routes.merge(
-            build_organization_service_account_runtime_router(authenticator),
-        ),
-        None => public_routes,
-    };
     let management_routes = match oauth_connection_routes {
         Some(routes) => management_routes.merge(routes),
-        None => management_routes,
-    };
-    let management_routes = match platform_audit_service {
-        Some(service) => management_routes.merge(build_platform_audit_router(
-            service,
-            Arc::clone(&http_state.session_authenticator),
-        )),
-        None => management_routes,
-    };
-    let management_routes = match platform_organization_services {
-        Some((directory_service, management_service)) => {
-            management_routes.merge(build_platform_organization_router(
-                directory_service,
-                management_service,
-                Arc::clone(&http_state.session_authenticator),
-            ))
-        }
         None => management_routes,
     };
     let extension_catalog_routes = build_extension_catalog_router(
