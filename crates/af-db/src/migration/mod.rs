@@ -1,6 +1,8 @@
-use std::{future::Future, marker::PhantomData, pin::Pin, time::Duration};
+use std::{collections::HashSet, future::Future, marker::PhantomData, pin::Pin, time::Duration};
 
-use sea_orm_migration::{MigrationTrait, MigratorTrait};
+use sea_orm::sea_query::Query;
+use sea_orm::{ConnectionTrait, EntityTrait, Expr, QueryOrder};
+use sea_orm_migration::{MigrationTrait, MigratorTrait, SchemaManager};
 use tokio::time::timeout;
 
 use crate::{DatabaseError, DatabaseOptionsError, DatabasePool};
@@ -186,16 +188,56 @@ pub trait DatabaseMigrationExtension: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = Result<(), DatabaseError>> + Send + 'a>>;
 }
 
+/// 从历史公共迁移表接管已执行的扩展迁移版本。
+///
+/// 这个声明只用于已经在 `seaql_migrations` 中执行过、但后续要从公共注册表移入
+/// 私有扩展注册表的版本。不存在于旧表中的版本不会被写入目标表，仍会按正常流程执行。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MigrationHistoryAdoption {
+    versions: Vec<String>,
+}
+
+impl MigrationHistoryAdoption {
+    /// 创建一个历史接管声明；重复版本会被折叠。
+    pub fn from_versions<I, S>(versions: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let mut versions = versions.into_iter().map(Into::into).collect::<Vec<_>>();
+        versions.sort_unstable();
+        versions.dedup();
+        Self { versions }
+    }
+
+    /// 返回声明中的迁移版本。
+    pub fn versions(&self) -> &[String] {
+        &self.versions
+    }
+}
+
 /// 将一个 SeaORM `MigratorTrait` 适配为数据库扩展迁移执行器。
 ///
 /// 企业仓库只需将自己的 `Migrator` 包装为
 /// `MigratorExtension::<EnterpriseMigrator>::new()`，并覆盖该 Migrator 的
 /// `migration_table_name`。
-pub struct MigratorExtension<M>(PhantomData<fn() -> M>);
+pub struct MigratorExtension<M> {
+    marker: PhantomData<fn() -> M>,
+    adoption: Option<MigrationHistoryAdoption>,
+}
 
 impl<M> MigratorExtension<M> {
     pub const fn new() -> Self {
-        Self(PhantomData)
+        Self {
+            marker: PhantomData,
+            adoption: None,
+        }
+    }
+
+    /// 声明需要从旧公共迁移表接管的扩展版本。
+    pub fn with_legacy_history(mut self, adoption: MigrationHistoryAdoption) -> Self {
+        self.adoption = Some(adoption);
+        self
     }
 }
 
@@ -219,7 +261,10 @@ where
             if table == PUBLIC_MIGRATION_TABLE_NAME {
                 return Err(DatabaseError::MigrationTableConflict { table });
             }
-            run_pending_migrations_with::<M>(pool, options).await
+            match self.adoption.as_ref() {
+                Some(adoption) => run_with_adoption::<M>(pool, options, adoption).await,
+                None => run_pending_migrations_with::<M>(pool, options).await,
+            }
         })
     }
 }
@@ -454,4 +499,104 @@ where
             source,
         }),
     }
+}
+
+async fn run_with_adoption<M>(
+    pool: &DatabasePool,
+    options: MigrationOptions,
+    adoption: &MigrationHistoryAdoption,
+) -> Result<(), DatabaseError>
+where
+    M: MigratorTrait,
+{
+    let future = async {
+        adopt_migration_history::<M>(pool, adoption).await?;
+        M::up(pool.connection(), None)
+            .await
+            .map_err(DatabaseError::Migration)
+    };
+
+    match timeout(options.timeout(), future).await {
+        Ok(result) => result,
+        Err(source) => Err(DatabaseError::MigrationTimeout {
+            timeout: options.timeout(),
+            source,
+        }),
+    }
+}
+
+async fn adopt_migration_history<M>(
+    pool: &DatabasePool,
+    adoption: &MigrationHistoryAdoption,
+) -> Result<(), DatabaseError>
+where
+    M: MigratorTrait,
+{
+    let known_versions = M::migrations()
+        .into_iter()
+        .map(|migration| migration.name().to_owned())
+        .collect::<HashSet<_>>();
+    for version in adoption.versions() {
+        if !known_versions.contains(version) {
+            return Err(DatabaseError::MigrationAdoptionVersionUnknown {
+                version: version.clone(),
+            });
+        }
+    }
+
+    M::install(pool.connection())
+        .await
+        .map_err(DatabaseError::Migration)?;
+    if !SchemaManager::new(pool.connection())
+        .has_table(PUBLIC_MIGRATION_TABLE_NAME)
+        .await
+        .map_err(DatabaseError::Migration)?
+    {
+        return Ok(());
+    }
+
+    let backend = pool.connection().get_database_backend();
+    let source = sea_orm_migration::seaql_migrations::Entity::find()
+        .order_by_asc(sea_orm_migration::seaql_migrations::Column::Version)
+        .all(pool.connection())
+        .await
+        .map_err(DatabaseError::Migration)?;
+    let versions = adoption.versions().iter().collect::<HashSet<_>>();
+
+    for record in source
+        .into_iter()
+        .filter(|record| versions.contains(&record.version))
+    {
+        let target_exists = Query::select()
+            .column(sea_orm_migration::seaql_migrations::Column::Version)
+            .from(M::migration_table_name())
+            .and_where(
+                Expr::col(sea_orm_migration::seaql_migrations::Column::Version).eq(&record.version),
+            )
+            .to_owned();
+        if pool
+            .connection()
+            .query_one(backend.build(&target_exists))
+            .await
+            .map_err(DatabaseError::Migration)?
+            .is_some()
+        {
+            continue;
+        }
+
+        let insert = Query::insert()
+            .into_table(M::migration_table_name())
+            .columns([
+                sea_orm_migration::seaql_migrations::Column::Version,
+                sea_orm_migration::seaql_migrations::Column::AppliedAt,
+            ])
+            .values([record.version.into(), record.applied_at.into()])
+            .map_err(DatabaseError::Migration)?
+            .to_owned();
+        pool.connection()
+            .execute(backend.build(&insert))
+            .await
+            .map_err(DatabaseError::Migration)?;
+    }
+    Ok(())
 }

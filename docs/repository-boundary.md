@@ -25,6 +25,12 @@ The private distribution repository owns the selected public core revision, the 
    `seaql_migrations`. Existing installations still contain earlier enterprise
    records in that historical table and require an explicit adoption step before
    the remaining enterprise migrations are moved out of the in-tree registry.
+   The adoption step uses `MigrationHistoryAdoption` with the exact migration
+   names owned by the extension. `MigratorExtension::with_legacy_history` copies
+   only matching rows, preserves `applied_at`, and then runs pending extension
+   migrations. It does nothing when the old table is absent, so the same startup
+   path works for new installations. Versions not present in the extension
+   registry are rejected rather than copied.
 2. Enterprise routes and OpenAPI documents are registered through an extension boundary.
    The built-in route composition accepts `af_http::OrganizationHttpServices` as one
    dependency bundle, and `af-http` assembles those services in a dedicated organization

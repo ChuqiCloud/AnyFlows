@@ -274,6 +274,18 @@ impl MigratorTrait for PublicTableMigrator {
     }
 }
 
+struct AdoptedExtensionMigrator;
+
+impl MigratorTrait for AdoptedExtensionMigrator {
+    fn migrations() -> Vec<Box<dyn MigrationTrait>> {
+        vec![Box::new(AdoptedExtensionMigration)]
+    }
+
+    fn migration_table_name() -> sea_orm::sea_query::DynIden {
+        Alias::new("adopted_extension_migrations").into_iden()
+    }
+}
+
 #[derive(DeriveMigrationName)]
 struct ExtensionMigration;
 
@@ -281,6 +293,34 @@ struct ExtensionMigration;
 impl MigrationTrait for ExtensionMigration {
     async fn up(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
         Ok(())
+    }
+}
+
+struct AdoptedExtensionMigration;
+
+impl sea_orm_migration::MigrationName for AdoptedExtensionMigration {
+    fn name(&self) -> &str {
+        "m20260930_000001_adopted_extension_migration"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for AdoptedExtensionMigration {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .create_table(
+                Table::create()
+                    .table(Alias::new("adoption_marker"))
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(Alias::new("id"))
+                            .integer()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .to_owned(),
+            )
+            .await
     }
 }
 
@@ -2072,6 +2112,67 @@ async fn migration_extension_adapter_uses_the_extension_registry() -> Result<(),
     let manager = SchemaManager::new(pool.connection());
     assert!(manager.has_table("anyflows_extension_migrations").await?);
     assert!(!manager.has_table("seaql_migrations").await?);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn migration_extension_adopts_history_from_public_registry() -> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    Migrator::install(pool.connection()).await?;
+    let version = AdoptedExtensionMigrator::migrations()
+        .into_iter()
+        .next()
+        .expect("adoption migration")
+        .name()
+        .to_owned();
+    let statement = Query::insert()
+        .into_table(sea_orm_migration::seaql_migrations::Entity)
+        .columns([
+            sea_orm_migration::seaql_migrations::Column::Version,
+            sea_orm_migration::seaql_migrations::Column::AppliedAt,
+        ])
+        .values([version.clone().into(), 123_i64.into()])?
+        .to_owned();
+    pool.connection()
+        .execute(pool.connection().get_database_backend().build(&statement))
+        .await?;
+
+    let extension = MigratorExtension::<AdoptedExtensionMigrator>::new()
+        .with_legacy_history(MigrationHistoryAdoption::from_versions([version.as_str()]));
+    extension
+        .run_pending(&pool, MigrationOptions::default())
+        .await?;
+
+    let applied = AdoptedExtensionMigrator::get_migration_models(pool.connection()).await?;
+    assert_eq!(applied.len(), 1);
+    assert_eq!(applied[0].version, version);
+    assert_eq!(applied[0].applied_at, 123);
+    assert!(
+        !SchemaManager::new(pool.connection())
+            .has_table("adoption_marker")
+            .await?
+    );
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn migration_history_adoption_rejects_unknown_versions() -> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    let extension = MigratorExtension::<ExtensionMigrator>::new().with_legacy_history(
+        MigrationHistoryAdoption::from_versions(["m20990101_000001_missing"]),
+    );
+
+    let error = extension
+        .run_pending(&pool, MigrationOptions::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        DatabaseError::MigrationAdoptionVersionUnknown { version }
+            if version == "m20990101_000001_missing"
+    ));
     pool.close().await?;
     Ok(())
 }
