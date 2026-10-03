@@ -35,8 +35,28 @@ use af_db::{
     OrganizationTokenRepository, OrganizationVerificationRepository, OrganizationWalletRepository,
     PlatformAuditRepository,
 };
+use af_scheduler::{
+    OrganizationApprovalTimeoutSupervisor, OrganizationApprovalTimeoutSupervisorConfig,
+    OrganizationSsoDomainReverificationResolver, OrganizationSsoDomainReverificationSupervisor,
+    OrganizationSsoDomainReverificationSupervisorConfig,
+    OrganizationSsoLoginTransactionCleanupSupervisor,
+    OrganizationSsoLoginTransactionCleanupSupervisorConfig,
+};
+use af_telemetry::{
+    MetricOrganizationApprovalTimeoutOutcome, record_organization_approval_timeout,
+};
 
-use crate::BootstrapError;
+use crate::{BackgroundTaskSupervisor, BootstrapError};
+
+/// 企业后台任务注册器。
+///
+/// 注册发生在公共计费和路由运行时准备好、监督器创建之后。发行版可以替换默认
+/// 注册器，避免公共启动器直接依赖企业仓储和后台任务；注册器不应执行阻塞操作。
+pub type OrganizationBackgroundTaskRegistrar = Arc<
+    dyn Fn(&mut BackgroundTaskSupervisor, &af_config::AppConfig, &af_db::DatabasePool)
+        + Send
+        + Sync,
+>;
 
 /// 企业装配可复用的公共运行时依赖。
 ///
@@ -68,6 +88,8 @@ pub struct OrganizationRuntimeContext<'a> {
 /// 发行版可以围绕该组合对象迁出企业服务装配，同时继续复用公共认证、计费和转发
 /// 基础设施。具体实现仍通过现有服务 trait 注入，路由行为不由该类型改变。
 pub struct OrganizationRuntimeServices {
+    /// 企业后台任务的注册回调；为 None 时不启动企业后台任务。
+    pub organization_background_task_registrar: Option<OrganizationBackgroundTaskRegistrar>,
     pub organization_approval_notification_service:
         Arc<dyn OrganizationApprovalNotificationService>,
     pub organization_wallet_service: Arc<dyn OrganizationWalletService>,
@@ -370,6 +392,7 @@ impl OrganizationRuntimeServices {
                 Arc::clone(context.session_authenticator),
             ));
         Ok(Self {
+            organization_background_task_registrar: Some(default_background_task_registrar()),
             organization_approval_notification_service: Arc::new(
                 DatabaseOrganizationApprovalNotificationService::new(
                     organization_approval_notification_repository,
@@ -464,5 +487,136 @@ impl OrganizationRuntimeServices {
             organization_sso_policy_service,
             organization_sso_recovery_service,
         })
+    }
+}
+
+/// 创建内置企业后台任务注册器。
+#[must_use]
+pub fn default_background_task_registrar() -> OrganizationBackgroundTaskRegistrar {
+    Arc::new(|supervisor, config, database| {
+        let lookup_timeout = Duration::from_secs(config.auth().lookup_timeout_secs());
+        let approval_repository =
+            OrganizationApprovalRepository::new(database.clone(), lookup_timeout)
+                .expect("已校验的审批查询超时必须可装配超时扫描仓储");
+        supervisor.spawn("organization-approval-timeout", move |task_shutdown| {
+            let repository = approval_repository.clone();
+            async move {
+                OrganizationApprovalTimeoutSupervisor::new(
+                    repository,
+                    OrganizationApprovalTimeoutSupervisorConfig::default(),
+                )
+                .run_periodic_until_with_report(
+                    task_shutdown.cancelled(),
+                    record_organization_approval_timeout_report,
+                )
+                .await;
+            }
+        });
+
+        let sso_repository =
+            OrganizationSsoProviderRepository::new(database.clone(), lookup_timeout)
+                .expect("已校验的 SSO 域名复验仓储必须可装配");
+        let resolver = ControlledOrganizationSsoDnsResolver::new(
+            &[
+                std::net::SocketAddr::from(([1, 1, 1, 1], 53)),
+                std::net::SocketAddr::from(([8, 8, 8, 8], 53)),
+            ],
+            Duration::from_secs(5),
+        )
+        .expect("已校验的 SSO DNS 解析器必须可装配");
+        supervisor.spawn(
+            "organization-sso-domain-reverification",
+            move |task_shutdown| {
+                let repository = sso_repository.clone();
+                let resolver = OrganizationSsoDomainReverificationDnsResolver(resolver.clone());
+                async move {
+                    OrganizationSsoDomainReverificationSupervisor::new(
+                        repository,
+                        resolver,
+                        OrganizationSsoDomainReverificationSupervisorConfig::default(),
+                    )
+                    .run_periodic_until(task_shutdown.cancelled())
+                    .await;
+                }
+            },
+        );
+
+        let cleanup_repository =
+            OrganizationSsoProviderRepository::new(database.clone(), lookup_timeout)
+                .expect("已校验的 SSO 登录事务清理仓储必须可装配");
+        supervisor.spawn(
+            "organization-sso-login-transaction-cleanup",
+            move |task_shutdown| {
+                let repository = cleanup_repository.clone();
+                async move {
+                    OrganizationSsoLoginTransactionCleanupSupervisor::new(
+                        repository,
+                        OrganizationSsoLoginTransactionCleanupSupervisorConfig::default(),
+                    )
+                    .run_periodic_until(task_shutdown.cancelled())
+                    .await;
+                }
+            },
+        );
+    })
+}
+
+#[derive(Clone)]
+struct OrganizationSsoDomainReverificationDnsResolver(ControlledOrganizationSsoDnsResolver);
+
+impl OrganizationSsoDomainReverificationResolver
+    for OrganizationSsoDomainReverificationDnsResolver
+{
+    async fn lookup_txt(
+        &self,
+        target: &af_db::OrganizationSsoDomainReverificationTarget,
+    ) -> Result<af_domain::OrganizationSsoDnsTxtAnswers, ()> {
+        self.0
+            .lookup_txt_for_domain(target.domain())
+            .await
+            .map_err(|_| ())
+    }
+}
+
+fn record_organization_approval_timeout_report(
+    report: af_scheduler::OrganizationApprovalTimeoutRunReport,
+) {
+    if report.lease_held() {
+        record_organization_approval_timeout(
+            MetricOrganizationApprovalTimeoutOutcome::LeaseHeld,
+            1,
+        );
+    }
+    if report.scan_failed() {
+        record_organization_approval_timeout(
+            MetricOrganizationApprovalTimeoutOutcome::ScanFailed,
+            1,
+        );
+    }
+    record_organization_approval_timeout(
+        MetricOrganizationApprovalTimeoutOutcome::Applied,
+        u64::try_from(report.applied()).unwrap_or(u64::MAX),
+    );
+    record_organization_approval_timeout(
+        MetricOrganizationApprovalTimeoutOutcome::Existing,
+        u64::try_from(report.existing()).unwrap_or(u64::MAX),
+    );
+    record_organization_approval_timeout(
+        MetricOrganizationApprovalTimeoutOutcome::Skipped,
+        u64::try_from(report.skipped()).unwrap_or(u64::MAX),
+    );
+    record_organization_approval_timeout(
+        MetricOrganizationApprovalTimeoutOutcome::Failed,
+        u64::try_from(report.failed()).unwrap_or(u64::MAX),
+    );
+    record_organization_approval_timeout(
+        MetricOrganizationApprovalTimeoutOutcome::OutcomeUnknownReplay,
+        u64::try_from(report.outcome_unknown_replays()).unwrap_or(u64::MAX),
+    );
+    if report.truncated() {
+        record_organization_approval_timeout(
+            MetricOrganizationApprovalTimeoutOutcome::Truncated,
+            1,
+        );
     }
 }

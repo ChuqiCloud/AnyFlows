@@ -93,7 +93,10 @@ pub use bootstrap::{
     ListenerReady, RelayReady, RouterReady, ShutdownReport, Supervised, TelemetryReady, run,
 };
 pub use oauth_connection::OAuthRuntimeConfigError;
-pub use organization_runtime::{OrganizationRuntimeContext, OrganizationRuntimeServices};
+pub use organization_runtime::{
+    OrganizationBackgroundTaskRegistrar, OrganizationRuntimeContext, OrganizationRuntimeServices,
+    default_background_task_registrar,
+};
 pub use request_outcome_runtime::{RequestOutcomeContext, RequestOutcomeRuntime, RoutedExecution};
 pub use scheduled_chat::{
     BoundVideoTaskSubmission, VideoTaskBinding, VideoTaskPollFuture, VideoTaskRuntime,

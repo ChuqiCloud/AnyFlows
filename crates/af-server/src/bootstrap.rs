@@ -1,11 +1,10 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{
-    ControlledOrganizationSsoDnsResolver, CredentialDecryptionError, CredentialDecryptor,
-    CredentialEncryptionError, CredentialEncryptor, DiagnosticSnapshotCipher,
-    OAuthConnectionCoordinator, OAuthLoginClient, OAuthProviderProfile, OAuthRefreshSupervisor,
-    OrganizationSsoDnsResolverConfigError, PlainSystemSecret, SystemSecretCipher,
-    SystemSecretError, SystemSecretKind,
+    CredentialDecryptionError, CredentialDecryptor, CredentialEncryptionError, CredentialEncryptor,
+    DiagnosticSnapshotCipher, OAuthConnectionCoordinator, OAuthLoginClient, OAuthProviderProfile,
+    OAuthRefreshSupervisor, OrganizationSsoDnsResolverConfigError, PlainSystemSecret,
+    SystemSecretCipher, SystemSecretError, SystemSecretKind,
 };
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
@@ -83,7 +82,7 @@ use af_db::{
     ModelPriceRepository, ModelProviderCatalogRepository, ModelProviderCatalogRepositoryError,
     ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
     NetworkSettingsRepositoryConfigError, OAuthLoginRepository, OAuthLoginRepositoryError,
-    OrganizationApprovalNotificationRepositoryConfigError, OrganizationApprovalRepository,
+    OrganizationApprovalNotificationRepositoryConfigError,
     OrganizationApprovalRepositoryConfigError, OrganizationBudgetRepositoryConfigError,
     OrganizationContractPriceRepositoryConfigError, OrganizationCreditInvoiceRepositoryConfigError,
     OrganizationCreditRepaymentRepositoryConfigError, OrganizationCreditTermsRepositoryConfigError,
@@ -96,12 +95,12 @@ use af_db::{
     OrganizationScimGroupRepositoryError, OrganizationScimTokenRepositoryError,
     OrganizationScimUserRepositoryError, OrganizationServiceAccountAuditRepository,
     OrganizationServiceAccountBudgetBindingRepositoryConfigError,
-    OrganizationServiceAccountRepositoryError, OrganizationSsoProviderRepository,
-    OrganizationSsoProviderRepositoryConfigError, OrganizationTokenRepositoryConfigError,
-    OrganizationVerificationRepositoryConfigError, OrganizationWalletRepositoryConfigError,
-    PasskeyRepository, PasswordResetRepository, PasswordResetRepositoryConfigError,
-    PaymentSecretUpdate, PaymentSettingsRepository, PaymentSettingsRepositoryConfigError,
-    PaymentSettingsRepositoryError, PaymentSettingsWriteRecord, PlaygroundConversationRepository,
+    OrganizationServiceAccountRepositoryError, OrganizationSsoProviderRepositoryConfigError,
+    OrganizationTokenRepositoryConfigError, OrganizationVerificationRepositoryConfigError,
+    OrganizationWalletRepositoryConfigError, PasskeyRepository, PasswordResetRepository,
+    PasswordResetRepositoryConfigError, PaymentSecretUpdate, PaymentSettingsRepository,
+    PaymentSettingsRepositoryConfigError, PaymentSettingsRepositoryError,
+    PaymentSettingsWriteRecord, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
     RedemptionRepositoryConfigError, RefundRepository, RefundRepositoryConfigError,
@@ -136,18 +135,10 @@ use af_httpclient::{
 use af_scheduler::{
     ChannelIndexCacheError, ChannelIndexRefreshConfig, ChannelIndexRefreshSupervisor, ChannelProbe,
     ChannelProbeSupervisor, ChannelProbeSupervisorConfig, InMemoryChannelIndex,
-    IndexedWeightedScheduler, OrganizationApprovalTimeoutSupervisor,
-    OrganizationApprovalTimeoutSupervisorConfig, OrganizationSsoDomainReverificationResolver,
-    OrganizationSsoDomainReverificationSupervisor,
-    OrganizationSsoDomainReverificationSupervisorConfig,
-    OrganizationSsoLoginTransactionCleanupSupervisor,
-    OrganizationSsoLoginTransactionCleanupSupervisorConfig, StickyWaitPolicy,
-    SubscriptionCycleSupervisor, SubscriptionCycleSupervisorConfig,
+    IndexedWeightedScheduler, StickyWaitPolicy, SubscriptionCycleSupervisor,
+    SubscriptionCycleSupervisorConfig,
 };
-use af_telemetry::{
-    MetricOrganizationApprovalTimeoutOutcome, MetricsHandle, TelemetryError, TracingHandle,
-    init_metrics, init_tracing, record_organization_approval_timeout,
-};
+use af_telemetry::{MetricsHandle, TelemetryError, TracingHandle, init_metrics, init_tracing};
 use thiserror::Error;
 use url::Url;
 use webauthn_rs::prelude::{Webauthn, WebauthnBuilder};
@@ -2195,41 +2186,17 @@ impl Bootstrap<BillingReady> {
                 }
             }
         });
-        spawn_organization_approval_timeout_task(
-            &mut supervisor,
-            OrganizationApprovalRepository::new(
-                infrastructure.infrastructure.database.clone(),
-                Duration::from_secs(config.auth().lookup_timeout_secs()),
-            )
-            .expect("已校验的审批查询超时必须可装配超时扫描仓储"),
-            OrganizationApprovalTimeoutSupervisorConfig::default(),
-        );
-        spawn_organization_sso_domain_reverification_task(
-            &mut supervisor,
-            OrganizationSsoProviderRepository::new(
-                infrastructure.infrastructure.database.clone(),
-                Duration::from_secs(config.auth().lookup_timeout_secs()),
-            )
-            .expect("已校验的 SSO 域名复验仓储必须可装配"),
-            ControlledOrganizationSsoDnsResolver::new(
-                &[
-                    std::net::SocketAddr::from(([1, 1, 1, 1], 53)),
-                    std::net::SocketAddr::from(([8, 8, 8, 8], 53)),
-                ],
-                Duration::from_secs(5),
-            )
-            .expect("已校验的 SSO DNS 解析器必须可装配"),
-            OrganizationSsoDomainReverificationSupervisorConfig::default(),
-        );
-        spawn_organization_sso_login_transaction_cleanup_task(
-            &mut supervisor,
-            OrganizationSsoProviderRepository::new(
-                infrastructure.infrastructure.database.clone(),
-                Duration::from_secs(config.auth().lookup_timeout_secs()),
-            )
-            .expect("已校验的 SSO 登录事务清理仓储必须可装配"),
-            OrganizationSsoLoginTransactionCleanupSupervisorConfig::default(),
-        );
+        if let Some(register_organization_tasks) = infrastructure
+            .organization
+            .organization_background_task_registrar
+            .as_ref()
+        {
+            register_organization_tasks(
+                &mut supervisor,
+                &config,
+                &infrastructure.infrastructure.database,
+            );
+        }
         if config.subscription().enabled() {
             spawn_subscription_cycle_task(
                 &mut supervisor,
@@ -2416,125 +2383,6 @@ fn spawn_subscription_cycle_task(
                 .await;
         }
     });
-}
-
-/// 注册启动即扫描、带数据库租约且响应统一关闭信号的审批超时任务。
-fn spawn_organization_approval_timeout_task(
-    supervisor: &mut BackgroundTaskSupervisor,
-    repository: OrganizationApprovalRepository,
-    timeout_config: OrganizationApprovalTimeoutSupervisorConfig,
-) {
-    supervisor.spawn("organization-approval-timeout", move |task_shutdown| {
-        let repository = repository.clone();
-        async move {
-            OrganizationApprovalTimeoutSupervisor::new(repository, timeout_config)
-                .run_periodic_until_with_report(
-                    task_shutdown.cancelled(),
-                    record_organization_approval_timeout_report,
-                )
-                .await;
-        }
-    });
-}
-
-/// 注册启动即扫描、带数据库租约且按 DNS 结果 CAS 复验/撤销的域名任务。
-fn spawn_organization_sso_domain_reverification_task(
-    supervisor: &mut BackgroundTaskSupervisor,
-    repository: OrganizationSsoProviderRepository,
-    resolver: ControlledOrganizationSsoDnsResolver,
-    config: OrganizationSsoDomainReverificationSupervisorConfig,
-) {
-    supervisor.spawn(
-        "organization-sso-domain-reverification",
-        move |task_shutdown| {
-            let repository = repository.clone();
-            let resolver = OrganizationSsoDomainReverificationDnsResolver(resolver.clone());
-            async move {
-                OrganizationSsoDomainReverificationSupervisor::new(repository, resolver, config)
-                    .run_periodic_until(task_shutdown.cancelled())
-                    .await;
-            }
-        },
-    );
-}
-
-/// 注册启动即扫描、带独立数据库租约且有界删除的登录事务清理任务。
-fn spawn_organization_sso_login_transaction_cleanup_task(
-    supervisor: &mut BackgroundTaskSupervisor,
-    repository: OrganizationSsoProviderRepository,
-    config: OrganizationSsoLoginTransactionCleanupSupervisorConfig,
-) {
-    supervisor.spawn(
-        "organization-sso-login-transaction-cleanup",
-        move |task_shutdown| {
-            let repository = repository.clone();
-            async move {
-                OrganizationSsoLoginTransactionCleanupSupervisor::new(repository, config)
-                    .run_periodic_until(task_shutdown.cancelled())
-                    .await;
-            }
-        },
-    );
-}
-
-#[derive(Clone)]
-struct OrganizationSsoDomainReverificationDnsResolver(ControlledOrganizationSsoDnsResolver);
-
-impl OrganizationSsoDomainReverificationResolver
-    for OrganizationSsoDomainReverificationDnsResolver
-{
-    async fn lookup_txt(
-        &self,
-        target: &af_db::OrganizationSsoDomainReverificationTarget,
-    ) -> Result<af_domain::OrganizationSsoDnsTxtAnswers, ()> {
-        self.0
-            .lookup_txt_for_domain(target.domain())
-            .await
-            .map_err(|_| ())
-    }
-}
-
-fn record_organization_approval_timeout_report(
-    report: af_scheduler::OrganizationApprovalTimeoutRunReport,
-) {
-    if report.lease_held() {
-        record_organization_approval_timeout(
-            MetricOrganizationApprovalTimeoutOutcome::LeaseHeld,
-            1,
-        );
-    }
-    if report.scan_failed() {
-        record_organization_approval_timeout(
-            MetricOrganizationApprovalTimeoutOutcome::ScanFailed,
-            1,
-        );
-    }
-    record_organization_approval_timeout(
-        MetricOrganizationApprovalTimeoutOutcome::Applied,
-        u64::try_from(report.applied()).unwrap_or(u64::MAX),
-    );
-    record_organization_approval_timeout(
-        MetricOrganizationApprovalTimeoutOutcome::Existing,
-        u64::try_from(report.existing()).unwrap_or(u64::MAX),
-    );
-    record_organization_approval_timeout(
-        MetricOrganizationApprovalTimeoutOutcome::Skipped,
-        u64::try_from(report.skipped()).unwrap_or(u64::MAX),
-    );
-    record_organization_approval_timeout(
-        MetricOrganizationApprovalTimeoutOutcome::Failed,
-        u64::try_from(report.failed()).unwrap_or(u64::MAX),
-    );
-    record_organization_approval_timeout(
-        MetricOrganizationApprovalTimeoutOutcome::OutcomeUnknownReplay,
-        u64::try_from(report.outcome_unknown_replays()).unwrap_or(u64::MAX),
-    );
-    if report.truncated() {
-        record_organization_approval_timeout(
-            MetricOrganizationApprovalTimeoutOutcome::Truncated,
-            1,
-        );
-    }
 }
 
 /// 注册可重建且响应统一关闭信号的渠道探活周期任务。
