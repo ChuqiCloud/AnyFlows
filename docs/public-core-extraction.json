@@ -27,6 +27,7 @@
       "order": 2,
       "paths": [
         "crates/af-db/src/organization*",
+        "crates/af-db/src/quota/organization.rs",
         "crates/af-db/src/entity/organization*",
         "crates/af-db/src/entity/billing_organization*",
         "crates/af-db/src/migration/schema/organization*",
