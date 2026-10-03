@@ -1,7 +1,7 @@
 use std::{collections::HashSet, future::Future, marker::PhantomData, pin::Pin, time::Duration};
 
-use sea_orm::sea_query::Query;
-use sea_orm::{ConnectionTrait, EntityTrait, Expr, QueryOrder};
+use sea_orm::sea_query::{Expr, Query};
+use sea_orm::{ConnectionTrait, EntityTrait, QueryOrder};
 use sea_orm_migration::{MigrationTrait, MigratorTrait, SchemaManager};
 use tokio::time::timeout;
 
