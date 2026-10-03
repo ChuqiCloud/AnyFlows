@@ -30,6 +30,7 @@ mod model_catalog;
 mod model_discovery;
 mod model_price_source;
 mod oauth_connection;
+mod organization_runtime;
 mod payment_runtime;
 mod readiness;
 mod request_outcome_runtime;
@@ -89,10 +90,10 @@ pub use billing_speech::{
 };
 pub use bootstrap::{
     AuthenticationReady, BillingReady, Bootstrap, BootstrapError, Configured, DatabaseReady,
-    ListenerReady, OrganizationRuntimeServices, RelayReady, RouterReady, ShutdownReport,
-    Supervised, TelemetryReady, run,
+    ListenerReady, RelayReady, RouterReady, ShutdownReport, Supervised, TelemetryReady, run,
 };
 pub use oauth_connection::OAuthRuntimeConfigError;
+pub use organization_runtime::{OrganizationRuntimeContext, OrganizationRuntimeServices};
 pub use request_outcome_runtime::{RequestOutcomeContext, RequestOutcomeRuntime, RoutedExecution};
 pub use scheduled_chat::{
     BoundVideoTaskSubmission, VideoTaskBinding, VideoTaskPollFuture, VideoTaskRuntime,

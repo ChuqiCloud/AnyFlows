@@ -66,9 +66,9 @@ The server bootstrap exposes the same boundary through
 `Bootstrap::with_http_extensions`. A distribution constructs its
 `HttpExtensions` registry before initializing telemetry and passes it into the
 bootstrap; the registry is carried through the staged startup and consumed when
-the final router is built. The public binary leaves the registry empty, so
-enterprise routes and capabilities are not linked into the public build by
-default.
+the final router is built. The default binary leaves the registry empty. The
+legacy in-tree enterprise implementation is still linked during extraction;
+an empty registry alone does not make the current build a community edition.
 
 Database migrations use a separate startup hook,
 `Bootstrap::with_database_migration_extension`. The extension implements
@@ -76,3 +76,28 @@ Database migrations use a separate startup hook,
 `MigratorTrait` with `af_db::MigratorExtension`. The bootstrap runs the public
 registry first and the extension registry second on the same migration
 connection, including when a dedicated migration connection is configured.
+
+## Runtime assembly
+
+`Bootstrap<DatabaseReady>::init_authentication_with_organization` accepts a
+distribution-owned factory for `af_server::OrganizationRuntimeServices`. It
+calls the factory once, after migrations and shared authentication services
+are ready, and before relay, billing, background tasks, and HTTP routes start.
+Any factory error aborts startup without falling back to the built-in services.
+Private factories can wrap their own startup errors with
+`BootstrapError::OrganizationRuntime`; its display text omits the nested details.
+
+The factory receives an `OrganizationRuntimeContext` with the application
+database pool, validated configuration, session and profile services, optional
+Passkey authentication, the system secret cipher, shared request-log repositories,
+and the initialized SCIM rate-limit store. Enterprise SSO must reuse these
+authentication instances so that public and enterprise flows use the same
+session, profile, and credential policies.
+
+The default `init_authentication` entry point delegates to
+`OrganizationRuntimeServices::from_database`. The built-in enterprise assembly
+now lives in `crates/af-server/src/organization_runtime.rs`; a distribution can
+replace the factory or use it during a staged migration. The service bundle
+still contains concrete organization repositories and an SSO transaction service,
+and enterprise background jobs still use in-tree implementations. These remaining
+dependencies must be extracted before publishing the public core.
