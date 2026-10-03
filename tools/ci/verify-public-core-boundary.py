@@ -10,7 +10,14 @@ from pathlib import Path
 
 
 def expand(root: Path, pattern: str) -> list[Path]:
-    return sorted(path for path in root.glob(pattern) if path.is_file())
+    """Expand a file or directory pattern into the files it owns."""
+    expanded: set[Path] = set()
+    for path in root.glob(pattern):
+        if path.is_file():
+            expanded.add(path)
+        elif path.is_dir():
+            expanded.update(candidate for candidate in path.rglob("*") if candidate.is_file())
+    return sorted(expanded)
 
 
 def main() -> int:
