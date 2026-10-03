@@ -162,6 +162,12 @@ mod tests;
 
 const DEFAULT_MIGRATION_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
+/// 公共核心迁移使用的历史表名。
+pub const PUBLIC_MIGRATION_TABLE_NAME: &str = "seaql_migrations";
+
+/// 扩展迁移推荐使用的默认表名。
+pub const EXTENSION_MIGRATION_TABLE_NAME: &str = "anyflows_extension_migrations";
+
 /// 待处理迁移的执行参数。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MigrationOptions {
@@ -208,7 +214,13 @@ where
         pool: &'a DatabasePool,
         options: MigrationOptions,
     ) -> Pin<Box<dyn Future<Output = Result<(), DatabaseError>> + Send + 'a>> {
-        Box::pin(run_pending_migrations_with::<M>(pool, options))
+        let table = M::migration_table_name().to_string();
+        Box::pin(async move {
+            if table == PUBLIC_MIGRATION_TABLE_NAME {
+                return Err(DatabaseError::MigrationTableConflict { table });
+            }
+            run_pending_migrations_with::<M>(pool, options).await
+        })
     }
 }
 

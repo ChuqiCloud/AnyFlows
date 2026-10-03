@@ -63,6 +63,9 @@ pub enum DatabaseError {
         #[source]
         source: Elapsed,
     },
+    /// 扩展迁移误用了公共迁移表。
+    #[error("数据库扩展迁移必须使用独立迁移表：{table}")]
+    MigrationTableConflict { table: String },
     /// 关闭数据库连接池失败。
     #[error("数据库连接池关闭失败")]
     Close(#[source] DbErr),
