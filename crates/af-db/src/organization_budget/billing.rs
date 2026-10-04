@@ -2,8 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use af_domain::{
     BillingContractPriceSnapshot, BillingReservationId, GroupId, OrganizationBudgetPolicyId,
-    OrganizationBudgetWindowId,
-    OrganizationDepartmentBudgetPath, OrganizationDepartmentId,
+    OrganizationBudgetWindowId, OrganizationDepartmentBudgetPath, OrganizationDepartmentId,
     OrganizationDepartmentMembershipStatus, OrganizationDepartmentNode,
     OrganizationDepartmentStatus, OrganizationId, OrganizationMembershipId,
     OrganizationMembershipStatus, OrganizationTeamId, Quota, TokenId, UserId,
