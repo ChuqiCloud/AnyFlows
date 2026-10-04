@@ -15,8 +15,7 @@ use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    DatabasePool,
-    OrganizationContractPriceSnapshot,
+    DatabasePool, OrganizationContractPriceSnapshot,
     entity::{organization_contract_prices, organization_memberships, organizations},
 };
 
@@ -97,7 +96,6 @@ impl OrganizationContractPriceSnapshot {
             prices: record.prices,
         }
     }
-
 }
 
 impl OrganizationContractPriceRecord {

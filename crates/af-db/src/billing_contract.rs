@@ -97,7 +97,9 @@ mod tests {
         assert_eq!(snapshot.version(), 3);
         assert_eq!(snapshot.prices(), prices);
         for version in [0, -1] {
-            assert!(OrganizationContractPriceSnapshot::new(organization, id, version, prices).is_err());
+            assert!(
+                OrganizationContractPriceSnapshot::new(organization, id, version, prices).is_err()
+            );
         }
         for index in 0..5 {
             let mut invalid = prices;
