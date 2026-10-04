@@ -223,15 +223,16 @@ pub use payment::{
     TopupPaymentEventType, TopupRequestId, TopupStateCodeError,
 };
 pub use principal::{
-    ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, OrganizationApprovalDecisionId,
-    OrganizationApprovalRequestId, OrganizationApprovalTemplateId, OrganizationBudgetPolicyId,
-    OrganizationBudgetWindowId, OrganizationContractPriceId, OrganizationCreditInvoiceId,
-    OrganizationCreditRepaymentAllocationId, OrganizationCreditRepaymentId,
-    OrganizationCreditTermId, OrganizationCustomRoleId, OrganizationDepartmentId,
-    OrganizationGatewayPrincipal, OrganizationId, OrganizationMembershipId,
-    OrganizationProvisioningRequestId, OrganizationScimTokenId, OrganizationServiceAccountId,
-    OrganizationTeamId, OrganizationVerificationCaseId, OrganizationVerificationMaterialId,
-    PrincipalIdError, ProxyId, RouteChannelId, RouteId, TokenId, UserId,
+    BillingContractPriceId, ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId,
+    OrganizationApprovalDecisionId, OrganizationApprovalRequestId, OrganizationApprovalTemplateId,
+    OrganizationBudgetPolicyId, OrganizationBudgetWindowId, OrganizationContractPriceId,
+    OrganizationCreditInvoiceId, OrganizationCreditRepaymentAllocationId,
+    OrganizationCreditRepaymentId, OrganizationCreditTermId, OrganizationCustomRoleId,
+    OrganizationDepartmentId, OrganizationGatewayPrincipal, OrganizationId,
+    OrganizationMembershipId, OrganizationProvisioningRequestId, OrganizationScimTokenId,
+    OrganizationServiceAccountId, OrganizationTeamId, OrganizationVerificationCaseId,
+    OrganizationVerificationMaterialId, PrincipalIdError, ProxyId, RouteChannelId, RouteId,
+    TokenId, UserId,
 };
 pub use quota::{Quota, QuotaDelta, QuotaError};
 pub use redemption::{

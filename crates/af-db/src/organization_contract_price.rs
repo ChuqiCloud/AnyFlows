@@ -90,8 +90,13 @@ impl OrganizationContractPriceRecord {
     fn billing_snapshot(
         &self,
     ) -> Result<BillingContractPriceSnapshot, OrganizationContractPriceRepositoryError> {
-        BillingContractPriceSnapshot::new(self.organization_id, self.id, self.version, self.prices)
-            .map_err(|_| OrganizationContractPriceRepositoryError::Invariant)
+        BillingContractPriceSnapshot::from_persistence_parts(
+            self.organization_id.get(),
+            self.id.get(),
+            self.version,
+            self.prices,
+        )
+        .map_err(|_| OrganizationContractPriceRepositoryError::Invariant)
     }
 
     #[must_use]

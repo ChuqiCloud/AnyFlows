@@ -92,7 +92,8 @@
         "crates/af-admin/src/platform_organization*.rs",
         "crates/af-cache/src/organization_*.rs",
         "crates/af-scheduler/src/organization_*.rs",
-        "crates/af-server/src/organization_runtime.rs"
+        "crates/af-server/src/organization_runtime.rs",
+        "crates/af-server/src/organization_runtime/"
       ],
       "dependsOn": ["domain", "database"],
       "status": "planned"

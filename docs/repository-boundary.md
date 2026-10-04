@@ -131,6 +131,14 @@ cleanup unchanged, while a distribution can replace or omit those registrations.
 These remaining concrete service dependencies must be extracted before publishing
 the public core.
 
+The same bundle supplies `organization_contract_price_source` and
+`organization_service_account_audit_sink` through the public `af-billing` traits.
+The shared billing startup clones those injected instances. It does not construct
+enterprise pricing or audit repositories. The transitional database adapters live
+in `crates/af-server/src/organization_runtime/billing.rs` and belong to the
+enterprise extraction inventory. Pricing resolution errors still abort request
+pricing, and audit errors still retain the usage record for queue retry.
+
 ## Billing contract snapshots
 
 The request billing layer consumes `af_domain::BillingContractPriceSnapshot`, a
@@ -141,6 +149,11 @@ only this value through `ContractPriceSource`; the database repository converts
 its private record into the value at the adapter boundary. Quota persistence
 stores and restores the snapshot fields without exposing the repository type to
 the public billing crate.
+
+The snapshot uses the public `BillingContractPriceId`. The enterprise repository
+retains `OrganizationContractPriceId` for its management and approval contracts,
+and converts the validated numeric ID when producing the billing snapshot. This
+does not change reservation columns or historical replay values.
 
 This keeps public pricing and lifecycle code independent from the enterprise
 contract-price table while preserving owner checks, versioned pricing, and

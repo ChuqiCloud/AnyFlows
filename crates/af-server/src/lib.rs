@@ -10,7 +10,6 @@ mod billing_audio;
 mod billing_chat;
 mod billing_compact;
 mod billing_embedding;
-mod billing_extensions;
 mod billing_image;
 mod billing_rerank;
 mod billing_runtime;

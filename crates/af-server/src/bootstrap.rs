@@ -93,7 +93,7 @@ use af_db::{
     OrganizationPlanRepositoryConfigError, OrganizationProvisioningRepositoryConfigError,
     OrganizationRepositoryConfigError, OrganizationScimAuditRepositoryError,
     OrganizationScimGroupRepositoryError, OrganizationScimTokenRepositoryError,
-    OrganizationScimUserRepositoryError, OrganizationServiceAccountAuditRepository,
+    OrganizationScimUserRepositoryError,
     OrganizationServiceAccountBudgetBindingRepositoryConfigError,
     OrganizationServiceAccountRepositoryError, OrganizationSsoProviderRepositoryConfigError,
     OrganizationTokenRepositoryConfigError, OrganizationVerificationRepositoryConfigError,
@@ -152,7 +152,6 @@ use crate::{
     ResponsesCompactRoutePlanner, ShutdownController, SpeechRoutePlanner, SupervisorError,
     SupervisorShutdown,
     balance_alert_runtime::BalanceAlertRuntime,
-    billing_extensions::{DatabaseContractPriceSource, DatabaseServiceAccountAuditSink},
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
     concurrency_runtime::{ConcurrencyCleanupWorker, ConcurrencyReleaseWorker, ConcurrencyRuntime},
     debug_trace_runtime::{AdminDebugTraceRuntimeApplier, DebugTraceRuntime, DebugTraceWorker},
@@ -1829,13 +1828,13 @@ impl Bootstrap<RelayReady> {
         let route_planner: Arc<dyn ChatRoutePlanner> = Arc::new(route_service);
         let pricing_source = Arc::new(
             CachedRequestPricingSnapshotSource::new(model_prices.clone(), group_pricing.clone())
-                .with_contract_prices(Arc::new(DatabaseContractPriceSource::new(Arc::clone(
+                .with_contract_prices(Arc::clone(
                     &self
                         .stage
                         .infrastructure
                         .organization
-                        .organization_contract_price_repository,
-                )))),
+                        .organization_contract_price_source,
+                )),
         );
         let model_catalog_reader: Arc<dyn ModelCatalogReader> =
             Arc::new(RuntimeModelCatalogReader::new(
@@ -1877,12 +1876,13 @@ impl Bootstrap<RelayReady> {
                         .clone()
                         .with_analytics_export(repository.clone())
                 });
-        let service_account_audit_repository = OrganizationServiceAccountAuditRepository::new(
-            self.stage.infrastructure.infrastructure.database.clone(),
+        let service_account_audit_sink = Arc::clone(
+            &self
+                .stage
+                .infrastructure
+                .organization
+                .organization_service_account_audit_sink,
         );
-        let service_account_audit_sink = Arc::new(DatabaseServiceAccountAuditSink::new(
-            service_account_audit_repository,
-        ));
         let usage_record_sink: Arc<dyn UsageRecordSink> = Arc::new(
             DatabaseUsageRecordSink::new(usage_repository)
                 .with_service_account_audit_sink(service_account_audit_sink),
