@@ -15,14 +15,14 @@ use af_domain::{
 
 /// 将企业合同价仓储接入公共计费快照接口。
 #[derive(Clone)]
-pub(crate) struct DatabaseContractPriceSource {
+pub(super) struct DatabaseContractPriceSource {
     repository: Arc<OrganizationContractPriceRepository>,
 }
 
 impl DatabaseContractPriceSource {
     /// 使用已经完成配置校验的企业合同价仓储创建适配器。
     #[must_use]
-    pub(crate) fn new(repository: Arc<OrganizationContractPriceRepository>) -> Self {
+    pub(super) fn new(repository: Arc<OrganizationContractPriceRepository>) -> Self {
         Self { repository }
     }
 }
@@ -46,14 +46,14 @@ impl ContractPriceSource for DatabaseContractPriceSource {
 
 /// 将企业服务账号审计仓储接入公共用量记录接口。
 #[derive(Clone)]
-pub(crate) struct DatabaseServiceAccountAuditSink {
+pub(super) struct DatabaseServiceAccountAuditSink {
     repository: OrganizationServiceAccountAuditRepository,
 }
 
 impl DatabaseServiceAccountAuditSink {
     /// 使用已经完成数据库迁移的企业审计仓储创建适配器。
     #[must_use]
-    pub(crate) const fn new(repository: OrganizationServiceAccountAuditRepository) -> Self {
+    pub(super) const fn new(repository: OrganizationServiceAccountAuditRepository) -> Self {
         Self { repository }
     }
 }

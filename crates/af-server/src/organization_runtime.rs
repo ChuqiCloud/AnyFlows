@@ -21,6 +21,7 @@ use af_admin::{
     OrganizationSsoPolicyService, OrganizationSsoProviderService, OrganizationSsoRecoveryService,
     OrganizationTokenService, OrganizationWalletService, PlatformAuditService,
 };
+use af_billing::{ContractPriceSource, ServiceAccountAuditSink};
 use af_db::{
     DatabaseOrganizationTokenAuthValidator, OrganizationApprovalNotificationRepository,
     OrganizationApprovalRepository, OrganizationAuditRepository, OrganizationBudgetRepository,
@@ -31,7 +32,8 @@ use af_db::{
     OrganizationPlanOrderRepository, OrganizationPlanRepository,
     OrganizationProvisioningRepository, OrganizationRepository, OrganizationScimAuditRepository,
     OrganizationScimGroupRepository, OrganizationScimTokenRepository,
-    OrganizationScimUserRepository, OrganizationServiceAccountBudgetBindingRepository,
+    OrganizationScimUserRepository, OrganizationServiceAccountAuditRepository,
+    OrganizationServiceAccountBudgetBindingRepository,
     OrganizationServiceAccountRepository, OrganizationSsoProviderRepository,
     OrganizationTokenAuthValidator, OrganizationTokenRepository,
     OrganizationVerificationRepository, OrganizationWalletRepository, PlatformAuditRepository,
@@ -48,6 +50,10 @@ use af_telemetry::{
 };
 
 use crate::{BackgroundTaskSupervisor, BootstrapError};
+
+mod billing;
+
+use billing::{DatabaseContractPriceSource, DatabaseServiceAccountAuditSink};
 
 /// 企业后台任务注册器。
 ///
@@ -98,7 +104,10 @@ pub struct OrganizationRuntimeServices {
     pub organization_wallet_service: Arc<dyn OrganizationWalletService>,
     pub organization_budget_service: Arc<dyn OrganizationBudgetService>,
     pub organization_credit_terms_service: Arc<dyn OrganizationCreditTermsService>,
-    pub organization_contract_price_repository: Arc<OrganizationContractPriceRepository>,
+    /// 请求合同价快照来源，由企业实现负责价格解析与仓储错误映射。
+    pub organization_contract_price_source: Arc<dyn ContractPriceSource>,
+    /// 公共用量落库后的企业审计投影；失败保留原队列重试语义。
+    pub organization_service_account_audit_sink: Arc<dyn ServiceAccountAuditSink>,
     pub organization_contract_price_service: Arc<dyn OrganizationContractPriceService>,
     pub organization_token_service: Arc<dyn OrganizationTokenService>,
     pub organization_scim_service: Arc<dyn OrganizationScimService>,
@@ -417,8 +426,13 @@ impl OrganizationRuntimeServices {
                         organization_credit_repayment_repository,
                     ),
             ),
-            organization_contract_price_repository: Arc::clone(
-                &organization_contract_price_repository,
+            organization_contract_price_source: Arc::new(DatabaseContractPriceSource::new(
+                Arc::clone(&organization_contract_price_repository),
+            )),
+            organization_service_account_audit_sink: Arc::new(
+                DatabaseServiceAccountAuditSink::new(
+                    OrganizationServiceAccountAuditRepository::new(context.database.clone()),
+                ),
             ),
             organization_contract_price_service: Arc::new(
                 DatabaseOrganizationContractPriceService::new(

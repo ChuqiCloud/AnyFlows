@@ -223,8 +223,9 @@ pub use payment::{
     TopupPaymentEventType, TopupRequestId, TopupStateCodeError,
 };
 pub use principal::{
-    ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, OrganizationApprovalDecisionId,
-    OrganizationApprovalRequestId, OrganizationApprovalTemplateId, OrganizationBudgetPolicyId,
+    BillingContractPriceId, ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId,
+    OrganizationApprovalDecisionId, OrganizationApprovalRequestId, OrganizationApprovalTemplateId,
+    OrganizationBudgetPolicyId,
     OrganizationBudgetWindowId, OrganizationContractPriceId, OrganizationCreditInvoiceId,
     OrganizationCreditRepaymentAllocationId, OrganizationCreditRepaymentId,
     OrganizationCreditTermId, OrganizationCustomRoleId, OrganizationDepartmentId,

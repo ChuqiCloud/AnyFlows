@@ -95,6 +95,11 @@ principal_id! {
 }
 
 principal_id! {
+    /// 请求计费快照使用的合同价记录标识。
+    BillingContractPriceId
+}
+
+principal_id! {
     /// 已通过组织范围校验的企业空间内部标识。
     OrganizationId
 }
