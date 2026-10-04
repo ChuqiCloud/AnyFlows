@@ -9,7 +9,7 @@ use af_domain::{
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QueryResult,
     entity::prelude::TimeDateTimeWithTimeZone,
-    sea_query::{Alias, Expr, ExprTrait, Query, SelectStatement},
+    sea_query::{Alias, Expr, Query, SelectStatement},
 };
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
