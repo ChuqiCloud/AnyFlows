@@ -1281,8 +1281,6 @@ impl Bootstrap<DatabaseReady> {
             database_migration_extension: _,
             stage,
         } = self;
-        let database_authenticator: Arc<dyn TokenAuthenticator> =
-            Arc::new(DatabaseTokenAuthenticator::new(repository));
         let user_profile_service: Arc<dyn UserProfileService> =
             Arc::new(build_user_profile_service(
                 user_profile_repository,
@@ -1304,6 +1302,11 @@ impl Bootstrap<DatabaseReady> {
             request_outcome_repository: &request_outcome_read_repository,
             scim_rate_limit_store: stage.organization_scim_rate_limit_store.clone(),
         })?;
+        let database_authenticator: Arc<dyn TokenAuthenticator> = Arc::new(
+            DatabaseTokenAuthenticator::new(repository.with_organization_validator(Arc::clone(
+                &organization.organization_token_auth_validator,
+            ))),
+        );
         Ok(Bootstrap {
             config,
             shutdown_timeout,

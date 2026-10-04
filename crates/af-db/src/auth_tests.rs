@@ -17,14 +17,16 @@ use tracing_subscriber::fmt::format::FmtSpan;
 
 use af_domain::{
     MAX_MODEL_NAME_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_COUNT, MAX_TOKEN_MODEL_ALLOWLIST_TEXT_BYTES,
-    TokenModelPolicy, TrustedClientIp,
+    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, TokenModelPolicy,
+    TrustedClientIp, UserId,
 };
 
 use crate::{
-    DatabaseOptions, DatabasePool, MigrationOptions, TokenAuthLookup, TokenAuthLookupError,
-    TokenAuthLookupOutcome, TokenAuthRepository, TokenAuthRepositoryConfigError,
-    TokenAuthRepositoryError,
-    entity::{TokenHash, groups, tokens, users},
+    DatabaseOptions, DatabaseOrganizationTokenAuthValidator, DatabasePool, MigrationOptions,
+    OrganizationCreate, OrganizationEntitlementWrite, OrganizationRepository, TokenAuthLookup,
+    TokenAuthLookupError, TokenAuthLookupOutcome, TokenAuthRepository,
+    TokenAuthRepositoryConfigError, TokenAuthRepositoryError,
+    entity::{TokenHash, groups, organizations, tokens, users},
 };
 
 const VALID_HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -928,6 +930,106 @@ async fn lookup_timeout_and_closed_pool_are_internal() -> Result<(), Box<dyn Err
     let closed_fixture = fixture(Duration::from_secs(1)).await?;
     closed_fixture.pool.clone().close().await?;
     assert_repository_error(&closed_fixture, TokenAuthRepositoryError::Query).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn organization_token_auth_uses_the_extension_boundary() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture(Duration::from_secs(1)).await?;
+    let owner_id = UserId::new(fixture.user_id)?;
+    let created = OrganizationRepository::new(fixture.pool.clone(), Duration::from_secs(1))?
+        .create(OrganizationCreate::new(
+            "Token Auth Organization".to_owned(),
+            "token-auth-organization".to_owned(),
+            owner_id,
+            OrganizationEntitlementWrite::new(
+                OrganizationEntitlementSnapshot::new(
+                    OrganizationEntitlementCapacity::new(10, 10, 10)?,
+                    true,
+                    false,
+                    false,
+                    90,
+                    946_684_800,
+                    4_102_444_800,
+                    Some(4_102_444_800),
+                )?,
+                "auth-test".to_owned(),
+                None,
+                None,
+            )?,
+        ))
+        .await?;
+    let (organization, owner_membership) = created.into_parts();
+    let statement = Query::update()
+        .table(tokens::Entity)
+        .value(
+            tokens::Column::OrganizationId,
+            Expr::value(Some(organization.id().get())),
+        )
+        .value(
+            tokens::Column::OrganizationMembershipId,
+            Expr::value(Some(owner_membership.id().get())),
+        )
+        .and_where(Expr::col(tokens::Column::Id).eq(fixture.token_id))
+        .to_owned();
+    fixture
+        .pool
+        .connection()
+        .execute(
+            fixture
+                .pool
+                .connection()
+                .get_database_backend()
+                .build(&statement),
+        )
+        .await?;
+
+    assert_eq!(
+        fixture
+            .repository
+            .lookup(&fixture.lookup, test_client_ip())
+            .await?,
+        TokenAuthLookupOutcome::Rejected
+    );
+
+    let repository = TokenAuthRepository::new(fixture.pool.clone(), Duration::from_secs(1))?
+        .with_organization_validator(Arc::new(DatabaseOrganizationTokenAuthValidator::new(
+            fixture.pool.clone(),
+        )));
+    let outcome = repository.lookup(&fixture.lookup, test_client_ip()).await?;
+    let TokenAuthLookupOutcome::Authenticated { principal, .. } = outcome else {
+        return Err("active organization token should authenticate".into());
+    };
+    let organization_principal = principal
+        .organization_principal()
+        .ok_or("organization token must not become a personal principal")?;
+    assert_eq!(organization_principal.organization_id(), organization.id());
+    assert_eq!(
+        organization_principal.membership_id(),
+        owner_membership.id()
+    );
+
+    let statement = Query::update()
+        .table(organizations::Entity)
+        .value(organizations::Column::Status, Expr::value(2_i16))
+        .and_where(Expr::col(organizations::Column::Id).eq(organization.id().get()))
+        .to_owned();
+    fixture
+        .pool
+        .connection()
+        .execute(
+            fixture
+                .pool
+                .connection()
+                .get_database_backend()
+                .build(&statement),
+        )
+        .await?;
+    assert_eq!(
+        repository.lookup(&fixture.lookup, test_client_ip()).await?,
+        TokenAuthLookupOutcome::Rejected
+    );
+    fixture.pool.close().await?;
     Ok(())
 }
 

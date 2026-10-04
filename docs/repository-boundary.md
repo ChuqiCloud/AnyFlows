@@ -130,3 +130,27 @@ approval timeout handling, SSO domain re-verification, and SSO login transaction
 cleanup unchanged, while a distribution can replace or omit those registrations.
 These remaining concrete service dependencies must be extracted before publishing
 the public core.
+
+## Token authentication
+
+The public `TokenAuthRepository` queries shared token, user, and group state. It
+does not join organization, membership, team, department, or entitlement tables.
+Organization tokens are validated through `OrganizationTokenAuthValidator`,
+injected by `OrganizationRuntimeServices` during authentication startup.
+
+The validator receives `OrganizationTokenAuthContext`: token, user, organization,
+membership, and optional team and department IDs. The context contains neither
+the API key nor its hash, and no enterprise configuration. The public repository
+checks that the returned organization principal matches every ownership ID in
+that context before accepting it.
+
+Missing validators, rejected enterprise state, and validator errors never
+produce a personal principal. Shared token state and enterprise validation use
+the same lookup deadline. Personal tokens do not invoke the enterprise validator.
+
+`DatabaseOrganizationTokenAuthValidator` is the transitional in-tree
+implementation. It retains the existing membership, entitlement, team,
+department, and organization key capacity checks, and rechecks persisted token
+ownership before returning an organization principal. This implementation must
+move to the private enterprise repository before the public core is published;
+the validator contract and shared principal IDs remain public.
