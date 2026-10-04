@@ -1,22 +1,21 @@
-use std::fmt;
+use std::{fmt, sync::Arc};
 
 use af_db::{
-    OrganizationServiceAccountAuditRepository, OrganizationServiceAccountAuditRepositoryError,
-    OrganizationServiceAccountAuditWrite, UsageLogBillingMode, UsageLogRepository,
-    UsageLogRepositoryError, UsageLogSemantics, UsageLogSource, UsageLogUsage,
-    UsageLogVideoResolution, UsageLogWrite,
+    UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics,
+    UsageLogSource, UsageLogUsage, UsageLogVideoResolution, UsageLogWrite,
 };
 use af_protocol::{ReasoningEffort, UsageSemantics, UsageSource, VideoResolution};
 
 use crate::{
-    BillingMode, BillingUsageRecord, UsageRecordSink, UsageRecordSinkError, UsageRecordSinkFuture,
+    BillingMode, BillingUsageRecord, ServiceAccountAuditSink, UsageRecordSink,
+    UsageRecordSinkError, UsageRecordSinkFuture,
 };
 
 /// 将计费生命周期的最小用量事实写入 `af-db::UsageLogRepository`。
 #[derive(Clone)]
 pub struct DatabaseUsageRecordSink {
     repository: UsageLogRepository,
-    service_account_audit_repository: Option<OrganizationServiceAccountAuditRepository>,
+    service_account_audit_sink: Option<Arc<dyn ServiceAccountAuditSink>>,
 }
 
 impl DatabaseUsageRecordSink {
@@ -25,17 +24,17 @@ impl DatabaseUsageRecordSink {
     pub fn new(repository: UsageLogRepository) -> Self {
         Self {
             repository,
-            service_account_audit_repository: None,
+            service_account_audit_sink: None,
         }
     }
 
     /// 开启服务账号调用身份投影；个人/API Key 用量仍只写入原有日志。
     #[must_use]
-    pub fn with_service_account_audit_projection(
+    pub fn with_service_account_audit_sink(
         mut self,
-        repository: OrganizationServiceAccountAuditRepository,
+        sink: Arc<dyn ServiceAccountAuditSink>,
     ) -> Self {
-        self.service_account_audit_repository = Some(repository);
+        self.service_account_audit_sink = Some(sink);
         self
     }
 }
@@ -48,16 +47,13 @@ impl UsageRecordSink for DatabaseUsageRecordSink {
                 .record(&write)
                 .await
                 .map_err(map_repository_error)?;
-            if let (Some(repository), Some(identity)) = (
-                self.service_account_audit_repository.as_ref(),
+            if let (Some(sink), Some(identity)) = (
+                self.service_account_audit_sink.as_ref(),
                 record.service_account_identity(),
             ) {
-                let projection =
-                    OrganizationServiceAccountAuditWrite::new(record.event_id(), identity);
-                repository
-                    .record(&projection)
+                sink.record(record.event_id(), identity)
                     .await
-                    .map_err(map_service_account_audit_repository_error)?;
+                    .map_err(map_service_account_audit_error)?;
             }
             Ok(())
         })
@@ -188,23 +184,11 @@ fn map_repository_error(error: UsageLogRepositoryError) -> UsageRecordSinkError 
     }
 }
 
-fn map_service_account_audit_repository_error(
-    error: OrganizationServiceAccountAuditRepositoryError,
-) -> UsageRecordSinkError {
+fn map_service_account_audit_error(error: crate::ServiceAccountAuditError) -> UsageRecordSinkError {
     match error {
-        OrganizationServiceAccountAuditRepositoryError::OutcomeUnknown
-        | OrganizationServiceAccountAuditRepositoryError::Query
-        | OrganizationServiceAccountAuditRepositoryError::Timeout
-        | OrganizationServiceAccountAuditRepositoryError::UsageNotFound
-        | OrganizationServiceAccountAuditRepositoryError::AccountNotFound
-        | OrganizationServiceAccountAuditRepositoryError::CredentialNotFound => {
-            UsageRecordSinkError::Unavailable
-        }
-        OrganizationServiceAccountAuditRepositoryError::Conflict => UsageRecordSinkError::Conflict,
-        OrganizationServiceAccountAuditRepositoryError::InvalidInput
-        | OrganizationServiceAccountAuditRepositoryError::Invariant => {
-            UsageRecordSinkError::Invariant
-        }
+        crate::ServiceAccountAuditError::Unavailable => UsageRecordSinkError::Unavailable,
+        crate::ServiceAccountAuditError::Conflict => UsageRecordSinkError::Conflict,
+        crate::ServiceAccountAuditError::Invariant => UsageRecordSinkError::Invariant,
     }
 }
 

@@ -1,16 +1,14 @@
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
-use af_db::{
-    OrganizationContractPriceRepository, OrganizationContractPriceRepositoryError,
-    OrganizationContractPriceSnapshot,
-};
+use af_db::OrganizationContractPriceSnapshot;
 use af_domain::{GroupId, OrganizationId, Protocol};
 use thiserror::Error;
 
 use crate::{
-    BillingMode, GroupPricingCache, GroupPricingCacheError, GroupPricingLookupError,
-    ModelPriceCache, ModelPriceCacheError, ModelPriceMode, PricingRatio, PricingRatios,
-    PricingResolver, RatioPricingResolver, TokenPrices,
+    BillingMode, ContractPriceSource, ContractPriceSourceError, GroupPricingCache,
+    GroupPricingCacheError, GroupPricingLookupError, ModelPriceCache, ModelPriceCacheError,
+    ModelPriceMode, PricingRatio, PricingRatios, PricingResolver, RatioPricingResolver,
+    TokenPrices,
 };
 
 /// 从进程内不可变目录同步固定一次请求的完整定价事实。
@@ -167,7 +165,7 @@ pub enum RequestPricingSnapshotError {
     ExpressionPricingUnavailable,
     /// 企业合同价目录读取失败。
     #[error(transparent)]
-    ContractPrice(#[from] OrganizationContractPriceRepositoryError),
+    ContractPrice(#[from] ContractPriceSourceError),
 }
 
 /// 组合模型价格与分组倍率缓存的同步请求快照来源。
@@ -175,7 +173,7 @@ pub enum RequestPricingSnapshotError {
 pub struct CachedRequestPricingSnapshotSource {
     model_prices: ModelPriceCache,
     group_pricing: GroupPricingCache,
-    contract_prices: Option<Arc<OrganizationContractPriceRepository>>,
+    contract_prices: Option<Arc<dyn ContractPriceSource>>,
 }
 
 impl CachedRequestPricingSnapshotSource {
@@ -191,11 +189,8 @@ impl CachedRequestPricingSnapshotSource {
 
     /// 接入企业合同价仓储；未绑定仓储时保持原有平台定价行为。
     #[must_use]
-    pub fn with_contract_prices(
-        mut self,
-        repository: Arc<OrganizationContractPriceRepository>,
-    ) -> Self {
-        self.contract_prices = Some(repository);
+    pub fn with_contract_prices(mut self, source: Arc<dyn ContractPriceSource>) -> Self {
+        self.contract_prices = Some(source);
         self
     }
 
@@ -266,12 +261,12 @@ impl RequestPricingSnapshotSource for CachedRequestPricingSnapshotSource {
         Box::pin(async move {
             let mut snapshot =
                 self.capture(model, source_group_id, target_group_id, current_second)?;
-            let (Some(organization_id), Some(repository)) =
+            let (Some(organization_id), Some(source)) =
                 (organization_id, self.contract_prices.as_ref())
             else {
                 return Ok(snapshot);
             };
-            let Some(contract_price) = repository
+            let Some(contract_price) = source
                 .resolve(
                     organization_id,
                     model,
@@ -282,6 +277,9 @@ impl RequestPricingSnapshotSource for CachedRequestPricingSnapshotSource {
             else {
                 return Ok(snapshot);
             };
+            if contract_price.organization_id() != organization_id {
+                return Err(ContractPriceSourceError::Invariant.into());
+            }
             let prices = contract_price.prices();
             let prices = TokenPrices::new(prices[0], prices[1], prices[2], prices[3], prices[4])
                 .map_err(|_| RequestPricingSnapshotError::ExpressionPricingUnavailable)?;
