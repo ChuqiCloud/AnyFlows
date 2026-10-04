@@ -5,10 +5,10 @@ use af_domain::{GroupId, OrganizationId, Protocol};
 use thiserror::Error;
 
 use crate::{
-    BillingMode, ContractPriceSource, ContractPriceSourceError,
-    GroupPricingCache, GroupPricingCacheError, GroupPricingLookupError, ModelPriceCache,
-    ModelPriceCacheError, ModelPriceMode, PricingRatio, PricingRatios, PricingResolver,
-    RatioPricingResolver, TokenPrices,
+    BillingMode, ContractPriceSource, ContractPriceSourceError, GroupPricingCache,
+    GroupPricingCacheError, GroupPricingLookupError, ModelPriceCache, ModelPriceCacheError,
+    ModelPriceMode, PricingRatio, PricingRatios, PricingResolver, RatioPricingResolver,
+    TokenPrices,
 };
 
 /// 从进程内不可变目录同步固定一次请求的完整定价事实。
@@ -189,10 +189,7 @@ impl CachedRequestPricingSnapshotSource {
 
     /// 接入企业合同价仓储；未绑定仓储时保持原有平台定价行为。
     #[must_use]
-    pub fn with_contract_prices(
-        mut self,
-        source: Arc<dyn ContractPriceSource>,
-    ) -> Self {
+    pub fn with_contract_prices(mut self, source: Arc<dyn ContractPriceSource>) -> Self {
         self.contract_prices = Some(source);
         self
     }

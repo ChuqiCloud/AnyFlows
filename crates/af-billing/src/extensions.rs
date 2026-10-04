@@ -20,7 +20,10 @@ pub trait ContractPriceSource: Send + Sync + 'static {
 pub type ContractPriceSourceFuture<'a> = Pin<
     Box<
         dyn Future<
-                Output = Result<Option<OrganizationContractPriceSnapshot>, ContractPriceSourceError>,
+                Output = Result<
+                    Option<OrganizationContractPriceSnapshot>,
+                    ContractPriceSourceError,
+                >,
             > + Send
             + 'a,
     >,

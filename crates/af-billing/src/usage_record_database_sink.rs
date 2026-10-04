@@ -7,8 +7,8 @@ use af_db::{
 use af_protocol::{ReasoningEffort, UsageSemantics, UsageSource, VideoResolution};
 
 use crate::{
-    BillingMode, BillingUsageRecord, ServiceAccountAuditSink, UsageRecordSink, UsageRecordSinkError,
-    UsageRecordSinkFuture,
+    BillingMode, BillingUsageRecord, ServiceAccountAuditSink, UsageRecordSink,
+    UsageRecordSinkError, UsageRecordSinkFuture,
 };
 
 /// 将计费生命周期的最小用量事实写入 `af-db::UsageLogRepository`。
@@ -186,9 +186,7 @@ fn map_repository_error(error: UsageLogRepositoryError) -> UsageRecordSinkError 
 
 fn map_service_account_audit_error(error: crate::ServiceAccountAuditError) -> UsageRecordSinkError {
     match error {
-        crate::ServiceAccountAuditError::Unavailable => {
-            UsageRecordSinkError::Unavailable
-        }
+        crate::ServiceAccountAuditError::Unavailable => UsageRecordSinkError::Unavailable,
         crate::ServiceAccountAuditError::Conflict => UsageRecordSinkError::Conflict,
         crate::ServiceAccountAuditError::Invariant => UsageRecordSinkError::Invariant,
     }
