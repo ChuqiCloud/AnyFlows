@@ -2,6 +2,7 @@
 
 mod auto_ban;
 mod billing;
+mod billing_contract;
 mod channel;
 mod concurrency;
 mod enums;
@@ -319,6 +320,7 @@ mod token_policy_tests;
 #[cfg(test)]
 mod wallet_tests;
 pub use billing::{BillingReservationId, BillingReservationIdError};
+pub use billing_contract::{BillingContractPriceSnapshot, BillingContractPriceSnapshotError};
 pub use channel::{
     ChannelTimeout, ChannelTimeoutError, MAX_CHANNEL_TIMEOUT_SECS, MIN_CHANNEL_TIMEOUT_SECS,
 };

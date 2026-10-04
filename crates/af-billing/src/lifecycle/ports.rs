@@ -1,10 +1,10 @@
 use std::{future::Future, pin::Pin};
 
-use af_db::{
-    OrganizationContractPriceSnapshot, QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError,
-    QuotaReservationStatus,
+use af_db::{QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError, QuotaReservationStatus};
+use af_domain::{
+    BillingContractPriceSnapshot, BillingReservationId, GatewayPrincipal, Quota,
+    QuotaWindowRetryAfter,
 };
-use af_domain::{BillingReservationId, GatewayPrincipal, Quota, QuotaWindowRetryAfter};
 use thiserror::Error;
 
 use crate::SettlementRequest;
@@ -41,7 +41,7 @@ pub trait BillingPrechargePort: Send + Sync + 'static {
         reservation_id: BillingReservationId,
         principal: GatewayPrincipal,
         amount: Quota,
-        contract_price: Option<OrganizationContractPriceSnapshot>,
+        contract_price: Option<BillingContractPriceSnapshot>,
     ) -> BillingPrechargeFuture<'a> {
         let _ = contract_price;
         self.precharge(reservation_id, principal, amount)
@@ -103,7 +103,7 @@ impl BillingPrechargePort for QuotaRepository {
         reservation_id: BillingReservationId,
         principal: GatewayPrincipal,
         amount: Quota,
-        contract_price: Option<OrganizationContractPriceSnapshot>,
+        contract_price: Option<BillingContractPriceSnapshot>,
     ) -> BillingPrechargeFuture<'a> {
         Box::pin(async move {
             let outcome = QuotaRepository::precharge_with_contract_price(

@@ -1,7 +1,6 @@
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
-use af_db::OrganizationContractPriceSnapshot;
-use af_domain::{GroupId, OrganizationId, Protocol};
+use af_domain::{BillingContractPriceSnapshot, GroupId, OrganizationId, Protocol};
 use thiserror::Error;
 
 use crate::{
@@ -60,7 +59,7 @@ pub struct RequestPricingSnapshot {
     ratios: PricingRatios,
     model_generation: u64,
     group_generation: u64,
-    contract_price: Option<OrganizationContractPriceSnapshot>,
+    contract_price: Option<BillingContractPriceSnapshot>,
 }
 
 impl RequestPricingSnapshot {
@@ -96,7 +95,7 @@ impl RequestPricingSnapshot {
 
     /// 返回企业合同价快照；个人请求和未命中合同价时为空。
     #[must_use]
-    pub const fn contract_price(&self) -> Option<OrganizationContractPriceSnapshot> {
+    pub const fn contract_price(&self) -> Option<BillingContractPriceSnapshot> {
         self.contract_price
     }
 

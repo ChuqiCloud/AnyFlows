@@ -249,6 +249,7 @@ version = "0.2.0-beta.14"
 dependencies = [
  "getrandom 0.4.3",
  "regex",
+ "rust_decimal",
  "serde",
  "serde_json",
  "sha2 0.10.9",

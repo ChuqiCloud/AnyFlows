@@ -13,7 +13,8 @@ use af_billing::{
     RequestPricingSnapshotSource, UsageRecordPort,
 };
 use af_domain::{
-    AfError, BillingReservationId, ChannelId, ConcurrencyLimit, GatewayPrincipal, GroupId, Protocol,
+    AfError, BillingContractPriceSnapshot, BillingReservationId, ChannelId, ConcurrencyLimit,
+    GatewayPrincipal, GroupId, Protocol,
 };
 use af_http::{ChatService, ChatServiceFuture};
 use af_protocol::{CanonicalRequestEnvelope, TokenCount, Usage};
@@ -497,7 +498,7 @@ pub(crate) async fn precharge_with_retries(
     reservation_id: BillingReservationId,
     principal: GatewayPrincipal,
     amount: af_domain::Quota,
-    contract_price: Option<af_db::OrganizationContractPriceSnapshot>,
+    contract_price: Option<BillingContractPriceSnapshot>,
 ) -> Result<(), AfError> {
     let mut attempts = 0;
     loop {

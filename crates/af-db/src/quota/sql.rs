@@ -1,4 +1,4 @@
-use af_domain::{GatewayPrincipal, Quota};
+use af_domain::{BillingContractPriceSnapshot, GatewayPrincipal, Quota};
 use sea_orm::{
     ColumnTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
@@ -8,7 +8,6 @@ use sea_orm::{
     },
 };
 
-use crate::OrganizationContractPriceSnapshot;
 use crate::entity::{billing_reservations, groups, tokens, users};
 
 use super::state::{QuotaFundingSource, QuotaReservationKind, QuotaReservationStatus};
@@ -20,7 +19,7 @@ pub(crate) fn insert_reservation(
     reservation_kind: QuotaReservationKind,
     now: TimeDateTimeWithTimeZone,
     expires_at: TimeDateTimeWithTimeZone,
-    contract_price: Option<OrganizationContractPriceSnapshot>,
+    contract_price: Option<BillingContractPriceSnapshot>,
 ) -> InsertStatement {
     let contract_prices = contract_price.map(|snapshot| snapshot.prices());
     Query::insert()

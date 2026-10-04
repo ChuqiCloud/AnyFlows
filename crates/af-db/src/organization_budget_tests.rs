@@ -1,7 +1,8 @@
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    BillingReservationId, GatewayPrincipal, GroupId, OrganizationBudgetLimit,
+    BillingContractPriceSnapshot, BillingReservationId, GatewayPrincipal, GroupId,
+    OrganizationBudgetLimit,
     OrganizationBudgetPeriod, OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot,
     OrganizationGatewayPrincipal, OrganizationId, OrganizationMembershipId, OrganizationRole,
     OrganizationTeamId, Quota, TokenId, UserId, WalletEventId,
@@ -16,7 +17,7 @@ use super::{
     DatabaseOptions, MigrationOptions, OrganizationBillingMutationOutcome,
     OrganizationBillingPrincipal, OrganizationBillingReservationStatus,
     OrganizationBudgetPolicyWrite, OrganizationBudgetRepository, OrganizationBudgetRepositoryError,
-    OrganizationBudgetScope, OrganizationContractPriceSnapshot, OrganizationCreate,
+    OrganizationBudgetScope, OrganizationCreate,
     OrganizationDepartmentCreate, OrganizationDepartmentMembershipCreate,
     OrganizationDepartmentMembershipRepository, OrganizationDepartmentRepository,
     OrganizationEntitlementWrite, OrganizationMembershipCreate, OrganizationRepository,
@@ -553,7 +554,7 @@ async fn gateway_contract_price_snapshot_is_org_scoped_and_idempotent() -> Resul
     credit_wallet(&fixture, first, 500, 0x91).await?;
     let principal = create_gateway_principal(&fixture, first, 200, 0x92).await?;
     let repository = QuotaRepository::new(fixture.pool.clone());
-    let foreign_snapshot = OrganizationContractPriceSnapshot::from_parts(
+    let foreign_snapshot = BillingContractPriceSnapshot::from_persistence_parts(
         second.organization_id.get(),
         901,
         3,
@@ -569,7 +570,7 @@ async fn gateway_contract_price_snapshot_is_org_scoped_and_idempotent() -> Resul
         Err(QuotaRepositoryError::Invariant)
     );
 
-    let snapshot = OrganizationContractPriceSnapshot::from_parts(
+    let snapshot = BillingContractPriceSnapshot::from_persistence_parts(
         first.organization_id.get(),
         902,
         4,

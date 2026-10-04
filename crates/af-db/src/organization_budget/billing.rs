@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use af_domain::{
-    BillingReservationId, GroupId, OrganizationBudgetPolicyId, OrganizationBudgetWindowId,
+    BillingContractPriceSnapshot, BillingReservationId, GroupId, OrganizationBudgetPolicyId,
+    OrganizationBudgetWindowId,
     OrganizationDepartmentBudgetPath, OrganizationDepartmentId,
     OrganizationDepartmentMembershipStatus, OrganizationDepartmentNode,
     OrganizationDepartmentStatus, OrganizationId, OrganizationMembershipId,
@@ -14,7 +15,6 @@ use sea_orm::{
     sea_query::{Expr, LockType},
 };
 
-use crate::OrganizationContractPriceSnapshot;
 use crate::entity::{
     BillingReservationKey, SensitiveDecimal, billing_organization_reservation_departments,
     billing_organization_reservations, organization_department_memberships,
@@ -52,7 +52,7 @@ pub(crate) async fn reserve_gateway(
     group_id: GroupId,
     amount: Quota,
     expires_at: TimeDateTimeWithTimeZone,
-    contract_price: Option<OrganizationContractPriceSnapshot>,
+    contract_price: Option<BillingContractPriceSnapshot>,
 ) -> Result<OrganizationBillingMutationOutcome, OrganizationBudgetRepositoryError> {
     reserve_with_gateway(
         transaction,
@@ -73,7 +73,7 @@ async fn reserve_with_gateway(
     amount: Quota,
     expires_at: TimeDateTimeWithTimeZone,
     gateway: Option<(TokenId, GroupId)>,
-    contract_price: Option<OrganizationContractPriceSnapshot>,
+    contract_price: Option<BillingContractPriceSnapshot>,
 ) -> Result<OrganizationBillingMutationOutcome, OrganizationBudgetRepositoryError> {
     if amount.is_zero() {
         return Err(OrganizationBudgetRepositoryError::InvalidInput);
@@ -1008,7 +1008,7 @@ fn record(
             Some(cache_5m),
             Some(cache_1h),
         ) => Some(
-            OrganizationContractPriceSnapshot::from_parts(
+            BillingContractPriceSnapshot::from_persistence_parts(
                 model.organization_id,
                 id,
                 version,

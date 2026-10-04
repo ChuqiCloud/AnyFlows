@@ -1,5 +1,4 @@
-use crate::OrganizationContractPriceSnapshot;
-use af_domain::{GatewayPrincipal, Quota, QuotaWindowRetryAfter};
+use af_domain::{BillingContractPriceSnapshot, GatewayPrincipal, Quota, QuotaWindowRetryAfter};
 use rust_decimal::Decimal;
 use sea_orm::{QueryResult, entity::prelude::TimeDateTimeWithTimeZone};
 use thiserror::Error;
@@ -166,7 +165,7 @@ pub(crate) struct ReservationState {
     pub(crate) reserved_quota: i64,
     pub(crate) token_reserved_quota: i64,
     pub(crate) actual_quota: Option<i64>,
-    pub(crate) contract_price: Option<OrganizationContractPriceSnapshot>,
+    pub(crate) contract_price: Option<BillingContractPriceSnapshot>,
 }
 
 impl ReservationState {
@@ -316,7 +315,7 @@ impl GroupQuotaState {
 fn contract_price_from_result(
     result: &QueryResult,
     organization_id: Option<i64>,
-) -> Result<Option<OrganizationContractPriceSnapshot>, QuotaRepositoryError> {
+) -> Result<Option<BillingContractPriceSnapshot>, QuotaRepositoryError> {
     let id: Option<i64> = get(result, "contract_price_id")?;
     let version: Option<i64> = get(result, "contract_price_version")?;
     let prices = [
@@ -338,7 +337,7 @@ fn contract_price_from_result(
                 Some(cache_5m),
                 Some(cache_1h),
             ],
-        ) => OrganizationContractPriceSnapshot::from_parts(
+        ) => BillingContractPriceSnapshot::from_persistence_parts(
             organization_id.ok_or(QuotaRepositoryError::Invariant)?,
             id,
             version,

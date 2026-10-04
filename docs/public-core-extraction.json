@@ -133,6 +133,8 @@
     "crates/af-http/src/http_extensions.rs",
     "crates/af-http/src/organization_routes.rs",
     "crates/af-server/src/bootstrap.rs",
+    "crates/af-domain/src/billing_contract.rs",
+    "crates/af-billing/src/extensions.rs",
     "docs/repository-boundary.md"
   ]
 }
