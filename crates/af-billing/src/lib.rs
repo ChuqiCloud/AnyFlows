@@ -5,6 +5,7 @@ mod billing_session;
 mod database_sink;
 mod easypay;
 mod expression_pricing;
+mod extensions;
 mod group_pricing_cache;
 mod lifecycle;
 mod model_price_cache;
@@ -46,6 +47,10 @@ pub use expression_pricing::{
     BillingExpressionResult, BillingExpressionUsage, BillingExpressionUsageSemantics,
     BillingExpressionVariables, ExpressionVariable, ExpressionVariableUsage, ExpressionVersion,
     MAX_BILLING_EXPRESSION_BYTES,
+};
+pub use extensions::{
+    ContractPriceSource, ContractPriceSourceError, ContractPriceSourceFuture,
+    ServiceAccountAuditError, ServiceAccountAuditFuture, ServiceAccountAuditSink,
 };
 pub use group_pricing_cache::{
     GroupModelRatioSourceRecord, GroupPeakPricing, GroupPricingCache, GroupPricingCacheError,
