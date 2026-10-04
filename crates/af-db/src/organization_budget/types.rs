@@ -3,8 +3,8 @@ use std::fmt;
 use af_domain::{
     BillingContractPriceSnapshot, BillingReservationId, GroupId, OrganizationBudgetLimit,
     OrganizationBudgetPeriod, OrganizationBudgetPolicyId, OrganizationBudgetScopeKind,
-    OrganizationBudgetWindowId, OrganizationDepartmentId, OrganizationId,
-    OrganizationMembershipId, OrganizationTeamId, Quota, TokenId, UserId,
+    OrganizationBudgetWindowId, OrganizationDepartmentId, OrganizationId, OrganizationMembershipId,
+    OrganizationTeamId, Quota, TokenId, UserId,
 };
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 use thiserror::Error;
