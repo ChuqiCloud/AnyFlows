@@ -398,6 +398,7 @@ fn allowed_restricted_external_dependency(dependency: &DeclaredDependency) -> bo
             | ("af-domain", "serde", "normal")
             | ("af-domain", "serde_json", "dev")
             | ("af-domain", "regex", "normal")
+            | ("af-domain", "rust_decimal", "normal")
             | ("af-domain", "sha2", "normal")
             | ("af-domain", "thiserror", "normal")
             | ("af-adapter", "async-trait", "normal")
@@ -600,13 +601,22 @@ mod tests {
         let mut serde_json = dependency("af-domain", "serde_json", false);
         serde_json.kind = "dev".to_owned();
         let regex = dependency("af-domain", "regex", false);
+        let rust_decimal = dependency("af-domain", "rust_decimal", false);
         let getrandom = dependency("af-domain", "getrandom", false);
         let sha2 = dependency("af-domain", "sha2", false);
         let thiserror = dependency("af-domain", "thiserror", false);
 
         let violations = validate_workspace(
             &baseline_workspace(),
-            &[serde, serde_json, regex, getrandom, sha2, thiserror],
+            &[
+                serde,
+                serde_json,
+                regex,
+                rust_decimal,
+                getrandom,
+                sha2,
+                thiserror,
+            ],
         );
 
         assert!(violations.is_empty());
