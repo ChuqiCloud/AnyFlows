@@ -22,18 +22,19 @@ use af_admin::{
     OrganizationTokenService, OrganizationWalletService, PlatformAuditService,
 };
 use af_db::{
-    OrganizationApprovalNotificationRepository, OrganizationApprovalRepository,
-    OrganizationAuditRepository, OrganizationBudgetRepository, OrganizationContractPriceRepository,
-    OrganizationCreditInvoiceRepository, OrganizationCreditRepaymentRepository,
-    OrganizationCreditTermsRepository, OrganizationCustomRoleBindingRepository,
-    OrganizationCustomRoleRepository, OrganizationDepartmentMembershipRepository,
-    OrganizationDepartmentRepository, OrganizationPlanOrderRepository, OrganizationPlanRepository,
+    DatabaseOrganizationTokenAuthValidator, OrganizationApprovalNotificationRepository,
+    OrganizationApprovalRepository, OrganizationAuditRepository, OrganizationBudgetRepository,
+    OrganizationContractPriceRepository, OrganizationCreditInvoiceRepository,
+    OrganizationCreditRepaymentRepository, OrganizationCreditTermsRepository,
+    OrganizationCustomRoleBindingRepository, OrganizationCustomRoleRepository,
+    OrganizationDepartmentMembershipRepository, OrganizationDepartmentRepository,
+    OrganizationPlanOrderRepository, OrganizationPlanRepository,
     OrganizationProvisioningRepository, OrganizationRepository, OrganizationScimAuditRepository,
     OrganizationScimGroupRepository, OrganizationScimTokenRepository,
     OrganizationScimUserRepository, OrganizationServiceAccountBudgetBindingRepository,
     OrganizationServiceAccountRepository, OrganizationSsoProviderRepository,
-    OrganizationTokenRepository, OrganizationVerificationRepository, OrganizationWalletRepository,
-    PlatformAuditRepository,
+    OrganizationTokenAuthValidator, OrganizationTokenRepository,
+    OrganizationVerificationRepository, OrganizationWalletRepository, PlatformAuditRepository,
 };
 use af_scheduler::{
     OrganizationApprovalTimeoutSupervisor, OrganizationApprovalTimeoutSupervisorConfig,
@@ -88,6 +89,8 @@ pub struct OrganizationRuntimeContext<'a> {
 /// 发行版可以围绕该组合对象迁出企业服务装配，同时继续复用公共认证、计费和转发
 /// 基础设施。具体实现仍通过现有服务 trait 注入，路由行为不由该类型改变。
 pub struct OrganizationRuntimeServices {
+    /// 企业 API Key 的成员、授权与归属校验器；与公共鉴权共享同一查询截止时间。
+    pub organization_token_auth_validator: Arc<dyn OrganizationTokenAuthValidator>,
     /// 企业后台任务的注册回调；为 None 时不启动企业后台任务。
     pub organization_background_task_registrar: Option<OrganizationBackgroundTaskRegistrar>,
     pub organization_approval_notification_service:
@@ -392,6 +395,9 @@ impl OrganizationRuntimeServices {
                 Arc::clone(context.session_authenticator),
             ));
         Ok(Self {
+            organization_token_auth_validator: Arc::new(
+                DatabaseOrganizationTokenAuthValidator::new(context.database.clone()),
+            ),
             organization_background_task_registrar: Some(default_background_task_registrar()),
             organization_approval_notification_service: Arc::new(
                 DatabaseOrganizationApprovalNotificationService::new(

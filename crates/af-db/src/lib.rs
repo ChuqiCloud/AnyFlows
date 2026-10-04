@@ -212,6 +212,7 @@ mod organization_sso_tests;
 #[cfg(test)]
 mod organization_tests;
 mod organization_token;
+mod organization_token_auth;
 mod organization_verification;
 mod organization_wallet;
 mod passkey;
@@ -380,6 +381,7 @@ pub use async_task::{
     AsyncTaskTransition, AsyncTaskTransitionOutcome, AsyncTaskVideoResolution,
 };
 pub use auth::{
+    OrganizationTokenAuthContext, OrganizationTokenAuthValidation, OrganizationTokenAuthValidator,
     TokenAuthLookup, TokenAuthLookupError, TokenAuthLookupOutcome, TokenAuthRepository,
     TokenAuthRepositoryConfigError, TokenAuthRepositoryError,
 };
@@ -751,6 +753,7 @@ pub use organization_token::{
     OrganizationTokenRecord, OrganizationTokenRepository, OrganizationTokenRepositoryConfigError,
     OrganizationTokenRepositoryError, OrganizationTokenWriteRecord,
 };
+pub use organization_token_auth::DatabaseOrganizationTokenAuthValidator;
 pub use organization_verification::{
     OrganizationVerificationBundle, OrganizationVerificationMaterialWrite,
     OrganizationVerificationRepository, OrganizationVerificationRepositoryConfigError,
