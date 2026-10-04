@@ -15,7 +15,7 @@ use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    DatabasePool,
+    DatabasePool, OrganizationContractPriceSnapshot,
     entity::{organization_contract_prices, organization_memberships, organizations},
 };
 
@@ -85,15 +85,6 @@ pub struct OrganizationContractPriceRecord {
     updated_at: TimeDateTimeWithTimeZone,
 }
 
-/// 绑定到单次计费预留的合同价快照；结算阶段不得重新读取合同价目录。
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub struct OrganizationContractPriceSnapshot {
-    organization_id: OrganizationId,
-    id: OrganizationContractPriceId,
-    version: i64,
-    prices: [Decimal; 5],
-}
-
 impl OrganizationContractPriceSnapshot {
     /// 从已校验的合同价记录提取不可变快照。
     #[must_use]
@@ -104,57 +95,6 @@ impl OrganizationContractPriceSnapshot {
             version: record.version,
             prices: record.prices,
         }
-    }
-
-    pub(crate) fn from_parts(
-        organization_id: i64,
-        id: i64,
-        version: i64,
-        prices: [Decimal; 5],
-    ) -> Result<Self, ()> {
-        let organization_id = OrganizationId::new(organization_id).map_err(|_| ())?;
-        let id = OrganizationContractPriceId::new(id).map_err(|_| ())?;
-        if version <= 0 || prices.into_iter().any(|price| price < Decimal::ZERO) {
-            return Err(());
-        }
-        Ok(Self {
-            organization_id,
-            id,
-            version,
-            prices,
-        })
-    }
-
-    #[must_use]
-    pub const fn organization_id(self) -> OrganizationId {
-        self.organization_id
-    }
-
-    #[must_use]
-    pub const fn id(self) -> OrganizationContractPriceId {
-        self.id
-    }
-
-    #[must_use]
-    pub const fn version(self) -> i64 {
-        self.version
-    }
-
-    /// 按输入、输出、缓存读取、5 分钟缓存创建、1 小时缓存创建顺序返回单价。
-    #[must_use]
-    pub const fn prices(self) -> [Decimal; 5] {
-        self.prices
-    }
-}
-
-impl fmt::Debug for OrganizationContractPriceSnapshot {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("OrganizationContractPriceSnapshot")
-            .field("organization_id", &self.organization_id)
-            .field("id", &self.id)
-            .field("version", &self.version)
-            .finish_non_exhaustive()
     }
 }
 

@@ -74,6 +74,8 @@ mod auth_challenge_tests;
 mod auth_tests;
 mod balance_alert;
 mod billing_batch;
+mod billing_contract;
+pub use billing_contract::{BillingContractPriceSnapshotError, OrganizationContractPriceSnapshot};
 #[cfg(test)]
 mod billing_batch_tests;
 mod channel_settings;
@@ -632,7 +634,7 @@ pub use organization_budget::{
 pub use organization_contract_price::{
     OrganizationContractPriceRecord, OrganizationContractPriceRepository,
     OrganizationContractPriceRepositoryConfigError, OrganizationContractPriceRepositoryError,
-    OrganizationContractPriceSnapshot, OrganizationContractPriceWrite,
+    OrganizationContractPriceWrite,
 };
 pub use organization_credit_invoice::{
     MAX_ORGANIZATION_CREDIT_INVOICE_PAGE_SIZE, OrganizationCreditInvoicePageRecord,
