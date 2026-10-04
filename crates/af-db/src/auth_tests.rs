@@ -22,8 +22,8 @@ use af_domain::{
 
 use crate::{
     DatabaseOptions, DatabasePool, MigrationOptions, TokenAuthLookup, TokenAuthLookupError,
-    TokenAuthLookupOutcome, TokenAuthRepository,
-    TokenAuthRepositoryConfigError, TokenAuthRepositoryError,
+    TokenAuthLookupOutcome, TokenAuthRepository, TokenAuthRepositoryConfigError,
+    TokenAuthRepositoryError,
     entity::{TokenHash, groups, tokens, users},
 };
 

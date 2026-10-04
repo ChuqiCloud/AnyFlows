@@ -81,7 +81,10 @@ async fn organization_token_auth_uses_runtime_boundary() -> Result<(), Box<dyn E
         .organization_principal()
         .ok_or("organization token must not become a personal principal")?;
     assert_eq!(organization_principal.organization_id(), organization.id());
-    assert_eq!(organization_principal.membership_id(), owner_membership.id());
+    assert_eq!(
+        organization_principal.membership_id(),
+        owner_membership.id()
+    );
 
     database
         .seed()
