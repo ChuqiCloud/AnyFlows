@@ -1,7 +1,8 @@
 use std::{fmt, future::Future, time::Duration};
 
 use af_domain::{
-    OrganizationContractPriceId, OrganizationId, OrganizationMembershipStatus, Protocol, UserId,
+    BillingContractPriceSnapshot, OrganizationContractPriceId, OrganizationId,
+    OrganizationMembershipStatus, Protocol, UserId,
 };
 use rust_decimal::Decimal;
 use sea_orm::{
@@ -15,7 +16,7 @@ use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    DatabasePool, OrganizationContractPriceSnapshot,
+    DatabasePool,
     entity::{organization_contract_prices, organization_memberships, organizations},
 };
 
@@ -85,20 +86,14 @@ pub struct OrganizationContractPriceRecord {
     updated_at: TimeDateTimeWithTimeZone,
 }
 
-impl OrganizationContractPriceSnapshot {
-    /// 从已校验的合同价记录提取不可变快照。
-    #[must_use]
-    pub fn from_record(record: &OrganizationContractPriceRecord) -> Self {
-        Self {
-            organization_id: record.organization_id,
-            id: record.id,
-            version: record.version,
-            prices: record.prices,
-        }
-    }
-}
-
 impl OrganizationContractPriceRecord {
+    fn billing_snapshot(
+        &self,
+    ) -> Result<BillingContractPriceSnapshot, OrganizationContractPriceRepositoryError> {
+        BillingContractPriceSnapshot::new(self.organization_id, self.id, self.version, self.prices)
+            .map_err(|_| OrganizationContractPriceRepositoryError::Invariant)
+    }
+
     #[must_use]
     pub const fn id(&self) -> OrganizationContractPriceId {
         self.id
@@ -233,7 +228,7 @@ impl OrganizationContractPriceRepository {
         model: &str,
         protocol: Protocol,
         request_time: TimeDateTimeWithTimeZone,
-    ) -> Result<Option<OrganizationContractPriceSnapshot>, OrganizationContractPriceRepositoryError>
+    ) -> Result<Option<BillingContractPriceSnapshot>, OrganizationContractPriceRepositoryError>
     {
         self.run(self.resolve_inner(organization_id, model, protocol, request_time))
             .await
@@ -322,7 +317,7 @@ impl OrganizationContractPriceRepository {
         model: &str,
         protocol: Protocol,
         request_time: TimeDateTimeWithTimeZone,
-    ) -> Result<Option<OrganizationContractPriceSnapshot>, OrganizationContractPriceRepositoryError>
+    ) -> Result<Option<BillingContractPriceSnapshot>, OrganizationContractPriceRepositoryError>
     {
         if model.is_empty() || model.len() > 256 {
             return Err(OrganizationContractPriceRepositoryError::InvalidInput);
@@ -344,11 +339,12 @@ impl OrganizationContractPriceRepository {
             .one(self.pool.connection())
             .await
             .map_err(query_error)?;
-        model.map(record_from_model).transpose().map(|record| {
-            record
-                .as_ref()
-                .map(OrganizationContractPriceSnapshot::from_record)
-        })
+        model
+            .map(record_from_model)
+            .transpose()?
+            .as_ref()
+            .map(OrganizationContractPriceRecord::billing_snapshot)
+            .transpose()
     }
 
     async fn close_inner(

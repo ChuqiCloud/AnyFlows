@@ -131,6 +131,22 @@ cleanup unchanged, while a distribution can replace or omit those registrations.
 These remaining concrete service dependencies must be extracted before publishing
 the public core.
 
+## Billing contract snapshots
+
+The request billing layer consumes `af_domain::BillingContractPriceSnapshot`, a
+validated immutable value containing the owner, price record, version, and five
+token price components. It is a shared billing contract and does not depend on
+SeaORM, database entities, or an enterprise repository. `af-billing` exposes
+only this value through `ContractPriceSource`; the database repository converts
+its private record into the value at the adapter boundary. Quota persistence
+stores and restores the snapshot fields without exposing the repository type to
+the public billing crate.
+
+This keeps public pricing and lifecycle code independent from the enterprise
+contract-price table while preserving owner checks, versioned pricing, and
+idempotent reservation replay. A future enterprise distribution can provide a
+different `ContractPriceSource` without adding its database types to `af-billing`.
+
 ## Token authentication
 
 The public `TokenAuthRepository` queries shared token, user, and group state. It

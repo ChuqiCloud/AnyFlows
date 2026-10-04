@@ -74,8 +74,6 @@ mod auth_challenge_tests;
 mod auth_tests;
 mod balance_alert;
 mod billing_batch;
-mod billing_contract;
-pub use billing_contract::{BillingContractPriceSnapshotError, OrganizationContractPriceSnapshot};
 #[cfg(test)]
 mod billing_batch_tests;
 mod channel_settings;

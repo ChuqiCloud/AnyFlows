@@ -1,11 +1,10 @@
 use std::fmt;
 
-use crate::OrganizationContractPriceSnapshot;
 use af_domain::{
-    BillingReservationId, GroupId, OrganizationBudgetLimit, OrganizationBudgetPeriod,
-    OrganizationBudgetPolicyId, OrganizationBudgetScopeKind, OrganizationBudgetWindowId,
-    OrganizationDepartmentId, OrganizationId, OrganizationMembershipId, OrganizationTeamId, Quota,
-    TokenId, UserId,
+    BillingContractPriceSnapshot, BillingReservationId, GroupId, OrganizationBudgetLimit,
+    OrganizationBudgetPeriod, OrganizationBudgetPolicyId, OrganizationBudgetScopeKind,
+    OrganizationBudgetWindowId, OrganizationDepartmentId, OrganizationId, OrganizationMembershipId,
+    OrganizationTeamId, Quota, TokenId, UserId,
 };
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 use thiserror::Error;
@@ -346,7 +345,7 @@ pub struct OrganizationBillingReservationRecord {
     pub(crate) status: OrganizationBillingReservationStatus,
     pub(crate) reserved_quota: Quota,
     pub(crate) actual_quota: Option<Quota>,
-    pub(crate) contract_price: Option<OrganizationContractPriceSnapshot>,
+    pub(crate) contract_price: Option<BillingContractPriceSnapshot>,
     pub(crate) gateway: Option<OrganizationBillingGatewayRecord>,
     pub(crate) organization: Option<OrganizationBudgetAllocationRecord>,
     pub(crate) department_path: Vec<OrganizationDepartmentId>,
@@ -390,7 +389,7 @@ impl OrganizationBillingReservationRecord {
     }
 
     #[must_use]
-    pub(crate) const fn contract_price(&self) -> Option<OrganizationContractPriceSnapshot> {
+    pub(crate) const fn contract_price(&self) -> Option<BillingContractPriceSnapshot> {
         self.contract_price
     }
 

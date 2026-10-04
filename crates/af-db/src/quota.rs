@@ -6,7 +6,7 @@ use std::sync::{
     atomic::{AtomicU8, Ordering},
 };
 
-use af_domain::{BillingReservationId, GatewayPrincipal, Quota};
+use af_domain::{BillingContractPriceSnapshot, BillingReservationId, GatewayPrincipal, Quota};
 use sea_orm::{
     ConnectionTrait, DatabaseTransaction, DbBackend, DbErr, QueryResult, SqlErr, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone, sea_query::SelectStatement,
@@ -14,7 +14,7 @@ use sea_orm::{
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
-use crate::{DatabasePool, OrganizationContractPriceSnapshot};
+use crate::DatabasePool;
 
 mod group_windows;
 mod organization;
@@ -104,7 +104,7 @@ impl QuotaRepository {
         id: BillingReservationId,
         principal: GatewayPrincipal,
         amount: Quota,
-        contract_price: Option<OrganizationContractPriceSnapshot>,
+        contract_price: Option<BillingContractPriceSnapshot>,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
         self.reserve_with_kind(
             id,
@@ -133,7 +133,7 @@ impl QuotaRepository {
         principal: GatewayPrincipal,
         amount: Quota,
         reservation_kind: QuotaReservationKind,
-        contract_price: Option<OrganizationContractPriceSnapshot>,
+        contract_price: Option<BillingContractPriceSnapshot>,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
         if let Some(contract_price) = contract_price {
             let Some(organization) = principal.organization_principal() else {
@@ -246,7 +246,7 @@ impl QuotaRepository {
         principal: GatewayPrincipal,
         amount: Quota,
         reservation_kind: QuotaReservationKind,
-        contract_price: Option<OrganizationContractPriceSnapshot>,
+        contract_price: Option<BillingContractPriceSnapshot>,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
         if principal.organization_principal().is_some() {
             return organization::precharge(
@@ -399,7 +399,7 @@ impl QuotaRepository {
         principal: GatewayPrincipal,
         amount: Quota,
         reservation_kind: QuotaReservationKind,
-        contract_price: Option<OrganizationContractPriceSnapshot>,
+        contract_price: Option<BillingContractPriceSnapshot>,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
         let result = query_one(
             self.pool.connection(),

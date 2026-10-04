@@ -4,9 +4,9 @@ use std::{
     sync::Arc,
 };
 
-use af_db::OrganizationContractPriceSnapshot;
 use af_domain::{
-    BillingReservationId, GatewayPrincipal, OrganizationServiceAccountRuntimeIdentity, Quota,
+    BillingContractPriceSnapshot, BillingReservationId, GatewayPrincipal,
+    OrganizationServiceAccountRuntimeIdentity, Quota,
 };
 use af_protocol::Usage;
 use thiserror::Error;
@@ -46,7 +46,7 @@ enum PlanMode {
 pub struct BillingRequestPlan {
     resolver: Arc<dyn PricingResolver>,
     mode: PlanMode,
-    contract_price: Option<OrganizationContractPriceSnapshot>,
+    contract_price: Option<BillingContractPriceSnapshot>,
 }
 
 impl BillingRequestPlan {
@@ -81,7 +81,7 @@ impl BillingRequestPlan {
     #[must_use = "必须保留绑定合同价后的计费计划"]
     pub const fn with_contract_price(
         mut self,
-        contract_price: Option<OrganizationContractPriceSnapshot>,
+        contract_price: Option<BillingContractPriceSnapshot>,
     ) -> Self {
         self.contract_price = contract_price;
         self
@@ -89,7 +89,7 @@ impl BillingRequestPlan {
 
     /// 返回本计划固定的合同价快照。
     #[must_use]
-    pub const fn contract_price(&self) -> Option<OrganizationContractPriceSnapshot> {
+    pub const fn contract_price(&self) -> Option<BillingContractPriceSnapshot> {
         self.contract_price
     }
 

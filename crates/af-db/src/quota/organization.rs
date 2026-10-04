@@ -1,7 +1,6 @@
-use af_domain::{BillingReservationId, GatewayPrincipal, Quota};
+use af_domain::{BillingContractPriceSnapshot, BillingReservationId, GatewayPrincipal, Quota};
 use sea_orm::{ConnectionTrait, TransactionTrait, entity::prelude::TimeDateTimeWithTimeZone};
 
-use crate::OrganizationContractPriceSnapshot;
 use crate::organization_budget::{
     OrganizationBillingMutationOutcome, OrganizationBillingPrincipal,
     OrganizationBillingReservationRecord, OrganizationBillingReservationStatus,
@@ -25,7 +24,7 @@ pub(super) async fn precharge(
     principal: GatewayPrincipal,
     amount: Quota,
     reservation_kind: QuotaReservationKind,
-    contract_price: Option<OrganizationContractPriceSnapshot>,
+    contract_price: Option<BillingContractPriceSnapshot>,
 ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
     let organization = billing_principal(principal)?;
     if contract_price
@@ -565,7 +564,7 @@ async fn existing_precharge(
     principal: GatewayPrincipal,
     amount: Quota,
     reservation_kind: QuotaReservationKind,
-    contract_price: Option<OrganizationContractPriceSnapshot>,
+    contract_price: Option<BillingContractPriceSnapshot>,
 ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
     let key = id.persistence_key();
     let state = load_reservation(repository.pool.connection(), key.clone(), false)

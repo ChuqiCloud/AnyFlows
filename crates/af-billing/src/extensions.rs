@@ -1,8 +1,9 @@
 use std::{future::Future, pin::Pin};
 
-use af_db::{DatabaseTimestamp, OrganizationContractPriceSnapshot};
+use af_db::DatabaseTimestamp;
 use af_domain::{
-    BillingReservationId, OrganizationId, OrganizationServiceAccountRuntimeIdentity, Protocol,
+    BillingContractPriceSnapshot, BillingReservationId, OrganizationId,
+    OrganizationServiceAccountRuntimeIdentity, Protocol,
 };
 use thiserror::Error;
 
@@ -19,12 +20,8 @@ pub trait ContractPriceSource: Send + Sync + 'static {
 
 pub type ContractPriceSourceFuture<'a> = Pin<
     Box<
-        dyn Future<
-                Output = Result<
-                    Option<OrganizationContractPriceSnapshot>,
-                    ContractPriceSourceError,
-                >,
-            > + Send
+        dyn Future<Output = Result<Option<BillingContractPriceSnapshot>, ContractPriceSourceError>>
+            + Send
             + 'a,
     >,
 >;

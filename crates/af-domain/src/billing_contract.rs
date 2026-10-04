@@ -1,23 +1,27 @@
 use std::fmt;
 
-use af_domain::{OrganizationContractPriceId, OrganizationId};
 use rust_decimal::Decimal;
 use thiserror::Error;
 
-/// Immutable prices consumed by billing independently of the contract repository.
+use crate::{OrganizationContractPriceId, OrganizationId};
+
+/// Immutable token prices captured for one billing request.
+///
+/// The snapshot is a shared billing contract. Storage and the source that
+/// produced it remain outside the domain crate.
 #[derive(Clone, Copy, Eq, PartialEq)]
-pub struct OrganizationContractPriceSnapshot {
-    pub(crate) organization_id: OrganizationId,
-    pub(crate) id: OrganizationContractPriceId,
-    pub(crate) version: i64,
-    pub(crate) prices: [Decimal; 5],
+pub struct BillingContractPriceSnapshot {
+    organization_id: OrganizationId,
+    id: OrganizationContractPriceId,
+    version: i64,
+    prices: [Decimal; 5],
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 #[error("合同价快照无效")]
 pub struct BillingContractPriceSnapshotError;
 
-impl OrganizationContractPriceSnapshot {
+impl BillingContractPriceSnapshot {
     /// Prices are USD per million tokens: input, output, read, 5m write, 1h write.
     pub fn new(
         organization_id: OrganizationId,
@@ -36,7 +40,8 @@ impl OrganizationContractPriceSnapshot {
         })
     }
 
-    pub(crate) fn from_parts(
+    /// Reconstruct a snapshot from validated persistence fields.
+    pub fn from_persistence_parts(
         organization_id: i64,
         id: i64,
         version: i64,
@@ -71,10 +76,10 @@ impl OrganizationContractPriceSnapshot {
     }
 }
 
-impl fmt::Debug for OrganizationContractPriceSnapshot {
+impl fmt::Debug for BillingContractPriceSnapshot {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("OrganizationContractPriceSnapshot")
+            .debug_struct("BillingContractPriceSnapshot")
             .field("organization_id", &self.organization_id)
             .field("id", &self.id)
             .field("version", &self.version)
@@ -87,24 +92,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn extension_snapshots_validate_version_and_prices() {
+    fn snapshots_validate_version_and_prices() {
         let organization = OrganizationId::new(1).unwrap();
         let id = OrganizationContractPriceId::new(2).unwrap();
         let prices = [Decimal::ONE; 5];
-        let snapshot = OrganizationContractPriceSnapshot::new(organization, id, 3, prices).unwrap();
+        let snapshot = BillingContractPriceSnapshot::new(organization, id, 3, prices).unwrap();
         assert_eq!(snapshot.organization_id(), organization);
         assert_eq!(snapshot.id(), id);
         assert_eq!(snapshot.version(), 3);
         assert_eq!(snapshot.prices(), prices);
         for version in [0, -1] {
-            assert!(
-                OrganizationContractPriceSnapshot::new(organization, id, version, prices).is_err()
-            );
+            assert!(BillingContractPriceSnapshot::new(organization, id, version, prices).is_err());
         }
         for index in 0..5 {
             let mut invalid = prices;
             invalid[index] = -Decimal::ONE;
-            assert!(OrganizationContractPriceSnapshot::new(organization, id, 1, invalid).is_err());
+            assert!(BillingContractPriceSnapshot::new(organization, id, 1, invalid).is_err());
         }
     }
 }
