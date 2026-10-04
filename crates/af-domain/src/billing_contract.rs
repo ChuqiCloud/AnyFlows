@@ -114,16 +114,15 @@ mod tests {
     #[test]
     fn persistence_parts_preserve_billing_identity_and_reject_invalid_ids() {
         let prices = [Decimal::ONE; 5];
-        let snapshot = BillingContractPriceSnapshot::from_persistence_parts(1, 2, 3, prices)
-            .unwrap();
+        let snapshot =
+            BillingContractPriceSnapshot::from_persistence_parts(1, 2, 3, prices).unwrap();
         assert_eq!(snapshot.organization_id().get(), 1);
         assert_eq!(snapshot.id().get(), 2);
         assert_eq!(snapshot.version(), 3);
         assert_eq!(snapshot.prices(), prices);
         for (owner, id) in [(0, 2), (-1, 2), (1, 0), (1, -1)] {
             assert!(
-                BillingContractPriceSnapshot::from_persistence_parts(owner, id, 3, prices)
-                    .is_err()
+                BillingContractPriceSnapshot::from_persistence_parts(owner, id, 3, prices).is_err()
             );
         }
     }
