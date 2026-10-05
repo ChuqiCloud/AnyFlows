@@ -182,8 +182,8 @@ implementation in `crates/af-server/src/organization_runtime/token_auth.rs`.
 It owns membership, entitlement, team, department, and organization key capacity
 policy. The enterprise-owned `OrganizationTokenAuthRepository` in `af-db`
 rechecks persisted token ownership and returns structured database facts; it
-does not decide whether an organization may consume gateway services. Database
-connections and ORM entities remain private to `af-db`.
+does not decide whether an organization may consume gateway services. ORM
+entities remain private to `af-db`.
 
 Both the runtime validator and its database reader remain part of the enterprise
 extraction inventory and must move to the private enterprise repository before
@@ -191,3 +191,18 @@ publication. Moving the policy into the runtime is an intermediate step, not a
 completed source extraction. The validator contract and shared principal IDs
 remain public. Integration coverage belongs to the enterprise runtime; public
 authentication tests exercise the injected validator contract independently.
+
+## Extension persistence
+
+`DatabasePool::extension_connection` lends the shared connection to
+extension-owned persistence code as `ConnectionTrait + TransactionTrait`.
+Extensions can execute structured queries and transactions after migrations
+without opening a second pool or copying public ORM entities. The concrete
+connection type and pool lifecycle remain owned by `af-db`; the borrowed
+interface cannot close or replace the pool.
+
+This is a persistence boundary, not an application service API. Extension
+repositories must enforce their own validation, ownership checks, query
+deadlines, and error redaction. The token authentication reader uses the
+public authentication deadline and must not introduce an independent one.
+Shared user, token, and group writes continue through the core repositories.

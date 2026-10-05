@@ -1,6 +1,6 @@
 use std::fmt;
 
-use sea_orm::{Database, DatabaseConnection};
+use sea_orm::{ConnectionTrait, Database, DatabaseConnection, TransactionTrait};
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber, subscriber::NoSubscriber};
 
@@ -48,6 +48,15 @@ impl DatabasePool {
     }
 
     pub(crate) fn connection(&self) -> &DatabaseConnection {
+        &self.connection
+    }
+
+    /// Borrow the shared connection for extension-owned persistence code.
+    ///
+    /// Extensions own their queries, transactions, validation, and deadlines.
+    /// Application services should continue to use repository APIs. The opaque
+    /// reference cannot close or replace the core-managed connection pool.
+    pub fn extension_connection(&self) -> &(impl ConnectionTrait + TransactionTrait) {
         &self.connection
     }
 }
