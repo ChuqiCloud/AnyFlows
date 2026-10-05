@@ -23,13 +23,12 @@ use af_admin::{
 };
 use af_billing::{ContractPriceSource, ServiceAccountAuditSink};
 use af_db::{
-    DatabaseOrganizationTokenAuthValidator, OrganizationApprovalNotificationRepository,
-    OrganizationApprovalRepository, OrganizationAuditRepository, OrganizationBudgetRepository,
-    OrganizationContractPriceRepository, OrganizationCreditInvoiceRepository,
-    OrganizationCreditRepaymentRepository, OrganizationCreditTermsRepository,
-    OrganizationCustomRoleBindingRepository, OrganizationCustomRoleRepository,
-    OrganizationDepartmentMembershipRepository, OrganizationDepartmentRepository,
-    OrganizationPlanOrderRepository, OrganizationPlanRepository,
+    OrganizationApprovalNotificationRepository, OrganizationApprovalRepository,
+    OrganizationAuditRepository, OrganizationBudgetRepository, OrganizationContractPriceRepository,
+    OrganizationCreditInvoiceRepository, OrganizationCreditRepaymentRepository,
+    OrganizationCreditTermsRepository, OrganizationCustomRoleBindingRepository,
+    OrganizationCustomRoleRepository, OrganizationDepartmentMembershipRepository,
+    OrganizationDepartmentRepository, OrganizationPlanOrderRepository, OrganizationPlanRepository,
     OrganizationProvisioningRepository, OrganizationRepository, OrganizationScimAuditRepository,
     OrganizationScimGroupRepository, OrganizationScimTokenRepository,
     OrganizationScimUserRepository, OrganizationServiceAccountAuditRepository,
@@ -51,8 +50,12 @@ use af_telemetry::{
 use crate::{BackgroundTaskSupervisor, BootstrapError};
 
 mod billing;
+mod token_auth;
+#[cfg(test)]
+mod token_auth_tests;
 
 use billing::{DatabaseContractPriceSource, DatabaseServiceAccountAuditSink};
+use token_auth::DatabaseOrganizationTokenAuthValidator;
 
 /// 企业后台任务注册器。
 ///

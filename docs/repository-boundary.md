@@ -178,8 +178,16 @@ produce a personal principal. Shared token state and enterprise validation use
 the same lookup deadline. Personal tokens do not invoke the enterprise validator.
 
 `DatabaseOrganizationTokenAuthValidator` is the transitional in-tree
-implementation. It retains the existing membership, entitlement, team,
-department, and organization key capacity checks, and rechecks persisted token
-ownership before returning an organization principal. This implementation must
-move to the private enterprise repository before the public core is published;
-the validator contract and shared principal IDs remain public.
+implementation in `crates/af-server/src/organization_runtime/token_auth.rs`.
+It owns membership, entitlement, team, department, and organization key capacity
+policy. The enterprise-owned `OrganizationTokenAuthRepository` in `af-db`
+rechecks persisted token ownership and returns structured database facts; it
+does not decide whether an organization may consume gateway services. Database
+connections and ORM entities remain private to `af-db`.
+
+Both the runtime validator and its database reader remain part of the enterprise
+extraction inventory and must move to the private enterprise repository before
+publication. Moving the policy into the runtime is an intermediate step, not a
+completed source extraction. The validator contract and shared principal IDs
+remain public. Integration coverage belongs to the enterprise runtime; public
+authentication tests exercise the injected validator contract independently.

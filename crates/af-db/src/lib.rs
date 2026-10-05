@@ -212,7 +212,7 @@ mod organization_sso_tests;
 #[cfg(test)]
 mod organization_tests;
 mod organization_token;
-mod organization_token_auth;
+mod organization_token_auth_store;
 mod organization_verification;
 mod organization_wallet;
 mod passkey;
@@ -753,7 +753,10 @@ pub use organization_token::{
     OrganizationTokenRecord, OrganizationTokenRepository, OrganizationTokenRepositoryConfigError,
     OrganizationTokenRepositoryError, OrganizationTokenWriteRecord,
 };
-pub use organization_token_auth::DatabaseOrganizationTokenAuthValidator;
+pub use organization_token_auth_store::{
+    OrganizationTokenAuthDepartmentRecord, OrganizationTokenAuthRecord,
+    OrganizationTokenAuthRepository,
+};
 pub use organization_verification::{
     OrganizationVerificationBundle, OrganizationVerificationMaterialWrite,
     OrganizationVerificationRepository, OrganizationVerificationRepositoryConfigError,
