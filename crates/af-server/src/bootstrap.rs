@@ -3,8 +3,8 @@ use std::{future::Future, sync::Arc, time::Duration};
 use af_account::{
     CredentialDecryptionError, CredentialDecryptor, CredentialEncryptionError, CredentialEncryptor,
     DiagnosticSnapshotCipher, OAuthConnectionCoordinator, OAuthLoginClient, OAuthProviderProfile,
-    OAuthRefreshSupervisor, OrganizationSsoDnsResolverConfigError, PlainSystemSecret,
-    SystemSecretCipher, SystemSecretError, SystemSecretKind,
+    OAuthRefreshSupervisor, PlainSystemSecret, SystemSecretCipher, SystemSecretError,
+    SystemSecretKind,
 };
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
@@ -24,21 +24,19 @@ use af_admin::{
     DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
     DatabaseAdminWalletService, DatabaseAnnouncementService, DatabaseInitialSetup,
     DatabaseOAuthLoginService, DatabasePasskeyAuthenticationService, DatabasePasswordResetService,
-    DatabasePlatformOrganizationDirectoryService, DatabasePlatformOrganizationManagementService,
     DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
     DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
     DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
     DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
     DatabaseUserTokenService, DatabaseUserWalletService, EmailBindingService, EmailDelivery,
     InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
-    OAuthLoginService, OrganizationActivityServiceConfigError,
-    OrganizationSsoLoginTransactionService, PasskeyAuthenticationService,
-    PasskeyAuthenticationServiceConfigError, PasswordResetService, PasswordResetServiceConfigError,
-    PlaygroundConversationService, PlaygroundShareService, RedemptionService, RegistrationService,
-    RegistrationServiceConfigError, RuntimeRefreshingAdminGroupWriter,
-    RuntimeRefreshingInitialSetup, SessionAuthenticator, SessionAuthenticatorConfigError,
-    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
-    UserProfileService, UserTokenService, UserTopupService, UserWalletService,
+    OAuthLoginService, PasskeyAuthenticationService, PasskeyAuthenticationServiceConfigError,
+    PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
+    PlaygroundShareService, RedemptionService, RegistrationService, RegistrationServiceConfigError,
+    RuntimeRefreshingAdminGroupWriter, RuntimeRefreshingInitialSetup, SessionAuthenticator,
+    SessionAuthenticatorConfigError, SiteSettingsService, SubscriptionService, TokenAuthenticator,
+    UserInvitationService, UserProfileService, UserTokenService, UserTopupService,
+    UserWalletService,
 };
 use af_analytics::{
     AdminDashboardChannelStorage, AdminDashboardReader, SplitAdminDashboardStorage,
@@ -55,9 +53,8 @@ use af_billing::{
 };
 use af_cache::{
     CacheError, RedisConcurrencyConfig, RedisConcurrencyStore, RedisConfig, RedisHealthConfig,
-    RedisHealthStore, RedisOrganizationScimRateLimitStore,
-    RedisOrganizationSsoPublicLoginRateLimitStore, RedisRequestRateLimitConfig,
-    RedisRequestRateLimitStore, RedisStickySessionConfig, RedisStickySessionStore,
+    RedisHealthStore, RedisRequestRateLimitConfig, RedisRequestRateLimitStore,
+    RedisStickySessionConfig, RedisStickySessionStore,
 };
 use af_config::{AppConfig, ConfigError};
 use af_db::{
@@ -82,25 +79,9 @@ use af_db::{
     ModelPriceRepository, ModelProviderCatalogRepository, ModelProviderCatalogRepositoryError,
     ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
     NetworkSettingsRepositoryConfigError, OAuthLoginRepository, OAuthLoginRepositoryError,
-    OrganizationApprovalNotificationRepositoryConfigError,
-    OrganizationApprovalRepositoryConfigError, OrganizationBudgetRepositoryConfigError,
-    OrganizationContractPriceRepositoryConfigError, OrganizationCreditInvoiceRepositoryConfigError,
-    OrganizationCreditRepaymentRepositoryConfigError, OrganizationCreditTermsRepositoryConfigError,
-    OrganizationCustomRoleBindingRepositoryConfigError,
-    OrganizationCustomRoleRepositoryConfigError,
-    OrganizationDepartmentMembershipRepositoryConfigError,
-    OrganizationDepartmentRepositoryConfigError, OrganizationPlanOrderRepositoryConfigError,
-    OrganizationPlanRepositoryConfigError, OrganizationProvisioningRepositoryConfigError,
-    OrganizationRepositoryConfigError, OrganizationScimAuditRepositoryError,
-    OrganizationScimGroupRepositoryError, OrganizationScimTokenRepositoryError,
-    OrganizationScimUserRepositoryError,
-    OrganizationServiceAccountBudgetBindingRepositoryConfigError,
-    OrganizationServiceAccountRepositoryError, OrganizationSsoProviderRepositoryConfigError,
-    OrganizationTokenRepositoryConfigError, OrganizationVerificationRepositoryConfigError,
-    OrganizationWalletRepositoryConfigError, PasskeyRepository, PasswordResetRepository,
-    PasswordResetRepositoryConfigError, PaymentSecretUpdate, PaymentSettingsRepository,
-    PaymentSettingsRepositoryConfigError, PaymentSettingsRepositoryError,
-    PaymentSettingsWriteRecord, PlaygroundConversationRepository,
+    PasskeyRepository, PasswordResetRepository, PasswordResetRepositoryConfigError,
+    PaymentSecretUpdate, PaymentSettingsRepository, PaymentSettingsRepositoryConfigError,
+    PaymentSettingsRepositoryError, PaymentSettingsWriteRecord, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
     RedemptionRepositoryConfigError, RefundRepository, RefundRepositoryConfigError,
@@ -120,7 +101,7 @@ use af_db::{
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, AudioService, ChatService, EmbeddingService,
     FrontendAssetSource, HttpExtensions, HttpListener, HttpRouter, ImageService,
-    OrganizationHttpServices, PaymentWebhookProcessorRegistry, QueryApiKeyPolicy, ReadinessHandle,
+    PaymentWebhookProcessorRegistry, QueryApiKeyPolicy, ReadinessHandle,
     RefundReceiptProcessorRegistry, RerankService, ResponsesCompactService, ServeError,
     ServeOutcome, SpeechService, TurnstileVerifier, VideoTaskService,
     build_frontend_template_router, build_payment_webhook_router,
@@ -147,9 +128,9 @@ use crate::{
     AudioRoutePlanner, BackgroundTaskSupervisor, BillingAudioService, BillingChatService,
     BillingEmbeddingService, BillingFlushReport, BillingImageService, BillingRerankService,
     BillingResponsesCompactService, BillingRuntime, BillingRuntimeError, BillingSpeechService,
-    ChatRoutePlanner, EmbeddingRoutePlanner, ImageRoutePlanner, OrganizationRuntimeContext,
-    OrganizationRuntimeServices, RequestOutcomeRuntime, RerankRoutePlanner,
-    ResponsesCompactRoutePlanner, ShutdownController, SpeechRoutePlanner, SupervisorError,
+    ChatRoutePlanner, EmbeddingRoutePlanner, ImageRoutePlanner, RequestOutcomeRuntime,
+    RerankRoutePlanner, ResponsesCompactRoutePlanner, RuntimeExtensionContext, RuntimeExtensions,
+    RuntimeHttpContext, ShutdownController, SpeechRoutePlanner, SupervisorError,
     SupervisorShutdown,
     balance_alert_runtime::BalanceAlertRuntime,
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
@@ -203,10 +184,6 @@ pub struct DatabaseReady {
     database: DatabasePool,
     passkey_public_base_url: Option<String>,
     frontend_template_id: Option<String>,
-    organization_scim_rate_limit_store: Option<Arc<dyn af_domain::OrganizationScimRateLimitStore>>,
-    organization_sso_public_login_rate_limit_store:
-        Option<Arc<dyn af_domain::OrganizationSsoPublicLoginRateLimitStore>>,
-    organization_sso_public_login_fingerprint_secret: [u8; 32],
 }
 
 /// 已使用数据库连接池装配令牌认证服务。
@@ -223,7 +200,8 @@ pub struct AuthenticationReady {
     account_verification_provider: Arc<dyn af_admin::AccountVerificationProvider>,
     verification_settings_service: Option<Arc<af_admin::DatabaseVerificationSettingsService>>,
     user_notification_service: Arc<dyn af_admin::UserNotificationService>,
-    organization: OrganizationRuntimeServices,
+    extensions: RuntimeExtensions,
+    platform_audit_service: Arc<dyn af_admin::PlatformAuditService>,
     redemption_service: Arc<dyn RedemptionService>,
     subscription_service: Arc<dyn SubscriptionService>,
     subscription_repository: SubscriptionRepository,
@@ -406,9 +384,9 @@ pub enum BootstrapError {
     /// 静态配置加载或校验失败。
     #[error("加载服务配置失败")]
     Config(#[source] ConfigError),
-    /// 发行版提供的企业运行时装配失败。
-    #[error("企业运行时服务装配失败")]
-    OrganizationRuntime(#[source] Box<dyn std::error::Error + Send + Sync>),
+    /// 发行版提供的运行时扩展装配失败。
+    #[error("运行时扩展装配失败")]
+    RuntimeExtension(#[source] Box<dyn std::error::Error + Send + Sync>),
     /// tracing 或 metrics 初始化失败。
     #[error("初始化可观测性失败")]
     Telemetry(#[source] TelemetryError),
@@ -457,45 +435,6 @@ pub enum BootstrapError {
     /// 密码重置安全派生密钥缺失或无效。
     #[error("密码重置服务启动配置无效")]
     PasswordResetService(#[source] PasswordResetServiceConfigError),
-    /// 企业活动审计指纹派生密钥缺失或无效。
-    #[error("企业活动服务启动配置无效")]
-    OrganizationActivityService(#[source] OrganizationActivityServiceConfigError),
-    /// 企业审批事实仓储的启动参数无效。
-    #[error("企业审批仓储启动参数无效")]
-    OrganizationApprovalRepository(#[source] OrganizationApprovalRepositoryConfigError),
-    /// 企业开通申请事实仓储的启动参数无效。
-    #[error("企业开通申请仓储启动参数无效")]
-    OrganizationProvisioningRepository(#[source] OrganizationProvisioningRepositoryConfigError),
-    /// 企业认证事实仓储的启动参数无效。
-    #[error("企业认证仓储启动参数无效")]
-    OrganizationVerificationRepository(#[source] OrganizationVerificationRepositoryConfigError),
-    /// 企业套餐目录仓储的启动参数无效。
-    #[error("企业套餐仓储启动参数无效")]
-    OrganizationPlanRepository(#[source] OrganizationPlanRepositoryConfigError),
-    /// 企业授权订单仓储的启动参数无效。
-    #[error("企业授权订单仓储启动参数无效")]
-    OrganizationPlanOrderRepository(#[source] OrganizationPlanOrderRepositoryConfigError),
-    /// 企业审批通知回执仓储的启动参数无效。
-    #[error("企业审批通知仓储启动参数无效")]
-    OrganizationApprovalNotificationRepository(
-        #[source] OrganizationApprovalNotificationRepositoryConfigError,
-    ),
-    /// 企业自定义角色仓储的启动参数无效。
-    #[error("企业自定义角色仓储启动参数无效")]
-    OrganizationCustomRoleRepository(#[source] OrganizationCustomRoleRepositoryConfigError),
-    /// 企业自定义角色绑定仓储的启动参数无效。
-    #[error("企业自定义角色绑定仓储启动参数无效")]
-    OrganizationCustomRoleBindingRepository(
-        #[source] OrganizationCustomRoleBindingRepositoryConfigError,
-    ),
-    /// 企业服务账号仓储的启动参数无效。
-    #[error("企业服务账号仓储启动参数无效")]
-    OrganizationServiceAccountRepository(#[source] OrganizationServiceAccountRepositoryError),
-    /// 企业服务账号预算绑定仓储的启动参数无效。
-    #[error("企业服务账号预算绑定仓储启动参数无效")]
-    OrganizationServiceAccountBudgetBindingRepository(
-        #[source] OrganizationServiceAccountBudgetBindingRepositoryConfigError,
-    ),
     /// 站点设置仓储的启动参数无效。
     #[error("站点设置仓储启动参数无效")]
     SiteSettingsRepository(#[source] SiteSettingsRepositoryConfigError),
@@ -574,59 +513,6 @@ pub enum BootstrapError {
     /// 当前用户邀请读仓储的启动参数无效。
     #[error("用户邀请仓储启动参数无效")]
     UserInvitationRepository(#[source] UserInvitationRepositoryConfigError),
-    /// 企业上下文授权仓储的启动参数无效。
-    #[error("企业授权仓储启动参数无效")]
-    OrganizationRepository(#[source] OrganizationRepositoryConfigError),
-    /// 企业部门目录仓储的启动参数无效。
-    #[error("企业部门目录仓储启动参数无效")]
-    OrganizationDepartmentRepository(#[source] OrganizationDepartmentRepositoryConfigError),
-    /// 企业部门成员归属仓储的启动参数无效。
-    #[error("企业部门成员归属仓储启动参数无效")]
-    OrganizationDepartmentMembershipRepository(
-        #[source] OrganizationDepartmentMembershipRepositoryConfigError,
-    ),
-    /// 企业钱包仓储的启动参数无效。
-    #[error("企业钱包仓储启动参数无效")]
-    OrganizationWalletRepository(#[source] OrganizationWalletRepositoryConfigError),
-    /// 企业预算仓储的启动参数无效。
-    #[error("企业预算仓储启动参数无效")]
-    OrganizationBudgetRepository(#[source] OrganizationBudgetRepositoryConfigError),
-    /// 企业授信策略仓储的启动参数无效。
-    #[error("企业授信策略仓储启动参数无效")]
-    OrganizationCreditTermsRepository(#[source] OrganizationCreditTermsRepositoryConfigError),
-    /// 企业账单仓储的启动参数无效。
-    #[error("企业账单仓储启动参数无效")]
-    OrganizationCreditInvoiceRepository(#[source] OrganizationCreditInvoiceRepositoryConfigError),
-    /// 企业还款核销仓储的启动参数无效。
-    #[error("企业还款核销仓储启动参数无效")]
-    OrganizationCreditRepaymentRepository(
-        #[source] OrganizationCreditRepaymentRepositoryConfigError,
-    ),
-    /// 企业合同价仓储的启动参数无效。
-    #[error("企业合同价仓储启动参数无效")]
-    OrganizationContractPriceRepository(#[source] OrganizationContractPriceRepositoryConfigError),
-    /// 企业 API Key 仓储的启动参数无效。
-    #[error("企业 API Key 仓储启动参数无效")]
-    OrganizationTokenRepository(#[source] OrganizationTokenRepositoryConfigError),
-    /// 企业 SCIM 令牌仓储的启动参数无效。
-    #[error("企业 SCIM 令牌仓储启动参数无效")]
-    OrganizationScimTokenRepository(#[source] OrganizationScimTokenRepositoryError),
-    /// SCIM 审计仓储初始化失败。
-    #[error("初始化 SCIM 审计仓储失败")]
-    OrganizationScimAuditRepository(#[source] OrganizationScimAuditRepositoryError),
-    /// 企业 SCIM 用户同步仓储的启动参数无效。
-    #[error("企业 SCIM 用户同步仓储启动参数无效")]
-    OrganizationScimUserRepository(#[source] OrganizationScimUserRepositoryError),
-    /// 企业 SCIM 组同步仓储的启动参数无效。
-    #[error("企业 SCIM 组同步仓储启动参数无效")]
-    OrganizationScimGroupRepository(#[source] OrganizationScimGroupRepositoryError),
-    #[error("企业 SSO Provider 存储启动参数无效")]
-    OrganizationSsoProviderRepository(#[source] OrganizationSsoProviderRepositoryConfigError),
-    #[error("企业 SSO DNS 解析器启动参数无效")]
-    OrganizationSsoDnsResolver(#[source] OrganizationSsoDnsResolverConfigError),
-    /// 企业邀请邮箱和令牌摘要密码学配置无效。
-    #[error("企业邀请密码学配置无效")]
-    OrganizationInvitationCipher(#[source] af_account::OrganizationInvitationCipherError),
     /// 管理员分组仓储的启动参数无效。
     #[error("管理员分组仓储启动参数无效")]
     AdminGroupRepository(#[source] AdminGroupRepositoryConfigError),
@@ -884,38 +770,6 @@ impl Bootstrap<TelemetryReady> {
             .map_err(BootstrapError::SiteSettingsRead)?;
         let passkey_public_base_url = site_settings.public_base_url().map(str::to_owned);
         let frontend_template_id = site_settings.frontend_template_id().map(str::to_owned);
-        let organization_scim_rate_limit_store = if let Some(redis_url) = self.config.redis().url()
-        {
-            let store = RedisOrganizationScimRateLimitStore::connect(
-                RedisConfig::new(redis_url.expose().to_owned()),
-                "anyflows.organization.scim.rate.v1",
-            )
-            .await
-            .map_err(BootstrapError::RequestRateLimit)?;
-            Some(Arc::new(store) as Arc<dyn af_domain::OrganizationScimRateLimitStore>)
-        } else {
-            None
-        };
-        let organization_sso_public_login_rate_limit_store =
-            if let Some(redis_url) = self.config.redis().url() {
-                let store = RedisOrganizationSsoPublicLoginRateLimitStore::connect(
-                    RedisConfig::new(redis_url.expose().to_owned()),
-                    "anyflows.organization.sso.public-login.rate.v1",
-                )
-                .await
-                .map_err(BootstrapError::RequestRateLimit)?;
-                Some(Arc::new(store)
-                    as Arc<
-                        dyn af_domain::OrganizationSsoPublicLoginRateLimitStore,
-                    >)
-            } else {
-                None
-            };
-        // 限流指纹必须跨重启稳定，并绑定应用密钥，避免重启后绕过窗口或泄露原始标识。
-        let organization_sso_public_login_fingerprint_secret =
-            SystemSecretCipher::new(self.config.credential_encryption())
-                .map_err(BootstrapError::SystemSecret)?
-                .organization_sso_public_login_rate_limit_key();
         let Bootstrap {
             config,
             shutdown_timeout,
@@ -935,9 +789,6 @@ impl Bootstrap<TelemetryReady> {
                 database,
                 passkey_public_base_url,
                 frontend_template_id,
-                organization_scim_rate_limit_store,
-                organization_sso_public_login_rate_limit_store,
-                organization_sso_public_login_fingerprint_secret,
             },
         })
     }
@@ -946,38 +797,19 @@ impl Bootstrap<TelemetryReady> {
 impl Bootstrap<DatabaseReady> {
     /// 使用同一数据库连接池装配令牌认证，并固定查询截止时间与 carrier 策略。
     pub fn init_authentication(self) -> Result<Bootstrap<AuthenticationReady>, BootstrapError> {
-        self.init_authentication_with_organization(OrganizationRuntimeServices::from_database)
+        self.init_authentication_with_extensions(|_| Ok(RuntimeExtensions::default()))
     }
 
-    /// 使用发行版提供的装配函数初始化企业运行时服务。
+    /// 使用发行版提供的装配函数初始化运行时扩展。
     ///
     /// 装配函数在数据库迁移和公共认证服务初始化后调用一次；返回的服务将用于后续
-    /// 转发、计费和 HTTP 路由装配。装配失败会直接终止启动，不会回退到内置实现。
-    ///
-    /// ```no_run
-    /// use af_server::{AuthenticationReady, Bootstrap, BootstrapError, DatabaseReady,
-    ///     OrganizationRuntimeContext, OrganizationRuntimeServices};
-    ///
-    /// fn enterprise_services(context: OrganizationRuntimeContext<'_>)
-    ///     -> Result<OrganizationRuntimeServices, BootstrapError>
-    /// {
-    ///     OrganizationRuntimeServices::from_database(context)
-    /// }
-    ///
-    /// fn initialize(bootstrap: Bootstrap<DatabaseReady>)
-    ///     -> Result<Bootstrap<AuthenticationReady>, BootstrapError>
-    /// {
-    ///     bootstrap.init_authentication_with_organization(enterprise_services)
-    /// }
-    /// ```
-    pub fn init_authentication_with_organization<F>(
+    /// 转发、计费和 HTTP 路由装配。装配失败会直接终止启动。
+    pub fn init_authentication_with_extensions<F>(
         self,
-        build_organization: F,
+        build_extensions: F,
     ) -> Result<Bootstrap<AuthenticationReady>, BootstrapError>
     where
-        F: FnOnce(
-            OrganizationRuntimeContext<'_>,
-        ) -> Result<OrganizationRuntimeServices, BootstrapError>,
+        F: FnOnce(RuntimeExtensionContext<'_>) -> Result<RuntimeExtensions, BootstrapError>,
     {
         let auth = self.config.auth();
         let repository = TokenAuthRepository::new(
@@ -1291,7 +1123,7 @@ impl Bootstrap<DatabaseReady> {
                 email_binding_service,
             ));
         let session_authenticator: Arc<dyn SessionAuthenticator> = Arc::new(session_authenticator);
-        let organization = build_organization(OrganizationRuntimeContext {
+        let extensions = build_extensions(RuntimeExtensionContext {
             config: &config,
             database: &stage.database,
             session_authenticator: &session_authenticator,
@@ -1300,13 +1132,16 @@ impl Bootstrap<DatabaseReady> {
             system_secret_cipher: &system_secret_cipher,
             usage_log_repository: &admin_usage_log_repository,
             request_outcome_repository: &request_outcome_read_repository,
-            scim_rate_limit_store: stage.organization_scim_rate_limit_store.clone(),
         })?;
-        let database_authenticator: Arc<dyn TokenAuthenticator> = Arc::new(
-            DatabaseTokenAuthenticator::new(repository.with_organization_validator(Arc::clone(
-                &organization.organization_token_auth_validator,
-            ))),
-        );
+        let repository = match extensions.organization_token_validator.as_ref() {
+            Some(validator) => repository.with_organization_validator(Arc::clone(validator)),
+            None => repository,
+        };
+        let database_authenticator: Arc<dyn TokenAuthenticator> =
+            Arc::new(DatabaseTokenAuthenticator::new(repository));
+        let platform_audit_service = Arc::new(af_admin::DatabasePlatformAuditService::new(
+            af_db::PlatformAuditRepository::new(stage.database.clone()),
+        ));
         Ok(Bootstrap {
             config,
             shutdown_timeout,
@@ -1335,7 +1170,8 @@ impl Bootstrap<DatabaseReady> {
                 user_notification_service: Arc::new(DatabaseUserNotificationService::new(
                     user_notification_repository,
                 )),
-                organization,
+                extensions,
+                platform_audit_service,
                 redemption_service: Arc::new(DatabaseRedemptionService::new(redemption_repository)),
                 subscription_service: Arc::new(DatabaseSubscriptionService::new(
                     subscription_repository.clone(),
@@ -1457,11 +1293,9 @@ impl Bootstrap<AuthenticationReady> {
         );
         authentication.account_verification_provider = verification_settings_service.clone();
         authentication.verification_settings_service = Some(verification_settings_service);
-        // 回调编排只复用已完成 SSRF、代理和超时基线的共享 Client。
-        authentication
-            .organization
-            .organization_sso_login_service
-            .set_http_clients(upstream_clients.clone());
+        if let Some(initialize) = authentication.extensions.initialize_relay.as_ref() {
+            initialize(&upstream_clients)?;
+        }
         if let Some(settings) = config.clickhouse_analytics() {
             let clickhouse_config =
                 crate::admin_dashboard_storage::ClickHouseAdminDashboardConfig::new(
@@ -1601,6 +1435,10 @@ impl Bootstrap<RelayReady> {
             Duration::from_secs(self.config.auth().lookup_timeout_secs()),
         )
         .map_err(BootstrapError::TopupRepository)?;
+        let topup_repository = match self.stage.infrastructure.extensions.topup.as_ref() {
+            Some(extension) => topup_repository.with_extension(Arc::clone(extension)),
+            None => topup_repository,
+        };
         let refund_repository = RefundRepository::new(
             self.stage.infrastructure.infrastructure.database.clone(),
             Duration::from_secs(self.config.auth().lookup_timeout_secs()),
@@ -1826,16 +1664,19 @@ impl Bootstrap<RelayReady> {
             Arc::new(route_service.clone());
         let video_task_runtime = route_service.clone();
         let route_planner: Arc<dyn ChatRoutePlanner> = Arc::new(route_service);
-        let pricing_source = Arc::new(
-            CachedRequestPricingSnapshotSource::new(model_prices.clone(), group_pricing.clone())
-                .with_contract_prices(Arc::clone(
-                    &self
-                        .stage
-                        .infrastructure
-                        .organization
-                        .organization_contract_price_source,
-                )),
-        );
+        let pricing_source =
+            CachedRequestPricingSnapshotSource::new(model_prices.clone(), group_pricing.clone());
+        let pricing_source = match self
+            .stage
+            .infrastructure
+            .extensions
+            .contract_prices
+            .as_ref()
+        {
+            Some(source) => pricing_source.with_contract_price_source(Arc::clone(source)),
+            None => pricing_source,
+        };
+        let pricing_source = Arc::new(pricing_source);
         let model_catalog_reader: Arc<dyn ModelCatalogReader> =
             Arc::new(RuntimeModelCatalogReader::new(
                 channel_index.clone(),
@@ -1843,9 +1684,13 @@ impl Bootstrap<RelayReady> {
                 pricing_source.clone(),
                 model_catalog_metadata,
             ));
-        let quota_repository = Arc::new(QuotaRepository::new(
-            self.stage.infrastructure.infrastructure.database.clone(),
-        ));
+        let quota_repository =
+            QuotaRepository::new(self.stage.infrastructure.infrastructure.database.clone());
+        let quota_repository = match self.stage.infrastructure.extensions.quota.as_ref() {
+            Some(extension) => quota_repository.with_extension(Arc::clone(extension)),
+            None => quota_repository,
+        };
+        let quota_repository = Arc::new(quota_repository);
         let precharge_port: Arc<dyn BillingPrechargePort> = quota_repository.clone();
         let settlement_port: Arc<dyn BillingSettlementPort> = quota_repository.clone();
         let task_reserve_port: Arc<dyn TaskBillingReservePort> = quota_repository.clone();
@@ -1876,17 +1721,18 @@ impl Bootstrap<RelayReady> {
                         .clone()
                         .with_analytics_export(repository.clone())
                 });
-        let service_account_audit_sink = Arc::clone(
-            &self
-                .stage
-                .infrastructure
-                .organization
-                .organization_service_account_audit_sink,
-        );
-        let usage_record_sink: Arc<dyn UsageRecordSink> = Arc::new(
-            DatabaseUsageRecordSink::new(usage_repository)
-                .with_service_account_audit_sink(service_account_audit_sink),
-        );
+        let usage_record_sink = DatabaseUsageRecordSink::new(usage_repository);
+        let usage_record_sink = match self
+            .stage
+            .infrastructure
+            .extensions
+            .usage_projection
+            .as_ref()
+        {
+            Some(projection) => usage_record_sink.with_projection(Arc::clone(projection)),
+            None => usage_record_sink,
+        };
+        let usage_record_sink: Arc<dyn UsageRecordSink> = Arc::new(usage_record_sink);
         let usage_record_consumer = UsageRecordConsumer::new(
             usage_record_receiver,
             Arc::clone(&usage_record_sink),
@@ -2192,12 +2038,8 @@ impl Bootstrap<BillingReady> {
                 }
             }
         });
-        if let Some(register_organization_tasks) = infrastructure
-            .organization
-            .organization_background_task_registrar
-            .as_ref()
-        {
-            register_organization_tasks(
+        if let Some(register_tasks) = infrastructure.extensions.background_tasks.as_ref() {
+            register_tasks(
                 &mut supervisor,
                 &config,
                 &infrastructure.infrastructure.database,
@@ -2542,43 +2384,6 @@ impl Bootstrap<Supervised> {
                 )),
             ));
         let user_topup_service: Arc<dyn UserTopupService> = self.stage.payment_runtime.clone();
-        let organization_plan_order_service: Arc<dyn af_admin::OrganizationPlanOrderService> =
-            Arc::new(af_admin::DatabaseOrganizationPlanOrderService::new(
-                Arc::clone(
-                    &self
-                        .stage
-                        .infrastructure
-                        .organization
-                        .organization_authorization_service,
-                ),
-                Arc::clone(
-                    &self
-                        .stage
-                        .infrastructure
-                        .organization
-                        .organization_plan_service,
-                ),
-                Arc::clone(&user_topup_service),
-                self.stage
-                    .infrastructure
-                    .organization
-                    .organization_plan_order_repository
-                    .clone(),
-                Arc::clone(
-                    &self
-                        .stage
-                        .infrastructure
-                        .organization
-                        .organization_repository,
-                ),
-                Arc::clone(
-                    &self
-                        .stage
-                        .infrastructure
-                        .organization
-                        .organization_activity_service,
-                ),
-            ));
         let custom_oauth2_provider_service: Arc<dyn AdminCustomOAuth2ProviderService> =
             Arc::new(DatabaseAdminCustomOAuth2ProviderService::new(
                 self.stage
@@ -2594,49 +2399,6 @@ impl Bootstrap<Supervised> {
                     .model_provider_catalog_repository
                     .clone(),
             ));
-        let platform_organization_directory_service: Arc<
-            dyn af_admin::PlatformOrganizationDirectoryService,
-        > = Arc::new(DatabasePlatformOrganizationDirectoryService::new(
-            Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_repository,
-            ),
-            Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .platform_audit_service,
-            ),
-        ));
-        let platform_organization_management_service: Arc<
-            dyn af_admin::PlatformOrganizationManagementService,
-        > = Arc::new(DatabasePlatformOrganizationManagementService::new(
-            Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_repository,
-            ),
-            Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_invitation_service,
-            ),
-            Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .platform_audit_service,
-            ),
-        ));
         let payment_webhook_registry: Arc<dyn PaymentWebhookProcessorRegistry> =
             self.stage.payment_runtime.clone();
         let refund_receipt_registry: Arc<dyn RefundReceiptProcessorRegistry> =
@@ -2658,215 +2420,16 @@ impl Bootstrap<Supervised> {
                 .frontend_template_id
                 .clone(),
         );
-        let organization_services = OrganizationHttpServices {
-            approval_notification: Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_approval_notification_service,
-            ),
-            authorization: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_authorization_service,
-            )),
-            activity: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_activity_service,
-            )),
-            wallet: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_wallet_service,
-            )),
-            budget: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_budget_service,
-            )),
-            contract_price: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_contract_price_service,
-            )),
-            credit_terms: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_credit_terms_service,
-            )),
-            token: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_token_service,
-            )),
-            scim: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_scim_service,
-            )),
-            approval: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_approval_service,
-            )),
-            provisioning: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_provisioning_service,
-            )),
-            verification: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_verification_service,
-            )),
-            plan: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_plan_service,
-            )),
-            plan_order: Some(organization_plan_order_service),
-            invitation: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_invitation_service,
-            )),
-            management: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_management_service,
-            )),
-            custom_role: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_custom_role_service,
-            )),
-            custom_role_binding: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_custom_role_binding_service,
-            )),
-            service_account: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_service_account_service,
-            )),
-            service_account_runtime_authenticator: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_service_account_runtime_authenticator,
-            )),
-            platform_audit: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .platform_audit_service,
-            )),
-            platform_organization_services: Some((
-                platform_organization_directory_service,
-                platform_organization_management_service,
-            )),
-            sso_provider: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_sso_provider_service,
-            )),
-            sso_policy: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_sso_policy_service,
-            )),
-            sso_domain: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_sso_domain_service,
-            )),
-            sso_login: Some({
-                let service: Arc<dyn OrganizationSsoLoginTransactionService> = self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_sso_login_service
-                    .clone();
-                service
-            }),
-            sso_public_login_rate_limit_store: self
-                .stage
-                .infrastructure
-                .infrastructure
-                .organization_sso_public_login_rate_limit_store
-                .clone(),
-            sso_public_login_fingerprint_secret: self
-                .stage
-                .infrastructure
-                .infrastructure
-                .organization_sso_public_login_fingerprint_secret,
-            sso_session: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_sso_session_service,
-            )),
-            sso_identity_binding: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_sso_identity_binding_service,
-            )),
-            sso_recovery: Some(Arc::clone(
-                &self
-                    .stage
-                    .infrastructure
-                    .organization
-                    .organization_sso_recovery_service,
-            )),
-        };
+        let mut http_extensions = self.http_extensions.clone();
+        if let Some(factory) = self.stage.infrastructure.extensions.http.as_ref() {
+            http_extensions.extend(factory(RuntimeHttpContext {
+                config: &self.config,
+                database: &self.stage.infrastructure.infrastructure.database,
+                session_authenticator: &self.stage.infrastructure.session_authenticator,
+                user_topup_service: &user_topup_service,
+                upstream_clients: &self.stage.upstream_clients,
+            }));
+        }
         let router = build_router(
             self.config.server(),
             self.stage.chat.clone(),
@@ -2894,7 +2457,9 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.user_profile_service),
             Arc::clone(&self.stage.infrastructure.user_wallet_service),
             Arc::clone(&self.stage.infrastructure.user_notification_service),
-            organization_services,
+            Some(Arc::clone(
+                &self.stage.infrastructure.platform_audit_service,
+            )),
             Some(user_topup_service),
             Arc::clone(&self.stage.infrastructure.redemption_service),
             Arc::clone(&self.stage.infrastructure.subscription_service),
@@ -2946,33 +2511,17 @@ impl Bootstrap<Supervised> {
             Some(Arc::clone(&self.stage.admin_refund_service)),
             self.stage.infrastructure.query_api_key_policy,
             Some(Arc::clone(&frontend_template_manager) as Arc<dyn FrontendAssetSource>),
-            Some(self.http_extensions.clone()),
+            Some(http_extensions),
             Some(payment_webhook_routes),
         );
         let router = router
-            .merge(af_http::build_platform_entitlement_router(
-                Arc::new(af_admin::PlatformEntitlementService::new(Arc::clone(
-                    &self
-                        .stage
-                        .infrastructure
-                        .organization
-                        .organization_repository,
-                ))),
-                Arc::clone(&self.stage.infrastructure.session_authenticator),
-            ))
             .merge(af_http::build_account_verification_router(
                 Arc::new(
                     af_admin::AccountVerificationService::new(
                         af_db::AccountVerificationRepository::new(
                             self.stage.infrastructure.infrastructure.database.clone(),
                         ),
-                        Arc::clone(
-                            &self
-                                .stage
-                                .infrastructure
-                                .organization
-                                .platform_audit_service,
-                        ),
+                        Arc::clone(&self.stage.infrastructure.platform_audit_service),
                     )
                     .with_provider(Arc::new(
                         af_admin::DatabaseManualAccountVerificationProvider::new(Arc::clone(
@@ -3614,7 +3163,7 @@ mod tests {
         );
 
         let error =
-            BootstrapError::OrganizationRuntime(Box::new(std::io::Error::other(SECRET_CANARY)));
+            BootstrapError::RuntimeExtension(Box::new(std::io::Error::other(SECRET_CANARY)));
         assert!(!error.to_string().contains(SECRET_CANARY));
         assert!(std::error::Error::source(&error).is_some());
     }
@@ -3686,9 +3235,15 @@ mod tests {
             .unwrap()
             .init_billing()
             .await
-            .unwrap()
-            .start_supervisor();
-        assert_eq!(supervised.stage.supervisor.task_count(), 13);
+            .unwrap();
+        // Codex 使用固定的 1455 回调端口；端口被并行测试占用时，启动器会
+        // 保留手动回调路径并跳过对应监听任务，因此这里只把实际注册的监听任务计入基线。
+        let expected_task_count = 9 + supervised.stage.oauth_loopback_servers.len();
+        let supervised = supervised.start_supervisor();
+        assert_eq!(
+            supervised.stage.supervisor.task_count(),
+            expected_task_count
+        );
         let report = supervised
             .build_router()
             .bind()
@@ -3703,7 +3258,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn organization_factory_reuses_public_auth_and_preserves_injected_services() {
+    async fn runtime_extension_factory_reuses_public_auth_services() {
         let path = config_file("sqlite::memory:");
         let config = af_config::load_from(&path).unwrap();
         let _ = fs::remove_file(&path);
@@ -3717,25 +3272,15 @@ mod tests {
         database_ready.stage.passkey_public_base_url = Some("https://console.example".to_owned());
         let mut calls = 0;
         let mut shared_auth = None;
-        let mut injected_audit = None;
-
         let authenticated = database_ready
-            .init_authentication_with_organization(|context| {
+            .init_authentication_with_extensions(|context| {
                 calls += 1;
                 shared_auth = Some((
                     Arc::clone(context.session_authenticator),
                     Arc::clone(context.user_profile_service),
                     Arc::clone(context.passkey_authentication_service.unwrap()),
                 ));
-                assert!(context.scim_rate_limit_store.is_none());
-                let audit: Arc<dyn af_admin::PlatformAuditService> =
-                    Arc::new(af_admin::DatabasePlatformAuditService::new(
-                        af_db::PlatformAuditRepository::new(context.database.clone()),
-                    ));
-                let mut services = OrganizationRuntimeServices::from_database(context)?;
-                services.platform_audit_service = Arc::clone(&audit);
-                injected_audit = Some(audit);
-                Ok(services)
+                Ok(RuntimeExtensions::default())
             })
             .unwrap();
 
@@ -3757,29 +3302,14 @@ mod tests {
                 .as_ref()
                 .unwrap(),
         ));
-        let audit = injected_audit.unwrap();
-        assert!(Arc::ptr_eq(
-            &audit,
-            &authenticated.stage.organization.platform_audit_service,
-        ));
-
-        let relay = authenticated.init_relay().unwrap();
-        assert!(Arc::ptr_eq(
-            &audit,
-            &relay
-                .stage
-                .infrastructure
-                .organization
-                .platform_audit_service,
-        ));
-        let database = relay.stage.infrastructure.infrastructure.database.clone();
-        drop(relay);
+        let database = authenticated.stage.infrastructure.database.clone();
+        drop(authenticated);
         database.close().await.unwrap();
         let _ = fs::remove_dir_all(billing_wal_directory(&path));
     }
 
     #[tokio::test]
-    async fn organization_factory_error_aborts_authentication_without_fallback() {
+    async fn runtime_extension_factory_error_aborts_authentication_without_fallback() {
         let path = config_file("sqlite::memory:");
         let config = af_config::load_from(&path).unwrap();
         let _ = fs::remove_file(&path);
@@ -3793,9 +3323,9 @@ mod tests {
         let database = bootstrap.stage.database.clone();
         let mut calls = 0;
 
-        let result = bootstrap.init_authentication_with_organization(|_| {
+        let result = bootstrap.init_authentication_with_extensions(|_| {
             calls += 1;
-            Err(BootstrapError::OrganizationRuntime(Box::new(
+            Err(BootstrapError::RuntimeExtension(Box::new(
                 std::io::Error::other("enterprise-factory-error-canary"),
             )))
         });
@@ -3804,7 +3334,7 @@ mod tests {
             Ok(_) => panic!("企业服务装配失败时必须终止启动"),
         };
         assert_eq!(calls, 1);
-        assert!(matches!(error, BootstrapError::OrganizationRuntime(_)));
+        assert!(matches!(error, BootstrapError::RuntimeExtension(_)));
         assert!(
             !error
                 .to_string()
@@ -3833,10 +3363,16 @@ mod tests {
             .unwrap()
             .connect_database()
             .await
+            .unwrap()
+            .init_authentication()
+            .unwrap()
+            .init_relay()
+            .unwrap()
+            .init_billing()
+            .await
         else {
-            panic!("已配置但不可用的 Redis 必须阻止 SCIM 限流启动");
+            panic!("已配置但不可用的 Redis 必须阻止计费启动");
         };
-        assert!(matches!(&error, BootstrapError::RequestRateLimit(_)));
         let rendered = format!("{error:?}{error}");
         assert!(!rendered.contains("not-a-redis-url"));
         let _ = fs::remove_dir_all(wal_directory);
@@ -3864,10 +3400,16 @@ mod tests {
             .unwrap()
             .connect_database()
             .await
+            .unwrap()
+            .init_authentication()
+            .unwrap()
+            .init_relay()
+            .unwrap()
+            .init_billing()
+            .await
         else {
-            panic!("已配置但不可用的 Redis 必须阻止 SCIM 限流启动");
+            panic!("已配置但不可用的 Redis 必须阻止计费启动");
         };
-        assert!(matches!(&error, BootstrapError::RequestRateLimit(_)));
         let rendered = format!("{error:?}{error}");
         assert!(!rendered.contains("not-a-redis-url"));
         let _ = fs::remove_dir_all(wal_directory);
@@ -3985,7 +3527,7 @@ mod tests {
             .connect_database()
             .await
             .unwrap();
-        let error = match bootstrap.init_authentication_with_organization(|_| {
+        let error = match bootstrap.init_authentication_with_extensions(|_| {
             panic!("公共认证尚未初始化时不得调用企业装配函数")
         }) {
             Ok(_) => panic!("缺失管理会话密钥时不应进入认证就绪阶段"),

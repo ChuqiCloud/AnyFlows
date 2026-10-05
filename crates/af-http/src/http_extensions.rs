@@ -95,6 +95,11 @@ impl HttpExtensions {
         self.extensions.push(extension);
     }
 
+    /// Appends extensions assembled by a distribution-owned factory.
+    pub fn extend(&mut self, other: Self) {
+        self.extensions.extend(other.extensions);
+    }
+
     pub fn is_empty(&self) -> bool {
         self.extensions.is_empty()
     }

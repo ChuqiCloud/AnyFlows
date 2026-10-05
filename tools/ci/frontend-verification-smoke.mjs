@@ -32,7 +32,6 @@ try {
     import './src/index.css';
     import './src/i18n';
     import { AccountVerificationPage } from './src/features/account-verification/account-verification-page';
-    import { PlatformEntitlementEditor } from './src/features/platform-organizations/platform-entitlement-editor';
     import { VerificationSettingsPanel } from './src/features/account-verification/verification-settings-panel';
     import { ModelProviderCatalogPanel } from './src/features/model-management/model-provider-catalog-panel';
     import { resolveProviderLogo, findProviderLogo } from './src/components/brand/model-logos';
@@ -43,7 +42,7 @@ try {
     createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         ${isNext ? '<HeroUIProvider>' : ''}<main style={{ padding: '16px', maxWidth: '1100px', margin: 'auto' }}>
-          {mode === 'entitlement' ? <PlatformEntitlementEditor organizationId={1} name="Example Enterprise" onClose={() => {}} /> : mode === 'settings' ? <VerificationSettingsPanel /> : mode === 'catalog' ? <ModelProviderCatalogPanel /> : <AccountVerificationPage admin={mode === 'admin'} />}
+          {mode === 'settings' ? <VerificationSettingsPanel /> : mode === 'catalog' ? <ModelProviderCatalogPanel /> : <AccountVerificationPage admin={mode === 'admin'} />}
         </main>${isNext ? '</HeroUIProvider>' : ''}
       </QueryClientProvider>
     );
@@ -77,14 +76,12 @@ try {
   let submitted = 0
   let reviewed = 0
   let downloads = 0
-  let entitlementWrites = 0
   let providers = ['manual']
   let settings = { source: 'database', manual_enabled: true, individual_manual_enabled: true, enterprise_manual_enabled: true, individual_reason_required: true, enterprise_reason_required: true, enabled: false, app_id: 'test-app', private_key_configured: true, public_key_configured: true, gateway_url: 'https://openapi.alipay.com/gateway.do', biz_code: 'FACE', timeout_secs: 10, version: 1 }
   let settingsWrites = 0
   const catalog = [{ provider_key: 'custom-ai', display_name: 'Custom AI', logo: 'OpenAI', aliases: [], enabled: true, sort_order: 0, version: 1 }]
   let catalogWrites = 0
   const cases = Array.from({ length: 27 }, (_, index) => ({ id: 27 - index, user_id: 1, kind: 'enterprise', provider: 'manual', document_country: 'CN', document_type: 'business_registration', document_number_masked: '91****43', subject_name: `Enterprise ${27 - index}`, summary: 'Historical application', status: 5, version: 2, review_reason: 'Supplement required', reviewer_user_id: 2, created_at: 1_780_000_000, updated_at: 1_780_000_010 }))
-  let entitlement = { version: 2, sso_enabled: true, team_management_enabled: true, custom_roles_enabled: true, seat_limit: 10, team_limit: 5, organization_key_limit: 5, audit_retention_days: 90, valid_from: 1_700_000_000, valid_until: 2_000_000_000, grace_until: null }
   await page.route((url) => url.pathname.startsWith('/api/'), async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -112,17 +109,7 @@ try {
       }
       body = { providers: catalog }
     }
-    else if (path.includes('/entitlement')) {
-      if (request.method() === 'PATCH') {
-        const update = request.postDataJSON()
-        assert.equal(update.expected_version, entitlement.version)
-        assert.ok(update.reason.trim())
-        assert.equal(update.sso_enabled, entitlementWrites > 0)
-        entitlement = { ...entitlement, ...update, version: entitlement.version + 1 }
-        entitlementWrites += 1
-      }
-      body = entitlement
-    } else if (path.includes('/materials/')) {
+    else if (path.includes('/materials/')) {
       downloads += 1
       await route.fulfill({ contentType: 'image/png', body: png })
       return
@@ -192,7 +179,6 @@ try {
   await page.locator('article').first().getByText('已通过', { exact: true }).waitFor()
   assert.equal(reviewed, 1)
   await page.goto(home)
-  await page.getByRole('link', { name: '申请企业空间', exact: true }).waitFor()
   await page.getByRole('button', { name: '查看详情', exact: true }).first().click()
   await page.getByRole('button', { name: '预览', exact: true }).click()
   await page.locator('img[alt="license.png"]').waitFor()
@@ -259,26 +245,12 @@ try {
   assert.equal(catalogWrites, 1)
   await page.getByRole('textbox', { name: '搜索厂商', exact: true }).fill('example-provider')
   await page.getByText('Example Provider', { exact: true }).waitFor()
-  await page.goto(`${home}?mode=entitlement`)
-  const sso = page.getByRole('checkbox', { name: 'SSO 与域名验证', exact: true })
-  await sso.uncheck()
-  await page.getByLabel('变更原因（必填，将记录审计）', { exact: true }).fill('Disable SSO for maintenance')
-  await page.getByRole('button', { name: '保存授权', exact: true }).click()
-  await page.getByRole('button', { name: '继续编辑', exact: true }).click()
-  await sso.check()
-  await page.getByLabel('变更原因（必填，将记录审计）', { exact: true }).fill('Reenable SSO after maintenance')
-  await page.getByRole('button', { name: '保存授权', exact: true }).click()
-  await page.getByRole('status').filter({ hasText: '企业授权已更新。' }).waitFor()
-  assert.equal(entitlementWrites, 2)
+  await page.goto(`${home}?mode=admin`)
   for (const theme of ['dark', 'light']) {
     await page.evaluate((mode) => { document.documentElement.classList.remove('dark', 'light'); document.documentElement.classList.add(mode) }, theme)
     for (const [name, width, height] of [['desktop', 1280, 960], ['mobile', 390, 844]]) {
       await page.setViewportSize({ width, height })
       await page.evaluate(() => document.fonts.ready)
-      const continueButton = page.getByRole('button', { name: '继续编辑', exact: true })
-      await continueButton.scrollIntoViewIfNeeded()
-      const buttonBox = await continueButton.boundingBox()
-      assert.ok(buttonBox && buttonBox.width >= 48 && buttonBox.height >= 24, 'Continue editing must remain usable at every viewport size')
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${frontend} overflowed at ${width}px`)
       const screenshot = await page.screenshot({ fullPage: true, animations: 'disabled' })
       console.log(`ANYFLOWS_VERIFICATION_SCREENSHOT_${frontend}_${theme}_${name}_BEGIN`)
@@ -287,7 +259,7 @@ try {
     }
   }
   assert.deepEqual(errors, [])
-  console.log(`Verification browser checks passed for ${frontend}: cursor pagination, deferred previews, multipart upload, approval, retained materials, eligibility and repeated entitlement changes.`)
+  console.log(`Verification browser checks passed for ${frontend}: cursor pagination, deferred previews, multipart upload, approval, retained materials, eligibility and provider catalog.`)
 } catch (error) {
   console.error(serverOutput)
   console.error(JSON.stringify({ browserErrors: errors }))

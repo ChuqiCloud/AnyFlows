@@ -12,7 +12,7 @@ const USER_ACCESSIBLE_SEGMENTS = new Set([
   "account-verification",
 ]);
 
-/** 取 /console 之后的一级路径段，用于判定访问级别与企业视图。 */
+/** 取 /console 之后的一级路径段，用于判定访问级别。 */
 function consoleSegment(pathname: string) {
   const [head, segment] = pathname.replace(/^\//, "").split("/");
 
@@ -26,17 +26,5 @@ export function requiresAdmin(pathname: string) {
   if (segment === undefined) return false;
   if (!segment) return true;
 
-  return (
-    !USER_ACCESSIBLE_SEGMENTS.has(segment) && !segment.startsWith("organization")
-  );
-}
-
-/** 企业视图承载全部 organization-* 页面；provisioning 属于平台侧，仍走个人视图。 */
-export function isEnterpriseView(pathname: string) {
-  const segment = consoleSegment(pathname);
-
-  return (
-    Boolean(segment?.startsWith("organization")) &&
-    segment !== "organization-provisioning"
-  );
+  return !USER_ACCESSIBLE_SEGMENTS.has(segment);
 }

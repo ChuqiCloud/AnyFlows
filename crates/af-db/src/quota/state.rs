@@ -124,6 +124,9 @@ pub enum QuotaRepositoryError {
     /// 用户钱包不足以完成预扣或结算补扣。
     #[error("用户额度不足")]
     UserQuotaInsufficient,
+    /// 组织计费扩展未注入；公共核心无法处理组织主体。
+    #[error("组织额度扩展不可用")]
+    ExtensionUnavailable,
     /// 企业钱包、分层预算或企业计费保护阻止本次预扣或补扣。
     #[error("企业额度不足或暂不可用")]
     OrganizationQuotaInsufficient,

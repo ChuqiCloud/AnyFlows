@@ -1,5 +1,8 @@
 //! HTTP 路由、中间件、提取器与响应映射。
 
+// 公共核心保留部分供发行版扩展的 HTTP 契约；企业发行版会连接这些路由。
+#![allow(dead_code)]
+
 mod announcements;
 mod anthropic_messages;
 mod api_explorer;
@@ -68,22 +71,6 @@ mod openai_responses_compact;
 mod openai_speech;
 mod openapi;
 mod operations;
-mod organization_activity;
-mod organization_approval;
-mod organization_approval_notifications;
-mod organization_budget;
-mod organization_contract_price;
-mod organization_credit_terms;
-mod organization_plan;
-mod organization_provisioning;
-mod organization_routes;
-mod organization_scim_audit;
-mod organization_service_account_runtime;
-mod organization_sso_login;
-mod organization_tokens;
-mod organization_verification;
-mod organization_wallet;
-mod organizations;
 mod passkey_auth;
 mod password_reset;
 mod payment_settings;
@@ -91,7 +78,6 @@ mod verification_settings;
 pub use verification_settings::build_verification_settings_router;
 mod payment_webhook;
 mod platform_audit;
-mod platform_organizations;
 mod playground_conversations;
 mod playground_shares;
 mod redemption;
@@ -101,7 +87,6 @@ mod rerank;
 mod rerank_service;
 mod responses_compact_service;
 mod router;
-mod scim;
 mod serve;
 mod site_settings;
 mod speech_service;
@@ -157,20 +142,6 @@ pub use openapi::{openapi_document, openapi_document_with_extensions};
 pub use operations::{
     HEALTH_PATH, READINESS_PATH, ReadinessFuture, ReadinessHandle, ReadinessProbe,
 };
-pub use organization_activity::build_organization_activity_router;
-pub use organization_approval::build_organization_approval_router;
-pub use organization_budget::build_organization_budget_router;
-pub use organization_contract_price::build_organization_contract_price_router;
-pub use organization_credit_terms::build_organization_credit_terms_router;
-pub use organization_plan::build_organization_plan_router;
-pub use organization_provisioning::build_organization_provisioning_router;
-pub use organization_routes::OrganizationHttpServices;
-pub use organization_scim_audit::build_organization_scim_audit_router;
-pub use organization_service_account_runtime::build_organization_service_account_runtime_router;
-pub use organization_tokens::build_organization_token_router;
-pub use organization_verification::build_organization_verification_router;
-pub use organization_wallet::build_organization_wallet_router;
-pub use organizations::build_organization_router;
 pub use payment_webhook::{PaymentWebhookProcessorRegistry, build_payment_webhook_router};
 pub use refund_webhook::{RefundReceiptProcessorRegistry, build_refund_receipt_webhook_router};
 pub use rerank_service::{RerankService, RerankServiceFuture};
@@ -221,8 +192,6 @@ mod oauth_login_tests;
 #[cfg(test)]
 mod operations_tests;
 #[cfg(test)]
-mod organization_provisioning_tests;
-#[cfg(test)]
 mod passkey_auth_tests;
 #[cfg(test)]
 mod password_reset_tests;
@@ -249,6 +218,3 @@ mod user_wallet_tests;
 
 mod account_verification;
 pub use account_verification::build_account_verification_router;
-
-mod platform_entitlement;
-pub use platform_entitlement::build_platform_entitlement_router;

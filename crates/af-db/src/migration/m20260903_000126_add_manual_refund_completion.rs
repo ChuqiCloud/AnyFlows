@@ -150,7 +150,6 @@ async fn alter_reconciliation(manager: &SchemaManager<'_>) -> Result<(), DbErr> 
                     CONSTRAINT fk_refund_reconciliation_provider_event FOREIGN KEY (provider_event_id) REFERENCES refund_provider_events(id) ON UPDATE RESTRICT ON DELETE RESTRICT,\
                     CONSTRAINT fk_refund_reconciliation_manual_completion FOREIGN KEY (manual_completion_id) REFERENCES refund_manual_completions(id) ON UPDATE RESTRICT ON DELETE RESTRICT,\
                     CONSTRAINT fk_refund_reconciliation_user FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,\
-                    CONSTRAINT fk_refund_reconciliation_organization FOREIGN KEY (organization_id) REFERENCES organizations(id) ON UPDATE RESTRICT ON DELETE RESTRICT,\
                     CONSTRAINT fk_refund_reconciliation_approval_actor FOREIGN KEY (approval_actor_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,\
                     CONSTRAINT ck_refund_reconciliation_source CHECK ((provider_event_id IS NOT NULL AND manual_completion_id IS NULL) OR (provider_event_id IS NULL AND manual_completion_id IS NOT NULL)),\
                     CONSTRAINT ck_refund_reconciliation_order_kind CHECK (order_kind BETWEEN 1 AND 2),\
@@ -280,7 +279,6 @@ async fn revert_reconciliation(manager: &SchemaManager<'_>) -> Result<(), DbErr>
                     CONSTRAINT fk_refund_reconciliation_request FOREIGN KEY (request_key) REFERENCES refund_requests(request_key) ON UPDATE RESTRICT ON DELETE RESTRICT,\
                     CONSTRAINT fk_refund_reconciliation_provider_event FOREIGN KEY (provider_event_id) REFERENCES refund_provider_events(id) ON UPDATE RESTRICT ON DELETE RESTRICT,\
                     CONSTRAINT fk_refund_reconciliation_user FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,\
-                    CONSTRAINT fk_refund_reconciliation_organization FOREIGN KEY (organization_id) REFERENCES organizations(id) ON UPDATE RESTRICT ON DELETE RESTRICT,\
                     CONSTRAINT fk_refund_reconciliation_approval_actor FOREIGN KEY (approval_actor_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,\
                     CONSTRAINT ck_refund_reconciliation_order_kind CHECK (order_kind BETWEEN 1 AND 2),\
                     CONSTRAINT ck_refund_reconciliation_amount CHECK (amount_delta_minor < 0 AND amount_delta_minor != -9223372036854775808),\

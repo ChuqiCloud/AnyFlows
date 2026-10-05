@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ArrowRight, Building2, Plus, RefreshCw } from 'lucide-react'
+import { Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -14,7 +14,6 @@ import { UserEditorSheet } from './user-editor-sheet'
 import { userRequestWithStatus } from './user-form-model'
 import { UserTable } from './user-table'
 import { UserWalletSheet } from './user-wallet-sheet'
-import { UserOrganizationsSheet } from './user-organizations-sheet'
 
 type EditorState = AdminUser | 'create' | undefined
 
@@ -33,11 +32,9 @@ export function UserPage() {
   const [deleting, setDeleting] = useState<AdminUser>()
   const [togglingId, setTogglingId] = useState<number>()
   const [walletUserId, setWalletUserId] = useState<number>()
-  const [organizationUserId, setOrganizationUserId] = useState<number>()
   const users = usersQuery.data?.pages[pagination.pageIndex]?.users ?? []
   const groupNames = useMemo(() => new Map((groupsQuery.data ?? []).map((group) => [group.id, group.display_name])), [groupsQuery.data])
   const walletUser = users.find((user) => user.id === walletUserId)
-  const organizationUser = users.find((user) => user.id === organizationUserId)
 
   const toggle = async (user: AdminUser) => {
     setTogglingId(user.id)
@@ -66,7 +63,6 @@ export function UserPage() {
         </div>
       </header>
 
-      <EnterpriseManagementGuide />
 
       <div className="flex items-center justify-between border-y border-[var(--hairline)] py-2 text-xs text-muted-foreground">
         <span>{t('users.count', { count: users.length })}</span>
@@ -84,7 +80,7 @@ export function UserPage() {
           <p className="mt-1 text-xs text-muted-foreground">{t('users.error.body')}</p>
           <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => void usersQuery.refetch()}>{t('users.actions.retry')}</Button>
         </div>
-      ) : <UserTable users={users} groupNames={groupNames} togglingId={togglingId} onDelete={setDeleting} onEdit={setEditor} onOrganizations={(user) => setOrganizationUserId(user.id)} onToggle={(user) => void toggle(user)} onWallet={(user) => setWalletUserId(user.id)} />}
+      ) : <UserTable users={users} groupNames={groupNames} togglingId={togglingId} onDelete={setDeleting} onEdit={setEditor} onToggle={(user) => void toggle(user)} onWallet={(user) => setWalletUserId(user.id)} />}
 
       {usersQuery.isFetchNextPageError ? <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2 text-xs text-destructive"><span>{t('users.error.more')}</span><Button type="button" size="sm" variant="ghost" onClick={() => void usersQuery.fetchNextPage()}>{t('users.actions.retry')}</Button></div> : null}
       {!usersQuery.isPending && !initialError ? (
@@ -105,41 +101,7 @@ export function UserPage() {
 
       <UserEditorSheet open={editor !== undefined} user={editor === 'create' ? undefined : editor} onOpenChange={(open) => !open && setEditor(undefined)} />
       <UserWalletSheet open={walletUser !== undefined} user={walletUser} onOpenChange={(open) => !open && setWalletUserId(undefined)} />
-      <UserOrganizationsSheet open={organizationUser !== undefined} user={organizationUser} onOpenChange={(open) => !open && setOrganizationUserId(undefined)} />
       <UserDeleteDialog key={deleting?.id ?? 'no-user'} user={deleting} onClose={() => setDeleting(undefined)} />
     </div>
   )
-}
-
-/** 在管理员用户列表中固定展示企业归属的既有操作顺序，避免误以为修改个人角色即可加入企业。 */
-function EnterpriseManagementGuide() {
-  const { t } = useTranslation()
-  return (
-    <section className="grid gap-3 border-y border-[var(--hairline)] py-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start" aria-labelledby="users-enterprise-guide-title">
-      <div className="flex min-w-0 items-start gap-3">
-        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand/10 text-brand"><Building2 className="size-4" aria-hidden="true" /></span>
-        <div className="min-w-0">
-          <h2 id="users-enterprise-guide-title" className="text-sm font-semibold">{t('users.enterpriseGuide.title')}</h2>
-          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">{t('users.enterpriseGuide.body')}</p>
-        </div>
-      </div>
-      <ol className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3 lg:min-w-[34rem]">
-        {(['directory', 'membership', 'accept'] as const).map((step, index) => (
-          <li key={step} className="flex min-w-0 items-start gap-2">
-            <span className="grid size-5 shrink-0 place-items-center rounded-full border border-[var(--hairline)] font-mono text-[0.6875rem]">{index + 1}</span>
-            <span>{t(`users.enterpriseGuide.steps.${step}`)}</span>
-          </li>
-        ))}
-      </ol>
-      <div className="flex flex-wrap gap-2 lg:col-span-2">
-        <GuideLink href="#/console/platform-organizations" label={t('users.enterpriseGuide.links.directory')} />
-        <GuideLink href="#/console/organization-provisioning" label={t('users.enterpriseGuide.links.provisioning')} />
-        <GuideLink href="#/console/organization-verification" label={t('users.enterpriseGuide.links.verification')} />
-      </div>
-    </section>
-  )
-}
-
-function GuideLink({ href, label }: { href: string; label: string }) {
-  return <a href={href} className="inline-flex items-center gap-1 text-xs font-medium text-info underline-offset-4 hover:underline">{label}<ArrowRight className="size-3.5" aria-hidden="true" /></a>
 }

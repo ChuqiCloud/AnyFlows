@@ -30,12 +30,12 @@ mod model_catalog;
 mod model_discovery;
 mod model_price_source;
 mod oauth_connection;
-mod organization_runtime;
 mod payment_runtime;
 mod readiness;
 mod request_outcome_runtime;
 mod request_rate_limit;
 mod responses_websocket_runtime;
+mod runtime_extensions;
 mod runtime_frontend;
 mod scheduled_chat;
 mod scheduler_invalidation;
@@ -93,11 +93,11 @@ pub use bootstrap::{
     ListenerReady, RelayReady, RouterReady, ShutdownReport, Supervised, TelemetryReady, run,
 };
 pub use oauth_connection::OAuthRuntimeConfigError;
-pub use organization_runtime::{
-    OrganizationBackgroundTaskRegistrar, OrganizationRuntimeContext, OrganizationRuntimeServices,
-    default_background_task_registrar,
-};
 pub use request_outcome_runtime::{RequestOutcomeContext, RequestOutcomeRuntime, RoutedExecution};
+pub use runtime_extensions::{
+    BackgroundTaskRegistrar, RelayExtensionInitializer, RuntimeExtensionContext, RuntimeExtensions,
+    RuntimeHttpContext, RuntimeHttpExtensionFactory,
+};
 pub use scheduled_chat::{
     BoundVideoTaskSubmission, VideoTaskBinding, VideoTaskPollFuture, VideoTaskRuntime,
     VideoTaskSubmissionFuture, VideoTaskSubmissionRuntimeError,

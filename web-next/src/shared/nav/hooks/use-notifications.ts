@@ -2,9 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
-  useMarkOrganizationApprovalNotificationsRead,
   useMarkUserNotificationsRead,
-  useOrganizationApprovalNotifications,
   useUserNotifications,
 } from "@/features/profile/profile-api";
 
@@ -24,16 +22,13 @@ export const useNotifications = () => {
   );
   const [isOpen, setIsOpen] = useState(false);
   const userQuery = useUserNotifications();
-  const approvalQuery = useOrganizationApprovalNotifications();
   const markUserRead = useMarkUserNotificationsRead();
-  const markApprovalRead = useMarkOrganizationApprovalNotificationsRead();
 
   const notifications = useMemo<NotificationItem[]>(() => {
     const userEntries = userQuery.data?.pages.flatMap((page) => page.entries) ?? [];
-    const approvalEntries = approvalQuery.data?.pages.flatMap((page) => page.entries) ?? [];
     const language = i18n.resolvedLanguage;
 
-    const userItems = userEntries.map((entry) => {
+    return [...userEntries].sort((left, right) => right.occurred_at - left.occurred_at).map((entry) => {
       const isRead = entry.read_at !== null && entry.read_at !== undefined;
       const title = entry.kind === "product_update"
         ? (language?.startsWith("zh")
@@ -66,34 +61,9 @@ export const useNotifications = () => {
       };
     });
 
-    const approvalItems = approvalEntries.map((entry) => ({
-      id: `approval:${entry.id}`,
-      icon: "solar:clipboard-check-linear",
-      title: t(`profile.organizationApprovalNotifications.decision.${entry.decision}`),
-      description: t("profile.organizationApprovalNotifications.detail", {
-        organization: entry.organization_id,
-        request: entry.request_id,
-      }),
-      time: formatTime(entry.occurred_at, language),
-      type: "request" as const,
-      isRead: entry.read_at !== null && entry.read_at !== undefined,
-    }));
+  }, [i18n.resolvedLanguage, t, userQuery.data]);
 
-    return [...userItems, ...approvalItems].sort((left, right) => {
-      const leftTime = userEntries.find((entry) => `user:${entry.id}` === left.id)?.occurred_at
-        ?? approvalEntries.find((entry) => `approval:${entry.id}` === left.id)?.occurred_at
-        ?? 0;
-      const rightTime = userEntries.find((entry) => `user:${entry.id}` === right.id)?.occurred_at
-        ?? approvalEntries.find((entry) => `approval:${entry.id}` === right.id)?.occurred_at
-        ?? 0;
-
-      return rightTime - leftTime;
-    });
-  }, [approvalQuery.data, i18n.resolvedLanguage, t, userQuery.data]);
-
-  const unreadCount =
-    (userQuery.data?.pages[0]?.unread_count ?? 0) +
-    (approvalQuery.data?.pages[0]?.unread_count ?? 0);
+  const unreadCount = userQuery.data?.pages[0]?.unread_count ?? 0;
   const unreadNotifications = notifications.filter((item) => !item.isRead);
   const tabCounts = useMemo(
     () => ({
@@ -112,15 +82,8 @@ export const useNotifications = () => {
     const userIds = unreadNotifications
       .filter((item) => item.id.startsWith("user:"))
       .map((item) => Number(item.id.slice("user:".length)));
-    const approvalIds = unreadNotifications
-      .filter((item) => item.id.startsWith("approval:"))
-      .map((item) => Number(item.id.slice("approval:".length)));
-
-    void Promise.all([
-      userIds.length ? markUserRead.mutateAsync(userIds) : Promise.resolve(),
-      approvalIds.length ? markApprovalRead.mutateAsync(approvalIds) : Promise.resolve(),
-    ]);
-  }, [markApprovalRead, markUserRead, unreadNotifications]);
+    if (userIds.length) void markUserRead.mutateAsync(userIds);
+  }, [markUserRead, unreadNotifications]);
 
   return {
     isOpen,

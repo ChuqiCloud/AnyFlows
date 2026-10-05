@@ -57,7 +57,7 @@ fn submission(kind: &str) -> AccountVerificationSubmit {
         document_number: Some("A12345678".to_owned()),
         subject_name: "Verified applicant".to_owned(),
         summary: "Identity supporting document".to_owned(),
-        materials: vec![OrganizationVerificationMaterialWrite {
+        materials: vec![VerificationMaterialWrite {
             kind: "identity".to_owned(),
             object_reference: "unused".to_owned(),
             file_name: "identity.pdf".to_owned(),

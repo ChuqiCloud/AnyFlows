@@ -135,7 +135,9 @@ pub use usage_record_consumer::{
     UsageRecordConsumer, UsageRecordConsumerError, UsageRecordSink, UsageRecordSinkError,
     UsageRecordSinkFuture,
 };
-pub use usage_record_database_sink::DatabaseUsageRecordSink;
+pub use usage_record_database_sink::{
+    DatabaseUsageRecordSink, UsageRecordProjection, UsageRecordProjectionError,
+};
 pub use usage_record_queue::{
     UsageRecordDelivery, UsageRecordQueue, UsageRecordQueueError, UsageRecordReceiver,
 };

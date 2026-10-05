@@ -2,7 +2,6 @@ import { useMutation } from '@tanstack/react-query'
 import {
   AlertCircle,
   Boxes,
-  Building2,
   CheckCircle2,
   Eye,
   EyeOff,
@@ -46,8 +45,6 @@ type AccountLoginFormProps = {
   site?: PublicSiteSettings
   notice?: LoginNotice
   onAuthenticated: () => void
-  /** 切换到企业 SSO 表单；由登录卡片底部的地球/企业图标触发。 */
-  onUseOrganizationLogin: () => void
 }
 
 function classifyLoginError(error: unknown): LoginError {
@@ -66,7 +63,7 @@ function classifyLoginError(error: unknown): LoginError {
 }
 
 /** 账号密码登录表单：OAuth、用户名密码、二次验证与 Passkey。 */
-export function AccountLoginForm({ site, notice, onAuthenticated, onUseOrganizationLogin }: AccountLoginFormProps) {
+export function AccountLoginForm({ site, notice, onAuthenticated }: AccountLoginFormProps) {
   const { t } = useTranslation()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -346,7 +343,7 @@ export function AccountLoginForm({ site, notice, onAuthenticated, onUseOrganizat
         </p>
       ) : null}
 
-      {/* 次要入口：Passkey 用圆形图标直接验证，企业登录切换成独立表单。 */}
+      {/* 次要入口：Passkey 用圆形图标直接验证。 */}
       <div className="grid gap-3 border-t border-[var(--hairline)] pt-5">
         <p className="text-center text-xs text-muted-foreground">{t('auth.login.moreOptions')}</p>
         <div className="flex items-center justify-center gap-3" role="group" aria-label={t('auth.login.moreOptions')}>
@@ -367,18 +364,6 @@ export function AccountLoginForm({ site, notice, onAuthenticated, onUseOrganizat
               </Button>
             </SiteTooltip>
           ) : null}
-          <SiteTooltip content={t('auth.login.organizationSso.title')}>
-            <Button
-              isIconOnly
-              aria-label={t('auth.login.organizationSso.title')}
-              className={buttonIconRound}
-              type="button"
-              variant="flat"
-              onPress={onUseOrganizationLogin}
-            >
-              <Building2 className="size-4" aria-hidden="true" />
-            </Button>
-          </SiteTooltip>
         </div>
       </div>
 

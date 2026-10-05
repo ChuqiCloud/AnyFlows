@@ -186,9 +186,9 @@ impl CachedRequestPricingSnapshotSource {
         }
     }
 
-    /// 接入企业合同价仓储；未绑定仓储时保持原有平台定价行为。
+    /// 接入发行版提供的合同价来源；未绑定时保持平台定价行为。
     #[must_use]
-    pub fn with_contract_prices(mut self, source: Arc<dyn ContractPriceSource>) -> Self {
+    pub fn with_contract_price_source(mut self, source: Arc<dyn ContractPriceSource>) -> Self {
         self.contract_prices = Some(source);
         self
     }
@@ -260,12 +260,12 @@ impl RequestPricingSnapshotSource for CachedRequestPricingSnapshotSource {
         Box::pin(async move {
             let mut snapshot =
                 self.capture(model, source_group_id, target_group_id, current_second)?;
-            let (Some(organization_id), Some(source)) =
+            let (Some(organization_id), Some(repository)) =
                 (organization_id, self.contract_prices.as_ref())
             else {
                 return Ok(snapshot);
             };
-            let Some(contract_price) = source
+            let Some(contract_price) = repository
                 .resolve(
                     organization_id,
                     model,

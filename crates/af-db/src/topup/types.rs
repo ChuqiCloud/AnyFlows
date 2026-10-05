@@ -509,6 +509,9 @@ pub enum TopupRepositoryConfigError {
 /// 充值仓储错误；不携带订单、Provider 或支付流水内容。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum TopupRepositoryError {
+    /// The selected wallet target is supplied only by a distribution extension.
+    #[error("充值收款主体未启用")]
+    UnsupportedTarget,
     /// 相同幂等键绑定了不同事实，或 CAS 状态不允许迁移。
     #[error("充值订单或支付事件冲突")]
     Conflict,

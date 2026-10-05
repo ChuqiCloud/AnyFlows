@@ -4,9 +4,8 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { AppShell } from '@/components/layout/app-shell'
 import { SessionBoundary } from '@/features/auth/session-boundary'
 import { endManagementSession } from '@/features/auth/session-query'
-import { OrganizationWorkspaceProvider } from '@/features/organization-console/organization-workspace-context'
 import type { SessionResponse } from '@/lib/api/generated/types.gen'
-import { isEnterpriseView, requiresAdmin } from '@/routes/access'
+import { requiresAdmin } from '@/routes/access'
 
 /** 控制台页面共享当前会话，避免每个页面各自判定角色。 */
 const ConsoleSessionContext = createContext<SessionResponse | null>(null)
@@ -63,11 +62,9 @@ export function ConsoleLayout() {
     >
       {(session) => (
         <ConsoleSessionContext.Provider value={session}>
-          <OrganizationWorkspaceProvider enterpriseView={isEnterpriseView(pathname)}>
-            <AppShell currentUser={session.user} onLogout={handleLogout}>
-              <Outlet context={{ onPasswordChanged: handlePasswordChanged }} />
-            </AppShell>
-          </OrganizationWorkspaceProvider>
+          <AppShell currentUser={session.user} onLogout={handleLogout}>
+            <Outlet context={{ onPasswordChanged: handlePasswordChanged }} />
+          </AppShell>
         </ConsoleSessionContext.Provider>
       )}
     </SessionBoundary>

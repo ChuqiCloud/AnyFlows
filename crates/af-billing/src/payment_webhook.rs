@@ -468,9 +468,9 @@ fn map_repository_error(error: TopupRepositoryError) -> TopupPaymentEventPortErr
     match error {
         TopupRepositoryError::Conflict => TopupPaymentEventPortError::Conflict,
         TopupRepositoryError::OutcomeUnknown => TopupPaymentEventPortError::OutcomeUnknown,
-        TopupRepositoryError::Query | TopupRepositoryError::Timeout => {
-            TopupPaymentEventPortError::Unavailable
-        }
+        TopupRepositoryError::Query
+        | TopupRepositoryError::Timeout
+        | TopupRepositoryError::UnsupportedTarget => TopupPaymentEventPortError::Unavailable,
         TopupRepositoryError::Invariant => TopupPaymentEventPortError::Invariant,
     }
 }
@@ -764,9 +764,9 @@ fn map_topup_route_error(error: TopupRepositoryError) -> PaymentWebhookHandlerEr
     match error {
         TopupRepositoryError::Conflict => PaymentWebhookHandlerError::Conflict,
         TopupRepositoryError::OutcomeUnknown => PaymentWebhookHandlerError::OutcomeUnknown,
-        TopupRepositoryError::Query | TopupRepositoryError::Timeout => {
-            PaymentWebhookHandlerError::Unavailable
-        }
+        TopupRepositoryError::Query
+        | TopupRepositoryError::Timeout
+        | TopupRepositoryError::UnsupportedTarget => PaymentWebhookHandlerError::Unavailable,
         TopupRepositoryError::Invariant => PaymentWebhookHandlerError::Invariant,
     }
 }

@@ -8,13 +8,13 @@ use af_db::{
     RefundRepository, RefundRepositoryError,
 };
 use af_domain::{
-    MAX_REFUND_APPROVAL_REASON_BYTES, OrganizationId, OrganizationPermission, RefundApprovalStatus,
-    RefundManualCompletion, RefundManualResult, RefundOrderKind, RefundRequestId, RefundRequestKey,
-    RefundRequestRecord, RefundRequestStatus, UserId,
+    MAX_REFUND_APPROVAL_REASON_BYTES, OrganizationId, RefundApprovalStatus, RefundManualCompletion,
+    RefundManualResult, RefundOrderKind, RefundRequestId, RefundRequestKey, RefundRequestRecord,
+    RefundRequestStatus, UserId,
 };
 use thiserror::Error;
 
-use crate::{OrganizationContext, SessionPrincipal, SessionRole};
+use crate::{SessionPrincipal, SessionRole};
 
 pub const DEFAULT_ADMIN_REFUND_PAGE_SIZE: usize = DEFAULT_REFUND_ADMIN_PAGE_SIZE;
 pub const MAX_ADMIN_REFUND_PAGE_SIZE: usize = MAX_REFUND_ADMIN_PAGE_SIZE;
@@ -444,11 +444,6 @@ pub trait AdminRefundService: Send + Sync {
         principal: SessionPrincipal,
         query: RefundReconciliationListQuery,
     ) -> RefundReconciliationListFuture<'a>;
-    fn list_organization_reconciliations<'a>(
-        &'a self,
-        context: OrganizationContext,
-        query: RefundReconciliationListQuery,
-    ) -> RefundReconciliationListFuture<'a>;
     fn list_admin_reconciliations<'a>(
         &'a self,
         principal: SessionPrincipal,
@@ -605,25 +600,6 @@ impl AdminRefundService for DatabaseAdminRefundService {
         })
     }
 
-    fn list_organization_reconciliations<'a>(
-        &'a self,
-        context: OrganizationContext,
-        query: RefundReconciliationListQuery,
-    ) -> RefundReconciliationListFuture<'a> {
-        Box::pin(async move {
-            require_organization_wallet_read(&context)?;
-            let page = self
-                .repository
-                .list_organization_reconciliations(
-                    context.organization_id(),
-                    DbRefundReconciliationQuery::new(query.before_id, query.limit),
-                )
-                .await
-                .map_err(map_repository_error)?;
-            Ok(to_reconciliation_page(page))
-        })
-    }
-
     fn list_admin_reconciliations<'a>(
         &'a self,
         principal: SessionPrincipal,
@@ -717,13 +693,6 @@ fn require_admin(principal: SessionPrincipal) -> Result<(), AdminRefundError> {
     } else {
         Err(AdminRefundError::Forbidden)
     }
-}
-
-fn require_organization_wallet_read(context: &OrganizationContext) -> Result<(), AdminRefundError> {
-    context
-        .allows(OrganizationPermission::WalletRead)
-        .then_some(())
-        .ok_or(AdminRefundError::Forbidden)
 }
 
 fn now_seconds() -> u64 {

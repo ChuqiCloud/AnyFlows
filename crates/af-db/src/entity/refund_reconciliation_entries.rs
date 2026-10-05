@@ -51,12 +51,4 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     ManualCompletion,
-    #[sea_orm(
-        belongs_to = "super::organizations::Entity",
-        from = "Column::OrganizationId",
-        to = "super::organizations::Column::Id",
-        on_update = "Restrict",
-        on_delete = "Restrict"
-    )]
-    Organization,
 }

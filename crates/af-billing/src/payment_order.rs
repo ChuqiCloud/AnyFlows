@@ -1,7 +1,7 @@
 use std::{fmt, future::Future, pin::Pin};
 
 use af_db::MAX_PROVIDER_ORDER_ID_BYTES;
-use af_domain::{OrganizationPlanOrderId, SubscriptionOrderId, TopupOrderId};
+use af_domain::{SubscriptionOrderId, TopupOrderId};
 use thiserror::Error;
 use zeroize::Zeroize;
 
@@ -17,8 +17,6 @@ pub enum PaymentOrderId {
     Topup(TopupOrderId),
     /// 个人订阅购买订单。
     Subscription(SubscriptionOrderId),
-    /// 企业商业授权购买订单。
-    OrganizationPlanOrder(OrganizationPlanOrderId),
 }
 
 impl From<TopupOrderId> for PaymentOrderId {
@@ -33,19 +31,12 @@ impl From<SubscriptionOrderId> for PaymentOrderId {
     }
 }
 
-impl From<OrganizationPlanOrderId> for PaymentOrderId {
-    fn from(value: OrganizationPlanOrderId) -> Self {
-        Self::OrganizationPlanOrder(value)
-    }
-}
-
 impl PaymentOrderId {
     #[must_use]
     pub fn persistence_key(self) -> String {
         match self {
             Self::Topup(value) => value.persistence_key(),
             Self::Subscription(value) => value.persistence_key(),
-            Self::OrganizationPlanOrder(value) => value.persistence_key(),
         }
     }
 }
@@ -444,14 +435,5 @@ mod tests {
             "https://pay.example.test/submit.php?sign=secret-value"
         );
         assert!(!format!("{:?}", session.action()).contains("secret-value"));
-
-        let enterprise_order = OrganizationPlanOrderId::new([0x24; 16]).unwrap();
-        let request =
-            PaymentOrderRequest::new(enterprise_order, 100, "USD".to_owned(), "card".to_owned())
-                .unwrap();
-        assert_eq!(
-            request.order_id().persistence_key(),
-            enterprise_order.persistence_key()
-        );
     }
 }

@@ -1,4 +1,3 @@
-import { useAccountEligibility } from '@/features/account-verification/account-verification-api'
 import {
   Activity,
   Boxes,
@@ -16,7 +15,6 @@ import {
   GitBranch,
   Globe2,
   Headphones,
-  History,
   KeyRound,
   Landmark,
   Layers3,
@@ -53,7 +51,6 @@ import {
   adminNavigationSections,
   adminSystemItems,
   adminWorkspaceItems,
-  filterOrganizationNavigationItems,
   type AdminSectionKey,
   type NavKey,
   userNavigationGroups,
@@ -71,7 +68,6 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
-import { useOrganizationWorkspace } from '@/features/organization-console/organization-workspace-context'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import type { SiteSidebarLink } from '@/lib/api/generated/types.gen'
 
@@ -94,31 +90,14 @@ const navItems = {
   playground: { key: 'playground', icon: MessageSquareText, href: '#/console/playground' },
   videoTasks: { key: 'videoTasks', icon: Video, href: '#/console/video-tasks' },
   apiKeys: { key: 'apiKeys', icon: KeyRound, href: '#/console/api-keys' },
-  organizationApiKeys: { key: 'organizationApiKeys', icon: KeyRound, href: '#/console/organization-api-keys' },
-  organizationActivity: { key: 'organizationActivity', icon: History, href: '#/console/organization-activity' },
-  organizationBudgets: { key: 'organizationBudgets', icon: Building2, href: '#/console/organization-budgets' },
-  organizationContractPrices: { key: 'organizationContractPrices', icon: CircleDollarSign, href: '#/console/organization-contract-prices' },
-  organizationCredit: { key: 'organizationCredit', icon: Landmark, href: '#/console/organization-credit' },
-  organizationApprovals: { key: 'organizationApprovals', icon: ClipboardCheck, href: '#/console/organization-approvals' },
-  organizationMembers: { key: 'organizationMembers', icon: UsersRound, href: '#/console/organization-members' },
-  organizationDepartments: { key: 'organizationDepartments', icon: Building2, href: '#/console/organization-departments' },
-  organizationOverview: { key: 'organizationOverview', icon: Gauge, href: '#/console/organization' },
-  organizationOnboarding: { key: 'organizationOnboarding', icon: ClipboardCheck, href: '#/console/organization-onboarding' },
   accountVerification: { key: 'accountVerification', icon: ShieldCheck, href: '#/console/account-verification' },
   accountVerificationSettings: { key: 'accountVerificationSettings', icon: Settings2, href: '#/console/system-settings/account-verification' },
-  organizationProvisioning: { key: 'organizationProvisioning', icon: ClipboardCheck, href: '#/console/organization-provisioning' },
-  organizationVerification: { key: 'organizationVerification', icon: ShieldCheck, href: '#/console/organization-verification' },
-  organizationSettings: { key: 'organizationSettings', icon: Settings2, href: '#/console/organization-settings' },
-  organizationServiceAccounts: { key: 'organizationServiceAccounts', icon: Bot, href: '#/console/organization-service-accounts' },
-  organizationWallet: { key: 'organizationWallet', icon: WalletCards, href: '#/console/organization-wallet' },
   wallet: { key: 'wallet', icon: WalletCards, href: '#/console/wallet' },
   subscriptions: { key: 'subscriptions', icon: CalendarRange, href: '#/console/subscriptions' },
   invitations: { key: 'invitations', icon: TicketCheck, href: '#/console/invitations' },
   profile: { key: 'profile', icon: UserRound, href: '#/console/profile' },
   users: { key: 'users', icon: UsersRound, href: '#/console/users' },
   subscriptionManagement: { key: 'subscriptionManagement', icon: ListChecks, href: '#/console/subscription-management' },
-  organizationPlans: { key: 'organizationPlans', icon: Layers3, href: '#/console/organization-plans' },
-  platformOrganizations: { key: 'platformOrganizations', icon: Building2, href: '#/console/platform-organizations' },
   redemptionCodes: { key: 'redemptionCodes', icon: Ticket, href: '#/console/redemption-codes' },
   refunds: { key: 'refunds', icon: CircleCheckBig, href: '#/console/refunds' },
   siteSettings: { key: 'siteSettings', icon: PanelsTopLeft, href: '#/console/system-settings/site' },
@@ -142,8 +121,6 @@ const navItems = {
 } as const satisfies Record<NavKey, NavItem>
 
 const sectionIcons = {
-  organization: Building2,
-  enterprise: Building2,
   operations: BriefcaseBusiness,
   gateway: Waypoints,
   platform: Settings2,
@@ -351,26 +328,13 @@ function AdminNavigation({ activeKey }: { activeKey: NavKey }) {
     )
   }
 
-  const organizationSection = adminNavigationSections.find((section) => section.key === 'organization')
-  const enterpriseSection = adminNavigationSections.find((section) => section.key === 'enterprise')
-  const systemSections = adminNavigationSections.filter((section) => (
-    section.key !== 'organization' && section.key !== 'enterprise'
-  ))
-  const renderSectionGroup = (label: string, section: typeof adminNavigationSections[number] | undefined) => section ? (
-    <SidebarGroup className="p-0 py-1.5">
-      <SidebarGroupLabel className="h-6 px-3 text-[0.6875rem] font-semibold text-sidebar-foreground/60">{label}</SidebarGroupLabel>
-      <SidebarGroupContent><SidebarMenu className="gap-0.5">{renderSection(section)}</SidebarMenu></SidebarGroupContent>
-    </SidebarGroup>
-  ) : null
   return (
     <>
       <NavigationGroup label={t('nav.groups.workspace')} items={adminWorkspaceItems} activeKey={activeKey} />
-      {renderSectionGroup(t('nav.sections.organization'), organizationSection)}
-      {renderSectionGroup(t('nav.sections.enterprise'), enterpriseSection)}
       <SidebarGroup className="p-0 py-1.5">
         <SidebarGroupLabel className="h-6 px-3 text-[0.6875rem] font-semibold text-sidebar-foreground/60">{t('nav.sections.system')}</SidebarGroupLabel>
         <SidebarGroupContent><SidebarMenu className="gap-0.5">
-            {systemSections.map(renderSection)}
+            {adminNavigationSections.map(renderSection)}
             {adminSystemItems.map((item) => <NavigationItem key={item} itemKey={item} activeKey={activeKey} />)}
         </SidebarMenu></SidebarGroupContent>
       </SidebarGroup>
@@ -383,19 +347,7 @@ export function AppNavigation({ className, compact = false, role }: AppNavigatio
   const siteQuery = usePublicSiteSettings()
   const customLinks = siteQuery.data?.navigation.sidebar_links ?? []
   const activeKey = useActiveKey()
-  const workspace = useOrganizationWorkspace()
-  const eligibility = useAccountEligibility()
-  const organizationItems: readonly NavKey[] = workspace.selectedId === undefined && eligibility.data?.enterprise_verified
-    ? ['organizationProvisioning']
-    : filterOrganizationNavigationItems(
-    userNavigationGroups.find((group) => group.key === 'organization')?.items ?? [],
-    workspace.organizationPermissions,
-    workspace.selectedId !== undefined,
-    workspace.organizationPermissionsLoading,
-  )
   const visibleUserGroups = userNavigationGroups
-    .map((group) => group.key === 'organization' ? { ...group, items: organizationItems } : { ...group, items: group.items.filter((item) => item !== 'organizationProvisioning' || !organizationItems.includes('organizationProvisioning')) })
-    .filter((group) => group.key !== 'organization' || group.items.length > 0)
   const visibleItems = role === 'admin'
     ? adminNavigationItems
     : visibleUserGroups.flatMap((group) => group.items)

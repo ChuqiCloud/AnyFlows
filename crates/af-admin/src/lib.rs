@@ -36,46 +36,12 @@ mod model_provider_catalog;
 mod model_sync;
 mod network_settings;
 mod oauth_login;
-mod organization;
-mod organization_activity;
-mod organization_approval;
-mod organization_approval_execution;
-mod organization_approval_notifications;
-mod organization_budget;
-mod organization_contract_price;
-mod organization_credit_terms;
-mod organization_custom_role;
-mod organization_custom_role_binding;
-mod organization_entitlement;
-mod organization_invitation;
-mod organization_management;
-mod organization_plan;
-mod organization_plan_order;
-mod organization_plan_order_service;
-mod organization_provisioning;
-mod organization_scim;
-mod organization_service_account;
-mod organization_sso;
-mod organization_sso_discovery;
-mod organization_sso_domain;
-mod organization_sso_identity_binding;
-mod organization_sso_login;
-#[cfg(test)]
-mod organization_sso_login_tests;
-mod organization_sso_policy;
-mod organization_sso_recovery;
-mod organization_sso_session;
-mod organization_token;
-mod organization_verification;
-mod organization_wallet;
 mod passkey;
 mod passkey_auth;
 mod password_reset;
 mod payment_settings;
 #[cfg(test)]
 mod payment_settings_tests;
-mod platform_organization_directory;
-mod platform_organization_management;
 mod platform_rbac;
 mod playground_conversation;
 mod playground_share;
@@ -107,28 +73,9 @@ mod user_wallet;
 mod user_write;
 mod wallet;
 
-pub use af_account::{
-    ORGANIZATION_SSO_OIDC_CALLBACK_PATH, ORGANIZATION_SSO_SAML_CALLBACK_PATH,
-    OrganizationSsoOidcCallback, OrganizationSsoSamlCallback,
-};
 pub use af_account::{PlainCredentialSecret as AdminCredentialSecret, PlainOAuthCredential};
-pub use af_db::OrganizationContractPriceRecord;
-pub use af_db::OrganizationScimTokenRecord;
-pub use af_db::{
-    CredentialProxyScheme, DatabaseTimestamp, NetworkSettingsMode,
-    OrganizationBillingReservationRecord, OrganizationBillingReservationStatus,
-    OrganizationBudgetAllocationRecord, OrganizationBudgetPolicyRecord, OrganizationBudgetScope,
-    OrganizationBudgetWindowRecord, OrganizationCustomRoleRecord, OrganizationInvitationRecord,
-    OrganizationMembershipRecord, OrganizationTeamRecord, OrganizationWalletLedgerEntryType,
-};
-pub use af_db::{OrganizationAuditOutcome, PlatformAuditOutcome};
-pub use af_db::{
-    OrganizationCreditInvoiceRecord, OrganizationCreditRepaymentAllocationRecord,
-    OrganizationCreditRepaymentRecord, OrganizationCreditTermsRecord,
-};
-pub use af_db::{
-    OrganizationScimAuditPageRecord, OrganizationScimAuditQuery, OrganizationScimAuditRecord,
-};
+pub use af_db::PlatformAuditOutcome;
+pub use af_db::{CredentialProxyScheme, DatabaseTimestamp, NetworkSettingsMode};
 pub use announcement::{
     AnnouncementAudience, AnnouncementFuture, AnnouncementListFuture, AnnouncementService,
     AnnouncementServiceError, AnnouncementStatus, AnnouncementView, AnnouncementWriteCommand,
@@ -274,227 +221,6 @@ pub use oauth_login::{
     DatabaseOAuthLoginService, OAuthLoginCallbackResult, OAuthLoginError, OAuthLoginService,
     OAuthLoginServiceFuture, OAuthLoginStart, PublicOAuthLoginProvider,
 };
-pub use organization::{
-    DatabaseOrganizationAuthorizationService, OrganizationAccessFuture, OrganizationAccessSummary,
-    OrganizationAuthorizationError, OrganizationAuthorizationService, OrganizationContext,
-    OrganizationEntitlementSummary, OrganizationListFuture,
-};
-pub use organization_activity::{
-    DatabaseOrganizationActivityService, OrganizationActivityError, OrganizationActivityService,
-    OrganizationActivityServiceConfigError, OrganizationAuditChangeSummary,
-    OrganizationAuditListFuture, OrganizationAuditListQuery, OrganizationAuditLog,
-    OrganizationAuditPage, OrganizationAuditRecordFuture, OrganizationAuditRequestContext,
-    OrganizationUsageLogFuture, OrganizationUsageLogPage, OrganizationUsageLogRows,
-    OrganizationUsageLogScope, OrganizationUsageLogSummary,
-};
-pub use organization_approval::{
-    DatabaseOrganizationApprovalService, OrganizationApprovalDecisionCommand,
-    OrganizationApprovalDecisionRecord, OrganizationApprovalRequestCreateCommand,
-    OrganizationApprovalRequestFuture, OrganizationApprovalRequestListFuture,
-    OrganizationApprovalRequestStatus, OrganizationApprovalRequestView,
-    OrganizationApprovalService, OrganizationApprovalServiceError,
-    OrganizationApprovalTemplateCreateCommand, OrganizationApprovalTemplateFuture,
-    OrganizationApprovalTemplateListFuture, OrganizationApprovalTemplateRecord,
-};
-pub use organization_approval_execution::{
-    DatabaseOrganizationApprovalExecutionService, OrganizationApprovalBudgetExecutionFuture,
-    OrganizationApprovalBudgetExecutionResult, OrganizationApprovalBudgetPolicyCommand,
-    OrganizationApprovalContractPriceCommand, OrganizationApprovalContractPriceExecutionFuture,
-    OrganizationApprovalContractPriceExecutionResult, OrganizationApprovalExecutionError,
-    OrganizationApprovalExecutionService, OrganizationApprovalFundsAdjustmentCommand,
-    OrganizationApprovalFundsExecutionFuture, OrganizationApprovalFundsExecutionResult,
-    OrganizationApprovalMemberChangeCommand, OrganizationApprovalMemberExecutionFuture,
-    OrganizationApprovalMemberExecutionResult,
-    OrganizationApprovalServiceAccountBudgetBindingCommand,
-    OrganizationApprovalServiceAccountExecutionFuture,
-    OrganizationApprovalServiceAccountExecutionResult,
-    OrganizationApprovalServiceAccountStatusCommand,
-};
-pub use organization_approval_notifications::{
-    DEFAULT_ORGANIZATION_APPROVAL_NOTIFICATION_PAGE_SIZE,
-    DatabaseOrganizationApprovalNotificationService, OrganizationApprovalNotification,
-    OrganizationApprovalNotificationCursor, OrganizationApprovalNotificationDecision,
-    OrganizationApprovalNotificationError, OrganizationApprovalNotificationListFuture,
-    OrganizationApprovalNotificationListQuery, OrganizationApprovalNotificationMarkReadFuture,
-    OrganizationApprovalNotificationMarkReadResult, OrganizationApprovalNotificationPage,
-    OrganizationApprovalNotificationService,
-};
-pub use organization_budget::{
-    DatabaseOrganizationBudgetService, OrganizationBudgetPoliciesFuture,
-    OrganizationBudgetPolicyCreateCommand, OrganizationBudgetPolicyFuture,
-    OrganizationBudgetReservationFuture, OrganizationBudgetService, OrganizationBudgetServiceError,
-    OrganizationBudgetWindowsFuture,
-};
-pub use organization_contract_price::{
-    DatabaseOrganizationContractPriceService, OrganizationContractPriceCloseCommand,
-    OrganizationContractPriceCreateCommand, OrganizationContractPriceFuture,
-    OrganizationContractPriceListFuture, OrganizationContractPriceService,
-    OrganizationContractPriceServiceError,
-};
-pub use organization_credit_terms::{
-    DatabaseOrganizationCreditTermsService, OrganizationCreditInvoiceFuture,
-    OrganizationCreditInvoicePageFuture, OrganizationCreditRepaymentAllocationFuture,
-    OrganizationCreditRepaymentAllocationPageFuture, OrganizationCreditRepaymentFuture,
-    OrganizationCreditRepaymentPageFuture, OrganizationCreditTermsCreateCommand,
-    OrganizationCreditTermsFuture, OrganizationCreditTermsListFuture,
-    OrganizationCreditTermsPageFuture, OrganizationCreditTermsService,
-    OrganizationCreditTermsServiceError, OrganizationCreditTermsStatusCommand,
-};
-pub use organization_custom_role::{
-    DEFAULT_ORGANIZATION_CUSTOM_ROLE_PAGE_SIZE, DatabaseOrganizationCustomRoleService,
-    OrganizationCustomRoleChangeCommand, OrganizationCustomRoleCreateCommand,
-    OrganizationCustomRoleDisableCommand, OrganizationCustomRoleFuture,
-    OrganizationCustomRoleListQuery, OrganizationCustomRolePage, OrganizationCustomRolePageFuture,
-    OrganizationCustomRoleService, OrganizationCustomRoleServiceError,
-};
-pub use organization_custom_role_binding::{
-    DatabaseOrganizationCustomRoleBindingService, OrganizationCustomRoleBindingCommand,
-    OrganizationCustomRoleBindingFuture, OrganizationCustomRoleBindingResult,
-    OrganizationCustomRoleBindingService, OrganizationCustomRoleBindingServiceError,
-};
-pub use organization_entitlement::{
-    DatabaseOrganizationEntitlementReader, OrganizationEntitlementServiceError,
-    OrganizationEntitlementSource, OrganizationEntitlementView,
-};
-pub use organization_invitation::{
-    AcceptedOrganizationInvitation, DEFAULT_ORGANIZATION_INVITATION_TTL_SECONDS,
-    DatabaseOrganizationInvitationService, IssuedOrganizationInvitation,
-    MAX_ORGANIZATION_INVITATION_TTL_SECONDS, MIN_ORGANIZATION_INVITATION_TTL_SECONDS,
-    OrganizationInvitationBatchCommand, OrganizationInvitationBatchResult,
-    OrganizationInvitationCommand, OrganizationInvitationError, OrganizationInvitationFuture,
-    OrganizationInvitationPreviewCommand, OrganizationInvitationPreviewIssue,
-    OrganizationInvitationPreviewItemResult, OrganizationInvitationPreviewResult,
-    OrganizationInvitationService,
-};
-pub use organization_management::{
-    DEFAULT_ORGANIZATION_DIRECTORY_PAGE_SIZE, DatabaseOrganizationManagementService,
-    OrganizationDepartmentCreateCommand, OrganizationDepartmentCursor,
-    OrganizationDepartmentDisableCommand, OrganizationDepartmentFuture,
-    OrganizationDepartmentListQuery, OrganizationDepartmentMembershipAddCommand,
-    OrganizationDepartmentMembershipFuture, OrganizationDepartmentMembershipPage,
-    OrganizationDepartmentMembershipPageFuture, OrganizationDepartmentMembershipRecord,
-    OrganizationDepartmentMoveCommand, OrganizationDepartmentPage,
-    OrganizationDepartmentPageFuture, OrganizationDepartmentRecord, OrganizationManagementError,
-    OrganizationManagementService, OrganizationMembershipChangeCommand,
-    OrganizationMembershipFuture, OrganizationMembershipListQuery, OrganizationMembershipPage,
-    OrganizationMembershipPageFuture, OrganizationOwnershipTransferCommand,
-    OrganizationOwnershipTransferFuture, OrganizationOwnershipTransferResult,
-    OrganizationProfileChangeCommand, OrganizationProfileFuture, OrganizationTeamChangeCommand,
-    OrganizationTeamCreateCommand, OrganizationTeamDisableCommand, OrganizationTeamFuture,
-    OrganizationTeamListQuery, OrganizationTeamPage, OrganizationTeamPageFuture,
-};
-pub use organization_plan::{
-    DEFAULT_ORGANIZATION_PLAN_PAGE_SIZE, DatabaseOrganizationPlanService, OrganizationPlanCatalog,
-    OrganizationPlanCatalogFuture, OrganizationPlanCreateCommand, OrganizationPlanDisableCommand,
-    OrganizationPlanFuture, OrganizationPlanListQuery, OrganizationPlanPage,
-    OrganizationPlanPageFuture, OrganizationPlanService, OrganizationPlanServiceError,
-    OrganizationPlanView,
-};
-pub use organization_plan_order::{
-    DatabaseOrganizationPlanOrderPaymentService, OrganizationPlanOrderPayment,
-    OrganizationPlanOrderPaymentCommand, OrganizationPlanOrderPaymentError,
-    OrganizationPlanOrderPaymentFuture, OrganizationPlanOrderPaymentService,
-};
-pub use organization_plan_order_service::{
-    DatabaseOrganizationPlanOrderService, OrganizationEntitlementFuture,
-    OrganizationPlanOrderCreateCommand, OrganizationPlanOrderFuture,
-    OrganizationPlanOrderPaymentView, OrganizationPlanOrderPaymentViewFuture,
-    OrganizationPlanOrderService, OrganizationPlanOrderServiceError, OrganizationPlanOrderView,
-};
-pub use organization_provisioning::{
-    DatabaseOrganizationProvisioningService, OrganizationProvisioningCreateCommand,
-    OrganizationProvisioningDecisionCommand, OrganizationProvisioningEntitlementCommand,
-    OrganizationProvisioningListQuery, OrganizationProvisioningMaterial,
-    OrganizationProvisioningMaterialDownloadFuture, OrganizationProvisioningMaterialPageFuture,
-    OrganizationProvisioningMaterialWrite, OrganizationProvisioningPage,
-    OrganizationProvisioningRecord, OrganizationProvisioningRecordFuture,
-    OrganizationProvisioningResult, OrganizationProvisioningResultFuture,
-    OrganizationProvisioningService, OrganizationProvisioningServiceError,
-    OrganizationProvisioningStatus,
-};
-pub use organization_scim::{
-    DatabaseOrganizationScimService, OrganizationScimAuditError, OrganizationScimAuditFuture,
-    OrganizationScimAuditListFuture, OrganizationScimAuditReadError,
-    OrganizationScimAuthenticationError, OrganizationScimAuthenticationFuture,
-    OrganizationScimGroupSyncError, OrganizationScimGroupSyncFuture,
-    OrganizationScimGroupSyncOutcome, OrganizationScimService, OrganizationScimUserSyncError,
-    OrganizationScimUserSyncFuture, OrganizationScimUserSyncOutcome,
-};
-pub use organization_service_account::{
-    DEFAULT_ORGANIZATION_SERVICE_ACCOUNT_PAGE_SIZE, DatabaseOrganizationServiceAccountService,
-    OrganizationServiceAccountBudgetBindingCommand, OrganizationServiceAccountBudgetBindingFuture,
-    OrganizationServiceAccountCreateCommand, OrganizationServiceAccountFuture,
-    OrganizationServiceAccountIssued, OrganizationServiceAccountIssuedFuture,
-    OrganizationServiceAccountListQuery, OrganizationServiceAccountPage,
-    OrganizationServiceAccountPageFuture, OrganizationServiceAccountRecord,
-    OrganizationServiceAccountRotateCommand, OrganizationServiceAccountRuntimeAuthenticationError,
-    OrganizationServiceAccountRuntimeAuthenticationFuture,
-    OrganizationServiceAccountRuntimeAuthenticator, OrganizationServiceAccountService,
-    OrganizationServiceAccountServiceError, OrganizationServiceAccountStatusCommand,
-};
-pub use organization_sso::{
-    DatabaseOrganizationSsoProviderService, OrganizationSsoProvider,
-    OrganizationSsoProviderCommand, OrganizationSsoProviderFuture,
-    OrganizationSsoProviderListFuture, OrganizationSsoProviderService,
-    OrganizationSsoProviderServiceError,
-};
-pub use organization_sso_discovery::{
-    OrganizationSsoDiscovery, OrganizationSsoDiscoveryServiceError,
-    normalize_organization_sso_public_login_identifier,
-};
-pub use organization_sso_domain::{
-    DatabaseOrganizationSsoDomainService, OrganizationSsoDomain,
-    OrganizationSsoDomainCreateCommand, OrganizationSsoDomainCreated,
-    OrganizationSsoDomainCreatedFuture, OrganizationSsoDomainFuture,
-    OrganizationSsoDomainListFuture, OrganizationSsoDomainService,
-    OrganizationSsoDomainServiceError, OrganizationSsoDomainVerifyCommand,
-};
-pub use organization_sso_identity_binding::{
-    DatabaseOrganizationSsoIdentityBindingService, OrganizationSsoExplicitIdentityBinding,
-    OrganizationSsoExplicitIdentityBindingFuture, OrganizationSsoIdentityBindingService,
-    OrganizationSsoIdentityBindingServiceError, OrganizationSsoIdentityBindingStepUp,
-};
-pub use organization_sso_login::{
-    ClaimedOrganizationSsoLoginTransaction, DatabaseOrganizationSsoLoginTransactionService,
-    ExchangedOrganizationSsoLoginTicket, IssuedOrganizationSsoLoginTicket,
-    OrganizationSsoDiscoveryFuture, OrganizationSsoLoginTransactionFuture,
-    OrganizationSsoLoginTransactionService, OrganizationSsoLoginTransactionServiceError,
-    OrganizationSsoLoginTransactionStart,
-};
-pub use organization_sso_policy::{
-    DatabaseOrganizationSsoPolicyService, OrganizationSsoPolicy, OrganizationSsoPolicyCommand,
-    OrganizationSsoPolicyFuture, OrganizationSsoPolicyService, OrganizationSsoPolicyServiceError,
-};
-pub use organization_sso_recovery::{
-    DatabaseOrganizationSsoRecoveryService, OrganizationSsoRecovery,
-    OrganizationSsoRecoveryCommand, OrganizationSsoRecoveryFuture, OrganizationSsoRecoveryService,
-    OrganizationSsoRecoveryServiceError,
-};
-pub use organization_sso_session::{
-    DatabaseOrganizationSsoSessionService, OrganizationSsoSessionFuture,
-    OrganizationSsoSessionService, OrganizationSsoSessionServiceError,
-};
-pub use organization_token::{
-    DEFAULT_ORGANIZATION_TOKEN_PAGE_SIZE, DatabaseOrganizationTokenService,
-    IssuedOrganizationToken, OrganizationToken, OrganizationTokenError, OrganizationTokenListQuery,
-    OrganizationTokenPage, OrganizationTokenService, OrganizationTokenStatus,
-    OrganizationTokenWriteCommand,
-};
-pub use organization_verification::{
-    DatabaseOrganizationVerificationService, OrganizationVerificationBundle,
-    OrganizationVerificationDecisionCommand, OrganizationVerificationDecisionKind,
-    OrganizationVerificationListQuery, OrganizationVerificationMaterialDownload,
-    OrganizationVerificationMaterialDownloadFuture, OrganizationVerificationMaterialWrite,
-    OrganizationVerificationPage, OrganizationVerificationService,
-    OrganizationVerificationServiceError, OrganizationVerificationSubmitCommand,
-};
-pub use organization_wallet::{
-    DEFAULT_ORGANIZATION_WALLET_PAGE_SIZE, DatabaseOrganizationWalletService,
-    OrganizationWalletAdjustment, OrganizationWalletAdjustmentCommand,
-    OrganizationWalletAdjustmentFuture, OrganizationWalletEntry, OrganizationWalletListFuture,
-    OrganizationWalletListQuery, OrganizationWalletPage, OrganizationWalletService,
-    OrganizationWalletServiceError, OrganizationWalletSummary, OrganizationWalletSummaryFuture,
-};
 pub use passkey::{
     PasskeyRegistrationCommand, PasskeyRegistrationOptions, PasskeyRenameCommand,
     PasskeyRevokeCommand, UserPasskey,
@@ -516,23 +242,6 @@ pub use payment_settings::{
     AdminPaymentSettingsReadFuture, AdminPaymentSettingsService, AdminPaymentSettingsUpdateFuture,
     DatabaseAdminPaymentSettingsService, PaymentSettingsApplyFuture, PaymentSettingsRuntimeApplier,
     PaymentSettingsRuntimeError,
-};
-pub use platform_organization_directory::{
-    DEFAULT_PLATFORM_ORGANIZATION_DIRECTORY_PAGE_SIZE,
-    DatabasePlatformOrganizationDirectoryService, MAX_PLATFORM_ORGANIZATION_REASON_BYTES,
-    PlatformOrganizationDirectoryError, PlatformOrganizationDirectoryFuture,
-    PlatformOrganizationDirectoryPage, PlatformOrganizationDirectoryQuery,
-    PlatformOrganizationDirectoryService, PlatformOrganizationSummary,
-    PlatformUserOrganizationFuture, PlatformUserOrganizationPage, PlatformUserOrganizationQuery,
-    PlatformUserOrganizationSummary,
-};
-pub use platform_organization_management::{
-    DEFAULT_PLATFORM_ORGANIZATION_MEMBER_PAGE_SIZE, DatabasePlatformOrganizationManagementService,
-    PlatformOrganizationInvitationFuture, PlatformOrganizationManagementError,
-    PlatformOrganizationManagementService, PlatformOrganizationMember,
-    PlatformOrganizationMemberChangeCommand, PlatformOrganizationMemberFuture,
-    PlatformOrganizationMemberPage, PlatformOrganizationMemberPageFuture,
-    PlatformOrganizationMemberQuery,
 };
 pub use platform_rbac::{
     DEFAULT_PLATFORM_AUDIT_PAGE_SIZE, DatabasePlatformAuditService, PlatformAuditEntry,
@@ -719,9 +428,7 @@ mod account_verification;
 pub use account_verification::{
     AccountVerificationError, AccountVerificationMaterial, AccountVerificationProvider,
     AccountVerificationProviderError, AccountVerificationRecord, AccountVerificationService,
-    AccountVerificationSubmit, ManualAccountVerificationProvider, validate_verification_material,
+    AccountVerificationSubmit, ManualAccountVerificationProvider, VerificationMaterialWrite,
+    validate_verification_material,
 };
 pub use alipay_verification::{AlipayAccountVerificationProvider, AlipayProviderConfigError};
-
-mod platform_entitlement;
-pub use platform_entitlement::PlatformEntitlementService;

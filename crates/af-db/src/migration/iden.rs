@@ -1,5 +1,7 @@
 //! 初始迁移专用的固定表名与列名，避免运行时实体重命名改写历史迁移。
 
+#![allow(unused_imports)]
+
 use sea_orm_migration::prelude::DeriveIden;
 
 pub(in crate::migration) mod account_verification_settings {

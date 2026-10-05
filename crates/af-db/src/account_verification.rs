@@ -1,11 +1,10 @@
 //! Account identity reviews are independent of organization provisioning.
 //! Each submission remains immutable; a supplement creates another case.
 use crate::{
-    DatabasePool, DatabaseTimestamp, OrganizationVerificationMaterialWrite,
+    DatabasePool, DatabaseTimestamp,
     entity::{
         SensitiveString, account_verification_materials as materials,
-        account_verifications as cases, organization_verification_cases, platform_audit_logs,
-        users,
+        account_verifications as cases, platform_audit_logs, users,
     },
 };
 use af_domain::{PlatformPermission, UserId};
@@ -110,7 +109,17 @@ pub struct AccountVerificationSubmit {
     pub document_number: Option<String>,
     pub subject_name: String,
     pub summary: String,
-    pub materials: Vec<OrganizationVerificationMaterialWrite>,
+    pub materials: Vec<VerificationMaterialWrite>,
+}
+
+/// Uploaded evidence shared by identity providers and manual account reviews.
+pub struct VerificationMaterialWrite {
+    pub kind: String,
+    pub object_reference: String,
+    pub file_name: String,
+    pub content_type: String,
+    pub size_bytes: i64,
+    pub content_bytes: Vec<u8>,
 }
 
 #[derive(Clone)]
@@ -544,7 +553,9 @@ impl AccountVerificationRepository {
             .map_err(unavailable)?;
             platform_audit_logs::ActiveModel {
                 operator_user_id: Set(reviewer.get()),
-                permission_code: Set(PlatformPermission::OrganizationsManage.code().to_owned()),
+                permission_code: Set(PlatformPermission::AccountVerificationsManage
+                    .code()
+                    .to_owned()),
                 route: Set("/api/admin/account-verifications/{case_id}/decision".to_owned()),
                 operation: Set("decide".to_owned()),
                 resource: Set("account_verification".to_owned()),
@@ -575,21 +586,10 @@ pub(crate) async fn has_enterprise_verification<C: ConnectionTrait>(
     db: &C,
     user: UserId,
 ) -> Result<bool, AccountVerificationError> {
-    let verified = cases::Entity::find()
+    Ok(cases::Entity::find()
         .filter(cases::Column::UserId.eq(user.get()))
         .filter(cases::Column::Kind.eq("enterprise"))
         .filter(cases::Column::Status.eq(4))
-        .one(db)
-        .await
-        .map_err(unavailable)?
-        .is_some();
-    if verified {
-        return Ok(true);
-    }
-    // Preserve an existing approved organization applicant's qualification.
-    Ok(organization_verification_cases::Entity::find()
-        .filter(organization_verification_cases::Column::ApplicantUserId.eq(user.get()))
-        .filter(organization_verification_cases::Column::Status.eq(4))
         .one(db)
         .await
         .map_err(unavailable)?

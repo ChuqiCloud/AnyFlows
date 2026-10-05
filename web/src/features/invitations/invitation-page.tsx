@@ -1,6 +1,5 @@
 import {
   Check,
-  Building2,
   Coins,
   Copy,
   History,
@@ -20,7 +19,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import type { UserInvitationSummaryResponse } from '@/lib/api/generated/types.gen'
-import { useAcceptOrganizationInvitation, useUserInvitations } from './invitation-api'
+import { useUserInvitations } from './invitation-api'
 
 type CopyTarget = 'code' | 'link'
 
@@ -82,8 +81,6 @@ export function InvitationPage() {
         </Button>
       </header>
 
-      <OrganizationInvitationAcceptPanel />
-
       {invitationsQuery.isPending ? (
         <InvitationLoading />
       ) : invitationsQuery.isError || !invitations ? (
@@ -107,47 +104,6 @@ export function InvitationPage() {
       )}
     </div>
   )
-}
-
-function OrganizationInvitationAcceptPanel() {
-  const { t } = useTranslation()
-  const mutation = useAcceptOrganizationInvitation()
-  const [token, setToken] = useState(readOrganizationInvitationToken)
-  const valid = /^oinv_[^.\s]+\.[A-Za-z0-9_-]{43}$/.test(token)
-  const submit = async () => {
-    if (!valid) return
-    try {
-      await mutation.mutateAsync(token)
-      setToken('')
-    } catch {
-      // 失败时保留令牌，用户可核对登录邮箱或按原令牌重试。
-    }
-  }
-  return (
-    <Card className="overflow-hidden">
-      <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45">
-        <div className="flex items-start gap-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand/10 text-brand"><Building2 className="size-4" aria-hidden="true" /></span>
-          <div><CardTitle className="text-base">{t('invitations.organization.title')}</CardTitle><p className="mt-1 text-xs leading-5 text-muted-foreground">{t('invitations.organization.subtitle')}</p></div>
-        </div>
-      </CardHeader>
-      <CardContent className="p-4">
-        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-          <Input value={token} className="font-mono text-xs" autoComplete="off" placeholder="oinv_…" aria-label={t('invitations.organization.token')} disabled={mutation.isPending} onChange={(event) => { setToken(event.target.value.trim()); mutation.reset() }} />
-          <Button type="button" disabled={!valid || mutation.isPending} onClick={() => void submit()}>{t('invitations.organization.accept')}</Button>
-        </div>
-        {token && !valid ? <p className="mt-2 text-xs text-destructive">{t('invitations.organization.invalid')}</p> : null}
-        {mutation.isSuccess ? <p role="status" className="mt-3 rounded-lg bg-success/8 px-3 py-2 text-xs text-success">{t('invitations.organization.accepted', { organizationId: mutation.data.organization_id })}</p> : null}
-        {mutation.isError ? <p role="alert" className="mt-3 rounded-lg bg-destructive/8 px-3 py-2 text-xs text-destructive">{t('invitations.organization.error')}</p> : null}
-      </CardContent>
-    </Card>
-  )
-}
-
-function readOrganizationInvitationToken() {
-  const queryStart = window.location.hash.indexOf('?')
-  if (queryStart < 0) return ''
-  return new URLSearchParams(window.location.hash.slice(queryStart + 1)).get('organization_token') ?? ''
 }
 
 function InvitationSharePanel({
