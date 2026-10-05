@@ -3235,9 +3235,12 @@ mod tests {
             .unwrap()
             .init_billing()
             .await
-            .unwrap()
-            .start_supervisor();
-        assert_eq!(supervised.stage.supervisor.task_count(), 10);
+            .unwrap();
+        // Codex 使用固定的 1455 回调端口；端口被并行测试占用时，启动器会
+        // 保留手动回调路径并跳过对应监听任务，因此这里只把实际注册的监听任务计入基线。
+        let expected_task_count = 9 + supervised.stage.oauth_loopback_servers.len();
+        let supervised = supervised.start_supervisor();
+        assert_eq!(supervised.stage.supervisor.task_count(), expected_task_count);
         let report = supervised
             .build_router()
             .bind()
