@@ -17,15 +17,13 @@ use tracing_subscriber::fmt::format::FmtSpan;
 
 use af_domain::{
     MAX_MODEL_NAME_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_COUNT, MAX_TOKEN_MODEL_ALLOWLIST_TEXT_BYTES,
-    TokenModelPolicy,
-    TrustedClientIp, UserId,
+    TokenModelPolicy, TrustedClientIp, UserId,
 };
 
 use crate::{
-    DatabaseOptions, DatabasePool, MigrationOptions,
-    TokenAuthLookup,
-    TokenAuthLookupError, TokenAuthLookupOutcome, TokenAuthRepository,
-    TokenAuthRepositoryConfigError, TokenAuthRepositoryError,
+    DatabaseOptions, DatabasePool, MigrationOptions, TokenAuthLookup, TokenAuthLookupError,
+    TokenAuthLookupOutcome, TokenAuthRepository, TokenAuthRepositoryConfigError,
+    TokenAuthRepositoryError,
     entity::{TokenHash, groups, tokens, users},
 };
 

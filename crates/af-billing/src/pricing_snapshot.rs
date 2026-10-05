@@ -60,7 +60,10 @@ pub trait ContractPriceSource: Send + Sync + 'static {
     ) -> Pin<
         Box<
             dyn Future<
-                    Output = Result<Option<OrganizationContractPriceSnapshot>, ContractPriceSourceError>,
+                    Output = Result<
+                        Option<OrganizationContractPriceSnapshot>,
+                        ContractPriceSourceError,
+                    >,
                 > + Send
                 + 'a,
         >,
@@ -217,10 +220,7 @@ impl CachedRequestPricingSnapshotSource {
 
     /// 接入发行版提供的合同价来源；未绑定时保持平台定价行为。
     #[must_use]
-    pub fn with_contract_price_source(
-        mut self,
-        source: Arc<dyn ContractPriceSource>,
-    ) -> Self {
+    pub fn with_contract_price_source(mut self, source: Arc<dyn ContractPriceSource>) -> Self {
         self.contract_prices = Some(source);
         self
     }

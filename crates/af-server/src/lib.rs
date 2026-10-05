@@ -35,8 +35,8 @@ mod readiness;
 mod request_outcome_runtime;
 mod request_rate_limit;
 mod responses_websocket_runtime;
-mod runtime_frontend;
 mod runtime_extensions;
+mod runtime_frontend;
 mod scheduled_chat;
 mod scheduler_invalidation;
 mod shutdown;
@@ -95,8 +95,8 @@ pub use bootstrap::{
 pub use oauth_connection::OAuthRuntimeConfigError;
 pub use request_outcome_runtime::{RequestOutcomeContext, RequestOutcomeRuntime, RoutedExecution};
 pub use runtime_extensions::{
-    BackgroundTaskRegistrar, RelayExtensionInitializer, RuntimeExtensionContext,
-    RuntimeExtensions, RuntimeHttpContext, RuntimeHttpExtensionFactory,
+    BackgroundTaskRegistrar, RelayExtensionInitializer, RuntimeExtensionContext, RuntimeExtensions,
+    RuntimeHttpContext, RuntimeHttpExtensionFactory,
 };
 pub use scheduled_chat::{
     BoundVideoTaskSubmission, VideoTaskBinding, VideoTaskPollFuture, VideoTaskRuntime,

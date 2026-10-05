@@ -4,8 +4,7 @@ use crate::{
     DatabasePool, DatabaseTimestamp,
     entity::{
         SensitiveString, account_verification_materials as materials,
-        account_verifications as cases, platform_audit_logs,
-        users,
+        account_verifications as cases, platform_audit_logs, users,
     },
 };
 use af_domain::{PlatformPermission, UserId};
@@ -554,7 +553,9 @@ impl AccountVerificationRepository {
             .map_err(unavailable)?;
             platform_audit_logs::ActiveModel {
                 operator_user_id: Set(reviewer.get()),
-                permission_code: Set(PlatformPermission::AccountVerificationsManage.code().to_owned()),
+                permission_code: Set(PlatformPermission::AccountVerificationsManage
+                    .code()
+                    .to_owned()),
                 route: Set("/api/admin/account-verifications/{case_id}/decision".to_owned()),
                 operation: Set("decide".to_owned()),
                 resource: Set("account_verification".to_owned()),

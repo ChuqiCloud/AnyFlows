@@ -3,7 +3,7 @@ use std::{future::Future, pin::Pin};
 use af_domain::{OrganizationId, Quota, UserId, WalletEventId};
 use sea_orm::{DatabaseTransaction, entity::prelude::TimeDateTimeWithTimeZone};
 
-use super::{TopupRepositoryError};
+use super::TopupRepositoryError;
 
 pub type TopupExtensionFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, TopupRepositoryError>> + Send + 'a>>;

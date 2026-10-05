@@ -10,11 +10,11 @@ use rust_decimal::Decimal;
 use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
 use af_domain::{
-    BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES,
-    Protocol, Quota, QuotaDelta, RedemptionBatchId, RedemptionBatchStatus,
-    RedemptionCodeId, RedemptionCodeStatus, RouteMode, RouteStrategy, SubscriptionCycle,
-    SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow, UserSubscriptionId,
-    UserSubscriptionStatus, WalletEventId, validate_route_model_pattern,
+    BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES, Protocol, Quota,
+    QuotaDelta, RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus,
+    RouteMode, RouteStrategy, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
+    SubscriptionWindow, UserSubscriptionId, UserSubscriptionStatus, WalletEventId,
+    validate_route_model_pattern,
 };
 
 pub(crate) mod abilities;

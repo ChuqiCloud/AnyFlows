@@ -395,8 +395,7 @@ pub fn build_router(
             // Google 风格动作与模型共享一个路径段，由 handler 严格拆分两个已实现动作。
             post(gemini_generate_content).route_layer(gemini_authentication),
         )
-        .with_state(http_state.clone())
-        ;
+        .with_state(http_state.clone());
     let playground_session_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
         authenticate_management_session,

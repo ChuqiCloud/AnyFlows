@@ -3,10 +3,15 @@
 use std::sync::Arc;
 
 use af_account::SystemSecretCipher;
-use af_admin::{PasskeyAuthenticationService, SessionAuthenticator, UserProfileService, UserTopupService};
+use af_admin::{
+    PasskeyAuthenticationService, SessionAuthenticator, UserProfileService, UserTopupService,
+};
 use af_billing::{ContractPriceSource, UsageRecordProjection};
 use af_config::AppConfig;
-use af_db::{AdminUsageLogRepository, DatabasePool, OrganizationTokenAuthValidator, QuotaExtension, RequestOutcomeRepository, TopupExtension};
+use af_db::{
+    AdminUsageLogRepository, DatabasePool, OrganizationTokenAuthValidator, QuotaExtension,
+    RequestOutcomeRepository, TopupExtension,
+};
 use af_http::HttpExtensions;
 use af_httpclient::HttpClientProvider;
 
@@ -33,17 +38,14 @@ pub struct RuntimeHttpContext<'a> {
     pub upstream_clients: &'a HttpClientProvider,
 }
 
-pub type BackgroundTaskRegistrar = Arc<
-    dyn Fn(&mut BackgroundTaskSupervisor, &AppConfig, &DatabasePool) + Send + Sync,
->;
+pub type BackgroundTaskRegistrar =
+    Arc<dyn Fn(&mut BackgroundTaskSupervisor, &AppConfig, &DatabasePool) + Send + Sync>;
 
-pub type RelayExtensionInitializer = Arc<
-    dyn Fn(&HttpClientProvider) -> Result<(), BootstrapError> + Send + Sync,
->;
+pub type RelayExtensionInitializer =
+    Arc<dyn Fn(&HttpClientProvider) -> Result<(), BootstrapError> + Send + Sync>;
 
-pub type RuntimeHttpExtensionFactory = Arc<
-    dyn Fn(RuntimeHttpContext<'_>) -> HttpExtensions + Send + Sync,
->;
+pub type RuntimeHttpExtensionFactory =
+    Arc<dyn Fn(RuntimeHttpContext<'_>) -> HttpExtensions + Send + Sync>;
 
 /// Optional extension ports. The default binary starts with no private services.
 #[derive(Default)]

@@ -3,9 +3,7 @@ use std::{fmt, future::Future, pin::Pin, time::Duration};
 use std::sync::Arc;
 
 #[cfg(test)]
-use std::sync::{
-    atomic::{AtomicU8, Ordering},
-};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use af_domain::{BillingContractPriceSnapshot, BillingReservationId, GatewayPrincipal, Quota};
 use sea_orm::{
@@ -31,9 +29,8 @@ pub use state::{
 const DEFAULT_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_RESERVATION_TTL: Duration = Duration::from_secs(15 * 60);
 
-pub type QuotaExtensionFuture<'a> = Pin<
-    Box<dyn Future<Output = Result<QuotaMutationOutcome, QuotaRepositoryError>> + Send + 'a>,
->;
+pub type QuotaExtensionFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<QuotaMutationOutcome, QuotaRepositoryError>> + Send + 'a>>;
 
 /// Distribution-owned quota handling for organization principals and reservations.
 /// Implementations must preserve the reservation's atomic and idempotent behavior.
@@ -293,13 +290,7 @@ impl QuotaRepository {
                 return Err(QuotaRepositoryError::ExtensionUnavailable);
             };
             return extension
-                .precharge(
-                id,
-                principal,
-                amount,
-                reservation_kind,
-                contract_price,
-            )
+                .precharge(id, principal, amount, reservation_kind, contract_price)
             .await;
         }
         let key = id.persistence_key();

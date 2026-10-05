@@ -3,8 +3,8 @@ use std::{future::Future, sync::Arc, time::Duration};
 use af_account::{
     CredentialDecryptionError, CredentialDecryptor, CredentialEncryptionError, CredentialEncryptor,
     DiagnosticSnapshotCipher, OAuthConnectionCoordinator, OAuthLoginClient, OAuthProviderProfile,
-    OAuthRefreshSupervisor, PlainSystemSecret,
-    SystemSecretCipher, SystemSecretError, SystemSecretKind,
+    OAuthRefreshSupervisor, PlainSystemSecret, SystemSecretCipher, SystemSecretError,
+    SystemSecretKind,
 };
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
@@ -30,13 +30,13 @@ use af_admin::{
     DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
     DatabaseUserTokenService, DatabaseUserWalletService, EmailBindingService, EmailDelivery,
     InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
-    OAuthLoginService, PasskeyAuthenticationService,
-    PasskeyAuthenticationServiceConfigError, PasswordResetService, PasswordResetServiceConfigError,
-    PlaygroundConversationService, PlaygroundShareService, RedemptionService, RegistrationService,
-    RegistrationServiceConfigError, RuntimeRefreshingAdminGroupWriter,
-    RuntimeRefreshingInitialSetup, SessionAuthenticator, SessionAuthenticatorConfigError,
-    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
-    UserProfileService, UserTokenService, UserTopupService, UserWalletService,
+    OAuthLoginService, PasskeyAuthenticationService, PasskeyAuthenticationServiceConfigError,
+    PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
+    PlaygroundShareService, RedemptionService, RegistrationService, RegistrationServiceConfigError,
+    RuntimeRefreshingAdminGroupWriter, RuntimeRefreshingInitialSetup, SessionAuthenticator,
+    SessionAuthenticatorConfigError, SiteSettingsService, SubscriptionService, TokenAuthenticator,
+    UserInvitationService, UserProfileService, UserTokenService, UserTopupService,
+    UserWalletService,
 };
 use af_analytics::{
     AdminDashboardChannelStorage, AdminDashboardReader, SplitAdminDashboardStorage,
@@ -53,8 +53,8 @@ use af_billing::{
 };
 use af_cache::{
     CacheError, RedisConcurrencyConfig, RedisConcurrencyStore, RedisConfig, RedisHealthConfig,
-    RedisHealthStore, RedisRequestRateLimitConfig,
-    RedisRequestRateLimitStore, RedisStickySessionConfig, RedisStickySessionStore,
+    RedisHealthStore, RedisRequestRateLimitConfig, RedisRequestRateLimitStore,
+    RedisStickySessionConfig, RedisStickySessionStore,
 };
 use af_config::{AppConfig, ConfigError};
 use af_db::{
@@ -79,10 +79,9 @@ use af_db::{
     ModelPriceRepository, ModelProviderCatalogRepository, ModelProviderCatalogRepositoryError,
     ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
     NetworkSettingsRepositoryConfigError, OAuthLoginRepository, OAuthLoginRepositoryError,
-    PasskeyRepository, PasswordResetRepository,
-    PasswordResetRepositoryConfigError, PaymentSecretUpdate, PaymentSettingsRepository,
-    PaymentSettingsRepositoryConfigError, PaymentSettingsRepositoryError,
-    PaymentSettingsWriteRecord, PlaygroundConversationRepository,
+    PasskeyRepository, PasswordResetRepository, PasswordResetRepositoryConfigError,
+    PaymentSecretUpdate, PaymentSettingsRepository, PaymentSettingsRepositoryConfigError,
+    PaymentSettingsRepositoryError, PaymentSettingsWriteRecord, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
     RedemptionRepositoryConfigError, RefundRepository, RefundRepositoryConfigError,
@@ -130,8 +129,8 @@ use crate::{
     BillingEmbeddingService, BillingFlushReport, BillingImageService, BillingRerankService,
     BillingResponsesCompactService, BillingRuntime, BillingRuntimeError, BillingSpeechService,
     ChatRoutePlanner, EmbeddingRoutePlanner, ImageRoutePlanner, RequestOutcomeRuntime,
-    RerankRoutePlanner, RuntimeExtensionContext, RuntimeExtensions, RuntimeHttpContext,
-    ResponsesCompactRoutePlanner, ShutdownController, SpeechRoutePlanner, SupervisorError,
+    RerankRoutePlanner, ResponsesCompactRoutePlanner, RuntimeExtensionContext, RuntimeExtensions,
+    RuntimeHttpContext, ShutdownController, SpeechRoutePlanner, SupervisorError,
     SupervisorShutdown,
     balance_alert_runtime::BalanceAlertRuntime,
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
@@ -810,9 +809,7 @@ impl Bootstrap<DatabaseReady> {
         build_extensions: F,
     ) -> Result<Bootstrap<AuthenticationReady>, BootstrapError>
     where
-        F: FnOnce(
-            RuntimeExtensionContext<'_>,
-        ) -> Result<RuntimeExtensions, BootstrapError>,
+        F: FnOnce(RuntimeExtensionContext<'_>) -> Result<RuntimeExtensions, BootstrapError>,
     {
         let auth = self.config.auth();
         let repository = TokenAuthRepository::new(
@@ -1669,7 +1666,13 @@ impl Bootstrap<RelayReady> {
         let route_planner: Arc<dyn ChatRoutePlanner> = Arc::new(route_service);
         let pricing_source =
             CachedRequestPricingSnapshotSource::new(model_prices.clone(), group_pricing.clone());
-        let pricing_source = match self.stage.infrastructure.extensions.contract_prices.as_ref() {
+        let pricing_source = match self
+            .stage
+            .infrastructure
+            .extensions
+            .contract_prices
+            .as_ref()
+        {
             Some(source) => pricing_source.with_contract_price_source(Arc::clone(source)),
             None => pricing_source,
         };
@@ -1681,9 +1684,8 @@ impl Bootstrap<RelayReady> {
                 pricing_source.clone(),
                 model_catalog_metadata,
             ));
-        let quota_repository = QuotaRepository::new(
-            self.stage.infrastructure.infrastructure.database.clone(),
-        );
+        let quota_repository =
+            QuotaRepository::new(self.stage.infrastructure.infrastructure.database.clone());
         let quota_repository = match self.stage.infrastructure.extensions.quota.as_ref() {
             Some(extension) => quota_repository.with_extension(Arc::clone(extension)),
             None => quota_repository,
@@ -1720,7 +1722,13 @@ impl Bootstrap<RelayReady> {
                         .with_analytics_export(repository.clone())
                 });
         let usage_record_sink = DatabaseUsageRecordSink::new(usage_repository);
-        let usage_record_sink = match self.stage.infrastructure.extensions.usage_projection.as_ref() {
+        let usage_record_sink = match self
+            .stage
+            .infrastructure
+            .extensions
+            .usage_projection
+            .as_ref()
+        {
             Some(projection) => usage_record_sink.with_projection(Arc::clone(projection)),
             None => usage_record_sink,
         };
@@ -2511,12 +2519,7 @@ impl Bootstrap<Supervised> {
                         af_db::AccountVerificationRepository::new(
                             self.stage.infrastructure.infrastructure.database.clone(),
                         ),
-                        Arc::clone(
-                            &self
-                                .stage
-                                .infrastructure
-                                .platform_audit_service,
-                        ),
+                        Arc::clone(&self.stage.infrastructure.platform_audit_service),
                     )
                     .with_provider(Arc::new(
                         af_admin::DatabaseManualAccountVerificationProvider::new(Arc::clone(

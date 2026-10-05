@@ -560,5 +560,4 @@ mod tests {
         let rendered = format!("{cipher:?}{secret:?}{envelope:?}");
         assert!(!rendered.contains("custom-client-secret"));
     }
-
 }

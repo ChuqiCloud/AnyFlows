@@ -50,10 +50,7 @@ impl DatabaseUsageRecordSink {
 
     /// 开启服务账号调用身份投影；个人/API Key 用量仍只写入原有日志。
     #[must_use]
-    pub fn with_projection(
-        mut self,
-        projection: Arc<dyn UsageRecordProjection>,
-    ) -> Self {
+    pub fn with_projection(mut self, projection: Arc<dyn UsageRecordProjection>) -> Self {
         self.projection = Some(projection);
         self
     }

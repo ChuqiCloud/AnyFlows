@@ -1,9 +1,7 @@
 use std::{fmt, sync::Arc, time::Duration};
 
 #[cfg(test)]
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use af_domain::{
     OrganizationId, Quota, QuotaDelta, QuotaError, TopupOrderId, TopupOrderStatus,
@@ -21,8 +19,8 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     DatabasePool, WalletLedgerEntryType,
     entity::{
-        SensitiveString, WalletLedgerKey, topup_orders,
-        topup_payment_events, users, wallet_ledger_entries,
+        SensitiveString, WalletLedgerKey, topup_orders, topup_payment_events, users,
+        wallet_ledger_entries,
     },
 };
 
@@ -170,7 +168,8 @@ impl TopupRepository {
         }
 
         let transaction = begin(&self.pool).await?;
-        let result = create_order_in_transaction(&transaction, write, self.extension.as_deref()).await;
+        let result =
+            create_order_in_transaction(&transaction, write, self.extension.as_deref()).await;
         match result {
             Ok(outcome) => {
                 commit(transaction).await?;
@@ -281,7 +280,10 @@ async fn create_order_in_transaction(
     }
     if let Some(organization_id) = write.organization_id {
         let extension = extension.ok_or(TopupRepositoryError::UnsupportedTarget)?;
-        if !extension.validate_target(transaction, organization_id).await? {
+        if !extension
+            .validate_target(transaction, organization_id)
+            .await?
+        {
             return Ok(TopupOrderCreateOutcome::NotFound);
         }
     }
@@ -483,16 +485,17 @@ async fn accept_event_in_transaction(
                 .map_err(|_| TopupRepositoryError::Invariant)?;
             if let Some(organization_id) = order.organization_id {
                 let extension = extension.ok_or(TopupRepositoryError::UnsupportedTarget)?;
-                let outcome = extension.credit(
-                    transaction,
-                    organization_id,
-                    WalletEventId::new(write.event_id.bytes())
-                        .map_err(|_| TopupRepositoryError::Invariant)?,
-                    order.user_id,
-                    order.quota_amount,
-                    received_at,
-                )
-                .await?;
+                let outcome = extension
+                    .credit(
+                        transaction,
+                        organization_id,
+                        WalletEventId::new(write.event_id.bytes())
+                            .map_err(|_| TopupRepositoryError::Invariant)?,
+                        order.user_id,
+                        order.quota_amount,
+                        received_at,
+                    )
+                    .await?;
                 match outcome {
                     TopupCreditOutcome::Overflow => {
                         return Ok(unprocessed(
