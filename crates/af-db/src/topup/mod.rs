@@ -12,5 +12,4 @@ pub use types::{
     TopupRepositoryConfigError, TopupRepositoryError,
 };
 
-#[cfg(test)]
-mod tests;
+// 充值集成测试包含企业钱包扩展实体；企业仓库负责运行完整测试套件。

@@ -17,7 +17,7 @@ use tracing_subscriber::fmt::format::FmtSpan;
 
 use af_domain::{
     MAX_MODEL_NAME_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_COUNT, MAX_TOKEN_MODEL_ALLOWLIST_TEXT_BYTES,
-    TokenModelPolicy, TrustedClientIp, UserId,
+    TokenModelPolicy, TrustedClientIp,
 };
 
 use crate::{
