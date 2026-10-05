@@ -19,23 +19,6 @@ export type AppView =
   | 'model-providers'
   | 'network-settings'
   | 'oauth-callback'
-  | 'organization-api-keys'
-  | 'organization-activity'
-  | 'organization-budgets'
-  | 'organization-contract-prices'
-  | 'organization-credit'
-  | 'organization-approvals'
-  | 'organization-members'
-  | 'organization-departments'
-  | 'organization-overview'
-  | 'organization-onboarding'
-  | 'organization-plans'
-  | 'platform-organizations'
-  | 'organization-provisioning'
-  | 'organization-verification'
-  | 'organization-settings'
-  | 'organization-service-accounts'
-  | 'organization-wallet'
   | 'payment-settings'
   | 'playground'
   | 'profile'
@@ -63,12 +46,10 @@ export type AppView =
 export type AppRoute = {
   view: AppView
   channelId?: number
-  organizationId?: number
   shareToken?: string
   resetToken?: string
   inviteCode?: string
   profileSection?: 'notifications'
-  activityTab?: 'audit' | 'scim' | 'usage'
 }
 
 const shareRoutePrefix = '#/share/'
@@ -93,16 +74,6 @@ function profileSectionQuery(hash: string): AppRoute['profileSection'] {
   if (queryStart < 0) return undefined
   const values = new URLSearchParams(hash.slice(queryStart + 1)).getAll('section')
   return values.length === 1 && values[0] === 'notifications' ? 'notifications' : undefined
-}
-
-/** 只接受企业活动页签深链，避免把任意查询值带入页内状态。 */
-function activityTabQuery(hash: string): AppRoute['activityTab'] {
-  const queryStart = hash.indexOf('?')
-  if (queryStart < 0) return undefined
-  const values = new URLSearchParams(hash.slice(queryStart + 1)).getAll('tab')
-  return values.length === 1 && (values[0] === 'audit' || values[0] === 'scim' || values[0] === 'usage')
-    ? values[0]
-    : undefined
 }
 
 /** 解析临时 hash 路由，并严格限制公开分享令牌的可接受格式。 */
@@ -147,28 +118,6 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/system-settings/model-providers')) return { view: 'model-providers' }
   if (hash.startsWith('#/console/system-settings/account-verification')) return { view: 'account-verification-settings' }
   if (hash.startsWith('#/console/api-keys')) return { view: 'api-keys' }
-  if (hash.startsWith('#/console/organization-api-keys')) return { view: 'organization-api-keys' }
-  if (hash.startsWith('#/console/organization-activity')) {
-    const activityTab = activityTabQuery(hash)
-    return activityTab ? { view: 'organization-activity', activityTab } : { view: 'organization-activity' }
-  }
-  if (hash.startsWith('#/console/organization-budgets')) return { view: 'organization-budgets' }
-  if (hash.startsWith('#/console/organization-contract-prices')) return { view: 'organization-contract-prices' }
-  if (hash.startsWith('#/console/organization-credit')) return { view: 'organization-credit' }
-  if (hash.startsWith('#/console/organization-approvals')) return { view: 'organization-approvals' }
-  if (hash.startsWith('#/console/organization-members')) return { view: 'organization-members' }
-  if (hash.startsWith('#/console/organization-departments')) return { view: 'organization-departments' }
-  if (hash.startsWith('#/console/organization-wallet')) return { view: 'organization-wallet' }
-  if (hash.startsWith('#/console/organization-onboarding')) {
-    return { view: 'organization-onboarding', organizationId: positiveIntegerQuery(hash, 'organization_id') }
-  }
-  if (hash.startsWith('#/console/organization-plans')) return { view: 'organization-plans' }
-  if (hash.startsWith('#/console/platform-organizations')) return { view: 'platform-organizations' }
-  if (hash.startsWith('#/console/organization-provisioning')) return { view: 'organization-provisioning' }
-  if (hash.startsWith('#/console/organization-verification')) return { view: 'organization-verification' }
-  if (hash.startsWith('#/console/organization-settings')) return { view: 'organization-settings' }
-  if (hash.startsWith('#/console/organization-service-accounts')) return { view: 'organization-service-accounts' }
-  if (hash === '#/console/organization' || hash.startsWith('#/console/organization?')) return { view: 'organization-overview' }
   if (hash.startsWith('#/console/wallet')) return { view: 'wallet' }
   if (hash.startsWith('#/console/models')) return { view: 'models' }
   if (hash.startsWith('#/console/playground')) return { view: 'playground' }

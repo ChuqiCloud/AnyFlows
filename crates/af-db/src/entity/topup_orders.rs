@@ -46,14 +46,6 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     User,
-    #[sea_orm(
-        belongs_to = "super::organizations::Entity",
-        from = "Column::OrganizationId",
-        to = "super::organizations::Column::Id",
-        on_update = "Restrict",
-        on_delete = "Restrict"
-    )]
-    Organization,
 }
 
 impl Related<super::users::Entity> for Entity {
@@ -62,8 +54,3 @@ impl Related<super::users::Entity> for Entity {
     }
 }
 
-impl Related<super::organizations::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Organization.def()
-    }
-}

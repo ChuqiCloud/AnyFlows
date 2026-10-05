@@ -22,8 +22,6 @@ import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import type { UserTopupMethod, UserTopupPayment } from '@/features/payment-settings/payment-settings-types'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
-import { organizationQueryKey } from '@/features/organization-budgets/organization-budget-api'
-import { useCreateOrganizationTopupOrder } from '@/features/organization-wallet/organization-wallet-api'
 import {
   createTopupAttempt,
   topupAmountInput,
@@ -65,25 +63,21 @@ type TopupOrderView = {
 
 /** 组合支付方式选择、幂等恢复、Stripe 内嵌支付与易支付跳转流程。 */
 export function WalletTopupPanel({
-  organizationId,
   title,
   description,
 }: {
-  organizationId?: number
   title?: string
   description?: string
 } = {}) {
   const { i18n, t } = useTranslation()
   const queryClient = useQueryClient()
   const configurationQuery = useUserTopupConfiguration()
-  const userOrderMutation = useCreateUserTopupOrder()
-  const organizationOrderMutation = useCreateOrganizationTopupOrder(organizationId ?? 0)
-  const orderMutation = organizationId === undefined ? userOrderMutation : organizationOrderMutation
+  const orderMutation = useCreateUserTopupOrder()
   const { formatQuota } = useBalanceDisplay()
   const createOrRecoverOrder = orderMutation.mutateAsync
   const resetOrderMutation = orderMutation.reset
-  const topupScope = organizationId === undefined ? 'personal' : `organization:${organizationId}`
-  const returnPath = organizationId === undefined ? '/console/wallet' : '/console/organization-wallet'
+  const topupScope = 'personal'
+  const returnPath = '/console/wallet'
   const [restoredAttempt] = useState(() => readStoredTopupAttempt(topupScope))
   const [attempt, setAttempt] = useState<TopupAttempt | undefined>(restoredAttempt)
   const [selectedMethodKey, setSelectedMethodKey] = useState(() => restoredAttempt ? attemptMethodKey(restoredAttempt) : '')
@@ -132,16 +126,11 @@ export function WalletTopupPanel({
     if (nextOrder.status !== 'paid') return
 
     clearStoredTopupAttempt(topupScope)
-    await (organizationId === undefined
-      ? Promise.all([
+    await Promise.all([
           queryClient.invalidateQueries({ queryKey: userWalletSummaryQueryKey }),
           queryClient.invalidateQueries({ queryKey: userWalletEntriesQueryKey }),
         ])
-      : Promise.all([
-          queryClient.invalidateQueries({ queryKey: organizationQueryKey(organizationId, 'wallet', 'summary') }),
-          queryClient.invalidateQueries({ queryKey: organizationQueryKey(organizationId, 'wallet', 'entries') }),
-        ]))
-  }, [organizationId, queryClient, topupScope])
+  }, [queryClient, topupScope])
 
   const submitAttempt = useCallback(async (currentAttempt: TopupAttempt) => {
     resetOrderMutation()

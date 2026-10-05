@@ -97,8 +97,9 @@ pub use pricing::{
     PricingRatio, PricingRatios, PricingResolver, RatioPricingResolver, TokenPrices,
 };
 pub use pricing_snapshot::{
-    CachedRequestPricingSnapshotSource, RequestPricingSnapshot, RequestPricingSnapshotError,
-    RequestPricingSnapshotFuture, RequestPricingSnapshotSource,
+    CachedRequestPricingSnapshotSource, ContractPriceSource, ContractPriceSourceError,
+    RequestPricingSnapshot, RequestPricingSnapshotError, RequestPricingSnapshotFuture,
+    RequestPricingSnapshotSource,
 };
 pub use quota_math::quota_from_cny_minor;
 pub use refund::{
@@ -135,7 +136,9 @@ pub use usage_record_consumer::{
     UsageRecordConsumer, UsageRecordConsumerError, UsageRecordSink, UsageRecordSinkError,
     UsageRecordSinkFuture,
 };
-pub use usage_record_database_sink::DatabaseUsageRecordSink;
+pub use usage_record_database_sink::{
+    DatabaseUsageRecordSink, UsageRecordProjection, UsageRecordProjectionError,
+};
 pub use usage_record_queue::{
     UsageRecordDelivery, UsageRecordQueue, UsageRecordQueueError, UsageRecordReceiver,
 };

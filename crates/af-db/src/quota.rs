@@ -1,8 +1,9 @@
-use std::{fmt, time::Duration};
+use std::{fmt, future::Future, pin::Pin, time::Duration};
+
+use std::sync::Arc;
 
 #[cfg(test)]
 use std::sync::{
-    Arc,
     atomic::{AtomicU8, Ordering},
 };
 
@@ -17,7 +18,6 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::DatabasePool;
 
 mod group_windows;
-mod organization;
 mod sql;
 mod state;
 pub(crate) mod subscription;
@@ -30,6 +30,36 @@ pub use state::{
 
 const DEFAULT_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_RESERVATION_TTL: Duration = Duration::from_secs(15 * 60);
+
+pub type QuotaExtensionFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<QuotaMutationOutcome, QuotaRepositoryError>> + Send + 'a>,
+>;
+
+/// Distribution-owned quota handling for organization principals and reservations.
+/// Implementations must preserve the reservation's atomic and idempotent behavior.
+pub trait QuotaExtension: Send + Sync {
+    fn precharge<'a>(
+        &'a self,
+        id: BillingReservationId,
+        principal: GatewayPrincipal,
+        amount: Quota,
+        kind: QuotaReservationKind,
+        contract_price: Option<OrganizationContractPriceSnapshot>,
+    ) -> QuotaExtensionFuture<'a>;
+
+    fn settle<'a>(
+        &'a self,
+        id: BillingReservationId,
+        actual: Quota,
+        kind: QuotaReservationKind,
+    ) -> QuotaExtensionFuture<'a>;
+
+    fn refund<'a>(
+        &'a self,
+        id: BillingReservationId,
+        kind: QuotaReservationKind,
+    ) -> QuotaExtensionFuture<'a>;
+}
 
 #[derive(Clone, Copy)]
 pub(crate) enum QuotaRepositoryOperation {
@@ -44,6 +74,7 @@ pub struct QuotaRepository {
     pool: DatabasePool,
     operation_timeout: Duration,
     reservation_ttl: Duration,
+    extension: Option<Arc<dyn QuotaExtension>>,
     #[cfg(test)]
     outcome_unknown_after_commit: Arc<AtomicU8>,
 }
@@ -56,6 +87,7 @@ impl QuotaRepository {
             pool,
             operation_timeout: DEFAULT_OPERATION_TIMEOUT,
             reservation_ttl: DEFAULT_RESERVATION_TTL,
+            extension: None,
             #[cfg(test)]
             outcome_unknown_after_commit: Arc::new(AtomicU8::new(0)),
         }
@@ -75,9 +107,17 @@ impl QuotaRepository {
             pool,
             operation_timeout,
             reservation_ttl,
+            extension: None,
             #[cfg(test)]
             outcome_unknown_after_commit: Arc::new(AtomicU8::new(0)),
         })
+    }
+
+    /// 注入发行版负责的企业额度实现；公共核心不直接访问企业钱包或预算表。
+    #[must_use]
+    pub fn with_extension(mut self, extension: Arc<dyn QuotaExtension>) -> Self {
+        self.extension = Some(extension);
+        self
     }
 
     /// 仅供回归测试模拟事务已提交但调用方未收到确定结果。
@@ -249,8 +289,11 @@ impl QuotaRepository {
         contract_price: Option<BillingContractPriceSnapshot>,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
         if principal.organization_principal().is_some() {
-            return organization::precharge(
-                self,
+            let Some(extension) = self.extension.as_ref() else {
+                return Err(QuotaRepositoryError::ExtensionUnavailable);
+            };
+            return extension
+                .precharge(
                 id,
                 principal,
                 amount,
@@ -440,7 +483,10 @@ impl QuotaRepository {
             return Err(QuotaRepositoryError::ActualExceedsReservation);
         }
         if observed.organization_id.is_some() {
-            return organization::settle(self, id, observed, actual, reservation_kind).await;
+            let Some(extension) = self.extension.as_ref() else {
+                return Err(QuotaRepositoryError::ExtensionUnavailable);
+            };
+            return extension.settle(id, actual, reservation_kind).await;
         }
         let transaction = self
             .pool
@@ -661,7 +707,10 @@ impl QuotaRepository {
             return Err(QuotaRepositoryError::Conflict);
         }
         if observed.organization_id.is_some() {
-            return organization::refund(self, id, observed, reservation_kind).await;
+            let Some(extension) = self.extension.as_ref() else {
+                return Err(QuotaRepositoryError::ExtensionUnavailable);
+            };
+            return extension.refund(id, reservation_kind).await;
         }
         let transaction = self
             .pool

@@ -78,7 +78,7 @@ use crate::management_model_writes::{create_admin_model, delete_admin_model, upd
 use crate::management_models::{get_admin_model, list_admin_models};
 use crate::management_refunds::{
     approve_admin_refund, list_account_refund_reconciliations, list_admin_refund_reconciliations,
-    list_admin_refunds, list_organization_refund_reconciliations, manual_complete_admin_refund,
+    list_admin_refunds, manual_complete_admin_refund,
     reject_admin_refund, submit_admin_refund,
 };
 use crate::management_route_writes::{create_admin_route, delete_admin_route, update_admin_route};
@@ -111,10 +111,6 @@ use crate::openai_responses::openai_responses;
 use crate::openai_responses_compact::openai_responses_compact;
 use crate::openai_speech::openai_speech;
 use crate::operations::{ReadinessHandle, operations_router};
-use crate::organization_activity::PLATFORM_REASON_HEADER;
-use crate::organization_routes::{
-    OrganizationHttpRoutes, OrganizationHttpServices, build_organization_routes,
-};
 use crate::passkey_auth::build_passkey_authentication_router;
 use crate::password_reset::build_password_reset_router;
 use crate::payment_settings::build_payment_settings_router;
@@ -193,7 +189,7 @@ pub fn build_router(
     user_profile_service: Arc<dyn af_admin::UserProfileService>,
     user_wallet_service: Arc<dyn UserWalletService>,
     user_notification_service: Arc<dyn UserNotificationService>,
-    organization_services: OrganizationHttpServices,
+    platform_audit_service: Option<Arc<dyn af_admin::PlatformAuditService>>,
     user_topup_service: Option<Arc<dyn UserTopupService>>,
     redemption_service: Arc<dyn RedemptionService>,
     subscription_service: Arc<dyn SubscriptionService>,
@@ -323,19 +319,7 @@ pub fn build_router(
     .with_admin_usage_log_reader(admin_usage_log_reader)
     .with_admin_wallet_service(admin_wallet_service)
     .with_admin_refund_service(admin_refund_service)
-    .with_platform_audit_service(organization_services.platform_audit.clone())
-    .with_organization_authorization_service(organization_services.authorization.clone())
-    .with_organization_invitation_service(organization_services.invitation.clone())
-    .with_organization_management_service(organization_services.management.clone());
-    let OrganizationHttpRoutes {
-        public: organization_public_routes,
-        management: organization_management_routes,
-    } = build_organization_routes(
-        organization_services,
-        Arc::clone(&http_state.session_authenticator),
-        user_topup_service.clone(),
-        config,
-    );
+    .with_platform_audit_service(platform_audit_service);
     let api_explorer_routes = build_api_explorer_router(
         Arc::clone(&http_state.session_authenticator),
         http_state.clone(),
@@ -412,7 +396,7 @@ pub fn build_router(
             post(gemini_generate_content).route_layer(gemini_authentication),
         )
         .with_state(http_state.clone())
-        .merge(organization_public_routes);
+        ;
     let playground_session_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
         authenticate_management_session,
@@ -702,11 +686,6 @@ pub fn build_router(
                 .route_layer(channel_collection_authentication.clone()),
         )
         .route(
-            "/api/organizations/{organization_id}/refund-reconciliations",
-            get(list_organization_refund_reconciliations)
-                .route_layer(channel_collection_authentication.clone()),
-        )
-        .route(
             "/api/admin/refund-reconciliations",
             get(list_admin_refund_reconciliations)
                 .route_layer(middleware::from_fn(authorize_management_admin))
@@ -959,7 +938,6 @@ pub fn build_router(
         Some(routes) => management_routes.merge(routes),
         None => management_routes,
     };
-    let management_routes = management_routes.merge(organization_management_routes);
     let management_routes = management_routes.merge(debug_trace_routes);
     let management_routes = match oauth_connection_routes {
         Some(routes) => management_routes.merge(routes),
@@ -1081,7 +1059,6 @@ fn cors_layer(config: &ServerConfig) -> Option<CorsLayer> {
                 HeaderName::from_static("x-api-key"),
                 HeaderName::from_static("x-goog-api-key"),
                 HeaderName::from_static("idempotency-key"),
-                HeaderName::from_static(PLATFORM_REASON_HEADER),
             ])
             .expose_headers([request_id_header()]),
     )

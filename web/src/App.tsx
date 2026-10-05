@@ -29,25 +29,7 @@ import { ModelPage } from '@/features/models/model-page'
 import { ModelManagementPage } from '@/features/model-management/model-management-page'
 import { ModelProviderCatalogPanel } from '@/features/model-management/model-provider-catalog-panel'
 import { NetworkSettingsPage } from '@/features/network-settings/network-settings-page'
-import { OrganizationActivityPage } from '@/features/organization-activity/organization-activity-page'
-import { OrganizationApiKeyPage } from '@/features/organization-api-keys/organization-api-key-page'
-import { OrganizationBudgetPage } from '@/features/organization-budgets/organization-budget-page'
-import { OrganizationContractPricePage } from '@/features/organization-contract-prices/organization-contract-price-page'
-import { OrganizationCreditPage } from '@/features/organization-credit/organization-credit-page'
-import { OrganizationApprovalPage } from '@/features/organization-approvals/organization-approval-page'
-import { OrganizationMemberPage } from '@/features/organization-members/organization-member-page'
-import { OrganizationDepartmentPage } from '@/features/organization-departments/organization-department-page'
-import { OrganizationOverviewPage } from '@/features/organization-console/organization-overview-page'
-import { OrganizationOnboardingPage } from '@/features/organization-onboarding/organization-onboarding-page'
-import { OrganizationPlanManagementPage } from '@/features/organization-console/organization-plan-management-page'
-import { OrganizationProvisioningPage } from '@/features/organization-provisioning/organization-provisioning-page'
-import { OrganizationVerificationPage } from '@/features/organization-verification/organization-verification-page'
-import { OrganizationSettingsPage } from '@/features/organization-console/organization-settings-page'
-import { OrganizationServiceAccountPage } from '@/features/organization-service-accounts/organization-service-account-page'
-import { OrganizationWalletPage } from '@/features/organization-wallet/organization-wallet-page'
-import { OrganizationWorkspaceProvider } from '@/features/organization-console/organization-workspace-context'
 import { PaymentSettingsPage } from '@/features/payment-settings/payment-settings-page'
-import { PlatformOrganizationPage } from '@/features/platform-organizations/platform-organization-page'
 import { PublicModelPage } from '@/features/models/public-model-page'
 import { PlaygroundPage } from '@/features/playground/playground-page'
 import { PublicPlaygroundSharePage } from '@/features/playground/public-playground-share-page'
@@ -93,8 +75,6 @@ type ManagementEntryProps = {
   view: Exclude<AppView, 'landing' | 'public-models' | 'register' | 'share' | 'forgot-password' | 'reset-password' | 'oauth-callback'>
   credentialChannelId?: number
   profileSection?: AppRoute['profileSection']
-  activityTab?: AppRoute['activityTab']
-  organizationId?: AppRoute['organizationId']
   loginNotice?: LoginNotice
   onAuthenticated: () => void
   onLoginRequired: (reason: 'required' | 'sessionExpired' | 'setupComplete') => void
@@ -108,8 +88,6 @@ function ManagementEntry({
   view,
   credentialChannelId,
   profileSection,
-  activityTab,
-  organizationId,
   loginNotice,
   onAuthenticated,
   onLoginRequired,
@@ -193,40 +171,6 @@ function ManagementEntry({
                 ? 'users.title'
             : view === 'api-keys'
               ? 'apiKeys.title'
-              : view === 'organization-api-keys'
-                ? 'organizationApiKeys.title'
-                : view === 'organization-activity'
-                  ? 'organizationActivity.title'
-                : view === 'organization-budgets'
-                  ? 'organizationBudgets.title'
-                : view === 'organization-contract-prices'
-                  ? 'organizationContractPrices.title'
-                : view === 'organization-credit'
-                  ? 'organizationCredit.title'
-                : view === 'organization-approvals'
-                  ? 'organizationApprovals.title'
-                : view === 'organization-members'
-                  ? 'organizationConsole.members.title'
-                : view === 'organization-departments'
-                  ? 'organizationDepartments.title'
-                : view === 'organization-overview'
-                  ? 'organizationConsole.overview.title'
-                : view === 'organization-onboarding'
-                  ? 'organizationOnboarding.title'
-                : view === 'organization-plans'
-                  ? 'organizationPlans.title'
-                : view === 'platform-organizations'
-                  ? 'platformOrganizations.title'
-                : view === 'organization-provisioning'
-                  ? 'organizationProvisioning.title'
-                : view === 'organization-verification'
-                  ? 'organizationVerification.title'
-                : view === 'organization-settings'
-                  ? 'organizationConsole.settings.title'
-                : view === 'organization-service-accounts'
-                  ? 'organizationServiceAccounts.title'
-                : view === 'organization-wallet'
-                  ? 'organizationConsole.wallet.title'
               : view === 'wallet'
                 ? 'wallet.title'
               : view === 'invitations'
@@ -292,40 +236,6 @@ function ManagementEntry({
                 ? <UserPage />
             : view === 'api-keys'
               ? <ApiKeyPage />
-            : view === 'organization-api-keys'
-                ? <OrganizationApiKeyPage />
-                : view === 'organization-activity'
-                  ? <OrganizationActivityPage initialTab={activityTab} />
-                : view === 'organization-budgets'
-                  ? <OrganizationBudgetPage />
-                : view === 'organization-contract-prices'
-                  ? <OrganizationContractPricePage />
-                : view === 'organization-credit'
-                  ? <OrganizationCreditPage />
-                : view === 'organization-approvals'
-                  ? <OrganizationApprovalPage />
-                : view === 'organization-members'
-                  ? <OrganizationMemberPage />
-                : view === 'organization-departments'
-                  ? <OrganizationDepartmentPage />
-                : view === 'organization-overview'
-                  ? <OrganizationOverviewPage />
-                : view === 'organization-onboarding'
-                  ? <OrganizationOnboardingPage requestedOrganizationId={organizationId} />
-                : view === 'organization-plans'
-                  ? <OrganizationPlanManagementPage />
-                : view === 'platform-organizations'
-                  ? <PlatformOrganizationPage />
-                : view === 'organization-provisioning'
-                  ? <OrganizationProvisioningPage admin={admin} />
-                : view === 'organization-verification'
-                  ? <OrganizationVerificationPage admin={admin} />
-                : view === 'organization-settings'
-                  ? <OrganizationSettingsPage />
-                : view === 'organization-service-accounts'
-                  ? <OrganizationServiceAccountPage />
-                : view === 'organization-wallet'
-                  ? <OrganizationWalletPage />
               : view === 'wallet'
                 ? <WalletPage />
               : view === 'invitations'
@@ -349,22 +259,6 @@ function ManagementEntry({
                         : <DashboardPage />
 
   const requireAdmin = view !== 'api-keys'
-    && view !== 'organization-api-keys'
-    && view !== 'organization-activity'
-    && view !== 'organization-budgets'
-    && view !== 'organization-contract-prices'
-    && view !== 'organization-credit'
-    && view !== 'organization-approvals'
-    && view !== 'organization-members'
-    && view !== 'organization-departments'
-    && view !== 'organization-overview'
-    && view !== 'organization-onboarding'
-    && view !== 'organization-plans'
-    && view !== 'organization-provisioning'
-    && view !== 'organization-verification'
-    && view !== 'organization-settings'
-    && view !== 'organization-service-accounts'
-    && view !== 'organization-wallet'
     && view !== 'wallet'
     && view !== 'subscriptions'
     && view !== 'invitations'
@@ -382,11 +276,9 @@ function ManagementEntry({
       onUserHomeRequired={onUserHomeRequired}
     >
       {(session) => (
-        <OrganizationWorkspaceProvider enterpriseView={view.startsWith('organization-') && view !== 'organization-provisioning'}>
           <AppShell title={t(titleKey)} currentUser={session.user} onLogout={onLogout}>
             {content(session.user.role === 'admin')}
           </AppShell>
-        </OrganizationWorkspaceProvider>
       )}
     </SessionBoundary>
   )
@@ -460,8 +352,6 @@ export default function App() {
       view={view}
       credentialChannelId={route.channelId}
       profileSection={route.profileSection}
-      activityTab={route.activityTab}
-      organizationId={route.organizationId}
       loginNotice={loginNotice}
       onAuthenticated={openConsole}
       onLoginRequired={openLogin}

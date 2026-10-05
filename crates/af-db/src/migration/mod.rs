@@ -68,13 +68,6 @@ mod m20260814_000057_extend_usage_call_observations;
 mod m20260814_000058_extend_debug_trace_diagnostics;
 mod m20260815_000059_add_balance_display_policy;
 mod m20260815_000060_secure_debug_trace_snapshots;
-mod m20260815_000061_create_organization_foundation;
-mod m20260815_000062_create_organization_entitlements;
-mod m20260816_000063_create_organization_invitations;
-mod m20260816_000064_create_organization_wallets;
-mod m20260816_000065_create_organization_budgets;
-mod m20260817_000066_add_organization_tokens;
-mod m20260817_000067_create_organization_activity;
 mod m20260817_000068_add_client_simulation_observability;
 mod m20260817_000069_enforce_spark_shadow_shape;
 mod m20260817_000070_create_oauth_login;
@@ -100,52 +93,12 @@ mod m20260823_000089_add_refund_approval;
 mod m20260823_000090_add_refund_payment_reference;
 mod m20260823_000091_create_custom_oauth2_providers;
 mod m20260823_000092_create_custom_oauth2_login;
-mod m20260823_000093_create_organization_custom_roles;
-mod m20260823_000094_add_organization_custom_role_bindings;
-mod m20260824_000095_create_organization_sso_persistence;
-mod m20260825_000096_add_organization_sso_login_material;
-mod m20260825_000097_add_organization_sso_ticket_email_fingerprint;
-mod m20260826_000098_create_organization_sso_policies;
-mod m20260827_000099_create_organization_scim_tokens;
-mod m20260827_000100_create_organization_scim_user_resources;
-mod m20260827_000101_create_organization_scim_group_resources;
-mod m20260828_000102_create_organization_scim_audit_logs;
-mod m20260828_000103_create_organization_service_accounts;
-mod m20260828_000104_create_organization_service_account_budget_bindings;
-mod m20260828_000105_create_organization_service_account_audit_logs;
-mod m20260829_000106_create_organization_departments;
-mod m20260829_000107_create_organization_department_memberships;
-mod m20260829_000108_add_organization_department_snapshots;
-mod m20260829_000109_add_department_budget_snapshots;
-mod m20260829_000110_create_organization_contract_prices;
-mod m20260829_000111_add_contract_price_snapshots;
-mod m20260830_000112_create_organization_credit_terms;
-mod m20260830_000113_create_organization_credit_invoices;
-mod m20260830_000114_create_organization_credit_repayments;
-mod m20260830_000115_create_organization_approvals;
-mod m20260830_000116_create_organization_approval_execution;
-mod m20260830_000117_create_organization_approval_budget_execution;
-mod m20260830_000118_create_organization_approval_service_account_execution;
-mod m20260830_000119_create_organization_approval_contract_price_execution;
-mod m20260830_000120_create_organization_approval_funds_execution;
-mod m20260830_000121_create_organization_approval_timeout_lease;
-mod m20260831_000122_create_organization_approval_notifications;
 mod m20260831_000123_create_refund_reconciliations;
-mod m20260901_000124_add_organization_sso_domain_reverification;
-mod m20260902_000125_add_organization_sso_login_transaction_cleanup;
 mod m20260903_000126_add_manual_refund_completion;
 mod m20260903_000127_extend_refund_status;
 mod m20260903_000128_add_client_simulation_body_observability;
-mod m20260903_000129_create_organization_approval_notification_receipts;
-mod m20260904_000130_create_organization_provisioning_requests;
-mod m20260904_000131_create_organization_plan_catalog;
-mod m20260905_000132_create_organization_plan_orders;
-mod m20260905_000133_add_organization_plan_order_changes;
 mod m20260906_000134_create_announcements;
 mod m20260906_000135_add_announcement_audience_notifications;
-mod m20260907_000136_create_organization_verification;
-mod m20260907_000137_add_organization_verification_material_content;
-mod m20260907_000138_create_organization_provisioning_materials;
 mod m20260912_000139_add_frontend_template;
 mod m20260921_000140_extend_request_outcomes_for_call_logs;
 mod m20260923_000141_account_verification;
@@ -359,13 +312,6 @@ impl MigratorTrait for Migrator {
             Box::new(m20260814_000058_extend_debug_trace_diagnostics::Migration),
             Box::new(m20260815_000059_add_balance_display_policy::Migration),
             Box::new(m20260815_000060_secure_debug_trace_snapshots::Migration),
-            Box::new(m20260815_000061_create_organization_foundation::Migration),
-            Box::new(m20260815_000062_create_organization_entitlements::Migration),
-            Box::new(m20260816_000063_create_organization_invitations::Migration),
-            Box::new(m20260816_000064_create_organization_wallets::Migration),
-            Box::new(m20260816_000065_create_organization_budgets::Migration),
-            Box::new(m20260817_000066_add_organization_tokens::Migration),
-            Box::new(m20260817_000067_create_organization_activity::Migration),
             Box::new(m20260817_000068_add_client_simulation_observability::Migration),
             Box::new(m20260817_000069_enforce_spark_shadow_shape::Migration),
             Box::new(m20260817_000070_create_oauth_login::Migration),
@@ -391,60 +337,12 @@ impl MigratorTrait for Migrator {
             Box::new(m20260823_000090_add_refund_payment_reference::Migration),
             Box::new(m20260823_000091_create_custom_oauth2_providers::Migration),
             Box::new(m20260823_000092_create_custom_oauth2_login::Migration),
-            Box::new(m20260823_000093_create_organization_custom_roles::Migration),
-            Box::new(m20260823_000094_add_organization_custom_role_bindings::Migration),
-            Box::new(m20260824_000095_create_organization_sso_persistence::Migration),
-            Box::new(m20260825_000096_add_organization_sso_login_material::Migration),
-            Box::new(m20260825_000097_add_organization_sso_ticket_email_fingerprint::Migration),
-            Box::new(m20260826_000098_create_organization_sso_policies::Migration),
-            Box::new(m20260827_000099_create_organization_scim_tokens::Migration),
-            Box::new(m20260827_000100_create_organization_scim_user_resources::Migration),
-            Box::new(m20260827_000101_create_organization_scim_group_resources::Migration),
-            Box::new(m20260828_000102_create_organization_scim_audit_logs::Migration),
-            Box::new(m20260828_000103_create_organization_service_accounts::Migration),
-            Box::new(
-                m20260828_000104_create_organization_service_account_budget_bindings::Migration,
-            ),
-            Box::new(m20260828_000105_create_organization_service_account_audit_logs::Migration),
-            Box::new(m20260829_000106_create_organization_departments::Migration),
-            Box::new(m20260829_000107_create_organization_department_memberships::Migration),
-            Box::new(m20260829_000108_add_organization_department_snapshots::Migration),
-            Box::new(m20260829_000109_add_department_budget_snapshots::Migration),
-            Box::new(m20260829_000110_create_organization_contract_prices::Migration),
-            Box::new(m20260829_000111_add_contract_price_snapshots::Migration),
-            Box::new(m20260830_000112_create_organization_credit_terms::Migration),
-            Box::new(m20260830_000113_create_organization_credit_invoices::Migration),
-            Box::new(m20260830_000114_create_organization_credit_repayments::Migration),
-            Box::new(m20260830_000115_create_organization_approvals::Migration),
-            Box::new(m20260830_000116_create_organization_approval_execution::Migration),
-            Box::new(m20260830_000117_create_organization_approval_budget_execution::Migration),
-            Box::new(
-                m20260830_000118_create_organization_approval_service_account_execution::Migration,
-            ),
-            Box::new(
-                m20260830_000119_create_organization_approval_contract_price_execution::Migration,
-            ),
-            Box::new(m20260830_000120_create_organization_approval_funds_execution::Migration),
-            Box::new(m20260830_000121_create_organization_approval_timeout_lease::Migration),
-            Box::new(m20260831_000122_create_organization_approval_notifications::Migration),
             Box::new(m20260831_000123_create_refund_reconciliations::Migration),
-            Box::new(m20260901_000124_add_organization_sso_domain_reverification::Migration),
-            Box::new(m20260902_000125_add_organization_sso_login_transaction_cleanup::Migration),
             Box::new(m20260903_000126_add_manual_refund_completion::Migration),
             Box::new(m20260903_000127_extend_refund_status::Migration),
             Box::new(m20260903_000128_add_client_simulation_body_observability::Migration),
-            Box::new(
-                m20260903_000129_create_organization_approval_notification_receipts::Migration,
-            ),
-            Box::new(m20260904_000130_create_organization_provisioning_requests::Migration),
-            Box::new(m20260904_000131_create_organization_plan_catalog::Migration),
-            Box::new(m20260905_000132_create_organization_plan_orders::Migration),
-            Box::new(m20260905_000133_add_organization_plan_order_changes::Migration),
             Box::new(m20260906_000134_create_announcements::Migration),
             Box::new(m20260906_000135_add_announcement_audience_notifications::Migration),
-            Box::new(m20260907_000136_create_organization_verification::Migration),
-            Box::new(m20260907_000137_add_organization_verification_material_content::Migration),
-            Box::new(m20260907_000138_create_organization_provisioning_materials::Migration),
             Box::new(m20260912_000139_add_frontend_template::Migration),
             Box::new(m20260921_000140_extend_request_outcomes_for_call_logs::Migration),
             Box::new(m20260923_000141_account_verification::Migration),

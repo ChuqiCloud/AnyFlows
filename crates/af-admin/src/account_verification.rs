@@ -333,7 +333,7 @@ impl AccountVerificationService {
         reason: Option<String>,
         request_id: String,
     ) -> Result<AccountVerificationRecord, AccountVerificationError> {
-        PlatformPolicy::authorize(principal, PlatformPermission::OrganizationsManage)
+        PlatformPolicy::authorize(principal, PlatformPermission::AccountVerificationsManage)
             .map_err(|_| AccountVerificationError::Forbidden)?;
         self.repository
             .decide(id, version, principal.user_id(), status, reason, request_id)
@@ -345,7 +345,7 @@ impl AccountVerificationService {
         admin: bool,
     ) -> Result<Option<UserId>, AccountVerificationError> {
         if admin {
-            PlatformPolicy::authorize(principal, PlatformPermission::OrganizationsReadAll)
+            PlatformPolicy::authorize(principal, PlatformPermission::AccountVerificationsReadAll)
                 .map_err(|_| AccountVerificationError::Forbidden)?;
             Ok(None)
         } else {
@@ -362,7 +362,7 @@ impl AccountVerificationService {
     ) -> Result<(), AccountVerificationError> {
         let entry = PlatformAuditEntry::new(
             principal,
-            PlatformPermission::OrganizationsReadAll,
+            PlatformPermission::AccountVerificationsReadAll,
             "/api/admin/account-verifications",
             operation,
             "account_verification",

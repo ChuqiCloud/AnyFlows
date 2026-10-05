@@ -1,7 +1,9 @@
+mod extension;
 mod repository;
 mod types;
 
 pub use repository::TopupRepository;
+pub use extension::{TopupCreditOutcome, TopupExtension, TopupExtensionFuture};
 pub use types::{
     MAX_PAYMENT_METHOD_BYTES, MAX_PAYMENT_PROVIDER_BYTES, MAX_PROVIDER_EVENT_ID_BYTES,
     MAX_PROVIDER_ORDER_ID_BYTES, MAX_PROVIDER_TRADE_NO_BYTES, TopupInputError, TopupOrderCreate,

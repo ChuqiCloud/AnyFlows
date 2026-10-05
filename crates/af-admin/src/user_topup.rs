@@ -945,7 +945,9 @@ fn map_repository_error(error: TopupRepositoryError) -> UserTopupError {
     match error {
         TopupRepositoryError::Conflict => UserTopupError::Conflict,
         TopupRepositoryError::OutcomeUnknown => UserTopupError::OutcomeUnknown,
-        TopupRepositoryError::Query | TopupRepositoryError::Timeout => UserTopupError::Unavailable,
+        TopupRepositoryError::Query
+        | TopupRepositoryError::Timeout
+        | TopupRepositoryError::UnsupportedTarget => UserTopupError::Unavailable,
         TopupRepositoryError::Invariant => UserTopupError::Internal,
     }
 }

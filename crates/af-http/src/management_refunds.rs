@@ -1,11 +1,11 @@
 use af_admin::{
     AdminRefundDecisionCommand, AdminRefundError, AdminRefundListQuery,
     AdminRefundManualCompletionCommand, AdminRefundPage, AdminRefundRequest,
-    OrganizationAuthorizationError, RefundReconciliationEntry, RefundReconciliationListQuery,
+    RefundReconciliationEntry, RefundReconciliationListQuery,
     RefundReconciliationPage,
 };
 use af_domain::{
-    OrganizationId, OrganizationPermission, RefundApprovalStatus, RefundManualResult,
+    RefundApprovalStatus, RefundManualResult,
     RefundOrderKind, RefundRequestId, RefundRequestKey, RefundRequestStatus,
 };
 use axum::{
@@ -190,43 +190,6 @@ pub(crate) async fn list_account_refund_reconciliations(
     let page = service
         .list_user_reconciliations(
             authentication.principal(),
-            parse_reconciliation_query(raw_query.as_deref())?,
-        )
-        .await
-        .map_err(map_refund_error)?;
-    Ok(no_store_json(RefundReconciliationListResponse::from_page(
-        &page,
-    )))
-}
-
-/// 读取企业资金主体的现金退款成功对账事实，企业边界由服务端权限上下文确定。
-pub(crate) async fn list_organization_refund_reconciliations(
-    State(state): State<HttpState>,
-    Path(organization_id): Path<i64>,
-    RawQuery(raw_query): RawQuery,
-    Extension(authentication): Extension<af_admin::SessionAuthentication>,
-) -> Result<Response, ManagementError> {
-    let organization_id =
-        OrganizationId::new(organization_id).map_err(|_| ManagementError::InvalidRequest)?;
-    let authorization = state
-        .organization_authorization_service
-        .as_ref()
-        .ok_or(ManagementError::Internal)?;
-    let context = authorization
-        .context(
-            authentication.principal(),
-            organization_id,
-            OrganizationPermission::WalletRead,
-        )
-        .await
-        .map_err(map_organization_authorization_error)?;
-    let service = state
-        .admin_refund_service
-        .as_ref()
-        .ok_or(ManagementError::Internal)?;
-    let page = service
-        .list_organization_reconciliations(
-            context,
             parse_reconciliation_query(raw_query.as_deref())?,
         )
         .await
@@ -554,14 +517,6 @@ fn map_refund_error(error: AdminRefundError) -> ManagementError {
         AdminRefundError::AutoSubmitFailed => ManagementError::RefundAutoSubmitFailed,
         AdminRefundError::OutcomeUnknown => ManagementError::RefundOutcomeUnknown,
         AdminRefundError::Internal => ManagementError::Internal,
-    }
-}
-
-fn map_organization_authorization_error(error: OrganizationAuthorizationError) -> ManagementError {
-    match error {
-        OrganizationAuthorizationError::NotFound => ManagementError::OrganizationNotFound,
-        OrganizationAuthorizationError::Forbidden => ManagementError::Forbidden,
-        OrganizationAuthorizationError::Internal => ManagementError::Internal,
     }
 }
 

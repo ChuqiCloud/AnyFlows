@@ -8,5 +8,5 @@ export { AccessControlContext } from "./context";
 export { AccessControlProvider } from "./provider";
 export { AccessControlRuntimeProvider } from "./runtime";
 export { getAccessControlBootstrap } from "./services";
-export { isEnterpriseView, requiresAdmin } from "./paths";
+export { requiresAdmin } from "./paths";
 export { useAccessControl } from "./hooks";

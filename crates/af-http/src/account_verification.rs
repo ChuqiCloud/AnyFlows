@@ -513,7 +513,7 @@ async fn submit(
     for entry in metadata.materials {
         let (file_name, content_type, bytes) =
             files.remove(&entry.file_field).ok_or_else(invalid)?;
-        materials.push(af_admin::OrganizationVerificationMaterialWrite {
+        materials.push(af_db::VerificationMaterialWrite {
             kind: entry.kind,
             object_reference: String::new(),
             file_name,

@@ -12,8 +12,6 @@ mod health;
 mod hybrid;
 mod lease;
 mod local;
-mod organization_scim_rate_limit;
-mod organization_sso_public_login_rate_limit;
 mod projection;
 mod rate_limit;
 mod redis_backend;
@@ -47,8 +45,6 @@ pub use lease::{
     DistributedLease, DistributedLeaseConfig, DistributedLeaseManager, DistributedLeaseMode,
     LeaseAcquireOutcome, LeaseReleaseOutcome,
 };
-pub use organization_scim_rate_limit::RedisOrganizationScimRateLimitStore;
-pub use organization_sso_public_login_rate_limit::RedisOrganizationSsoPublicLoginRateLimitStore;
 pub use projection::{
     ProjectionWriteOutcome, RedisProjectionConfig, RedisProjectionEntry,
     RedisVersionedProjectionStore,

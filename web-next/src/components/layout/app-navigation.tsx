@@ -1,19 +1,14 @@
-import { useAccountEligibility } from '@/features/account-verification/account-verification-api'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
   adminWorkspaceItems,
-  enterpriseAdminItems,
-  filterOrganizationNavigationItems,
   type NavKey,
   type NavigationSectionKey,
-  organizationSectionItems,
   systemSectionItems,
   userWorkspaceItems,
 } from '@/components/layout/app-navigation-model'
 import type { SidebarNode } from '@/shared/app-shell'
-import { useOrganizationWorkspace } from '@/features/organization-console/organization-workspace-context'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import type { SiteSidebarLink } from '@/lib/api/generated/types.gen'
 
@@ -51,31 +46,14 @@ const navItems = {
   playground: { key: 'playground', icon: 'solar:chat-round-dots-linear', href: '/console/playground' },
   videoTasks: { key: 'videoTasks', icon: 'solar:video-frame-linear', href: '/console/video-tasks' },
   apiKeys: { key: 'apiKeys', icon: 'solar:key-linear', href: '/console/api-keys' },
-  organizationApiKeys: { key: 'organizationApiKeys', icon: 'solar:key-square-linear', href: '/console/organization-api-keys' },
-  organizationActivity: { key: 'organizationActivity', icon: 'solar:history-linear', href: '/console/organization-activity' },
-  organizationBudgets: { key: 'organizationBudgets', icon: 'solar:wallet-money-linear', href: '/console/organization-budgets' },
-  organizationContractPrices: { key: 'organizationContractPrices', icon: 'solar:hand-money-linear', href: '/console/organization-contract-prices' },
-  organizationCredit: { key: 'organizationCredit', icon: 'solar:banknote-linear', href: '/console/organization-credit' },
-  organizationApprovals: { key: 'organizationApprovals', icon: 'solar:clipboard-check-linear', href: '/console/organization-approvals' },
-  organizationMembers: { key: 'organizationMembers', icon: 'solar:users-group-rounded-linear', href: '/console/organization-members' },
-  organizationDepartments: { key: 'organizationDepartments', icon: 'solar:buildings-2-linear', href: '/console/organization-departments' },
-  organizationOverview: { key: 'organizationOverview', icon: 'solar:chart-square-linear', href: '/console/organization' },
-  organizationOnboarding: { key: 'organizationOnboarding', icon: 'solar:clipboard-list-linear', href: '/console/organization-onboarding' },
   accountVerification: { key: 'accountVerification', icon: 'solar:verified-check-linear', href: '/console/account-verification' },
   accountVerificationSettings: { key: 'accountVerificationSettings', icon: 'solar:settings-linear', href: '/console/system-settings/account-verification' },
-  organizationProvisioning: { key: 'organizationProvisioning', icon: 'solar:add-circle-linear', href: '/console/organization-provisioning' },
-  organizationVerification: { key: 'organizationVerification', icon: 'solar:verified-check-linear', href: '/console/organization-verification' },
-  organizationSettings: { key: 'organizationSettings', icon: 'solar:settings-linear', href: '/console/organization-settings' },
-  organizationServiceAccounts: { key: 'organizationServiceAccounts', icon: 'solar:cpu-linear', href: '/console/organization-service-accounts' },
-  organizationWallet: { key: 'organizationWallet', icon: 'solar:card-linear', href: '/console/organization-wallet' },
   wallet: { key: 'wallet', icon: 'solar:wallet-linear', href: '/console/wallet' },
   subscriptions: { key: 'subscriptions', icon: 'solar:calendar-mark-linear', href: '/console/subscriptions' },
   invitations: { key: 'invitations', icon: 'solar:gift-linear', href: '/console/invitations' },
   profile: { key: 'profile', icon: 'solar:user-id-linear', href: '/console/profile' },
   users: { key: 'users', icon: 'solar:users-group-two-rounded-linear', href: '/console/users' },
   subscriptionManagement: { key: 'subscriptionManagement', icon: 'solar:layers-minimalistic-linear', href: '/console/subscription-management' },
-  organizationPlans: { key: 'organizationPlans', icon: 'solar:layers-linear', href: '/console/organization-plans' },
-  platformOrganizations: { key: 'platformOrganizations', icon: 'solar:buildings-3-linear', href: '/console/platform-organizations' },
   redemptionCodes: { key: 'redemptionCodes', icon: 'solar:ticket-linear', href: '/console/redemption-codes' },
   refunds: { key: 'refunds', icon: 'solar:check-circle-linear', href: '/console/refunds' },
   siteSettings: { key: 'siteSettings', icon: 'solar:monitor-linear', href: '/console/system-settings/site' },
@@ -152,36 +130,13 @@ function customNavigationTree(links: SiteSidebarLink[], english: boolean, role: 
 
 /** 构建控制台侧栏导航节点树，交给 acmeidc 的 ModuleSidebarLayoutContainer 渲染。 */
 export function useAppNavigationItems(role: 'admin' | 'user'): SidebarNode[] {
-  const eligibility = useAccountEligibility()
   const { i18n, t } = useTranslation()
   const siteQuery = usePublicSiteSettings()
   const customLinks = siteQuery.data?.navigation.sidebar_links
-  const {
-    organizationPermissions,
-    organizationPermissionsLoading,
-    selectedId,
-  } = useOrganizationWorkspace()
 
   return useMemo(() => {
-    /*
-     * 侧栏固定三个板块：工作台 / 企业管理 / 系统管理。
-     * 前两档两类角色都有，系统管理只给管理员——它装的都是平台运维与网关配置。
-     * 用户角色的企业条目要按成员权限裁剪，管理员则看完整集合。
-     */
-    const enterpriseItems: readonly NavKey[] = role === 'admin'
-      ? [...organizationSectionItems, ...enterpriseAdminItems]
-      : selectedId === undefined && eligibility.data?.enterprise_verified
-      ? ['organizationProvisioning']
-      : filterOrganizationNavigationItems(
-        organizationSectionItems,
-        organizationPermissions,
-        selectedId !== undefined,
-        organizationPermissionsLoading,
-      )
-
     const sections: Array<{ key: NavigationSectionKey; items: readonly NavKey[] }> = [
-      { key: 'workspace', items: role === 'admin' ? adminWorkspaceItems : userWorkspaceItems.filter((item) => item !== 'organizationProvisioning' || !enterpriseItems.includes('organizationProvisioning')) },
-      { key: 'enterprise', items: enterpriseItems },
+      { key: 'workspace', items: role === 'admin' ? adminWorkspaceItems : userWorkspaceItems },
     ]
     if (role === 'admin') {
       sections.push({ key: 'system', items: systemSectionItems })
@@ -201,5 +156,5 @@ export function useAppNavigationItems(role: 'admin' | 'user'): SidebarNode[] {
           ) : []),
         ],
       ))
-  }, [customLinks, eligibility.data?.enterprise_verified, i18n.resolvedLanguage, organizationPermissions, organizationPermissionsLoading, role, selectedId, t])
+  }, [customLinks, i18n.resolvedLanguage, role, t])
 }

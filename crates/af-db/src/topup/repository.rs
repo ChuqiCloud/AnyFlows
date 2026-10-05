@@ -1,8 +1,7 @@
-use std::{fmt, time::Duration};
+use std::{fmt, sync::Arc, time::Duration};
 
 #[cfg(test)]
 use std::sync::{
-    Arc,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -22,10 +21,9 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     DatabasePool, WalletLedgerEntryType,
     entity::{
-        SensitiveString, WalletLedgerKey, organization_wallets, organizations, topup_orders,
+        SensitiveString, WalletLedgerKey, topup_orders,
         topup_payment_events, users, wallet_ledger_entries,
     },
-    organization_wallet::{OrganizationWalletCreditOutcome, credit_topup_in_transaction},
 };
 
 use super::types::{
@@ -34,6 +32,7 @@ use super::types::{
     TopupPaymentEventWrite, TopupRepositoryConfigError, TopupRepositoryError, valid_currency,
     valid_payment_method, valid_provider, valid_provider_value,
 };
+use super::{TopupCreditOutcome, TopupExtension};
 
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
@@ -42,6 +41,7 @@ const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 pub struct TopupRepository {
     pool: DatabasePool,
     operation_timeout: Duration,
+    extension: Option<Arc<dyn TopupExtension>>,
     #[cfg(test)]
     outcome_unknown_after_commit: Arc<AtomicBool>,
 }
@@ -58,9 +58,17 @@ impl TopupRepository {
         Ok(Self {
             pool,
             operation_timeout,
+            extension: None,
             #[cfg(test)]
             outcome_unknown_after_commit: Arc::new(AtomicBool::new(false)),
         })
+    }
+
+    /// Register distribution-owned crediting for non-personal wallet targets.
+    #[must_use]
+    pub fn with_extension(mut self, extension: Arc<dyn TopupExtension>) -> Self {
+        self.extension = Some(extension);
+        self
     }
 
     /// 幂等创建本地充值订单；目标用户必须存在且未软删除。
@@ -154,12 +162,15 @@ impl TopupRepository {
         &self,
         write: &TopupOrderCreate,
     ) -> Result<TopupOrderCreateOutcome, TopupRepositoryError> {
+        if write.organization_id.is_some() && self.extension.is_none() {
+            return Err(internal(TopupRepositoryError::UnsupportedTarget));
+        }
         if let Some(existing) = load_create_collision(self.pool.connection(), write).await? {
             return classify_create_collision(existing, write);
         }
 
         let transaction = begin(&self.pool).await?;
-        let result = create_order_in_transaction(&transaction, write).await;
+        let result = create_order_in_transaction(&transaction, write, self.extension.as_deref()).await;
         match result {
             Ok(outcome) => {
                 commit(transaction).await?;
@@ -210,7 +221,13 @@ impl TopupRepository {
         }
 
         let transaction = begin(&self.pool).await?;
-        let result = accept_event_in_transaction(&transaction, preloaded.user_id, write).await;
+        let result = accept_event_in_transaction(
+            &transaction,
+            preloaded.user_id,
+            write,
+            self.extension.as_deref(),
+        )
+        .await;
         match result {
             Ok(outcome) => {
                 commit(transaction).await?;
@@ -257,22 +274,14 @@ impl From<TopupRepositoryError> for TransactionWriteError {
 async fn create_order_in_transaction(
     transaction: &DatabaseTransaction,
     write: &TopupOrderCreate,
+    extension: Option<&dyn TopupExtension>,
 ) -> Result<TopupOrderCreateOutcome, TransactionWriteError> {
     if lock_user(transaction, write.user_id, true).await?.is_none() {
         return Ok(TopupOrderCreateOutcome::NotFound);
     }
     if let Some(organization_id) = write.organization_id {
-        let active = organizations::Entity::find_by_id(organization_id.get())
-            .filter(organizations::Column::Status.eq(1_i16))
-            .one(transaction)
-            .await
-            .map_err(|_| TopupRepositoryError::Query)?;
-        let wallet = organization_wallets::Entity::find()
-            .filter(organization_wallets::Column::OrganizationId.eq(organization_id.get()))
-            .one(transaction)
-            .await
-            .map_err(|_| TopupRepositoryError::Query)?;
-        if active.is_none() || wallet.is_none() {
+        let extension = extension.ok_or(TopupRepositoryError::UnsupportedTarget)?;
+        if !extension.validate_target(transaction, organization_id).await? {
             return Ok(TopupOrderCreateOutcome::NotFound);
         }
     }
@@ -368,6 +377,7 @@ async fn accept_event_in_transaction(
     transaction: &DatabaseTransaction,
     preloaded_user_id: UserId,
     write: &TopupPaymentEventWrite,
+    extension: Option<&dyn TopupExtension>,
 ) -> Result<TopupPaymentEventOutcome, TransactionWriteError> {
     let user = lock_user(transaction, preloaded_user_id, false)
         .await?
@@ -472,7 +482,8 @@ async fn accept_event_in_transaction(
             let delta = QuotaDelta::new(order.quota_amount.units())
                 .map_err(|_| TopupRepositoryError::Invariant)?;
             if let Some(organization_id) = order.organization_id {
-                let outcome = match credit_topup_in_transaction(
+                let extension = extension.ok_or(TopupRepositoryError::UnsupportedTarget)?;
+                let outcome = extension.credit(
                     transaction,
                     organization_id,
                     WalletEventId::new(write.event_id.bytes())
@@ -481,20 +492,15 @@ async fn accept_event_in_transaction(
                     order.quota_amount,
                     received_at,
                 )
-                .await
-                {
-                    Ok(outcome) => outcome,
-                    Err(crate::OrganizationWalletError::Overflow) => {
+                .await?;
+                match outcome {
+                    TopupCreditOutcome::Overflow => {
                         return Ok(unprocessed(
                             order,
                             TopupPaymentEventRejection::CreditOverflow,
                         ));
                     }
-                    Err(error) => return Err(map_organization_wallet_error(error).into()),
-                };
-                match outcome {
-                    OrganizationWalletCreditOutcome::Applied
-                    | OrganizationWalletCreditOutcome::Existing => {}
+                    TopupCreditOutcome::Credited => {}
                 }
             } else {
                 let balance_before =
@@ -1032,19 +1038,6 @@ fn is_event_unique_conflict(error: &sea_orm::DbErr) -> bool {
         || rendered.contains("Duplicate entry")
 }
 
-fn map_organization_wallet_error(error: crate::OrganizationWalletError) -> TopupRepositoryError {
-    match error {
-        crate::OrganizationWalletError::Conflict => TopupRepositoryError::Conflict,
-        crate::OrganizationWalletError::Overflow
-        | crate::OrganizationWalletError::InsufficientQuota
-        | crate::OrganizationWalletError::Invariant => TopupRepositoryError::Invariant,
-        crate::OrganizationWalletError::InvalidInput
-        | crate::OrganizationWalletError::Query
-        | crate::OrganizationWalletError::OutcomeUnknown
-        | crate::OrganizationWalletError::Timeout => TopupRepositoryError::Query,
-    }
-}
-
 async fn begin(pool: &DatabasePool) -> Result<DatabaseTransaction, TopupRepositoryError> {
     pool.connection()
         .begin()
@@ -1084,7 +1077,7 @@ fn is_applied_event(outcome: &TopupPaymentEventOutcome) -> bool {
 /// 仅记录闭合内部分类，避免订单、Provider、流水号和摘要进入日志。
 fn internal(error: TopupRepositoryError) -> TopupRepositoryError {
     let error_kind = match error {
-        TopupRepositoryError::Conflict => return error,
+        TopupRepositoryError::Conflict | TopupRepositoryError::UnsupportedTarget => return error,
         TopupRepositoryError::Query => "topup_query",
         TopupRepositoryError::OutcomeUnknown => "topup_outcome_unknown",
         TopupRepositoryError::Timeout => "topup_timeout",

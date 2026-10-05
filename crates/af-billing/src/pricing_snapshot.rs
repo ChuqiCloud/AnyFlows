@@ -1,13 +1,13 @@
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
-use af_domain::{BillingContractPriceSnapshot, GroupId, OrganizationId, Protocol};
+use af_db::OrganizationContractPriceSnapshot;
+use af_domain::{GroupId, OrganizationId, Protocol};
 use thiserror::Error;
 
 use crate::{
-    BillingMode, ContractPriceSource, ContractPriceSourceError, GroupPricingCache,
-    GroupPricingCacheError, GroupPricingLookupError, ModelPriceCache, ModelPriceCacheError,
-    ModelPriceMode, PricingRatio, PricingRatios, PricingResolver, RatioPricingResolver,
-    TokenPrices,
+    BillingMode, GroupPricingCache, GroupPricingCacheError, GroupPricingLookupError,
+    ModelPriceCache, ModelPriceCacheError, ModelPriceMode, PricingRatio, PricingRatios,
+    PricingResolver, RatioPricingResolver, TokenPrices,
 };
 
 /// 从进程内不可变目录同步固定一次请求的完整定价事实。
@@ -47,6 +47,35 @@ pub type RequestPricingSnapshotFuture<'a> = Pin<
     >,
 >;
 
+/// Enterprise pricing override source injected by a distribution.
+///
+/// The public billing crate only consumes the immutable snapshot. Repository
+/// queries, authorization and storage remain outside the public core.
+pub trait ContractPriceSource: Send + Sync + 'static {
+    fn resolve<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        model: &'a str,
+        protocol: Protocol,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<Option<OrganizationContractPriceSnapshot>, ContractPriceSourceError>,
+                > + Send
+                + 'a,
+        >,
+    >;
+}
+
+/// Sanitized failure categories returned by an injected contract price source.
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+pub enum ContractPriceSourceError {
+    #[error("合同价来源不可用")]
+    Unavailable,
+    #[error("合同价来源返回了无效数据")]
+    Invalid,
+}
+
 /// 一次请求从预扣到最终结算始终复用的不可变定价快照。
 #[must_use = "请求定价快照必须用于构造同一生命周期的解析器"]
 #[derive(Clone)]
@@ -59,7 +88,7 @@ pub struct RequestPricingSnapshot {
     ratios: PricingRatios,
     model_generation: u64,
     group_generation: u64,
-    contract_price: Option<BillingContractPriceSnapshot>,
+    contract_price: Option<OrganizationContractPriceSnapshot>,
 }
 
 impl RequestPricingSnapshot {
@@ -95,7 +124,7 @@ impl RequestPricingSnapshot {
 
     /// 返回企业合同价快照；个人请求和未命中合同价时为空。
     #[must_use]
-    pub const fn contract_price(&self) -> Option<BillingContractPriceSnapshot> {
+    pub const fn contract_price(&self) -> Option<OrganizationContractPriceSnapshot> {
         self.contract_price
     }
 
@@ -186,9 +215,12 @@ impl CachedRequestPricingSnapshotSource {
         }
     }
 
-    /// 接入企业合同价仓储；未绑定仓储时保持原有平台定价行为。
+    /// 接入发行版提供的合同价来源；未绑定时保持平台定价行为。
     #[must_use]
-    pub fn with_contract_prices(mut self, source: Arc<dyn ContractPriceSource>) -> Self {
+    pub fn with_contract_price_source(
+        mut self,
+        source: Arc<dyn ContractPriceSource>,
+    ) -> Self {
         self.contract_prices = Some(source);
         self
     }
@@ -260,25 +292,15 @@ impl RequestPricingSnapshotSource for CachedRequestPricingSnapshotSource {
         Box::pin(async move {
             let mut snapshot =
                 self.capture(model, source_group_id, target_group_id, current_second)?;
-            let (Some(organization_id), Some(source)) =
+            let (Some(organization_id), Some(repository)) =
                 (organization_id, self.contract_prices.as_ref())
             else {
                 return Ok(snapshot);
             };
-            let Some(contract_price) = source
-                .resolve(
-                    organization_id,
-                    model,
-                    protocol,
-                    af_db::DatabaseTimestamp::now_utc(),
-                )
-                .await?
+            let Some(contract_price) = repository.resolve(organization_id, model, protocol).await?
             else {
                 return Ok(snapshot);
             };
-            if contract_price.organization_id() != organization_id {
-                return Err(ContractPriceSourceError::Invariant.into());
-            }
             let prices = contract_price.prices();
             let prices = TokenPrices::new(prices[0], prices[1], prices[2], prices[3], prices[4])
                 .map_err(|_| RequestPricingSnapshotError::ExpressionPricingUnavailable)?;

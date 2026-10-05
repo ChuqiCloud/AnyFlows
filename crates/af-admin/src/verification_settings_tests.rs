@@ -20,7 +20,7 @@ use tokio::{
 };
 
 const PRIVATE_KEY: &str =
-    include_str!("../../af-account/src/fixtures/organization_sso_oidc_private.pem");
+    include_str!("fixtures/alipay_verification_test_private.pem");
 const TIMEOUT: Duration = Duration::from_secs(10);
 
 async fn read_form(stream: &mut TcpStream) -> BTreeMap<String, String> {

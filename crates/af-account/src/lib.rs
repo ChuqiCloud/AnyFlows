@@ -6,13 +6,6 @@ mod credential_secret;
 mod diagnostic_snapshot;
 mod login_oauth;
 mod oauth;
-mod organization_invitation;
-mod organization_sso_dns;
-mod organization_sso_login;
-mod organization_sso_oidc;
-mod organization_sso_oidc_exchange;
-mod organization_sso_oidc_jwks;
-mod organization_sso_saml;
 mod system_secret;
 
 pub use credential_decryption::{
@@ -53,42 +46,6 @@ pub use oauth::{
     OAuthTokenExchange, OAuthTokenExchangeError, OAuthTokenPersistenceError,
     OAuthTokenPersistenceOutcome, OAuthTokenPersistenceService, OAuthTokenRefreshRequest,
     OAuthTokenRequestEncoding, OAuthTokenSet, UpstreamOAuthProvider,
-};
-pub use organization_invitation::{
-    DecryptedOrganizationInvitationEmail, OrganizationInvitationCipher,
-    OrganizationInvitationCipherError, PlainOrganizationInvitationEmail,
-};
-pub use organization_sso_dns::{
-    ControlledOrganizationSsoDnsResolver, MAX_ORGANIZATION_SSO_DNS_NAMESERVERS,
-    MAX_ORGANIZATION_SSO_DNS_TXT_ANSWER_BYTES, MAX_ORGANIZATION_SSO_DNS_TXT_ANSWERS,
-    MAX_ORGANIZATION_SSO_DNS_TXT_TOTAL_BYTES, OrganizationSsoDnsDomainResolver,
-    OrganizationSsoDnsResolverConfigError, OrganizationSsoDnsResolverError,
-    OrganizationSsoDnsTxtResolver,
-};
-pub use organization_sso_login::{
-    ORGANIZATION_SSO_OIDC_CALLBACK_PATH, ORGANIZATION_SSO_SAML_CALLBACK_PATH,
-    OrganizationSsoLoginError, OrganizationSsoLoginStart, OrganizationSsoOidcCallback,
-    OrganizationSsoOidcLoginMaterial, OrganizationSsoSamlCallback,
-    OrganizationSsoSamlLoginMaterial, organization_sso_login_state_digest,
-    organization_sso_login_ticket_digest,
-};
-pub use organization_sso_oidc::{
-    OrganizationSsoOidcIdTokenError, OrganizationSsoOidcIdTokenVerificationConfig,
-    OrganizationSsoOidcIdTokenVerifier, VerifiedOrganizationSsoOidcIdentity,
-};
-pub use organization_sso_oidc_exchange::{
-    OrganizationSsoOidcAuthorizationRequest, OrganizationSsoOidcTokenExchangeClient,
-    OrganizationSsoOidcTokenExchangeConfig, OrganizationSsoOidcTokenExchangeError,
-    OrganizationSsoOidcTokenExchangeInput, OrganizationSsoOidcTokenSet,
-};
-pub use organization_sso_oidc_jwks::{OrganizationSsoOidcJwksClient, OrganizationSsoOidcJwksError};
-pub use organization_sso_saml::{
-    OrganizationSsoSamlAuthnRequest, OrganizationSsoSamlNameIdFormat,
-    OrganizationSsoSamlProviderConfig, OrganizationSsoSamlSemanticError,
-    OrganizationSsoSamlSemanticVerificationConfig, OrganizationSsoSamlSemanticVerifier,
-    OrganizationSsoSamlSignatureError, OrganizationSsoSamlSignatureVerificationConfig,
-    OrganizationSsoSamlSignatureVerifier, VerifiedOrganizationSsoSamlIdentity,
-    VerifiedOrganizationSsoSamlResponse,
 };
 pub use system_secret::{
     DecryptedSystemSecret, PlainSystemSecret, SystemSecretCipher, SystemSecretError,

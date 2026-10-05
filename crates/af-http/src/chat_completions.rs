@@ -68,12 +68,6 @@ pub(crate) struct HttpState {
     pub(crate) admin_wallet_service: Option<Arc<dyn AdminWalletService>>,
     pub(crate) admin_refund_service: Option<Arc<dyn af_admin::AdminRefundService>>,
     pub(crate) platform_audit_service: Option<Arc<dyn PlatformAuditService>>,
-    pub(crate) organization_authorization_service:
-        Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
-    pub(crate) organization_invitation_service:
-        Option<Arc<dyn af_admin::OrganizationInvitationService>>,
-    pub(crate) organization_management_service:
-        Option<Arc<dyn af_admin::OrganizationManagementService>>,
     stream_delivery: StreamDeliveryPolicy,
 }
 
@@ -123,9 +117,6 @@ impl HttpState {
             admin_wallet_service: None,
             admin_refund_service: None,
             platform_audit_service: None,
-            organization_authorization_service: None,
-            organization_invitation_service: None,
-            organization_management_service: None,
             stream_delivery: StreamDeliveryPolicy::default(),
         }
     }
@@ -234,33 +225,6 @@ impl HttpState {
         service: Option<Arc<dyn PlatformAuditService>>,
     ) -> Self {
         self.platform_audit_service = service;
-        self
-    }
-
-    /// 注入企业上下文只读授权服务；未注入时不注册企业入口。
-    pub(crate) fn with_organization_authorization_service(
-        mut self,
-        service: Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
-    ) -> Self {
-        self.organization_authorization_service = service;
-        self
-    }
-
-    /// 注入企业邀请服务；只有授权服务同时存在时才注册邀请入口。
-    pub(crate) fn with_organization_invitation_service(
-        mut self,
-        service: Option<Arc<dyn af_admin::OrganizationInvitationService>>,
-    ) -> Self {
-        self.organization_invitation_service = service;
-        self
-    }
-
-    /// 注入企业成员与团队生命周期服务；未注入时不注册生命周期入口。
-    pub(crate) fn with_organization_management_service(
-        mut self,
-        service: Option<Arc<dyn af_admin::OrganizationManagementService>>,
-    ) -> Self {
-        self.organization_management_service = service;
         self
     }
 

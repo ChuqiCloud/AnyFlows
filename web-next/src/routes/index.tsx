@@ -7,24 +7,7 @@ import type { RouteObject } from 'react-router-dom'
 import { PublicModelPage } from '@/features/models/public-model-page'
 import { ApiExplorerPage } from '@/features/api-explorer/api-explorer-page'
 import { LandingPage } from '@/features/landing/landing-page'
-import { OrganizationActivityPage } from '@/features/organization-activity/organization-activity-page'
-import { OrganizationApiKeyPage } from '@/features/organization-api-keys/organization-api-key-page'
-import { OrganizationApprovalPage } from '@/features/organization-approvals/organization-approval-page'
-import { OrganizationBudgetPage } from '@/features/organization-budgets/organization-budget-page'
-import { OrganizationContractPricePage } from '@/features/organization-contract-prices/organization-contract-price-page'
-import { OrganizationOverviewPage } from '@/features/organization-console/organization-overview-page'
-import { OrganizationPlanManagementPage } from '@/features/organization-console/organization-plan-management-page'
-import { OrganizationSettingsPage } from '@/features/organization-console/organization-settings-page'
-import { OrganizationCreditPage } from '@/features/organization-credit/organization-credit-page'
-import { OrganizationDepartmentPage } from '@/features/organization-departments/organization-department-page'
-import { OrganizationMemberPage } from '@/features/organization-members/organization-member-page'
-import { OrganizationOnboardingPage } from '@/features/organization-onboarding/organization-onboarding-page'
-import { OrganizationProvisioningPage } from '@/features/organization-provisioning/organization-provisioning-page'
-import { OrganizationServiceAccountPage } from '@/features/organization-service-accounts/organization-service-account-page'
-import { OrganizationVerificationPage } from '@/features/organization-verification/organization-verification-page'
-import { OrganizationWalletPage } from '@/features/organization-wallet/organization-wallet-page'
 import { PaymentSettingsPage } from '@/features/payment-settings/payment-settings-page'
-import { PlatformOrganizationPage } from '@/features/platform-organizations/platform-organization-page'
 import { PlaygroundPage } from '@/features/playground/playground-page'
 import { PublicPlaygroundSharePage } from '@/features/playground/public-playground-share-page'
 import { ProfilePage } from '@/features/profile/profile-page'
@@ -48,16 +31,6 @@ import { ManagementGate } from '@/routes/management-gate'
 
 type ConsoleOutletContext = {
   onPasswordChanged: () => void
-}
-
-/** 只接受单个十进制正整数查询参数，避免宽松转换产生错误深链。 */
-function positiveIntegerParam(params: URLSearchParams, key: string) {
-  const values = params.getAll(key)
-
-  if (values.length !== 1 || !/^[1-9]\d*$/.test(values[0])) return undefined
-
-  const value = Number(values[0])
-  return Number.isSafeInteger(value) ? value : undefined
 }
 
 function SetupRoute() {
@@ -89,27 +62,6 @@ function PlaygroundShareRoute() {
   return <PublicPlaygroundSharePage key={token ?? 'invalid'} token={token} />
 }
 
-function OrganizationActivityRoute() {
-  const [params] = useSearchParams()
-  const tab = params.get('tab')
-
-  return (
-    <OrganizationActivityPage
-      initialTab={tab === 'audit' || tab === 'scim' || tab === 'usage' ? tab : undefined}
-    />
-  )
-}
-
-function OrganizationOnboardingRoute() {
-  const [params] = useSearchParams()
-
-  return (
-    <OrganizationOnboardingPage
-      requestedOrganizationId={positiveIntegerParam(params, 'organization_id')}
-    />
-  )
-}
-
 function ProfileRoute() {
   const navigate = useNavigate()
   const { onPasswordChanged } = useOutletContext<ConsoleOutletContext>()
@@ -132,18 +84,6 @@ function UsageLogRoute() {
   return <UsageLogPage admin={session.user.role === 'admin'} />
 }
 
-function OrganizationProvisioningRoute() {
-  const session = useConsoleSession()
-
-  return <OrganizationProvisioningPage admin={session.user.role === 'admin'} />
-}
-
-function OrganizationVerificationRoute() {
-  const session = useConsoleSession()
-
-  return <OrganizationVerificationPage admin={session.user.role === 'admin'} />
-}
-
 type ConsoleRouteDefinition = {
   path: string
   element: ReactNode
@@ -163,50 +103,6 @@ const consoleRoutes: ConsoleRouteDefinition[] = [
   { path: 'system-settings/navigation', element: <SiteNavigationPage /> },
   { path: 'system-settings/payment', element: <PaymentSettingsPage /> },
   { path: 'users', element: <UserPage /> },
-  { path: 'organization', element: <OrganizationOverviewPage /> },
-  {
-    path: 'organization-api-keys',
-    element: <OrganizationApiKeyPage />,
-  },
-  {
-    path: 'organization-activity',
-    element: <OrganizationActivityRoute />,
-  },
-  { path: 'organization-budgets', element: <OrganizationBudgetPage /> },
-  {
-    path: 'organization-contract-prices',
-    element: <OrganizationContractPricePage />,
-  },
-  { path: 'organization-credit', element: <OrganizationCreditPage /> },
-  {
-    path: 'organization-approvals',
-    element: <OrganizationApprovalPage />,
-  },
-  { path: 'organization-members', element: <OrganizationMemberPage /> },
-  {
-    path: 'organization-departments',
-    element: <OrganizationDepartmentPage />,
-  },
-  { path: 'organization-wallet', element: <OrganizationWalletPage /> },
-  {
-    path: 'organization-onboarding',
-    element: <OrganizationOnboardingRoute />,
-  },
-  { path: 'organization-plans', element: <OrganizationPlanManagementPage /> },
-  {
-    path: 'organization-provisioning',
-    element: <OrganizationProvisioningRoute />,
-  },
-  {
-    path: 'organization-verification',
-    element: <OrganizationVerificationRoute />,
-  },
-  { path: 'organization-settings', element: <OrganizationSettingsPage /> },
-  {
-    path: 'organization-service-accounts',
-    element: <OrganizationServiceAccountPage />,
-  },
-  { path: 'platform-organizations', element: <PlatformOrganizationPage /> },
   { path: 'wallet', element: <WalletPage /> },
   { path: 'playground', element: <PlaygroundPage /> },
   { path: 'video-tasks', element: <VideoTaskPage /> },

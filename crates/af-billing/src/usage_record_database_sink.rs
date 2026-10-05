@@ -1,21 +1,41 @@
-use std::{fmt, sync::Arc};
+use std::{fmt, future::Future, sync::Arc};
 
 use af_db::{
     UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics,
     UsageLogSource, UsageLogUsage, UsageLogVideoResolution, UsageLogWrite,
 };
 use af_protocol::{ReasoningEffort, UsageSemantics, UsageSource, VideoResolution};
+use thiserror::Error;
 
 use crate::{
-    BillingMode, BillingUsageRecord, ServiceAccountAuditSink, UsageRecordSink,
-    UsageRecordSinkError, UsageRecordSinkFuture,
+    BillingMode, BillingUsageRecord, UsageRecordSink, UsageRecordSinkError, UsageRecordSinkFuture,
 };
 
 /// 将计费生命周期的最小用量事实写入 `af-db::UsageLogRepository`。
 #[derive(Clone)]
 pub struct DatabaseUsageRecordSink {
     repository: UsageLogRepository,
-    service_account_audit_sink: Option<Arc<dyn ServiceAccountAuditSink>>,
+    projection: Option<Arc<dyn UsageRecordProjection>>,
+}
+
+/// Optional distribution-owned projection of a usage fact.
+pub trait UsageRecordProjection: Send + Sync + 'static {
+    fn persist<'a>(&'a self, record: BillingUsageRecord) -> UsageRecordProjectionFuture<'a>;
+}
+
+pub type UsageRecordProjectionFuture<'a> =
+    std::pin::Pin<Box<dyn Future<Output = Result<(), UsageRecordProjectionError>> + Send + 'a>>;
+
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+pub enum UsageRecordProjectionError {
+    #[error("用量投影不可用")]
+    Unavailable,
+    #[error("用量投影数据无效")]
+    Invalid,
+    #[error("用量投影结果未知")]
+    OutcomeUnknown,
+    #[error("用量投影发生冲突")]
+    Conflict,
 }
 
 impl DatabaseUsageRecordSink {
@@ -24,17 +44,17 @@ impl DatabaseUsageRecordSink {
     pub fn new(repository: UsageLogRepository) -> Self {
         Self {
             repository,
-            service_account_audit_sink: None,
+            projection: None,
         }
     }
 
     /// 开启服务账号调用身份投影；个人/API Key 用量仍只写入原有日志。
     #[must_use]
-    pub fn with_service_account_audit_sink(
+    pub fn with_projection(
         mut self,
-        sink: Arc<dyn ServiceAccountAuditSink>,
+        projection: Arc<dyn UsageRecordProjection>,
     ) -> Self {
-        self.service_account_audit_sink = Some(sink);
+        self.projection = Some(projection);
         self
     }
 }
@@ -47,13 +67,11 @@ impl UsageRecordSink for DatabaseUsageRecordSink {
                 .record(&write)
                 .await
                 .map_err(map_repository_error)?;
-            if let (Some(sink), Some(identity)) = (
-                self.service_account_audit_sink.as_ref(),
-                record.service_account_identity(),
-            ) {
-                sink.record(record.event_id(), identity)
+            if let Some(projection) = self.projection.as_ref() {
+                projection
+                    .persist(record)
                     .await
-                    .map_err(map_service_account_audit_error)?;
+                    .map_err(map_projection_error)?;
             }
             Ok(())
         })
@@ -184,11 +202,12 @@ fn map_repository_error(error: UsageLogRepositoryError) -> UsageRecordSinkError 
     }
 }
 
-fn map_service_account_audit_error(error: crate::ServiceAccountAuditError) -> UsageRecordSinkError {
+fn map_projection_error(error: UsageRecordProjectionError) -> UsageRecordSinkError {
     match error {
-        crate::ServiceAccountAuditError::Unavailable => UsageRecordSinkError::Unavailable,
-        crate::ServiceAccountAuditError::Conflict => UsageRecordSinkError::Conflict,
-        crate::ServiceAccountAuditError::Invariant => UsageRecordSinkError::Invariant,
+        UsageRecordProjectionError::Unavailable => UsageRecordSinkError::Unavailable,
+        UsageRecordProjectionError::Invalid => UsageRecordSinkError::Invariant,
+        UsageRecordProjectionError::OutcomeUnknown => UsageRecordSinkError::OutcomeUnknown,
+        UsageRecordProjectionError::Conflict => UsageRecordSinkError::Conflict,
     }
 }
 

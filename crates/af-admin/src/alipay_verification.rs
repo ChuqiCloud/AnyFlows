@@ -644,7 +644,7 @@ mod tests {
     use rsa::pkcs8::{EncodePublicKey, LineEnding};
 
     const TEST_PRIVATE_KEY: &str =
-        include_str!("../../af-account/src/fixtures/organization_sso_oidc_private.pem");
+        include_str!("fixtures/alipay_verification_test_private.pem");
 
     #[test]
     fn accepts_pem_and_alipay_base64_der_keys() {

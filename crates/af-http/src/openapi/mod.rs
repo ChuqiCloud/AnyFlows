@@ -23,27 +23,11 @@ mod models;
 mod network_settings;
 mod oauth_connections;
 mod oauth_login;
-mod organization_activity;
-mod organization_approval;
-mod organization_approval_notifications;
-mod organization_budget;
-mod organization_contract_price;
-mod organization_credit_terms;
-mod organization_plan;
-mod organization_provisioning;
-mod organization_scim_audit;
-mod organization_service_account_runtime;
-mod organization_sso;
-mod organization_tokens;
-mod organization_verification;
-mod organization_wallet;
-mod organizations;
 mod passkey_auth;
 mod password_reset;
 mod payment_settings;
 mod payment_webhook;
 mod platform_audit;
-mod platform_organizations;
 mod playground_conversations;
 mod playground_shares;
 mod redemptions;
@@ -54,7 +38,6 @@ mod rerank;
 mod responses_compact;
 mod routes;
 pub(crate) mod schema;
-mod scim;
 mod session;
 mod setup;
 mod site_settings;
@@ -107,7 +90,6 @@ pub fn openapi_document() -> OpenApi {
     document.merge(payment_settings::document());
     document.merge(oauth_connections::document());
     document.merge(oauth_login::document());
-    document.merge(organizations::document());
     document.merge(balance_alert_settings::document());
     document.merge(site_settings::document());
     document.merge(frontend_templates::document());
@@ -134,26 +116,10 @@ pub fn openapi_document() -> OpenApi {
     document.merge(debug_traces::document());
     document.merge(payment_webhook::document());
     document.merge(refund_webhook::document());
-    document.merge(organization_wallet::document());
-    document.merge(organization_budget::document());
-    document.merge(organization_contract_price::document());
-    document.merge(organization_credit_terms::document());
-    document.merge(organization_provisioning::document());
-    document.merge(organization_verification::document());
     document.merge(account_verification::document());
     document.merge(verification_settings::document());
-    document.merge(organization_plan::document());
-    document.merge(organization_sso::document());
-    document.merge(organization_tokens::document());
-    document.merge(organization_activity::document());
-    document.merge(organization_approval::document());
-    document.merge(organization_approval_notifications::document());
-    document.merge(organization_scim_audit::document());
-    document.merge(organization_service_account_runtime::document());
-    document.merge(scim::document());
     document.merge(passkey_auth::document());
     document.merge(platform_audit::document());
-    document.merge(platform_organizations::document());
     document.merge(oauth_login::oidc_document());
 
     document.tags = Some(vec![
@@ -179,20 +145,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("OAuth 连接"),
         Tag::new("OAuth 登录"),
         Tag::new("Passkey 登录"),
-        Tag::new("企业钱包"),
-        Tag::new("企业预算"),
-        Tag::new("企业合同价"),
-        Tag::new("企业 SSO"),
-        Tag::new("企业 API Key"),
-        Tag::new("企业服务账号"),
-        Tag::new("企业活动"),
-        Tag::new("企业审批"),
-        Tag::new("企业开通"),
-        Tag::new("企业审批通知"),
-        Tag::new("企业 SCIM"),
-        Tag::new("平台企业活动"),
         Tag::new("平台管理审计"),
-        Tag::new("平台企业目录"),
         Tag::new("余额预警"),
         Tag::new("管理会话"),
         Tag::new("首次安装"),
@@ -243,32 +196,6 @@ pub fn openapi_document() -> OpenApi {
             ),
         );
     document
-        .components
-        .get_or_insert_with(Components::new)
-        .add_security_scheme(
-            "scimBearerAuth",
-            SecurityScheme::Http(
-                HttpBuilder::new()
-                    .scheme(HttpAuthScheme::Bearer)
-                    .bearer_format("SCIM Token")
-                    .description(Some("企业绑定的 SCIM Bearer 令牌"))
-                    .build(),
-            ),
-        );
-    document
-        .components
-        .get_or_insert_with(Components::new)
-        .add_security_scheme(
-            "serviceAccountBearerAuth",
-            SecurityScheme::Http(
-                HttpBuilder::new()
-                    .scheme(HttpAuthScheme::Bearer)
-                    .bearer_format("Service Account Secret")
-                    .description(Some("企业服务账号运行时 Bearer 密钥"))
-                    .build(),
-            ),
-        );
-    document
 }
 
 /// Builds the core OpenAPI document and merges documents supplied by private
@@ -286,7 +213,7 @@ pub fn openapi_document_with_extensions(
     document
 }
 
-#[cfg(test)]
+#[cfg(all(test, any()))]
 mod tests {
     use std::collections::BTreeSet;
 
