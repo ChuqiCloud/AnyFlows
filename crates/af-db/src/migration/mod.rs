@@ -112,7 +112,8 @@ mod m20260926_000148_split_verification_policy;
 mod m20260929_000149_add_epay_qr_enabled;
 mod schema;
 
-// 完整迁移冒烟测试包含企业扩展表；企业仓库负责在扩展迁移注册表上运行它们。
+#[cfg(test)]
+mod tests;
 
 const DEFAULT_MIGRATION_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
