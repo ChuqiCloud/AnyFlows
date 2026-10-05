@@ -5,12 +5,13 @@
 
 // 仓储层尚未落地前，部分实体仅用于声明稳定表结构；保持模块私有并局部关闭死代码告警。
 #![allow(dead_code)]
+#![allow(unused_imports)]
 
 use rust_decimal::Decimal;
 use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
 use af_domain::{
-    BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES, Protocol, Quota,
+    BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES, Quota,
     QuotaDelta, RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus,
     RouteMode, RouteStrategy, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
     SubscriptionWindow, UserSubscriptionId, UserSubscriptionStatus, WalletEventId,
