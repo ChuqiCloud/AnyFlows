@@ -435,6 +435,5 @@ mod tests {
             "https://pay.example.test/submit.php?sign=secret-value"
         );
         assert!(!format!("{:?}", session.action()).contains("secret-value"));
-
     }
 }

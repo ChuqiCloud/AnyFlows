@@ -41,11 +41,11 @@ pub use error::{
     UpstreamRetryAfter, UpstreamServerStatus,
 };
 pub use network::{IpCidr, IpCidrParseError, TrustedClientIp};
-pub use platform_permission::PlatformPermission;
 pub use payment::{
     TopupIdentifierError, TopupOrderId, TopupOrderStatus, TopupPaymentEventId,
     TopupPaymentEventType, TopupRequestId, TopupStateCodeError,
 };
+pub use platform_permission::PlatformPermission;
 pub use principal::{
     BillingContractPriceId, ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId,
     OrganizationApprovalDecisionId, OrganizationApprovalRequestId, OrganizationApprovalTemplateId,
