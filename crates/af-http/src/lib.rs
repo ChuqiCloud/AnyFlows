@@ -1,5 +1,8 @@
 //! HTTP 路由、中间件、提取器与响应映射。
 
+// 公共核心保留部分供发行版扩展的 HTTP 契约；企业发行版会连接这些路由。
+#![allow(dead_code)]
+
 mod announcements;
 mod anthropic_messages;
 mod api_explorer;

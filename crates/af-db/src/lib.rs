@@ -1,5 +1,8 @@
 //! 数据库连接池、迁移、实体与仓储边界。
 
+// 公共核心保留部分供发行版注入的数据库契约；在核心仓库中暂未全部连接到路由。
+#![allow(dead_code)]
+
 /// 数据库存储使用的 UTC 时间类型，供应用任务传递一致的扫描时刻。
 mod account_verification;
 mod account_verification_settings;
