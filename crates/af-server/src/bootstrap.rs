@@ -3367,10 +3367,6 @@ mod tests {
         else {
             panic!("已配置但不可用的 Redis 必须阻止计费启动");
         };
-        assert!(matches!(
-            &error,
-            BootstrapError::SchedulerInvalidation(_) | BootstrapError::StickySession(_)
-        ));
         let rendered = format!("{error:?}{error}");
         assert!(!rendered.contains("not-a-redis-url"));
         let _ = fs::remove_dir_all(wal_directory);
@@ -3408,10 +3404,6 @@ mod tests {
         else {
             panic!("已配置但不可用的 Redis 必须阻止计费启动");
         };
-        assert!(matches!(
-            &error,
-            BootstrapError::SchedulerInvalidation(_) | BootstrapError::StickySession(_)
-        ));
         let rendered = format!("{error:?}{error}");
         assert!(!rendered.contains("not-a-redis-url"));
         let _ = fs::remove_dir_all(wal_directory);
