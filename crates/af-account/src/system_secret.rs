@@ -366,6 +366,18 @@ mod tests {
 
     use super::*;
 
+    fn settings_with_key_id(key_id: &str) -> CredentialEncryptionSettings {
+        serde_json::from_value(json!({
+            "key_id": key_id,
+            "key": URL_SAFE_NO_PAD.encode([0x42; CREDENTIAL_ENCRYPTION_KEY_BYTES])
+        }))
+        .unwrap()
+    }
+
+    fn settings() -> CredentialEncryptionSettings {
+        settings_with_key_id("primary-key")
+    }
+
     #[test]
     fn round_trips_smtp_password_without_debug_leakage() {
         let cipher = SystemSecretCipher::new(&settings()).unwrap();
