@@ -3,6 +3,7 @@
 mod auto_ban;
 mod billing;
 mod billing_contract;
+mod billing_runtime;
 mod channel;
 mod concurrency;
 mod enums;
@@ -125,6 +126,10 @@ mod token_policy_tests;
 mod wallet_tests;
 pub use billing::{BillingReservationId, BillingReservationIdError};
 pub use billing_contract::{BillingContractPriceSnapshot, BillingContractPriceSnapshotError};
+pub use billing_runtime::{
+    OrganizationServiceAccountKey, OrganizationServiceAccountLocator,
+    OrganizationServiceAccountRuntimeIdentity,
+};
 pub use channel::{
     ChannelTimeout, ChannelTimeoutError, MAX_CHANNEL_TIMEOUT_SECS, MIN_CHANNEL_TIMEOUT_SECS,
 };

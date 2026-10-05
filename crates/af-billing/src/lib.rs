@@ -97,7 +97,7 @@ pub use pricing::{
     PricingRatio, PricingRatios, PricingResolver, RatioPricingResolver, TokenPrices,
 };
 pub use pricing_snapshot::{
-    CachedRequestPricingSnapshotSource, ContractPriceSource, ContractPriceSourceError,
+    CachedRequestPricingSnapshotSource,
     RequestPricingSnapshot, RequestPricingSnapshotError, RequestPricingSnapshotFuture,
     RequestPricingSnapshotSource,
 };
