@@ -322,10 +322,7 @@ pub fn build_router(
     .with_platform_audit_service(platform_audit_service.clone());
     let platform_audit_routes = platform_audit_service
         .map(|service| {
-            build_platform_audit_router(
-                service,
-                Arc::clone(&http_state.session_authenticator),
-            )
+            build_platform_audit_router(service, Arc::clone(&http_state.session_authenticator))
         })
         .unwrap_or_default();
     let api_explorer_routes = build_api_explorer_router(
