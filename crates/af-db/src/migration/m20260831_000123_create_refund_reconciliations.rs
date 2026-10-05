@@ -2,7 +2,7 @@ use sea_orm::{ConnectionTrait, DbBackend};
 use sea_orm_migration::prelude::*;
 
 use crate::migration::iden::{
-    organizations, refund_provider_events, refund_reconciliation_entries, refund_requests, users,
+    refund_provider_events, refund_reconciliation_entries, refund_requests, users,
 };
 
 use super::schema;
@@ -105,17 +105,6 @@ impl MigrationTrait for Migration {
                         refund_reconciliation_entries::Column::UserId,
                     )
                     .to(users::Entity, users::Column::Id)
-                    .on_update(ForeignKeyAction::Restrict)
-                    .on_delete(ForeignKeyAction::Restrict),
-            )
-            .foreign_key(
-                ForeignKey::create()
-                    .name("fk_refund_reconciliation_organization")
-                    .from(
-                        refund_reconciliation_entries::Entity,
-                        refund_reconciliation_entries::Column::OrganizationId,
-                    )
-                    .to(organizations::Entity, organizations::Column::Id)
                     .on_update(ForeignKeyAction::Restrict)
                     .on_delete(ForeignKeyAction::Restrict),
             )

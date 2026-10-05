@@ -954,8 +954,7 @@ async fn complete_manual_refund_transaction(
             )
             .await;
         }
-        Err(error) => {
-            eprintln!("refund manual completion insert failed: {error:?}");
+        Err(_) => {
             savepoint
                 .rollback()
                 .await
@@ -1373,7 +1372,6 @@ async fn insert_reconciliation(
     .await
     .map(|_| ())
     .map_err(|error| {
-        eprintln!("refund reconciliation insert failed: {error:?}");
         if matches!(error.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) {
             RefundRepositoryError::Conflict
         } else {
