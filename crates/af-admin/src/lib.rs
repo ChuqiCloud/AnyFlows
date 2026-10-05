@@ -74,8 +74,8 @@ mod user_write;
 mod wallet;
 
 pub use af_account::{PlainCredentialSecret as AdminCredentialSecret, PlainOAuthCredential};
-pub use af_db::{CredentialProxyScheme, DatabaseTimestamp, NetworkSettingsMode};
 pub use af_db::PlatformAuditOutcome;
+pub use af_db::{CredentialProxyScheme, DatabaseTimestamp, NetworkSettingsMode};
 pub use announcement::{
     AnnouncementAudience, AnnouncementFuture, AnnouncementListFuture, AnnouncementService,
     AnnouncementServiceError, AnnouncementStatus, AnnouncementView, AnnouncementWriteCommand,
@@ -428,6 +428,7 @@ mod account_verification;
 pub use account_verification::{
     AccountVerificationError, AccountVerificationMaterial, AccountVerificationProvider,
     AccountVerificationProviderError, AccountVerificationRecord, AccountVerificationService,
-    AccountVerificationSubmit, ManualAccountVerificationProvider, validate_verification_material,
+    AccountVerificationSubmit, ManualAccountVerificationProvider, VerificationMaterialWrite,
+    validate_verification_material,
 };
 pub use alipay_verification::{AlipayAccountVerificationProvider, AlipayProviderConfigError};
