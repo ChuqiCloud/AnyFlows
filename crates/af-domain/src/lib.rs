@@ -128,8 +128,7 @@ pub use billing::{BillingReservationId, BillingReservationIdError};
 pub use billing_contract::{BillingContractPriceSnapshot, BillingContractPriceSnapshotError};
 pub use billing_runtime::{
     OrganizationServiceAccountKey, OrganizationServiceAccountKeyError,
-    OrganizationServiceAccountLocator,
-    OrganizationServiceAccountRuntimeIdentity,
+    OrganizationServiceAccountLocator, OrganizationServiceAccountRuntimeIdentity,
 };
 pub use channel::{
     ChannelTimeout, ChannelTimeoutError, MAX_CHANNEL_TIMEOUT_SECS, MIN_CHANNEL_TIMEOUT_SECS,
