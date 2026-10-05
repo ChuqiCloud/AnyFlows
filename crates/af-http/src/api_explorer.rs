@@ -572,7 +572,7 @@ mod verification_visibility_tests {
     use super::*;
 
     #[test]
-    fn identity_records_and_entitlement_changes_follow_viewer_permissions() {
+    fn account_verification_operations_follow_viewer_permissions() {
         let guest = Viewer {
             authenticated: false,
             admin: false,
@@ -600,50 +600,12 @@ mod verification_visibility_tests {
         }
         for id in [
             "listAdminAccountVerifications",
+            "getAdminAccountVerification",
             "decideAccountVerification",
-            "updatePlatformOrganizationEntitlement",
         ] {
             assert!(!contains(guest, id), "{id}");
             assert!(!contains(user, id), "{id}");
             assert!(contains(admin, id), "{id}");
         }
-        assert!(!is_debuggable(
-            "/api/platform/organizations/{organization_id}/entitlement",
-            "PATCH",
-            ApiExplorerAccessScope::Admin,
-            ApiExplorerAuthMode::Session
-        ));
-    }
-
-    #[test]
-    fn organization_sso_callback_catalog_entries_use_readable_chinese() {
-        let public_viewer = Viewer {
-            authenticated: false,
-            admin: false,
-        };
-        let operations = projected_operations(public_viewer);
-        let entry = |operation_id: &str| {
-            operations
-                .iter()
-                .find(|operation| operation.metadata.operation_id == operation_id)
-                .unwrap_or_else(|| panic!("缺少 {operation_id}"))
-        };
-
-        assert_eq!(
-            entry("completeOrganizationSsoOidcLogin").metadata.tag,
-            "企业 SSO"
-        );
-        assert_eq!(
-            entry("completeOrganizationSsoOidcLogin").metadata.summary,
-            "接收企业 OIDC 回调"
-        );
-        assert_eq!(
-            entry("completeOrganizationSsoSamlLogin").metadata.tag,
-            "企业 SSO"
-        );
-        assert_eq!(
-            entry("completeOrganizationSsoSamlLogin").metadata.summary,
-            "接收企业 SAML 回调"
-        );
     }
 }

@@ -5,6 +5,9 @@ use crate::migration::iden::{billing_reservations, groups, tokens, users};
 
 use super::{nullable_timestamp, table, timestamp};
 
+const PRICE_PRECISION: u32 = 38;
+const PRICE_SCALE: u32 = 28;
+
 pub(in crate::migration) async fn create_billing_reservations(
     manager: &SchemaManager<'_>,
 ) -> Result<(), DbErr> {
@@ -32,6 +35,22 @@ pub(in crate::migration) async fn create_billing_reservations(
                 .not_null(),
         )
         .col(ColumnDef::new(billing_reservations::Column::OrganizationId).big_integer())
+        // 将合同价版本及其快照写入预扣记录，保证后续结算不受合同调价影响。
+        .col(ColumnDef::new(billing_reservations::Column::ContractPriceId).big_integer())
+        .col(
+            ColumnDef::new(billing_reservations::Column::ContractPriceVersion).big_integer(),
+        )
+        .col(price(manager, billing_reservations::Column::ContractInputPrice))
+        .col(price(manager, billing_reservations::Column::ContractOutputPrice))
+        .col(price(manager, billing_reservations::Column::ContractCacheReadPrice))
+        .col(price(
+            manager,
+            billing_reservations::Column::ContractCacheCreation5mPrice,
+        ))
+        .col(price(
+            manager,
+            billing_reservations::Column::ContractCacheCreation1hPrice,
+        ))
         .col(
             ColumnDef::new(billing_reservations::Column::Status)
                 .small_integer()
@@ -130,6 +149,19 @@ pub(in crate::migration) async fn create_billing_reservations(
                 .ne("00000000000000000000000000000000"),
         );
     manager.create_table(statement).await
+}
+
+fn price<T>(manager: &SchemaManager<'_>, column: T) -> ColumnDef
+where
+    T: IntoIden + Clone + 'static,
+{
+    let mut definition = ColumnDef::new(column);
+    if manager.get_database_backend() == DbBackend::Sqlite {
+        definition.decimal();
+    } else {
+        definition.decimal_len(PRICE_PRECISION, PRICE_SCALE);
+    }
+    definition
 }
 
 fn reservation_state_check() -> SimpleExpr {
