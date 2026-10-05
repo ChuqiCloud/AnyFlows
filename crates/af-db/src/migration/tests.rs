@@ -4,7 +4,7 @@ use std::error::Error;
 use sea_orm_migration::prelude::*;
 
 use super::Migrator;
-use crate::{connect, DatabaseOptions, PoolOptions};
+use crate::{DatabaseOptions, PoolOptions, connect};
 
 const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
@@ -39,14 +39,18 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
 
     // 先执行历史节点，再执行剩余迁移，覆盖公共核心的升级路径。
     Migrator::up(pool.connection(), Some(54)).await?;
-    assert!(!Migrator::get_pending_migrations(pool.connection())
-        .await?
-        .is_empty());
+    assert!(
+        !Migrator::get_pending_migrations(pool.connection())
+            .await?
+            .is_empty()
+    );
 
     Migrator::up(pool.connection(), None).await?;
-    assert!(Migrator::get_pending_migrations(pool.connection())
-        .await?
-        .is_empty());
+    assert!(
+        Migrator::get_pending_migrations(pool.connection())
+            .await?
+            .is_empty()
+    );
 
     pool.close().await?;
     Ok(())
