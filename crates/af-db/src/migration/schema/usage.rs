@@ -39,6 +39,8 @@ pub(in crate::migration) async fn create_usage_logs(
                 .big_integer()
                 .not_null(),
         )
+        .col(ColumnDef::new(usage_logs::Column::OrganizationId).big_integer())
+        .col(ColumnDef::new(usage_logs::Column::OrganizationTeamId).big_integer())
         .col(
             ColumnDef::new(usage_logs::Column::BillingMode)
                 .small_integer()
@@ -232,6 +234,8 @@ async fn create_latest_usage_table(
                 .big_integer()
                 .not_null(),
         )
+        .col(ColumnDef::new(usage_logs::Column::OrganizationId).big_integer())
+        .col(ColumnDef::new(usage_logs::Column::OrganizationTeamId).big_integer())
         .col(
             ColumnDef::new(usage_logs::Column::BillingMode)
                 .small_integer()

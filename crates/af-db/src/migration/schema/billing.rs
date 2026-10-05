@@ -31,6 +31,7 @@ pub(in crate::migration) async fn create_billing_reservations(
                 .big_integer()
                 .not_null(),
         )
+        .col(ColumnDef::new(billing_reservations::Column::OrganizationId).big_integer())
         .col(
             ColumnDef::new(billing_reservations::Column::Status)
                 .small_integer()

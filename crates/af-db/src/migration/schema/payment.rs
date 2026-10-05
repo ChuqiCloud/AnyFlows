@@ -216,9 +216,8 @@ where
                 .big_integer()
                 .not_null(),
         );
-    if include_organization {
-        statement.col(ColumnDef::new(topup_orders::Column::OrganizationId).big_integer());
-    }
+    // 企业归属由扩展层解释；公共核心始终保留可空上下文列，避免共享实体查询缺列。
+    statement.col(ColumnDef::new(topup_orders::Column::OrganizationId).big_integer());
     statement.col(
         ColumnDef::new(topup_orders::Column::Provider)
             .string_len(64)

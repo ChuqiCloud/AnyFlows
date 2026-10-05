@@ -213,6 +213,13 @@ pub(in crate::migration) async fn create_tokens(manager: &SchemaManager<'_>) -> 
                         .check(Expr::col(tokens::Column::Status).is_in([1_i16, 2_i16])),
                 )
                 .col(ColumnDef::new(tokens::Column::GroupId).big_integer())
+                // 企业扩展通过可选上下文列关联令牌；公共核心不创建企业表或外键。
+                .col(ColumnDef::new(tokens::Column::OrganizationId).big_integer())
+                .col(
+                    ColumnDef::new(tokens::Column::OrganizationMembershipId).big_integer(),
+                )
+                .col(ColumnDef::new(tokens::Column::OrganizationTeamId).big_integer())
+                .col(ColumnDef::new(tokens::Column::OrganizationDepartmentId).big_integer())
                 .col(big_integer_zero(tokens::Column::RemainQuota))
                 .col(
                     ColumnDef::new(tokens::Column::UnlimitedQuota)
