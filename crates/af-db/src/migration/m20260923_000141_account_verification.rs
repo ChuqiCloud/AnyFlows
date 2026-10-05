@@ -127,84 +127,27 @@ impl MigrationTrait for Migration {
                     .to_owned(),
             )
             .await?;
-        manager
-            .create_table(
-                table(manager, Alias::new("organization_verification_history"))
-                    .col(auto_id(Alias::new("id")))
-                    .col(
-                        ColumnDef::new(Alias::new("case_id"))
-                            .big_integer()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(Alias::new("version"))
-                            .big_integer()
-                            .not_null(),
-                    )
-                    .col(ColumnDef::new(Alias::new("snapshot")).text().not_null())
-                    .foreign_key(
-                        ForeignKey::create()
-                            .name("fk_org_verification_history_case")
-                            .from(
-                                Alias::new("organization_verification_history"),
-                                Alias::new("case_id"),
-                            )
-                            .to(
-                                Alias::new("organization_verification_cases"),
-                                Alias::new("id"),
-                            )
-                            .on_delete(ForeignKeyAction::Restrict)
-                            .on_update(ForeignKeyAction::Restrict),
-                    )
-                    .to_owned(),
-            )
-            .await?;
-        manager
-            .create_index(
-                Index::create()
-                    .name("idx_org_verification_history_version")
-                    .table(Alias::new("organization_verification_history"))
-                    .col(Alias::new("case_id"))
-                    .col(Alias::new("version"))
-                    .unique()
-                    .to_owned(),
-            )
-            .await?;
         // MySQL BLOB cannot hold the file sizes accepted by the upload APIs.
-        // Widen existing material storage as well as the new account storage.
+        // Widen the public account material storage. Enterprise material tables
+        // are owned by the enterprise migration set and are not part of this schema.
         if manager.get_database_backend() == sea_orm::DbBackend::MySql {
-            for name in [
-                "account_verification_materials",
-                "organization_verification_materials",
-                "organization_provisioning_materials",
-            ] {
-                let mut content = ColumnDef::new(Alias::new("content_bytes"));
-                content.custom(Alias::new("LONGBLOB"));
-                if name == "account_verification_materials" {
-                    content.not_null();
-                } else {
-                    content.null();
-                }
-                manager
-                    .alter_table(
-                        Table::alter()
-                            .table(Alias::new(name))
-                            .modify_column(content)
-                            .to_owned(),
-                    )
-                    .await?;
-            }
+            let mut content = ColumnDef::new(Alias::new("content_bytes"));
+            content.custom(Alias::new("LONGBLOB")).not_null();
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(Alias::new("account_verification_materials"))
+                        .modify_column(content)
+                        .to_owned(),
+                )
+                .await?;
         }
         Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         // Keep the widened legacy columns on rollback; shrinking them could lose files.
-        for name in [
-            "organization_verification_history",
-            "account_verification_materials",
-            "account_verifications",
-        ] {
+        for name in ["account_verification_materials", "account_verifications"] {
             manager
                 .drop_table(Table::drop().table(Alias::new(name)).to_owned())
                 .await?;
