@@ -5,7 +5,7 @@ use crate::{
 };
 pub use af_db::{
     AccountVerificationError, AccountVerificationMaterial, AccountVerificationRecord,
-    AccountVerificationSubmit, validate_verification_material,
+    AccountVerificationSubmit, VerificationMaterialWrite, validate_verification_material,
 };
 use af_db::{
     AccountVerificationProviderRequest, AccountVerificationProviderResult,
