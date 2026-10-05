@@ -3237,7 +3237,7 @@ mod tests {
             .await
             .unwrap()
             .start_supervisor();
-        assert_eq!(supervised.stage.supervisor.task_count(), 13);
+        assert_eq!(supervised.stage.supervisor.task_count(), 10);
         let report = supervised
             .build_router()
             .bind()
@@ -3357,10 +3357,17 @@ mod tests {
             .unwrap()
             .connect_database()
             .await
+            .unwrap()
+            .init_authentication()
+            .unwrap()
+            .init_relay()
+            .unwrap()
+            .init_billing()
+            .await
         else {
-            panic!("已配置但不可用的 Redis 必须阻止 SCIM 限流启动");
+            panic!("已配置但不可用的 Redis 必须阻止计费启动");
         };
-        assert!(matches!(&error, BootstrapError::RequestRateLimit(_)));
+        assert!(matches!(&error, BootstrapError::StickySession(_)));
         let rendered = format!("{error:?}{error}");
         assert!(!rendered.contains("not-a-redis-url"));
         let _ = fs::remove_dir_all(wal_directory);
@@ -3388,10 +3395,17 @@ mod tests {
             .unwrap()
             .connect_database()
             .await
+            .unwrap()
+            .init_authentication()
+            .unwrap()
+            .init_relay()
+            .unwrap()
+            .init_billing()
+            .await
         else {
-            panic!("已配置但不可用的 Redis 必须阻止 SCIM 限流启动");
+            panic!("已配置但不可用的 Redis 必须阻止计费启动");
         };
-        assert!(matches!(&error, BootstrapError::RequestRateLimit(_)));
+        assert!(matches!(&error, BootstrapError::StickySession(_)));
         let rendered = format!("{error:?}{error}");
         assert!(!rendered.contains("not-a-redis-url"));
         let _ = fs::remove_dir_all(wal_directory);

@@ -113,6 +113,7 @@ use crate::operations::{ReadinessHandle, operations_router};
 use crate::passkey_auth::build_passkey_authentication_router;
 use crate::password_reset::build_password_reset_router;
 use crate::payment_settings::build_payment_settings_router;
+use crate::platform_audit::build_platform_audit_router;
 use crate::playground_conversations::build_playground_conversation_router;
 use crate::playground_shares::build_playground_share_router;
 use crate::redemption::build_redemption_router;
@@ -318,7 +319,15 @@ pub fn build_router(
     .with_admin_usage_log_reader(admin_usage_log_reader)
     .with_admin_wallet_service(admin_wallet_service)
     .with_admin_refund_service(admin_refund_service)
-    .with_platform_audit_service(platform_audit_service);
+    .with_platform_audit_service(platform_audit_service.clone());
+    let platform_audit_routes = platform_audit_service
+        .map(|service| {
+            build_platform_audit_router(
+                service,
+                Arc::clone(&http_state.session_authenticator),
+            )
+        })
+        .unwrap_or_default();
     let api_explorer_routes = build_api_explorer_router(
         Arc::clone(&http_state.session_authenticator),
         http_state.clone(),
@@ -953,6 +962,7 @@ pub fn build_router(
     HttpRouter::new(build_router_with_routes_and_frontend(
         public_routes
             .merge(api_explorer_routes)
+            .merge(platform_audit_routes)
             .merge(extension_catalog_routes)
             .merge(playground_routes)
             .merge(management_routes)
