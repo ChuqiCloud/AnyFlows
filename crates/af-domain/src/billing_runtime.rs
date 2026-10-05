@@ -47,9 +47,14 @@ impl fmt::Debug for OrganizationServiceAccountLocator {
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct OrganizationServiceAccountKey([u8; RUNTIME_KEY_BYTES]);
 
+/// 服务账号运行时标识不能由全零字节构成。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct OrganizationServiceAccountKeyError;
+
 impl OrganizationServiceAccountKey {
-    #[must_use]
-    pub const fn new(bytes: [u8; RUNTIME_KEY_BYTES]) -> Result<Self, ()> {
+    pub const fn new(
+        bytes: [u8; RUNTIME_KEY_BYTES],
+    ) -> Result<Self, OrganizationServiceAccountKeyError> {
         let mut index = 0;
         while index < bytes.len() {
             if bytes[index] != 0 {
@@ -57,7 +62,7 @@ impl OrganizationServiceAccountKey {
             }
             index += 1;
         }
-        Err(())
+        Err(OrganizationServiceAccountKeyError)
     }
 }
 

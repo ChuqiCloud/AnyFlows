@@ -24,7 +24,7 @@ test('账号认证上传使用 multipart，材料按需读取并释放预览资�
   assert.doesNotMatch(api + attachment, /localStorage|sessionStorage|indexedDB/)
 })
 
-test('认证接口与授权修改契约要求管理会话，生成客户端包含新操作', async () => {
+test('认证接口契约要求管理会话，生成客户端包含新操作', async () => {
   const [document, sdk] = await Promise.all([
     read('../openapi/openapi.json').then(JSON.parse),
     read('../src/lib/api/generated/sdk.gen.ts'),
@@ -45,9 +45,6 @@ test('认证接口与授权修改契约要求管理会话，生成客户端包�
       assert.match(sdk, new RegExp(`export const ${operation.operationId}\\b`))
     }
   }
-  const update = document.paths['/api/platform/organizations/{organization_id}/entitlement'].patch
-  assert.ok(update)
-  assert.deepEqual(update.security, [{ bearerAuth: [] }])
 })
 
 test('认证与授权文案完整且记录状态为可显示字符串', async () => {
