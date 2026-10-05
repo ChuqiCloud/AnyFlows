@@ -15,7 +15,6 @@ import {
   GitBranch,
   Globe2,
   Headphones,
-  History,
   KeyRound,
   Landmark,
   Layers3,

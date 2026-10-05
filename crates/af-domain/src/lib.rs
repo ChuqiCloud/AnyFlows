@@ -40,6 +40,7 @@ pub use error::{
     UpstreamRetryAfter, UpstreamServerStatus,
 };
 pub use network::{IpCidr, IpCidrParseError, TrustedClientIp};
+pub use platform_permission::PlatformPermission;
 pub use payment::{
     TopupIdentifierError, TopupOrderId, TopupOrderStatus, TopupPaymentEventId,
     TopupPaymentEventType, TopupRequestId, TopupStateCodeError,
@@ -56,7 +57,6 @@ pub use principal::{
     OrganizationVerificationMaterialId, PrincipalIdError, ProxyId, RouteChannelId, RouteId,
     TokenId, UserId,
 };
-pub use platform_permission::PlatformPermission;
 pub use quota::{Quota, QuotaDelta, QuotaError};
 pub use redemption::{
     RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus,

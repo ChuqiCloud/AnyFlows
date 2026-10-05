@@ -41,7 +41,7 @@ pub trait QuotaExtension: Send + Sync {
         principal: GatewayPrincipal,
         amount: Quota,
         kind: QuotaReservationKind,
-        contract_price: Option<OrganizationContractPriceSnapshot>,
+        contract_price: Option<BillingContractPriceSnapshot>,
     ) -> QuotaExtensionFuture<'a>;
 
     fn settle<'a>(
@@ -291,7 +291,7 @@ impl QuotaRepository {
             };
             return extension
                 .precharge(id, principal, amount, reservation_kind, contract_price)
-            .await;
+                .await;
         }
         let key = id.persistence_key();
         let (now, expires_at) = reservation_times(self.reservation_ttl)?;
@@ -1223,6 +1223,7 @@ fn record_internal_error(error: QuotaRepositoryError) -> QuotaRepositoryError {
         QuotaRepositoryError::Query => "quota_query",
         QuotaRepositoryError::OutcomeUnknown => "quota_outcome_unknown",
         QuotaRepositoryError::Invariant => "quota_invariant",
+        QuotaRepositoryError::ExtensionUnavailable => "quota_extension_unavailable",
         QuotaRepositoryError::ZeroAmount
         | QuotaRepositoryError::NotFound
         | QuotaRepositoryError::Conflict

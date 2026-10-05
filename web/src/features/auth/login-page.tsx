@@ -2,7 +2,6 @@ import { useMutation } from '@tanstack/react-query'
 import {
   AlertCircle,
   Boxes,
-  Building2,
   CheckCircle2,
   Eye,
   EyeOff,
@@ -23,7 +22,6 @@ import { AuthCapabilityCard, AuthCapabilitySkeleton } from '@/features/auth/auth
 import { AuthPageShell } from '@/features/auth/auth-page-shell'
 import { beginOAuthLogin, type OAuthLoginProvider } from '@/features/auth/oauth-login-api'
 import { OAuthProviderIcon } from '@/features/auth/oauth-provider-icon'
-import { OrganizationSsoLoginForm } from '@/features/auth/organization-sso-login-form'
 import {
   authenticateWithPasskey,
   PasskeyClientError,
@@ -72,7 +70,6 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   const [turnstileResetKey, setTurnstileResetKey] = useState(0)
   const [loginError, setLoginError] = useState<LoginError>()
   const [noticeDismissed, setNoticeDismissed] = useState(false)
-  const [mode, setMode] = useState<'account' | 'organization'>('account')
   const siteQuery = usePublicSiteSettings()
 
   const loginMutation = useMutation({
@@ -151,7 +148,6 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
     }
   }
 
-  const organizationMode = mode === 'organization'
   const site = siteQuery.data
   const siteName = site?.site_name ?? t('brand.name')
   const heroTitle = site?.brand.tagline ?? t('auth.login.heroTitle')
@@ -206,19 +202,14 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
           <Card elevation="overlay" className="mx-auto w-full max-w-[400px] bg-card/94 backdrop-blur-2xl">
             <CardHeader className="gap-2 px-6 pt-6 pb-5 sm:px-7 sm:pt-7">
               <div className="mb-2 grid size-10 place-items-center rounded-xl border border-[var(--hairline)] bg-surface-2 text-info">
-                {organizationMode
-                  ? <Building2 className="size-5" aria-hidden="true" />
-                  : <LockKeyhole className="size-5" aria-hidden="true" />}
+                <LockKeyhole className="size-5" aria-hidden="true" />
               </div>
-              <CardTitle className="text-xl leading-tight">{t(organizationMode ? 'auth.login.organizationSso.title' : 'auth.login.title')}</CardTitle>
-              <CardDescription className="leading-6">{t(organizationMode ? 'auth.login.organizationSso.description' : 'auth.login.subtitle')}</CardDescription>
+              <CardTitle className="text-xl leading-tight">{t('auth.login.title')}</CardTitle>
+              <CardDescription className="leading-6">{t('auth.login.subtitle')}</CardDescription>
             </CardHeader>
 
             <CardContent className="px-6 pb-6 sm:px-7 sm:pb-7">
-              {organizationMode ? (
-                <OrganizationSsoLoginForm registrationAvailable={registrationAvailable} onBack={() => setMode('account')} />
-              ) : (
-                <form className="grid gap-5" onSubmit={handleSubmit}>
+              <form className="grid gap-5" onSubmit={handleSubmit}>
                   {oauthProviders.map((provider) => {
                     const providerId = provider.id as OAuthLoginProvider
                     const isStarting = oauthMutation.isPending && oauthMutation.variables === providerId
@@ -410,34 +401,12 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                           <TooltipContent>{passkeyLabel}</TooltipContent>
                         </Tooltip>
                       ) : null}
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="icon-lg"
-                            className="rounded-full"
-                            aria-label={t('auth.login.organizationSso.title')}
-                            disabled={loginMutation.isPending || passkeyMutation.isPending || oauthMutation.isPending}
-                            onClick={() => {
-                              setTurnstileToken('')
-                              setTurnstileResetKey((value) => value + 1)
-                              setShowPassword(false)
-                              setMode('organization')
-                            }}
-                          >
-                            <Building2 className="size-4" aria-hidden="true" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>{t('auth.login.organizationSso.title')}</TooltipContent>
-                      </Tooltip>
                     </div>
                   </div>
                   <Button variant="ghost" className="w-full" asChild>
                     <a href="#/models"><Boxes className="size-4" aria-hidden="true" />{t('auth.login.browseModels')}</a>
                   </Button>
                 </form>
-              )}
             </CardContent>
           </Card>
         )}

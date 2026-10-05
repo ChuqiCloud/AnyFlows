@@ -2457,7 +2457,9 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.user_profile_service),
             Arc::clone(&self.stage.infrastructure.user_wallet_service),
             Arc::clone(&self.stage.infrastructure.user_notification_service),
-            Some(Arc::clone(&self.stage.infrastructure.platform_audit_service)),
+            Some(Arc::clone(
+                &self.stage.infrastructure.platform_audit_service,
+            )),
             Some(user_topup_service),
             Arc::clone(&self.stage.infrastructure.redemption_service),
             Arc::clone(&self.stage.infrastructure.subscription_service),
