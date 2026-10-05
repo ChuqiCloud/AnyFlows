@@ -130,6 +130,7 @@
     }
   ],
   "sharedContracts": [
+    "crates/af-db/src/connection.rs",
     "crates/af-db/src/migration/mod.rs",
     "crates/af-http/src/http_extensions.rs",
     "crates/af-http/src/organization_routes.rs",
