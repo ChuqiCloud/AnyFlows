@@ -33,3 +33,12 @@ application:
 ```sh
 bash tools/ci/test-public-core-export.sh
 ```
+
+## Public contributions
+
+Pull requests merged into the public repository's `main` branch are proposed
+in Gitea as reviewable sync pull requests. The workflow applies the change to
+a new branch from `develop` and does not write directly to the source branch.
+
+Branches created by the public export process use the
+`sync/gitea-public-core-*` prefix and are ignored by the reverse-sync workflow.
