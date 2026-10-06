@@ -20,7 +20,7 @@
       "order": 1,
       "paths": ["crates/af-domain/src/organization*.rs"],
       "dependsOn": [],
-      "status": "planned"
+      "status": "extracted"
     },
     {
       "id": "database",
@@ -80,7 +80,7 @@
         "crates/af-db/src/migration/m*_000138*"
       ],
       "dependsOn": ["domain"],
-      "status": "planned"
+      "status": "extracted"
     },
     {
       "id": "services",
@@ -96,7 +96,7 @@
         "crates/af-server/src/organization_runtime/"
       ],
       "dependsOn": ["domain", "database"],
-      "status": "planned"
+      "status": "extracted"
     },
     {
       "id": "http",
@@ -112,7 +112,7 @@
         "crates/af-http/src/openapi/scim.rs"
       ],
       "dependsOn": ["services"],
-      "status": "planned"
+      "status": "extracted"
     },
     {
       "id": "frontends",
@@ -126,7 +126,7 @@
         "web-next/src/features/auth/organization-sso*"
       ],
       "dependsOn": ["http"],
-      "status": "planned"
+      "status": "extracted"
     }
   ],
   "sharedContracts": [
@@ -138,5 +138,18 @@
     "crates/af-domain/src/billing_contract.rs",
     "crates/af-billing/src/extensions.rs",
     "docs/repository-boundary.md"
-  ]
+  ],
+  "export": {
+    "metadataPath": "docs/public-core-source.json",
+    "sensitiveFilePatterns": [
+      "**/*.key",
+      "**/*.p12",
+      "**/*.pfx",
+      "**/*private*.pem"
+    ],
+    "allowedTestFixtures": [
+      "crates/af-adapter/src/vertex/fixtures/service_account_private.pem",
+      "crates/af-admin/src/fixtures/alipay_verification_test_private.pem"
+    ]
+  }
 }

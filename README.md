@@ -74,6 +74,8 @@ When enabled by the server, `/api` provides an API directory and online request 
 Create a feature branch from `develop`, keep changes focused, and open a pull request with the relevant validation details. Do not commit credentials, generated secrets, local build output, or private enterprise source.
 
 See [`docs/repository-boundary.md`](docs/repository-boundary.md) for the public and enterprise extension boundary.
+The reproducible public checkout procedure is documented in
+[`docs/public-core-export.md`](docs/public-core-export.md).
 
 ## License
 

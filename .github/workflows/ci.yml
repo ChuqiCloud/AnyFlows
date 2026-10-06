@@ -423,6 +423,9 @@ jobs:
       - name: Test release scripts
         run: bash tools/ci/test-release-scripts.sh
 
+      - name: Check public core export
+        run: bash tools/ci/test-public-core-export.sh
+
       - name: Test live provider preflight
         run: bash tools/ci/test-live-provider-test.sh
 
