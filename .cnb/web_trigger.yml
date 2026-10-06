@@ -1,0 +1,6 @@
+branch:
+  - buttons:
+      - name: 运行完整 CI
+        description: 运行 Rust 质量门禁和最低支持版本检查
+        event: web_trigger_ci
+        isDefault: true

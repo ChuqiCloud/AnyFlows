@@ -1,0 +1,132 @@
+[graph]
+all-features = true
+
+[advisories]
+unmaintained = "workspace"
+unsound = "all"
+yanked = "deny"
+unused-ignored-advisory = "deny"
+ignore = [
+    { id = "RUSTSEC-2023-0071", reason = "SQLx MySQL 仅执行 RSA 公钥加密，不执行该公告涉及的私钥运算。" },
+]
+
+[licenses]
+confidence-threshold = 0.93
+unused-allowed-license = "allow"
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
+]
+
+[licenses.private]
+ignore = true
+
+[[licenses.exceptions]]
+crate = "webpki-roots"
+allow = ["CDLA-Permissive-2.0"]
+
+# rustls 平台校验器使用的根证书数据，与 webpki-roots 采用相同宽松数据许可证。
+[[licenses.exceptions]]
+crate = "webpki-root-certs"
+allow = ["CDLA-Permissive-2.0"]
+
+# redis-rs 使用该实现做内部哈希；Boost 许可证为 OSI 认可的宽松许可证。
+[[licenses.exceptions]]
+crate = "xxhash-rust"
+allow = ["BSL-1.0"]
+
+# lettre 的 quoted-printable 编码依赖使用 OSI 认可的零条款 BSD 宽松许可证。
+[[licenses.exceptions]]
+crate = "quoted_printable"
+allow = ["0BSD"]
+
+# Rhai 使用该依赖保存脚本标识符；MPL 仅约束对依赖自身文件的修改，不扩散到本项目代码。
+[[licenses.exceptions]]
+crate = "smartstring"
+allow = ["MPL-2.0"]
+
+# Symphonia 仅用于读取音频容器元数据；MPL 只约束依赖自身文件的修改，不扩散到本项目代码。
+[[licenses.exceptions]]
+crate = "symphonia"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-bundle-flac"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-bundle-mp3"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-codec-aac"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-core"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-format-isomp4"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-format-mkv"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-format-ogg"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-format-riff"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-metadata"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-utils-xiph"
+allow = ["MPL-2.0"]
+
+# Rhai 的哈希依赖通过该实现生成编译期随机种子；CC0 为公共领域式宽松许可。
+[[licenses.exceptions]]
+crate = "tiny-keccak"
+allow = ["CC0-1.0"]
+
+# WebAuthn 依赖使用 MPL-2.0；仅对其自身依赖文件适用，不扩散到本项目代码。
+[[licenses.exceptions]]
+crate = "webauthn-rs"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "webauthn-rs-core"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "webauthn-rs-proto"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "webauthn-attestation-ca"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "base64urlsafedata"
+allow = ["MPL-2.0"]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

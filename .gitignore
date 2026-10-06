@@ -1,0 +1,14 @@
+reference/
+.claude/
+.dsh/
+design/
+
+/target/
+/release/
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+*.profraw
+.DS_Store

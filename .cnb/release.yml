@@ -1,0 +1,209 @@
+.release-conditions:
+  version: &release-version-tag-condition >-
+    printf '%s\n' "$CNB_BRANCH" |
+    grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+  previous: &release-has-previous-tag-condition >-
+    printf '%s\n' "$CNB_BRANCH" |
+    grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$' &&
+    git tag --list 'v*' | grep -Fvx "$CNB_BRANCH" | grep -q .
+  stable: &release-stable-tag-condition >-
+    printf '%s\n' "$CNB_BRANCH" |
+    grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+  prerelease: &release-prerelease-tag-condition >-
+    printf '%s\n' "$CNB_BRANCH" |
+    grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+
+.release-files: &release-files
+  - .cnb.yml
+  - .cnb/release.yml
+  - .cnb/release.Dockerfile
+  - tools/ci/*release*.sh
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - crates/**
+  - web/**
+  - web-next/**
+
+.release-install-stage: &release-install-stage
+  name: 安装发布依赖
+  timeout: 10m
+  script: |
+    corepack pnpm@10.33.0 --dir web install --frozen-lockfile
+    corepack pnpm@10.33.0 --dir web-next install --frozen-lockfile
+
+.release-frontend-stage: &release-frontend-stage
+  name: 构建内嵌前端
+  timeout: 10m
+  script: |
+    corepack pnpm@10.33.0 --dir web build
+    corepack pnpm@10.33.0 --dir web-next build
+
+.release-binary-stage: &release-binary-stage
+  name: 构建 release 二进制
+  timeout: 40m
+  script: |
+    cargo clean --release --workspace
+    cargo build --release --locked --package af-server
+
+.release-package-stage: &release-package-stage
+  name: 归档并校验摘要
+  script: |
+    if [ "$CNB_EVENT" = "tag_push" ]; then
+      release_tag="$CNB_BRANCH"
+    else
+      release_tag=auto
+    fi
+    export SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$CNB_COMMIT")"
+    bash tools/ci/package-release.sh "$release_tag" "$RELEASE_ARCH"
+
+.release-amd64-base: &release-amd64-base
+  runner:
+    tags: cnb:arch:amd64
+    cpus: 64
+  docker:
+    build:
+      dockerfile: ./.cnb/release.Dockerfile
+      by:
+        - ./.cnb/release.Dockerfile
+    volumes:
+      - release-pnpm-v10:/root/.local/share/pnpm/store:copy-on-write
+      - rust-cargo:/usr/local/cargo/registry:copy-on-write
+      - rust-cargo:/usr/local/cargo/git:copy-on-write
+      - rust-release-amd64-1.97.1:./target:copy-on-write
+  env:
+    CARGO_TERM_COLOR: always
+    RUST_BACKTRACE: "1"
+    RELEASE_ARCH: amd64
+
+"$":
+  tag_push:
+    - name: 校验版本发布边界
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      docker:
+        image: rust:1.97.1-bookworm@sha256:77fac8b98f9f46062bb680b6d25d5bcaabfc400143952ebc572e924bcbedc3fa
+      stages:
+        - name: 校验版本标签与发布分支
+          if: *release-version-tag-condition
+          script: bash tools/ci/verify-release-tag.sh "$CNB_BRANCH" "$CNB_COMMIT"
+        - name: 清理本次提交的旧临时附件
+          if: *release-version-tag-condition
+          allowFailure: true
+          image: cnbcool/attachments:latest
+          settings:
+            type: DELETE
+            commit: $CNB_COMMIT
+            attachments:
+              - anyflows-${CNB_BRANCH}-linux-amd64.tar.gz
+              - anyflows-${CNB_BRANCH}-linux-amd64.tar.gz.sha256
+        - name: 放行 amd64 构建
+          if: *release-version-tag-condition
+          type: cnb:resolve
+          options:
+            key: release-preflight-$CNB_COMMIT
+
+    - name: 构建 Linux amd64 发布包
+      <<: *release-amd64-base
+      stages:
+        - name: 等待版本校验
+          if: *release-version-tag-condition
+          type: cnb:await
+          options:
+            key: release-preflight-$CNB_COMMIT
+        - <<: *release-install-stage
+          if: *release-version-tag-condition
+        - <<: *release-frontend-stage
+          if: *release-version-tag-condition
+        - <<: *release-binary-stage
+          if: *release-version-tag-condition
+        - <<: *release-package-stage
+          if: *release-version-tag-condition
+        - name: 上传 amd64 临时附件
+          if: *release-version-tag-condition
+          image: cnbcool/attachments:latest
+          settings:
+            commit: $CNB_COMMIT
+            attachments:
+              - ./release/anyflows-${CNB_BRANCH}-linux-amd64.tar.gz
+              - ./release/anyflows-${CNB_BRANCH}-linux-amd64.tar.gz.sha256
+        - name: 标记 amd64 构建完成
+          if: *release-version-tag-condition
+          type: cnb:resolve
+          options:
+            key: release-amd64-$CNB_COMMIT
+
+    - name: 校验并发布 CNB Release
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      docker:
+        image: rust:1.97.1-bookworm@sha256:77fac8b98f9f46062bb680b6d25d5bcaabfc400143952ebc572e924bcbedc3fa
+      stages:
+        - name: 等待版本校验
+          if: *release-version-tag-condition
+          type: cnb:await
+          options:
+            key: release-preflight-$CNB_COMMIT
+        - name: 等待 amd64 发布包
+          if: *release-version-tag-condition
+          type: cnb:await
+          options:
+            key: release-amd64-$CNB_COMMIT
+        - name: 下载 amd64 临时附件
+          if: *release-version-tag-condition
+          image: cnbcool/attachments:latest
+          settings:
+            type: DOWNLOAD
+            commit: $CNB_COMMIT
+            attachments:
+              - anyflows-${CNB_BRANCH}-linux-amd64.tar.gz
+              - anyflows-${CNB_BRANCH}-linux-amd64.tar.gz.sha256
+        - name: 准备发布说明目录
+          if: *release-version-tag-condition
+          script: |
+            git fetch --force --tags origin
+            mkdir -p release
+        - name: 生成版本变更摘要
+          if: *release-has-previous-tag-condition
+          image: cnbcool/changelog:latest
+          settings:
+            latestChangeLogTarget: release/CHANGELOG.md
+        - name: 汇总并复验发布摘要
+          if: *release-version-tag-condition
+          script: bash tools/ci/finalize-release.sh "$CNB_BRANCH" "$CNB_COMMIT"
+        - name: 创建正式 CNB Release
+          if: *release-stable-tag-condition
+          type: git:release
+          options:
+            overlying: false
+            title: AnyFlows $CNB_BRANCH
+            descriptionFromFile: release/RELEASE_NOTES.md
+            preRelease: false
+            latest: true
+        - name: 创建预发布 CNB Release
+          if: *release-prerelease-tag-condition
+          type: git:release
+          options:
+            overlying: false
+            title: AnyFlows $CNB_BRANCH
+            descriptionFromFile: release/RELEASE_NOTES.md
+            preRelease: true
+            latest: false
+        - name: 上传 CNB Release 附件
+          if: *release-version-tag-condition
+          image: cnbcool/attachments:latest
+          settings:
+            attachments:
+              - ./release/anyflows-${CNB_BRANCH}-linux-amd64.tar.gz
+              - ./release/SHA256SUMS
+        - name: 清理提交临时附件
+          if: *release-version-tag-condition
+          image: cnbcool/attachments:latest
+          settings:
+            type: DELETE
+            commit: $CNB_COMMIT
+            attachments:
+              - anyflows-${CNB_BRANCH}-linux-amd64.tar.gz
+              - anyflows-${CNB_BRANCH}-linux-amd64.tar.gz.sha256

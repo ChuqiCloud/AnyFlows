@@ -1,0 +1,14 @@
+# robots.txt for 萌云控制台
+# 控制台应用通常需要登录访问，禁止所有搜索引擎爬虫
+
+User-agent: *
+Disallow: /
+
+# 如果需要允许某些路径被索引，可以取消下面的注释并修改路径
+# Allow: /public
+# Allow: /help
+# Allow: /docs
+
+# Sitemap (如果有的话，取消注释并填写正确的地址)
+# Sitemap: https://console.acmeidc.net/sitemap.xml
+
