@@ -1,0 +1,88 @@
+name: Frontend generated assets
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [develop, master]
+    paths:
+      - '.github/workflows/frontend-generated-assets.yml'
+      - 'crates/af-http/src/account_verification.rs'
+      - 'crates/af-http/src/verification_settings.rs'
+      - 'crates/af-http/src/openapi/verification_settings.rs'
+      - 'crates/af-http/src/frontend_templates.rs'
+      - 'crates/af-http/src/openapi/frontend_templates.rs'
+      - 'crates/af-http/src/site_settings.rs'
+      - 'crates/af-http/src/openapi/site_settings.rs'
+      - 'crates/af-admin/src/site_settings.rs'
+      - 'crates/af-http/src/management_credential_writes.rs'
+      - 'crates/af-http/src/openapi/credentials.rs'
+      - 'web-next/package.json'
+      - 'crates/af-server/src/runtime_frontend.rs'
+      - 'crates/af-server/src/frontend.rs'
+      - 'crates/af-server/build.rs'
+      - 'tools/xtask/src/main.rs'
+      - 'crates/af-http/src/management_service_levels.rs'
+      - 'crates/af-http/src/openapi/dashboard.rs'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-generated-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    name: Export reviewable frontend source patch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_JOBS: '1'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+    steps:
+      - name: Configure Gitea checkout
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        run: git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+      - name: Check out source
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+      - name: Install Rust tooling
+        run: |
+          bash tools/ci/install-rustup.sh
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup component add rustfmt
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Generate contracts and dependency lock
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$PATH"
+          corepack pnpm@10.33.0 --dir web-next install --lockfile-only --ignore-scripts
+          cargo fmt --all
+          cargo run --package xtask -- openapi export
+          corepack pnpm@10.33.0 --dir web install --frozen-lockfile
+          corepack pnpm@10.33.0 --dir web exec openapi-ts --no-log-file
+          node web/scripts/normalize-generated-api.mjs
+          mkdir -p web-next/openapi
+          cp web/openapi/openapi.json web-next/openapi/openapi.json
+          cp -a web/src/lib/api/generated/. web-next/src/lib/api/generated/
+      - name: Export source patch for review
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          if test -f web-next/pnpm-lock.yaml; then git add -N -- web-next/pnpm-lock.yaml; fi
+          echo 'ANYFLOWS_GENERATED_PATCH_BEGIN'
+          git diff --binary -- Cargo.lock crates tools/xtask web web-next | gzip -9 | base64 -w120
+          echo
+          echo 'ANYFLOWS_GENERATED_PATCH_END'
+          git diff --stat -- Cargo.lock crates tools/xtask web web-next

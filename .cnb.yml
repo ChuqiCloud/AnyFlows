@@ -1,0 +1,13 @@
+include:
+  - .cnb/release.yml
+
+# 日常测试流水线暂时迁至 Gitea Actions，覆盖发布包、前端、Rust、MSRV、数据库与 Redis 门禁。
+# CNB 仅通过 .cnb/release.yml 保留标签发布；容量恢复后再单独评估是否恢复日常测试。
+__cnb_disabled__:
+  push:
+    - name: CNB pipelines disabled
+      docker:
+        image: alpine:3.22
+      stages:
+        - name: Skip CNB test pipelines
+          script: echo "CNB test pipelines are temporarily disabled; use Gitea Actions."

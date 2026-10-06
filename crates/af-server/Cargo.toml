@@ -1,0 +1,51 @@
+[package]
+name = "af-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+af-account = { path = "../af-account", version = "0.2.0-beta.14" }
+af-admin = { path = "../af-admin", version = "0.2.0-beta.14" }
+af-analytics = { path = "../af-analytics", version = "0.2.0-beta.14" }
+af-adapter = { path = "../af-adapter", version = "0.2.0-beta.14" }
+af-billing = { path = "../af-billing", version = "0.2.0-beta.14" }
+af-cache = { path = "../af-cache", version = "0.2.0-beta.14" }
+af-config = { path = "../af-config", version = "0.2.0-beta.14" }
+af-db = { path = "../af-db", version = "0.2.0-beta.14" }
+af-domain = { path = "../af-domain", version = "0.2.0-beta.14" }
+af-http = { path = "../af-http", version = "0.2.0-beta.14" }
+af-httpclient = { path = "../af-httpclient", version = "0.2.0-beta.14" }
+af-protocol = { path = "../af-protocol", version = "0.2.0-beta.14" }
+af-relay = { path = "../af-relay", version = "0.2.0-beta.14" }
+af-scheduler = { path = "../af-scheduler", version = "0.2.0-beta.14" }
+af-telemetry = { path = "../af-telemetry", version = "0.2.0-beta.14" }
+futures-util.workspace = true
+getrandom.workspace = true
+include_dir.workspace = true
+lettre.workspace = true
+lru.workspace = true
+rust_decimal.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+symphonia.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+webauthn-rs.workspace = true
+uuid.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+argon2.workspace = true
+async-trait.workspace = true
+base64.workspace = true
+chacha20poly1305.workspace = true
+sea-orm.workspace = true
+tower.workspace = true
+
+[lints]
+workspace = true
