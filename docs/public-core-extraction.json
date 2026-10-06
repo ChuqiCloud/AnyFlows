@@ -141,6 +141,9 @@
   ],
   "export": {
     "metadataPath": "docs/public-core-source.json",
+    "preservePaths": [
+      "LICENSE"
+    ],
     "sensitiveFilePatterns": [
       "**/*.key",
       "**/*.p12",

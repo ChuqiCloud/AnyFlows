@@ -121,9 +121,11 @@ def safe_member_path(destination: Path, name: str) -> Path:
     return target
 
 
-def remove_tracked_files(destination: Path) -> None:
+def remove_tracked_files(destination: Path, preserve_paths: set[str]) -> None:
     for path in run_git(destination, ["ls-files", "-z"]).split("\x00"):
         if not path:
+            continue
+        if path in preserve_paths:
             continue
         target = safe_member_path(destination, path)
         if target.is_file() or target.is_symlink():
@@ -228,6 +230,14 @@ def main() -> int:
         export_config = manifest.get("export", {})
         if not isinstance(export_config, dict):
             raise ExportError("boundary manifest export must be an object")
+        preserve_paths_value = export_config.get("preservePaths", [])
+        if not isinstance(preserve_paths_value, list) or not all(
+            isinstance(item, str) and item for item in preserve_paths_value
+        ):
+            raise ExportError("export.preservePaths must be an array of non-empty strings")
+        preserve_paths = set(preserve_paths_value)
+        for path in preserve_paths:
+            safe_member_path(destination, path)
         validate_sensitive_paths(paths, export_config)
         metadata_path = export_config.get("metadataPath", "docs/public-core-source.json")
         repository = manifest.get("publicRepository")
@@ -236,7 +246,7 @@ def main() -> int:
         if not isinstance(repository, str) or not repository:
             raise ExportError("publicRepository must be a non-empty string")
 
-        remove_tracked_files(destination)
+        remove_tracked_files(destination, preserve_paths)
         export_archive(source, destination, commit)
         write_metadata(destination, metadata_path, repository, commit)
         print(f"exported public core {commit} to {destination}")

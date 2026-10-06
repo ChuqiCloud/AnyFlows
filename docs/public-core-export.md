@@ -19,7 +19,9 @@ The destination must already be a Git repository with no local changes. The
 command checks the enterprise boundary, rejects unapproved sensitive files,
 exports the exact commit with `git archive`, and writes
 `docs/public-core-source.json` containing the source repository and full
-commit id. It never copies the source working directory or Git credentials.
+commit id. Legal files listed in `export.preservePaths` remain in the public
+repository when they are intentionally maintained there. It never copies the
+source working directory or Git credentials.
 
 After reviewing the generated diff, create a branch in the GitHub repository
 and open a pull request. The public repository must retain the generated source
