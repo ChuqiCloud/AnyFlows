@@ -1,0 +1,169 @@
+name: Export public core
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-core-export-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  export:
+    if: ${{ github.repository == 'acmecloud/AnyFlows' }}
+    name: Export Gitea develop to GitHub
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GITHUB_PUBLIC_REPOSITORY: ChuqiCloud/AnyFlows
+      GITHUB_PUBLIC_BRANCH: main
+      PUBLIC_REPO_SYNC_TOKEN: ${{ secrets.PUBLIC_REPO_SYNC_TOKEN }}
+      GITEA_COMMIT: ${{ github.sha }}
+    steps:
+      - name: Validate sync credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PUBLIC_REPO_SYNC_TOKEN" || {
+            echo 'PUBLIC_REPO_SYNC_TOKEN is not configured' >&2
+            exit 1
+          }
+          [[ "$GITEA_COMMIT" =~ ^[0-9a-f]{40}$ ]] || {
+            echo 'Gitea commit is invalid' >&2
+            exit 1
+          }
+
+      - name: Check out Gitea source
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init -q gitea-source
+          git -C gitea-source remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -C gitea-source -c http.extraheader="AUTHORIZATION: basic $auth" \
+            fetch --no-tags --depth=1 origin "$GITEA_COMMIT"
+          git -C gitea-source checkout -q --detach FETCH_HEAD
+
+      - name: Check out public repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          askpass="$RUNNER_TEMP/github-askpass"
+          trap 'rm -f "$askpass"' EXIT
+          cat > "$askpass" <<'EOF'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s' 'x-access-token' ;;
+            *) printf '%s' "$PUBLIC_REPO_SYNC_TOKEN" ;;
+          esac
+          EOF
+          chmod 700 "$askpass"
+          export GIT_ASKPASS="$askpass"
+          export GIT_TERMINAL_PROMPT=0
+          git clone --quiet --branch "$GITHUB_PUBLIC_BRANCH" --single-branch \
+            "https://github.com/$GITHUB_PUBLIC_REPOSITORY.git" github-public
+
+      - name: Prepare export branch
+        id: branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          askpass="$RUNNER_TEMP/github-askpass"
+          trap 'rm -f "$askpass"' EXIT
+          cat > "$askpass" <<'EOF'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s' 'x-access-token' ;;
+            *) printf '%s' "$PUBLIC_REPO_SYNC_TOKEN" ;;
+          esac
+          EOF
+          chmod 700 "$askpass"
+          export GIT_ASKPASS="$askpass"
+          export GIT_TERMINAL_PROMPT=0
+          short_commit="${GITEA_COMMIT:0:12}"
+          export_branch="sync/gitea-public-core-$short_commit"
+          if git -C github-public ls-remote --exit-code origin "refs/heads/$export_branch" >/dev/null 2>&1; then
+            git -C github-public fetch --quiet origin "$export_branch"
+            git -C github-public checkout -q -B "$export_branch" "FETCH_HEAD"
+          else
+            git -C github-public checkout -q -b "$export_branch"
+          fi
+          echo "export_branch=$export_branch" >> "$GITHUB_OUTPUT"
+
+      - name: Export and validate public core
+        id: export
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 gitea-source/tools/repository/export-public-core.py \
+            --source gitea-source \
+            --destination github-public \
+            --commit "$GITEA_COMMIT" \
+            --allow-replace
+          git -C github-public add -A
+          if git -C github-public diff --cached --quiet -- . \
+            ':(exclude)docs/public-core-source.json'; then
+            echo 'has_changes=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git -C github-public config user.name 'gitea-sync[bot]'
+          git -C github-public config user.email 'gitea-sync[bot]@users.noreply.github.com'
+          git -C github-public commit -q -m "同步 Gitea 公共核心 $GITEA_COMMIT"
+          echo 'has_changes=true' >> "$GITHUB_OUTPUT"
+
+      - name: Push public export branch
+        if: ${{ steps.export.outputs.has_changes == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          askpass="$RUNNER_TEMP/github-askpass"
+          trap 'rm -f "$askpass"' EXIT
+          cat > "$askpass" <<'EOF'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s' 'x-access-token' ;;
+            *) printf '%s' "$PUBLIC_REPO_SYNC_TOKEN" ;;
+          esac
+          EOF
+          chmod 700 "$askpass"
+          export GIT_ASKPASS="$askpass"
+          export GIT_TERMINAL_PROMPT=0
+          git -C github-public push --quiet origin \
+            "HEAD:${{ steps.branch.outputs.export_branch }}"
+
+      - name: Create or reuse GitHub pull request
+        if: ${{ steps.export.outputs.has_changes == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/$GITHUB_PUBLIC_REPOSITORY"
+          head="${{ steps.branch.outputs.export_branch }}"
+          existing="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $PUBLIC_REPO_SYNC_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "$api/pulls?state=open&head=ChuqiCloud:$head&base=$GITHUB_PUBLIC_BRANCH")"
+          if jq -e 'length > 0' >/dev/null <<<"$existing"; then
+            exit 0
+          fi
+          body="$(printf '将 Gitea develop 的公共核心变更同步到 GitHub。\n\n来源提交：%s\n来源仓库：%s' \
+            "$GITEA_COMMIT" "${{ github.server_url }}/${{ github.repository }}")"
+          payload="$(jq -n \
+            --arg title "同步 Gitea 公共核心 $GITEA_COMMIT" \
+            --arg head "$head" \
+            --arg base "$GITHUB_PUBLIC_BRANCH" \
+            --arg body "$body" \
+            '{title: $title, head: $head, base: $base, body: $body}')"
+          curl --fail --silent --show-error --request POST \
+            -H "Authorization: Bearer $PUBLIC_REPO_SYNC_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            -H 'Content-Type: application/json' \
+            --data "$payload" "$api/pulls"
