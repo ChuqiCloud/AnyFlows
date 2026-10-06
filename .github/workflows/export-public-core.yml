@@ -21,15 +21,15 @@ jobs:
     env:
       GITHUB_PUBLIC_REPOSITORY: ChuqiCloud/AnyFlows
       GITHUB_PUBLIC_BRANCH: main
-      GITHUB_SYNC_TOKEN: ${{ secrets.GITHUB_SYNC_TOKEN }}
+      PUBLIC_REPO_SYNC_TOKEN: ${{ secrets.PUBLIC_REPO_SYNC_TOKEN }}
       GITEA_COMMIT: ${{ github.sha }}
     steps:
       - name: Validate sync credentials
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$GITHUB_SYNC_TOKEN" || {
-            echo 'GITHUB_SYNC_TOKEN is not configured' >&2
+          test -n "$PUBLIC_REPO_SYNC_TOKEN" || {
+            echo 'PUBLIC_REPO_SYNC_TOKEN is not configured' >&2
             exit 1
           }
           [[ "$GITEA_COMMIT" =~ ^[0-9a-f]{40}$ ]] || {
@@ -61,7 +61,7 @@ jobs:
           #!/bin/sh
           case "$1" in
             *Username*) printf '%s' 'x-access-token' ;;
-            *) printf '%s' "$GITHUB_SYNC_TOKEN" ;;
+            *) printf '%s' "$PUBLIC_REPO_SYNC_TOKEN" ;;
           esac
           EOF
           chmod 700 "$askpass"
@@ -81,7 +81,7 @@ jobs:
           #!/bin/sh
           case "$1" in
             *Username*) printf '%s' 'x-access-token' ;;
-            *) printf '%s' "$GITHUB_SYNC_TOKEN" ;;
+            *) printf '%s' "$PUBLIC_REPO_SYNC_TOKEN" ;;
           esac
           EOF
           chmod 700 "$askpass"
@@ -129,7 +129,7 @@ jobs:
           #!/bin/sh
           case "$1" in
             *Username*) printf '%s' 'x-access-token' ;;
-            *) printf '%s' "$GITHUB_SYNC_TOKEN" ;;
+            *) printf '%s' "$PUBLIC_REPO_SYNC_TOKEN" ;;
           esac
           EOF
           chmod 700 "$askpass"
@@ -146,7 +146,7 @@ jobs:
           api="https://api.github.com/repos/$GITHUB_PUBLIC_REPOSITORY"
           head="${{ steps.branch.outputs.export_branch }}"
           existing="$(curl --fail --silent --show-error \
-            -H "Authorization: Bearer $GITHUB_SYNC_TOKEN" \
+            -H "Authorization: Bearer $PUBLIC_REPO_SYNC_TOKEN" \
             -H 'Accept: application/vnd.github+json' \
             -H 'X-GitHub-Api-Version: 2022-11-28' \
             "$api/pulls?state=open&head=ChuqiCloud:$head&base=$GITHUB_PUBLIC_BRANCH")"
@@ -162,7 +162,7 @@ jobs:
             --arg body "$body" \
             '{title: $title, head: $head, base: $base, body: $body}')"
           curl --fail --silent --show-error --request POST \
-            -H "Authorization: Bearer $GITHUB_SYNC_TOKEN" \
+            -H "Authorization: Bearer $PUBLIC_REPO_SYNC_TOKEN" \
             -H 'Accept: application/vnd.github+json' \
             -H 'X-GitHub-Api-Version: 2022-11-28' \
             -H 'Content-Type: application/json' \

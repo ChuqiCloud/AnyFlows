@@ -28,7 +28,7 @@ The GitHub repository must define these Actions secrets:
 
 The Gitea repository must define this Actions secret:
 
-- `GITHUB_SYNC_TOKEN`: GitHub fine-grained token limited to
+- `PUBLIC_REPO_SYNC_TOKEN`: GitHub fine-grained token limited to
   `ChuqiCloud/AnyFlows`, with repository contents read/write and pull request
   read/write access.
 

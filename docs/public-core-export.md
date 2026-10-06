@@ -52,7 +52,7 @@ The generated `docs/public-core-source.json` file is kept under export control
 and cannot be changed through a public contribution.
 
 The forward export workflow runs from Gitea on every push to `develop`. It
-requires the `GITHUB_SYNC_TOKEN` secret in the Gitea repository and creates a
+requires the `PUBLIC_REPO_SYNC_TOKEN` secret in the Gitea repository and creates a
 reviewable GitHub PR from the public export. The token is limited to the
 `ChuqiCloud/AnyFlows` repository and needs contents and pull request write
 access. No GitHub credential is stored in the source tree.
