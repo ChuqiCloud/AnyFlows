@@ -33,3 +33,26 @@ application:
 ```sh
 bash tools/ci/test-public-core-export.sh
 ```
+
+## Public contributions
+
+The Gitea `develop` branch is the source of truth. A pull request merged into
+the public repository's `main` branch is proposed in Gitea as a reviewable
+sync pull request. The workflow applies the patch to a branch from the current
+`develop` and does not write directly to the source branch. A maintainer still
+reviews and merges the Gitea pull request.
+
+Branches created by the public export process use the
+`sync/gitea-public-core-*` prefix and are ignored by the reverse-sync workflow.
+
+The reverse-sync workflow requires the `GITEA_SYNC_USERNAME` and
+`GITEA_SYNC_TOKEN` Actions secrets in the GitHub repository. It uses the
+merged pull request patch, so it supports merge, squash, and rebase merges.
+The generated `docs/public-core-source.json` file is kept under export control
+and cannot be changed through a public contribution.
+
+The forward export workflow runs from Gitea on every push to `develop`. It
+requires the `PUBLIC_REPO_SYNC_TOKEN` secret in the Gitea repository and creates a
+reviewable GitHub PR from the public export. The token is limited to the
+`ChuqiCloud/AnyFlows` repository and needs contents and pull request write
+access. No GitHub credential is stored in the source tree.
