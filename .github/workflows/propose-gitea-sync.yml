@@ -27,10 +27,10 @@ jobs:
       GITEA_TARGET_BRANCH: develop
       GITEA_USERNAME: ${{ secrets.GITEA_SYNC_USERNAME }}
       GITEA_TOKEN: ${{ secrets.GITEA_SYNC_TOKEN }}
-      PUBLIC_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-      PUBLIC_MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
       PUBLIC_PR_NUMBER: ${{ github.event.pull_request.number }}
       PUBLIC_PR_URL: ${{ github.event.pull_request.html_url }}
+      PUBLIC_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PUBLIC_PATCH_URL: ${{ github.event.pull_request.patch_url }}
     steps:
       - name: Validate sync credentials
         shell: bash
@@ -46,17 +46,23 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir public-source
-          git -C public-source init -q
-          git -C public-source remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          auth="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
-          git -C public-source -c http.extraheader="AUTHORIZATION: basic $auth" \
-            fetch --no-tags --depth=1 origin "$PUBLIC_BASE_SHA" "$PUBLIC_MERGE_SHA"
-          git -C public-source diff --binary "$PUBLIC_BASE_SHA" "$PUBLIC_MERGE_SHA" -- \
-            . ':(exclude)docs/public-core-source.json' > "$RUNNER_TEMP/public-core.patch"
-          if test ! -s "$RUNNER_TEMP/public-core.patch"; then
-            echo 'has_changes=false' >> "$GITHUB_OUTPUT"
-            exit 0
+          test -n "$PUBLIC_PATCH_URL" || { echo 'GitHub PR patch URL is missing' >&2; exit 1; }
+          [[ "$PUBLIC_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo 'GitHub PR head SHA is invalid' >&2
+            exit 1
+          }
+          curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+            -H 'Accept: application/vnd.github.v3.patch' \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "$PUBLIC_PATCH_URL" > "$RUNNER_TEMP/public-core.patch"
+          grep -q '^diff --git ' "$RUNNER_TEMP/public-core.patch" || {
+            echo 'GitHub PR patch does not contain a file diff' >&2
+            exit 1
+          }
+          if grep -Eq '^(diff --git |--- |\\+\\+\\+ ).*docs/public-core-source\\.json' \
+            "$RUNNER_TEMP/public-core.patch"; then
+            echo 'Public source metadata is generated and must not be changed in a public PR.' >&2
+            exit 1
           fi
           echo 'has_changes=true' >> "$GITHUB_OUTPUT"
 
@@ -85,10 +91,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sync_branch="sync/github-pr-${PUBLIC_PR_NUMBER}-${PUBLIC_MERGE_SHA}"
+          sync_branch="sync/github-pr-${PUBLIC_PR_NUMBER}-${PUBLIC_HEAD_SHA}"
+          cat > "$RUNNER_TEMP/gitea-askpass" <<'EOF'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s' "$GITEA_USERNAME" ;;
+            *) printf '%s' "$GITEA_TOKEN" ;;
+          esac
+          EOF
+          chmod 700 "$RUNNER_TEMP/gitea-askpass"
+          export GIT_ASKPASS="$RUNNER_TEMP/gitea-askpass"
+          export GIT_TERMINAL_PROMPT=0
+          if git -C gitea-source ls-remote --exit-code origin "refs/heads/$sync_branch" >/dev/null 2>&1; then
+            echo "Reusing existing Gitea branch $sync_branch"
+            echo 'has_changes=true' >> "$GITHUB_OUTPUT"
+            echo 'needs_push=false' >> "$GITHUB_OUTPUT"
+            echo "sync_branch=$sync_branch" >> "$GITHUB_OUTPUT"
+            rm -f "$RUNNER_TEMP/gitea-askpass"
+            exit 0
+          fi
           git -C gitea-source checkout -q -b "$sync_branch"
           if ! git -C gitea-source apply --3way --whitespace=nowarn "$RUNNER_TEMP/public-core.patch"; then
             echo 'The public contribution cannot be applied cleanly to Gitea develop.' >&2
+            rm -f "$RUNNER_TEMP/gitea-askpass"
             exit 1
           fi
           git -C gitea-source config user.name 'github-sync[bot]'
@@ -96,14 +121,17 @@ jobs:
           git -C gitea-source add -A
           if git -C gitea-source diff --cached --quiet; then
             echo 'has_changes=false' >> "$GITHUB_OUTPUT"
+            rm -f "$RUNNER_TEMP/gitea-askpass"
             exit 0
           fi
           git -C gitea-source commit -q -m "sync: apply GitHub PR #$PUBLIC_PR_NUMBER"
+          rm -f "$RUNNER_TEMP/gitea-askpass"
           echo 'has_changes=true' >> "$GITHUB_OUTPUT"
+          echo 'needs_push=true' >> "$GITHUB_OUTPUT"
           echo "sync_branch=$sync_branch" >> "$GITHUB_OUTPUT"
 
       - name: Push Gitea sync branch
-        if: ${{ steps.apply.outputs.has_changes == 'true' }}
+        if: ${{ steps.apply.outputs.has_changes == 'true' && steps.apply.outputs.needs_push == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -133,7 +161,8 @@ jobs:
             '.[] | select(.head.ref == $branch)' >/dev/null <<<"$existing"; then
             exit 0
           fi
-          body="同步 GitHub 公共核心变更。\n\n来源 PR：$PUBLIC_PR_URL\n合并提交：$PUBLIC_MERGE_SHA"
+          body="$(printf '同步 GitHub 公共核心变更。\n\n来源 PR：%s\n来源提交：%s' \
+            "$PUBLIC_PR_URL" "$PUBLIC_HEAD_SHA")"
           payload="$(jq -n \
             --arg title "同步 GitHub 公共核心变更 #$PUBLIC_PR_NUMBER" \
             --arg head "${{ steps.apply.outputs.sync_branch }}" \
