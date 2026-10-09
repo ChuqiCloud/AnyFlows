@@ -11,6 +11,60 @@ use crate::{
 pub const MAX_REQUEST_RATE_LIMIT_RULES: usize = 8;
 const MAX_REQUEST_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
+/// A caller-derived, domain-separated fingerprint with a fixed-window limit.
+/// Raw IP addresses and login identifiers must be hashed before construction.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct FingerprintRateLimitRule {
+    fingerprint: [u8; 32],
+    limit: NonZeroU32,
+    window_millis: i64,
+}
+
+impl FingerprintRateLimitRule {
+    pub fn new(
+        fingerprint: [u8; 32],
+        limit: NonZeroU32,
+        window: Duration,
+    ) -> Result<Self, CacheError> {
+        Ok(Self {
+            fingerprint,
+            limit,
+            window_millis: validate_window(window)?,
+        })
+    }
+
+    pub(super) const fn fingerprint(self) -> [u8; 32] {
+        self.fingerprint
+    }
+
+    pub(super) const fn limit(self) -> u32 {
+        self.limit.get()
+    }
+
+    pub(super) const fn window_millis(self) -> i64 {
+        self.window_millis
+    }
+}
+
+impl fmt::Debug for FingerprintRateLimitRule {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("FingerprintRateLimitRule")
+            .field("fingerprint", &"<redacted>")
+            .field("limit", &self.limit)
+            .field("window_millis", &self.window_millis)
+            .finish()
+    }
+}
+
+fn validate_window(window: Duration) -> Result<i64, CacheError> {
+    let milliseconds = validate_ttl(window)?;
+    if window > MAX_REQUEST_RATE_LIMIT_WINDOW {
+        return Err(CacheError::InvalidRateLimitWindow);
+    }
+    Ok(milliseconds)
+}
+
 /// Redis 请求限流的连接与键空间配置。
 #[derive(Clone)]
 pub struct RedisRequestRateLimitConfig {
@@ -95,10 +149,7 @@ impl RequestRateLimitRule {
         limit: NonZeroU32,
         window: Duration,
     ) -> Result<Self, CacheError> {
-        let window_millis = validate_ttl(window)?;
-        if window > MAX_REQUEST_RATE_LIMIT_WINDOW {
-            return Err(CacheError::InvalidRateLimitWindow);
-        }
+        let window_millis = validate_window(window)?;
         Ok(Self {
             subject,
             limit,

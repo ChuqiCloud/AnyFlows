@@ -225,6 +225,46 @@ async fn verify_request_rate_limit_contract(redis_url: &str, namespace: &str) {
         second.admit(&[user_rule, group_rule]).await.unwrap(),
         RequestRateLimitOutcome::Admitted
     );
+
+    let window = Duration::from_secs(10 * 60);
+    let first_rule =
+        af_cache::FingerprintRateLimitRule::new([31; 32], NonZeroU32::new(2).unwrap(), window)
+            .unwrap();
+    let second_rule =
+        af_cache::FingerprintRateLimitRule::new([32; 32], NonZeroU32::new(1).unwrap(), window)
+            .unwrap();
+    assert_eq!(
+        first
+            .admit_fingerprints(&[first_rule, second_rule])
+            .await
+            .unwrap(),
+        None
+    );
+    let retry = second
+        .admit_fingerprints(&[first_rule, second_rule])
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!retry.is_zero());
+    assert!(retry <= window);
+    // A rejected batch must not consume the remaining capacity of another fingerprint.
+    assert_eq!(
+        second.admit_fingerprints(&[first_rule]).await.unwrap(),
+        None
+    );
+    assert!(
+        first
+            .admit_fingerprints(&[first_rule])
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        first
+            .admit_fingerprints(&[first_rule, first_rule])
+            .await
+            .is_err()
+    );
 }
 
 /// 通过 Redis 返回的剩余时间进入新窗口，避免集成断言随机跨桶。
