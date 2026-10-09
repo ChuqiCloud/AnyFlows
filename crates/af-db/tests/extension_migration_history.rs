@@ -110,9 +110,11 @@ async fn registered_extension_history_is_preserved_and_pending_migrations_run_on
     }
     let original = records(&db, "seaql_migrations").await?;
     db.close().await?;
-    let extension = MigratorExtension::<ExtensionMigrator>::new()
-        .with_legacy_history(MigrationHistoryAdoption::from_versions(["extension_v1"]));
-    for _ in 0..2 {
+    for extension in [
+        MigratorExtension::<ExtensionMigrator>::new()
+            .with_legacy_history(MigrationHistoryAdoption::from_versions(["extension_v1"])),
+        MigratorExtension::<ExtensionMigrator>::new(),
+    ] {
         connect_and_migrate_with_extension(&options, MigrationOptions::default(), Some(&extension))
             .await?
             .close()
@@ -132,6 +134,46 @@ async fn registered_extension_history_is_preserved_and_pending_migrations_run_on
         assert_eq!(data[0].try_get::<String>("", "value")?, "existing data");
         db.close().await?;
     }
+    Ok(())
+}
+
+struct ConflictingMigration;
+struct ConflictingMigrator;
+
+impl MigrationName for ConflictingMigration {
+    fn name(&self) -> &str {
+        "m20260718_000001_create_groups"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for ConflictingMigration {
+    async fn up(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+        Err(DbErr::Custom(
+            "conflicting migration must not run".to_owned(),
+        ))
+    }
+}
+
+impl MigratorTrait for ConflictingMigrator {
+    fn migrations() -> Vec<Box<dyn MigrationTrait>> {
+        vec![Box::new(ConflictingMigration)]
+    }
+
+    fn migration_table_name() -> sea_orm::DynIden {
+        Alias::new("extension_migrations").into_iden()
+    }
+}
+
+#[tokio::test]
+async fn extension_cannot_claim_a_public_migration_version() -> TestResult {
+    let options = DatabaseOptions::new("sqlite::memory:")?;
+    let extension = MigratorExtension::<ConflictingMigrator>::new();
+    let error =
+        connect_and_migrate_with_extension(&options, MigrationOptions::default(), Some(&extension))
+            .await
+            .expect_err("public and extension registries must be disjoint");
+    assert!(error.to_string().contains("overlap the public registry"));
     Ok(())
 }
 
