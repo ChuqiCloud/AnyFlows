@@ -659,7 +659,15 @@ pub async fn connect_and_migrate_with_extension(
 ) -> Result<DatabasePool, DatabaseError> {
     if let Some(dedicated_options) = database_options.dedicated_migration_options() {
         let migration_pool = connect(&dedicated_options).await?;
-        if let Err(error) = run_pending_migrations(&migration_pool, migration_options).await {
+        let public_result = match extension {
+            Some(extension) => {
+                extension
+                    .run_public_migrations(&migration_pool, migration_options)
+                    .await
+            }
+            None => run_pending_migrations(&migration_pool, migration_options).await,
+        };
+        if let Err(error) = public_result {
             let _ = migration_pool.close().await;
             return Err(error);
         }
@@ -675,7 +683,15 @@ pub async fn connect_and_migrate_with_extension(
         return connect(database_options).await;
     }
     let pool = connect(database_options).await?;
-    if let Err(error) = run_pending_migrations(&pool, migration_options).await {
+    let public_result = match extension {
+        Some(extension) => {
+            extension
+                .run_public_migrations(&pool, migration_options)
+                .await
+        }
+        None => run_pending_migrations(&pool, migration_options).await,
+    };
+    if let Err(error) = public_result {
         // 迁移失败时主动执行有界关闭，同时保留原始迁移错误供启动层判定。
         let _ = pool.close().await;
         return Err(error);
