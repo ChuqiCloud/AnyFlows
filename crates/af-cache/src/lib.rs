@@ -50,9 +50,9 @@ pub use projection::{
     RedisVersionedProjectionStore,
 };
 pub use rate_limit::{
-    MAX_REQUEST_RATE_LIMIT_RULES, RedisRequestRateLimitConfig, RedisRequestRateLimitStore,
-    RequestRateLimitOutcome, RequestRateLimitRejection, RequestRateLimitRule,
-    RequestRateLimitSubject,
+    FingerprintRateLimitRule, MAX_REQUEST_RATE_LIMIT_RULES, RedisRequestRateLimitConfig,
+    RedisRequestRateLimitStore, RequestRateLimitOutcome, RequestRateLimitRejection,
+    RequestRateLimitRule, RequestRateLimitSubject,
 };
 pub use sticky::{DEFAULT_STICKY_SESSION_TTL, RedisStickySessionConfig, RedisStickySessionStore};
 

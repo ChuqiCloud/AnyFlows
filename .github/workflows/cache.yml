@@ -1,0 +1,59 @@
+name: Cache contracts
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['crates/af-cache/**', '.github/workflows/cache.yml']
+  push:
+    branches: [main, 'feature/fingerprint-rate-limits']
+    paths: ['crates/af-cache/**', '.github/workflows/cache.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cache-contracts-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cache:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      redis:
+        image: redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 30
+    env:
+      CARGO_BUILD_JOBS: '1'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust tooling
+        run: |
+          bash tools/ci/install-rustup.sh
+          export PATH="$HOME/.cargo/bin:$PATH"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal --component rustfmt --component clippy
+      - name: Check cache formatting
+        run: cargo fmt -p af-cache -- --check
+      - name: Lint cache contracts
+        run: cargo clippy -p af-cache --all-targets --locked -- -D warnings
+      - name: Test cache contracts
+        run: cargo test -p af-cache --locked
+      - name: Test shared Redis admission
+        env:
+          AF_REQUIRE_LIVE_REDIS: '1'
+          AF_TEST_REDIS_URL: redis://127.0.0.1:6379/
+        run: cargo test -p af-cache --test redis_integration --locked -- --include-ignored
