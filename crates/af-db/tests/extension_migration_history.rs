@@ -1,7 +1,7 @@
 use std::{error::Error, path::PathBuf, time::SystemTime};
 
 use af_db::{
-    DatabaseOptions, MigrationHistoryAdoption, MigrationOptions, MigratorExtension,
+    DatabaseError, DatabaseOptions, MigrationHistoryAdoption, MigrationOptions, MigratorExtension,
     connect_and_migrate, connect_and_migrate_with_extension,
 };
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
@@ -173,7 +173,10 @@ async fn extension_cannot_claim_a_public_migration_version() -> TestResult {
         connect_and_migrate_with_extension(&options, MigrationOptions::default(), Some(&extension))
             .await
             .expect_err("public and extension registries must be disjoint");
-    assert!(error.to_string().contains("overlap the public registry"));
+    assert!(
+        matches!(&error, DatabaseError::Migration(source) if source.to_string().contains("overlap the public registry")),
+        "{error:?}"
+    );
     Ok(())
 }
 
@@ -195,7 +198,10 @@ async fn undeclared_history_is_rejected_without_running_extension_migrations() -
         connect_and_migrate_with_extension(&options, MigrationOptions::default(), Some(&extension))
             .await
             .expect_err("undeclared history must stop startup");
-    assert!(error.to_string().contains("unknown_version"));
+    assert!(
+        matches!(&error, DatabaseError::Migration(source) if source.to_string().contains("unknown_version")),
+        "{error:?}"
+    );
     let db = Database::connect(file.url()).await?;
     assert_eq!(records(&db, "seaql_migrations").await?, original);
     assert!(!SchemaManager::new(&db).has_table("extension_probe").await?);
