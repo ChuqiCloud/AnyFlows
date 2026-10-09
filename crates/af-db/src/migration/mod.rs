@@ -2,6 +2,7 @@ use std::{collections::HashSet, future::Future, marker::PhantomData, pin::Pin, t
 
 use sea_orm::sea_query::{Expr, Query};
 use sea_orm::{ConnectionTrait, EntityTrait, QueryOrder};
+use sea_orm_migration::prelude::async_trait;
 use sea_orm_migration::{MigrationTrait, MigratorTrait, SchemaManager};
 use tokio::time::timeout;
 
@@ -134,6 +135,16 @@ pub struct MigrationOptions {
 /// 公共服务负责创建并持有迁移连接，扩展只提供自己的注册表执行逻辑。这样企业
 /// 仓库可以实现独立迁移表，同时避免再次建立连接或把扩展迁移混入公共注册表。
 pub trait DatabaseMigrationExtension: Send + Sync {
+    /// Run the public registry with any declared extension history compatibility.
+    /// Implementations that wrap another extension must forward this hook.
+    fn run_public_migrations<'a>(
+        &'a self,
+        pool: &'a DatabasePool,
+        options: MigrationOptions,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DatabaseError>> + Send + 'a>> {
+        Box::pin(run_pending_migrations(pool, options))
+    }
+
     fn run_pending<'a>(
         &'a self,
         pool: &'a DatabasePool,
@@ -204,6 +215,20 @@ impl<M> DatabaseMigrationExtension for MigratorExtension<M>
 where
     M: MigratorTrait + 'static,
 {
+    fn run_public_migrations<'a>(
+        &'a self,
+        pool: &'a DatabasePool,
+        options: MigrationOptions,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DatabaseError>> + Send + 'a>> {
+        let table = M::migration_table_name().to_string();
+        Box::pin(async move {
+            if table == PUBLIC_MIGRATION_TABLE_NAME {
+                return Err(DatabaseError::MigrationTableConflict { table });
+            }
+            run_with::<PublicMigratorWithExtensionHistory<M>>(pool, options).await
+        })
+    }
+
     fn run_pending<'a>(
         &'a self,
         pool: &'a DatabasePool,
@@ -219,6 +244,43 @@ where
                 None => run_pending_migrations_with::<M>(pool, options).await,
             }
         })
+    }
+}
+
+struct PublicMigratorWithExtensionHistory<M>(PhantomData<fn() -> M>);
+
+#[async_trait::async_trait]
+impl<M: MigratorTrait + 'static> MigratorTrait for PublicMigratorWithExtensionHistory<M> {
+    fn migrations() -> Vec<Box<dyn MigrationTrait>> {
+        Migrator::migrations()
+    }
+
+    async fn get_migration_models<C>(
+        db: &C,
+    ) -> Result<Vec<sea_orm_migration::seaql_migrations::Model>, sea_orm::DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        let public = Migrator::migrations()
+            .iter()
+            .map(|migration| migration.name().to_owned())
+            .collect::<HashSet<_>>();
+        let private = M::migrations()
+            .iter()
+            .map(|migration| migration.name().to_owned())
+            .collect::<HashSet<_>>();
+        if !public.is_disjoint(&private) {
+            return Err(sea_orm::DbErr::Custom(
+                "extension migration versions overlap the public registry".to_owned(),
+            ));
+        }
+        // Filter only the status projection. Keep original rows and timestamps
+        // available for adoption; unknown versions still fail SeaORM validation.
+        Ok(Migrator::get_migration_models(db)
+            .await?
+            .into_iter()
+            .filter(|record| !private.contains(&record.version))
+            .collect())
     }
 }
 

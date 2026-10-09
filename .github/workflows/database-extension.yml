@@ -1,0 +1,49 @@
+name: Database extension
+
+on:
+  push:
+    branches: [main, 'fix/**', 'feature/**']
+    paths:
+      - 'crates/af-db/**'
+      - '.github/workflows/database-extension.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/af-db/**'
+      - '.github/workflows/database-extension.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-extension-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  migration-history:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CARGO_BUILD_JOBS: '1'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install Rust tooling
+        run: |
+          bash tools/ci/install-rustup.sh
+          export PATH="$HOME/.cargo/bin:$PATH"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal --component rustfmt --component clippy
+      - name: Check database formatting
+        run: cargo fmt -p af-db -- --check
+      - name: Test extension migration history
+        run: cargo test -p af-db --test extension_migration_history --locked
+      - name: Lint database extension boundary
+        run: cargo clippy -p af-db --lib --test extension_migration_history --locked -- -D warnings
