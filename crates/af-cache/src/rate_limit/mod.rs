@@ -1,7 +1,7 @@
 mod scripts;
 mod types;
 
-use std::{collections::BTreeSet, sync::Arc, time::Duration};
+use std::{collections::BTreeSet, fmt::Write as _, sync::Arc, time::Duration};
 
 use crate::{
     CacheError, CacheOperation, RedisFailureKind, config::validate_cache_key,
@@ -10,8 +10,9 @@ use crate::{
 use scripts::ADMIT_SCRIPT;
 
 pub use types::{
-    MAX_REQUEST_RATE_LIMIT_RULES, RedisRequestRateLimitConfig, RequestRateLimitOutcome,
-    RequestRateLimitRejection, RequestRateLimitRule, RequestRateLimitSubject,
+    FingerprintRateLimitRule, MAX_REQUEST_RATE_LIMIT_RULES, RedisRequestRateLimitConfig,
+    RequestRateLimitOutcome, RequestRateLimitRejection, RequestRateLimitRule,
+    RequestRateLimitSubject,
 };
 
 const ADMIT_OK: i64 = 0;
@@ -52,17 +53,68 @@ impl RedisRequestRateLimitStore {
             .copied()
             .map(|rule| self.rule_key(rule))
             .collect::<Result<Vec<_>, _>>()?;
-        let mut command = redis::cmd("EVAL");
-        command.arg(ADMIT_SCRIPT).arg(keys.len()).arg(&keys);
-        for rule in rules {
-            command.arg(rule.limit().get()).arg(rule.window_millis());
-        }
-        let (status, index, retry_after_millis): (i64, i64, i64) = self
-            .backend
-            .query(CacheOperation::RateLimitCheck, &mut command)
+        let (status, index, retry_after_millis) = self
+            .evaluate(
+                &keys,
+                rules
+                    .iter()
+                    .map(|rule| (rule.limit().get(), rule.window_millis())),
+            )
             .await?;
 
         decode_admit_response(rules, status, index, retry_after_millis)
+    }
+
+    /// Atomically admit anonymous fingerprints in a separate key space.
+    /// `None` means admitted; `Some` contains the Redis-derived retry interval.
+    /// Duplicate rules and unavailable or inconsistent storage return errors.
+    pub async fn admit_fingerprints(
+        &self,
+        rules: &[FingerprintRateLimitRule],
+    ) -> Result<Option<Duration>, CacheError> {
+        validate_fingerprint_rules(rules)?;
+        if rules.is_empty() {
+            return Ok(None);
+        }
+        let keys = rules
+            .iter()
+            .copied()
+            .map(|rule| self.fingerprint_key(rule))
+            .collect::<Result<Vec<_>, _>>()?;
+        let response = self
+            .evaluate(
+                &keys,
+                rules
+                    .iter()
+                    .map(|rule| (rule.limit(), rule.window_millis())),
+            )
+            .await?;
+        decode_fingerprint_response(rules, response)
+    }
+
+    async fn evaluate(
+        &self,
+        keys: &[String],
+        limits: impl IntoIterator<Item = (u32, i64)>,
+    ) -> Result<(i64, i64, i64), CacheError> {
+        let mut command = redis::cmd("EVAL");
+        command.arg(ADMIT_SCRIPT).arg(keys.len()).arg(keys);
+        for (limit, window) in limits {
+            command.arg(limit).arg(window);
+        }
+        self.backend
+            .query(CacheOperation::RateLimitCheck, &mut command)
+            .await
+    }
+
+    fn fingerprint_key(&self, rule: FingerprintRateLimitRule) -> Result<String, CacheError> {
+        let mut key = format!("{}:fingerprint:", self.key_prefix);
+        for byte in rule.fingerprint() {
+            write!(key, "{byte:02x}").expect("writing to a String cannot fail");
+        }
+        write!(key, ":w{}", rule.window_millis()).expect("writing to a String cannot fail");
+        validate_cache_key(&key)?;
+        Ok(key)
     }
 
     fn rule_key(&self, rule: RequestRateLimitRule) -> Result<String, CacheError> {
@@ -76,6 +128,40 @@ impl RedisRequestRateLimitStore {
         );
         validate_cache_key(&key)?;
         Ok(key)
+    }
+}
+
+fn validate_fingerprint_rules(rules: &[FingerprintRateLimitRule]) -> Result<(), CacheError> {
+    if rules.len() > MAX_REQUEST_RATE_LIMIT_RULES {
+        return Err(CacheError::InvalidRateLimitBatch);
+    }
+    let mut unique = BTreeSet::new();
+    for rule in rules {
+        if !unique.insert((rule.fingerprint(), rule.window_millis())) {
+            return Err(CacheError::InvalidRateLimitBatch);
+        }
+    }
+    Ok(())
+}
+
+fn decode_fingerprint_response(
+    rules: &[FingerprintRateLimitRule],
+    (status, index, retry_after_millis): (i64, i64, i64),
+) -> Result<Option<Duration>, CacheError> {
+    match status {
+        ADMIT_OK if index == 0 && retry_after_millis == 0 => Ok(None),
+        ADMIT_LIMITED => {
+            let rule = usize::try_from(index)
+                .ok()
+                .and_then(|index| index.checked_sub(1))
+                .and_then(|index| rules.get(index))
+                .ok_or_else(protocol_error)?;
+            if retry_after_millis <= 0 || retry_after_millis > rule.window_millis() {
+                return Err(protocol_error());
+            }
+            Ok(Some(Duration::from_millis(retry_after_millis as u64)))
+        }
+        _ => Err(protocol_error()),
     }
 }
 
@@ -139,6 +225,62 @@ mod tests {
     use af_domain::{GroupId, TokenId, UserId};
 
     use super::*;
+
+    #[test]
+    fn fingerprint_rules_validate_windows_batches_and_hide_material() {
+        let limit = NonZeroU32::new(1).unwrap();
+        for window in [
+            Duration::ZERO,
+            Duration::from_micros(1),
+            Duration::from_secs(604_801),
+        ] {
+            assert!(FingerprintRateLimitRule::new([7; 32], limit, window).is_err());
+        }
+        let rule = FingerprintRateLimitRule::new([7; 32], limit, Duration::from_secs(60)).unwrap();
+        assert!(validate_fingerprint_rules(&[]).is_ok());
+        assert_eq!(
+            validate_fingerprint_rules(&[rule, rule]),
+            Err(CacheError::InvalidRateLimitBatch)
+        );
+        assert_eq!(
+            validate_fingerprint_rules(&[rule; MAX_REQUEST_RATE_LIMIT_RULES + 1]),
+            Err(CacheError::InvalidRateLimitBatch)
+        );
+        let other = FingerprintRateLimitRule::new([8; 32], limit, Duration::from_secs(60)).unwrap();
+        assert!(validate_fingerprint_rules(&[rule, other]).is_ok());
+        assert!(!format!("{rule:?}").contains("07070707"));
+    }
+
+    #[test]
+    fn fingerprint_protocol_rejects_invalid_indexes_statuses_and_intervals() {
+        let rule = FingerprintRateLimitRule::new(
+            [7; 32],
+            NonZeroU32::new(1).unwrap(),
+            Duration::from_millis(1_500),
+        )
+        .unwrap();
+        assert_eq!(decode_fingerprint_response(&[rule], (0, 0, 0)), Ok(None));
+        assert_eq!(
+            decode_fingerprint_response(&[rule], (1, 1, 1_500)),
+            Ok(Some(Duration::from_millis(1_500)))
+        );
+        for response in [
+            (0, 1, 0),
+            (0, 0, 1),
+            (1, -1, 1),
+            (1, 0, 1),
+            (1, 2, 1),
+            (1, 1, 0),
+            (1, 1, 1_501),
+            (2, 0, 0),
+            (99, 0, 0),
+        ] {
+            assert_eq!(
+                decode_fingerprint_response(&[rule], response),
+                Err(protocol_error())
+            );
+        }
+    }
 
     #[test]
     fn batch_rejects_duplicate_rules_and_excess_capacity() {
