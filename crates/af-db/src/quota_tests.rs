@@ -2229,3 +2229,5 @@ where
     token.update(fixture.pool.connection()).await?;
     Ok(())
 }
+
+mod funding;
