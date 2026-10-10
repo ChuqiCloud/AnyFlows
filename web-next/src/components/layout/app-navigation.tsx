@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useConsoleExtensionNavigation } from '@/extensions/query'
 
 import {
   adminWorkspaceItems,
@@ -130,6 +131,7 @@ function customNavigationTree(links: SiteSidebarLink[], english: boolean, role: 
 
 /** 构建控制台侧栏导航节点树，交给 acmeidc 的 ModuleSidebarLayoutContainer 渲染。 */
 export function useAppNavigationItems(role: 'admin' | 'user'): SidebarNode[] {
+  const extensionRoutes = useConsoleExtensionNavigation(role)
   const { i18n, t } = useTranslation()
   const siteQuery = usePublicSiteSettings()
   const customLinks = siteQuery.data?.navigation.sidebar_links
@@ -149,6 +151,9 @@ export function useAppNavigationItems(role: 'admin' | 'user'): SidebarNode[] {
         t(`nav.sections.${section.key}`),
         [
           ...section.items.map((itemKey) => navNode(itemKey, t)),
+          ...(section.key === 'workspace' ? extensionRoutes.map((route): SidebarNode => ({
+            key: `extension:${route.path}`, title: t(route.titleKey), href: route.path, icon: 'solar:buildings-2-linear',
+          })) : []),
           ...(section.key === 'workspace' ? customNavigationTree(
             customLinks ?? [],
             i18n.resolvedLanguage?.startsWith('en') ?? false,
@@ -156,5 +161,5 @@ export function useAppNavigationItems(role: 'admin' | 'user'): SidebarNode[] {
           ) : []),
         ],
       ))
-  }, [customLinks, i18n.resolvedLanguage, role, t])
+  }, [customLinks, extensionRoutes, i18n.resolvedLanguage, role, t])
 }
