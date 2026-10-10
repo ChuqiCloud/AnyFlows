@@ -1,4 +1,5 @@
 export type AppView =
+  | 'extension'
   | 'account-verification'
   | 'account-verification-settings'
   | 'api'
@@ -45,6 +46,7 @@ export type AppView =
 
 export type AppRoute = {
   view: AppView
+  extensionPath?: string
   channelId?: number
   shareToken?: string
   resetToken?: string
@@ -78,6 +80,8 @@ function profileSectionQuery(hash: string): AppRoute['profileSection'] {
 
 /** 解析临时 hash 路由，并严格限制公开分享令牌的可接受格式。 */
 export function routeFromHash(hash: string): AppRoute {
+  const extensionPath = hash.slice(1).split('?')[0]
+  if (/^\/console\/extensions\/[a-z0-9-]+(?:\/[a-z0-9-]+)*$/.test(extensionPath)) return { view: 'extension', extensionPath }
   if (hash.startsWith(shareRoutePrefix)) {
     const token = hash.slice(shareRoutePrefix.length)
     return {
