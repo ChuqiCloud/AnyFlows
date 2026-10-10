@@ -45,5 +45,7 @@ jobs:
         run: cargo fmt -p af-db -- --check
       - name: Test extension migration history
         run: cargo test -p af-db --test extension_migration_history --locked
+      - name: Test payment order extension transactions
+        run: cargo test -p af-db --test topup_extension_hooks --locked
       - name: Lint database extension boundary
-        run: cargo clippy -p af-db --lib --test extension_migration_history --locked -- -D warnings
+        run: cargo clippy -p af-db --lib --test extension_migration_history --test topup_extension_hooks --locked -- -D warnings

@@ -42,6 +42,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useConsoleExtensionNavigation } from '@/extensions/query'
 import { Collapsible } from 'radix-ui'
 
 import { routeFromHash } from '@/app-route'
@@ -343,6 +344,7 @@ function AdminNavigation({ activeKey }: { activeKey: NavKey }) {
 }
 
 export function AppNavigation({ className, compact = false, role }: AppNavigationProps) {
+  const extensionRoutes = useConsoleExtensionNavigation(role)
   const { t } = useTranslation()
   const siteQuery = usePublicSiteSettings()
   const customLinks = siteQuery.data?.navigation.sidebar_links ?? []
@@ -374,6 +376,7 @@ export function AppNavigation({ className, compact = false, role }: AppNavigatio
             </a>
           )
         })}
+        {extensionRoutes.map((route) => <a key={route.path} href={`#${route.path}`} className="flex h-8 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium text-muted-foreground"><Building2 className="size-4" aria-hidden="true" />{t(route.titleKey)}</a>)}
         {customNavigationTree(customLinks, role).flatMap((node) => node.link.kind === 'group' || node.children.length > 0 ? node.children : [node.link]).map((link, index) => {
           const Icon = customIcons[link.icon] ?? Link2
           const external = !link.url.startsWith('/')
@@ -390,6 +393,9 @@ export function AppNavigation({ className, compact = false, role }: AppNavigatio
         : visibleUserGroups.map((group) => (
           <NavigationGroup key={group.key} label={t(`nav.groups.${group.key}`)} items={group.items} activeKey={activeKey} />
         ))}
+      {extensionRoutes.length > 0 ? <SidebarGroup className="p-0 py-1.5"><SidebarGroupContent><SidebarMenu className="gap-0.5">
+        {extensionRoutes.map((route) => <SidebarMenuItem key={route.path}><SidebarMenuButton asChild tooltip={t(route.titleKey)} isActive={window.location.hash.split('?')[0] === `#${route.path}`} className="h-9 rounded-lg px-3"><a href={`#${route.path}`}><Building2 aria-hidden="true" /><span>{t(route.titleKey)}</span></a></SidebarMenuButton></SidebarMenuItem>)}
+      </SidebarMenu></SidebarGroupContent></SidebarGroup> : null}
       <CustomNavigation links={customLinks} role={role} />
     </div>
   )

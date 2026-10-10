@@ -27,6 +27,8 @@ import { WalletPage } from '@/features/wallet/wallet-page'
 import { applyRouteGuards } from '@/shared/router'
 import { forgeRoutes } from '@/feature/routes'
 import { ConsoleLayout, useConsoleSession } from '@/routes/console-layout'
+import { ConsoleExtensionPage } from '@/extensions/extension-page'
+import { consoleExtensionRoutes } from '@/extensions/registry'
 import { ManagementGate } from '@/routes/management-gate'
 
 type ConsoleOutletContext = {
@@ -152,6 +154,10 @@ export const routes: RouteObject[] = [
           ...consoleIndexModuleRoutes.map((route) => ({ index: true, element: route.element })),
           // 已迁移到模块的路由优先于旧业务路由，避免同路径时旧表先声明而胜出。
           ...consoleModuleRoutes,
+          ...consoleExtensionRoutes.map((route) => ({
+            path: route.path,
+            element: <ConsoleExtensionPage path={route.path} />,
+          })),
           ...consoleRoutes.map((route) => ({
             path: route.path,
             element: route.element,
