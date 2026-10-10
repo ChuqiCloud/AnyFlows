@@ -163,7 +163,9 @@ impl TopupRepository {
         if write.organization_id.is_some() && self.extension.is_none() {
             return Err(internal(TopupRepositoryError::UnsupportedTarget));
         }
-        if let Some(existing) = load_create_collision(self.pool.connection(), write).await? {
+        if write.organization_id.is_none()
+            && let Some(existing) = load_create_collision(self.pool.connection(), write).await?
+        {
             return classify_create_collision(existing, write);
         }
 
@@ -275,17 +277,17 @@ async fn create_order_in_transaction(
     write: &TopupOrderCreate,
     extension: Option<&dyn TopupExtension>,
 ) -> Result<TopupOrderCreateOutcome, TransactionWriteError> {
-    if lock_user(transaction, write.user_id, true).await?.is_none() {
-        return Ok(TopupOrderCreateOutcome::NotFound);
-    }
     if let Some(organization_id) = write.organization_id {
         let extension = extension.ok_or(TopupRepositoryError::UnsupportedTarget)?;
         if !extension
-            .validate_target(transaction, organization_id)
+            .validate_order(transaction, organization_id, write.user_id)
             .await?
         {
             return Ok(TopupOrderCreateOutcome::NotFound);
         }
+    }
+    if lock_user(transaction, write.user_id, true).await?.is_none() {
+        return Ok(TopupOrderCreateOutcome::NotFound);
     }
     if let Some(existing) = load_create_collision(transaction, write).await? {
         return classify_create_collision(existing, write).map_err(Into::into);
@@ -316,7 +318,16 @@ async fn create_order_in_transaction(
     .insert(transaction)
     .await;
     match inserted {
-        Ok(model) => Ok(TopupOrderCreateOutcome::Created(order_record(model)?)),
+        Ok(model) => {
+            let order = order_record(model)?;
+            if write.organization_id.is_some() {
+                extension
+                    .ok_or(TopupRepositoryError::UnsupportedTarget)?
+                    .order_created(transaction, &order)
+                    .await?;
+            }
+            Ok(TopupOrderCreateOutcome::Created(order))
+        }
         Err(error) if is_order_unique_conflict(&error) => {
             Err(TransactionWriteError::UniqueConflict)
         }
