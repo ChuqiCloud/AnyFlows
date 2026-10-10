@@ -1013,6 +1013,13 @@ async fn settle_adjustment(
             .ok_or(QuotaRepositoryError::ExtensionUnavailable)?
             .settle(savepoint, context, actual)
             .await?;
+        let user_result = savepoint
+            .execute(backend.build(&sql::settle_organization_user(state.user_id, actual, now)))
+            .await
+            .map_err(|_| QuotaRepositoryError::Query)?;
+        if user_result.rows_affected() != 1 {
+            return Err(QuotaRepositoryError::Invariant);
+        }
     } else if let Some(settlement) = subscription_settlement {
         subscription::apply_settlement(savepoint, state, user_state, actual, settlement, now)
             .await?;

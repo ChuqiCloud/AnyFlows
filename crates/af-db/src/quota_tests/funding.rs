@@ -166,6 +166,14 @@ async fn funding_uses_shared_idempotency_and_rolls_back_on_token_shortage()
         FixtureConfig::default().user_frozen_quota
     );
     assert_eq!(account.token_remain_quota, 40);
+    assert_eq!(
+        account.user_used_quota,
+        FixtureConfig::default().user_used_quota + 20
+    );
+    assert_eq!(
+        account.user_request_count,
+        FixtureConfig::default().user_request_count + 1
+    );
     fixture.close().await?;
     Ok(())
 }
@@ -189,6 +197,15 @@ async fn funding_supplement_failure_preserves_actual_and_refund_is_terminal()
         Err(QuotaRepositoryError::OrganizationQuotaInsufficient)
     );
     assert_eq!(funds(&fixture).await?, (0, 30, 0));
+    let account = account_snapshot(&fixture.pool, fixture.principal).await?;
+    assert_eq!(
+        account.user_used_quota,
+        FixtureConfig::default().user_used_quota
+    );
+    assert_eq!(
+        account.user_request_count,
+        FixtureConfig::default().user_request_count
+    );
     assert_eq!(
         fixture.repository.refund(id).await,
         Err(QuotaRepositoryError::Conflict)
