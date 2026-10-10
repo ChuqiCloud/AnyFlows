@@ -6,7 +6,6 @@ import { SessionBoundary } from '@/features/auth/session-boundary'
 import { endManagementSession } from '@/features/auth/session-query'
 import type { SessionResponse } from '@/lib/api/generated/types.gen'
 import { requiresAdmin } from '@/routes/access'
-import { findConsoleExtensionRoute } from '@/extensions/registry'
 
 /** 控制台页面共享当前会话，避免每个页面各自判定角色。 */
 const ConsoleSessionContext = createContext<SessionResponse | null>(null)
@@ -57,7 +56,7 @@ export function ConsoleLayout() {
 
   return (
     <SessionBoundary
-      requireAdmin={findConsoleExtensionRoute(pathname)?.access === 'user' ? false : requiresAdmin(pathname)}
+      requireAdmin={requiresAdmin(pathname)}
       onSessionEnded={handleSessionEnded}
       onUserHomeRequired={handleUserHomeRequired}
     >
