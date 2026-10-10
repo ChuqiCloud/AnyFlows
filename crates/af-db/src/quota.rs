@@ -763,16 +763,15 @@ impl QuotaRepository {
                     .rollback()
                     .await
                     .map_err(|_| QuotaRepositoryError::OutcomeUnknown)?;
-                if let Some(context) = funding.as_ref() {
-                    if let Err(error) = self
+                if let Some(context) = funding.as_ref()
+                    && let Err(error) = self
                         .funding_extension
                         .as_ref()
                         .ok_or(QuotaRepositoryError::ExtensionUnavailable)?
                         .pending(&transaction, context, actual)
                         .await
-                    {
-                        return rollback_with_error(transaction, error).await;
-                    }
+                {
+                    return rollback_with_error(transaction, error).await;
                 }
                 transaction
                     .commit()
