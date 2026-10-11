@@ -40,8 +40,10 @@ impl QuotaRepository {
                 id,
                 organization_id: organization,
                 user_id: UserId::new(state.user_id).map_err(|_| QuotaRepositoryError::Invariant)?,
-                token_id: TokenId::new(state.token_id).map_err(|_| QuotaRepositoryError::Invariant)?,
-                group_id: GroupId::new(state.group_id).map_err(|_| QuotaRepositoryError::Invariant)?,
+                token_id: TokenId::new(state.token_id)
+                    .map_err(|_| QuotaRepositoryError::Invariant)?,
+                group_id: GroupId::new(state.group_id)
+                    .map_err(|_| QuotaRepositoryError::Invariant)?,
                 kind: state.reservation_kind,
                 status: state.status,
                 reserved: Quota::new(state.reserved_quota)

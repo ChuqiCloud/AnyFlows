@@ -306,7 +306,10 @@ async fn recovery_preserves_batch_kind_and_rejects_refunded_reservations()
         .repository
         .reserve_batch_task(batch, fixture.principal, quota(30))
         .await?;
-    fixture.repository.settle_batch_task(batch, quota(20)).await?;
+    fixture
+        .repository
+        .settle_batch_task(batch, quota(20))
+        .await?;
     let snapshot = fixture.repository.settlement_snapshot(batch, owner).await?;
     assert_eq!(snapshot.kind, crate::QuotaReservationKind::BatchTask);
     assert_eq!(
