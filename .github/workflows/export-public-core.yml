@@ -87,15 +87,17 @@ jobs:
           chmod 700 "$askpass"
           export GIT_ASKPASS="$askpass"
           export GIT_TERMINAL_PROMPT=0
-          short_commit="${GITEA_COMMIT:0:12}"
-          export_branch="sync/gitea-public-core-$short_commit"
+          export_branch="sync/gitea-public-core"
+          git -C github-public fetch --quiet origin "$GITHUB_PUBLIC_BRANCH"
           if git -C github-public ls-remote --exit-code origin "refs/heads/$export_branch" >/dev/null 2>&1; then
             git -C github-public fetch --quiet origin "$export_branch"
-            git -C github-public checkout -q -B "$export_branch" "FETCH_HEAD"
+            expected_branch_sha="$(git -C github-public rev-parse "FETCH_HEAD^{commit}")"
           else
-            git -C github-public checkout -q -b "$export_branch"
+            expected_branch_sha=""
           fi
+          git -C github-public checkout -q -B "$export_branch" "origin/$GITHUB_PUBLIC_BRANCH"
           echo "export_branch=$export_branch" >> "$GITHUB_OUTPUT"
+          echo "expected_branch_sha=$expected_branch_sha" >> "$GITHUB_OUTPUT"
 
       - name: Export and validate public core
         id: export
@@ -135,7 +137,13 @@ jobs:
           chmod 700 "$askpass"
           export GIT_ASKPASS="$askpass"
           export GIT_TERMINAL_PROMPT=0
-          git -C github-public push --quiet origin \
+          expected_branch_sha="${{ steps.branch.outputs.expected_branch_sha }}"
+          if [ -n "$expected_branch_sha" ]; then
+            lease="refs/heads/${{ steps.branch.outputs.export_branch }}:$expected_branch_sha"
+          else
+            lease="refs/heads/${{ steps.branch.outputs.export_branch }}:"
+          fi
+          git -C github-public push --quiet --force-with-lease="$lease" origin \
             "HEAD:${{ steps.branch.outputs.export_branch }}"
 
       - name: Create or reuse GitHub pull request
@@ -151,12 +159,23 @@ jobs:
             -H 'X-GitHub-Api-Version: 2022-11-28' \
             "$api/pulls?state=open&head=ChuqiCloud:$head&base=$GITHUB_PUBLIC_BRANCH")"
           if jq -e 'length > 0' >/dev/null <<<"$existing"; then
+            number="$(jq -r '.[0].number' <<<"$existing")"
+            body="$(printf '将 Gitea develop 的公共核心变更同步到 GitHub。\n\n来源提交：%s\n来源仓库：%s' \
+              "$GITEA_COMMIT" "${{ github.server_url }}/${{ github.repository }}")"
+            payload="$(jq -n --arg title '同步 Gitea 公共核心' --arg body "$body" \
+              '{title: $title, body: $body}')"
+            curl --fail --silent --show-error --request PATCH \
+              -H "Authorization: Bearer $PUBLIC_REPO_SYNC_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              -H 'Content-Type: application/json' \
+              --data "$payload" "$api/pulls/$number" >/dev/null
             exit 0
           fi
           body="$(printf '将 Gitea develop 的公共核心变更同步到 GitHub。\n\n来源提交：%s\n来源仓库：%s' \
             "$GITEA_COMMIT" "${{ github.server_url }}/${{ github.repository }}")"
           payload="$(jq -n \
-            --arg title "同步 Gitea 公共核心 $GITEA_COMMIT" \
+            --arg title '同步 Gitea 公共核心' \
             --arg head "$head" \
             --arg base "$GITHUB_PUBLIC_BRANCH" \
             --arg body "$body" \
