@@ -5,7 +5,7 @@ use std::{
 };
 
 use af_domain::{
-    BillingContractPriceSnapshot, BillingReservationId, GatewayPrincipal,
+    BillingContractPriceSnapshot, BillingReservationId, GatewayIdentity, GatewayPrincipal,
     OrganizationServiceAccountRuntimeIdentity, Quota,
 };
 use af_protocol::Usage;
@@ -124,8 +124,7 @@ impl BillingRequestPlan {
             return Err(BillingLifecycleError::InvalidActivation);
         }
         Ok(BillingRequestLifecycle {
-            principal,
-            service_account_identity: None,
+            identity: GatewayIdentity::User(principal),
             event_id,
             resolver: self.resolver,
             state: LifecycleState::Free,
@@ -147,8 +146,7 @@ impl BillingRequestPlan {
             return Err(BillingLifecycleError::InvalidActivation);
         };
         Ok(BillingRequestLifecycle {
-            principal,
-            service_account_identity: None,
+            identity: GatewayIdentity::User(principal),
             event_id: reservation_id,
             resolver: self.resolver,
             state: LifecycleState::Metered {
@@ -157,6 +155,56 @@ impl BillingRequestPlan {
                 pending_completion: None,
             },
             settlement_port: Some(settlement_port),
+            usage_port,
+        })
+    }
+
+    /// Start a free request owned solely by an authenticated service account.
+    pub fn start_service_account_free(
+        self,
+        identity: OrganizationServiceAccountRuntimeIdentity,
+        event_id: BillingReservationId,
+        usage_port: Arc<dyn UsageRecordPort>,
+    ) -> Result<BillingRequestLifecycle, BillingLifecycleError> {
+        if self.mode != PlanMode::Free {
+            return Err(BillingLifecycleError::InvalidActivation);
+        }
+        Ok(BillingRequestLifecycle {
+            identity: GatewayIdentity::ServiceAccount(identity),
+            event_id,
+            resolver: self.resolver,
+            state: LifecycleState::Free,
+            settlement_port: None,
+            usage_port,
+        })
+    }
+
+    /// Activate only after the service funding port confirmed the same reservation.
+    /// The original identity is bound to both settlement and RAII compensation.
+    pub fn start_service_account_reserved(
+        self,
+        identity: OrganizationServiceAccountRuntimeIdentity,
+        reservation_id: BillingReservationId,
+        funding: Arc<dyn crate::ServiceAccountBillingPort>,
+        usage_port: Arc<dyn UsageRecordPort>,
+    ) -> Result<BillingRequestLifecycle, BillingLifecycleError> {
+        let PlanMode::Metered { billing_mode, .. } = self.mode else {
+            return Err(BillingLifecycleError::InvalidActivation);
+        };
+        let bound = Arc::new(crate::service_account::BoundServiceAccountBilling {
+            identity,
+            port: funding,
+        });
+        Ok(BillingRequestLifecycle {
+            identity: GatewayIdentity::ServiceAccount(identity),
+            event_id: reservation_id,
+            resolver: self.resolver,
+            state: LifecycleState::Metered {
+                billing_mode,
+                session: BillingSession::from_reserved(reservation_id, bound.clone()),
+                pending_completion: None,
+            },
+            settlement_port: Some(bound),
             usage_port,
         })
     }
@@ -206,8 +254,7 @@ pub enum BillingLifecycleState {
 /// [`Self::complete`]。方法会先固化结算请求，再执行持久化 IO，最后只记录一次 usage。
 #[must_use = "请求计费生命周期必须保留到完成结算或触发 RAII 退款责任"]
 pub struct BillingRequestLifecycle {
-    principal: GatewayPrincipal,
-    service_account_identity: Option<OrganizationServiceAccountRuntimeIdentity>,
+    identity: GatewayIdentity,
     event_id: BillingReservationId,
     resolver: Arc<dyn PricingResolver>,
     state: LifecycleState,
@@ -230,17 +277,6 @@ impl BillingRequestLifecycle {
             LifecycleState::UsagePending(_) => BillingLifecycleState::UsagePending,
             LifecycleState::Completed(_) => BillingLifecycleState::Completed,
         }
-    }
-
-    /// 绑定已由运行时鉴权固定的服务账号身份，后续完成时写入企业审计投影。
-    ///
-    /// 该方法只设置脱敏身份，不改变现有个人/API Key 主体；应在首次完成请求前调用。
-    pub const fn with_service_account_identity(
-        mut self,
-        identity: OrganizationServiceAccountRuntimeIdentity,
-    ) -> Self {
-        self.service_account_identity = Some(identity);
-        self
     }
 
     /// 用最终 usage 完成免费记录或按量结算；相同 usage 的终态重放不会重复副作用。
@@ -303,15 +339,14 @@ impl BillingRequestLifecycle {
         } else {
             let price = self.resolver.resolve(&PricingContext::new(&usage))?;
             BillingCompletion::new(
-                BillingUsageRecord::new_with_dimensions(
+                BillingUsageRecord::new_with_identity(
                     self.event_id,
-                    self.principal,
+                    self.identity,
                     usage,
                     dimensions,
                     price.billing_mode(),
                     price.quota(),
                 )
-                .with_service_account_identity_opt(self.service_account_identity)
                 .with_observation(observation),
             )
         };

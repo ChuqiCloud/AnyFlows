@@ -21,3 +21,17 @@ routing group, authorize a model, reserve funds or enable the existing user gate
 pipeline for service keys. Routing, admission, billing, logging and asynchronous task
 ownership must handle the service variant explicitly before model execution is enabled.
 Database entities, authorization rules and private routes remain in the extension.
+
+Billing usage records have one `GatewayIdentity`. Service records expose no user or
+token principal. A `BillingRequestPlan` has separate service activation methods;
+metered activation binds the original service identity to `ServiceAccountBillingPort`
+for settlement and non-blocking cancellation compensation. Callers must first confirm
+precharge and reuse its absolute expiry on retries.
+
+`DatabaseUsageRecordSink` sends service facts directly to the distribution's
+`UsageRecordProjection`. Missing service storage returns an error and keeps the
+delivery pending. Personal usage continues through `UsageLogRepository`. Service
+facts never create personal usage rows.
+
+The billing port does not authorize model execution. Service model policy, routing,
+rate limits, concurrency and task ownership still require explicit integration.
