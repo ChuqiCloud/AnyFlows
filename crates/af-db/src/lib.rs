@@ -512,7 +512,7 @@ pub use playground_share::{
 pub use quota::{
     QuotaExtension, QuotaExtensionFuture, QuotaFundingContext, QuotaFundingExtension,
     QuotaFundingFuture, QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError,
-    QuotaReservationKind, QuotaReservationStatus,
+    QuotaReservationKind, QuotaReservationStatus, QuotaSettlementSnapshot,
 };
 pub use redemption::{
     IssuedRedemptionBatch, IssuedRedemptionCode, MAX_REDEMPTION_AUDIT_PAGE_SIZE,

@@ -235,3 +235,98 @@ async fn funding_supplement_failure_preserves_actual_and_refund_is_terminal()
     fixture.close().await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn recovery_uses_persisted_actual_after_restart_and_is_owner_scoped()
+-> Result<(), Box<dyn Error>> {
+    let fixture = organization_fixture().await?;
+    let id = reservation_id(0xc4);
+    let owner = Some(af_domain::OrganizationId::new(1)?);
+    fixture
+        .repository
+        .precharge(id, fixture.principal, quota(30))
+        .await?;
+    assert_eq!(
+        fixture.repository.retry_settlement(id, owner).await,
+        Err(QuotaRepositoryError::Conflict)
+    );
+    fixture
+        .pool
+        .extension_connection()
+        .execute_unprepared("UPDATE extension_funds SET balance = 0")
+        .await?;
+    assert_eq!(
+        fixture.repository.settle(id, quota(40)).await,
+        Err(QuotaRepositoryError::OrganizationQuotaInsufficient)
+    );
+    let restarted =
+        QuotaRepository::new(fixture.pool.clone()).with_funding_extension(Arc::new(Funding));
+    let snapshot = restarted.settlement_snapshot(id, owner).await?;
+    assert_eq!(snapshot.actual, Some(quota(40)));
+    assert_eq!(snapshot.status, QuotaReservationStatus::SettlementPending);
+    assert_eq!(
+        restarted.retry_settlement(id, None).await,
+        Err(QuotaRepositoryError::NotFound)
+    );
+    assert_eq!(
+        restarted
+            .retry_settlement(id, Some(af_domain::OrganizationId::new(2)?))
+            .await,
+        Err(QuotaRepositoryError::NotFound)
+    );
+    assert_eq!(funds(&fixture).await?, (0, 30, 0));
+    fixture
+        .pool
+        .extension_connection()
+        .execute_unprepared("UPDATE extension_funds SET balance = 20")
+        .await?;
+    restarted.retry_settlement(id, owner).await?;
+    assert_eq!(
+        restarted.retry_settlement(id, owner).await?,
+        QuotaMutationOutcome::Existing(QuotaReservationStatus::Settled)
+    );
+    assert_eq!(funds(&fixture).await?, (10, 0, 40));
+    assert_eq!(
+        account_snapshot(&fixture.pool, fixture.principal)
+            .await?
+            .token_remain_quota,
+        20
+    );
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn recovery_preserves_batch_kind_and_rejects_refunded_reservations()
+-> Result<(), Box<dyn Error>> {
+    let fixture = organization_fixture().await?;
+    let owner = Some(af_domain::OrganizationId::new(1)?);
+    let batch = reservation_id(0xc5);
+    fixture
+        .repository
+        .reserve_batch_task(batch, fixture.principal, quota(30))
+        .await?;
+    fixture
+        .repository
+        .settle_batch_task(batch, quota(20))
+        .await?;
+    let snapshot = fixture.repository.settlement_snapshot(batch, owner).await?;
+    assert_eq!(snapshot.kind, crate::QuotaReservationKind::BatchTask);
+    assert_eq!(
+        fixture.repository.retry_settlement(batch, owner).await?,
+        QuotaMutationOutcome::Existing(QuotaReservationStatus::Settled)
+    );
+    let refunded = reservation_id(0xc6);
+    fixture
+        .repository
+        .precharge(refunded, fixture.principal, quota(5))
+        .await?;
+    fixture.repository.refund(refunded).await?;
+    assert_eq!(
+        fixture.repository.retry_settlement(refunded, owner).await,
+        Err(QuotaRepositoryError::Conflict)
+    );
+    assert_eq!(funds(&fixture).await?, (80, 0, 20));
+    fixture.close().await?;
+    Ok(())
+}

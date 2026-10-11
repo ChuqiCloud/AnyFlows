@@ -25,9 +25,11 @@ export function DashboardSla() {
   const time = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' })
   const pages = Math.max(1, Math.ceil((report.data?.total ?? 0) / size))
   useEffect(() => {
-    const timer = window.setTimeout(() => { setFilter(search.trim()); setPage(1) }, 300)
+    const nextFilter = search.trim()
+    if (nextFilter === filter) return
+    const timer = window.setTimeout(() => { setFilter(nextFilter); setPage(1) }, 300)
     return () => window.clearTimeout(timer)
-  }, [search])
+  }, [search, filter])
   useEffect(() => {
     if (report.data && !report.isFetching && page > pages) {
       void queryClient.invalidateQueries({ queryKey: ['admin-service-levels', dimension, filter, pages, size, sort], exact: true, refetchType: 'none' })

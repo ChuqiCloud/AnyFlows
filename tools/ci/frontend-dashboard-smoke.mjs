@@ -140,6 +140,11 @@ try {
   await sla.getByRole('button', { name: '下一页', exact: true }).click()
   await sla.getByText('custom-model-5', { exact: true }).waitFor()
   assert.equal(requests.at(-1).page, '2')
+  const pageRequestCount = requests.length
+  await sla.getByRole('textbox', { name: '搜索模型或渠道' }).fill('  ')
+  await delay(400)
+  assert.equal(requests.length, pageRequestCount, 'An unchanged normalized search preserves pagination')
+  assert.equal(await sla.getByText('custom-model-5', { exact: true }).isVisible(), true)
   await sla.getByRole('combobox', { name: '每页', exact: true }).selectOption('5')
   await sla.getByText('gpt-5', { exact: true }).waitFor()
   assert.equal(await sla.locator('.report-sla-row').count(), 5)
