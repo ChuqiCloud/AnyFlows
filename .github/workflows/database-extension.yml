@@ -47,5 +47,7 @@ jobs:
         run: cargo test -p af-db --test extension_migration_history --locked
       - name: Test payment order extension transactions
         run: cargo test -p af-db --test topup_extension_hooks --locked
+      - name: Test shared quota lifecycle and funding transactions
+        run: cargo test -p af-db --lib quota_tests --locked
       - name: Lint database extension boundary
         run: cargo clippy -p af-db --lib --test extension_migration_history --test topup_extension_hooks --locked -- -D warnings

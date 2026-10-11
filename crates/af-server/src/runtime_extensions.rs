@@ -10,7 +10,7 @@ use af_billing::{ContractPriceSource, UsageRecordProjection};
 use af_config::AppConfig;
 use af_db::{
     AdminUsageLogRepository, DatabasePool, OrganizationTokenAuthValidator, QuotaExtension,
-    RequestOutcomeRepository, TopupExtension,
+    QuotaFundingExtension, RequestOutcomeRepository, TopupExtension,
 };
 use af_http::HttpExtensions;
 use af_httpclient::HttpClientProvider;
@@ -54,6 +54,7 @@ pub struct RuntimeExtensions {
     pub contract_prices: Option<Arc<dyn ContractPriceSource>>,
     pub usage_projection: Option<Arc<dyn UsageRecordProjection>>,
     pub quota: Option<Arc<dyn QuotaExtension>>,
+    pub quota_funding: Option<Arc<dyn QuotaFundingExtension>>,
     pub topup: Option<Arc<dyn TopupExtension>>,
     pub background_tasks: Option<BackgroundTaskRegistrar>,
     pub initialize_relay: Option<RelayExtensionInitializer>,
