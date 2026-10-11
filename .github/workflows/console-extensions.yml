@@ -1,0 +1,39 @@
+name: Console extensions
+
+on:
+  push:
+    branches: [main, 'feature/console-extension-entry']
+    paths: ['web/**', 'web-next/**', '.github/workflows/console-extensions.yml']
+  pull_request:
+    branches: [main]
+    paths: ['web/**', 'web-next/**', '.github/workflows/console-extensions.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: console-extensions-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        frontend: [web, web-next]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install package manager and locked dependencies
+        run: |
+          npm install --global corepack@0.34.0
+          corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} install --frozen-lockfile
+      - name: Check scripts and community contracts
+        run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} lint
+      - name: Build community frontend
+        run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build
