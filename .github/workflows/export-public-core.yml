@@ -21,6 +21,7 @@ jobs:
     env:
       GITHUB_PUBLIC_REPOSITORY: ChuqiCloud/AnyFlows
       GITHUB_PUBLIC_BRANCH: main
+      GITEA_SOURCE_REPOSITORY_URL: https://gitea.acmecloud.cn/acmecloud/AnyFlows
       PUBLIC_REPO_SYNC_TOKEN: ${{ secrets.PUBLIC_REPO_SYNC_TOKEN }}
       GITEA_COMMIT: ${{ github.sha }}
     steps:
@@ -161,7 +162,7 @@ jobs:
           if jq -e 'length > 0' >/dev/null <<<"$existing"; then
             number="$(jq -r '.[0].number' <<<"$existing")"
             body="$(printf '将 Gitea develop 的公共核心变更同步到 GitHub。\n\n来源提交：%s\n来源仓库：%s' \
-              "$GITEA_COMMIT" "${{ github.server_url }}/${{ github.repository }}")"
+              "$GITEA_COMMIT" "$GITEA_SOURCE_REPOSITORY_URL")"
             payload="$(jq -n --arg title '同步 Gitea 公共核心' --arg body "$body" \
               '{title: $title, body: $body}')"
             curl --fail --silent --show-error --request PATCH \
@@ -173,7 +174,7 @@ jobs:
             exit 0
           fi
           body="$(printf '将 Gitea develop 的公共核心变更同步到 GitHub。\n\n来源提交：%s\n来源仓库：%s' \
-            "$GITEA_COMMIT" "${{ github.server_url }}/${{ github.repository }}")"
+            "$GITEA_COMMIT" "$GITEA_SOURCE_REPOSITORY_URL")"
           payload="$(jq -n \
             --arg title '同步 Gitea 公共核心' \
             --arg head "$head" \
