@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master, develop]
+    branches: [main]
   pull_request:
-    branches: [master, develop]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -462,6 +462,8 @@ jobs:
     services:
       clickhouse:
         image: docker.io/clickhouse/clickhouse-server:25.8.9.20@sha256:8bc7c69999a7391548765753249eb83f3d93d62d6941484a97188d9d0545fac8
+        ports:
+          - 18123:8123
         env:
           CLICKHOUSE_PASSWORD: anyflows-integration
         options: >-
@@ -505,9 +507,18 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-      - name: Run real ClickHouse integration test
+      - name: Run real ClickHouse integration test on Gitea
+        if: ${{ github.server_url != 'https://github.com' }}
         env:
           ANYFLOWS_CLICKHOUSE_INTEGRATION_URL: http://clickhouse:8123
+          ANYFLOWS_CLICKHOUSE_INTEGRATION_USERNAME: default
+          ANYFLOWS_CLICKHOUSE_INTEGRATION_PASSWORD: anyflows-integration
+        run: bash tools/ci/run-clickhouse-integration-test.sh
+
+      - name: Run real ClickHouse integration test on GitHub
+        if: ${{ github.server_url == 'https://github.com' }}
+        env:
+          ANYFLOWS_CLICKHOUSE_INTEGRATION_URL: http://127.0.0.1:18123
           ANYFLOWS_CLICKHOUSE_INTEGRATION_USERNAME: default
           ANYFLOWS_CLICKHOUSE_INTEGRATION_PASSWORD: anyflows-integration
         run: bash tools/ci/run-clickhouse-integration-test.sh
@@ -643,6 +654,8 @@ jobs:
     services:
       postgres:
         image: postgres:17.10-bookworm@sha256:67870dc097790edf2bd6726658db995dcc830f799d41bb2b78ef07c9a2d5f010
+        ports:
+          - 15432:5432
         env:
           POSTGRES_USER: anyflows
           POSTGRES_PASSWORD: anyflows_ci
@@ -719,6 +732,8 @@ jobs:
     services:
       mysql:
         image: mysql:8.4.10@sha256:6ec1dc148edc412cce3ae27dd5b78dcd4e026976648424b3d31d9a8c6204db4e
+        ports:
+          - 13306:3306
         env:
           MYSQL_USER: anyflows
           MYSQL_PASSWORD: anyflows_ci
