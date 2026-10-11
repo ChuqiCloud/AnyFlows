@@ -5,8 +5,6 @@ import { useTranslation } from 'react-i18next'
 
 import { routeFromHash, type AppRoute, type AppView } from '@/app-route'
 import { AppShell } from '@/components/layout/app-shell'
-import { ConsoleExtensionPage } from '@/extensions/extension-page'
-import { findConsoleExtensionRoute } from '@/extensions/registry'
 import { AuthenticationSettingsPage } from '@/features/authentication-settings/authentication-settings-page'
 import { ForgotPasswordPage } from '@/features/auth/forgot-password-page'
 import { LoginPage, type LoginNotice } from '@/features/auth/login-page'
@@ -74,7 +72,6 @@ function useHashRoute(): [AppRoute, (hash: string) => void] {
 }
 
 type ManagementEntryProps = {
-  extensionPath?: string
   view: Exclude<AppView, 'landing' | 'public-models' | 'register' | 'share' | 'forgot-password' | 'reset-password' | 'oauth-callback'>
   credentialChannelId?: number
   profileSection?: AppRoute['profileSection']
@@ -88,7 +85,6 @@ type ManagementEntryProps = {
 
 /** 在登录或控制台挂载前完成首次安装状态判定。 */
 function ManagementEntry({
-  extensionPath,
   view,
   credentialChannelId,
   profileSection,
@@ -131,8 +127,7 @@ function ManagementEntry({
     return <LoginPage notice={loginNotice} onAuthenticated={onAuthenticated} />
   }
 
-  const extensionRoute = extensionPath ? findConsoleExtensionRoute(extensionPath) : undefined
-  const titleKey = extensionRoute?.titleKey ?? (view === 'channels'
+  const titleKey = view === 'channels'
     ? 'channels.title'
     : view === 'announcements'
       ? 'announcements.title'
@@ -196,10 +191,8 @@ function ManagementEntry({
                         ? 'usageLogs.title'
                         : view === 'debug-traces'
                           ? 'debugTraces.title'
-                        : 'dashboard.title')
-  const content = (admin: boolean) => view === 'extension'
-    ? <ConsoleExtensionPage path={extensionPath ?? ''} />
-    : view === 'channels'
+                        : 'dashboard.title'
+  const content = (admin: boolean) => view === 'channels'
     ? <ChannelPage />
     : view === 'announcements'
       ? <AnnouncementPage />
@@ -265,7 +258,7 @@ function ManagementEntry({
                           ? <DebugTracePage />
                         : <DashboardPage />
 
-  const requireAdmin = extensionRoute ? extensionRoute.access === 'admin' : view !== 'api-keys'
+  const requireAdmin = view !== 'api-keys'
     && view !== 'wallet'
     && view !== 'subscriptions'
     && view !== 'invitations'
@@ -357,7 +350,6 @@ export default function App() {
   return (
     <ManagementEntry
       view={view}
-      extensionPath={route.extensionPath}
       credentialChannelId={route.channelId}
       profileSection={route.profileSection}
       loginNotice={loginNotice}
