@@ -17,12 +17,14 @@ use crate::DatabasePool;
 
 mod funding;
 mod group_windows;
-pub use funding::{QuotaFundingContext, QuotaFundingExtension, QuotaFundingFuture};
+mod recovery;
 mod sql;
 mod state;
 pub(crate) mod subscription;
 mod token_windows;
 
+pub use funding::{QuotaFundingContext, QuotaFundingExtension, QuotaFundingFuture};
+pub use recovery::QuotaSettlementSnapshot;
 use state::{GroupQuotaState, ReservationState, TokenQuotaState, UserQuotaState};
 pub use state::{
     QuotaMutationOutcome, QuotaRepositoryError, QuotaReservationKind, QuotaReservationStatus,

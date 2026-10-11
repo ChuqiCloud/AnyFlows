@@ -288,7 +288,9 @@ async fn configured_clickhouse_supplies_analytics_while_database_supplies_channe
     ) = if let Some(endpoint) = live_clickhouse {
         let (proxy_address, proxy_handle) = spawn_clickhouse_forwarder(&endpoint);
         (
-            endpoint,
+            // The forwarder owns the private test destination. Keep the production
+            // client target public so literal loopback addresses remain forbidden.
+            "http://clickhouse.example".to_owned(),
             REAL_CLICKHOUSE_QUERY.to_owned(),
             std::env::var("ANYFLOWS_CLICKHOUSE_INTEGRATION_USERNAME")
                 .unwrap_or_else(|_| "default".to_owned()),
