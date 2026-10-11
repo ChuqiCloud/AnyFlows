@@ -1,6 +1,4 @@
-import { useState, type ReactNode } from 'react'
-import { Button, Drawer, DrawerContent } from '@heroui/react'
-import { X } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 
@@ -40,7 +38,6 @@ export function AppShell({ children, currentUser, onLogout }: AppShellProps) {
   const { t } = useTranslation()
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const [navigationOpen, setNavigationOpen] = useState(false)
   const items = useAppNavigationItems(currentUser.role)
   const siteQuery = usePublicSiteSettings()
   // 侧栏标题与 Header 品牌同名：属于外壳级常量，不随页面变化。
@@ -56,53 +53,38 @@ export function AppShell({ children, currentUser, onLogout }: AppShellProps) {
 
     if (href) {
       navigate(href)
-      setNavigationOpen(false)
     }
   }
 
-  const sidebar = (mobile = false) => (
-    <ModuleSidebarLayoutContainer
-      containerClassName={mobile ? 'flex h-full w-full flex-col bg-background' : SIDEBAR_CONTAINER_CLASS}
-      defaultSelectedKey="overview"
-      headerAction={(
-        <div className="flex items-center gap-1">
-          <NavigationSectionSwitcher
-            ariaLabel={t('nav.sectionSwitcher')}
-            sections={items.map((item) => ({ key: item.key, title: item.title }))}
-            value={activeSectionKey}
-            onChange={openSection}
-          />
-          {mobile ? <Button isIconOnly size="sm" variant="light" aria-label={t('shell.collapse')} onPress={() => setNavigationOpen(false)}><X className="size-4" aria-hidden="true" /></Button> : null}
-        </div>
-      )}
-      items={items.filter((item) => item.key === activeSectionKey)}
-      sectionClasses={SIDEBAR_SECTION_CLASSES}
-      title={title}
-      onNavigate={() => setNavigationOpen(false)}
-    />
-  )
-
   return (
-    <>
-      <ModuleShell
-        /*
-         * 内容区限宽 960px 居中，与旧站一致：
-         * 控制台页面是按窄栏排版设计的，不设限宽时表格和表单会被拉到整个视口宽。
-         * 内边距留在滚动容器上，限宽只作用于正文，这样滚动时留白不会跟着跳。
-         */
-        contentClassName="min-w-0 flex-1 overflow-auto px-4 py-4 md:px-5"
-        navbar={<Navbar currentUser={currentUser} onLogout={onLogout} onOpenNavigation={() => setNavigationOpen(true)} />}
-        sidebarClassName="hidden shrink-0 sm:block"
-        sidebar={sidebar()}
-      >
-        <AnnouncementStrip />
-        <div className="mx-auto w-full max-w-[960px]">{children}</div>
-      </ModuleShell>
-      <Drawer hideCloseButton isOpen={navigationOpen} placement="left" size="xs" onClose={() => setNavigationOpen(false)}>
-        <DrawerContent className="max-w-[calc(100vw-2rem)]" aria-label={t('nav.label')}>
-          {sidebar(true)}
-        </DrawerContent>
-      </Drawer>
-    </>
+    <ModuleShell
+      /*
+       * 内容区限宽 960px 居中，与旧站一致：
+       * 控制台页面是按窄栏排版设计的，不设限宽时表格和表单会被拉到整个视口宽。
+       * 内边距留在滚动容器上，限宽只作用于正文，这样滚动时留白不会跟着跳。
+       */
+      contentClassName="min-w-0 flex-1 overflow-auto px-4 py-4 md:px-5"
+      navbar={<Navbar currentUser={currentUser} onLogout={onLogout} />}
+      sidebar={
+        <ModuleSidebarLayoutContainer
+          containerClassName={SIDEBAR_CONTAINER_CLASS}
+          defaultSelectedKey="overview"
+          headerAction={(
+            <NavigationSectionSwitcher
+              ariaLabel={t('nav.sectionSwitcher')}
+              sections={items.map((item) => ({ key: item.key, title: item.title }))}
+              value={activeSectionKey}
+              onChange={openSection}
+            />
+          )}
+          items={items.filter((item) => item.key === activeSectionKey)}
+          sectionClasses={SIDEBAR_SECTION_CLASSES}
+          title={title}
+        />
+      }
+    >
+      <AnnouncementStrip />
+      <div className="mx-auto w-full max-w-[960px]">{children}</div>
+    </ModuleShell>
   )
 }

@@ -17,7 +17,6 @@ export type ModuleSidebarLayoutContainerProps = {
   containerClassName?: string;
   /** 分组/条目样式覆盖，透传给 SidebarContainer。 */
   sectionClasses?: SidebarContainerProps["sectionClasses"];
-  onNavigate?: () => void;
 };
 
 export const ModuleSidebarLayoutContainer = ({
@@ -27,7 +26,6 @@ export const ModuleSidebarLayoutContainer = ({
   headerAction,
   containerClassName = "h-full border-r border-divider w-60 flex flex-col bg-content1",
   sectionClasses,
-  onNavigate,
 }: ModuleSidebarLayoutContainerProps) => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -63,10 +61,9 @@ export const ModuleSidebarLayoutContainer = ({
         } else {
           navigate(href);
         }
-        onNavigate?.();
       }
     },
-    [items, navigate, onNavigate],
+    [items, navigate],
   );
 
   return (

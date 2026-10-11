@@ -13,7 +13,6 @@ import {
 import { useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import { Icon } from "@iconify/react";
-import { Menu } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { ThemeSwitch } from "@/shared/components/theme-switch";
@@ -41,10 +40,9 @@ const brandConfig = {
 type NavbarProps = {
   currentUser?: SessionUser;
   onLogout?: () => void;
-  onOpenNavigation?: () => void;
 };
 
-export const Navbar = ({ currentUser, onLogout, onOpenNavigation }: NavbarProps) => {
+export const Navbar = ({ currentUser, onLogout }: NavbarProps) => {
   const { t } = useTranslation();
   const [isProductDrawerOpen, setIsProductDrawerOpen] = useState(false);
   const siteQuery = usePublicSiteSettings();
@@ -95,11 +93,7 @@ export const Navbar = ({ currentUser, onLogout, onOpenNavigation }: NavbarProps)
         maxWidth="full"
       >
         <NavbarContent className="gap-2 grow-0" justify="start">
-          {onOpenNavigation ? (
-            <Button isIconOnly className="sm:hidden" size="sm" variant="light" aria-label={t("shell.expand")} onPress={onOpenNavigation}>
-              <Menu className="size-5" aria-hidden="true" />
-            </Button>
-          ) : <NavbarMenuToggle className="sm:hidden" />}
+          <NavbarMenuToggle className="sm:hidden" />
 
           <NavbarBrand className="gap-2 grow-0">
             <RouterLink className="flex items-center gap-2" to={brandConfig.href}>
