@@ -15,7 +15,9 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::DatabasePool;
 
+mod funding;
 mod group_windows;
+pub use funding::{QuotaFundingContext, QuotaFundingExtension, QuotaFundingFuture};
 mod sql;
 mod state;
 pub(crate) mod subscription;
@@ -72,6 +74,7 @@ pub struct QuotaRepository {
     operation_timeout: Duration,
     reservation_ttl: Duration,
     extension: Option<Arc<dyn QuotaExtension>>,
+    funding_extension: Option<Arc<dyn QuotaFundingExtension>>,
     #[cfg(test)]
     outcome_unknown_after_commit: Arc<AtomicU8>,
 }
@@ -85,6 +88,7 @@ impl QuotaRepository {
             operation_timeout: DEFAULT_OPERATION_TIMEOUT,
             reservation_ttl: DEFAULT_RESERVATION_TTL,
             extension: None,
+            funding_extension: None,
             #[cfg(test)]
             outcome_unknown_after_commit: Arc::new(AtomicU8::new(0)),
         }
@@ -105,6 +109,7 @@ impl QuotaRepository {
             operation_timeout,
             reservation_ttl,
             extension: None,
+            funding_extension: None,
             #[cfg(test)]
             outcome_unknown_after_commit: Arc::new(AtomicU8::new(0)),
         })
@@ -114,6 +119,13 @@ impl QuotaRepository {
     #[must_use]
     pub fn with_extension(mut self, extension: Arc<dyn QuotaExtension>) -> Self {
         self.extension = Some(extension);
+        self
+    }
+
+    /// Keep the shared reservation lifecycle and key/group controls while replacing funding.
+    #[must_use]
+    pub fn with_funding_extension(mut self, extension: Arc<dyn QuotaFundingExtension>) -> Self {
+        self.funding_extension = Some(extension);
         self
     }
 
@@ -285,7 +297,7 @@ impl QuotaRepository {
         reservation_kind: QuotaReservationKind,
         contract_price: Option<BillingContractPriceSnapshot>,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
-        if principal.organization_principal().is_some() {
+        if principal.organization_principal().is_some() && self.funding_extension.is_none() {
             let Some(extension) = self.extension.as_ref() else {
                 return Err(QuotaRepositoryError::ExtensionUnavailable);
             };
@@ -303,12 +315,39 @@ impl QuotaRepository {
             .map_err(|_| QuotaRepositoryError::Query)?;
         let backend = transaction.get_database_backend();
 
+        let funding = principal
+            .organization_principal()
+            .map(|organization| QuotaFundingContext {
+                id,
+                organization_id: organization.organization_id(),
+                user_id: principal.user_id(),
+                token_id: principal.token_id(),
+                group_id: principal.group_id(),
+                reserved: amount,
+                kind: reservation_kind,
+                now,
+                expires_at: Some(expires_at),
+            });
+        if let Some(context) = funding.as_ref()
+            && let Err(error) = self
+                .funding_extension
+                .as_ref()
+                .ok_or(QuotaRepositoryError::ExtensionUnavailable)?
+                .lock(&transaction, context)
+                .await
+        {
+            return rollback_with_error(transaction, error).await;
+        }
+
         // 先取得会被修改的父行锁，避免 MySQL 外键检查先持有共享锁后再升级而死锁。
         let (group_state, _, token_state) = match lock_subject(
             &transaction,
             principal.group_id().get(),
             principal.user_id().get(),
             principal.token_id().get(),
+            funding
+                .as_ref()
+                .map(|context| context.organization_id.get()),
         )
         .await
         {
@@ -316,6 +355,9 @@ impl QuotaRepository {
             Err(error) => return rollback_with_error(transaction, error).await,
         };
 
+        if !token_matches_principal(&token_state, principal) {
+            return rollback_with_error(transaction, QuotaRepositoryError::Conflict).await;
+        }
         match transaction
             .execute(backend.build(&sql::insert_reservation(
                 key.clone(),
@@ -338,7 +380,14 @@ impl QuotaRepository {
                     .await
                     .map_err(|_| QuotaRepositoryError::OutcomeUnknown)?;
                 return self
-                    .existing_precharge(key, principal, amount, reservation_kind, contract_price)
+                    .existing_precharge(
+                        id,
+                        key,
+                        principal,
+                        amount,
+                        reservation_kind,
+                        contract_price,
+                    )
                     .await;
             }
             Err(_) => {
@@ -364,7 +413,7 @@ impl QuotaRepository {
         {
             return rollback_with_error(transaction, error).await;
         }
-        let uses_subscription = if reservation_kind.allows_subscription() {
+        let uses_subscription = if funding.is_none() && reservation_kind.allows_subscription() {
             match subscription::try_reserve(&transaction, &key, &parent, amount, now).await {
                 Ok(value) => value,
                 Err(error) => return rollback_with_error(transaction, error).await,
@@ -373,7 +422,17 @@ impl QuotaRepository {
             false
         };
 
-        if !uses_subscription {
+        if let Some(context) = funding.as_ref() {
+            if let Err(error) = self
+                .funding_extension
+                .as_ref()
+                .ok_or(QuotaRepositoryError::ExtensionUnavailable)?
+                .reserve(&transaction, context, principal)
+                .await
+            {
+                return rollback_with_error(transaction, error).await;
+            }
+        } else if !uses_subscription {
             let user_result = transaction
                 .execute(backend.build(&sql::precharge_user(
                     principal.user_id().get(),
@@ -429,6 +488,7 @@ impl QuotaRepository {
 
     async fn existing_precharge(
         &self,
+        id: BillingReservationId,
         key: String,
         principal: GatewayPrincipal,
         amount: Quota,
@@ -450,6 +510,25 @@ impl QuotaRepository {
         if state.matches_precharge(principal, amount, reservation_kind)
             && state.contract_price == contract_price
         {
+            if principal.organization_principal().is_some() && self.funding_extension.is_some() {
+                let transaction = self
+                    .pool
+                    .connection()
+                    .begin()
+                    .await
+                    .map_err(|_| QuotaRepositoryError::Query)?;
+                let context = funding::context(id, &state, TimeDateTimeWithTimeZone::now_utc())?
+                    .ok_or(QuotaRepositoryError::Invariant)?;
+                self.funding_extension
+                    .as_ref()
+                    .ok_or(QuotaRepositoryError::ExtensionUnavailable)?
+                    .replay(&transaction, &context, principal)
+                    .await?;
+                transaction
+                    .rollback()
+                    .await
+                    .map_err(|_| QuotaRepositoryError::OutcomeUnknown)?;
+            }
             Ok(QuotaMutationOutcome::Existing(state.status))
         } else {
             Err(QuotaRepositoryError::Conflict)
@@ -473,7 +552,7 @@ impl QuotaRepository {
         if !reservation_kind.allows_supplement() && actual.units() > observed.reserved_quota {
             return Err(QuotaRepositoryError::ActualExceedsReservation);
         }
-        if observed.organization_id.is_some() {
+        if observed.organization_id.is_some() && self.funding_extension.is_none() {
             let Some(extension) = self.extension.as_ref() else {
                 return Err(QuotaRepositoryError::ExtensionUnavailable);
             };
@@ -486,12 +565,24 @@ impl QuotaRepository {
             .await
             .map_err(|_| QuotaRepositoryError::Query)?;
         let backend = transaction.get_database_backend();
+        let funding = funding::context(id, &observed, TimeDateTimeWithTimeZone::now_utc())?;
+        if let Some(context) = funding.as_ref()
+            && let Err(error) = self
+                .funding_extension
+                .as_ref()
+                .ok_or(QuotaRepositoryError::ExtensionUnavailable)?
+                .lock(&transaction, context)
+                .await
+        {
+            return rollback_with_error(transaction, error).await;
+        }
 
         let (group_state, user_state, token_state) = match lock_subject(
             &transaction,
             observed.group_id,
             observed.user_id,
             observed.token_id,
+            observed.organization_id,
         )
         .await
         {
@@ -648,6 +739,8 @@ impl QuotaRepository {
                 group_window_allocation: group_window_allocation.as_ref(),
                 token_window_allocation: token_window_allocation.as_ref(),
                 now,
+                funding: funding.as_ref(),
+                funding_extension: self.funding_extension.as_deref(),
             },
         )
         .await;
@@ -660,7 +753,8 @@ impl QuotaRepository {
                 commit_applied(transaction).await
             }
             Err(
-                error @ (QuotaRepositoryError::UserQuotaInsufficient
+                error @ (QuotaRepositoryError::OrganizationQuotaInsufficient
+                | QuotaRepositoryError::UserQuotaInsufficient
                 | QuotaRepositoryError::TokenQuotaInsufficient
                 | QuotaRepositoryError::GroupWindowQuotaInsufficient { .. }
                 | QuotaRepositoryError::TokenWindowQuotaInsufficient { .. }),
@@ -669,6 +763,16 @@ impl QuotaRepository {
                     .rollback()
                     .await
                     .map_err(|_| QuotaRepositoryError::OutcomeUnknown)?;
+                if let Some(context) = funding.as_ref()
+                    && let Err(error) = self
+                        .funding_extension
+                        .as_ref()
+                        .ok_or(QuotaRepositoryError::ExtensionUnavailable)?
+                        .pending(&transaction, context, actual)
+                        .await
+                {
+                    return rollback_with_error(transaction, error).await;
+                }
                 transaction
                     .commit()
                     .await
@@ -697,7 +801,7 @@ impl QuotaRepository {
         if observed.reservation_kind != reservation_kind {
             return Err(QuotaRepositoryError::Conflict);
         }
-        if observed.organization_id.is_some() {
+        if observed.organization_id.is_some() && self.funding_extension.is_none() {
             let Some(extension) = self.extension.as_ref() else {
                 return Err(QuotaRepositoryError::ExtensionUnavailable);
             };
@@ -710,12 +814,24 @@ impl QuotaRepository {
             .await
             .map_err(|_| QuotaRepositoryError::Query)?;
         let backend = transaction.get_database_backend();
+        let funding = funding::context(id, &observed, TimeDateTimeWithTimeZone::now_utc())?;
+        if let Some(context) = funding.as_ref()
+            && let Err(error) = self
+                .funding_extension
+                .as_ref()
+                .ok_or(QuotaRepositoryError::ExtensionUnavailable)?
+                .lock(&transaction, context)
+                .await
+        {
+            return rollback_with_error(transaction, error).await;
+        }
 
         if let Err(error) = lock_subject(
             &transaction,
             observed.group_id,
             observed.user_id,
             observed.token_id,
+            observed.organization_id,
         )
         .await
         {
@@ -793,7 +909,17 @@ impl QuotaRepository {
 
         let reserved = quota_from_db(state.reserved_quota)?;
         let token_reserved = quota_from_db(state.token_reserved_quota)?;
-        if allocation.is_none() {
+        if let Some(context) = funding.as_ref() {
+            if let Err(error) = self
+                .funding_extension
+                .as_ref()
+                .ok_or(QuotaRepositoryError::ExtensionUnavailable)?
+                .refund(&transaction, context)
+                .await
+            {
+                return rollback_with_error(transaction, error).await;
+            }
+        } else if allocation.is_none() {
             let user_result = transaction
                 .execute(backend.build(&sql::refund_user(state.user_id, reserved, now)))
                 .await;
@@ -848,6 +974,8 @@ struct SettlementAdjustment<'a> {
     group_window_allocation: Option<&'a group_windows::GroupWindowAllocation>,
     token_window_allocation: Option<&'a token_windows::TokenWindowAllocation>,
     now: TimeDateTimeWithTimeZone,
+    funding: Option<&'a QuotaFundingContext>,
+    funding_extension: Option<&'a dyn QuotaFundingExtension>,
 }
 
 async fn settle_adjustment(
@@ -867,6 +995,8 @@ async fn settle_adjustment(
         group_window_allocation,
         token_window_allocation,
         now,
+        funding,
+        funding_extension,
     } = adjustment;
     let backend = savepoint.get_database_backend();
     group_windows::apply_settlement(
@@ -878,7 +1008,19 @@ async fn settle_adjustment(
         now,
     )
     .await?;
-    if let Some(settlement) = subscription_settlement {
+    if let Some(context) = funding {
+        funding_extension
+            .ok_or(QuotaRepositoryError::ExtensionUnavailable)?
+            .settle(savepoint, context, actual)
+            .await?;
+        let user_result = savepoint
+            .execute(backend.build(&sql::settle_organization_user(state.user_id, actual, now)))
+            .await
+            .map_err(|_| QuotaRepositoryError::Query)?;
+        if user_result.rows_affected() != 1 {
+            return Err(QuotaRepositoryError::Invariant);
+        }
+    } else if let Some(settlement) = subscription_settlement {
         subscription::apply_settlement(savepoint, state, user_state, actual, settlement, now)
             .await?;
     } else {
@@ -1011,16 +1153,17 @@ async fn lock_subject(
     group_id: i64,
     user_id: i64,
     token_id: i64,
+    organization_id: Option<i64>,
 ) -> Result<(GroupQuotaState, UserQuotaState, TokenQuotaState), QuotaRepositoryError> {
     let group = lock_group(transaction, group_id).await?;
     let user = lock_user(transaction, user_id).await?;
     let token = lock_token(transaction, token_id).await?;
-    let principal = GatewayPrincipal::new(
-        af_domain::TokenId::new(token_id).map_err(|_| QuotaRepositoryError::Invariant)?,
-        af_domain::UserId::new(user_id).map_err(|_| QuotaRepositoryError::Invariant)?,
-        af_domain::GroupId::new(group_id).map_err(|_| QuotaRepositoryError::Invariant)?,
-    );
-    if !token_matches_principal(&token, principal) {
+    if token.user_id != user_id
+        || (organization_id.is_none()
+            && (token.organization_id.is_some()
+                || token.organization_membership_id.is_some()
+                || token.organization_team_id.is_some()))
+    {
         return Err(QuotaRepositoryError::Invariant);
     }
     Ok((group, user, token))

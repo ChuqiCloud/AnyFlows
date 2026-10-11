@@ -1690,6 +1690,10 @@ impl Bootstrap<RelayReady> {
             Some(extension) => quota_repository.with_extension(Arc::clone(extension)),
             None => quota_repository,
         };
+        let quota_repository = match self.stage.infrastructure.extensions.quota_funding.as_ref() {
+            Some(extension) => quota_repository.with_funding_extension(Arc::clone(extension)),
+            None => quota_repository,
+        };
         let quota_repository = Arc::new(quota_repository);
         let precharge_port: Arc<dyn BillingPrechargePort> = quota_repository.clone();
         let settlement_port: Arc<dyn BillingSettlementPort> = quota_repository.clone();
