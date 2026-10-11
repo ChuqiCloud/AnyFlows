@@ -56,6 +56,7 @@ mod registration_verification;
 mod route_read;
 mod route_write;
 mod routing_read;
+mod service_account_auth;
 mod session;
 mod site_settings;
 mod subscription;
@@ -309,6 +310,10 @@ pub use route_write::{
 pub use routing_read::{
     AdminChannelGetFuture, AdminChannelListFuture, AdminChannelReadError, AdminChannelReader,
     AdminCredentialGetFuture, AdminCredentialListFuture, DatabaseAdminChannelReader,
+};
+pub use service_account_auth::{
+    PresentedServiceAccountKey, ServiceAccountAuthentication, ServiceAccountAuthenticationError,
+    ServiceAccountAuthenticationFuture, ServiceAccountAuthenticator, ServiceAccountKeyDigest,
 };
 pub use session::{
     DatabaseSessionAuthenticator, IssuedSession, LoginCredentials, SessionAuthentication,
