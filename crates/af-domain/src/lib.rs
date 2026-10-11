@@ -8,6 +8,7 @@ mod channel;
 mod concurrency;
 mod enums;
 mod error;
+mod gateway_identity;
 mod network;
 mod payment;
 mod platform_permission;
@@ -40,6 +41,7 @@ pub use error::{
     AfError, NetworkFailureKind, QuotaWindowRetryAfter, RateLimitScope, UpstreamError,
     UpstreamRetryAfter, UpstreamServerStatus,
 };
+pub use gateway_identity::GatewayIdentity;
 pub use network::{IpCidr, IpCidrParseError, TrustedClientIp};
 pub use payment::{
     TopupIdentifierError, TopupOrderId, TopupOrderStatus, TopupPaymentEventId,
