@@ -18,7 +18,7 @@ jobs:
     if: >-
       github.event.pull_request.merged == true &&
       github.event.pull_request.base.ref == 'main' &&
-      !startsWith(github.event.pull_request.head.ref, 'sync/gitea-public-core-')
+      !startsWith(github.event.pull_request.head.ref, 'sync/gitea-public-core')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
