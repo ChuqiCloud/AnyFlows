@@ -57,6 +57,11 @@ mod route_read;
 mod route_write;
 mod routing_read;
 mod service_account_auth;
+mod service_account_models;
+pub use service_account_models::{
+    ServiceAccountModelAuthentication, ServiceAccountModelAuthenticationError,
+    ServiceAccountModelAuthenticationFuture, ServiceAccountModelAuthenticator,
+};
 mod session;
 mod site_settings;
 mod subscription;
