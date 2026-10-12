@@ -64,6 +64,18 @@ impl OrganizationServiceAccountKey {
         }
         Err(OrganizationServiceAccountKeyError)
     }
+
+    /// Stable lowercase identifier used only for authorization scope keys.
+    #[must_use]
+    pub fn persistence_key(self) -> String {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut value = String::with_capacity(RUNTIME_KEY_BYTES * 2);
+        for byte in self.0 {
+            value.push(char::from(HEX[usize::from(byte >> 4)]));
+            value.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+        value
+    }
 }
 
 impl fmt::Debug for OrganizationServiceAccountKey {
