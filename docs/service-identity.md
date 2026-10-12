@@ -33,5 +33,8 @@ precharge and reuse its absolute expiry on retries.
 delivery pending. Personal usage continues through `UsageLogRepository`. Service
 facts never create personal usage rows.
 
-The billing port does not authorize model execution. Service model policy, routing,
-rate limits, concurrency and task ownership still require explicit integration.
+The billing port does not authorize model execution. Hosts also register the
+model authorization port for synchronous model endpoints; see
+[Service model authorization](service-model-authorization.md). Service identities
+are never converted to personal principals. Asynchronous task ownership remains
+outside this registration.

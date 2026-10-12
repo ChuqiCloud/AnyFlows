@@ -367,11 +367,26 @@ impl RuntimeModelCatalogReader {
 }
 
 impl ModelCatalogReader for RuntimeModelCatalogReader {
+    fn list_for_service_account(
+        &self,
+        authentication: af_admin::ServiceAccountModelAuthentication,
+    ) -> af_admin::GatewayModelListFuture<'_> {
+        Box::pin(async move {
+            self.list_gateway_models(af_admin::GatewayModelAuthentication::ServiceAccount(
+                authentication,
+            ))
+            .await
+        })
+    }
+
     fn list_for_token(
         &self,
         authentication: af_admin::TokenAuthentication,
     ) -> af_admin::GatewayModelListFuture<'_> {
-        Box::pin(async move { self.list_gateway_models(authentication).await })
+        Box::pin(async move {
+            self.list_gateway_models(af_admin::GatewayModelAuthentication::User(authentication))
+                .await
+        })
     }
 
     fn list<'a>(

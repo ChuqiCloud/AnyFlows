@@ -171,8 +171,7 @@ fn validate_rules(rules: &[RequestRateLimitRule]) -> Result<(), CacheError> {
     }
     let mut unique = BTreeSet::new();
     for rule in rules {
-        let (kind, identifier) = rule.subject().duplicate_key();
-        if !unique.insert((kind, identifier, rule.window_millis())) {
+        if !unique.insert((rule.subject().duplicate_key(), rule.window_millis())) {
             return Err(CacheError::InvalidRateLimitBatch);
         }
     }

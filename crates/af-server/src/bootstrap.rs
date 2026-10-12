@@ -1856,7 +1856,14 @@ impl Bootstrap<RelayReady> {
                 Some(settlement_port),
                 usage_port,
             )
-            .with_request_outcomes(request_outcomes),
+            .with_request_outcomes(request_outcomes)
+            .with_service_account_billing(
+                self.stage
+                    .infrastructure
+                    .extensions
+                    .service_account_billing
+                    .clone(),
+            ),
         );
         let Bootstrap {
             config,
@@ -1873,6 +1880,14 @@ impl Bootstrap<RelayReady> {
             group_pricing_refresher,
         ));
         let authenticator = Arc::clone(&infrastructure.authenticator);
+        if let Some(authenticator) = infrastructure.extensions.service_account_models.take() {
+            infrastructure.extensions.service_account_models = Some(Arc::new(
+                crate::request_rate_limit::RuntimeServiceModelAuthenticator::new(
+                    authenticator,
+                    request_rate_limit_store.clone(),
+                ),
+            ));
+        }
         infrastructure.authenticator = Arc::new(RuntimeTokenAuthenticator::new(
             authenticator,
             request_rate_limit_store,
@@ -2433,6 +2448,16 @@ impl Bootstrap<Supervised> {
                 user_topup_service: &user_topup_service,
                 upstream_clients: &self.stage.upstream_clients,
             }));
+        }
+        if let Some(authenticator) = self
+            .stage
+            .infrastructure
+            .extensions
+            .service_account_models
+            .as_ref()
+        {
+            http_extensions =
+                http_extensions.with_service_account_models(Arc::clone(authenticator));
         }
         let router = build_router(
             self.config.server(),

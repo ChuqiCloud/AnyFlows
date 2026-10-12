@@ -17,6 +17,62 @@ use af_telemetry::{
 
 const REQUEST_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
 
+pub(crate) struct RuntimeServiceModelAuthenticator {
+    inner: Arc<dyn af_admin::ServiceAccountModelAuthenticator>,
+    store: Option<Arc<dyn RequestRateLimitStore>>,
+}
+
+impl RuntimeServiceModelAuthenticator {
+    pub(crate) fn new(
+        inner: Arc<dyn af_admin::ServiceAccountModelAuthenticator>,
+        store: Option<Arc<dyn RequestRateLimitStore>>,
+    ) -> Self {
+        Self { inner, store }
+    }
+}
+
+impl af_admin::ServiceAccountModelAuthenticator for RuntimeServiceModelAuthenticator {
+    fn authenticate_models<'a>(
+        &'a self,
+        digest: &'a af_admin::ServiceAccountKeyDigest,
+    ) -> af_admin::ServiceAccountModelAuthenticationFuture<'a> {
+        Box::pin(async move {
+            use af_admin::ServiceAccountModelAuthenticationError as Error;
+            let authentication = self.inner.authenticate_models(digest).await?;
+            let rule = RequestRateLimitRule::new(
+                RequestRateLimitSubject::ServiceAccount(
+                    authentication.authentication().identity().locator(),
+                ),
+                authentication.rpm_limit(),
+                REQUEST_RATE_LIMIT_WINDOW,
+            )
+            .map_err(|_| Error::Unavailable)?;
+            let store = self.store.as_ref().ok_or(Error::Unavailable)?;
+            record_request_rate_limit_check(1);
+            match store.admit(&[rule]).await {
+                Ok(RequestRateLimitOutcome::Admitted) => {
+                    record_request_rate_limit_admission();
+                    Ok(authentication)
+                }
+                Ok(RequestRateLimitOutcome::Limited(rejection)) => {
+                    record_request_rate_limit_rejection(
+                        MetricRequestRateLimitSubject::ServiceAccount,
+                        rejection.retry_after(),
+                    );
+                    Err(Error::RateLimited {
+                        retry_after: retry_after(rejection.retry_after())
+                            .ok_or(Error::Unavailable)?,
+                    })
+                }
+                Err(error) => {
+                    record_request_rate_limit_failure(metric_failure(error));
+                    Err(Error::Unavailable)
+                }
+            }
+        })
+    }
+}
+
 type AdmissionFuture<'a> =
     Pin<Box<dyn Future<Output = Result<RequestRateLimitOutcome, CacheError>> + Send + 'a>>;
 
@@ -141,6 +197,7 @@ const fn metric_subject(subject: RequestRateLimitSubject) -> MetricRequestRateLi
         RequestRateLimitSubject::User(_) => MetricRequestRateLimitSubject::User,
         RequestRateLimitSubject::Group(_) => MetricRequestRateLimitSubject::Group,
         RequestRateLimitSubject::Token(_) => MetricRequestRateLimitSubject::Token,
+        RequestRateLimitSubject::ServiceAccount(_) => MetricRequestRateLimitSubject::ServiceAccount,
     }
 }
 
@@ -401,5 +458,75 @@ mod tests {
 
     fn client_ip() -> TrustedClientIp {
         TrustedClientIp::new("192.0.2.1".parse().unwrap())
+    }
+
+    struct FixedServiceAuthenticator;
+    impl af_admin::ServiceAccountModelAuthenticator for FixedServiceAuthenticator {
+        fn authenticate_models<'a>(
+            &'a self,
+            _: &'a af_admin::ServiceAccountKeyDigest,
+        ) -> af_admin::ServiceAccountModelAuthenticationFuture<'a> {
+            Box::pin(async {
+                use af_domain::{
+                    OrganizationId, OrganizationServiceAccountId, OrganizationServiceAccountKey,
+                    OrganizationServiceAccountLocator, OrganizationServiceAccountRuntimeIdentity,
+                    ServiceModelPolicy,
+                };
+                Ok(af_admin::ServiceAccountModelAuthentication::new(
+                    af_admin::ServiceAccountAuthentication::new(
+                        OrganizationServiceAccountRuntimeIdentity::new(
+                            OrganizationServiceAccountLocator::new(
+                                OrganizationId::new(1).unwrap(),
+                                OrganizationServiceAccountId::new(2).unwrap(),
+                            ),
+                            OrganizationServiceAccountKey::new([3; 16]).unwrap(),
+                            OrganizationServiceAccountKey::new([4; 16]).unwrap(),
+                        ),
+                        None,
+                        None,
+                    ),
+                    GroupId::new(5).unwrap(),
+                    ServiceModelPolicy::new(vec!["gpt-5".into()]).unwrap(),
+                    af_domain::ConcurrencyLimit::new(2).unwrap(),
+                    NonZeroU32::new(30).unwrap(),
+                ))
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn service_admission_uses_account_scope_and_rejects_missing_or_failed_storage() {
+        use af_admin::ServiceAccountModelAuthenticator as _;
+        let presented =
+            af_admin::PresentedServiceAccountKey::parse(&format!("sa_{}", "ab".repeat(32)))
+                .unwrap();
+        let digest = presented.digest();
+        drop(presented);
+        let missing =
+            RuntimeServiceModelAuthenticator::new(Arc::new(FixedServiceAuthenticator), None);
+        assert_eq!(
+            missing.authenticate_models(&digest).await.unwrap_err(),
+            af_admin::ServiceAccountModelAuthenticationError::Unavailable
+        );
+        let failed = RuntimeServiceModelAuthenticator::new(
+            Arc::new(FixedServiceAuthenticator),
+            Some(Arc::new(FailingStore)),
+        );
+        assert_eq!(
+            failed.authenticate_models(&digest).await.unwrap_err(),
+            af_admin::ServiceAccountModelAuthenticationError::Unavailable
+        );
+        let store = Arc::new(AdmittingStore::default());
+        let admitted = RuntimeServiceModelAuthenticator::new(
+            Arc::new(FixedServiceAuthenticator),
+            Some(store.clone()),
+        );
+        let auth = admitted.authenticate_models(&digest).await.unwrap();
+        let batches = store.batches.lock().unwrap();
+        assert_eq!(batches[0].len(), 1);
+        assert_eq!(
+            batches[0][0].subject(),
+            RequestRateLimitSubject::ServiceAccount(auth.authentication().identity().locator())
+        );
     }
 }
