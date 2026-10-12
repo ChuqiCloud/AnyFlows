@@ -208,12 +208,12 @@ async fn service_account_identity_is_carried_into_billing_completion() {
     let plan = BillingRequestPlan::prepare(Arc::new(RatioPricingResolver::free()), &measured)
         .expect("免费定价必须可准备");
     let mut lifecycle = plan
-        .start_free(principal(), reservation_id(6), usage_port.clone())
-        .unwrap()
-        .with_service_account_identity(identity);
+        .start_service_account_free(identity, reservation_id(6), usage_port.clone())
+        .unwrap();
 
     let completion = lifecycle.complete(measured).await.unwrap();
 
+    assert_eq!(completion.usage_record().principal(), None);
     assert_eq!(completion.service_account_identity(), Some(identity));
     assert_eq!(
         completion.usage_record().service_account_identity(),
@@ -223,6 +223,132 @@ async fn service_account_identity_is_carried_into_billing_completion() {
         usage_port.records()[0].service_account_identity(),
         Some(identity)
     );
+}
+
+#[derive(Default)]
+struct ServiceFunding {
+    settlements: Mutex<
+        Vec<(
+            OrganizationServiceAccountRuntimeIdentity,
+            crate::SettlementRequest,
+        )>,
+    >,
+    refunds: Mutex<
+        Vec<(
+            OrganizationServiceAccountRuntimeIdentity,
+            BillingReservationId,
+        )>,
+    >,
+    fail_first: AtomicUsize,
+}
+
+impl crate::ServiceAccountBillingPort for ServiceFunding {
+    fn precharge<'a>(
+        &'a self,
+        _: BillingReservationId,
+        _: OrganizationServiceAccountRuntimeIdentity,
+        _: Quota,
+        _: i64,
+    ) -> crate::BillingPrechargeFuture<'a> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn settle<'a>(
+        &'a self,
+        identity: OrganizationServiceAccountRuntimeIdentity,
+        request: crate::SettlementRequest,
+    ) -> BillingSettlementFuture<'a> {
+        Box::pin(async move {
+            self.settlements.lock().unwrap().push((identity, request));
+            if self.fail_first.swap(0, Ordering::AcqRel) > 0 {
+                Err(BillingSettlementError::OutcomeUnknown)
+            } else {
+                Ok(())
+            }
+        })
+    }
+
+    fn try_signal_refund(
+        &self,
+        identity: OrganizationServiceAccountRuntimeIdentity,
+        id: BillingReservationId,
+    ) -> RefundSignalOutcome {
+        self.refunds.lock().unwrap().push((identity, id));
+        RefundSignalOutcome::Accepted
+    }
+}
+
+fn service_identity() -> OrganizationServiceAccountRuntimeIdentity {
+    OrganizationServiceAccountRuntimeIdentity::new(
+        OrganizationServiceAccountLocator::new(
+            OrganizationId::new(44).unwrap(),
+            OrganizationServiceAccountId::new(55).unwrap(),
+        ),
+        OrganizationServiceAccountKey::new([1; 16]).unwrap(),
+        OrganizationServiceAccountKey::new([2; 16]).unwrap(),
+    )
+}
+
+#[tokio::test]
+async fn service_settlement_retry_preserves_identity_usage_and_refund_ownership() {
+    let funding = Arc::new(ServiceFunding::default());
+    funding.fail_first.store(1, Ordering::Release);
+    let records = Arc::new(RecordingUsagePort::default());
+    let measured = usage(20, 7);
+    let mut lifecycle = BillingRequestPlan::prepare(Arc::new(metered_resolver()), &measured)
+        .unwrap()
+        .start_service_account_reserved(
+            service_identity(),
+            reservation_id(61),
+            funding.clone(),
+            records.clone(),
+        )
+        .unwrap();
+    assert_eq!(
+        lifecycle.complete(measured).await,
+        Err(BillingLifecycleError::Settlement(
+            BillingSettlementError::OutcomeUnknown
+        ))
+    );
+    assert_eq!(lifecycle.state(), BillingLifecycleState::SettlementPending);
+    assert_eq!(
+        lifecycle.complete(usage(20, 8)).await,
+        Err(BillingLifecycleError::CompletionConflict)
+    );
+    let completed = lifecycle.complete(measured).await.unwrap();
+    assert_eq!(completed.usage_record().principal(), None);
+    assert_eq!(
+        completed.service_account_identity(),
+        Some(service_identity())
+    );
+    assert_eq!(lifecycle.complete(measured).await.unwrap(), completed);
+    drop(lifecycle);
+    let requests = funding.settlements.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0], requests[1]);
+    assert_eq!(requests[0].0, service_identity());
+    assert!(funding.refunds.lock().unwrap().is_empty());
+    assert_eq!(records.records(), vec![completed.usage_record()]);
+}
+
+#[tokio::test]
+async fn service_cancellation_refunds_only_the_original_identity() {
+    let funding = Arc::new(ServiceFunding::default());
+    let lifecycle = BillingRequestPlan::prepare(Arc::new(metered_resolver()), &usage(20, 7))
+        .unwrap()
+        .start_service_account_reserved(
+            service_identity(),
+            reservation_id(62),
+            funding.clone(),
+            Arc::new(RecordingUsagePort::default()),
+        )
+        .unwrap();
+    drop(lifecycle);
+    assert_eq!(
+        *funding.refunds.lock().unwrap(),
+        vec![(service_identity(), reservation_id(62))]
+    );
+    assert!(funding.settlements.lock().unwrap().is_empty());
 }
 
 #[tokio::test]

@@ -6,7 +6,7 @@ use af_account::SystemSecretCipher;
 use af_admin::{
     PasskeyAuthenticationService, SessionAuthenticator, UserProfileService, UserTopupService,
 };
-use af_billing::{ContractPriceSource, UsageRecordProjection};
+use af_billing::{ContractPriceSource, ServiceAccountBillingPort, UsageRecordProjection};
 use af_config::AppConfig;
 use af_db::{
     AdminUsageLogRepository, DatabasePool, OrganizationTokenAuthValidator, QuotaExtension,
@@ -53,6 +53,8 @@ pub struct RuntimeExtensions {
     pub organization_token_validator: Option<Arc<dyn OrganizationTokenAuthValidator>>,
     pub contract_prices: Option<Arc<dyn ContractPriceSource>>,
     pub usage_projection: Option<Arc<dyn UsageRecordProjection>>,
+    /// Independent funding; registration alone does not enable model execution.
+    pub service_account_billing: Option<Arc<dyn ServiceAccountBillingPort>>,
     pub quota: Option<Arc<dyn QuotaExtension>>,
     pub quota_funding: Option<Arc<dyn QuotaFundingExtension>>,
     pub topup: Option<Arc<dyn TopupExtension>>,

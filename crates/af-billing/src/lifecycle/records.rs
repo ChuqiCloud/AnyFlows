@@ -1,8 +1,8 @@
 use std::fmt;
 
 use af_domain::{
-    BillingReservationId, GatewayPrincipal, Operation, OrganizationServiceAccountRuntimeIdentity,
-    Protocol, Quota,
+    BillingReservationId, GatewayIdentity, GatewayPrincipal, Operation,
+    OrganizationServiceAccountRuntimeIdentity, Protocol, Quota,
 };
 use af_protocol::{
     AudioDuration, ReasoningEffort, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
@@ -292,8 +292,7 @@ impl BillingUsageDimensions {
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct BillingUsageRecord {
     event_id: BillingReservationId,
-    principal: GatewayPrincipal,
-    service_account_identity: Option<OrganizationServiceAccountRuntimeIdentity>,
+    identity: GatewayIdentity,
     usage: Usage,
     dimensions: BillingUsageDimensions,
     observation: BillingUsageObservation,
@@ -328,10 +327,27 @@ impl BillingUsageRecord {
         billing_mode: BillingMode,
         quota: Quota,
     ) -> Self {
+        Self::new_with_identity(
+            event_id,
+            GatewayIdentity::User(principal),
+            usage,
+            dimensions,
+            billing_mode,
+            quota,
+        )
+    }
+
+    pub(crate) const fn new_with_identity(
+        event_id: BillingReservationId,
+        identity: GatewayIdentity,
+        usage: Usage,
+        dimensions: BillingUsageDimensions,
+        billing_mode: BillingMode,
+        quota: Quota,
+    ) -> Self {
         Self {
             event_id,
-            principal,
-            service_account_identity: None,
+            identity,
             usage,
             dimensions,
             observation: BillingUsageObservation::empty(),
@@ -382,39 +398,29 @@ impl BillingUsageRecord {
         self.event_id
     }
 
-    /// 返回已认证的请求主体。
+    /// The mutually exclusive owner of this usage fact.
     #[must_use]
-    pub const fn principal(self) -> GatewayPrincipal {
-        self.principal
+    pub const fn identity(self) -> GatewayIdentity {
+        self.identity
     }
 
-    /// 返回可选的脱敏服务账号运行时身份；个人/API Key 调用保持为空。
+    /// Personal records alone have a user/token principal.
+    #[must_use]
+    pub const fn principal(self) -> Option<GatewayPrincipal> {
+        match self.identity {
+            GatewayIdentity::User(principal) => Some(principal),
+            GatewayIdentity::ServiceAccount(_) => None,
+        }
+    }
+
     #[must_use]
     pub const fn service_account_identity(
         self,
     ) -> Option<OrganizationServiceAccountRuntimeIdentity> {
-        self.service_account_identity
-    }
-
-    /// 绑定已完成企业与活动密钥校验的服务账号身份，供用量审计投影使用。
-    ///
-    /// 身份只包含企业、服务账号公开标识和密钥公开标识，不含密钥明文、摘要或自然人
-    /// 身份；调用方应在生命周期完成前设置该值。
-    #[must_use]
-    pub const fn with_service_account_identity(
-        mut self,
-        identity: OrganizationServiceAccountRuntimeIdentity,
-    ) -> Self {
-        self.service_account_identity = Some(identity);
-        self
-    }
-
-    pub(crate) const fn with_service_account_identity_opt(
-        mut self,
-        identity: Option<OrganizationServiceAccountRuntimeIdentity>,
-    ) -> Self {
-        self.service_account_identity = identity;
-        self
+        match self.identity {
+            GatewayIdentity::ServiceAccount(identity) => Some(identity),
+            GatewayIdentity::User(_) => None,
+        }
     }
 
     /// 返回本次请求的最终规范化用量。
