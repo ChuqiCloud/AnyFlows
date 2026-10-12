@@ -1,4 +1,4 @@
-use af_admin::{GatewayModel, ModelCatalogReadError, TokenAuthentication};
+use af_admin::{GatewayModel, GatewayModelAuthentication, ModelCatalogReadError};
 use af_db::MAX_ADMIN_MODEL_PAGE_SIZE;
 
 use super::{MAX_METADATA_SCAN_PAGES, RuntimeModelCatalogReader};
@@ -6,7 +6,7 @@ use super::{MAX_METADATA_SCAN_PAGES, RuntimeModelCatalogReader};
 impl RuntimeModelCatalogReader {
     pub(super) async fn list_gateway_models(
         &self,
-        authentication: TokenAuthentication,
+        authentication: GatewayModelAuthentication,
     ) -> Result<Vec<GatewayModel>, ModelCatalogReadError> {
         if self.model_prices.is_stale() {
             return Err(ModelCatalogReadError::Internal);
@@ -19,7 +19,7 @@ impl RuntimeModelCatalogReader {
             .channel_index
             .snapshot()
             .map_err(|_| ModelCatalogReadError::Internal)?;
-        let group_id = authentication.principal().group_id();
+        let group_id = authentication.group_id();
         let mut cursor = None;
         let mut models = Vec::new();
         // OpenAI 客户端期望完整列表；内部逐页扫描仍保留目录容量上限。
@@ -31,7 +31,7 @@ impl RuntimeModelCatalogReader {
                 .map_err(|_| ModelCatalogReadError::Internal)?;
             let (records, next_cursor) = page.into_parts();
             for record in records {
-                if !authentication.model_policy().allows(record.model())
+                if !authentication.allows_model(record.model())
                     || prices.get(record.model()).is_none()
                     || runtime
                         .candidates(group_id, record.model())

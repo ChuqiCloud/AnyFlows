@@ -5,6 +5,62 @@ use crate::{ApiKeyExtractionError, QueryApiKeyPolicy, extract_presented_api_key}
 
 const TEST_KEY: &str = "sk-af-AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
 
+#[test]
+fn service_model_keys_require_one_bearer_and_scrub_conflicting_carriers() {
+    use crate::credentials::{PresentedModelKey, extract_presented_model_key};
+    let secret = format!("sa_{}", "ab".repeat(32));
+    let mut accepted = request("/v1/models");
+    accepted.headers_mut().insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(&format!("Bearer {secret}")).unwrap(),
+    );
+    assert!(matches!(
+        extract_presented_model_key(&mut accepted, QueryApiKeyPolicy::Allow),
+        Ok(PresentedModelKey::ServiceAccount(_))
+    ));
+    assert!(accepted.headers().get(AUTHORIZATION).is_none());
+    for carrier in ["duplicate", "x-api-key", "x-goog-api-key", "query"] {
+        let mut denied = request(if carrier == "query" {
+            "/v1/models?key=conflict&keep=1"
+        } else {
+            "/v1/models"
+        });
+        denied.headers_mut().insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {secret}")).unwrap(),
+        );
+        match carrier {
+            "duplicate" => {
+                denied.headers_mut().append(
+                    AUTHORIZATION,
+                    HeaderValue::from_static("Bearer conflicting"),
+                );
+            }
+            "query" => {}
+            header => {
+                denied
+                    .headers_mut()
+                    .insert(header, HeaderValue::from_static("conflicting"));
+            }
+        }
+        assert!(extract_presented_model_key(&mut denied, QueryApiKeyPolicy::Allow).is_err());
+        assert!(denied.headers().get(AUTHORIZATION).is_none());
+        assert!(denied.headers().get("x-api-key").is_none());
+        assert!(denied.headers().get("x-goog-api-key").is_none());
+        assert!(!format!("{denied:?}").contains(&secret));
+        if carrier == "query" {
+            assert_eq!(denied.uri().to_string(), "/v1/models?keep=1");
+        }
+    }
+    for header in ["x-api-key", "x-goog-api-key"] {
+        let mut denied = request("/v1/models");
+        denied
+            .headers_mut()
+            .insert(header, HeaderValue::from_str(&secret).unwrap());
+        assert!(extract_presented_model_key(&mut denied, QueryApiKeyPolicy::Allow).is_err());
+    }
+}
+
 fn request(uri: &str) -> Request<()> {
     Request::builder().uri(uri).body(()).unwrap()
 }

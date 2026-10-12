@@ -806,6 +806,12 @@ pub type ModelCatalogProvidersFuture<'a> = Pin<
 
 /// 游客、登录用户与 API Key 共用的模型目录异步只读端口。
 pub trait ModelCatalogReader: Send + Sync {
+    fn list_for_service_account(
+        &self,
+        _authentication: crate::ServiceAccountModelAuthentication,
+    ) -> GatewayModelListFuture<'_> {
+        Box::pin(async { Err(ModelCatalogReadError::Internal) })
+    }
     /// 按令牌有效分组、模型白名单和目录可见性返回完整模型列表。
     fn list_for_token(
         &self,

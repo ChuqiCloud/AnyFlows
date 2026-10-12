@@ -74,6 +74,19 @@ enum BilledChatExecution {
 
 /// 为已认证 Chat 请求信封生成不可变路由计划的对象安全端口。
 pub trait ChatRoutePlanner: Send + Sync {
+    #[allow(clippy::too_many_arguments)]
+    fn plan_service_account<'a>(
+        &'a self,
+        _identity: af_domain::OrganizationServiceAccountRuntimeIdentity,
+        _group_id: GroupId,
+        _concurrency: ConcurrencyLimit,
+        _request: CanonicalRequestEnvelope,
+        _response_protocol: Protocol,
+        _request_id: &'a str,
+        _diagnostic: RelayDiagnosticInput,
+    ) -> ChatRoutePlanFuture<'a> {
+        Box::pin(async { Err(AfError::ModelNotAllowed) })
+    }
     /// 从当前运行时快照固定候选并完成所有安全装配；本方法不得发送上游请求。
     fn plan<'a>(
         &'a self,
@@ -99,6 +112,7 @@ pub struct BillingChatService {
     settlement: Option<Arc<dyn BillingSettlementPort>>,
     usage: Arc<dyn UsageRecordPort>,
     request_outcomes: Option<crate::RequestOutcomeRuntime>,
+    service_billing: Option<Arc<dyn af_billing::ServiceAccountBillingPort>>,
 }
 
 impl BillingChatService {
@@ -120,6 +134,7 @@ impl BillingChatService {
             settlement,
             usage,
             request_outcomes: None,
+            service_billing: None,
         }
     }
 
@@ -127,6 +142,15 @@ impl BillingChatService {
     #[must_use]
     pub fn with_request_outcomes(mut self, runtime: crate::RequestOutcomeRuntime) -> Self {
         self.request_outcomes = Some(runtime);
+        self
+    }
+
+    #[must_use]
+    pub fn with_service_account_billing(
+        mut self,
+        port: Option<Arc<dyn af_billing::ServiceAccountBillingPort>>,
+    ) -> Self {
+        self.service_billing = port;
         self
     }
 
@@ -148,7 +172,7 @@ impl BillingChatService {
         );
         match self
             .call_billed(
-                principal,
+                crate::model_subject::ModelSubject::User(*principal),
                 user_concurrency,
                 request,
                 response_protocol,
@@ -198,7 +222,7 @@ impl BillingChatService {
     #[allow(clippy::too_many_arguments)]
     async fn call_billed(
         &self,
-        principal: &GatewayPrincipal,
+        subject: crate::model_subject::ModelSubject,
         user_concurrency: Option<ConcurrencyLimit>,
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
@@ -210,17 +234,37 @@ impl BillingChatService {
         let request = request.with_default_max_output_tokens(
             TokenCount::new(DEFAULT_MAX_OUTPUT_TOKENS).expect("网关默认输出上限必须是合法正整数"),
         );
-        let planned = self
-            .inner
-            .plan(
-                principal,
-                user_concurrency,
-                request,
-                response_protocol,
-                request_id,
-                diagnostic,
-            )
-            .await?;
+        let planned = match subject {
+            crate::model_subject::ModelSubject::User(principal) => {
+                self.inner
+                    .plan(
+                        &principal,
+                        user_concurrency,
+                        request,
+                        response_protocol,
+                        request_id,
+                        diagnostic,
+                    )
+                    .await?
+            }
+            crate::model_subject::ModelSubject::ServiceAccount {
+                identity,
+                group_id,
+                concurrency,
+            } => {
+                self.inner
+                    .plan_service_account(
+                        identity,
+                        group_id,
+                        concurrency,
+                        request,
+                        response_protocol,
+                        request_id,
+                        diagnostic,
+                    )
+                    .await?
+            }
+        };
         // 路由计划可能已按受控正文档案重建消息；预扣与后续结算必须使用同一份事实。
         let canonical = planned.canonical_request().canonical();
         let observation_context = BillingUsageContext::new(
@@ -235,7 +279,7 @@ impl BillingChatService {
         .map_err(|_| AfError::Internal)?;
         let upper_bound =
             estimate_openai_request_upper_bound(canonical).map_err(map_upper_bound_error)?;
-        let source_group_id = principal.group_id();
+        let source_group_id = subject.group_id();
         let target_group_id = planned.target_group_id();
         let pricing_model = planned.pricing_model().to_owned();
         let snapshot = self
@@ -244,9 +288,7 @@ impl BillingChatService {
                 &pricing_model,
                 source_group_id,
                 target_group_id,
-                principal
-                    .organization_principal()
-                    .map(|organization| organization.organization_id()),
+                subject.organization_id(),
                 response_protocol,
                 crate::utc_time::current_utc_day_second().ok_or(AfError::Internal)?,
             )
@@ -256,36 +298,74 @@ impl BillingChatService {
             .map_err(map_lifecycle_error)?
             .with_contract_price(snapshot.contract_price());
         let reservation_id = new_reservation_id()?;
-        let mut lifecycle = match plan.precharge_quota() {
-            None => plan
-                .start_free(*principal, reservation_id, self.usage.clone())
-                .map_err(map_lifecycle_error)?,
-            Some(amount) => {
-                let precharge = self.precharge.as_ref().ok_or(AfError::Internal)?;
-                let refund = self.refund.as_ref().ok_or(AfError::Internal)?;
-                let settlement = self.settlement.as_ref().ok_or(AfError::Internal)?;
-                precharge_with_retries(
-                    precharge,
-                    reservation_id,
-                    *principal,
-                    amount,
-                    snapshot.contract_price(),
-                )
-                .await?;
-                match plan.start_reserved(
-                    *principal,
-                    reservation_id,
-                    refund.clone(),
-                    settlement.clone(),
-                    self.usage.clone(),
-                ) {
-                    Ok(lifecycle) => lifecycle,
-                    Err(error) => {
-                        let _ = refund.try_signal_refund(reservation_id);
-                        return Err(map_lifecycle_error(error));
+        let mut lifecycle = match subject {
+            crate::model_subject::ModelSubject::ServiceAccount { identity, .. } => {
+                match plan.precharge_quota() {
+                    None => plan
+                        .start_service_account_free(identity, reservation_id, self.usage.clone())
+                        .map_err(map_lifecycle_error)?,
+                    Some(amount) => {
+                        let port = self.service_billing.as_ref().ok_or(AfError::Internal)?;
+                        let expires_at = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .ok()
+                            .and_then(|value| i64::try_from(value.as_secs()).ok())
+                            .and_then(|value| value.checked_add(86_400))
+                            .ok_or(AfError::Internal)?;
+                        service_precharge_with_retries(
+                            port,
+                            reservation_id,
+                            identity,
+                            amount,
+                            expires_at,
+                        )
+                        .await?;
+                        match plan.start_service_account_reserved(
+                            identity,
+                            reservation_id,
+                            port.clone(),
+                            self.usage.clone(),
+                        ) {
+                            Ok(lifecycle) => lifecycle,
+                            Err(error) => {
+                                let _ = port.try_signal_refund(identity, reservation_id);
+                                return Err(map_lifecycle_error(error));
+                            }
+                        }
                     }
                 }
             }
+            crate::model_subject::ModelSubject::User(principal) => match plan.precharge_quota() {
+                None => plan
+                    .start_free(principal, reservation_id, self.usage.clone())
+                    .map_err(map_lifecycle_error)?,
+                Some(amount) => {
+                    let precharge = self.precharge.as_ref().ok_or(AfError::Internal)?;
+                    let refund = self.refund.as_ref().ok_or(AfError::Internal)?;
+                    let settlement = self.settlement.as_ref().ok_or(AfError::Internal)?;
+                    precharge_with_retries(
+                        precharge,
+                        reservation_id,
+                        principal,
+                        amount,
+                        snapshot.contract_price(),
+                    )
+                    .await?;
+                    match plan.start_reserved(
+                        principal,
+                        reservation_id,
+                        refund.clone(),
+                        settlement.clone(),
+                        self.usage.clone(),
+                    ) {
+                        Ok(lifecycle) => lifecycle,
+                        Err(error) => {
+                            let _ = refund.try_signal_refund(reservation_id);
+                            return Err(map_lifecycle_error(error));
+                        }
+                    }
+                }
+            },
         };
 
         let routed = planned.execute().await?;
@@ -329,6 +409,47 @@ impl BillingChatService {
 }
 
 impl ChatService for BillingChatService {
+    fn service_account_chat_completions<'a>(
+        &'a self,
+        authentication: &'a af_admin::ServiceAccountModelAuthentication,
+        request: CanonicalRequestEnvelope,
+        response_protocol: Protocol,
+        request_id: &'a str,
+        diagnostic: RelayDiagnosticInput,
+    ) -> ChatServiceFuture<'a> {
+        Box::pin(async move {
+            let subject = crate::model_subject::ModelSubject::ServiceAccount {
+                identity: authentication.authentication().identity(),
+                group_id: authentication.group_id(),
+                concurrency: authentication.concurrency(),
+            };
+            match self
+                .call_billed(
+                    subject,
+                    None,
+                    request,
+                    response_protocol,
+                    request_id,
+                    diagnostic,
+                )
+                .await?
+            {
+                BilledChatExecution::Full { body, usage, .. } => Ok(ChatResponse::Full {
+                    body,
+                    usage: Ok(usage),
+                }),
+                BilledChatExecution::Stream {
+                    body,
+                    usage,
+                    completion,
+                    ..
+                } => Ok(ChatResponse::Stream {
+                    body: body.with_completion_hook(completion),
+                    usage,
+                }),
+            }
+        })
+    }
     fn chat_completions<'a>(
         &'a self,
         principal: &'a GatewayPrincipal,
@@ -493,6 +614,28 @@ impl Drop for BillingStreamCompletionHook {
     }
 }
 
+async fn service_precharge_with_retries(
+    port: &Arc<dyn af_billing::ServiceAccountBillingPort>,
+    reservation: BillingReservationId,
+    identity: af_domain::OrganizationServiceAccountRuntimeIdentity,
+    amount: af_domain::Quota,
+    expires_at: i64,
+) -> Result<(), AfError> {
+    for attempt in 0..MAX_PRECHARGE_ATTEMPTS {
+        match port
+            .precharge(reservation, identity, amount, expires_at)
+            .await
+        {
+            Ok(()) => return Ok(()),
+            Err(BillingPrechargeError::OutcomeUnknown) if attempt + 1 < MAX_PRECHARGE_ATTEMPTS => {
+                sleep(RETRY_DELAY).await
+            }
+            Err(error) => return Err(map_precharge_error(error)),
+        }
+    }
+    Err(AfError::Internal)
+}
+
 pub(crate) async fn precharge_with_retries(
     port: &Arc<dyn BillingPrechargePort>,
     reservation_id: BillingReservationId,
@@ -643,6 +786,7 @@ pub(crate) fn map_lifecycle_error(error: BillingLifecycleError) -> AfError {
 
 #[cfg(test)]
 mod tests {
+    mod service_gateway;
     use std::sync::{Arc, Mutex};
 
     use af_adapter::{Bytes, HeaderMap};

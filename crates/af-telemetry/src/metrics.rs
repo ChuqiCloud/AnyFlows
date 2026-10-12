@@ -400,6 +400,7 @@ pub enum MetricRequestRateLimitSubject {
     User,
     Group,
     Token,
+    ServiceAccount,
 }
 
 impl MetricRequestRateLimitSubject {
@@ -408,6 +409,7 @@ impl MetricRequestRateLimitSubject {
             Self::User => "user",
             Self::Group => "group",
             Self::Token => "token",
+            Self::ServiceAccount => "service",
         }
     }
 }

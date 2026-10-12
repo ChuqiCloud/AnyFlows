@@ -24,6 +24,7 @@ mod email_binding;
 mod email_settings;
 #[cfg(test)]
 mod email_settings_tests;
+mod gateway_model_auth;
 mod group_read;
 mod group_write;
 mod initial_setup;
@@ -58,6 +59,7 @@ mod route_write;
 mod routing_read;
 mod service_account_auth;
 mod service_account_models;
+pub use gateway_model_auth::GatewayModelAuthentication;
 pub use service_account_models::{
     ServiceAccountModelAuthentication, ServiceAccountModelAuthenticationError,
     ServiceAccountModelAuthenticationFuture, ServiceAccountModelAuthenticator,

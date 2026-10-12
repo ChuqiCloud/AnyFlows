@@ -5,7 +5,10 @@ use af_cache::{
     MAX_CONCURRENCY_CLEANUP_BATCH_SIZE, RedisConcurrencyLease, RedisConcurrencyStore,
     RedisConcurrencyWait,
 };
-use af_domain::{ConcurrencyLimit, CredentialId, GatewayPrincipal, TokenId, UserId};
+use af_domain::{
+    ConcurrencyLimit, CredentialId, GatewayPrincipal, OrganizationServiceAccountLocator, TokenId,
+    UserId,
+};
 use af_protocol::Usage;
 use af_relay::{
     GenerationCompletionFuture, GenerationCompletionHook, RelayAttemptGate, RelayAttemptGateError,
@@ -67,6 +70,20 @@ impl ConcurrencyRuntime {
                 token_id: principal.token_id(),
                 limit,
             },
+            timeout,
+        )
+        .await
+    }
+
+    /// 为单个运行时凭据创建候选许可门；等待时间由路由计划提前固定。
+    pub(crate) async fn acquire_service_account(
+        &self,
+        locator: OrganizationServiceAccountLocator,
+        limit: ConcurrencyLimit,
+        timeout: Duration,
+    ) -> Result<RuntimeConcurrencyPermit, ConcurrencyRuntimeError> {
+        self.acquire_with_wait(
+            RuntimeSlotTarget::ServiceAccount { locator, limit },
             timeout,
         )
         .await
@@ -151,6 +168,9 @@ impl ConcurrencyRuntime {
         target: RuntimeSlotTarget,
     ) -> Result<Option<RedisConcurrencyLease>, ConcurrencyRuntimeError> {
         let outcome = match target {
+            RuntimeSlotTarget::ServiceAccount { locator, limit } => {
+                self.store.acquire_service_account(locator, limit).await
+            }
             RuntimeSlotTarget::User {
                 user_id,
                 token_id,
@@ -178,6 +198,11 @@ impl ConcurrencyRuntime {
         max_waiting: ConcurrencyLimit,
     ) -> Result<RedisConcurrencyWait, ConcurrencyRuntimeError> {
         let outcome = match target {
+            RuntimeSlotTarget::ServiceAccount { locator, .. } => {
+                self.store
+                    .enter_service_account_wait(locator, max_waiting)
+                    .await
+            }
             RuntimeSlotTarget::User { user_id, .. } => {
                 self.store.enter_user_wait(user_id, max_waiting).await
             }
@@ -213,6 +238,10 @@ impl fmt::Debug for ConcurrencyRuntime {
 
 #[derive(Clone, Copy)]
 enum RuntimeSlotTarget {
+    ServiceAccount {
+        locator: OrganizationServiceAccountLocator,
+        limit: ConcurrencyLimit,
+    },
     User {
         user_id: UserId,
         token_id: TokenId,
@@ -227,6 +256,7 @@ enum RuntimeSlotTarget {
 impl RuntimeSlotTarget {
     const fn limit(self) -> Option<ConcurrencyLimit> {
         match self {
+            Self::ServiceAccount { limit, .. } => Some(limit),
             Self::User { limit, .. } | Self::Account { limit, .. } => limit,
         }
     }

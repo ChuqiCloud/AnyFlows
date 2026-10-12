@@ -5,6 +5,7 @@ use std::{
     time::Instant,
 };
 
+use crate::model_subject::ModelSubject;
 use crate::{
     ChatRoutePlanFuture, ChatRoutePlanner, PlannedChatExecution, PlannedChatExecutionFuture,
     adaptor_credential::build_adaptor_credential,
@@ -26,7 +27,8 @@ use crate::{
     },
     responses_websocket_runtime::ResponsesWebSocketRuntime,
     sticky_session::{
-        StableSessionScope, StickySessionStore, stable_session_scope, sticky_cache_error_kind,
+        StableSessionScope, StickySessionStore, stable_identity_session_scope,
+        sticky_cache_error_kind,
     },
 };
 use af_account::{CredentialDecryptor, SystemSecretCipher, SystemSecretKind};
@@ -654,10 +656,7 @@ impl ScheduledChatService {
             .map_err(|_| AfError::Internal)
     }
 
-    async fn route_group_chain(
-        &self,
-        principal: GatewayPrincipal,
-    ) -> Result<Vec<GroupId>, AfError> {
+    async fn route_group_chain(&self, principal: ModelSubject) -> Result<Vec<GroupId>, AfError> {
         let mut groups = vec![principal.group_id()];
         if !principal.is_playground() {
             return Ok(groups);
@@ -700,7 +699,7 @@ impl ScheduledChatService {
 
     async fn prepare_route_selection(
         &self,
-        principal: GatewayPrincipal,
+        principal: ModelSubject,
         request: &CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &str,
@@ -880,10 +879,10 @@ impl ScheduledChatService {
     }
 }
 
-impl ChatRoutePlanner for ScheduledChatService {
-    fn plan<'a>(
+impl ScheduledChatService {
+    fn plan_subject<'a>(
         &'a self,
-        principal: &'a GatewayPrincipal,
+        principal: ModelSubject,
         user_concurrency: Option<ConcurrencyLimit>,
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
@@ -891,7 +890,8 @@ impl ChatRoutePlanner for ScheduledChatService {
         diagnostic: RelayDiagnosticInput,
     ) -> ChatRoutePlanFuture<'a> {
         Box::pin(async move {
-            let session_scope = stable_session_scope(*principal, request.canonical());
+            let session_scope =
+                stable_identity_session_scope(principal.identity(), request.canonical());
             let PreparedRouteSelection {
                 route,
                 upstream_protocol,
@@ -899,7 +899,7 @@ impl ChatRoutePlanner for ScheduledChatService {
                 credential_health,
             } = self
                 .prepare_route_selection(
-                    *principal,
+                    principal,
                     &request,
                     response_protocol,
                     request_id,
@@ -945,22 +945,44 @@ impl ChatRoutePlanner for ScheduledChatService {
                 }
                 None => request,
             };
-            let debug_trace = self.debug_trace.as_ref().and_then(|runtime| {
-                runtime.capture(
-                    request_id,
-                    *principal,
-                    &request.canonical().model,
-                    response_protocol,
-                    upstream_protocol,
-                    request.canonical().operation,
-                    body_profile,
-                    body_profile.map(|_| ClientSimulationBodyPatchResult::Applied),
-                    diagnostic,
-                )
-            });
-            let user_permit = self
-                .acquire_user_permit(*principal, user_concurrency)
-                .await?;
+            let debug_trace = match principal {
+                ModelSubject::User(user) => self.debug_trace.as_ref().and_then(|runtime| {
+                    runtime.capture(
+                        request_id,
+                        user,
+                        &request.canonical().model,
+                        response_protocol,
+                        upstream_protocol,
+                        request.canonical().operation,
+                        body_profile,
+                        body_profile.map(|_| ClientSimulationBodyPatchResult::Applied),
+                        diagnostic,
+                    )
+                }),
+                ModelSubject::ServiceAccount { .. } => None,
+            };
+            let user_permit = match principal {
+                ModelSubject::User(user) => {
+                    self.acquire_user_permit(user, user_concurrency).await?
+                }
+                ModelSubject::ServiceAccount {
+                    identity,
+                    concurrency,
+                    ..
+                } => {
+                    let runtime = self.concurrency.as_ref().ok_or(AfError::Internal)?;
+                    Some(
+                        runtime
+                            .acquire_service_account(
+                                identity.locator(),
+                                concurrency,
+                                self.sticky_wait_policy.fallback_wait_timeout(),
+                            )
+                            .await
+                            .map_err(map_concurrency_runtime_error)?,
+                    )
+                }
+            };
             let account_loads = self
                 .load_account_concurrency(&route, upstream_protocol, &routed_model)
                 .await?;
@@ -983,6 +1005,51 @@ impl ChatRoutePlanner for ScheduledChatService {
             plan.debug_trace = debug_trace;
             Ok(Box::new(plan) as Box<dyn PlannedChatExecution>)
         })
+    }
+}
+
+impl ChatRoutePlanner for ScheduledChatService {
+    fn plan<'a>(
+        &'a self,
+        principal: &'a GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
+        request: CanonicalRequestEnvelope,
+        response_protocol: Protocol,
+        request_id: &'a str,
+        diagnostic: RelayDiagnosticInput,
+    ) -> ChatRoutePlanFuture<'a> {
+        self.plan_subject(
+            ModelSubject::User(*principal),
+            user_concurrency,
+            request,
+            response_protocol,
+            request_id,
+            diagnostic,
+        )
+    }
+
+    fn plan_service_account<'a>(
+        &'a self,
+        identity: af_domain::OrganizationServiceAccountRuntimeIdentity,
+        group_id: GroupId,
+        concurrency: ConcurrencyLimit,
+        request: CanonicalRequestEnvelope,
+        response_protocol: Protocol,
+        request_id: &'a str,
+        diagnostic: RelayDiagnosticInput,
+    ) -> ChatRoutePlanFuture<'a> {
+        self.plan_subject(
+            ModelSubject::ServiceAccount {
+                identity,
+                group_id,
+                concurrency,
+            },
+            None,
+            request,
+            response_protocol,
+            request_id,
+            diagnostic,
+        )
     }
 }
 
@@ -1566,7 +1633,8 @@ fn responses_websocket_session_scope(
     principal: GatewayPrincipal,
     request: &af_protocol::CanonicalRequest,
 ) -> Option<String> {
-    stable_session_scope(principal, request).map(|scope| scope.as_str().to_owned())
+    stable_identity_session_scope(af_domain::GatewayIdentity::User(principal), request)
+        .map(|scope| scope.as_str().to_owned())
 }
 
 #[cfg(test)]
