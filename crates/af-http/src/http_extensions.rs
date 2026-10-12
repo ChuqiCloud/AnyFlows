@@ -88,9 +88,24 @@ pub trait HttpExtension: Send + Sync {
 #[derive(Clone, Default)]
 pub struct HttpExtensions {
     extensions: Vec<Arc<dyn HttpExtension>>,
+    model_authenticator: Option<Arc<dyn af_admin::ServiceAccountModelAuthenticator>>,
 }
 
 impl HttpExtensions {
+    /// Registers independent credentials for synchronous model endpoints.
+    pub fn with_service_account_models(
+        mut self,
+        authenticator: Arc<dyn af_admin::ServiceAccountModelAuthenticator>,
+    ) -> Self {
+        self.model_authenticator = Some(authenticator);
+        self
+    }
+
+    pub(crate) fn model_authenticator(
+        &self,
+    ) -> Option<Arc<dyn af_admin::ServiceAccountModelAuthenticator>> {
+        self.model_authenticator.clone()
+    }
     pub fn register(&mut self, extension: Arc<dyn HttpExtension>) {
         self.extensions.push(extension);
     }
@@ -98,6 +113,9 @@ impl HttpExtensions {
     /// Appends extensions assembled by a distribution-owned factory.
     pub fn extend(&mut self, other: Self) {
         self.extensions.extend(other.extensions);
+        if other.model_authenticator.is_some() {
+            self.model_authenticator = other.model_authenticator;
+        }
     }
 
     pub fn is_empty(&self) -> bool {

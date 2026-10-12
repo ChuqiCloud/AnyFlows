@@ -12,6 +12,52 @@ pub type ChatServiceFuture<'a> =
 ///
 /// 端口只接收已经完成协议归一和鉴权的不可变请求，不负责鉴权、计费或调度。
 pub trait ChatService: Send + Sync {
+    /// Independent service credentials cannot be adapted to a personal token.
+    fn service_account_chat_completions<'a>(
+        &'a self,
+        _authentication: &'a af_admin::ServiceAccountModelAuthentication,
+        _request: CanonicalRequestEnvelope,
+        _response_protocol: Protocol,
+        _request_id: &'a str,
+        _diagnostic: RelayDiagnosticInput,
+    ) -> ChatServiceFuture<'a> {
+        Box::pin(async { Err(AfError::ModelNotAllowed) })
+    }
+
+    fn execute_model<'a>(
+        &'a self,
+        authentication: &'a af_admin::GatewayModelAuthentication,
+        request: CanonicalRequestEnvelope,
+        response_protocol: Protocol,
+        request_id: &'a str,
+        diagnostic: RelayDiagnosticInput,
+    ) -> ChatServiceFuture<'a> {
+        Box::pin(async move {
+            match authentication {
+                af_admin::GatewayModelAuthentication::User(authentication) => {
+                    self.chat_completions(
+                        &authentication.principal(),
+                        authentication.user_concurrency(),
+                        request,
+                        response_protocol,
+                        request_id,
+                        diagnostic,
+                    )
+                    .await
+                }
+                af_admin::GatewayModelAuthentication::ServiceAccount(authentication) => {
+                    self.service_account_chat_completions(
+                        authentication,
+                        request,
+                        response_protocol,
+                        request_id,
+                        diagnostic,
+                    )
+                    .await
+                }
+            }
+        })
+    }
     /// 转发一次 Chat 请求，并保留非流式 usage 或流式 usage 句柄供上层消费。
     fn chat_completions<'a>(
         &'a self,

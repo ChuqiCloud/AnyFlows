@@ -1,6 +1,6 @@
 use std::{fmt, future::Future, num::NonZeroU32, pin::Pin};
 
-use af_domain::{ConcurrencyLimit, GroupId, ServiceModelPolicy};
+use af_domain::{ConcurrencyLimit, GroupId, ServiceModelPolicy, UpstreamRetryAfter};
 use thiserror::Error;
 
 use crate::{ServiceAccountAuthentication, ServiceAccountKeyDigest};
@@ -69,6 +69,8 @@ pub enum ServiceAccountModelAuthenticationError {
     Forbidden,
     #[error("Service account model authentication unavailable")]
     Unavailable,
+    #[error("Service account request rate exceeded")]
+    RateLimited { retry_after: UpstreamRetryAfter },
 }
 
 pub type ServiceAccountModelAuthenticationFuture<'a> = Pin<

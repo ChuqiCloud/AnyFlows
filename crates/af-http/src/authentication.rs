@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
-use af_admin::{SessionAuthentication, TokenAuthenticationError, TokenAuthenticator};
+use af_admin::{
+    GatewayModelAuthentication, ServiceAccountModelAuthenticationError,
+    ServiceAccountModelAuthenticator, SessionAuthentication, TokenAuthenticationError,
+    TokenAuthenticator,
+};
 use af_domain::{AfError, Protocol};
 use axum::{
     extract::{Extension, Request, State},
@@ -8,14 +12,15 @@ use axum::{
     response::Response,
 };
 
+use crate::QueryApiKeyPolicy;
 use crate::client_ip::{ClientIpResolutionError, ClientIpResolver};
 use crate::error_response::{api_error_response, rate_limit_error_response};
-use crate::{QueryApiKeyPolicy, extract_presented_api_key};
 
 /// HTTP API Key 鉴权中间件所需的不可变状态。
 #[derive(Clone)]
 pub(crate) struct AuthenticationState {
     authenticator: Arc<dyn TokenAuthenticator>,
+    service_authenticator: Option<Arc<dyn ServiceAccountModelAuthenticator>>,
     query_api_key_policy: QueryApiKeyPolicy,
     client_ip_resolver: ClientIpResolver,
     error_protocol: Protocol,
@@ -30,6 +35,7 @@ impl AuthenticationState {
     ) -> Self {
         Self {
             authenticator,
+            service_authenticator: None,
             query_api_key_policy,
             client_ip_resolver: ClientIpResolver::from_config(server_config),
             error_protocol: Protocol::OpenAiChat,
@@ -39,6 +45,14 @@ impl AuthenticationState {
     /// 为独立协议入口选择对应的公开错误 wire。
     pub(crate) const fn with_error_protocol(mut self, protocol: Protocol) -> Self {
         self.error_protocol = protocol;
+        self
+    }
+
+    pub(crate) fn with_service_authenticator(
+        mut self,
+        authenticator: Option<Arc<dyn ServiceAccountModelAuthenticator>>,
+    ) -> Self {
+        self.service_authenticator = authenticator;
         self
     }
 }
@@ -59,6 +73,9 @@ pub(crate) async fn authenticate_playground_session(
             request.headers_mut().remove(http::header::AUTHORIZATION);
             request.headers_mut().remove("x-api-key");
             request.headers_mut().remove("x-goog-api-key");
+            request
+                .extensions_mut()
+                .insert(GatewayModelAuthentication::User(authentication.clone()));
             request.extensions_mut().insert(authentication);
             next.run(request).await
         }
@@ -98,9 +115,52 @@ pub(crate) async fn authenticate_api_key(
             return api_error_response(state.error_protocol, AfError::InvalidApiKey);
         }
     };
-    let presented = match extract_presented_api_key(&mut request, state.query_api_key_policy) {
+    let presented = match crate::credentials::extract_presented_model_key(
+        &mut request,
+        state.query_api_key_policy,
+    ) {
         Ok(presented) => presented,
         Err(_) => return api_error_response(state.error_protocol, AfError::InvalidApiKey),
+    };
+
+    let presented = match presented {
+        crate::credentials::PresentedModelKey::User(presented) => presented,
+        crate::credentials::PresentedModelKey::ServiceAccount(presented) => {
+            let digest = presented.digest();
+            drop(presented);
+            let result = match state.service_authenticator.as_ref() {
+                Some(authenticator) => authenticator.authenticate_models(&digest).await,
+                None => Err(ServiceAccountModelAuthenticationError::InvalidKey),
+            };
+            drop(digest);
+            let mut response = match result {
+                Ok(authentication) => {
+                    request
+                        .extensions_mut()
+                        .insert(GatewayModelAuthentication::ServiceAccount(authentication));
+                    next.run(request).await
+                }
+                Err(ServiceAccountModelAuthenticationError::InvalidKey) => {
+                    api_error_response(state.error_protocol, AfError::InvalidApiKey)
+                }
+                Err(ServiceAccountModelAuthenticationError::Forbidden) => {
+                    api_error_response(state.error_protocol, AfError::ModelNotAllowed)
+                }
+                Err(ServiceAccountModelAuthenticationError::Unavailable) => {
+                    let mut response = api_error_response(state.error_protocol, AfError::Internal);
+                    *response.status_mut() = http::StatusCode::SERVICE_UNAVAILABLE;
+                    response
+                }
+                Err(ServiceAccountModelAuthenticationError::RateLimited { retry_after }) => {
+                    rate_limit_error_response(state.error_protocol, retry_after)
+                }
+            };
+            response.headers_mut().insert(
+                http::header::CACHE_CONTROL,
+                http::HeaderValue::from_static("no-store"),
+            );
+            return response;
+        }
     };
 
     // 明文只活到摘要计算完成；数据库查询期间不得继续持有它。
@@ -113,6 +173,9 @@ pub(crate) async fn authenticate_api_key(
 
     match authentication {
         Ok(authentication) => {
+            request
+                .extensions_mut()
+                .insert(GatewayModelAuthentication::User(authentication.clone()));
             request.extensions_mut().insert(authentication);
             next.run(request).await
         }

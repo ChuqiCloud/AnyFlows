@@ -40,6 +40,7 @@ use crate::{
 };
 
 const SESSION_TOKEN: &str = "signed.jwt.value";
+mod service_model_gateway;
 
 struct UnusedChatService;
 struct UnusedAdminGroupReader;

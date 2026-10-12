@@ -29,6 +29,7 @@ mod health_runtime;
 mod model_catalog;
 mod model_discovery;
 mod model_price_source;
+mod model_subject;
 mod oauth_connection;
 mod payment_runtime;
 mod readiness;

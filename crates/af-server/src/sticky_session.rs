@@ -1,7 +1,7 @@
 use std::{fmt, fmt::Write as _, future::Future, pin::Pin};
 
 use af_cache::{CacheError, RedisStickySessionStore};
-use af_domain::GatewayPrincipal;
+use af_domain::GatewayIdentity;
 use af_protocol::CanonicalRequest;
 use sha2::{Digest, Sha256};
 
@@ -62,8 +62,8 @@ impl fmt::Debug for StableSessionScope {
 }
 
 /// 按受控元数据选择稳定会话身份并计算不可逆摘要。
-pub(crate) fn stable_session_scope(
-    principal: GatewayPrincipal,
+pub(crate) fn stable_identity_session_scope(
+    identity: GatewayIdentity,
     request: &CanonicalRequest,
 ) -> Option<StableSessionScope> {
     let (kind, value) = request
@@ -94,8 +94,19 @@ pub(crate) fn stable_session_scope(
         })?;
 
     let mut digest = Sha256::new();
-    digest.update(b"AnyFlows:stable-session-scope:v1\0");
-    digest.update(principal.token_id().get().to_be_bytes());
+    match identity {
+        GatewayIdentity::User(principal) => {
+            digest.update(b"AnyFlows:stable-session-scope:v1\0");
+            digest.update(principal.token_id().get().to_be_bytes());
+        }
+        GatewayIdentity::ServiceAccount(identity) => {
+            digest.update(b"AnyFlows:service-session-scope:v1\0");
+            digest.update(identity.locator().organization_id().get().to_be_bytes());
+            digest.update(identity.locator().service_account_id().get().to_be_bytes());
+            digest.update(identity.account_key().persistence_key().as_bytes());
+            digest.update(identity.credential_key().persistence_key().as_bytes());
+        }
+    }
     digest.update([kind]);
     digest.update(u32::try_from(value.len()).unwrap_or(u32::MAX).to_be_bytes());
     digest.update(value.as_bytes());
@@ -123,5 +134,40 @@ pub(crate) const fn sticky_cache_error_kind(error: &CacheError) -> &'static str 
             _ => "unknown",
         },
         _ => "invalid",
+    }
+}
+
+#[cfg(test)]
+mod service_tests {
+    use super::*;
+    use af_domain::{
+        OrganizationId, OrganizationServiceAccountId, OrganizationServiceAccountKey,
+        OrganizationServiceAccountLocator, OrganizationServiceAccountRuntimeIdentity,
+    };
+
+    #[test]
+    fn service_session_isolates_organizations_accounts_and_credentials() {
+        let request = af_protocol::openai_chat::parse_request_envelope(af_adapter::Bytes::from_static(br#"{"model":"gpt-5","messages":[{"role":"user","content":"hello"}],"user":"shared-session"}"#)).unwrap();
+        let scope = |organization, account, credential| {
+            stable_identity_session_scope(
+                GatewayIdentity::ServiceAccount(OrganizationServiceAccountRuntimeIdentity::new(
+                    OrganizationServiceAccountLocator::new(
+                        OrganizationId::new(organization).unwrap(),
+                        OrganizationServiceAccountId::new(account).unwrap(),
+                    ),
+                    OrganizationServiceAccountKey::new([3; 16]).unwrap(),
+                    OrganizationServiceAccountKey::new([credential; 16]).unwrap(),
+                )),
+                request.canonical(),
+            )
+            .unwrap()
+            .as_str()
+            .to_owned()
+        };
+        let first = scope(1, 2, 4);
+        assert_eq!(first, scope(1, 2, 4));
+        assert_ne!(first, scope(2, 2, 4));
+        assert_ne!(first, scope(1, 3, 4));
+        assert_ne!(first, scope(1, 2, 5));
     }
 }
