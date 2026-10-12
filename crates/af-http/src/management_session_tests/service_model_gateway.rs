@@ -250,7 +250,7 @@ async fn service_models_and_four_protocols_preserve_identity_and_model_policy() 
         )
         .await
         .status(),
-        StatusCode::FORBIDDEN
+        StatusCode::NOT_FOUND
     );
     assert_eq!(calls.0.load(Ordering::Relaxed), 4);
     assert_eq!(
