@@ -9,6 +9,7 @@ use af_domain::{
     ServiceModelPolicy,
 };
 use axum::extract::{ConnectInfo, Extension};
+use http::Method;
 use std::{
     net::SocketAddr,
     num::NonZeroU32,
