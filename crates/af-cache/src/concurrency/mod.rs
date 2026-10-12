@@ -3,7 +3,9 @@ mod types;
 
 use std::{collections::BTreeSet, fmt, sync::Arc};
 
-use af_domain::{ConcurrencyLimit, CredentialId, TokenId, UserId};
+use af_domain::{
+    ConcurrencyLimit, CredentialId, OrganizationServiceAccountLocator, TokenId, UserId,
+};
 
 use crate::{
     CacheError, CacheOperation, RedisFailureKind, config::validate_cache_key,
@@ -69,6 +71,28 @@ impl RedisConcurrencyStore {
             self.slot_ttl_millis,
         )
         .await
+    }
+
+    /// 获取单个上游账号槽位；空限制仍写入 ZSET 供负载调度使用。
+    pub async fn acquire_service_account(
+        &self,
+        locator: OrganizationServiceAccountLocator,
+        limit: ConcurrencyLimit,
+    ) -> Result<ConcurrencyAcquireOutcome, CacheError> {
+        self.acquire(
+            vec![(self.service_key("slot", locator)?, Some(limit))],
+            self.slot_ttl_millis,
+        )
+        .await
+    }
+
+    pub async fn enter_service_account_wait(
+        &self,
+        locator: OrganizationServiceAccountLocator,
+        max_waiting: ConcurrencyLimit,
+    ) -> Result<ConcurrencyWaitOutcome, CacheError> {
+        self.enter_wait(self.service_key("wait", locator)?, max_waiting)
+            .await
     }
 
     /// 获取单个上游账号槽位；空限制仍写入 ZSET 供负载调度使用。
@@ -325,6 +349,21 @@ impl RedisConcurrencyStore {
         self.dynamic_key("slot", kind, id)
     }
 
+    fn service_key(
+        &self,
+        family: &str,
+        locator: OrganizationServiceAccountLocator,
+    ) -> Result<String, CacheError> {
+        let key = format!(
+            "{}:{family}:service:{}:{}",
+            self.key_prefix,
+            locator.organization_id().get(),
+            locator.service_account_id().get()
+        );
+        validate_cache_key(&key)?;
+        Ok(key)
+    }
+
     fn wait_key(&self, kind: &str, id: i64) -> Result<String, CacheError> {
         self.dynamic_key("wait", kind, id)
     }
@@ -345,6 +384,8 @@ impl RedisConcurrencyStore {
             || !(key.contains(":slot:account:")
                 || key.contains(":slot:user:")
                 || key.contains(":slot:token:")
+                || key.contains(":slot:service:")
+                || key.contains(":wait:service:")
                 || key.contains(":wait:account:")
                 || key.contains(":wait:user:"))
         {

@@ -69,6 +69,42 @@ fn header_values<'a>(headers: &'a HeaderMap, name: &HeaderName) -> Vec<&'a Heade
     headers.get_all(name).iter().collect()
 }
 
+pub(crate) enum PresentedModelKey {
+    User(PresentedApiKey),
+    ServiceAccount(af_admin::PresentedServiceAccountKey),
+}
+
+/// Service credentials only travel in a single Bearer header. Both paths scrub
+/// every credential carrier before returning, including on rejection.
+pub(crate) fn extract_presented_model_key<B>(
+    request: &mut Request<B>,
+    query_policy: QueryApiKeyPolicy,
+) -> Result<PresentedModelKey, ApiKeyExtractionError> {
+    let authorization = header_values(request.headers(), &AUTHORIZATION);
+    let is_service = authorization
+        .iter()
+        .any(|value| bearer_value(value).is_ok_and(|value| value.starts_with("sa_")));
+    if !is_service {
+        return extract_presented_api_key(request, query_policy).map(PresentedModelKey::User);
+    }
+    let query = inspect_query(request.uri());
+    let result = if authorization.len() != 1
+        || request.headers().contains_key(&X_API_KEY)
+        || request.headers().contains_key(&X_GOOG_API_KEY)
+        || !query.values.is_empty()
+    {
+        Err(ApiKeyExtractionError::Ambiguous)
+    } else {
+        bearer_value(authorization[0]).and_then(|value| {
+            af_admin::PresentedServiceAccountKey::parse(value)
+                .map(PresentedModelKey::ServiceAccount)
+                .map_err(|_| ApiKeyExtractionError::Malformed)
+        })
+    };
+    let sanitized = query.sanitized_path_and_query;
+    scrub_and_return(request, sanitized, result)
+}
+
 fn bearer_value(value: &HeaderValue) -> Result<&str, ApiKeyExtractionError> {
     let value = header_value(value)?;
     let Some((scheme, credential)) = value.split_once(' ') else {
@@ -138,11 +174,11 @@ fn inspect_query(uri: &Uri) -> QueryInspection<'_> {
     }
 }
 
-fn scrub_and_return<B>(
+fn scrub_and_return<B, T>(
     request: &mut Request<B>,
     sanitized_path_and_query: Option<String>,
-    result: Result<PresentedApiKey, ApiKeyExtractionError>,
-) -> Result<PresentedApiKey, ApiKeyExtractionError> {
+    result: Result<T, ApiKeyExtractionError>,
+) -> Result<T, ApiKeyExtractionError> {
     request.headers_mut().remove(AUTHORIZATION);
     request.headers_mut().remove(&X_API_KEY);
     request.headers_mut().remove(&X_GOOG_API_KEY);

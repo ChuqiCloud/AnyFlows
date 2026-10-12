@@ -1,4 +1,4 @@
-use af_admin::TokenAuthentication;
+use af_admin::GatewayModelAuthentication;
 use af_domain::AfError;
 use axum::{
     extract::{Extension, State},
@@ -31,16 +31,21 @@ pub(crate) struct OpenAiModelListResponse {
 
 pub(crate) async fn list_openai_models(
     State(state): State<HttpState>,
-    Extension(authentication): Extension<TokenAuthentication>,
+    Extension(authentication): Extension<GatewayModelAuthentication>,
 ) -> Result<Response, OpenAiHttpError> {
     let reader = state
         .model_catalog_reader
         .as_deref()
         .ok_or(AfError::Internal)?;
-    let models = reader
-        .list_for_token(authentication)
-        .await
-        .map_err(|_| AfError::Internal)?;
+    let models = match authentication {
+        GatewayModelAuthentication::User(authentication) => {
+            reader.list_for_token(authentication).await
+        }
+        GatewayModelAuthentication::ServiceAccount(authentication) => {
+            reader.list_for_service_account(authentication).await
+        }
+    }
+    .map_err(|_| AfError::Internal)?;
     Ok(no_store_json(OpenAiModelListResponse {
         object: "list",
         data: models

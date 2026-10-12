@@ -1,6 +1,6 @@
 use std::{fmt, num::NonZeroU32, time::Duration};
 
-use af_domain::{GroupId, TokenId, UserId};
+use af_domain::{GroupId, OrganizationServiceAccountLocator, TokenId, UserId};
 
 use crate::{
     CacheError, RedisConfig,
@@ -105,6 +105,7 @@ pub enum RequestRateLimitSubject {
     User(UserId),
     Group(GroupId),
     Token(TokenId),
+    ServiceAccount(OrganizationServiceAccountLocator),
 }
 
 impl RequestRateLimitSubject {
@@ -113,22 +114,33 @@ impl RequestRateLimitSubject {
             Self::User(_) => "user",
             Self::Group(_) => "group",
             Self::Token(_) => "token",
+            Self::ServiceAccount(_) => "service",
         }
     }
 
-    pub(super) const fn identifier(self) -> i64 {
+    pub(super) fn identifier(self) -> String {
         match self {
-            Self::User(value) => value.get(),
-            Self::Group(value) => value.get(),
-            Self::Token(value) => value.get(),
+            Self::User(value) => value.get().to_string(),
+            Self::Group(value) => value.get().to_string(),
+            Self::Token(value) => value.get().to_string(),
+            Self::ServiceAccount(value) => format!(
+                "{}:{}",
+                value.organization_id().get(),
+                value.service_account_id().get()
+            ),
         }
     }
 
-    pub(super) const fn duplicate_key(self) -> (u8, i64) {
+    pub(super) const fn duplicate_key(self) -> (u8, i64, i64) {
         match self {
-            Self::User(value) => (1, value.get()),
-            Self::Group(value) => (2, value.get()),
-            Self::Token(value) => (3, value.get()),
+            Self::User(value) => (1, value.get(), 0),
+            Self::Group(value) => (2, value.get(), 0),
+            Self::Token(value) => (3, value.get(), 0),
+            Self::ServiceAccount(value) => (
+                4,
+                value.organization_id().get(),
+                value.service_account_id().get(),
+            ),
         }
     }
 }

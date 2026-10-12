@@ -1,4 +1,4 @@
-use af_admin::TokenAuthentication;
+use af_admin::GatewayModelAuthentication;
 use af_domain::{AfError, Protocol};
 use af_protocol::openai_responses::parse_request_envelope;
 use af_relay::RelayDiagnosticInput;
@@ -11,7 +11,7 @@ use axum::{
 use http::HeaderMap;
 
 use crate::{
-    chat_completions::{HttpState, prepare_canonical_request, render_chat_response},
+    chat_completions::{HttpState, prepare_model_request, render_chat_response},
     error_response::OpenAiResponsesHttpError,
 };
 
@@ -19,21 +19,19 @@ use crate::{
 pub(crate) async fn openai_responses(
     State(state): State<HttpState>,
     Extension(request_id): Extension<RequestId>,
-    Extension(authentication): Extension<TokenAuthentication>,
+    Extension(authentication): Extension<GatewayModelAuthentication>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, OpenAiResponsesHttpError> {
     let diagnostic = RelayDiagnosticInput::capture("POST", "/v1/responses", &headers, &body);
     let request = parse_request_envelope(body)
         .map_err(|_| OpenAiResponsesHttpError::from(AfError::InvalidRequest))?;
-    let request = prepare_canonical_request(request, authentication.model_policy())
-        .map_err(OpenAiResponsesHttpError::from)?;
-    let principal = authentication.principal();
+    let request =
+        prepare_model_request(request, &authentication).map_err(OpenAiResponsesHttpError::from)?;
     let response = state
         .chat_service()
-        .chat_completions(
-            &principal,
-            authentication.user_concurrency(),
+        .execute_model(
+            &authentication,
             request,
             Protocol::OpenAiResponses,
             request_id.as_str(),

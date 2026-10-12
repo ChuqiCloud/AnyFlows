@@ -1,4 +1,4 @@
-use af_admin::TokenAuthentication;
+use af_admin::GatewayModelAuthentication;
 use af_domain::{AfError, Protocol};
 use af_protocol::gemini::{parse_request_envelope, parse_stream_request_envelope};
 use af_relay::RelayDiagnosticInput;
@@ -12,7 +12,7 @@ use http::HeaderMap;
 use url::form_urlencoded;
 
 use crate::{
-    chat_completions::{HttpState, prepare_canonical_request, render_chat_response},
+    chat_completions::{HttpState, prepare_model_request, render_chat_response},
     error_response::GeminiHttpError,
 };
 
@@ -25,7 +25,7 @@ pub(crate) async fn gemini_generate_content(
     Path(model_action): Path<String>,
     RawQuery(query): RawQuery,
     Extension(request_id): Extension<RequestId>,
-    Extension(authentication): Extension<TokenAuthentication>,
+    Extension(authentication): Extension<GatewayModelAuthentication>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, GeminiHttpError> {
@@ -43,14 +43,11 @@ pub(crate) async fn gemini_generate_content(
         parse_request_envelope(&model_resource, body)
     }
     .map_err(|_| GeminiHttpError::from(AfError::InvalidRequest))?;
-    let request = prepare_canonical_request(request, authentication.model_policy())
-        .map_err(GeminiHttpError::from)?;
-    let principal = authentication.principal();
+    let request = prepare_model_request(request, &authentication).map_err(GeminiHttpError::from)?;
     let response = state
         .chat_service()
-        .chat_completions(
-            &principal,
-            authentication.user_concurrency(),
+        .execute_model(
+            &authentication,
             request,
             Protocol::Gemini,
             request_id.as_str(),

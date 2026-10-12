@@ -4,11 +4,13 @@ use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter,
     AdminModelPriceService, AdminModelReader, AdminModelSyncService, AdminModelWriter,
     AdminRouteReader, AdminRouteWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader,
-    AdminUserReader, AdminUserWriter, AdminWalletService, InitialSetup, PlatformAuditService,
-    SessionAuthenticator, TokenAuthentication,
+    AdminUserReader, AdminUserWriter, AdminWalletService, GatewayModelAuthentication, InitialSetup,
+    PlatformAuditService, SessionAuthenticator,
 };
 use af_analytics::{AdminDashboardReader, AnalyticsExportControl};
-use af_domain::{AfError, Protocol, TokenModelPolicy};
+#[cfg(test)]
+use af_domain::TokenModelPolicy;
+use af_domain::{AfError, Protocol};
 use af_protocol::{
     CanonicalRequestEnvelope, apply_reasoning_model_suffix, openai_chat::parse_request_envelope,
 };
@@ -379,18 +381,18 @@ impl HttpState {
 pub(crate) async fn chat_completions(
     State(state): State<HttpState>,
     Extension(request_id): Extension<RequestId>,
-    Extension(authentication): Extension<TokenAuthentication>,
+    Extension(authentication): Extension<GatewayModelAuthentication>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, OpenAiHttpError> {
     let diagnostic = RelayDiagnosticInput::capture("POST", "/v1/chat/completions", &headers, &body);
-    let request = prepare_chat_request(body, authentication.model_policy())?;
-    let principal = authentication.principal();
+    let request =
+        parse_request_envelope(body).map_err(|_| OpenAiHttpError::from(AfError::InvalidRequest))?;
+    let request = prepare_model_request(request, &authentication).map_err(OpenAiHttpError::from)?;
     let response = state
         .chat
-        .chat_completions(
-            &principal,
-            authentication.user_concurrency(),
+        .execute_model(
+            &authentication,
             request,
             Protocol::OpenAiChat,
             request_id.as_str(),
@@ -432,6 +434,7 @@ pub(crate) fn render_chat_response(
 }
 
 /// 在令牌策略、计费和调度前完成协议解析与模型后缀归一。
+#[cfg(test)]
 fn prepare_chat_request(
     body: Bytes,
     model_policy: &TokenModelPolicy,
@@ -441,7 +444,20 @@ fn prepare_chat_request(
     prepare_canonical_request(request, model_policy).map_err(OpenAiHttpError::from)
 }
 
+/// Model suffixes are normalized before checking either identity's allowlist.
+pub(crate) fn prepare_model_request(
+    request: CanonicalRequestEnvelope,
+    authentication: &GatewayModelAuthentication,
+) -> Result<CanonicalRequestEnvelope, AfError> {
+    let request = apply_reasoning_model_suffix(request).map_err(|_| AfError::InvalidRequest)?;
+    if !authentication.allows_model(&request.canonical().model) {
+        return Err(AfError::ModelNotAllowed);
+    }
+    Ok(request)
+}
+
 /// 在所有 Chat 协议入口共享模型后缀和令牌白名单语义。
+#[cfg(test)]
 pub(crate) fn prepare_canonical_request(
     request: CanonicalRequestEnvelope,
     model_policy: &TokenModelPolicy,

@@ -236,6 +236,20 @@ pub fn build_router(
     http_extensions: Option<HttpExtensions>,
     payment_webhook_routes: Option<Router>,
 ) -> HttpRouter {
+    let service_authenticator = http_extensions
+        .as_ref()
+        .and_then(HttpExtensions::model_authenticator);
+    let model_openai_authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config)
+            .with_service_authenticator(service_authenticator.clone()),
+        authenticate_api_key,
+    );
+    let model_responses_authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config)
+            .with_service_authenticator(service_authenticator.clone())
+            .with_error_protocol(Protocol::OpenAiResponses),
+        authenticate_api_key,
+    );
     let openai_authentication = middleware::from_fn_with_state(
         AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config),
         authenticate_api_key,
@@ -257,12 +271,14 @@ pub fn build_router(
     );
     let anthropic_authentication = middleware::from_fn_with_state(
         AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config)
-            .with_error_protocol(Protocol::Anthropic),
+            .with_error_protocol(Protocol::Anthropic)
+            .with_service_authenticator(service_authenticator.clone()),
         authenticate_api_key,
     );
     let gemini_authentication = middleware::from_fn_with_state(
         AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config)
-            .with_error_protocol(Protocol::Gemini),
+            .with_error_protocol(Protocol::Gemini)
+            .with_service_authenticator(service_authenticator.clone()),
         authenticate_api_key,
     );
     let playground_openai_authentication = middleware::from_fn_with_state(
@@ -333,12 +349,12 @@ pub fn build_router(
         .route(
             "/v1/models",
             get(crate::openai_models::list_openai_models)
-                .route_layer(openai_authentication.clone()),
+                .route_layer(model_openai_authentication.clone()),
         )
         .route(
             "/v1/chat/completions",
             // 只包裹已注册的 POST endpoint，不把路径级 405 改写为 401。
-            post(chat_completions).route_layer(openai_authentication.clone()),
+            post(chat_completions).route_layer(model_openai_authentication),
         )
         .route(
             "/v1/embeddings",
@@ -383,7 +399,7 @@ pub fn build_router(
         .route(
             "/v1/responses",
             // Responses 使用独立协议标记，OpenAI 错误 wire 与 Chat 保持兼容。
-            post(openai_responses).route_layer(responses_authentication.clone()),
+            post(openai_responses).route_layer(model_responses_authentication),
         )
         .route(
             "/v1/responses/compact",

@@ -93,6 +93,117 @@ async fn redis_hybrid_cache_smoke() {
     verify_concurrency_contract(&redis_url, &format!("{namespace}.concurrency")).await;
     verify_health_contract(&redis_url, &format!("{namespace}.health")).await;
     verify_request_rate_limit_contract(&redis_url, &format!("{namespace}.rate-limit")).await;
+    verify_service_account_limits(&redis_url, &format!("{namespace}.service")).await;
+}
+
+async fn verify_service_account_limits(redis_url: &str, namespace: &str) {
+    use af_domain::{
+        OrganizationId, OrganizationServiceAccountId, OrganizationServiceAccountLocator,
+    };
+    let locator = |organization| {
+        OrganizationServiceAccountLocator::new(
+            OrganizationId::new(organization).unwrap(),
+            OrganizationServiceAccountId::new(2).unwrap(),
+        )
+    };
+    let rate = RedisRequestRateLimitStore::connect(
+        RedisRequestRateLimitConfig::new(RedisConfig::new(redis_url), namespace).unwrap(),
+    )
+    .await
+    .unwrap();
+    let rate_second = RedisRequestRateLimitStore::connect(
+        RedisRequestRateLimitConfig::new(RedisConfig::new(redis_url), namespace).unwrap(),
+    )
+    .await
+    .unwrap();
+    let rule = |organization| {
+        RequestRateLimitRule::new(
+            RequestRateLimitSubject::ServiceAccount(locator(organization)),
+            NonZeroU32::new(1).unwrap(),
+            Duration::from_secs(60),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        rate.admit(&[rule(1)]).await.unwrap(),
+        RequestRateLimitOutcome::Admitted
+    );
+    assert!(matches!(
+        rate_second.admit(&[rule(1)]).await.unwrap(),
+        RequestRateLimitOutcome::Limited(_)
+    ));
+    assert_eq!(
+        rate_second.admit(&[rule(2)]).await.unwrap(),
+        RequestRateLimitOutcome::Admitted
+    );
+    let store = RedisConcurrencyStore::connect(
+        RedisConcurrencyConfig::new(RedisConfig::new(redis_url), namespace).unwrap(),
+    )
+    .await
+    .unwrap();
+    let other_store = RedisConcurrencyStore::connect(
+        RedisConcurrencyConfig::new(RedisConfig::new(redis_url), namespace).unwrap(),
+    )
+    .await
+    .unwrap();
+    let limit = ConcurrencyLimit::new(1).unwrap();
+    let held = expect_concurrency_acquired(
+        store
+            .acquire_service_account(locator(1), limit)
+            .await
+            .unwrap(),
+    );
+    assert!(matches!(
+        other_store
+            .acquire_service_account(locator(1), limit)
+            .await
+            .unwrap(),
+        ConcurrencyAcquireOutcome::Limited
+    ));
+    let other = expect_concurrency_acquired(
+        other_store
+            .acquire_service_account(locator(2), limit)
+            .await
+            .unwrap(),
+    );
+    let waiting = match store
+        .enter_service_account_wait(locator(1), limit)
+        .await
+        .unwrap()
+    {
+        af_cache::ConcurrencyWaitOutcome::Entered(waiting) => waiting,
+        _ => panic!("first service wait must be accepted"),
+    };
+    assert!(matches!(
+        other_store
+            .enter_service_account_wait(locator(1), limit)
+            .await
+            .unwrap(),
+        af_cache::ConcurrencyWaitOutcome::Full
+    ));
+    assert_eq!(
+        waiting.leave().await.unwrap(),
+        ConcurrencyLeaseOutcome::Applied
+    );
+    assert_eq!(
+        held.release().await.unwrap(),
+        ConcurrencyLeaseOutcome::Applied
+    );
+    assert_eq!(
+        other.release().await.unwrap(),
+        ConcurrencyLeaseOutcome::Applied
+    );
+    let next = expect_concurrency_acquired(
+        other_store
+            .acquire_service_account(locator(1), limit)
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        next.release().await.unwrap(),
+        ConcurrencyLeaseOutcome::Applied
+    );
+    store.cleanup_expired(64).await.unwrap();
 }
 
 /// 验证多个独立 Redis 连接并发竞争同一窗口时，全局容量不会按实例数放大。
