@@ -18,6 +18,7 @@ pub mod quota_math;
 mod refund;
 mod refund_signal_consumer;
 mod refund_signal_queue;
+mod service_account;
 mod stripe;
 mod task_billing;
 mod usage_record_consumer;
@@ -116,6 +117,7 @@ pub use refund_signal_consumer::{
 pub use refund_signal_queue::{
     RefundSignalDelivery, RefundSignalQueue, RefundSignalQueueError, RefundSignalReceiver,
 };
+pub use service_account::ServiceAccountBillingPort;
 pub use stripe::{
     DEFAULT_STRIPE_SIGNATURE_TOLERANCE_SECS, MAX_STRIPE_SIGNATURE_TOLERANCE_SECS,
     STRIPE_PAYMENT_PROVIDER, STRIPE_SIGNATURE_HEADER, StripePaymentProvider,
@@ -137,6 +139,7 @@ pub use usage_record_consumer::{
 };
 pub use usage_record_database_sink::{
     DatabaseUsageRecordSink, UsageRecordProjection, UsageRecordProjectionError,
+    UsageRecordProjectionFuture,
 };
 pub use usage_record_queue::{
     UsageRecordDelivery, UsageRecordQueue, UsageRecordQueueError, UsageRecordReceiver,
