@@ -48,7 +48,7 @@ impl DatabaseUsageRecordSink {
         }
     }
 
-    /// 开启服务账号调用身份投影；个人/API Key 用量仍只写入原有日志。
+    /// Register distribution storage; service facts bypass the personal usage table.
     #[must_use]
     pub fn with_projection(mut self, projection: Arc<dyn UsageRecordProjection>) -> Self {
         self.projection = Some(projection);
@@ -59,6 +59,17 @@ impl DatabaseUsageRecordSink {
 impl UsageRecordSink for DatabaseUsageRecordSink {
     fn persist<'a>(&'a self, record: BillingUsageRecord) -> UsageRecordSinkFuture<'a> {
         Box::pin(async move {
+            if record.service_account_identity().is_some() {
+                // Service usage must never create a personal usage row or disappear
+                // when the distribution forgot to register its private storage.
+                return self
+                    .projection
+                    .as_ref()
+                    .ok_or(UsageRecordSinkError::Unavailable)?
+                    .persist(record)
+                    .await
+                    .map_err(map_projection_error);
+            }
             let write = to_usage_log_write(record).map_err(|_| UsageRecordSinkError::Invariant)?;
             self.repository
                 .record(&write)
@@ -112,7 +123,7 @@ fn to_usage_log_write(record: BillingUsageRecord) -> Result<UsageLogWrite, Usage
     };
     let write = UsageLogWrite::new(
         record.event_id(),
-        record.principal(),
+        record.principal().ok_or(UsageRecordSinkError::Invariant)?,
         billing_mode,
         usage,
         source,
@@ -258,5 +269,91 @@ mod tests {
             write.video_resolution(),
             Some(UsageLogVideoResolution::P720)
         );
+    }
+
+    #[tokio::test]
+    async fn service_usage_requires_projection_and_never_uses_personal_storage() {
+        use af_domain::{
+            GatewayIdentity, OrganizationId, OrganizationServiceAccountId,
+            OrganizationServiceAccountKey, OrganizationServiceAccountLocator,
+            OrganizationServiceAccountRuntimeIdentity,
+        };
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        struct Projection(AtomicUsize);
+        impl UsageRecordProjection for Projection {
+            fn persist<'a>(
+                &'a self,
+                record: BillingUsageRecord,
+            ) -> UsageRecordProjectionFuture<'a> {
+                Box::pin(async move {
+                    assert!(record.principal().is_none());
+                    self.0.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                })
+            }
+        }
+        let pool = af_db::connect_and_migrate(
+            &af_db::DatabaseOptions::new("sqlite::memory:").unwrap(),
+            af_db::MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let identity = OrganizationServiceAccountRuntimeIdentity::new(
+            OrganizationServiceAccountLocator::new(
+                OrganizationId::new(44).unwrap(),
+                OrganizationServiceAccountId::new(55).unwrap(),
+            ),
+            OrganizationServiceAccountKey::new([1; 16]).unwrap(),
+            OrganizationServiceAccountKey::new([2; 16]).unwrap(),
+        );
+        let usage = Usage::new(
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            UsageDetails::new(
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+            ),
+            UsageSource::Upstream,
+            UsageSemantics::Inclusive,
+        )
+        .unwrap();
+        let record = BillingUsageRecord::new_with_identity(
+            BillingReservationId::new([63; 16]).unwrap(),
+            GatewayIdentity::ServiceAccount(identity),
+            usage,
+            crate::BillingUsageDimensions::empty(),
+            BillingMode::Free,
+            Quota::ZERO,
+        );
+        assert!(matches!(
+            to_usage_log_write(record),
+            Err(UsageRecordSinkError::Invariant)
+        ));
+        let sink = DatabaseUsageRecordSink::new(UsageLogRepository::new(pool.clone()));
+        assert_eq!(
+            sink.persist(record).await,
+            Err(UsageRecordSinkError::Unavailable)
+        );
+        let projection = Arc::new(Projection(AtomicUsize::new(0)));
+        sink.with_projection(projection.clone())
+            .persist(record)
+            .await
+            .unwrap();
+        assert_eq!(projection.0.load(Ordering::SeqCst), 1);
+        use sea_orm::ConnectionTrait as _;
+        let row = pool
+            .extension_connection()
+            .query_one(sea_orm::Statement::from_string(
+                sea_orm::DbBackend::Sqlite,
+                "SELECT COUNT(*) AS count FROM usage_logs".to_owned(),
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.try_get::<i64>("", "count").unwrap(), 0);
     }
 }
