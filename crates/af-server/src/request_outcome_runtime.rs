@@ -1,8 +1,9 @@
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use af_db::{
     RequestFailureKind, RequestOutcomeRepository, RequestOutcomeRepositoryError,
-    RequestOutcomeSubject, RequestOutcomeWrite,
+    RequestOutcomeSubject, RequestOutcomeWrite, ServiceAccountOutcomeSink,
+    ServiceAccountRequestOutcome,
 };
 use af_domain::{AfError, ChannelId, GatewayPrincipal, Operation, Protocol, UpstreamError};
 
@@ -39,6 +40,10 @@ pub struct RequestOutcomeContext {
     operation: Operation,
     model: String,
     subject: Option<RequestOutcomeSubject>,
+    service_subject: Option<(
+        af_domain::OrganizationServiceAccountRuntimeIdentity,
+        af_domain::GroupId,
+    )>,
     started_at: Instant,
 }
 
@@ -52,6 +57,7 @@ impl RequestOutcomeContext {
             operation,
             model: model.to_owned(),
             subject: None,
+            service_subject: None,
             started_at: Instant::now(),
         }
     }
@@ -78,8 +84,24 @@ impl RequestOutcomeContext {
                 organization.map(|value| value.organization_id()),
                 organization.and_then(|value| value.team_id()),
             )),
+            service_subject: None,
             started_at: Instant::now(),
         }
+    }
+
+    /// Service identities use the distribution sink exclusively, including on failure.
+    #[must_use]
+    pub fn for_service_account(
+        request_id: &str,
+        protocol: Protocol,
+        operation: Operation,
+        model: &str,
+        identity: af_domain::OrganizationServiceAccountRuntimeIdentity,
+        group_id: af_domain::GroupId,
+    ) -> Self {
+        let mut context = Self::new(request_id, protocol, operation, model);
+        context.service_subject = Some((identity, group_id));
+        context
     }
 
     /// 持久化服务调用终态并剥离内部渠道包装。
@@ -111,6 +133,10 @@ impl RequestOutcomeContext {
         let Some(runtime) = runtime else {
             return;
         };
+        if self.service_subject.is_some() {
+            self.record_service(runtime, Some(channel_id), None).await;
+            return;
+        }
         let write = match self.subject {
             Some(subject) => RequestOutcomeWrite::succeeded_for_subject(
                 &self.request_id,
@@ -144,6 +170,11 @@ impl RequestOutcomeContext {
             return;
         };
         let failure_kind = classify_error(error);
+        if self.service_subject.is_some() {
+            self.record_service(runtime, channel_id, Some(failure_kind))
+                .await;
+            return;
+        }
         let write = match self.subject {
             Some(subject) => RequestOutcomeWrite::failed_for_subject(
                 &self.request_id,
@@ -167,19 +198,76 @@ impl RequestOutcomeContext {
         };
         runtime.record(write).await;
     }
+
+    async fn record_service(
+        &self,
+        runtime: &RequestOutcomeRuntime,
+        channel_id: Option<ChannelId>,
+        failure_kind: Option<RequestFailureKind>,
+    ) {
+        let Some((identity, group_id)) = self.service_subject else {
+            return;
+        };
+        let fact = ServiceAccountRequestOutcome::new(
+            identity,
+            group_id,
+            &self.request_id,
+            self.protocol,
+            self.operation,
+            &self.model,
+            channel_id,
+            failure_kind,
+            self.started_at.elapsed(),
+        );
+        let Ok(fact) = fact else {
+            record_runtime_error("service_outcome_invalid_fact");
+            return;
+        };
+        let Some(sink) = runtime.service_accounts.as_ref() else {
+            record_runtime_error("service_outcome_sink_missing");
+            return;
+        };
+        for attempt in 0..3 {
+            match sink.persist(fact.clone()).await {
+                Ok(()) => return,
+                Err(
+                    RequestOutcomeRepositoryError::Query | RequestOutcomeRepositoryError::Timeout,
+                ) if attempt < 2 => {
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                }
+                Err(error) => {
+                    record_repository_error(error);
+                    return;
+                }
+            }
+        }
+    }
 }
 
 /// 请求终态事实的进程级持久化适配器。
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct RequestOutcomeRuntime {
     repository: RequestOutcomeRepository,
+    service_accounts: Option<Arc<dyn ServiceAccountOutcomeSink>>,
 }
 
 impl RequestOutcomeRuntime {
     /// 绑定只追加请求终态仓储。
     #[must_use]
     pub const fn new(repository: RequestOutcomeRepository) -> Self {
-        Self { repository }
+        Self {
+            repository,
+            service_accounts: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_service_accounts(
+        mut self,
+        sink: Option<Arc<dyn ServiceAccountOutcomeSink>>,
+    ) -> Self {
+        self.service_accounts = sink;
+        self
     }
 
     async fn record(&self, write: Result<RequestOutcomeWrite, af_db::RequestOutcomeWriteError>) {
@@ -193,6 +281,16 @@ impl RequestOutcomeRuntime {
         if let Err(error) = self.repository.record(&write).await {
             record_repository_error(error);
         }
+    }
+}
+
+impl std::fmt::Debug for RequestOutcomeRuntime {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RequestOutcomeRuntime")
+            .field("repository", &self.repository)
+            .field("has_service_sink", &self.service_accounts.is_some())
+            .finish()
     }
 }
 

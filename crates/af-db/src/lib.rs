@@ -184,6 +184,7 @@ mod scheduler_outbox;
 #[cfg(test)]
 mod scheduler_outbox_tests;
 mod scheduler_runtime;
+mod service_account_outcome;
 mod site_settings;
 #[cfg(test)]
 mod site_settings_tests;
@@ -565,6 +566,9 @@ pub use scheduler_runtime::{
     SchedulerRuntimeTargetRecordError, validate_channel_header_overrides,
 };
 pub use sea_orm_migration::{MigrationTrait, MigratorTrait};
+pub use service_account_outcome::{
+    ServiceAccountOutcomeFuture, ServiceAccountOutcomeSink, ServiceAccountRequestOutcome,
+};
 pub use site_settings::{
     BalanceDisplayModeRecord, BalanceDisplayPolicyRecord, BalanceSymbolPositionRecord,
     SiteNavigationGroupRecord, SiteNavigationLinkRecord, SiteNavigationRecord, SiteSettingsRecord,
