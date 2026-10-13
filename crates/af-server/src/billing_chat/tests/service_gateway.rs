@@ -8,6 +8,21 @@ use af_domain::{
 };
 use std::num::NonZeroU32;
 
+#[derive(Default)]
+struct Outcomes(Mutex<Vec<af_db::ServiceAccountRequestOutcome>>);
+
+impl af_db::ServiceAccountOutcomeSink for Outcomes {
+    fn persist<'a>(
+        &'a self,
+        fact: af_db::ServiceAccountRequestOutcome,
+    ) -> af_db::ServiceAccountOutcomeFuture<'a> {
+        Box::pin(async move {
+            self.0.lock().unwrap().push(fact);
+            Ok(())
+        })
+    }
+}
+
 fn authentication() -> ServiceAccountModelAuthentication {
     ServiceAccountModelAuthentication::new(
         ServiceAccountAuthentication::new(
@@ -148,6 +163,8 @@ impl ServiceAccountBillingPort for ServiceFunds {
 
 #[tokio::test]
 async fn service_call_uses_independent_funds_and_stable_precharge_facts() {
+    let database = SqliteTestDatabase::new("service-success-outcome").await;
+    let outcomes = Arc::new(Outcomes::default());
     let auth = authentication();
     let funds = Arc::new(ServiceFunds::default());
     let usage = Arc::new(UsageStub::default());
@@ -159,7 +176,11 @@ async fn service_call_uses_independent_funds_and_stable_precharge_facts() {
         None,
         usage.clone(),
     )
-    .with_service_account_billing(Some(funds.clone()));
+    .with_service_account_billing(Some(funds.clone()))
+    .with_request_outcomes(
+        crate::RequestOutcomeRuntime::new(RequestOutcomeRepository::new(database.pool().clone()))
+            .with_service_accounts(Some(outcomes.clone())),
+    );
     let response = service
         .service_account_chat_completions(
             &auth,
@@ -171,6 +192,15 @@ async fn service_call_uses_independent_funds_and_stable_precharge_facts() {
         .await
         .unwrap();
     assert!(matches!(response, ChatResponse::Full { .. }));
+    {
+        let facts = outcomes.0.lock().unwrap();
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].identity(), auth.authentication().identity());
+        assert_eq!(facts[0].group_id(), auth.group_id());
+        assert_eq!(facts[0].request_id(), "service-request");
+        assert_eq!(facts[0].failure_kind(), None);
+        assert!(facts[0].channel_id().is_some());
+    }
     let calls = funds.precharges.lock().unwrap();
     assert_eq!(calls.len(), 2);
     assert_eq!(calls[0], calls[1]);
@@ -190,6 +220,8 @@ async fn service_call_uses_independent_funds_and_stable_precharge_facts() {
 
 #[tokio::test]
 async fn upstream_failure_refunds_only_the_confirmed_service_reservation() {
+    let database = SqliteTestDatabase::new("service-failure-outcome").await;
+    let outcomes = Arc::new(Outcomes::default());
     let auth = authentication();
     let funds = Arc::new(ServiceFunds::default());
     let usage = Arc::new(UsageStub::default());
@@ -201,7 +233,11 @@ async fn upstream_failure_refunds_only_the_confirmed_service_reservation() {
         None,
         usage.clone(),
     )
-    .with_service_account_billing(Some(funds.clone()));
+    .with_service_account_billing(Some(funds.clone()))
+    .with_request_outcomes(
+        crate::RequestOutcomeRuntime::new(RequestOutcomeRepository::new(database.pool().clone()))
+            .with_service_accounts(Some(outcomes.clone())),
+    );
     assert!(
         service
             .service_account_chat_completions(
@@ -221,4 +257,78 @@ async fn upstream_failure_refunds_only_the_confirmed_service_reservation() {
     );
     assert!(funds.settlements.lock().unwrap().is_empty());
     assert!(usage.records.lock().unwrap().is_empty());
+    let facts = outcomes.0.lock().unwrap();
+    assert_eq!(facts.len(), 1);
+    assert_eq!(facts[0].identity(), auth.authentication().identity());
+    assert_eq!(facts[0].request_id(), "service-failure");
+    assert_eq!(
+        facts[0].failure_kind(),
+        Some(af_db::RequestFailureKind::Internal)
+    );
+}
+
+#[tokio::test]
+async fn service_stream_terminal_paths_use_only_the_distribution_sink() {
+    let database = SqliteTestDatabase::new("service-stream-outcomes").await;
+    let outcomes = Arc::new(Outcomes::default());
+    let runtime =
+        crate::RequestOutcomeRuntime::new(RequestOutcomeRepository::new(database.pool().clone()))
+            .with_service_accounts(Some(outcomes.clone()));
+    let auth = authentication();
+    let outcome = |request_id| {
+        Some(StreamRequestOutcome {
+            context: crate::RequestOutcomeContext::for_service_account(
+                request_id,
+                Protocol::OpenAiChat,
+                Operation::Chat,
+                "gpt-test",
+                auth.authentication().identity(),
+                auth.group_id(),
+            ),
+            runtime: Some(runtime.clone()),
+            channel_id: ChannelId::new(1).unwrap(),
+        })
+    };
+    StreamRequestOutcomeGuard::new(outcome("success"))
+        .record_success()
+        .await;
+    StreamRequestOutcomeGuard::new(outcome("failure"))
+        .record_failure(AfError::Internal)
+        .await;
+    drop(StreamRequestOutcomeGuard::new(outcome("interrupted")));
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while outcomes.0.lock().unwrap().len() != 3 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    {
+        let facts = outcomes.0.lock().unwrap();
+        assert_eq!(facts[0].failure_kind(), None);
+        assert_eq!(
+            facts[1].failure_kind(),
+            Some(af_db::RequestFailureKind::Internal)
+        );
+        assert_eq!(
+            facts[2].failure_kind(),
+            Some(af_db::RequestFailureKind::OutcomeUnknown)
+        );
+        assert!(
+            facts
+                .iter()
+                .all(|fact| fact.identity() == auth.authentication().identity())
+        );
+    }
+    let row = database
+        .seed()
+        .query_one(Statement::from_string(
+            database.seed().get_database_backend(),
+            "SELECT COUNT(*) AS value FROM request_outcome_logs",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.try_get::<i64>("", "value").unwrap(), 0);
+    database.close().await;
 }

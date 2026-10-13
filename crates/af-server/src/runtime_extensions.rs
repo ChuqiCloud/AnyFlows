@@ -56,6 +56,7 @@ pub struct RuntimeExtensions {
     pub usage_projection: Option<Arc<dyn UsageRecordProjection>>,
     /// Independent funding; registration alone does not enable model execution.
     pub service_account_billing: Option<Arc<dyn ServiceAccountBillingPort>>,
+    pub service_account_outcomes: Option<Arc<dyn af_db::ServiceAccountOutcomeSink>>,
     pub quota: Option<Arc<dyn QuotaExtension>>,
     pub quota_funding: Option<Arc<dyn QuotaFundingExtension>>,
     pub topup: Option<Arc<dyn TopupExtension>>,

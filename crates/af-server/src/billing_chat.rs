@@ -418,6 +418,14 @@ impl ChatService for BillingChatService {
         diagnostic: RelayDiagnosticInput,
     ) -> ChatServiceFuture<'a> {
         Box::pin(async move {
+            let outcome = crate::RequestOutcomeContext::for_service_account(
+                request_id,
+                response_protocol,
+                request.canonical().operation,
+                request.requested_model(),
+                authentication.authentication().identity(),
+                authentication.group_id(),
+            );
             let subject = crate::model_subject::ModelSubject::ServiceAccount {
                 identity: authentication.authentication().identity(),
                 group_id: authentication.group_id(),
@@ -432,21 +440,43 @@ impl ChatService for BillingChatService {
                     request_id,
                     diagnostic,
                 )
-                .await?
+                .await
             {
-                BilledChatExecution::Full { body, usage, .. } => Ok(ChatResponse::Full {
-                    body,
-                    usage: Ok(usage),
-                }),
-                BilledChatExecution::Stream {
+                Ok(BilledChatExecution::Full {
                     body,
                     usage,
-                    completion,
-                    ..
-                } => Ok(ChatResponse::Stream {
-                    body: body.with_completion_hook(completion),
+                    channel_id,
+                }) => {
+                    outcome
+                        .record_success(self.request_outcomes.as_ref(), channel_id)
+                        .await;
+                    Ok(ChatResponse::Full {
+                        body,
+                        usage: Ok(usage),
+                    })
+                }
+                Ok(BilledChatExecution::Stream {
+                    body,
                     usage,
-                }),
+                    channel_id,
+                    mut completion,
+                }) => {
+                    completion.outcome = Some(StreamRequestOutcome {
+                        context: outcome,
+                        runtime: self.request_outcomes.clone(),
+                        channel_id,
+                    });
+                    Ok(ChatResponse::Stream {
+                        body: body.with_completion_hook(completion),
+                        usage,
+                    })
+                }
+                Err(error) => {
+                    outcome
+                        .record_failure(self.request_outcomes.as_ref(), &error, None)
+                        .await;
+                    Err(error)
+                }
             }
         })
     }

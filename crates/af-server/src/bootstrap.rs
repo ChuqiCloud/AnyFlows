@@ -1754,7 +1754,14 @@ impl Bootstrap<RelayReady> {
                         .clone()
                         .with_analytics_export(repository.clone())
                 });
-        let request_outcomes = RequestOutcomeRuntime::new(request_repository);
+        let request_outcomes = RequestOutcomeRuntime::new(request_repository)
+            .with_service_accounts(
+                self.stage
+                    .infrastructure
+                    .extensions
+                    .service_account_outcomes
+                    .clone(),
+            );
         let refund_signal_consumer = RefundSignalConsumer::new(
             refund_signal_receiver,
             refund_sink,
