@@ -3405,23 +3405,7 @@
       "orPassword": "or use a password",
       "passkey": "Sign in with Passkey",
       "passkeyVerifying": "Verifying Passkey",
-      "moreOptions": "Other sign-in methods",
-      "organizationSso": {
-        "back": "Back to account sign-in",
-        "title": "Enterprise SSO",
-        "description": "Members of an organization use a work email or public organization identifier to enter the identity provider. SSO never takes over an existing personal account by email.",
-        "identifier": "Work email or organization ID",
-        "placeholder": "name@company.com or organization ID",
-        "check": "Check enterprise sign-in",
-        "checking": "Checking enterprise sign-in",
-        "continue": "Continue with enterprise sign-in",
-        "starting": "Starting enterprise sign-in",
-        "available": "An enterprise sign-in method is available. Continue to sign in.",
-        "unavailable": "No available enterprise sign-in method was found.",
-        "error": "Enterprise sign-in is temporarily unavailable. Try again shortly.",
-        "noOrganization": "Need an organization account?",
-        "createAccount": "Create a personal account first"
-      }
+      "moreOptions": "Other sign-in methods"
     },
     "oauthCallback": {
       "title": "Completing sign-in",

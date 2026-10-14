@@ -11,7 +11,7 @@ import {
   RefreshCw,
   UserRoundPlus,
 } from 'lucide-react'
-import { type FormEvent, useEffect, useState } from 'react'
+import { Suspense, type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -30,6 +30,8 @@ import {
 import { establishManagementSession } from '@/features/auth/session-query'
 import { TurnstileWidget } from '@/features/auth/turnstile-widget'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
+import { extensionLoginMethods, type RegisteredExtensionLoginMethod } from '@/extensions/registry'
+import { i18n } from '@/i18n'
 import { apiClient, ApiError } from '@/lib/api'
 import { loginManagementSession } from '@/lib/api/generated/sdk.gen'
 import type { LoginRequestWritable } from '@/lib/api/generated/types.gen'
@@ -70,6 +72,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   const [turnstileResetKey, setTurnstileResetKey] = useState(0)
   const [loginError, setLoginError] = useState<LoginError>()
   const [noticeDismissed, setNoticeDismissed] = useState(false)
+  const [activeLoginMethod, setActiveLoginMethod] = useState<RegisteredExtensionLoginMethod | null>(null)
   const siteQuery = usePublicSiteSettings()
 
   const loginMutation = useMutation({
@@ -157,6 +160,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   const oauthLoginEnabled = oauthProviders.length > 0
   const registrationEnabled = site?.authentication.registration_enabled ?? false
   const registrationAvailable = passwordLoginEnabled && registrationEnabled
+  const ActiveLoginMethod = activeLoginMethod?.Component
   const turnstileSiteKey = site?.authentication.turnstile_site_key ?? null
   const passkeySupported = passwordLoginEnabled && supportsPasskeyAuthentication()
   const visibleError = loginError ?? (noticeDismissed ? undefined : notice)
@@ -204,11 +208,22 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
               <div className="mb-2 grid size-10 place-items-center rounded-xl border border-[var(--hairline)] bg-surface-2 text-info">
                 <LockKeyhole className="size-5" aria-hidden="true" />
               </div>
-              <CardTitle className="text-xl leading-tight">{t('auth.login.title')}</CardTitle>
-              <CardDescription className="leading-6">{t('auth.login.subtitle')}</CardDescription>
+              <CardTitle className="text-xl leading-tight">
+                {activeLoginMethod ? i18n.t(`${activeLoginMethod.namespace}:${activeLoginMethod.labelKey}`) : t('auth.login.title')}
+              </CardTitle>
+              <CardDescription className="leading-6">
+                {activeLoginMethod?.descriptionKey
+                  ? i18n.t(`${activeLoginMethod.namespace}:${activeLoginMethod.descriptionKey}`)
+                  : t('auth.login.subtitle')}
+              </CardDescription>
             </CardHeader>
 
             <CardContent className="px-6 pb-6 sm:px-7 sm:pb-7">
+              {ActiveLoginMethod ? (
+                <Suspense fallback={<p role="status" className="text-sm text-muted-foreground">{t('auth.login.loadingCapabilities')}</p>}>
+                  <ActiveLoginMethod onBack={() => setActiveLoginMethod(null)} registrationAvailable={registrationAvailable} />
+                </Suspense>
+              ) : (
               <form className="grid gap-5" onSubmit={handleSubmit}>
                   {oauthProviders.map((provider) => {
                     const providerId = provider.id as OAuthLoginProvider
@@ -240,7 +255,22 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                     )
                   })}
 
-                  {oauthLoginEnabled && passwordLoginEnabled ? (
+                  {extensionLoginMethods.map((method) => (
+                    <Button
+                      key={`${method.namespace}:${method.id}`}
+                      type="button"
+                      size="lg"
+                      variant="secondary"
+                      className="h-auto min-h-11 w-full whitespace-normal break-words py-3 text-center leading-5"
+                      disabled={loginMutation.isPending || oauthMutation.isPending || passkeyMutation.isPending}
+                      onClick={() => setActiveLoginMethod(method)}
+                    >
+                      {method.icon}
+                      {i18n.t(`${method.namespace}:${method.labelKey}`)}
+                    </Button>
+                  ))}
+
+                  {(oauthLoginEnabled || extensionLoginMethods.length > 0) && passwordLoginEnabled ? (
                     <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
                       <span className="h-px flex-1 bg-[var(--hairline)]" />
                       <span>{t('auth.login.orPassword')}</span>
@@ -406,7 +436,8 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                   <Button variant="ghost" className="w-full" asChild>
                     <a href="#/models"><Boxes className="size-4" aria-hidden="true" />{t('auth.login.browseModels')}</a>
                   </Button>
-                </form>
+              </form>
+              )}
             </CardContent>
           </Card>
         )}
