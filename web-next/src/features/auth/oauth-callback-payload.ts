@@ -15,11 +15,16 @@ export function parseOAuthCallbackPayload(search: string, hash: string): OAuthCa
   const methods = query.getAll('method')
   if (methods.length > 1 || (methods.length === 1 && !methodPattern.test(methods[0]))) return { kind: 'failed' }
   const context: Record<string, string> = {}
-  for (const [key, value] of query) {
-    if (key === 'ticket' || key === 'error' || key === 'method') continue
-    if (!/^[a-z][a-z0-9_]{0,63}$/.test(key) || value.length > 4096 || key in context) return { kind: 'failed' }
+  let invalidContext = false
+  query.forEach((value, key) => {
+    if (key === 'ticket' || key === 'error' || key === 'method') return
+    if (!/^[a-z][a-z0-9_]{0,63}$/.test(key) || value.length > 4096 || key in context) {
+      invalidContext = true
+      return
+    }
     context[key] = value
-  }
+  })
+  if (invalidContext) return { kind: 'failed' }
   if (tickets.length === 1 && errors.length === 0 && ticketPattern.test(tickets[0])) {
     return { kind: 'ticket', ticket: tickets[0], ...(methods.length === 1 ? { method: methods[0] } : {}), context }
   }
