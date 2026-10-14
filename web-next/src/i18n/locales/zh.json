@@ -3404,23 +3404,7 @@
       "orPassword": "或使用密码",
       "passkey": "使用 Passkey 登录",
       "passkeyVerifying": "正在验证 Passkey",
-      "moreOptions": "其他登录方式",
-      "organizationSso": {
-        "back": "返回账号登录",
-        "title": "企业 SSO",
-        "description": "输入工作邮箱或企业标识，前往企业身份平台登录。SSO 不会自动关联或替换个人账户。",
-        "identifier": "企业邮箱或企业标识",
-        "placeholder": "name@company.com 或企业公开标识",
-        "check": "检查企业登录",
-        "checking": "正在检查企业登录",
-        "continue": "继续企业登录",
-        "starting": "正在启动企业登录",
-        "available": "检测到可用的企业登录方式，可以继续登录。",
-        "unavailable": "未找到可用的企业登录方式。",
-        "error": "企业登录暂时不可用，请稍后重试。",
-        "noOrganization": "还没有企业账号？",
-        "createAccount": "先创建个人账户"
-      }
+      "moreOptions": "其他登录方式"
     },
     "oauthCallback": {
       "title": "正在完成登录",

@@ -36,6 +36,7 @@ import { SiteTooltip } from '@/shared/components/site-tooltip'
 import { apiClient, ApiError } from '@/lib/api'
 import { loginManagementSession } from '@/lib/api/generated/sdk.gen'
 import type { LoginRequestWritable, PublicSiteSettings } from '@/lib/api/generated/types.gen'
+import { extensionLoginMethods, type RegisteredExtensionLoginMethod } from '@/extensions/registry'
 
 export type LoginNotice = 'sessionExpired' | 'setupComplete' | 'passwordResetSuccess' | 'passwordChanged'
 
@@ -45,6 +46,7 @@ type AccountLoginFormProps = {
   site?: PublicSiteSettings
   notice?: LoginNotice
   onAuthenticated: () => void
+  onLoginMethodSelect: (method: RegisteredExtensionLoginMethod) => void
 }
 
 function classifyLoginError(error: unknown): LoginError {
@@ -63,8 +65,8 @@ function classifyLoginError(error: unknown): LoginError {
 }
 
 /** 账号密码登录表单：OAuth、用户名密码、二次验证与 Passkey。 */
-export function AccountLoginForm({ site, notice, onAuthenticated }: AccountLoginFormProps) {
-  const { t } = useTranslation()
+export function AccountLoginForm({ site, notice, onAuthenticated, onLoginMethodSelect }: AccountLoginFormProps) {
+  const { t, i18n } = useTranslation()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [twoFactorCode, setTwoFactorCode] = useState('')
@@ -202,7 +204,23 @@ export function AccountLoginForm({ site, notice, onAuthenticated }: AccountLogin
         )
       })}
 
-      {oauthLoginEnabled && passwordLoginEnabled ? (
+      {extensionLoginMethods.map((method) => (
+        <Button
+          key={`${method.namespace}:${method.id}`}
+          data-slot="button"
+          type="button"
+          size="lg"
+          variant="flat"
+          className={cn(buttonSecondaryLg, 'h-auto min-h-11 w-full whitespace-normal break-words py-3 text-center leading-5')}
+          isDisabled={loginMutation.isPending || oauthMutation.isPending || passkeyMutation.isPending}
+          onPress={() => onLoginMethodSelect(method)}
+        >
+          {method.icon}
+          {i18n.t(`${method.namespace}:${method.labelKey}`)}
+        </Button>
+      ))}
+
+      {(oauthLoginEnabled || extensionLoginMethods.length > 0) && passwordLoginEnabled ? (
         <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
           <span className="h-px flex-1 bg-[var(--hairline)]" />
           <span>{t('auth.login.orPassword')}</span>
