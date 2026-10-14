@@ -1,5 +1,5 @@
 export type OAuthCallbackPayload =
-  | { kind: 'ticket'; ticket: string; method?: string }
+  | { kind: 'ticket'; ticket: string; method?: string; context: Readonly<Record<string, string>> }
   | { kind: 'cancelled' }
   | { kind: 'failed' }
 
@@ -14,9 +14,15 @@ export function parseOAuthCallbackPayload(search: string, hash: string): OAuthCa
   const errors = query.getAll('error')
   const methods = query.getAll('method')
   if (methods.length > 1 || (methods.length === 1 && !methodPattern.test(methods[0]))) return { kind: 'failed' }
-  if (tickets.length === 1 && errors.length === 0 && ticketPattern.test(tickets[0])) {
-    return { kind: 'ticket', ticket: tickets[0], ...(methods.length === 1 ? { method: methods[0] } : {}) }
+  const context: Record<string, string> = {}
+  for (const [key, value] of query) {
+    if (key === 'ticket' || key === 'error' || key === 'method') continue
+    if (!/^[a-z][a-z0-9_]{0,63}$/.test(key) || value.length > 4096 || key in context) return { kind: 'failed' }
+    context[key] = value
   }
-  if (tickets.length === 0 && errors.length === 1 && errors[0] === 'cancelled') return { kind: 'cancelled' }
+  if (tickets.length === 1 && errors.length === 0 && ticketPattern.test(tickets[0])) {
+    return { kind: 'ticket', ticket: tickets[0], ...(methods.length === 1 ? { method: methods[0] } : {}), context }
+  }
+  if (tickets.length === 0 && errors.length === 1 && errors[0] === 'cancelled' && Object.keys(context).length === 0) return { kind: 'cancelled' }
   return { kind: 'failed' }
 }

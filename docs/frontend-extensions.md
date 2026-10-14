@@ -27,9 +27,12 @@ outside the community repository.
 Modules may also declare `loginMethods` with a unique method ID, translated
 label, icon and lazy form loader. The host supplies a back action and the
 current registration availability. An optional `exchangeTicket` function
-returns the host's `LoginResponse` when the method supports a login callback.
+returns the host's `LoginResponse` when the method supports a login callback;
+single-valued callback parameters other than `ticket`, `error` and `method` are
+passed to that method as opaque context.
 
-Browser callbacks use `/#/oauth/callback?method=<module>:<method>&ticket=<ticket>`.
+Browser callbacks use `/#/oauth/callback?method=<module>:<method>&ticket=<ticket>`;
+other parameters are passed to the matching method as opaque context.
 Next accepts this fragment route as well as its browser callback route. The
 host consumes and clears callback parameters before exchanging the ticket,
 then establishes the existing management session. Unknown or duplicate methods

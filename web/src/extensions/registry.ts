@@ -18,7 +18,7 @@ export type ExtensionLoginMethod = {
   labelKey: string
   descriptionKey?: string
   icon: ReactNode
-  exchangeTicket?: (ticket: string) => Promise<LoginResponse>
+  exchangeTicket?: (ticket: string, context: Readonly<Record<string, string>>) => Promise<LoginResponse>
   load: () => Promise<{ default: ComponentType<ExtensionLoginMethodProps> }>
 }
 
