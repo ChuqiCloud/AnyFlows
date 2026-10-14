@@ -39,6 +39,7 @@ export function OAuthCallbackPage({ onAuthenticated }: OAuthCallbackPageProps) {
   const started = useRef(false)
 
   useEffect(() => {
+    consumedCallbackPayload = undefined
     if (payload.kind !== 'ticket' || started.current) return
     started.current = true
     const method = extensionLoginMethods.find((entry) => `${entry.namespace}:${entry.id}` === payload.method)
