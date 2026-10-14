@@ -1,6 +1,7 @@
 import { lazy, type ComponentType, type LazyExoticComponent, type ReactNode } from 'react'
 
 import { i18n } from '@/i18n'
+import type { LoginResponse } from '@/lib/api/generated/types.gen'
 import { validateExtensionRoutes, type ExtensionRouteDefinition } from './model'
 
 export type ConsoleExtensionRoute = ExtensionRouteDefinition & {
@@ -17,6 +18,7 @@ export type ExtensionLoginMethod = {
   labelKey: string
   descriptionKey?: string
   icon: ReactNode
+  exchangeTicket?: (ticket: string) => Promise<LoginResponse>
   load: () => Promise<{ default: ComponentType<ExtensionLoginMethodProps> }>
 }
 

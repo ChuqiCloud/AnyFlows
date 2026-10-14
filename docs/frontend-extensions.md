@@ -23,3 +23,15 @@ store or put protected data into browser persistence.
 The distribution owns the private source checkout, combined OpenAPI client
 generation and build process. These files and their generated contracts remain
 outside the community repository.
+
+Modules may also declare `loginMethods` with a unique method ID, translated
+label, icon and lazy form loader. The host supplies a back action and the
+current registration availability. An optional `exchangeTicket` function
+returns the host's `LoginResponse` when the method supports a login callback.
+
+Browser callbacks use `/#/oauth/callback?method=<module>:<method>&ticket=<ticket>`.
+Next accepts this fragment route as well as its browser callback route. The
+host consumes and clears callback parameters before exchanging the ticket,
+then establishes the existing management session. Unknown or duplicate methods
+are rejected; they never fall back to the built-in OAuth exchange. Tickets
+are not added to the module query cache or browser persistence.

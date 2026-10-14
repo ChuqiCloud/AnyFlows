@@ -5,6 +5,8 @@ import { Button, Card, CardBody, CardHeader } from '@heroui/react'
 
 import { cn } from '@/lib/utils'
 import { AuthPageShell } from '@/features/auth/auth-page-shell'
+import { parseOAuthCallbackPayload, type OAuthCallbackPayload } from '@/features/auth/oauth-callback-payload'
+import { extensionLoginMethods } from '@/extensions/registry'
 import { exchangeOAuthTicket } from '@/features/auth/oauth-login-api'
 import { establishManagementSession } from '@/features/auth/session-query'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
@@ -13,15 +15,9 @@ type OAuthCallbackPageProps = {
   onAuthenticated: () => void
 }
 
-type CallbackPayload =
-  | { kind: 'ticket'; ticket: string }
-  | { kind: 'cancelled' }
-  | { kind: 'failed' }
-
 type CallbackStatus = 'exchanging' | 'succeeded' | 'cancelled' | 'failed'
 
-const ticketPattern = /^[A-Za-z0-9_-]{43}$/
-let consumedCallbackPayload: CallbackPayload | undefined
+let consumedCallbackPayload: OAuthCallbackPayload | undefined
 
 /*
  * 卡片与按钮外观沿用原设计系统：HeroUI 自带的内边距、字号与间距由 className 覆盖回原值。
@@ -45,7 +41,10 @@ export function OAuthCallbackPage({ onAuthenticated }: OAuthCallbackPageProps) {
   useEffect(() => {
     if (payload.kind !== 'ticket' || started.current) return
     started.current = true
-    void exchangeOAuthTicket(payload.ticket)
+    const method = extensionLoginMethods.find((entry) => `${entry.namespace}:${entry.id}` === payload.method)
+    const exchange = payload.method ? method?.exchangeTicket : exchangeOAuthTicket
+    const result = exchange ? exchange(payload.ticket) : Promise.reject(new Error('Unknown login method'))
+    void result
       .then((session) => {
         establishManagementSession(session)
         setStatus('succeeded')
@@ -101,18 +100,10 @@ function consumeCallbackPayloadOnce() {
   return consumedCallbackPayload
 }
 
-function consumeCallbackPayload(): CallbackPayload {
-  const query = new URLSearchParams(window.location.search)
-  const tickets = query.getAll('ticket')
-  const errors = query.getAll('error')
+function consumeCallbackPayload(): OAuthCallbackPayload {
+  const payload = parseOAuthCallbackPayload(window.location.search, window.location.hash)
 
   // replaceState 清掉一次性票据，避免其进入浏览器历史或后续重放。
   window.history.replaceState(null, '', '/oauth/callback')
-  if (tickets.length === 1 && errors.length === 0 && ticketPattern.test(tickets[0])) {
-    return { kind: 'ticket', ticket: tickets[0] }
-  }
-  if (tickets.length === 0 && errors.length === 1 && errors[0] === 'cancelled') {
-    return { kind: 'cancelled' }
-  }
-  return { kind: 'failed' }
+  return payload
 }
