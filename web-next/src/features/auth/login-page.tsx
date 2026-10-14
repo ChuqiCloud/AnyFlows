@@ -1,4 +1,5 @@
 import { AlertCircle, Boxes, RefreshCw } from 'lucide-react'
+import { Suspense, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Card, CardBody, CardHeader } from '@heroui/react'
 
@@ -8,6 +9,7 @@ import { AuthCapabilityCard, AuthCapabilitySkeleton } from '@/features/auth/auth
 import { AuthPageShell } from '@/features/auth/auth-page-shell'
 import { buttonPrimary, buttonSecondary, cardClass } from '@/features/auth/auth-form-styles'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
+import { type RegisteredExtensionLoginMethod } from '@/extensions/registry'
 
 export type { LoginNotice }
 
@@ -20,10 +22,13 @@ type LoginPageProps = {
  * 登录页：公开站点能力就绪后挂载账号登录表单。
  */
 export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const [activeLoginMethod, setActiveLoginMethod] = useState<RegisteredExtensionLoginMethod | null>(null)
   const siteQuery = usePublicSiteSettings()
 
   const site = siteQuery.data
+  const ActiveLoginMethod = activeLoginMethod?.Component
+  const registrationAvailable = Boolean(site?.authentication.password_login_enabled && site.authentication.registration_enabled)
   const siteName = site?.site_name ?? t('brand.name')
   const heroTitle = site?.brand.tagline ?? t('auth.login.heroTitle')
   const heroBody = site?.brand.description ?? t('auth.login.heroBody')
@@ -61,19 +66,28 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
             {/* HeroUI 头部默认横排 + items-center + p-3，补回原竖排与 p-5 基准。 */}
             <CardHeader className="flex-col items-stretch gap-2 px-6 pt-6 pb-5 sm:px-7 sm:pt-7">
               <h3 data-slot="card-title" className="text-xl leading-tight font-semibold">
-                {t('auth.login.title')}
+                {activeLoginMethod ? i18n.t(`${activeLoginMethod.namespace}:${activeLoginMethod.labelKey}`) : t('auth.login.title')}
               </h3>
               <p data-slot="card-description" className="text-sm text-muted-foreground leading-6">
-                {t('auth.login.subtitle')}
+                {activeLoginMethod?.descriptionKey
+                  ? i18n.t(`${activeLoginMethod.namespace}:${activeLoginMethod.descriptionKey}`)
+                  : t('auth.login.subtitle')}
               </p>
             </CardHeader>
 
             <CardBody className="p-5 pt-0 px-6 pb-6 sm:px-7 sm:pb-7">
-              <AccountLoginForm
-                notice={notice}
-                site={site}
-                onAuthenticated={onAuthenticated}
-              />
+              {ActiveLoginMethod ? (
+                <Suspense fallback={<p role="status" className="text-sm text-muted-foreground">{t('auth.login.loadingCapabilities')}</p>}>
+                  <ActiveLoginMethod onBack={() => setActiveLoginMethod(null)} registrationAvailable={registrationAvailable} />
+                </Suspense>
+              ) : (
+                <AccountLoginForm
+                  notice={notice}
+                  site={site}
+                  onAuthenticated={onAuthenticated}
+                  onLoginMethodSelect={setActiveLoginMethod}
+                />
+              )}
             </CardBody>
           </Card>
         )}
