@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { AuthPageShell } from '@/features/auth/auth-page-shell'
+import { parseOAuthCallbackPayload, type OAuthCallbackPayload } from '@/features/auth/oauth-callback-payload'
+import { extensionLoginMethods } from '@/extensions/registry'
 import { exchangeOAuthTicket } from '@/features/auth/oauth-login-api'
 import { establishManagementSession } from '@/features/auth/session-query'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
@@ -13,15 +15,9 @@ type OAuthCallbackPageProps = {
   onAuthenticated: () => void
 }
 
-type CallbackPayload =
-  | { kind: 'ticket'; ticket: string }
-  | { kind: 'cancelled' }
-  | { kind: 'failed' }
-
 type CallbackStatus = 'exchanging' | 'succeeded' | 'cancelled' | 'failed'
 
-const ticketPattern = /^[A-Za-z0-9_-]{43}$/
-let consumedCallbackPayload: CallbackPayload | undefined
+let consumedCallbackPayload: OAuthCallbackPayload | undefined
 
 /** 读取一次性回调材料后立即清理地址栏，再进入 bearer 会话交换。 */
 export function OAuthCallbackPage({ onAuthenticated }: OAuthCallbackPageProps) {
@@ -34,9 +30,16 @@ export function OAuthCallbackPage({ onAuthenticated }: OAuthCallbackPageProps) {
   const started = useRef(false)
 
   useEffect(() => {
+    consumedCallbackPayload = undefined
     if (payload.kind !== 'ticket' || started.current) return
     started.current = true
-    void exchangeOAuthTicket(payload.ticket)
+    const method = extensionLoginMethods.find((entry) => `${entry.namespace}:${entry.id}` === payload.method)
+    const result = payload.method
+      ? method?.exchangeTicket
+        ? method.exchangeTicket(payload.ticket, payload.context)
+        : Promise.reject(new Error('Unknown login method'))
+      : exchangeOAuthTicket(payload.ticket)
+    void result
       .then((session) => {
         establishManagementSession(session)
         setStatus('succeeded')
@@ -90,20 +93,10 @@ function consumeCallbackPayloadOnce() {
   return consumedCallbackPayload
 }
 
-function consumeCallbackPayload(): CallbackPayload {
-  const hash = window.location.hash
-  const queryStart = hash.indexOf('?')
-  const query = queryStart >= 0 ? new URLSearchParams(hash.slice(queryStart + 1)) : undefined
-  const tickets = query?.getAll('ticket') ?? []
-  const errors = query?.getAll('error') ?? []
+function consumeCallbackPayload(): OAuthCallbackPayload {
+  const payload = parseOAuthCallbackPayload(window.location.search, window.location.hash)
 
   // replaceState 不触发 hashchange，避免原始票据再次进入路由状态或浏览器历史。
-  window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/oauth/callback`)
-  if (tickets.length === 1 && errors.length === 0 && ticketPattern.test(tickets[0])) {
-    return { kind: 'ticket', ticket: tickets[0] }
-  }
-  if (tickets.length === 0 && errors.length === 1 && errors[0] === 'cancelled') {
-    return { kind: 'cancelled' }
-  }
-  return { kind: 'failed' }
+  window.history.replaceState(null, '', `${window.location.pathname}#/oauth/callback`)
+  return payload
 }

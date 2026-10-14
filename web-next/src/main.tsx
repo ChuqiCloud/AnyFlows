@@ -10,6 +10,11 @@ import './index.css'
 import './i18n'
 import { App } from './App'
 
+// Shared login callbacks carry one-time material in a fragment, including hash-based templates.
+if (window.location.hash === '#/oauth/callback' || window.location.hash.startsWith('#/oauth/callback?')) {
+  window.history.replaceState(null, '', `/oauth/callback${window.location.search}${window.location.hash}`)
+}
+
 const rootElement = document.getElementById('root')
 
 if (!rootElement) {
