@@ -50,6 +50,7 @@ pub type RuntimeHttpExtensionFactory =
 /// Optional extension ports. The default binary starts with no private services.
 #[derive(Default)]
 pub struct RuntimeExtensions {
+    pub payment_orders: Option<Arc<dyn af_billing::PaymentOrderExtension>>,
     pub service_account_models: Option<Arc<dyn af_admin::ServiceAccountModelAuthenticator>>,
     pub organization_token_validator: Option<Arc<dyn OrganizationTokenAuthValidator>>,
     pub contract_prices: Option<Arc<dyn ContractPriceSource>>,

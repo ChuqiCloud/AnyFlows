@@ -136,7 +136,38 @@ pub struct VerifiedTopupPaymentEvent {
     signature_key_fingerprint: [u8; 32],
 }
 
+/// Verified payment values. Provider references must not be logged or cached.
+pub struct VerifiedPaymentFacts {
+    pub order_key: String,
+    pub provider_event_id: String,
+    pub trade_no: Option<String>,
+    pub event_type: TopupPaymentEventType,
+    pub amount_minor: u64,
+    pub currency: String,
+    pub payment_method: String,
+    pub signature_key_fingerprint: [u8; 32],
+}
+
 impl VerifiedTopupPaymentEvent {
+    /// Immutable, verified facts for a registered order extension.
+    #[must_use]
+    pub fn order_key(&self) -> String {
+        self.order_id.persistence_key()
+    }
+
+    #[must_use]
+    pub fn into_facts(self) -> VerifiedPaymentFacts {
+        VerifiedPaymentFacts {
+            order_key: self.order_id.persistence_key(),
+            provider_event_id: self.provider_event_id,
+            trade_no: self.trade_no,
+            event_type: self.event_type,
+            amount_minor: self.amount_minor,
+            currency: self.currency,
+            payment_method: self.payment_method,
+            signature_key_fingerprint: self.signature_key_fingerprint,
+        }
+    }
     /// 构造已验签事件；调用方必须是经过审查的 Provider Verifier 实现。
     pub fn new(
         order_id: TopupOrderId,
@@ -522,11 +553,40 @@ pub type PaymentWebhookRouteFuture<'a> = Pin<
     >,
 >;
 
+/// Optional order storage. Lookup runs before any core payment transaction, so a
+/// key shared by core and extension orders is rejected without crediting either.
+pub trait PaymentOrderExtension: Send + Sync + 'static {
+    fn contains<'a>(
+        &'a self,
+        order_key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<bool, PaymentWebhookHandlerError>> + Send + 'a>>;
+    fn accept<'a>(
+        &'a self,
+        provider: String,
+        event: VerifiedTopupPaymentEvent,
+        payload_sha256: [u8; 32],
+        received_at: u64,
+    ) -> PaymentWebhookRouteFuture<'a>;
+}
+
+fn ensure_unambiguous_owner(
+    topup: bool,
+    subscription: bool,
+    extension: bool,
+) -> Result<(), PaymentWebhookHandlerError> {
+    if usize::from(topup) + usize::from(subscription) + usize::from(extension) > 1 {
+        Err(PaymentWebhookHandlerError::Conflict)
+    } else {
+        Ok(())
+    }
+}
+
 /// 数据库支付路由：双查订单类型后才允许进入对应的原子确认事务。
 #[derive(Clone)]
 pub struct DatabasePaymentWebhookRouter {
     topup_repository: TopupRepository,
     subscription_repository: SubscriptionRepository,
+    extension: Option<Arc<dyn PaymentOrderExtension>>,
 }
 
 impl DatabasePaymentWebhookRouter {
@@ -538,7 +598,14 @@ impl DatabasePaymentWebhookRouter {
         Self {
             topup_repository,
             subscription_repository,
+            extension: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_extension(mut self, extension: Option<Arc<dyn PaymentOrderExtension>>) -> Self {
+        self.extension = extension;
+        self
     }
 }
 
@@ -565,9 +632,20 @@ impl PaymentWebhookEventRouter for DatabasePaymentWebhookRouter {
                 .await
                 .map_err(map_subscription_route_error)?;
 
-            // 同一个外部订单键同时命中两类订单时，拒绝猜测资金归属。
-            if topup.is_some() && subscription.is_some() {
-                return Err(PaymentWebhookHandlerError::Conflict);
+            let extension_order = if let Some(extension) = &self.extension {
+                extension.contains(&event.order_key()).await?
+            } else {
+                false
+            };
+            // Reject ambiguous ownership before processing any payment.
+            ensure_unambiguous_owner(topup.is_some(), subscription.is_some(), extension_order)?;
+            if extension_order {
+                return self
+                    .extension
+                    .as_ref()
+                    .expect("extension lookup succeeded")
+                    .accept(provider, event, payload_sha256, received_at)
+                    .await;
             }
             if topup.is_none() && subscription.is_none() {
                 return Ok(PaymentWebhookHandlerOutcome::NotFound);
@@ -621,6 +699,58 @@ impl PaymentWebhookEventRouter for DatabasePaymentWebhookRouter {
                 .map(map_subscription_outcome)
                 .map_err(map_subscription_route_error)
         })
+    }
+}
+
+#[cfg(test)]
+mod extension_ownership_tests {
+    use super::*;
+
+    #[test]
+    fn every_ambiguous_order_combination_is_rejected() {
+        for topup in [false, true] {
+            for subscription in [false, true] {
+                for extension in [false, true] {
+                    let expected =
+                        if usize::from(topup) + usize::from(subscription) + usize::from(extension)
+                            > 1
+                        {
+                            Err(PaymentWebhookHandlerError::Conflict)
+                        } else {
+                            Ok(())
+                        };
+                    assert_eq!(
+                        ensure_unambiguous_owner(topup, subscription, extension),
+                        expected
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn extension_facts_preserve_verified_payment_values() {
+        let order = TopupOrderId::new([42; 16]).expect("order");
+        let event = VerifiedTopupPaymentEvent::new(
+            order,
+            "event".into(),
+            Some("trade".into()),
+            TopupPaymentEventType::Succeeded,
+            1234,
+            "USD".into(),
+            "card".into(),
+            [3; 32],
+        )
+        .expect("verified event");
+        let facts = event.into_facts();
+        assert_eq!(facts.order_key, order.persistence_key());
+        assert_eq!(facts.provider_event_id, "event");
+        assert_eq!(facts.trade_no.as_deref(), Some("trade"));
+        assert_eq!(facts.event_type, TopupPaymentEventType::Succeeded);
+        assert_eq!(facts.amount_minor, 1234);
+        assert_eq!(facts.currency, "USD");
+        assert_eq!(facts.payment_method, "card");
+        assert_eq!(facts.signature_key_fingerprint, [3; 32]);
     }
 }
 
