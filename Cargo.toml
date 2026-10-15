@@ -98,7 +98,7 @@ rhai = { version = "1.25.1", default-features = false, features = [
     "sync",
 ] }
 rust_decimal = { version = "1.42.1", default-features = false }
-rustls = { version = "0.23.45", default-features = false, features = [
+rustls = { version = "0.23.46", default-features = false, features = [
     "ring",
     "std",
     "tls12",
