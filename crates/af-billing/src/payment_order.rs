@@ -17,6 +17,8 @@ pub enum PaymentOrderId {
     Topup(TopupOrderId),
     /// 个人订阅购买订单。
     Subscription(SubscriptionOrderId),
+    /// Order owned by an optional distribution extension.
+    Extension(TopupOrderId),
 }
 
 impl From<TopupOrderId> for PaymentOrderId {
@@ -37,6 +39,7 @@ impl PaymentOrderId {
         match self {
             Self::Topup(value) => value.persistence_key(),
             Self::Subscription(value) => value.persistence_key(),
+            Self::Extension(value) => value.persistence_key(),
         }
     }
 }
