@@ -1,0 +1,62 @@
+name: Public sync checks
+
+on:
+  push:
+    branches: [main, develop, 'fix/**', 'sync/gitea-public-core']
+    paths:
+      - .github/workflows/public-sync-checks.yml
+      - .github/workflows/export-public-core.yml
+      - .github/workflows/propose-gitea-sync.yml
+      - tools/repository/**
+      - tools/ci/test-public-core-export.sh
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - .github/workflows/public-sync-checks.yml
+      - .github/workflows/export-public-core.yml
+      - .github/workflows/propose-gitea-sync.yml
+      - tools/repository/**
+      - tools/ci/test-public-core-export.sh
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-sync-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  export:
+    name: Validate public sync and export
+    # Same-repository branches are already checked on push.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        shell: bash
+        env:
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$SOURCE_TOKEN" | base64 -w0)"
+          git init -q .
+          git remote add origin "$SOURCE_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --quiet --no-tags --depth=1 origin "$SOURCE_SHA"
+          git checkout -q --detach FETCH_HEAD
+
+      - name: Check export and synchronization regressions
+        run: bash tools/ci/test-public-core-export.sh
+
+      - name: Check proposed export against public main
+        shell: bash
+        run: |
+          set -euo pipefail
+          destination="$(mktemp -d)"
+          trap 'rm -rf "$destination"' EXIT
+          git clone --quiet --single-branch --branch main \
+            https://github.com/ChuqiCloud/AnyFlows.git "$destination"
+          python3 tools/repository/export-public-core.py \
+            --source . --destination "$destination" --commit HEAD --allow-replace

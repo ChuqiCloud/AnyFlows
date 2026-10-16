@@ -1451,14 +1451,17 @@ impl Bootstrap<RelayReady> {
             self.config.payment(),
         )
         .await?;
-        let payment_runtime = Arc::new(PaymentRuntime::new(
-            topup_repository,
-            refund_repository,
-            self.stage.infrastructure.subscription_repository.clone(),
-            self.stage.infrastructure.site_settings_repository.clone(),
-            self.stage.upstream_clients.clone(),
-            request_timeout,
-        ));
+        let payment_runtime = Arc::new(
+            PaymentRuntime::new(
+                topup_repository,
+                refund_repository,
+                self.stage.infrastructure.subscription_repository.clone(),
+                self.stage.infrastructure.site_settings_repository.clone(),
+                self.stage.upstream_clients.clone(),
+                request_timeout,
+            )
+            .with_order_extension(self.stage.infrastructure.extensions.payment_orders.clone()),
+        );
         let admin_refund_service: Arc<dyn AdminRefundService> = Arc::new(
             DatabaseAdminRefundService::new(admin_refund_repository, Some(payment_runtime.clone())),
         );

@@ -57,6 +57,7 @@ impl PaymentRuntimeSnapshot {
 
 /// 支付 Provider 的稳定运行时门面；新配置只影响切换后的新请求。
 pub(crate) struct PaymentRuntime {
+    order_extension: Option<Arc<dyn af_billing::PaymentOrderExtension>>,
     snapshot: RwLock<Arc<PaymentRuntimeSnapshot>>,
     topup_repository: TopupRepository,
     refund_repository: RefundRepository,
@@ -77,6 +78,7 @@ impl PaymentRuntime {
         request_timeout: Duration,
     ) -> Self {
         Self {
+            order_extension: None,
             snapshot: RwLock::new(Arc::new(PaymentRuntimeSnapshot::disabled())),
             topup_repository,
             refund_repository,
@@ -85,6 +87,14 @@ impl PaymentRuntime {
             upstream_clients,
             request_timeout,
         }
+    }
+
+    pub(crate) fn with_order_extension(
+        mut self,
+        extension: Option<Arc<dyn af_billing::PaymentOrderExtension>>,
+    ) -> Self {
+        self.order_extension = extension;
+        self
     }
 
     async fn build_snapshot(
@@ -189,10 +199,13 @@ impl PaymentRuntime {
             STRIPE_PAYMENT_PROVIDER.to_owned(),
             Arc::new(PaymentWebhookProcessor::new(
                 webhook_provider.clone(),
-                Arc::new(DatabasePaymentWebhookRouter::new(
-                    self.topup_repository.clone(),
-                    self.subscription_repository.clone(),
-                )),
+                Arc::new(
+                    DatabasePaymentWebhookRouter::new(
+                        self.topup_repository.clone(),
+                        self.subscription_repository.clone(),
+                    )
+                    .with_extension(self.order_extension.clone()),
+                ),
             )),
         );
         refund_receipt_processors.insert(
@@ -279,10 +292,13 @@ impl PaymentRuntime {
             EASYPAY_PAYMENT_PROVIDER.to_owned(),
             Arc::new(PaymentWebhookProcessor::new(
                 provider,
-                Arc::new(DatabasePaymentWebhookRouter::new(
-                    self.topup_repository.clone(),
-                    self.subscription_repository.clone(),
-                )),
+                Arc::new(
+                    DatabasePaymentWebhookRouter::new(
+                        self.topup_repository.clone(),
+                        self.subscription_repository.clone(),
+                    )
+                    .with_extension(self.order_extension.clone()),
+                ),
             )),
         );
         Ok(())

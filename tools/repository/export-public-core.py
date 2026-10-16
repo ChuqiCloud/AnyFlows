@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 from typing import Sequence
 
 
@@ -186,6 +187,67 @@ def write_metadata(destination: Path, relative_path: str, repository: str, commi
     target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def verify_public_sync(
+    source: Path, destination: Path, commit: str, metadata_path: str, preserve_paths: set[str]
+) -> None:
+    """Reject exports that would discard public changes since the last export.
+
+    Merge synthetic snapshots in a temporary repository. This compares content
+    across independent histories and leaves both input repositories untouched.
+    Legal files maintained in the public repository and generated provenance
+    do not participate in the comparison.
+    """
+    ignored = sorted(preserve_paths | {metadata_path})
+    public_paths = set(run_git(destination, ["ls-files", "-z"]).split("\x00")) - {""}
+    if metadata_path not in public_paths:
+        if public_paths - preserve_paths:
+            raise ExportError(
+                "public repository has no export provenance; reconcile its contents before exporting"
+            )
+        return
+    anchor = run_git(destination, ["log", "-1", "--format=%H", "HEAD", "--", metadata_path])
+    if not anchor:
+        raise ExportError("cannot locate the public export checkpoint")
+    public_head = resolve_commit(destination, "HEAD")
+    with tempfile.TemporaryDirectory(prefix="anyflows-public-sync-") as directory:
+        scratch = Path(directory)
+        run_git(scratch, ["init", "--quiet"])
+        run_git(scratch, ["fetch", "--quiet", "--no-tags", "--depth=1", str(source), commit])
+        run_git(
+            scratch,
+            ["fetch", "--quiet", "--no-tags", "--depth=1", str(destination), anchor, public_head],
+        )
+        # These identities only label temporary commits; they are never pushed.
+        run_git(scratch, ["config", "user.name", "Public sync check"])
+        run_git(scratch, ["config", "user.email", "public-sync@example.invalid"])
+
+        def snapshot(revision: str) -> str:
+            run_git(scratch, ["read-tree", revision])
+            run_git(scratch, ["update-index", "--force-remove", "--", *ignored])
+            return run_git(scratch, ["write-tree"])
+
+        base_tree = snapshot(anchor)
+        source_tree = snapshot(commit)
+        public_tree = snapshot(public_head)
+        base = run_git(scratch, ["commit-tree", base_tree, "-m", "export checkpoint"])
+        left = run_git(scratch, ["commit-tree", source_tree, "-p", base, "-m", "source"])
+        right = run_git(scratch, ["commit-tree", public_tree, "-p", base, "-m", "public"])
+        result = subprocess.run(
+            ["git", "-C", str(scratch), "merge-tree", "--write-tree", left, right],
+            check=False, capture_output=True, text=True, encoding="utf-8",
+        )
+        if result.returncode not in (0, 1):
+            raise ExportError("public sync comparison failed; Git 2.38 or newer is required")
+        merged_tree = result.stdout.splitlines()[0] if result.stdout else ""
+        if result.returncode or merged_tree != source_tree:
+            paths = run_git(scratch, ["diff", "--name-only", source_tree, merged_tree])
+            preview = ", ".join(paths.splitlines()[:20])
+            raise ExportError(
+                "public changes have not been reconciled into the source: " + preview
+                + "; merge the missing GitHub contributions into Gitea before exporting"
+            )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=Path.cwd())
@@ -246,6 +308,7 @@ def main() -> int:
         if not isinstance(repository, str) or not repository:
             raise ExportError("publicRepository must be a non-empty string")
 
+        verify_public_sync(source, destination, commit, metadata_path, preserve_paths)
         remove_tracked_files(destination, preserve_paths)
         export_archive(source, destination, commit)
         write_metadata(destination, metadata_path, repository, commit)

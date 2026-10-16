@@ -23,6 +23,12 @@ commit id. Legal files listed in `export.preservePaths` remain in the public
 repository when they are intentionally maintained there. It never copies the
 source working directory or Git credentials.
 
+Before replacing files, the exporter compares the last public export, the
+current public branch, and the proposed source tree in a temporary Git
+repository. Public changes that are missing from the source, including
+deletions and conflicting edits, stop the export. Merge the corresponding
+contributions into Gitea and rerun the workflow. Git 2.38 or newer is required.
+
 After reviewing the generated diff, create a branch in the GitHub repository
 and open a pull request. The public repository must retain the generated source
 metadata so distribution releases can prove which Gitea commit they contain.
@@ -47,7 +53,8 @@ The branch created by the public export process is
 
 The reverse-sync workflow requires the `GITEA_SYNC_USERNAME` and
 `GITEA_SYNC_TOKEN` Actions secrets in the GitHub repository. It uses the
-merged pull request patch, so it supports merge, squash, and rebase merges.
+merged pull request patch from the authenticated GitHub API, so it supports
+merge, squash, and rebase merges without downloading the website's patch URL.
 The generated `docs/public-core-source.json` file is kept under export control
 and cannot be changed through a public contribution.
 

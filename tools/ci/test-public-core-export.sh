@@ -20,3 +20,4 @@ test -f "$destination/Cargo.toml"
 test -f "$destination/docs/public-core-source.json"
 test "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sourceCommit"])' "$destination/docs/public-core-source.json")" = "$source_commit"
 python3 tools/ci/verify-public-core-boundary.py --root "$destination" --mode public
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools/repository/tests -p 'test_public_core_sync.py'
