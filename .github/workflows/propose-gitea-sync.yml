@@ -30,7 +30,7 @@ jobs:
       PUBLIC_PR_NUMBER: ${{ github.event.pull_request.number }}
       PUBLIC_PR_URL: ${{ github.event.pull_request.html_url }}
       PUBLIC_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      PUBLIC_PATCH_URL: ${{ github.event.pull_request.patch_url }}
+      PUBLIC_PATCH_API_URL: ${{ github.api_url }}/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}
     steps:
       - name: Validate sync credentials
         shell: bash
@@ -46,20 +46,22 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          test -n "$PUBLIC_PATCH_URL" || { echo 'GitHub PR patch URL is missing' >&2; exit 1; }
+          test -n "$PUBLIC_PATCH_API_URL" || { echo 'GitHub PR API URL is missing' >&2; exit 1; }
           [[ "$PUBLIC_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || {
             echo 'GitHub PR head SHA is invalid' >&2
             exit 1
           }
           curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
-            -H 'Accept: application/vnd.github.v3.patch' \
+            --retry-delay 5 --connect-timeout 10 --max-time 60 \
+            -H 'Accept: application/vnd.github.patch' \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
-            "$PUBLIC_PATCH_URL" > "$RUNNER_TEMP/public-core.patch"
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "$PUBLIC_PATCH_API_URL" > "$RUNNER_TEMP/public-core.patch"
           grep -q '^diff --git ' "$RUNNER_TEMP/public-core.patch" || {
             echo 'GitHub PR patch does not contain a file diff' >&2
             exit 1
           }
-          if grep -Eq '^(diff --git |--- |\\+\\+\\+ ).*docs/public-core-source\\.json' \
+          if grep -Eq '^(diff --git |--- |\+\+\+ ).*docs/public-core-source\.json' \
             "$RUNNER_TEMP/public-core.patch"; then
             echo 'Public source metadata is generated and must not be changed in a public PR.' >&2
             exit 1
