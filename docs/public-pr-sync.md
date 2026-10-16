@@ -12,7 +12,15 @@ merges that pull request. Changes that only update the generated source
 metadata are skipped; this prevents a public contribution merged back into
 Gitea from producing an empty return PR.
 
-The workflow downloads the merged GitHub pull request patch rather than
+An export is blocked while public changes are missing from Gitea. The exporter
+performs a three-way content comparison against the last public export before
+modifying the destination. This prevents an incomplete reverse sync from
+reverting a public security update or removing an extension interface. Resolve
+the missing contributions in Gitea before rerunning the export; do not merge a
+return PR that rolls them back.
+
+The workflow downloads the merged GitHub pull request patch through the
+authenticated GitHub API rather than the website patch endpoint or
 reconstructing a diff from merge commits. This works for merge, squash, and
 rebase merges. It creates a branch from the current Gitea `develop`, applies
 the patch with three-way context, and opens a Gitea pull request.
