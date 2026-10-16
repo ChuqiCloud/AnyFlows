@@ -211,7 +211,7 @@ def verify_public_sync(
     public_head = resolve_commit(destination, "HEAD")
     with tempfile.TemporaryDirectory(prefix="anyflows-public-sync-") as directory:
         scratch = Path(directory)
-        run_git(scratch, ["init", "--quiet", "--bare"])
+        run_git(scratch, ["init", "--quiet"])
         run_git(scratch, ["fetch", "--quiet", "--no-tags", "--depth=1", str(source), commit])
         run_git(
             scratch,
