@@ -42,3 +42,11 @@ test('filtered navigation groups preserve stable order without mutating the regi
   assert.deepEqual(groupExtensionNavigation([]), [])
   assert.deepEqual(groupExtensionNavigation([route, { ...route, path: '/console/extensions/second' }])[0].routes.map((item) => item.path), [route.path, '/console/extensions/second'])
 })
+
+test('account verification destinations are unique user routes', () => {
+  const destination = { ...route, entryPoint: 'account-verification' }
+  assert.equal(validateExtensionRoutes([destination])[0], destination)
+  assert.throws(() => validateExtensionRoutes([{ ...destination, access: 'admin' }]))
+  assert.throws(() => validateExtensionRoutes([{ ...destination, entryPoint: 'unknown' }]))
+  assert.throws(() => validateExtensionRoutes([destination, { ...destination, path: '/console/extensions/second' }]))
+})

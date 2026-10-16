@@ -15,6 +15,15 @@ only when `GET /api/extensions` reports every declared capability. A registered
 direct link shows loading, retry or unavailable states when discovery fails or
 the capability is absent.
 
+Routes may declare `navigation` with a stable group ID, translated group title,
+icon and numeric order. Both frontends group the visible routes after role and
+capability filtering. Routes without this metadata keep their default group.
+
+A user route may declare `entryPoint: 'account-verification'` to provide the
+optional destination shown after account verification. The host resolves it
+from available user routes and omits the link when the module is unavailable.
+Each entry point must be unique; administrator routes cannot claim it.
+
 Runtime capabilities describe installed features. Each backend endpoint must
 still enforce membership and resource permissions. Modules share the host API
 client, query cache and session handling; they must not create a second login
