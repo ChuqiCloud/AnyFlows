@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import { apiClient } from '@/lib/api'
 import { listExtensionCatalog } from '@/lib/api/generated/sdk.gen'
-import { supportsExtensionRoute } from './model'
+import { supportsExtensionRoute, type ExtensionRouteDefinition } from './model'
 import { consoleExtensionRoutes } from './registry'
 
 export function useConsoleExtensionCatalog() {
@@ -23,4 +23,9 @@ export function useConsoleExtensionNavigation(role: 'user' | 'admin') {
     (route.access !== 'admin' || role === 'admin')
     && catalog.isSuccess && supportsExtensionRoute(route, catalog.data),
   )
+}
+
+/** Resolve optional user destinations only when their extension is available. */
+export function useConsoleExtensionEntryPoint(entryPoint: NonNullable<ExtensionRouteDefinition['entryPoint']>) {
+  return useConsoleExtensionNavigation('user').find((route) => route.entryPoint === entryPoint)
 }

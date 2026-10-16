@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useConsoleExtensionNavigation } from '@/extensions/query'
+import { groupExtensionNavigation } from '@/extensions/model'
 
 import {
   adminWorkspaceItems,
@@ -151,15 +152,18 @@ export function useAppNavigationItems(role: 'admin' | 'user'): SidebarNode[] {
         t(`nav.sections.${section.key}`),
         [
           ...section.items.map((itemKey) => navNode(itemKey, t)),
-          ...(section.key === 'workspace' ? extensionRoutes.map((route): SidebarNode => ({
-            key: `extension:${route.path}`, title: t(route.titleKey), href: route.path, icon: 'solar:buildings-2-linear',
-          })) : []),
           ...(section.key === 'workspace' ? customNavigationTree(
             customLinks ?? [],
             i18n.resolvedLanguage?.startsWith('en') ?? false,
             role,
           ) : []),
         ],
-      ))
+      )).concat(groupExtensionNavigation(extensionRoutes).map((group) => groupNode(
+        `extension:${group.id}`, group.titleKey ? t(group.titleKey) : '',
+        group.routes.map((route): SidebarNode => ({
+          key: `extension:${route.path}`, title: t(route.titleKey), href: route.path,
+          icon: ({ building: 'solar:buildings-2-linear', package: 'solar:box-linear', clipboard: 'solar:clipboard-check-linear', shield: 'solar:shield-check-linear', settings: 'solar:settings-linear' })[route.navigation?.icon ?? 'building'],
+        })),
+      )))
   }, [customLinks, extensionRoutes, i18n.resolvedLanguage, role, t])
 }

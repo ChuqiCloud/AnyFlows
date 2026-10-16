@@ -11,6 +11,7 @@ for (const path of [
   'src/lib/api/generated/sdk.gen.ts',
   'src/components/brand/provider-catalog.ts',
   'src/components/brand/model-logos.ts',
+  'src/extensions/model.ts',
   'src/features/account-verification/alipay-authorization.ts',
   'src/features/channels/channel-form-model.ts',
   'src/features/usage-logs/usage-log-model.ts',

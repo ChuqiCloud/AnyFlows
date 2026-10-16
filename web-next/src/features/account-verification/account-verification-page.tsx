@@ -5,6 +5,7 @@ import { Button } from '@heroui/react'
 import { Input } from '@heroui/react'
 import { Textarea } from '@heroui/react'
 import { ApiError } from '@/lib/api'
+import { useConsoleExtensionEntryPoint } from '@/extensions/query'
 import { useAccountEligibility, useAccountVerifications, useVerificationDetail, useSubmitAccountVerification,
   useReviewAccountVerification, materialBlob, verificationBase, type VerificationKind, type VerificationProvider } from './account-verification-api'
 import { AlipayVerification } from './alipay-verification'
@@ -42,6 +43,7 @@ export function AccountVerificationPage({ admin = false }: { admin?: boolean }) 
 function AccountVerificationForm({ restartSignal, onSubmitted }: { restartSignal: number; onSubmitted: (id: number) => void }) {
   const { t } = useTranslation()
   const eligibility = useAccountEligibility()
+  const verifiedAccountEntry = useConsoleExtensionEntryPoint('account-verification')
   const mutation = useSubmitAccountVerification()
   const [kind, setKind] = useState<VerificationKind>('individual')
   const [provider, setProvider] = useState<VerificationProvider>(restartSignal > 0 ? 'alipay' : 'manual')
@@ -83,7 +85,7 @@ function AccountVerificationForm({ restartSignal, onSubmitted }: { restartSignal
     try { const record = await mutation.mutateAsync({ kind, provider, document_country: country, document_type: kind === 'enterprise' ? 'business_registration' : documentType, document_number: documentNumber.trim() || undefined, subject_name: name.trim(), summary: summary.trim(), files }); setFiles([]); setName(''); setDocumentNumber(''); setSummary(''); onSubmitted(record.id) } catch { /* Keep the form for correction. */ }
   }
   return <section id="verification-form" tabIndex={-1} className="rounded-2xl border border-default-200 bg-content1 p-6">
-    {eligibility.data?.enterprise_verified ? <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-success/10 p-3"><p className="flex items-center gap-2 text-sm text-success"><CheckCircle2 className="size-4" />{t('verificationCenter.enterpriseGranted')}</p><a href="/console/organization-provisioning" className="text-sm font-medium text-primary">{t('verificationCenter.applyWorkspace')}</a></div> : null}
+    {eligibility.isSuccess && eligibility.data.enterprise_verified ? <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-success/10 p-3"><p className="flex items-center gap-2 text-sm text-success"><CheckCircle2 className="size-4" />{t('verificationCenter.enterpriseGranted')}</p>{verifiedAccountEntry ? <a href={'' + verifiedAccountEntry.path} className="text-sm font-medium text-primary">{t('verificationCenter.applyWorkspace')}</a> : null}</div> : null}
     <div className="mb-4 flex gap-2" role="tablist" aria-label={t('verificationCenter.kind')}>{(['individual', 'enterprise'] as const).map((value) => <Button key={value} type="button" role="tab" aria-selected={kind === value} variant={kind === value ? 'solid' : 'bordered'} color={kind === value ? 'primary' : 'default'} onClick={() => { setKind(value); if (value === 'enterprise') setProvider('manual'); mutation.reset() }}>{value === 'individual' ? <UserRound className="size-4" /> : <Building2 className="size-4" />}{t(`verificationCenter.${value}`)}</Button>)}</div>
     {eligibility.isPending ? <p role="status">{t('verificationCenter.loading')}</p> : eligibility.isError ? <p role="alert" className="text-sm text-danger">{t('verificationCenter.loadError')}</p> : null}
     <form onSubmit={(event) => void submit(event)} className="grid gap-4">
