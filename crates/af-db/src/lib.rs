@@ -63,6 +63,8 @@ mod admin_user;
 #[cfg(test)]
 mod admin_user_tests;
 mod admin_user_write;
+mod external_account;
+pub use external_account::provision_external_account_in_transaction;
 mod analytics_export;
 #[cfg(test)]
 mod analytics_export_tests;
