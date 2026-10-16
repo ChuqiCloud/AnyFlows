@@ -43,6 +43,7 @@ import type { LucideIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useConsoleExtensionNavigation } from '@/extensions/query'
+import { groupExtensionNavigation, type ExtensionRouteDefinition } from '@/extensions/model'
 import { Collapsible } from 'radix-ui'
 
 import { routeFromHash } from '@/app-route'
@@ -376,7 +377,7 @@ export function AppNavigation({ className, compact = false, role }: AppNavigatio
             </a>
           )
         })}
-        {extensionRoutes.map((route) => <a key={route.path} href={`#${route.path}`} className="flex h-8 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium text-muted-foreground"><Building2 className="size-4" aria-hidden="true" />{t(route.titleKey)}</a>)}
+        {extensionRoutes.map((route) => { const Icon = extensionIcon(route); return <a key={route.path} href={`#${route.path}`} className="flex h-8 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium text-muted-foreground"><Icon className="size-4" aria-hidden="true" />{t(route.titleKey)}</a> })}
         {customNavigationTree(customLinks, role).flatMap((node) => node.link.kind === 'group' || node.children.length > 0 ? node.children : [node.link]).map((link, index) => {
           const Icon = customIcons[link.icon] ?? Link2
           const external = !link.url.startsWith('/')
@@ -393,10 +394,29 @@ export function AppNavigation({ className, compact = false, role }: AppNavigatio
         : visibleUserGroups.map((group) => (
           <NavigationGroup key={group.key} label={t(`nav.groups.${group.key}`)} items={group.items} activeKey={activeKey} />
         ))}
-      {extensionRoutes.length > 0 ? <SidebarGroup className="p-0 py-1.5"><SidebarGroupContent><SidebarMenu className="gap-0.5">
-        {extensionRoutes.map((route) => <SidebarMenuItem key={route.path}><SidebarMenuButton asChild tooltip={t(route.titleKey)} isActive={window.location.hash.split('?')[0] === `#${route.path}`} className="h-9 rounded-lg px-3"><a href={`#${route.path}`}><Building2 aria-hidden="true" /><span>{t(route.titleKey)}</span></a></SidebarMenuButton></SidebarMenuItem>)}
-      </SidebarMenu></SidebarGroupContent></SidebarGroup> : null}
+      {groupExtensionNavigation(extensionRoutes).map((group) => <ExtensionNavigationGroup key={group.id} group={group} />)}
       <CustomNavigation links={customLinks} role={role} />
     </div>
   )
+}
+
+function extensionIcon(route: ExtensionRouteDefinition) {
+  const icons = { building: Building2, package: PackageSearch, clipboard: ClipboardCheck, shield: ShieldCheck, settings: Settings2 }
+  return icons[route.navigation?.icon ?? 'building']
+}
+
+function ExtensionNavigationGroup({ group }: { group: { id: string; titleKey?: string; routes: ExtensionRouteDefinition[] } }) {
+  const { t } = useTranslation()
+  return <SidebarGroup className="p-0 py-1.5">
+    {group.titleKey ? <SidebarGroupLabel className="h-6 px-3 text-[0.6875rem] font-semibold text-sidebar-foreground/60">{t(group.titleKey)}</SidebarGroupLabel> : null}
+    <SidebarGroupContent><SidebarMenu className="gap-0.5">
+      {group.routes.map((route) => {
+        const Icon = extensionIcon(route)
+        const active = window.location.hash.split('?')[0] === `#${route.path}`
+        return <SidebarMenuItem key={route.path}><SidebarMenuButton asChild tooltip={t(route.titleKey)} isActive={active} className={cn('h-9 rounded-lg px-3', active && 'text-brand')}>
+          <a href={`#${route.path}`} aria-current={active ? 'page' : undefined}><Icon className={active ? 'text-brand' : 'text-sidebar-foreground/70'} aria-hidden="true" /><span>{t(route.titleKey)}</span></a>
+        </SidebarMenuButton></SidebarMenuItem>
+      })}
+    </SidebarMenu></SidebarGroupContent>
+  </SidebarGroup>
 }
