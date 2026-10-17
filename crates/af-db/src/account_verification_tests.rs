@@ -163,8 +163,8 @@ async fn expired_alipay_cases_hide_links_reject_callbacks_and_allow_resubmission
 }
 
 #[tokio::test]
-async fn completed_alipay_cases_cannot_be_replayed_and_replacements_use_new_state() -> Result<(), Box<dyn Error>>
-{
+async fn completed_alipay_cases_cannot_be_replayed_and_replacements_use_new_state()
+-> Result<(), Box<dyn Error>> {
     let (pool, repo, users) = fixture().await?;
     let state = "0123456789abcdef0123456789abcdef";
     let case = repo.submit(users[0], alipay_submission(state)).await?;
