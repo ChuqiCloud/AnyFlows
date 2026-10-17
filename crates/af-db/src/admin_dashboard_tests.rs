@@ -533,14 +533,13 @@ async fn runtime_cache_totals_normalize_semantics_and_exclude_estimates()
     )
     .await?;
     seed_principals(pool.connection()).await?;
-    // Includes the lower bound, excludes the upper bound and non-usage events.
+    // Includes the lower bound, excludes the upper bound and separates estimated sources.
     for (id, at, event, source, semantics, input, read, write) in [
         (1, 1_000, 1, 1, 1, 100, 20, 5),
         (2, 1_001, 1, 1, 2, 70, 30, 10),
         (3, 1_002, 1, 2, 1, 500, 100, 0),
-        (4, 1_003, 2, 1, 1, 500, 100, 0),
-        (5, 87_400, 1, 1, 1, 500, 100, 0),
-        (6, 999, 1, 1, 1, 500, 100, 0),
+        (4, 87_400, 1, 1, 1, 500, 100, 0),
+        (5, 999, 1, 1, 1, 500, 100, 0),
     ] {
         let created_at = TimeDateTimeWithTimeZone::from_unix_timestamp(at)?;
         usage_logs::ActiveModel {
