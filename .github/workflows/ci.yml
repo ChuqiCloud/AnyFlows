@@ -17,7 +17,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # runner 资源有限；每个 job 串行编译，避免多个 Rust 门禁同时耗尽 CPU/内存。
+  # 独立检查使用不同 job 并行执行；每个 job 限制编译资源，兼容受限 runner。
   CARGO_BUILD_JOBS: "1"
   CARGO_INCREMENTAL: "0"
   # 开发与测试产物关闭调试符号，避免大型数据库检查在受限 runner 中触发 OOM。
@@ -124,8 +124,8 @@ jobs:
 
   deployment:
     name: Docker deployment checks
-    needs: [changes, cache-redis]
-    if: ${{ always() && needs.changes.outputs.deployment == 'true' && (needs.cache-redis.result == 'success' || needs.cache-redis.result == 'skipped') }}
+    needs: changes
+    if: ${{ needs.changes.outputs.deployment == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -230,8 +230,8 @@ jobs:
 
   release-package:
     name: Linux amd64 release package
-    needs: [changes, rust-quality]
-    if: ${{ always() && needs.changes.outputs.rust == 'true' && needs.rust-quality.result == 'success' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -260,10 +260,6 @@ jobs:
         shell: bash
         run: bash tools/ci/install-rustup.sh
 
-      - name: Install rustup when missing from runner image
-        shell: bash
-        run: bash tools/ci/install-rustup.sh
-
       - name: Install pinned Rust toolchain
         shell: bash
         run: |
@@ -271,6 +267,11 @@ jobs:
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal
           rustc --version --verbose
+
+      - name: Cache release build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: release
 
       - name: Install frontend dependencies
         shell: bash
@@ -455,8 +456,8 @@ jobs:
 
   clickhouse-integration:
     name: ClickHouse integration
-    needs: [changes, rust-quality]
-    if: ${{ always() && needs.changes.outputs.clickhouse == 'true' && needs.rust-quality.result == 'success' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.clickhouse == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -525,8 +526,8 @@ jobs:
 
   msrv:
     name: Minimum supported Rust version
-    needs: [changes, release-package]
-    if: ${{ always() && needs.changes.outputs.rust == 'true' && needs.release-package.result == 'success' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -589,8 +590,8 @@ jobs:
 
   sqlite-migration:
     name: SQLite migration smoke test
-    needs: [changes, msrv]
-    if: ${{ always() && needs.changes.outputs.database == 'true' && needs.msrv.result == 'success' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -635,6 +636,11 @@ jobs:
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal
 
+      - name: Cache database test build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: database-smoke
+
       - name: Run SQLite migration smoke test
         env:
           AF_TEST_DATABASE_URL: "sqlite::memory:"
@@ -644,8 +650,8 @@ jobs:
 
   postgres-migration:
     name: PostgreSQL migration smoke test
-    needs: [changes, sqlite-migration]
-    if: ${{ always() && needs.changes.outputs.database == 'true' && needs.sqlite-migration.result == 'success' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -704,6 +710,11 @@ jobs:
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal
 
+      - name: Cache database test build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: database-smoke
+
       - name: Run PostgreSQL migration smoke test on Gitea
         if: ${{ github.server_url != 'https://github.com' }}
         env:
@@ -722,8 +733,8 @@ jobs:
 
   mysql-migration:
     name: MySQL migration smoke test
-    needs: [changes, postgres-migration]
-    if: ${{ always() && needs.changes.outputs.database == 'true' && needs.postgres-migration.result == 'success' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -777,6 +788,11 @@ jobs:
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal
 
+      - name: Cache database test build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: database-smoke
+
       - name: Run MySQL migration smoke test on Gitea
         if: ${{ github.server_url != 'https://github.com' }}
         env:
@@ -795,8 +811,8 @@ jobs:
 
   cache-redis:
     name: Redis cache smoke test
-    needs: [changes, mysql-migration]
-    if: ${{ always() && needs.changes.outputs.redis == 'true' && (needs.mysql-migration.result == 'success' || needs.mysql-migration.result == 'skipped') }}
+    needs: changes
+    if: ${{ needs.changes.outputs.redis == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -831,16 +847,6 @@ jobs:
 
       - name: Ensure Rust toolchain manager
         shell: bash
-        run: |
-          if ! command -v rustup >/dev/null 2>&1; then
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
-          fi
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.cargo/bin:$PATH"
-          rustup --version
-
-      - name: Install rustup when missing from runner image
-        shell: bash
         run: bash tools/ci/install-rustup.sh
 
       - name: Install pinned Rust toolchain
@@ -849,6 +855,9 @@ jobs:
           toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal
+
+      - name: Cache Redis test build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Run Redis cache smoke test on Gitea
         if: ${{ github.server_url != 'https://github.com' }}
