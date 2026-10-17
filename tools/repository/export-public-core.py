@@ -244,10 +244,9 @@ def verify_public_sync(
             scratch, ["diff", "--binary", "--full-index", base, right]
         )
         if public_patch:
+            run_git(scratch, ["read-tree", "--reset", left])
             patch_path = scratch / "public-sync.patch"
             patch_path.write_text(public_patch + "\n", encoding="utf-8")
-            run_git(scratch, ["read-tree", "--reset", left])
-            run_git(scratch, ["checkout-index", "--all", "--force"])
             reverse_check = subprocess.run(
                 [
                     "git",
@@ -256,6 +255,7 @@ def verify_public_sync(
                     "apply",
                     "--reverse",
                     "--check",
+                    "--cached",
                     "--whitespace=nowarn",
                     str(patch_path),
                 ],
@@ -265,9 +265,6 @@ def verify_public_sync(
                 encoding="utf-8",
             )
             if reverse_check.returncode:
-                run_git(scratch, ["read-tree", "--reset", left])
-                run_git(scratch, ["checkout-index", "--all", "--force"])
-                run_git(scratch, ["add", "-A"])
                 reverse_check = subprocess.run(
                     [
                         "git",
@@ -276,6 +273,7 @@ def verify_public_sync(
                         "apply",
                         "--reverse",
                         "--3way",
+                        "--cached",
                         "--whitespace=nowarn",
                         str(patch_path),
                     ],
