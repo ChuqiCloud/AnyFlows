@@ -232,6 +232,61 @@ def verify_public_sync(
         base = run_git(scratch, ["commit-tree", base_tree, "-m", "export checkpoint"])
         left = run_git(scratch, ["commit-tree", source_tree, "-p", base, "-m", "source"])
         right = run_git(scratch, ["commit-tree", public_tree, "-p", base, "-m", "public"])
+
+        # A public contribution may already have been merged into the source
+        # after the last export. In that case the source contains the public
+        # patch plus additional source changes, and a content-only merge from
+        # the old checkpoint can report a false conflict. Apply the public
+        # delta in reverse to a source snapshot first; a clean reverse apply
+        # proves that the contribution is present without changing either
+        # repository.
+        public_patch = run_git(
+            scratch, ["diff", "--binary", "--full-index", base, right]
+        )
+        if public_patch:
+            patch_path = scratch / "public-sync.patch"
+            patch_path.write_text(public_patch + "\n", encoding="utf-8")
+            run_git(scratch, ["read-tree", "--reset", left])
+            run_git(scratch, ["checkout-index", "--all", "--force"])
+            reverse_check = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(scratch),
+                    "apply",
+                    "--reverse",
+                    "--check",
+                    "--whitespace=nowarn",
+                    str(patch_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            if reverse_check.returncode:
+                run_git(scratch, ["read-tree", "--reset", left])
+                run_git(scratch, ["checkout-index", "--all", "--force"])
+                run_git(scratch, ["add", "-A"])
+                reverse_check = subprocess.run(
+                    [
+                        "git",
+                        "-C",
+                        str(scratch),
+                        "apply",
+                        "--reverse",
+                        "--3way",
+                        "--whitespace=nowarn",
+                        str(patch_path),
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                )
+            if reverse_check.returncode == 0:
+                return
+
         result = subprocess.run(
             ["git", "-C", str(scratch), "merge-tree", "--write-tree", left, right],
             check=False, capture_output=True, text=True, encoding="utf-8",
