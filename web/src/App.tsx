@@ -168,6 +168,10 @@ function ManagementEntry({
             ? 'groups.title'
               : view === 'model-providers'
                 ? 'modelManagement.title'
+              : view === 'account-verification-reviews'
+                ? 'verificationCenter.adminTitle'
+              : view === 'invitation-settings'
+                ? 'invitationSettings.title'
               : view === 'account-verification-settings'
                 ? 'verificationCenter.settingsTitle'
               : view === 'model-settings'
@@ -235,6 +239,10 @@ function ManagementEntry({
             ? <GroupPage />
             : view === 'model-providers'
               ? <ModelProviderCatalogPanel />
+            : view === 'account-verification-reviews'
+              ? <AccountVerificationPage admin />
+            : view === 'invitation-settings'
+              ? <AuthenticationSettingsPage rewardsOnly />
             : view === 'account-verification-settings'
               ? <VerificationSettingsPanel />
             : view === 'model-settings'

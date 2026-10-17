@@ -14,6 +14,7 @@ pub struct Model {
     pub registration_default_group_id: Option<i64>,
     pub registration_initial_quota: i64,
     pub invitation_rebate_quota: i64,
+    pub invitation_invitee_quota: i64,
     pub registration_email_required: bool,
     pub registration_rate_limit_attempts: i32,
     pub registration_rate_limit_window_seconds: i64,

@@ -48,7 +48,7 @@ export function VerificationSettingsPanel() {
   if (query.isError || !query.data || !draft) return <div role="alert" className="flex items-center gap-3 text-sm text-danger">无法读取认证配置。<Button size="sm" variant="flat" onPress={() => void query.refetch()}><RefreshCw className="size-4" />重试</Button></div>
   const environment = query.data.source === 'environment'
   return <section className="grid gap-5">
-    <header><h2 className="text-lg font-semibold">实名认证配置</h2><p className="mt-1 text-sm text-default-500">在这里控制用户可选择的认证方式。关闭某项后，用户提交页面不会再显示该方式。</p></header>
+    <header><h2 className="text-lg font-semibold">实名认证配置</h2><p className="mt-1 text-sm text-default-500">在这里控制用户可选择的认证方式。关闭某项后，用户提交页面不会再显示该方式。</p><a className="mt-2 inline-block text-sm underline underline-offset-4" href="/console/account-verification-reviews">审核个人与企业账号认证</a></header>
     {environment ? <p className="border-l-2 border-warning px-3 text-sm text-default-500">当前使用启动配置。首次在线保存后以后台设置为准；若启用支付宝，请重新填写两把密钥。</p> : null}
     <form onSubmit={submit} className="grid max-w-3xl gap-4">
       <section className="grid gap-3 rounded-xl border border-default-200 bg-content1 p-4"><h3 className="font-medium">个人认证</h3><Switch aria-label="个人认证人工审核" isSelected={draft.individual_manual_enabled} onValueChange={(individual_manual_enabled) => setDraft({ ...draft, individual_manual_enabled })}>启用人工审核</Switch><Switch aria-label="个人认证支付宝" isSelected={draft.enabled} onValueChange={(enabled) => setDraft({ ...draft, enabled })}>启用支付宝实名认证</Switch><Switch aria-label="个人认证理由必填" isSelected={draft.individual_reason_required} onValueChange={(individual_reason_required) => setDraft({ ...draft, individual_reason_required })}>要求填写认证理由</Switch></section>

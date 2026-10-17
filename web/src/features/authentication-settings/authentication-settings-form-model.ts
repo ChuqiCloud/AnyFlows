@@ -11,6 +11,7 @@ export type AuthenticationSettingsValues = {
   defaultGroupId: string
   initialQuota: number
   invitationRebateQuota: number
+  invitationInviteeQuota: number
   emailRequired: boolean
   rateLimitAttempts: number
   rateLimitWindowSeconds: string
@@ -37,6 +38,7 @@ export function authenticationSettingsValues(
     defaultGroupId: String(settings.default_group_id),
     initialQuota: settings.initial_quota,
     invitationRebateQuota: settings.invitation_rebate_quota,
+    invitationInviteeQuota: settings.invitation_invitee_quota ?? 0,
     emailRequired: settings.email_required,
     rateLimitAttempts: settings.rate_limit_attempts,
     rateLimitWindowSeconds: String(settings.rate_limit_window_seconds),
@@ -60,6 +62,7 @@ export function buildAuthenticationSettingsSchema(messages: ValidationMessages) 
       .int(messages.invalidRebateQuota)
       .safe(messages.invalidRebateQuota)
       .min(0, messages.invalidRebateQuota),
+    invitationInviteeQuota: z.number().int(messages.invalidRebateQuota).safe(messages.invalidRebateQuota).min(0, messages.invalidRebateQuota),
     emailRequired: z.boolean(),
     rateLimitAttempts: z.number()
       .int(messages.invalidAttempts)
@@ -73,6 +76,9 @@ export function buildAuthenticationSettingsSchema(messages: ValidationMessages) 
       messages.invalidWindow,
     ),
   }).superRefine((values, context) => {
+    if (!Number.isSafeInteger(values.initialQuota + values.invitationInviteeQuota)) {
+      context.addIssue({ code: 'custom', message: messages.invalidRebateQuota, path: ['invitationInviteeQuota'] })
+    }
     if (values.registrationEnabled && !values.passwordLoginEnabled) {
       context.addIssue({
         code: 'custom',
@@ -98,6 +104,7 @@ export function toAuthenticationSettingsRequest(
     default_group_id: defaultGroupId,
     initial_quota: values.initialQuota,
     invitation_rebate_quota: values.invitationRebateQuota,
+    invitation_invitee_quota: values.invitationInviteeQuota,
     email_required: values.emailRequired,
     rate_limit_attempts: values.rateLimitAttempts,
     rate_limit_window_seconds: rateLimitWindowSeconds,

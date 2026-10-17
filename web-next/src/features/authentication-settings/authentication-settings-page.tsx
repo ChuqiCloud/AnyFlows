@@ -20,7 +20,7 @@ const authenticationSections = [
 ] as const
 
 /** 呈现管理员认证设置，并在策略或分组目录不可靠时禁止编辑。 */
-export function AuthenticationSettingsPage() {
+export function AuthenticationSettingsPage({ rewardsOnly = false }: { rewardsOnly?: boolean }) {
   const { t } = useTranslation()
   const [activeSection, setActiveSection] = useState('authentication-core')
   const settingsQuery = useAdminAuthenticationSettings()
@@ -76,9 +76,9 @@ export function AuthenticationSettingsPage() {
     <div className="flex flex-col gap-4">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold">{t('authenticationSettings.title')}</h2>
+          <h2 className="text-lg font-semibold">{t(rewardsOnly ? 'invitationSettings.title' : 'authenticationSettings.title')}</h2>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
-            {t('authenticationSettings.subtitle')}
+            {t(rewardsOnly ? 'invitationSettings.description' : 'authenticationSettings.subtitle')}
           </p>
         </div>
         <Button
@@ -96,7 +96,7 @@ export function AuthenticationSettingsPage() {
         </Button>
       </header>
 
-      <nav
+      {!rewardsOnly ? <nav
         aria-label={t('authenticationSettings.navigation.label')}
         className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
@@ -118,7 +118,7 @@ export function AuthenticationSettingsPage() {
             </button>
           )
         })}
-      </nav>
+      </nav> : null}
 
       {pending ? (
         <div className="grid gap-0 border-t border-[var(--hairline)]" aria-label={t('authenticationSettings.loading')}>
@@ -143,8 +143,8 @@ export function AuthenticationSettingsPage() {
         </div>
       ) : settingsQuery.data && groupsQuery.data ? (
         <>
-          <AuthenticationSettingsForm settings={settingsQuery.data} groups={groupsQuery.data} />
-          <section id="authentication-oauth" tabIndex={-1} className="grid scroll-mt-20 gap-4 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
+          <AuthenticationSettingsForm settings={settingsQuery.data} groups={groupsQuery.data} rewardsOnly={rewardsOnly} />
+          {!rewardsOnly ? <section id="authentication-oauth" tabIndex={-1} className="grid scroll-mt-20 gap-4 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
             <GitHubOAuthSettings />
             <DiscordOAuthSettings />
             <OAuthProviderSettings provider="oidc" />
@@ -152,7 +152,7 @@ export function AuthenticationSettingsPage() {
             <OAuthProviderSettings provider="wechat" />
             <OAuthProviderSettings provider="telegram" />
             <OAuthProviderSettings provider="google" />
-          </section>
+          </section> : null}
         </>
       ) : null}
     </div>

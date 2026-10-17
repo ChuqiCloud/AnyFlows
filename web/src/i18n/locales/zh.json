@@ -123,6 +123,8 @@
     "billing": "计费",
     "settings": "设置",
     "accountVerification": "账号认证",
+    "accountVerificationReviews": "账号认证审核",
+    "invitationSettings": "注册与邀请奖励",
     "accountVerificationSettings": "实名认证配置"
   },
   "shell": {
@@ -1530,7 +1532,7 @@
       "status": "状态",
       "defaultGroup": "默认分组",
       "quota": "总额度",
-      "initialQuota": "初始额度",
+      "initialQuota": "新用户注册赠送",
       "rpmLimit": "每分钟请求数",
       "concurrency": "并发数"
     },
@@ -3533,7 +3535,7 @@
       "description": "仅控制字段是否必填。邮箱验证与密码找回将在后续用户生命周期切片实现。"
     },
     "allocation": {
-      "title": "新用户归属",
+      "title": "注册与邀请奖励",
       "description": "每位新用户都绑定一个有效分组；有效邀请码可按配置为邀请人发放返利。"
     },
     "protection": {
@@ -3667,10 +3669,10 @@
     },
     "fields": {
       "defaultGroup": "默认分组",
-      "initialQuota": "初始额度",
-      "initialQuotaHint": "使用系统额度整数单位。",
-      "invitationRebateQuota": "单次邀请返利",
-      "invitationRebateQuotaHint": "设为 0 时只记录邀请关系，不产生返利账本。",
+      "initialQuota": "新用户注册赠送",
+      "initialQuotaHint": "所有新注册用户均可获得，使用系统额度整数单位。",
+      "invitationRebateQuota": "邀请人奖励",
+      "invitationRebateQuotaHint": "每位受邀用户通过有效邀请码完成注册后，发放给邀请人的额度。设为 0 则不赠送。",
       "attempts": "窗口内尝试次数",
       "window": "固定窗口"
     },
@@ -7516,11 +7518,13 @@
     "toggle": "切换语言"
   },
   "verificationCenter": {
+    "adminLinks": "认证管理",
+    "myVerification": "我的账号认证",
     "title": "账号认证",
     "settingsTitle": "实名认证配置",
     "adminTitle": "个人与企业认证审核",
     "description": "提交个人或企业身份材料，查看审核进度与完整申请记录。企业认证通过后可申请开通企业空间。",
-    "adminDescription": "审核个人与企业身份材料。审核结论和原始材料保留在对应申请中，企业空间需单独审批。",
+    "adminDescription": "审核个人与企业账号的身份材料。企业空间开通申请在企业管理中单独处理。",
     "individual": "个人认证",
     "enterprise": "企业认证",
     "kind": "认证类型",
@@ -7640,5 +7644,17 @@
     "saved": "企业授权已更新。",
     "continueEditing": "继续编辑",
     "save": "保存授权"
+  },
+  "invitationSettings": {
+    "saved": "奖励设置已保存",
+    "title": "注册与邀请奖励",
+    "description": "设置注册赠送额度，以及通过有效邀请码完成注册后双方获得的奖励。",
+    "inviter": "邀请人奖励",
+    "initial": "新用户注册赠送",
+    "invitee": "受邀用户额外奖励",
+    "inviteeHint": "仅通过有效邀请码注册时发放，与新用户注册赠送相加；设为 0 则不额外赠送。",
+    "rulesTitle": "奖励规则",
+    "closed": "当前暂停新用户注册，邀请链接暂不可用于注册。",
+    "rulesHint": "邀请人奖励和受邀用户额外奖励仅在通过有效邀请码成功注册时发放一次。设置为 0 的项目不赠送额度，历史邀请不补发。"
   }
 }

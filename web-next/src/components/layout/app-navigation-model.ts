@@ -10,6 +10,8 @@ export type NavKey =
   | 'invitations'
   | 'accountVerification'
   | 'accountVerificationSettings'
+  | 'accountVerificationReviews'
+  | 'invitationSettings'
   | 'profile'
   | 'users'
   | 'subscriptionManagement'
@@ -68,6 +70,8 @@ export const adminWorkspaceItems = [
 /** 系统管理：运维、网关与平台配置，全部是管理员专属。 */
 export const systemSectionItems = [
   'users',
+  'accountVerificationReviews',
+  'invitationSettings',
   'subscriptionManagement',
   'redemptionCodes',
   'refunds',
