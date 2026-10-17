@@ -1,5 +1,5 @@
 import { Activity, Database, RefreshCw, Server } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -27,6 +27,9 @@ export function RuntimeStatusPage() {
   const selected = data?.nodes.find(node => node.instance_id === (selectedId ?? data.local_instance_id)) ?? data?.nodes[0]
   const pages = Math.max(1, Math.ceil((data?.nodes.length ?? 0) / 6))
   const currentPage = Math.min(page, pages - 1)
+  useEffect(() => {
+    setPage(previous => Math.min(previous, pages - 1))
+  }, [pages])
   const cache = data?.prompt_cache
   const cacheAvailable = cache?.sampled_at != null
   const stateLabel = (status: string) => t(`runtimeStatus.states.${status}`, { defaultValue: t('runtimeStatus.states.unknown') })
