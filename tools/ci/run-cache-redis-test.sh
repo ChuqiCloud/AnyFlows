@@ -6,6 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/container-test-runner.sh"
 readonly REDIS_IMAGE="docker.io/library/redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3"
 readonly CACHE_SMOKE_TEST_NAMES=(
     "redis_hybrid_cache_smoke"
+    "redis_runtime_registry_shares_nodes_and_bounds_retention"
     "redis_request_rate_limit_multi_instance_capacity"
 )
 readonly HTTP_SMOKE_TEST_TARGET="token_auth_chain"

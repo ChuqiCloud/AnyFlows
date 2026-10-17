@@ -30,6 +30,8 @@ mod admin_channel_write;
 mod admin_channel_write_tests;
 mod admin_credential;
 mod admin_dashboard;
+mod runtime_usage;
+pub use runtime_usage::RuntimeUsageTotals;
 mod admin_dashboard_sla;
 pub use admin_dashboard_sla::{
     DashboardServiceLevelPoint, DashboardServiceLevelQuery, DashboardServiceLevelReport,

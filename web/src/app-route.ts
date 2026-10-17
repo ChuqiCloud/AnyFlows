@@ -13,6 +13,7 @@ export type AppView =
   | 'credentials'
   | 'credential-proxies'
   | 'debug-traces'
+  | 'runtime-status'
   | 'email-settings'
   | 'forgot-password'
   | 'group-settings'
@@ -105,6 +106,7 @@ export function routeFromHash(hash: string): AppRoute {
   }
   if (hash.startsWith('#/console/channels')) return { view: 'channels' }
   if (hash.startsWith('#/console/proxies')) return { view: 'credential-proxies' }
+  if (hash === '#/console/runtime-status' || hash.startsWith('#/console/runtime-status?')) return { view: 'runtime-status' }
   if (hash.startsWith('#/console/debug-traces')) return { view: 'debug-traces' }
   if (hash.startsWith('#/console/redemption-codes')) return { view: 'redemption-codes' }
   if (hash.startsWith('#/console/refunds')) return { view: 'refunds' }

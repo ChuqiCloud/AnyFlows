@@ -34,6 +34,7 @@ export type NavKey =
   | 'keys'
   | 'usage'
   | 'debugTraces'
+  | 'runtimeStatus'
 
 export type AdminSectionKey = 'operations' | 'gateway' | 'platform'
 
@@ -49,7 +50,7 @@ export const adminNavigationSections = [
   { key: 'platform', items: ['users', 'accountVerificationReviews', 'invitationSettings', 'siteSettings', 'siteNavigation', 'authenticationSettings', 'announcements', 'emailSettings', 'networkSettings', 'accountVerificationSettings', 'keys'] },
 ] as const satisfies ReadonlyArray<{ key: AdminSectionKey; items: readonly NavKey[] }>
 
-export const adminSystemItems = ['debugTraces'] as const satisfies readonly NavKey[]
+export const adminSystemItems = ['runtimeStatus', 'debugTraces'] as const satisfies readonly NavKey[]
 
 export const adminNavigationItems: readonly NavKey[] = [
   ...adminWorkspaceItems,
@@ -95,4 +96,5 @@ export const activeKeyByView: Readonly<Record<string, NavKey>> = {
   tokens: 'keys',
   'usage-logs': 'usage',
   'debug-traces': 'debugTraces',
+  'runtime-status': 'runtimeStatus',
 }
