@@ -355,10 +355,7 @@ async fn invitation_bonus_requires_a_valid_code_and_is_credited_once() -> Result
     let preserved = registration.update_policy(admin, legacy_command).await?;
     assert_eq!(preserved.invitation_invitee_quota(), 75);
     registration
-        .update_policy(
-            admin,
-            legacy_command.with_invitee_quota(0)?,
-        )
+        .update_policy(admin, legacy_command.with_invitee_quota(0)?)
         .await?;
     let no_bonus = registration
         .register(

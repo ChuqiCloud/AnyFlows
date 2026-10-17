@@ -76,7 +76,7 @@ export type AdminAuthenticationSettingsRequest = {
     default_group_id: number;
     initial_quota: number;
     invitation_rebate_quota: number;
-    invitation_invitee_quota?: number;
+    invitation_invitee_quota?: number | null;
     email_required: boolean;
     rate_limit_attempts: number;
     rate_limit_window_seconds: number;

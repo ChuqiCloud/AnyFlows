@@ -18198,7 +18198,10 @@
             "minimum": 0
           },
           "invitation_invitee_quota": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
             "minimum": 0
           },
