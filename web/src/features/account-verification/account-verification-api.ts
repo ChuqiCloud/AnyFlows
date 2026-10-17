@@ -26,6 +26,14 @@ export function useAccountEligibility() {
     refetchInterval: 30_000, refetchIntervalInBackground: false,
     queryFn: ({ signal }) => verificationGet<{ enterprise_verified: boolean; can_apply_for_organization: boolean; providers?: VerificationProvider[]; individual_providers?: VerificationProvider[]; enterprise_providers?: VerificationProvider[]; individual_reason_required?: boolean; enterprise_reason_required?: boolean }>('/api/account/verifications/eligibility', signal) })
 }
+export function useVerifiedAccount(enabled: boolean) {
+  return useQuery({ queryKey: [...verificationKey, 'verified'], enabled, gcTime: 0, retry: false,
+    refetchInterval: 30_000, refetchIntervalInBackground: false,
+    queryFn: async ({ signal }) => {
+      const data = await verificationGet<{ cases: VerificationRecord[] }>('/api/account/verifications?status=4&limit=1', signal)
+      return data.cases[0] ?? null
+    } })
+}
 export function useAccountVerifications(admin: boolean, status?: number) {
   return useInfiniteQuery({ queryKey: [...verificationKey, admin ? 'admin' : 'self', status], gcTime: 0, retry: false,
     initialPageParam: undefined as number | undefined,
