@@ -5,6 +5,7 @@ import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
+import { checkRuntimeStatus } from './frontend-runtime-status-smoke.mjs'
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const frontend = process.argv[2]
@@ -68,9 +69,11 @@ try {
     import './src/index.css';
     import './src/i18n';
     import { ${isNext ? 'AdminDashboardView' : 'DashboardPage'} as Dashboard } from './src/features/dashboard/dashboard-page';
+    import { RuntimeStatusPage } from './src/features/runtime-status/runtime-status-page';
+    const runtime = new URLSearchParams(location.search).get('page') === 'runtime-status';
     createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } })}>
-        ${isNext ? '<HeroUIProvider>' : ''}<main style={{ padding: '20px', maxWidth: '1240px', margin: 'auto' }}><Dashboard /></main>${isNext ? '</HeroUIProvider>' : ''}
+        ${isNext ? '<HeroUIProvider>' : ''}<main style={{ padding: '20px', maxWidth: '1240px', margin: 'auto' }}>{runtime ? <RuntimeStatusPage /> : <Dashboard />}</main>${isNext ? '</HeroUIProvider>' : ''}
       </QueryClientProvider>
     );
   `)
@@ -203,6 +206,7 @@ try {
   await page.reload()
   await page.locator('.report-sla-row').first().waitFor()
   assert.equal(await page.locator('.report-chart-hitareas button').count(), 24, 'Failure-only windows must remain visible')
+  await checkRuntimeStatus(page, `http://127.0.0.1:${port}/.dashboard-smoke.html?page=runtime-status`, frontend)
   assert.deepEqual(errors, [])
   console.log(`Dashboard browser checks passed for ${frontend}: charts, keyboard, unknown outcomes, filters, pagination, recovery, target changes, failure-only windows and responsive themes.`)
 } catch (error) {
