@@ -1,56 +1,55 @@
-# 迁移与发布说明
+# 升级与备份
 
-本文说明 AnyFlows 版本升级、数据库迁移和失败回滚之间的关系。它适用于 Docker Compose 和 Linux systemd 两种部署方式。
+升级会替换程序，并在启动时执行待处理的数据库迁移。升级前阅读目标版本说明，保留当前版本安装包，并安排可恢复的备份。
 
-## 发布物
+## 备份哪些内容
 
-版本号来自工作区 `Cargo.toml` 的 `package.version`，正式标签格式为 `v<版本号>`。Linux amd64 归档包含：
+| 部署方式 | 至少保留 |
+| --- | --- |
+| systemd 默认 SQLite | `/etc/anyflows/anyflows.env`、整个 `/var/lib/anyflows` 和当前版本归档 |
+| PostgreSQL / MySQL | 数据库一致性备份、应用配置、每个节点的计费 WAL、当前版本归档 |
+| Docker Compose | `.env`、数据库备份、Redis 数据及 WAL 命名卷、上一版镜像或构建来源 |
 
-- 内嵌前端资源的 `anyflows` 单二进制。
-- `README.md`、`.env.example` 和 `CHANGELOG.md`。
-- systemd `install.sh`、`anyflows.service` 和记录标签及提交的 `VERSION`。
-- 与归档对应的 `.sha256` 和发布汇总中的 `SHA256SUMS`。
+配置中的凭据加密密钥和标识必须与数据库一起保留。外部前端模板也需备份。
 
-下载后先校验 SHA-256，再在隔离环境检查 `/healthz` 和 `/readyz`。不要直接执行来源不明或校验失败的归档。
-
-## 数据库迁移
-
-应用启动时执行待处理迁移，迁移历史由应用维护。升级前必须备份 PostgreSQL、MySQL 或 SQLite 数据，并备份计费 WAL；多实例部署应安排单一迁移窗口，避免多个旧版本同时启动。
-
-迁移按前向兼容策略设计，发布脚本不会自动撤销已执行的迁移。禁止手工删除迁移历史或直接修改生产表结构来绕过失败。迁移失败时先保留日志和数据库快照，再在隔离环境修复或准备前向修复版本。
-
-### 企业迁移历史接管
-
-企业迁移从公共仓库移出时，已有数据库中的企业版本仍记录在
-`seaql_migrations`。发行版必须为扩展注册表创建明确的
-`MigrationHistoryAdoption` 声明，并通过
-`MigratorExtension::with_legacy_history` 启动迁移。系统只接管扩展注册表中存在、且
-已经在旧表执行过的版本，保留原始 `applied_at`，随后执行其余待处理迁移。新安装没有
-旧表记录时会直接执行扩展迁移。不要把公共迁移表中的全部版本批量复制到扩展表，也不要
-手工删除旧记录；接管完成后仍保留公共迁移历史，便于公共核心继续升级。
-
-## systemd 升级与回滚
-
-在新归档目录执行 `sudo ./install.sh upgrade`。脚本会原子替换二进制、保留上一份二进制，并在 `127.0.0.1:8080/readyz` 上等待最多 30 秒。新版本未就绪时，存在上一份二进制则自动恢复；也可执行 `sudo ./install.sh rollback` 交换当前与上一份二进制。
-
-systemd 的回滚只恢复程序文件，不会降级数据库迁移、配置文件、计费 WAL 或 Redis 数据。若新版本已经成功执行不可逆数据库迁移，不能只切回旧二进制；应恢复兼容的数据库快照，或部署包含前向兼容修复的版本，并重新执行就绪检查。
-
-## Docker Compose 升级与回滚
-
-升级前备份 `.env` 和命名卷。使用新代码构建并检查服务状态：
+单机 SQLite 可在维护窗口停止服务后备份配置和整个数据目录，避免只复制仍在写入的数据库文件：
 
 ```bash
-docker compose --env-file .env up -d --build
-docker compose --env-file .env ps
-curl --fail http://127.0.0.1:8080/readyz
+sudo systemctl stop anyflows
+sudo install -d -m 0700 /var/backups/anyflows
+sudo sh -c 'umask 077; tar -czf "/var/backups/anyflows/backup-$(date +%Y%m%d-%H%M%S).tar.gz" -C / etc/anyflows var/lib/anyflows'
+sudo systemctl start anyflows
 ```
 
-应用未就绪时先停止新容器并保留命名卷，再恢复上一份已校验的镜像。不要执行 `docker compose down -v` 排障，因为该命令会删除数据库、Redis 和计费 WAL。Compose 与 systemd 一样不会自动降级数据库迁移；发生迁移兼容性问题时必须使用数据库快照或前向修复版本。
+备份包含密钥和业务数据，应另存到受控备份位置并验证可恢复性。使用外部数据库时，上面的文件备份不能代替数据库备份；需按数据库官方工具取得一致性快照。计费 WAL 是实例恢复日志，不是数据库备份。
 
-## 发布后检查
+## 二进制升级
 
-1. 检查 `VERSION` 中的标签和提交是否与发布记录一致。
-2. 检查 `/healthz`、`/readyz`、应用日志和迁移结果。
-3. 执行一条受控管理请求和一条低额度网关请求，确认鉴权、数据库和计费链路正常。
-4. 检查 WAL、数据库和 Redis 的磁盘/内存监控；确认反向代理仍只转发到回环地址。
-5. 记录发布提交、归档摘要、迁移结果和回滚决定，不把密钥或请求正文写入记录。
+下载新归档及对应校验文件，校验并解压；命令与 [首次安装](deployment-and-configuration.md#2-下载并校验) 相同。在新版本目录执行：
+
+```bash
+sudo ./install.sh upgrade
+sudo ./install.sh status
+curl --fail http://127.0.0.1:8080/readyz
+sudo journalctl -u anyflows -n 100 --no-pager
+```
+
+安装器保留已有配置和上一份二进制，重启后循环检查 `/readyz`。新版本无法就绪时，存在上一份二进制则尝试恢复。也可在归档目录执行：
+
+```bash
+sudo ./install.sh rollback
+```
+
+回滚只恢复程序，不撤销数据库迁移、配置或 WAL。新版本已改变数据库且旧版不兼容时，应使用前向修复版本，或按完整恢复方案还原兼容的数据和配置，不能仅切回旧程序。
+
+## 多节点和容器
+
+多节点升级先摘除待升级节点、等待长请求结束，再停止服务。先由一个新版本节点完成迁移并检查就绪，再启动其余节点。没有确认跨版本兼容时使用维护窗口，不直接混跑版本。配置步骤见 [多节点部署](multi-node-deployment.md)。
+
+容器部署先完成备份，获取目标源码版本后执行 `docker compose --env-file .env up -d --build`。失败时保留数据卷，检查日志和迁移状态，再决定恢复镜像或部署修复。不要用删除数据卷的方式排障。
+
+## 升级后确认
+
+确认服务就绪、能够登录、渠道凭据可读取，并执行一次小额度模型调用，核对日志和用量。`/healthz` 仅表示存活，`/readyz` 用于依赖就绪检查，二者不能代替实际调用。
+
+迁移历史由应用管理，不要手工删除记录或改表绕过失败。企业扩展的迁移接管机制见 [扩展边界](repository-boundary.md#数据库迁移与访问)。
