@@ -79,6 +79,7 @@ pub struct RegistrationPolicy {
     default_group_id: GroupId,
     initial_quota: i64,
     invitation_rebate_quota: i64,
+    invitation_invitee_quota: i64,
     email_required: bool,
     rate_limit_attempts: u32,
     rate_limit_window_seconds: u64,
@@ -106,6 +107,7 @@ impl RegistrationPolicy {
             default_group_id,
             initial_quota,
             invitation_rebate_quota,
+            invitation_invitee_quota: 0,
             email_required,
             rate_limit_attempts,
             rate_limit_window_seconds,
@@ -143,6 +145,12 @@ impl RegistrationPolicy {
         self.invitation_rebate_quota
     }
 
+    /// 返回有效邀请码注册时额外发放给新用户的额度。
+    #[must_use]
+    pub const fn invitation_invitee_quota(self) -> i64 {
+        self.invitation_invitee_quota
+    }
+
     /// 返回注册时是否必须填写邮箱。
     #[must_use]
     pub const fn email_required(self) -> bool {
@@ -176,6 +184,7 @@ impl From<RegistrationPolicyRecord> for RegistrationPolicy {
             default_group_id: record.default_group_id(),
             initial_quota: record.initial_quota(),
             invitation_rebate_quota: record.invitation_rebate_quota(),
+            invitation_invitee_quota: record.invitation_invitee_quota(),
             email_required: record.email_required(),
             rate_limit_attempts: record.rate_limit_attempts(),
             rate_limit_window_seconds: record.rate_limit_window_seconds(),
@@ -192,6 +201,7 @@ pub struct RegistrationPolicyCommand {
     default_group_id: GroupId,
     initial_quota: i64,
     invitation_rebate_quota: i64,
+    invitation_invitee_quota: i64,
     email_required: bool,
     rate_limit_attempts: u32,
     rate_limit_window_seconds: u64,
@@ -226,10 +236,20 @@ impl RegistrationPolicyCommand {
             default_group_id,
             initial_quota,
             invitation_rebate_quota,
+            invitation_invitee_quota: 0,
             email_required,
             rate_limit_attempts,
             rate_limit_window_seconds,
         })
+    }
+
+    /// 设置有效邀请注册的额外奖励，拒绝负数及初始余额溢出。
+    pub fn with_invitee_quota(mut self, quota: i64) -> Result<Self, RegistrationError> {
+        if quota < 0 || self.initial_quota.checked_add(quota).is_none() {
+            return Err(RegistrationError::InvalidInput);
+        }
+        self.invitation_invitee_quota = quota;
+        Ok(self)
     }
 
     fn into_record(self) -> RegistrationPolicyWriteRecord {
@@ -242,7 +262,7 @@ impl RegistrationPolicyCommand {
             self.email_required,
             self.rate_limit_attempts,
             self.rate_limit_window_seconds,
-        )
+        ).with_invitee_quota(self.invitation_invitee_quota)
     }
 }
 
@@ -292,18 +312,21 @@ impl RegistrationCommand {
         })
     }
 
-    fn user_record(&self, policy: RegistrationPolicyRecord) -> AdminUserCreateRecord {
-        AdminUserCreateRecord::new(
+    fn user_record(&self, policy: RegistrationPolicyRecord) -> Result<AdminUserCreateRecord, RegistrationError> {
+        let quota = policy.initial_quota().checked_add(
+            if self.invite_code.is_some() { policy.invitation_invitee_quota() } else { 0 }
+        ).ok_or(RegistrationError::Internal)?;
+        Ok(AdminUserCreateRecord::new(
             self.username.clone(),
             self.email.clone(),
             Some(self.password.clone()),
             SessionRole::User.to_database(),
             AdminUserStatus::Enabled.to_database(),
             policy.default_group_id(),
-            policy.initial_quota(),
+            quota,
             None,
             None,
-        )
+        ))
     }
 
     /// 注册成功后消费原始凭据，交给统一会话认证器完成自动登录。
@@ -607,7 +630,7 @@ impl RegistrationService for DatabaseRegistrationService {
             let result = self
                 .user_repository
                 .create_registration(
-                    command.user_record(policy),
+                    command.user_record(policy)?,
                     challenge,
                     command.invite_code.as_deref(),
                     rebate_quota,

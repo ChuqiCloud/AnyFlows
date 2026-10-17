@@ -132,6 +132,8 @@
     "billing": "Billing",
     "settings": "Settings",
     "accountVerification": "Account verification",
+    "accountVerificationReviews": "Identity reviews",
+    "invitationSettings": "Registration and referral rewards",
     "accountVerificationSettings": "Verification settings"
   },
   "notifications": {
@@ -1614,7 +1616,7 @@
       "status": "Status",
       "defaultGroup": "Default group",
       "quota": "Total quota",
-      "initialQuota": "Initial quota",
+      "initialQuota": "New user starting balance",
       "rpmLimit": "Requests per minute",
       "concurrency": "Concurrency"
     },
@@ -3749,10 +3751,10 @@
     },
     "fields": {
       "defaultGroup": "Default group",
-      "initialQuota": "Initial quota",
-      "initialQuotaHint": "Uses the system integer quota unit.",
-      "invitationRebateQuota": "Rebate per invitation",
-      "invitationRebateQuotaHint": "Set to 0 to record the relationship without creating a rebate ledger entry.",
+      "initialQuota": "New user starting balance",
+      "initialQuotaHint": "Granted to every newly registered user, in integer quota units.",
+      "invitationRebateQuota": "Referrer reward",
+      "invitationRebateQuotaHint": "Credit issued to the referrer for each successful registration with a valid invitation. Set to 0 to disable.",
       "attempts": "Attempts per window",
       "window": "Fixed window"
     },
@@ -7631,11 +7633,13 @@
     "empty": "No matching providers"
   },
   "verificationCenter": {
+    "adminLinks": "Identity management",
+    "myVerification": "My identity verification",
     "title": "Account verification",
     "settingsTitle": "Verification settings",
     "adminTitle": "Identity verification reviews",
     "description": "Verify your personal or business identity and review submitted documents and decisions. Approved business accounts can apply for an organization workspace.",
-    "adminDescription": "Review personal and business identity submissions. Documents and decisions remain with each application; workspace provisioning is approved separately.",
+    "adminDescription": "Review individual and business account identities. Workspace applications are handled separately in enterprise management.",
     "individual": "Personal",
     "enterprise": "Business",
     "kind": "Verification type",
@@ -7755,5 +7759,16 @@
     "saved": "Organization entitlements updated.",
     "continueEditing": "Edit again",
     "save": "Save entitlements"
+  },
+  "invitationSettings": {
+    "title": "Registration and referral rewards",
+    "description": "Set the starting balance for new users and the rewards for both parties after a successful referral.",
+    "inviter": "Referrer reward",
+    "initial": "New user starting balance",
+    "invitee": "Referred user bonus",
+    "inviteeHint": "Added to the starting balance only when registering with a valid invitation. Set to 0 to disable the bonus.",
+    "rulesTitle": "Reward rules",
+    "closed": "Registration is closed. Invitation links cannot be used to create an account.",
+    "rulesHint": "Referral rewards are issued once after successful registration with a valid invitation. Zero disables that reward. Changes do not apply to past referrals."
   }
 }

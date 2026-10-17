@@ -49,6 +49,8 @@ const navItems = {
   videoTasks: { key: 'videoTasks', icon: 'solar:video-frame-linear', href: '/console/video-tasks' },
   apiKeys: { key: 'apiKeys', icon: 'solar:key-linear', href: '/console/api-keys' },
   accountVerification: { key: 'accountVerification', icon: 'solar:verified-check-linear', href: '/console/account-verification' },
+  accountVerificationReviews: { key: 'accountVerificationReviews', icon: 'solar:clipboard-check-linear', href: '/console/account-verification-reviews' },
+  invitationSettings: { key: 'invitationSettings', icon: 'solar:gift-linear', href: '/console/system-settings/invitations' },
   accountVerificationSettings: { key: 'accountVerificationSettings', icon: 'solar:settings-linear', href: '/console/system-settings/account-verification' },
   wallet: { key: 'wallet', icon: 'solar:wallet-linear', href: '/console/wallet' },
   subscriptions: { key: 'subscriptions', icon: 'solar:calendar-mark-linear', href: '/console/subscriptions' },

@@ -48,6 +48,7 @@ export function useUpdateAdminAuthenticationSettings() {
             }
           : current
       ))
+      void queryClient.invalidateQueries({ queryKey: ['user-invitations'] })
       void queryClient.invalidateQueries({ queryKey: publicSiteSettingsQueryKey })
     },
   })

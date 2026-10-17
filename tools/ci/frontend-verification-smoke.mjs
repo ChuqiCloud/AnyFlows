@@ -73,6 +73,7 @@ try {
   }
   await page.addInitScript(() => localStorage.setItem('anyflows.locale', 'zh'))
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9mQAAAAASUVORK5CYII=', 'base64')
+  let submissionKind = 'enterprise'
   let submitted = 0
   let reviewed = 0
   let downloads = 0
@@ -123,10 +124,10 @@ try {
     } else if (request.method() === 'POST') {
       assert.match(request.headers()['content-type'], /^multipart\/form-data; boundary=/)
       assert.ok(request.postDataBuffer().includes(Buffer.from('name="file:0"')))
-      assert.ok(request.postDataBuffer().includes(Buffer.from('"kind":"enterprise"')))
+      assert.ok(request.postDataBuffer().includes(Buffer.from(`"kind":"${submissionKind}"`)))
       assert.ok(request.postDataBuffer().includes(Buffer.from('"document_country":"CN"')))
-      assert.ok(request.postDataBuffer().includes(Buffer.from('"document_type":"business_registration"')))
-      cases.unshift({ ...cases[0], id: 28, subject_name: 'New Enterprise', status: 1, version: 1, review_reason: null, reviewer_user_id: null })
+      assert.ok(request.postDataBuffer().includes(Buffer.from(`"document_type":"${submissionKind === 'enterprise' ? 'business_registration' : 'passport'}"`)))
+      cases.unshift({ ...cases[0], id: 28 + submitted, kind: submissionKind, subject_name: submissionKind === 'enterprise' ? 'New Enterprise' : 'Test Individual', status: 1, version: 1, review_reason: null, reviewer_user_id: null })
       submitted += 1
       body = cases[0]
     } else if (/\/\d+$/.test(path)) {
@@ -183,6 +184,24 @@ try {
   await page.getByRole('button', { name: '预览', exact: true }).click()
   await page.locator('img[alt="license.png"]').waitFor()
   assert.equal(downloads, 2, 'Approved materials must remain accessible')
+  await page.goto(home)
+  submissionKind = 'individual'
+  await page.getByRole('tab', { name: '个人认证', exact: true }).click()
+  await page.getByLabel('认证主体名称', { exact: true }).fill('Test Individual')
+  await page.getByRole('combobox', { name: '证件类型', exact: true }).selectOption('passport')
+  await page.getByLabel('证件号码', { exact: true }).fill('P12345678')
+  await page.getByLabel('认证说明', { exact: true }).fill('Personal manual review')
+  await page.locator('input[type="file"]').setInputFiles({ name: 'passport.png', mimeType: 'image/png', buffer: png })
+  await page.getByRole('button', { name: '提交认证', exact: true }).click()
+  await page.getByText('Test Individual', { exact: false }).first().waitFor()
+  assert.equal(submitted, 2)
+  await page.goto(`${home}?mode=admin`)
+  assert.equal(await page.locator('input[type="file"]').count(), 0)
+  await page.getByRole('button', { name: '查看详情', exact: true }).first().click()
+  await page.getByRole('button', { name: '通过认证', exact: true }).click()
+  await page.locator('article').first().getByText('已通过', { exact: true }).waitFor()
+  assert.equal(reviewed, 2)
+  await capturePage('account-verification-reviews')
   await page.goto(`${home}?mode=settings`)
   await page.getByText('实名认证配置', { exact: true }).waitFor()
   await capturePage('verification-settings')

@@ -18,10 +18,11 @@ import {
 type AuthenticationSettingsFormProps = {
   groups: AdminGroup[]
   settings: AdminAuthenticationSettings
+  rewardsOnly?: boolean
 }
 
 /** 编辑完整认证设置；关闭密码登录时同步关闭依赖它的公开注册。 */
-export function AuthenticationSettingsForm({ groups, settings }: AuthenticationSettingsFormProps) {
+export function AuthenticationSettingsForm({ groups, settings, rewardsOnly = false }: AuthenticationSettingsFormProps) {
   const { t } = useTranslation()
   const mutation = useUpdateAdminAuthenticationSettings()
   const form = useForm<AuthenticationSettingsValues>({
@@ -83,6 +84,7 @@ export function AuthenticationSettingsForm({ groups, settings }: AuthenticationS
           <LockKeyhole className="size-4 text-info" aria-hidden="true" />
         </div>
 
+        {!rewardsOnly ? <>
         <SettingRow
           title={t('authenticationSettings.passwordLogin.title')}
           description={t('authenticationSettings.passwordLogin.description')}
@@ -168,6 +170,8 @@ export function AuthenticationSettingsForm({ groups, settings }: AuthenticationS
           )}
         />
 
+        </> : null}
+
         <section id="authentication-allocation" tabIndex={-1} className="grid scroll-mt-20 gap-5 border-b border-[var(--hairline)] px-4 py-5 outline-none focus-visible:ring-2 focus-visible:ring-ring/60 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" aria-labelledby="authentication-allocation-title">
           <div>
             <h3 id="authentication-allocation-title" className="text-sm font-semibold">
@@ -235,10 +239,20 @@ export function AuthenticationSettingsForm({ groups, settings }: AuthenticationS
                 {...form.register('invitationRebateQuota', { valueAsNumber: true })}
               />
             </SettingsField>
+            <SettingsField
+              id="authentication-invitation-invitee-quota"
+              label={t('invitationSettings.invitee')}
+              hint={t('invitationSettings.inviteeHint')}
+              error={form.formState.errors.invitationInviteeQuota?.message}
+            >
+              <Input id="authentication-invitation-invitee-quota" type="number" min={0} step={1} inputMode="numeric"
+                isInvalid={!!form.formState.errors.invitationInviteeQuota}
+                {...form.register('invitationInviteeQuota', { valueAsNumber: true })} />
+            </SettingsField>
           </div>
         </section>
 
-        <section id="authentication-protection" tabIndex={-1} className="grid scroll-mt-20 gap-5 px-4 py-5 outline-none focus-visible:ring-2 focus-visible:ring-ring/60 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" aria-labelledby="authentication-protection-title">
+        {!rewardsOnly ? <section id="authentication-protection" tabIndex={-1} className="grid scroll-mt-20 gap-5 px-4 py-5 outline-none focus-visible:ring-2 focus-visible:ring-ring/60 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" aria-labelledby="authentication-protection-title">
           <div>
             <h3 id="authentication-protection-title" className="text-sm font-semibold">
               {t('authenticationSettings.protection.title')}
@@ -289,7 +303,7 @@ export function AuthenticationSettingsForm({ groups, settings }: AuthenticationS
               />
             </SettingsField>
           </div>
-        </section>
+        </section> : null}
 
         <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-t border-[var(--hairline)] bg-surface-2/25 px-4 py-3">
           <div className="text-xs">
@@ -313,7 +327,7 @@ export function AuthenticationSettingsForm({ groups, settings }: AuthenticationS
         </div>
       </div>
 
-      <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-warning/25 bg-warning/8 p-4">
+      {!rewardsOnly ? <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-warning/25 bg-warning/8 p-4">
         <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
         <div>
           <h3 className="text-sm font-semibold">{t('authenticationSettings.warning.title')}</h3>
@@ -321,7 +335,7 @@ export function AuthenticationSettingsForm({ groups, settings }: AuthenticationS
             {t('authenticationSettings.warning.description')}
           </p>
         </div>
-      </div>
+      </div> : null}
     </form>
   )
 

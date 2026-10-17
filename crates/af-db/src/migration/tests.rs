@@ -52,6 +52,15 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
             .is_empty()
     );
 
+    use sea_orm::{ConnectionTrait, DbBackend, Statement};
+    let backend = pool.connection().get_database_backend();
+    let sql = match backend {
+        DbBackend::MySql => "SELECT `invitation_invitee_quota` FROM `authentication_settings` WHERE `id` = 1",
+        _ => "SELECT invitation_invitee_quota FROM authentication_settings WHERE id = 1",
+    };
+    let row = pool.connection().query_one(Statement::from_string(backend, sql.to_owned())).await?
+        .ok_or("authentication settings must survive the upgrade")?;
+    assert_eq!(row.try_get::<i64>("", "invitation_invitee_quota")?, 0);
     pool.close().await?;
     Ok(())
 }
