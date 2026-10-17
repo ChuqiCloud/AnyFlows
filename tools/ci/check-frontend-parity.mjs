@@ -13,6 +13,8 @@ for (const path of [
   'src/components/brand/model-logos.ts',
   'src/extensions/model.ts',
   'src/features/account-verification/alipay-authorization.ts',
+  'src/features/account-verification/verification-identity.ts',
+  'src/features/account-verification/account-verification-api.ts',
   'src/features/channels/channel-form-model.ts',
   'src/features/usage-logs/usage-log-model.ts',
   'src/features/site-settings/frontend-template-model.ts',

@@ -651,7 +651,9 @@ fn alipay_expired(case: &cases::Model, now: DatabaseTimestamp) -> bool {
 }
 
 fn blocks_submission(case: &cases::Model, now: DatabaseTimestamp) -> bool {
-    case.status == 4 || (case.status == 1 && !alipay_expired(case, now))
+    // A replacement is a new case. Approved evidence remains valid and readable
+    // while the replacement is reviewed; only an active request blocks another.
+    case.status == 1 && !alipay_expired(case, now)
 }
 
 fn valid_text(value: &str, max: usize) -> bool {
