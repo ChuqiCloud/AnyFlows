@@ -125,6 +125,59 @@ pub const PUBLIC_MIGRATION_TABLE_NAME: &str = "seaql_migrations";
 /// 扩展迁移推荐使用的默认表名。
 pub const EXTENSION_MIGRATION_TABLE_NAME: &str = "anyflows_extension_migrations";
 
+// Exact versions removed from the public registry when enterprise migrations
+// moved to the private extension. Keep this list derived from the split commit;
+// unknown migration history must continue to fail startup.
+const LEGACY_ENTERPRISE_MIGRATION_VERSIONS: &[&str] = &[
+    "m20260815_000061_create_organization_foundation",
+    "m20260815_000062_create_organization_entitlements",
+    "m20260816_000063_create_organization_invitations",
+    "m20260816_000064_create_organization_wallets",
+    "m20260816_000065_create_organization_budgets",
+    "m20260817_000066_add_organization_tokens",
+    "m20260817_000067_create_organization_activity",
+    "m20260823_000093_create_organization_custom_roles",
+    "m20260823_000094_add_organization_custom_role_bindings",
+    "m20260824_000095_create_organization_sso_persistence",
+    "m20260825_000096_add_organization_sso_login_material",
+    "m20260825_000097_add_organization_sso_ticket_email_fingerprint",
+    "m20260826_000098_create_organization_sso_policies",
+    "m20260827_000099_create_organization_scim_tokens",
+    "m20260827_000100_create_organization_scim_user_resources",
+    "m20260827_000101_create_organization_scim_group_resources",
+    "m20260828_000102_create_organization_scim_audit_logs",
+    "m20260828_000103_create_organization_service_accounts",
+    "m20260828_000104_create_organization_service_account_budget_bindings",
+    "m20260828_000105_create_organization_service_account_audit_logs",
+    "m20260829_000106_create_organization_departments",
+    "m20260829_000107_create_organization_department_memberships",
+    "m20260829_000108_add_organization_department_snapshots",
+    "m20260829_000109_add_department_budget_snapshots",
+    "m20260829_000110_create_organization_contract_prices",
+    "m20260829_000111_add_contract_price_snapshots",
+    "m20260830_000112_create_organization_credit_terms",
+    "m20260830_000113_create_organization_credit_invoices",
+    "m20260830_000114_create_organization_credit_repayments",
+    "m20260830_000115_create_organization_approvals",
+    "m20260830_000116_create_organization_approval_execution",
+    "m20260830_000117_create_organization_approval_budget_execution",
+    "m20260830_000118_create_organization_approval_service_account_execution",
+    "m20260830_000119_create_organization_approval_contract_price_execution",
+    "m20260830_000120_create_organization_approval_funds_execution",
+    "m20260830_000121_create_organization_approval_timeout_lease",
+    "m20260831_000122_create_organization_approval_notifications",
+    "m20260901_000124_add_organization_sso_domain_reverification",
+    "m20260902_000125_add_organization_sso_login_transaction_cleanup",
+    "m20260903_000129_create_organization_approval_notification_receipts",
+    "m20260904_000130_create_organization_provisioning_requests",
+    "m20260904_000131_create_organization_plan_catalog",
+    "m20260905_000132_create_organization_plan_orders",
+    "m20260905_000133_add_organization_plan_order_changes",
+    "m20260907_000136_create_organization_verification",
+    "m20260907_000137_add_organization_verification_material_content",
+    "m20260907_000138_create_organization_provisioning_materials",
+];
+
 /// 待处理迁移的执行参数。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MigrationOptions {
@@ -249,6 +302,30 @@ where
 }
 
 struct PublicMigratorWithExtensionHistory<M>(PhantomData<fn() -> M>);
+
+struct CommunityMigratorWithLegacyEnterpriseHistory;
+
+#[async_trait::async_trait]
+impl MigratorTrait for CommunityMigratorWithLegacyEnterpriseHistory {
+    fn migrations() -> Vec<Box<dyn MigrationTrait>> {
+        Migrator::migrations()
+    }
+
+    async fn get_migration_models<C>(
+        db: &C,
+    ) -> Result<Vec<sea_orm_migration::seaql_migrations::Model>, sea_orm::DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        Ok(Migrator::get_migration_models(db)
+            .await?
+            .into_iter()
+            .filter(|record| {
+                !LEGACY_ENTERPRISE_MIGRATION_VERSIONS.contains(&record.version.as_str())
+            })
+            .collect())
+    }
+}
 
 #[async_trait::async_trait]
 impl<M: MigratorTrait + 'static> MigratorTrait for PublicMigratorWithExtensionHistory<M> {
@@ -431,7 +508,7 @@ pub async fn run_pending_migrations(
     pool: &DatabasePool,
     options: MigrationOptions,
 ) -> Result<(), DatabaseError> {
-    run_pending_migrations_with::<Migrator>(pool, options).await
+    run_with::<CommunityMigratorWithLegacyEnterpriseHistory>(pool, options).await
 }
 
 /// 执行扩展注册表中的全部待处理迁移。
