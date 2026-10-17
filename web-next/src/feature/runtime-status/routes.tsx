@@ -2,7 +2,7 @@ import { createModuleRouteMetaResolver } from '@/shared/modules'
 import { lazyRoute, type AppRouteObject } from '@/shared/router'
 import runtimeStatusModule from './module'
 
-const routeMeta = createModuleRouteMetaResolver(runtimeStatusModule, { requireAuth: true })
+const routeMeta = createModuleRouteMetaResolver(runtimeStatusModule, { requireAuth: true, surface: 'admin' })
 
 export const runtimeStatusRoutes: AppRouteObject[] = [
   {
