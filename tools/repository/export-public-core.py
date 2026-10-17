@@ -236,19 +236,18 @@ def changed_line_chunks(base_content: bytes, public_content: bytes) -> tuple[lis
 def contains_chunks_in_order(source_lines: list[bytes], chunks: list[list[bytes]]) -> bool:
     cursor = 0
     for chunk in chunks:
-        if not chunk:
-            continue
-        position = next(
-            (
-                index
-                for index in range(cursor, len(source_lines) - len(chunk) + 1)
-                if source_lines[index : index + len(chunk)] == chunk
-            ),
-            None,
-        )
-        if position is None:
-            return False
-        cursor = position + len(chunk)
+        for line in chunk:
+            position = next(
+                (
+                    index
+                    for index in range(cursor, len(source_lines))
+                    if source_lines[index] == line
+                ),
+                None,
+            )
+            if position is None:
+                return False
+            cursor = position + 1
     return True
 
 
