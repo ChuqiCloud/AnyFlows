@@ -9,9 +9,10 @@
 .runtime-metric { padding: 1.1rem; display: grid; gap: .75rem; min-width: 0; }
 .runtime-metric > span { display: flex; align-items: center; gap: .5rem; color: var(--muted-foreground); font-size: .75rem; }
 .runtime-metric > strong { font-size: 1.55rem; line-height: 1.2; font-weight: 650; letter-spacing: -.04em; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-.runtime-metric small, .runtime-muted { font-size: .7rem; line-height: 1.7; color: var(--muted-foreground); }
+.runtime-metric small, .runtime-muted { font-size: .7rem; line-height: 1.7; color: var(--muted-foreground); overflow-wrap: anywhere; }
 .runtime-section { padding: 1.2rem; min-width: 0; }
 .runtime-section-title { margin-bottom: 1.1rem; }
+.runtime-section-title > div { min-width: 0; }
 .runtime-section-title h3 { font-size: .95rem; font-weight: 600; overflow-wrap: anywhere; }
 .runtime-section-title > span { flex-shrink: 0; color: var(--muted-foreground); font-size: .72rem; }
 .runtime-badge { display: inline-flex; align-items: center; gap: .35rem; flex-shrink: 0; font-size: .68rem; border-radius: 999px; padding: .2rem .5rem; background: var(--muted); color: var(--muted-foreground); }
@@ -26,7 +27,7 @@
 .runtime-node:hover, .runtime-node[aria-pressed=true] { border-color: color-mix(in srgb, #3b82f6 65%, var(--border)); background: color-mix(in srgb, #3b82f6 3%, var(--card)); }
 .runtime-node:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .runtime-node-heading { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
-.runtime-node-heading > strong { font-size: .85rem; overflow-wrap: anywhere; }
+.runtime-node-heading > strong { min-width: 0; font-size: .85rem; overflow-wrap: anywhere; }
 .runtime-node-version, .runtime-node-footer { color: var(--muted-foreground); font-size: .65rem; line-height: 1.6; overflow-wrap: anywhere; }
 .runtime-node-values { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; font-size: .65rem; color: var(--muted-foreground); }
 .runtime-node-values strong { display: block; margin-top: .25rem; color: var(--foreground); font-size: .95rem; font-weight: 550; }
