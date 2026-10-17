@@ -75,6 +75,37 @@ class PublicSyncTests(unittest.TestCase):
         self.commit(self.source)
         self.verify()
 
+    def test_reconciled_rewrite_allows_source_followup_in_same_file(self):
+        rewritten = "# public deployment guide\n\nFollow the release checklist.\n"
+        self.write(self.public, "payment.rs", rewritten)
+        self.commit(self.public)
+        self.write(self.source, "payment.rs", rewritten + "\nEnterprise-only release notes stay in the source repository.\n")
+        self.commit(self.source)
+        self.verify()
+
+    def test_reconciled_public_delta_allows_source_edit_inside_public_file(self):
+        rewritten = "# public deployment guide\n\nFollow the release checklist.\n"
+        self.write(self.public, "payment.rs", rewritten)
+        self.commit(self.public)
+        self.write(
+            self.source,
+            "payment.rs",
+            "# public deployment guide\n\nEnterprise release notes.\n\nFollow the release checklist.\n",
+        )
+        self.commit(self.source)
+        self.verify()
+
+    def test_reconciled_public_delta_ignores_final_newline_difference(self):
+        self.write(self.public, "payment.rs", "# public deployment guide\n\nFollow the release checklist.")
+        self.commit(self.public)
+        self.write(
+            self.source,
+            "payment.rs",
+            "# public deployment guide\n\nFollow the release checklist.\nEnterprise release notes.\n",
+        )
+        self.commit(self.source)
+        self.verify()
+
     def test_conflicting_public_change_is_rejected(self):
         self.write(self.public, "payment.rs", "// public order routing\n")
         self.commit(self.public)
