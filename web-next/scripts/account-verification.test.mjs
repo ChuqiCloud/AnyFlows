@@ -56,3 +56,16 @@ test('认证与授权文案完整且记录状态为可显示字符串', async ()
     for (const key of ['sso_enabled', 'custom_roles_enabled', 'disableSsoHint', 'reason']) assert.equal(typeof locale.enterpriseEntitlement[key], 'string', key)
   }
 })
+
+
+test('账号审核和邀请设置的直接访问要求管理员', async () => {
+  const { requiresAdmin } = await import('../src/shared/access-control/paths.ts')
+  assert.equal(requiresAdmin('/console/account-verification-reviews'), true)
+  assert.equal(requiresAdmin('/console/system-settings/invitations'), true)
+  assert.equal(requiresAdmin('/console/account-verification'), false)
+  const { userWorkspaceItems, systemSectionItems } = await import('../src/components/layout/app-navigation-model.ts')
+  for (const key of ['accountVerificationReviews', 'invitationSettings']) {
+    assert.ok(systemSectionItems.includes(key))
+    assert.ok(!userWorkspaceItems.includes(key))
+  }
+})

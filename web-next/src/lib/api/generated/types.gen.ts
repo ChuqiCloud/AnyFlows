@@ -64,6 +64,7 @@ export type AdminAuthenticationSettings = {
     default_group_id: number;
     initial_quota: number;
     invitation_rebate_quota: number;
+    invitation_invitee_quota: number;
     email_required: boolean;
     rate_limit_attempts: number;
     rate_limit_window_seconds: number;
@@ -75,6 +76,7 @@ export type AdminAuthenticationSettingsRequest = {
     default_group_id: number;
     initial_quota: number;
     invitation_rebate_quota: number;
+    invitation_invitee_quota?: number | null;
     email_required: boolean;
     rate_limit_attempts: number;
     rate_limit_window_seconds: number;
@@ -1975,6 +1977,10 @@ export type UserInvitationSummaryResponse = {
     current_rebate_quota: number;
     historical_rebate_quota: number;
     recent_rebates: Array<UserInvitationRebateResponse>;
+    registration_enabled: boolean;
+    inviter_reward_quota: number;
+    new_user_quota: number;
+    invited_user_bonus_quota: number;
 };
 export type UserNotification = {
     id: number;

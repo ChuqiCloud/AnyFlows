@@ -10,6 +10,8 @@ export type NavKey =
   | 'invitations'
   | 'accountVerification'
   | 'accountVerificationSettings'
+  | 'accountVerificationReviews'
+  | 'invitationSettings'
   | 'profile'
   | 'users'
   | 'subscriptionManagement'
@@ -44,7 +46,7 @@ export const adminWorkspaceItems = ['overview', 'models', 'playground', 'videoTa
 export const adminNavigationSections = [
   { key: 'operations', items: ['subscriptionManagement', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings'] },
   { key: 'gateway', items: ['modelSettings', 'modelProviders', 'groupSettings', 'channels', 'credentials', 'credentialProxies', 'routes'] },
-  { key: 'platform', items: ['users', 'siteSettings', 'siteNavigation', 'authenticationSettings', 'announcements', 'emailSettings', 'networkSettings', 'accountVerificationSettings', 'keys'] },
+  { key: 'platform', items: ['users', 'accountVerificationReviews', 'invitationSettings', 'siteSettings', 'siteNavigation', 'authenticationSettings', 'announcements', 'emailSettings', 'networkSettings', 'accountVerificationSettings', 'keys'] },
 ] as const satisfies ReadonlyArray<{ key: AdminSectionKey; items: readonly NavKey[] }>
 
 export const adminSystemItems = ['debugTraces'] as const satisfies readonly NavKey[]
@@ -65,6 +67,8 @@ export const activeKeyByView: Readonly<Record<string, NavKey>> = {
   'api-keys': 'apiKeys',
   'account-verification': 'accountVerification',
   'account-verification-settings': 'accountVerificationSettings',
+  'account-verification-reviews': 'accountVerificationReviews',
+  'invitation-settings': 'invitationSettings',
   wallet: 'wallet',
   subscriptions: 'subscriptions',
   invitations: 'invitations',

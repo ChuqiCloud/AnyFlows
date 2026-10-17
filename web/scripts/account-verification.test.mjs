@@ -56,3 +56,16 @@ test('认证与授权文案完整且记录状态为可显示字符串', async ()
     for (const key of ['sso_enabled', 'custom_roles_enabled', 'disableSsoHint', 'reason']) assert.equal(typeof locale.enterpriseEntitlement[key], 'string', key)
   }
 })
+
+
+test('账号审核与个人提交使用独立路由和权限边界', async () => {
+  const { routeFromHash } = await import('../src/app-route.ts')
+  assert.deepEqual(routeFromHash('#/console/account-verification-reviews'), { view: 'account-verification-reviews' })
+  assert.deepEqual(routeFromHash('#/console/account-verification'), { view: 'account-verification' })
+  assert.deepEqual(routeFromHash('#/console/system-settings/invitations'), { view: 'invitation-settings' })
+  const { userNavigationItems, adminNavigationItems } = await import('../src/components/layout/app-navigation-model.ts')
+  for (const key of ['accountVerificationReviews', 'invitationSettings']) {
+    assert.ok(adminNavigationItems.includes(key))
+    assert.ok(!userNavigationItems.includes(key))
+  }
+})

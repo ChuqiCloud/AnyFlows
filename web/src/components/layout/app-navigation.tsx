@@ -93,6 +93,8 @@ const navItems = {
   videoTasks: { key: 'videoTasks', icon: Video, href: '#/console/video-tasks' },
   apiKeys: { key: 'apiKeys', icon: KeyRound, href: '#/console/api-keys' },
   accountVerification: { key: 'accountVerification', icon: ShieldCheck, href: '#/console/account-verification' },
+  accountVerificationReviews: { key: 'accountVerificationReviews', icon: ClipboardCheck, href: '#/console/account-verification-reviews' },
+  invitationSettings: { key: 'invitationSettings', icon: TicketCheck, href: '#/console/system-settings/invitations' },
   accountVerificationSettings: { key: 'accountVerificationSettings', icon: Settings2, href: '#/console/system-settings/account-verification' },
   wallet: { key: 'wallet', icon: WalletCards, href: '#/console/wallet' },
   subscriptions: { key: 'subscriptions', icon: CalendarRange, href: '#/console/subscriptions' },

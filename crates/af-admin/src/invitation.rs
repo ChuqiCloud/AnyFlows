@@ -47,6 +47,10 @@ pub struct UserInvitationSummary {
     current_rebate_quota: Quota,
     historical_rebate_quota: Quota,
     recent_rebates: Vec<UserInvitationRebate>,
+    registration_enabled: bool,
+    inviter_reward_quota: i64,
+    new_user_quota: i64,
+    invited_user_bonus_quota: i64,
 }
 
 impl UserInvitationSummary {
@@ -68,7 +72,32 @@ impl UserInvitationSummary {
             current_rebate_quota,
             historical_rebate_quota,
             recent_rebates,
+            registration_enabled: false,
+            inviter_reward_quota: 0,
+            new_user_quota: 0,
+            invited_user_bonus_quota: 0,
         }
+    }
+
+    /// 当前公开注册是否开放。
+    #[must_use]
+    pub const fn registration_enabled(&self) -> bool {
+        self.registration_enabled
+    }
+    /// 每次成功邀请发放给邀请人的额度。
+    #[must_use]
+    pub const fn inviter_reward_quota(&self) -> i64 {
+        self.inviter_reward_quota
+    }
+    /// 通用注册赠送额度。
+    #[must_use]
+    pub const fn new_user_quota(&self) -> i64 {
+        self.new_user_quota
+    }
+    /// 有效邀请注册的额外赠送额度。
+    #[must_use]
+    pub const fn invited_user_bonus_quota(&self) -> i64 {
+        self.invited_user_bonus_quota
     }
 
     /// 返回当前用户邀请码。
@@ -177,6 +206,10 @@ fn summary_from_record(record: UserInvitationSummaryRecord) -> UserInvitationSum
         credited_count: record.credited_count(),
         current_rebate_quota: record.current_rebate_quota(),
         historical_rebate_quota: record.historical_rebate_quota(),
+        registration_enabled: record.registration_enabled(),
+        inviter_reward_quota: record.inviter_reward_quota(),
+        new_user_quota: record.new_user_quota(),
+        invited_user_bonus_quota: record.invited_user_bonus_quota(),
         recent_rebates: record
             .recent_rebates()
             .iter()

@@ -18106,6 +18106,7 @@
           "default_group_id",
           "initial_quota",
           "invitation_rebate_quota",
+          "invitation_invitee_quota",
           "email_required",
           "rate_limit_attempts",
           "rate_limit_window_seconds",
@@ -18131,6 +18132,12 @@
           "invitation_rebate_quota": {
             "type": "integer",
             "format": "int64",
+            "minimum": 0
+          },
+          "invitation_invitee_quota": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Extra opening quota for a user registering with a valid invitation.",
             "minimum": 0
           },
           "email_required": {
@@ -18187,6 +18194,14 @@
           },
           "invitation_rebate_quota": {
             "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "invitation_invitee_quota": {
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
             "minimum": 0
           },
@@ -29744,7 +29759,11 @@
           "credited_count",
           "current_rebate_quota",
           "historical_rebate_quota",
-          "recent_rebates"
+          "recent_rebates",
+          "registration_enabled",
+          "inviter_reward_quota",
+          "new_user_quota",
+          "invited_user_bonus_quota"
         ],
         "properties": {
           "invite_code": {
@@ -29778,6 +29797,24 @@
             "items": {
               "$ref": "#/components/schemas/UserInvitationRebateResponse"
             }
+          },
+          "registration_enabled": {
+            "type": "boolean"
+          },
+          "inviter_reward_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "new_user_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "invited_user_bonus_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         },
         "additionalProperties": false

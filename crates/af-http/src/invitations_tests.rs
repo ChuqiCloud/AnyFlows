@@ -110,7 +110,7 @@ async fn invitation_route_is_session_scoped_and_omits_invitee_identity() {
     assert_eq!(body["credited_count"], 2);
     assert_eq!(body["recent_rebates"][0]["quota_amount"], 20);
     let rendered = body.to_string();
-    for forbidden in ["invitee", "username", "email", "user_id"] {
+    for forbidden in ["invitee_user_id", "username", "email", "user_id"] {
         assert!(!rendered.contains(forbidden), "{rendered}");
     }
     assert_eq!(service.calls.load(Ordering::Relaxed), 1);

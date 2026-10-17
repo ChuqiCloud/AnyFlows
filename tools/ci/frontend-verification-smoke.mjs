@@ -34,6 +34,7 @@ try {
     import { AccountVerificationPage } from './src/features/account-verification/account-verification-page';
     import { VerificationSettingsPanel } from './src/features/account-verification/verification-settings-panel';
     import { ModelProviderCatalogPanel } from './src/features/model-management/model-provider-catalog-panel';
+    import { AuthenticationSettingsPage } from './src/features/authentication-settings/authentication-settings-page';
     import { resolveProviderLogo, findProviderLogo } from './src/components/brand/model-logos';
     if (resolveProviderLogo('Jina', 'deepseek')?.name !== 'Jina') throw new Error('Configured logo must take priority');
     if (resolveProviderLogo(null, 'private-provider', 'DeepSeek')?.name !== 'DeepSeek') throw new Error('Display name must identify logo');
@@ -42,7 +43,7 @@ try {
     createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         ${isNext ? '<HeroUIProvider>' : ''}<main style={{ padding: '16px', maxWidth: '1100px', margin: 'auto' }}>
-          {mode === 'settings' ? <VerificationSettingsPanel /> : mode === 'catalog' ? <ModelProviderCatalogPanel /> : <AccountVerificationPage admin={mode === 'admin'} />}
+          {mode === 'rewards' ? <AuthenticationSettingsPage rewardsOnly /> : mode === 'settings' ? <VerificationSettingsPanel /> : mode === 'catalog' ? <ModelProviderCatalogPanel /> : <AccountVerificationPage admin={mode === 'admin'} />}
         </main>${isNext ? '</HeroUIProvider>' : ''}
       </QueryClientProvider>
     );
@@ -73,6 +74,7 @@ try {
   }
   await page.addInitScript(() => localStorage.setItem('anyflows.locale', 'zh'))
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9mQAAAAASUVORK5CYII=', 'base64')
+  let submissionKind = 'enterprise'
   let submitted = 0
   let reviewed = 0
   let downloads = 0
@@ -81,13 +83,26 @@ try {
   let settingsWrites = 0
   const catalog = [{ provider_key: 'custom-ai', display_name: 'Custom AI', logo: 'OpenAI', aliases: [], enabled: true, sort_order: 0, version: 1 }]
   let catalogWrites = 0
+  let rewardWrites = 0
+  let rewardSettings = { password_login_enabled: true, registration_enabled: true, default_group_id: 3, initial_quota: 100, invitation_rebate_quota: 20, invitation_invitee_quota: 50, email_required: true, rate_limit_attempts: 7, rate_limit_window_seconds: 900, version: 4 }
   const cases = Array.from({ length: 27 }, (_, index) => ({ id: 27 - index, user_id: 1, kind: 'enterprise', provider: 'manual', document_country: 'CN', document_type: 'business_registration', document_number_masked: '91****43', subject_name: `Enterprise ${27 - index}`, summary: 'Historical application', status: 5, version: 2, review_reason: 'Supplement required', reviewer_user_id: 2, created_at: 1_780_000_000, updated_at: 1_780_000_010 }))
   await page.route((url) => url.pathname.startsWith('/api/'), async (route) => {
     const request = route.request()
     const url = new URL(request.url())
     const path = url.pathname
     let body
-    if (path.endsWith('/eligibility')) body = { enterprise_verified: reviewed > 0, can_apply_for_organization: reviewed > 0, providers, individual_providers: [...(settings.individual_manual_enabled ? ['manual'] : []), ...(settings.enabled ? ['alipay'] : [])], enterprise_providers: settings.enterprise_manual_enabled ? ['manual'] : [], individual_reason_required: settings.individual_reason_required, enterprise_reason_required: settings.enterprise_reason_required }
+    if (path === '/api/admin/authentication-settings') {
+      if (request.method() === 'PUT') {
+        const update = request.postDataJSON()
+        const expected = { ...rewardSettings, initial_quota: 200, invitation_rebate_quota: 30, invitation_invitee_quota: 75 }
+        delete expected.version
+        assert.deepEqual(update, expected)
+        rewardSettings = { ...rewardSettings, ...update, version: rewardSettings.version + 1 }
+        rewardWrites += 1
+      }
+      body = rewardSettings
+    } else if (path === '/api/admin/groups') body = { groups: [{ id: 3, name: 'default', display_name: '默认分组', enabled: true, version: 1 }], next_cursor: null }
+    else if (path.endsWith('/eligibility')) body = { enterprise_verified: reviewed > 0, can_apply_for_organization: reviewed > 0, providers, individual_providers: [...(settings.individual_manual_enabled ? ['manual'] : []), ...(settings.enabled ? ['alipay'] : [])], enterprise_providers: settings.enterprise_manual_enabled ? ['manual'] : [], individual_reason_required: settings.individual_reason_required, enterprise_reason_required: settings.enterprise_reason_required }
     else if (path === '/api/admin/account-verification-settings') {
       if (request.method() === 'PUT') {
         const update = request.postDataJSON()
@@ -123,10 +138,10 @@ try {
     } else if (request.method() === 'POST') {
       assert.match(request.headers()['content-type'], /^multipart\/form-data; boundary=/)
       assert.ok(request.postDataBuffer().includes(Buffer.from('name="file:0"')))
-      assert.ok(request.postDataBuffer().includes(Buffer.from('"kind":"enterprise"')))
+      assert.ok(request.postDataBuffer().includes(Buffer.from(`"kind":"${submissionKind}"`)))
       assert.ok(request.postDataBuffer().includes(Buffer.from('"document_country":"CN"')))
-      assert.ok(request.postDataBuffer().includes(Buffer.from('"document_type":"business_registration"')))
-      cases.unshift({ ...cases[0], id: 28, subject_name: 'New Enterprise', status: 1, version: 1, review_reason: null, reviewer_user_id: null })
+      assert.ok(request.postDataBuffer().includes(Buffer.from(`"document_type":"${submissionKind === 'enterprise' ? 'business_registration' : 'passport'}"`)))
+      cases.unshift({ ...cases[0], id: 28 + submitted, kind: submissionKind, subject_name: submissionKind === 'enterprise' ? 'New Enterprise' : 'Test Individual', status: 1, version: 1, review_reason: null, reviewer_user_id: null })
       submitted += 1
       body = cases[0]
     } else if (/\/\d+$/.test(path)) {
@@ -174,6 +189,7 @@ try {
   await page.getByText('New Enterprise', { exact: false }).first().waitFor()
   assert.equal(submitted, 1)
   await page.goto(`${home}?mode=admin`)
+  await page.getByRole('combobox', { name: '按审核状态筛选', exact: true }).selectOption('')
   await page.getByRole('button', { name: '查看详情', exact: true }).first().click()
   await page.getByRole('button', { name: '通过认证', exact: true }).click()
   await page.locator('article').first().getByText('已通过', { exact: true }).waitFor()
@@ -183,6 +199,25 @@ try {
   await page.getByRole('button', { name: '预览', exact: true }).click()
   await page.locator('img[alt="license.png"]').waitFor()
   assert.equal(downloads, 2, 'Approved materials must remain accessible')
+  await page.goto(home)
+  submissionKind = 'individual'
+  await page.getByRole('tab', { name: '个人认证', exact: true }).click()
+  await page.getByLabel('认证主体名称', { exact: true }).fill('Test Individual')
+  await page.getByRole('combobox', { name: '证件类型', exact: true }).selectOption('passport')
+  await page.getByLabel('证件号码', { exact: true }).fill('P12345678')
+  await page.getByLabel('认证说明', { exact: true }).fill('Personal manual review')
+  await page.locator('input[type="file"]').setInputFiles({ name: 'passport.png', mimeType: 'image/png', buffer: png })
+  await page.getByRole('button', { name: '提交认证', exact: true }).click()
+  await page.getByText('Test Individual', { exact: false }).first().waitFor()
+  assert.equal(submitted, 2)
+  await page.goto(`${home}?mode=admin`)
+  await page.getByRole('combobox', { name: '按审核状态筛选', exact: true }).selectOption('')
+  assert.equal(await page.locator('input[type="file"]').count(), 0)
+  await page.getByRole('button', { name: '查看详情', exact: true }).first().click()
+  await page.getByRole('button', { name: '通过认证', exact: true }).click()
+  await page.locator('article').first().getByText('已通过', { exact: true }).waitFor()
+  assert.equal(reviewed, 2)
+  await capturePage('account-verification-reviews')
   await page.goto(`${home}?mode=settings`)
   await page.getByText('实名认证配置', { exact: true }).waitFor()
   await capturePage('verification-settings')
@@ -226,6 +261,18 @@ try {
   assert.equal(await page.getByLabel('证件签发国家或地区代码', { exact: true }).inputValue(), 'CN')
   await providerSelect.selectOption('manual')
   assert.equal(await page.locator('input[type="file"]').evaluate((input) => input.files.length), 0)
+
+  await page.goto(`${home}?mode=rewards`)
+  await page.getByRole('heading', { name: '注册与邀请奖励', exact: true }).waitFor()
+  await page.locator('#authentication-initial-quota').waitFor()
+  assert.equal(await page.getByRole('switch').count(), 0)
+  await page.locator('#authentication-initial-quota').fill('200')
+  await page.locator('#authentication-invitation-rebate-quota').fill('30')
+  await page.locator('#authentication-invitation-invitee-quota').fill('75')
+  await page.getByRole('button', { name: '保存设置', exact: true }).click()
+  await page.getByText('奖励设置已保存', { exact: true }).waitFor()
+  assert.equal(rewardWrites, 1)
+  await capturePage('invitation-settings')
 
   await page.goto(`${home}?mode=catalog`)
   await page.locator('article p').getByText('OpenAI', { exact: true }).waitFor()

@@ -8,7 +8,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool,
-    entity::{invite_rebate_events, users},
+    entity::{authentication_settings, invite_rebate_events, users},
 };
 
 const ENABLED_USER_STATUS: i16 = 1;
@@ -43,9 +43,34 @@ pub struct UserInvitationSummaryRecord {
     current_rebate_quota: Quota,
     historical_rebate_quota: Quota,
     recent_rebates: Vec<UserInvitationRebateRecord>,
+    registration_enabled: bool,
+    inviter_reward_quota: i64,
+    new_user_quota: i64,
+    invited_user_bonus_quota: i64,
 }
 
 impl UserInvitationSummaryRecord {
+    /// 返回当前是否允许通过邀请链接注册。
+    #[must_use]
+    pub const fn registration_enabled(&self) -> bool {
+        self.registration_enabled
+    }
+    /// 返回邀请人每次成功邀请获得的额度。
+    #[must_use]
+    pub const fn inviter_reward_quota(&self) -> i64 {
+        self.inviter_reward_quota
+    }
+    /// 返回所有新用户共有的注册额度。
+    #[must_use]
+    pub const fn new_user_quota(&self) -> i64 {
+        self.new_user_quota
+    }
+    /// 返回通过有效邀请注册额外获得的额度。
+    #[must_use]
+    pub const fn invited_user_bonus_quota(&self) -> i64 {
+        self.invited_user_bonus_quota
+    }
+
     /// 返回当前用户不可枚举身份信息的随机邀请码。
     #[must_use]
     pub fn invite_code(&self) -> &str {
@@ -220,6 +245,23 @@ impl UserInvitationRepository {
             return Err(UserInvitationRepositoryError::Invariant);
         }
 
+        let policy = authentication_settings::Entity::find_by_id(1_i16)
+            .one(connection)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| UserInvitationRepositoryError::Query)?
+            .ok_or(UserInvitationRepositoryError::Invariant)?;
+        if policy.invitation_rebate_quota < 0
+            || policy.invitation_invitee_quota < 0
+            || policy.registration_initial_quota < 0
+            || policy
+                .registration_initial_quota
+                .checked_add(policy.invitation_invitee_quota)
+                .is_none()
+        {
+            return Err(UserInvitationRepositoryError::Invariant);
+        }
+
         Ok(UserInvitationLookupOutcome::Found(
             UserInvitationSummaryRecord {
                 invite_code: user.aff_code,
@@ -228,6 +270,10 @@ impl UserInvitationRepository {
                 current_rebate_quota,
                 historical_rebate_quota,
                 recent_rebates,
+                registration_enabled: policy.password_login_enabled && policy.registration_enabled,
+                inviter_reward_quota: policy.invitation_rebate_quota,
+                new_user_quota: policy.registration_initial_quota,
+                invited_user_bonus_quota: policy.invitation_invitee_quota,
             },
         ))
     }

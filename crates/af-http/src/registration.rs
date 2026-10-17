@@ -94,6 +94,9 @@ pub(crate) struct AdminAuthenticationSettingsResponse {
     initial_quota: i64,
     #[schema(minimum = 0)]
     invitation_rebate_quota: i64,
+    /// Extra opening quota for a user registering with a valid invitation.
+    #[schema(minimum = 0)]
+    invitation_invitee_quota: i64,
     email_required: bool,
     #[schema(minimum = 1, maximum = 100)]
     rate_limit_attempts: u32,
@@ -111,6 +114,7 @@ impl From<RegistrationPolicy> for AdminAuthenticationSettingsResponse {
             default_group_id: policy.default_group_id().get(),
             initial_quota: policy.initial_quota(),
             invitation_rebate_quota: policy.invitation_rebate_quota(),
+            invitation_invitee_quota: policy.invitation_invitee_quota(),
             email_required: policy.email_required(),
             rate_limit_attempts: policy.rate_limit_attempts(),
             rate_limit_window_seconds: policy.rate_limit_window_seconds(),
@@ -131,6 +135,9 @@ pub(crate) struct AdminAuthenticationSettingsRequest {
     initial_quota: i64,
     #[schema(minimum = 0)]
     invitation_rebate_quota: i64,
+    #[serde(default)]
+    #[schema(minimum = 0)]
+    invitation_invitee_quota: Option<i64>,
     email_required: bool,
     #[schema(minimum = 1, maximum = 100)]
     rate_limit_attempts: u32,
@@ -352,6 +359,12 @@ async fn update_authentication_settings(
         request.rate_limit_window_seconds,
     )
     .map_err(map_registration_error)?;
+    let command = match request.invitation_invitee_quota {
+        Some(quota) => command
+            .with_invitee_quota(quota)
+            .map_err(map_registration_error)?,
+        None => command,
+    };
     let policy = state
         .service
         .update_policy(authentication.principal(), command)
