@@ -1427,6 +1427,7 @@ pub(in crate::migration) mod authentication_settings {
         RegistrationDefaultGroupId,
         RegistrationInitialQuota,
         InvitationRebateQuota,
+        InvitationInviteeQuota,
         RegistrationEmailRequired,
         RegistrationRateLimitAttempts,
         RegistrationRateLimitWindowSeconds,

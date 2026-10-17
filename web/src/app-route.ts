@@ -2,6 +2,8 @@ export type AppView =
   | 'extension'
   | 'account-verification'
   | 'account-verification-settings'
+  | 'account-verification-reviews'
+  | 'invitation-settings'
   | 'api'
   | 'api-keys'
   | 'announcements'
@@ -112,6 +114,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/system-settings/navigation')) return { view: 'site-navigation' }
   if (hash.startsWith('#/console/system-settings/site')) return { view: 'site-settings' }
   if (hash.startsWith('#/console/system-settings/announcements')) return { view: 'announcements' }
+  if (hash.startsWith('#/console/system-settings/invitations')) return { view: 'invitation-settings' }
   if (hash.startsWith('#/console/system-settings/authentication')) return { view: 'authentication-settings' }
   if (hash.startsWith('#/console/system-settings/email')) return { view: 'email-settings' }
   if (hash.startsWith('#/console/system-settings/network')) return { view: 'network-settings' }
@@ -135,6 +138,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/usage-logs')) return { view: 'usage-logs' }
   if (hash.startsWith('#/console/users')) return { view: 'users' }
   if (hash.startsWith('#/console/registration')) return { view: 'authentication-settings' }
+  if (hash.startsWith('#/console/account-verification-reviews')) return { view: 'account-verification-reviews' }
   if (hash.startsWith('#/console/account-verification')) return { view: 'account-verification' }
   if (hash.startsWith('#/console')) return { view: 'overview' }
   if (hash.startsWith('#/models')) return { view: 'public-models' }

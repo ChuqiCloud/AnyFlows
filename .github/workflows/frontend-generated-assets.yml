@@ -3,9 +3,11 @@ name: Frontend generated assets
 on:
   workflow_dispatch:
   pull_request:
-    branches: [develop, master]
+    branches: [main, develop, master]
     paths:
       - '.github/workflows/frontend-generated-assets.yml'
+      - 'crates/af-http/src/registration.rs'
+      - 'crates/af-http/src/invitations.rs'
       - 'crates/af-http/src/account_verification.rs'
       - 'crates/af-http/src/verification_settings.rs'
       - 'crates/af-http/src/openapi/verification_settings.rs'

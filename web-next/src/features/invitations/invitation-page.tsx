@@ -83,6 +83,18 @@ export function InvitationPage() {
             />
             <InvitationMetrics invitations={invitations} formatNumber={formatNumber.format} formatQuota={formatQuota} />
           </section>
+          <section aria-label={t('invitationSettings.rulesTitle')} className="grid gap-3 rounded-xl border border-[var(--hairline)] p-5">
+            <h3 className="text-sm font-semibold">{t('invitationSettings.rulesTitle')}</h3>
+            {!invitations.registration_enabled ? <p className="text-xs text-warning">{t('invitationSettings.closed')}</p> : null}
+            <dl className="grid gap-3 text-sm sm:grid-cols-3">
+              {[
+                ['inviter', invitations.inviter_reward_quota],
+                ['initial', invitations.new_user_quota],
+                ['invitee', invitations.invited_user_bonus_quota],
+              ].map(([key, value]) => <div key={String(key)}><dt className="text-xs text-muted-foreground">{t(`invitationSettings.${key}`)}</dt><dd className="mt-1 font-medium tabular-nums">{formatQuota(Number(value))}</dd></div>)}
+            </dl>
+            <p className="text-xs leading-5 text-muted-foreground">{t('invitationSettings.rulesHint')}</p>
+          </section>
           <RecentRebates
             invitations={invitations}
             formatQuota={formatQuota}

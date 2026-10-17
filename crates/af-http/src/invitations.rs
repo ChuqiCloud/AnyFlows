@@ -39,6 +39,13 @@ pub(crate) struct UserInvitationSummaryResponse {
     #[schema(minimum = 0)]
     historical_rebate_quota: i64,
     recent_rebates: Vec<UserInvitationRebateResponse>,
+    registration_enabled: bool,
+    #[schema(minimum = 0)]
+    inviter_reward_quota: i64,
+    #[schema(minimum = 0)]
+    new_user_quota: i64,
+    #[schema(minimum = 0)]
+    invited_user_bonus_quota: i64,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -88,6 +95,10 @@ impl UserInvitationSummaryResponse {
             credited_count: summary.credited_count(),
             current_rebate_quota: summary.current_rebate_quota().units(),
             historical_rebate_quota: summary.historical_rebate_quota().units(),
+            registration_enabled: summary.registration_enabled(),
+            inviter_reward_quota: summary.inviter_reward_quota(),
+            new_user_quota: summary.new_user_quota(),
+            invited_user_bonus_quota: summary.invited_user_bonus_quota(),
             recent_rebates: summary
                 .recent_rebates()
                 .iter()
