@@ -258,7 +258,9 @@ def matched_base_lines(base_content: bytes, source_content: bytes) -> set[int]:
     matcher = SequenceMatcher(a=base_lines, b=source_lines, autojunk=False)
     for tag, base_start, base_end, _source_start, _source_end in matcher.get_opcodes():
         if tag == "equal":
-            matched.update(range(base_start, base_end))
+            matched.update(
+                index for index in range(base_start, base_end) if base_lines[index].strip()
+            )
     return matched
 
 
