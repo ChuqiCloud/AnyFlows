@@ -9,6 +9,7 @@ working directory, and writes deterministic source metadata for release tools.
 from __future__ import annotations
 
 import argparse
+from difflib import SequenceMatcher
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -187,6 +188,135 @@ def write_metadata(destination: Path, relative_path: str, repository: str, commi
     target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def tree_entry(repository: Path, revision: str, path: str) -> tuple[str, str] | None:
+    result = subprocess.run(
+        ["git", "-C", str(repository), "ls-tree", "-z", "--full-tree", revision, "--", f":(literal){path}"],
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ExportError(f"cannot read tree entry for {path}: {detail}")
+    records = [record for record in result.stdout.split(b"\x00") if record]
+    if not records:
+        return None
+    header, separator, _ = records[0].partition(b"\t")
+    if not separator:
+        raise ExportError(f"cannot parse tree entry for {path}")
+    mode, _object_type, object_id = header.decode("ascii").split(" ")
+    return mode, object_id
+
+
+def blob_content(repository: Path, object_id: str) -> bytes:
+    result = subprocess.run(
+        ["git", "-C", str(repository), "cat-file", "blob", object_id],
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ExportError(f"cannot read Git blob {object_id}: {detail}")
+    return result.stdout
+
+
+def changed_line_chunks(base_content: bytes, public_content: bytes) -> tuple[list[list[bytes]], list[tuple[int, int]]]:
+    base_lines = base_content.splitlines()
+    public_lines = public_content.splitlines()
+    matcher = SequenceMatcher(a=base_lines, b=public_lines, autojunk=False)
+    added: list[list[bytes]] = []
+    removed: list[tuple[int, int]] = []
+    for tag, base_start, base_end, public_start, public_end in matcher.get_opcodes():
+        if tag in {"replace", "insert"} and public_start != public_end:
+            added.append(public_lines[public_start:public_end])
+        if tag in {"replace", "delete"} and base_start != base_end:
+            removed.append((base_start, base_end))
+    return added, removed
+
+
+def contains_chunks_in_order(source_lines: list[bytes], chunks: list[list[bytes]]) -> bool:
+    cursor = 0
+    for chunk in chunks:
+        for line in chunk:
+            position = next(
+                (
+                    index
+                    for index in range(cursor, len(source_lines))
+                    if source_lines[index] == line
+                ),
+                None,
+            )
+            if position is None:
+                return False
+            cursor = position + 1
+    return True
+
+
+def matched_base_lines(base_content: bytes, source_content: bytes) -> set[int]:
+    base_lines = base_content.splitlines()
+    source_lines = source_content.splitlines()
+    matched: set[int] = set()
+    matcher = SequenceMatcher(a=base_lines, b=source_lines, autojunk=False)
+    for tag, base_start, base_end, _source_start, _source_end in matcher.get_opcodes():
+        if tag == "equal":
+            matched.update(
+                index for index in range(base_start, base_end) if base_lines[index].strip()
+            )
+    return matched
+
+
+def public_changes_are_reconciled(
+    repository: Path, base: str, source_tree: str, public_tree: str
+) -> tuple[bool, list[str]]:
+    result = subprocess.run(
+        ["git", "-C", str(repository), "diff", "--no-renames", "--name-only", "-z", base, public_tree, "--"],
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ExportError(f"cannot list public changes: {detail}")
+
+    missing: list[str] = []
+    for raw_path in result.stdout.split(b"\x00"):
+        if not raw_path:
+            continue
+        path = raw_path.decode("utf-8")
+        source_entry = tree_entry(repository, source_tree, path)
+        public_entry = tree_entry(repository, public_tree, path)
+        if source_entry == public_entry:
+            continue
+        if source_entry is None or public_entry is None:
+            missing.append(path)
+            continue
+
+        base_entry = tree_entry(repository, base, path)
+        if base_entry is None:
+            missing.append(path)
+            continue
+        source_mode, source_blob = source_entry
+        public_mode, public_blob = public_entry
+        if source_mode != public_mode or source_mode not in {"100644", "100755"}:
+            missing.append(path)
+            continue
+        _base_mode, base_blob = base_entry
+        base_content = blob_content(repository, base_blob)
+        source_content = blob_content(repository, source_blob)
+        public_content = blob_content(repository, public_blob)
+        if source_content == public_content:
+            continue
+        additions, removals = changed_line_chunks(base_content, public_content)
+        source_lines = source_content.splitlines()
+        if not contains_chunks_in_order(source_lines, additions):
+            missing.append(path)
+            continue
+
+        matched = matched_base_lines(base_content, source_content)
+        if any(index in matched for start, end in removals for index in range(start, end)):
+            missing.append(path)
+
+    return not missing, missing
+
+
 def verify_public_sync(
     source: Path, destination: Path, commit: str, metadata_path: str, preserve_paths: set[str]
 ) -> None:
@@ -232,6 +362,7 @@ def verify_public_sync(
         base = run_git(scratch, ["commit-tree", base_tree, "-m", "export checkpoint"])
         left = run_git(scratch, ["commit-tree", source_tree, "-p", base, "-m", "source"])
         right = run_git(scratch, ["commit-tree", public_tree, "-p", base, "-m", "public"])
+
         result = subprocess.run(
             ["git", "-C", str(scratch), "merge-tree", "--write-tree", left, right],
             check=False, capture_output=True, text=True, encoding="utf-8",
@@ -240,8 +371,12 @@ def verify_public_sync(
             raise ExportError("public sync comparison failed; Git 2.38 or newer is required")
         merged_tree = result.stdout.splitlines()[0] if result.stdout else ""
         if result.returncode or merged_tree != source_tree:
-            paths = run_git(scratch, ["diff", "--name-only", source_tree, merged_tree])
-            preview = ", ".join(paths.splitlines()[:20])
+            reconciled, missing = public_changes_are_reconciled(
+                scratch, base, source_tree, public_tree
+            )
+            if reconciled:
+                return
+            preview = ", ".join(missing[:20])
             raise ExportError(
                 "public changes have not been reconciled into the source: " + preview
                 + "; merge the missing GitHub contributions into Gitea before exporting"
