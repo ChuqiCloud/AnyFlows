@@ -87,6 +87,7 @@ mod rerank;
 mod rerank_service;
 mod responses_compact_service;
 mod router;
+mod runtime_status;
 mod serve;
 mod site_settings;
 mod speech_service;
@@ -147,6 +148,10 @@ pub use refund_webhook::{RefundReceiptProcessorRegistry, build_refund_receipt_we
 pub use rerank_service::{RerankService, RerankServiceFuture};
 pub use responses_compact_service::{ResponsesCompactService, ResponsesCompactServiceFuture};
 pub use router::{DEFAULT_REQUEST_BODY_LIMIT_BYTES, HttpRouter, build_router};
+pub use runtime_status::{
+    RuntimeDependency, RuntimeNode, RuntimePromptCache, RuntimeResourcePoint, RuntimeStatus,
+    RuntimeStatusFuture, RuntimeStatusReader, build_runtime_status_router,
+};
 pub use serve::{HttpListener, ServeError, ServeOutcome, serve_with_graceful_shutdown};
 pub use speech_service::{SpeechService, SpeechServiceFuture};
 pub use turnstile::{TurnstileVerification, TurnstileVerificationFuture, TurnstileVerifier};

@@ -22,6 +22,7 @@ import { ChannelPage } from '@/features/channels/channel-page'
 import { CredentialPage } from '@/features/credentials/credential-page'
 import { CredentialProxyPage } from '@/features/credential-proxies/credential-proxy-page'
 import { DashboardPage } from '@/features/dashboard/dashboard-page'
+import { RuntimeStatusPage } from '@/features/runtime-status/runtime-status-page'
 import { DebugTracePage } from '@/features/debug-traces/debug-trace-page'
 import { EmailSettingsPage } from '@/features/email-settings/email-settings-page'
 import { GroupPage } from '@/features/groups/group-page'
@@ -198,6 +199,8 @@ function ManagementEntry({
                       ? 'tokens.title'
                       : view === 'usage-logs'
                         ? 'usageLogs.title'
+                        : view === 'runtime-status'
+                          ? 'runtimeStatus.title'
                         : view === 'debug-traces'
                           ? 'debugTraces.title'
                         : 'dashboard.title')
@@ -269,6 +272,8 @@ function ManagementEntry({
                       ? <TokenPage />
                       : view === 'usage-logs'
                         ? <UsageLogPage admin={admin} />
+                        : view === 'runtime-status'
+                          ? <RuntimeStatusPage />
                         : view === 'debug-traces'
                           ? <DebugTracePage />
                         : <DashboardPage />

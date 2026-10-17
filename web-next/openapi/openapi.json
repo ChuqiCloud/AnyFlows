@@ -16534,6 +16534,52 @@
         ]
       }
     },
+    "/api/admin/runtime-status": {
+      "get": {
+        "tags": [
+          "运行状态"
+        ],
+        "summary": "读取节点资源、依赖健康和上下文缓存快照",
+        "operationId": "getAdminRuntimeStatus",
+        "responses": {
+          "200": {
+            "description": "后台采样的运行快照；未采集字段为 null，Redis 故障保留最后观测",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要平台管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/auth/oauth/oidc/start": {
       "post": {
         "tags": [
@@ -28937,6 +28983,280 @@
         },
         "additionalProperties": false
       },
+      "RuntimeDependency": {
+        "type": "object",
+        "description": "A bounded dependency check. No endpoint or credential is exposed.",
+        "required": [
+          "kind",
+          "status"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "starting, healthy, unavailable, or not_configured."
+          },
+          "latency_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "RuntimeNode": {
+        "type": "object",
+        "description": "One running process. The instance ID changes on every restart.",
+        "required": [
+          "node_id",
+          "instance_id",
+          "version",
+          "os",
+          "started_at",
+          "sampled_at",
+          "uptime_seconds",
+          "status",
+          "database",
+          "redis",
+          "history"
+        ],
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "instance_id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "os": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sampled_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "uptime_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "description": "starting, online, stale, or unknown when cluster observation failed."
+          },
+          "cpu_cores": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "memory_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "cpu_capacity_cores": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Container CPU quota, or host logical CPUs when no quota is present."
+          },
+          "host_memory_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "host_memory_used_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "container_memory_limit_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "container_memory_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "database": {
+            "$ref": "#/components/schemas/RuntimeDependency"
+          },
+          "redis": {
+            "$ref": "#/components/schemas/RuntimeDependency"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeResourcePoint"
+            },
+            "description": "At most 60 ten-second samples of this process."
+          }
+        }
+      },
+      "RuntimePromptCache": {
+        "type": "object",
+        "description": "Persisted upstream prompt-cache usage; zero does not imply explicit reporting.",
+        "required": [
+          "period_start",
+          "period_end",
+          "status",
+          "scope",
+          "upstream_requests",
+          "estimated_requests",
+          "positive_cache_requests",
+          "input_tokens",
+          "cache_read_tokens",
+          "cache_write_tokens"
+        ],
+        "properties": {
+          "sampled_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "period_start": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "period_end": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "description": "Public usage ledger only; extension-owned service-account ledgers excluded."
+          },
+          "upstream_requests": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "estimated_requests": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "positive_cache_requests": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cache_read_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cache_write_tokens": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "RuntimeResourcePoint": {
+        "type": "object",
+        "description": "One resource sample; CPU is expressed in cores, not host percentages.",
+        "required": [
+          "sampled_at"
+        ],
+        "properties": {
+          "sampled_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cpu_cores": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "memory_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "RuntimeStatus": {
+        "type": "object",
+        "description": "A small operational snapshot. Shared dependencies are reported per observer.",
+        "required": [
+          "sampled_at",
+          "local_instance_id",
+          "cluster_status",
+          "nodes",
+          "prompt_cache"
+        ],
+        "properties": {
+          "sampled_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "local_instance_id": {
+            "type": "string"
+          },
+          "cluster_status": {
+            "type": "string",
+            "description": "local, healthy, starting, unavailable, or capacity_reached."
+          },
+          "cluster_observed_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Last successful registry observation, retained on Redis failure."
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeNode"
+            }
+          },
+          "prompt_cache": {
+            "$ref": "#/components/schemas/RuntimePromptCache"
+          }
+        }
+      },
       "ServiceLevelPoint": {
         "type": "object",
         "required": [
@@ -31682,6 +32002,9 @@
     },
     {
       "name": "平台管理审计"
+    },
+    {
+      "name": "运行状态"
     },
     {
       "name": "余额预警"

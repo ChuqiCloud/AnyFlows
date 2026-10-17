@@ -7,7 +7,7 @@ import { activeKeyByView, adminNavigationItems, adminNavigationSections, adminSy
 const expectedAdminItems = [
   'overview', 'models', 'playground', 'videoTasks', 'usage', 'apiKeys', 'wallet', 'subscriptions', 'invitations', 'accountVerification', 'profile',
   'subscriptionManagement', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings', 'modelSettings', 'modelProviders', 'groupSettings', 'channels', 'credentials', 'credentialProxies', 'routes',
-  'users', 'accountVerificationReviews', 'invitationSettings', 'siteSettings', 'siteNavigation', 'authenticationSettings', 'announcements', 'emailSettings', 'networkSettings', 'accountVerificationSettings', 'keys', 'debugTraces',
+  'users', 'accountVerificationReviews', 'invitationSettings', 'siteSettings', 'siteNavigation', 'authenticationSettings', 'announcements', 'emailSettings', 'networkSettings', 'accountVerificationSettings', 'keys', 'runtimeStatus', 'debugTraces',
 ]
 
 test('管理员导航覆盖公共核心入口且没有重复项', () => {
@@ -18,7 +18,7 @@ test('管理员导航覆盖公共核心入口且没有重复项', () => {
 test('管理员工作台和任务域保持规划顺序', () => {
   assert.deepEqual(adminWorkspaceItems, ['overview', 'models', 'playground', 'videoTasks', 'usage', 'apiKeys', 'wallet', 'subscriptions', 'invitations', 'accountVerification', 'profile'])
   assert.deepEqual(adminNavigationSections.map((section) => section.key), ['operations', 'gateway', 'platform'])
-  assert.deepEqual(adminSystemItems, ['debugTraces'])
+  assert.deepEqual(adminSystemItems, ['runtimeStatus', 'debugTraces'])
 })
 
 test('调用日志是角色感知的共享入口', () => {
