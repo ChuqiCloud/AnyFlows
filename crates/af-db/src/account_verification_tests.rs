@@ -163,8 +163,8 @@ async fn expired_alipay_cases_hide_links_reject_callbacks_and_allow_resubmission
 }
 
 #[tokio::test]
-async fn completed_alipay_cases_cannot_be_replayed_or_submitted_again() -> Result<(), Box<dyn Error>>
-{
+async fn completed_alipay_cases_cannot_be_replayed_and_replacements_use_new_state()
+-> Result<(), Box<dyn Error>> {
     let (pool, repo, users) = fixture().await?;
     let state = "0123456789abcdef0123456789abcdef";
     let case = repo.submit(users[0], alipay_submission(state)).await?;
@@ -181,6 +181,21 @@ async fn completed_alipay_cases_cannot_be_replayed_or_submitted_again() -> Resul
             .await,
         Err(AccountVerificationError::Conflict)
     ));
+    repo.ensure_can_submit(users[0], "individual").await?;
+    let replacement_state = "abcdef0123456789abcdef0123456789";
+    let replacement = repo
+        .submit(users[0], alipay_submission(replacement_state))
+        .await?;
+    assert_ne!(replacement.id, case.id);
+    assert!(matches!(
+        repo.provider_reference_by_state(state).await,
+        Err(AccountVerificationError::Conflict)
+    ));
+    assert!(
+        repo.provider_reference_by_state(replacement_state)
+            .await
+            .is_ok()
+    );
     assert!(matches!(
         repo.ensure_can_submit(users[0], "individual").await,
         Err(AccountVerificationError::Conflict)
@@ -268,10 +283,39 @@ async fn only_approved_enterprise_cases_grant_qualification_and_preserve_materia
     assert_eq!(approved.version, 2);
     assert!(repo.enterprise_verified(users[0]).await?);
     assert!(!repo.enterprise_verified(users[1]).await?);
+    repo.ensure_can_submit(users[0], "enterprise").await?;
+    let replacement = repo.submit(users[0], submission("enterprise")).await?;
+    assert!(repo.enterprise_verified(users[0]).await?);
     assert!(matches!(
         repo.submit(users[0], submission("enterprise")).await,
         Err(AccountVerificationError::Conflict)
     ));
+    assert!(matches!(
+        repo.ensure_can_submit(users[0], "enterprise").await,
+        Err(AccountVerificationError::Conflict)
+    ));
+    repo.decide(
+        replacement.id,
+        1,
+        users[2],
+        5,
+        Some("Replacement needs correction".to_owned()),
+        "replacement-rejected".to_owned(),
+    )
+    .await?;
+    assert!(repo.enterprise_verified(users[0]).await?);
+    let replacement = repo.submit(users[0], submission("enterprise")).await?;
+    repo.decide(
+        replacement.id,
+        1,
+        users[2],
+        4,
+        None,
+        "replacement-approved".to_owned(),
+    )
+    .await?;
+    assert!(repo.enterprise_verified(users[0]).await?);
+    assert_eq!(repo.get(Some(users[0]), enterprise.id).await?.status, 4);
     let material = repo.materials(Some(users[0]), enterprise.id).await?;
     assert_eq!(material.len(), 1);
     assert_eq!(
@@ -284,7 +328,7 @@ async fn only_approved_enterprise_cases_grant_qualification_and_preserve_materia
         platform_audit_logs::Entity::find()
             .count(pool.connection())
             .await?,
-        2
+        4
     );
     pool.close().await?;
     Ok(())

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Building2, CheckCircle2, FileCheck2, LoaderCircle, RefreshCw, UserRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -6,8 +6,10 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { ApiError } from '@/lib/api'
 import { useConsoleExtensionEntryPoint } from '@/extensions/query'
-import { useAccountEligibility, useAccountVerifications, useVerificationDetail, useSubmitAccountVerification,
+import { useAccountEligibility, useVerifiedAccount, useAccountVerifications, useVerificationDetail, useSubmitAccountVerification,
   useReviewAccountVerification, materialBlob, verificationBase, type VerificationKind, type VerificationProvider } from './account-verification-api'
+import { VerifiedAccount } from './verified-account'
+import { maskedVerificationName } from './verification-identity'
 import { AlipayVerification } from './alipay-verification'
 import { VerificationAttachment } from './verification-attachment'
 
@@ -24,20 +26,30 @@ export function AccountVerificationPage({ admin = false }: { admin?: boolean }) 
   const [status, setStatus] = useState<number | undefined>(admin ? 1 : undefined)
   const [selected, setSelected] = useState<number>()
   const [formRestart, setFormRestart] = useState(0)
+  const [replacing, setReplacing] = useState(false)
+  const pendingScroll = useRef<number | undefined>(undefined)
+  const verified = useVerifiedAccount(!admin)
   const query = useAccountVerifications(admin, status)
   const entries = query.data?.pages.flatMap((p) => p.cases) ?? []
   useEffect(() => {
-    if (selected !== undefined && !query.isFetching) document.getElementById(`verification-case-${selected}`)?.scrollIntoView({ block: 'nearest' })
-  }, [selected, query.isFetching])
+    if (selected === undefined || pendingScroll.current !== selected) return
+    const element = document.getElementById(`verification-case-${selected}`)
+    if (element) { element.scrollIntoView({ block: 'nearest' }); pendingScroll.current = undefined }
+  }, [selected, query.data])
   return <div className="grid min-w-0 gap-5">
-    <header className="flex items-start justify-between gap-3"><div><h2 className="flex items-center gap-2 text-xl font-semibold"><FileCheck2 className="size-5 text-brand" />{t(admin ? 'verificationCenter.adminTitle' : 'verificationCenter.title')}</h2><p className="mt-2 text-sm text-muted-foreground">{t(admin ? 'verificationCenter.adminDescription' : 'verificationCenter.description')}</p></div><Button type="button" size="sm" variant="secondary" disabled={query.isFetching} onClick={() => void query.refetch()}><RefreshCw className="size-4" />{t('verificationCenter.refresh')}</Button></header>
+    <header className="flex items-start justify-between gap-3"><div><h2 className="flex items-center gap-2 text-xl font-semibold"><FileCheck2 className="size-5 text-brand" />{t(admin ? 'verificationCenter.adminTitle' : 'verificationCenter.title')}</h2><p className="mt-2 text-sm text-muted-foreground">{t(admin ? 'verificationCenter.adminDescription' : 'verificationCenter.description')}</p></div><Button type="button" size="sm" variant="secondary" disabled={query.isFetching} onClick={() => { void query.refetch(); if (!admin) void verified.refetch() }}><RefreshCw className="size-4" />{t('verificationCenter.refresh')}</Button></header>
     {admin ? <nav aria-label={t('verificationCenter.adminLinks')} className="flex flex-wrap gap-3 text-sm"><a className="text-brand underline-offset-4 hover:underline" href="#/console/system-settings/account-verification">{t('verificationCenter.settingsTitle')}</a><a className="text-brand underline-offset-4 hover:underline" href="#/console/account-verification">{t('verificationCenter.myVerification')}</a></nav> : null}
-    {!admin ? <AccountVerificationForm key={formRestart} restartSignal={formRestart} onSubmitted={(id) => { setStatus(undefined); setSelected(id) }} /> : null}
+    {!admin ? verified.isPending ? <VerificationLoading /> : verified.isError ? <p role="alert" className="text-sm text-destructive">{t('verificationCenter.loadError')}</p> : verified.data && !replacing ? <VerifiedAccount record={verified.data} onReplace={() => { setReplacing(true); setFormRestart((value) => value + 1) }} /> : <div className="grid gap-3">{verified.data ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--hairline)] bg-surface-1 p-4"><p className="text-sm text-muted-foreground">{t('verificationCenter.replacementHint')}</p><Button type="button" size="sm" variant="secondary" onClick={() => setReplacing(false)}>{t('verificationCenter.backToResult')}</Button></div> : null}<AccountVerificationForm key={formRestart} restartSignal={formRestart} onSubmitted={(id) => { setStatus(undefined); setSelected(id); pendingScroll.current = id; setReplacing(false) }} /></div> : null}
     <section className="grid gap-3"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">{t('verificationCenter.history')}</h3><select aria-label={t('verificationCenter.filter')} className="rounded-lg border border-[var(--hairline)] bg-surface-1 p-2 text-sm" value={status ?? ''} onChange={(e) => { setStatus(e.target.value ? Number(e.target.value) : undefined); setSelected(undefined) }}><option value="">{t('verificationCenter.all')}</option>{[1, 3, 4, 5].map((s) => <option key={s} value={s}>{t(`verificationCenter.status.${s}`)}</option>)}</select></div>
-      {query.isPending ? <p role="status">{t('verificationCenter.loading')}</p> : query.isError ? <p role="alert" className="text-destructive">{t('verificationCenter.loadError')}</p> : entries.length === 0 ? <p className="rounded-xl border border-dashed border-[var(--hairline)] p-8 text-center text-sm text-muted-foreground">{t('verificationCenter.empty')}</p> : entries.map((item) => <article id={`verification-case-${item.id}`} key={item.id} className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-medium">{item.subject_name} <span className="ml-2 text-xs text-muted-foreground">{t(`verificationCenter.${item.kind}`)} · #{item.id}{admin ? ` · UID ${item.user_id}` : ''}</span></p><p className="mt-1 text-xs text-muted-foreground">{new Date(item.created_at * 1000).toLocaleString()}</p>{item.provider_status ? <p className="mt-1 text-xs text-muted-foreground">{t('verificationCenter.providerStatus')}: {t(`verificationCenter.providerStatuses.${item.provider_status}`, { defaultValue: item.provider_status })}</p> : null}</div><div className="flex items-center gap-3"><span className={item.status === 4 ? 'text-sm text-success' : item.status === 5 ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>{t(item.provider_status === 'expired' ? 'verificationCenter.providerStatuses.expired' : `verificationCenter.status.${item.status}`)}</span><Button type="button" size="sm" variant="secondary" onClick={() => setSelected(selected === item.id ? undefined : item.id)}>{t('verificationCenter.details')}</Button></div></div>{selected === item.id ? <VerificationDetailPanel key={`${admin}-${item.id}`} id={item.id} admin={admin} onRestart={() => { setStatus(undefined); setSelected(undefined); setFormRestart((value) => value + 1) }} /> : null}</article>)}
+      {query.isPending ? <VerificationLoading /> : query.isError ? <p role="alert" className="text-destructive">{t('verificationCenter.loadError')}</p> : entries.length === 0 ? <p className="rounded-xl border border-dashed border-[var(--hairline)] p-8 text-center text-sm text-muted-foreground">{t('verificationCenter.empty')}</p> : entries.map((item) => <article id={`verification-case-${item.id}`} key={item.id} className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-medium">{admin ? item.subject_name : maskedVerificationName(item.subject_name)} <span className="ml-2 text-xs text-muted-foreground">{t(`verificationCenter.${item.kind}`)} · #{item.id}{admin ? ` · UID ${item.user_id}` : ''}</span></p><p className="mt-1 text-xs text-muted-foreground">{new Date(item.created_at * 1000).toLocaleString()}</p>{item.provider_status ? <p className="mt-1 text-xs text-muted-foreground">{t('verificationCenter.providerStatus')}: {t(`verificationCenter.providerStatuses.${item.provider_status}`, { defaultValue: item.provider_status })}</p> : null}</div><div className="flex items-center gap-3"><span className={item.status === 4 ? 'text-sm text-success' : item.status === 5 ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>{t(item.provider_status === 'expired' ? 'verificationCenter.providerStatuses.expired' : `verificationCenter.status.${item.status}`)}</span><Button type="button" size="sm" variant="secondary" onClick={() => setSelected(selected === item.id ? undefined : item.id)}>{t('verificationCenter.details')}</Button></div></div>{selected === item.id ? <VerificationDetailPanel key={`${admin}-${item.id}`} id={item.id} admin={admin} onRestart={() => { setStatus(undefined); setSelected(undefined); setReplacing(true); setFormRestart((value) => value + 1) }} /> : null}</article>)}
       {query.hasNextPage ? <Button type="button" variant="secondary" disabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>{t('verificationCenter.more')}</Button> : null}
     </section>
   </div>
+}
+
+function VerificationLoading() {
+  const { t } = useTranslation()
+  return <div role="status" aria-busy="true" className="min-h-64 rounded-2xl border border-[var(--hairline)] bg-surface-1 p-6"><p className="text-sm text-muted-foreground">{t('verificationCenter.loading')}</p><div aria-hidden="true" className="mt-5 grid gap-4 motion-safe:animate-pulse sm:grid-cols-2">{[0, 1, 2, 3].map((key) => <div key={key} className="h-16 rounded-xl bg-surface-2" />)}</div></div>
 }
 
 function AccountVerificationForm({ restartSignal, onSubmitted }: { restartSignal: number; onSubmitted: (id: number) => void }) {
@@ -87,7 +99,7 @@ function AccountVerificationForm({ restartSignal, onSubmitted }: { restartSignal
   return <section id="verification-form" tabIndex={-1} className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-5">
     {eligibility.isSuccess && eligibility.data.enterprise_verified ? <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-success/10 p-3"><p className="flex items-center gap-2 text-sm text-success"><CheckCircle2 className="size-4" />{t('verificationCenter.enterpriseGranted')}</p>{verifiedAccountEntry ? <a href={'#' + verifiedAccountEntry.path} className="text-sm font-medium text-brand">{t('verificationCenter.applyWorkspace')}</a> : null}</div> : null}
     <div className="mb-4 flex gap-2" role="tablist" aria-label={t('verificationCenter.kind')}>{(['individual', 'enterprise'] as const).map((value) => <Button key={value} type="button" role="tab" aria-selected={kind === value} variant={kind === value ? 'default' : 'secondary'} onClick={() => { setKind(value); if (value === 'enterprise') setProvider('manual'); mutation.reset() }}>{value === 'individual' ? <UserRound className="size-4" /> : <Building2 className="size-4" />}{t(`verificationCenter.${value}`)}</Button>)}</div>
-    {eligibility.isPending ? <p role="status">{t('verificationCenter.loading')}</p> : eligibility.isError ? <p role="alert" className="text-sm text-destructive">{t('verificationCenter.loadError')}</p> : null}
+    {eligibility.isPending ? <VerificationLoading /> : eligibility.isError ? <p role="alert" className="text-sm text-destructive">{t('verificationCenter.loadError')}</p> : null}
     <form onSubmit={(event) => void submit(event)} className="grid gap-4">
       <label className="grid gap-2 text-sm"><span>{t('verificationCenter.provider')}</span><select className="rounded-lg border border-[var(--hairline)] bg-surface-1 p-2 text-sm" value={provider} disabled={providerOptions.length === 0} aria-label={t('verificationCenter.provider')} onChange={(e) => { setProvider(e.target.value as VerificationProvider); mutation.reset() }}>{providerOptions.map((value) => <option key={value} value={value}>{t(`verificationCenter.providers.${value}`)}</option>)}</select>{eligibility.data && providerOptions.length === 0 ? <span className="text-xs text-destructive">{t('verificationCenter.noProvider')}</span> : null}</label>
       <label className="grid gap-2 text-sm"><span>{t(kind === 'enterprise' ? 'verificationCenter.companyName' : 'verificationCenter.personName')}</span><Input aria-label={t('verificationCenter.subjectName')} required maxLength={128} value={name} onChange={(e) => setName(e.target.value)} /></label>
@@ -115,7 +127,7 @@ function VerificationDetailPanel({ id, admin, onRestart }: { id: number; admin: 
     if (!query.data) return
     try { await mutation.mutateAsync({ id, expected_version: query.data.case.version, status, reason: reason.trim() || undefined }); setReason('') } catch { /* Render the error beside the action. */ }
   }
-  if (query.isPending) return <p role="status" className="pt-4">{t('verificationCenter.loading')}</p>
+  if (query.isPending) return <VerificationLoading />
   if (!query.data) return <p role="alert" className="pt-4 text-destructive">{t('verificationCenter.loadError')}</p>
   return <div className="mt-4 grid gap-4 border-t border-[var(--hairline)] pt-4"><p className="whitespace-pre-wrap text-sm">{query.data.case.summary}</p>
     {!admin && query.data.case.provider === 'alipay' ? <AlipayVerification key={id} record={query.data.case} receivedAt={query.dataUpdatedAt} checking={query.isFetching} checkError={query.isError} onCheck={() => void query.refetch()} onRestart={onRestart} /> : null}

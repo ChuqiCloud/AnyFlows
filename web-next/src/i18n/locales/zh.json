@@ -7631,6 +7631,12 @@
     "empty": "没有匹配的厂商"
   },
   "verificationCenter": {
+    "verifiedTitle": "实名认证已通过",
+    "verifiedHint": "认证结果已保存。身份信息发生变化时，可重新提交认证。",
+    "maskedHint": "为保护个人信息，此处仅展示脱敏资料。",
+    "replace": "更换认证",
+    "replacementHint": "新资料审核期间，原认证结果与已有资格继续有效。",
+    "backToResult": "返回认证结果",
     "adminLinks": "认证管理",
     "myVerification": "我的账号认证",
     "title": "账号认证",
@@ -7698,7 +7704,7 @@
     "invalid": "认证请求内容无效，请检查材料和填写内容。",
     "notFound": "认证记录不存在，可能已被删除。",
     "unavailable": "认证服务暂时不可用，请稍后重试。",
-    "conflict": "已有待审核或已通过的同类认证，或记录已被更新。请刷新查看最新状态。",
+    "conflict": "已有待审核的同类认证，或记录已被更新。请刷新查看最新状态。",
     "reviewReason": "审核意见",
     "reasonHint": "补充或驳回时，请填写明确原因。",
     "approve": "通过认证",
