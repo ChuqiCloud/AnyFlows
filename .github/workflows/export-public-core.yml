@@ -68,7 +68,7 @@ jobs:
           fi
 
           if [ -z "$pr_number" ]; then
-            jq -n '{title: "同步 Gitea 公共核心", body: "", url: "", number: null, comments: []}' > "$metadata"
+            jq -n '{title: "同步 Gitea 公共核心", body: "", url: "", number: null}' > "$metadata"
             exit 0
           fi
 
@@ -80,33 +80,9 @@ jobs:
             exit 1
           fi
 
-          comments='[]'
-          page=1
-          while true; do
-            if ! comments_page="$(curl --fail --silent --show-error \
-              -H "Authorization: token $GITEA_API_TOKEN" \
-              -H 'Accept: application/json' \
-              "$GITEA_API_BASE/repos/$GITEA_REPOSITORY/issues/$pr_number/comments?limit=50&page=$page")"; then
-              echo "Comments for source Gitea PR #$pr_number could not be read." >&2
-              exit 1
-            fi
-            jq -e 'type == "array"' >/dev/null <<<"$comments_page" || {
-              echo "Comments for source Gitea PR #$pr_number returned an invalid response." >&2
-              exit 1
-            }
-            count="$(jq 'length' <<<"$comments_page")"
-            comments="$(jq -cn --argjson current "$comments" --argjson next "$comments_page" '$current + $next')"
-            [ "$count" -lt 50 ] && break
-            page=$((page + 1))
-          done
-
-          jq -n --argjson pr "$pr" --argjson comments "$comments" --arg number "$pr_number" \
+          jq -n --argjson pr "$pr" --arg number "$pr_number" \
             '{title: $pr.title, body: ($pr.body // ""), url: $pr.html_url,
-              number: ($number|tonumber), comments: [$comments[] |
-                select((.body // "") != "") |
-                select((.user.type // "") != "Bot") |
-                select(((.user.login // "") | endswith("[bot]")) | not) |
-                select(((.body // "") | contains("<!-- anyflows-pr-sync-comment:")) | not)]}' \
+              number: ($number|tonumber)}' \
             > "$metadata"
 
       - name: Check out public repository
@@ -216,7 +192,7 @@ jobs:
           source_body="$(jq -r '.body' "$metadata")"
           source_pr_url="$(jq -r '.url' "$metadata")"
           source_pr_number="$(jq -r '.number // empty' "$metadata")"
-          body="$(jq -n --arg source_body "$source_body" --arg url "$source_pr_url" \
+          body="$(jq -rn --arg source_body "$source_body" --arg url "$source_pr_url" \
             --arg pr "$source_pr_number" --arg sha "$GITEA_COMMIT" --arg repo "$GITEA_SOURCE_REPOSITORY_URL" \
             '$source_body + (if $source_body == "" then "" else "\n\n" end) +
              (if $url != "" then "来源 PR：" + $url + "\n" else "" end) +
@@ -254,48 +230,4 @@ jobs:
               -H 'Content-Type: application/json' \
               --data "$payload" "$api/pulls")"
             number="$(jq -r '.number' <<<"$created")"
-          fi
-
-          if [ -n "$source_pr_number" ]; then
-            existing_comments='[]'
-            page=1
-            while true; do
-              comments_page="$(curl --fail --silent --show-error \
-                -H "Authorization: Bearer $PUBLIC_REPO_SYNC_TOKEN" \
-                -H 'Accept: application/vnd.github+json' \
-                -H 'X-GitHub-Api-Version: 2022-11-28' \
-                "$api/issues/$number/comments?per_page=100&page=$page")"
-              jq -e 'type == "array"' >/dev/null <<<"$comments_page" || {
-                echo 'GitHub target PR comments could not be parsed.' >&2
-                exit 1
-              }
-              count="$(jq 'length' <<<"$comments_page")"
-              existing_comments="$(jq -cn --argjson current "$existing_comments" --argjson next "$comments_page" '$current + $next')"
-              [ "$count" -lt 100 ] && break
-              page=$((page + 1))
-            done
-            while IFS= read -r comment; do
-              login="$(jq -r '.user.login // "unknown"' <<<"$comment")"
-              comment_id="$(jq -r '.id' <<<"$comment")"
-              comment_body="$(jq -r '.body // ""' <<<"$comment")"
-              created_at="$(jq -r '.created_at' <<<"$comment")"
-              marker="<!-- anyflows-pr-sync-comment:gitea:$source_pr_number:$comment_id -->"
-              if jq -e --arg marker "$marker" 'any(.[]; (.body // "") | contains($marker))' \
-                >/dev/null <<<"$existing_comments"; then
-                continue
-              fi
-              comment_url="$(jq -r '.html_url // empty' <<<"$comment")"
-              [ -n "$comment_url" ] || comment_url="$GITEA_SOURCE_REPOSITORY_URL/pulls/$source_pr_number#issuecomment-$comment_id"
-              mirrored="$(printf 'Gitea user `%s` (%s):\n\n%s\n\n来源评论：%s\n\n%s' \
-                "$login" "$created_at" "$comment_body" "$comment_url" "$marker")"
-              comment_payload="$(jq -n --arg body "$mirrored" '{body: $body}')"
-              curl --fail --silent --show-error --request POST \
-                -H "Authorization: Bearer $PUBLIC_REPO_SYNC_TOKEN" \
-                -H 'Accept: application/vnd.github+json' \
-                -H 'X-GitHub-Api-Version: 2022-11-28' \
-                -H 'Content-Type: application/json' \
-                --data "$comment_payload" "$api/issues/$number/comments" >/dev/null
-              existing_comments="$(jq -cn --argjson comments "$existing_comments" --argjson marker "$marker" \
-                '$comments + [{body: $marker}]')"
-            done < <(jq -c '.comments[] | select((.body // "") != "") | select((.user.type // "") != "Bot") | select(((.user.login // "") | endswith("[bot]")) | not)' "$metadata")
           fi
