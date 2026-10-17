@@ -9,6 +9,7 @@ working directory, and writes deterministic source metadata for release tools.
 from __future__ import annotations
 
 import argparse
+from difflib import SequenceMatcher
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -218,6 +219,50 @@ def blob_content(repository: Path, object_id: str) -> bytes:
     return result.stdout
 
 
+def changed_line_chunks(base_content: bytes, public_content: bytes) -> tuple[list[list[bytes]], list[tuple[int, int]]]:
+    base_lines = base_content.splitlines(keepends=True)
+    public_lines = public_content.splitlines(keepends=True)
+    matcher = SequenceMatcher(a=base_lines, b=public_lines, autojunk=False)
+    added: list[list[bytes]] = []
+    removed: list[tuple[int, int]] = []
+    for tag, base_start, base_end, public_start, public_end in matcher.get_opcodes():
+        if tag in {"replace", "insert"} and public_start != public_end:
+            added.append(public_lines[public_start:public_end])
+        if tag in {"replace", "delete"} and base_start != base_end:
+            removed.append((base_start, base_end))
+    return added, removed
+
+
+def contains_chunks_in_order(source_lines: list[bytes], chunks: list[list[bytes]]) -> bool:
+    cursor = 0
+    for chunk in chunks:
+        if not chunk:
+            continue
+        position = next(
+            (
+                index
+                for index in range(cursor, len(source_lines) - len(chunk) + 1)
+                if source_lines[index : index + len(chunk)] == chunk
+            ),
+            None,
+        )
+        if position is None:
+            return False
+        cursor = position + len(chunk)
+    return True
+
+
+def matched_base_lines(base_content: bytes, source_content: bytes) -> set[int]:
+    base_lines = base_content.splitlines(keepends=True)
+    source_lines = source_content.splitlines(keepends=True)
+    matched: set[int] = set()
+    matcher = SequenceMatcher(a=base_lines, b=source_lines, autojunk=False)
+    for tag, base_start, base_end, _source_start, _source_end in matcher.get_opcodes():
+        if tag == "equal":
+            matched.update(range(base_start, base_end))
+    return matched
+
+
 def public_changes_are_reconciled(
     repository: Path, base: str, source_tree: str, public_tree: str
 ) -> tuple[bool, list[str]]:
@@ -243,21 +288,29 @@ def public_changes_are_reconciled(
             missing.append(path)
             continue
 
+        base_entry = tree_entry(repository, base, path)
+        if base_entry is None:
+            missing.append(path)
+            continue
         source_mode, source_blob = source_entry
         public_mode, public_blob = public_entry
         if source_mode != public_mode or source_mode not in {"100644", "100755"}:
             missing.append(path)
             continue
+        _base_mode, base_blob = base_entry
+        base_content = blob_content(repository, base_blob)
         source_content = blob_content(repository, source_blob)
         public_content = blob_content(repository, public_blob)
         if source_content == public_content:
             continue
-        if not public_content:
+        additions, removals = changed_line_chunks(base_content, public_content)
+        source_lines = source_content.splitlines(keepends=True)
+        if not contains_chunks_in_order(source_lines, additions):
             missing.append(path)
             continue
 
-        source_lines = iter(source_content.splitlines(keepends=True))
-        if not all(any(line == public_line for line in source_lines) for public_line in public_content.splitlines(keepends=True)):
+        matched = matched_base_lines(base_content, source_content)
+        if any(index in matched for start, end in removals for index in range(start, end)):
             missing.append(path)
 
     return not missing, missing
