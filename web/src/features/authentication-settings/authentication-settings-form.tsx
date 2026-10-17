@@ -67,7 +67,7 @@ export function AuthenticationSettingsForm({ groups, settings, rewardsOnly = fal
       <div className="overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1/45 shadow-[var(--shadow-subtle)]">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--hairline)] px-4 py-3.5">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold">{t('authenticationSettings.status.title')}</h3>
+            <h3 className="text-sm font-semibold">{t(rewardsOnly ? 'invitationSettings.rulesTitle' : 'authenticationSettings.status.title')}</h3>
             <Badge className="border-info/25 bg-info/10 text-info">
               {t('authenticationSettings.status.version', { version: settings.version })}
             </Badge>
@@ -290,7 +290,7 @@ export function AuthenticationSettingsForm({ groups, settings, rewardsOnly = fal
             ) : mutation.isSuccess && !form.formState.isDirty ? (
               <span className="inline-flex items-center gap-1.5 text-success">
                 <Check className="size-3.5" aria-hidden="true" />
-                {t('authenticationSettings.state.saved')}
+                {t(rewardsOnly ? 'invitationSettings.saved' : 'authenticationSettings.state.saved')}
               </span>
             ) : form.formState.isDirty ? (
               <span className="text-muted-foreground">{t('authenticationSettings.state.unsaved')}</span>

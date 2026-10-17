@@ -7646,6 +7646,7 @@
     "save": "保存授权"
   },
   "invitationSettings": {
+    "saved": "奖励设置已保存",
     "title": "注册与邀请奖励",
     "description": "设置注册赠送额度，以及通过有效邀请码完成注册后双方获得的奖励。",
     "inviter": "邀请人奖励",

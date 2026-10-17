@@ -201,7 +201,7 @@ pub struct RegistrationPolicyCommand {
     default_group_id: GroupId,
     initial_quota: i64,
     invitation_rebate_quota: i64,
-    invitation_invitee_quota: i64,
+    invitation_invitee_quota: Option<i64>,
     email_required: bool,
     rate_limit_attempts: u32,
     rate_limit_window_seconds: u64,
@@ -236,7 +236,7 @@ impl RegistrationPolicyCommand {
             default_group_id,
             initial_quota,
             invitation_rebate_quota,
-            invitation_invitee_quota: 0,
+            invitation_invitee_quota: None,
             email_required,
             rate_limit_attempts,
             rate_limit_window_seconds,
@@ -248,12 +248,12 @@ impl RegistrationPolicyCommand {
         if quota < 0 || self.initial_quota.checked_add(quota).is_none() {
             return Err(RegistrationError::InvalidInput);
         }
-        self.invitation_invitee_quota = quota;
+        self.invitation_invitee_quota = Some(quota);
         Ok(self)
     }
 
     fn into_record(self) -> RegistrationPolicyWriteRecord {
-        RegistrationPolicyWriteRecord::new(
+        let record = RegistrationPolicyWriteRecord::new(
             self.password_login_enabled,
             self.enabled,
             self.default_group_id,
@@ -262,7 +262,11 @@ impl RegistrationPolicyCommand {
             self.email_required,
             self.rate_limit_attempts,
             self.rate_limit_window_seconds,
-        ).with_invitee_quota(self.invitation_invitee_quota)
+        );
+        match self.invitation_invitee_quota {
+            Some(quota) => record.with_invitee_quota(quota),
+            None => record,
+        }
     }
 }
 
@@ -312,10 +316,18 @@ impl RegistrationCommand {
         })
     }
 
-    fn user_record(&self, policy: RegistrationPolicyRecord) -> Result<AdminUserCreateRecord, RegistrationError> {
-        let quota = policy.initial_quota().checked_add(
-            if self.invite_code.is_some() { policy.invitation_invitee_quota() } else { 0 }
-        ).ok_or(RegistrationError::Internal)?;
+    fn user_record(
+        &self,
+        policy: RegistrationPolicyRecord,
+    ) -> Result<AdminUserCreateRecord, RegistrationError> {
+        let quota = policy
+            .initial_quota()
+            .checked_add(if self.invite_code.is_some() {
+                policy.invitation_invitee_quota()
+            } else {
+                0
+            })
+            .ok_or(RegistrationError::Internal)?;
         Ok(AdminUserCreateRecord::new(
             self.username.clone(),
             self.email.clone(),

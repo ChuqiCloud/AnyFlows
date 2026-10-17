@@ -128,7 +128,8 @@ async fn registration_reuses_identity_creation_and_counts_conflicts() -> Result<
     registration
         .update_policy(
             admin,
-            RegistrationPolicyCommand::new(true, true, default_group_id, 500, 40, true, 2, 86_400)?.with_invitee_quota(75)?,
+            RegistrationPolicyCommand::new(true, true, default_group_id, 500, 40, true, 2, 86_400)?
+                .with_invitee_quota(75)?,
         )
         .await?;
 
@@ -240,64 +241,144 @@ async fn policy_access_requires_admin_before_repository_work() -> Result<(), Box
     Ok(())
 }
 
-
 #[tokio::test]
-async fn invitation_bonus_requires_a_valid_code_and_is_credited_once() -> Result<(), Box<dyn Error>> {
+async fn invitation_bonus_requires_a_valid_code_and_is_credited_once() -> Result<(), Box<dyn Error>>
+{
     let pool = af_db::connect_and_migrate(
-        &DatabaseOptions::new("sqlite::memory:")?, MigrationOptions::default(),
-    ).await?;
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
     let InitialSetupOutcome::Initialized { user_id: admin_id } =
         InitialSetupRepository::new(pool.clone(), Duration::from_secs(5))?
-            .initialize(InitialSetupRecord::new("owner".to_owned(), PASSWORD.to_owned())).await?
-    else { panic!("setup must initialize the owner"); };
+            .initialize(InitialSetupRecord::new(
+                "owner".to_owned(),
+                PASSWORD.to_owned(),
+            ))
+            .await?
+    else {
+        panic!("setup must initialize the owner");
+    };
     let users = AdminUserRepository::new(pool.clone(), Duration::from_secs(5))?;
-    let registration = registration_service(&pool, users.clone(), Arc::new(RecordingDelivery::default())).await?;
+    let registration =
+        registration_service(&pool, users.clone(), Arc::new(RecordingDelivery::default())).await?;
     let admin = SessionPrincipal::new(admin_id, SessionRole::Admin);
-    let AdminUserLookupOutcome::Found(owner) = users.get(admin_id).await?
-    else { panic!("owner must exist"); };
+    let AdminUserLookupOutcome::Found(owner) = users.get(admin_id).await? else {
+        panic!("owner must exist");
+    };
     let invitations = UserInvitationRepository::new(pool.clone(), Duration::from_secs(5))?;
-    let UserInvitationLookupOutcome::Found(summary) = invitations.get(admin_id).await?
-    else { panic!("owner must have an invitation code"); };
+    let UserInvitationLookupOutcome::Found(summary) = invitations.get(admin_id).await? else {
+        panic!("owner must have an invitation code");
+    };
     let code = summary.invite_code().to_owned();
-    let policy = registration.update_policy(admin,
-        RegistrationPolicyCommand::new(true, true, owner.default_group_id(), 100, 20, false, 20, 3600)?
-            .with_invitee_quota(75)?).await?;
+    let policy = registration
+        .update_policy(
+            admin,
+            RegistrationPolicyCommand::new(
+                true,
+                true,
+                owner.default_group_id(),
+                100,
+                20,
+                false,
+                20,
+                3600,
+            )?
+            .with_invitee_quota(75)?,
+        )
+        .await?;
     assert_eq!(policy.invitation_invitee_quota(), 75);
     let ip = TrustedClientIp::new("192.0.2.101".parse::<IpAddr>()?);
-    let ordinary = registration.register(ip, &RegistrationCommand::new(
-        "ordinary-user".to_owned(), None, PASSWORD.to_owned(), None, None,
-    )?).await?;
-    let AdminUserLookupOutcome::Found(ordinary) = users.get(ordinary.user_id()).await?
-    else { panic!("registered user must exist"); };
+    let ordinary = registration
+        .register(
+            ip,
+            &RegistrationCommand::new(
+                "ordinary-user".to_owned(),
+                None,
+                PASSWORD.to_owned(),
+                None,
+                None,
+            )?,
+        )
+        .await?;
+    let AdminUserLookupOutcome::Found(ordinary) = users.get(ordinary.user_id()).await? else {
+        panic!("registered user must exist");
+    };
     assert_eq!(ordinary.quota(), 100);
-    assert_eq!(registration.register(ip, &RegistrationCommand::new(
-        "invalid-invite-user".to_owned(), None, PASSWORD.to_owned(), None,
-        Some("af-AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
-    )?).await, Err(RegistrationError::InvitationRejected));
-    let command = RegistrationCommand::new("referred-user".to_owned(), None, PASSWORD.to_owned(), None, Some(code.clone()))?;
+    assert_eq!(
+        registration
+            .register(
+                ip,
+                &RegistrationCommand::new(
+                    "invalid-invite-user".to_owned(),
+                    None,
+                    PASSWORD.to_owned(),
+                    None,
+                    Some("af-AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
+                )?
+            )
+            .await,
+        Err(RegistrationError::InvitationRejected)
+    );
+    let command = RegistrationCommand::new(
+        "referred-user".to_owned(),
+        None,
+        PASSWORD.to_owned(),
+        None,
+        Some(code.clone()),
+    )?;
     let referred = registration.register(ip, &command).await?;
-    let AdminUserLookupOutcome::Found(referred) = users.get(referred.user_id()).await?
-    else { panic!("referred user must exist"); };
+    let AdminUserLookupOutcome::Found(referred) = users.get(referred.user_id()).await? else {
+        panic!("referred user must exist");
+    };
     assert_eq!(referred.quota(), 175);
     assert!(registration.register(ip, &command).await.is_err());
-    let UserInvitationLookupOutcome::Found(summary) = invitations.get(admin_id).await?
-    else { panic!("invitation summary must exist"); };
+    let UserInvitationLookupOutcome::Found(summary) = invitations.get(admin_id).await? else {
+        panic!("invitation summary must exist");
+    };
     assert_eq!(summary.invited_count(), 1);
     assert_eq!(summary.credited_count(), 1);
     assert_eq!(summary.current_rebate_quota().units(), 20);
     assert_eq!(summary.inviter_reward_quota(), 20);
     assert_eq!(summary.new_user_quota(), 100);
     assert_eq!(summary.invited_user_bonus_quota(), 75);
-    registration.update_policy(admin,
-        RegistrationPolicyCommand::new(true, true, owner.default_group_id(), 100, 0, false, 20, 3600)?).await?;
-    let no_bonus = registration.register(ip, &RegistrationCommand::new(
-        "zero-bonus-user".to_owned(), None, PASSWORD.to_owned(), None, Some(code),
-    )?).await?;
-    let AdminUserLookupOutcome::Found(no_bonus) = users.get(no_bonus.user_id()).await?
-    else { panic!("new user must exist"); };
+    let legacy_command = RegistrationPolicyCommand::new(
+        true,
+        true,
+        owner.default_group_id(),
+        100,
+        0,
+        false,
+        20,
+        3600,
+    )?;
+    let preserved = registration.update_policy(admin, legacy_command).await?;
+    assert_eq!(preserved.invitation_invitee_quota(), 75);
+    registration
+        .update_policy(
+            admin,
+            legacy_command.with_invitee_quota(0)?,
+        )
+        .await?;
+    let no_bonus = registration
+        .register(
+            ip,
+            &RegistrationCommand::new(
+                "zero-bonus-user".to_owned(),
+                None,
+                PASSWORD.to_owned(),
+                None,
+                Some(code),
+            )?,
+        )
+        .await?;
+    let AdminUserLookupOutcome::Found(no_bonus) = users.get(no_bonus.user_id()).await? else {
+        panic!("new user must exist");
+    };
     assert_eq!(no_bonus.quota(), 100);
-    let UserInvitationLookupOutcome::Found(summary) = invitations.get(admin_id).await?
-    else { panic!("invitation summary must exist"); };
+    let UserInvitationLookupOutcome::Found(summary) = invitations.get(admin_id).await? else {
+        panic!("invitation summary must exist");
+    };
     assert_eq!(summary.invited_count(), 2);
     assert_eq!(summary.credited_count(), 1);
     assert_eq!(summary.current_rebate_quota().units(), 20);
@@ -307,7 +388,17 @@ async fn invitation_bonus_requires_a_valid_code_and_is_credited_once() -> Result
 
 #[test]
 fn invitation_bonus_rejects_negative_values_and_balance_overflow() {
-    let policy = RegistrationPolicyCommand::new(true, true, GroupId::new(1).unwrap(), i64::MAX, 0, false, 5, 3600).unwrap();
+    let policy = RegistrationPolicyCommand::new(
+        true,
+        true,
+        GroupId::new(1).unwrap(),
+        i64::MAX,
+        0,
+        false,
+        5,
+        3600,
+    )
+    .unwrap();
     assert!(policy.with_invitee_quota(-1).is_err());
     assert!(policy.with_invitee_quota(1).is_err());
     assert!(policy.with_invitee_quota(0).is_ok());

@@ -52,16 +52,24 @@ pub struct UserInvitationSummaryRecord {
 impl UserInvitationSummaryRecord {
     /// 返回当前是否允许通过邀请链接注册。
     #[must_use]
-    pub const fn registration_enabled(&self) -> bool { self.registration_enabled }
+    pub const fn registration_enabled(&self) -> bool {
+        self.registration_enabled
+    }
     /// 返回邀请人每次成功邀请获得的额度。
     #[must_use]
-    pub const fn inviter_reward_quota(&self) -> i64 { self.inviter_reward_quota }
+    pub const fn inviter_reward_quota(&self) -> i64 {
+        self.inviter_reward_quota
+    }
     /// 返回所有新用户共有的注册额度。
     #[must_use]
-    pub const fn new_user_quota(&self) -> i64 { self.new_user_quota }
+    pub const fn new_user_quota(&self) -> i64 {
+        self.new_user_quota
+    }
     /// 返回通过有效邀请注册额外获得的额度。
     #[must_use]
-    pub const fn invited_user_bonus_quota(&self) -> i64 { self.invited_user_bonus_quota }
+    pub const fn invited_user_bonus_quota(&self) -> i64 {
+        self.invited_user_bonus_quota
+    }
 
     /// 返回当前用户不可枚举身份信息的随机邀请码。
     #[must_use]
@@ -243,10 +251,16 @@ impl UserInvitationRepository {
             .await
             .map_err(|_| UserInvitationRepositoryError::Query)?
             .ok_or(UserInvitationRepositoryError::Invariant)?;
-        if policy.invitation_rebate_quota < 0 || policy.invitation_invitee_quota < 0
+        if policy.invitation_rebate_quota < 0
+            || policy.invitation_invitee_quota < 0
             || policy.registration_initial_quota < 0
-            || policy.registration_initial_quota.checked_add(policy.invitation_invitee_quota).is_none()
-        { return Err(UserInvitationRepositoryError::Invariant); }
+            || policy
+                .registration_initial_quota
+                .checked_add(policy.invitation_invitee_quota)
+                .is_none()
+        {
+            return Err(UserInvitationRepositoryError::Invariant);
+        }
 
         Ok(UserInvitationLookupOutcome::Found(
             UserInvitationSummaryRecord {

@@ -34,6 +34,7 @@ try {
     import { AccountVerificationPage } from './src/features/account-verification/account-verification-page';
     import { VerificationSettingsPanel } from './src/features/account-verification/verification-settings-panel';
     import { ModelProviderCatalogPanel } from './src/features/model-management/model-provider-catalog-panel';
+    import { AuthenticationSettingsPage } from './src/features/authentication-settings/authentication-settings-page';
     import { resolveProviderLogo, findProviderLogo } from './src/components/brand/model-logos';
     if (resolveProviderLogo('Jina', 'deepseek')?.name !== 'Jina') throw new Error('Configured logo must take priority');
     if (resolveProviderLogo(null, 'private-provider', 'DeepSeek')?.name !== 'DeepSeek') throw new Error('Display name must identify logo');
@@ -42,7 +43,7 @@ try {
     createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         ${isNext ? '<HeroUIProvider>' : ''}<main style={{ padding: '16px', maxWidth: '1100px', margin: 'auto' }}>
-          {mode === 'settings' ? <VerificationSettingsPanel /> : mode === 'catalog' ? <ModelProviderCatalogPanel /> : <AccountVerificationPage admin={mode === 'admin'} />}
+          {mode === 'rewards' ? <AuthenticationSettingsPage rewardsOnly /> : mode === 'settings' ? <VerificationSettingsPanel /> : mode === 'catalog' ? <ModelProviderCatalogPanel /> : <AccountVerificationPage admin={mode === 'admin'} />}
         </main>${isNext ? '</HeroUIProvider>' : ''}
       </QueryClientProvider>
     );
@@ -82,13 +83,26 @@ try {
   let settingsWrites = 0
   const catalog = [{ provider_key: 'custom-ai', display_name: 'Custom AI', logo: 'OpenAI', aliases: [], enabled: true, sort_order: 0, version: 1 }]
   let catalogWrites = 0
+  let rewardWrites = 0
+  let rewardSettings = { password_login_enabled: true, registration_enabled: true, default_group_id: 3, initial_quota: 100, invitation_rebate_quota: 20, invitation_invitee_quota: 50, email_required: true, rate_limit_attempts: 7, rate_limit_window_seconds: 900, version: 4 }
   const cases = Array.from({ length: 27 }, (_, index) => ({ id: 27 - index, user_id: 1, kind: 'enterprise', provider: 'manual', document_country: 'CN', document_type: 'business_registration', document_number_masked: '91****43', subject_name: `Enterprise ${27 - index}`, summary: 'Historical application', status: 5, version: 2, review_reason: 'Supplement required', reviewer_user_id: 2, created_at: 1_780_000_000, updated_at: 1_780_000_010 }))
   await page.route((url) => url.pathname.startsWith('/api/'), async (route) => {
     const request = route.request()
     const url = new URL(request.url())
     const path = url.pathname
     let body
-    if (path.endsWith('/eligibility')) body = { enterprise_verified: reviewed > 0, can_apply_for_organization: reviewed > 0, providers, individual_providers: [...(settings.individual_manual_enabled ? ['manual'] : []), ...(settings.enabled ? ['alipay'] : [])], enterprise_providers: settings.enterprise_manual_enabled ? ['manual'] : [], individual_reason_required: settings.individual_reason_required, enterprise_reason_required: settings.enterprise_reason_required }
+    if (path === '/api/admin/authentication-settings') {
+      if (request.method() === 'PUT') {
+        const update = request.postDataJSON()
+        const expected = { ...rewardSettings, initial_quota: 200, invitation_rebate_quota: 30, invitation_invitee_quota: 75 }
+        delete expected.version
+        assert.deepEqual(update, expected)
+        rewardSettings = { ...rewardSettings, ...update, version: rewardSettings.version + 1 }
+        rewardWrites += 1
+      }
+      body = rewardSettings
+    } else if (path === '/api/admin/groups') body = { groups: [{ id: 3, name: 'default', display_name: '默认分组', enabled: true, version: 1 }], next_cursor: null }
+    else if (path.endsWith('/eligibility')) body = { enterprise_verified: reviewed > 0, can_apply_for_organization: reviewed > 0, providers, individual_providers: [...(settings.individual_manual_enabled ? ['manual'] : []), ...(settings.enabled ? ['alipay'] : [])], enterprise_providers: settings.enterprise_manual_enabled ? ['manual'] : [], individual_reason_required: settings.individual_reason_required, enterprise_reason_required: settings.enterprise_reason_required }
     else if (path === '/api/admin/account-verification-settings') {
       if (request.method() === 'PUT') {
         const update = request.postDataJSON()
@@ -175,6 +189,7 @@ try {
   await page.getByText('New Enterprise', { exact: false }).first().waitFor()
   assert.equal(submitted, 1)
   await page.goto(`${home}?mode=admin`)
+  await page.getByRole('combobox', { name: '按审核状态筛选', exact: true }).selectOption('')
   await page.getByRole('button', { name: '查看详情', exact: true }).first().click()
   await page.getByRole('button', { name: '通过认证', exact: true }).click()
   await page.locator('article').first().getByText('已通过', { exact: true }).waitFor()
@@ -196,6 +211,7 @@ try {
   await page.getByText('Test Individual', { exact: false }).first().waitFor()
   assert.equal(submitted, 2)
   await page.goto(`${home}?mode=admin`)
+  await page.getByRole('combobox', { name: '按审核状态筛选', exact: true }).selectOption('')
   assert.equal(await page.locator('input[type="file"]').count(), 0)
   await page.getByRole('button', { name: '查看详情', exact: true }).first().click()
   await page.getByRole('button', { name: '通过认证', exact: true }).click()
@@ -245,6 +261,18 @@ try {
   assert.equal(await page.getByLabel('证件签发国家或地区代码', { exact: true }).inputValue(), 'CN')
   await providerSelect.selectOption('manual')
   assert.equal(await page.locator('input[type="file"]').evaluate((input) => input.files.length), 0)
+
+  await page.goto(`${home}?mode=rewards`)
+  await page.getByRole('heading', { name: '注册与邀请奖励', exact: true }).waitFor()
+  await page.locator('#authentication-initial-quota').waitFor()
+  assert.equal(await page.getByRole('switch').count(), 0)
+  await page.locator('#authentication-initial-quota').fill('200')
+  await page.locator('#authentication-invitation-rebate-quota').fill('30')
+  await page.locator('#authentication-invitation-invitee-quota').fill('75')
+  await page.getByRole('button', { name: '保存设置', exact: true }).click()
+  await page.getByText('奖励设置已保存', { exact: true }).waitFor()
+  assert.equal(rewardWrites, 1)
+  await capturePage('invitation-settings')
 
   await page.goto(`${home}?mode=catalog`)
   await page.locator('article p').getByText('OpenAI', { exact: true }).waitFor()

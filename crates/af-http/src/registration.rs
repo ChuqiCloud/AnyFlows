@@ -137,7 +137,7 @@ pub(crate) struct AdminAuthenticationSettingsRequest {
     invitation_rebate_quota: i64,
     #[serde(default)]
     #[schema(minimum = 0)]
-    invitation_invitee_quota: i64,
+    invitation_invitee_quota: Option<i64>,
     email_required: bool,
     #[schema(minimum = 1, maximum = 100)]
     rate_limit_attempts: u32,
@@ -358,8 +358,13 @@ async fn update_authentication_settings(
         request.rate_limit_attempts,
         request.rate_limit_window_seconds,
     )
-    .and_then(|command| command.with_invitee_quota(request.invitation_invitee_quota))
     .map_err(map_registration_error)?;
+    let command = match request.invitation_invitee_quota {
+        Some(quota) => command
+            .with_invitee_quota(quota)
+            .map_err(map_registration_error)?,
+        None => command,
+    };
     let policy = state
         .service
         .update_policy(authentication.principal(), command)

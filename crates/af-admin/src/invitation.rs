@@ -81,16 +81,24 @@ impl UserInvitationSummary {
 
     /// 当前公开注册是否开放。
     #[must_use]
-    pub const fn registration_enabled(&self) -> bool { self.registration_enabled }
+    pub const fn registration_enabled(&self) -> bool {
+        self.registration_enabled
+    }
     /// 每次成功邀请发放给邀请人的额度。
     #[must_use]
-    pub const fn inviter_reward_quota(&self) -> i64 { self.inviter_reward_quota }
+    pub const fn inviter_reward_quota(&self) -> i64 {
+        self.inviter_reward_quota
+    }
     /// 通用注册赠送额度。
     #[must_use]
-    pub const fn new_user_quota(&self) -> i64 { self.new_user_quota }
+    pub const fn new_user_quota(&self) -> i64 {
+        self.new_user_quota
+    }
     /// 有效邀请注册的额外赠送额度。
     #[must_use]
-    pub const fn invited_user_bonus_quota(&self) -> i64 { self.invited_user_bonus_quota }
+    pub const fn invited_user_bonus_quota(&self) -> i64 {
+        self.invited_user_bonus_quota
+    }
 
     /// 返回当前用户邀请码。
     #[must_use]

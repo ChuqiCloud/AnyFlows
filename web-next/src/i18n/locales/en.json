@@ -7761,6 +7761,7 @@
     "save": "Save entitlements"
   },
   "invitationSettings": {
+    "saved": "Reward settings saved",
     "title": "Registration and referral rewards",
     "description": "Set the starting balance for new users and the rewards for both parties after a successful referral.",
     "inviter": "Referrer reward",

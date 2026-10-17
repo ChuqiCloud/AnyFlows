@@ -142,7 +142,7 @@ pub struct RegistrationPolicyWriteRecord {
     default_group_id: GroupId,
     initial_quota: i64,
     invitation_rebate_quota: i64,
-    invitation_invitee_quota: i64,
+    invitation_invitee_quota: Option<i64>,
     email_required: bool,
     rate_limit_attempts: u32,
     rate_limit_window_seconds: u64,
@@ -168,7 +168,7 @@ impl RegistrationPolicyWriteRecord {
             default_group_id,
             initial_quota,
             invitation_rebate_quota,
-            invitation_invitee_quota: 0,
+            invitation_invitee_quota: None,
             email_required,
             rate_limit_attempts,
             rate_limit_window_seconds,
@@ -178,18 +178,20 @@ impl RegistrationPolicyWriteRecord {
     /// 设置受邀用户的额外注册奖励；持久化前统一校验额度边界。
     #[must_use]
     pub const fn with_invitee_quota(mut self, quota: i64) -> Self {
-        self.invitation_invitee_quota = quota;
+        self.invitation_invitee_quota = Some(quota);
         self
     }
 
-    fn into_policy(self, version: i64) -> RegistrationPolicyRecord {
+    fn into_policy(self, version: i64, existing_invitee_quota: i64) -> RegistrationPolicyRecord {
         RegistrationPolicyRecord {
             password_login_enabled: self.password_login_enabled,
             enabled: self.enabled,
             default_group_id: self.default_group_id,
             initial_quota: self.initial_quota,
             invitation_rebate_quota: self.invitation_rebate_quota,
-            invitation_invitee_quota: self.invitation_invitee_quota,
+            invitation_invitee_quota: self
+                .invitation_invitee_quota
+                .unwrap_or(existing_invitee_quota),
             email_required: self.email_required,
             rate_limit_attempts: self.rate_limit_attempts,
             rate_limit_window_seconds: self.rate_limit_window_seconds,
@@ -331,7 +333,7 @@ impl RegistrationRepository {
         &self,
         record: RegistrationPolicyWriteRecord,
     ) -> Result<RegistrationPolicyRecord, RegistrationRepositoryError> {
-        let policy = record.into_policy(1);
+        let policy = record.into_policy(1, 0);
         validate_policy(policy).map_err(|_| RegistrationRepositoryError::InvalidPolicy)?;
         let transaction = begin_transaction(&self.pool).await?;
         if !active_group_exists(&transaction, policy.default_group_id).await? {
@@ -342,7 +344,8 @@ impl RegistrationRepository {
             .version
             .checked_add(1)
             .ok_or_else(|| record_internal_error(RegistrationRepositoryError::Invariant))?;
-        let policy = record.into_policy(version);
+        let policy = record.into_policy(version, existing.invitation_invitee_quota);
+        validate_policy(policy).map_err(|_| RegistrationRepositoryError::InvalidPolicy)?;
         let now = TimeDateTimeWithTimeZone::now_utc();
         let saved = authentication_settings::ActiveModel {
             id: Set(AUTHENTICATION_SETTINGS_ID),
@@ -624,7 +627,10 @@ fn settings_from_model(
         || settings.registration_initial_quota < 0
         || settings.invitation_rebate_quota < 0
         || settings.invitation_invitee_quota < 0
-        || settings.registration_initial_quota.checked_add(settings.invitation_invitee_quota).is_none()
+        || settings
+            .registration_initial_quota
+            .checked_add(settings.invitation_invitee_quota)
+            .is_none()
         || !(1..=MAX_REGISTRATION_RATE_LIMIT_ATTEMPTS)
             .contains(&settings.registration_rate_limit_attempts)
         || !(MIN_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS
@@ -663,7 +669,7 @@ where
         default_group_id,
         initial_quota: settings.registration_initial_quota,
         invitation_rebate_quota: settings.invitation_rebate_quota,
-            invitation_invitee_quota: settings.invitation_invitee_quota,
+        invitation_invitee_quota: settings.invitation_invitee_quota,
         email_required: settings.registration_email_required,
         rate_limit_attempts: settings.registration_rate_limit_attempts,
         rate_limit_window_seconds: settings.registration_rate_limit_window_seconds,
@@ -676,7 +682,10 @@ fn validate_policy(policy: RegistrationPolicyRecord) -> Result<(), ()> {
         || policy.initial_quota < 0
         || policy.invitation_rebate_quota < 0
         || policy.invitation_invitee_quota < 0
-        || policy.initial_quota.checked_add(policy.invitation_invitee_quota).is_none()
+        || policy
+            .initial_quota
+            .checked_add(policy.invitation_invitee_quota)
+            .is_none()
         || !(1..=MAX_REGISTRATION_RATE_LIMIT_ATTEMPTS).contains(&policy.rate_limit_attempts)
         || !(MIN_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS
             ..=MAX_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS)
