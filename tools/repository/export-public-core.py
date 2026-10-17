@@ -220,8 +220,8 @@ def blob_content(repository: Path, object_id: str) -> bytes:
 
 
 def changed_line_chunks(base_content: bytes, public_content: bytes) -> tuple[list[list[bytes]], list[tuple[int, int]]]:
-    base_lines = base_content.splitlines(keepends=True)
-    public_lines = public_content.splitlines(keepends=True)
+    base_lines = base_content.splitlines()
+    public_lines = public_content.splitlines()
     matcher = SequenceMatcher(a=base_lines, b=public_lines, autojunk=False)
     added: list[list[bytes]] = []
     removed: list[tuple[int, int]] = []
@@ -252,8 +252,8 @@ def contains_chunks_in_order(source_lines: list[bytes], chunks: list[list[bytes]
 
 
 def matched_base_lines(base_content: bytes, source_content: bytes) -> set[int]:
-    base_lines = base_content.splitlines(keepends=True)
-    source_lines = source_content.splitlines(keepends=True)
+    base_lines = base_content.splitlines()
+    source_lines = source_content.splitlines()
     matched: set[int] = set()
     matcher = SequenceMatcher(a=base_lines, b=source_lines, autojunk=False)
     for tag, base_start, base_end, _source_start, _source_end in matcher.get_opcodes():
@@ -305,7 +305,7 @@ def public_changes_are_reconciled(
         if source_content == public_content:
             continue
         additions, removals = changed_line_chunks(base_content, public_content)
-        source_lines = source_content.splitlines(keepends=True)
+        source_lines = source_content.splitlines()
         if not contains_chunks_in_order(source_lines, additions):
             missing.append(path)
             continue

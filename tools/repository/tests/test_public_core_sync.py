@@ -95,6 +95,17 @@ class PublicSyncTests(unittest.TestCase):
         self.commit(self.source)
         self.verify()
 
+    def test_reconciled_public_delta_ignores_final_newline_difference(self):
+        self.write(self.public, "payment.rs", "# public deployment guide\n\nFollow the release checklist.")
+        self.commit(self.public)
+        self.write(
+            self.source,
+            "payment.rs",
+            "# public deployment guide\n\nFollow the release checklist.\nEnterprise release notes.\n",
+        )
+        self.commit(self.source)
+        self.verify()
+
     def test_conflicting_public_change_is_rejected(self):
         self.write(self.public, "payment.rs", "// public order routing\n")
         self.commit(self.public)
