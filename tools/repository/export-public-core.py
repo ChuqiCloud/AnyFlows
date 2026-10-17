@@ -187,6 +187,82 @@ def write_metadata(destination: Path, relative_path: str, repository: str, commi
     target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def tree_entry(repository: Path, revision: str, path: str) -> tuple[str, str] | None:
+    result = subprocess.run(
+        ["git", "-C", str(repository), "ls-tree", "-z", "--full-tree", revision, "--", f":(literal){path}"],
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ExportError(f"cannot read tree entry for {path}: {detail}")
+    records = [record for record in result.stdout.split(b"\x00") if record]
+    if not records:
+        return None
+    header, separator, _ = records[0].partition(b"\t")
+    if not separator:
+        raise ExportError(f"cannot parse tree entry for {path}")
+    mode, _object_type, object_id = header.decode("ascii").split(" ")
+    return mode, object_id
+
+
+def blob_content(repository: Path, object_id: str) -> bytes:
+    result = subprocess.run(
+        ["git", "-C", str(repository), "cat-file", "blob", object_id],
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ExportError(f"cannot read Git blob {object_id}: {detail}")
+    return result.stdout
+
+
+def public_changes_are_reconciled(
+    repository: Path, base: str, source_tree: str, public_tree: str
+) -> tuple[bool, list[str]]:
+    result = subprocess.run(
+        ["git", "-C", str(repository), "diff", "--no-renames", "--name-only", "-z", base, public_tree, "--"],
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ExportError(f"cannot list public changes: {detail}")
+
+    missing: list[str] = []
+    for raw_path in result.stdout.split(b"\x00"):
+        if not raw_path:
+            continue
+        path = raw_path.decode("utf-8")
+        source_entry = tree_entry(repository, source_tree, path)
+        public_entry = tree_entry(repository, public_tree, path)
+        if source_entry == public_entry:
+            continue
+        if source_entry is None or public_entry is None:
+            missing.append(path)
+            continue
+
+        source_mode, source_blob = source_entry
+        public_mode, public_blob = public_entry
+        if source_mode != public_mode or source_mode not in {"100644", "100755"}:
+            missing.append(path)
+            continue
+        source_content = blob_content(repository, source_blob)
+        public_content = blob_content(repository, public_blob)
+        if source_content == public_content:
+            continue
+        if not public_content:
+            missing.append(path)
+            continue
+
+        source_lines = iter(source_content.splitlines(keepends=True))
+        if not all(any(line == public_line for line in source_lines) for public_line in public_content.splitlines(keepends=True)):
+            missing.append(path)
+
+    return not missing, missing
+
+
 def verify_public_sync(
     source: Path, destination: Path, commit: str, metadata_path: str, preserve_paths: set[str]
 ) -> None:
@@ -233,58 +309,6 @@ def verify_public_sync(
         left = run_git(scratch, ["commit-tree", source_tree, "-p", base, "-m", "source"])
         right = run_git(scratch, ["commit-tree", public_tree, "-p", base, "-m", "public"])
 
-        # A public contribution may already have been merged into the source
-        # after the last export. In that case the source contains the public
-        # patch plus additional source changes, and a content-only merge from
-        # the old checkpoint can report a false conflict. Apply the public
-        # delta in reverse to a source snapshot first; a clean reverse apply
-        # proves that the contribution is present without changing either
-        # repository.
-        public_patch = run_git(
-            scratch, ["diff", "--binary", "--full-index", base, right]
-        )
-        if public_patch:
-            run_git(scratch, ["read-tree", "--reset", left])
-            patch_path = scratch / "public-sync.patch"
-            patch_path.write_text(public_patch + "\n", encoding="utf-8")
-            reverse_check = subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(scratch),
-                    "apply",
-                    "--reverse",
-                    "--check",
-                    "--cached",
-                    "--whitespace=nowarn",
-                    str(patch_path),
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-            )
-            if reverse_check.returncode:
-                reverse_check = subprocess.run(
-                    [
-                        "git",
-                        "-C",
-                        str(scratch),
-                        "apply",
-                        "--reverse",
-                        "--3way",
-                        "--cached",
-                        "--whitespace=nowarn",
-                        str(patch_path),
-                    ],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                )
-            if reverse_check.returncode == 0:
-                return
-
         result = subprocess.run(
             ["git", "-C", str(scratch), "merge-tree", "--write-tree", left, right],
             check=False, capture_output=True, text=True, encoding="utf-8",
@@ -293,8 +317,12 @@ def verify_public_sync(
             raise ExportError("public sync comparison failed; Git 2.38 or newer is required")
         merged_tree = result.stdout.splitlines()[0] if result.stdout else ""
         if result.returncode or merged_tree != source_tree:
-            paths = run_git(scratch, ["diff", "--name-only", source_tree, merged_tree])
-            preview = ", ".join(paths.splitlines()[:20])
+            reconciled, missing = public_changes_are_reconciled(
+                scratch, base, source_tree, public_tree
+            )
+            if reconciled:
+                return
+            preview = ", ".join(missing[:20])
             raise ExportError(
                 "public changes have not been reconciled into the source: " + preview
                 + "; merge the missing GitHub contributions into Gitea before exporting"
