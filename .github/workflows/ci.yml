@@ -818,6 +818,8 @@ jobs:
     services:
       redis:
         image: redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3
+        ports:
+          - 16379:6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s
@@ -863,5 +865,12 @@ jobs:
         if: ${{ github.server_url != 'https://github.com' }}
         env:
           AF_TEST_REDIS_URL: redis://redis:6379/
+          AF_REQUIRE_LIVE_REDIS: "1"
+        run: bash tools/ci/run-cache-redis-test.sh
+
+      - name: Run Redis cache smoke test on GitHub
+        if: ${{ github.server_url == 'https://github.com' }}
+        env:
+          AF_TEST_REDIS_URL: redis://127.0.0.1:16379/
           AF_REQUIRE_LIVE_REDIS: "1"
         run: bash tools/ci/run-cache-redis-test.sh
