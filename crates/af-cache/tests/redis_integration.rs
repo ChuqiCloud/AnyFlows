@@ -25,6 +25,102 @@ const RATE_LIMIT_LOAD_INSTANCE_COUNT: usize = 8;
 const RATE_LIMIT_LOAD_ATTEMPT_COUNT: usize = 128;
 const RATE_LIMIT_LOAD_CAPACITY: u32 = 17;
 
+#[tokio::test]
+#[ignore = "需要显式配置隔离的 Redis 测试实例"]
+async fn redis_runtime_registry_shares_nodes_and_bounds_retention() {
+    use af_cache::RedisNodeRegistry;
+
+    let redis_url = live_redis_url();
+    let namespace = unique_namespace();
+    let config = RedisConfig::new(redis_url.clone());
+    let first = RedisNodeRegistry::connect(config.clone(), &namespace)
+        .await
+        .unwrap();
+    let second = RedisNodeRegistry::connect(config, &namespace)
+        .await
+        .unwrap();
+    let first_id = "a".repeat(32);
+    let second_id = "b".repeat(32);
+    let initial = first.exchange(&first_id, b"first").await.unwrap();
+    assert!(initial.admitted);
+    assert_eq!(initial.entries.len(), 1);
+    let joined = second.exchange(&second_id, b"second").await.unwrap();
+    assert_eq!(joined.entries.len(), 2);
+    assert!(
+        joined
+            .entries
+            .iter()
+            .any(|entry| entry.instance_id == first_id && entry.payload == b"first")
+    );
+    assert!(first.claim_usage_refresh().await.unwrap());
+    assert!(!second.claim_usage_refresh().await.unwrap());
+    first.publish_usage(b"snapshot").await.unwrap();
+    assert_eq!(second.read_usage().await.unwrap().unwrap(), b"snapshot");
+    assert!(matches!(
+        first.exchange("invalid", b"x").await,
+        Err(CacheError::InvalidKey)
+    ));
+    assert!(matches!(
+        first.exchange(&first_id, &vec![0; 16_385]).await,
+        Err(CacheError::ValueTooLarge)
+    ));
+
+    let mut connection = redis::Client::open(redis_url)
+        .unwrap()
+        .get_multiplexed_async_connection()
+        .await
+        .unwrap();
+    let heartbeat = format!("{{{namespace}}}:nodes:heartbeat");
+    // Exercise age/expiry without delaying CI by several minutes.
+    let _: () = redis::cmd("EVAL").arg("local now = tonumber(redis.call('TIME')[1]); redis.call('ZADD', KEYS[1], now - 31, ARGV[1])")
+        .arg(1).arg(&heartbeat).arg(&first_id).query_async(&mut connection).await.unwrap();
+    let stale = second.exchange(&second_id, b"second").await.unwrap();
+    assert!(
+        stale
+            .entries
+            .iter()
+            .any(|entry| entry.instance_id == first_id && entry.age_seconds >= 31)
+    );
+    let _: () = redis::cmd("ZADD")
+        .arg(&heartbeat)
+        .arg(0)
+        .arg(&first_id)
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    let expired = second.exchange(&second_id, b"second").await.unwrap();
+    assert_eq!(expired.entries.len(), 1);
+    let usage_ttl: i64 = redis::cmd("PTTL")
+        .arg(format!("{namespace}:usage:snapshot"))
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    assert!(usage_ttl > 0 && usage_ttl <= 130_000);
+
+    let mut fill = redis::cmd("ZADD");
+    fill.arg(&heartbeat);
+    for id in 0..255 {
+        fill.arg(i64::MAX / 2).arg(format!("{id:032x}"));
+    }
+    let _: i64 = fill.query_async(&mut connection).await.unwrap();
+    let full = first.exchange(&first_id, b"first").await.unwrap();
+    assert!(!full.admitted);
+    let count: i64 = redis::cmd("ZCARD")
+        .arg(&heartbeat)
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(count, 256);
+    let _: i64 = redis::cmd("DEL")
+        .arg(&heartbeat)
+        .arg(format!("{{{namespace}}}:nodes:payload"))
+        .arg(format!("{namespace}:usage:snapshot"))
+        .arg(format!("{namespace}:usage:refresh"))
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+}
+
 /// 验证真实 Redis 下的 L1/L2、TTL、删除和跨实例边界。
 #[tokio::test]
 #[ignore = "需要显式配置隔离的 Redis 测试实例"]

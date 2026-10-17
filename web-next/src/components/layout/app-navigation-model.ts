@@ -34,6 +34,7 @@ export type NavKey =
   | 'keys'
   | 'usage'
   | 'debugTraces'
+  | 'runtimeStatus'
 
 /** 工作台向登录用户开放，系统管理仅向管理员开放。 */
 export type NavigationSectionKey = 'workspace' | 'system'
@@ -92,5 +93,6 @@ export const systemSectionItems = [
   'networkSettings',
   'accountVerificationSettings',
   'keys',
+  'runtimeStatus',
   'debugTraces',
 ] as const satisfies readonly NavKey[]

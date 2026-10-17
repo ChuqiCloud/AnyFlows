@@ -121,6 +121,7 @@ const navItems = {
   routes: { key: 'routes', icon: GitBranch, href: '#/console/routes' },
   keys: { key: 'keys', icon: ShieldCheck, href: '#/console/tokens' },
   usage: { key: 'usage', icon: ScrollText, href: '#/console/usage-logs' },
+  runtimeStatus: { key: 'runtimeStatus', icon: Activity, href: '#/console/runtime-status' },
   debugTraces: { key: 'debugTraces', icon: Activity, href: '#/console/debug-traces' },
 } as const satisfies Record<NavKey, NavItem>
 

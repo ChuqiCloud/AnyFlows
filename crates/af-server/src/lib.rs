@@ -38,6 +38,7 @@ mod request_rate_limit;
 mod responses_websocket_runtime;
 mod runtime_extensions;
 mod runtime_frontend;
+mod runtime_status;
 mod scheduled_chat;
 mod scheduler_invalidation;
 mod shutdown;
