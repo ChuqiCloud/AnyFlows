@@ -3,11 +3,32 @@ use std::error::Error;
 
 use sea_orm_migration::prelude::*;
 
-use super::Migrator;
+use super::{LEGACY_ENTERPRISE_MIGRATION_VERSIONS, Migrator};
 use crate::{DatabaseOptions, PoolOptions, connect};
 
 const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
+
+#[test]
+fn legacy_enterprise_history_allowlist_is_exact_and_unique() {
+    let unique = LEGACY_ENTERPRISE_MIGRATION_VERSIONS
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    let public_migrations = Migrator::migrations();
+    let public = public_migrations
+        .iter()
+        .map(|migration| migration.name())
+        .collect::<std::collections::HashSet<_>>();
+
+    assert_eq!(LEGACY_ENTERPRISE_MIGRATION_VERSIONS.len(), 47);
+    assert_eq!(unique.len(), LEGACY_ENTERPRISE_MIGRATION_VERSIONS.len());
+    assert!(unique.is_disjoint(&public));
+    assert!(unique.contains("m20260815_000061_create_organization_foundation"));
+    assert!(unique.contains("m20260907_000138_create_organization_provisioning_materials"));
+    assert!(!unique.contains("m20260831_000123_create_refund_reconciliations"));
+    assert!(!unique.contains("m20260903_000126_add_manual_refund_completion"));
+}
 
 fn test_database_url() -> String {
     env::var(TEST_DATABASE_URL).unwrap_or_else(|_| "sqlite::memory:".to_owned())

@@ -208,3 +208,98 @@ async fn undeclared_history_is_rejected_without_running_extension_migrations() -
     db.close().await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn legacy_enterprise_history_is_preserved_during_community_startup() -> TestResult {
+    let file = TemporaryDatabase::new()?;
+    let db = Database::connect(file.url()).await?;
+    for sql in [
+        "CREATE TABLE seaql_migrations (version VARCHAR(255) NOT NULL PRIMARY KEY, applied_at BIGINT NOT NULL)",
+        "CREATE TABLE enterprise_preserved_fixture (id INTEGER PRIMARY KEY, value TEXT NOT NULL)",
+        "INSERT INTO enterprise_preserved_fixture VALUES (1, 'retained after downgrade')",
+    ] {
+        db.execute_unprepared(sql).await?;
+    }
+    db.execute(Statement::from_sql_and_values(
+        DbBackend::Sqlite,
+        "INSERT INTO seaql_migrations (version, applied_at) VALUES (?, ?)",
+        [
+            "m20260815_000061_create_organization_foundation".into(),
+            42_i64.into(),
+        ],
+    ))
+    .await?;
+    db.close().await?;
+
+    connect_and_migrate(
+        &DatabaseOptions::new(file.url())?,
+        MigrationOptions::default(),
+    )
+    .await?
+    .close()
+    .await?;
+
+    let db = Database::connect(file.url()).await?;
+    let history = records(&db, "seaql_migrations").await?;
+    assert!(history.contains(&(
+        "m20260815_000061_create_organization_foundation".to_owned(),
+        42
+    )));
+    assert!(
+        history
+            .iter()
+            .any(|(version, _)| { version == "m20260906_000134_create_announcements" })
+    );
+    let retained = db
+        .query_all(Statement::from_string(
+            DbBackend::Sqlite,
+            "SELECT id, value FROM enterprise_preserved_fixture ORDER BY id",
+        ))
+        .await?;
+    assert_eq!(retained.len(), 1);
+    assert_eq!(
+        retained[0].try_get::<String>("", "value")?,
+        "retained after downgrade"
+    );
+    assert!(SchemaManager::new(&db).has_table("groups").await?);
+    assert!(SchemaManager::new(&db).has_table("announcements").await?);
+    db.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn community_startup_still_rejects_unknown_migration_history() -> TestResult {
+    let file = TemporaryDatabase::new()?;
+    let db = Database::connect(file.url()).await?;
+    db.execute_unprepared(
+        "CREATE TABLE seaql_migrations (version VARCHAR(255) NOT NULL PRIMARY KEY, applied_at BIGINT NOT NULL)",
+    )
+    .await?;
+    db.execute(Statement::from_sql_and_values(
+        DbBackend::Sqlite,
+        "INSERT INTO seaql_migrations (version, applied_at) VALUES (?, ?)",
+        ["unrecognized_migration".into(), 42_i64.into()],
+    ))
+    .await?;
+    db.close().await?;
+
+    let error = connect_and_migrate(
+        &DatabaseOptions::new(file.url())?,
+        MigrationOptions::default(),
+    )
+    .await
+    .expect_err("unknown migration history must stop community startup");
+    assert!(
+        matches!(&error, DatabaseError::Migration(source) if source.to_string().contains("unrecognized_migration")),
+        "{error:?}"
+    );
+
+    let db = Database::connect(file.url()).await?;
+    assert_eq!(
+        records(&db, "seaql_migrations").await?,
+        vec![("unrecognized_migration".to_owned(), 42)]
+    );
+    assert!(!SchemaManager::new(&db).has_table("groups").await?);
+    db.close().await?;
+    Ok(())
+}
