@@ -74,6 +74,8 @@ try {
   }
   await page.addInitScript(() => localStorage.setItem('anyflows.locale', 'zh'))
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9mQAAAAASUVORK5CYII=', 'base64')
+  let releaseVerification
+  const verificationReady = new Promise((resolve) => { releaseVerification = resolve })
   let submissionKind = 'enterprise'
   let submitted = 0
   let reviewed = 0
@@ -141,7 +143,7 @@ try {
       assert.ok(request.postDataBuffer().includes(Buffer.from(`"kind":"${submissionKind}"`)))
       assert.ok(request.postDataBuffer().includes(Buffer.from('"document_country":"CN"')))
       assert.ok(request.postDataBuffer().includes(Buffer.from(`"document_type":"${submissionKind === 'enterprise' ? 'business_registration' : 'passport'}"`)))
-      cases.unshift({ ...cases[0], id: 28 + submitted, kind: submissionKind, subject_name: submissionKind === 'enterprise' ? 'New Enterprise' : 'Test Individual', status: 1, version: 1, review_reason: null, reviewer_user_id: null })
+      cases.unshift({ ...cases[0], id: 28 + submitted, kind: submissionKind, subject_name: submissionKind === 'enterprise' ? 'New Enterprise' : 'Test Individual', document_type: submissionKind === 'enterprise' ? 'business_registration' : 'passport', document_number_masked: submissionKind === 'enterprise' ? '91****43' : 'P****78', status: 1, version: 1, review_reason: null, reviewer_user_id: null })
       submitted += 1
       body = cases[0]
     } else if (/\/\d+$/.test(path)) {
@@ -149,6 +151,7 @@ try {
       assert.ok(record)
       body = { case: record, materials: [{ id: 1, case_id: record.id, kind: 'business_document', file_name: 'license.png', content_type: 'image/png', size_bytes: png.length }] }
     } else {
+      await verificationReady
       assert.ok(['/api/account/verifications', '/api/admin/account-verifications'].includes(path), path)
       const before = Number(url.searchParams.get('before') ?? Infinity)
       const status = url.searchParams.get('status')
@@ -159,7 +162,10 @@ try {
   })
   const home = `http://127.0.0.1:${port}/.verification-smoke.html`
   await page.goto(home)
-  await page.getByText('Enterprise 27', { exact: false }).first().waitFor()
+  await page.getByRole('status').first().waitFor()
+  releaseVerification()
+  await page.locator('#verification-case-27').waitFor()
+  assert.equal(await page.getByText('Enterprise 27', { exact: false }).count(), 0, 'History must mask identity names')
   const providerSelect = page.getByRole('combobox', { name: '认证方式', exact: true })
   const documentSelect = page.getByRole('combobox', { name: '证件类型', exact: true })
   assert.deepEqual(await providerSelect.locator('option').evaluateAll((options) => options.map((option) => option.value)), ['manual'])
@@ -186,7 +192,7 @@ try {
   await page.getByLabel('认证说明', { exact: true }).fill('Enterprise identity review')
   await page.locator('input[type="file"]').setInputFiles({ name: 'license.png', mimeType: 'image/png', buffer: png })
   await page.getByRole('button', { name: '提交认证', exact: true }).click()
-  await page.getByText('New Enterprise', { exact: false }).first().waitFor()
+  await page.locator('#verification-case-28').waitFor()
   assert.equal(submitted, 1)
   await page.goto(`${home}?mode=admin`)
   await page.getByRole('combobox', { name: '按审核状态筛选', exact: true }).selectOption('')
@@ -199,7 +205,25 @@ try {
   await page.getByRole('button', { name: '预览', exact: true }).click()
   await page.locator('img[alt="license.png"]').waitFor()
   assert.equal(downloads, 2, 'Approved materials must remain accessible')
+  await page.evaluate(() => {
+    window.verificationScrolls = 0
+    const scroll = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = function (...args) { window.verificationScrolls += 1; return scroll.apply(this, args) }
+  })
+  const refreshed = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/account/verifications' && !new URL(response.url()).searchParams.has('status'))
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await refreshed
+  assert.equal(await page.evaluate(() => window.verificationScrolls), 0, 'Refreshing history must not repeatedly scroll a selected record')
   await page.goto(home)
+  const verifiedResult = page.locator('[data-verification-result]')
+  await verifiedResult.waitFor()
+  assert.equal(await verifiedResult.getByText('New Enterprise', { exact: true }).count(), 0)
+  await verifiedResult.getByText('91****43', { exact: true }).waitFor()
+  assert.equal(await page.locator('#verification-form').count(), 0, 'Approved accounts should show the result first')
+  await capturePage('verified-account')
+  await page.getByRole('button', { name: '更换认证', exact: true }).click()
+  await page.locator('#verification-form').waitFor()
+  await page.getByText('新资料审核期间，原认证结果与已有资格继续有效。', { exact: true }).waitFor()
   submissionKind = 'individual'
   await page.getByRole('tab', { name: '个人认证', exact: true }).click()
   await page.getByLabel('认证主体名称', { exact: true }).fill('Test Individual')
@@ -208,7 +232,7 @@ try {
   await page.getByLabel('认证说明', { exact: true }).fill('Personal manual review')
   await page.locator('input[type="file"]').setInputFiles({ name: 'passport.png', mimeType: 'image/png', buffer: png })
   await page.getByRole('button', { name: '提交认证', exact: true }).click()
-  await page.getByText('Test Individual', { exact: false }).first().waitFor()
+  await page.locator('#verification-case-29').waitFor()
   assert.equal(submitted, 2)
   await page.goto(`${home}?mode=admin`)
   await page.getByRole('combobox', { name: '按审核状态筛选', exact: true }).selectOption('')
@@ -236,6 +260,7 @@ try {
   await page.getByText('配置已保存并生效。', { exact: true }).waitFor()
   assert.equal(settingsWrites, 1)
   await page.goto(home)
+  await page.getByRole('button', { name: '更换认证', exact: true }).click()
   await page.waitForFunction(() => document.querySelector('select[aria-label="认证方式"]')?.value === 'alipay')
   assert.deepEqual(await providerSelect.locator('option').evaluateAll((options) => options.map((option) => option.value)), ['alipay'])
   assert.equal(await documentSelect.inputValue(), 'national_id')
@@ -247,11 +272,13 @@ try {
   providers = []
   settings = { ...settings, enabled: false }
   await page.reload()
+  await page.getByRole('button', { name: '更换认证', exact: true }).click()
   await page.getByText('当前没有可用的认证方式，请联系管理员。', { exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: '提交认证', exact: true }).isDisabled(), true)
   providers = ['manual', 'alipay']
   settings = { ...settings, individual_manual_enabled: true, enterprise_manual_enabled: true, enabled: true }
   await page.reload()
+  await page.getByRole('button', { name: '更换认证', exact: true }).click()
   await providerSelect.selectOption('manual')
   await documentSelect.selectOption('passport')
   await page.getByLabel('证件签发国家或地区代码', { exact: true }).fill('US')

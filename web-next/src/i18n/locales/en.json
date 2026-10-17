@@ -7633,6 +7633,12 @@
     "empty": "No matching providers"
   },
   "verificationCenter": {
+    "verifiedTitle": "Identity verified",
+    "verifiedHint": "Your verification is saved. Submit a replacement if your identity details change.",
+    "maskedHint": "Identity details are masked to protect your privacy.",
+    "replace": "Replace verification",
+    "replacementHint": "Your existing verification and eligibility remain valid while the replacement is reviewed.",
+    "backToResult": "Back to verification",
     "adminLinks": "Identity management",
     "myVerification": "My identity verification",
     "title": "Account verification",
