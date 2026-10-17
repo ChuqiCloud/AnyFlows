@@ -1828,6 +1828,57 @@ export type ResponsesCompactUsage = {
     output_tokens_details: ResponsesCompactOutputUsageDetails;
     total_tokens: number;
 };
+export type RuntimeDependency = {
+    kind: string;
+    status: string;
+    latency_ms?: number | null;
+};
+export type RuntimeNode = {
+    node_id: string;
+    instance_id: string;
+    version: string;
+    os: string;
+    started_at: number;
+    sampled_at: number;
+    uptime_seconds: number;
+    status: string;
+    cpu_cores?: number | null;
+    memory_bytes?: number | null;
+    cpu_capacity_cores?: number | null;
+    host_memory_bytes?: number | null;
+    host_memory_used_bytes?: number | null;
+    container_memory_limit_bytes?: number | null;
+    container_memory_bytes?: number | null;
+    database: RuntimeDependency;
+    redis: RuntimeDependency;
+    history: Array<RuntimeResourcePoint>;
+};
+export type RuntimePromptCache = {
+    sampled_at?: number | null;
+    period_start: number;
+    period_end: number;
+    status: string;
+    scope: string;
+    upstream_requests: number;
+    estimated_requests: number;
+    positive_cache_requests: number;
+    input_tokens: number;
+    cache_read_tokens: number;
+    cache_write_tokens: number;
+};
+export type RuntimeResourcePoint = {
+    sampled_at: number;
+    cpu_cores?: number | null;
+    memory_bytes?: number | null;
+};
+export type RuntimeStatus = {
+    sampled_at: number;
+    local_instance_id: string;
+    cluster_status: string;
+    cluster_observed_at?: number | null;
+    nodes: Array<RuntimeNode>;
+    prompt_cache: RuntimePromptCache;
+};
 export type ServiceLevelPoint = {
     period_start: number;
     successful_request_count: number;
@@ -6293,6 +6344,21 @@ export type ListSelfPlatformAuditLogsResponses = {
     200: PlatformAuditLogListResponse;
 };
 export type ListSelfPlatformAuditLogsResponse = ListSelfPlatformAuditLogsResponses[keyof ListSelfPlatformAuditLogsResponses];
+export type GetAdminRuntimeStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/runtime-status';
+};
+export type GetAdminRuntimeStatusErrors = {
+    401: ManagementError;
+    403: ManagementError;
+};
+export type GetAdminRuntimeStatusError = GetAdminRuntimeStatusErrors[keyof GetAdminRuntimeStatusErrors];
+export type GetAdminRuntimeStatusResponses = {
+    200: RuntimeStatus;
+};
+export type GetAdminRuntimeStatusResponse = GetAdminRuntimeStatusResponses[keyof GetAdminRuntimeStatusResponses];
 export type StartOidcLoginData = {
     body?: never;
     path?: never;
