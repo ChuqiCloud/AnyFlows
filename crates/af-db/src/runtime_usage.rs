@@ -3,7 +3,7 @@
 use sea_orm::{
     ConnectionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
-    sea_query::{Alias, Expr, Func, Query, SimpleExpr},
+    sea_query::{Alias, Expr, ExprTrait, Func, Query, SimpleExpr},
 };
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
