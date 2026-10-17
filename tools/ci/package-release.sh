@@ -73,7 +73,7 @@ install -m 0644 "$workspace/anyflows.conf" "$temporary_directory/$package_name/a
 install -m 0644 "$workspace/CHANGELOG.md" "$temporary_directory/$package_name/CHANGELOG.md"
 install -m 0755 "$workspace/scripts/systemd/install.sh" "$temporary_directory/$package_name/install.sh"
 install -m 0644 "$workspace/scripts/systemd/anyflows.service" "$temporary_directory/$package_name/anyflows.service"
-printf '%s\ncommit=%s\n' "$tag" "$(git -C "$workspace" rev-parse HEAD)" \
+printf 'tag=%s\ncommit=%s\n' "$tag" "$(git -C "$workspace" rev-parse HEAD)" \
   >"$temporary_directory/$package_name/VERSION"
 
 # 固定归档元数据，保证同一提交重复构建时不会因时间戳产生无意义漂移。

@@ -1,82 +1,66 @@
 # AnyFlows
 
-AnyFlows is a self-hosted API gateway for connecting applications to multiple AI model providers through one compatible interface. It provides channel management, model routing, API keys, usage accounting, request logs, rate limits, and an administration console.
+[English](README.en.md) · [使用文档](https://github.com/ChuqiCloud/AnyFlows/blob/main/docs/README.md) · [版本下载](https://github.com/ChuqiCloud/AnyFlows/releases)
 
-The public repository contains the community core. Enterprise capabilities are maintained separately and are assembled by the distribution repository.
+AnyFlows 是一个可自行部署的 AI API 网关。将不同厂商的模型接入同一服务，为应用统一提供 API Key、模型路由、额度管理和调用记录。
 
-## Features
+## 主要功能
 
-- OpenAI-compatible chat, responses, embeddings, audio, image, rerank, and model endpoints
-- Multiple upstream providers with channel health checks and routing policies
-- API key management, groups, quotas, pricing, usage records, and request logs
-- PostgreSQL, MySQL, and SQLite support
-- Redis-backed rate limiting and optional cache integrations
-- React administration consoles, including the classic and next-generation frontends
-- Extension contracts for enterprise routes, migrations, authentication, billing, and background tasks
+- 兼容 OpenAI Chat、Responses 等接口，支持流式响应和模型列表。
+- 管理渠道、密钥池和账号池，按模型能力与渠道状态分配请求。
+- 管理用户、分组、API Key、模型权限、价格和额度。
+- 查看调用日志、用量、费用及模型和渠道的运行情况。
+- 内置 Classic 和 Next 两套管理前端，支持切换和外部静态模板。
+- 支持 SQLite、PostgreSQL、MySQL，可接入 Redis 共享限流等状态。
 
-## Technology
+本仓库提供社区版核心，可独立部署。企业空间、企业 SSO 等私有功能由独立扩展提供。
 
-- Rust, Axum, Tokio, and SeaORM
-- React, TypeScript, Tailwind CSS, and TanStack Router/Query
-- PostgreSQL, MySQL, or SQLite
-- Optional Redis
+## 二进制部署
 
-## Repository layout
+推荐在使用 systemd 的 Linux 服务器上安装发布包。包内已包含两套前端，无需安装 Rust、Node.js，也无需在服务器编译。
 
-This repository is the public core. Private enterprise features and release assembly are maintained in separate repositories and are not required for community development.
+公共二进制包正在准备发布。发布后请在 [Releases](https://github.com/ChuqiCloud/AnyFlows/releases) 下载适合服务器架构的归档及对应的 `.sha256` 文件；当前没有可用归档时，可使用 [Docker Compose 源码部署](docs/docker-compose.md)。
 
-The main crates are:
+以 Linux amd64 包为例，在下载目录执行。将 `PACKAGE` 中的「版本号」替换为下载版本，包含可能的预发布后缀：
 
-| Crate | Responsibility |
+```bash
+PACKAGE='anyflows-v版本号-linux-amd64'
+sha256sum --check "$PACKAGE.tar.gz.sha256"
+tar -xzf "$PACKAGE.tar.gz"
+cd "$PACKAGE"
+sudo ./install.sh install
+sudo ./install.sh status
+```
+
+安装器自动生成密钥、创建服务用户并设置开机启动，默认使用 SQLite。服务监听 `127.0.0.1:8080`。首次安装请通过 SSH 隧道访问并创建管理员，再配置域名和 HTTPS。
+
+完整步骤见 [二进制安装教程](docs/deployment-and-configuration.md)。多台服务器部署见 [多节点部署](docs/multi-node-deployment.md)。
+
+## 开始使用
+
+1. 打开站点，进入登录或控制台页面，按提示完成初始化并创建管理员。
+2. 在后台添加渠道和凭据，获取并确认可用模型，再配置需要对外提供的模型与价格。
+3. 创建用户 API Key，为客户端填写站点地址和 API Key。
+4. 在站点的 `/api` 页面或客户端发起一次调用，查看调用日志与用量。
+
+不同客户端要求的 Base URL 格式可能不同。OpenAI 兼容客户端通常填写 `https://你的域名/v1`；若客户端会自行追加 `/v1`，则填写站点根地址。
+
+## 文档
+
+| 内容 | 链接 |
 | --- | --- |
-| `af-server` | Startup, runtime wiring, and graceful shutdown |
-| `af-http` | HTTP routing, middleware, and API contracts |
-| `af-relay` | Request forwarding and provider routing |
-| `af-billing` | Pricing, usage accounting, and quota integration |
-| `af-account` | Authentication, sessions, and user accounts |
-| `af-admin` | Shared administration services |
-| `af-db` | Database repositories and migrations |
-| `af-domain` | Shared domain types and contracts |
-| `af-adapter` / `af-protocol` | Provider adapters and protocol translation |
+| 下载、安装、初始化和域名访问 | [二进制安装](docs/deployment-and-configuration.md) |
+| 负载均衡、共享依赖和升级顺序 | [多节点部署](docs/multi-node-deployment.md) |
+| Docker Compose 源码部署 | [容器部署](docs/docker-compose.md) |
+| 环境变量、数据库和密钥 | [配置参考](docs/configuration.md) |
+| 备份、升级和回滚 | [升级维护](docs/migrations-and-release.md) |
+| 账号、API Key 和注册邀请 | [认证与访问](docs/authentication-and-access.md) |
+| 其余使用和开发文档 | [文档目录](docs/README.md) |
 
-Enterprise implementations use the extension contracts exposed by the public core. They can provide their own routes, migrations, authentication validators, billing sources, and background jobs without copying public ORM entities or changing the public router.
+## 参与开发
 
-## Development
+后端使用 Rust、Axum 和 SeaORM；两套前端使用 React 和 TypeScript。从 `main` 创建分支并提交 Pull Request，开发环境和检查命令见 [贡献指南](CONTRIBUTING.md)。社区开发不需要访问私有仓库。
 
-The repository pins its Rust toolchain in `rust-toolchain.toml`. Node.js and pnpm are required for frontend work.
+## 许可证
 
-```bash
-cargo build --workspace
-cargo test --workspace --all-features --locked
-corepack pnpm@10.33.0 --dir web install --frozen-lockfile
-corepack pnpm@10.33.0 --dir web check
-```
-
-The CI workflow is the authoritative validation environment. It runs formatting, dependency boundary checks, database tests, Clippy, Rust tests, frontend checks, and release checks.
-
-## Running locally
-
-Create a configuration from `.env.example`, then start the server with the normal Rust tooling or use the provided deployment scripts. The default service listens on `127.0.0.1:8080`.
-
-```bash
-cargo run --package af-server
-curl http://127.0.0.1:8080/healthz
-```
-
-For production deployments, use the Docker Compose or systemd assets under `scripts/deploy` and place a reverse proxy in front of the local listener.
-
-## API explorer
-
-When enabled by the server, `/api` provides an API directory and online request editor. The catalog is filtered by the current session, so public, user, and administrator views expose only the operations that the caller may use.
-
-## Contributing
-
-Create a feature branch from `develop`, keep changes focused, and open a pull request with the relevant validation details. Do not commit credentials, generated secrets, local build output, or private enterprise source.
-
-See [`docs/repository-boundary.md`](docs/repository-boundary.md) for the public and enterprise extension boundary.
-The reproducible public checkout procedure is documented in
-[`docs/public-core-export.md`](docs/public-core-export.md).
-
-## License
-
-See the repository license file for the terms that apply to this source tree.
+本项目采用 [GNU AGPL v3](LICENSE)。

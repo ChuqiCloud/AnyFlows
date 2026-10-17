@@ -66,4 +66,12 @@ grep -q "/anyflows.service$" "$archive_listing"
 grep -q "/CHANGELOG.md$" "$archive_listing"
 grep -q "/anyflows.conf$" "$archive_listing"
 
+# 安装器要求 tag= 格式，直接核对归档内的版本材料。
+package_version="$temporary_directory/package-version"
+tar -xOzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
+  "anyflows-${tag}-linux-amd64/VERSION" >"$package_version"
+grep -Fxq "tag=$tag" "$package_version"
+grep -Fxq "commit=$commit" "$package_version"
+test "$(wc -l <"$package_version")" -eq 2
+
 printf '发布脚本回归通过。\n'

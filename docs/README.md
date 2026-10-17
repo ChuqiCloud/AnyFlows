@@ -1,12 +1,34 @@
 # AnyFlows 文档
 
-这里是面向部署者、管理员和运维人员的正式文档入口。
+首次部署从二进制安装开始。需要多台服务器时，再阅读多节点部署；完整参数和开发契约分别放在独立文档中。
 
-- [部署与配置参考](./deployment-and-configuration.md)：Docker Compose、systemd、环境变量、健康检查、升级和回滚。
-- [认证与访问指南](./authentication-and-access.md)：管理会话、用户 API Key、平台管理员令牌、企业 SSO 和 SCIM 的使用边界。
-- [账号认证与企业空间](./account-and-enterprise-verification.md)：个人及企业认证、材料预览、申请记录、企业空间开通和授权调整。
-- [API 目录与在线调试](./api-explorer.md)：公开 API 目录、权限投影、分页查询和受控在线请求。
-- [迁移与发布说明](./migrations-and-release.md)：版本归档、数据库迁移、升级验证和程序回滚边界。
-- [前端模板开发规范](./frontend-template-development.md)：独立构建、OpenAPI 契约、模板扫描切换、部署路径和缓存限制。
+## 安装与维护
 
-架构设计、数据模型、开发 TODO 和安全不变量位于独立的 [AnyFlows-Design](https://cnb.cool/acmecloud/AnyFlows-Design) 仓库，不在产品仓库的 `docs/` 中维护。
+| 文档 | 内容 |
+| --- | --- |
+| [二进制安装](deployment-and-configuration.md) | 下载、校验、安装、初始化和域名访问 |
+| [多节点部署](multi-node-deployment.md) | 共享数据库和 Redis、负载均衡、节点配置与升级顺序 |
+| [Docker Compose 部署](docker-compose.md) | 从源码构建容器、查看日志和管理数据卷 |
+| [配置参考](configuration.md) | 配置文件、环境变量、密钥和可选服务 |
+| [升级与备份](migrations-and-release.md) | 数据备份、数据库迁移、升级和回滚 |
+
+## 使用与管理
+
+| 文档 | 内容 |
+| --- | --- |
+| [认证与访问](authentication-and-access.md) | 登录、API Key、注册与邀请奖励 |
+| [个人与企业主体认证](account-and-enterprise-verification.md) | 人工审核、材料查看和支付宝实名认证 |
+| [API 目录与在线调试](api-explorer.md) | 接口查找、访问权限和请求调试 |
+| [前端模板](frontend-template-development.md) | 内置前端、外部模板、预览和切换 |
+
+## 开发与仓库维护
+
+| 文档 | 内容 |
+| --- | --- |
+| [贡献指南](../CONTRIBUTING.md) | 开发环境、提交规范和检查范围 |
+| [仓库与扩展边界](repository-boundary.md) | 公共核心和私有扩展的职责 |
+| [前端扩展](frontend-extensions.md) | 扩展页面、导航和能力发现 |
+| [服务账号身份](service-identity.md) | 独立身份、认证和运行时契约 |
+| [服务账号模型授权](service-model-authorization.md) | 模型授权和请求权限 |
+| [公共核心导出](public-core-export.md) | 可复现导出和内容保护 |
+| [公共 PR 回传](public-pr-sync.md) | GitHub 合并后的同步流程和维护配置 |
