@@ -96,7 +96,8 @@ export async function checkRuntimeStatus(page, url, frontend) {
     failure = 0
     response = snapshot
     await page.getByRole('button', { name: '重试', exact: true }).click()
-    await page.waitForFunction(() => document.querySelectorAll('.runtime-node').length === 6 && !document.querySelector('[role=alert]'))
+    await page.locator('.runtime-node').nth(5).waitFor()
+    await page.getByRole('alert').waitFor({ state: 'detached' })
     for (const status of [403, 401]) {
       failure = status
       await page.getByRole('button', { name: '刷新', exact: true }).click()
