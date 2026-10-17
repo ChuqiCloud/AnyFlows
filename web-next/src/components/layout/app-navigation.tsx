@@ -77,6 +77,7 @@ const navItems = {
   routes: { key: 'routes', icon: 'solar:routing-2-linear', href: '/console/routes' },
   keys: { key: 'keys', icon: 'solar:shield-check-linear', href: '/console/tokens' },
   usage: { key: 'usage', icon: 'solar:document-text-linear', href: '/console/usage-logs' },
+  runtimeStatus: { key: 'runtimeStatus', icon: 'solar:server-minimalistic-linear', href: '/console/runtime-status' },
   debugTraces: { key: 'debugTraces', icon: 'solar:bug-linear', href: '/console/debug-traces' },
 } as const satisfies Record<NavKey, NavItem>
 

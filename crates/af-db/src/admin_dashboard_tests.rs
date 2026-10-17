@@ -523,3 +523,78 @@ async fn seed_principals(connection: &sea_orm::DatabaseConnection) -> Result<(),
     .await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn runtime_cache_totals_normalize_semantics_and_exclude_estimates()
+-> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    seed_principals(pool.connection()).await?;
+    // Includes the lower bound, excludes the upper bound and separates estimated sources.
+    for (id, at, event, source, semantics, input, read, write) in [
+        (1, 1_000, 1, 1, 1, 100, 20, 5),
+        (2, 1_001, 1, 1, 2, 70, 30, 10),
+        (3, 1_002, 1, 2, 1, 500, 100, 0),
+        (4, 87_400, 1, 1, 1, 500, 100, 0),
+        (5, 999, 1, 1, 1, 500, 100, 0),
+    ] {
+        let created_at = TimeDateTimeWithTimeZone::from_unix_timestamp(at)?;
+        usage_logs::ActiveModel {
+            id: Set(id),
+            event_id: Set(crate::entity::BillingReservationKey::parse(&format!(
+                "{id:032x}"
+            ))?),
+            event_type: Set(event),
+            user_id: Set(1),
+            token_id: Set(1),
+            group_id: Set(1),
+            organization_id: Set(None),
+            organization_team_id: Set(None),
+            billing_mode: Set(1),
+            input_tokens: Set(input),
+            output_tokens: Set(1),
+            cache_read: Set(read),
+            cache_creation_5m: Set(write),
+            cache_creation_1h: Set(0),
+            reasoning_tokens: Set(0),
+            audio_input_tokens: Set(0),
+            audio_output_tokens: Set(0),
+            audio_duration_nanoseconds: Set(None),
+            video_duration_seconds: Set(None),
+            video_resolution: Set(None),
+            request_id: Set(Some(format!("dashboard-outcome-{id}"))),
+            model: Set(Some("gpt-test".to_owned())),
+            protocol: Set(None),
+            operation: Set(None),
+            is_stream: Set(None),
+            reasoning_effort: Set(None),
+            reasoning_budget_tokens: Set(None),
+            first_token_ms: Set(None),
+            duration_ms: Set(None),
+            usage_source: Set(source),
+            usage_semantics: Set(semantics),
+            quota: Set(0),
+            created_at: Set(created_at),
+        }
+        .insert(pool.connection())
+        .await?;
+    }
+    let totals = pool.runtime_usage_totals(87_400).await?;
+    assert_eq!(totals.upstream_requests, 2);
+    assert_eq!(totals.estimated_requests, 1);
+    assert_eq!(totals.positive_cache_requests, 2);
+    assert_eq!(totals.input_tokens, 210);
+    assert_eq!(totals.cache_read_tokens, 50);
+    assert_eq!(totals.cache_write_tokens, 15);
+    let empty = pool.runtime_usage_totals(1_000).await?;
+    // The row at 999 is in this earlier window.
+    assert_eq!(empty.upstream_requests, 1);
+    let empty = pool.runtime_usage_totals(999).await?;
+    assert_eq!(empty.upstream_requests, 0);
+    assert_eq!(empty.input_tokens, 0);
+    pool.close().await?;
+    Ok(())
+}

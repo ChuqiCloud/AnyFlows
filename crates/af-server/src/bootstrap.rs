@@ -148,6 +148,7 @@ use crate::{
     payment_runtime::PaymentRuntime,
     request_rate_limit::{RequestRateLimitStore, RuntimeTokenAuthenticator},
     runtime_frontend::FrontendTemplateManager,
+    runtime_status::RuntimeMonitor,
     scheduled_chat::ScheduledChatService,
     scheduler_invalidation::{
         PreparedSchedulerInvalidationRuntime, SchedulerInvalidationRuntimeError,
@@ -322,6 +323,7 @@ pub struct Supervised {
     debug_trace_repository: DebugTraceRepository,
     debug_trace_runtime: DebugTraceRuntime,
     analytics_export_control: Option<Arc<dyn af_analytics::AnalyticsExportControl>>,
+    runtime_monitor: Arc<RuntimeMonitor>,
     supervisor: BackgroundTaskSupervisor,
 }
 
@@ -2006,6 +2008,22 @@ impl Bootstrap<BillingReady> {
                 repository.clone(),
             )) as Arc<dyn af_analytics::AnalyticsExportControl>
         });
+        let node_name = std::env::var("HOSTNAME")
+            .ok()
+            .or_else(|| std::env::var("COMPUTERNAME").ok());
+        let runtime_monitor = RuntimeMonitor::new(
+            infrastructure.infrastructure.database.clone(),
+            config
+                .redis()
+                .url()
+                .map(|url| RedisConfig::new(url.expose().to_owned())),
+            node_name.as_deref(),
+            "anyflows.runtime-status.v1",
+        );
+        supervisor.spawn("runtime-status", {
+            let monitor = Arc::clone(&runtime_monitor);
+            move |task_shutdown| Arc::clone(&monitor).run(task_shutdown)
+        });
         spawn_channel_index_refresh_task(
             &mut supervisor,
             channel_index.clone(),
@@ -2168,6 +2186,7 @@ impl Bootstrap<BillingReady> {
                 debug_trace_repository,
                 debug_trace_runtime,
                 analytics_export_control,
+                runtime_monitor,
                 supervisor,
             },
         }
@@ -2597,6 +2616,10 @@ impl Bootstrap<Supervised> {
             .merge(build_frontend_template_router(
                 frontend_template_manager.clone() as Arc<dyn af_http::FrontendTemplateService>,
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+            .merge(af_http::build_runtime_status_router(
+                self.stage.runtime_monitor.clone(),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
             ));
         let Bootstrap {
             config,
@@ -2715,6 +2738,7 @@ impl Bootstrap<ListenerReady> {
             debug_trace_repository: _,
             debug_trace_runtime: _,
             analytics_export_control: _,
+            runtime_monitor: _,
             video_task: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);
@@ -3277,7 +3301,7 @@ mod tests {
             .unwrap();
         // Codex 使用固定的 1455 回调端口；端口被并行测试占用时，启动器会
         // 保留手动回调路径并跳过对应监听任务，因此这里只把实际注册的监听任务计入基线。
-        let expected_task_count = 9 + supervised.stage.oauth_loopback_servers.len();
+        let expected_task_count = 10 + supervised.stage.oauth_loopback_servers.len();
         let supervised = supervised.start_supervisor();
         assert_eq!(
             supervised.stage.supervisor.task_count(),

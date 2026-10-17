@@ -25,6 +25,8 @@ on:
       - 'tools/xtask/src/main.rs'
       - 'crates/af-http/src/management_service_levels.rs'
       - 'crates/af-http/src/openapi/dashboard.rs'
+      - 'crates/af-http/src/runtime_status.rs'
+      - 'crates/af-http/src/openapi/runtime_status.rs'
 
 permissions:
   contents: read
