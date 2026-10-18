@@ -795,6 +795,8 @@ mod tests {
         .with_client_profile(Some(profile.clone()))
         .unwrap()
         .with_opencode_entry(Some(af_domain::OpenCodeEntry::ZenV1))
+        .unwrap()
+        .with_opencode_full_compatibility(true)
         .unwrap();
         let record = SchedulerRuntimeRecord::new(
             SchedulerAbilityRecord::from_projection_parts(
@@ -824,6 +826,15 @@ mod tests {
             Some(&profile)
         );
         let mut wire: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        assert!(decoded.records()[0].target().opencode_full_compatibility());
+        let saved_wire = wire.clone();
+        wire["targets"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("opencode_full_compatibility");
+        let old = SchedulerRuntimeProjection::decode(&serde_json::to_vec(&wire).unwrap()).unwrap();
+        assert!(!old.records()[0].target().opencode_full_compatibility());
+        wire = saved_wire;
         wire["targets"][0]["opencode_entry"] = serde_json::json!("https://example.com");
         assert!(SchedulerRuntimeProjection::decode(&serde_json::to_vec(&wire).unwrap()).is_err());
     }

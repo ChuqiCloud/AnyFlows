@@ -330,6 +330,7 @@ dependencies = [
  "af-domain",
  "af-protocol",
  "futures-core",
+ "serde",
  "serde_json",
  "thiserror 2.0.20",
  "tiktoken-rs",

@@ -292,8 +292,15 @@ async fn opencode_entry_updates_preserve_private_settings_and_reject_stale_versi
         .count(pool.connection())
         .await?;
     let next = repo
-        .set_opencode_entry(channel, &original.version, af_domain::OpenCodeEntry::ZenV1)
+        .set_opencode_settings(
+            channel,
+            &original.version,
+            af_domain::OpenCodeEntry::ZenV1,
+            Some(true),
+        )
         .await?;
+    assert!(!original.full_compatibility);
+    assert!(next.full_compatibility);
     assert_eq!(next.entry, af_domain::OpenCodeEntry::ZenV1);
     assert_ne!(next.version, original.version);
     assert_eq!(
@@ -313,6 +320,10 @@ async fn opencode_entry_updates_preserve_private_settings_and_reject_stale_versi
             af_domain::OpenCodeEntry::InferenceV1,
         )
         .await?;
+    assert!(
+        rollback.full_compatibility,
+        "旧入口更新接口必须保留兼容开关"
+    );
     assert_ne!(rollback.version, original.version);
     assert_ne!(rollback.version, next.version);
     let row = channels::Entity::find_by_id(channel.get())

@@ -38,6 +38,42 @@ pub fn channel_opencode_full_compatibility(
 mod tests {
     use super::*;
     #[test]
+    fn compatibility_requires_explicit_boolean_on_opencode_only() {
+        assert!(
+            !channel_opencode_full_compatibility(ChannelType::OpenCode, &serde_json::json!({}))
+                .unwrap()
+        );
+        assert!(
+            channel_opencode_full_compatibility(
+                ChannelType::OpenCode,
+                &serde_json::json!({"opencode_full_compatibility":true})
+            )
+            .unwrap()
+        );
+        for value in [
+            serde_json::json!(null),
+            serde_json::json!("true"),
+            serde_json::json!(1),
+        ] {
+            assert!(
+                channel_opencode_entry(
+                    ChannelType::OpenCode,
+                    &serde_json::json!({"opencode_full_compatibility":value})
+                )
+                .is_err()
+            );
+        }
+        for value in [true, false] {
+            assert!(
+                channel_opencode_entry(
+                    ChannelType::OpenAi,
+                    &serde_json::json!({"opencode_full_compatibility":value})
+                )
+                .is_err()
+            );
+        }
+    }
+    #[test]
     fn entry_selection_rejects_arbitrary_urls_and_other_channels() {
         assert_eq!(
             channel_opencode_entry(ChannelType::OpenCode, &serde_json::json!({})).unwrap(),

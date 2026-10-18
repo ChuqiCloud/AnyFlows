@@ -227,3 +227,106 @@ impl Drop for Completion {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use af_account::EncryptedCredentialEnvelope;
+    use af_db::{
+        ChannelModelMappings, ChannelParameterOverrides, SchedulerRuntimeCredentialRecord,
+        SchedulerRuntimeTargetRecord,
+    };
+    use af_domain::{ChannelId, CredentialKind};
+    use af_protocol::openai_chat;
+
+    fn target(enabled: bool, protocol: Protocol) -> SchedulerRuntimeTargetRecord {
+        SchedulerRuntimeTargetRecord::new_pool_with_request_policy(
+            ChannelId::new(901).unwrap(),
+            ChannelType::OpenCode,
+            protocol,
+            None,
+            vec![
+                SchedulerRuntimeCredentialRecord::new(
+                    902,
+                    CredentialKind::ApiKey,
+                    EncryptedCredentialEnvelope::new("fixture", [1; 24], vec![2; 16]).unwrap(),
+                    false,
+                )
+                .unwrap(),
+            ],
+            ChannelModelMappings::parse(&serde_json::json!({"alias":"mimo-v2.6-flash-free"}))
+                .unwrap(),
+            ChannelParameterOverrides::parse(
+                &serde_json::json!({"temperature":0.25,"max_output_tokens":64}),
+            )
+            .unwrap(),
+            Vec::new(),
+        )
+        .unwrap()
+        .with_opencode_full_compatibility(enabled)
+        .unwrap()
+    }
+
+    #[test]
+    fn compatibility_budget_freezes_mapping_sampling_and_tools_before_precharge() {
+        for protocol in [
+            Protocol::OpenAiChat,
+            Protocol::OpenAiResponses,
+            Protocol::Anthropic,
+        ] {
+            let request = openai_chat::parse_request_envelope(af_adapter::Bytes::from_static(
+                br#"{"model":"alias","messages":[{"role":"user","content":"hello"}],"max_tokens":128,"stream":true}"#
+            )).unwrap();
+            let original =
+                af_relay::estimate_openai_request_upper_bound(request.canonical()).unwrap();
+            let plan =
+                prepare_plan(&target(true, protocol), request, "mimo-v2.6-flash-free").unwrap();
+            assert_eq!(plan.request().canonical().model, "mimo-v2.6-flash-free");
+            assert_eq!(plan.request().requested_model(), "alias");
+            assert_eq!(
+                plan.request().canonical().sampling.temperature(),
+                Some(0.25)
+            );
+            assert_eq!(
+                plan.request()
+                    .canonical()
+                    .sampling
+                    .max_output_tokens()
+                    .unwrap()
+                    .get(),
+                64
+            );
+            assert!(plan.request().canonical().tools.len() >= 13);
+            assert_eq!(plan.upper_bound().output_tokens().get(), 64);
+            assert!(plan.upper_bound().input_tokens() > original.input_tokens());
+            assert!(plan.request().source_protocol().is_none());
+        }
+    }
+
+    #[test]
+    fn disabled_mode_and_unrepresentable_vendor_state_are_rejected() {
+        let request = openai_chat::parse_request_envelope(af_adapter::Bytes::from_static(
+            br#"{"model":"alias","messages":[{"role":"user","content":"hello"}],"max_tokens":128}"#,
+        ))
+        .unwrap();
+        assert!(
+            prepare_plan(
+                &target(false, Protocol::OpenAiChat),
+                request,
+                "mimo-v2.6-flash-free"
+            )
+            .is_err()
+        );
+        let request = af_protocol::openai_responses::parse_request_envelope(af_adapter::Bytes::from_static(
+            br#"{"model":"alias","input":"hello","previous_response_id":"resp_private","max_output_tokens":128}"#
+        )).unwrap();
+        assert!(
+            prepare_plan(
+                &target(true, Protocol::OpenAiResponses),
+                request,
+                "mimo-v2.6-flash-free"
+            )
+            .is_err()
+        );
+    }
+}
