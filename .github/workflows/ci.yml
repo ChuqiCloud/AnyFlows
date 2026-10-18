@@ -119,7 +119,7 @@ jobs:
             echo "redis=$(matches '^(crates/af-cache/|tools/ci/run-cache-redis-test\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
             echo "clickhouse=$(matches '^(crates/af-server/src/admin_dashboard_storage/clickhouse\.rs$|crates/af-server/tests/admin_dashboard_chain\.rs$|tools/ci/run-clickhouse-integration-test\.sh$)')"
             echo "deployment=$(matches '^(Dockerfile$|docker-compose\.ya?ml$|\.dockerignore$|scripts/deploy/)')"
-            echo "systemd=$(matches '^(scripts/systemd/|tools/ci/(package-release|finalize-release|test-release-scripts)\.sh$)')"
+            echo "systemd=$(matches '^(scripts/systemd/|tools/ci/(package-release|finalize-release|test-release-scripts|verify-release-tag)\.sh$|\.cnb/release\.yml$)')"
           } >> "$GITHUB_OUTPUT"
 
   deployment:

@@ -11,6 +11,7 @@
 | [Docker Compose 部署](docker-compose.md) | 从源码构建容器、查看日志和管理数据卷 |
 | [配置参考](configuration.md) | 配置文件、环境变量、密钥和可选服务 |
 | [升级与备份](migrations-and-release.md) | 数据备份、数据库迁移、升级和回滚 |
+| [版本标签规范](release-tagging.md) | Alpha、Beta、RC、正式版标签及三仓发布对应关系 |
 
 ## 使用与管理
 
