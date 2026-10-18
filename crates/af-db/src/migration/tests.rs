@@ -94,7 +94,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
             .await?
             .items
             .len(),
-        5
+        6
     );
     for profile in af_domain::built_in_client_profiles() {
         assert_eq!(

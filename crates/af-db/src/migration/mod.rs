@@ -113,6 +113,7 @@ mod m20260926_000148_split_verification_policy;
 mod m20260929_000149_add_epay_qr_enabled;
 mod m20261017_000150_add_invitation_invitee_quota;
 mod m20261018_000151_create_client_profiles;
+mod m20261018_000152_add_opencode_public_profile;
 mod schema;
 
 #[cfg(test)]
@@ -497,6 +498,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260929_000149_add_epay_qr_enabled::Migration),
             Box::new(m20261017_000150_add_invitation_invitee_quota::Migration),
             Box::new(m20261018_000151_create_client_profiles::Migration),
+            Box::new(m20261018_000152_add_opencode_public_profile::Migration),
         ]
     }
 }

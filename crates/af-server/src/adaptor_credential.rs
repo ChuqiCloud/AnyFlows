@@ -7,6 +7,7 @@ pub(crate) fn build_adaptor_credential(
     credential: &DecryptedCredential,
 ) -> Result<Credential, AdaptorError> {
     match credential.kind() {
+        CredentialKind::Public => Ok(Credential::public()),
         CredentialKind::ApiKey => Credential::api_key(credential.expose_secret()),
         CredentialKind::Oauth => Credential::oauth(credential.expose_secret()),
         CredentialKind::Bedrock => {

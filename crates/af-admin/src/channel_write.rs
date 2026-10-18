@@ -884,7 +884,8 @@ impl AdminCredentialWriteFields {
         };
         if !matches!(
             kind,
-            CredentialKind::ApiKey
+            CredentialKind::Public
+                | CredentialKind::ApiKey
                 | CredentialKind::Oauth
                 | CredentialKind::Bedrock
                 | CredentialKind::ServiceAccount

@@ -130,6 +130,7 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
         CredentialKind,
         CredentialKind::ALL,
         [
+            (CredentialKind::Public, "public"),
             (CredentialKind::ApiKey, "api_key"),
             (CredentialKind::Oauth, "oauth"),
             (CredentialKind::SetupToken, "setup_token"),

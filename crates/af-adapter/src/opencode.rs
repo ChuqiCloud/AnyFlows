@@ -104,7 +104,10 @@ impl Adaptor for OpenCodeAdaptor {
         context: &RelayContext,
     ) -> AdaptorResult<()> {
         self.validate_context(context)?;
-        if credential.kind() != CredentialKind::ApiKey {
+        if !matches!(
+            credential.kind(),
+            CredentialKind::ApiKey | CredentialKind::Public
+        ) {
             return Err(AdaptorError::UnsupportedCredential {
                 kind: credential.kind(),
             });
@@ -121,10 +124,16 @@ impl Adaptor for OpenCodeAdaptor {
         ] {
             headers.remove(name);
         }
-        let mut authorization = HeaderValue::from_str(&if self.protocol == Protocol::Anthropic {
-            credential.expose_secret().to_owned()
+        // public 是官方客户端的协议标记，在认证边界生成，不能作为假 Key 持久化。
+        let token = if credential.kind() == CredentialKind::Public {
+            "public"
         } else {
-            format!("Bearer {}", credential.expose_secret())
+            credential.expose_secret()
+        };
+        let mut authorization = HeaderValue::from_str(&if self.protocol == Protocol::Anthropic {
+            token.to_owned()
+        } else {
+            format!("Bearer {token}")
         })
         .map_err(|_| AdaptorError::InvalidHeader)?;
         authorization.set_sensitive(true);
@@ -152,10 +161,20 @@ impl Adaptor for OpenCodeAdaptor {
             .or_else(|| context.request_id());
         if let Some(scope) = scope {
             let mut digest = Sha256::new();
+            if credential.kind() == CredentialKind::Public {
+                let id = context
+                    .credential_scope()
+                    .ok_or(AdaptorError::InvalidCredential)?;
+                digest.update(id.to_be_bytes());
+            }
             for part in [
                 b"AnyFlows:opencode-session:v1".as_slice(),
                 scope.as_bytes(),
-                credential.expose_secret().as_bytes(),
+                if credential.kind() == CredentialKind::Public {
+                    b"AnyFlows:opencode-public:v1".as_slice()
+                } else {
+                    credential.expose_secret().as_bytes()
+                },
             ] {
                 digest.update(u64::try_from(part.len()).unwrap_or(u64::MAX).to_be_bytes());
                 digest.update(part);
@@ -247,6 +266,60 @@ impl Adaptor for OpenCodeAdaptor {
 mod tests {
     use super::*;
     use crate::{HttpClientConfig, HttpClientPool, ResponseMode};
+
+    #[test]
+    fn public_access_clears_authentication_and_isolates_sessions_by_credential() {
+        let context = RelayContext::new(
+            HttpClientPool::default()
+                .get(&HttpClientConfig::default())
+                .unwrap(),
+        )
+        .with_request_id("public-test")
+        .unwrap();
+        let credential = Credential::public();
+        for protocol in [
+            Protocol::OpenAiChat,
+            Protocol::OpenAiResponses,
+            Protocol::Anthropic,
+        ] {
+            let adaptor =
+                OpenCodeAdaptor::new(OpenCodeEntry::InferenceV1, protocol, vec![]).unwrap();
+            let prepare = |id| {
+                let mut headers = HeaderMap::new();
+                headers.insert("authorization", HeaderValue::from_static("Bearer previous"));
+                headers.insert("x-api-key", HeaderValue::from_static("previous"));
+                adaptor
+                    .setup_headers(
+                        &mut headers,
+                        &credential,
+                        &context.clone().with_credential_scope(id).unwrap(),
+                    )
+                    .unwrap();
+                headers
+            };
+            let first = prepare(21);
+            let (active, absent, value) = if protocol == Protocol::Anthropic {
+                ("x-api-key", "authorization", "public")
+            } else {
+                ("authorization", "x-api-key", "Bearer public")
+            };
+            assert_eq!(first[active], value);
+            assert!(first[active].is_sensitive());
+            assert!(!first.contains_key(absent));
+            assert_eq!(first["x-session-id"], prepare(21)["x-session-id"]);
+            assert_ne!(first["x-session-id"], prepare(22)["x-session-id"]);
+            assert!(
+                adaptor
+                    .setup_headers(&mut HeaderMap::new(), &credential, &context)
+                    .is_err()
+            );
+        }
+        assert!(
+            crate::OpenAiAdaptor::new()
+                .setup_headers(&mut HeaderMap::new(), &credential, &context)
+                .is_err()
+        );
+    }
 
     #[test]
     fn fixed_endpoints_reject_address_and_oauth_overrides() {

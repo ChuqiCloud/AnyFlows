@@ -68,7 +68,7 @@ impl CredentialStateEvent {
     ) -> Result<Self, CredentialStateRepositoryError> {
         let supported_kind = matches!(
             credential_kind,
-            CredentialKind::ApiKey | CredentialKind::Oauth
+            CredentialKind::ApiKey | CredentialKind::Oauth | CredentialKind::Public
         );
         let invalid_missing_refresh = matches!(change, CredentialStateChange::MissingRefreshToken)
             && !matches!(credential_kind, CredentialKind::Oauth);

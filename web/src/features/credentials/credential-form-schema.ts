@@ -25,7 +25,7 @@ type CredentialSchemaOptions = {
 
 const credentialFormShape = z.object({
   mode: z.enum(['standard', 'spark_shadow']),
-  kind: z.enum(['api_key', 'oauth', 'bedrock', 'service_account']),
+  kind: z.enum(['public', 'api_key', 'oauth', 'bedrock', 'service_account']),
   oauthCreateMode: z.enum(['authorize', 'access_token']),
   rotateSecret: z.boolean(),
   apiKey: z.string(), accessToken: z.string(), accessKeyId: z.string(),

@@ -763,6 +763,19 @@ impl AdminChannelRepository {
         let Some(current) = find_active_channel(&transaction, channel_id).await? else {
             return Ok(AdminChannelMutationOutcome::NotFound);
         };
+        if fields.channel_type != ChannelType::OpenCode
+            && credentials::Entity::find()
+                .filter(credentials::Column::ChannelId.eq(channel_id.get()))
+                .filter(credentials::Column::DeletedAt.is_null())
+                .filter(credentials::Column::Kind.eq(CredentialKind::Public.as_str()))
+                .one(&transaction)
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(map_db_error)?
+                .is_some()
+        {
+            return Err(AdminChannelWriteRepositoryError::InvalidInput);
+        }
         let current_settings = current.settings.into_inner();
         let current_client_simulation_profile = client_simulation_profile(&current_settings)
             .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
@@ -1037,6 +1050,7 @@ impl AdminChannelRepository {
             return Ok(AdminCredentialCreateOutcome::ChannelNotFound);
         };
         validate_credential_channel_compatibility(&channel, fields.kind)?;
+        validate_public_credential_pool(&transaction, channel_id, fields.kind, None).await?;
         if fields.quota_dimension == CredentialQuotaDimension::Spark {
             validate_spark_shadow_channel(&channel)?;
             lock_and_validate_spark_parent(&transaction, channel_id, &fields, None).await?;
@@ -1127,6 +1141,8 @@ impl AdminChannelRepository {
         };
         let current_kind = CredentialKind::from_str(&current.kind)
             .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+        validate_public_credential_pool(&transaction, channel_id, fields.kind, Some(credential_id))
+            .await?;
         let current_quota_dimension = CredentialQuotaDimension::from_str(&current.quota_dimension)
             .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
         if current_kind != fields.kind
@@ -1530,7 +1546,8 @@ fn validate_credential_fields(
     };
     if !matches!(
         record.kind,
-        CredentialKind::ApiKey
+        CredentialKind::Public
+            | CredentialKind::ApiKey
             | CredentialKind::Oauth
             | CredentialKind::Bedrock
             | CredentialKind::ServiceAccount
@@ -1583,8 +1600,14 @@ fn validate_credential_channel_compatibility(
         .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
     if matches!(
         channel_type,
-        ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai | ChannelType::OpenCode
+        ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
     ) && kind != CredentialKind::ApiKey
+    {
+        return Err(AdminChannelWriteRepositoryError::InvalidInput);
+    }
+    if (kind == CredentialKind::Public && channel_type != ChannelType::OpenCode)
+        || (channel_type == ChannelType::OpenCode
+            && !matches!(kind, CredentialKind::ApiKey | CredentialKind::Public))
     {
         return Err(AdminChannelWriteRepositoryError::InvalidInput);
     }
@@ -1599,6 +1622,35 @@ fn validate_credential_channel_compatibility(
         && (channel_type != ChannelType::OpenAi
             || channel.protocol.parse::<Protocol>().ok() != Some(Protocol::OpenAiResponses)
             || kind != CredentialKind::Oauth)
+    {
+        return Err(AdminChannelWriteRepositoryError::InvalidInput);
+    }
+    Ok(())
+}
+
+/// 渠道行已在同一事务内锁定。公开访问不能通过账号池轮换到收费 Key，
+/// 也不能创建多个无密钥描述绕开同一公开入口的并发与健康限制。
+async fn validate_public_credential_pool(
+    transaction: &DatabaseTransaction,
+    channel_id: ChannelId,
+    kind: CredentialKind,
+    excluding: Option<CredentialId>,
+) -> Result<(), AdminChannelWriteRepositoryError> {
+    let mut query = credentials::Entity::find()
+        .filter(credentials::Column::ChannelId.eq(channel_id.get()))
+        .filter(credentials::Column::DeletedAt.is_null());
+    if let Some(id) = excluding {
+        query = query.filter(credentials::Column::Id.ne(id.get()));
+    }
+    if kind != CredentialKind::Public {
+        query = query.filter(credentials::Column::Kind.eq(CredentialKind::Public.as_str()));
+    }
+    if query
+        .one(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_db_error)?
+        .is_some()
     {
         return Err(AdminChannelWriteRepositoryError::InvalidInput);
     }
