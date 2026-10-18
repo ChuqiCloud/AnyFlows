@@ -270,6 +270,8 @@ string_enum! {
     pub enum ChannelType {
         /// OpenAI 及其兼容 API。
         OpenAi => "openai",
+        /// OpenCode 固定服务入口。
+        OpenCode => "opencode",
         /// Anthropic 官方或兼容 API。
         Anthropic => "anthropic",
         /// Gemini 官方或兼容 API。

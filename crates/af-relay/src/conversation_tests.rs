@@ -376,3 +376,58 @@ async fn responses_client_posts_to_chat_endpoint_and_receives_responses_output()
     assert_eq!(usage.unwrap().input_tokens().get(), 41);
     assert!(report.successful_candidate_index().is_some());
 }
+
+#[tokio::test]
+async fn sse_aggregation_preserves_all_four_protocols_tools_and_usage() {
+    for upstream in PROTOCOLS {
+        for tool in [false, true] {
+            let canonical = request(upstream, true).into_canonical();
+            let mut encoder = ChatStreamEncoder::new(
+                upstream,
+                "fixture",
+                "model",
+                1_700_000_000,
+                &canonical,
+                true,
+            )
+            .unwrap();
+            let mut bytes = Vec::new();
+            for event in fixture_events(tool) {
+                bytes.extend(encoder.encode_event(event).unwrap());
+            }
+            bytes.extend(
+                encoder
+                    .encode_event(CanonicalStreamEvent::Usage(usage()))
+                    .unwrap(),
+            );
+            bytes.extend(encoder.finish(Ok(usage()), true).unwrap());
+            let response = crate::collect_conversation_response(
+                upstream,
+                af_adapter::UpstreamBody::Full(Bytes::from(bytes)),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                response.choices[0].message,
+                self::response(upstream, tool).choices[0].message,
+                "{upstream:?}"
+            );
+            assert_eq!(response.usage, Some(usage()));
+            for downstream in PROTOCOLS {
+                let body = build_response(
+                    downstream,
+                    response.clone(),
+                    usage(),
+                    "client",
+                    "public-model",
+                    1_700_000_000,
+                )
+                .unwrap();
+                assert_eq!(
+                    super::parse_response(downstream, &body).unwrap().choices[0].message,
+                    response.choices[0].message
+                );
+            }
+        }
+    }
+}

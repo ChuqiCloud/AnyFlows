@@ -76,7 +76,7 @@ fn try_runtime_target(
             CredentialKind::ApiKey | CredentialKind::Oauth
         ) || (matches!(
             channel_type,
-            ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
+            ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai | ChannelType::OpenCode
         ) && credential_kind != CredentialKind::ApiKey)
             || (channel.client_simulation_profile().is_some()
                 && credential_kind != CredentialKind::Oauth)
@@ -134,6 +134,7 @@ fn try_runtime_target(
     .and_then(|target| {
         target.with_client_simulation_body_profile(channel.client_simulation_body_profile())
     })
+    .and_then(|target| target.with_opencode_entry(channel.opencode_entry()))
     .and_then(|target| target.with_client_profile(channel.client_profile().cloned()))
     .and_then(|target| {
         target.with_responses_websocket_enabled(channel.responses_websocket_enabled())

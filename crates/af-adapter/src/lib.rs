@@ -7,7 +7,7 @@ mod anthropic;
 mod bedrock;
 mod client_profile;
 mod cohere;
-pub use client_profile::apply_client_profile_identity;
+pub use client_profile::{apply_client_profile_headers, apply_client_profile_identity};
 mod context;
 mod credential;
 mod custom;
@@ -17,6 +17,8 @@ mod gemini;
 mod jina;
 mod mimicry;
 mod openai;
+mod opencode;
+pub use opencode::OpenCodeAdaptor;
 mod request;
 mod responses_websocket_pool;
 mod responses_websocket_transport;
@@ -45,7 +47,7 @@ pub use error::{AdaptorError, AdaptorResult, AdaptorTransportError};
 pub use factory::{
     AdaptorSettings, AnthropicAdaptorSettings, BedrockAdaptorSettings, CohereAdaptorSettings,
     CustomAdaptorSettings, GeminiAdaptorSettings, JinaAdaptorSettings, OpenAiAdaptorSettings,
-    VertexAdaptorSettings, get_adaptor, get_task_adaptor,
+    OpenCodeAdaptorSettings, VertexAdaptorSettings, get_adaptor, get_task_adaptor,
 };
 pub use gemini::GeminiAdaptor;
 pub use jina::JinaAdaptor;

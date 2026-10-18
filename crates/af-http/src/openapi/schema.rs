@@ -378,6 +378,7 @@ pub(crate) enum AdminRouteStrategySchema {
 #[schema(as = AdminChannelType, rename_all = "snake_case")]
 pub(crate) enum AdminChannelTypeSchema {
     Openai,
+    Opencode,
     Anthropic,
     Gemini,
     Jina,

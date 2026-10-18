@@ -119,12 +119,25 @@ pub async fn relay_conversation_with_report(
             }
             return Ok(ChatResponse::Stream { body, usage });
         }
-        let body = response
-            .into_body()
-            .into_bytes()
-            .await
-            .map_err(map_adaptor_error)?;
-        let response = parse_response(upstream_protocol, &body)?;
+        let is_sse = response
+            .headers()
+            .get("content-type")
+            .and_then(|h| h.to_str().ok())
+            .is_some_and(|h| {
+                h.split(';')
+                    .next()
+                    .is_some_and(|mime| mime.trim().eq_ignore_ascii_case("text/event-stream"))
+            });
+        let response = if is_sse {
+            crate::collect_conversation_response(upstream_protocol, response.into_body()).await?
+        } else {
+            let body = response
+                .into_body()
+                .into_bytes()
+                .await
+                .map_err(map_adaptor_error)?;
+            parse_response(upstream_protocol, &body)?
+        };
         let usage = estimator
             .resolve_response(&response)
             .map_err(|_| UpstreamError::ProtocolError)?;

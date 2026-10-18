@@ -3,13 +3,12 @@ use af_httpclient::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::{AdaptorError, AdaptorResult, ClientSimulationContext, UpstreamRequest};
 
-/// 只应用冻结档案中的身份字段；认证、协议和服务头仍由适配器托管。
-pub fn apply_client_profile_identity(
+pub fn apply_client_profile_headers(
     profile: &ClientProfileSnapshot,
     context: ClientSimulationContext,
     oauth_provider: Option<&str>,
-    request: UpstreamRequest,
-) -> AdaptorResult<UpstreamRequest> {
+    headers: &mut HeaderMap,
+) -> AdaptorResult<()> {
     profile
         .validate()
         .map_err(|_| AdaptorError::InvalidClientSimulation)?;
@@ -22,10 +21,6 @@ pub fn apply_client_profile_identity(
     {
         return Err(AdaptorError::InvalidClientSimulation);
     }
-    if profile.definition.identity_headers.is_empty() {
-        return Ok(request);
-    }
-    let mut headers = HeaderMap::new();
     for (name, value) in &profile.definition.identity_headers {
         headers.insert(
             HeaderName::try_from(name.as_str())
@@ -34,6 +29,18 @@ pub fn apply_client_profile_identity(
                 .map_err(|_| AdaptorError::InvalidClientSimulation)?,
         );
     }
+    Ok(())
+}
+
+/// 只应用冻结档案中的身份字段；认证、协议和服务头仍由适配器托管。
+pub fn apply_client_profile_identity(
+    profile: &ClientProfileSnapshot,
+    context: ClientSimulationContext,
+    oauth_provider: Option<&str>,
+    request: UpstreamRequest,
+) -> AdaptorResult<UpstreamRequest> {
+    let mut headers = HeaderMap::new();
+    apply_client_profile_headers(profile, context, oauth_provider, &mut headers)?;
     request.with_header_overrides(headers)
 }
 
