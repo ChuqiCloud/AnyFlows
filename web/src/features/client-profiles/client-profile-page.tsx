@@ -102,7 +102,7 @@ function ProfileEditorForm({ editor, initial, record, readError, retry, template
   const protocols = Array.from(new Set(compatible.flatMap(template => template.protocols)))
   const credentials = Array.from(new Set(compatible.flatMap(template => template.credential_kinds)))
   return <ProfileDrawer title={t(creating ? 'clientProfiles.create' : readonly ? 'clientProfiles.details' : 'clientProfiles.edit')} dirty={dirty} busy={busy} onClose={onClose}>
-    {readError && <ProfileError error={readError} retry={retry} />}
+    {!!readError && <ProfileError error={readError} retry={retry} />}
     {!creating && <div className="cp-tabs">{['definition', 'revisions', 'references'].map(value => <ProfileButton key={value} onClick={() => setTab(value)}><span aria-current={tab === value ? 'page' : undefined}>{t(`clientProfiles.${value}`)}</span></ProfileButton>)}</div>}
     {tab === 'definition' ? <form className="cp-form" onSubmit={event => { event.preventDefault(); if (!readonly && !busy && validProfileDraft(key, definition)) save.mutate() }}>
       <div className="cp-grid"><ProfileField label={t('clientProfiles.key')}><ProfileInput label={t('clientProfiles.key')} value={key} maxLength={64} disabled={!creating || busy} onChange={setKey} /></ProfileField><ProfileField label={t('clientProfiles.name')}><ProfileInput label={t('clientProfiles.name')} value={definition.name} maxLength={128} disabled={readonly || busy} onChange={name => change({ name })} /></ProfileField></div>

@@ -64,9 +64,7 @@
     "allTags": "全部分类",
     "count": "共 {{count}} 个接口",
     "loadMore": "加载更多",
-    "actions": {
-      "retry": "重试"
-    },
+    "actions": { "retry": "重试" },
     "loading": "加载接口目录…",
     "empty": "没有匹配的接口",
     "required": "必填",
@@ -7545,59 +7543,20 @@
     },
     "providers": "已接入的模型厂商",
     "journey": {
-      "healthy": {
-        "label": "健康路由",
-        "route": "OpenAI · 优先渠道"
-      },
-      "failover": {
-        "label": "故障切换",
-        "route": "AnyFlows · 候选渠道"
-      },
-      "streaming": {
-        "label": "流式响应",
-        "route": "Gemini · 流式通道"
-      }
+      "healthy": { "label": "健康路由", "route": "OpenAI · 优先渠道" },
+      "failover": { "label": "故障切换", "route": "AnyFlows · 候选渠道" },
+      "streaming": { "label": "流式响应", "route": "Gemini · 流式通道" }
     },
     "home": {
-      "heroChecks": {
-        "compatible": "OpenAI 兼容接口",
-        "health": "渠道健康检查",
-        "logs": "请求级调用记录"
-      },
+      "heroChecks": { "compatible": "OpenAI 兼容接口", "health": "渠道健康检查", "logs": "请求级调用记录" },
       "preview": {
-        "eyebrow": "REQUEST FLOW",
-        "statusHealthy": "HEALTHY",
-        "statusRecovering": "RECOVERING",
-        "entry": "统一入口",
-        "title": "一条请求，自动找到路径",
-        "healthy": "优先渠道响应中",
-        "failover": "候选渠道 2 / 3",
-        "streaming": "流式响应已建立",
-        "stats": {
-          "latency": "首字延迟",
-          "availability": "可用性",
-          "channels": "候选渠道",
-          "channelUnit": "条"
-        }
+        "eyebrow": "REQUEST FLOW", "statusHealthy": "HEALTHY", "statusRecovering": "RECOVERING", "entry": "统一入口", "title": "一条请求，自动找到路径",
+        "healthy": "优先渠道响应中", "failover": "候选渠道 2 / 3", "streaming": "流式响应已建立",
+        "stats": { "latency": "首字延迟", "availability": "可用性", "channels": "候选渠道", "channelUnit": "条" }
       },
-      "journey": {
-        "heading": "从请求进入，到结果返回",
-        "weight": "权重",
-        "health": "健康度",
-        "failover": "自动降级"
-      },
-      "status": {
-        "eyebrow": "实时状态示意",
-        "heading": "把异常切换变成可见的过程",
-        "description": "选择一个场景，看同一条请求如何在健康、故障切换和流式响应之间保持清晰。",
-        "tablist": "请求场景",
-        "ok": "200 OK",
-        "route": "路由结果",
-        "stable": "稳定"
-      },
-      "cta": {
-        "heading": "一个端点，连接所有模型渠道"
-      }
+      "journey": { "heading": "从请求进入，到结果返回", "weight": "权重", "health": "健康度", "failover": "自动降级" },
+      "status": { "eyebrow": "实时状态示意", "heading": "把异常切换变成可见的过程", "description": "选择一个场景，看同一条请求如何在健康、故障切换和流式响应之间保持清晰。", "tablist": "请求场景", "ok": "200 OK", "route": "路由结果", "stable": "稳定" },
+      "cta": { "heading": "一个端点，连接所有模型渠道" }
     },
     "feature": {
       "eyebrow": "核心能力",
@@ -7746,10 +7705,7 @@
     "enterprise": "企业认证",
     "kind": "认证类型",
     "provider": "认证方式",
-    "providers": {
-      "manual": "人工审核",
-      "alipay": "支付宝实名认证"
-    },
+    "providers": { "manual": "人工审核", "alipay": "支付宝实名认证" },
     "noProvider": "当前没有可用的认证方式，请联系管理员。",
     "alipayHint": "提交后请在有效期内使用本人支付宝扫码认证；手机访问会尝试打开支付宝。",
     "alipayCallbackHint": "完成支付宝授权后，认证结果会自动更新。",
@@ -7761,31 +7717,8 @@
     "documentType": "证件类型",
     "documentNumber": "证件号码",
     "documentNumberHint": "仅保存脱敏号码；中国居民身份证会校验校验位。",
-    "documentTypes": {
-      "national_id": "身份证",
-      "passport": "护照",
-      "residence_permit": "居留证",
-      "foreign_passport": "外国护照",
-      "hkm_macao_pass": "港澳居民来往内地通行证",
-      "taiwan_pass": "台湾居民来往大陆通行证",
-      "business_registration": "企业登记号",
-      "other": "其他证件"
-    },
-    "countries": {
-      "CN": "中国大陆",
-      "HK": "中国香港",
-      "MO": "中国澳门",
-      "TW": "中国台湾",
-      "US": "美国",
-      "CA": "加拿大",
-      "GB": "英国",
-      "JP": "日本",
-      "KR": "韩国",
-      "SG": "新加坡",
-      "AU": "澳大利亚",
-      "DE": "德国",
-      "FR": "法国"
-    },
+    "documentTypes": { "national_id": "身份证", "passport": "护照", "residence_permit": "居留证", "foreign_passport": "外国护照", "hkm_macao_pass": "港澳居民来往内地通行证", "taiwan_pass": "台湾居民来往大陆通行证", "business_registration": "企业登记号", "other": "其他证件" },
+    "countries": { "CN": "中国大陆", "HK": "中国香港", "MO": "中国澳门", "TW": "中国台湾", "US": "美国", "CA": "加拿大", "GB": "英国", "JP": "日本", "KR": "韩国", "SG": "新加坡", "AU": "澳大利亚", "DE": "德国", "FR": "法国" },
     "summary": "认证说明",
     "materials": "认证材料",
     "fileHint": "支持 PNG、JPEG、WebP 和 PDF；最多 5 份，每份不超过 10 MB，总计不超过 25 MB。",

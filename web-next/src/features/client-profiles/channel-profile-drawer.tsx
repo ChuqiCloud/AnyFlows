@@ -39,7 +39,7 @@ function ChannelProfileForm({ channel, binding, settings, readError, retry, onCl
   const bindingDirty = !!selection && (selection.key !== base?.binding.key || selection.revision !== base?.binding.revision)
   const entryDirty = !!entryBase && entry !== entryBase.entry
   return <ProfileDrawer title={`${t('clientProfiles.channelSettings')} · ${channel.name}`} dirty={bindingDirty || entryDirty} busy={busy} onClose={onClose}>
-    {readError && <ProfileError error={readError} retry={retry} />}
+    {!!readError && <ProfileError error={readError} retry={retry} />}
     <p className="cp-hint">{t('clientProfiles.channelHint')}</p>
     <div className="cp-version"><strong>{t('clientProfiles.currentBinding')}</strong><p>{base ? `${base.binding.key} · r${base.binding.revision}` : t('clientProfiles.unbound')}</p><p className="cp-hint">{channel.type} · {channel.protocol}</p></div>
     {(channel.client_simulation_profile || channel.client_simulation_body_profile) && <p className="cp-error">{t('clientProfiles.legacyConflict')}</p>}
