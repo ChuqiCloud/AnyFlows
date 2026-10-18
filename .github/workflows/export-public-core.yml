@@ -68,7 +68,7 @@ jobs:
           fi
 
           if [ -z "$pr_number" ]; then
-            jq -n '{title: "同步 Gitea 公共核心", body: "", url: "", number: null}' > "$metadata"
+            jq -n '{title: "同步 Gitea 公共核心", body: "", url: "", number: null, mergeCommitSha: ""}' > "$metadata"
             exit 0
           fi
 
@@ -82,7 +82,7 @@ jobs:
 
           jq -n --argjson pr "$pr" --arg number "$pr_number" \
             '{title: $pr.title, body: ($pr.body // ""), url: $pr.html_url,
-              number: ($number|tonumber)}' \
+              number: ($number|tonumber), mergeCommitSha: ($pr.merge_commit_sha // "")}' \
             > "$metadata"
 
       - name: Check out public repository
@@ -194,10 +194,15 @@ jobs:
           source_pr_number="$(jq -r '.number // empty' "$metadata")"
           body="$(jq -rn --arg source_body "$source_body" --arg url "$source_pr_url" \
             --arg pr "$source_pr_number" --arg sha "$GITEA_COMMIT" --arg repo "$GITEA_SOURCE_REPOSITORY_URL" \
+            --arg source_repo "$GITEA_REPOSITORY" \
+            --arg merge_sha "$(jq -r '.mergeCommitSha // ""' "$metadata")" \
             '$source_body + (if $source_body == "" then "" else "\n\n" end) +
              (if $url != "" then "来源 PR：" + $url + "\n" else "" end) +
              (if $pr != "" then "来源 PR 编号：#" + $pr + "\n" else "" end) +
-             "来源提交：" + $sha + "\n来源仓库：" + $repo')"
+             "来源提交：" + $sha + "\n来源仓库：" + $repo +
+             (if $pr != "" and ($merge_sha | test("^[0-9a-f]{40}$")) then
+               "\n\n<!-- anyflows-pr-source:gitea:" + $source_repo + ":" + $pr + ":" + $merge_sha + " -->"
+              else "" end)')"
           existing="$(curl --fail --silent --show-error \
             -H "Authorization: Bearer $PUBLIC_REPO_SYNC_TOKEN" \
             -H 'Accept: application/vnd.github+json' \
