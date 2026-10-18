@@ -5,6 +5,12 @@ mod billing;
 mod billing_contract;
 mod billing_runtime;
 mod channel;
+mod client_profile;
+pub use client_profile::{
+    ClientProfileBehavior, ClientProfileBinding, ClientProfileDefinition, ClientProfileError,
+    ClientProfileService, ClientProfileSessionStrategy, ClientProfileSnapshot,
+    built_in_client_profiles, validate_client_identity_header, validate_client_profile_key,
+};
 mod concurrency;
 mod enums;
 mod error;

@@ -46,6 +46,7 @@ pub(super) struct SchedulerRuntimeChannelSource {
     pool_mode: bool,
     client_simulation_profile: Option<ClientSimulationProfile>,
     client_simulation_body_profile: Option<ClientSimulationBodyProfile>,
+    client_profile: Option<af_domain::ClientProfileSnapshot>,
     responses_websocket_enabled: bool,
     responses_compact_mode: ResponsesCompactMode,
     responses_compact_probe_result: ResponsesCompactProbeResult,
@@ -151,6 +152,7 @@ impl SchedulerRuntimeChannelSource {
             pool_mode,
             client_simulation_profile,
             client_simulation_body_profile,
+            client_profile: None,
             responses_websocket_enabled,
             responses_compact_mode,
             responses_compact_probe_result,
@@ -159,6 +161,62 @@ impl SchedulerRuntimeChannelSource {
     }
 
     /// 返回渠道数据库标识。
+    pub(super) fn with_client_profile(
+        mut self,
+        profile: af_domain::ClientProfileSnapshot,
+    ) -> Result<Self, SchedulerRuntimeSourceError> {
+        profile
+            .validate()
+            .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        if !profile
+            .definition
+            .matches_channel(self.channel_type, self.protocol)
+        {
+            return Err(SchedulerRuntimeSourceError::Invariant);
+        }
+        if self.client_simulation_profile.is_some() {
+            let expected = if self.client_simulation_body_profile.is_some() {
+                "claude-code-date"
+            } else {
+                "claude-code"
+            };
+            if profile.binding.key != expected || profile.binding.revision != 1 {
+                return Err(SchedulerRuntimeSourceError::Invariant);
+            }
+            // 旧身份中间件覆盖同名 Header；投影移除被覆盖值，保持迁移前语义。
+            self.headers.retain(|(key, _)| {
+                !profile
+                    .definition
+                    .identity_headers
+                    .keys()
+                    .any(|name| name.eq_ignore_ascii_case(key))
+            });
+        } else if self.headers.iter().any(|(key, _)| {
+            profile
+                .definition
+                .identity_headers
+                .keys()
+                .any(|name| name.eq_ignore_ascii_case(key))
+        }) {
+            return Err(SchedulerRuntimeSourceError::Invariant);
+        }
+        if profile.definition.service == af_domain::ClientProfileService::ClaudeCode {
+            self.client_simulation_profile = Some(ClientSimulationProfile::AnthropicCliHeadersV1);
+            self.client_simulation_body_profile = match profile.definition.behavior {
+                af_domain::ClientProfileBehavior::ClaudeUtcDateV1 => {
+                    Some(ClientSimulationBodyProfile::AnthropicCliSystemDateV1)
+                }
+                _ => None,
+            };
+        }
+        self.client_profile = Some(profile);
+        Ok(self)
+    }
+
+    pub(super) fn client_profile(&self) -> Option<&af_domain::ClientProfileSnapshot> {
+        self.client_profile.as_ref()
+    }
+
     pub(super) const fn channel_id(&self) -> ChannelId {
         self.channel_id
     }

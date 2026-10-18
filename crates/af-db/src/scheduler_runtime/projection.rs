@@ -186,6 +186,8 @@ struct ProjectionTargetWire {
     /// 旧投影缺少该字段时保持默认关闭。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     client_simulation_body_profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    client_profile: Option<af_domain::ClientProfileSnapshot>,
     responses_websocket_enabled: bool,
     #[serde(default)]
     responses_compact_mode: Option<String>,
@@ -399,6 +401,7 @@ impl ProjectionTargetWire {
                 .collect(),
             auto_ban_keywords: target.auto_ban_rules().keywords().to_vec(),
             pool_mode: target.pool_mode(),
+            client_profile: target.client_profile().cloned(),
             client_simulation_profile: target
                 .client_simulation_profile()
                 .map(|profile| profile.to_string()),
@@ -499,6 +502,7 @@ impl ProjectionTargetWire {
         .and_then(|target| {
             target.with_client_simulation_body_profile(client_simulation_body_profile)
         })
+        .and_then(|target| target.with_client_profile(self.client_profile))
         .and_then(|target| {
             target.with_responses_websocket_enabled(self.responses_websocket_enabled)
         })
@@ -879,6 +883,70 @@ mod tests {
                 .client_simulation_profile(),
             None
         );
+    }
+
+    #[test]
+    fn profile_snapshot_round_trips_and_invalid_identity_is_rejected() {
+        let channel = ChannelId::new(31).unwrap();
+        let mut profile = af_domain::built_in_client_profiles().remove(0);
+        profile.binding.key = "example-client".to_owned();
+        profile
+            .definition
+            .identity_headers
+            .insert("user-agent".to_owned(), "example/1".to_owned());
+        let target = SchedulerRuntimeTargetRecord::new_pool(
+            channel,
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat,
+            None,
+            vec![
+                SchedulerRuntimeCredentialRecord::new(
+                    32,
+                    CredentialKind::ApiKey,
+                    EncryptedCredentialEnvelope::new("test-key", [1; 24], vec![2; 16]).unwrap(),
+                    false,
+                )
+                .unwrap(),
+            ],
+            Vec::new(),
+        )
+        .unwrap()
+        .with_client_profile(Some(profile.clone()))
+        .unwrap();
+        let record = SchedulerRuntimeRecord::new(
+            SchedulerAbilityRecord::from_projection_parts(
+                GroupId::new(33).unwrap(),
+                "model".to_owned(),
+                channel,
+                1,
+                1,
+            )
+            .unwrap(),
+            Arc::new(target),
+        );
+        let projection = SchedulerRuntimeProjection::new(
+            34,
+            SchedulerCatalogSubject::Channel(channel),
+            vec![record],
+        )
+        .unwrap();
+        let payload = projection.encode().unwrap();
+        let decoded = SchedulerRuntimeProjection::decode(&payload).unwrap();
+        assert_eq!(
+            decoded.records()[0].target().client_profile(),
+            Some(&profile)
+        );
+        let mut wire: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        wire["targets"][0]["client_profile"]["definition"]["identity_headers"]["authorization"] =
+            serde_json::json!("Bearer forbidden");
+        assert!(SchedulerRuntimeProjection::decode(&serde_json::to_vec(&wire).unwrap()).is_err());
+        wire["targets"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("client_profile");
+        let legacy =
+            SchedulerRuntimeProjection::decode(&serde_json::to_vec(&wire).unwrap()).unwrap();
+        assert!(legacy.records()[0].target().client_profile().is_none());
     }
 
     #[test]

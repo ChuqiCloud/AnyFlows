@@ -507,6 +507,7 @@ pub struct SchedulerRuntimeTargetRecord {
     pool_mode: bool,
     client_simulation_profile: Option<ClientSimulationProfile>,
     client_simulation_body_profile: Option<ClientSimulationBodyProfile>,
+    client_profile: Option<af_domain::ClientProfileSnapshot>,
     responses_websocket_enabled: bool,
     responses_compact_mode: ResponsesCompactMode,
     responses_compact_probe_result: ResponsesCompactProbeResult,
@@ -657,6 +658,7 @@ impl SchedulerRuntimeTargetRecord {
             pool_mode: false,
             client_simulation_profile: None,
             client_simulation_body_profile: None,
+            client_profile: None,
             responses_websocket_enabled: false,
             responses_compact_mode: ResponsesCompactMode::Auto,
             responses_compact_probe_result: ResponsesCompactProbeResult::Unknown,
@@ -716,6 +718,38 @@ impl SchedulerRuntimeTargetRecord {
     }
 
     /// 显式设置客户端仿真档案，并保证快照内只保留适用的 OAuth 凭据。
+    pub fn with_client_profile(
+        mut self,
+        profile: Option<af_domain::ClientProfileSnapshot>,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        if let Some(profile) = &profile
+            && (profile.validate().is_err()
+                || !profile
+                    .definition
+                    .matches_channel(self.channel_type, self.protocol)
+                || self.credentials.iter().any(|c| {
+                    !profile
+                        .definition
+                        .matches_credential(c.credential_kind(), c.oauth_provider())
+                })
+                || self.headers.iter().any(|h| {
+                    profile
+                        .definition
+                        .identity_headers
+                        .keys()
+                        .any(|name| name.eq_ignore_ascii_case(h.name()))
+                }))
+        {
+            return Err(SchedulerRuntimeTargetRecordError);
+        }
+        self.client_profile = profile;
+        Ok(self)
+    }
+
+    pub fn client_profile(&self) -> Option<&af_domain::ClientProfileSnapshot> {
+        self.client_profile.as_ref()
+    }
+
     pub fn with_client_simulation_profile(
         mut self,
         profile: Option<ClientSimulationProfile>,
