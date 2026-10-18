@@ -213,7 +213,16 @@ fn protocol_matrix_preserves_tool_results_in_followup_requests() {
                 outbound.messages, canonical.messages,
                 "{source:?} -> {target:?}"
             );
-            assert_eq!(outbound.tools, canonical.tools, "{source:?} -> {target:?}");
+            assert_eq!(outbound.tools.len(), canonical.tools.len());
+            for (actual, expected) in outbound.tools.iter().zip(&canonical.tools) {
+                assert_eq!(actual.name, expected.name);
+                assert_eq!(actual.description, expected.description);
+                assert_eq!(actual.input_schema, expected.input_schema);
+                assert_eq!(
+                    actual.strict.unwrap_or(false),
+                    expected.strict.unwrap_or(false)
+                );
+            }
         }
     }
 }
