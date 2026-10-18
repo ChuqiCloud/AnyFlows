@@ -159,7 +159,11 @@ try {
   assert.ok(await oldRevision.getByRole('button', { name: '选择', exact: true }).isDisabled())
   await oldRevision.getByText('此修订的服务或协议与当前渠道不兼容，无法选择。', { exact: true }).waitFor()
   if (isNext) {
-    await page.getByRole('button', { name: '服务入口', exact: true }).click()
+    const endpoint = page.getByRole('button', { name: '服务入口', exact: true })
+    await endpoint.scrollIntoViewIfNeeded()
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    await endpoint.click()
+    assert.equal(await endpoint.getAttribute('aria-expanded'), 'true', 'Endpoint menu should remain open after pointer input')
     await page.getByRole('option', { name: 'Zen v1', exact: true }).click()
   } else await page.getByRole('combobox', { name: '服务入口', exact: true }).selectOption('zen_v1')
   await page.getByRole('button', { name: '保存服务入口', exact: true }).click()
