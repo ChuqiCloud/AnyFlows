@@ -5,6 +5,7 @@ on:
     branches: [main, develop, master]
     paths:
       - .github/workflows/release-checks.yml
+      - .github/workflows/publish-public-release.yml
       - .cnb/release.yml
       - tools/ci/*release*.sh
       - scripts/systemd/**
