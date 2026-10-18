@@ -14,8 +14,7 @@ use futures_core::Stream;
 
 use crate::chat_stream_encoder::ChatStreamEncoder;
 use crate::conversation_decoder::ConversationDecoder;
-use crate::error::map_adaptor_error;
-use crate::generation_stream::StreamSource;
+use crate::conversation_source::ConversationSource;
 use crate::generation_stream::{append_completion_future, append_completion_hook};
 use crate::openai_chat_usage::{
     OpenAiChatUsageEstimator, OpenAiChatUsageHandle, UsageResolutionError, UsageSender,
@@ -28,8 +27,7 @@ use crate::{GenerationCompletionFuture, GenerationCompletionHook, GenerationStre
 /// 每段上游字节都会先解码为 Canonical 事件再重新编码；任一错误都会终止实例，
 /// 且只向调用方暴露闭合的脱敏错误分类。
 pub struct OpenAiChatStream {
-    source: Option<StreamSource>,
-    decoder: ConversationDecoder,
+    source: Option<ConversationSource>,
     encoder: ChatStreamEncoder,
     usage_estimator: OpenAiChatUsageEstimator,
     usage_sender: Option<UsageSender>,
@@ -50,8 +48,10 @@ impl OpenAiChatStream {
         let (usage_sender, usage_handle) = usage_channel();
         (
             Self {
-                source: Some(StreamSource::from(source)),
-                decoder: ConversationDecoder::Chat(OpenAiChatStreamDecoder::new()),
+                source: Some(ConversationSource::wire(
+                    source,
+                    ConversationDecoder::Chat(OpenAiChatStreamDecoder::new()),
+                )),
                 encoder,
                 usage_estimator,
                 usage_sender: Some(usage_sender),
@@ -67,7 +67,14 @@ impl OpenAiChatStream {
     }
 
     pub(crate) fn with_decoder(mut self, decoder: ConversationDecoder) -> Self {
-        self.decoder = decoder;
+        if let Some(ConversationSource::Wire { decoder: slot, .. }) = self.source.as_mut() {
+            **slot = decoder;
+        }
+        self
+    }
+
+    pub(crate) fn with_source(mut self, source: ConversationSource) -> Self {
+        self.source = Some(source);
         self
     }
 
@@ -97,11 +104,6 @@ impl OpenAiChatStream {
     /// 等待下一段已经完成协议转换的 SSE 字节。
     pub async fn next_chunk(&mut self) -> Option<Result<Bytes, UpstreamError>> {
         poll_fn(|context| Pin::new(&mut *self).poll_next(context)).await
-    }
-
-    fn transform(&mut self, bytes: &[u8]) -> Result<Option<Bytes>, UpstreamError> {
-        let events = self.decoder.push(bytes)?;
-        self.transform_events(events)
     }
 
     fn transform_events(
@@ -210,7 +212,8 @@ impl Stream for OpenAiChatStream {
             return Poll::Ready(None);
         }
 
-        loop {
+        // 连续心跳和空块不能在一次 poll 中占满执行器。
+        for _ in 0..64 {
             let next = self
                 .source
                 .as_mut()
@@ -218,34 +221,22 @@ impl Stream for OpenAiChatStream {
                 .poll_next(context);
             match next {
                 Poll::Pending => return Poll::Pending,
-                Poll::Ready(Some(Ok(bytes))) => match self.transform(&bytes) {
+                Poll::Ready(Some(Ok(events))) => match self.transform_events(events) {
                     Ok(Some(output)) => return Poll::Ready(Some(Ok(output))),
                     Ok(None) => {}
                     Err(error) => return self.fail(error, context),
                 },
                 Poll::Ready(Some(Err(error))) => {
-                    return self.fail(map_adaptor_error(error), context);
+                    return self.fail(error, context);
                 }
                 Poll::Ready(None) => {
                     self.source = None;
-                    let events = match self.decoder.finish() {
-                        Ok(events) => events,
-                        Err(error) => return self.fail(error, context),
-                    };
-                    return match self.transform_events(events) {
-                        Ok(Some(output)) => Poll::Ready(Some(Ok(output))),
-                        Ok(None) if self.completion_future.is_some() => {
-                            self.poll_terminal_completion(context)
-                        }
-                        Ok(None) => {
-                            self.terminated = true;
-                            Poll::Ready(None)
-                        }
-                        Err(error) => self.fail(error, context),
-                    };
+                    return self.fail(UpstreamError::ProtocolError, context);
                 }
             }
         }
+        context.waker().wake_by_ref();
+        Poll::Pending
     }
 }
 

@@ -53,6 +53,12 @@ pub trait PlannedChatExecution: Send {
     /// 返回经过路由期受控改写后的 Canonical 请求，计费只能以此请求估算与结算。
     fn canonical_request(&self) -> &CanonicalRequestEnvelope;
 
+    /// 请求计划可为受控多轮执行冻结额外预算；默认保持单轮估算。
+    /// 该预算在发送前读取一次，后续续答不得另建计费生命周期。
+    fn usage_upper_bound(&self) -> Result<Usage, UsageResolutionError> {
+        estimate_openai_request_upper_bound(self.canonical_request().canonical())
+    }
+
     /// 在预扣成功后消费计划并执行全部候选故障转移。
     fn execute(self: Box<Self>) -> PlannedChatExecutionFuture;
 }
@@ -277,8 +283,7 @@ impl BillingChatService {
             canonical.reasoning.and_then(|value| value.budget_tokens()),
         )
         .map_err(|_| AfError::Internal)?;
-        let upper_bound =
-            estimate_openai_request_upper_bound(canonical).map_err(map_upper_bound_error)?;
+        let upper_bound = planned.usage_upper_bound().map_err(map_upper_bound_error)?;
         let source_group_id = subject.group_id();
         let target_group_id = planned.target_group_id();
         let pricing_model = planned.pricing_model().to_owned();
@@ -1066,6 +1071,7 @@ mod tests {
     #[derive(Default)]
     struct PrechargeStub {
         calls: Mutex<Vec<BillingReservationId>>,
+        amounts: Mutex<Vec<Quota>>,
     }
 
     impl BillingPrechargePort for PrechargeStub {
@@ -1073,10 +1079,11 @@ mod tests {
             &'a self,
             id: BillingReservationId,
             _principal: GatewayPrincipal,
-            _amount: Quota,
+            amount: Quota,
         ) -> BillingPrechargeFuture<'a> {
             Box::pin(async move {
                 self.calls.lock().unwrap().push(id);
+                self.amounts.lock().unwrap().push(amount);
                 Ok(())
             })
         }
@@ -1150,6 +1157,181 @@ mod tests {
         assert_eq!(precharge.calls.lock().unwrap().len(), 1);
         assert_eq!(settlement.calls.lock().unwrap().len(), 1);
         assert_eq!(usage_port.records.lock().unwrap().len(), 1);
+    }
+
+    struct BudgetPlanner {
+        budget: Result<Usage, UsageResolutionError>,
+        executed: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    struct BudgetExecution {
+        base: FullExecution,
+        budget: Result<Usage, UsageResolutionError>,
+        executed: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl ChatRoutePlanner for BudgetPlanner {
+        fn plan<'a>(
+            &'a self,
+            _principal: &'a GatewayPrincipal,
+            _concurrency: Option<ConcurrencyLimit>,
+            request: CanonicalRequestEnvelope,
+            _protocol: Protocol,
+            _request_id: &'a str,
+            _diagnostic: RelayDiagnosticInput,
+        ) -> ChatRoutePlanFuture<'a> {
+            Box::pin(async move {
+                Ok(Box::new(BudgetExecution {
+                    base: FullExecution {
+                        target_group_id: GroupId::new(3).unwrap(),
+                        pricing_model: request.canonical().model.clone(),
+                        request,
+                    },
+                    budget: self.budget,
+                    executed: self.executed.clone(),
+                }) as Box<dyn PlannedChatExecution>)
+            })
+        }
+    }
+
+    impl PlannedChatExecution for BudgetExecution {
+        fn target_group_id(&self) -> GroupId {
+            self.base.target_group_id()
+        }
+        fn pricing_model(&self) -> &str {
+            self.base.pricing_model()
+        }
+        fn canonical_request(&self) -> &CanonicalRequestEnvelope {
+            self.base.canonical_request()
+        }
+        fn usage_upper_bound(&self) -> Result<Usage, UsageResolutionError> {
+            self.budget
+        }
+        fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {
+            self.executed
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async move {
+                Ok(crate::RoutedExecution::new(
+                    ChatResponse::Full {
+                        body: Bytes::from_static(b"{}"),
+                        usage: Ok(usage().checked_add(usage()).unwrap()),
+                    },
+                    ChannelId::new(1).unwrap(),
+                ))
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn execution_budget_is_reserved_once_and_combined_usage_settles_once() {
+        let execution_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        // 使用可观察的每百万 token 单价，避免两份预算都舍入到最低 1 quota。
+        let prices = TokenPrices::new(
+            Decimal::ONE,
+            Decimal::from(2),
+            Decimal::ZERO,
+            Decimal::ZERO,
+            Decimal::ZERO,
+        )
+        .unwrap();
+        let mut multi_round = request()
+            .with_default_max_output_tokens(TokenCount::new(8192).unwrap())
+            .into_canonical();
+        multi_round.messages.push(Message::new(
+            Role::User,
+            vec![ContentBlock::Text("long context ".repeat(4000))],
+        ));
+        let budget = estimate_openai_request_upper_bound(&multi_round).unwrap();
+        let precharge = Arc::new(PrechargeStub::default());
+        let settlement = Arc::new(SettlementStub::default());
+        let usage_port = Arc::new(UsageStub::default());
+        let service = BillingChatService::new(
+            Arc::new(BudgetPlanner {
+                budget: Ok(budget),
+                executed: execution_count.clone(),
+            }),
+            Arc::new(metered_snapshot_source_with_prices(GroupId::new(3).unwrap(), prices).await),
+            Some(precharge.clone()),
+            Some(Arc::new(RefundStub)),
+            Some(settlement.clone()),
+            usage_port.clone(),
+        );
+        let response = service
+            .chat_completions(
+                &principal(),
+                None,
+                request(),
+                Protocol::OpenAiChat,
+                "two-round-budget",
+                diagnostic(),
+            )
+            .await
+            .unwrap();
+        let ChatResponse::Full { usage: actual, .. } = response else {
+            panic!("full response expected")
+        };
+        assert_eq!(actual.unwrap(), usage().checked_add(usage()).unwrap());
+        assert_eq!(execution_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(precharge.calls.lock().unwrap().len(), 1);
+        assert_eq!(settlement.calls.lock().unwrap().len(), 1);
+        assert_eq!(usage_port.records.lock().unwrap().len(), 1);
+
+        let ordinary_charge = Arc::new(PrechargeStub::default());
+        let ordinary = BillingChatService::new(
+            Arc::new(FullStub {
+                target_group_id: GroupId::new(3).unwrap(),
+                pricing_model_override: None,
+            }),
+            Arc::new(metered_snapshot_source_with_prices(GroupId::new(3).unwrap(), prices).await),
+            Some(ordinary_charge.clone()),
+            Some(Arc::new(RefundStub)),
+            Some(Arc::new(SettlementStub::default())),
+            Arc::new(UsageStub::default()),
+        );
+        ordinary
+            .chat_completions(
+                &principal(),
+                None,
+                request(),
+                Protocol::OpenAiChat,
+                "ordinary-budget",
+                diagnostic(),
+            )
+            .await
+            .unwrap();
+        assert!(precharge.amounts.lock().unwrap()[0] > ordinary_charge.amounts.lock().unwrap()[0]);
+    }
+
+    #[tokio::test]
+    async fn invalid_execution_budget_fails_before_precharge_or_execution() {
+        let executed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let precharge = Arc::new(PrechargeStub::default());
+        let service = BillingChatService::new(
+            Arc::new(BudgetPlanner {
+                budget: Err(UsageResolutionError::Overflow),
+                executed: executed.clone(),
+            }),
+            Arc::new(metered_snapshot_source().await),
+            Some(precharge.clone()),
+            Some(Arc::new(RefundStub)),
+            Some(Arc::new(SettlementStub::default())),
+            Arc::new(UsageStub::default()),
+        );
+        assert!(
+            service
+                .chat_completions(
+                    &principal(),
+                    None,
+                    request(),
+                    Protocol::OpenAiChat,
+                    "invalid-budget",
+                    diagnostic()
+                )
+                .await
+                .is_err()
+        );
+        assert!(precharge.calls.lock().unwrap().is_empty());
+        assert_eq!(executed.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
@@ -1525,6 +1707,13 @@ mod tests {
             Decimal::ZERO,
         )
         .unwrap();
+        metered_snapshot_source_with_prices(target_group_id, prices).await
+    }
+
+    async fn metered_snapshot_source_with_prices(
+        target_group_id: GroupId,
+        prices: TokenPrices,
+    ) -> CachedRequestPricingSnapshotSource {
         let model_prices = ModelPriceCache::load(Arc::new(StaticModelPriceSource {
             records: vec![
                 ModelPriceSourceRecord::new(
