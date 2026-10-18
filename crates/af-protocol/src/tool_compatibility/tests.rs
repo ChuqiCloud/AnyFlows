@@ -531,7 +531,9 @@ fn oversized_arguments_and_abort_do_not_release_hidden_state() {
 
 #[test]
 fn debug_output_and_errors_do_not_include_request_or_tool_secrets() {
-    let mut session = session();
+    let mut session =
+        ToolCompatibilitySession::prepare(request(), vec![tool("read"), tool("private-tool-name")])
+            .unwrap();
     hidden_round(&mut session, Some(20));
     let debug = format!("{session:?}");
     for private in [
@@ -540,7 +542,7 @@ fn debug_output_and_errors_do_not_include_request_or_tool_secrets() {
         "private-city",
         "hidden-id",
         "caller description",
-        "read",
+        "private-tool-name",
     ] {
         assert!(!debug.contains(private));
     }
