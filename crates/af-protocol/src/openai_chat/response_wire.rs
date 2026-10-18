@@ -153,6 +153,9 @@ pub(super) struct CompletionUsageWire {
     /// 可选的冗余总令牌数，用于一致性校验。
     #[serde(default)]
     pub(super) total_tokens: Option<i64>,
+    /// 部分兼容服务将推理用量直接放在 usage 中。
+    #[serde(default)]
+    pub(super) reasoning_tokens: Option<i64>,
     /// 可选的输入令牌明细。
     #[serde(default)]
     pub(super) prompt_tokens_details: Option<PromptTokensDetailsWire>,

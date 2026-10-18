@@ -45,7 +45,7 @@ pub struct OpenAiChatStreamDecoder {
     identity: Option<StreamIdentity>,
     choices: BTreeMap<u32, ChoiceState>,
     totals: DecodeTotals,
-    usage_seen: bool,
+    usage: Option<crate::Usage>,
     done: bool,
     failed: bool,
 }
@@ -64,7 +64,7 @@ impl OpenAiChatStreamDecoder {
             identity: None,
             choices: BTreeMap::new(),
             totals: DecodeTotals::default(),
-            usage_seen: false,
+            usage: None,
             done: false,
             failed: false,
         })
@@ -117,6 +117,9 @@ impl OpenAiChatStreamDecoder {
         output: &mut Vec<CanonicalStreamEvent>,
     ) -> Result<(), ParseStreamError> {
         if self.done {
+            if frame.is_comment() || frame.data().trim_ascii() == b"[DONE]" {
+                return Ok(());
+            }
             return Err(ParseStreamError::DataAfterDone);
         }
         if frame.is_comment() || frame.event_name() == Some("ping") {
@@ -190,11 +193,12 @@ impl OpenAiChatStreamDecoder {
         }
 
         if let Some(usage) = convert_usage(usage).map_err(map_response_error)? {
-            if self.usage_seen || self.choices.is_empty() || !self.all_choices_finished() {
+            if self.choices.is_empty() || !self.all_choices_finished() {
                 return Err(ParseStreamError::InvalidSequence);
             }
-            self.usage_seen = true;
-            output.push(CanonicalStreamEvent::Usage(usage));
+            // 结束分片可能携带临时统计，后续独立 usage 分片才是最终快照。
+            // 留到逻辑终点只发送一次，避免重复结算且不受网络分片边界影响。
+            self.usage = Some(usage);
         }
         Ok(())
     }
@@ -227,14 +231,10 @@ impl OpenAiChatStreamDecoder {
             return Err(ParseStreamError::InvalidSequence);
         }
 
-        let mut emitted = decode_delta(index, delta, state, &mut self.totals, output)?;
+        decode_delta(index, delta, state, &mut self.totals, output)?;
         if let Some(reason) = finish_reason {
             let reason = convert_finish_reason(reason).map_err(map_response_error)?;
             finish_choice(index, reason, state, &mut self.totals, output)?;
-            emitted = true;
-        }
-        if !emitted {
-            return Err(ParseStreamError::InvalidValue);
         }
         Ok(())
     }
@@ -247,6 +247,9 @@ impl OpenAiChatStreamDecoder {
             return Err(ParseStreamError::InvalidSequence);
         }
         self.done = true;
+        if let Some(usage) = self.usage.take() {
+            output.push(CanonicalStreamEvent::Usage(usage));
+        }
         output.push(CanonicalStreamEvent::StreamEnd);
         Ok(())
     }
@@ -262,7 +265,7 @@ impl fmt::Debug for OpenAiChatStreamDecoder {
             .debug_struct("OpenAiChatStreamDecoder")
             .field("has_identity", &self.identity.is_some())
             .field("choice_count", &self.choices.len())
-            .field("usage_seen", &self.usage_seen)
+            .field("has_usage", &self.usage.is_some())
             .field("done", &self.done)
             .field("failed", &self.failed)
             .finish()
@@ -358,15 +361,17 @@ fn decode_delta(
 
     let mut emitted = false;
     if let Some(role) = role {
-        if state.started || !matches!(role, StreamRoleWire::Assistant) {
+        if !matches!(role, StreamRoleWire::Assistant) {
             return Err(ParseStreamError::InvalidSequence);
         }
-        state.started = true;
-        output.push(CanonicalStreamEvent::MessageStart {
-            choice_index,
-            role: Role::Assistant,
-        });
-        emitted = true;
+        if !state.started {
+            state.started = true;
+            output.push(CanonicalStreamEvent::MessageStart {
+                choice_index,
+                role: Role::Assistant,
+            });
+            emitted = true;
+        }
     }
 
     if reasoning_content.is_some() && reasoning.is_some() {
