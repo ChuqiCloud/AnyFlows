@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useId, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Input, Select, SelectItem, Drawer, DrawerBody, DrawerContent, DrawerHeader } from '@heroui/react'
 
@@ -14,9 +14,10 @@ export function ProfileInput({ label, disabled, onChange, ...props }: ProfileInp
 export type ProfileSelectProps = { label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; disabled?: boolean }
 export function ProfileSelect({ label, value, options, onChange, disabled }: ProfileSelectProps) {
   const portal = useContext(PortalContext)
-  return <Select aria-label={label} size="sm" variant="bordered" isDisabled={disabled} selectedKeys={[value || '__all__']} items={options.map(option => ({ ...option, key: option.value || '__all__' }))} popoverProps={portal ? { portalContainer: portal } : undefined} onSelectionChange={keys => { const key = Array.from(keys)[0]; if (typeof key === 'string') onChange(key === '__all__' ? '' : key) }}>
+  const labelId = useId()
+  return <div className="min-w-0"><span id={labelId} className="sr-only">{label}</span><Select aria-label={label} aria-labelledby={labelId} size="sm" variant="bordered" isDisabled={disabled} selectedKeys={[value || '__all__']} items={options.map(option => ({ ...option, key: option.value || '__all__' }))} popoverProps={portal ? { portalContainer: portal } : undefined} onSelectionChange={keys => { const key = Array.from(keys)[0]; if (typeof key === 'string') onChange(key === '__all__' ? '' : key) }}>
     {option => <SelectItem key={option.key}>{option.label}</SelectItem>}
-  </Select>
+  </Select></div>
 }
 export type ProfileDrawerProps = { title: string; dirty?: boolean; busy?: boolean; children: ReactNode; onClose: () => void }
 export function ProfileDrawer({ title, dirty, busy, children, onClose }: ProfileDrawerProps) {
