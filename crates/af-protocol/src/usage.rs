@@ -248,6 +248,50 @@ impl Usage {
     pub fn checked_total_tokens(&self) -> Result<TokenCount, UsageError> {
         self.checked_input_tokens()?.checked_add(self.output_tokens)
     }
+
+    /// 合并实际发生的两次调用，保留缓存、推理、音频明细及估算来源。
+    /// 不同缓存口径先统一为 Inclusive，避免重复计入缓存。
+    pub fn checked_add(self, rhs: Self) -> Result<Self, UsageError> {
+        let semantics = if self.semantics == rhs.semantics {
+            self.semantics
+        } else {
+            UsageSemantics::Inclusive
+        };
+        let input = |usage: Self| match semantics {
+            UsageSemantics::Inclusive => usage.checked_input_tokens(),
+            UsageSemantics::CacheSeparated => Ok(usage.input_tokens),
+        };
+        let usage = Self::new(
+            input(self)?.checked_add(input(rhs)?)?,
+            self.output_tokens.checked_add(rhs.output_tokens)?,
+            UsageDetails::new(
+                self.details
+                    .cache_read
+                    .checked_add(rhs.details.cache_read)?,
+                self.details
+                    .cache_creation_5m
+                    .checked_add(rhs.details.cache_creation_5m)?,
+                self.details
+                    .cache_creation_1h
+                    .checked_add(rhs.details.cache_creation_1h)?,
+                self.details.reasoning.checked_add(rhs.details.reasoning)?,
+                self.details
+                    .audio_input
+                    .checked_add(rhs.details.audio_input)?,
+                self.details
+                    .audio_output
+                    .checked_add(rhs.details.audio_output)?,
+            ),
+            if self.source == UsageSource::Upstream && rhs.source == UsageSource::Upstream {
+                UsageSource::Upstream
+            } else {
+                UsageSource::Estimated
+            },
+            semantics,
+        )?;
+        usage.checked_total_tokens()?;
+        Ok(usage)
+    }
 }
 
 /// 用量构造与 checked 汇总错误，不保留任何外部数值。
