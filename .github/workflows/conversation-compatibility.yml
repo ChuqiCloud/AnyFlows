@@ -111,7 +111,7 @@ jobs:
           cargo test --quiet -p af-db --lib --locked model_sync_tests::
           cargo test --quiet -p af-server --lib --all-features --locked sticky_session::
           cargo test --quiet -p af-server --lib --all-features --locked model_discovery::
-          cargo test --quiet -p af-server --lib --all-features --locked channel_probe::
+          cargo test --quiet -p af-server --lib --all-features --locked channel_probe_tests::
           cargo test --quiet -p af-admin --lib --locked client_profiles::
           cargo test --quiet -p af-http --lib --locked client_profiles::
           cargo test --quiet -p af-db --lib --locked client_profiles_tests::

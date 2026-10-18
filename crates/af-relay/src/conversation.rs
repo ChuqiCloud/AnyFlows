@@ -43,6 +43,7 @@ pub async fn relay_conversation_with_report(
     };
     // 跨协议响应不能补造 Anthropic thinking 签名，派发前保留该能力边界。
     if response_protocol == Protocol::Anthropic
+        && upstream_protocol != Protocol::Anthropic
         && canonical
             .reasoning
             .is_some_and(|reasoning| reasoning.include_thinking())

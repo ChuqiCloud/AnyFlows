@@ -64,6 +64,7 @@ test('OpenAPI channel write contracts include OpenCode', () => {
   const schema = JSON.parse(readFileSync(new URL('../openapi/openapi.json', import.meta.url), 'utf8'))
   for (const name of ['AdminChannelCreateRequest', 'AdminChannelUpdateRequest']) {
     const type = schema.components.schemas[name].properties.type
-    assert.ok((type.enum ?? type.oneOf?.[0].enum).includes('opencode'), name)
+    const variants = type.enum ?? type.oneOf?.[0]?.enum ?? []
+    assert.ok(variants.includes('opencode'), name)
   }
 })
