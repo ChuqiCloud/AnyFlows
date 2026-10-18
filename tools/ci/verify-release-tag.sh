@@ -10,8 +10,9 @@ fail() {
   exit 1
 }
 
-semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
-[[ "$tag" == v* && "${tag#v}" =~ $semver ]] || fail "标签必须是以 v 开头的 SemVer 版本"
+release_version='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(alpha|beta|rc)\.[1-9][0-9]*)?$'
+[[ "$tag" == v* && "${tag#v}" =~ $release_version ]] || \
+  fail "标签必须是 v1.2.3、v1.2.3-alpha.1、v1.2.3-beta.1 或 v1.2.3-rc.1"
 [[ "$commit" =~ ^[0-9a-fA-F]{40}$ ]] || fail "提交必须是完整的 40 位 SHA"
 
 workspace_version="$({

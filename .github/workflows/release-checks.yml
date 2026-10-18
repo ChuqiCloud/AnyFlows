@@ -1,0 +1,50 @@
+name: Release checks
+
+on:
+  pull_request:
+    branches: [main, develop, master]
+    paths:
+      - .github/workflows/release-checks.yml
+      - .cnb/release.yml
+      - tools/ci/*release*.sh
+      - scripts/systemd/**
+      - Cargo.toml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-scripts:
+    name: Validate release tags and archives
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        shell: bash
+        env:
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$SOURCE_TOKEN" | base64 -w0)"
+          git init -q .
+          git remote add origin "$SOURCE_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --quiet --no-tags --depth=1 origin "$SOURCE_SHA"
+          git checkout -q --detach FETCH_HEAD
+
+      - name: Check release script syntax
+        shell: bash
+        run: |
+          bash -n tools/ci/verify-release-tag.sh
+          bash -n tools/ci/package-release.sh
+          bash -n tools/ci/finalize-release.sh
+          bash -n tools/ci/test-release-scripts.sh
+
+      - name: Check tag formats and release archives
+        run: bash tools/ci/test-release-scripts.sh
