@@ -20168,6 +20168,7 @@
         "type": "string",
         "enum": [
           "openai",
+          "opencode",
           "anthropic",
           "gemini",
           "jina",

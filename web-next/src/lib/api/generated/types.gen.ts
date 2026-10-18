@@ -189,7 +189,7 @@ export type AdminChannelProbeResponse = {
 };
 export type AdminChannelProbeStatus = 'healthy' | 'unhealthy' | 'timeout';
 export type AdminChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
-export type AdminChannelType = 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai' | 'bedrock' | 'vertex' | 'custom';
+export type AdminChannelType = 'openai' | 'opencode' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai' | 'bedrock' | 'vertex' | 'custom';
 export type AdminChannelUpdateRequest = {
     provider?: string | null;
     name: string;
