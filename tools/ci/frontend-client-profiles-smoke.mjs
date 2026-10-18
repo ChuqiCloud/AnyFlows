@@ -184,7 +184,13 @@ try {
   assert.deepEqual(errors, [], 'Client profiles must not raise browser errors')
   console.log(`Client profile browser checks passed for ${frontend}: loading, cursor isolation, frozen drafts, save payload, mobile selects, discard protection, revision compatibility, independent endpoint saves and permission errors.`)
 } catch (error) {
-  if (page) console.error((await page.locator('body').ariaSnapshot()).slice(-16_000))
+  if (page) {
+    console.error((await page.locator('body').ariaSnapshot()).slice(-16_000))
+    const screenshot = await page.screenshot({ fullPage: true, animations: 'disabled' })
+    console.log(`ANYFLOWS_SCREENSHOT_${frontend}_client_profiles_failure_BEGIN`)
+    console.log(screenshot.toString('base64').match(/.{1,120}/g).join('\n'))
+    console.log(`ANYFLOWS_SCREENSHOT_${frontend}_client_profiles_failure_END`)
+  }
   console.error(serverOutput)
   console.error(JSON.stringify({ browserErrors: errors }))
   throw error

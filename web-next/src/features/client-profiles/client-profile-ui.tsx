@@ -31,10 +31,10 @@ export function ProfileDrawer({ title, dirty, busy, children, onClose }: Profile
   }, [dirty, busy])
   const [portal, setPortal] = useState<HTMLDivElement | null>(null)
   return <Drawer isOpen backdrop="blur" placement="right" scrollBehavior="inside" classNames={{ base: 'w-full max-h-none sm:max-w-2xl' }} aria-describedby="profile-drawer-description" onOpenChange={open => { if (!open && !busy) { if (dirty) setDiscard(true); else onClose() } }}>
-    <DrawerContent>{() => <>
+    <DrawerContent>{() => <div ref={setPortal} className="relative flex h-full min-h-0 flex-col"><PortalContext.Provider value={portal}>
       <DrawerHeader className="flex flex-col gap-1 border-b border-[var(--hairline)] p-5 pr-12"><h2 className="text-base font-semibold">{title}</h2><p className="text-sm font-normal text-muted-foreground" id="profile-drawer-description">{t('clientProfiles.versionHint')}</p></DrawerHeader>
       {discard && <div className="cp-discard" role="alert"><p>{t('clientProfiles.unsaved')}</p><ProfileButton onClick={() => setDiscard(false)}>{t('clientProfiles.keepEditing')}</ProfileButton><ProfileButton onClick={onClose}>{t('clientProfiles.discard')}</ProfileButton></div>}
-      <DrawerBody className="p-0"><div ref={setPortal} className="cp-drawer-body relative"><PortalContext.Provider value={portal}>{children}</PortalContext.Provider></div></DrawerBody>
-    </>}</DrawerContent>
+      <DrawerBody className="min-h-0 gap-0 p-0"><div className="cp-drawer-body">{children}</div></DrawerBody>
+    </PortalContext.Provider></div>}</DrawerContent>
   </Drawer>
 }
