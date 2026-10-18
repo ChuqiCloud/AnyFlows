@@ -231,10 +231,9 @@ impl Drop for Completion {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use af_account::EncryptedCredentialEnvelope;
     use af_db::{
-        ChannelModelMappings, ChannelParameterOverrides, SchedulerRuntimeCredentialRecord,
-        SchedulerRuntimeTargetRecord,
+        ChannelModelMappings, ChannelParameterOverrides, EncryptedCredentialEnvelope,
+        SchedulerRuntimeCredentialRecord, SchedulerRuntimeTargetRecord,
     };
     use af_domain::{ChannelId, CredentialKind};
     use af_protocol::openai_chat;

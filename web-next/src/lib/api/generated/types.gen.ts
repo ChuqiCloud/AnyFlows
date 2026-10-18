@@ -1487,14 +1487,14 @@ export type ClientProfileEnabledRequest = {
     enabled: boolean;
 };
 export type ClientProfileOpenCodeEntryRequest = {
-    full_compatibility?: boolean | null;
     version: string;
     entry: ClientProfileOpenCodeEntrySchema;
+    full_compatibility?: boolean | null;
 };
 export type ClientProfileOpenCodeEntrySchema = 'inference_v1' | 'zen_v1';
 export type ClientProfileOpenCodeSettingsSchema = {
-    full_compatibility: boolean;
     entry: ClientProfileOpenCodeEntrySchema;
+    full_compatibility: boolean;
     version: string;
 };
 export type ClientProfilePageSchema = {
