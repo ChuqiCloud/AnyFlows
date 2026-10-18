@@ -290,7 +290,19 @@ fn tool_compatibility_keeps_hidden_rounds_out_of_all_four_downstream_protocols()
                     }
                 }
                 let total = total.unwrap();
-                assert_eq!(total.output_tokens().get(), 2);
+                let [Some(first), Some(second)] = *session.observed_usage() else {
+                    panic!("both rounds must retain their decoded usage");
+                };
+                // Anthropic 编码器会协调本地估算；按实际解码口径验证两轮守恒。
+                assert_eq!(
+                    total.output_tokens().get(),
+                    first.output_tokens().get() + second.output_tokens().get()
+                );
+                assert_eq!(
+                    total.checked_total_tokens().unwrap().get(),
+                    first.checked_total_tokens().unwrap().get()
+                        + second.checked_total_tokens().unwrap().get()
+                );
                 assert_eq!(
                     visible
                         .iter()
