@@ -290,7 +290,7 @@ try {
   assert.equal(await page.locator('input[type="file"]').evaluate((input) => input.files.length), 0)
 
   await page.goto(`${home}?mode=rewards`)
-  await page.getByRole('heading', { name: '注册与邀请奖励', exact: true }).waitFor()
+  await page.getByRole('heading', { name: '注册与邀请奖励', level: 2, exact: true }).waitFor()
   await page.locator('#authentication-initial-quota').waitFor()
   assert.equal(await page.getByRole('switch').count(), 0)
   await page.locator('#authentication-initial-quota').fill('200')
