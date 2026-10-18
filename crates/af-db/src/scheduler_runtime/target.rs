@@ -722,8 +722,8 @@ impl SchedulerRuntimeTargetRecord {
         mut self,
         profile: Option<af_domain::ClientProfileSnapshot>,
     ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
-        if let Some(profile) = &profile {
-            if profile.validate().is_err()
+        if let Some(profile) = &profile
+            && (profile.validate().is_err()
                 || !profile
                     .definition
                     .matches_channel(self.channel_type, self.protocol)
@@ -739,10 +739,9 @@ impl SchedulerRuntimeTargetRecord {
                         .identity_headers
                         .keys()
                         .any(|name| name.eq_ignore_ascii_case(h.name()))
-                })
-            {
-                return Err(SchedulerRuntimeTargetRecordError);
-            }
+                }))
+        {
+            return Err(SchedulerRuntimeTargetRecordError);
         }
         self.client_profile = profile;
         Ok(self)

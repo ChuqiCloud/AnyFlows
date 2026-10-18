@@ -179,10 +179,10 @@ impl SchedulerRuntimeRepository {
             for (id, profile) in profiles {
                 let id =
                     ChannelId::new(id).map_err(|_| SchedulerRuntimeRepositoryError::Invariant)?;
-                if let Some(channel) = channels.remove(&id) {
-                    if let Some(profile) = profile {
-                        channels.insert(id, channel.with_client_profile(profile)?);
-                    }
+                if let Some(channel) = channels.remove(&id)
+                    && let Some(profile) = profile
+                {
+                    channels.insert(id, channel.with_client_profile(profile)?);
                 }
             }
             let credentials = credentials::Entity::find()
