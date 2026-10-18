@@ -185,11 +185,12 @@ impl OpenAiChatStreamDecoder {
             return Err(ParseStreamError::InvalidValue);
         }
         let mut seen_choices = HashSet::with_capacity(choices.len());
+        let usage_trailer = usage.is_some();
         for choice in choices {
             if !seen_choices.insert(choice.index) {
                 return Err(ParseStreamError::InvalidValue);
             }
-            self.decode_choice(choice, output)?;
+            self.decode_choice(choice, usage_trailer, output)?;
         }
 
         if let Some(usage) = convert_usage(usage).map_err(map_response_error)? {
@@ -206,6 +207,7 @@ impl OpenAiChatStreamDecoder {
     fn decode_choice(
         &mut self,
         choice: StreamChoiceWire,
+        usage_trailer: bool,
         output: &mut Vec<CanonicalStreamEvent>,
     ) -> Result<(), ParseStreamError> {
         let StreamChoiceWire {
@@ -227,13 +229,20 @@ impl OpenAiChatStreamDecoder {
             .choices
             .get_mut(&index)
             .expect("刚插入或已存在的 choice 必须可读取");
+        let reason = finish_reason
+            .map(convert_finish_reason)
+            .transpose()
+            .map_err(map_response_error)?;
         if state.finished {
+            // 部分兼容服务在最终用量分片中重发相同终态；不重发正文或结束事件。
+            if usage_trailer && reason == state.finish_reason && empty_usage_delta(&delta) {
+                return Ok(());
+            }
             return Err(ParseStreamError::InvalidSequence);
         }
 
         decode_delta(index, delta, state, &mut self.totals, output)?;
-        if let Some(reason) = finish_reason {
-            let reason = convert_finish_reason(reason).map_err(map_response_error)?;
+        if let Some(reason) = reason {
             finish_choice(index, reason, state, &mut self.totals, output)?;
         }
         Ok(())
@@ -315,6 +324,7 @@ impl StreamIdentity {
 struct ChoiceState {
     started: bool,
     finished: bool,
+    finish_reason: Option<FinishReason>,
     next_content_index: u32,
     text_index: Option<u32>,
     reasoning_index: Option<u32>,
@@ -350,6 +360,7 @@ fn decode_delta(
         content,
         reasoning_content,
         reasoning,
+        reasoning_details,
         tool_calls,
         refusal,
         audio,
@@ -377,7 +388,8 @@ fn decode_delta(
     if reasoning_content.is_some() && reasoning.is_some() {
         return Err(ParseStreamError::InvalidValue);
     }
-    if let Some(text) = reasoning_content.or(reasoning)
+    let reasoning = merge_reasoning_details(reasoning_content.or(reasoning), reasoning_details)?;
+    if let Some(text) = reasoning
         && !text.is_empty()
     {
         require_started(state)?;
@@ -424,6 +436,63 @@ fn decode_delta(
         }
     }
     Ok(emitted)
+}
+
+fn empty_usage_delta(delta: &StreamDeltaWire) -> bool {
+    delta.content.as_ref().is_none_or(String::is_empty)
+        && delta.reasoning.as_ref().is_none_or(String::is_empty)
+        && delta
+            .reasoning_content
+            .as_ref()
+            .is_none_or(String::is_empty)
+        && delta.reasoning_details.as_ref().is_none_or(Vec::is_empty)
+        && delta.tool_calls.is_none()
+        && delta.refusal.is_none()
+        && delta.audio.is_none()
+        && delta.function_call.is_none()
+}
+
+fn merge_reasoning_details(
+    primary: Option<String>,
+    details: Option<Vec<Value>>,
+) -> Result<Option<String>, ParseStreamError> {
+    let Some(details) = details else {
+        return Ok(primary);
+    };
+    if details.len() > MAX_CONTENT_BLOCKS {
+        return Err(ParseStreamError::StructureLimitExceeded);
+    }
+    let mut text = String::new();
+    for detail in details {
+        let object = detail.as_object().ok_or(ParseStreamError::InvalidValue)?;
+        if object
+            .keys()
+            .any(|key| !matches!(key.as_str(), "type" | "text" | "format" | "index"))
+            || object.get("type").and_then(Value::as_str) != Some("reasoning.text")
+            || object
+                .get("format")
+                .is_some_and(|format| !format.is_null() && format.as_str() != Some("unknown"))
+            || object
+                .get("index")
+                .is_some_and(|index| !index.is_null() && index.as_u64() != Some(0))
+        {
+            return Err(ParseStreamError::UnsupportedFeature);
+        }
+        let delta = object
+            .get("text")
+            .and_then(Value::as_str)
+            .ok_or(ParseStreamError::InvalidValue)?;
+        if text.len().saturating_add(delta.len()) > MAX_TEXT_BYTES {
+            return Err(ParseStreamError::StructureLimitExceeded);
+        }
+        text.push_str(delta);
+    }
+    match primary {
+        Some(primary) if text.is_empty() || primary == text => Ok(Some(primary)),
+        Some(primary) if !primary.is_empty() => Err(ParseStreamError::InvalidValue),
+        _ if text.is_empty() => Ok(None),
+        _ => Ok(Some(text)),
+    }
 }
 
 fn decode_tool_delta(
@@ -551,6 +620,7 @@ fn finish_choice(
         });
     }
     state.finished = true;
+    state.finish_reason = Some(reason);
     output.push(CanonicalStreamEvent::Finish {
         choice_index,
         reason,

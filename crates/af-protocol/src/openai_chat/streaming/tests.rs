@@ -278,6 +278,144 @@ fn decoder_rejects_duplicate_json_and_becomes_terminal() {
 }
 
 #[test]
+fn opencode_plain_reasoning_alias_and_usage_trailer_preserve_single_events() {
+    let usage = json!({
+        "prompt_tokens":3111,"completion_tokens":27,"total_tokens":3138,
+        "prompt_tokens_details":{"audio_tokens":0,"cached_tokens":3072,"cache_write_tokens":0},
+        "completion_tokens_details":{"audio_tokens":0,"reasoning_tokens":23}
+    });
+    let stream = [
+        b": keep-alive\n\n".to_vec(),
+        sse(&chunk(json!([{"index":0,"delta":{
+            "role":"assistant","content":"","reasoning":"Think",
+            "reasoning_details":[{"type":"reasoning.text","text":"Think","format":"unknown","index":0}]
+        }}]), None)),
+        sse(&chunk(json!([{"index":0,"delta":{
+            "role":"assistant","reasoning_details":[{"type":"reasoning.text","text":" once","index":0}]
+        }}]), None)),
+        sse(&chunk(json!([{"index":0,"delta":{"role":"assistant","content":"SAVED"}}]), None)),
+        sse(&chunk(json!([{"index":0,"delta":{"role":"assistant","content":"","reasoning":null},"finish_reason":"stop"}]), None)),
+        sse(&chunk(json!([{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":"stop"}]), Some(usage))),
+        b"data: [DONE]\n\n".to_vec(),
+    ].concat();
+    for size in [1, 13, 256, stream.len()] {
+        let mut decoder = OpenAiChatStreamDecoder::new();
+        let mut events = Vec::new();
+        for bytes in stream.chunks(size) {
+            events.extend(decoder.push(bytes).unwrap());
+        }
+        decoder.finish().unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter_map(|event| match event {
+                    CanonicalStreamEvent::ReasoningDelta { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<String>(),
+            "Think once"
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, CanonicalStreamEvent::Finish { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, CanonicalStreamEvent::Usage(_)))
+                .count(),
+            1
+        );
+        let final_usage = events
+            .iter()
+            .find_map(|event| match event {
+                CanonicalStreamEvent::Usage(usage) => Some(usage),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(final_usage.input_tokens().get(), 3111);
+        assert_eq!(final_usage.output_tokens().get(), 27);
+        assert!(matches!(
+            events.last(),
+            Some(CanonicalStreamEvent::StreamEnd)
+        ));
+    }
+}
+
+#[test]
+fn reasoning_details_reject_conflicting_or_opaque_vendor_data() {
+    for (details, expected) in [
+        (
+            json!([{"type":"reasoning.text","text":"different","format":"unknown","index":0}]),
+            ParseStreamError::InvalidValue,
+        ),
+        (
+            json!([{"type":"reasoning.encrypted","data":"opaque"}]),
+            ParseStreamError::UnsupportedFeature,
+        ),
+        (
+            json!([{"type":"reasoning.text","text":"Think","signature":"opaque"}]),
+            ParseStreamError::UnsupportedFeature,
+        ),
+        (
+            json!([{"type":"reasoning.text","text":"Think","format":"anthropic-claude-v1","index":0}]),
+            ParseStreamError::UnsupportedFeature,
+        ),
+        (
+            json!([{"type":"reasoning.text","text":"Think","index":1}]),
+            ParseStreamError::UnsupportedFeature,
+        ),
+    ] {
+        let mut decoder = OpenAiChatStreamDecoder::new();
+        let event = chunk(
+            json!([{"index":0,"delta":{
+                "role":"assistant","reasoning":"Think","reasoning_details":details
+            }}]),
+            None,
+        );
+        assert_eq!(decoder.push(&sse(&event)).unwrap_err(), expected);
+    }
+}
+
+#[test]
+fn usage_trailer_rejects_new_content_changed_finish_and_unmarked_duplicates() {
+    for (delta, finish, usage) in [
+        (
+            json!({"content":"late"}),
+            "stop",
+            Some(json!({"prompt_tokens":1,"completion_tokens":1})),
+        ),
+        (
+            json!({}),
+            "length",
+            Some(json!({"prompt_tokens":1,"completion_tokens":1})),
+        ),
+        (json!({}), "stop", None),
+    ] {
+        let mut decoder = OpenAiChatStreamDecoder::new();
+        decoder
+            .push(&sse(&chunk(
+                json!([{
+                    "index":0,"delta":{"role":"assistant","content":"OK"},"finish_reason":"stop"
+                }]),
+                None,
+            )))
+            .unwrap();
+        let trailer = chunk(
+            json!([{"index":0,"delta":delta,"finish_reason":finish}]),
+            usage,
+        );
+        assert_eq!(
+            decoder.push(&sse(&trailer)).unwrap_err(),
+            ParseStreamError::InvalidSequence
+        );
+    }
+}
+
+#[test]
 fn decoder_rejects_metadata_drift_and_delta_before_role() {
     let mut decoder = OpenAiChatStreamDecoder::new();
     decoder
