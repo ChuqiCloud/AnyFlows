@@ -1075,11 +1075,11 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(
-            machine.next_candidate_index(0, UpstreamError::InvalidApiKey),
+            machine.next_candidate_index(0, UpstreamError::AuthRevoked),
             1
         );
         assert_eq!(
-            machine.next_candidate_index(1, UpstreamError::InvalidApiKey),
+            machine.next_candidate_index(1, UpstreamError::AuthRevoked),
             3
         );
         assert_eq!(machine.next_channel_index(0), 3);

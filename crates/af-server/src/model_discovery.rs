@@ -143,7 +143,7 @@ impl DatabaseUpstreamModelDiscoverer {
                     .finalize_request(prepared, &credential, &context)
                     .await
                     .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?;
-                let (_, _, headers, _, _, _) = prepared.into_parts();
+                let headers = prepared.headers().clone();
                 let body = send_page(&adaptor, &context, &headers, url).await?;
                 let wire: OpenAiModelsWire = serde_json::from_slice(&body)
                     .map_err(|_| UpstreamModelDiscoveryError::InvalidResponse)?;

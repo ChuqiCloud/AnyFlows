@@ -1526,6 +1526,17 @@ fn candidate_request(
     requested_model: &str,
     upstream_model: &str,
 ) -> Result<Option<RelayCandidateRequest>, AfError> {
+    if target.channel_type() == ChannelType::OpenCode
+        && (request
+            .canonical()
+            .continuation
+            .previous_response_id()
+            .is_some()
+            || request.canonical().continuation.conversation_id().is_some())
+    {
+        // 私有响应状态尚未实现持久凭据绑定，必须在预扣前拒绝。
+        return Err(AfError::InvalidRequest);
+    }
     let parameters = target.parameter_overrides();
     if upstream_model == requested_model && parameters.is_empty() {
         return Ok(None);
