@@ -57,6 +57,6 @@ v0.3.1
    git push origin v0.3.0-rc.1
    ```
 
-6. 核对标签指向、发布说明、归档名称和校验文件中的版本完全一致，再创建公开 Release。
+6. GitHub 推送版本标签后，`Publish public release` 工作流会构建 Linux amd64 二进制和两套内置前端，生成归档与 SHA-256 文件，并发布 Release。Alpha、Beta 和 RC 自动标记为预发布，不设为 Latest。发布前核对标签指向和版本说明；发布后核对下载附件。已公开的 Release 不覆盖产物，修复时递增版本号。
 
 标签校验由 [`tools/ci/verify-release-tag.sh`](../tools/ci/verify-release-tag.sh) 执行。它会拒绝缺少 `v`、阶段名称不在 `alpha`/`beta`/`rc` 中、序号为零或包含构建元数据的标签。
