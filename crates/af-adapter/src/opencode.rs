@@ -110,11 +110,32 @@ impl Adaptor for OpenCodeAdaptor {
             });
         }
         clear_authentication_headers(headers);
-        let mut authorization =
-            HeaderValue::from_str(&format!("Bearer {}", credential.expose_secret()))
-                .map_err(|_| AdaptorError::InvalidHeader)?;
+        for name in [
+            "x-opencode-session",
+            "x-opencode-session-id",
+            "x-session-affinity",
+            "x-session-id",
+            "x-opencode-project",
+            "x-opencode-request",
+            "x-parent-session-id",
+        ] {
+            headers.remove(name);
+        }
+        let mut authorization = HeaderValue::from_str(&if self.protocol == Protocol::Anthropic {
+            credential.expose_secret().to_owned()
+        } else {
+            format!("Bearer {}", credential.expose_secret())
+        })
+        .map_err(|_| AdaptorError::InvalidHeader)?;
         authorization.set_sensitive(true);
-        headers.insert("authorization", authorization);
+        headers.insert(
+            if self.protocol == Protocol::Anthropic {
+                "x-api-key"
+            } else {
+                "authorization"
+            },
+            authorization,
+        );
         headers.insert("content-type", HeaderValue::from_static("application/json"));
         headers.insert("accept", HeaderValue::from_static("text/event-stream"));
         headers.insert(
@@ -144,7 +165,19 @@ impl Adaptor for OpenCodeAdaptor {
             for byte in hash {
                 write!(&mut encoded, "{byte:02x}").expect("写入 String 不会失败");
             }
-            let mut session = HeaderValue::from_str(&format!("ses_{encoded}"))
+            // 官方 Identifier.descending 的 12 位十六进制序号与 14 位 Base62 尾部。
+            // 用隔离摘要派生稳定序号，避免重试或多节点重新生成会话。
+            let ordinal =
+                u64::from_be_bytes(hash[..8].try_into().expect("SHA-256 摘要至少 8 字节"))
+                    & 0x0000_000f_ffff_ffff;
+            let descending = !((ordinal << 12) | 1) & 0x0000_ffff_ffff_ffff;
+            const ALPHABET: &[u8] =
+                b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+            let tail: String = hash[8..22]
+                .iter()
+                .map(|byte| char::from(ALPHABET[usize::from(*byte) % ALPHABET.len()]))
+                .collect();
+            let mut session = HeaderValue::from_str(&format!("ses_{descending:012x}{tail}"))
                 .map_err(|_| AdaptorError::InvalidHeader)?;
             session.set_sensitive(true);
             for name in [
@@ -293,6 +326,39 @@ mod tests {
         assert_eq!(first["x-session-id"], first["x-opencode-session"]);
         assert!(first["authorization"].is_sensitive());
         assert!(first["x-session-id"].is_sensitive());
+        let session = first["x-session-id"].to_str().unwrap();
+        assert_eq!(session.len(), 30);
+        assert!(session.starts_with("ses_"));
+        assert_eq!(&session[13..16], "ffe");
+        assert!(
+            session[4..16]
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        );
+        assert!(session[16..].bytes().all(|b| b.is_ascii_alphanumeric()));
+    }
+
+    #[test]
+    fn messages_uses_native_api_key_authentication() {
+        let context = RelayContext::new(
+            HttpClientPool::default()
+                .get(&HttpClientConfig::default())
+                .unwrap(),
+        );
+        let adaptor =
+            OpenCodeAdaptor::new(OpenCodeEntry::InferenceV1, Protocol::Anthropic, vec![]).unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", HeaderValue::from_static("Bearer previous"));
+        adaptor
+            .setup_headers(
+                &mut headers,
+                &Credential::api_key("fixture").unwrap(),
+                &context,
+            )
+            .unwrap();
+        assert!(!headers.contains_key("authorization"));
+        assert_eq!(headers["x-api-key"], "fixture");
+        assert!(headers["x-api-key"].is_sensitive());
     }
 }
 

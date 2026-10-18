@@ -392,15 +392,54 @@ async fn sse_aggregation_preserves_all_four_protocols_tools_and_usage() {
             )
             .unwrap();
             let mut bytes = Vec::new();
-            for event in fixture_events(tool) {
-                bytes.extend(encoder.encode_event(event).unwrap());
+            let expected_usage = if upstream == Protocol::Anthropic {
+                Usage::new(
+                    usage().input_tokens(),
+                    usage().output_tokens(),
+                    *usage().details(),
+                    UsageSource::Upstream,
+                    UsageSemantics::CacheSeparated,
+                )
+                .unwrap()
+            } else {
+                usage()
+            };
+            if upstream == Protocol::Anthropic {
+                // 原生上游夹具提供已知用量，避免下游编码器的本地估算掩盖聚合问题。
+                let initial = Usage::new(
+                    expected_usage.input_tokens(),
+                    TokenCount::ZERO,
+                    *expected_usage.details(),
+                    UsageSource::Upstream,
+                    UsageSemantics::CacheSeparated,
+                )
+                .unwrap();
+                let mut native = af_protocol::anthropic::AnthropicMessagesStreamEncoder::new(
+                    "msg_fixture",
+                    "model",
+                    initial,
+                )
+                .unwrap();
+                for event in fixture_events(tool) {
+                    bytes.extend(native.encode(event).unwrap());
+                }
+                bytes.extend(
+                    native
+                        .encode(CanonicalStreamEvent::Usage(expected_usage))
+                        .unwrap(),
+                );
+                bytes.extend(native.encode(CanonicalStreamEvent::StreamEnd).unwrap());
+            } else {
+                for event in fixture_events(tool) {
+                    bytes.extend(encoder.encode_event(event).unwrap());
+                }
+                bytes.extend(
+                    encoder
+                        .encode_event(CanonicalStreamEvent::Usage(expected_usage))
+                        .unwrap(),
+                );
+                bytes.extend(encoder.finish(Ok(expected_usage), true).unwrap());
             }
-            bytes.extend(
-                encoder
-                    .encode_event(CanonicalStreamEvent::Usage(usage()))
-                    .unwrap(),
-            );
-            bytes.extend(encoder.finish(Ok(usage()), true).unwrap());
             let response = crate::collect_conversation_response(
                 upstream,
                 af_adapter::UpstreamBody::Full(Bytes::from(bytes)),
@@ -412,7 +451,7 @@ async fn sse_aggregation_preserves_all_four_protocols_tools_and_usage() {
                 self::response(upstream, tool).choices[0].message,
                 "{upstream:?}"
             );
-            assert_eq!(response.usage, Some(usage()));
+            assert_eq!(response.usage, Some(expected_usage), "{upstream:?}");
             for downstream in PROTOCOLS {
                 let body = build_response(
                     downstream,
