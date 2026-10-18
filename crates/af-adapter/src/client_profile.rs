@@ -7,6 +7,7 @@ use crate::{AdaptorError, AdaptorResult, ClientSimulationContext, UpstreamReques
 pub fn apply_client_profile_identity(
     profile: &ClientProfileSnapshot,
     context: ClientSimulationContext,
+    oauth_provider: Option<&str>,
     request: UpstreamRequest,
 ) -> AdaptorResult<UpstreamRequest> {
     profile
@@ -17,8 +18,7 @@ pub fn apply_client_profile_identity(
         .matches_channel(context.channel_type(), context.protocol())
         || !profile
             .definition
-            .credential_kinds
-            .contains(&context.credential_kind())
+            .matches_credential(context.credential_kind(), oauth_provider)
     {
         return Err(AdaptorError::InvalidClientSimulation);
     }
@@ -71,6 +71,7 @@ mod tests {
                 Operation::Chat,
                 CredentialKind::ApiKey,
             ),
+            None,
             request,
         )
         .unwrap();

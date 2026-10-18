@@ -86,8 +86,7 @@ fn try_runtime_target(
         if channel.client_profile().is_some_and(|profile| {
             !profile
                 .definition
-                .credential_kinds
-                .contains(&credential_kind)
+                .matches_credential(credential_kind, oauth_provider.as_deref())
         }) {
             continue;
         }

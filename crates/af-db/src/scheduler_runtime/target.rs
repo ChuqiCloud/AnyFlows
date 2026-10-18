@@ -730,8 +730,7 @@ impl SchedulerRuntimeTargetRecord {
                 || self.credentials.iter().any(|c| {
                     !profile
                         .definition
-                        .credential_kinds
-                        .contains(&c.credential_kind())
+                        .matches_credential(c.credential_kind(), c.oauth_provider())
                 })
                 || self.headers.iter().any(|h| {
                     profile

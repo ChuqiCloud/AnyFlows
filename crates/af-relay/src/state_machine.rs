@@ -758,6 +758,7 @@ impl RelayStateMachine {
                         request.operation,
                         candidate.credential.kind(),
                     ),
+                    candidate.context.oauth_provider(),
                     upstream_request,
                 ) {
                     Ok(request) => request,

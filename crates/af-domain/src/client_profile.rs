@@ -173,6 +173,15 @@ impl ClientProfileDefinition {
                 ClientProfileService::OpenCode => false,
             }
     }
+
+    /// 服务身份除凭据种类外，还须匹配实际的 OAuth 提供商。
+    pub fn matches_credential(&self, kind: CredentialKind, oauth_provider: Option<&str>) -> bool {
+        self.credential_kinds.contains(&kind)
+            && (self.service != ClientProfileService::Codex
+                || (kind == CredentialKind::Oauth
+                    && oauth_provider
+                        .is_some_and(|provider| provider.eq_ignore_ascii_case("codex"))))
+    }
 }
 
 /// 运行时只持有已验证的不可变配置，不在发送过程中读取数据库。
@@ -382,5 +391,15 @@ mod tests {
             copy[field] = serde_json::json!("untrusted");
             assert!(serde_json::from_value::<ClientProfileDefinition>(copy).is_err());
         }
+    }
+
+    #[test]
+    fn codex_service_requires_its_registered_oauth_provider() {
+        let codex = built_in_client_profiles().remove(3).definition;
+        assert!(codex.matches_credential(CredentialKind::Oauth, Some("codex")));
+        assert!(codex.matches_credential(CredentialKind::Oauth, Some("Codex")));
+        assert!(!codex.matches_credential(CredentialKind::Oauth, None));
+        assert!(!codex.matches_credential(CredentialKind::Oauth, Some("openai")));
+        assert!(!codex.matches_credential(CredentialKind::ApiKey, Some("codex")));
     }
 }

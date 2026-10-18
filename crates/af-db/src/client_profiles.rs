@@ -682,13 +682,16 @@ pub(crate) fn validate_profile_channel(
         .header_override
         .pairs()
         .map_err(|_| Error::Invariant)?;
-    if headers.iter().any(|(k, _)| {
-        snapshot
-            .definition
-            .identity_headers
-            .keys()
-            .any(|p| p.eq_ignore_ascii_case(k))
-    }) {
+    // 旧版身份中间件本就覆盖这些值；迁移须保留其优先级和可用性。
+    if legacy_header.is_none()
+        && headers.iter().any(|(k, _)| {
+            snapshot
+                .definition
+                .identity_headers
+                .keys()
+                .any(|p| p.eq_ignore_ascii_case(k))
+        })
+    {
         return Err(Error::Conflict);
     }
     Ok(())

@@ -171,13 +171,6 @@ impl SchedulerRuntimeChannelSource {
         if !profile
             .definition
             .matches_channel(self.channel_type, self.protocol)
-            || self.headers.iter().any(|(key, _)| {
-                profile
-                    .definition
-                    .identity_headers
-                    .keys()
-                    .any(|name| name.eq_ignore_ascii_case(key))
-            })
         {
             return Err(SchedulerRuntimeSourceError::Invariant);
         }
@@ -190,6 +183,22 @@ impl SchedulerRuntimeChannelSource {
             if profile.binding.key != expected || profile.binding.revision != 1 {
                 return Err(SchedulerRuntimeSourceError::Invariant);
             }
+            // 旧身份中间件覆盖同名 Header；投影移除被覆盖值，保持迁移前语义。
+            self.headers.retain(|(key, _)| {
+                !profile
+                    .definition
+                    .identity_headers
+                    .keys()
+                    .any(|name| name.eq_ignore_ascii_case(key))
+            });
+        } else if self.headers.iter().any(|(key, _)| {
+            profile
+                .definition
+                .identity_headers
+                .keys()
+                .any(|name| name.eq_ignore_ascii_case(key))
+        }) {
+            return Err(SchedulerRuntimeSourceError::Invariant);
         }
         if profile.definition.service == af_domain::ClientProfileService::ClaudeCode {
             self.client_simulation_profile = Some(ClientSimulationProfile::AnthropicCliHeadersV1);
