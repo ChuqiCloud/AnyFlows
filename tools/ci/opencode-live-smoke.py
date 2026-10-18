@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run explicit live acceptance against a fresh loopback preview instance."""
 
+import http.client
 import json
 import os
 import secrets
@@ -31,6 +32,8 @@ def request(method, path, body=None, token=None, stream=False):
         except (ValueError, AttributeError):
             code = "unknown"
         raise RuntimeError(f"{method} {path}: HTTP {error.code}, code={code}") from None
+    except (http.client.HTTPException, OSError) as error:
+        raise RuntimeError(f"{method} {path}: incomplete transport ({type(error).__name__})") from None
     if stream:
         frames = []
         events = []
