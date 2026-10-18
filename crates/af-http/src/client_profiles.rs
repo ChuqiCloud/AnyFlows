@@ -5,7 +5,7 @@ use af_admin::{
     DatabaseAdminClientProfileService, SessionAuthentication, SessionAuthenticator,
 };
 use af_domain::{
-    ChannelId, ClientProfileBinding, ClientProfileDefinition, CredentialKind, Protocol,
+    ChannelId, ChannelType, ClientProfileBinding, ClientProfileDefinition, CredentialKind, Protocol,
 };
 use axum::{
     Extension, Json, Router,
@@ -38,6 +38,7 @@ struct ListQuery {
     service: Option<String>,
     protocol: Option<Protocol>,
     credential_kind: Option<CredentialKind>,
+    channel_type: Option<ChannelType>,
     limit: Option<usize>,
 }
 #[derive(Default, Deserialize)]
@@ -79,6 +80,42 @@ pub(crate) struct ClientProfileBindRequest {
     binding: ClientProfileBinding,
     #[schema(minimum = 0)]
     expected_version: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ClientProfileOpenCodeEntryRequest {
+    #[schema(max_length = 128)]
+    version: String,
+    entry: ClientProfileOpenCodeEntrySchema,
+}
+#[derive(Clone, Copy, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ClientProfileOpenCodeEntrySchema {
+    InferenceV1,
+    ZenV1,
+}
+impl From<ClientProfileOpenCodeEntrySchema> for af_domain::OpenCodeEntry {
+    fn from(value: ClientProfileOpenCodeEntrySchema) -> Self {
+        match value {
+            ClientProfileOpenCodeEntrySchema::InferenceV1 => Self::InferenceV1,
+            ClientProfileOpenCodeEntrySchema::ZenV1 => Self::ZenV1,
+        }
+    }
+}
+#[derive(ToSchema)]
+pub(crate) struct ClientProfileOpenCodeSettingsSchema {
+    entry: ClientProfileOpenCodeEntrySchema,
+    version: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub(crate) struct ClientProfileCapabilitiesSchema {
+    #[schema(value_type = Vec<ClientProfileDefinitionSchema>)]
+    templates: Vec<ClientProfileDefinition>,
+    identity_headers: Vec<&'static str>,
+    session_strategies: Vec<ClientProfileSessionStrategySchema>,
+    opencode_entries: Vec<ClientProfileOpenCodeEntrySchema>,
 }
 
 // 文档镜像保持 HTTP 层对 OpenAPI 的所有权；领域层不依赖 HTTP schema。
@@ -169,6 +206,11 @@ pub fn build_client_profile_router(
 ) -> Router {
     Router::new()
         .route("/api/admin/client-profiles", get(list_profiles))
+        .route("/api/admin/client-profiles/capabilities", get(capabilities))
+        .route(
+            "/api/admin/client-profiles/opencode-settings/{channel_id}",
+            get(get_opencode_settings).put(set_opencode_settings),
+        )
         .route(
             "/api/admin/client-profiles/validate",
             post(validate_profile),
@@ -222,12 +264,73 @@ async fn list_profiles(
                 service: query.service,
                 protocol: query.protocol,
                 credential_kind: query.credential_kind,
+                channel_type: query.channel_type,
                 limit: query.limit.unwrap_or(25),
             },
         )
         .await
         .map_err(map_error)?;
     Ok(no_store_json(page))
+}
+
+async fn capabilities() -> Response {
+    no_store_json(ClientProfileCapabilitiesSchema {
+        templates: af_domain::built_in_client_profiles()
+            .into_iter()
+            .map(|p| p.definition)
+            .collect(),
+        identity_headers: vec![
+            "user-agent",
+            "x-app",
+            "x-client-name",
+            "x-client-version",
+            "x-opencode-client",
+        ],
+        session_strategies: vec![
+            ClientProfileSessionStrategySchema::Explicit,
+            ClientProfileSessionStrategySchema::FirstUserMessage,
+        ],
+        opencode_entries: vec![
+            ClientProfileOpenCodeEntrySchema::InferenceV1,
+            ClientProfileOpenCodeEntrySchema::ZenV1,
+        ],
+    })
+}
+async fn get_opencode_settings(
+    State(state): State<ProfileState>,
+    Extension(auth): Extension<SessionAuthentication>,
+    Path(id): Path<i64>,
+) -> Result<Response, ManagementError> {
+    Ok(no_store_json(
+        state
+            .service
+            .opencode_settings(
+                auth.principal(),
+                ChannelId::new(id).map_err(|_| ManagementError::InvalidRequest)?,
+            )
+            .await
+            .map_err(map_error)?,
+    ))
+}
+async fn set_opencode_settings(
+    State(state): State<ProfileState>,
+    Extension(auth): Extension<SessionAuthentication>,
+    Path(id): Path<i64>,
+    request: Result<Json<ClientProfileOpenCodeEntryRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    Ok(no_store_json(
+        state
+            .service
+            .set_opencode_entry(
+                auth.principal(),
+                ChannelId::new(id).map_err(|_| ManagementError::InvalidRequest)?,
+                &request.version,
+                request.entry.into(),
+            )
+            .await
+            .map_err(map_error)?,
+    ))
 }
 async fn get_profile(
     State(state): State<ProfileState>,
@@ -453,6 +556,7 @@ fn parse_list_query(raw: Option<&str>) -> Result<ListQuery, ManagementError> {
         service: fields.remove("service"),
         protocol: take_query_value(&mut fields, "protocol")?,
         credential_kind: take_query_value(&mut fields, "credential_kind")?,
+        channel_type: take_query_value(&mut fields, "channel_type")?,
         limit: take_query_value(&mut fields, "limit")?,
     };
     if !fields.is_empty() || query.limit.is_some_and(|limit| !(1..=100).contains(&limit)) {
@@ -490,6 +594,12 @@ mod tests {
         assert_eq!(query.protocol, Some(Protocol::OpenAiChat));
         assert_eq!(query.credential_kind, Some(CredentialKind::Oauth));
         assert_eq!(query.limit, Some(25));
+        assert_eq!(
+            parse_list_query(Some("channel_type=opencode"))
+                .unwrap()
+                .channel_type,
+            Some(ChannelType::OpenCode)
+        );
         assert!(parse_list_query(None).unwrap().limit.is_none());
         for raw in [
             "limit=0",
@@ -498,6 +608,8 @@ mod tests {
             "enabled=invalid",
             "protocol=unknown",
             "credential_kind=unknown",
+            "channel_type=unknown",
+            "channel_type=opencode&channel_type=openai",
             "unknown=value",
         ] {
             assert!(parse_list_query(Some(raw)).is_err(), "{raw}");

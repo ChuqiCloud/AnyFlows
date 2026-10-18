@@ -21,6 +21,7 @@
 | [个人与企业主体认证](account-and-enterprise-verification.md) | 人工审核、材料查看和支付宝实名认证 |
 | [API 目录与在线调试](api-explorer.md) | 接口查找、访问权限和请求调试 |
 | [运行状态](runtime-status.md) | 节点负载、数据库与 Redis 健康、上下文缓存统计 |
+| [客户端档案](client-profiles.md) | 身份配置、修订管理、渠道绑定和 OpenCode 入口 |
 | [前端模板](frontend-template-development.md) | 内置前端、外部模板、预览和切换 |
 
 ## 开发与仓库维护

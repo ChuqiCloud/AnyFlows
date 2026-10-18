@@ -28,6 +28,7 @@ export type NavKey =
   | 'modelSettings'
   | 'modelProviders'
   | 'channels'
+  | 'clientProfiles'
   | 'credentials'
   | 'credentialProxies'
   | 'routes'
@@ -46,7 +47,7 @@ export const adminWorkspaceItems = ['overview', 'models', 'playground', 'videoTa
 
 export const adminNavigationSections = [
   { key: 'operations', items: ['subscriptionManagement', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings'] },
-  { key: 'gateway', items: ['modelSettings', 'modelProviders', 'groupSettings', 'channels', 'credentials', 'credentialProxies', 'routes'] },
+  { key: 'gateway', items: ['modelSettings', 'modelProviders', 'groupSettings', 'channels', 'clientProfiles', 'credentials', 'credentialProxies', 'routes'] },
   { key: 'platform', items: ['users', 'accountVerificationReviews', 'invitationSettings', 'siteSettings', 'siteNavigation', 'authenticationSettings', 'announcements', 'emailSettings', 'networkSettings', 'accountVerificationSettings', 'keys'] },
 ] as const satisfies ReadonlyArray<{ key: AdminSectionKey; items: readonly NavKey[] }>
 
@@ -90,6 +91,7 @@ export const activeKeyByView: Readonly<Record<string, NavKey>> = {
   'model-settings': 'modelSettings',
   'model-providers': 'modelProviders',
   channels: 'channels',
+  'client-profiles': 'clientProfiles',
   credentials: 'credentials',
   'credential-proxies': 'credentialProxies',
   routes: 'routes',
