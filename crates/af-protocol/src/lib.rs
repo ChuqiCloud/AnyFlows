@@ -26,6 +26,7 @@ pub mod rerank_v1;
 mod response;
 mod sse;
 mod stream;
+mod tool_compatibility;
 mod usage;
 mod video_task;
 pub mod xai_video;
@@ -101,6 +102,9 @@ pub use rerank::{
 };
 pub use response::{CanonicalResponse, ResponseChoice};
 pub use stream::{CanonicalStreamEvent, ContentDelta, FinishReason};
+pub use tool_compatibility::{
+    ToolCompatibilityError, ToolCompatibilitySession, ToolCompatibilityStep,
+};
 pub use usage::{TokenCount, Usage, UsageDetails, UsageError, UsageSemantics, UsageSource};
 pub use video_task::{
     CanonicalTaskOutput, CanonicalTaskPoll, CanonicalVideoGenerationRequest, CanonicalVideoOutput,
