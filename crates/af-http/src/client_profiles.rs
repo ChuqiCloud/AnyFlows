@@ -9,7 +9,7 @@ use af_domain::{
 };
 use axum::{
     Extension, Json, Router,
-    extract::{Path, Query, State, rejection::JsonRejection},
+    extract::{Path, RawQuery, State, rejection::JsonRejection},
     middleware,
     response::Response,
     routing::{get, post},
@@ -208,9 +208,9 @@ pub fn build_client_profile_router(
 async fn list_profiles(
     State(state): State<ProfileState>,
     Extension(auth): Extension<SessionAuthentication>,
-    query: Result<Query<ListQuery>, axum::extract::rejection::QueryRejection>,
+    RawQuery(raw): RawQuery,
 ) -> Result<Response, ManagementError> {
-    let Query(query) = query.map_err(|_| ManagementError::InvalidRequest)?;
+    let query = parse_list_query(raw.as_deref())?;
     let page = state
         .service
         .list(
@@ -288,9 +288,9 @@ async fn list_revisions(
     State(state): State<ProfileState>,
     Extension(auth): Extension<SessionAuthentication>,
     Path(key): Path<String>,
-    query: Result<Query<PageQuery>, axum::extract::rejection::QueryRejection>,
+    RawQuery(raw): RawQuery,
 ) -> Result<Response, ManagementError> {
-    let Query(query) = query.map_err(|_| ManagementError::InvalidRequest)?;
+    let query = parse_page_query(raw.as_deref())?;
     if query.after.is_some() {
         return Err(ManagementError::InvalidRequest);
     }
@@ -338,9 +338,9 @@ async fn list_references(
     State(state): State<ProfileState>,
     Extension(auth): Extension<SessionAuthentication>,
     Path(key): Path<String>,
-    query: Result<Query<PageQuery>, axum::extract::rejection::QueryRejection>,
+    RawQuery(raw): RawQuery,
 ) -> Result<Response, ManagementError> {
-    let Query(query) = query.map_err(|_| ManagementError::InvalidRequest)?;
+    let query = parse_page_query(raw.as_deref())?;
     if query.before.is_some() {
         return Err(ManagementError::InvalidRequest);
     }
@@ -412,5 +412,109 @@ fn map_error(error: AdminClientProfileError) -> ManagementError {
             ClientProfileRepositoryError::Conflict => ManagementError::ClientProfileConflict,
             _ => ManagementError::Internal,
         },
+    }
+}
+
+fn query_fields(
+    raw: Option<&str>,
+) -> Result<std::collections::BTreeMap<String, String>, ManagementError> {
+    let raw = raw.unwrap_or_default();
+    if raw.len() > 4096 {
+        return Err(ManagementError::InvalidRequest);
+    }
+    let mut fields = std::collections::BTreeMap::new();
+    for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
+        if fields
+            .insert(key.into_owned(), value.into_owned())
+            .is_some()
+        {
+            return Err(ManagementError::InvalidRequest);
+        }
+    }
+    Ok(fields)
+}
+
+fn take_query_value<T: std::str::FromStr>(
+    fields: &mut std::collections::BTreeMap<String, String>,
+    name: &str,
+) -> Result<Option<T>, ManagementError> {
+    fields
+        .remove(name)
+        .map(|value| value.parse().map_err(|_| ManagementError::InvalidRequest))
+        .transpose()
+}
+
+fn parse_list_query(raw: Option<&str>) -> Result<ListQuery, ManagementError> {
+    let mut fields = query_fields(raw)?;
+    let query = ListQuery {
+        after: fields.remove("after"),
+        search: fields.remove("search"),
+        enabled: take_query_value(&mut fields, "enabled")?,
+        service: fields.remove("service"),
+        protocol: take_query_value(&mut fields, "protocol")?,
+        credential_kind: take_query_value(&mut fields, "credential_kind")?,
+        limit: take_query_value(&mut fields, "limit")?,
+    };
+    if !fields.is_empty() || query.limit.is_some_and(|limit| !(1..=100).contains(&limit)) {
+        return Err(ManagementError::InvalidRequest);
+    }
+    Ok(query)
+}
+
+fn parse_page_query(raw: Option<&str>) -> Result<PageQuery, ManagementError> {
+    let mut fields = query_fields(raw)?;
+    let query = PageQuery {
+        before: take_query_value(&mut fields, "before")?,
+        after: take_query_value(&mut fields, "after")?,
+        limit: take_query_value(&mut fields, "limit")?,
+    };
+    if !fields.is_empty()
+        || query.before.is_some_and(|v| v < 1)
+        || query.after.is_some_and(|v| v < 1)
+        || query.limit.is_some_and(|limit| !(1..=100).contains(&limit))
+    {
+        return Err(ManagementError::InvalidRequest);
+    }
+    Ok(query)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn queries_decode_filters_and_reject_ambiguous_or_unbounded_inputs() {
+        let query = parse_list_query(Some("search=Example+client&enabled=false&protocol=openai_chat&credential_kind=oauth&limit=25")).unwrap();
+        assert_eq!(query.search.as_deref(), Some("Example client"));
+        assert_eq!(query.enabled, Some(false));
+        assert_eq!(query.protocol, Some(Protocol::OpenAiChat));
+        assert_eq!(query.credential_kind, Some(CredentialKind::Oauth));
+        assert_eq!(query.limit, Some(25));
+        assert!(parse_list_query(None).unwrap().limit.is_none());
+        for raw in [
+            "limit=0",
+            "limit=101",
+            "limit=25&limit=50",
+            "enabled=invalid",
+            "protocol=unknown",
+            "credential_kind=unknown",
+            "unknown=value",
+        ] {
+            assert!(parse_list_query(Some(raw)).is_err(), "{raw}");
+        }
+        assert!(parse_list_query(Some(&format!("search={}", "a".repeat(4096)))).is_err());
+        assert_eq!(
+            parse_page_query(Some("before=3&limit=100")).unwrap().before,
+            Some(3)
+        );
+        for raw in [
+            "before=0",
+            "after=-1",
+            "limit=101",
+            "after=1&after=2",
+            "unknown=value",
+        ] {
+            assert!(parse_page_query(Some(raw)).is_err(), "{raw}");
+        }
     }
 }
