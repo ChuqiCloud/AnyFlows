@@ -55,7 +55,7 @@ jobs:
         with:
           shared-key: preview-package
 
-      - uses: https://github.com/actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
 
@@ -90,9 +90,21 @@ jobs:
           (cd release && sha256sum anyflows-preview-*.tar.gz > SHA256SUMS && sha256sum --check --strict SHA256SUMS)
           printf 'commit=%s\nref=%s\nedition=community\n' "$(git rev-parse HEAD)" "$GITHUB_REF" > release/PREVIEW
 
+      - name: Prepare Gitea artifact uploader
+        if: github.server_url != 'https://github.com'
+        run: |
+          set -euo pipefail
+          action_path='.ci-actions/gitea-upload-artifact'
+          action_sha='62ac910c5d3dfa85c7cb2df15afe2e342b2407c2'
+          git init --quiet "$action_path"
+          git -C "$action_path" remote add origin https://gitea.com/actions/gitea-upload-artifact.git
+          git -C "$action_path" fetch --quiet --no-tags --depth=1 origin "$action_sha"
+          git -C "$action_path" checkout --quiet --detach FETCH_HEAD
+          test "$(git -C "$action_path" rev-parse HEAD)" = "$action_sha"
+
       - name: Upload preview package
         if: github.server_url != 'https://github.com'
-        uses: https://gitea.com/actions/gitea-upload-artifact@62ac910c5d3dfa85c7cb2df15afe2e342b2407c2 # Gitea v4 backend
+        uses: ./.ci-actions/gitea-upload-artifact
         with:
           name: anyflows-preview-linux-amd64-${{ github.sha }}
           path: |

@@ -4,17 +4,15 @@ on:
   push:
     branches: [main, develop, 'fix/**', 'feat/**', 'sync/gitea-public-core']
     paths:
-      - .github/workflows/public-sync-checks.yml
-      - .github/workflows/export-public-core.yml
-      - .github/workflows/propose-gitea-sync.yml
+      - .github/workflows/**
+      - tools/ci/check-workflow-actions.py
       - tools/repository/**
       - tools/ci/test-public-core-export.sh
   pull_request:
     branches: [main, develop]
     paths:
-      - .github/workflows/public-sync-checks.yml
-      - .github/workflows/export-public-core.yml
-      - .github/workflows/propose-gitea-sync.yml
+      - .github/workflows/**
+      - tools/ci/check-workflow-actions.py
       - tools/repository/**
       - tools/ci/test-public-core-export.sh
 
@@ -46,6 +44,9 @@ jobs:
           git remote add origin "$SOURCE_URL"
           git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --quiet --no-tags --depth=1 origin "$SOURCE_SHA"
           git checkout -q --detach FETCH_HEAD
+
+      - name: Check portable workflow action references
+        run: python3 tools/ci/check-workflow-actions.py
 
       - name: Check export and synchronization regressions
         run: bash tools/ci/test-public-core-export.sh
