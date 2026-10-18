@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import type { AdminChannel, ClientProfileBindingSchema, ClientProfileReferenceSchema, ClientProfileOpenCodeSettingsSchema } from '@/lib/api/generated/types.gen'
@@ -21,6 +21,7 @@ export function ChannelProfileDrawer({ channel, onClose }: { channel: AdminChann
 function ChannelProfileForm({ channel, binding, settings, readError, retry, onClose }: { channel: AdminChannel; binding: ClientProfileReferenceSchema | null; settings?: ClientProfileOpenCodeSettingsSchema; readError?: unknown; retry: () => void; onClose: () => void }) {
   const { t } = useTranslation()
   const cache = useQueryClient()
+  const currentBinding = useRef<HTMLDivElement>(null)
   const [base, setBase] = useState(() => binding)
   const [selection, setSelection] = useState<ClientProfileBindingSchema | undefined>()
   const [profileKey, setProfileKey] = useState('')
@@ -33,7 +34,7 @@ function ChannelProfileForm({ channel, binding, settings, readError, retry, onCl
   const capabilities = useProfileCapabilities()
   const profiles = useProfiles({ enabled: true, channel_type: channel.type, protocol: channel.protocol, search: search.debounced || undefined }, page.cursor)
   const revisions = useProfileRevisions(profileKey, revisionsPage.cursor, !!profileKey)
-  const save = useMutation({ mutationFn: () => bindProfile(channel.id, selection!, base?.version ?? 0), onSuccess: async result => { setBase(result); setSelection(undefined); setSaved(true); await cache.invalidateQueries({ queryKey: clientProfilesKey }) } })
+  const save = useMutation({ mutationFn: () => bindProfile(channel.id, selection!, base?.version ?? 0), onSuccess: async result => { setBase(result); setSelection(undefined); setSaved(true); await cache.invalidateQueries({ queryKey: clientProfilesKey }); currentBinding.current?.focus() } })
   const saveEntry = useMutation({ mutationFn: () => setOpenCodeEntry(channel.id, entryBase!.version, entry), onSuccess: async result => { setEntryBase(result); setEntry(result.entry); setSaved(true); await cache.invalidateQueries({ queryKey: adminChannelsQueryKey }) } })
   const busy = save.isPending || saveEntry.isPending
   const bindingDirty = !!selection && (selection.key !== base?.binding.key || selection.revision !== base?.binding.revision)
@@ -41,7 +42,7 @@ function ChannelProfileForm({ channel, binding, settings, readError, retry, onCl
   return <ProfileDrawer title={`${t('clientProfiles.channelSettings')} · ${channel.name}`} dirty={bindingDirty || entryDirty} busy={busy} onClose={onClose}>
     {!!readError && <ProfileError error={readError} retry={retry} />}
     <p className="cp-hint">{t('clientProfiles.channelHint')}</p>
-    <div className="cp-version"><strong>{t('clientProfiles.currentBinding')}</strong><p>{base ? `${base.binding.key} · r${base.binding.revision}` : t('clientProfiles.unbound')}</p><p className="cp-hint">{channel.type} · {channel.protocol}</p></div>
+    <div ref={currentBinding} tabIndex={-1} className="cp-version cp-current-binding"><strong>{t('clientProfiles.currentBinding')}</strong><p>{base ? `${base.binding.key} · r${base.binding.revision}` : t('clientProfiles.unbound')}</p><p className="cp-hint">{channel.type} · {channel.protocol}</p></div>
     {(channel.client_simulation_profile || channel.client_simulation_body_profile) && <p className="cp-error">{t('clientProfiles.legacyConflict')}</p>}
     <ProfileField label={t('clientProfiles.compatibleProfiles')}><ProfileInput label={t('clientProfiles.search')} value={search.search} maxLength={128} onChange={search.setSearch} placeholder={t('clientProfiles.search')} disabled={busy} /></ProfileField>
     {profiles.isPending ? <ProfileLoading /> : profiles.isError ? <ProfileError error={profiles.error} retry={() => void profiles.refetch()} /> : <>
