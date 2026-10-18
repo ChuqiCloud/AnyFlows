@@ -173,6 +173,7 @@ try {
   await page.getByRole('button', { name: '切换到此修订', exact: true }).click()
   await page.getByRole('button', { name: '切换到此修订', exact: true }).waitFor({ state: 'hidden' })
   assert.deepEqual(savedBinding, { binding: { key: record.key, revision: 2 }, expected_version: 1 })
+  await page.waitForFunction(() => [...document.querySelectorAll('.cp-drawer-body button')].some(button => button.textContent.trim() === '已选择' && !button.disabled))
   const screenshot = await page.screenshot({ fullPage: true, animations: 'disabled' })
   console.log(`ANYFLOWS_SCREENSHOT_${frontend}_client_profiles_BEGIN`)
   console.log(screenshot.toString('base64').match(/.{1,120}/g).join('\n'))
