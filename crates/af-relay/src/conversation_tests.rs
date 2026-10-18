@@ -2,7 +2,8 @@ use af_adapter::{HeaderMap, StatusCode, UpstreamResponse};
 use af_domain::Role;
 use af_protocol::{
     CanonicalStreamEvent, ContentBlock, ContentDelta, FinishReason, Message, ResponseChoice,
-    Sampling, StreamOptions, TokenCount, UsageDetails, UsageSemantics, UsageSource,
+    Sampling, StreamOptions, TokenCount, ToolCompatibilitySession, ToolCompatibilityStep, ToolDef,
+    UsageDetails, UsageSemantics, UsageSource,
 };
 use serde_json::{Value, json};
 
@@ -187,6 +188,166 @@ fn fixture_events(tool: bool) -> Vec<CanonicalStreamEvent> {
         stop_sequence: None,
     });
     events
+}
+
+fn decoded_fixture(
+    protocol: Protocol,
+    canonical: &CanonicalRequest,
+    events: Vec<CanonicalStreamEvent>,
+) -> Vec<CanonicalStreamEvent> {
+    let mut encoder = ChatStreamEncoder::new(
+        protocol,
+        "upstream",
+        "upstream-model",
+        1_700_000_000,
+        canonical,
+        true,
+    )
+    .unwrap();
+    let mut bytes = Vec::new();
+    for event in events {
+        bytes.extend(encoder.encode_event(event).unwrap());
+    }
+    bytes.extend(
+        encoder
+            .encode_event(CanonicalStreamEvent::Usage(usage()))
+            .unwrap(),
+    );
+    bytes.extend(encoder.finish(Ok(usage()), true).unwrap());
+    let mut decoder = ConversationDecoder::new(protocol).unwrap();
+    let mut events = Vec::new();
+    for chunk in bytes.chunks(7) {
+        events.extend(decoder.push(chunk).unwrap());
+    }
+    events.extend(decoder.finish().unwrap());
+    events
+}
+
+#[test]
+fn tool_compatibility_keeps_hidden_rounds_out_of_all_four_downstream_protocols() {
+    for upstream in PROTOCOLS {
+        for downstream in PROTOCOLS {
+            for real_tool in [false, true] {
+                let mut canonical = request(downstream, true).into_canonical();
+                let definition = ToolDef {
+                    name: "weather".to_owned(),
+                    description: None,
+                    input_schema: json!({"type":"object","properties":{"city":{"type":"string"}}}),
+                    strict: None,
+                };
+                canonical.tools.push(definition.clone());
+                let mut session =
+                    ToolCompatibilitySession::prepare(canonical.clone().into(), vec![definition])
+                        .unwrap();
+                let mut visible = Vec::new();
+                let mut continued = false;
+                for event in decoded_fixture(
+                    upstream,
+                    session.request().canonical(),
+                    fixture_events(true),
+                ) {
+                    match session.push(event).unwrap() {
+                        ToolCompatibilityStep::Forward(events) => visible.extend(events),
+                        ToolCompatibilityStep::Continue { request, .. } => {
+                            assert!(!continued);
+                            continued = true;
+                            assert_eq!(
+                                request.canonical().messages.len(),
+                                canonical.messages.len() + 2
+                            );
+                            for target in PROTOCOLS {
+                                assert!(
+                                    prepare_request(request.as_ref().clone(), target).is_ok(),
+                                    "{upstream:?} -> {target:?}"
+                                );
+                            }
+                        }
+                        other => panic!("hidden round completed: {other:?}"),
+                    }
+                }
+                assert!(continued, "{upstream:?}");
+                assert!(
+                    visible
+                        .iter()
+                        .all(|event| matches!(event, CanonicalStreamEvent::Ping))
+                );
+                let mut events = fixture_events(real_tool);
+                for event in &mut events {
+                    if let CanonicalStreamEvent::ToolCallStart { id, name, .. } = event {
+                        *id = "call_client".to_owned();
+                        *name = "af_client_0".to_owned();
+                    }
+                }
+                let mut total = None;
+                for event in decoded_fixture(upstream, &canonical, events) {
+                    match session.push(event).unwrap() {
+                        ToolCompatibilityStep::Forward(events) => visible.extend(events),
+                        ToolCompatibilityStep::Complete { events, usage } => {
+                            visible.extend(events);
+                            total = usage;
+                        }
+                        other => panic!("unexpected third round: {other:?}"),
+                    }
+                }
+                let total = total.unwrap();
+                let [Some(first), Some(second)] = *session.observed_usage() else {
+                    panic!("both rounds must retain their decoded usage");
+                };
+                // Anthropic 编码器会协调本地估算；按实际解码口径验证两轮守恒。
+                assert_eq!(
+                    total.output_tokens().get(),
+                    first.output_tokens().get() + second.output_tokens().get()
+                );
+                assert_eq!(
+                    total.checked_total_tokens().unwrap().get(),
+                    first.checked_total_tokens().unwrap().get()
+                        + second.checked_total_tokens().unwrap().get()
+                );
+                assert_eq!(
+                    visible
+                        .iter()
+                        .filter(|event| matches!(event, CanonicalStreamEvent::MessageStart { .. }))
+                        .count(),
+                    1
+                );
+                let mut encoder = ChatStreamEncoder::new(
+                    downstream,
+                    "client",
+                    "public-model",
+                    1_700_000_000,
+                    &canonical,
+                    true,
+                )
+                .unwrap();
+                let mut bytes = Vec::new();
+                for event in visible {
+                    if matches!(event, CanonicalStreamEvent::StreamEnd) {
+                        bytes.extend(encoder.finish(Ok(total), true).unwrap());
+                    } else {
+                        bytes.extend(encoder.encode_event(event).unwrap());
+                    }
+                }
+                let wire = String::from_utf8(bytes.clone()).unwrap();
+                assert!(!wire.contains("call_weather"));
+                assert!(!wire.contains("af_client_0"));
+                let mut decoder = ConversationDecoder::new(downstream).unwrap();
+                let mut decoded = decoder.push(&bytes).unwrap();
+                decoded.extend(decoder.finish().unwrap());
+                if real_tool {
+                    assert!(decoded.iter().any(|event| matches!(event, CanonicalStreamEvent::ToolCallStart { name, id, .. } if name == "weather" && id == "call_client")));
+                } else {
+                    assert!(decoded.iter().any(|event| matches!(event, CanonicalStreamEvent::ContentDelta { delta: ContentDelta::Text(text), .. } if text == "violet")));
+                }
+                assert_eq!(
+                    decoded
+                        .iter()
+                        .filter(|event| matches!(event, CanonicalStreamEvent::StreamEnd))
+                        .count(),
+                    1
+                );
+            }
+        }
+    }
 }
 
 #[test]

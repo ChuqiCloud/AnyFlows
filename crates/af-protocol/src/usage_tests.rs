@@ -228,3 +228,83 @@ fn usage_errors_have_fixed_chinese_diagnostics_without_sources() {
         assert!(error.source().is_none());
     }
 }
+
+#[test]
+fn adding_round_usage_preserves_details_and_normalizes_mixed_cache_semantics() {
+    let first = Usage::new(
+        count(100),
+        count(20),
+        details(40, 10, 5, 4, 2, 1),
+        UsageSource::Upstream,
+        UsageSemantics::Inclusive,
+    )
+    .unwrap();
+    let second = Usage::new(
+        count(70),
+        count(15),
+        details(30, 3, 2, 5, 1, 2),
+        UsageSource::Upstream,
+        UsageSemantics::CacheSeparated,
+    )
+    .unwrap();
+    let total = first.checked_add(second).unwrap();
+    assert_eq!(total.semantics(), UsageSemantics::Inclusive);
+    assert_eq!(total.checked_input_tokens().unwrap().get(), 205);
+    assert_eq!(total.output_tokens().get(), 35);
+    assert_eq!(total.details(), &details(70, 13, 7, 9, 3, 3));
+    assert_eq!(total.source(), UsageSource::Upstream);
+    assert_eq!(first.checked_add(second), second.checked_add(first));
+}
+
+#[test]
+fn adding_usage_retains_estimated_source_and_detects_overflow() {
+    for semantics in [UsageSemantics::Inclusive, UsageSemantics::CacheSeparated] {
+        let first = Usage::new(
+            count(100),
+            count(20),
+            details(30, 5, 2, 4, 1, 1),
+            UsageSource::Upstream,
+            semantics,
+        )
+        .unwrap();
+        let estimated = Usage::new(
+            count(10),
+            count(5),
+            details(0, 0, 0, 0, 0, 0),
+            UsageSource::Estimated,
+            semantics,
+        )
+        .unwrap();
+        let total = first.checked_add(estimated).unwrap();
+        assert_eq!(total.source(), UsageSource::Estimated);
+        assert_eq!(total.semantics(), semantics);
+        assert_eq!(total.input_tokens().get(), 110);
+        assert_eq!(total.details(), first.details());
+    }
+    let large = Usage::new(
+        count(i64::MAX),
+        TokenCount::ZERO,
+        details(0, 0, 0, 0, 0, 0),
+        UsageSource::Upstream,
+        UsageSemantics::Inclusive,
+    )
+    .unwrap();
+    let one = Usage::new(
+        count(1),
+        TokenCount::ZERO,
+        details(0, 0, 0, 0, 0, 0),
+        UsageSource::Upstream,
+        UsageSemantics::Inclusive,
+    )
+    .unwrap();
+    assert_eq!(large.checked_add(one), Err(UsageError::Overflow));
+    let output_one = Usage::new(
+        TokenCount::ZERO,
+        count(1),
+        details(0, 0, 0, 0, 0, 0),
+        UsageSource::Upstream,
+        UsageSemantics::Inclusive,
+    )
+    .unwrap();
+    assert_eq!(large.checked_add(output_one), Err(UsageError::Overflow));
+}
