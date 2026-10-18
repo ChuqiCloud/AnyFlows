@@ -209,8 +209,12 @@ fn protocol_matrix_preserves_tool_results_in_followup_requests() {
         for target in PROTOCOLS {
             let (_, body) = prepare_request(inbound.clone(), target).unwrap();
             let outbound = parse_request(target, &body);
+            let normalized = CanonicalRequestEnvelope::from(outbound.clone())
+                .for_conversation_protocol(Protocol::OpenAiChat)
+                .unwrap()
+                .into_canonical();
             assert_eq!(
-                outbound.messages, canonical.messages,
+                normalized.messages, canonical.messages,
                 "{source:?} -> {target:?}"
             );
             assert_eq!(outbound.tools.len(), canonical.tools.len());

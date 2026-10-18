@@ -3,7 +3,7 @@ use std::fmt;
 use af_domain::{Operation, Protocol};
 use bytes::Bytes;
 
-use crate::{CanonicalRequest, Sampling, StreamOptions, TokenCount};
+use crate::{CanonicalRequest, ContentBlock, Sampling, StreamOptions, TokenCount};
 
 /// Canonical 请求及其可选的已验证源协议正文。
 ///
@@ -73,6 +73,9 @@ impl CanonicalRequestEnvelope {
             Protocol::OpenAiChat | Protocol::Anthropic | Protocol::Gemini => Operation::Chat,
             _ => return None,
         };
+        if protocol != Protocol::Gemini && normalize_text_tool_results(&mut self.canonical)? {
+            self.source = None;
+        }
         let foreign_raw = self
             .canonical
             .raw_passthrough()
@@ -190,6 +193,43 @@ impl CanonicalRequestEnvelope {
             requested_model,
         })
     }
+}
+
+// 文本工具协议使用完整 JSON 表达结构化结果，原生 Gemini 继续保留对象。
+fn normalize_text_tool_results(request: &mut CanonicalRequest) -> Option<bool> {
+    let mut changed = false;
+    for message in &mut request.messages {
+        for block in &mut message.content {
+            let ContentBlock::ToolResult {
+                content,
+                structured_content,
+                is_error,
+                ..
+            } = block
+            else {
+                continue;
+            };
+            let Some(value) = structured_content.as_ref() else {
+                continue;
+            };
+            if !content.is_empty() {
+                return None;
+            }
+            // 普通文本在 Gemini 中使用单字段 result 包装；其余对象完整序列化。
+            let text = if !*is_error
+                && value.as_object().is_some_and(|object| object.len() == 1)
+                && let Some(text) = value.get("result").and_then(serde_json::Value::as_str)
+            {
+                text.to_owned()
+            } else {
+                serde_json::to_string(value).ok()?
+            };
+            content.push(ContentBlock::Text(text));
+            *structured_content = None;
+            changed = true;
+        }
+    }
+    Some(changed)
 }
 
 impl From<CanonicalRequest> for CanonicalRequestEnvelope {
@@ -346,6 +386,60 @@ mod tests {
         assert_eq!(request.canonical().operation, Operation::Chat);
         assert_eq!(request.source_protocol(), None);
         assert!(crate::openai_chat::build_request(request.canonical()).is_ok());
+    }
+
+    #[test]
+    fn gemini_tool_result_objects_remain_native_or_convert_to_complete_json_text() {
+        let request = crate::gemini::parse_request_envelope(
+            "models/gemini-test",
+            Bytes::from_static(br#"{"generationConfig":{"maxOutputTokens":128},"contents":[{"role":"user","parts":[{"text":"Weather?"}]},{"role":"model","parts":[{"functionCall":{"id":"call_weather","name":"weather","args":{}}}]},{"role":"user","parts":[{"functionResponse":{"id":"call_weather","name":"weather","response":{"temperature":25,"details":{"condition":"sunny"},"nullable":null}}}]}]}"#),
+        ).unwrap();
+        assert_eq!(
+            request
+                .clone()
+                .for_conversation_protocol(Protocol::Gemini)
+                .unwrap(),
+            request
+        );
+        for target in [
+            Protocol::OpenAiChat,
+            Protocol::OpenAiResponses,
+            Protocol::Anthropic,
+        ] {
+            let converted = request.clone().for_conversation_protocol(target).unwrap();
+            let ContentBlock::ToolResult {
+                tool_use_id,
+                content,
+                structured_content,
+                is_error,
+            } = &converted.canonical().messages[2].content[0]
+            else {
+                panic!("expected tool result")
+            };
+            assert_eq!(tool_use_id, "call_weather");
+            assert!(!is_error);
+            assert!(structured_content.is_none());
+            let [ContentBlock::Text(text)] = content.as_slice() else {
+                panic!("expected JSON text")
+            };
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(text).unwrap(),
+                serde_json::json!({"temperature":25,"details":{"condition":"sunny"},"nullable":null})
+            );
+            let built = match target {
+                Protocol::OpenAiChat => {
+                    crate::openai_chat::build_request(converted.canonical()).is_ok()
+                }
+                Protocol::OpenAiResponses => {
+                    crate::openai_responses::build_request(converted.canonical()).is_ok()
+                }
+                Protocol::Anthropic => {
+                    crate::anthropic::build_request(converted.canonical()).is_ok()
+                }
+                _ => unreachable!(),
+            };
+            assert!(built, "{target:?}");
+        }
     }
 
     #[test]
