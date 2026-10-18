@@ -1,9 +1,9 @@
 use std::fmt;
 
-use af_domain::Protocol;
+use af_domain::{Operation, Protocol};
 use bytes::Bytes;
 
-use crate::{CanonicalRequest, Sampling, TokenCount};
+use crate::{CanonicalRequest, Sampling, StreamOptions, TokenCount};
 
 /// Canonical 请求及其可选的已验证源协议正文。
 ///
@@ -56,6 +56,53 @@ impl CanonicalRequestEnvelope {
     #[must_use]
     pub const fn canonical(&self) -> &CanonicalRequest {
         &self.canonical
+    }
+
+    /// 为对话协议转换操作类型和流选项，保留消息、工具关联及客户端模型别名。
+    /// 无法跨协议表达的私有参数不得静默丢弃；无状态等默认选项可安全归一化。
+    #[must_use]
+    pub fn for_conversation_protocol(mut self, protocol: Protocol) -> Option<Self> {
+        if !matches!(
+            self.canonical.operation,
+            Operation::Chat | Operation::Responses
+        ) {
+            return None;
+        }
+        let operation = match protocol {
+            Protocol::OpenAiResponses => Operation::Responses,
+            Protocol::OpenAiChat | Protocol::Anthropic | Protocol::Gemini => Operation::Chat,
+            _ => return None,
+        };
+        let foreign_raw = self
+            .canonical
+            .raw_passthrough()
+            .filter(|raw| raw.source_protocol() != protocol);
+        if let Some(raw) = foreign_raw {
+            let fields = raw.fields_for_protocol(raw.source_protocol()).ok()?;
+            if !fields.iter().all(|(key, value)| match key.as_str() {
+                "store" | "logprobs" => value.as_bool() == Some(false),
+                "n" => value.as_u64() == Some(1),
+                "parallel_tool_calls" => self.canonical.tools.is_empty(),
+                "include" => value.as_array().is_some_and(Vec::is_empty),
+                _ => false,
+            }) {
+                return None;
+            }
+            self.canonical = self.canonical.with_validated_raw_passthrough(None);
+            self.source = None;
+        }
+        if self.canonical.operation != operation
+            || self
+                .source_protocol()
+                .is_some_and(|source| source != protocol)
+        {
+            self.source = None;
+        }
+        self.canonical.operation = operation;
+        if protocol != Protocol::OpenAiChat {
+            self.canonical.stream_options = StreamOptions::EMPTY;
+        }
+        Some(self)
     }
 
     /// 在客户端未声明输出上限时注入网关默认值，并取消原始正文直通资格。
@@ -243,6 +290,32 @@ mod tests {
 
     use super::*;
     use crate::openai_responses;
+
+    #[test]
+    fn responses_default_options_can_be_rebuilt_as_chat_without_foreign_raw() {
+        let request = responses_request(br#"{"model":"gpt-test","input":"hi","store":false}"#)
+            .for_conversation_protocol(Protocol::OpenAiChat)
+            .unwrap();
+        assert_eq!(request.canonical().operation, Operation::Chat);
+        assert_eq!(request.source_protocol(), None);
+        assert!(crate::openai_chat::build_request(request.canonical()).is_ok());
+    }
+
+    #[test]
+    fn conversion_preserves_unrepresentable_options_as_explicit_failures() {
+        let request = responses_request(br#"{"model":"gpt-test","input":"hi","store":true}"#);
+        assert!(
+            request
+                .for_conversation_protocol(Protocol::OpenAiChat)
+                .is_none()
+        );
+        let request = responses_request(
+            br#"{"model":"gpt-test","input":"hi","previous_response_id":"resp_previous"}"#,
+        )
+        .for_conversation_protocol(Protocol::OpenAiChat)
+        .unwrap();
+        assert!(crate::openai_chat::build_request(request.canonical()).is_err());
+    }
 
     fn responses_request(body: &'static [u8]) -> CanonicalRequestEnvelope {
         openai_responses::parse_request_envelope(Bytes::from_static(body)).unwrap()

@@ -2,12 +2,16 @@ use af_domain::{AfError, Protocol};
 use af_protocol::{
     CanonicalRequest, CanonicalStreamEvent, Usage, anthropic::AnthropicMessagesStreamEncoder,
     gemini::GeminiGenerateContentStreamEncoder, openai_chat::OpenAiChatStreamEncoder,
+    openai_responses::OpenAiResponsesStreamEncoder,
 };
 
 use crate::openai_chat_usage::{OpenAiChatUsageEstimator, UsageResolutionError};
 
 /// OpenAI Chat 上游流对应的闭合下游协议编码器。
 pub(crate) enum ChatStreamEncoder {
+    Responses {
+        encoder: Box<OpenAiResponsesStreamEncoder>,
+    },
     OpenAi {
         encoder: OpenAiChatStreamEncoder,
         include_usage: bool,
@@ -32,6 +36,16 @@ impl ChatStreamEncoder {
         include_usage: bool,
     ) -> Result<Self, AfError> {
         match protocol {
+            Protocol::OpenAiResponses => Ok(Self::Responses {
+                encoder: Box::new(
+                    OpenAiResponsesStreamEncoder::new(
+                        format!("resp_{request_id}"),
+                        client_model,
+                        created_at,
+                    )
+                    .map_err(|_| AfError::Internal)?,
+                ),
+            }),
             Protocol::OpenAiChat => {
                 let encoder = OpenAiChatStreamEncoder::new(
                     format!("chatcmpl-{request_id}"),
@@ -71,8 +85,7 @@ impl ChatStreamEncoder {
                     encoder: Box::new(encoder),
                 })
             }
-            Protocol::OpenAiResponses
-            | Protocol::OpenAiEmbeddings
+            Protocol::OpenAiEmbeddings
             | Protocol::OpenAiImages
             | Protocol::OpenAiAudio
             | Protocol::OpenAiSpeech
@@ -85,6 +98,7 @@ impl ChatStreamEncoder {
     /// 编码一个非终点事件；Anthropic 始终忽略上游 usage，避免初始与最终口径漂移。
     pub(crate) fn encode_event(&mut self, event: CanonicalStreamEvent) -> Result<Vec<u8>, AfError> {
         match self {
+            Self::Responses { encoder } => encoder.encode(event).map_err(|_| AfError::Internal),
             Self::OpenAi {
                 encoder,
                 include_usage,
@@ -116,6 +130,22 @@ impl ChatStreamEncoder {
     ) -> Result<Vec<u8>, AfError> {
         let mut output = Vec::new();
         match self {
+            Self::Responses { encoder } => {
+                if !upstream_usage_seen {
+                    output.extend(
+                        encoder
+                            .encode(CanonicalStreamEvent::Usage(
+                                billing_usage.map_err(|_| AfError::Internal)?,
+                            ))
+                            .map_err(|_| AfError::Internal)?,
+                    );
+                }
+                output.extend(
+                    encoder
+                        .encode(CanonicalStreamEvent::StreamEnd)
+                        .map_err(|_| AfError::Internal)?,
+                );
+            }
             Self::OpenAi {
                 encoder,
                 include_usage,
