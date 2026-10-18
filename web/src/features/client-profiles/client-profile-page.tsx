@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Copy, Fingerprint, Plus, RefreshCw } from 'lucide-react'
@@ -8,8 +8,9 @@ import {
   clientProfilesKey, toggleProfile, useProfileCapabilities, useProfileDetail,
   useProfileReferences, useProfileRevisions, useProfiles, validateProfile, writeProfile,
 } from './client-profile-api'
-import { profileErrorKey, profileLogo, useCursorPage, useProfileSearch, validProfileDraft } from './client-profile-model'
+import { profileErrorKey, profileLogo, useCursorPage, useProfileSearch } from './client-profile-model'
 import { ProfileButton, ProfileDrawer, ProfileInput, ProfileSelect } from './client-profile-ui'
+import { validProfileDraft } from './client-profile-policy'
 import './client-profiles.css'
 
 type Editor = { mode: 'create' | 'copy' | 'edit' | 'view'; key?: string }
@@ -46,10 +47,9 @@ export function ClientProfilePage() {
   const [service, setService] = useState('')
   const [editor, setEditor] = useState<Editor>()
   const [confirm, setConfirm] = useState<ClientProfileRecordSchema>()
-  const page = useCursorPage<string>()
+  const page = useCursorPage<string>(JSON.stringify([search.debounced, enabled, service]))
   const capabilities = useProfileCapabilities()
   const query = useProfiles({ search: search.debounced || undefined, enabled: enabled === '' ? undefined : enabled === 'true', service: service as ClientProfileRecordSchema['service'] || undefined }, page.cursor)
-  useEffect(() => { page.reset() }, [search.debounced, enabled, service]) // Cursor belongs to one filter set.
   const toggle = useMutation({ mutationFn: toggleProfile, onSuccess: async () => { setConfirm(undefined); await cache.invalidateQueries({ queryKey: clientProfilesKey }) } })
   const services = Array.from(new Set(capabilities.data?.templates.map(item => item.service) ?? []))
   return <div className="cp-page">
@@ -122,11 +122,10 @@ function ProfileEditorForm({ editor, initial, record, templates, headers, sessio
 
 function ProfileHistory({ profileKey, tab }: { profileKey: string; tab: string }) {
   const { t } = useTranslation()
-  const page = useCursorPage<number>()
+  const page = useCursorPage<number>(tab)
   const revisions = useProfileRevisions(profileKey, page.cursor, tab === 'revisions')
   const references = useProfileReferences(profileKey, page.cursor, tab === 'references')
   const query = tab === 'revisions' ? revisions : references
-  useEffect(() => { page.reset() }, [tab])
   if (query.isPending) return <ProfileLoading />
   if (query.isError) return <ProfileError error={query.error} retry={() => void query.refetch()} />
   return <div className="cp-form">

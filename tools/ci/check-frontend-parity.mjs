@@ -18,6 +18,7 @@ for (const path of [
   'src/features/channels/channel-form-model.ts',
   'src/features/client-profiles/client-profile-api.ts',
   'src/features/client-profiles/client-profile-model.ts',
+  'src/features/client-profiles/client-profile-policy.ts',
   'src/features/client-profiles/client-profile-page.tsx',
   'src/features/client-profiles/channel-profile-drawer.tsx',
   'src/features/usage-logs/usage-log-model.ts',

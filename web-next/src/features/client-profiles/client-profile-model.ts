@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ApiError } from '@/lib/api'
 import type { ClientProfileDefinitionSchema } from '@/lib/api/generated/types.gen'
+import { scopedCursors } from './client-profile-policy'
 
 export function useProfileSearch() {
   const [search, setSearch] = useState('')
@@ -12,13 +13,13 @@ export function useProfileSearch() {
   return { search, setSearch, debounced }
 }
 
-export function useCursorPage<T>() {
-  const [cursors, setCursors] = useState<(T | undefined)[]>([undefined])
+export function useCursorPage<T>(scope = '') {
+  const [state, setState] = useState<{ scope: string; cursors: (T | undefined)[] }>({ scope, cursors: [undefined] })
+  const cursors = scopedCursors(state, scope)
   return {
     cursor: cursors.at(-1), page: cursors.length,
-    reset: () => setCursors([undefined]),
-    previous: () => setCursors(current => current.length > 1 ? current.slice(0, -1) : current),
-    next: (cursor: T) => setCursors(current => [...current, cursor]),
+    previous: () => setState({ scope, cursors: cursors.length > 1 ? cursors.slice(0, -1) : cursors }),
+    next: (cursor: T) => setState({ scope, cursors: [...cursors, cursor] }),
   }
 }
 
@@ -36,9 +37,3 @@ export function profileLogo(definition?: ClientProfileDefinitionSchema, service?
   return definition?.icon ?? icons[service ?? definition?.service ?? 'standard']
 }
 
-export function validProfileDraft(key: string, definition: ClientProfileDefinitionSchema) {
-  return /^[a-z0-9][a-z0-9_-]{0,63}$/.test(key)
-    && definition.name.trim().length > 0
-    && definition.protocols.length > 0 && definition.credential_kinds.length > 0
-    && Object.values(definition.identity_headers).every(value => value.trim().length > 0)
-}
