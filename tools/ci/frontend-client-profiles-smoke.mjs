@@ -68,7 +68,7 @@ try {
   const snapshot = revision => ({ binding: { key: record.key, revision }, definition: { ...definition, protocols: revision === 1 ? ['anthropic'] : ['openai_chat'] } })
   const capabilities = { templates: [standard, definition], identity_headers: ['user-agent', 'x-app'], session_strategies: ['explicit', 'first_user_message'], opencode_entries: ['inference_v1', 'zen_v1'] }
   let binding = { channel_id: 7, binding: { key: 'standard-0', revision: 1 }, version: 1 }
-  let settings = { entry: 'inference_v1', version: 'entry-version-1' }
+  let settings = { entry: 'inference_v1', full_compatibility: false, version: 'entry-version-1' }
   let detailFailure = 0
   let write
   let savedBinding
@@ -92,7 +92,7 @@ try {
       body = { items: filtered.slice(offset, offset + 25), next_cursor: filtered.length > offset + 25 ? 'page-2' : null }
     } else if (path === '/validate') body = { valid: true }
     else if (path === '/opencode-settings/7') {
-      if (request.method() === 'PUT') { savedEntry = request.postDataJSON(); settings = { entry: savedEntry.entry, version: 'entry-version-2' } }
+      if (request.method() === 'PUT') { savedEntry = request.postDataJSON(); settings = { entry: savedEntry.entry, full_compatibility: savedEntry.full_compatibility, version: 'entry-version-2' } }
       body = settings
     } else if (path === '/channel-bindings/7') {
       if (request.method() === 'PUT') { savedBinding = request.postDataJSON(); binding = { ...binding, binding: savedBinding.binding, version: binding.version + 1 } }
@@ -168,10 +168,14 @@ try {
     assert.equal(await endpoint.getAttribute('aria-expanded'), 'true', 'Endpoint menu should remain open after pointer input')
     await page.getByRole('option', { name: 'Zen v1', exact: true }).click()
   } else await page.getByRole('combobox', { name: '服务入口', exact: true }).selectOption('zen_v1')
+  const compatibility = page.getByRole('switch', { name: '完整工具兼容', exact: true })
+  assert.equal(await compatibility.isChecked(), false)
+  await compatibility.check()
   await page.getByRole('button', { name: '保存服务入口', exact: true }).click()
   await page.getByText('配置已保存。', { exact: true }).waitFor()
-  assert.deepEqual(savedEntry, { entry: 'zen_v1', version: 'entry-version-1' })
+  assert.deepEqual(savedEntry, { entry: 'zen_v1', full_compatibility: true, version: 'entry-version-1' })
   assert.equal(savedBinding, undefined, 'Changing the endpoint must not overwrite the binding')
+  assert.equal(await compatibility.isChecked(), true)
   await page.getByRole('button', { name: '切换到此修订', exact: true }).click()
   await page.getByRole('button', { name: '切换到此修订', exact: true }).waitFor({ state: 'hidden' })
   assert.deepEqual(savedBinding, { binding: { key: record.key, revision: 2 }, expected_version: 1 })

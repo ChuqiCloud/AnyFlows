@@ -48,6 +48,7 @@ pub(super) struct SchedulerRuntimeChannelSource {
     client_simulation_body_profile: Option<ClientSimulationBodyProfile>,
     client_profile: Option<af_domain::ClientProfileSnapshot>,
     opencode_entry: Option<af_domain::OpenCodeEntry>,
+    opencode_full_compatibility: bool,
     responses_websocket_enabled: bool,
     responses_compact_mode: ResponsesCompactMode,
     responses_compact_probe_result: ResponsesCompactProbeResult,
@@ -96,6 +97,9 @@ impl SchedulerRuntimeChannelSource {
             .pairs()
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let settings = channel.settings.into_inner();
+        let opencode_full_compatibility =
+            crate::channel_opencode_full_compatibility(channel_type, &settings)
+                .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let opencode_entry = crate::channel_opencode_entry(channel_type, &settings)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let auto_ban_rules =
@@ -157,6 +161,7 @@ impl SchedulerRuntimeChannelSource {
             client_simulation_body_profile,
             client_profile: None,
             opencode_entry,
+            opencode_full_compatibility,
             responses_websocket_enabled,
             responses_compact_mode,
             responses_compact_probe_result,
@@ -215,6 +220,10 @@ impl SchedulerRuntimeChannelSource {
         }
         self.client_profile = Some(profile);
         Ok(self)
+    }
+
+    pub(super) fn opencode_full_compatibility(&self) -> bool {
+        self.opencode_full_compatibility
     }
 
     pub(super) fn opencode_entry(&self) -> Option<af_domain::OpenCodeEntry> {

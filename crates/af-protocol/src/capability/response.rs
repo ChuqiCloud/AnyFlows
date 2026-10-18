@@ -161,6 +161,7 @@ pub(super) const OPENAI_CHAT: &[ResponseCapability] = &[
     ResponseCapability::MultipleChoices,
     ResponseCapability::ArbitraryChoiceIndex,
     ResponseCapability::Text,
+    ResponseCapability::Thinking,
     ResponseCapability::ToolCalls,
     COMMON_FINISH[0],
     COMMON_FINISH[1],

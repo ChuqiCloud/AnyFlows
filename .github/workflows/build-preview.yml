@@ -1,0 +1,115 @@
+name: Build preview package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['feat/**', 'fix/**']
+    paths: ['.github/workflows/build-preview.yml', 'tools/ci/smoke-preview.sh']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Linux amd64 preview
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - name: Check out selected revision
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repository_url="$CHECKOUT_REPOSITORY_URL"
+          if [[ "$repository_url" == http://gitea_cps3:* ]]; then
+            repository_url="https://gitea.acmecloud.cn/${{ github.repository }}.git"
+          fi
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$repository_url"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$CHECKOUT_SHA"
+
+      - name: Install Rust toolchain
+        run: |
+          bash tools/ci/install-rustup.sh
+          export PATH="$HOME/.cargo/bin:$PATH"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          toolchain="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal
+
+      - name: Cache Rust release artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: preview-package
+
+      - uses: https://github.com/actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+
+      - name: Build both embedded frontends
+        run: |
+          set -euo pipefail
+          build_frontend() {
+            npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir "$1" install --frozen-lockfile
+            npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir "$1" build
+          }
+          build_frontend web &
+          classic_pid=$!
+          build_frontend web-next &
+          next_pid=$!
+          result=0
+          wait "$classic_pid" || result=1
+          wait "$next_pid" || result=1
+          exit "$result"
+
+      - name: Build release binary
+        run: cargo build --release --locked --package af-server
+
+      - name: Package and start the archive
+        run: |
+          set -euo pipefail
+          bash tools/ci/package-release.sh auto amd64
+          bash tools/ci/smoke-preview.sh release/*.tar.gz
+          short_sha="$(git rev-parse --short=12 HEAD)"
+          archive="$(find release -maxdepth 1 -name '*.tar.gz' -print -quit)"
+          mv "$archive" "release/anyflows-preview-${short_sha}-linux-amd64.tar.gz"
+          rm -- "$archive.sha256"
+          (cd release && sha256sum anyflows-preview-*.tar.gz > SHA256SUMS && sha256sum --check --strict SHA256SUMS)
+          printf 'commit=%s\nref=%s\nedition=community\n' "$(git rev-parse HEAD)" "$GITHUB_REF" > release/PREVIEW
+
+      - name: Upload preview package
+        if: github.server_url != 'https://github.com'
+        uses: https://gitea.com/actions/gitea-upload-artifact@62ac910c5d3dfa85c7cb2df15afe2e342b2407c2 # Gitea v4 backend
+        with:
+          name: anyflows-preview-linux-amd64-${{ github.sha }}
+          path: |
+            release/anyflows-preview-*.tar.gz
+            release/SHA256SUMS
+            release/PREVIEW
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload GitHub preview package
+        if: github.server_url == 'https://github.com'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: anyflows-preview-linux-amd64-${{ github.sha }}
+          path: |
+            release/anyflows-preview-*.tar.gz
+            release/SHA256SUMS
+            release/PREVIEW
+          retention-days: 14
+          if-no-files-found: error

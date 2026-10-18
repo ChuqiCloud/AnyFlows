@@ -99,6 +99,33 @@ fn builds_minimal_response_and_round_trips() {
 }
 
 #[test]
+fn preserves_plain_reasoning_in_complete_responses_without_fabricating_signatures() {
+    let mut response = canonical_response(text_choice(), None);
+    response.choices[0].message.content.insert(
+        0,
+        ContentBlock::Thinking {
+            text: "checking the answer".to_owned(),
+            signature: None,
+        },
+    );
+    let built = build_response(&response).unwrap();
+    assert_eq!(
+        built["choices"][0]["message"]["reasoning_content"],
+        "checking the answer"
+    );
+    assert_eq!(built["choices"][0]["message"]["content"], "matrix-output");
+    assert_eq!(
+        parse_response(&serde_json::to_vec(&built).unwrap()).unwrap(),
+        response
+    );
+
+    if let ContentBlock::Thinking { signature, .. } = &mut response.choices[0].message.content[0] {
+        *signature = Some("opaque-signature".to_owned());
+    }
+    assert_unsupported_capability(&response, ResponseCapability::ThinkingSignatures);
+}
+
+#[test]
 fn preserves_tools_usage_details_and_same_protocol_metadata() {
     let source = json!({
         "id": "chatcmpl-matrix",

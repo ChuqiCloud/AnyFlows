@@ -1,5 +1,6 @@
 use std::fmt;
 
+use af_domain::Protocol;
 use af_httpclient::PooledClient;
 use url::Url;
 
@@ -20,7 +21,9 @@ pub struct RelayContext {
     base_url: Option<String>,
     request_id: Option<String>,
     client_session_scope: Option<String>,
+    client_session_epoch_millis: u64,
     credential_scope: Option<i64>,
+    response_protocol: Option<Protocol>,
     oauth_provider: Option<String>,
     oauth_account_key: Option<String>,
 }
@@ -28,13 +31,19 @@ pub struct RelayContext {
 impl RelayContext {
     /// 以受连接池管理的 HTTP Client 创建适配器上下文。
     #[must_use]
-    pub const fn new(http_client: PooledClient) -> Self {
+    pub fn new(http_client: PooledClient) -> Self {
         Self {
             http_client,
             base_url: None,
             request_id: None,
             client_session_scope: None,
+            client_session_epoch_millis: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|elapsed| u64::try_from(elapsed.as_millis()).ok())
+                .unwrap_or(0),
             credential_scope: None,
+            response_protocol: None,
             oauth_provider: None,
             oauth_account_key: None,
         }
@@ -51,6 +60,17 @@ impl RelayContext {
 
     pub const fn credential_scope(&self) -> Option<i64> {
         self.credential_scope
+    }
+
+    /// 下游协议由转发规划阶段固定，供服务适配器协商可表达的响应格式。
+    #[must_use]
+    pub const fn with_response_protocol(mut self, protocol: Protocol) -> Self {
+        self.response_protocol = Some(protocol);
+        self
+    }
+
+    pub const fn response_protocol(&self) -> Option<Protocol> {
+        self.response_protocol
     }
 
     /// 设置已校验的渠道基础地址；不得携带 userinfo、查询串或片段。
@@ -96,6 +116,19 @@ impl RelayContext {
 
     pub fn client_session_scope(&self) -> Option<&str> {
         self.client_session_scope.as_deref()
+    }
+
+    /// 规划阶段固定的会话创建时间；与主体隔离摘要一起生成客户端标识。
+    pub fn with_client_session_epoch_millis(mut self, epoch: u64) -> AdaptorResult<Self> {
+        if epoch == 0 || epoch > i64::MAX as u64 {
+            return Err(AdaptorError::InvalidRequestId);
+        }
+        self.client_session_epoch_millis = epoch;
+        Ok(self)
+    }
+
+    pub const fn client_session_epoch_millis(&self) -> u64 {
+        self.client_session_epoch_millis
     }
 
     /// 返回受连接池管理的 HTTP Client。

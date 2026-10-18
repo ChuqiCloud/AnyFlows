@@ -512,6 +512,7 @@ pub struct SchedulerRuntimeTargetRecord {
     client_simulation_body_profile: Option<ClientSimulationBodyProfile>,
     client_profile: Option<af_domain::ClientProfileSnapshot>,
     opencode_entry: Option<af_domain::OpenCodeEntry>,
+    opencode_full_compatibility: bool,
     responses_websocket_enabled: bool,
     responses_compact_mode: ResponsesCompactMode,
     responses_compact_probe_result: ResponsesCompactProbeResult,
@@ -675,6 +676,7 @@ impl SchedulerRuntimeTargetRecord {
             client_simulation_profile: None,
             client_simulation_body_profile: None,
             client_profile: None,
+            opencode_full_compatibility: false,
             opencode_entry: (channel_type == ChannelType::OpenCode)
                 .then_some(af_domain::OpenCodeEntry::default()),
             responses_websocket_enabled: false,
@@ -775,6 +777,21 @@ impl SchedulerRuntimeTargetRecord {
         }
         self.opencode_entry = entry;
         Ok(self)
+    }
+
+    pub fn with_opencode_full_compatibility(
+        mut self,
+        enabled: bool,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        if enabled && self.channel_type != ChannelType::OpenCode {
+            return Err(SchedulerRuntimeTargetRecordError);
+        }
+        self.opencode_full_compatibility = enabled;
+        Ok(self)
+    }
+
+    pub fn opencode_full_compatibility(&self) -> bool {
+        self.opencode_full_compatibility
     }
 
     pub fn opencode_entry(&self) -> Option<af_domain::OpenCodeEntry> {

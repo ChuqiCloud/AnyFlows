@@ -1,0 +1,93 @@
+name: Verify OpenCode preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      preview_run:
+        description: 'Successful Build preview package run ID'
+        required: true
+        type: string
+      access_mode:
+        description: 'public or api_key (uses OPENCODE_LIVE_API_KEY repository secret)'
+        required: false
+        default: public
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  live:
+    if: github.server_url != 'https://github.com'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out acceptance scripts
+        env:
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repository_url="$SOURCE_URL"
+          if [[ "$repository_url" == http://gitea_cps3:* ]]; then
+            repository_url="https://gitea.acmecloud.cn/${{ github.repository }}.git"
+          fi
+          auth="$(printf 'x-access-token:%s' "$SOURCE_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$repository_url"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$SOURCE_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Download and verify the selected binary
+        env:
+          SOURCE_API: ${{ github.api_url }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_TOKEN: ${{ github.token }}
+          PREVIEW_RUN: ${{ inputs.preview_run }}
+        run: |
+          set -euo pipefail
+          [[ "$PREVIEW_RUN" =~ ^[1-9][0-9]*$ ]]
+          api="$SOURCE_API"
+          if [[ "$api" == http://gitea_cps3:* ]]; then api='https://gitea.acmecloud.cn/api/v1'; fi
+          repo="$api/repos/$SOURCE_REPOSITORY"
+          mkdir preview
+          curl --silent --show-error --fail --user "x-access-token:$SOURCE_TOKEN" "$repo/actions/runs/$PREVIEW_RUN" > preview/run.json
+          jq -e '.conclusion == "success" and (.path | startswith("build-preview.yml"))' preview/run.json > /dev/null
+          sha="$(jq -r .head_sha preview/run.json)"
+          curl --silent --show-error --fail --user "x-access-token:$SOURCE_TOKEN" "$repo/actions/runs/$PREVIEW_RUN/artifacts" > preview/artifacts.json
+          artifact_id="$(jq -r --arg sha "$sha" '.artifacts[] | select(.name == ("anyflows-preview-linux-amd64-" + $sha)) | .id' preview/artifacts.json)"
+          [[ "$artifact_id" =~ ^[1-9][0-9]*$ ]]
+          curl --silent --show-error --fail --location --user "x-access-token:$SOURCE_TOKEN" "$repo/actions/artifacts/$artifact_id/zip" -o preview/package.zip
+          unzip -q preview/package.zip -d preview/download
+          (cd preview/download && sha256sum --check --strict SHA256SUMS)
+          tar -xzf preview/download/anyflows-preview-*.tar.gz -C preview
+          package="$(find preview -mindepth 1 -maxdepth 1 -type d -name 'anyflows-*' -print -quit)"
+          test -x "$package/anyflows"
+          grep -Fx "commit=$sha" "$package/VERSION"
+          echo "PREVIEW_PACKAGE=$(realpath "$package")" >> "$GITHUB_ENV"
+
+      - name: Verify four protocols against the fixed free model
+        env:
+          OPENCODE_LIVE_ACCESS: ${{ inputs.access_mode || 'public' }}
+          OPENCODE_LIVE_API_KEY: ${{ secrets.OPENCODE_LIVE_API_KEY }}
+        run: |
+          set -euo pipefail
+          script="$(realpath tools/ci/opencode-live-smoke.py)"
+          cd "$PREVIEW_PACKAGE"
+          export AF_CONFIG_FILE="$PWD/anyflows.conf"
+          export AF_SERVER__BIND='127.0.0.1:18080'
+          export AF_AUTH__SESSION_SIGNING_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
+          export AF_CREDENTIAL_ENCRYPTION__KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
+          ./anyflows > server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for _ in $(seq 1 90); do
+            kill -0 "$server_pid" 2>/dev/null || break
+            if curl --silent --fail --max-time 2 http://127.0.0.1:18080/readyz > /dev/null; then ready=1; break; fi
+            sleep 1
+          done
+          test "$ready" = 1 || { tail -n 80 server.log; exit 1; }
+          python3 "$script"

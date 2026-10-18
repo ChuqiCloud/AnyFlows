@@ -95,5 +95,5 @@ export function useOpenCodeSettings(channelId: number, enabled: boolean) {
   })
 }
 
-export const setOpenCodeEntry = async (channelId: number, version: string, entry: 'inference_v1' | 'zen_v1') =>
-  (await setAdminClientProfileOpenCodeEntry({ client: apiClient, path: { channel_id: channelId }, body: { version, entry } })).data
+export const setOpenCodeEntry = async (channelId: number, version: string, entry: 'inference_v1' | 'zen_v1', full_compatibility: boolean) =>
+  (await setAdminClientProfileOpenCodeEntry({ client: apiClient, path: { channel_id: channelId }, body: { version, entry, full_compatibility } })).data

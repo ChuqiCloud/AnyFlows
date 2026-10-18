@@ -28429,6 +28429,12 @@
           },
           "entry": {
             "$ref": "#/components/schemas/ClientProfileOpenCodeEntrySchema"
+          },
+          "full_compatibility": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -28444,11 +28450,15 @@
         "type": "object",
         "required": [
           "entry",
+          "full_compatibility",
           "version"
         ],
         "properties": {
           "entry": {
             "$ref": "#/components/schemas/ClientProfileOpenCodeEntrySchema"
+          },
+          "full_compatibility": {
+            "type": "boolean"
           },
           "version": {
             "type": "string"

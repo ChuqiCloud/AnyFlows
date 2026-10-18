@@ -27,6 +27,20 @@ use crate::{
     RelayCandidate, RelayCandidateRequest, conversation_decoder::ConversationDecoder,
 };
 
+#[test]
+fn cancellation_preserves_completed_state_and_round_count() {
+    let handle = ToolConversationReportHandle::new(RelayAttemptReport::default());
+    handle.cancel();
+    assert_eq!(handle.snapshot().state, ToolConversationState::Failed);
+    handle.update(|report| {
+        report.state = ToolConversationState::Completed;
+        report.sent_rounds = 2;
+    });
+    handle.cancel();
+    assert_eq!(handle.snapshot().state, ToolConversationState::Completed);
+    assert_eq!(handle.snapshot().sent_rounds, 2);
+}
+
 struct FixtureAdaptor(Protocol);
 
 impl Adaptor for FixtureAdaptor {
