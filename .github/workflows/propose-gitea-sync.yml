@@ -4,18 +4,23 @@ on:
   pull_request_target:
     types: [closed]
     branches: [main]
+  issue_comment:
+    types: [created, edited, deleted]
 
 permissions:
   contents: read
+  issues: read
   pull-requests: read
 
 concurrency:
-  group: gitea-sync-${{ github.event.pull_request.number }}
+  group: gitea-sync-${{ github.event.pull_request.number || github.event.issue.number }}
   cancel-in-progress: false
 
 jobs:
   propose:
     if: >-
+      github.repository == 'ChuqiCloud/AnyFlows' &&
+      github.event_name == 'pull_request_target' &&
       github.event.pull_request.merged == true &&
       github.event.pull_request.base.ref == 'main' &&
       !startsWith(github.event.pull_request.head.ref, 'sync/gitea-public-core')
@@ -65,6 +70,27 @@ jobs:
             "$RUNNER_TEMP/public-core.patch"; then
             echo 'Public source metadata is generated and must not be changed in a public PR.' >&2
             exit 1
+          fi
+
+          metadata="$RUNNER_TEMP/source-pr-metadata.json"
+          jq -n --arg title "同步 GitHub 公共核心变更 #$PUBLIC_PR_NUMBER" \
+            --arg url "$PUBLIC_PR_URL" '{title: $title, body: "", url: $url}' > "$metadata"
+          if source_pr="$(curl --fail --silent --show-error --connect-timeout 5 --max-time 15 \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "$PUBLIC_PATCH_API_URL")" &&
+            jq -e --argjson number "$PUBLIC_PR_NUMBER" '
+              select(type == "object" and .number == $number) |
+              select((.title | type == "string" and length > 0) and
+                (.body == null or (.body | type == "string")) and
+                (.html_url | type == "string" and length > 0)) |
+              {title: .title, body: (.body // ""), url: .html_url}' \
+              <<<"$source_pr" > "$metadata.tmp"; then
+            mv "$metadata.tmp" "$metadata"
+          else
+            rm -f "$metadata.tmp"
+            echo "::warning::Source GitHub PR #$PUBLIC_PR_NUMBER metadata is unavailable; using the default sync title and description."
           fi
           echo 'has_changes=true' >> "$GITHUB_OUTPUT"
 
@@ -156,22 +182,86 @@ jobs:
         run: |
           set -euo pipefail
           api="$GITEA_BASE_URL/api/v1/repos/$GITEA_REPOSITORY"
-          existing="$(curl --fail --silent --show-error \
-            -H "Authorization: token $GITEA_TOKEN" \
-            "$api/pulls?state=open&limit=50")"
+          existing='[]'
+          page=1
+          while true; do
+            pulls_page="$(curl --fail --silent --show-error \
+              -H "Authorization: token $GITEA_TOKEN" \
+              "$api/pulls?state=open&limit=50&page=$page")"
+            jq -e 'type == "array"' >/dev/null <<<"$pulls_page" || {
+              echo 'Gitea open PR list could not be parsed.' >&2
+              exit 1
+            }
+            count="$(jq 'length' <<<"$pulls_page")"
+            existing="$(jq -cn --argjson current "$existing" --argjson next "$pulls_page" '$current + $next')"
+            [ "$count" -lt 50 ] && break
+            page=$((page + 1))
+          done
+          source_title="$(jq -r '.title' "$RUNNER_TEMP/source-pr-metadata.json")"
+          source_body="$(jq -r '.body' "$RUNNER_TEMP/source-pr-metadata.json")"
+          body="$(jq -rn --arg source_body "$source_body" --arg url "$PUBLIC_PR_URL" \
+            --arg sha "$PUBLIC_HEAD_SHA" \
+            '$source_body + (if $source_body == "" then "" else "\n\n" end) + "来源 PR：" + $url + "\n来源提交：" + $sha')"
           if jq -e --arg branch "${{ steps.apply.outputs.sync_branch }}" \
             '.[] | select(.head.ref == $branch)' >/dev/null <<<"$existing"; then
-            exit 0
+            target_pr_number="$(jq -r --arg branch "${{ steps.apply.outputs.sync_branch }}" \
+              '.[] | select(.head.ref == $branch) | .number' <<<"$existing" | head -n1)"
+            payload="$(jq -n --arg title "$source_title" --arg body "$body" \
+              '{title: $title, body: $body}')"
+            curl --fail --silent --show-error --request PATCH \
+              -H "Authorization: token $GITEA_TOKEN" \
+              -H 'Content-Type: application/json' \
+              --data "$payload" "$api/pulls/$target_pr_number" >/dev/null
+          else
+            payload="$(jq -n \
+              --arg title "$source_title" \
+              --arg head "${{ steps.apply.outputs.sync_branch }}" \
+              --arg base "$GITEA_TARGET_BRANCH" \
+              --arg body "$body" \
+              '{title: $title, head: $head, base: $base, body: $body}')"
+            created="$(curl --fail --silent --show-error --request POST \
+              -H "Authorization: token $GITEA_TOKEN" \
+              -H 'Content-Type: application/json' \
+              --data "$payload" "$api/pulls")"
+            target_pr_number="$(jq -r '.number' <<<"$created")"
           fi
-          body="$(printf '同步 GitHub 公共核心变更。\n\n来源 PR：%s\n来源提交：%s' \
-            "$PUBLIC_PR_URL" "$PUBLIC_HEAD_SHA")"
-          payload="$(jq -n \
-            --arg title "同步 GitHub 公共核心变更 #$PUBLIC_PR_NUMBER" \
-            --arg head "${{ steps.apply.outputs.sync_branch }}" \
-            --arg base "$GITEA_TARGET_BRANCH" \
-            --arg body "$body" \
-            '{title: $title, head: $head, base: $base, body: $body}')"
-          curl --fail --silent --show-error --request POST \
-            -H "Authorization: token $GITEA_TOKEN" \
-            -H 'Content-Type: application/json' \
-            --data "$payload" "$api/pulls"
+
+  mirror-comment:
+    needs: propose
+    if: >-
+      always() && github.repository == 'ChuqiCloud/AnyFlows' &&
+      (needs.propose.result == 'success' || needs.propose.result == 'skipped') &&
+      ((github.event_name == 'issue_comment' && github.event.issue.pull_request != null &&
+        github.event.comment.user.type != 'Bot' &&
+        !endsWith(github.event.comment.user.login, '[bot]')) ||
+       (github.event_name == 'pull_request_target' && github.event.pull_request.merged == true))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GITEA_BASE_URL: https://gitea.acmecloud.cn
+      GITEA_REPOSITORY: acmecloud/AnyFlows
+      GITEA_SYNC_USERNAME: ${{ secrets.GITEA_SYNC_USERNAME }}
+      GITEA_TOKEN: ${{ secrets.GITEA_SYNC_TOKEN }}
+      GITHUB_TOKEN: ${{ github.token }}
+      GITHUB_API_URL: ${{ github.api_url }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      PUBLIC_PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+    steps:
+      - name: Check out trusted workflow revision
+        uses: actions/checkout@v4
+        with:
+          # Both events resolve github.sha on the base/default branch.
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: tools/repository
+
+      - name: Validate sync credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$GITEA_SYNC_USERNAME" || { echo 'GITEA_SYNC_USERNAME is not configured' >&2; exit 1; }
+          test -n "$GITEA_TOKEN" || { echo 'GITEA_SYNC_TOKEN is not configured' >&2; exit 1; }
+
+      - name: Mirror public PR discussion to Gitea
+        shell: bash
+        run: python3 tools/repository/sync-github-pr-comments.py --pr "$PUBLIC_PR_NUMBER"
