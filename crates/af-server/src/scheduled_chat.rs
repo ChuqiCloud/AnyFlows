@@ -433,6 +433,7 @@ impl ScheduledChatService {
                     None
                 };
                 let mut context = RelayContext::new(client)
+                    .with_response_protocol(response_protocol)
                     .with_credential_scope(secret_owner_id.get())
                     .map_err(|_| AfError::Internal)?;
                 if let Some(epoch) = client_epoch {

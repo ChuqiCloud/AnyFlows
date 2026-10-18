@@ -245,6 +245,22 @@ impl Adaptor for OpenCodeAdaptor {
             }
             object.insert("stream".to_owned(), serde_json::Value::Bool(true));
             if self.protocol == Protocol::OpenAiChat {
+                // Messages 无法表示无签名思考。请求服务端不输出思考文本，
+                // 保留实际推理消耗；不能在收到响应后丢弃内容或补造签名。
+                if context.response_protocol() == Some(Protocol::Anthropic) {
+                    let reasoning = object
+                        .entry("reasoning")
+                        .or_insert_with(|| serde_json::json!({}))
+                        .as_object_mut()
+                        .ok_or(AdaptorError::InvalidTaskRequest)?;
+                    if reasoning
+                        .get("exclude")
+                        .is_some_and(|value| value != &serde_json::Value::Bool(true))
+                    {
+                        return Err(AdaptorError::InvalidTaskRequest);
+                    }
+                    reasoning.insert("exclude".to_owned(), serde_json::Value::Bool(true));
+                }
                 let options = object
                     .entry("stream_options")
                     .or_insert_with(|| serde_json::json!({}))
@@ -448,6 +464,67 @@ mod tests {
 mod request_tests {
     use super::*;
     use crate::{Bytes, HttpClientConfig, HttpClientPool, Method, ResponseMode};
+    #[tokio::test]
+    async fn messages_negotiates_reasoning_output_without_altering_other_protocols() {
+        let adaptor =
+            OpenCodeAdaptor::new(OpenCodeEntry::InferenceV1, Protocol::OpenAiChat, vec![]).unwrap();
+        let context = RelayContext::new(
+            HttpClientPool::default()
+                .get(&HttpClientConfig::default())
+                .unwrap(),
+        );
+        let credential = Credential::api_key("fixture-secret").unwrap();
+        for protocol in [
+            Protocol::OpenAiChat,
+            Protocol::OpenAiResponses,
+            Protocol::Anthropic,
+            Protocol::Gemini,
+        ] {
+            let request = UpstreamRequest::new(
+                Method::POST,
+                "https://opencode.ai/inference/openai/v1/chat/completions",
+                HeaderMap::new(),
+                Some(Bytes::from_static(
+                    br#"{"model":"fixture","messages":[{"role":"user","content":"hi"}]}"#,
+                )),
+            )
+            .unwrap();
+            let result = adaptor
+                .finalize_request(
+                    request,
+                    &credential,
+                    &context.clone().with_response_protocol(protocol),
+                )
+                .await
+                .unwrap();
+            let body: serde_json::Value = serde_json::from_slice(result.body().unwrap()).unwrap();
+            if protocol == Protocol::Anthropic {
+                assert_eq!(body["reasoning"], serde_json::json!({"exclude":true}));
+            } else {
+                assert!(body.get("reasoning").is_none());
+            }
+        }
+        let conflicting = UpstreamRequest::new(
+            Method::POST,
+            "https://opencode.ai/inference/openai/v1/chat/completions",
+            HeaderMap::new(),
+            Some(Bytes::from_static(
+                br#"{"model":"fixture","reasoning":{"exclude":false}}"#,
+            )),
+        )
+        .unwrap();
+        assert!(
+            adaptor
+                .finalize_request(
+                    conflicting,
+                    &credential,
+                    &context.with_response_protocol(Protocol::Anthropic)
+                )
+                .await
+                .is_err()
+        );
+    }
+
     #[tokio::test]
     async fn nonstream_client_uses_upstream_sse_without_mutating_tools_or_history() {
         let adaptor =
