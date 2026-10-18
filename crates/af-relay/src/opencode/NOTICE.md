@@ -1,8 +1,9 @@
-Tool parameter contracts and descriptions adapted from OpenCode v1.2.27
-(https://github.com/anomalyco/opencode/tree/v1.2.27/packages/opencode/src/tool).
-Copyright (c) 2025 opencode. Licensed under MIT; see LICENSE.opencode.
+Tool parameter contracts and descriptions adapted from OpenCode
+60a5a6ca7ce176b04cd2321ffd1819b1ea8e6006 (MIT).
+https://github.com/anomalyco/opencode/tree/60a5a6ca7ce176b04cd2321ffd1819b1ea8e6006/packages/core/src/tool/plugin
+Code Mode contract: packages/core/src/codemode/tool.ts and packages/codemode/src/codemode.ts.
+Copyright: see LICENSE.opencode.
 
-AnyFlows advertises these contracts for protocol compatibility only. It does not
-execute the tools. Caller tools retain their own definitions and take precedence
-through reversible aliasing. Both registered OpenCode entries use this frozen
-contract; changing upstream contracts requires a new program registry version.
+AnyFlows provides these declarations for protocol compatibility. It does not
+execute the tools. Both registered entries use the frozen v1 registry. Caller
+tools retain their own contracts through reversible aliasing.

@@ -19,14 +19,9 @@ pub fn opencode_compatibility_tools(entry: OpenCodeEntry, model: &str) -> Vec<To
                 .expect("程序内置 OpenCode 工具契约必须有效")
         }),
     };
-    let patch = model.contains("gpt-") && !model.contains("oss") && !model.contains("gpt-4");
+    let _ = model;
     tools
         .iter()
-        .filter(|tool| match tool.name.as_str() {
-            "apply_patch" => patch,
-            "edit" | "write" => !patch,
-            _ => true,
-        })
         .map(|tool| ToolDef {
             name: tool.name.clone(),
             description: Some(tool.description.clone()),
@@ -40,16 +35,17 @@ pub fn opencode_compatibility_tools(entry: OpenCodeEntry, model: &str) -> Vec<To
 mod tests {
     use super::*;
     #[test]
-    fn registry_uses_official_model_tool_variants_and_complete_contracts() {
+    fn registry_preserves_current_official_contracts() {
         for entry in [OpenCodeEntry::InferenceV1, OpenCodeEntry::ZenV1] {
-            let normal = opencode_compatibility_tools(entry, "mimo-v2.6-flash-free");
-            assert!(normal.iter().any(|t| t.name == "bash"
-                && t.input_schema["required"] == serde_json::json!(["command", "description"])));
-            assert!(normal.iter().any(|t| t.name == "edit"));
-            assert!(!normal.iter().any(|t| t.name == "apply_patch"));
-            let gpt = opencode_compatibility_tools(entry, "gpt-5");
-            assert!(gpt.iter().any(|t| t.name == "apply_patch"));
-            assert!(!gpt.iter().any(|t| t.name == "edit" || t.name == "write"));
+            let tools = opencode_compatibility_tools(entry, "mimo-v2.6-flash-free");
+            assert_eq!(tools.len(), 12);
+            assert!(tools.iter().any(|t| t.name == "shell"
+                && t.input_schema["required"] == serde_json::json!(["command"])));
+            assert!(tools.iter().any(|t| t.name == "execute"
+                && t.input_schema["required"] == serde_json::json!(["code"])));
+            assert!(tools.iter().any(
+                |t| t.name == "read" && t.input_schema["properties"]["offset"]["minimum"] == 0
+            ));
         }
     }
 }

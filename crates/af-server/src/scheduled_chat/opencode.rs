@@ -295,7 +295,7 @@ mod tests {
                     .get(),
                 64
             );
-            assert!(plan.request().canonical().tools.len() >= 13);
+            assert!(plan.request().canonical().tools.len() >= 12);
             assert_eq!(plan.upper_bound().output_tokens().get(), 64);
             assert!(plan.upper_bound().input_tokens() > original.input_tokens());
             assert!(plan.request().source_protocol().is_none());
