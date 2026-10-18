@@ -49,6 +49,7 @@ pub struct ClientProfileQuery {
     pub service: Option<String>,
     pub protocol: Option<Protocol>,
     pub credential_kind: Option<CredentialKind>,
+    pub channel_type: Option<ChannelType>,
     /// 零表示默认每页 25 条。
     pub limit: usize,
 }
@@ -94,6 +95,13 @@ pub struct ClientProfileReferencePage {
 pub struct ClientProfileWrite {
     pub expected_version: i64,
     pub definition: ClientProfileDefinition,
+}
+
+/// 仅投影服务入口与不透明并发版本，绝不返回渠道敏感设置。
+#[derive(Clone, Debug, Serialize)]
+pub struct ClientProfileOpenCodeSettings {
+    pub entry: af_domain::OpenCodeEntry,
+    pub version: String,
 }
 
 #[derive(Clone, Debug)]
@@ -151,6 +159,19 @@ impl ClientProfileRepository {
             }
             if let Some(service) = query.service {
                 select = select.filter(profiles::Column::Service.eq(service));
+            }
+            if let Some(kind) = query.channel_type {
+                let service = match kind {
+                    ChannelType::OpenCode => Some("open_code"),
+                    ChannelType::OpenAi => Some("codex"),
+                    ChannelType::Anthropic => Some("claude_code"),
+                    _ => None,
+                };
+                let mut compatible = Condition::any().add(profiles::Column::Service.eq("standard"));
+                if let Some(service) = service {
+                    compatible = compatible.add(profiles::Column::Service.eq(service));
+                }
+                select = select.filter(compatible);
             }
             if let Some(protocol) = query.protocol {
                 select = select.filter(
@@ -511,6 +532,84 @@ impl ClientProfileRepository {
         .await
     }
 
+    pub async fn opencode_settings(
+        &self,
+        channel: ChannelId,
+    ) -> Result<ClientProfileOpenCodeSettings, Error> {
+        self.bounded(async {
+            let row = channels::Entity::find_by_id(channel.get())
+                .one(self.pool.connection())
+                .await
+                .map_err(storage)?
+                .filter(|row| row.deleted_at.is_none())
+                .ok_or(Error::NotFound)?;
+            opencode_settings_record(&row)
+        })
+        .await
+    }
+
+    /// 在事务中只更新受控入口，保留密钥、代理及其他渠道设置。
+    pub async fn set_opencode_entry(
+        &self,
+        channel: ChannelId,
+        version: &str,
+        entry: af_domain::OpenCodeEntry,
+    ) -> Result<ClientProfileOpenCodeSettings, Error> {
+        if version.is_empty() || version.len() > 128 {
+            return Err(Error::InvalidInput);
+        }
+        self.bounded(async {
+            let tx = self.pool.connection().begin().await.map_err(storage)?;
+            let row = channels::Entity::find_by_id(channel.get())
+                .lock_exclusive()
+                .one(&tx)
+                .await
+                .map_err(storage)?
+                .filter(|row| row.deleted_at.is_none())
+                .ok_or(Error::NotFound)?;
+            let current = opencode_settings_record(&row)?;
+            if current.version != version {
+                return Err(Error::Conflict);
+            }
+            let mut settings = row.settings.clone().into_inner();
+            settings.as_object_mut().ok_or(Error::Invariant)?.insert(
+                "opencode_entry".to_owned(),
+                serde_json::to_value(entry).map_err(|_| Error::Invariant)?,
+            );
+            // 独立随机版本防止低精度数据库时间戳下的快速切换和 ABA 更新。
+            let mut nonce = [0_u8; 16];
+            getrandom::fill(&mut nonce).map_err(|_| Error::Storage)?;
+            settings.as_object_mut().ok_or(Error::Invariant)?.insert(
+                "opencode_entry_revision".to_owned(),
+                format!("{:032x}", u128::from_be_bytes(nonce)).into(),
+            );
+            let now = DatabaseTimestamp::now_utc();
+            // 版本已在同一事务的行锁下核对。SQLite 的事务快照阻止并发覆盖；
+            // 不比较其历史文本时间戳，避免默认值与驱动编码格式不同造成误冲突。
+            let changed = channels::Entity::update_many()
+                .filter(channels::Column::Id.eq(channel.get()))
+                .filter(channels::Column::DeletedAt.is_null())
+                .col_expr(channels::Column::Settings, Expr::value(settings))
+                .col_expr(channels::Column::UpdatedAt, Expr::value(now))
+                .exec(&tx)
+                .await
+                .map_err(storage)?;
+            if changed.rows_affected != 1 {
+                return Err(Error::Conflict);
+            }
+            publish(&tx, channel.get(), now).await?;
+            let updated = channels::Entity::find_by_id(channel.get())
+                .one(&tx)
+                .await
+                .map_err(storage)?
+                .ok_or(Error::Invariant)?;
+            let result = opencode_settings_record(&updated)?;
+            tx.commit().await.map_err(storage)?;
+            Ok(result)
+        })
+        .await
+    }
+
     /// 固定修订并校验身份头冲突；不清除或覆盖历史 Claude 设置。
     pub async fn bind(
         &self,
@@ -595,6 +694,25 @@ impl ClientProfileRepository {
         })
         .await
     }
+}
+
+fn opencode_settings_record(row: &channels::Model) -> Result<ClientProfileOpenCodeSettings, Error> {
+    if row.r#type != "opencode" {
+        return Err(Error::InvalidInput);
+    }
+    let entry =
+        crate::channel_opencode_entry(ChannelType::OpenCode, &row.settings.clone().into_inner())
+            .map_err(|_| Error::Invariant)?
+            .ok_or(Error::Invariant)?;
+    let settings = row.settings.clone().into_inner();
+    let revision = settings
+        .get("opencode_entry_revision")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("0");
+    Ok(ClientProfileOpenCodeSettings {
+        entry,
+        version: format!("{}:{revision}", row.updated_at),
+    })
 }
 
 /// 批量解析渠道绑定；None 表示明确停用，缺失键表示未选择新档案。

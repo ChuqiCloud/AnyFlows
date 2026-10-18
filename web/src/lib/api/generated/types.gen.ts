@@ -1461,6 +1461,12 @@ export type ClientProfileBindingSchema = {
     key: string;
     revision: number;
 };
+export type ClientProfileCapabilitiesSchema = {
+    templates: Array<ClientProfileDefinitionSchema>;
+    identity_headers: Array<string>;
+    session_strategies: Array<ClientProfileSessionStrategySchema>;
+    opencode_entries: Array<ClientProfileOpenCodeEntrySchema>;
+};
 export type ClientProfileDefinitionSchema = {
     name: string;
     description: string;
@@ -1477,6 +1483,15 @@ export type ClientProfileDefinitionSchema = {
 export type ClientProfileEnabledRequest = {
     expected_version: number;
     enabled: boolean;
+};
+export type ClientProfileOpenCodeEntryRequest = {
+    version: string;
+    entry: ClientProfileOpenCodeEntrySchema;
+};
+export type ClientProfileOpenCodeEntrySchema = 'inference_v1' | 'zen_v1';
+export type ClientProfileOpenCodeSettingsSchema = {
+    entry: ClientProfileOpenCodeEntrySchema;
+    version: string;
 };
 export type ClientProfilePageSchema = {
     items: Array<ClientProfileRecordSchema>;
@@ -5633,6 +5648,62 @@ export type ProbeAdminChannelResponses = {
     200: AdminChannelProbeResponse;
 };
 export type ProbeAdminChannelResponse = ProbeAdminChannelResponses[keyof ProbeAdminChannelResponses];
+export type GetAdminClientProfileCapabilitiesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/client-profiles/capabilities';
+};
+export type GetAdminClientProfileCapabilitiesErrors = {
+    401: ManagementError;
+    403: ManagementError;
+};
+export type GetAdminClientProfileCapabilitiesError = GetAdminClientProfileCapabilitiesErrors[keyof GetAdminClientProfileCapabilitiesErrors];
+export type GetAdminClientProfileCapabilitiesResponses = {
+    200: ClientProfileCapabilitiesSchema;
+};
+export type GetAdminClientProfileCapabilitiesResponse = GetAdminClientProfileCapabilitiesResponses[keyof GetAdminClientProfileCapabilitiesResponses];
+export type GetAdminClientProfileOpenCodeSettingsData = {
+    body?: never;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/client-profiles/opencode-settings/{channel_id}';
+};
+export type GetAdminClientProfileOpenCodeSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminClientProfileOpenCodeSettingsError = GetAdminClientProfileOpenCodeSettingsErrors[keyof GetAdminClientProfileOpenCodeSettingsErrors];
+export type GetAdminClientProfileOpenCodeSettingsResponses = {
+    200: ClientProfileOpenCodeSettingsSchema;
+};
+export type GetAdminClientProfileOpenCodeSettingsResponse = GetAdminClientProfileOpenCodeSettingsResponses[keyof GetAdminClientProfileOpenCodeSettingsResponses];
+export type SetAdminClientProfileOpenCodeEntryData = {
+    body: ClientProfileOpenCodeEntryRequest;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/client-profiles/opencode-settings/{channel_id}';
+};
+export type SetAdminClientProfileOpenCodeEntryErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type SetAdminClientProfileOpenCodeEntryError = SetAdminClientProfileOpenCodeEntryErrors[keyof SetAdminClientProfileOpenCodeEntryErrors];
+export type SetAdminClientProfileOpenCodeEntryResponses = {
+    200: ClientProfileOpenCodeSettingsSchema;
+};
+export type SetAdminClientProfileOpenCodeEntryResponse = SetAdminClientProfileOpenCodeEntryResponses[keyof SetAdminClientProfileOpenCodeEntryResponses];
 export type ListAdminClientProfilesData = {
     body?: never;
     path?: never;
@@ -5643,6 +5714,7 @@ export type ListAdminClientProfilesData = {
         service?: ClientProfileServiceSchema;
         protocol?: AdminChannelProtocol;
         credential_kind?: AdminCredentialKind;
+        channel_type?: AdminChannelType;
         limit?: number;
     };
     url: '/api/admin/client-profiles';
