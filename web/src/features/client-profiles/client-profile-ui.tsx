@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,6 +21,12 @@ export type ProfileDrawerProps = { title: string; dirty?: boolean; busy?: boolea
 export function ProfileDrawer({ title, dirty, busy, children, onClose }: ProfileDrawerProps) {
   const { t } = useTranslation()
   const [discard, setDiscard] = useState(false)
+  useEffect(() => {
+    if (!dirty && !busy) return
+    const preventUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', preventUnload)
+    return () => window.removeEventListener('beforeunload', preventUnload)
+  }, [dirty, busy])
   return <Sheet open onOpenChange={open => { if (!open && !busy) { if (dirty) setDiscard(true); else onClose() } }}>
     <SheetContent className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-2xl" aria-describedby="profile-drawer-description">
       <SheetHeader className="border-b border-[var(--hairline)] pr-12"><SheetTitle>{title}</SheetTitle><SheetDescription id="profile-drawer-description">{t('clientProfiles.versionHint')}</SheetDescription></SheetHeader>

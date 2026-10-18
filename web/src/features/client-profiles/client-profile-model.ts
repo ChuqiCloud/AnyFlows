@@ -37,3 +37,6 @@ export function profileLogo(definition?: ClientProfileDefinitionSchema, service?
   return definition?.icon ?? icons[service ?? definition?.service ?? 'standard']
 }
 
+export function isProfileAccessError(error: unknown) {
+  return error instanceof ApiError && (error.status === 401 || error.status === 403)
+}

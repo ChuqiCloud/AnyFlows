@@ -584,9 +584,10 @@ impl ClientProfileRepository {
                 format!("{:032x}", u128::from_be_bytes(nonce)).into(),
             );
             let now = DatabaseTimestamp::now_utc();
+            // 版本已在同一事务的行锁下核对。SQLite 的事务快照阻止并发覆盖；
+            // 不比较其历史文本时间戳，避免默认值与驱动编码格式不同造成误冲突。
             let changed = channels::Entity::update_many()
                 .filter(channels::Column::Id.eq(channel.get()))
-                .filter(channels::Column::UpdatedAt.eq(row.updated_at))
                 .filter(channels::Column::DeletedAt.is_null())
                 .col_expr(channels::Column::Settings, Expr::value(settings))
                 .col_expr(channels::Column::UpdatedAt, Expr::value(now))

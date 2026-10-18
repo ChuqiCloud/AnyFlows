@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Input, Select, SelectItem, Drawer, DrawerBody, DrawerContent, DrawerHeader } from '@heroui/react'
 
@@ -22,6 +22,12 @@ export type ProfileDrawerProps = { title: string; dirty?: boolean; busy?: boolea
 export function ProfileDrawer({ title, dirty, busy, children, onClose }: ProfileDrawerProps) {
   const { t } = useTranslation()
   const [discard, setDiscard] = useState(false)
+  useEffect(() => {
+    if (!dirty && !busy) return
+    const preventUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', preventUnload)
+    return () => window.removeEventListener('beforeunload', preventUnload)
+  }, [dirty, busy])
   const [portal, setPortal] = useState<HTMLDivElement | null>(null)
   return <Drawer isOpen backdrop="blur" placement="right" scrollBehavior="inside" classNames={{ base: 'w-full max-h-none sm:max-w-2xl' }} aria-describedby="profile-drawer-description" onOpenChange={open => { if (!open && !busy) { if (dirty) setDiscard(true); else onClose() } }}>
     <DrawerContent>{() => <>

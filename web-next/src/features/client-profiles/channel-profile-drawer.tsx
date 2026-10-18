@@ -5,7 +5,7 @@ import type { AdminChannel, ClientProfileBindingSchema, ClientProfileReferenceSc
 import { adminChannelsQueryKey } from '@/features/channels/channel-api'
 import { bindProfile, clientProfilesKey, setOpenCodeEntry, useChannelProfile, useOpenCodeSettings, useProfileCapabilities, useProfileRevisions, useProfiles } from './client-profile-api'
 import { compatibleProfile } from './client-profile-policy'
-import { useCursorPage, useProfileSearch } from './client-profile-model'
+import { isProfileAccessError, useCursorPage, useProfileSearch } from './client-profile-model'
 import { ProfileError, ProfileField, ProfileLoading, ProfileMark, ProfilePagination } from './client-profile-page'
 import { ProfileButton, ProfileDrawer, ProfileInput, ProfileSelect } from './client-profile-ui'
 
@@ -14,11 +14,11 @@ export function ChannelProfileDrawer({ channel, onClose }: { channel: AdminChann
   const binding = useChannelProfile(channel.id)
   const settings = useOpenCodeSettings(channel.id, channel.type === 'opencode')
   const error = binding.error ?? settings.error
-  if (binding.isPending || (channel.type === 'opencode' && settings.isPending) || error) return <ProfileDrawer title={t('clientProfiles.channelSettings')} onClose={onClose}>{error ? <ProfileError error={error} retry={() => { void binding.refetch(); if (channel.type === 'opencode') void settings.refetch() }} /> : <ProfileLoading />}</ProfileDrawer>
-  return <ChannelProfileForm channel={channel} binding={binding.data ?? null} settings={settings.data} onClose={onClose} />
+  if (binding.isPending || (channel.type === 'opencode' && settings.isPending) || (error && (binding.data === undefined || (channel.type === 'opencode' && !settings.data) || isProfileAccessError(error)))) return <ProfileDrawer title={t('clientProfiles.channelSettings')} onClose={onClose}>{error ? <ProfileError error={error} retry={() => { void binding.refetch(); if (channel.type === 'opencode') void settings.refetch() }} /> : <ProfileLoading />}</ProfileDrawer>
+  return <ChannelProfileForm channel={channel} binding={binding.data ?? null} settings={settings.data} readError={error} retry={() => { void binding.refetch(); if (channel.type === 'opencode') void settings.refetch() }} onClose={onClose} />
 }
 
-function ChannelProfileForm({ channel, binding, settings, onClose }: { channel: AdminChannel; binding: ClientProfileReferenceSchema | null; settings?: ClientProfileOpenCodeSettingsSchema; onClose: () => void }) {
+function ChannelProfileForm({ channel, binding, settings, readError, retry, onClose }: { channel: AdminChannel; binding: ClientProfileReferenceSchema | null; settings?: ClientProfileOpenCodeSettingsSchema; readError?: unknown; retry: () => void; onClose: () => void }) {
   const { t } = useTranslation()
   const cache = useQueryClient()
   const [base, setBase] = useState(() => binding)
@@ -39,6 +39,7 @@ function ChannelProfileForm({ channel, binding, settings, onClose }: { channel: 
   const bindingDirty = !!selection && (selection.key !== base?.binding.key || selection.revision !== base?.binding.revision)
   const entryDirty = !!entryBase && entry !== entryBase.entry
   return <ProfileDrawer title={`${t('clientProfiles.channelSettings')} · ${channel.name}`} dirty={bindingDirty || entryDirty} busy={busy} onClose={onClose}>
+    {readError && <ProfileError error={readError} retry={retry} />}
     <p className="cp-hint">{t('clientProfiles.channelHint')}</p>
     <div className="cp-version"><strong>{t('clientProfiles.currentBinding')}</strong><p>{base ? `${base.binding.key} · r${base.binding.revision}` : t('clientProfiles.unbound')}</p><p className="cp-hint">{channel.type} · {channel.protocol}</p></div>
     {(channel.client_simulation_profile || channel.client_simulation_body_profile) && <p className="cp-error">{t('clientProfiles.legacyConflict')}</p>}
@@ -48,7 +49,7 @@ function ChannelProfileForm({ channel, binding, settings, onClose }: { channel: 
       <ProfilePagination page={page.page} previous={page.page > 1 ? page.previous : undefined} next={profiles.data.next_cursor ? () => page.next(profiles.data.next_cursor!) : undefined} busy={profiles.isFetching || busy} />
     </>}
     {profileKey && <section className="cp-section"><h3>{t('clientProfiles.chooseRevision')}</h3>{revisions.isPending ? <ProfileLoading /> : revisions.isError ? <ProfileError error={revisions.error} retry={() => void revisions.refetch()} /> : <>
-      {revisions.data.items.map(snapshot => <div className="cp-version" key={snapshot.binding.revision}><div className="cp-heading"><strong>r{snapshot.binding.revision} · {snapshot.definition.name}</strong><ProfileButton disabled={busy || !compatibleProfile(snapshot.definition, channel)} onClick={() => { setSelection(snapshot.binding); save.reset(); setSaved(false) }}>{t(selection?.revision === snapshot.binding.revision && selection.key === profileKey ? 'clientProfiles.selected' : 'clientProfiles.select')}</ProfileButton></div><p className="cp-hint">{snapshot.definition.protocols.join(' · ')} · {t(`clientProfiles.sessions.${snapshot.definition.session_strategy}`)}</p><p className="cp-hint">{Object.entries(snapshot.definition.identity_headers).map(([name, value]) => `${name}: ${value}`).join(' · ')}</p></div>)}
+      {revisions.data.items.map(snapshot => <div className="cp-version" key={snapshot.binding.revision}><div className="cp-heading"><strong>r{snapshot.binding.revision} · {snapshot.definition.name}</strong><ProfileButton disabled={busy || !compatibleProfile(snapshot.definition, channel)} onClick={() => { setSelection(snapshot.binding); save.reset(); setSaved(false) }}>{t(selection?.revision === snapshot.binding.revision && selection.key === profileKey ? 'clientProfiles.selected' : 'clientProfiles.select')}</ProfileButton></div>{!compatibleProfile(snapshot.definition, channel) && <p className="cp-hint">{t('clientProfiles.incompatibleRevision')}</p>}<p className="cp-hint">{snapshot.definition.protocols.join(' · ')} · {t(`clientProfiles.sessions.${snapshot.definition.session_strategy}`)}</p><p className="cp-hint">{Object.entries(snapshot.definition.identity_headers).map(([name, value]) => `${name}: ${value}`).join(' · ')}</p></div>)}
       <ProfilePagination page={revisionsPage.page} previous={revisionsPage.page > 1 ? revisionsPage.previous : undefined} next={revisions.data.next_cursor ? () => revisionsPage.next(revisions.data.next_cursor!) : undefined} busy={revisions.isFetching || busy} />
     </>}</section>}
     {selection && <div className="cp-version"><strong>{t('clientProfiles.pendingBinding')}</strong><p>{base ? `${base.binding.key} · r${base.binding.revision}` : t('clientProfiles.unbound')} → {selection.key} · r{selection.revision}</p><p className="cp-hint">{t('clientProfiles.bindingWarning')}</p><ProfileButton primary disabled={busy || !bindingDirty} onClick={() => save.mutate()}>{t(busy ? 'clientProfiles.saving' : 'clientProfiles.applyBinding')}</ProfileButton></div>}

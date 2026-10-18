@@ -8,7 +8,7 @@ import {
   clientProfilesKey, toggleProfile, useProfileCapabilities, useProfileDetail,
   useProfileReferences, useProfileRevisions, useProfiles, validateProfile, writeProfile,
 } from './client-profile-api'
-import { profileErrorKey, profileLogo, useCursorPage, useProfileSearch } from './client-profile-model'
+import { isProfileAccessError, profileErrorKey, profileLogo, useCursorPage, useProfileSearch } from './client-profile-model'
 import { ProfileButton, ProfileDrawer, ProfileInput, ProfileSelect } from './client-profile-ui'
 import { validProfileDraft } from './client-profile-policy'
 import './client-profiles.css'
@@ -76,13 +76,13 @@ export function ClientProfilePage() {
 function ProfileEditor({ editor, templates, headers, sessions, onClose }: { editor: Editor; templates: ClientProfileDefinitionSchema[]; headers: string[]; sessions: ClientProfileDefinitionSchema['session_strategy'][]; onClose: () => void }) {
   const { t } = useTranslation()
   const detail = useProfileDetail(editor.key)
-  if (editor.key && (detail.isPending || detail.isError)) return <ProfileDrawer title={t('clientProfiles.details')} onClose={onClose}>{detail.isError ? <ProfileError error={detail.error} retry={() => void detail.refetch()} /> : <ProfileLoading />}</ProfileDrawer>
+  if (editor.key && (detail.isPending || (detail.isError && (!detail.data || isProfileAccessError(detail.error))))) return <ProfileDrawer title={t('clientProfiles.details')} onClose={onClose}>{detail.isError ? <ProfileError error={detail.error} retry={() => void detail.refetch()} /> : <ProfileLoading />}</ProfileDrawer>
   const template = detail.data?.snapshot.definition ?? templates[0]
   if (!template) return null
-  return <ProfileEditorForm editor={editor} initial={template} record={detail.data?.record} templates={templates} headers={headers} sessions={sessions} onClose={onClose} />
+  return <ProfileEditorForm editor={editor} initial={template} record={detail.data?.record} readError={detail.error} retry={() => void detail.refetch()} templates={templates} headers={headers} sessions={sessions} onClose={onClose} />
 }
 
-function ProfileEditorForm({ editor, initial, record, templates, headers, sessions, onClose }: { editor: Editor; initial: ClientProfileDefinitionSchema; record?: ClientProfileRecordSchema; templates: ClientProfileDefinitionSchema[]; headers: string[]; sessions: ClientProfileDefinitionSchema['session_strategy'][]; onClose: () => void }) {
+function ProfileEditorForm({ editor, initial, record, readError, retry, templates, headers, sessions, onClose }: { editor: Editor; initial: ClientProfileDefinitionSchema; record?: ClientProfileRecordSchema; readError?: unknown; retry: () => void; templates: ClientProfileDefinitionSchema[]; headers: string[]; sessions: ClientProfileDefinitionSchema['session_strategy'][]; onClose: () => void }) {
   const { t } = useTranslation()
   const cache = useQueryClient()
   const creating = editor.mode === 'create' || editor.mode === 'copy'
@@ -102,6 +102,7 @@ function ProfileEditorForm({ editor, initial, record, templates, headers, sessio
   const protocols = Array.from(new Set(compatible.flatMap(template => template.protocols)))
   const credentials = Array.from(new Set(compatible.flatMap(template => template.credential_kinds)))
   return <ProfileDrawer title={t(creating ? 'clientProfiles.create' : readonly ? 'clientProfiles.details' : 'clientProfiles.edit')} dirty={dirty} busy={busy} onClose={onClose}>
+    {readError && <ProfileError error={readError} retry={retry} />}
     {!creating && <div className="cp-tabs">{['definition', 'revisions', 'references'].map(value => <ProfileButton key={value} onClick={() => setTab(value)}><span aria-current={tab === value ? 'page' : undefined}>{t(`clientProfiles.${value}`)}</span></ProfileButton>)}</div>}
     {tab === 'definition' ? <form className="cp-form" onSubmit={event => { event.preventDefault(); if (!readonly && !busy && validProfileDraft(key, definition)) save.mutate() }}>
       <div className="cp-grid"><ProfileField label={t('clientProfiles.key')}><ProfileInput label={t('clientProfiles.key')} value={key} maxLength={64} disabled={!creating || busy} onChange={setKey} /></ProfileField><ProfileField label={t('clientProfiles.name')}><ProfileInput label={t('clientProfiles.name')} value={definition.name} maxLength={128} disabled={readonly || busy} onChange={name => change({ name })} /></ProfileField></div>
