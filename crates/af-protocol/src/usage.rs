@@ -261,7 +261,7 @@ impl Usage {
             UsageSemantics::Inclusive => usage.checked_input_tokens(),
             UsageSemantics::CacheSeparated => Ok(usage.input_tokens),
         };
-        Self::new(
+        let usage = Self::new(
             input(self)?.checked_add(input(rhs)?)?,
             self.output_tokens.checked_add(rhs.output_tokens)?,
             UsageDetails::new(
@@ -288,7 +288,9 @@ impl Usage {
                 UsageSource::Estimated
             },
             semantics,
-        )
+        )?;
+        usage.checked_total_tokens()?;
+        Ok(usage)
     }
 }
 

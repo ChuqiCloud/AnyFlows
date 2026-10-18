@@ -336,6 +336,15 @@ impl ToolCompatibilitySession {
         if !self.round.visible && reason != FinishReason::ContentFilter {
             return Err(E::InvalidOutput);
         }
+        if self.round.tools.is_empty()
+            && reason != FinishReason::ContentFilter
+            && matches!(
+                self.request.canonical().tool_choice,
+                ToolChoice::Required | ToolChoice::Named { .. }
+            )
+        {
+            return Err(E::InvalidOutput);
+        }
         let usage = match (self.observed[0], usage, self.round_index) {
             (Some(first), Some(second), 1) => {
                 Some(first.checked_add(second).map_err(|_| E::UsageOverflow)?)

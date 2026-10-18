@@ -551,3 +551,107 @@ fn debug_output_and_errors_do_not_include_request_or_tool_secrets() {
         assert!(!error.to_string().contains("private"));
     }
 }
+
+#[test]
+fn specified_and_disabled_tool_choices_are_enforced_without_substitution() {
+    for (choice, invalid_name) in [
+        (ToolChoice::None, "weather"),
+        (
+            ToolChoice::Named {
+                name: "weather".to_owned(),
+            },
+            "other",
+        ),
+        (
+            ToolChoice::Named {
+                name: "weather".to_owned(),
+            },
+            "read",
+        ),
+    ] {
+        let mut canonical = request().into_canonical();
+        canonical.tools = vec![tool("weather"), tool("other")];
+        canonical.tool_choice = choice;
+        let mut session =
+            ToolCompatibilitySession::prepare(canonical.into(), vec![tool("read")]).unwrap();
+        forward(&mut session, start());
+        assert_eq!(
+            session.push(call(0, "id", invalid_name)).unwrap_err(),
+            ToolCompatibilityError::InvalidOutput
+        );
+    }
+    for choice in [
+        ToolChoice::Required,
+        ToolChoice::Named {
+            name: "weather".to_owned(),
+        },
+    ] {
+        let mut canonical = request().into_canonical();
+        canonical.tools = vec![tool("weather")];
+        canonical.tool_choice = choice;
+        let mut session =
+            ToolCompatibilitySession::prepare(canonical.into(), vec![tool("read")]).unwrap();
+        forward(&mut session, start());
+        forward(&mut session, text("a tool was required"));
+        forward(&mut session, finish(FinishReason::Stop));
+        assert_eq!(
+            session.push(Event::StreamEnd).unwrap_err(),
+            ToolCompatibilityError::InvalidOutput
+        );
+    }
+}
+
+#[test]
+fn signatures_are_preserved_only_when_the_tool_name_is_unchanged() {
+    for collides in [false, true] {
+        let mut canonical = request().into_canonical();
+        canonical.tools = vec![tool(if collides { "read" } else { "weather" })];
+        let mut session =
+            ToolCompatibilitySession::prepare(canonical.into(), vec![tool("read")]).unwrap();
+        forward(&mut session, start());
+        forward(
+            &mut session,
+            call(0, "id", if collides { "af_client_0" } else { "weather" }),
+        );
+        let signature = Event::ToolCallSignature {
+            choice_index: 0,
+            tool_index: 0,
+            signature: "private-signature".to_owned(),
+        };
+        if collides {
+            assert_eq!(
+                session.push(signature).unwrap_err(),
+                ToolCompatibilityError::UnsupportedSignature
+            );
+        } else {
+            assert_eq!(forward(&mut session, signature.clone()), vec![signature]);
+        }
+    }
+}
+
+#[test]
+fn continuation_cannot_reuse_a_previous_call_id_or_lose_final_usage() {
+    for reuse_id in [true, false] {
+        let mut canonical = request().into_canonical();
+        canonical.tools.push(tool("weather"));
+        let mut session =
+            ToolCompatibilitySession::prepare(canonical.into(), vec![tool("read")]).unwrap();
+        hidden_round(&mut session, Some(20));
+        session.push(Event::StreamEnd).unwrap();
+        forward(&mut session, start());
+        if reuse_id {
+            assert_eq!(
+                session.push(call(0, "hidden-id", "weather")).unwrap_err(),
+                ToolCompatibilityError::InvalidOutput
+            );
+        } else {
+            forward(&mut session, text("answer"));
+            forward(&mut session, finish(FinishReason::Stop));
+            assert_eq!(
+                session.push(Event::StreamEnd).unwrap_err(),
+                ToolCompatibilityError::MissingUsage
+            );
+        }
+        assert_eq!(session.observed_usage(), &[Some(usage(20)), None]);
+    }
+}

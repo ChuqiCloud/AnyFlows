@@ -298,4 +298,13 @@ fn adding_usage_retains_estimated_source_and_detects_overflow() {
     )
     .unwrap();
     assert_eq!(large.checked_add(one), Err(UsageError::Overflow));
+    let output_one = Usage::new(
+        TokenCount::ZERO,
+        count(1),
+        details(0, 0, 0, 0, 0, 0),
+        UsageSource::Upstream,
+        UsageSemantics::Inclusive,
+    )
+    .unwrap();
+    assert_eq!(large.checked_add(output_one), Err(UsageError::Overflow));
 }
