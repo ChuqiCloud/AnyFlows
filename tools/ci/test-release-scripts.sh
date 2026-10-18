@@ -33,6 +33,41 @@ if RELEASE_REQUIRE_MASTER=0 \
   exit 1
 fi
 
+# Use matching workspace versions so a version mismatch cannot hide a format bug.
+tag_workspace="$temporary_directory/tag-workspace"
+mkdir -p "$tag_workspace"
+git -C "$tag_workspace" init -q
+git -C "$tag_workspace" -c user.name='Release checks' \
+  -c user.email='release-checks@example.invalid' commit -q --allow-empty -m fixture
+tag_commit="$(git -C "$tag_workspace" rev-parse HEAD)"
+
+write_tag_version() {
+  printf '[workspace.package]\nversion = "%s"\n' "$1" >"$tag_workspace/Cargo.toml"
+}
+
+for valid_version in 1.2.3-alpha.1 1.2.3-beta.2 1.2.3-rc.3 1.2.3; do
+  write_tag_version "$valid_version"
+  RELEASE_WORKSPACE="$tag_workspace" RELEASE_REQUIRE_MASTER=0 \
+    bash "$workspace/tools/ci/verify-release-tag.sh" "v$valid_version" "$tag_commit" \
+    >"$temporary_directory/valid-tag.out"
+  grep -Fq "版本标签 v$valid_version 已通过发布校验" "$temporary_directory/valid-tag.out"
+done
+
+for invalid_tag in \
+  "1.2.3" "v01.2.3" "v1.02.3" "v1.2.03" \
+  "v1.2.3-preview.1" "v1.2.3-alph.1" "v1.2.3-final" \
+  "v1.2.3-rc" "v1.2.3-RC.1" "v1.2.3-beta.0" "v1.2.3-beta.01" \
+  "v1.2.3-alpha.1.1" "v1.2.3+build.1" "v1.2.3-beta.1+build.1"; do
+  write_tag_version "${invalid_tag#v}"
+  if RELEASE_WORKSPACE="$tag_workspace" RELEASE_REQUIRE_MASTER=0 \
+    bash "$workspace/tools/ci/verify-release-tag.sh" "$invalid_tag" "$tag_commit" \
+    >"$temporary_directory/invalid-tag.out" 2>&1; then
+    printf '不符合发布规范的标签不应通过校验：%s\n' "$invalid_tag" >&2
+    exit 1
+  fi
+  grep -q '发布校验失败：标签必须是' "$temporary_directory/invalid-tag.out"
+done
+
 fake_binary="$temporary_directory/af-server"
 printf '#!/usr/bin/env sh\nexit 0\n' >"$fake_binary"
 chmod 0755 "$fake_binary"
