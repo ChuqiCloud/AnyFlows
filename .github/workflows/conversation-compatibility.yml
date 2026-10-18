@@ -21,6 +21,7 @@ on:
       - 'crates/af-http/src/client_profiles.rs'
       - 'crates/af-http/src/openapi/client_profiles.rs'
       - 'crates/af-server/src/scheduled_chat.rs'
+      - 'crates/af-server/src/billing_chat.rs'
       - '.github/workflows/conversation-compatibility.yml'
   workflow_dispatch:
 
@@ -100,6 +101,7 @@ jobs:
       - name: Test conversation scheduling
         run: |
           cargo test --quiet -p af-server --lib --all-features --locked scheduled_chat::
+          cargo test --quiet -p af-server --lib --all-features --locked billing_chat::
 
       - name: Test client profile configuration and runtime snapshots
         run: |

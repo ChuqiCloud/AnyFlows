@@ -165,7 +165,7 @@ pub async fn relay_conversation_with_report(
     }
 }
 
-fn prepare_request(
+pub(crate) fn prepare_request(
     request: CanonicalRequestEnvelope,
     protocol: Protocol,
 ) -> Result<(CanonicalRequest, Bytes), AfError> {
@@ -198,7 +198,7 @@ fn parse_response(protocol: Protocol, body: &[u8]) -> Result<CanonicalResponse, 
     }
 }
 
-fn build_response(
+pub(crate) fn build_response(
     protocol: Protocol,
     response: CanonicalResponse,
     usage: Usage,
