@@ -20949,6 +20949,7 @@
               {
                 "type": "string",
                 "enum": [
+                  "public",
                   "api_key",
                   "oauth",
                   "bedrock",
@@ -21173,6 +21174,7 @@
       "AdminCredentialKind": {
         "type": "string",
         "enum": [
+          "public",
           "api_key",
           "oauth",
           "setup_token",
@@ -21390,6 +21392,21 @@
         "oneOf": [
           {
             "type": "object",
+            "description": "OpenCode 公开访问描述，不接受任何密钥字段。",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "public"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "description": "通用 API Key。",
             "required": [
               "api_key",
@@ -21538,6 +21555,7 @@
               {
                 "type": "string",
                 "enum": [
+                  "public",
                   "api_key",
                   "oauth",
                   "bedrock",
@@ -21688,6 +21706,7 @@
               {
                 "type": "string",
                 "enum": [
+                  "public",
                   "api_key",
                   "oauth",
                   "bedrock",
