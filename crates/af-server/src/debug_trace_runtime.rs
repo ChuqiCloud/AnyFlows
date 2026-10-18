@@ -99,17 +99,19 @@ impl DebugTraceRuntime {
         body_profile: Option<ClientSimulationBodyProfile>,
         body_result: Option<ClientSimulationBodyPatchResult>,
         downstream: RelayDiagnosticInput,
+        required_metadata: bool,
     ) -> Option<DebugTraceCapture> {
         let settings = *self.settings.borrow();
-        if !settings.enabled || !sampled(request_id, settings.sample_per_million) {
+        let capture_content = settings.enabled && sampled(request_id, settings.sample_per_million);
+        if !capture_content && !required_metadata {
             return None;
         }
         if body_profile.is_some() != body_result.is_some() {
             return None;
         }
         let policy = diagnostic_policy(
-            settings.capture_headers,
-            settings.capture_bodies,
+            capture_content && settings.capture_headers,
+            capture_content && settings.capture_bodies,
             usize::try_from(settings.max_body_bytes).ok()?,
             body_profile,
         )?;

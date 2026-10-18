@@ -9,6 +9,9 @@ on:
       - 'crates/af-domain/src/client_profile.rs'
       - 'crates/af-adapter/src/client_profile.rs'
       - 'crates/af-adapter/src/opencode.rs'
+      - 'crates/af-adapter/src/context.rs'
+      - 'crates/af-cache/src/sticky.rs'
+      - 'crates/af-cache/tests/redis_integration.rs'
       - 'crates/af-db/src/opencode_settings.rs'
       - 'crates/af-server/src/model_discovery.rs'
       - 'crates/af-server/src/channel_probe.rs'
@@ -104,6 +107,11 @@ jobs:
         run: |
           cargo test --quiet -p af-server --lib --all-features --locked scheduled_chat::
           cargo test --quiet -p af-server --lib --all-features --locked billing_chat::
+
+      - name: Test shared client session creation
+        run: |
+          cargo test --quiet -p af-cache --lib --locked sticky::
+          bash tools/ci/run-cache-redis-test.sh
 
       - name: Test client profile configuration and runtime snapshots
         run: |

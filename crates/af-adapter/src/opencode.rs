@@ -185,11 +185,12 @@ impl Adaptor for OpenCodeAdaptor {
                 write!(&mut encoded, "{byte:02x}").expect("写入 String 不会失败");
             }
             // 官方 Identifier.descending 的 12 位十六进制序号与 14 位 Base62 尾部。
-            // 用隔离摘要派生稳定序号，避免重试或多节点重新生成会话。
-            let ordinal =
-                u64::from_be_bytes(hash[..8].try_into().expect("SHA-256 摘要至少 8 字节"))
-                    & 0x0000_000f_ffff_ffff;
-            let descending = !((ordinal << 12) | 1) & 0x0000_ffff_ffff_ffff;
+            // 时间部分必须来自会话实际创建时间，摘要不能冒充时间序号。
+            let epoch = context.client_session_epoch_millis();
+            if epoch == 0 {
+                return Err(AdaptorError::InvalidRequestId);
+            }
+            let descending = !(epoch.wrapping_shl(12) | 1) & 0x0000_ffff_ffff_ffff;
             const ALPHABET: &[u8] =
                 b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
             let tail: String = hash[8..22]
@@ -400,6 +401,14 @@ mod tests {
         assert!(first["authorization"].is_sensitive());
         assert!(first["x-session-id"].is_sensitive());
         let session = first["x-session-id"].to_str().unwrap();
+        assert_eq!(
+            &session[4..16],
+            format!(
+                "{:012x}",
+                !(context.client_session_epoch_millis().wrapping_shl(12) | 1)
+                    & 0x0000_ffff_ffff_ffff
+            )
+        );
         assert_eq!(session.len(), 30);
         assert!(session.starts_with("ses_"));
         assert_eq!(&session[13..16], "ffe");

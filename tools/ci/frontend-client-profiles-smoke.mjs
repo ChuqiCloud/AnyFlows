@@ -168,7 +168,7 @@ try {
     assert.equal(await endpoint.getAttribute('aria-expanded'), 'true', 'Endpoint menu should remain open after pointer input')
     await page.getByRole('option', { name: 'Zen v1', exact: true }).click()
   } else await page.getByRole('combobox', { name: '服务入口', exact: true }).selectOption('zen_v1')
-  const compatibility = page.getByRole(isNext ? 'checkbox' : 'switch', { name: '完整工具兼容', exact: true })
+  const compatibility = page.getByRole('switch', { name: '完整工具兼容', exact: true })
   assert.equal(await compatibility.isChecked(), false)
   await compatibility.check()
   await page.getByRole('button', { name: '保存服务入口', exact: true }).click()

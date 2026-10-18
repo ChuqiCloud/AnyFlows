@@ -168,9 +168,14 @@ impl ToolConversationReportHandle {
 
     /// 消费方取消时关闭尚未完成的报告，避免将初始 HTTP 200 记为成功。
     pub fn cancel(&self) {
-        if self.snapshot().state == ToolConversationState::Pending {
-            self.fail(UpstreamError::network(NetworkFailureKind::ResponseBody));
-        }
+        self.update(|snapshot| {
+            if snapshot.state == ToolConversationState::Pending {
+                snapshot.state = ToolConversationState::Failed;
+                snapshot
+                    .report
+                    .reject_success(UpstreamError::network(NetworkFailureKind::ResponseBody));
+            }
+        });
     }
 
     pub(crate) fn update(&self, update: impl FnOnce(&mut ToolConversationReport)) {

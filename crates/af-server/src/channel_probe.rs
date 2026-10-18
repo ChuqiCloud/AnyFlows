@@ -134,13 +134,7 @@ impl DatabaseChannelProbe {
         }
 
         if target.opencode_full_compatibility() {
-            context = context
-                .with_client_session_scope(format!(
-                    "probe-{}-{}",
-                    target.channel_id().get(),
-                    probe_timestamp_millis()?
-                ))
-                .map_err(|_| ProbeFailure::ContextBuild)?;
+            // 探测用本次受信 request_id，不能把非摘要字符串写入会话作用域。
             let mut candidate = af_relay::RelayCandidate::new(adaptor, context, credential)
                 .with_header_overrides(headers);
             if let Some(profile) = target.client_profile() {

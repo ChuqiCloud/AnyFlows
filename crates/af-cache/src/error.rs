@@ -96,6 +96,8 @@ impl fmt::Display for RedisFailureKind {
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 #[non_exhaustive]
 pub enum CacheError {
+    #[error("客户端会话创建时间无效")]
+    InvalidSessionEpoch,
     #[error("缓存命名空间必须为 1 到 64 个 ASCII 字母、数字、点、短横线或下划线")]
     InvalidNamespace,
     #[error("本地缓存容量必须大于零")]
