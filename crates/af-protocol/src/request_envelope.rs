@@ -292,6 +292,53 @@ mod tests {
     use crate::openai_responses;
 
     #[test]
+    fn native_requests_keep_standard_options_and_source_body() {
+        let chat = crate::openai_chat::parse_request_envelope(Bytes::from_static(
+            br#"{"model":"gpt-test","messages":[{"role":"user","content":"hi"}],"stream":true,"stream_options":{"include_usage":true},"seed":17}"#,
+        ))
+        .unwrap();
+        assert_eq!(
+            chat.clone()
+                .for_conversation_protocol(Protocol::OpenAiChat)
+                .unwrap(),
+            chat
+        );
+        let responses = responses_request(
+            br#"{"model":"gpt-test","input":"hi","store":true,"previous_response_id":"resp_previous"}"#,
+        );
+        assert_eq!(
+            responses
+                .clone()
+                .for_conversation_protocol(Protocol::OpenAiResponses)
+                .unwrap(),
+            responses
+        );
+        let anthropic = crate::anthropic::parse_request_envelope(Bytes::from_static(
+            br#"{"model":"claude-test","max_tokens":128,"messages":[{"role":"user","content":"hi"}],"stream":true}"#,
+        ))
+        .unwrap();
+        assert_eq!(
+            anthropic
+                .clone()
+                .for_conversation_protocol(Protocol::Anthropic)
+                .unwrap(),
+            anthropic
+        );
+        let gemini = crate::gemini::parse_stream_request_envelope(
+            "models/gemini-test",
+            Bytes::from_static(br#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}"#),
+        )
+        .unwrap();
+        assert_eq!(
+            gemini
+                .clone()
+                .for_conversation_protocol(Protocol::Gemini)
+                .unwrap(),
+            gemini
+        );
+    }
+
+    #[test]
     fn responses_default_options_can_be_rebuilt_as_chat_without_foreign_raw() {
         let request = responses_request(br#"{"model":"gpt-test","input":"hi","store":false}"#)
             .for_conversation_protocol(Protocol::OpenAiChat)

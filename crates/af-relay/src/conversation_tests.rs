@@ -189,6 +189,35 @@ fn fixture_events(tool: bool) -> Vec<CanonicalStreamEvent> {
     events
 }
 
+#[test]
+fn protocol_matrix_preserves_tool_results_in_followup_requests() {
+    let canonical = openai_chat::parse_request(
+        br#"{"model":"public-model","max_tokens":128,"tools":[{"type":"function","function":{"name":"weather","parameters":{"type":"object","properties":{"city":{"type":"string"}}}}}],"messages":[{"role":"user","content":"Weather in Paris?"},{"role":"assistant","tool_calls":[{"id":"call_weather","type":"function","function":{"name":"weather","arguments":"{\"city\":\"Paris\"}"}}]},{"role":"tool","tool_call_id":"call_weather","content":"Sunny"},{"role":"user","content":"Should I take an umbrella?"}]}"#,
+    )
+    .unwrap();
+    for source in PROTOCOLS {
+        let (_, body) = prepare_request(canonical.clone().into(), source).unwrap();
+        let inbound = match source {
+            Protocol::OpenAiChat => openai_chat::parse_request_envelope(body).unwrap(),
+            Protocol::OpenAiResponses => openai_responses::parse_request_envelope(body).unwrap(),
+            Protocol::Anthropic => anthropic::parse_request_envelope(body).unwrap(),
+            Protocol::Gemini => {
+                gemini::parse_request_envelope("models/public-model", body).unwrap()
+            }
+            _ => unreachable!(),
+        };
+        for target in PROTOCOLS {
+            let (_, body) = prepare_request(inbound.clone(), target).unwrap();
+            let outbound = parse_request(target, &body);
+            assert_eq!(
+                outbound.messages, canonical.messages,
+                "{source:?} -> {target:?}"
+            );
+            assert_eq!(outbound.tools, canonical.tools, "{source:?} -> {target:?}");
+        }
+    }
+}
+
 #[tokio::test]
 async fn streaming_protocol_matrix_finishes_with_content_tools_and_usage() {
     for upstream in PROTOCOLS {
