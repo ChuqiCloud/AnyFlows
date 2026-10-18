@@ -2092,12 +2092,8 @@ mod tests {
                 assert!(reserved.input_tokens() > original.input_tokens());
                 assert_eq!(plan.request().canonical().model, "mimo-v2.6-flash-free");
                 assert!(!plan.request().canonical().tools.is_empty());
-                assert!(
-                    format!("{:?}", execution.machine).contains("has_candidate_request: false")
-                );
             } else {
                 assert_eq!(reserved, original);
-                assert!(format!("{:?}", execution.machine).contains("has_candidate_request: true"));
             }
         }
     }

@@ -28,7 +28,7 @@ use crate::{
 };
 
 #[test]
-fn cancellation_preserves_terminal_state_and_known_usage() {
+fn cancellation_preserves_completed_state_and_round_count() {
     let handle = ToolConversationReportHandle::new(RelayAttemptReport::default());
     handle.cancel();
     assert_eq!(handle.snapshot().state, ToolConversationState::Failed);
