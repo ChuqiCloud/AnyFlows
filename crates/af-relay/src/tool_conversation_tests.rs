@@ -320,21 +320,23 @@ async fn two_round_transport_preserves_identity_and_merges_usage_for_all_downstr
                 assert!(!output.contains("private-file") && !output.contains("call_read"));
                 if stream {
                     let mut decoder = ConversationDecoder::new(downstream).unwrap();
-                    let events = decoder.push(&bytes).unwrap();
-                    decoder.finish().unwrap();
+                    let mut events = decoder.push(&bytes).unwrap();
+                    events.extend(decoder.finish().unwrap());
                     assert_eq!(
                         events
                             .iter()
                             .filter(|event| matches!(event, Event::StreamEnd))
                             .count(),
-                        1
+                        1,
+                        "{protocol:?} -> {downstream:?}"
                     );
                     assert_eq!(
                         events
                             .iter()
                             .filter(|event| matches!(event, Event::MessageStart { .. }))
                             .count(),
-                        1
+                        1,
+                        "{protocol:?} -> {downstream:?}"
                     );
                 }
                 assert_eq!(snapshot.state, ToolConversationState::Completed);
