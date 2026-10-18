@@ -11,6 +11,11 @@ pub(crate) type StickySessionStoreFuture<'a, T> =
 
 /// 粘性会话存储端口；生产实现使用 Redis，测试可注入脱敏内存替身。
 pub(crate) trait StickySessionStore: Send + Sync {
+    fn get_or_insert_epoch<'a>(
+        &'a self,
+        digest: &'a str,
+        proposed: u64,
+    ) -> StickySessionStoreFuture<'a, u64>;
     /// 读取绑定并刷新其 TTL。
     fn get_and_refresh<'a>(&'a self, digest: &'a str) -> StickySessionStoreFuture<'a, Option<i64>>;
 
@@ -26,6 +31,13 @@ pub(crate) trait StickySessionStore: Send + Sync {
 }
 
 impl StickySessionStore for RedisStickySessionStore {
+    fn get_or_insert_epoch<'a>(
+        &'a self,
+        digest: &'a str,
+        proposed: u64,
+    ) -> StickySessionStoreFuture<'a, u64> {
+        Box::pin(self.get_or_insert_epoch(digest, proposed))
+    }
     fn get_and_refresh<'a>(&'a self, digest: &'a str) -> StickySessionStoreFuture<'a, Option<i64>> {
         Box::pin(self.get_and_refresh(digest))
     }

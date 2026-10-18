@@ -1,4 +1,11 @@
-use std::{fmt, sync::Arc, time::Duration};
+use std::{
+    fmt,
+    num::NonZeroUsize,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
+
+use lru::LruCache;
 
 use crate::{
     CacheError, CacheOperation, RedisConfig, RedisFailureKind,
@@ -11,6 +18,52 @@ pub const DEFAULT_STICKY_SESSION_TTL: Duration = Duration::from_secs(60 * 60);
 
 const STICKY_DIGEST_BYTES: usize = 64;
 const MAX_CHANNEL_ID_BYTES: usize = 19;
+const SESSION_EPOCH_SCRIPT: &str = r#"
+local value = redis.call('GET', KEYS[1])
+if not value then
+    value = ARGV[1]
+    redis.call('SET', KEYS[1], value, 'PX', ARGV[2])
+elseif string.len(value) == 0 or string.len(value) > 19 or string.find(value, '%D') then
+    return ''
+else
+    redis.call('PEXPIRE', KEYS[1], ARGV[2])
+end
+return value
+"#;
+
+/// 无 Redis 的单实例会话创建时间表；有界 LRU，不保存提示词或凭据。
+pub struct LocalClientSessionEpochs(Mutex<LruCache<String, (u64, Instant)>>);
+
+impl Default for LocalClientSessionEpochs {
+    fn default() -> Self {
+        Self(Mutex::new(LruCache::new(
+            NonZeroUsize::new(4096).expect("固定容量必须有效"),
+        )))
+    }
+}
+
+impl LocalClientSessionEpochs {
+    pub fn get_or_insert(&self, digest: &str, proposed: u64) -> Result<u64, CacheError> {
+        validate_digest(digest)?;
+        validate_epoch(proposed)?;
+        let now = Instant::now();
+        let mut entries = self.0.lock().map_err(|_| CacheError::LocalUnavailable)?;
+        let epoch = entries
+            .get(digest)
+            .filter(|(_, expires)| *expires > now)
+            .map_or(proposed, |(epoch, _)| *epoch);
+        entries.put(digest.to_owned(), (epoch, now + DEFAULT_STICKY_SESSION_TTL));
+        Ok(epoch)
+    }
+}
+
+fn validate_epoch(epoch: u64) -> Result<(), CacheError> {
+    if epoch == 0 || epoch > i64::MAX as u64 {
+        Err(CacheError::InvalidSessionEpoch)
+    } else {
+        Ok(())
+    }
+}
 const READ_AND_REFRESH_SCRIPT: &str = r#"
 local value = redis.call('GET', KEYS[1])
 if not value then
@@ -91,6 +144,40 @@ pub struct RedisStickySessionStore {
 }
 
 impl RedisStickySessionStore {
+    /// 与渠道绑定使用不同键；多节点竞争首次创建时原子保留同一个时间。
+    pub async fn get_or_insert_epoch(
+        &self,
+        digest: &str,
+        proposed: u64,
+    ) -> Result<u64, CacheError> {
+        validate_epoch(proposed)?;
+        let key = format!("{}.epoch", self.namespaced_key(digest)?);
+        validate_cache_key(&key)?;
+        let value: Vec<u8> = self
+            .backend
+            .query(
+                CacheOperation::StickyWrite,
+                redis::cmd("EVAL")
+                    .arg(SESSION_EPOCH_SCRIPT)
+                    .arg(1)
+                    .arg(key)
+                    .arg(proposed)
+                    .arg(validate_ttl(self.ttl)?),
+            )
+            .await?;
+        let epoch = std::str::from_utf8(&value)
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .ok_or(CacheError::redis(
+                CacheOperation::StickyWrite,
+                RedisFailureKind::Protocol,
+            ))?;
+        validate_epoch(epoch).map_err(|_| {
+            CacheError::redis(CacheOperation::StickyWrite, RedisFailureKind::Protocol)
+        })?;
+        Ok(epoch)
+    }
+
     /// 建立并验证 Redis 连接；显式配置 Redis 时连接失败必须阻止继续装配。
     pub async fn connect(config: RedisStickySessionConfig) -> Result<Self, CacheError> {
         config.validate()?;
@@ -259,6 +346,17 @@ fn parse_channel_id(value: &[u8]) -> Result<i64, CacheError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_client_epochs_reuse_first_creation_and_isolate_scopes() {
+        let store = LocalClientSessionEpochs::default();
+        let first = "a".repeat(64);
+        let other = "b".repeat(64);
+        assert_eq!(store.get_or_insert(&first, 123).unwrap(), 123);
+        assert_eq!(store.get_or_insert(&first, 456).unwrap(), 123);
+        assert_eq!(store.get_or_insert(&other, 456).unwrap(), 456);
+        assert!(store.get_or_insert(&first, 0).is_err());
+    }
 
     #[test]
     fn sticky_boundaries_reject_untrusted_digest_and_channel_values() {

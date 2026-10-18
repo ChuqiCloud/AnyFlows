@@ -69,6 +69,7 @@ mod audio;
 mod compact;
 mod embedding;
 mod image;
+mod opencode;
 mod rerank;
 mod smart_route;
 mod speech;
@@ -142,6 +143,7 @@ pub(crate) struct ScheduledChatService {
     credential_states: CredentialStateRepository,
     responses_websocket: std::sync::Arc<ResponsesWebSocketRuntime>,
     sticky_sessions: Option<Arc<dyn StickySessionStore>>,
+    client_session_epochs: Arc<af_cache::LocalClientSessionEpochs>,
     sticky_wait_policy: StickyWaitPolicy,
     concurrency: Option<ConcurrencyRuntime>,
     health: Option<Arc<dyn SchedulerHealthStore>>,
@@ -170,6 +172,7 @@ impl ScheduledChatService {
             credential_states,
             responses_websocket: std::sync::Arc::new(ResponsesWebSocketRuntime::default()),
             sticky_sessions: None,
+            client_session_epochs: Arc::new(af_cache::LocalClientSessionEpochs::default()),
             sticky_wait_policy: StickyWaitPolicy::default(),
             concurrency: None,
             health: None,
@@ -248,7 +251,7 @@ impl ScheduledChatService {
         self
     }
 
-    fn build_plan(
+    async fn build_plan(
         &self,
         prepared_route: PreparedExecutionRoute,
         request: CanonicalRequestEnvelope,
@@ -280,11 +283,25 @@ impl ScheduledChatService {
         let mut attempt_targets = Vec::with_capacity(relay_candidates.capacity());
         let mut auto_ban_targets = Vec::with_capacity(relay_candidates.capacity());
         let mut route_channel_ids = Vec::with_capacity(relay_candidates.capacity());
+        let compatibility_channel = route
+            .candidates()
+            .iter()
+            .map(|candidate| candidate.runtime_target())
+            .find(|target| target_matches_protocol(target, upstream_protocol))
+            .filter(|target| target.opencode_full_compatibility())
+            .map(|target| target.channel_id());
+        let mut tool_plan = None;
         let mut health_filtered = false;
         'channels: for candidate in route.candidates() {
             let target = candidate.runtime_target();
             let wait_plan = candidate.wait_plan();
             if !target_matches_protocol(target, upstream_protocol) {
+                continue;
+            }
+            // 兼容续答只在当前渠道内选择凭据，不跨渠道转入付费路径。
+            if compatibility_channel.is_some_and(|id| id != target.channel_id())
+                || (compatibility_channel.is_none() && target.opencode_full_compatibility())
+            {
                 continue;
             }
             let upstream_model = target
@@ -293,6 +310,19 @@ impl ScheduledChatService {
                 .to_owned();
             let candidate_request =
                 candidate_request(target, &request, &requested_model, &upstream_model)?;
+            let candidate_request = if compatibility_channel.is_some() {
+                if tool_plan.is_none() {
+                    tool_plan = Some(opencode::prepare_plan(
+                        target,
+                        request.clone(),
+                        &upstream_model,
+                    )?);
+                }
+                // 最终模型、采样覆盖和工具已进入冻结计划，禁止发送时再次改写正文。
+                None
+            } else {
+                candidate_request
+            };
             let adaptor = get_adaptor(
                 target.channel_type(),
                 adaptor_settings(target, upstream_model)?,
@@ -331,6 +361,23 @@ impl ScheduledChatService {
             let order_scope = client_scope
                 .as_ref()
                 .map_or(request_id, StableSessionScope::as_str);
+            let client_epoch = if target.channel_type() == ChannelType::OpenCode {
+                use sha2::{Digest as _, Sha256};
+                let digest = format!("{:x}", Sha256::digest(order_scope.as_bytes()));
+                let proposed = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .ok()
+                    .and_then(|elapsed| u64::try_from(elapsed.as_millis()).ok())
+                    .ok_or(AfError::Internal)?;
+                let epoch = match self.sticky_sessions.as_ref() {
+                    Some(store) => store.get_or_insert_epoch(&digest, proposed).await,
+                    None => self.client_session_epochs.get_or_insert(&digest, proposed),
+                }
+                .map_err(|_| AfError::Internal)?;
+                Some(epoch)
+            } else {
+                None
+            };
             let ordered_credentials = match (wait_plan.kind(), account_loads, credential_health) {
                 (RouteWaitKind::Fallback, Some(loads), health) if client_scope.is_some() => {
                     order_credentials_by_load_with_session_affinity(
@@ -386,8 +433,14 @@ impl ScheduledChatService {
                     None
                 };
                 let mut context = RelayContext::new(client)
+                    .with_response_protocol(response_protocol)
                     .with_credential_scope(secret_owner_id.get())
                     .map_err(|_| AfError::Internal)?;
+                if let Some(epoch) = client_epoch {
+                    context = context
+                        .with_client_session_epoch_millis(epoch)
+                        .map_err(|_| AfError::Internal)?;
+                }
                 if let Some(base_url) = target.base_url() {
                     context = context
                         .with_base_url(base_url)
@@ -484,6 +537,7 @@ impl ScheduledChatService {
         Ok(ScheduledChatExecution {
             target_group_id,
             pricing_model: routed_model,
+            tool_plan,
             machine,
             attempt_targets,
             auto_ban_targets,
@@ -993,6 +1047,12 @@ impl ScheduledChatService {
                 }
                 None => request,
             };
+            let compatibility_metadata = route
+                .candidates()
+                .iter()
+                .map(|candidate| candidate.runtime_target())
+                .find(|target| target_matches_protocol(target, upstream_protocol))
+                .is_some_and(|target| target.opencode_full_compatibility());
             let debug_trace = match principal {
                 ModelSubject::User(user) => self.debug_trace.as_ref().and_then(|runtime| {
                     runtime.capture(
@@ -1005,6 +1065,7 @@ impl ScheduledChatService {
                         body_profile,
                         body_profile.map(|_| ClientSimulationBodyPatchResult::Applied),
                         diagnostic,
+                        compatibility_metadata,
                     )
                 }),
                 ModelSubject::ServiceAccount { .. } => None,
@@ -1034,22 +1095,24 @@ impl ScheduledChatService {
             let account_loads = self
                 .load_account_concurrency(&route, upstream_protocol, &routed_model)
                 .await?;
-            let mut plan = self.build_plan(
-                PreparedExecutionRoute {
-                    route,
-                    upstream_protocol,
-                    routed_model,
-                },
-                request,
-                response_protocol,
-                request_id,
-                session_scope,
-                PreparedConcurrencyPlan {
-                    account_loads: account_loads.as_ref(),
-                    credential_health: credential_health.as_ref(),
-                    user_permit,
-                },
-            )?;
+            let mut plan = self
+                .build_plan(
+                    PreparedExecutionRoute {
+                        route,
+                        upstream_protocol,
+                        routed_model,
+                    },
+                    request,
+                    response_protocol,
+                    request_id,
+                    session_scope,
+                    PreparedConcurrencyPlan {
+                        account_loads: account_loads.as_ref(),
+                        credential_health: credential_health.as_ref(),
+                        user_permit,
+                    },
+                )
+                .await?;
             plan.debug_trace = debug_trace;
             Ok(Box::new(plan) as Box<dyn PlannedChatExecution>)
         })
@@ -1125,6 +1188,7 @@ struct ScheduledChatExecution {
     target_group_id: GroupId,
     pricing_model: String,
     machine: RelayStateMachine,
+    tool_plan: Option<af_relay::ToolConversationPlan>,
     attempt_targets: Vec<CredentialAttemptTarget>,
     auto_ban_targets: Vec<ChannelAutoBanAttemptTarget>,
     route_channel_ids: Vec<Option<af_domain::RouteChannelId>>,
@@ -1156,10 +1220,21 @@ impl PlannedChatExecution for ScheduledChatExecution {
         &self.request
     }
 
+    fn usage_upper_bound(&self) -> Result<af_protocol::Usage, af_relay::UsageResolutionError> {
+        match &self.tool_plan {
+            Some(plan) => Ok(plan.upper_bound()),
+            None => af_relay::estimate_openai_request_upper_bound(self.request.canonical()),
+        }
+    }
+
     fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {
+        if self.tool_plan.is_some() {
+            return Box::pin(opencode::execute(*self));
+        }
         let Self {
             target_group_id: _,
             pricing_model: _,
+            tool_plan: _,
             machine,
             attempt_targets,
             auto_ban_targets,
@@ -1953,6 +2028,78 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn opencode_production_plan_freezes_tools_and_precharge_only_when_enabled() {
+        for enabled in [false, true] {
+            let credential = SchedulerRuntimeCredentialRecord::new(
+                CREDENTIAL_ID,
+                CredentialKind::ApiKey,
+                valid_envelope(),
+                false,
+            )
+            .unwrap();
+            let target = SchedulerRuntimeTargetRecord::new_pool_with_request_policy(
+                ChannelId::new(CHANNEL_ID).unwrap(),
+                ChannelType::OpenCode,
+                Protocol::OpenAiChat,
+                None,
+                vec![credential],
+                ChannelModelMappings::parse(&json!({"gpt-scheduled":"mimo-v2.6-flash-free"}))
+                    .unwrap(),
+                ChannelParameterOverrides::parse(&json!({"max_output_tokens":64})).unwrap(),
+                Vec::new(),
+            )
+            .unwrap()
+            .with_opencode_full_compatibility(enabled)
+            .unwrap();
+            let source = ChannelIndexSourceRecord::with_runtime_target(
+                GroupId::new(7).unwrap(),
+                "gpt-scheduled",
+                10,
+                0,
+                Arc::new(target),
+            )
+            .unwrap();
+            let service = service(vec![source]).await;
+            let route = service
+                .scheduler
+                .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+                .unwrap()
+                .unwrap();
+            let request = valid_request_for_model("gpt-scheduled")
+                .with_default_max_output_tokens(af_protocol::TokenCount::new(128).unwrap());
+            let original =
+                af_relay::estimate_openai_request_upper_bound(request.canonical()).unwrap();
+            let execution = service
+                .build_plan(
+                    prepared_execution_route(route, Protocol::OpenAiChat),
+                    request,
+                    Protocol::OpenAiResponses,
+                    "request-opencode-production",
+                    None,
+                    PreparedConcurrencyPlan::disabled(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(execution.tool_plan.is_some(), enabled);
+            assert_eq!(execution.attempt_targets.len(), 1);
+            assert_eq!(
+                execution.canonical_request().requested_model(),
+                "gpt-scheduled"
+            );
+            let reserved = execution.usage_upper_bound().unwrap();
+            if let Some(plan) = &execution.tool_plan {
+                assert_eq!(reserved, plan.upper_bound());
+                assert_eq!(reserved.output_tokens().get(), 64);
+                assert!(reserved.input_tokens() > original.input_tokens());
+                assert_eq!(plan.request().canonical().model, "mimo-v2.6-flash-free");
+                assert!(!plan.request().canonical().tools.is_empty());
+            } else {
+                assert_eq!(reserved, original);
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn plan_expands_multiple_credentials_inside_one_channel_candidate() {
         let credentials = vec![
             SchedulerRuntimeCredentialRecord::with_scheduling(
@@ -1990,6 +2137,7 @@ mod tests {
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
+            .await
             .unwrap();
 
         assert_eq!(execution.attempt_targets.len(), 2);
@@ -2061,6 +2209,7 @@ mod tests {
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
+            .await
             .unwrap();
 
         assert_eq!(execution.attempt_targets.len(), 1);
@@ -2094,6 +2243,7 @@ mod tests {
                     None,
                     PreparedConcurrencyPlan::disabled(),
                 )
+                .await
                 .unwrap();
 
             assert_eq!(execution.attempt_targets.len(), 1);
@@ -2124,6 +2274,7 @@ mod tests {
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
+            .await
             .unwrap();
 
         assert_eq!(execution.response_protocol, Protocol::Anthropic);
@@ -2236,6 +2387,7 @@ mod tests {
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
+            .await
             .unwrap();
 
         assert_eq!(execution.response_protocol, Protocol::Anthropic);
@@ -2264,6 +2416,7 @@ mod tests {
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
+            .await
             .unwrap();
         assert_eq!(execution.response_protocol, Protocol::Gemini);
         assert_eq!(execution.upstream_protocol, Protocol::Gemini);
@@ -2284,6 +2437,7 @@ mod tests {
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
+            .await
             .unwrap();
         assert_eq!(execution.response_protocol, Protocol::Gemini);
         assert_eq!(execution.upstream_protocol, Protocol::OpenAiChat);
@@ -2351,6 +2505,7 @@ mod tests {
                         None,
                         PreparedConcurrencyPlan::disabled(),
                     )
+                    .await
                     .unwrap();
                 assert_eq!(execution.response_protocol, client);
                 assert_eq!(execution.upstream_protocol, protocol);

@@ -45,6 +45,21 @@ impl DatabaseAdminClientProfileService {
             .set_opencode_entry(channel, version, entry)
             .await?)
     }
+    pub async fn set_opencode_settings(
+        &self,
+        principal: SessionPrincipal,
+        channel: ChannelId,
+        version: &str,
+        entry: af_domain::OpenCodeEntry,
+        full_compatibility: Option<bool>,
+    ) -> Result<ClientProfileOpenCodeSettings, AdminClientProfileError> {
+        require_admin(principal)?;
+        Ok(self
+            .repository
+            .set_opencode_settings(channel, version, entry, full_compatibility)
+            .await?)
+    }
+
     pub const fn new(repository: ClientProfileRepository) -> Self {
         Self { repository }
     }

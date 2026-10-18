@@ -88,6 +88,8 @@ pub(crate) struct ClientProfileOpenCodeEntryRequest {
     #[schema(max_length = 128)]
     version: String,
     entry: ClientProfileOpenCodeEntrySchema,
+    #[serde(default)]
+    full_compatibility: Option<bool>,
 }
 #[derive(Clone, Copy, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -106,6 +108,7 @@ impl From<ClientProfileOpenCodeEntrySchema> for af_domain::OpenCodeEntry {
 #[derive(ToSchema)]
 pub(crate) struct ClientProfileOpenCodeSettingsSchema {
     entry: ClientProfileOpenCodeEntrySchema,
+    full_compatibility: bool,
     version: String,
 }
 
@@ -322,11 +325,12 @@ async fn set_opencode_settings(
     Ok(no_store_json(
         state
             .service
-            .set_opencode_entry(
+            .set_opencode_settings(
                 auth.principal(),
                 ChannelId::new(id).map_err(|_| ManagementError::InvalidRequest)?,
                 &request.version,
                 request.entry.into(),
+                request.full_compatibility,
             )
             .await
             .map_err(map_error)?,

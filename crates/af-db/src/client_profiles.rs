@@ -101,6 +101,7 @@ pub struct ClientProfileWrite {
 #[derive(Clone, Debug, Serialize)]
 pub struct ClientProfileOpenCodeSettings {
     pub entry: af_domain::OpenCodeEntry,
+    pub full_compatibility: bool,
     pub version: String,
 }
 
@@ -555,6 +556,17 @@ impl ClientProfileRepository {
         version: &str,
         entry: af_domain::OpenCodeEntry,
     ) -> Result<ClientProfileOpenCodeSettings, Error> {
+        self.set_opencode_settings(channel, version, entry, None)
+            .await
+    }
+
+    pub async fn set_opencode_settings(
+        &self,
+        channel: ChannelId,
+        version: &str,
+        entry: af_domain::OpenCodeEntry,
+        full_compatibility: Option<bool>,
+    ) -> Result<ClientProfileOpenCodeSettings, Error> {
         if version.is_empty() || version.len() > 128 {
             return Err(Error::InvalidInput);
         }
@@ -575,6 +587,12 @@ impl ClientProfileRepository {
             settings.as_object_mut().ok_or(Error::Invariant)?.insert(
                 "opencode_entry".to_owned(),
                 serde_json::to_value(entry).map_err(|_| Error::Invariant)?,
+            );
+            settings.as_object_mut().ok_or(Error::Invariant)?.insert(
+                "opencode_full_compatibility".to_owned(),
+                full_compatibility
+                    .unwrap_or(current.full_compatibility)
+                    .into(),
             );
             // 独立随机版本防止低精度数据库时间戳下的快速切换和 ABA 更新。
             let mut nonce = [0_u8; 16];
@@ -710,6 +728,11 @@ fn opencode_settings_record(row: &channels::Model) -> Result<ClientProfileOpenCo
         .and_then(serde_json::Value::as_str)
         .unwrap_or("0");
     Ok(ClientProfileOpenCodeSettings {
+        full_compatibility: crate::channel_opencode_full_compatibility(
+            ChannelType::OpenCode,
+            &settings,
+        )
+        .map_err(|_| Error::Invariant)?,
         entry,
         version: format!("{}:{revision}", row.updated_at),
     })

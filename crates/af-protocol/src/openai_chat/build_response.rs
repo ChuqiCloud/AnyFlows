@@ -141,7 +141,7 @@ fn build_choice(
         return Err(BuildResponseError::UnsupportedFeature);
     }
 
-    let (content, tool_calls) = build_message_content(choice, state)?;
+    let (content, tool_calls, reasoning) = build_message_content(choice, state)?;
     let has_tool_calls = !tool_calls.is_empty();
     if has_tool_calls != (choice.finish_reason == FinishReason::ToolCalls) {
         return Err(BuildResponseError::InvalidValue);
@@ -153,6 +153,9 @@ fn build_choice(
     ]);
     if has_tool_calls {
         message.insert("tool_calls".to_owned(), Value::Array(tool_calls));
+    }
+    if let Some(reasoning) = reasoning {
+        message.insert("reasoning_content".to_owned(), Value::String(reasoning));
     }
 
     Ok(object_value([
@@ -168,12 +171,27 @@ fn build_choice(
 fn build_message_content(
     choice: &ResponseChoice,
     state: &mut ResponseBuildState,
-) -> Result<(Value, Vec<Value>), BuildResponseError> {
+) -> Result<(Value, Vec<Value>, Option<String>), BuildResponseError> {
     let mut text = None;
+    let mut reasoning = None;
     let mut tool_calls = Vec::new();
     let mut seen_call_ids = HashSet::new();
     for block in &choice.message.content {
         match block {
+            ContentBlock::Thinking {
+                text: thinking,
+                signature,
+            } => {
+                if signature.is_some()
+                    || reasoning.is_some()
+                    || text.is_some()
+                    || !tool_calls.is_empty()
+                {
+                    return Err(BuildResponseError::UnsupportedFeature);
+                }
+                state.add_text(thinking)?;
+                reasoning = Some(thinking.clone());
+            }
             ContentBlock::Text(value) => {
                 if text.is_some() || !tool_calls.is_empty() {
                     return Err(BuildResponseError::UnsupportedFeature);
@@ -198,14 +216,13 @@ fn build_message_content(
             ContentBlock::Image { .. }
             | ContentBlock::Audio { .. }
             | ContentBlock::ToolResult { .. }
-            | ContentBlock::Thinking { .. }
             | ContentBlock::CacheControl(_)
             | ContentBlock::Compaction(_) => {
                 return Err(BuildResponseError::UnsupportedFeature);
             }
         }
     }
-    Ok((text.unwrap_or(Value::Null), tool_calls))
+    Ok((text.unwrap_or(Value::Null), tool_calls, reasoning))
 }
 
 fn build_tool_call(

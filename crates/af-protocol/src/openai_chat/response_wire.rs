@@ -80,7 +80,7 @@ pub(super) struct ResponseMessageWire {
     /// 文本内容；工具调用响应通常为 `null`。
     #[serde(default)]
     pub(super) content: Option<String>,
-    /// NewAPI 返回的非流式推理文本；当前 Canonical Chat 响应不单独暴露该字段。
+    /// 兼容服务返回的非流式推理文本。
     #[serde(default)]
     pub(super) reasoning_content: Option<String>,
     /// 部分 NewAPI 版本使用的推理文本别名。

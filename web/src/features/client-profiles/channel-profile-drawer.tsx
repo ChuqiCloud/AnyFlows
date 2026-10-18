@@ -7,7 +7,7 @@ import { bindProfile, clientProfilesKey, setOpenCodeEntry, useChannelProfile, us
 import { compatibleProfile } from './client-profile-policy'
 import { isProfileAccessError, useCursorPage, useProfileSearch } from './client-profile-model'
 import { ProfileError, ProfileField, ProfileLoading, ProfileMark, ProfilePagination } from './client-profile-page'
-import { ProfileButton, ProfileDrawer, ProfileInput, ProfileSelect } from './client-profile-ui'
+import { ProfileButton, ProfileDrawer, ProfileInput, ProfileSelect, ProfileSwitch } from './client-profile-ui'
 
 export function ChannelProfileDrawer({ channel, onClose }: { channel: AdminChannel; onClose: () => void }) {
   const { t } = useTranslation()
@@ -27,6 +27,7 @@ function ChannelProfileForm({ channel, binding, settings, readError, retry, onCl
   const [profileKey, setProfileKey] = useState('')
   const [entryBase, setEntryBase] = useState(() => settings)
   const [entry, setEntry] = useState(() => settings?.entry ?? 'inference_v1')
+  const [fullCompatibility, setFullCompatibility] = useState(() => settings?.full_compatibility ?? false)
   const [saved, setSaved] = useState(false)
   const search = useProfileSearch()
   const page = useCursorPage<string>(search.debounced)
@@ -35,10 +36,10 @@ function ChannelProfileForm({ channel, binding, settings, readError, retry, onCl
   const profiles = useProfiles({ enabled: true, channel_type: channel.type, protocol: channel.protocol, search: search.debounced || undefined }, page.cursor)
   const revisions = useProfileRevisions(profileKey, revisionsPage.cursor, !!profileKey)
   const save = useMutation({ mutationFn: () => bindProfile(channel.id, selection!, base?.version ?? 0), onSuccess: async result => { setBase(result); setSelection(undefined); setSaved(true); await cache.invalidateQueries({ queryKey: clientProfilesKey }); currentBinding.current?.focus() } })
-  const saveEntry = useMutation({ mutationFn: () => setOpenCodeEntry(channel.id, entryBase!.version, entry), onSuccess: async result => { setEntryBase(result); setEntry(result.entry); setSaved(true); await cache.invalidateQueries({ queryKey: adminChannelsQueryKey }) } })
+  const saveEntry = useMutation({ mutationFn: () => setOpenCodeEntry(channel.id, entryBase!.version, entry, fullCompatibility), onSuccess: async result => { setEntryBase(result); setEntry(result.entry); setFullCompatibility(result.full_compatibility); setSaved(true); await cache.invalidateQueries({ queryKey: adminChannelsQueryKey }) } })
   const busy = save.isPending || saveEntry.isPending
   const bindingDirty = !!selection && (selection.key !== base?.binding.key || selection.revision !== base?.binding.revision)
-  const entryDirty = !!entryBase && entry !== entryBase.entry
+  const entryDirty = !!entryBase && (entry !== entryBase.entry || fullCompatibility !== entryBase.full_compatibility)
   return <ProfileDrawer title={`${t('clientProfiles.channelSettings')} · ${channel.name}`} dirty={bindingDirty || entryDirty} busy={busy} onClose={onClose}>
     {!!readError && <ProfileError error={readError} retry={retry} />}
     <p className="cp-hint">{t('clientProfiles.channelHint')}</p>
@@ -55,7 +56,7 @@ function ChannelProfileForm({ channel, binding, settings, readError, retry, onCl
     </>}</section>}
     {selection && <div className="cp-version"><strong>{t('clientProfiles.pendingBinding')}</strong><p>{base ? `${base.binding.key} · r${base.binding.revision}` : t('clientProfiles.unbound')} → {selection.key} · r{selection.revision}</p><p className="cp-hint">{t('clientProfiles.bindingWarning')}</p><ProfileButton primary disabled={busy || !bindingDirty} onClick={() => save.mutate()}>{t(busy ? 'clientProfiles.saving' : 'clientProfiles.applyBinding')}</ProfileButton></div>}
     {save.isError && <ProfileError error={save.error} />}
-    {entryBase && <section className="cp-section"><h3>OpenCode</h3><p className="cp-hint">{t('clientProfiles.openCodeHint')}</p>{capabilities.isError ? <ProfileError error={capabilities.error} retry={() => void capabilities.refetch()} /> : <ProfileSelect label={t('clientProfiles.entry')} value={entry} disabled={busy || !capabilities.data} options={(capabilities.data?.opencode_entries ?? []).map(value => ({ value, label: value === 'inference_v1' ? 'Inference v1' : 'Zen v1' }))} onChange={value => { setEntry(value as typeof entry); saveEntry.reset(); setSaved(false) }} />}<ProfileButton disabled={busy || !entryDirty} onClick={() => saveEntry.mutate()}>{t('clientProfiles.saveEntry')}</ProfileButton>{saveEntry.isError && <ProfileError error={saveEntry.error} />}</section>}
+    {entryBase && <section className="cp-section"><h3>OpenCode</h3><p className="cp-hint">{t('clientProfiles.openCodeHint')}</p>{capabilities.isError ? <ProfileError error={capabilities.error} retry={() => void capabilities.refetch()} /> : <ProfileSelect label={t('clientProfiles.entry')} value={entry} disabled={busy || !capabilities.data} options={(capabilities.data?.opencode_entries ?? []).map(value => ({ value, label: value === 'inference_v1' ? 'Inference v1' : 'Zen v1' }))} onChange={value => { setEntry(value as typeof entry); saveEntry.reset(); setSaved(false) }} />}<ProfileSwitch label={t('clientProfiles.fullCompatibility')} checked={fullCompatibility} disabled={busy} onChange={value => { setFullCompatibility(value); saveEntry.reset(); setSaved(false) }} /><p className="cp-hint">{t('clientProfiles.fullCompatibilityHint')}</p><ProfileButton disabled={busy || !entryDirty} onClick={() => saveEntry.mutate()}>{t('clientProfiles.saveEntry')}</ProfileButton>{saveEntry.isError && <ProfileError error={saveEntry.error} />}</section>}
     {saved && <p className="cp-success" role="status">{t('clientProfiles.saved')}</p>}
   </ProfileDrawer>
 }

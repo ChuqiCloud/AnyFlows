@@ -187,6 +187,7 @@ pub struct ChannelProbeTargetRecord {
     proxy_required: bool,
     client_profile: Option<af_domain::ClientProfileSnapshot>,
     opencode_entry: Option<af_domain::OpenCodeEntry>,
+    opencode_full_compatibility: bool,
     revision: ChannelProbeTargetRevision,
     responses_compact_mode: ResponsesCompactMode,
     responses_compact_model: Option<String>,
@@ -213,6 +214,10 @@ impl ChannelProbeTargetRecord {
     pub fn client_profile(&self) -> Option<&af_domain::ClientProfileSnapshot> {
         self.client_profile.as_ref()
     }
+    pub fn opencode_full_compatibility(&self) -> bool {
+        self.opencode_full_compatibility
+    }
+
     pub fn opencode_entry(&self) -> Option<af_domain::OpenCodeEntry> {
         self.opencode_entry
     }
@@ -479,6 +484,9 @@ impl ChannelProbeTargetRepository {
                 crate::channel_opencode_entry(channel_type, &channel.settings.clone().into_inner())
                     .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
             let settings = channel.settings.clone().into_inner();
+            let opencode_full_compatibility =
+                crate::channel_opencode_full_compatibility(channel_type, &settings)
+                    .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
             let responses_compact_mode = responses_compact_mode(&settings)
                 .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
             validate_responses_compact_capability(channel_type, protocol, responses_compact_mode)
@@ -548,6 +556,7 @@ impl ChannelProbeTargetRepository {
                 proxy_required: credential.proxy_id.is_some(),
                 client_profile,
                 opencode_entry,
+                opencode_full_compatibility,
                 revision: ChannelProbeTargetRevision(channel.updated_at),
                 responses_compact_mode,
                 responses_compact_model,

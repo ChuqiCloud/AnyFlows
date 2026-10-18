@@ -10,6 +10,7 @@ af-adapter = { path = "../af-adapter", version = "0.3.0-beta.1" }
 af-domain = { path = "../af-domain", version = "0.3.0-beta.1" }
 af-protocol = { path = "../af-protocol", version = "0.3.0-beta.1" }
 futures-core.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tiktoken-rs.workspace = true
