@@ -10,9 +10,11 @@ mod cohere_rerank;
 mod conversation;
 mod conversation_aggregate;
 mod conversation_decoder;
+mod conversation_source;
 pub use conversation_aggregate::collect_conversation_response;
 mod diagnostic;
 mod error;
+mod frozen_candidate;
 mod gemini;
 mod gemini_request;
 mod gemini_stream;
@@ -32,6 +34,8 @@ mod openai_responses_stream;
 mod openai_speech;
 mod rerank;
 mod state_machine;
+mod tool_conversation;
+mod tool_conversation_stream;
 mod video_task;
 
 pub use anthropic::{RelayAnthropicOutcome, relay_anthropic, relay_anthropic_with_report};
@@ -98,6 +102,10 @@ pub use state_machine::{
     RelayAttemptFailure, RelayAttemptReport, RelayCandidate, RelayCandidateRequest,
     RelayClientSimulationAttempt, RelayExecutionError, RelayRequest, RelayResponse, RelayState,
     RelayStateMachine,
+};
+pub use tool_conversation::{
+    ToolConversationPlan, ToolConversationReport, ToolConversationReportHandle,
+    ToolConversationState, relay_tool_conversation,
 };
 pub use video_task::{
     VideoTaskPollOutcome, VideoTaskSubmissionCandidate, VideoTaskSubmissionDisposition,
