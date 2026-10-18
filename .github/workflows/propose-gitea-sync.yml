@@ -72,14 +72,26 @@ jobs:
             exit 1
           fi
 
-          source_pr="$(curl --fail --silent --show-error \
+          metadata="$RUNNER_TEMP/source-pr-metadata.json"
+          jq -n --arg title "同步 GitHub 公共核心变更 #$PUBLIC_PR_NUMBER" \
+            --arg url "$PUBLIC_PR_URL" '{title: $title, body: "", url: $url}' > "$metadata"
+          if source_pr="$(curl --fail --silent --show-error --connect-timeout 5 --max-time 15 \
             -H 'Accept: application/vnd.github+json' \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "$PUBLIC_PATCH_API_URL")"
-          jq -n --argjson pr "$source_pr" \
-            '{title: $pr.title, body: ($pr.body // ""), url: $pr.html_url}' \
-            > "$RUNNER_TEMP/source-pr-metadata.json"
+            "$PUBLIC_PATCH_API_URL")" &&
+            jq -e --argjson number "$PUBLIC_PR_NUMBER" '
+              select(type == "object" and .number == $number) |
+              select((.title | type == "string" and length > 0) and
+                (.body == null or (.body | type == "string")) and
+                (.html_url | type == "string" and length > 0)) |
+              {title: .title, body: (.body // ""), url: .html_url}' \
+              <<<"$source_pr" > "$metadata.tmp"; then
+            mv "$metadata.tmp" "$metadata"
+          else
+            rm -f "$metadata.tmp"
+            echo "::warning::Source GitHub PR #$PUBLIC_PR_NUMBER metadata is unavailable; using the default sync title and description."
+          fi
           echo 'has_changes=true' >> "$GITHUB_OUTPUT"
 
       - name: Check out Gitea develop
