@@ -1,10 +1,13 @@
 """Content-level regression checks for independent public/source histories."""
 
 from importlib.util import module_from_spec, spec_from_file_location
+import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 SPEC = spec_from_file_location("public_export", Path(__file__).parents[1] / "export-public-core.py")
@@ -127,6 +130,27 @@ class PublicSyncTests(unittest.TestCase):
         self.write(self.public, "LICENSE", "public license\n")
         self.commit(self.public)
         self.verify()
+
+    def test_verification_does_not_start_background_maintenance(self):
+        root = Path(self.directory.name)
+        config = root / "gitconfig"
+        trace = root / "git-trace.jsonl"
+        config.write_text(
+            "[maintenance]\n\tauto = true\n[gc]\n\tauto = 1\n\tautoDetach = true\n",
+            encoding="utf-8",
+        )
+        with patch.dict(os.environ, {
+            "GIT_CONFIG_GLOBAL": str(config),
+            "GIT_TRACE2_EVENT": str(trace),
+        }):
+            self.verify()
+        events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()]
+        children = [event.get("argv", []) for event in events if event["event"] == "child_start"]
+        self.assertTrue(children, "Git trace must capture the comparison subprocesses")
+        self.assertFalse(
+            [args for args in children if "maintenance" in args or "gc" in args],
+            "Disposable comparison repositories must not launch automatic maintenance",
+        )
 
     def test_initial_empty_repository_is_allowed(self):
         for path in (self.public / "Cargo.toml", self.public / "payment.rs", self.public / METADATA):
