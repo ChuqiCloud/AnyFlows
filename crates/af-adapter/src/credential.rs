@@ -273,7 +273,8 @@ impl Credential {
                 credential.secret_access_key.expose(),
                 credential.session_token.as_ref().map(SecretString::expose),
             )),
-            CredentialValue::ApiKey(_)
+            CredentialValue::Public
+            | CredentialValue::ApiKey(_)
             | CredentialValue::Oauth(_)
             | CredentialValue::ServiceAccount(_) => None,
         }
@@ -287,7 +288,8 @@ impl Credential {
                 credential.private_key_id.as_ref().map(SecretString::expose),
                 credential.private_key.expose(),
             )),
-            CredentialValue::ApiKey(_)
+            CredentialValue::Public
+            | CredentialValue::ApiKey(_)
             | CredentialValue::Oauth(_)
             | CredentialValue::Bedrock(_) => None,
         }
