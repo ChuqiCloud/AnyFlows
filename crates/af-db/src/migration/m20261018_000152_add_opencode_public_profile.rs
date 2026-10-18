@@ -53,9 +53,39 @@ impl MigrationTrait for Migration {
         Ok(())
     }
 
-    async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
-        Err(DbErr::Custom(
-            "公开访问凭据及冻结档案不支持自动回滚".to_owned(),
-        ))
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        let backend = manager.get_database_backend();
+        for (table, column, value) in [
+            ("credentials", "kind", "public"),
+            ("channel_client_profiles", "profile_key", "opencode-public"),
+        ] {
+            let used = Query::select()
+                .column(Alias::new(column))
+                .from(Alias::new(table))
+                .and_where(Expr::col(Alias::new(column)).eq(value))
+                .limit(1)
+                .to_owned();
+            if manager
+                .get_connection()
+                .query_one(backend.build(&used))
+                .await?
+                .is_some()
+            {
+                return Err(DbErr::Custom(
+                    "公开访问已被使用，不能回退档案迁移".to_owned(),
+                ));
+            }
+        }
+        for table in ["client_profile_revisions", "client_profiles"] {
+            let delete = Query::delete()
+                .from_table(Alias::new(table))
+                .and_where(Expr::col(Alias::new("profile_key")).eq("opencode-public"))
+                .to_owned();
+            manager
+                .get_connection()
+                .execute(backend.build(&delete))
+                .await?;
+        }
+        Ok(())
     }
 }

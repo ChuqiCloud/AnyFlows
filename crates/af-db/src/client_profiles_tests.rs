@@ -340,11 +340,11 @@ async fn opencode_entry_updates_preserve_private_settings_and_reject_stale_versi
 #[tokio::test]
 async fn migration_backfills_legacy_claude_binding_without_changing_settings() -> TestResult {
     let pool = crate::connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
-    Migrator::up(
-        pool.connection(),
-        Some((Migrator::migrations().len() - 1) as u32),
-    )
-    .await?;
+    let boundary = Migrator::migrations()
+        .iter()
+        .position(|migration| migration.name() == "m20261018_000151_create_client_profiles")
+        .expect("旧 Claude 档案迁移必须保留");
+    Migrator::up(pool.connection(), Some(u32::try_from(boundary)?)).await?;
     for (id, body) in [
         (901_i64, ""),
         (
