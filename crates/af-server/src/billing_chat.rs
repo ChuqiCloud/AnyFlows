@@ -1225,6 +1225,15 @@ mod tests {
     #[tokio::test]
     async fn execution_budget_is_reserved_once_and_combined_usage_settles_once() {
         let execution_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        // 使用可观察的每百万 token 单价，避免两份预算都舍入到最低 1 quota。
+        let prices = TokenPrices::new(
+            Decimal::ONE,
+            Decimal::from(2),
+            Decimal::ZERO,
+            Decimal::ZERO,
+            Decimal::ZERO,
+        )
+        .unwrap();
         let mut multi_round = request()
             .with_default_max_output_tokens(TokenCount::new(8192).unwrap())
             .into_canonical();
@@ -1241,7 +1250,7 @@ mod tests {
                 budget: Ok(budget),
                 executed: execution_count.clone(),
             }),
-            Arc::new(metered_snapshot_source().await),
+            Arc::new(metered_snapshot_source_with_prices(GroupId::new(3).unwrap(), prices).await),
             Some(precharge.clone()),
             Some(Arc::new(RefundStub)),
             Some(settlement.clone()),
@@ -1273,7 +1282,7 @@ mod tests {
                 target_group_id: GroupId::new(3).unwrap(),
                 pricing_model_override: None,
             }),
-            Arc::new(metered_snapshot_source().await),
+            Arc::new(metered_snapshot_source_with_prices(GroupId::new(3).unwrap(), prices).await),
             Some(ordinary_charge.clone()),
             Some(Arc::new(RefundStub)),
             Some(Arc::new(SettlementStub::default())),
@@ -1698,6 +1707,13 @@ mod tests {
             Decimal::ZERO,
         )
         .unwrap();
+        metered_snapshot_source_with_prices(target_group_id, prices).await
+    }
+
+    async fn metered_snapshot_source_with_prices(
+        target_group_id: GroupId,
+        prices: TokenPrices,
+    ) -> CachedRequestPricingSnapshotSource {
         let model_prices = ModelPriceCache::load(Arc::new(StaticModelPriceSource {
             records: vec![
                 ModelPriceSourceRecord::new(
