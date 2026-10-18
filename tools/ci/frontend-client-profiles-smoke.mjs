@@ -153,6 +153,8 @@ try {
 
   await page.getByRole('button', { name: '打开测试渠道', exact: true }).click()
   const drawer = page.locator('.cp-drawer-body')
+  await drawer.locator('.cp-row').first().waitFor()
+  assert.ok(await drawer.locator('.cp-table').evaluate(element => element.getBoundingClientRect().height >= element.querySelectorAll('.cp-row').length * 32), 'The drawer must not collapse a populated profile list')
   await drawer.getByRole('button', { name: '选择', exact: true }).first().click()
   const oldRevision = drawer.locator('.cp-version').filter({ hasText: 'r1 · OpenCode Custom' })
   await oldRevision.waitFor()
