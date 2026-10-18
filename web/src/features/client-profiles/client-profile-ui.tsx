@@ -1,3 +1,4 @@
+import { Switch } from '@/components/ui/switch'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -34,4 +35,8 @@ export function ProfileDrawer({ title, dirty, busy, children, onClose }: Profile
       <div className="cp-drawer-body">{children}</div>
     </SheetContent>
   </Sheet>
+}
+
+export function ProfileSwitch({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled?: boolean; onChange: (value: boolean) => void }) {
+  return <label className="cp-heading"><span>{label}</span><Switch aria-label={label} checked={checked} disabled={disabled} onCheckedChange={onChange} /></label>
 }

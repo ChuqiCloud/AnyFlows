@@ -32,9 +32,11 @@ mod openai_responses_compact;
 mod openai_responses_request;
 mod openai_responses_stream;
 mod openai_speech;
+mod opencode_tools;
 mod rerank;
 mod state_machine;
 mod tool_conversation;
+pub use opencode_tools::opencode_compatibility_tools;
 mod tool_conversation_stream;
 mod video_task;
 

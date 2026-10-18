@@ -146,6 +146,17 @@ impl CanonicalRequestEnvelope {
             .unwrap_or(&self.canonical.model)
     }
 
+    /// 冻结已校验的渠道模型与采样策略，并保留下游模型别名。
+    /// 修改后永久丢弃源字节直通资格。
+    #[must_use]
+    pub fn with_routed_parameters(mut self, model: String, sampling: Sampling) -> Self {
+        self.requested_model = Some(self.requested_model().to_owned());
+        self.canonical.model = model;
+        self.canonical.sampling = sampling;
+        self.source = None;
+        self
+    }
+
     /// 消费信封并仅保留 Canonical 请求，同时永久丢弃原始正文。
     #[must_use]
     pub fn into_canonical(self) -> CanonicalRequest {

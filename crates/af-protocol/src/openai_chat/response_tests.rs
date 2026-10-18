@@ -118,7 +118,8 @@ fn parses_newapi_non_streaming_metadata_and_reasoning_fields() {
     let parsed = parse_json(response).expect("NewAPI 扩展字段不应破坏非流式响应解析");
     assert!(matches!(
         parsed.choices[0].message.content.as_slice(),
-        [ContentBlock::Text(text)] if text == "answer"
+        [ContentBlock::Thinking { text: thinking, signature: None }, ContentBlock::Text(text)]
+            if thinking == "think" && text == "answer"
     ));
 }
 

@@ -595,6 +595,21 @@ async fn verify_sticky_session_contract(redis_url: &str, namespace: &str) {
     let first = RedisStickySessionStore::connect(config()).await.unwrap();
     let second = RedisStickySessionStore::connect(config()).await.unwrap();
 
+    let (first_epoch, second_epoch) = tokio::join!(
+        first.get_or_insert_epoch(&digest, 1_800_000_000_001),
+        second.get_or_insert_epoch(&digest, 1_800_000_000_002),
+    );
+    let epoch = first_epoch.unwrap();
+    assert_eq!(epoch, second_epoch.unwrap());
+    assert_eq!(
+        first
+            .get_or_insert_epoch(&digest, 1_800_000_000_003)
+            .await
+            .unwrap(),
+        epoch
+    );
+    assert!(second.get_or_insert_epoch(&digest, 0).await.is_err());
+
     assert_eq!(first.get_and_refresh(&digest).await.unwrap(), None);
     first.bind(&digest, 41).await.unwrap();
     assert_eq!(second.get_and_refresh(&digest).await.unwrap(), Some(41));
@@ -607,6 +622,13 @@ async fn verify_sticky_session_contract(redis_url: &str, namespace: &str) {
     assert!(second.refresh_if_channel(&digest, 43).await.unwrap());
     assert!(first.delete_if_channel(&digest, 43).await.unwrap());
     assert_eq!(second.get_and_refresh(&digest).await.unwrap(), None);
+    assert_eq!(
+        second
+            .get_or_insert_epoch(&digest, 1_800_000_000_004)
+            .await
+            .unwrap(),
+        epoch
+    );
 }
 
 async fn verify_concurrency_contract(redis_url: &str, namespace: &str) {

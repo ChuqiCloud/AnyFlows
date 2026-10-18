@@ -56,7 +56,10 @@ pub use rate_limit::{
     RedisRequestRateLimitStore, RequestRateLimitOutcome, RequestRateLimitRejection,
     RequestRateLimitRule, RequestRateLimitSubject,
 };
-pub use sticky::{DEFAULT_STICKY_SESSION_TTL, RedisStickySessionConfig, RedisStickySessionStore};
+pub use sticky::{
+    DEFAULT_STICKY_SESSION_TTL, LocalClientSessionEpochs, RedisStickySessionConfig,
+    RedisStickySessionStore,
+};
 
 /// 缓存统一存储字节，由调用方负责稳定的编码版本。
 pub type CacheValue = Arc<[u8]>;

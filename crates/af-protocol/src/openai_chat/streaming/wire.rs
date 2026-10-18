@@ -54,6 +54,9 @@ pub(super) struct StreamDeltaWire {
     pub(super) reasoning_content: Option<String>,
     #[serde(default)]
     pub(super) reasoning: Option<String>,
+    /// 兼容网关的明文推理增量；签名、加密等专有内容由 decoder 明确拒绝。
+    #[serde(default)]
+    pub(super) reasoning_details: Option<Vec<Value>>,
     #[serde(default)]
     pub(super) tool_calls: Option<Vec<StreamToolCallWire>>,
     #[serde(default)]

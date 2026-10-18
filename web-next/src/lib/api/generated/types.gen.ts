@@ -1489,10 +1489,12 @@ export type ClientProfileEnabledRequest = {
 export type ClientProfileOpenCodeEntryRequest = {
     version: string;
     entry: ClientProfileOpenCodeEntrySchema;
+    full_compatibility?: boolean | null;
 };
 export type ClientProfileOpenCodeEntrySchema = 'inference_v1' | 'zen_v1';
 export type ClientProfileOpenCodeSettingsSchema = {
     entry: ClientProfileOpenCodeEntrySchema;
+    full_compatibility: boolean;
     version: string;
 };
 export type ClientProfilePageSchema = {

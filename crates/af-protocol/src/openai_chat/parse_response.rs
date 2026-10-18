@@ -288,7 +288,6 @@ fn convert_message(
     message: ResponseMessageWire,
     state: &mut ResponseConvertState,
 ) -> Result<Message, ParseResponseError> {
-    let _ = (&message.reasoning_content, &message.reasoning);
     if !matches!(message.role, AssistantRoleWire::Assistant) {
         return Err(ParseResponseError::InvalidValue);
     }
@@ -304,6 +303,16 @@ fn convert_message(
     }
 
     let mut content = Vec::new();
+    if message.reasoning_content.is_some() && message.reasoning.is_some() {
+        return Err(ParseResponseError::InvalidValue);
+    }
+    if let Some(text) = message.reasoning_content.or(message.reasoning) {
+        state.add_text(&text)?;
+        content.push(ContentBlock::Thinking {
+            text,
+            signature: None,
+        });
+    }
     if let Some(text) = message.content {
         state.add_text(&text)?;
         content.push(ContentBlock::Text(text));

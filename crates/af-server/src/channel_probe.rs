@@ -133,6 +133,56 @@ impl DatabaseChannelProbe {
             .map_err(|_| ProbeFailure::RequestBuild)?;
         }
 
+        if target.opencode_full_compatibility() {
+            // 探测用本次受信 request_id，不能把非摘要字符串写入会话作用域。
+            let mut candidate = af_relay::RelayCandidate::new(adaptor, context, credential)
+                .with_header_overrides(headers);
+            if let Some(profile) = target.client_profile() {
+                candidate = candidate.with_client_profile(profile.clone());
+            }
+            let machine = af_relay::RelayStateMachine::new(vec![candidate])
+                .map_err(|_| ProbeFailure::RequestBuild)?;
+            let mut request = CanonicalRequest::new(
+                probe_operation(target.protocol())?,
+                target.model().to_owned(),
+                vec![Message::new(
+                    Role::User,
+                    vec![ContentBlock::Text(
+                        "Reply with OK. Do not call tools.".to_owned(),
+                    )],
+                )],
+                false,
+            );
+            request.tool_choice = ToolChoice::None;
+            request.sampling = Sampling::new(
+                None,
+                None,
+                Some(TokenCount::new(256).expect("固定探活预算必须有效")),
+                Vec::new(),
+            )
+            .map_err(|_| ProbeFailure::RequestBuild)?;
+            let plan = af_relay::ToolConversationPlan::prepare(
+                request.into(),
+                target.protocol(),
+                af_relay::opencode_compatibility_tools(
+                    target.opencode_entry().ok_or(ProbeFailure::RequestBuild)?,
+                    target.model(),
+                ),
+                TokenCount::new(4096).expect("固定探活余量必须有效"),
+                timeout.min(Duration::from_secs(600)),
+            )
+            .map_err(|_| ProbeFailure::RequestBuild)?;
+            // 此处无调度器和生产反馈写入，使用与生产相同的适配、工具及解码实现。
+            let (result, _) = af_relay::relay_tool_conversation(
+                &machine,
+                plan,
+                target.protocol(),
+                "opencode-probe",
+            )
+            .await;
+            return result.map(|_| ()).map_err(|_| ProbeFailure::ResponseRead);
+        }
+
         let request = UpstreamRequest::new(
             Method::POST,
             adaptor
