@@ -503,7 +503,11 @@ async fn native_messages_sse_preserves_thinking_and_signature_in_both_response_m
             ChatResponse::Stream { mut body, usage } => {
                 let mut decoder = ConversationDecoder::new(Protocol::Anthropic).unwrap();
                 let mut events = Vec::new();
-                while let Some(chunk) = body.next_chunk().await {
+                while let Some(chunk) = std::future::poll_fn(|context| {
+                    futures_core::Stream::poll_next(std::pin::Pin::new(body.as_mut()), context)
+                })
+                .await
+                {
                     events.extend(decoder.push(&chunk.unwrap()).unwrap());
                 }
                 events.extend(decoder.finish().unwrap());
