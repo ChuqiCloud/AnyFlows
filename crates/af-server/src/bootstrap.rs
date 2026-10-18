@@ -2620,6 +2620,14 @@ impl Bootstrap<Supervised> {
             .merge(af_http::build_runtime_status_router(
                 self.stage.runtime_monitor.clone(),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+            .merge(af_http::build_client_profile_router(
+                Arc::new(af_admin::DatabaseAdminClientProfileService::new(
+                    af_db::ClientProfileRepository::new(
+                        self.stage.infrastructure.infrastructure.database.clone(),
+                    ),
+                )),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
             ));
         let Bootstrap {
             config,

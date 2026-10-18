@@ -7,6 +7,8 @@ mod attempt_gate;
 mod chat_response;
 mod chat_stream_encoder;
 mod cohere_rerank;
+mod conversation;
+mod conversation_decoder;
 mod diagnostic;
 mod error;
 mod gemini;
@@ -39,6 +41,7 @@ pub use attempt_gate::{
 };
 pub use chat_response::ChatResponse;
 pub use cohere_rerank::build_cohere_rerank_candidate_request;
+pub use conversation::relay_conversation_with_report;
 pub use diagnostic::{
     RelayAttemptDiagnostic, RelayDiagnosticInput, RelayDiagnosticPolicy, RelayDiagnosticSnapshot,
 };

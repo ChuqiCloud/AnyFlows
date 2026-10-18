@@ -380,9 +380,65 @@ fn decoder_requires_done_and_rejects_data_after_done() {
     let mut completed = OpenAiChatStreamDecoder::new();
     completed.push(&stream).unwrap();
     assert_eq!(
-        completed.push(b": late\n\n").unwrap_err(),
+        completed.push(&sse(&chunk(json!([]), None))).unwrap_err(),
         ParseStreamError::DataAfterDone
     );
+}
+
+#[test]
+fn compatible_gateway_stream_uses_last_usage_once_at_every_byte_boundary() {
+    let provisional = json!({"prompt_tokens":2041,"completion_tokens":1,"total_tokens":2042,"reasoning_tokens":0});
+    let final_usage = json!({"prompt_tokens":41,"completion_tokens":1,"total_tokens":42});
+    let stream = [
+        sse(&chunk(
+            json!([{"index":0,"delta":{"role":"assistant","content":""}}]),
+            None,
+        )),
+        sse(&chunk(
+            json!([{"index":0,"delta":{"role":"assistant","content":"OK"}}]),
+            None,
+        )),
+        sse(&chunk(
+            json!([{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":"stop"}]),
+            Some(provisional),
+        )),
+        sse(&chunk(json!([]), Some(final_usage))),
+        b"data: [DONE]\n\ndata: [DONE]\n\n".to_vec(),
+    ]
+    .concat();
+    for size in [1, 7, 64, stream.len()] {
+        let mut decoder = OpenAiChatStreamDecoder::new();
+        let mut events = Vec::new();
+        for bytes in stream.chunks(size) {
+            events.extend(decoder.push(bytes).unwrap());
+        }
+        decoder.finish().unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, CanonicalStreamEvent::MessageStart { .. }))
+                .count(),
+            1
+        );
+        let usage: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                CanonicalStreamEvent::Usage(usage) => Some(usage),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(usage.len(), 1);
+        assert_eq!(usage[0].input_tokens().get(), 41);
+        assert_eq!(usage[0].output_tokens().get(), 1);
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, CanonicalStreamEvent::StreamEnd))
+                .count(),
+            1
+        );
+        assert!(events.iter().any(|e| matches!(e, CanonicalStreamEvent::ContentDelta { delta: ContentDelta::Text(text), .. } if text == "OK")));
+    }
 }
 
 #[test]

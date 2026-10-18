@@ -933,6 +933,9 @@ impl AdminChannelRepository {
         .await
         .map_err(map_ability_write_error)?;
         let model = fetch_channel_model(&transaction, channel_id).await?;
+        crate::client_profiles::validate_existing_profile_binding(&transaction, &model)
+            .await
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         let snapshot = AdminChannelRecord::try_from_model(model)
             .map_err(map_read_error)?
             .with_routing(fields.routing.snapshot());
@@ -1747,6 +1750,7 @@ async fn find_active_channel(
 ) -> Result<Option<channels::Model>, AdminChannelWriteRepositoryError> {
     channels::Entity::find_by_id(channel_id.get())
         .filter(channels::Column::DeletedAt.is_null())
+        .lock_exclusive()
         .one(transaction)
         .with_subscriber(NoSubscriber::default())
         .await

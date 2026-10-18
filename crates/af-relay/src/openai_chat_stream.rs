@@ -13,6 +13,7 @@ use af_protocol::{CanonicalStreamEvent, Usage, openai_chat::OpenAiChatStreamDeco
 use futures_core::Stream;
 
 use crate::chat_stream_encoder::ChatStreamEncoder;
+use crate::conversation_decoder::ConversationDecoder;
 use crate::error::map_adaptor_error;
 use crate::generation_stream::StreamSource;
 use crate::generation_stream::{append_completion_future, append_completion_hook};
@@ -28,7 +29,7 @@ use crate::{GenerationCompletionFuture, GenerationCompletionHook, GenerationStre
 /// 且只向调用方暴露闭合的脱敏错误分类。
 pub struct OpenAiChatStream {
     source: Option<StreamSource>,
-    decoder: OpenAiChatStreamDecoder,
+    decoder: ConversationDecoder,
     encoder: ChatStreamEncoder,
     usage_estimator: OpenAiChatUsageEstimator,
     usage_sender: Option<UsageSender>,
@@ -50,7 +51,7 @@ impl OpenAiChatStream {
         (
             Self {
                 source: Some(StreamSource::from(source)),
-                decoder: OpenAiChatStreamDecoder::new(),
+                decoder: ConversationDecoder::Chat(OpenAiChatStreamDecoder::new()),
                 encoder,
                 usage_estimator,
                 usage_sender: Some(usage_sender),
@@ -63,6 +64,11 @@ impl OpenAiChatStream {
             },
             usage_handle,
         )
+    }
+
+    pub(crate) fn with_decoder(mut self, decoder: ConversationDecoder) -> Self {
+        self.decoder = decoder;
+        self
     }
 
     /// 为流结束时的计费或审计收尾安装一次性回调。
@@ -94,10 +100,14 @@ impl OpenAiChatStream {
     }
 
     fn transform(&mut self, bytes: &[u8]) -> Result<Option<Bytes>, UpstreamError> {
-        let events = self
-            .decoder
-            .push(bytes)
-            .map_err(|_| UpstreamError::ProtocolError)?;
+        let events = self.decoder.push(bytes)?;
+        self.transform_events(events)
+    }
+
+    fn transform_events(
+        &mut self,
+        events: Vec<CanonicalStreamEvent>,
+    ) -> Result<Option<Bytes>, UpstreamError> {
         let mut output = Vec::new();
         let mut completed = false;
         let mut resolved_usage = None;
@@ -123,6 +133,7 @@ impl OpenAiChatStream {
                     resolved_usage = Some(usage);
                     completed = true;
                 }
+                CanonicalStreamEvent::Error(error) => return Err(error),
                 event => {
                     self.usage_estimator.observe(&event);
                     output.extend(
@@ -217,11 +228,21 @@ impl Stream for OpenAiChatStream {
                 }
                 Poll::Ready(None) => {
                     self.source = None;
-                    if self.decoder.finish().is_err() {
-                        return self.fail(UpstreamError::ProtocolError, context);
-                    }
-                    self.terminated = true;
-                    return Poll::Ready(None);
+                    let events = match self.decoder.finish() {
+                        Ok(events) => events,
+                        Err(error) => return self.fail(error, context),
+                    };
+                    return match self.transform_events(events) {
+                        Ok(Some(output)) => Poll::Ready(Some(Ok(output))),
+                        Ok(None) if self.completion_future.is_some() => {
+                            self.poll_terminal_completion(context)
+                        }
+                        Ok(None) => {
+                            self.terminated = true;
+                            Poll::Ready(None)
+                        }
+                        Err(error) => self.fail(error, context),
+                    };
                 }
             }
         }

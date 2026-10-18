@@ -1,0 +1,106 @@
+name: Conversation compatibility
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'crates/af-protocol/**'
+      - 'crates/af-relay/**'
+      - 'crates/af-domain/src/client_profile.rs'
+      - 'crates/af-adapter/src/client_profile.rs'
+      - 'crates/af-admin/src/client_profiles.rs'
+      - 'crates/af-db/src/client_profiles*'
+      - 'crates/af-db/src/entity/*client_profile*'
+      - 'crates/af-db/src/scheduler_runtime/**'
+      - 'crates/af-db/src/migration/*client_profiles*'
+      - 'crates/af-http/src/client_profiles.rs'
+      - 'crates/af-http/src/openapi/client_profiles.rs'
+      - 'crates/af-server/src/scheduled_chat.rs'
+      - '.github/workflows/conversation-compatibility.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: conversation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: '1'
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CACHE_ON_FAILURE: 'true'
+  RUSTFLAGS: '-C link-arg=-Wl,--no-keep-memory'
+
+jobs:
+  conversation:
+    name: Conversation protocol and scheduling checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repository_url="$CHECKOUT_REPOSITORY_URL"
+          if [[ "$repository_url" == http://gitea_cps3:* ]]; then
+            repository_url="https://gitea.acmecloud.cn/${{ github.repository }}.git"
+          fi
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$repository_url"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if bash tools/ci/install-rustup.sh; then
+              break
+            fi
+            if [[ "$attempt" == 3 ]]; then
+              exit 1
+            fi
+            sleep 3
+          done
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal --component rustfmt --component clippy
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: conversation
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Check affected crates
+        run: cargo clippy -p af-protocol -p af-relay -p af-server --all-targets --all-features --locked -- -D warnings
+
+      - name: Test protocol parsing and relay lifecycle
+        run: cargo test --quiet -p af-protocol -p af-relay --all-features --locked
+
+      - name: Test conversation scheduling
+        run: |
+          cargo test --quiet -p af-server --lib --all-features --locked scheduled_chat::
+
+      - name: Test client profile configuration and runtime snapshots
+        run: |
+          cargo test --quiet -p af-domain --lib --locked client_profile::
+          cargo test --quiet -p af-adapter --lib --locked client_profile::
+          cargo test --quiet -p af-admin --lib --locked client_profiles::
+          cargo test --quiet -p af-http --lib --locked client_profiles::
+          cargo test --quiet -p af-db --lib --locked client_profiles_tests::
+          cargo test --quiet -p af-db --lib --locked scheduler_runtime::

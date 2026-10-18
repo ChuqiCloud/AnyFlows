@@ -52,8 +52,8 @@ use af_protocol::{CanonicalRequestEnvelope, ClientSimulationBodyPatch, UtcDate};
 use af_relay::{
     AnthropicRequestOverrides, ChatResponse, GeminiRequestOverrides, OpenAiChatRequestOverrides,
     OpenAiResponsesRequestOverrides, RelayCandidate, RelayCandidateRequest, RelayDiagnosticInput,
-    RelayStateMachine, relay_anthropic_with_report, relay_gemini_with_report,
-    relay_openai_chat_with_report, relay_openai_responses_with_report,
+    RelayStateMachine, relay_anthropic_with_report, relay_conversation_with_report,
+    relay_gemini_with_report, relay_openai_chat_with_report, relay_openai_responses_with_report,
 };
 use af_scheduler::{
     ChannelRoutingHealth, IndexedRoutePlan, IndexedWeightedScheduler,
@@ -398,6 +398,9 @@ impl ScheduledChatService {
                 if let Some(profile) = target.client_simulation_profile() {
                     relay_candidate = relay_candidate
                         .with_client_simulation(Arc::new(BuiltInClientSimulation::new(profile)));
+                }
+                if let Some(profile) = target.client_profile() {
+                    relay_candidate = relay_candidate.with_client_profile(profile.clone());
                 }
                 if let Some(concurrency) = &self.concurrency {
                     relay_candidate = relay_candidate.with_attempt_gate(concurrency.account_gate(
@@ -1137,28 +1140,42 @@ impl PlannedChatExecution for ScheduledChatExecution {
             };
             let operation = request.canonical().operation;
             let routing_started_at = Instant::now();
-            let (result, report) = match (operation, upstream_protocol) {
-                (Operation::Chat, Protocol::OpenAiChat) => {
-                    relay_openai_chat_with_report(&machine, request, response_protocol, &request_id)
-                        .await
-                        .into_parts()
+            let (result, report) = if upstream_protocol != response_protocol {
+                relay_conversation_with_report(
+                    &machine,
+                    request,
+                    upstream_protocol,
+                    response_protocol,
+                    &request_id,
+                )
+                .await
+            } else {
+                match (operation, upstream_protocol) {
+                    (Operation::Chat, Protocol::OpenAiChat) => relay_openai_chat_with_report(
+                        &machine,
+                        request,
+                        response_protocol,
+                        &request_id,
+                    )
+                    .await
+                    .into_parts(),
+                    (Operation::Chat, Protocol::Anthropic) => {
+                        relay_anthropic_with_report(&machine, request, &request_id)
+                            .await
+                            .into_parts()
+                    }
+                    (Operation::Chat, Protocol::Gemini) => {
+                        relay_gemini_with_report(&machine, request, &request_id)
+                            .await
+                            .into_parts()
+                    }
+                    (Operation::Responses, Protocol::OpenAiResponses) => {
+                        relay_openai_responses_with_report(&machine, request, &request_id)
+                            .await
+                            .into_parts()
+                    }
+                    _ => return Err(AfError::InvalidRequest),
                 }
-                (Operation::Chat, Protocol::Anthropic) => {
-                    relay_anthropic_with_report(&machine, request, &request_id)
-                        .await
-                        .into_parts()
-                }
-                (Operation::Chat, Protocol::Gemini) => {
-                    relay_gemini_with_report(&machine, request, &request_id)
-                        .await
-                        .into_parts()
-                }
-                (Operation::Responses, Protocol::OpenAiResponses) => {
-                    relay_openai_responses_with_report(&machine, request, &request_id)
-                        .await
-                        .into_parts()
-                }
-                _ => return Err(AfError::InvalidRequest),
             };
             record_client_simulation_metrics(&report);
             if let Some(capture) = debug_trace {
@@ -1468,6 +1485,10 @@ fn candidate_request(
     if upstream_model == requested_model && parameters.is_empty() {
         return Ok(None);
     }
+    let request = request
+        .clone()
+        .for_conversation_protocol(target.protocol())
+        .ok_or(AfError::InvalidRequest)?;
     match target.protocol() {
         Protocol::OpenAiChat => OpenAiChatRequestOverrides::new(
             upstream_model,
@@ -1590,31 +1611,37 @@ fn select_upstream_protocol(
     request: &CanonicalRequestEnvelope,
     response_protocol: Protocol,
 ) -> Result<Protocol, AfError> {
-    match (request.canonical().operation, response_protocol) {
-        (Operation::Chat, Protocol::OpenAiChat) => Ok(Protocol::OpenAiChat),
-        (Operation::Chat, Protocol::Anthropic) => {
-            // 原生 Anthropic 同协议优先；没有标准 Anthropic 渠道时保留既有 OpenAI 跨协议链路。
-            if route.candidates().iter().any(|candidate| {
-                target_matches_protocol(candidate.runtime_target(), Protocol::Anthropic)
-            }) {
-                Ok(Protocol::Anthropic)
-            } else {
-                Ok(Protocol::OpenAiChat)
-            }
-        }
-        (Operation::Chat, Protocol::Gemini) => {
-            // 原生 Gemini 同协议优先；没有标准 Gemini 渠道时保留既有 OpenAI 跨协议链路。
-            if route.candidates().iter().any(|candidate| {
-                target_matches_protocol(candidate.runtime_target(), Protocol::Gemini)
-            }) {
-                Ok(Protocol::Gemini)
-            } else {
-                Ok(Protocol::OpenAiChat)
-            }
-        }
-        (Operation::Responses, Protocol::OpenAiResponses) => Ok(Protocol::OpenAiResponses),
-        _ => Err(AfError::InvalidRequest),
+    if !matches!(
+        (request.canonical().operation, response_protocol),
+        (
+            Operation::Chat,
+            Protocol::OpenAiChat | Protocol::Anthropic | Protocol::Gemini
+        ) | (Operation::Responses, Protocol::OpenAiResponses)
+    ) {
+        return Err(AfError::InvalidRequest);
     }
+    // 优先使用原生渠道，其次选择可表达该请求的对话协议。
+    // 不把 Embeddings、音视频等不同能力的端点纳入对话转换。
+    for protocol in [
+        response_protocol,
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Anthropic,
+        Protocol::Gemini,
+    ] {
+        if route
+            .candidates()
+            .iter()
+            .any(|candidate| target_matches_protocol(candidate.runtime_target(), protocol))
+            && request
+                .clone()
+                .for_conversation_protocol(protocol)
+                .is_some()
+        {
+            return Ok(protocol);
+        }
+    }
+    Ok(response_protocol)
 }
 
 fn map_scheduler_error(error: IndexedWeightedSchedulerError) -> AfError {
@@ -2195,92 +2222,72 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn openai_client_does_not_schedule_anthropic_upstream() {
-        let service = service(vec![anthropic_record(valid_envelope())]).await;
-
-        assert_eq!(
-            service
-                .plan(
-                    &principal(7),
-                    None,
-                    request(),
-                    Protocol::OpenAiChat,
-                    "request-openai-client",
-                    diagnostic(),
-                )
-                .await
-                .err(),
-            Some(AfError::Upstream(UpstreamError::ModelUnsupported))
-        );
-    }
-
-    #[tokio::test]
-    async fn openai_client_does_not_schedule_gemini_upstream() {
-        let service = service(vec![gemini_record(valid_envelope())]).await;
-
-        assert_eq!(
-            service
-                .plan(
-                    &principal(7),
-                    None,
-                    request(),
-                    Protocol::OpenAiChat,
-                    "request-openai-gemini-upstream",
-                    diagnostic(),
-                )
-                .await
-                .err(),
-            Some(AfError::Upstream(UpstreamError::ModelUnsupported))
-        );
-    }
-
-    #[tokio::test]
-    async fn responses_plan_requires_a_native_responses_channel() {
-        let credential = SchedulerRuntimeCredentialRecord::new(
-            CREDENTIAL_ID,
-            CredentialKind::ApiKey,
-            valid_envelope(),
-            false,
-        )
-        .unwrap();
-        let responses = service(vec![record_pool_with_protocol(
-            vec![credential],
+    async fn all_conversation_clients_can_schedule_each_upstream_protocol() {
+        for protocol in [
+            Protocol::OpenAiChat,
             Protocol::OpenAiResponses,
-        )])
-        .await;
-        let route = responses
-            .scheduler
-            .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
-            .unwrap()
-            .unwrap();
-        let execution = responses
-            .build_plan(
-                prepared_execution_route(route, Protocol::OpenAiResponses),
-                responses_request(),
+            Protocol::Anthropic,
+            Protocol::Gemini,
+        ] {
+            let record = match protocol {
+                Protocol::Anthropic => anthropic_record(valid_envelope()),
+                Protocol::Gemini => gemini_record(valid_envelope_for(CREDENTIAL_ID + 1, 0x25)),
+                _ => record_pool_with_protocol(
+                    vec![
+                        SchedulerRuntimeCredentialRecord::new(
+                            CREDENTIAL_ID,
+                            CredentialKind::ApiKey,
+                            valid_envelope(),
+                            false,
+                        )
+                        .unwrap(),
+                    ],
+                    protocol,
+                ),
+            };
+            let service = service(vec![record]).await;
+            let route = service
+                .scheduler
+                .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+                .unwrap()
+                .unwrap();
+            for client in [
+                Protocol::OpenAiChat,
                 Protocol::OpenAiResponses,
-                "request-responses",
-                None,
-                PreparedConcurrencyPlan::disabled(),
-            )
-            .unwrap();
-        assert_eq!(execution.response_protocol, Protocol::OpenAiResponses);
-        assert_eq!(execution.attempt_targets.len(), 1);
-
-        let chat_only = service(vec![record(false, valid_envelope())]).await;
-        assert_eq!(
-            chat_only
-                .plan(
-                    &principal(7),
-                    None,
-                    responses_request(),
-                    Protocol::OpenAiResponses,
-                    "request-wrong-protocol",
-                    diagnostic(),
-                )
-                .await
-                .err(),
-            Some(AfError::Upstream(UpstreamError::ModelUnsupported))
-        );
+                Protocol::Anthropic,
+                Protocol::Gemini,
+            ] {
+                let request = if client == Protocol::OpenAiResponses {
+                    responses_request()
+                } else {
+                    request()
+                };
+                assert_eq!(
+                    select_upstream_protocol(&route, &request, client).unwrap(),
+                    protocol
+                );
+                let execution = service
+                    .build_plan(
+                        prepared_execution_route(
+                            service
+                                .scheduler
+                                .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+                                .unwrap()
+                                .unwrap(),
+                            protocol,
+                        ),
+                        request,
+                        client,
+                        "request-protocol-matrix",
+                        None,
+                        PreparedConcurrencyPlan::disabled(),
+                    )
+                    .unwrap();
+                assert_eq!(execution.response_protocol, client);
+                assert_eq!(execution.upstream_protocol, protocol);
+                assert_eq!(execution.attempt_targets.len(), 1);
+            }
+        }
     }
 
     #[tokio::test]
