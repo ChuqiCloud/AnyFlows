@@ -49,7 +49,7 @@ pub(crate) async fn collect_conversation(
 }
 
 #[derive(Default)]
-struct Aggregate {
+pub(crate) struct Aggregate {
     choices: BTreeMap<u32, Choice>,
     usage: Option<Usage>,
     done: bool,
@@ -83,7 +83,7 @@ impl Aggregate {
             .ok_or(UpstreamError::ProtocolError)
     }
 
-    fn push(&mut self, events: Vec<Event>) -> Result<(), UpstreamError> {
+    pub(crate) fn push(&mut self, events: Vec<Event>) -> Result<(), UpstreamError> {
         for event in events {
             if self.done {
                 return Err(UpstreamError::ProtocolError);
@@ -241,7 +241,7 @@ impl Aggregate {
         Ok(())
     }
 
-    fn finish(self) -> Result<CanonicalResponse, UpstreamError> {
+    pub(crate) fn finish(self) -> Result<CanonicalResponse, UpstreamError> {
         if !self.done || self.choices.is_empty() {
             return Err(UpstreamError::ProtocolError);
         }

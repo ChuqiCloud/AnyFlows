@@ -378,6 +378,12 @@ impl RelayAttemptReport {
         self.successful_client_simulation
     }
 
+    pub(crate) fn complete_success(&mut self, elapsed: Duration) {
+        if self.successful_candidate_index.is_some() {
+            self.successful_elapsed = Some(elapsed);
+        }
+    }
+
     /// 把已经取得 HTTP 成功、但未通过协议验证的候选改记为失败。
     pub(crate) fn reject_success(&mut self, error: UpstreamError) {
         if let Some(candidate_index) = self.successful_candidate_index.take() {
@@ -484,9 +490,21 @@ pub struct RelayResponse {
     state: RelayState,
     report: RelayAttemptReport,
     permit: Option<Box<dyn RelayAttemptPermit>>,
+    continuation: Option<crate::frozen_candidate::FrozenCandidate>,
 }
 
 impl RelayResponse {
+    pub(crate) fn into_tool_parts(
+        self,
+    ) -> (
+        UpstreamResponse,
+        RelayAttemptReport,
+        Option<Box<dyn RelayAttemptPermit>>,
+        Option<crate::frozen_candidate::FrozenCandidate>,
+    ) {
+        (self.response, self.report, self.permit, self.continuation)
+    }
+
     /// 消费包装并返回适配层响应。
     #[must_use]
     pub fn into_response(self) -> UpstreamResponse {
@@ -638,6 +656,37 @@ impl RelayStateMachine {
     pub async fn execute_with_report(
         &self,
         request: RelayRequest,
+    ) -> Result<RelayResponse, RelayExecutionError> {
+        self.execute_inner(request, false).await
+    }
+
+    /// 工具补充只允许 OpenCode；候选正文须已纳入同一份预扣计划。
+    /// 暂不接受另行覆盖的候选正文，避免工具映射和实际发送内容不一致。
+    pub(crate) async fn execute_tool_request(
+        &self,
+        request: RelayRequest,
+        protocol: af_domain::Protocol,
+    ) -> Result<RelayResponse, RelayExecutionError> {
+        if request.method != Method::POST
+            || !matches!(request.operation, Operation::Chat | Operation::Responses)
+            || self.candidates.iter().any(|candidate| {
+                candidate.adaptor.channel_type() != af_domain::ChannelType::OpenCode
+                    || candidate.adaptor.default_protocol() != protocol
+                    || candidate.request.is_some()
+            })
+        {
+            return Err(RelayExecutionError::new(
+                RelayError::Upstream(UpstreamError::ProtocolError),
+                Vec::new(),
+            ));
+        }
+        self.execute_inner(request, true).await
+    }
+
+    async fn execute_inner(
+        &self,
+        request: RelayRequest,
+        freeze_continuation: bool,
     ) -> Result<RelayResponse, RelayExecutionError> {
         let mut last_error = None;
         let mut failures = Vec::new();
@@ -824,6 +873,16 @@ impl RelayStateMachine {
                 },
                 None => None,
             };
+            let continuation = freeze_continuation.then(|| {
+                crate::frozen_candidate::FrozenCandidate::new(
+                    candidate.adaptor.clone(),
+                    candidate.context.clone(),
+                    candidate.credential.clone(),
+                    candidate.transport.clone(),
+                    &upstream_request,
+                    self.diagnostic_policy,
+                )
+            });
             let outcome = match candidate
                 .transport
                 .send_with_report(upstream_request, &candidate.context)
@@ -884,6 +943,7 @@ impl RelayStateMachine {
                     .with_successful_diagnostic(diagnostic)
                     .with_successful_client_simulation(client_simulation),
                     permit,
+                    continuation,
                 });
             }
 
