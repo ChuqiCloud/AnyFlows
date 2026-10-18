@@ -13055,6 +13055,244 @@
         ]
       }
     },
+    "/api/admin/client-profiles/capabilities": {
+      "get": {
+        "tags": [
+          "客户端档案"
+        ],
+        "summary": "读取已注册的客户端档案能力",
+        "operationId": "getAdminClientProfileCapabilities",
+        "responses": {
+          "200": {
+            "description": "受控模板与身份字段",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientProfileCapabilitiesSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要平台管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/client-profiles/opencode-settings/{channel_id}": {
+      "get": {
+        "tags": [
+          "客户端档案"
+        ],
+        "summary": "读取渠道的 OpenCode 服务入口",
+        "operationId": "getAdminClientProfileOpenCodeSettings",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "不含敏感设置的服务入口",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientProfileOpenCodeSettingsSchema"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "渠道类型无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要平台管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "渠道不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "客户端档案"
+        ],
+        "summary": "更新渠道的 OpenCode 服务入口",
+        "operationId": "setAdminClientProfileOpenCodeEntry",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientProfileOpenCodeEntryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "入口已更新",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientProfileOpenCodeSettingsSchema"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "入口或渠道类型无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要平台管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "渠道不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "渠道已更新，请重新读取",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/client-profiles": {
       "get": {
         "tags": [
@@ -13110,6 +13348,14 @@
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/AdminCredentialKind"
+            }
+          },
+          {
+            "name": "channel_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/AdminChannelType"
             }
           },
           {
@@ -28038,6 +28284,41 @@
           }
         }
       },
+      "ClientProfileCapabilitiesSchema": {
+        "type": "object",
+        "required": [
+          "templates",
+          "identity_headers",
+          "session_strategies",
+          "opencode_entries"
+        ],
+        "properties": {
+          "templates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClientProfileDefinitionSchema"
+            }
+          },
+          "identity_headers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "session_strategies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClientProfileSessionStrategySchema"
+            }
+          },
+          "opencode_entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClientProfileOpenCodeEntrySchema"
+            }
+          }
+        }
+      },
       "ClientProfileDefinitionSchema": {
         "type": "object",
         "required": [
@@ -28115,6 +28396,45 @@
           }
         },
         "additionalProperties": false
+      },
+      "ClientProfileOpenCodeEntryRequest": {
+        "type": "object",
+        "required": [
+          "version",
+          "entry"
+        ],
+        "properties": {
+          "version": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "entry": {
+            "$ref": "#/components/schemas/ClientProfileOpenCodeEntrySchema"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ClientProfileOpenCodeEntrySchema": {
+        "type": "string",
+        "enum": [
+          "inference_v1",
+          "zen_v1"
+        ]
+      },
+      "ClientProfileOpenCodeSettingsSchema": {
+        "type": "object",
+        "required": [
+          "entry",
+          "version"
+        ],
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/ClientProfileOpenCodeEntrySchema"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
       },
       "ClientProfilePageSchema": {
         "type": "object",

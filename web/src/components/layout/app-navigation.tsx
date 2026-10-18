@@ -115,6 +115,7 @@ const navItems = {
   groupSettings: { key: 'groupSettings', icon: Layers3, href: '#/console/system-settings/groups' },
   modelSettings: { key: 'modelSettings', icon: PackageSearch, href: '#/console/system-settings/models' },
   modelProviders: { key: 'modelProviders', icon: Building2, href: '#/console/system-settings/model-providers' },
+  clientProfiles: { key: 'clientProfiles', icon: Network, href: '#/console/client-profiles' },
   channels: { key: 'channels', icon: Network, href: '#/console/channels' },
   credentials: { key: 'credentials', icon: KeyRound, href: '#/console/credentials' },
   credentialProxies: { key: 'credentialProxies', icon: ServerCog, href: '#/console/proxies' },

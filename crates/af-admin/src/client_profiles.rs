@@ -1,8 +1,8 @@
 use af_db::ClientProfileRepository;
 pub use af_db::{
-    ClientProfilePage, ClientProfileQuery, ClientProfileRecord, ClientProfileReference,
-    ClientProfileReferencePage, ClientProfileRepositoryError, ClientProfileRevisionPage,
-    ClientProfileWrite,
+    ClientProfileOpenCodeSettings, ClientProfilePage, ClientProfileQuery, ClientProfileRecord,
+    ClientProfileReference, ClientProfileReferencePage, ClientProfileRepositoryError,
+    ClientProfileRevisionPage, ClientProfileWrite,
 };
 use af_domain::{ChannelId, ClientProfileBinding, ClientProfileSnapshot};
 use thiserror::Error;
@@ -23,6 +23,28 @@ pub struct DatabaseAdminClientProfileService {
 }
 
 impl DatabaseAdminClientProfileService {
+    pub async fn opencode_settings(
+        &self,
+        principal: SessionPrincipal,
+        channel: ChannelId,
+    ) -> Result<ClientProfileOpenCodeSettings, AdminClientProfileError> {
+        require_admin(principal)?;
+        Ok(self.repository.opencode_settings(channel).await?)
+    }
+
+    pub async fn set_opencode_entry(
+        &self,
+        principal: SessionPrincipal,
+        channel: ChannelId,
+        version: &str,
+        entry: af_domain::OpenCodeEntry,
+    ) -> Result<ClientProfileOpenCodeSettings, AdminClientProfileError> {
+        require_admin(principal)?;
+        Ok(self
+            .repository
+            .set_opencode_entry(channel, version, entry)
+            .await?)
+    }
     pub const fn new(repository: ClientProfileRepository) -> Self {
         Self { repository }
     }

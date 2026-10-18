@@ -1,3 +1,4 @@
+import { ClientProfilePage } from '@/features/client-profiles/client-profile-page'
 import { AccountVerificationPage } from '@/features/account-verification/account-verification-page'
 import { VerificationSettingsPanel } from '@/features/account-verification/verification-settings-panel'
 import { useCallback, useEffect, useState } from 'react'
@@ -135,6 +136,8 @@ function ManagementEntry({
   const extensionRoute = extensionPath ? findConsoleExtensionRoute(extensionPath) : undefined
   const titleKey = extensionRoute?.titleKey ?? (view === 'channels'
     ? 'channels.title'
+    : view === 'client-profiles'
+      ? 'clientProfiles.title'
     : view === 'announcements'
       ? 'announcements.title'
     : view === 'credentials'
@@ -208,6 +211,8 @@ function ManagementEntry({
     ? <ConsoleExtensionPage path={extensionPath ?? ''} />
     : view === 'channels'
     ? <ChannelPage />
+    : view === 'client-profiles'
+      ? <ClientProfilePage />
     : view === 'announcements'
       ? <AnnouncementPage />
     : view === 'credentials'

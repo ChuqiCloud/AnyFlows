@@ -6,7 +6,7 @@ import { activeKeyByView, adminNavigationItems, adminNavigationSections, adminSy
 
 const expectedAdminItems = [
   'overview', 'models', 'playground', 'videoTasks', 'usage', 'apiKeys', 'wallet', 'subscriptions', 'invitations', 'accountVerification', 'profile',
-  'subscriptionManagement', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings', 'modelSettings', 'modelProviders', 'groupSettings', 'channels', 'credentials', 'credentialProxies', 'routes',
+  'subscriptionManagement', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings', 'modelSettings', 'modelProviders', 'groupSettings', 'channels', 'clientProfiles', 'credentials', 'credentialProxies', 'routes',
   'users', 'accountVerificationReviews', 'invitationSettings', 'siteSettings', 'siteNavigation', 'authenticationSettings', 'announcements', 'emailSettings', 'networkSettings', 'accountVerificationSettings', 'keys', 'runtimeStatus', 'debugTraces',
 ]
 

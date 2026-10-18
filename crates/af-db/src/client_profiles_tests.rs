@@ -252,6 +252,21 @@ async fn pagination_filters_and_limits_are_applied_by_database() -> TestResult {
         .await?;
     assert_eq!(filtered.items.len(), 1);
     assert_eq!(filtered.items[0].key, "standard");
+    let compatible = repo
+        .list(ClientProfileQuery {
+            channel_type: Some(ChannelType::OpenCode),
+            protocol: Some(Protocol::OpenAiChat),
+            ..Default::default()
+        })
+        .await?;
+    assert_eq!(
+        compatible
+            .items
+            .iter()
+            .map(|p| p.key.as_str())
+            .collect::<Vec<_>>(),
+        vec!["opencode", "standard"]
+    );
     assert_eq!(
         repo.list(ClientProfileQuery {
             limit: 101,
@@ -261,6 +276,63 @@ async fn pagination_filters_and_limits_are_applied_by_database() -> TestResult {
         .unwrap_err(),
         ClientProfileRepositoryError::InvalidInput
     );
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn opencode_entry_updates_preserve_private_settings_and_reject_stale_versions() -> TestResult
+{
+    let (pool, repo, other_channel) = fixture().await?;
+    pool.connection().execute(sea_orm::Statement::from_string(sea_orm::DbBackend::Sqlite,
+        "INSERT INTO channels (id, name, type, protocol, model_mapping, param_override, header_override, settings) VALUES (903, 'opencode', 'opencode', 'openai_chat', '{}', '{}', '{}', '{\"opencode_entry\":\"inference_v1\",\"private_setting\":\"retained\"}')".to_owned())).await?;
+    let channel = ChannelId::new(903)?;
+    let original = repo.opencode_settings(channel).await?;
+    let before = scheduler_outbox_events::Entity::find()
+        .count(pool.connection())
+        .await?;
+    let next = repo
+        .set_opencode_entry(channel, &original.version, af_domain::OpenCodeEntry::ZenV1)
+        .await?;
+    assert_eq!(next.entry, af_domain::OpenCodeEntry::ZenV1);
+    assert_ne!(next.version, original.version);
+    assert_eq!(
+        repo.set_opencode_entry(
+            channel,
+            &original.version,
+            af_domain::OpenCodeEntry::InferenceV1
+        )
+        .await
+        .unwrap_err(),
+        ClientProfileRepositoryError::Conflict
+    );
+    let rollback = repo
+        .set_opencode_entry(
+            channel,
+            &next.version,
+            af_domain::OpenCodeEntry::InferenceV1,
+        )
+        .await?;
+    assert_ne!(rollback.version, original.version);
+    assert_ne!(rollback.version, next.version);
+    let row = channels::Entity::find_by_id(channel.get())
+        .one(pool.connection())
+        .await?
+        .unwrap();
+    assert_eq!(row.settings.into_inner()["private_setting"], "retained");
+    assert_eq!(
+        scheduler_outbox_events::Entity::find()
+            .count(pool.connection())
+            .await?,
+        before + 2
+    );
+    assert_eq!(
+        repo.opencode_settings(other_channel).await.unwrap_err(),
+        ClientProfileRepositoryError::InvalidInput
+    );
+    let public = serde_json::to_value(rollback)?;
+    assert!(public.get("settings").is_none());
+    assert!(public.get("private_setting").is_none());
     pool.close().await?;
     Ok(())
 }

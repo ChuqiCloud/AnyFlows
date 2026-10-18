@@ -3,10 +3,10 @@ name: Console extensions
 on:
   push:
     branches: [main, 'feature/console-extension-entry']
-    paths: ['web/**', 'web-next/**', '.github/workflows/console-extensions.yml']
+    paths: ['web/**', 'web-next/**', 'tools/ci/frontend-client-profiles-smoke.mjs', '.github/workflows/console-extensions.yml']
   pull_request:
     branches: [main, develop]
-    paths: ['web/**', 'web-next/**', '.github/workflows/console-extensions.yml']
+    paths: ['web/**', 'web-next/**', 'tools/ci/frontend-client-profiles-smoke.mjs', '.github/workflows/console-extensions.yml']
   workflow_dispatch:
 
 permissions:
@@ -54,3 +54,9 @@ jobs:
           npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} lint
       - name: Build community frontend
         run: npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build
+      - name: Check client profile drawers in Chromium
+        run: |
+          browser_tools="$RUNNER_TEMP/anyflows-playwright"
+          npm install --prefix "$browser_tools" --no-save --ignore-scripts playwright@1.56.1
+          "$browser_tools/node_modules/.bin/playwright" install --with-deps chromium
+          PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-client-profiles-smoke.mjs '${{ matrix.frontend }}'
