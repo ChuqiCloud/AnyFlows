@@ -11,6 +11,7 @@ import urllib.request
 BASE = "http://127.0.0.1:18080"
 MODEL = "opencode-preview-free"
 UPSTREAM_MODEL = "mimo-v2.6-flash-free"
+ADMIN_TOKEN = None
 
 
 def request(method, path, body=None, token=None, stream=False):
@@ -43,8 +44,14 @@ def request(method, path, body=None, token=None, stream=False):
 
 
 def main():
+    global ADMIN_TOKEN
     password = secrets.token_urlsafe(24)
     admin = request("POST", "/api/setup", {"username": "preview-admin", "password": password})["access_token"]
+    ADMIN_TOKEN = admin
+    request("PUT", "/api/admin/debug-trace-settings", {
+        "enabled": True, "sample_per_million": 1000000, "retention_hours": 1,
+        "capture_headers": False, "capture_bodies": True, "max_body_bytes": 65536,
+    }, admin)
     groups = request("GET", "/api/admin/groups", token=admin)["groups"]
     group_id = groups[0]["id"]
     request("POST", "/api/admin/models", {
@@ -163,9 +170,38 @@ def main():
     print("Live acceptance passed: one fixed free upstream, four downstream protocols, JSON/SSE and continuous dialogue.", flush=True)
 
 
+def report_failure():
+    if not ADMIN_TOKEN:
+        return
+    try:
+        for _ in range(5):
+            traces = request("GET", "/api/admin/debug-traces?limit=5", token=ADMIN_TOKEN)["traces"]
+            if traces:
+                break
+            time.sleep(1)
+        for trace in traces:
+            detail = request("GET", f"/api/admin/debug-traces/{trace['id']}", token=ADMIN_TOKEN)
+            print("Trace:", json.dumps({
+                "outcome": trace["outcome"], "attempt_count": trace["attempt_count"],
+                "attempts": [{name: item.get(name) for name in [
+                    "outcome", "failure_kind", "upstream_status", "response_status", "response_streamed",
+                ]} for item in detail["attempts"]],
+            }), flush=True)
+            snapshots = request("POST", f"/api/admin/debug-traces/{trace['id']}/snapshots", {
+                "scope": "bodies",
+            }, ADMIN_TOKEN)
+            for attempt in snapshots["attempts"]:
+                response = attempt.get("response")
+                if isinstance(response, dict):
+                    print("Upstream response:", json.dumps(response, ensure_ascii=False)[:2000], flush=True)
+    except (RuntimeError, urllib.error.URLError, KeyError, TypeError) as error:
+        print(f"Diagnostic metadata unavailable: {error}", flush=True)
+
+
 if __name__ == "__main__":
     try:
         main()
     except (AssertionError, RuntimeError, urllib.error.URLError, KeyError, TypeError) as error:
         print(f"Live acceptance failed: {error}", file=sys.stderr)
+        report_failure()
         sys.exit(1)
