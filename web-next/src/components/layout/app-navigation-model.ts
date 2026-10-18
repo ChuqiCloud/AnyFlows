@@ -28,6 +28,7 @@ export type NavKey =
   | 'modelSettings'
   | 'modelProviders'
   | 'channels'
+  | 'clientProfiles'
   | 'credentials'
   | 'credentialProxies'
   | 'routes'
@@ -82,6 +83,7 @@ export const systemSectionItems = [
   'modelProviders',
   'groupSettings',
   'channels',
+  'clientProfiles',
   'credentials',
   'credentialProxies',
   'routes',

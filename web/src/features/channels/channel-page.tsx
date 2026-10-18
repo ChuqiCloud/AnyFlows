@@ -1,3 +1,4 @@
+import { ChannelProfileDrawer } from '@/features/client-profiles/channel-profile-drawer'
 import { useState } from 'react'
 import { Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -24,6 +25,7 @@ export function ChannelPage() {
   })
   const probeMutation = useProbeAdminChannel()
   const [editor, setEditor] = useState<EditorState>()
+  const [profileChannel, setProfileChannel] = useState<AdminChannel>()
   const [probingId, setProbingId] = useState<number>()
   const [probeResults, setProbeResults] = useState<Record<number, ProbeDisplay>>({})
   const channels = channelsQuery.data?.pages[pagination.pageIndex]?.channels ?? []
@@ -77,7 +79,7 @@ export function ChannelPage() {
           <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => channelsQuery.refetch()}>{t('channels.actions.retry')}</Button>
         </div>
       ) : (
-        <ChannelTable channels={channels} probeResults={probeResults} probingId={probingId} onCredentials={openCredentials} onEdit={setEditor} onProbe={probe} />
+        <ChannelTable channels={channels} probeResults={probeResults} probingId={probingId} onCredentials={openCredentials} onProfile={setProfileChannel} onEdit={setEditor} onProbe={probe} />
       )}
 
       {channelsQuery.isFetchNextPageError ? <p role="alert" className="text-xs text-destructive">{t('channels.error.body')}</p> : null}
@@ -97,6 +99,7 @@ export function ChannelPage() {
         />
       ) : null}
 
+      {profileChannel && <ChannelProfileDrawer key={profileChannel.id} channel={profileChannel} onClose={() => setProfileChannel(undefined)} />}
       <ChannelEditorSheet
         open={editor !== undefined}
         channel={editor === 'create' ? undefined : editor}

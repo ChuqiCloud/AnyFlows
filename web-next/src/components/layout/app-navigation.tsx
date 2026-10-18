@@ -71,6 +71,7 @@ const navItems = {
   groupSettings: { key: 'groupSettings', icon: 'solar:folder-linear', href: '/console/system-settings/groups' },
   modelSettings: { key: 'modelSettings', icon: 'solar:box-minimalistic-linear', href: '/console/system-settings/models' },
   modelProviders: { key: 'modelProviders', icon: 'solar:buildings-2-linear', href: '/console/system-settings/model-providers' },
+  clientProfiles: { key: 'clientProfiles', icon: 'solar:user-id-linear', href: '/console/client-profiles' },
   channels: { key: 'channels', icon: 'solar:server-minimalistic-linear', href: '/console/channels' },
   credentials: { key: 'credentials', icon: 'solar:key-minimalistic-square-linear', href: '/console/credentials' },
   credentialProxies: { key: 'credentialProxies', icon: 'solar:server-square-linear', href: '/console/proxies' },
