@@ -2,7 +2,7 @@ name: Public sync checks
 
 on:
   push:
-    branches: [main, develop, 'fix/**', 'sync/gitea-public-core']
+    branches: [main, develop, 'fix/**', 'feat/**', 'sync/gitea-public-core']
     paths:
       - .github/workflows/public-sync-checks.yml
       - .github/workflows/export-public-core.yml

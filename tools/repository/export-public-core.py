@@ -342,6 +342,10 @@ def verify_public_sync(
     with tempfile.TemporaryDirectory(prefix="anyflows-public-sync-") as directory:
         scratch = Path(directory)
         run_git(scratch, ["init", "--quiet"])
+        # Keep Git from starting background maintenance while TemporaryDirectory
+        # removes this disposable repository.
+        run_git(scratch, ["config", "maintenance.auto", "false"])
+        run_git(scratch, ["config", "gc.auto", "0"])
         run_git(scratch, ["fetch", "--quiet", "--no-tags", "--depth=1", str(source), commit])
         run_git(
             scratch,
