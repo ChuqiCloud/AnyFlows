@@ -54,6 +54,7 @@ sudo ./install.sh status
 | Docker Compose 源码部署 | [容器部署](docs/docker-compose.md) |
 | 环境变量、数据库和密钥 | [配置参考](docs/configuration.md) |
 | 备份、升级和回滚 | [升级维护](docs/migrations-and-release.md) |
+| 版本标签和发布阶段 | [版本标签规范](docs/release-tagging.md) |
 | 账号、API Key 和注册邀请 | [认证与访问](docs/authentication-and-access.md) |
 | 其余使用和开发文档 | [文档目录](docs/README.md) |
 
