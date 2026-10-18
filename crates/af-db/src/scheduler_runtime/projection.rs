@@ -190,6 +190,8 @@ struct ProjectionTargetWire {
     client_profile: Option<af_domain::ClientProfileSnapshot>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     opencode_entry: Option<af_domain::OpenCodeEntry>,
+    #[serde(default)]
+    opencode_full_compatibility: bool,
     responses_websocket_enabled: bool,
     #[serde(default)]
     responses_compact_mode: Option<String>,
@@ -405,6 +407,7 @@ impl ProjectionTargetWire {
             pool_mode: target.pool_mode(),
             client_profile: target.client_profile().cloned(),
             opencode_entry: target.opencode_entry(),
+            opencode_full_compatibility: target.opencode_full_compatibility(),
             client_simulation_profile: target
                 .client_simulation_profile()
                 .map(|profile| profile.to_string()),
@@ -506,6 +509,9 @@ impl ProjectionTargetWire {
             target.with_client_simulation_body_profile(client_simulation_body_profile)
         })
         .and_then(|target| target.with_opencode_entry(self.opencode_entry))
+        .and_then(|target| {
+            target.with_opencode_full_compatibility(self.opencode_full_compatibility)
+        })
         .and_then(|target| target.with_client_profile(self.client_profile))
         .and_then(|target| {
             target.with_responses_websocket_enabled(self.responses_websocket_enabled)

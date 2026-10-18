@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useId, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Input, Select, SelectItem, Drawer, DrawerBody, DrawerContent, DrawerHeader } from '@heroui/react'
+import { Button, Input, Switch, Select, SelectItem, Drawer, DrawerBody, DrawerContent, DrawerHeader } from '@heroui/react'
 
 const PortalContext = createContext<HTMLElement | null>(null)
 export type ProfileButtonProps = { children: ReactNode; disabled?: boolean; onClick?: () => void; primary?: boolean; type?: 'button' | 'submit' }
@@ -37,4 +37,8 @@ export function ProfileDrawer({ title, dirty, busy, children, onClose }: Profile
       <DrawerBody className="flex min-h-0 flex-col gap-0 overflow-hidden p-0"><div className="cp-drawer-body">{children}</div></DrawerBody>
     </PortalContext.Provider></div>}</DrawerContent>
   </Drawer>
+}
+
+export function ProfileSwitch({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled?: boolean; onChange: (value: boolean) => void }) {
+  return <Switch size="sm" isSelected={checked} isDisabled={disabled} onValueChange={onChange}>{label}</Switch>
 }

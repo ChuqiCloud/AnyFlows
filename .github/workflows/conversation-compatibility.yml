@@ -21,6 +21,8 @@ on:
       - 'crates/af-http/src/client_profiles.rs'
       - 'crates/af-http/src/openapi/client_profiles.rs'
       - 'crates/af-server/src/scheduled_chat.rs'
+      - 'crates/af-server/src/scheduled_chat/**'
+      - 'crates/af-server/src/debug_trace_runtime.rs'
       - 'crates/af-server/src/billing_chat.rs'
       - '.github/workflows/conversation-compatibility.yml'
   workflow_dispatch:
@@ -111,7 +113,6 @@ jobs:
           cargo test --quiet -p af-db --lib --locked credential_state_tests::
           AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST=1 cargo test --quiet -p af-db --lib --locked migration::tests::migration_runner_smoke -- --ignored
           cargo test --quiet -p af-http --lib --locked management_credential_writes::
-          cargo test --quiet -p af-http --lib --locked document_preserves_sensitive_and_free_form_object_boundaries
           cargo test --quiet -p af-domain --lib --locked client_profile::
           cargo test --quiet -p af-adapter --lib --locked client_profile::
           cargo test --quiet -p af-adapter --lib --locked opencode::

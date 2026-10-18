@@ -69,6 +69,7 @@ mod audio;
 mod compact;
 mod embedding;
 mod image;
+mod opencode;
 mod rerank;
 mod smart_route;
 mod speech;
@@ -280,11 +281,25 @@ impl ScheduledChatService {
         let mut attempt_targets = Vec::with_capacity(relay_candidates.capacity());
         let mut auto_ban_targets = Vec::with_capacity(relay_candidates.capacity());
         let mut route_channel_ids = Vec::with_capacity(relay_candidates.capacity());
+        let compatibility_channel = route
+            .candidates()
+            .iter()
+            .map(|candidate| candidate.runtime_target())
+            .find(|target| target_matches_protocol(target, upstream_protocol))
+            .filter(|target| target.opencode_full_compatibility())
+            .map(|target| target.channel_id());
+        let mut tool_plan = None;
         let mut health_filtered = false;
         'channels: for candidate in route.candidates() {
             let target = candidate.runtime_target();
             let wait_plan = candidate.wait_plan();
             if !target_matches_protocol(target, upstream_protocol) {
+                continue;
+            }
+            // 兼容续答只在当前渠道内选择凭据，不跨渠道转入付费路径。
+            if compatibility_channel.is_some_and(|id| id != target.channel_id())
+                || (compatibility_channel.is_none() && target.opencode_full_compatibility())
+            {
                 continue;
             }
             let upstream_model = target
@@ -293,6 +308,19 @@ impl ScheduledChatService {
                 .to_owned();
             let candidate_request =
                 candidate_request(target, &request, &requested_model, &upstream_model)?;
+            let candidate_request = if compatibility_channel.is_some() {
+                if tool_plan.is_none() {
+                    tool_plan = Some(opencode::prepare_plan(
+                        target,
+                        request.clone(),
+                        &upstream_model,
+                    )?);
+                }
+                // 最终模型、采样覆盖和工具已进入冻结计划，禁止发送时再次改写正文。
+                None
+            } else {
+                candidate_request
+            };
             let adaptor = get_adaptor(
                 target.channel_type(),
                 adaptor_settings(target, upstream_model)?,
@@ -484,6 +512,7 @@ impl ScheduledChatService {
         Ok(ScheduledChatExecution {
             target_group_id,
             pricing_model: routed_model,
+            tool_plan,
             machine,
             attempt_targets,
             auto_ban_targets,
@@ -1125,6 +1154,7 @@ struct ScheduledChatExecution {
     target_group_id: GroupId,
     pricing_model: String,
     machine: RelayStateMachine,
+    tool_plan: Option<af_relay::ToolConversationPlan>,
     attempt_targets: Vec<CredentialAttemptTarget>,
     auto_ban_targets: Vec<ChannelAutoBanAttemptTarget>,
     route_channel_ids: Vec<Option<af_domain::RouteChannelId>>,
@@ -1156,10 +1186,21 @@ impl PlannedChatExecution for ScheduledChatExecution {
         &self.request
     }
 
+    fn usage_upper_bound(&self) -> Result<af_protocol::Usage, af_relay::UsageResolutionError> {
+        match &self.tool_plan {
+            Some(plan) => Ok(plan.upper_bound()),
+            None => af_relay::estimate_openai_request_upper_bound(self.request.canonical()),
+        }
+    }
+
     fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {
+        if self.tool_plan.is_some() {
+            return Box::pin(opencode::execute(*self));
+        }
         let Self {
             target_group_id: _,
             pricing_model: _,
+            tool_plan: _,
             machine,
             attempt_targets,
             auto_ban_targets,

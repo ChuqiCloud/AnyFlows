@@ -200,6 +200,73 @@ impl DebugTraceCapture {
             );
             return;
         };
+        self.submit_attempts(attempts, succeeded, routing_elapsed);
+    }
+
+    /// 仅保存有界轮次、用量及脱敏诊断，不保存隐藏工具的原始输出。
+    pub(crate) fn submit_tools(
+        self,
+        snapshot: &af_relay::ToolConversationReport,
+        targets: &[CredentialAttemptTarget],
+        routing_elapsed: Duration,
+    ) {
+        let Some(mut attempts) = trace_attempts(
+            &snapshot.report,
+            targets,
+            self.body_profile,
+            self.body_result,
+        ) else {
+            return;
+        };
+        let diagnostic = snapshot.report.successful_diagnostic().or_else(|| {
+            snapshot
+                .report
+                .failures()
+                .last()
+                .and_then(|failure| failure.diagnostic())
+        });
+        if let (Some(attempt), Some(diagnostic)) = (attempts.last_mut(), diagnostic) {
+            let rounds = snapshot
+                .observed_usage
+                .iter()
+                .map(|usage| {
+                    usage.map(|usage| serde_json::json!({
+                "input_tokens": usage.input_tokens().get(),
+                "output_tokens": usage.output_tokens().get(),
+                "total_tokens": usage.checked_total_tokens().ok().map(|count| count.get()),
+            }))
+                })
+                .collect::<Vec<_>>();
+            let summary = serde_json::json!({
+                "compatibility": {"sent_rounds":snapshot.sent_rounds,"round_usage":rounds},
+                "continuation_status":snapshot.continuation_diagnostic.as_ref().and_then(|d| d.response_status()),
+            }).to_string();
+            if let Ok(value) = DebugTraceAttemptDiagnosticWrite::new(
+                diagnostic.request_method().to_owned(),
+                diagnostic.request_url().to_owned(),
+                diagnostic.request_headers_json().map(str::to_owned),
+                diagnostic.request_body_json().map(str::to_owned),
+                diagnostic.response_status(),
+                diagnostic.response_headers_json().map(str::to_owned),
+                Some(summary),
+                true,
+            ) {
+                *attempt = attempt.clone().with_diagnostic(value);
+            }
+        }
+        self.submit_attempts(
+            attempts,
+            snapshot.state == af_relay::ToolConversationState::Completed,
+            routing_elapsed,
+        );
+    }
+
+    fn submit_attempts(
+        self,
+        attempts: Vec<DebugTraceAttemptWrite>,
+        succeeded: bool,
+        routing_elapsed: Duration,
+    ) {
         let write = DebugTraceWrite::new(
             self.request_id,
             self.user_id,

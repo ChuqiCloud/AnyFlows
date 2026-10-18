@@ -6,6 +6,7 @@ pub fn channel_opencode_entry(
     channel_type: ChannelType,
     settings: &Value,
 ) -> Result<Option<OpenCodeEntry>, crate::AdminChannelWriteRepositoryError> {
+    channel_opencode_full_compatibility(channel_type, settings)?;
     let value = settings.get("opencode_entry");
     if channel_type != ChannelType::OpenCode {
         return if value.is_some() {
@@ -19,6 +20,18 @@ pub fn channel_opencode_entry(
             .map_err(|_| crate::AdminChannelWriteRepositoryError::InvalidInput)
     })?;
     Ok(Some(entry))
+}
+
+/// 完整工具兼容仅允许在 OpenCode 渠道显式开启，旧配置保持关闭。
+pub fn channel_opencode_full_compatibility(
+    channel_type: ChannelType,
+    settings: &Value,
+) -> Result<bool, crate::AdminChannelWriteRepositoryError> {
+    match settings.get("opencode_full_compatibility") {
+        None => Ok(false),
+        Some(Value::Bool(enabled)) if channel_type == ChannelType::OpenCode => Ok(*enabled),
+        Some(_) => Err(crate::AdminChannelWriteRepositoryError::InvalidInput),
+    }
 }
 
 #[cfg(test)]

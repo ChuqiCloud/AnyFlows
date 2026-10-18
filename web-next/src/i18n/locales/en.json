@@ -7916,7 +7916,9 @@
     "applyBinding": "Apply this revision",
     "entry": "Service entry",
     "saveEntry": "Save service entry",
-    "openCodeHint": "Uses built-in endpoints and API key credentials. Full tool compatibility is not available yet. Catalog access does not confirm successful inference. Recheck model availability after changing the entry.",
+    "openCodeHint": "Uses a registered endpoint with an API key or public credential. Model discovery does not confirm inference availability. Check model access after changing the endpoint.",
+    "fullCompatibility": "Full tool compatibility",
+    "fullCompatibilityHint": "Adds OpenCode tool contracts while preserving caller tools. The gateway does not execute tools. It may continue once with an unavailable-tool result before any useful output. Unavailable tools after output cause the request to fail. Both rounds share one credential, output limit and deadline.",
     "saved": "Settings saved.",
     "services": {
       "standard": "Standard",
