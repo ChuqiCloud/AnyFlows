@@ -1257,6 +1257,7 @@ mod tests {
             .as_array()
             .unwrap();
         let expected_variants = [
+            ("public", &[][..]),
             ("api_key", &["api_key"][..]),
             ("oauth", &["access_token"][..]),
             (
