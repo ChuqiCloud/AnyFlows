@@ -55,7 +55,7 @@ jobs:
       redis:
         image: redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3
         ports:
-          - 16379:6379
+          - 6379/tcp
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 2s
@@ -120,7 +120,7 @@ jobs:
 
       - name: Test shared client session creation
         env:
-          AF_TEST_REDIS_URL: ${{ github.server_url == 'https://github.com' && 'redis://127.0.0.1:16379/' || 'redis://redis:6379/' }}
+          AF_TEST_REDIS_URL: ${{ github.server_url == 'https://github.com' && format('redis://127.0.0.1:{0}/', job.services.redis.ports[6379]) || 'redis://redis:6379/' }}
           AF_REQUIRE_LIVE_REDIS: '1'
         run: |
           cargo test --quiet -p af-cache --lib --locked sticky::
