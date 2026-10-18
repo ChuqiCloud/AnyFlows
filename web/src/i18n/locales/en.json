@@ -984,6 +984,7 @@
       "loading": "Loading credentials"
     },
     "kind": {
+      "public": "Public access",
       "api_key": "API key",
       "oauth": "OAuth account",
       "bedrock": "Bedrock access key",
@@ -1068,6 +1069,7 @@
       "selectFirst": "Select a parent to preview"
     },
     "secret": {
+      "publicHint": "No API key is required. Use one public credential per channel, separately from API keys. Model access depends on the upstream service; listing a model does not prove inference access. Failed public requests do not fall back to paid keys.",
       "apiKey": "Upstream API key",
       "oauthCreateMode": "OAuth setup mode",
       "oauthMode": {

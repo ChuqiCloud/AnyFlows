@@ -15,6 +15,133 @@ use super::{
 };
 
 #[tokio::test]
+async fn opencode_public_pool_rejects_paid_keys_duplicates_and_service_changes()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let create = |name: &str| {
+        AdminChannelWriteRecord::new(
+            name.to_owned(),
+            ChannelType::OpenCode,
+            Protocol::OpenAiChat,
+            None,
+            None,
+            Status::Enabled,
+            1,
+            1,
+            true,
+            Vec::new(),
+            Vec::new(),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            None,
+        )
+    };
+    let channel = fixture
+        .repository
+        .create_channel(create("public-access"))
+        .await?
+        .channel_id();
+    let result = fixture
+        .repository
+        .create_credential(
+            channel,
+            credential_record(CredentialKind::Public, None),
+            |_| Ok(envelope(0x41)),
+        )
+        .await?;
+    let AdminCredentialCreateOutcome::Created(public) = result else {
+        panic!("public credential must be created");
+    };
+    assert_eq!(public.kind(), CredentialKind::Public);
+    for kind in [
+        CredentialKind::ApiKey,
+        CredentialKind::Public,
+        CredentialKind::Oauth,
+    ] {
+        assert_eq!(
+            fixture
+                .repository
+                .create_credential(channel, credential_record(kind, None), |_| Ok(envelope(
+                    0x42
+                )))
+                .await
+                .unwrap_err(),
+            AdminChannelWriteRepositoryError::InvalidInput
+        );
+    }
+    assert!(matches!(
+        fixture
+            .repository
+            .update_credential(
+                channel,
+                public.credential_id(),
+                credential_record(CredentialKind::Public, None),
+                None
+            )
+            .await?,
+        AdminCredentialMutationOutcome::Mutated(_)
+    ));
+    assert_eq!(
+        fixture
+            .repository
+            .update_channel(
+                channel,
+                channel_update_record("wrong-service", "https://example.com/v1")
+            )
+            .await
+            .unwrap_err(),
+        AdminChannelWriteRepositoryError::InvalidInput
+    );
+    let paid = fixture
+        .repository
+        .create_channel(create("paid-access"))
+        .await?
+        .channel_id();
+    fixture
+        .repository
+        .create_credential(
+            paid,
+            credential_record(CredentialKind::ApiKey, None),
+            |_| Ok(envelope(0x43)),
+        )
+        .await?;
+    assert_eq!(
+        fixture
+            .repository
+            .create_credential(
+                paid,
+                credential_record(CredentialKind::Public, None),
+                |_| Ok(envelope(0x44))
+            )
+            .await
+            .unwrap_err(),
+        AdminChannelWriteRepositoryError::InvalidInput
+    );
+    let normal = fixture
+        .repository
+        .create_channel(channel_record("openai", "https://api.example.com/v1"))
+        .await?
+        .channel_id();
+    assert_eq!(
+        fixture
+            .repository
+            .create_credential(
+                normal,
+                credential_record(CredentialKind::Public, None),
+                |_| Ok(envelope(0x45))
+            )
+            .await
+            .unwrap_err(),
+        AdminChannelWriteRepositoryError::InvalidInput
+    );
+    assert_eq!(credential_count(&fixture).await?, 2);
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn channel_provider_round_trips_without_changing_transport_or_secrets()
 -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;

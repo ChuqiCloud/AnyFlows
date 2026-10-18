@@ -62,6 +62,8 @@ struct AdminCredentialWriteFieldsSchema {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[schema(as = AdminCredentialSecret)]
 enum AdminCredentialSecretSchema {
+    /// OpenCode 公开访问描述，不接受任何密钥字段。
+    Public {},
     /// 通用 API Key。
     ApiKey {
         #[schema(min_length = 1, max_length = 16384, write_only)]

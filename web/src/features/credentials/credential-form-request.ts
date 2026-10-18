@@ -85,7 +85,7 @@ export function updateCredentialRequest(
   return {
     ...writeSchedulingFields(values),
     kind,
-    secret: shadow || !values.rotateSecret ? null : credentialSecret(values),
+    secret: shadow || kind === 'public' || !values.rotateSecret ? null : credentialSecret(values),
     concurrency: shadow ? null : optionalInteger(values.concurrency),
     parent_id: shadow ? credential.parent_id : null,
     quota_dimension: shadow ? 'spark' : 'global',
@@ -138,6 +138,7 @@ function writeSchedulingFields(values: CredentialFormValues) {
 
 function credentialSecret(values: CredentialFormValues): AdminCredentialCreateRequestWritable['secret'] {
   switch (values.kind) {
+    case 'public': return { kind: 'public' }
     case 'api_key': return { kind: 'api_key', api_key: values.apiKey }
     case 'oauth': return values.oauthCreateMode === 'authorize'
       ? null

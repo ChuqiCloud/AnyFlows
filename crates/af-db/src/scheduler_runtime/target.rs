@@ -306,7 +306,7 @@ impl SchedulerRuntimeCredentialRecord {
         if !valid_identity
             || !matches!(
                 credential_kind,
-                CredentialKind::ApiKey | CredentialKind::Oauth
+                CredentialKind::ApiKey | CredentialKind::Oauth | CredentialKind::Public
             )
         {
             return Err(SchedulerRuntimeTargetRecordError);
@@ -606,9 +606,16 @@ impl SchedulerRuntimeTargetRecord {
         if !is_supported_runtime_target(channel_type, protocol)
             || (channel_type == ChannelType::OpenCode
                 && (base_url.is_some()
-                    || credentials
-                        .iter()
-                        .any(|c| c.credential_kind() != CredentialKind::ApiKey)))
+                    || credentials.iter().any(|c| {
+                        !matches!(
+                            c.credential_kind(),
+                            CredentialKind::ApiKey | CredentialKind::Public
+                        )
+                    })))
+            || (credentials
+                .iter()
+                .any(|c| c.credential_kind() == CredentialKind::Public)
+                && (channel_type != ChannelType::OpenCode || credentials.len() != 1))
             || credentials.is_empty()
             || credentials.len() > MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL
             || credentials.iter().any(|credential| {

@@ -682,6 +682,87 @@ mod tests {
     use super::*;
 
     #[test]
+    fn public_access_survives_projection_and_rejects_paid_pool_or_other_service() {
+        let credential = |id, kind| {
+            SchedulerRuntimeCredentialRecord::new(
+                id,
+                kind,
+                EncryptedCredentialEnvelope::new("fixture", [1; 24], vec![2; 16]).unwrap(),
+                false,
+            )
+            .unwrap()
+        };
+        let channel = ChannelId::new(61).unwrap();
+        let public = || credential(62, CredentialKind::Public);
+        let profile = af_domain::built_in_client_profiles()
+            .into_iter()
+            .find(|p| p.binding.key == "opencode-public")
+            .unwrap();
+        let target = SchedulerRuntimeTargetRecord::new_pool(
+            channel,
+            ChannelType::OpenCode,
+            Protocol::OpenAiChat,
+            None,
+            vec![public()],
+            vec![],
+        )
+        .unwrap()
+        .with_client_profile(Some(profile.clone()))
+        .unwrap();
+        let record = SchedulerRuntimeRecord::new(
+            SchedulerAbilityRecord::from_projection_parts(
+                GroupId::new(63).unwrap(),
+                "model".to_owned(),
+                channel,
+                1,
+                1,
+            )
+            .unwrap(),
+            Arc::new(target),
+        );
+        let payload = SchedulerRuntimeProjection::new(
+            64,
+            SchedulerCatalogSubject::Channel(channel),
+            vec![record],
+        )
+        .unwrap()
+        .encode()
+        .unwrap();
+        let decoded = SchedulerRuntimeProjection::decode(&payload).unwrap();
+        assert_eq!(
+            decoded.records()[0].target().credentials()[0].credential_kind(),
+            CredentialKind::Public
+        );
+        assert_eq!(
+            decoded.records()[0].target().client_profile(),
+            Some(&profile)
+        );
+        for (service, pool) in [
+            (ChannelType::OpenAi, vec![public()]),
+            (
+                ChannelType::OpenCode,
+                vec![public(), credential(63, CredentialKind::ApiKey)],
+            ),
+            (
+                ChannelType::OpenCode,
+                vec![public(), credential(63, CredentialKind::Public)],
+            ),
+        ] {
+            assert!(
+                SchedulerRuntimeTargetRecord::new_pool(
+                    channel,
+                    service,
+                    Protocol::OpenAiChat,
+                    None,
+                    pool,
+                    vec![]
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
     fn opencode_entry_and_profile_revision_survive_projection() {
         let channel = ChannelId::new(61).unwrap();
         let profile = af_domain::built_in_client_profiles()

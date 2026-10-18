@@ -265,7 +265,7 @@ async fn pagination_filters_and_limits_are_applied_by_database() -> TestResult {
             .iter()
             .map(|p| p.key.as_str())
             .collect::<Vec<_>>(),
-        vec!["opencode", "standard"]
+        vec!["opencode", "opencode-public", "standard"]
     );
     assert_eq!(
         repo.list(ClientProfileQuery {

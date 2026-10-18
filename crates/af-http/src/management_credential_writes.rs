@@ -358,6 +358,7 @@ impl<'de> Deserialize<'de> for AdminCredentialSecretInput {
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum AdminCredentialSecretValue {
+    Public {},
     ApiKey {
         api_key: String,
     },
@@ -387,6 +388,7 @@ enum AdminCredentialSecretValue {
 impl AdminCredentialSecretValue {
     fn into_secret(self) -> Result<AdminCredentialSecret, ManagementError> {
         let result = match self {
+            Self::Public {} => Ok(AdminCredentialSecret::public()),
             Self::ApiKey { api_key } => AdminCredentialSecret::api_key(api_key),
             Self::Oauth {
                 access_token,
@@ -875,6 +877,7 @@ mod tests {
     #[test]
     fn typed_secret_requests_accept_all_supported_shapes() {
         for (kind, secret) in [
+            ("public", json!({"kind": "public"})),
             (
                 "api_key",
                 json!({"kind": "api_key", "api_key": "sk-private"}),
@@ -949,6 +952,37 @@ mod tests {
         missing.as_object_mut().unwrap().remove("secret");
         let missing = serde_json::from_value::<AdminCredentialWriteRequest>(missing).unwrap();
         assert!(missing.into_update_command().is_err());
+    }
+
+    #[test]
+    fn public_access_rejects_keys_oauth_fields_and_implicit_null_on_create() {
+        for secret in [
+            json!({"kind":"public","api_key":"placeholder"}),
+            json!({"kind":"public","access_token":"token"}),
+        ] {
+            assert!(
+                serde_json::from_value::<AdminCredentialWriteRequest>(request("public", secret))
+                    .is_err()
+            );
+        }
+        let pending =
+            serde_json::from_value::<AdminCredentialWriteRequest>(request("public", Value::Null))
+                .unwrap();
+        assert!(pending.into_create_command().is_err());
+        let mismatched = serde_json::from_value::<AdminCredentialWriteRequest>(request(
+            "api_key",
+            json!({"kind":"public"}),
+        ))
+        .unwrap();
+        assert!(mismatched.into_create_command().is_err());
+        let mut oauth = request("public", json!({"kind":"public"}));
+        oauth["oauth_provider"] = json!("codex");
+        assert!(
+            serde_json::from_value::<AdminCredentialWriteRequest>(oauth)
+                .unwrap()
+                .into_create_command()
+                .is_err()
+        );
     }
 
     #[test]

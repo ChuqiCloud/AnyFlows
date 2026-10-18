@@ -27,13 +27,14 @@ export function isSparkShadowCredential(credential: AdminCredential) {
 }
 
 export const writableCredentialKinds = [
+  'public',
   'api_key',
   'oauth',
   'bedrock',
   'service_account',
 ] as const satisfies readonly WritableCredentialKind[]
 
-/** 将开放的持久化类型收窄为管理端当前可写的四类凭据。 */
+/** 将开放的持久化类型收窄为管理端当前可写的凭据类型。 */
 export function asWritableCredentialKind(value: AdminCredential['kind']) {
   return writableCredentialKinds.find((kind) => kind === value)
 }
@@ -54,6 +55,7 @@ export function credentialKindsForChannel(
     case 'openai':
       return ['api_key', 'oauth']
     case 'opencode':
+      return ['api_key', 'public']
     case 'jina':
     case 'cohere':
     case 'xai':
