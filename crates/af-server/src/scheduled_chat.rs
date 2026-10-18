@@ -385,7 +385,9 @@ impl ScheduledChatService {
                 } else {
                     None
                 };
-                let mut context = RelayContext::new(client);
+                let mut context = RelayContext::new(client)
+                    .with_credential_scope(secret_owner_id.get())
+                    .map_err(|_| AfError::Internal)?;
                 if let Some(base_url) = target.base_url() {
                     context = context
                         .with_base_url(base_url)

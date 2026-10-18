@@ -1,5 +1,5 @@
 import { Controller, type UseFormReturn } from 'react-hook-form'
-import { KeyRound, Link2, LockKeyhole } from 'lucide-react'
+import { Globe2, KeyRound, Link2, LockKeyhole } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -18,6 +18,13 @@ export function CredentialSecretFields({ form, creating, disabled }: {
   const kind = form.watch('kind')
   const rotateSecret = form.watch('rotateSecret')
   const oauthCreateMode = form.watch('oauthCreateMode')
+
+  if (kind === 'public') return (
+    <div className="flex items-start gap-2.5 rounded-lg bg-info/8 px-3 py-2.5 text-info" role="note">
+      <Globe2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+      <p className="text-xs leading-5">{t('credentials.secret.publicHint')}</p>
+    </div>
+  )
 
   return (
     <div className="grid gap-3">

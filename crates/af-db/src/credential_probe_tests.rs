@@ -14,6 +14,82 @@ use crate::{
 };
 
 #[tokio::test]
+async fn public_discovery_and_probe_select_only_compatible_frozen_profile()
+-> Result<(), Box<dyn Error>> {
+    let pool = test_pool().await?;
+    let mut source = channel(
+        "public-probe",
+        Status::Enabled,
+        true,
+        "https://example.com",
+        [],
+    );
+    source.r#type = Set("opencode".to_owned());
+    source.base_url = Set(None);
+    let source = source.insert(pool.connection()).await?;
+    channel_model(source.id, "test-model")
+        .insert(pool.connection())
+        .await?;
+    let public = credential(
+        source.id,
+        CredentialKind::Public,
+        0,
+        true,
+        Status::Enabled,
+        None,
+        "public-descriptor",
+        0x44,
+    )
+    .insert(pool.connection())
+    .await?;
+    // 不受支持的高优先级 OAuth 不得抢占发现/探活身份。
+    credential(
+        source.id,
+        CredentialKind::Oauth,
+        99,
+        true,
+        Status::Enabled,
+        None,
+        "ignored-oauth",
+        0x45,
+    )
+    .insert(pool.connection())
+    .await?;
+    let profiles = crate::ClientProfileRepository::new(pool.clone());
+    profiles
+        .bind(
+            channel_id(source.id),
+            af_domain::ClientProfileBinding {
+                key: "opencode-public".to_owned(),
+                revision: 1,
+            },
+            0,
+        )
+        .await?;
+    let target = ChannelProbeTargetRepository::new(pool.clone())
+        .load(channel_id(source.id))
+        .await?
+        .unwrap();
+    assert_eq!(target.credential_id(), public.id);
+    assert_eq!(target.credential_kind(), CredentialKind::Public);
+    assert_eq!(
+        target.client_profile().unwrap().binding.key,
+        "opencode-public"
+    );
+    let crate::ModelDiscoveryTargetLookup::Found(discovery) =
+        crate::ModelSyncRepository::new(pool.clone())
+            .load_discovery_target(channel_id(source.id))
+            .await?
+    else {
+        panic!("public discovery target required");
+    };
+    assert_eq!(discovery.credential_id(), public.id);
+    assert_eq!(discovery.credential_kind(), CredentialKind::Public);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn load_selects_stable_model_and_highest_priority_credential() -> Result<(), Box<dyn Error>> {
     let pool = test_pool().await?;
     let mut channel = channel(

@@ -174,6 +174,7 @@ impl CredentialEncryptor {
             return Err(CredentialEncryptionError::InvalidBinding);
         }
         let wire = match secret.as_ref() {
+            PlainCredentialSecretRef::Public => PlainCredentialWire::Public {},
             PlainCredentialSecretRef::ApiKey(api_key) => PlainCredentialWire::ApiKey { api_key },
             PlainCredentialSecretRef::Oauth(access_token) => PlainCredentialWire::Oauth {
                 access_token,
@@ -272,6 +273,8 @@ impl fmt::Debug for CredentialEncryptor {
 #[derive(Serialize)]
 #[serde(tag = "kind")]
 enum PlainCredentialWire<'a> {
+    #[serde(rename = "public")]
+    Public {},
     #[serde(rename = "api_key")]
     ApiKey { api_key: &'a str },
     #[serde(rename = "oauth")]
@@ -320,6 +323,51 @@ mod tests {
     const CREDENTIAL_ID: i64 = 11;
     const SERVICE_ACCOUNT_PRIVATE_KEY: &str =
         include_str!("../../af-adapter/src/vertex/fixtures/service_account_private.pem");
+
+    #[test]
+    fn public_descriptor_round_trips_without_secret_and_is_bound_to_its_record() {
+        let settings = settings();
+        let encryptor = CredentialEncryptor::new(&settings).unwrap();
+        let decryptor = CredentialDecryptor::new(&settings).unwrap();
+        let secret = PlainCredentialSecret::public();
+        let envelope = encryptor
+            .encrypt(channel_id(), CREDENTIAL_ID, &secret)
+            .unwrap();
+        let decoded = decryptor
+            .decrypt_envelope(
+                channel_id(),
+                CREDENTIAL_ID,
+                CredentialKind::Public,
+                &envelope,
+            )
+            .unwrap();
+        assert_eq!(decoded.kind(), CredentialKind::Public);
+        assert_eq!(decoded.expose_secret(), "");
+        assert!(!decoded.oauth_has_refresh_token());
+        assert!(
+            decryptor
+                .decrypt_envelope(
+                    channel_id(),
+                    CREDENTIAL_ID + 1,
+                    CredentialKind::Public,
+                    &envelope
+                )
+                .is_err()
+        );
+        assert!(
+            decryptor
+                .decrypt_envelope(
+                    channel_id(),
+                    CREDENTIAL_ID,
+                    CredentialKind::ApiKey,
+                    &envelope
+                )
+                .is_err()
+        );
+        assert!(
+            PlainCredentialSecret::new(CredentialKind::Public, "placeholder".to_owned()).is_err()
+        );
+    }
 
     #[test]
     fn encrypts_supported_secrets_for_the_production_decryptor() {

@@ -75,6 +75,7 @@ pub struct Credential {
 
 #[derive(Clone, Eq, PartialEq)]
 enum CredentialValue {
+    Public,
     ApiKey(SecretString),
     Oauth(SecretString),
     Bedrock(BedrockCredential),
@@ -159,6 +160,14 @@ impl fmt::Debug for SecretString {
 }
 
 impl Credential {
+    /// 构造无密钥的公开访问描述；仅允许明确支持该模式的适配器消费。
+    #[must_use]
+    pub const fn public() -> Self {
+        Self {
+            value: CredentialValue::Public,
+        }
+    }
+
     /// 构造 API Key 凭据。
     pub fn api_key(value: impl Into<String>) -> AdaptorResult<Self> {
         Self::from_value(CredentialValue::ApiKey, value.into())
@@ -233,6 +242,7 @@ impl Credential {
     #[must_use]
     pub const fn kind(&self) -> CredentialKind {
         match &self.value {
+            CredentialValue::Public => CredentialKind::Public,
             CredentialValue::ApiKey(_) => CredentialKind::ApiKey,
             CredentialValue::Oauth(_) => CredentialKind::Oauth,
             CredentialValue::Bedrock(_) => CredentialKind::Bedrock,
@@ -247,6 +257,8 @@ impl Credential {
     #[must_use]
     pub fn expose_secret(&self) -> &str {
         match &self.value {
+            // 公开访问没有秘密。认证代码须先检查 kind，不能据此创建空 Bearer。
+            CredentialValue::Public => "",
             CredentialValue::ApiKey(secret) | CredentialValue::Oauth(secret) => secret.expose(),
             CredentialValue::Bedrock(credential) => credential.secret_access_key.expose(),
             CredentialValue::ServiceAccount(credential) => credential.private_key.expose(),
@@ -261,7 +273,8 @@ impl Credential {
                 credential.secret_access_key.expose(),
                 credential.session_token.as_ref().map(SecretString::expose),
             )),
-            CredentialValue::ApiKey(_)
+            CredentialValue::Public
+            | CredentialValue::ApiKey(_)
             | CredentialValue::Oauth(_)
             | CredentialValue::ServiceAccount(_) => None,
         }
@@ -275,7 +288,8 @@ impl Credential {
                 credential.private_key_id.as_ref().map(SecretString::expose),
                 credential.private_key.expose(),
             )),
-            CredentialValue::ApiKey(_)
+            CredentialValue::Public
+            | CredentialValue::ApiKey(_)
             | CredentialValue::Oauth(_)
             | CredentialValue::Bedrock(_) => None,
         }

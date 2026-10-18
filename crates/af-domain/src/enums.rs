@@ -294,6 +294,8 @@ string_enum! {
 string_enum! {
     /// 凭据记录的稳定种类；不包含具体 secret 字段。
     pub enum CredentialKind {
+        /// 上游明确支持的公开访问；没有秘密材料。
+        Public => "public",
         /// API Key 凭据。
         ApiKey => "api_key",
         /// OAuth access/refresh token 凭据。

@@ -490,6 +490,7 @@ pub(crate) enum ResponsesCompactProbeResultSchema {
 #[derive(ToSchema)]
 #[schema(as = AdminCredentialKind, rename_all = "snake_case")]
 pub(crate) enum AdminCredentialKindSchema {
+    Public,
     ApiKey,
     Oauth,
     SetupToken,
@@ -502,6 +503,7 @@ pub(crate) enum AdminCredentialKindSchema {
 #[derive(ToSchema)]
 #[schema(as = AdminCredentialWriteKind, rename_all = "snake_case")]
 pub(crate) enum AdminCredentialWriteKindSchema {
+    Public,
     ApiKey,
     Oauth,
     Bedrock,

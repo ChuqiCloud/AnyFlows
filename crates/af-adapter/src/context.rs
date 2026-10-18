@@ -20,6 +20,7 @@ pub struct RelayContext {
     base_url: Option<String>,
     request_id: Option<String>,
     client_session_scope: Option<String>,
+    credential_scope: Option<i64>,
     oauth_provider: Option<String>,
     oauth_account_key: Option<String>,
 }
@@ -33,9 +34,23 @@ impl RelayContext {
             base_url: None,
             request_id: None,
             client_session_scope: None,
+            credential_scope: None,
             oauth_provider: None,
             oauth_account_key: None,
         }
+    }
+
+    /// 固定本次使用的凭据记录，供无密钥身份隔离；不接受调用方传入的值。
+    pub fn with_credential_scope(mut self, credential_id: i64) -> AdaptorResult<Self> {
+        if credential_id <= 0 {
+            return Err(AdaptorError::InvalidCredential);
+        }
+        self.credential_scope = Some(credential_id);
+        Ok(self)
+    }
+
+    pub const fn credential_scope(&self) -> Option<i64> {
+        self.credential_scope
     }
 
     /// 设置已校验的渠道基础地址；不得携带 userinfo、查询串或片段。

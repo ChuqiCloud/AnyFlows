@@ -106,6 +106,7 @@ impl CredentialDecryptor {
     ) -> Result<DecryptedCredential, CredentialDecryptionError> {
         let wire = self.decrypt_wire(channel_id, credential_id, credential_kind, envelope)?;
         let value = match wire {
+            PlainCredentialWire::Public {} => DecryptedCredentialValue::Public,
             PlainCredentialWire::ApiKey { api_key } => DecryptedCredentialValue::ApiKey(api_key),
             PlainCredentialWire::Oauth {
                 access_token,
@@ -182,7 +183,8 @@ impl CredentialDecryptor {
     ) -> Result<PlainCredentialWire, CredentialDecryptionError> {
         if !matches!(
             credential_kind,
-            CredentialKind::ApiKey
+            CredentialKind::Public
+                | CredentialKind::ApiKey
                 | CredentialKind::Oauth
                 | CredentialKind::Bedrock
                 | CredentialKind::ServiceAccount
@@ -279,6 +281,8 @@ impl Drop for CredentialKey {
 #[derive(Deserialize)]
 #[serde(tag = "kind", deny_unknown_fields)]
 enum PlainCredentialWire {
+    #[serde(rename = "public")]
+    Public {},
     #[serde(rename = "api_key")]
     ApiKey { api_key: SecretText },
     #[serde(rename = "oauth")]
@@ -313,6 +317,7 @@ pub struct DecryptedCredential {
 }
 
 enum DecryptedCredentialValue {
+    Public,
     ApiKey(SecretText),
     Oauth {
         access_token: OAuthTokenText,
@@ -333,6 +338,7 @@ enum DecryptedCredentialValue {
 impl DecryptedCredentialValue {
     const fn kind(&self) -> CredentialKind {
         match self {
+            Self::Public => CredentialKind::Public,
             Self::ApiKey(_) => CredentialKind::ApiKey,
             Self::Oauth { .. } => CredentialKind::Oauth,
             Self::Bedrock { .. } => CredentialKind::Bedrock,
@@ -368,6 +374,7 @@ impl DecryptedCredential {
     #[must_use]
     pub fn expose_secret(&self) -> &str {
         match &self.value {
+            DecryptedCredentialValue::Public => "",
             DecryptedCredentialValue::ApiKey(value) => value.expose(),
             DecryptedCredentialValue::Oauth { access_token, .. } => access_token.expose(),
             DecryptedCredentialValue::Bedrock {

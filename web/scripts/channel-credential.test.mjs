@@ -368,3 +368,23 @@ test('独立账号池与 OAuth 固定终态都有中英文文案', () => {
     }
   }
 })
+
+test('公开访问只发送无密钥描述，编辑时保留描述与调度字段', () => {
+  const values = {
+    ...credentialFormValues(undefined, 'public'),
+    apiKey: 'must-not-be-sent', accessToken: 'must-not-be-sent',
+    concurrency: '3', priority: '4', weight: '5',
+  }
+  const created = createCredentialRequest(values)
+  assert.equal(created.kind, 'public')
+  assert.deepEqual(created.secret, { kind: 'public' })
+  assert.equal(created.oauth_provider, null)
+  assert.equal(created.concurrency, 3)
+  const existing = { ...oauthCredential, kind: 'public', oauth_provider: null }
+  const updated = updateCredentialRequest(values, existing)
+  assert.equal(updated.kind, 'public')
+  assert.equal(updated.secret, null)
+  assert.equal(updated.concurrency, 3)
+  assert.equal(updated.priority, 4)
+  assert.equal(updated.weight, 5)
+})

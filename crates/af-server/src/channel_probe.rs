@@ -99,6 +99,8 @@ impl DatabaseChannelProbe {
             .get(Some(timeout))
             .map_err(|_| ProbeFailure::ContextBuild)?;
         let mut context = RelayContext::new(client)
+            .with_credential_scope(target.credential_id())
+            .map_err(|_| ProbeFailure::ContextBuild)?
             .with_request_id(format!(
                 "probe-{}-{}",
                 target.channel_id().get(),

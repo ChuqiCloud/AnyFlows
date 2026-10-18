@@ -159,7 +159,9 @@ impl ClientProfileDefinition {
             ClientProfileService::ClaudeCode | ClientProfileService::Codex => {
                 kind == CredentialKind::Oauth
             }
-            ClientProfileService::OpenCode => kind == CredentialKind::ApiKey,
+            ClientProfileService::OpenCode => {
+                matches!(kind, CredentialKind::ApiKey | CredentialKind::Public)
+            }
         }
     }
 
@@ -260,7 +262,15 @@ pub fn built_in_client_profiles() -> Vec<ClientProfileSnapshot> {
                 Protocol::Anthropic,
                 Protocol::Gemini,
             ],
-            CredentialKind::ALL.to_vec(),
+            // 初始修订保持冻结，新增凭据类型不改变已有渠道的兼容范围。
+            vec![
+                CredentialKind::ApiKey,
+                CredentialKind::Oauth,
+                CredentialKind::SetupToken,
+                CredentialKind::Bedrock,
+                CredentialKind::ServiceAccount,
+                CredentialKind::Upstream,
+            ],
             vec![],
         ),
         (
@@ -307,6 +317,22 @@ pub fn built_in_client_profiles() -> Vec<ClientProfileSnapshot> {
                 Protocol::Anthropic,
             ],
             vec![CredentialKind::ApiKey],
+            vec![
+                ("user-agent", "opencode/latest/2.0.29/cli"),
+                ("x-opencode-client", "cli"),
+            ],
+        ),
+        (
+            "opencode-public",
+            "OpenCode（公开访问）",
+            ClientProfileService::OpenCode,
+            ClientProfileBehavior::OpenCodeV1,
+            vec![
+                Protocol::OpenAiChat,
+                Protocol::OpenAiResponses,
+                Protocol::Anthropic,
+            ],
+            vec![CredentialKind::Public],
             vec![
                 ("user-agent", "opencode/latest/2.0.29/cli"),
                 ("x-opencode-client", "cli"),

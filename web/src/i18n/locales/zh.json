@@ -986,6 +986,7 @@
       "loading": "正在加载凭据"
     },
     "kind": {
+      "public": "公开访问",
       "api_key": "API Key",
       "oauth": "OAuth 账号",
       "bedrock": "Bedrock 访问密钥",
@@ -1070,6 +1071,7 @@
       "selectFirst": "选择母凭据后显示"
     },
     "secret": {
+      "publicHint": "无需填写 API Key。此渠道只保留一条公开凭据，不能与 API Key 混用；可用模型由上游决定，目录可读取不代表可以推理。公开访问失败会直接返回，不会转用收费 Key。",
       "apiKey": "上游 API Key",
       "oauthCreateMode": "OAuth 创建方式",
       "oauthMode": {

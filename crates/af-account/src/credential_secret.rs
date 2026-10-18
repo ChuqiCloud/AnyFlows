@@ -26,6 +26,7 @@ pub struct PlainCredentialSecret {
 }
 
 enum PlainCredentialValue {
+    Public,
     ApiKey(Zeroizing<String>),
     Oauth(Zeroizing<String>),
     OauthBundle(PlainOAuthCredential),
@@ -43,6 +44,7 @@ enum PlainCredentialValue {
 
 /// 加密 wire 使用的短生命周期只读投影。
 pub(crate) enum PlainCredentialSecretRef<'a> {
+    Public,
     ApiKey(&'a str),
     Oauth(&'a str),
     OauthBundle(&'a PlainOAuthCredential),
@@ -59,12 +61,21 @@ pub(crate) enum PlainCredentialSecretRef<'a> {
 }
 
 impl PlainCredentialSecret {
+    /// 显式的无密钥描述，持久化时仍绑定渠道和凭据 ID，不能冒充 API Key。
+    #[must_use]
+    pub const fn public() -> Self {
+        Self {
+            value: PlainCredentialValue::Public,
+        }
+    }
+
     /// 兼容既有简单凭据入口；复杂凭据必须使用专用构造器。
     pub fn new(kind: CredentialKind, value: String) -> Result<Self, CredentialEncryptionError> {
         match kind {
             CredentialKind::ApiKey => Self::api_key(value),
             CredentialKind::Oauth => Self::oauth_access_token(value),
             CredentialKind::SetupToken
+            | CredentialKind::Public
             | CredentialKind::Bedrock
             | CredentialKind::ServiceAccount
             | CredentialKind::Upstream => Err(CredentialEncryptionError::UnsupportedKind),
@@ -136,6 +147,7 @@ impl PlainCredentialSecret {
     #[must_use]
     pub const fn kind(&self) -> CredentialKind {
         match &self.value {
+            PlainCredentialValue::Public => CredentialKind::Public,
             PlainCredentialValue::ApiKey(_) => CredentialKind::ApiKey,
             PlainCredentialValue::Oauth(_) | PlainCredentialValue::OauthBundle(_) => {
                 CredentialKind::Oauth
@@ -147,6 +159,7 @@ impl PlainCredentialSecret {
 
     pub(crate) fn as_ref(&self) -> PlainCredentialSecretRef<'_> {
         match &self.value {
+            PlainCredentialValue::Public => PlainCredentialSecretRef::Public,
             PlainCredentialValue::ApiKey(value) => PlainCredentialSecretRef::ApiKey(value),
             PlainCredentialValue::Oauth(value) => PlainCredentialSecretRef::Oauth(value),
             PlainCredentialValue::OauthBundle(value) => {
