@@ -72,7 +72,7 @@ def main():
     binding = request("GET", f"/api/admin/client-profiles/channel-bindings/{channel_id}", token=admin)
     request("PUT", f"/api/admin/client-profiles/channel-bindings/{channel_id}", {
         "binding": {"key": "opencode-public", "revision": 1},
-        "expected_version": binding["version"],
+        "expected_version": binding["version"] if binding else 0,
     }, admin)
     request("POST", f"/api/admin/channels/{channel_id}/credentials", {
         "kind": "public", "secret": {"kind": "public"}, "status": "enabled",
@@ -166,6 +166,6 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (AssertionError, RuntimeError, urllib.error.URLError, KeyError) as error:
+    except (AssertionError, RuntimeError, urllib.error.URLError, KeyError, TypeError) as error:
         print(f"Live acceptance failed: {error}", file=sys.stderr)
         sys.exit(1)
