@@ -102,72 +102,86 @@ def main():
 
     first = "Remember marker AF-627. Reply exactly SAVED. Do not call tools."
     second = "What marker did I ask you to remember? Reply with the marker only. Do not call tools."
-    messages = [{"role": "user", "content": first}]
-    answer = request("POST", "/v1/chat/completions", {
-        "model": MODEL, "messages": messages, "max_tokens": 256, "stream": False,
-    }, key)
-    assert answer["choices"][0]["finish_reason"] == "stop", "Chat response has no valid terminal state"
-    text = answer["choices"][0]["message"]["content"]
-    assert "SAVED" in text, "The first turn returned no expected content"
-    print("PASS chat/json/first-turn", flush=True)
-    messages += [{"role": "assistant", "content": text}, {"role": "user", "content": second}]
-    answer = request("POST", "/v1/chat/completions", {
-        "model": MODEL, "messages": messages, "max_tokens": 256, "stream": False,
-    }, key)
-    assert "AF-627" in answer["choices"][0]["message"]["content"]
-    assert answer["choices"][0]["finish_reason"] == "stop"
-    print("PASS chat/json/continuous-dialogue", flush=True)
-    frames, _ = request("POST", "/v1/chat/completions", {
-        "model": MODEL, "messages": messages, "max_tokens": 256, "stream": True,
-        "stream_options": {"include_usage": True},
-    }, key, True)
-    chunks = [frame for frame in frames if isinstance(frame, dict)]
-    assert frames[-1] == "[DONE]"
-    assert "AF-627" in "".join(choice.get("delta", {}).get("content") or ""
-        for chunk in chunks for choice in chunk.get("choices", []))
-    assert any(choice.get("finish_reason") == "stop" for chunk in chunks for choice in chunk.get("choices", []))
-    assert any(chunk.get("usage") for chunk in chunks)
-    print("PASS chat/sse/continuous-dialogue", flush=True)
+    failures = []
+    for protocol in ["chat", "responses", "messages", "gemini"]:
+        for streaming in [False, True]:
+            name = f"{protocol}/{'sse' if streaming else 'json'}"
+            messages = [{"role": "user", "content": first}]
+            try:
+                text = conversation_turn(protocol, streaming, messages, key)
+                assert "SAVED" in text, "The first turn returned no expected content"
+                print(f"PASS {name}/first-turn", flush=True)
+                messages += [{"role": "assistant", "content": text}, {"role": "user", "content": second}]
+                text = conversation_turn(protocol, streaming, messages, key)
+                assert "AF-627" in text, "The second turn did not retain conversation history"
+                print(f"PASS {name}/continuous-dialogue", flush=True)
+            except (AssertionError, RuntimeError, urllib.error.URLError, KeyError, TypeError) as error:
+                failures.append(name)
+                print(f"FAIL {name}: {error}", flush=True)
+                report_failure()
+    if failures:
+        raise RuntimeError("Failed protocol cases: " + ", ".join(failures))
+    print("Live acceptance passed: one fixed free upstream, four downstream protocols, JSON/SSE and two turns in every case.", flush=True)
 
-    prompt = "Reply exactly AF-627. Do not call tools."
-    for streaming in [False, True]:
+
+def conversation_turn(protocol, streaming, messages, key):
+    if protocol == "chat":
+        response = request("POST", "/v1/chat/completions", {
+            "model": MODEL, "messages": messages, "max_tokens": 256, "stream": streaming,
+            "stream_options": {"include_usage": True} if streaming else None,
+        } if streaming else {
+            "model": MODEL, "messages": messages, "max_tokens": 256, "stream": False,
+        }, key, streaming)
+        if not streaming:
+            assert response["choices"][0]["finish_reason"] == "stop"
+            assert response.get("usage"), "Chat response has no usage"
+            return response["choices"][0]["message"]["content"]
+        frames, _ = response
+        chunks = [frame for frame in frames if isinstance(frame, dict)]
+        assert frames[-1] == "[DONE]", "Chat stream has no terminal marker"
+        finished = [choice["finish_reason"] for chunk in chunks for choice in chunk.get("choices", [])
+                    if choice.get("finish_reason")]
+        assert finished == ["stop"], "Chat stream repeated or missed its terminal state"
+        assert any(chunk.get("usage") for chunk in chunks), "Chat stream has no usage"
+        return "".join(choice.get("delta", {}).get("content") or ""
+                       for chunk in chunks for choice in chunk.get("choices", []))
+    if protocol == "responses":
         response = request("POST", "/v1/responses", {
-            "model": MODEL, "input": prompt, "max_output_tokens": 256, "stream": streaming,
+            "model": MODEL, "input": messages, "max_output_tokens": 256, "stream": streaming,
         }, key, streaming)
         if streaming:
             frames, _ = response
             completed = [f["response"] for f in frames if isinstance(f, dict) and f.get("type") == "response.completed"]
-            assert len(completed) == 1
+            assert len(completed) == 1, "Responses stream has no unique completed response"
             response = completed[0]
         assert response["status"] == "completed"
-        assert "AF-627" in "".join(c.get("text", "") for item in response["output"] for c in item.get("content", []))
-        print(f"PASS responses/{'sse' if streaming else 'json'}", flush=True)
+        assert response.get("usage"), "Responses response has no usage"
+        return "".join(c.get("text", "") for item in response["output"] for c in item.get("content", []))
+    if protocol == "messages":
         response = request("POST", "/v1/messages", {
-            "model": MODEL, "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 256, "stream": streaming,
+            "model": MODEL, "messages": messages, "max_tokens": 256, "stream": streaming,
         }, key, streaming)
-        if streaming:
-            frames, events = response
-            assert "message_stop" in events
-            text = "".join(f.get("delta", {}).get("text", "") for f in frames if isinstance(f, dict))
-            assert any(f.get("delta", {}).get("stop_reason") == "end_turn" for f in frames if isinstance(f, dict))
-        else:
+        if not streaming:
             assert response["stop_reason"] == "end_turn"
-            text = "".join(c.get("text", "") for c in response["content"])
-        assert "AF-627" in text
-        print(f"PASS messages/{'sse' if streaming else 'json'}", flush=True)
-        action = "streamGenerateContent?alt=sse" if streaming else "generateContent"
-        response = request("POST", f"/v1beta/models/{MODEL}:{action}", {
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"maxOutputTokens": 256},
-        }, key, streaming)
-        frames = response[0] if streaming else [response]
-        candidates = [candidate for frame in frames if isinstance(frame, dict) for candidate in frame.get("candidates", [])]
-        assert any(candidate.get("finishReason") == "STOP" for candidate in candidates)
-        assert "AF-627" in "".join(part.get("text", "") for candidate in candidates
-            for part in candidate.get("content", {}).get("parts", []) if not part.get("thought"))
-        print(f"PASS gemini/{'sse' if streaming else 'json'}", flush=True)
-    print("Live acceptance passed: one fixed free upstream, four downstream protocols, JSON/SSE and continuous dialogue.", flush=True)
+            assert response.get("usage"), "Messages response has no usage"
+            return "".join(c.get("text", "") for c in response["content"])
+        frames, events = response
+        assert events.count("message_stop") == 1, "Messages stream has no unique terminal event"
+        assert any(f.get("delta", {}).get("stop_reason") == "end_turn" for f in frames if isinstance(f, dict))
+        assert any(f.get("usage") for f in frames if isinstance(f, dict)), "Messages stream has no usage"
+        return "".join(f.get("delta", {}).get("text", "") for f in frames if isinstance(f, dict))
+    action = "streamGenerateContent?alt=sse" if streaming else "generateContent"
+    response = request("POST", f"/v1beta/models/{MODEL}:{action}", {
+        "contents": [{"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
+                     for m in messages],
+        "generationConfig": {"maxOutputTokens": 256},
+    }, key, streaming)
+    frames = response[0] if streaming else [response]
+    candidates = [c for frame in frames if isinstance(frame, dict) for c in frame.get("candidates", [])]
+    assert any(c.get("finishReason") == "STOP" for c in candidates), "Gemini response has no stop state"
+    assert any(frame.get("usageMetadata") for frame in frames if isinstance(frame, dict)), "Gemini response has no usage"
+    return "".join(part.get("text", "") for c in candidates
+                   for part in c.get("content", {}).get("parts", []) if not part.get("thought"))
 
 
 def report_failure():
