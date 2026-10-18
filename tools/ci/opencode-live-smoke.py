@@ -2,6 +2,7 @@
 """Run explicit live acceptance against a fresh loopback preview instance."""
 
 import json
+import os
 import secrets
 import sys
 import time
@@ -45,6 +46,10 @@ def request(method, path, body=None, token=None, stream=False):
 
 def main():
     global ADMIN_TOKEN
+    access = os.environ.get("OPENCODE_LIVE_ACCESS", "public")
+    upstream_key = os.environ.get("OPENCODE_LIVE_API_KEY", "") if access == "api_key" else ""
+    if access not in ["public", "api_key"] or (access == "api_key" and not upstream_key):
+        raise RuntimeError("API Key acceptance requires the configured repository secret")
     password = secrets.token_urlsafe(24)
     admin = request("POST", "/api/setup", {"username": "preview-admin", "password": password})["access_token"]
     ADMIN_TOKEN = admin
@@ -72,17 +77,19 @@ def main():
         "client_simulation_risk_accepted": False, "client_simulation_body_profile": None,
         "client_simulation_body_risk_accepted": False, "models": [MODEL],
         "group_ids": [group_id], "model_mapping": {MODEL: UPSTREAM_MODEL},
-        "param_override": {}, "header_override": {}, "tag": None,
+        "param_override": {"temperature": 0}, "header_override": {}, "tag": None,
         "settings": {"opencode_entry": "inference_v1", "opencode_full_compatibility": True},
     }, admin)
     channel_id = channel["id"]
     binding = request("GET", f"/api/admin/client-profiles/channel-bindings/{channel_id}", token=admin)
     request("PUT", f"/api/admin/client-profiles/channel-bindings/{channel_id}", {
-        "binding": {"key": "opencode-public", "revision": 1},
+        "binding": {"key": "opencode" if access == "api_key" else "opencode-public", "revision": 1},
         "expected_version": binding["version"] if binding else 0,
     }, admin)
     request("POST", f"/api/admin/channels/{channel_id}/credentials", {
-        "kind": "public", "secret": {"kind": "public"}, "status": "enabled",
+        "kind": access,
+        "secret": {"kind": "api_key", "api_key": upstream_key} if access == "api_key" else {"kind": "public"},
+        "status": "enabled",
         "multi_key_mode": None, "priority": 0, "weight": 1, "concurrency": None,
         "load_factor_micros": None, "rate_multiplier_micros": None, "schedulable": True,
         "parent_id": None, "quota_dimension": "global", "proxy_id": None,
@@ -121,7 +128,7 @@ def main():
                 report_failure()
     if failures:
         raise RuntimeError("Failed protocol cases: " + ", ".join(failures))
-    print("Live acceptance passed: one fixed free upstream, four downstream protocols, JSON/SSE and two turns in every case.", flush=True)
+    print(f"Live acceptance passed ({access}): one fixed free upstream, four downstream protocols, JSON/SSE and two turns in every case.", flush=True)
 
 
 def conversation_turn(protocol, streaming, messages, key):

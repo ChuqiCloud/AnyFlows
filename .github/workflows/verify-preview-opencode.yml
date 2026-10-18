@@ -7,6 +7,11 @@ on:
         description: 'Successful Build preview package run ID'
         required: true
         type: string
+      access_mode:
+        description: 'public or api_key (uses OPENCODE_LIVE_API_KEY repository secret)'
+        required: false
+        default: public
+        type: string
 
 permissions:
   contents: read
@@ -64,6 +69,9 @@ jobs:
           echo "PREVIEW_PACKAGE=$(realpath "$package")" >> "$GITHUB_ENV"
 
       - name: Verify four protocols against the fixed free model
+        env:
+          OPENCODE_LIVE_ACCESS: ${{ inputs.access_mode || 'public' }}
+          OPENCODE_LIVE_API_KEY: ${{ secrets.OPENCODE_LIVE_API_KEY }}
         run: |
           set -euo pipefail
           script="$(realpath tools/ci/opencode-live-smoke.py)"
