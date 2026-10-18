@@ -86,6 +86,8 @@ pub use billing_contract::{BillingContractPriceSnapshotError, OrganizationContra
 #[cfg(test)]
 mod billing_batch_tests;
 mod channel_settings;
+mod opencode_settings;
+pub use opencode_settings::channel_opencode_entry;
 mod client_profiles;
 #[cfg(test)]
 mod client_profiles_tests;

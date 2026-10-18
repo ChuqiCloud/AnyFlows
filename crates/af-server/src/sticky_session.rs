@@ -1,7 +1,7 @@
 use std::{fmt, fmt::Write as _, future::Future, pin::Pin};
 
 use af_cache::{CacheError, RedisStickySessionStore};
-use af_domain::GatewayIdentity;
+use af_domain::{ChannelId, ClientProfileSnapshot, GatewayIdentity};
 use af_protocol::CanonicalRequest;
 use sha2::{Digest, Sha256};
 
@@ -45,13 +45,39 @@ impl StickySessionStore for RedisStickySessionStore {
 
 /// 只保存 SHA-256 十六进制摘要的稳定会话作用域；原文不得进入日志或 Redis。
 #[derive(Clone, Eq, PartialEq)]
-pub(crate) struct StableSessionScope(String);
+pub(crate) struct StableSessionScope {
+    digest: String,
+    inferred: bool,
+}
 
 impl StableSessionScope {
+    pub(crate) fn for_client_profile(
+        &self,
+        channel: ChannelId,
+        profile: Option<&ClientProfileSnapshot>,
+    ) -> Self {
+        let mut digest = Sha256::new();
+        digest.update(b"AnyFlows:client-session-scope:v1\0");
+        digest.update(self.digest.as_bytes());
+        digest.update(channel.get().to_be_bytes());
+        if let Some(profile) = profile {
+            digest.update(profile.binding.key.as_bytes());
+            digest.update(profile.binding.revision.to_be_bytes());
+        }
+        Self {
+            digest: hex_digest(digest),
+            inferred: self.inferred,
+        }
+    }
+
+    pub(crate) const fn is_inferred(&self) -> bool {
+        self.inferred
+    }
+
     /// 返回用于 Redis 键和 WebSocket 池隔离的脱敏摘要。
     #[must_use]
     pub(crate) fn as_str(&self) -> &str {
-        &self.0
+        &self.digest
     }
 }
 
@@ -93,6 +119,35 @@ pub(crate) fn stable_identity_session_scope(
                 .map(|value| (b'u', value))
         })?;
 
+    Some(hash_identity_scope(identity, kind, value.as_bytes()))
+}
+
+pub(crate) fn first_user_message_session_scope(
+    identity: GatewayIdentity,
+    request: &CanonicalRequest,
+) -> Option<StableSessionScope> {
+    let first = request
+        .messages
+        .iter()
+        .find(|message| message.role == af_domain::Role::User)?;
+    let mut bytes = Vec::new();
+    for block in &first.content {
+        match block {
+            af_protocol::ContentBlock::Text(text) => {
+                let length = text.len().min(16_384_usize.saturating_sub(bytes.len()));
+                bytes.extend_from_slice(&text.as_bytes()[..length]);
+                if bytes.len() == 16_384 {
+                    break;
+                }
+            }
+            // 有多模态内容或工具结果时不猜测等价的会话标识。
+            _ => return None,
+        }
+    }
+    (!bytes.is_empty()).then(|| hash_identity_scope(identity, b'f', &bytes))
+}
+
+fn hash_identity_scope(identity: GatewayIdentity, kind: u8, value: &[u8]) -> StableSessionScope {
     let mut digest = Sha256::new();
     match identity {
         GatewayIdentity::User(principal) => {
@@ -109,13 +164,20 @@ pub(crate) fn stable_identity_session_scope(
     }
     digest.update([kind]);
     digest.update(u32::try_from(value.len()).unwrap_or(u32::MAX).to_be_bytes());
-    digest.update(value.as_bytes());
+    digest.update(value);
+    StableSessionScope {
+        digest: hex_digest(digest),
+        inferred: kind == b'f',
+    }
+}
+
+fn hex_digest(digest: Sha256) -> String {
     let digest = digest.finalize();
     let mut encoded = String::with_capacity(digest.len() * 2);
     for byte in digest {
         write!(&mut encoded, "{byte:02x}").expect("写入 String 不会失败");
     }
-    Some(StableSessionScope(encoded))
+    encoded
 }
 
 /// 把缓存错误压缩成不含连接信息的日志类别。
@@ -144,6 +206,48 @@ mod service_tests {
         OrganizationId, OrganizationServiceAccountId, OrganizationServiceAccountKey,
         OrganizationServiceAccountLocator, OrganizationServiceAccountRuntimeIdentity,
     };
+
+    #[test]
+    fn first_message_scope_isolates_subject_channel_and_revision() {
+        let identity = |credential| {
+            GatewayIdentity::ServiceAccount(OrganizationServiceAccountRuntimeIdentity::new(
+                OrganizationServiceAccountLocator::new(
+                    OrganizationId::new(1).unwrap(),
+                    OrganizationServiceAccountId::new(2).unwrap(),
+                ),
+                OrganizationServiceAccountKey::new([3; 16]).unwrap(),
+                OrganizationServiceAccountKey::new([credential; 16]).unwrap(),
+            ))
+        };
+        let first =
+            af_protocol::openai_chat::parse_request_envelope(af_adapter::Bytes::from_static(
+                br#"{"model":"model","messages":[{"role":"user","content":"remember"}]}"#,
+            ))
+            .unwrap();
+        let next = af_protocol::openai_chat::parse_request_envelope(af_adapter::Bytes::from_static(br#"{"model":"model","messages":[{"role":"user","content":"remember"},{"role":"assistant","content":"ok"},{"role":"user","content":"what?"}]}"#)).unwrap();
+        let scope = first_user_message_session_scope(identity(4), first.canonical()).unwrap();
+        assert!(scope.is_inferred());
+        assert_eq!(
+            scope,
+            first_user_message_session_scope(identity(4), next.canonical()).unwrap()
+        );
+        assert_ne!(
+            scope,
+            first_user_message_session_scope(identity(5), first.canonical()).unwrap()
+        );
+        let mut profile = af_domain::built_in_client_profiles().remove(0);
+        let isolated = scope.for_client_profile(ChannelId::new(1).unwrap(), Some(&profile));
+        assert_ne!(
+            isolated,
+            scope.for_client_profile(ChannelId::new(2).unwrap(), Some(&profile))
+        );
+        profile.binding.revision += 1;
+        assert_ne!(
+            isolated,
+            scope.for_client_profile(ChannelId::new(1).unwrap(), Some(&profile))
+        );
+        assert!(!format!("{scope:?}").contains("remember"));
+    }
 
     #[test]
     fn service_session_isolates_organizations_accounts_and_credentials() {

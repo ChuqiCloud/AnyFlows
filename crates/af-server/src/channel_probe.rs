@@ -98,7 +98,13 @@ impl DatabaseChannelProbe {
             .clients
             .get(Some(timeout))
             .map_err(|_| ProbeFailure::ContextBuild)?;
-        let mut context = RelayContext::new(client);
+        let mut context = RelayContext::new(client)
+            .with_request_id(format!(
+                "probe-{}-{}",
+                target.channel_id().get(),
+                probe_timestamp_millis()?
+            ))
+            .map_err(|_| ProbeFailure::ContextBuild)?;
         if let Some(base_url) = target.base_url() {
             context = context
                 .with_base_url(base_url)
@@ -110,6 +116,20 @@ impl DatabaseChannelProbe {
             .setup_headers(&mut headers, &credential, &context)
             .map_err(|_| ProbeFailure::CredentialBuild)?;
         apply_header_overrides(&target, &mut headers)?;
+        if let Some(profile) = target.client_profile() {
+            af_adapter::apply_client_profile_headers(
+                profile,
+                af_adapter::ClientSimulationContext::new(
+                    target.channel_type(),
+                    target.protocol(),
+                    probe_operation(target.protocol())?,
+                    target.credential_kind(),
+                ),
+                target.oauth_provider(),
+                &mut headers,
+            )
+            .map_err(|_| ProbeFailure::RequestBuild)?;
+        }
 
         let request = UpstreamRequest::new(
             Method::POST,
@@ -140,12 +160,39 @@ impl DatabaseChannelProbe {
                 .map_err(|_| ProbeFailure::RequestBuild)?,
             None => request,
         };
+        let request = adaptor
+            .finalize_request(request, &credential, &context)
+            .await
+            .map_err(|_| ProbeFailure::RequestBuild)?;
         let response = adaptor
             .send(request, &context)
             .await
             .map_err(map_transport_failure)?;
         if !response.status().is_success() {
             return Err(ProbeFailure::UpstreamStatus);
+        }
+        let is_sse = response
+            .headers()
+            .get("content-type")
+            .and_then(|h| h.to_str().ok())
+            .is_some_and(|h| {
+                h.split(';')
+                    .next()
+                    .is_some_and(|mime| mime.trim().eq_ignore_ascii_case("text/event-stream"))
+            });
+        if is_sse {
+            let response =
+                af_relay::collect_conversation_response(target.protocol(), response.into_body())
+                    .await
+                    .map_err(|_| ProbeFailure::ResponseRead)?;
+            if response
+                .choices
+                .iter()
+                .all(|choice| choice.message.content.is_empty())
+            {
+                return Err(ProbeFailure::ResponseRead);
+            }
+            return Ok(());
         }
         let response_body = response.into_body();
         let body = match response_body_limit {
@@ -593,6 +640,9 @@ fn supported_target(target: &ChannelProbeTargetRecord) -> bool {
                 | Protocol::OpenAiImages
                 | Protocol::OpenAiAudio
                 | Protocol::OpenAiSpeech
+        ) | (
+            ChannelType::OpenCode,
+            Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic
         ) | (ChannelType::Anthropic, Protocol::Anthropic)
             | (ChannelType::Gemini, Protocol::Gemini)
             | (ChannelType::Jina, Protocol::JinaRerank)
@@ -626,6 +676,16 @@ fn adaptor_settings(target: &ChannelProbeTargetRecord) -> Result<AdaptorSettings
         models.push(compact_model.to_owned());
     }
     match (target.channel_type(), target.protocol()) {
+        (ChannelType::OpenCode, protocol) => Ok(AdaptorSettings::OpenCode(
+            af_adapter::OpenCodeAdaptorSettings::new(
+                target
+                    .opencode_entry()
+                    .ok_or(ProbeFailure::UnsupportedTarget)?,
+                protocol,
+                models,
+            )
+            .map_err(|_| ProbeFailure::AdapterBuild)?,
+        )),
         (
             ChannelType::OpenAi,
             Protocol::OpenAiChat

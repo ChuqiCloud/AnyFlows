@@ -83,11 +83,8 @@ impl DatabaseUpstreamModelDiscoverer {
             .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?;
         let credential = build_adaptor_credential(&decrypted)
             .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?;
-        let adaptor = get_adaptor(
-            target.channel_type(),
-            adaptor_settings(target.channel_type(), target.protocol())?,
-        )
-        .map_err(|_| UpstreamModelDiscoveryError::UnsupportedChannel)?;
+        let adaptor = get_adaptor(target.channel_type(), adaptor_settings_for_target(&target)?)
+            .map_err(|_| UpstreamModelDiscoveryError::UnsupportedChannel)?;
         if adaptor.default_protocol() != target.protocol() {
             return Err(UpstreamModelDiscoveryError::UnsupportedChannel);
         }
@@ -95,7 +92,9 @@ impl DatabaseUpstreamModelDiscoverer {
             .clients
             .get(target.timeout().map(af_domain::ChannelTimeout::duration))
             .map_err(|_| UpstreamModelDiscoveryError::Internal)?;
-        let mut context = RelayContext::new(client);
+        let mut context = RelayContext::new(client)
+            .with_request_id(format!("model-discovery-{}", channel_id.get()))
+            .map_err(|_| UpstreamModelDiscoveryError::Internal)?;
         if let Some(base_url) = target.base_url() {
             context = context
                 .with_base_url(base_url)
@@ -107,10 +106,59 @@ impl DatabaseUpstreamModelDiscoverer {
             .setup_headers(&mut headers, &credential, &context)
             .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?;
         apply_header_overrides(&target, &mut headers)?;
+        if let Some(profile) = target.client_profile() {
+            af_adapter::apply_client_profile_headers(
+                profile,
+                af_adapter::ClientSimulationContext::new(
+                    target.channel_type(),
+                    target.protocol(),
+                    af_domain::Operation::Chat,
+                    target.credential_kind(),
+                ),
+                target.oauth_provider(),
+                &mut headers,
+            )
+            .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?;
+        }
         let reverse_mappings = reverse_mappings(&target)?;
         let models = match target.channel_type() {
             ChannelType::OpenAi => {
                 discover_openai(&*adaptor, &context, &headers, &reverse_mappings).await?
+            }
+            ChannelType::OpenCode => {
+                let adaptor = af_adapter::OpenCodeAdaptor::new(
+                    target
+                        .opencode_entry()
+                        .ok_or(UpstreamModelDiscoveryError::ChannelUnavailable)?,
+                    target.protocol(),
+                    Vec::new(),
+                )
+                .map_err(|_| UpstreamModelDiscoveryError::UnsupportedChannel)?;
+                let url = Url::parse(&adaptor.models_url())
+                    .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?;
+                // 发现与推理使用同一最终处理，服务托管的认证/会话字段不可被覆盖。
+                let prepared = UpstreamRequest::new(Method::GET, url.as_str(), headers, None)
+                    .map_err(|_| UpstreamModelDiscoveryError::Internal)?;
+                let prepared = adaptor
+                    .finalize_request(prepared, &credential, &context)
+                    .await
+                    .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?;
+                let headers = prepared.headers().clone();
+                let body = send_page(&adaptor, &context, &headers, url).await?;
+                let wire: OpenAiModelsWire = serde_json::from_slice(&body)
+                    .map_err(|_| UpstreamModelDiscoveryError::InvalidResponse)?;
+                collect_models(
+                    wire.data.into_iter().map(|model| DiscoveredEvidence {
+                        upstream_model: model.id,
+                        display_name: None,
+                        description: None,
+                        context_window: None,
+                        input_token_limit: None,
+                        output_token_limit: None,
+                        supported_methods: Vec::new(),
+                    }),
+                    &reverse_mappings,
+                )?
             }
             ChannelType::Anthropic => {
                 discover_anthropic(&*adaptor, &context, &headers, &reverse_mappings).await?
@@ -482,6 +530,23 @@ fn apply_header_overrides(
     Ok(())
 }
 
+fn adaptor_settings_for_target(
+    target: &ModelDiscoveryTargetRecord,
+) -> Result<AdaptorSettings, UpstreamModelDiscoveryError> {
+    if target.channel_type() == ChannelType::OpenCode {
+        return af_adapter::OpenCodeAdaptorSettings::new(
+            target
+                .opencode_entry()
+                .ok_or(UpstreamModelDiscoveryError::ChannelUnavailable)?,
+            target.protocol(),
+            Vec::new(),
+        )
+        .map(AdaptorSettings::OpenCode)
+        .map_err(|_| UpstreamModelDiscoveryError::UnsupportedChannel);
+    }
+    adaptor_settings(target.channel_type(), target.protocol())
+}
+
 fn adaptor_settings(
     channel_type: ChannelType,
     protocol: Protocol,
@@ -520,6 +585,9 @@ fn supported_target(target: &ModelDiscoveryTargetRecord) -> bool {
                 | Protocol::OpenAiImages
                 | Protocol::OpenAiAudio
                 | Protocol::OpenAiSpeech
+        ) | (
+            ChannelType::OpenCode,
+            Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic
         ) | (ChannelType::Anthropic, Protocol::Anthropic)
             | (ChannelType::Gemini, Protocol::Gemini)
     )

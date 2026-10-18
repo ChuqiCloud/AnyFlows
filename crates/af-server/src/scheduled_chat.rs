@@ -309,11 +309,30 @@ impl ScheduledChatService {
                 .filter(|credential| credential.quota_dimension() == quota_dimension)
                 .cloned()
                 .collect::<Vec<_>>();
-            let order_scope = session_scope
+            let client_scope = session_scope
+                .as_ref()
+                .filter(|scope| {
+                    !scope.is_inferred()
+                        || (target.channel_type() == ChannelType::OpenCode
+                            && target.client_profile().is_none_or(|profile| {
+                                profile.definition.session_strategy
+                                    == af_domain::ClientProfileSessionStrategy::FirstUserMessage
+                            }))
+                })
+                .map(|scope| {
+                    if target.client_profile().is_some()
+                        || target.channel_type() == ChannelType::OpenCode
+                    {
+                        scope.for_client_profile(target.channel_id(), target.client_profile())
+                    } else {
+                        scope.clone()
+                    }
+                });
+            let order_scope = client_scope
                 .as_ref()
                 .map_or(request_id, StableSessionScope::as_str);
             let ordered_credentials = match (wait_plan.kind(), account_loads, credential_health) {
-                (RouteWaitKind::Fallback, Some(loads), health) if session_scope.is_some() => {
+                (RouteWaitKind::Fallback, Some(loads), health) if client_scope.is_some() => {
                     order_credentials_by_load_with_session_affinity(
                         order_scope,
                         target.channel_id(),
@@ -370,6 +389,13 @@ impl ScheduledChatService {
                 if let Some(base_url) = target.base_url() {
                     context = context
                         .with_base_url(base_url)
+                        .map_err(|_| AfError::Internal)?;
+                }
+                if target.channel_type() == ChannelType::OpenCode
+                    && let Some(scope) = &client_scope
+                {
+                    context = context
+                        .with_client_session_scope(scope.as_str().to_owned())
                         .map_err(|_| AfError::Internal)?;
                 }
                 context = context.with_oauth_identity(
@@ -893,10 +919,10 @@ impl ScheduledChatService {
         diagnostic: RelayDiagnosticInput,
     ) -> ChatRoutePlanFuture<'a> {
         Box::pin(async move {
-            let session_scope =
+            let mut session_scope =
                 stable_identity_session_scope(principal.identity(), request.canonical());
             let PreparedRouteSelection {
-                route,
+                mut route,
                 upstream_protocol,
                 routed_model,
                 credential_health,
@@ -909,6 +935,23 @@ impl ScheduledChatService {
                     session_scope.as_ref(),
                 )
                 .await?;
+            if session_scope.is_none()
+                && route.candidates().iter().all(|candidate| {
+                    let target = candidate.runtime_target();
+                    target.channel_type() == ChannelType::OpenCode
+                        && target.client_profile().is_none_or(|profile| {
+                            profile.definition.session_strategy
+                                == af_domain::ClientProfileSessionStrategy::FirstUserMessage
+                        })
+                })
+            {
+                session_scope = crate::sticky_session::first_user_message_session_scope(
+                    principal.identity(),
+                    request.canonical(),
+                );
+                self.apply_sticky_binding(&mut route, upstream_protocol, session_scope.as_ref())
+                    .await;
+            }
             let body_profile = route_client_simulation_body_profile(
                 &route,
                 upstream_protocol,
@@ -1140,7 +1183,9 @@ impl PlannedChatExecution for ScheduledChatExecution {
             };
             let operation = request.canonical().operation;
             let routing_started_at = Instant::now();
-            let (result, report) = if upstream_protocol != response_protocol {
+            let (result, report) = if upstream_protocol != response_protocol
+                || machine.requires_conversation_decoder()
+            {
                 relay_conversation_with_report(
                     &machine,
                     request,
@@ -1481,6 +1526,17 @@ fn candidate_request(
     requested_model: &str,
     upstream_model: &str,
 ) -> Result<Option<RelayCandidateRequest>, AfError> {
+    if target.channel_type() == ChannelType::OpenCode
+        && (request
+            .canonical()
+            .continuation
+            .previous_response_id()
+            .is_some()
+            || request.canonical().continuation.conversation_id().is_some())
+    {
+        // 私有响应状态尚未实现持久凭据绑定，必须在预扣前拒绝。
+        return Err(AfError::InvalidRequest);
+    }
     let parameters = target.parameter_overrides();
     if upstream_model == requested_model && parameters.is_empty() {
         return Ok(None);
@@ -1559,6 +1615,9 @@ fn target_matches_protocol(
                     | Protocol::OpenAiImages
                     | Protocol::OpenAiAudio
                     | Protocol::OpenAiSpeech
+            ) | (
+                ChannelType::OpenCode,
+                Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic
             ) | (ChannelType::Anthropic, Protocol::Anthropic)
                 | (ChannelType::Gemini, Protocol::Gemini)
                 | (ChannelType::Jina, Protocol::JinaRerank)
@@ -1572,6 +1631,14 @@ fn adaptor_settings(
     upstream_model: String,
 ) -> Result<AdaptorSettings, AfError> {
     match (target.channel_type(), target.protocol()) {
+        (ChannelType::OpenCode, protocol) => Ok(AdaptorSettings::OpenCode(
+            af_adapter::OpenCodeAdaptorSettings::new(
+                target.opencode_entry().ok_or(AfError::Internal)?,
+                protocol,
+                vec![upstream_model],
+            )
+            .map_err(|_| AfError::Internal)?,
+        )),
         (
             ChannelType::OpenAi,
             Protocol::OpenAiChat

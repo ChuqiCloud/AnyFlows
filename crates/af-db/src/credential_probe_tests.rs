@@ -121,6 +121,97 @@ async fn load_selects_stable_model_and_highest_priority_credential() -> Result<(
 }
 
 #[tokio::test]
+async fn opencode_discovery_and_probe_share_frozen_profile_and_compatible_credential()
+-> Result<(), Box<dyn Error>> {
+    let pool = test_pool().await?;
+    let mut record = channel(
+        "opencode-profile",
+        Status::Enabled,
+        false,
+        "https://unused.example",
+        [],
+    );
+    record.r#type = Set(ChannelType::OpenCode.as_str().to_owned());
+    record.base_url = Set(None);
+    record.settings = Set(SensitiveJson::from(
+        serde_json::json!({"opencode_entry":"zen_v1"}),
+    ));
+    let record = record.insert(pool.connection()).await?;
+    channel_model(record.id, "fixture")
+        .insert(pool.connection())
+        .await?;
+    let selected = credential(
+        record.id,
+        CredentialKind::ApiKey,
+        1,
+        true,
+        Status::Enabled,
+        None,
+        "fixture",
+        1,
+    )
+    .insert(pool.connection())
+    .await?;
+    credential(
+        record.id,
+        CredentialKind::Oauth,
+        100,
+        true,
+        Status::Enabled,
+        None,
+        "incompatible",
+        2,
+    )
+    .insert(pool.connection())
+    .await?;
+    let profiles = crate::ClientProfileRepository::new(pool.clone());
+    let mut definition = af_domain::built_in_client_profiles()
+        .into_iter()
+        .find(|profile| profile.binding.key == "opencode")
+        .unwrap()
+        .definition;
+    definition.name = "Test client".to_owned();
+    let snapshot = profiles
+        .save(
+            "test-opencode",
+            crate::ClientProfileWrite {
+                expected_version: 0,
+                definition,
+            },
+            af_domain::UserId::new(1)?,
+        )
+        .await?;
+    let id = channel_id(record.id);
+    profiles.bind(id, snapshot.binding.clone(), 0).await?;
+    let probes = ChannelProbeTargetRepository::new(pool.clone());
+    let discovery = crate::ModelSyncRepository::new(pool.clone());
+    let probe = probes.load(id).await?.unwrap();
+    let crate::ModelDiscoveryTargetLookup::Found(found) =
+        discovery.load_discovery_target(id).await?
+    else {
+        panic!("expected discovery target")
+    };
+    assert_eq!(probe.credential_id(), selected.id);
+    assert_eq!(found.credential_id(), selected.id);
+    assert_eq!(probe.client_profile(), Some(&snapshot));
+    assert_eq!(found.client_profile(), Some(&snapshot));
+    assert_eq!(
+        probe.opencode_entry(),
+        Some(af_domain::OpenCodeEntry::ZenV1)
+    );
+    assert_eq!(found.opencode_entry(), probe.opencode_entry());
+    profiles.set_enabled("test-opencode", 1, false).await?;
+    assert!(probes.load(id).await?.is_none());
+    assert!(matches!(
+        discovery.load_discovery_target(id).await?,
+        crate::ModelDiscoveryTargetLookup::Unavailable
+    ));
+    assert_eq!(probe.client_profile(), Some(&snapshot));
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn load_resolves_compact_probe_model_through_both_mapping_layers()
 -> Result<(), Box<dyn Error>> {
     let pool = test_pool().await?;

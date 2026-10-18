@@ -828,6 +828,7 @@ impl AdminChannelRepository {
                 .map(str::to_owned)
         });
         let mut settings = fields.settings.unwrap_or(current_settings);
+        crate::channel_opencode_entry(fields.channel_type, &settings)?;
         set_provider(&mut settings, provider)?;
         set_pool_mode(&mut settings, effective_pool_mode)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
@@ -1353,12 +1354,16 @@ fn validate_channel_fields(
                     | Protocol::OpenAiImages
                     | Protocol::OpenAiAudio
                     | Protocol::OpenAiSpeech
+            ) | (
+                ChannelType::OpenCode,
+                Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic
             ) | (ChannelType::Anthropic, Protocol::Anthropic)
                 | (ChannelType::Gemini, Protocol::Gemini)
                 | (ChannelType::Jina, Protocol::JinaRerank)
                 | (ChannelType::Cohere, Protocol::CohereRerank)
                 | (ChannelType::Xai, Protocol::XaiVideo)
         )
+        || (record.channel_type == ChannelType::OpenCode && record.base_url.is_some())
         || (codex_oauth
             && (record.channel_type != ChannelType::OpenAi
                 || record.protocol != Protocol::OpenAiResponses
@@ -1389,6 +1394,7 @@ fn validate_channel_fields(
     }
     if let Some(settings) = &record.settings {
         validate_json_object(settings, false)?;
+        crate::channel_opencode_entry(record.channel_type, settings)?;
     }
     if let Some(enabled) = record.responses_websocket_enabled {
         validate_responses_websocket_capability(record.channel_type, record.protocol, enabled)
@@ -1577,7 +1583,7 @@ fn validate_credential_channel_compatibility(
         .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
     if matches!(
         channel_type,
-        ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
+        ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai | ChannelType::OpenCode
     ) && kind != CredentialKind::ApiKey
     {
         return Err(AdminChannelWriteRepositoryError::InvalidInput);

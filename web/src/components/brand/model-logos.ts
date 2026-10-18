@@ -13,6 +13,7 @@ import Mistral from '@lobehub/icons/es/Mistral/components/Mono'
 import Moonshot from '@lobehub/icons/es/Moonshot/components/Mono'
 import Ollama from '@lobehub/icons/es/Ollama/components/Mono'
 import OpenAI from '@lobehub/icons/es/OpenAI/components/Mono'
+import OpenCode from '@lobehub/icons/es/OpenCode/components/Mono'
 import OpenRouter from '@lobehub/icons/es/OpenRouter/components/Mono'
 import Perplexity from '@lobehub/icons/es/Perplexity/components/Mono'
 import Qwen from '@lobehub/icons/es/Qwen/components/Mono'
@@ -51,6 +52,7 @@ export type LogoComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: num
  */
 export const modelLogos: readonly { name: string; Icon: LogoComponent }[] = [
   { name: 'OpenAI', Icon: OpenAI as LogoComponent },
+  { name: 'OpenCode', Icon: OpenCode as LogoComponent },
   { name: 'Anthropic', Icon: Anthropic as LogoComponent },
   { name: 'Gemini', Icon: Gemini as LogoComponent },
   { name: 'DeepSeek', Icon: DeepSeek as LogoComponent },

@@ -376,3 +376,261 @@ async fn responses_client_posts_to_chat_endpoint_and_receives_responses_output()
     assert_eq!(usage.unwrap().input_tokens().get(), 41);
     assert!(report.successful_candidate_index().is_some());
 }
+
+#[tokio::test]
+async fn native_messages_sse_preserves_thinking_and_signature_in_both_response_modes() {
+    use std::sync::Arc;
+
+    use af_adapter::{
+        AnthropicAdaptor, Credential, HttpClientConfig, HttpClientPool, ProxyConfig, RelayContext,
+        RemoteDnsPolicy,
+    };
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{body_partial_json, method, path},
+    };
+
+    let initial_usage = Usage::new(
+        TokenCount::new(41).unwrap(),
+        TokenCount::ZERO,
+        *usage().details(),
+        UsageSource::Upstream,
+        UsageSemantics::CacheSeparated,
+    )
+    .unwrap();
+    let final_usage = Usage::new(
+        initial_usage.input_tokens(),
+        TokenCount::new(4).unwrap(),
+        *initial_usage.details(),
+        UsageSource::Upstream,
+        UsageSemantics::CacheSeparated,
+    )
+    .unwrap();
+    let mut encoder = af_protocol::anthropic::AnthropicMessagesStreamEncoder::new(
+        "msg_fixture",
+        "upstream-model",
+        initial_usage,
+    )
+    .unwrap();
+    let mut bytes = Vec::new();
+    for event in [
+        CanonicalStreamEvent::MessageStart {
+            choice_index: 0,
+            role: Role::Assistant,
+        },
+        CanonicalStreamEvent::ReasoningDelta {
+            choice_index: 0,
+            content_index: 0,
+            text: "plan".to_owned(),
+            signature: Some("native-signature".to_owned()),
+        },
+        CanonicalStreamEvent::ContentDelta {
+            choice_index: 0,
+            content_index: 1,
+            delta: ContentDelta::Text("answer".to_owned()),
+        },
+        CanonicalStreamEvent::Finish {
+            choice_index: 0,
+            reason: FinishReason::Stop,
+            stop_sequence: None,
+        },
+        CanonicalStreamEvent::Usage(final_usage),
+        CanonicalStreamEvent::StreamEnd,
+    ] {
+        bytes.extend(encoder.encode(event).unwrap());
+    }
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(body_partial_json(
+            json!({"thinking":{"type":"enabled","budget_tokens":1024}}),
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_bytes(bytes),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
+    let client = HttpClientPool::default()
+        .get(
+            &HttpClientConfig::new(
+                ProxyConfig::parse(server.uri()).unwrap(),
+                af_adapter::HttpTimeouts::default(),
+            )
+            .with_remote_dns_policy(RemoteDnsPolicy::TrustProxy),
+        )
+        .unwrap();
+    let machine = RelayStateMachine::new(vec![crate::RelayCandidate::new(
+        Arc::new(AnthropicAdaptor::new()),
+        RelayContext::new(client)
+            .with_base_url("http://upstream.example")
+            .unwrap(),
+        Credential::api_key("fixture").unwrap(),
+    )])
+    .unwrap();
+    for stream in [false, true] {
+        let request = anthropic::parse_request_envelope(Bytes::from(
+            serde_json::to_vec(&json!({
+                "model":"public-model", "max_tokens":2048, "stream":stream,
+                "thinking":{"type":"enabled","budget_tokens":1024},
+                "messages":[{"role":"user","content":"Think then answer"}]
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+        let (result, _) = relay_conversation_with_report(
+            &machine,
+            request,
+            Protocol::Anthropic,
+            Protocol::Anthropic,
+            "native-thinking",
+        )
+        .await;
+        match result.unwrap() {
+            ChatResponse::Full { body, .. } => {
+                let response = anthropic::parse_response(&body).unwrap();
+                assert_eq!(
+                    response.choices[0].message.content[0],
+                    ContentBlock::Thinking {
+                        text: "plan".to_owned(),
+                        signature: Some("native-signature".to_owned()),
+                    }
+                );
+                assert_eq!(response.usage, Some(final_usage));
+            }
+            ChatResponse::Stream { mut body, usage } => {
+                let mut decoder = ConversationDecoder::new(Protocol::Anthropic).unwrap();
+                let mut events = Vec::new();
+                while let Some(chunk) = std::future::poll_fn(|context| {
+                    futures_core::Stream::poll_next(std::pin::Pin::new(body.as_mut()), context)
+                })
+                .await
+                {
+                    events.extend(decoder.push(&chunk.unwrap()).unwrap());
+                }
+                events.extend(decoder.finish().unwrap());
+                assert_eq!(
+                    events
+                        .iter()
+                        .filter(|event| matches!(event, CanonicalStreamEvent::StreamEnd))
+                        .count(),
+                    1
+                );
+                assert!(events.iter().any(|event| matches!(event,
+                    CanonicalStreamEvent::ContentDelta { delta: ContentDelta::Text(text), .. }
+                        if text == "answer"
+                )));
+                let mut thinking = String::new();
+                let mut signatures = String::new();
+                for event in events {
+                    if let CanonicalStreamEvent::ReasoningDelta {
+                        text, signature, ..
+                    } = event
+                    {
+                        thinking.push_str(&text);
+                        signatures.push_str(signature.as_deref().unwrap_or_default());
+                    }
+                }
+                assert_eq!(thinking, "plan");
+                assert_eq!(signatures, "native-signature");
+                assert!(usage.resolve().await.is_ok());
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn sse_aggregation_preserves_all_four_protocols_tools_and_usage() {
+    for upstream in PROTOCOLS {
+        for tool in [false, true] {
+            let canonical = request(upstream, true).into_canonical();
+            let mut encoder = ChatStreamEncoder::new(
+                upstream,
+                "fixture",
+                "model",
+                1_700_000_000,
+                &canonical,
+                true,
+            )
+            .unwrap();
+            let mut bytes = Vec::new();
+            let expected_usage = if upstream == Protocol::Anthropic {
+                Usage::new(
+                    usage().input_tokens(),
+                    usage().output_tokens(),
+                    *usage().details(),
+                    UsageSource::Upstream,
+                    UsageSemantics::CacheSeparated,
+                )
+                .unwrap()
+            } else {
+                usage()
+            };
+            if upstream == Protocol::Anthropic {
+                // 原生上游夹具提供已知用量，避免下游编码器的本地估算掩盖聚合问题。
+                let initial = Usage::new(
+                    expected_usage.input_tokens(),
+                    TokenCount::ZERO,
+                    *expected_usage.details(),
+                    UsageSource::Upstream,
+                    UsageSemantics::CacheSeparated,
+                )
+                .unwrap();
+                let mut native = af_protocol::anthropic::AnthropicMessagesStreamEncoder::new(
+                    "msg_fixture",
+                    "model",
+                    initial,
+                )
+                .unwrap();
+                for event in fixture_events(tool) {
+                    bytes.extend(native.encode(event).unwrap());
+                }
+                bytes.extend(
+                    native
+                        .encode(CanonicalStreamEvent::Usage(expected_usage))
+                        .unwrap(),
+                );
+                bytes.extend(native.encode(CanonicalStreamEvent::StreamEnd).unwrap());
+            } else {
+                for event in fixture_events(tool) {
+                    bytes.extend(encoder.encode_event(event).unwrap());
+                }
+                bytes.extend(
+                    encoder
+                        .encode_event(CanonicalStreamEvent::Usage(expected_usage))
+                        .unwrap(),
+                );
+                bytes.extend(encoder.finish(Ok(expected_usage), true).unwrap());
+            }
+            let response = crate::collect_conversation_response(
+                upstream,
+                af_adapter::UpstreamBody::Full(Bytes::from(bytes)),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                response.choices[0].message,
+                self::response(upstream, tool).choices[0].message,
+                "{upstream:?}"
+            );
+            assert_eq!(response.usage, Some(expected_usage), "{upstream:?}");
+            for downstream in PROTOCOLS {
+                let body = build_response(
+                    downstream,
+                    response.clone(),
+                    usage(),
+                    "client",
+                    "public-model",
+                    1_700_000_000,
+                )
+                .unwrap();
+                assert_eq!(
+                    super::parse_response(downstream, &body).unwrap().choices[0].message,
+                    response.choices[0].message
+                );
+            }
+        }
+    }
+}
