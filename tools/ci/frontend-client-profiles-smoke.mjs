@@ -131,7 +131,7 @@ try {
     await page.setViewportSize({ width, height: 960 })
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${frontend} drawer overflows at ${width}px`)
     if (isNext) {
-      const select = page.getByRole('button', { name: /会话关联/ })
+      const select = page.getByRole('button', { name: '会话关联', exact: true })
       await select.scrollIntoViewIfNeeded()
       await select.click()
       await page.getByRole('option', { name: '明确标识优先，首条消息尽力关联', exact: true }).click()
@@ -159,7 +159,7 @@ try {
   assert.ok(await oldRevision.getByRole('button', { name: '选择', exact: true }).isDisabled())
   await oldRevision.getByText('此修订的服务或协议与当前渠道不兼容，无法选择。', { exact: true }).waitFor()
   if (isNext) {
-    await page.getByRole('button', { name: /服务入口/ }).click()
+    await page.getByRole('button', { name: '服务入口', exact: true }).click()
     await page.getByRole('option', { name: 'Zen v1', exact: true }).click()
   } else await page.getByRole('combobox', { name: '服务入口', exact: true }).selectOption('zen_v1')
   await page.getByRole('button', { name: '保存服务入口', exact: true }).click()
