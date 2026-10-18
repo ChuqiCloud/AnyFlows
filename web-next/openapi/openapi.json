@@ -19889,6 +19889,7 @@
                 "type": "string",
                 "enum": [
                   "openai",
+                  "opencode",
                   "anthropic",
                   "gemini",
                   "jina",
@@ -20168,6 +20169,7 @@
         "type": "string",
         "enum": [
           "openai",
+          "opencode",
           "anthropic",
           "gemini",
           "jina",
@@ -20218,6 +20220,7 @@
             "type": "string",
             "enum": [
               "openai",
+              "opencode",
               "anthropic",
               "gemini",
               "jina",

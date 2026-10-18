@@ -8,6 +8,7 @@ export type ProviderOption = {
 
 // Brand identity is independent of the channel's transport adapter.
 export const providerCatalog: readonly ProviderOption[] = [
+  { id: 'opencode', name: 'OpenCode', logo: 'OpenCode' },
   { id: 'openai', name: 'OpenAI', logo: 'OpenAI' },
   { id: 'codex', name: 'OpenAI Codex', logo: 'OpenAI', aliases: ['codex', 'chatgpt codex'] },
   { id: 'codex_oauth', name: 'OpenAI Codex OAuth', logo: 'OpenAI', aliases: ['codex oauth'] },

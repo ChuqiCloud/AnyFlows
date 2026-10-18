@@ -169,8 +169,7 @@ impl ClientProfileDefinition {
                 ClientProfileService::Standard => true,
                 ClientProfileService::ClaudeCode => channel_type == ChannelType::Anthropic,
                 ClientProfileService::Codex => channel_type == ChannelType::OpenAi,
-                // 专用服务装配之前不能把 OpenCode 身份挂到任意 OpenAI 地址。
-                ClientProfileService::OpenCode => false,
+                ClientProfileService::OpenCode => channel_type == ChannelType::OpenCode,
             }
     }
 

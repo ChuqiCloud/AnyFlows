@@ -38,6 +38,9 @@ pub(super) const fn is_supported_runtime_target(
                 | Protocol::OpenAiImages
                 | Protocol::OpenAiAudio
                 | Protocol::OpenAiSpeech
+        ) | (
+            ChannelType::OpenCode,
+            Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic
         ) | (ChannelType::Anthropic, Protocol::Anthropic)
             | (ChannelType::Gemini, Protocol::Gemini)
             | (ChannelType::Jina, Protocol::JinaRerank)
@@ -508,6 +511,7 @@ pub struct SchedulerRuntimeTargetRecord {
     client_simulation_profile: Option<ClientSimulationProfile>,
     client_simulation_body_profile: Option<ClientSimulationBodyProfile>,
     client_profile: Option<af_domain::ClientProfileSnapshot>,
+    opencode_entry: Option<af_domain::OpenCodeEntry>,
     responses_websocket_enabled: bool,
     responses_compact_mode: ResponsesCompactMode,
     responses_compact_probe_result: ResponsesCompactProbeResult,
@@ -600,6 +604,11 @@ impl SchedulerRuntimeTargetRecord {
         headers: Vec<(String, String)>,
     ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
         if !is_supported_runtime_target(channel_type, protocol)
+            || (channel_type == ChannelType::OpenCode
+                && (base_url.is_some()
+                    || credentials
+                        .iter()
+                        .any(|c| c.credential_kind() != CredentialKind::ApiKey)))
             || credentials.is_empty()
             || credentials.len() > MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL
             || credentials.iter().any(|credential| {
@@ -659,6 +668,8 @@ impl SchedulerRuntimeTargetRecord {
             client_simulation_profile: None,
             client_simulation_body_profile: None,
             client_profile: None,
+            opencode_entry: (channel_type == ChannelType::OpenCode)
+                .then_some(af_domain::OpenCodeEntry::default()),
             responses_websocket_enabled: false,
             responses_compact_mode: ResponsesCompactMode::Auto,
             responses_compact_probe_result: ResponsesCompactProbeResult::Unknown,
@@ -744,6 +755,23 @@ impl SchedulerRuntimeTargetRecord {
         }
         self.client_profile = profile;
         Ok(self)
+    }
+
+    pub fn with_opencode_entry(
+        mut self,
+        entry: Option<af_domain::OpenCodeEntry>,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        if (self.channel_type == ChannelType::OpenCode) != entry.is_some()
+            || (entry.is_some() && self.base_url.is_some())
+        {
+            return Err(SchedulerRuntimeTargetRecordError);
+        }
+        self.opencode_entry = entry;
+        Ok(self)
+    }
+
+    pub fn opencode_entry(&self) -> Option<af_domain::OpenCodeEntry> {
+        self.opencode_entry
     }
 
     pub fn client_profile(&self) -> Option<&af_domain::ClientProfileSnapshot> {
