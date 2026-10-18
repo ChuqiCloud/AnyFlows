@@ -18,7 +18,7 @@ uname -m
 
 ## 2. 下载并校验
 
-打开 [Releases](https://github.com/ChuqiCloud/AnyFlows/releases)，下载归档和同名的 `.sha256` 文件，放在服务器的同一目录中。公共二进制包正在准备发布；如果页面尚无归档，请等待发布，或使用 [Docker Compose 源码部署](docker-compose.md)。不要将 GitHub 自动生成的 Source code 压缩包当作二进制包。
+打开 [Releases](https://github.com/ChuqiCloud/AnyFlows/releases)，下载归档和同名的 `.sha256` 文件，放在服务器的同一目录中。Beta 版本用于测试和部署验收；如果页面尚无归档，可以使用 [Docker Compose 源码部署](docker-compose.md)。不要将 GitHub 自动生成的 Source code 压缩包当作二进制包。
 
 以下以 amd64 为例，将 `PACKAGE` 中的「版本号」替换为下载版本，包括可能的 `-beta.N` 等后缀：
 

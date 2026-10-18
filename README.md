@@ -19,7 +19,7 @@ AnyFlows 是一个可自行部署的 AI API 网关。将不同厂商的模型接
 
 推荐在使用 systemd 的 Linux 服务器上安装发布包。包内已包含两套前端，无需安装 Rust、Node.js，也无需在服务器编译。
 
-公共二进制包正在准备发布。发布后请在 [Releases](https://github.com/ChuqiCloud/AnyFlows/releases) 下载适合服务器架构的归档及对应的 `.sha256` 文件；当前没有可用归档时，可使用 [Docker Compose 源码部署](docs/docker-compose.md)。
+在 [Releases](https://github.com/ChuqiCloud/AnyFlows/releases) 下载适合服务器架构的归档及对应的 `.sha256` 文件。Beta 版本用于测试和部署验收；没有可用二进制时，也可以使用 [Docker Compose 源码部署](docs/docker-compose.md)。
 
 以 Linux amd64 包为例，在下载目录执行。将 `PACKAGE` 中的「版本号」替换为下载版本，包含可能的预发布后缀：
 

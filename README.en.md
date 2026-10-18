@@ -8,7 +8,7 @@ This repository contains the community core and can run independently. Private e
 
 ## Installation
 
-Binary packages are the recommended deployment method for Linux servers running systemd. They include both frontends and do not require Rust or Node.js on the server. Public packages are being prepared; download only the assets actually listed on the Releases page.
+Binary packages are the recommended deployment method for Linux servers running systemd. They include both frontends and do not require Rust or Node.js on the server. Download the archive and matching SHA-256 file listed on the [Releases](https://github.com/ChuqiCloud/AnyFlows/releases) page. Beta releases are intended for testing and deployment validation.
 
 After downloading an archive and its matching SHA-256 file, replace `VERSION` in `PACKAGE` with the downloaded version, including any prerelease suffix, and run:
 
