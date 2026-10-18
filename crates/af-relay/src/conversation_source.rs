@@ -13,7 +13,7 @@ use crate::{
 pub(crate) enum ConversationSource {
     Wire {
         source: StreamSource,
-        decoder: ConversationDecoder,
+        decoder: Box<ConversationDecoder>,
     },
     Tools(Box<ToolConversationStream>),
 }
@@ -22,7 +22,7 @@ impl ConversationSource {
     pub(crate) fn wire(body: UpstreamBody, decoder: ConversationDecoder) -> Self {
         Self::Wire {
             source: body.into(),
-            decoder,
+            decoder: Box::new(decoder),
         }
     }
 

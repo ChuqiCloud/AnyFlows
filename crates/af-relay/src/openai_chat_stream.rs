@@ -68,7 +68,7 @@ impl OpenAiChatStream {
 
     pub(crate) fn with_decoder(mut self, decoder: ConversationDecoder) -> Self {
         if let Some(ConversationSource::Wire { decoder: slot, .. }) = self.source.as_mut() {
-            *slot = decoder;
+            **slot = decoder;
         }
         self
     }
