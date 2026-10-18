@@ -169,7 +169,7 @@ pub async fn relay_openai_responses_with_report(
     )
 }
 
-fn parse_full_response_body(body: &[u8]) -> Result<CanonicalResponse, ()> {
+pub(crate) fn parse_full_response_body(body: &[u8]) -> Result<CanonicalResponse, ()> {
     if let Ok(response) = openai_responses::parse_response(body) {
         return Ok(response);
     }

@@ -81,6 +81,27 @@ fn parses_deepseek_cache_breakdown_fields() {
 }
 
 #[test]
+fn top_level_reasoning_usage_is_validated_and_normalized() {
+    let mut response = response_with_choices(vec![text_choice(0, "answer")]);
+    response["usage"] =
+        json!({"prompt_tokens":4,"completion_tokens":3,"total_tokens":7,"reasoning_tokens":2});
+    assert_eq!(
+        parse_json(response.clone())
+            .unwrap()
+            .usage
+            .unwrap()
+            .details()
+            .reasoning()
+            .get(),
+        2
+    );
+    response["usage"]["completion_tokens_details"] = json!({"reasoning_tokens":1});
+    assert!(parse_json(response.clone()).is_err());
+    response["usage"]["reasoning_tokens"] = json!(-1);
+    assert!(parse_json(response).is_err());
+}
+
+#[test]
 fn parses_newapi_non_streaming_metadata_and_reasoning_fields() {
     let mut response = response_with_choices(vec![json!({
         "index": 0,

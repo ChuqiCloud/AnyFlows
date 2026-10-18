@@ -707,6 +707,72 @@ fn gemini_runtime_target_accepts_native_pair_and_rejects_mismatch() {
 }
 
 #[test]
+fn codex_client_profile_rejects_non_codex_oauth_in_runtime_snapshots() {
+    let profile = af_domain::built_in_client_profiles().remove(3);
+    for provider in [None, Some("openai"), Some("codex")] {
+        let credential = SchedulerRuntimeCredentialRecord::with_scheduling(
+            1,
+            CredentialKind::Oauth,
+            EncryptedCredentialEnvelope::new("runtime-test-key", [0x43; 24], vec![0x25; 16])
+                .unwrap(),
+            false,
+            0,
+            10,
+        )
+        .unwrap()
+        .with_oauth_identity(provider.map(str::to_owned), None);
+        let result = SchedulerRuntimeTargetRecord::new_pool(
+            ChannelId::new(1).unwrap(),
+            ChannelType::OpenAi,
+            Protocol::OpenAiResponses,
+            None,
+            vec![credential],
+            Vec::new(),
+        )
+        .unwrap()
+        .with_client_profile(Some(profile.clone()));
+        assert_eq!(result.is_ok(), provider == Some("codex"));
+    }
+}
+
+#[tokio::test]
+async fn legacy_claude_identity_headers_keep_their_original_precedence()
+-> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &crate::DatabaseOptions::new("sqlite::memory:")?,
+        crate::MigrationOptions::default(),
+    )
+    .await?;
+    let mut channel = runtime_channel(
+        "legacy",
+        Status::Enabled,
+        "anthropic",
+        "anthropic",
+        "https://example.com",
+        [("User-Agent", "old-ignored-value"), ("x-feature", "kept")],
+    );
+    channel.settings = Set(SensitiveJson::from(serde_json::json!({
+        "client_simulation_profile": "anthropic_cli_headers_v1"
+    })));
+    let channel = channel.insert(pool.connection()).await?;
+    let profile = af_domain::built_in_client_profiles().remove(1);
+    crate::ClientProfileRepository::new(pool.clone())
+        .bind(ChannelId::new(channel.id)?, profile.binding.clone(), 0)
+        .await?;
+    let source = super::source::SchedulerRuntimeChannelSource::from_entity(channel)
+        .unwrap()
+        .unwrap()
+        .with_client_profile(profile)
+        .unwrap();
+    assert_eq!(
+        source.headers(),
+        &[("x-feature".to_owned(), "kept".to_owned())]
+    );
+    pool.close().await?;
+    Ok(())
+}
+
+#[test]
 fn xai_runtime_target_accepts_video_pair_and_rejects_mismatch() {
     let credential = runtime_credential_record(1);
     assert!(

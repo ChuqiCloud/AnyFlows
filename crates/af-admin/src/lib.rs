@@ -16,6 +16,12 @@ mod balance_alert_task;
 mod balance_alert_tests;
 mod channel_read;
 mod channel_write;
+mod client_profiles;
+pub use client_profiles::{
+    AdminClientProfileError, ClientProfilePage, ClientProfileQuery, ClientProfileRecord,
+    ClientProfileReference, ClientProfileReferencePage, ClientProfileRepositoryError,
+    ClientProfileRevisionPage, ClientProfileWrite, DatabaseAdminClientProfileService,
+};
 mod credential_proxy;
 mod credential_read;
 mod custom_oauth2;

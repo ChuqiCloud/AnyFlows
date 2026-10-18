@@ -32,6 +32,7 @@ pub struct RelayCandidate {
     request: Option<RelayCandidateRequest>,
     header_overrides: HeaderMap,
     client_simulation: Option<Arc<dyn ClientSimulationMiddleware>>,
+    client_profile: Option<af_domain::ClientProfileSnapshot>,
     channel_group: Option<ChannelId>,
     transport: TransportDispatcher,
     attempt_gate: Option<Arc<dyn RelayAttemptGate>>,
@@ -48,6 +49,7 @@ impl RelayCandidate {
             request: None,
             header_overrides: HeaderMap::new(),
             client_simulation: None,
+            client_profile: None,
             channel_group: None,
             transport: TransportDispatcher::http(),
             attempt_gate: None,
@@ -75,6 +77,13 @@ impl RelayCandidate {
         client_simulation: Arc<dyn ClientSimulationMiddleware>,
     ) -> Self {
         self.client_simulation = Some(client_simulation);
+        self
+    }
+
+    /// 绑定请求开始时冻结的档案；发送阶段只读取该快照。
+    #[must_use]
+    pub fn with_client_profile(mut self, profile: af_domain::ClientProfileSnapshot) -> Self {
+        self.client_profile = Some(profile);
         self
     }
 
@@ -732,6 +741,33 @@ impl RelayStateMachine {
                             .with_client_simulation(client_simulation),
                         );
                         // 仿真档案是显式配置，应用失败不得静默退回未仿真请求或其他候选。
+                        return Err(RelayExecutionError::new(
+                            RelayError::Upstream(UpstreamError::ProtocolError),
+                            failures,
+                        ));
+                    }
+                },
+                None => upstream_request,
+            };
+            let upstream_request = match candidate.client_profile.as_ref() {
+                Some(profile) => match af_adapter::apply_client_profile_identity(
+                    profile,
+                    ClientSimulationContext::new(
+                        candidate.adaptor.channel_type(),
+                        candidate.adaptor.default_protocol(),
+                        request.operation,
+                        candidate.credential.kind(),
+                    ),
+                    candidate.context.oauth_provider(),
+                    upstream_request,
+                ) {
+                    Ok(request) => request,
+                    Err(_) => {
+                        failures.push(RelayAttemptFailure::new(
+                            index,
+                            UpstreamError::ProtocolError,
+                            attempt_started_at.elapsed(),
+                        ));
                         return Err(RelayExecutionError::new(
                             RelayError::Upstream(UpstreamError::ProtocolError),
                             failures,

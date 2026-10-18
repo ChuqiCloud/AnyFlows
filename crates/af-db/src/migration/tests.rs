@@ -87,6 +87,23 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         .await?
         .ok_or("authentication settings must survive the upgrade")?;
     assert_eq!(row.try_get::<i64>("", "invitation_invitee_quota")?, 0);
+    let profiles = crate::ClientProfileRepository::new(pool.clone());
+    assert_eq!(
+        profiles
+            .list(crate::ClientProfileQuery::default())
+            .await?
+            .items
+            .len(),
+        5
+    );
+    for profile in af_domain::built_in_client_profiles() {
+        assert_eq!(
+            profiles
+                .revision(&profile.binding.key, profile.binding.revision)
+                .await?,
+            profile
+        );
+    }
     pool.close().await?;
     Ok(())
 }

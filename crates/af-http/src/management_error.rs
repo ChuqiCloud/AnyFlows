@@ -302,6 +302,8 @@ pub(crate) enum ManagementError {
     ModelProviderNotFound,
     /// 模型厂商目录版本已被其他管理员推进。
     ModelProviderConflict,
+    ClientProfileNotFound,
+    ClientProfileConflict,
     /// 实名认证设置版本已被其他管理员推进。
     AccountVerificationSettingsConflict,
     /// 目标 OAuth 凭据已经绑定其他 provider。
@@ -1412,6 +1414,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "model_provider_not_found",
                     message: "Model provider not found",
+                },
+            ),
+            Self::ClientProfileNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "client_profile_not_found",
+                    message: "Client profile not found",
+                },
+            ),
+            Self::ClientProfileConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "client_profile_conflict",
+                    message: "Client profile changed, protected, disabled or in use",
                 },
             ),
             Self::ModelProviderConflict => (

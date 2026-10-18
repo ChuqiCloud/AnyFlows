@@ -5,6 +5,7 @@ mod analytics_export;
 mod announcements;
 mod balance_alert_settings;
 mod channels;
+mod client_profiles;
 mod credential_proxies;
 mod credentials;
 mod custom_oauth2;
@@ -111,6 +112,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(tokens::document());
     document.merge(usage_logs::document());
     document.merge(channels::document());
+    document.merge(client_profiles::document());
     document.merge(credentials::document());
     document.merge(credential_proxies::document());
     document.merge(custom_oauth2::document());
@@ -149,6 +151,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("Passkey 登录"),
         Tag::new("平台管理审计"),
         Tag::new("运行状态"),
+        Tag::new("客户端档案"),
         Tag::new("余额预警"),
         Tag::new("管理会话"),
         Tag::new("首次安装"),

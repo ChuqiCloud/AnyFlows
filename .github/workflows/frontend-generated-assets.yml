@@ -27,6 +27,8 @@ on:
       - 'crates/af-http/src/openapi/dashboard.rs'
       - 'crates/af-http/src/runtime_status.rs'
       - 'crates/af-http/src/openapi/runtime_status.rs'
+      - 'crates/af-http/src/client_profiles.rs'
+      - 'crates/af-http/src/openapi/client_profiles.rs'
 
 permissions:
   contents: read

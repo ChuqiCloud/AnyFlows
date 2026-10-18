@@ -163,7 +163,7 @@ impl SchedulerRuntimeRepository {
             .map(|channel_id| channel_id.get())
             .collect::<Vec<_>>();
         let operation = async {
-            let channels = channels::Entity::find()
+            let mut channels = channels::Entity::find()
                 .filter(channels::Column::Id.is_in(raw_channel_ids.clone()))
                 .filter(channels::Column::Status.eq(Status::Enabled.code()))
                 .filter(channels::Column::DeletedAt.is_null())
@@ -172,6 +172,19 @@ impl SchedulerRuntimeRepository {
                 .map_err(|_| SchedulerRuntimeRepositoryError::Query)?
                 .into_iter()
                 .try_fold(BTreeMap::new(), collect_channel_source)?;
+            let profiles =
+                crate::client_profiles::runtime_profiles(self.pool.connection(), &raw_channel_ids)
+                    .await
+                    .map_err(|_| SchedulerRuntimeRepositoryError::Invariant)?;
+            for (id, profile) in profiles {
+                let id =
+                    ChannelId::new(id).map_err(|_| SchedulerRuntimeRepositoryError::Invariant)?;
+                if let Some(channel) = channels.remove(&id)
+                    && let Some(profile) = profile
+                {
+                    channels.insert(id, channel.with_client_profile(profile)?);
+                }
+            }
             let credentials = credentials::Entity::find()
                 .filter(credentials::Column::ChannelId.is_in(raw_channel_ids))
                 .filter(credentials::Column::Status.eq(Status::Enabled.code()))

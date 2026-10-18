@@ -83,6 +83,13 @@ fn try_runtime_target(
         {
             continue;
         }
+        if channel.client_profile().is_some_and(|profile| {
+            !profile
+                .definition
+                .matches_credential(credential_kind, oauth_provider.as_deref())
+        }) {
+            continue;
+        }
         let proxy_required = proxy.is_some();
         let mut record = SchedulerRuntimeCredentialRecord::with_runtime_identity(
             routing_credential_id,
@@ -127,6 +134,7 @@ fn try_runtime_target(
     .and_then(|target| {
         target.with_client_simulation_body_profile(channel.client_simulation_body_profile())
     })
+    .and_then(|target| target.with_client_profile(channel.client_profile().cloned()))
     .and_then(|target| {
         target.with_responses_websocket_enabled(channel.responses_websocket_enabled())
     })

@@ -13,6 +13,8 @@ mod channel_probe;
 mod chat_completions;
 mod chat_service;
 mod client_ip;
+mod client_profiles;
+pub use client_profiles::build_client_profile_router;
 mod credential_proxies;
 mod credential_usage;
 mod credentials;

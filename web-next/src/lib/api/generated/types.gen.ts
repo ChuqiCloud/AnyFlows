@@ -1452,6 +1452,71 @@ export type BalanceDisplaySettings = {
     fraction_digits: number;
 };
 export type BalanceDisplaySymbolPosition = 'prefix' | 'suffix';
+export type ClientProfileBehaviorSchema = 'standard' | 'claude_utc_date_v1' | 'codex_v1' | 'open_code_v1';
+export type ClientProfileBindRequest = {
+    binding: ClientProfileBindingSchema;
+    expected_version: number;
+};
+export type ClientProfileBindingSchema = {
+    key: string;
+    revision: number;
+};
+export type ClientProfileDefinitionSchema = {
+    name: string;
+    description: string;
+    icon?: string | null;
+    service: ClientProfileServiceSchema;
+    protocols: Array<AdminChannelProtocol>;
+    credential_kinds: Array<AdminCredentialKind>;
+    identity_headers: {
+        [key: string]: string;
+    };
+    session_strategy: ClientProfileSessionStrategySchema;
+    behavior: ClientProfileBehaviorSchema;
+};
+export type ClientProfileEnabledRequest = {
+    expected_version: number;
+    enabled: boolean;
+};
+export type ClientProfilePageSchema = {
+    items: Array<ClientProfileRecordSchema>;
+    next_cursor?: string | null;
+};
+export type ClientProfileRecordSchema = {
+    key: string;
+    name: string;
+    service: ClientProfileServiceSchema;
+    built_in: boolean;
+    enabled: boolean;
+    latest_revision: number;
+    version: number;
+};
+export type ClientProfileReferencePageSchema = {
+    items: Array<ClientProfileReferenceSchema>;
+    next_cursor?: number | null;
+};
+export type ClientProfileReferenceSchema = {
+    channel_id: number;
+    binding: ClientProfileBindingSchema;
+    version: number;
+};
+export type ClientProfileRevisionPageSchema = {
+    items: Array<ClientProfileSnapshotSchema>;
+    next_cursor?: number | null;
+};
+export type ClientProfileSaveRequest = {
+    expected_version: number;
+    definition: ClientProfileDefinitionSchema;
+};
+export type ClientProfileServiceSchema = 'standard' | 'claude_code' | 'codex' | 'open_code';
+export type ClientProfileSessionStrategySchema = 'explicit' | 'first_user_message';
+export type ClientProfileSnapshotSchema = {
+    binding: ClientProfileBindingSchema;
+    definition: ClientProfileDefinitionSchema;
+};
+export type ClientProfileVersionRequest = {
+    expected_version: number;
+};
 export type ClientSimulationBodyPatchResult = 'applied' | 'rejected';
 export type ClientSimulationBodyProfile = 'anthropic_cli_system_date_v1';
 export type ClientSimulationProfile = 'anthropic_cli_headers_v1';
@@ -5568,6 +5633,247 @@ export type ProbeAdminChannelResponses = {
     200: AdminChannelProbeResponse;
 };
 export type ProbeAdminChannelResponse = ProbeAdminChannelResponses[keyof ProbeAdminChannelResponses];
+export type ListAdminClientProfilesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        after?: string;
+        search?: string;
+        enabled?: boolean;
+        service?: ClientProfileServiceSchema;
+        protocol?: AdminChannelProtocol;
+        credential_kind?: AdminCredentialKind;
+        limit?: number;
+    };
+    url: '/api/admin/client-profiles';
+};
+export type ListAdminClientProfilesErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminClientProfilesError = ListAdminClientProfilesErrors[keyof ListAdminClientProfilesErrors];
+export type ListAdminClientProfilesResponses = {
+    200: ClientProfilePageSchema;
+};
+export type ListAdminClientProfilesResponse = ListAdminClientProfilesResponses[keyof ListAdminClientProfilesResponses];
+export type ValidateAdminClientProfileData = {
+    body: ClientProfileSaveRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/client-profiles/validate';
+};
+export type ValidateAdminClientProfileErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ValidateAdminClientProfileError = ValidateAdminClientProfileErrors[keyof ValidateAdminClientProfileErrors];
+export type ValidateAdminClientProfileResponses = {
+    200: unknown;
+};
+export type GetAdminClientProfileData = {
+    body?: never;
+    path: {
+        key: string;
+    };
+    query?: never;
+    url: '/api/admin/client-profiles/{key}';
+};
+export type GetAdminClientProfileErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminClientProfileError = GetAdminClientProfileErrors[keyof GetAdminClientProfileErrors];
+export type GetAdminClientProfileResponses = {
+    200: ClientProfileRecordSchema;
+};
+export type GetAdminClientProfileResponse = GetAdminClientProfileResponses[keyof GetAdminClientProfileResponses];
+export type SaveAdminClientProfileData = {
+    body: ClientProfileSaveRequest;
+    path: {
+        key: string;
+    };
+    query?: never;
+    url: '/api/admin/client-profiles/{key}';
+};
+export type SaveAdminClientProfileErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type SaveAdminClientProfileError = SaveAdminClientProfileErrors[keyof SaveAdminClientProfileErrors];
+export type SaveAdminClientProfileResponses = {
+    200: ClientProfileSnapshotSchema;
+};
+export type SaveAdminClientProfileResponse = SaveAdminClientProfileResponses[keyof SaveAdminClientProfileResponses];
+export type SetAdminClientProfileEnabledData = {
+    body: ClientProfileEnabledRequest;
+    path: {
+        key: string;
+    };
+    query?: never;
+    url: '/api/admin/client-profiles/{key}/enabled';
+};
+export type SetAdminClientProfileEnabledErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type SetAdminClientProfileEnabledError = SetAdminClientProfileEnabledErrors[keyof SetAdminClientProfileEnabledErrors];
+export type SetAdminClientProfileEnabledResponses = {
+    200: ClientProfileRecordSchema;
+};
+export type SetAdminClientProfileEnabledResponse = SetAdminClientProfileEnabledResponses[keyof SetAdminClientProfileEnabledResponses];
+export type ListAdminClientProfileRevisionsData = {
+    body?: never;
+    path: {
+        key: string;
+    };
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/admin/client-profiles/{key}/revisions';
+};
+export type ListAdminClientProfileRevisionsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminClientProfileRevisionsError = ListAdminClientProfileRevisionsErrors[keyof ListAdminClientProfileRevisionsErrors];
+export type ListAdminClientProfileRevisionsResponses = {
+    200: ClientProfileRevisionPageSchema;
+};
+export type ListAdminClientProfileRevisionsResponse = ListAdminClientProfileRevisionsResponses[keyof ListAdminClientProfileRevisionsResponses];
+export type DeleteAdminClientProfileRevisionData = {
+    body: ClientProfileVersionRequest;
+    path: {
+        key: string;
+        revision: number;
+    };
+    query?: never;
+    url: '/api/admin/client-profiles/{key}/revisions/{revision}';
+};
+export type DeleteAdminClientProfileRevisionErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type DeleteAdminClientProfileRevisionError = DeleteAdminClientProfileRevisionErrors[keyof DeleteAdminClientProfileRevisionErrors];
+export type DeleteAdminClientProfileRevisionResponses = {
+    200: unknown;
+};
+export type GetAdminClientProfileRevisionData = {
+    body?: never;
+    path: {
+        key: string;
+        revision: number;
+    };
+    query?: never;
+    url: '/api/admin/client-profiles/{key}/revisions/{revision}';
+};
+export type GetAdminClientProfileRevisionErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminClientProfileRevisionError = GetAdminClientProfileRevisionErrors[keyof GetAdminClientProfileRevisionErrors];
+export type GetAdminClientProfileRevisionResponses = {
+    200: ClientProfileSnapshotSchema;
+};
+export type GetAdminClientProfileRevisionResponse = GetAdminClientProfileRevisionResponses[keyof GetAdminClientProfileRevisionResponses];
+export type ListAdminClientProfileReferencesData = {
+    body?: never;
+    path: {
+        key: string;
+    };
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/admin/client-profiles/{key}/references';
+};
+export type ListAdminClientProfileReferencesErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminClientProfileReferencesError = ListAdminClientProfileReferencesErrors[keyof ListAdminClientProfileReferencesErrors];
+export type ListAdminClientProfileReferencesResponses = {
+    200: ClientProfileReferencePageSchema;
+};
+export type ListAdminClientProfileReferencesResponse = ListAdminClientProfileReferencesResponses[keyof ListAdminClientProfileReferencesResponses];
+export type GetAdminChannelClientProfileData = {
+    body?: never;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/client-profiles/channel-bindings/{channel_id}';
+};
+export type GetAdminChannelClientProfileErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminChannelClientProfileError = GetAdminChannelClientProfileErrors[keyof GetAdminChannelClientProfileErrors];
+export type GetAdminChannelClientProfileResponses = {
+    200: null | ClientProfileReferenceSchema;
+};
+export type GetAdminChannelClientProfileResponse = GetAdminChannelClientProfileResponses[keyof GetAdminChannelClientProfileResponses];
+export type BindAdminChannelClientProfileData = {
+    body: ClientProfileBindRequest;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/client-profiles/channel-bindings/{channel_id}';
+};
+export type BindAdminChannelClientProfileErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type BindAdminChannelClientProfileError = BindAdminChannelClientProfileErrors[keyof BindAdminChannelClientProfileErrors];
+export type BindAdminChannelClientProfileResponses = {
+    200: ClientProfileReferenceSchema;
+};
+export type BindAdminChannelClientProfileResponse = BindAdminChannelClientProfileResponses[keyof BindAdminChannelClientProfileResponses];
 export type ListAdminCredentialsData = {
     body?: never;
     path: {

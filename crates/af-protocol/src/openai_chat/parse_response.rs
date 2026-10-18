@@ -389,7 +389,15 @@ pub(super) fn convert_usage(
         }
         _ => return Err(ParseResponseError::InvalidValue),
     }
-    let (reasoning, audio_output) = convert_completion_details(usage.completion_tokens_details)?;
+    let (mut reasoning, audio_output) =
+        convert_completion_details(usage.completion_tokens_details)?;
+    if let Some(value) = usage.reasoning_tokens {
+        let value = token_count(value)?;
+        if reasoning != TokenCount::ZERO && reasoning != value {
+            return Err(ParseResponseError::InvalidValue);
+        }
+        reasoning = value;
+    }
     let details = UsageDetails::new(
         cache_read,
         TokenCount::ZERO,
