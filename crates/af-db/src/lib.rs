@@ -92,9 +92,9 @@ mod client_profiles;
 #[cfg(test)]
 mod client_profiles_tests;
 pub use client_profiles::{
-    ClientProfilePage, ClientProfileQuery, ClientProfileRecord, ClientProfileReference,
-    ClientProfileReferencePage, ClientProfileRepository, ClientProfileRepositoryError,
-    ClientProfileRevisionPage, ClientProfileWrite,
+    ClientProfileOpenCodeSettings, ClientProfilePage, ClientProfileQuery, ClientProfileRecord,
+    ClientProfileReference, ClientProfileReferencePage, ClientProfileRepository,
+    ClientProfileRepositoryError, ClientProfileRevisionPage, ClientProfileWrite,
 };
 mod channel_state;
 #[cfg(test)]
