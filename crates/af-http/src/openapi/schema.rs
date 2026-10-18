@@ -411,6 +411,7 @@ pub(crate) enum AdminChannelProtocolSchema {
 #[schema(as = AdminChannelWriteType, rename_all = "snake_case")]
 pub(crate) enum AdminChannelWriteTypeSchema {
     Openai,
+    Opencode,
     Anthropic,
     Gemini,
     Jina,

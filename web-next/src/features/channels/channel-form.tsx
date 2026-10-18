@@ -42,10 +42,11 @@ type ChannelFormProps = {
 
 /* HeroUI Select 不接受空字符串 key，用哨兵 key 表达各枚举里的"关闭/空"选项。 */
 const OFF_KEY = '__off__'
-const adapterOptions = ['openai', 'anthropic', 'gemini', 'jina', 'cohere', 'xai'].map((id) => ({ ...findProvider(id)!, id }))
+const adapterOptions = ['opencode', 'openai', 'anthropic', 'gemini', 'jina', 'cohere', 'xai'].map((id) => ({ ...findProvider(id)!, id }))
 const channelTypeOptions = [findProvider('codex_oauth')!, ...adapterOptions]
 const OPENAI_PROTOCOL_KEYS = ['openai_chat', 'openai_responses', 'openai_embeddings', 'openai_images', 'openai_audio', 'openai_speech'] as const
 const PROTOCOL_BY_TYPE = {
+  opencode: ['openai_chat', 'openai_responses', 'anthropic'],
   anthropic: ['anthropic'],
   gemini: ['gemini'],
   jina: ['jina_rerank'],
@@ -86,6 +87,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
   const channelType = form.watch('channelType')
   const protocol = form.watch('protocol')
   const codexOAuth = channelType === 'codex_oauth'
+  const opencode = channelType === 'opencode'
   const autoBan = form.watch('autoBan')
   const poolMode = form.watch('poolMode')
   const clientSimulationProfile = form.watch('clientSimulationProfile')
@@ -153,7 +155,11 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
             <Input id="channel-name" aria-invalid={!!form.formState.errors.name} {...form.register('name')} />
           </ChannelFormField>
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(11rem,0.36fr)]">
-            {codexOAuth ? (
+            {opencode ? (
+              <ChannelFormField id="channel-url" label={t('channels.fields.baseUrl')} hint={t('channels.form.opencodeBaseUrlHint')}>
+                <div className="flex min-h-9 items-center rounded-lg border border-[var(--hairline)] bg-surface-2 px-3 py-2 text-sm text-muted-foreground">{t('channels.form.opencodeFixedEndpoint')}</div>
+              </ChannelFormField>
+            ) : codexOAuth ? (
               <ChannelFormField id="channel-url" label={t('channels.fields.baseUrl')} hint={t('channels.form.codexOAuthBaseUrlHint')}>
                 <div className="flex h-9 items-center rounded-lg border border-[var(--hairline)] bg-surface-2 px-3 text-sm text-muted-foreground">{t('channels.form.codexOAuthFixedEndpoint')}</div>
               </ChannelFormField>
@@ -187,12 +193,15 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                   onBlur={field.onBlur}
                   ref={field.ref}
                   allowCustom={false}
+                  disabled={pending || (mode === 'update' && channel?.type === 'opencode')}
                   options={channelTypeOptions}
                   onChange={(value) => {
                     const nextType = value as ChannelType
                     const currentProtocol = form.getValues('protocol')
                     const nextProtocol = nextType === 'codex_oauth'
                       ? 'openai_responses'
+                      : nextType === 'opencode'
+                        ? (currentProtocol === 'anthropic' || currentProtocol === 'openai_responses' ? currentProtocol : 'openai_chat')
                       : nextType === 'anthropic'
                       ? 'anthropic'
                       : nextType === 'gemini'
@@ -212,11 +221,16 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                           ? currentProtocol
                           : 'openai_chat'
                     field.onChange(nextType)
+                    if (nextType === 'opencode') {
+                      form.setValue('provider', 'opencode', { shouldDirty: true, shouldValidate: true })
+                      form.setValue('baseUrl', '', { shouldDirty: true, shouldValidate: true })
+                      form.setValue('responsesWebsocketEnabled', false, { shouldDirty: true, shouldValidate: true })
+                    }
                     if (nextType === 'codex_oauth') {
                       form.setValue('provider', 'codex', { shouldDirty: true, shouldValidate: true })
                       form.setValue('baseUrl', '', { shouldDirty: true, shouldValidate: true })
                       form.setValue('responsesWebsocketEnabled', false, { shouldDirty: true, shouldValidate: true })
-                    } else if (form.getValues('provider') === 'codex') {
+                    } else if (['codex', 'opencode'].includes(form.getValues('provider')) && nextType !== 'opencode') {
                       form.setValue('provider', nextType, { shouldDirty: true, shouldValidate: true })
                     }
                     form.setValue('protocol', nextProtocol, {

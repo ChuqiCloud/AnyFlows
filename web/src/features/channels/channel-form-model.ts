@@ -8,7 +8,7 @@ import type {
 
 export type ChannelEditorMode = 'create' | 'update'
 export type SensitiveEditMode = 'preserve' | 'replace' | 'clear'
-export type ChannelType = 'openai' | 'codex_oauth' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai'
+export type ChannelType = 'opencode' | 'openai' | 'codex_oauth' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai'
 export type ChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini' | 'jina_rerank' | 'cohere_rerank' | 'xai_video'
 export type ResponsesCompactMode = 'auto' | 'force_on' | 'force_off'
 export type ClientSimulationProfile = '' | 'anthropic_cli_headers_v1'
@@ -107,7 +107,7 @@ export function buildChannelFormSchema(
     name: z.string().trim().min(1, messages.invalidField).max(128, messages.invalidField),
     baseUrl: z.string().trim().max(2048, messages.invalidField),
     timeoutSeconds: z.string(),
-    channelType: z.enum(['openai', 'codex_oauth', 'anthropic', 'gemini', 'jina', 'cohere', 'xai']),
+    channelType: z.enum(['opencode', 'openai', 'codex_oauth', 'anthropic', 'gemini', 'jina', 'cohere', 'xai']),
     protocol: z.enum(['openai_chat', 'openai_responses', 'openai_embeddings', 'openai_images', 'openai_audio', 'openai_speech', 'anthropic', 'gemini', 'jina_rerank', 'cohere_rerank', 'xai_video']),
     tag: z.string().trim().max(64, messages.invalidField),
     status: z.enum(['enabled', 'disabled']),
@@ -133,6 +133,8 @@ export function buildChannelFormSchema(
   }).superRefine((values, context) => {
     const protocolMatchesType = values.channelType === 'codex_oauth'
       ? values.protocol === 'openai_responses'
+      : values.channelType === 'opencode'
+        ? ['openai_chat', 'openai_responses', 'anthropic'].includes(values.protocol)
       : values.channelType === 'anthropic'
       ? values.protocol === 'anthropic'
       : values.channelType === 'gemini'
@@ -196,6 +198,7 @@ export function buildChannelFormSchema(
       addIssue(context, 'autoBanKeywords', messages.invalidAutoBanRules)
     }
 
+    if (values.channelType === 'opencode' && values.baseUrl) addIssue(context, 'baseUrl', messages.invalidUrl)
     if (values.channelType !== 'codex_oauth' && values.baseUrl && !isSafeBaseUrl(values.baseUrl)) {
       addIssue(context, 'baseUrl', messages.invalidUrl)
     }
@@ -236,10 +239,11 @@ export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues 
   return {
     provider: codexOAuth ? 'codex' : channel?.provider ?? channel?.type ?? 'openai',
     name: channel?.name ?? '',
-    baseUrl: codexOAuth ? '' : channel?.base_url ?? '',
+    baseUrl: codexOAuth || channel?.type === 'opencode' ? '' : channel?.base_url ?? '',
     timeoutSeconds: channel?.timeout_secs == null ? '' : String(channel.timeout_secs),
     channelType: codexOAuth
       ? 'codex_oauth'
+      : channel?.type === 'opencode' ? 'opencode'
       : channel?.type === 'anthropic'
       ? 'anthropic'
       : channel?.type === 'gemini'
@@ -333,7 +337,7 @@ function commonRequest(values: ChannelFormValues) {
     name: values.name.trim(),
     type: values.channelType === 'codex_oauth' ? 'openai' : values.channelType,
     protocol: values.channelType === 'codex_oauth' ? 'openai_responses' : values.protocol,
-    base_url: values.channelType === 'codex_oauth' ? null : values.baseUrl.trim() || null,
+    base_url: values.channelType === 'codex_oauth' || values.channelType === 'opencode' ? null : values.baseUrl.trim() || null,
     timeout_secs: values.timeoutSeconds.trim() === '' ? null : Number(values.timeoutSeconds),
     status: values.status,
     weight: values.weight,
