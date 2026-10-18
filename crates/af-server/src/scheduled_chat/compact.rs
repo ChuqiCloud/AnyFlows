@@ -189,6 +189,9 @@ impl ScheduledChatService {
                 let mut relay_candidate = RelayCandidate::new(adaptor.clone(), context, credential)
                     .with_header_overrides(headers.clone())
                     .with_channel_group(target.channel_id());
+                if let Some(profile) = target.client_profile() {
+                    relay_candidate = relay_candidate.with_client_profile(profile.clone());
+                }
                 if let Some(concurrency) = &self.concurrency {
                     relay_candidate = relay_candidate.with_attempt_gate(concurrency.account_gate(
                         runtime_credential.concurrency_owner_id(),

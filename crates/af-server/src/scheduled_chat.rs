@@ -399,6 +399,9 @@ impl ScheduledChatService {
                     relay_candidate = relay_candidate
                         .with_client_simulation(Arc::new(BuiltInClientSimulation::new(profile)));
                 }
+                if let Some(profile) = target.client_profile() {
+                    relay_candidate = relay_candidate.with_client_profile(profile.clone());
+                }
                 if let Some(concurrency) = &self.concurrency {
                     relay_candidate = relay_candidate.with_attempt_gate(concurrency.account_gate(
                         concurrency_owner_id,

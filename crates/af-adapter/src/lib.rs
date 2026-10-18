@@ -5,7 +5,9 @@
 mod adaptor;
 mod anthropic;
 mod bedrock;
+mod client_profile;
 mod cohere;
+pub use client_profile::apply_client_profile_identity;
 mod context;
 mod credential;
 mod custom;
