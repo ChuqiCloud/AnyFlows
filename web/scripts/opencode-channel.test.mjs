@@ -56,7 +56,7 @@ test('OpenCode rejects external URLs, unsupported protocols and other service be
   assert.equal(schema.safeParse({ ...values, protocol: 'openai_responses', responsesWebsocketEnabled: true }).success, false)
   assert.equal(schema.safeParse({ ...values, protocol: 'openai_responses', responsesCompactMode: 'force_on' }).success, false)
   assert.equal(schema.safeParse({ ...values, protocol: 'anthropic', clientSimulationProfile: 'anthropic_cli_headers_v1', clientSimulationRiskAccepted: true }).success, false)
-  assert.deepEqual(credentialKindsForChannel('opencode'), ['api_key'])
+  assert.deepEqual(credentialKindsForChannel('opencode'), ['api_key', 'public'])
   assert.equal(findProvider('opencode').logo, 'OpenCode')
 })
 

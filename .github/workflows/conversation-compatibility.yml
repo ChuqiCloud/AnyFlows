@@ -103,6 +103,13 @@ jobs:
 
       - name: Test client profile configuration and runtime snapshots
         run: |
+          cargo test --quiet -p af-domain --lib --locked enums_tests::
+          cargo test --quiet -p af-account --lib --locked credential_
+          cargo test --quiet -p af-db --lib --locked admin_channel_write_tests::
+          cargo test --quiet -p af-db --lib --locked credential_state_tests::
+          AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST=1 cargo test --quiet -p af-db --lib --locked migration::tests::migration_runner_smoke -- --ignored
+          cargo test --quiet -p af-http --lib --locked management_credential_writes::
+          cargo test --quiet -p af-http --lib --locked document_preserves_sensitive_and_free_form_object_boundaries
           cargo test --quiet -p af-domain --lib --locked client_profile::
           cargo test --quiet -p af-adapter --lib --locked client_profile::
           cargo test --quiet -p af-adapter --lib --locked opencode::

@@ -265,7 +265,7 @@ async fn pagination_filters_and_limits_are_applied_by_database() -> TestResult {
             .iter()
             .map(|p| p.key.as_str())
             .collect::<Vec<_>>(),
-        vec!["opencode", "standard"]
+        vec!["opencode", "opencode-public", "standard"]
     );
     assert_eq!(
         repo.list(ClientProfileQuery {
@@ -338,13 +338,44 @@ async fn opencode_entry_updates_preserve_private_settings_and_reject_stale_versi
 }
 
 #[tokio::test]
+async fn public_profile_upgrade_preserves_frozen_revisions_and_blocks_used_rollback() -> TestResult
+{
+    let pool = crate::connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    let boundary = Migrator::migrations()
+        .iter()
+        .position(|migration| migration.name() == "m20261018_000152_add_opencode_public_profile")
+        .expect("公开访问档案迁移必须保留");
+    Migrator::up(pool.connection(), Some(u32::try_from(boundary)?)).await?;
+    let repo = ClientProfileRepository::new(pool.clone());
+    let original = repo.revision("opencode", 1).await?;
+    let standard = repo.revision("standard", 1).await?;
+    Migrator::up(pool.connection(), None).await?;
+    assert_eq!(repo.revision("opencode", 1).await?, original);
+    assert_eq!(repo.revision("standard", 1).await?, standard);
+    let public = repo.revision("opencode-public", 1).await?;
+    assert_eq!(
+        public.definition.credential_kinds,
+        vec![af_domain::CredentialKind::Public]
+    );
+    Migrator::down(pool.connection(), Some(1)).await?;
+    assert!(repo.get("opencode-public").await.is_err());
+    Migrator::up(pool.connection(), None).await?;
+    pool.connection().execute_unprepared("INSERT INTO channels (id, name, type, protocol, model_mapping, param_override, header_override, settings) VALUES (903, 'public-rollback', 'opencode', 'openai_chat', '{}', '{}', '{}', '{}')").await?;
+    repo.bind(ChannelId::new(903)?, public.binding, 0).await?;
+    assert!(Migrator::down(pool.connection(), Some(1)).await.is_err());
+    assert!(repo.get("opencode-public").await?.built_in);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn migration_backfills_legacy_claude_binding_without_changing_settings() -> TestResult {
     let pool = crate::connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
-    Migrator::up(
-        pool.connection(),
-        Some((Migrator::migrations().len() - 1) as u32),
-    )
-    .await?;
+    let boundary = Migrator::migrations()
+        .iter()
+        .position(|migration| migration.name() == "m20261018_000151_create_client_profiles")
+        .expect("旧 Claude 档案迁移必须保留");
+    Migrator::up(pool.connection(), Some(u32::try_from(boundary)?)).await?;
     for (id, body) in [
         (901_i64, ""),
         (

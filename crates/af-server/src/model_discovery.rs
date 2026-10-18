@@ -93,6 +93,8 @@ impl DatabaseUpstreamModelDiscoverer {
             .get(target.timeout().map(af_domain::ChannelTimeout::duration))
             .map_err(|_| UpstreamModelDiscoveryError::Internal)?;
         let mut context = RelayContext::new(client)
+            .with_credential_scope(target.credential_id())
+            .map_err(|_| UpstreamModelDiscoveryError::Internal)?
             .with_request_id(format!("model-discovery-{}", channel_id.get()))
             .map_err(|_| UpstreamModelDiscoveryError::Internal)?;
         if let Some(base_url) = target.base_url() {

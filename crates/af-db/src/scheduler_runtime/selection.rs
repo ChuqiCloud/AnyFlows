@@ -73,11 +73,17 @@ fn try_runtime_target(
         ) = credential.into_runtime_parts();
         if !matches!(
             credential_kind,
-            CredentialKind::ApiKey | CredentialKind::Oauth
+            CredentialKind::ApiKey | CredentialKind::Oauth | CredentialKind::Public
         ) || (matches!(
             channel_type,
-            ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai | ChannelType::OpenCode
+            ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
         ) && credential_kind != CredentialKind::ApiKey)
+            || (credential_kind == CredentialKind::Public && channel_type != ChannelType::OpenCode)
+            || (channel_type == ChannelType::OpenCode
+                && !matches!(
+                    credential_kind,
+                    CredentialKind::Public | CredentialKind::ApiKey
+                ))
             || (channel.client_simulation_profile().is_some()
                 && credential_kind != CredentialKind::Oauth)
         {

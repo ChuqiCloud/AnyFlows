@@ -16,6 +16,50 @@ use crate::{
 };
 
 #[tokio::test]
+async fn public_credential_health_uses_its_record_and_keeps_oauth_recovery_closed()
+-> Result<(), Box<dyn Error>> {
+    let pool = test_pool().await?;
+    let channel = test_channel("public-state")
+        .insert(pool.connection())
+        .await?;
+    let mut source = test_credential(channel.id, 0x59);
+    source.kind = Set(CredentialKind::Public.as_str().to_owned());
+    let source = source.insert(pool.connection()).await?;
+    let event = |change| {
+        CredentialStateEvent::new(
+            ChannelId::new(channel.id).unwrap(),
+            CredentialId::new(source.id).unwrap(),
+            CredentialKind::Public,
+            change,
+        )
+    };
+    assert_eq!(
+        event(CredentialStateChange::MissingRefreshToken),
+        Err(CredentialStateRepositoryError::InvalidEvent)
+    );
+    let repository = CredentialStateRepository::new(pool.clone());
+    repository
+        .apply(&[event(CredentialStateChange::RateLimited {
+            retry_after: None,
+        })?])
+        .await?;
+    assert!(
+        credential(&pool, source.id)
+            .await
+            .rate_limit_reset_at
+            .is_some()
+    );
+    repository
+        .apply(&[event(CredentialStateChange::Succeeded)?])
+        .await?;
+    let recovered = credential(&pool, source.id).await;
+    assert!(recovered.last_used_at.is_some());
+    assert!(recovered.rate_limit_reset_at.is_none());
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn repository_writes_closed_runtime_states_and_success_clears_cooling()
 -> Result<(), Box<dyn Error>> {
     let pool = test_pool().await?;

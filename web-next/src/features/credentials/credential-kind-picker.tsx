@@ -1,5 +1,5 @@
 import { Button } from '@heroui/react'
-import { CloudCog, FileKey2, KeyRound, Link2 } from 'lucide-react'
+import { Globe2, CloudCog, FileKey2, KeyRound, Link2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import type { WritableCredentialKind } from './credential-model'
 
 const kindIcons: Record<WritableCredentialKind, LucideIcon> = {
+  public: Globe2,
   api_key: KeyRound,
   oauth: Link2,
   bedrock: CloudCog,
