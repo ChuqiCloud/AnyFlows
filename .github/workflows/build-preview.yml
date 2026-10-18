@@ -92,7 +92,7 @@ jobs:
 
       - name: Upload preview package
         if: github.server_url != 'https://github.com'
-        uses: https://github.com/actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3.1.3
+        uses: https://gitea.com/actions/gitea-upload-artifact@62ac910c5d3dfa85c7cb2df15afe2e342b2407c2 # Gitea v4 backend
         with:
           name: anyflows-preview-linux-amd64-${{ github.sha }}
           path: |
