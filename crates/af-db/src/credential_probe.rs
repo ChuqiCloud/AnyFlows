@@ -4,7 +4,9 @@ use af_domain::{
     ChannelId, ChannelTimeout, ChannelType, CredentialKind, Protocol, ResponsesCompactMode, Status,
 };
 use sea_orm::{
-    ColumnTrait, EntityTrait, QueryFilter, QueryOrder, entity::prelude::TimeDateTimeWithTimeZone,
+    ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder,
+    entity::prelude::TimeDateTimeWithTimeZone,
+    sea_query::{Expr, Func},
 };
 use thiserror::Error;
 use tokio::time::timeout;
@@ -21,6 +23,37 @@ use crate::{
 };
 
 const DEFAULT_LOAD_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// 发现和探活在优先级排序前筛选兼容凭据，与生产快照使用相同的身份边界。
+pub(crate) fn compatible_probe_credentials(
+    channel_type: ChannelType,
+    profile: Option<&af_domain::ClientProfileSnapshot>,
+) -> Condition {
+    let mut condition = Condition::all();
+    if matches!(
+        channel_type,
+        ChannelType::OpenCode | ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
+    ) {
+        condition = condition.add(credentials::Column::Kind.eq(CredentialKind::ApiKey.as_str()));
+    }
+    if let Some(profile) = profile {
+        condition = condition.add(
+            credentials::Column::Kind.is_in(
+                profile
+                    .definition
+                    .credential_kinds
+                    .iter()
+                    .map(|kind| kind.as_str()),
+            ),
+        );
+        if profile.definition.service == af_domain::ClientProfileService::Codex {
+            condition = condition.add(
+                Expr::expr(Func::lower(Expr::col(credentials::Column::OauthProvider))).eq("codex"),
+            );
+        }
+    }
+    condition
+}
 /// XChaCha20-Poly1305 nonce 的固定字节数。
 pub const CREDENTIAL_ENVELOPE_NONCE_BYTES: usize = 24;
 /// Poly1305 认证标签的固定字节数。
@@ -144,6 +177,8 @@ pub struct ChannelProbeTargetRecord {
     envelope: EncryptedCredentialEnvelope,
     headers: Vec<ChannelProbeHeader>,
     proxy_required: bool,
+    client_profile: Option<af_domain::ClientProfileSnapshot>,
+    opencode_entry: Option<af_domain::OpenCodeEntry>,
     revision: ChannelProbeTargetRevision,
     responses_compact_mode: ResponsesCompactMode,
     responses_compact_model: Option<String>,
@@ -167,6 +202,13 @@ impl fmt::Debug for ChannelProbeTargetRevision {
 }
 
 impl ChannelProbeTargetRecord {
+    pub fn client_profile(&self) -> Option<&af_domain::ClientProfileSnapshot> {
+        self.client_profile.as_ref()
+    }
+    pub fn opencode_entry(&self) -> Option<af_domain::OpenCodeEntry> {
+        self.opencode_entry
+    }
+
     /// 返回目标渠道标识。
     #[must_use]
     pub const fn channel_id(&self) -> ChannelId {
@@ -374,12 +416,41 @@ impl ChannelProbeTargetRepository {
                 return Err(ChannelProbeTargetRepositoryError::Invariant);
             }
 
+            let channel_type = channel
+                .r#type
+                .parse()
+                .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
+            let protocol = channel
+                .protocol
+                .parse()
+                .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
+            let profiles = crate::client_profiles::runtime_profiles(
+                self.pool.connection(),
+                &[channel_id.get()],
+            )
+            .await
+            .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
+            let client_profile = match profiles.get(&channel_id.get()) {
+                Some(None) => return Ok(None),
+                Some(Some(profile)) => Some(profile.clone()),
+                None => None,
+            };
+            if client_profile
+                .as_ref()
+                .is_some_and(|profile| !profile.definition.matches_channel(channel_type, protocol))
+            {
+                return Ok(None);
+            }
             let Some(credential) = credentials::Entity::find()
                 .filter(credentials::Column::ChannelId.eq(channel_id.get()))
                 .filter(credentials::Column::Status.eq(Status::Enabled.code()))
                 .filter(credentials::Column::Schedulable.eq(true))
                 .filter(credentials::Column::OauthTokenPending.eq(false))
                 .filter(credentials::Column::DeletedAt.is_null())
+                .filter(crate::credential_probe::compatible_probe_credentials(
+                    channel_type,
+                    client_profile.as_ref(),
+                ))
                 .order_by_desc(credentials::Column::Priority)
                 .order_by_asc(credentials::Column::Id)
                 .one(self.pool.connection())
@@ -392,18 +463,13 @@ impl ChannelProbeTargetRepository {
                 return Err(ChannelProbeTargetRepositoryError::Invariant);
             }
 
-            let channel_type = channel
-                .r#type
-                .parse()
-                .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
-            let protocol = channel
-                .protocol
-                .parse()
-                .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
             let credential_kind = credential
                 .kind
                 .parse()
                 .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
+            let opencode_entry =
+                crate::channel_opencode_entry(channel_type, &channel.settings.clone().into_inner())
+                    .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
             let settings = channel.settings.clone().into_inner();
             let responses_compact_mode = responses_compact_mode(&settings)
                 .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
@@ -472,6 +538,8 @@ impl ChannelProbeTargetRepository {
                 envelope,
                 headers,
                 proxy_required: credential.proxy_id.is_some(),
+                client_profile,
+                opencode_entry,
                 revision: ChannelProbeTargetRevision(channel.updated_at),
                 responses_compact_mode,
                 responses_compact_model,

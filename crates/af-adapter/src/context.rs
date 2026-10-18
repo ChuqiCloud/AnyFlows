@@ -19,6 +19,7 @@ pub struct RelayContext {
     http_client: PooledClient,
     base_url: Option<String>,
     request_id: Option<String>,
+    client_session_scope: Option<String>,
     oauth_provider: Option<String>,
     oauth_account_key: Option<String>,
 }
@@ -31,6 +32,7 @@ impl RelayContext {
             http_client,
             base_url: None,
             request_id: None,
+            client_session_scope: None,
             oauth_provider: None,
             oauth_account_key: None,
         }
@@ -62,6 +64,23 @@ impl RelayContext {
         self.oauth_provider = provider.map(str::to_owned);
         self.oauth_account_key = account_key.map(str::to_owned);
         self
+    }
+
+    /// 只接收主体隔离后的摘要；原始提示词或用户会话标识不能进入上下文。
+    pub fn with_client_session_scope(mut self, value: String) -> AdaptorResult<Self> {
+        if value.len() != 64
+            || !value
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return Err(AdaptorError::InvalidRequestId);
+        }
+        self.client_session_scope = Some(value);
+        Ok(self)
+    }
+
+    pub fn client_session_scope(&self) -> Option<&str> {
+        self.client_session_scope.as_deref()
     }
 
     /// 返回受连接池管理的 HTTP Client。

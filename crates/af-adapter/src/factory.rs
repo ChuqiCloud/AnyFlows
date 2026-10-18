@@ -1,11 +1,12 @@
 use std::{fmt, sync::Arc};
 
-use af_domain::{ChannelType, Protocol};
+use af_domain::{ChannelType, OpenCodeEntry, Protocol};
 
 use crate::{
     Adaptor, AdaptorError, AdaptorResult, AnthropicAdaptor, BedrockAdaptor, CohereAdaptor,
     CustomAdaptor, CustomAuthentication, CustomEndpointTemplate, CustomStreamEndpoint,
-    GeminiAdaptor, JinaAdaptor, OpenAiAdaptor, VertexAdaptor, VideoTaskAdaptor, XaiVideoAdaptor,
+    GeminiAdaptor, JinaAdaptor, OpenAiAdaptor, OpenCodeAdaptor, VertexAdaptor, VideoTaskAdaptor,
+    XaiVideoAdaptor,
 };
 
 /// OpenAI 适配器的强类型构造配置。
@@ -327,6 +328,39 @@ impl fmt::Debug for CustomAdaptorSettings {
     }
 }
 
+/// OpenCode 的固定入口与单一原生协议配置。
+#[derive(Clone, Eq, PartialEq)]
+pub struct OpenCodeAdaptorSettings {
+    entry: OpenCodeEntry,
+    protocol: Protocol,
+    supported_models: Vec<String>,
+}
+
+impl fmt::Debug for OpenCodeAdaptorSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpenCodeAdaptorSettings")
+            .field("entry", &self.entry)
+            .field("protocol", &self.protocol)
+            .field("supported_model_count", &self.supported_models.len())
+            .finish()
+    }
+}
+
+impl OpenCodeAdaptorSettings {
+    pub fn new(
+        entry: OpenCodeEntry,
+        protocol: Protocol,
+        models: Vec<String>,
+    ) -> AdaptorResult<Self> {
+        OpenCodeAdaptor::new(entry, protocol, Vec::new())?;
+        Ok(Self {
+            entry,
+            protocol,
+            supported_models: models,
+        })
+    }
+}
+
 /// 按供应商闭合的适配器构造配置。
 ///
 /// 新渠道只有在对应适配器和专用配置都落地后才能增加变体，禁止用不透明 Map 或
@@ -336,6 +370,7 @@ impl fmt::Debug for CustomAdaptorSettings {
 pub enum AdaptorSettings {
     /// OpenAI Chat 及 Bearer-compatible 渠道配置。
     OpenAi(OpenAiAdaptorSettings),
+    OpenCode(OpenCodeAdaptorSettings),
     /// Anthropic Messages 官方及标准兼容渠道配置。
     Anthropic(AnthropicAdaptorSettings),
     /// Gemini Developer API 官方及原生协议兼容渠道配置。
@@ -355,6 +390,10 @@ pub enum AdaptorSettings {
 impl fmt::Debug for AdaptorSettings {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::OpenCode(settings) => formatter
+                .debug_tuple("AdaptorSettings::OpenCode")
+                .field(settings)
+                .finish(),
             Self::OpenAi(settings) => formatter
                 .debug_tuple("AdaptorSettings::OpenAi")
                 .field(settings)
@@ -400,6 +439,9 @@ pub fn get_adaptor(
     settings: AdaptorSettings,
 ) -> AdaptorResult<Arc<dyn Adaptor>> {
     match (channel_type, settings) {
+        (ChannelType::OpenCode, AdaptorSettings::OpenCode(settings)) => Ok(Arc::new(
+            OpenCodeAdaptor::new(settings.entry, settings.protocol, settings.supported_models)?,
+        )),
         (ChannelType::OpenAi, AdaptorSettings::OpenAi(settings)) => {
             let (protocol, models) = settings.into_parts();
             Ok(Arc::new(OpenAiAdaptor::with_protocol_and_supported_models(
@@ -442,7 +484,8 @@ pub fn get_adaptor(
             )))
         }
         (
-            channel_type @ (ChannelType::OpenAi
+            channel_type @ (ChannelType::OpenCode
+            | ChannelType::OpenAi
             | ChannelType::Anthropic
             | ChannelType::Gemini
             | ChannelType::Bedrock
@@ -830,7 +873,7 @@ mod tests {
 
     #[test]
     fn factory_channel_enum_has_no_unimplemented_placeholders() {
-        assert_eq!(ChannelType::ALL.len(), 9);
+        assert_eq!(ChannelType::ALL.len(), 10);
         assert!(ChannelType::ALL.contains(&ChannelType::Jina));
         assert!(ChannelType::ALL.contains(&ChannelType::Cohere));
         assert!(ChannelType::ALL.contains(&ChannelType::Xai));

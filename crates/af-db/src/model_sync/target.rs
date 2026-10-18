@@ -29,12 +29,41 @@ impl ModelSyncRepository {
             else {
                 return Ok(ModelDiscoveryTargetLookup::NotFound);
             };
+            let channel_type = channel
+                .r#type
+                .parse()
+                .map_err(|_| ModelSyncRepositoryError::Invariant)?;
+            let protocol = channel
+                .protocol
+                .parse()
+                .map_err(|_| ModelSyncRepositoryError::Invariant)?;
+            let profiles = crate::client_profiles::runtime_profiles(
+                self.pool.connection(),
+                &[channel_id.get()],
+            )
+            .await
+            .map_err(|_| ModelSyncRepositoryError::Invariant)?;
+            let client_profile = match profiles.get(&channel_id.get()) {
+                Some(None) => return Ok(ModelDiscoveryTargetLookup::Unavailable),
+                Some(Some(profile)) => Some(profile.clone()),
+                None => None,
+            };
+            if client_profile
+                .as_ref()
+                .is_some_and(|profile| !profile.definition.matches_channel(channel_type, protocol))
+            {
+                return Ok(ModelDiscoveryTargetLookup::Unavailable);
+            }
             let Some(credential) = credentials::Entity::find()
                 .filter(credentials::Column::ChannelId.eq(channel_id.get()))
                 .filter(credentials::Column::Status.eq(Status::Enabled.code()))
                 .filter(credentials::Column::Schedulable.eq(true))
                 .filter(credentials::Column::OauthTokenPending.eq(false))
                 .filter(credentials::Column::DeletedAt.is_null())
+                .filter(crate::credential_probe::compatible_probe_credentials(
+                    channel_type,
+                    client_profile.as_ref(),
+                ))
                 .order_by_desc(credentials::Column::Priority)
                 .order_by_asc(credentials::Column::Id)
                 .one(self.pool.connection())
@@ -47,18 +76,13 @@ impl ModelSyncRepository {
                 return Err(ModelSyncRepositoryError::Invariant);
             }
 
-            let channel_type = channel
-                .r#type
-                .parse()
-                .map_err(|_| ModelSyncRepositoryError::Invariant)?;
-            let protocol = channel
-                .protocol
-                .parse()
-                .map_err(|_| ModelSyncRepositoryError::Invariant)?;
             let credential_kind = credential
                 .kind
                 .parse()
                 .map_err(|_| ModelSyncRepositoryError::Invariant)?;
+            let opencode_entry =
+                crate::channel_opencode_entry(channel_type, &channel.settings.clone().into_inner())
+                    .map_err(|_| ModelSyncRepositoryError::Invariant)?;
             let channel_timeout = channel
                 .timeout_secs
                 .map(|value| {
@@ -114,6 +138,8 @@ impl ModelSyncRepository {
                     headers,
                     mappings,
                     proxy_required: credential.proxy_id.is_some(),
+                    client_profile,
+                    opencode_entry,
                 },
             ))
         }

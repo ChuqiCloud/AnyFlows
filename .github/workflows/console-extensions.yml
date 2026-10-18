@@ -5,7 +5,7 @@ on:
     branches: [main, 'feature/console-extension-entry']
     paths: ['web/**', 'web-next/**', '.github/workflows/console-extensions.yml']
   pull_request:
-    branches: [main]
+    branches: [main, develop]
     paths: ['web/**', 'web-next/**', '.github/workflows/console-extensions.yml']
   workflow_dispatch:
 
@@ -25,15 +25,32 @@ jobs:
       matrix:
         frontend: [web, web-next]
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repository_url="$CHECKOUT_REPOSITORY_URL"
+          if [[ "$repository_url" == http://gitea_cps3:* ]]; then
+            repository_url="https://gitea.acmecloud.cn/${{ github.repository }}.git"
+          fi
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$repository_url"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
       - name: Install package manager and locked dependencies
         run: |
-          npm install --global corepack@0.34.0
-          corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} install --frozen-lockfile
+          npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} install --frozen-lockfile
       - name: Check scripts and community contracts
-        run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} lint
+        run: |
+          node tools/ci/check-frontend-parity.mjs
+          npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} lint
       - name: Build community frontend
-        run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build
+        run: npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build

@@ -53,6 +53,7 @@ export function credentialKindsForChannel(
     case 'gemini':
     case 'openai':
       return ['api_key', 'oauth']
+    case 'opencode':
     case 'jina':
     case 'cohere':
     case 'xai':

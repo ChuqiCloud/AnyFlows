@@ -8,6 +8,11 @@ on:
       - 'crates/af-relay/**'
       - 'crates/af-domain/src/client_profile.rs'
       - 'crates/af-adapter/src/client_profile.rs'
+      - 'crates/af-adapter/src/opencode.rs'
+      - 'crates/af-db/src/opencode_settings.rs'
+      - 'crates/af-server/src/model_discovery.rs'
+      - 'crates/af-server/src/channel_probe.rs'
+      - 'crates/af-server/src/sticky_session.rs'
       - 'crates/af-admin/src/client_profiles.rs'
       - 'crates/af-db/src/client_profiles*'
       - 'crates/af-db/src/entity/*client_profile*'
@@ -100,6 +105,13 @@ jobs:
         run: |
           cargo test --quiet -p af-domain --lib --locked client_profile::
           cargo test --quiet -p af-adapter --lib --locked client_profile::
+          cargo test --quiet -p af-adapter --lib --locked opencode::
+          cargo test --quiet -p af-db --lib --locked opencode_settings::
+          cargo test --quiet -p af-db --lib --locked credential_probe_tests::
+          cargo test --quiet -p af-db --lib --locked model_sync_tests::
+          cargo test --quiet -p af-server --lib --all-features --locked sticky_session::
+          cargo test --quiet -p af-server --lib --all-features --locked model_discovery::
+          cargo test --quiet -p af-server --lib --all-features --locked channel_probe_tests::
           cargo test --quiet -p af-admin --lib --locked client_profiles::
           cargo test --quiet -p af-http --lib --locked client_profiles::
           cargo test --quiet -p af-db --lib --locked client_profiles_tests::

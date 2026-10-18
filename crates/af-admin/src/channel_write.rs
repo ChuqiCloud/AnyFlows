@@ -381,12 +381,16 @@ impl AdminChannelWriteFields {
                         | Protocol::OpenAiImages
                         | Protocol::OpenAiAudio
                         | Protocol::OpenAiSpeech
+                ) | (
+                    ChannelType::OpenCode,
+                    Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic
                 ) | (ChannelType::Anthropic, Protocol::Anthropic)
                     | (ChannelType::Gemini, Protocol::Gemini)
                     | (ChannelType::Jina, Protocol::JinaRerank)
                     | (ChannelType::Cohere, Protocol::CohereRerank)
                     | (ChannelType::Xai, Protocol::XaiVideo)
             )
+            || (channel_type == ChannelType::OpenCode && base_url.is_some())
             || base_url
                 .as_deref()
                 .is_some_and(|value| value.is_empty() || value.len() > 2_048)
@@ -412,6 +416,8 @@ impl AdminChannelWriteFields {
         }
         if let Some(settings) = &settings {
             validate_json_object(settings, false)?;
+            af_db::channel_opencode_entry(channel_type, settings)
+                .map_err(|_| AdminChannelWriteError::InvalidInput)?;
         }
         let timeout = timeout_secs
             .map(ChannelTimeout::new)

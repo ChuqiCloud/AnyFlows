@@ -188,6 +188,8 @@ struct ProjectionTargetWire {
     client_simulation_body_profile: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     client_profile: Option<af_domain::ClientProfileSnapshot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    opencode_entry: Option<af_domain::OpenCodeEntry>,
     responses_websocket_enabled: bool,
     #[serde(default)]
     responses_compact_mode: Option<String>,
@@ -402,6 +404,7 @@ impl ProjectionTargetWire {
             auto_ban_keywords: target.auto_ban_rules().keywords().to_vec(),
             pool_mode: target.pool_mode(),
             client_profile: target.client_profile().cloned(),
+            opencode_entry: target.opencode_entry(),
             client_simulation_profile: target
                 .client_simulation_profile()
                 .map(|profile| profile.to_string()),
@@ -502,6 +505,7 @@ impl ProjectionTargetWire {
         .and_then(|target| {
             target.with_client_simulation_body_profile(client_simulation_body_profile)
         })
+        .and_then(|target| target.with_opencode_entry(self.opencode_entry))
         .and_then(|target| target.with_client_profile(self.client_profile))
         .and_then(|target| {
             target.with_responses_websocket_enabled(self.responses_websocket_enabled)
@@ -676,6 +680,66 @@ fn record_matches_subject(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn opencode_entry_and_profile_revision_survive_projection() {
+        let channel = ChannelId::new(61).unwrap();
+        let profile = af_domain::built_in_client_profiles()
+            .into_iter()
+            .find(|profile| profile.binding.key == "opencode")
+            .unwrap();
+        let target = SchedulerRuntimeTargetRecord::new_pool(
+            channel,
+            ChannelType::OpenCode,
+            Protocol::OpenAiChat,
+            None,
+            vec![
+                SchedulerRuntimeCredentialRecord::new(
+                    62,
+                    CredentialKind::ApiKey,
+                    EncryptedCredentialEnvelope::new("fixture", [1; 24], vec![2; 16]).unwrap(),
+                    false,
+                )
+                .unwrap(),
+            ],
+            vec![],
+        )
+        .unwrap()
+        .with_client_profile(Some(profile.clone()))
+        .unwrap()
+        .with_opencode_entry(Some(af_domain::OpenCodeEntry::ZenV1))
+        .unwrap();
+        let record = SchedulerRuntimeRecord::new(
+            SchedulerAbilityRecord::from_projection_parts(
+                GroupId::new(63).unwrap(),
+                "model".to_owned(),
+                channel,
+                1,
+                1,
+            )
+            .unwrap(),
+            Arc::new(target),
+        );
+        let projection = SchedulerRuntimeProjection::new(
+            64,
+            SchedulerCatalogSubject::Channel(channel),
+            vec![record],
+        )
+        .unwrap();
+        let payload = projection.encode().unwrap();
+        let decoded = SchedulerRuntimeProjection::decode(&payload).unwrap();
+        assert_eq!(
+            decoded.records()[0].target().opencode_entry(),
+            Some(af_domain::OpenCodeEntry::ZenV1)
+        );
+        assert_eq!(
+            decoded.records()[0].target().client_profile(),
+            Some(&profile)
+        );
+        let mut wire: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        wire["targets"][0]["opencode_entry"] = serde_json::json!("https://example.com");
+        assert!(SchedulerRuntimeProjection::decode(&serde_json::to_vec(&wire).unwrap()).is_err());
+    }
 
     #[test]
     fn projection_round_trips_without_exposing_sensitive_debug_fields() {

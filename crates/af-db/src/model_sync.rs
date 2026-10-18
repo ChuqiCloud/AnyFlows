@@ -199,9 +199,18 @@ pub struct ModelDiscoveryTargetRecord {
     headers: Vec<ModelDiscoveryHeaderRecord>,
     mappings: Vec<ModelDiscoveryMappingRecord>,
     proxy_required: bool,
+    client_profile: Option<af_domain::ClientProfileSnapshot>,
+    opencode_entry: Option<af_domain::OpenCodeEntry>,
 }
 
 impl ModelDiscoveryTargetRecord {
+    pub fn client_profile(&self) -> Option<&af_domain::ClientProfileSnapshot> {
+        self.client_profile.as_ref()
+    }
+    pub fn opencode_entry(&self) -> Option<af_domain::OpenCodeEntry> {
+        self.opencode_entry
+    }
+
     #[must_use]
     pub const fn channel_id(&self) -> ChannelId {
         self.channel_id

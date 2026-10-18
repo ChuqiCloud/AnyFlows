@@ -16,6 +16,8 @@ mod enums;
 mod error;
 mod gateway_identity;
 mod network;
+mod opencode;
+pub use opencode::OpenCodeEntry;
 mod payment;
 mod platform_permission;
 mod principal;

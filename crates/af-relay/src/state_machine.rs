@@ -611,6 +611,12 @@ impl RelayStateMachine {
         })
     }
 
+    pub fn requires_conversation_decoder(&self) -> bool {
+        self.candidates
+            .iter()
+            .any(|candidate| candidate.adaptor.channel_type() == af_domain::ChannelType::OpenCode)
+    }
+
     /// 为当前请求启用安全诊断；策略只影响永久脱敏快照，不改变转发语义。
     #[must_use]
     pub const fn with_diagnostic_policy(mut self, policy: RelayDiagnosticPolicy) -> Self {
@@ -941,6 +947,14 @@ impl RelayStateMachine {
 
     fn next_candidate_index(&self, index: usize, error: UpstreamError) -> usize {
         if is_credential_scoped(error) {
+            if self.candidates[index].adaptor.channel_type() == af_domain::ChannelType::OpenCode
+                && !self.candidates.get(index + 1).is_some_and(|next| {
+                    next.channel_group.is_some()
+                        && next.channel_group == self.candidates[index].channel_group
+                })
+            {
+                return self.candidates.len();
+            }
             index + 1
         } else {
             self.next_channel_index(index)
@@ -948,6 +962,9 @@ impl RelayStateMachine {
     }
 
     fn next_channel_index(&self, index: usize) -> usize {
+        if self.candidates[index].adaptor.channel_type() == af_domain::ChannelType::OpenCode {
+            return self.candidates.len();
+        }
         let Some(channel_group) = self.candidates[index].channel_group else {
             return index + 1;
         };
@@ -1025,6 +1042,52 @@ pub(crate) const fn is_credential_scoped(error: UpstreamError) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn opencode_failure_never_falls_through_to_another_channel() {
+        let client = af_adapter::HttpClientPool::default()
+            .get(&af_adapter::HttpClientConfig::default())
+            .unwrap();
+        let candidate = |channel, opencode| {
+            let adaptor: Arc<dyn Adaptor> = if opencode {
+                Arc::new(
+                    af_adapter::OpenCodeAdaptor::new(
+                        af_domain::OpenCodeEntry::InferenceV1,
+                        af_domain::Protocol::OpenAiChat,
+                        vec![],
+                    )
+                    .unwrap(),
+                )
+            } else {
+                Arc::new(af_adapter::OpenAiAdaptor::new())
+            };
+            RelayCandidate::new(
+                adaptor,
+                RelayContext::new(client.clone()),
+                Credential::api_key("fixture").unwrap(),
+            )
+            .with_channel_group(ChannelId::new(channel).unwrap())
+        };
+        let machine = RelayStateMachine::new(vec![
+            candidate(1, true),
+            candidate(1, true),
+            candidate(2, false),
+        ])
+        .unwrap();
+        assert_eq!(
+            machine.next_candidate_index(0, UpstreamError::AuthRevoked),
+            1
+        );
+        assert_eq!(
+            machine.next_candidate_index(1, UpstreamError::AuthRevoked),
+            3
+        );
+        assert_eq!(machine.next_channel_index(0), 3);
+        assert!(machine.requires_conversation_decoder());
+        let standard =
+            RelayStateMachine::new(vec![candidate(2, false), candidate(3, false)]).unwrap();
+        assert_eq!(standard.next_channel_index(0), 1);
+    }
 
     #[test]
     fn rejecting_protocol_success_retains_client_simulation_metadata() {
