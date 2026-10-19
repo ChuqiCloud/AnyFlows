@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: read
+  issues: read
+  pull-requests: read
 
 concurrency:
   group: public-core-export-${{ github.ref }}

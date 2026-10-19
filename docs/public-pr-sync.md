@@ -40,6 +40,8 @@ Gitea 的 PR 讨论可能包含私有信息。启用反向同步前确认参与�
 
 Gitea 侧需要启用 `pull_request` 和 `issue_comment` Actions 事件。`pull_request` 事件负责合并后的标题和说明校正，`issue_comment` 事件负责评论的新增、编辑和删除。事件未触发时，可在 Gitea Actions 中手动运行 `Mirror Gitea PR discussion` 并填写 Gitea PR 编号。
 
+Gitea 工作流令牌需要 Contents、Issues 和 Pull requests 只读权限，API 地址沿用 Runner 的 `github.server_url`。事件任务先读取 PR 状态；仅已合并到 `develop` 的 PR 会进入同步。同步工具始终从 `develop` 检出，GitHub 写入令牌仅在同步步骤提供。
+
 ## 分支和重复执行
 
 公共导出始终复用 `sync/gitea-public-core`，开放 PR 存在时更新同一 PR；合并后下次导出复用分支名创建新评审。该前缀被回传工作流排除，防止循环。
