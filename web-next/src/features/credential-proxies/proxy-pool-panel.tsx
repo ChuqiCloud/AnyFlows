@@ -2,6 +2,7 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button as HeroButton, Input, Textarea as TextArea, Select, SelectItem, Switch, Drawer, DrawerContent, DrawerHeader } from '@heroui/react'
 import type { ComponentProps } from 'react'
+import { ProxyCheck, ProxySelection, ProxyCleanupControls } from './proxy-cleanup-controls'
 import { useAdminRouteChannelCatalog } from '@/features/routes/route-api'
 import { useAdminProxyPools, useProxyPoolAction, type AdminProxyPool, type ProxyPoolWrite } from './proxy-pool-api'
 
@@ -12,6 +13,7 @@ export function ProxyPoolPanel() {
   const action = useProxyPoolAction()
   const [editing, setEditing] = useState<AdminProxyPool | 'new'>()
   const [deleting, setDeleting] = useState<number>()
+  const [selected, setSelected] = useState<number[]>([])
   const [scope, setScope] = useState('0')
   const [notice, setNotice] = useState('')
   const pools = query.data ?? []
@@ -28,10 +30,12 @@ export function ProxyPoolPanel() {
       <Field label={t('proxyPools.scope')}><Choice label={t('proxyPools.scope')} value={scope} onChange={setScope} options={[{value:'0', label:t('proxyPools.global')}, ...(channels.data ?? []).map(channel => ({value:String(channel.id), label:`${channel.name} (#${channel.id})`}))]} disabled={channels.isPending || action.isPending} /></Field>
       <Field label={t('proxyPools.binding')}><Choice label={t('proxyPools.binding')} value={bound ? String(bound.id) : ''} onChange={value => action.mutate({kind:'bind',channelId:Number(scope),poolId:value ? Number(value) : null})} options={[{value:'',label:t('proxyPools.inherit')},...pools.map(pool => ({value:String(pool.id),label:pool.name}))]} disabled={query.isPending || query.isError || action.isPending} /></Field>
     </div>
+    <ProxySelection ids={pools.map(pool => pool.id)} selected={selected.filter(id => pools.some(pool => pool.id === id))} onChange={setSelected} />
+    <ProxyCleanupControls target="pools" selected={selected.filter(id => pools.some(pool => pool.id === id))} disabled={query.isPending || query.isError} onDeleted={() => setSelected([])} />
     {channels.isError ? <p role="alert" className="text-xs text-destructive">{t('proxyPools.channelError')}</p> : null}
     {query.isPending ? <p className="text-sm text-muted-foreground">{t('proxyPools.loading')}</p> : query.isError ? <p role="alert" className="text-sm text-destructive">{t('proxyPools.loadError')}</p> : pools.length === 0 ? <p className="py-4 text-sm text-muted-foreground">{t('proxyPools.empty')}</p> : pools.map(pool => <article key={pool.id} className="grid gap-3 border-t border-[var(--hairline)] pt-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><h4 className="text-sm font-semibold">{pool.name} <span className="font-normal text-muted-foreground">#{pool.id}</span></h4><p className="mt-1 text-xs text-muted-foreground">{t(`proxyPools.status.${pool.status}`, { defaultValue: pool.status })} · {t('proxyPools.count',{healthy:pool.nodes.filter(node => node.healthy).length,total:pool.nodes.length})} · {pool.subscribed ? pool.source_host ?? t('proxyPools.subscription') : t('proxyPools.manual')}</p><p className="mt-1 text-xs text-muted-foreground">{t('proxyPools.lastCheck')}: {pool.last_check_at ? new Date(pool.last_check_at * 1000).toLocaleString() : '—'}</p></div>
+        <div><ProxyCheck checked={selected.includes(pool.id)} onChange={checked => setSelected(ids => checked ? [...new Set([...ids,pool.id])].slice(0,256) : ids.filter(id => id !== pool.id))} label={t('proxyPools.selectPool',{id:pool.id})} /><h4 className="mt-2 text-sm font-semibold">{pool.name} <span className="font-normal text-muted-foreground">#{pool.id}</span></h4><p className="mt-1 text-xs text-muted-foreground">{t(`proxyPools.status.${pool.status}`, { defaultValue: pool.status })} · {t('proxyPools.count',{healthy:pool.nodes.filter(node => node.healthy).length,total:pool.nodes.length})} · {pool.subscribed ? pool.source_host ?? t('proxyPools.subscription') : t('proxyPools.manual')}</p><p className="mt-1 text-xs text-muted-foreground">{t('proxyPools.lastCheck')}: {pool.last_check_at ? new Date(pool.last_check_at * 1000).toLocaleString() : '—'}</p><p className="mt-1 text-xs text-muted-foreground">{t('proxyPools.every', {value: pool.interval_secs % 3600 === 0 ? pool.interval_secs / 3600 : pool.interval_secs % 60 === 0 ? pool.interval_secs / 60 : pool.interval_secs, unit:t(pool.interval_secs % 3600 === 0 ? 'proxyPools.hours' : pool.interval_secs % 60 === 0 ? 'proxyPools.minutes' : 'proxyPools.seconds')})}</p>{pool.subscribed ? <><p className="mt-1 text-xs text-muted-foreground">{t('proxyPools.lastRefresh')}: {pool.last_refresh_at ? new Date(pool.last_refresh_at * 1000).toLocaleString() : '—'}</p><p className="mt-1 text-xs text-muted-foreground">{t('proxyPools.lastAttempt')}: {pool.last_refresh_attempt_at ? new Date(pool.last_refresh_attempt_at * 1000).toLocaleString() : '—'}</p><p className="mt-1 text-xs text-muted-foreground">{t('proxyPools.nextRefresh')}: {pool.last_refresh_attempt_at ? new Date((pool.last_refresh_attempt_at + pool.interval_secs) * 1000).toLocaleString() : t('proxyPools.soon')}</p></> : null}</div>
         <div className="flex flex-wrap gap-2"><Button disabled={pool.busy || action.isPending} onClick={() => run('check',pool.id)}>{t('proxyPools.check')}</Button>{pool.subscribed ? <Button disabled={pool.busy || action.isPending} onClick={() => run('refresh',pool.id)}>{t('proxyPools.refresh')}</Button> : null}<Button disabled={action.isPending} onClick={() => setEditing(pool)}>{t('proxyPools.edit')}</Button><Button disabled={action.isPending} onClick={() => setDeleting(pool.id)}>{t('proxyPools.delete')}</Button></div>
       </div>
       {deleting === pool.id ? <div role="alert" className="flex flex-wrap items-center gap-3 text-xs"><span>{t('proxyPools.deleteConfirm')}</span><Button disabled={action.isPending} onClick={() => run('delete',pool.id)}>{t('proxyPools.confirm')}</Button><Button onClick={() => setDeleting(undefined)}>{t('proxyPools.cancel')}</Button></div> : null}
@@ -47,24 +51,33 @@ function PoolNodes({pool}:{pool:AdminProxyPool}) {
   const { t } = useTranslation()
   const [filter,setFilter] = useState('all')
   const [search,setSearch] = useState('')
-  const nodes = pool.nodes.filter(node => (filter === 'all' || (filter === 'healthy' ? node.healthy : !node.healthy)) && `${node.host}:${node.port} ${node.remark}`.toLowerCase().includes(search.toLowerCase()))
+  const [selected,setSelected] = useState<number[]>([])
+  const failed = (node: AdminProxyPool['nodes'][number]) => !node.healthy && node.checked_at !== null && node.latency_ms === null
+  const nodes = pool.nodes.filter(node => (filter === 'all' || (filter === 'healthy' ? node.healthy : filter === 'failed' ? failed(node) : !node.healthy && !failed(node))) && `${node.host}:${node.port} ${node.remark}`.toLowerCase().includes(search.toLowerCase()))
+  const selectedIds = selected.filter(id => nodes.some(node => node.id === id))
   return <div className="grid gap-2">
-    <div className="flex flex-wrap gap-2"><Choice value={filter} onChange={setFilter} label={t('proxyPools.filter')} options={['all','healthy','failed'].map(value => ({value,label:t(`proxyPools.${value}`)}))} /><Input aria-label={t('proxyPools.search')} placeholder={t('proxyPools.search')} value={search} onChange={event => setSearch(event.target.value)} /></div>
+    <div className="flex flex-wrap gap-2"><Choice value={filter} onChange={setFilter} label={t('proxyPools.filter')} options={['all','healthy','failed','pending'].map(value => ({value,label:t(`proxyPools.${value}`)}))} /><Input aria-label={t('proxyPools.search')} placeholder={t('proxyPools.search')} value={search} onChange={event => setSearch(event.target.value)} /></div>
+    <ProxySelection ids={nodes.map(node => node.id)} selected={selectedIds} onChange={setSelected} />
+    <ProxyCleanupControls target="nodes" poolId={pool.id} revision={pool.revision} selected={selectedIds} disabled={pool.busy} onDeleted={() => setSelected([])} />
     <p className="text-xs leading-5 text-muted-foreground">{t('proxyPools.manualHint')}</p>
-    {nodes.length ? <div className="max-h-64 overflow-auto"><table className="w-full text-left text-xs"><thead><tr className="border-b border-[var(--hairline)]"><th className="p-2">{t('proxyPools.node')}</th><th className="p-2">{t('proxyPools.health')}</th><th className="p-2">{t('proxyPools.remark')}</th></tr></thead><tbody>{nodes.map(node => <tr key={node.id} className="border-b border-[var(--hairline)]"><td className="p-2"><span className="text-muted-foreground">#{node.id}</span> {node.scheme}://{node.host.includes(':') ? `[${node.host}]` : node.host}:{node.port}{node.password_configured ? ` · ${t('proxyPools.authenticated')}` : ''}</td><td className="p-2">{node.healthy ? t('proxyPools.healthy') : node.checked_at ? t('proxyPools.failed') : t('proxyPools.pending')}{node.healthy && node.latency_ms !== null ? ` · ${node.latency_ms} ms` : ''}</td><td className="p-2">{node.remark || '—'}</td></tr>)}</tbody></table></div> : <p className="text-xs text-muted-foreground">{t('proxyPools.noNodes')}</p>}
+    {nodes.length ? <div className="max-h-64 overflow-auto"><table className="w-full text-left text-xs"><thead><tr className="border-b border-[var(--hairline)]"><th className="p-2">{t('proxyPools.node')}</th><th className="p-2">{t('proxyPools.health')}</th><th className="p-2">{t('proxyPools.remark')}</th></tr></thead><tbody>{nodes.map(node => <tr key={node.id} className="border-b border-[var(--hairline)]"><td className="p-2"><ProxyCheck checked={selectedIds.includes(node.id)} onChange={checked => setSelected(ids => checked ? [...new Set([...ids,node.id])].slice(0,256) : ids.filter(id => id !== node.id))} label={t('proxyPools.selectNode',{id:node.id})} /><span className="text-muted-foreground">#{node.id}</span> {node.scheme}://{node.host.includes(':') ? `[${node.host}]` : node.host}:{node.port}{node.password_configured ? ` · ${t('proxyPools.authenticated')}` : ''}</td><td className="p-2">{node.healthy ? t('proxyPools.healthy') : failed(node) ? t('proxyPools.failed') : t('proxyPools.pending')}{node.healthy && node.latency_ms !== null ? ` · ${node.latency_ms} ms` : ''}</td><td className="p-2">{node.remark || '—'}</td></tr>)}</tbody></table></div> : <p className="text-xs text-muted-foreground">{t('proxyPools.noNodes')}</p>}
   </div>
 }
 
 function PoolEditor({pool,onClose,onSaved}:{pool?:AdminProxyPool;onClose:()=>void;onSaved:(skipped:number,duplicates:number)=>void}) {
   const { t } = useTranslation()
   const action = useProxyPoolAction()
-  const [form,setForm] = useState({name:pool?.name ?? '',subscribed:pool?.subscribed ?? false,source_url:'',interval_secs:String(pool?.interval_secs ?? 900),default_scheme:pool?.default_scheme ?? 'socks5',trust_proxy_dns:pool?.trust_proxy_dns ?? false,probe_url:pool?.probe_url ?? 'https://www.gstatic.com/generate_204',content:''})
+  const initialInterval = pool?.interval_secs ?? 900
+  const initialUnit = initialInterval % 3600 === 0 ? 3600 : initialInterval % 60 === 0 ? 60 : 1
+  const [intervalUnit,setIntervalUnit] = useState(String(initialUnit))
+  const [form,setForm] = useState({name:pool?.name ?? '',subscribed:pool?.subscribed ?? false,source_url:'',interval_secs:String(initialInterval / initialUnit),default_scheme:pool?.default_scheme ?? 'socks5',trust_proxy_dns:pool?.trust_proxy_dns ?? false,probe_url:pool?.probe_url ?? 'https://www.gstatic.com/generate_204',content:''})
   const [invalid,setInvalid] = useState(false)
   const update = <K extends keyof typeof form>(key:K,value:(typeof form)[K]) => {setInvalid(false);setForm(current => ({...current,[key]:value}))}
   const submit = (event:FormEvent) => {
     event.preventDefault()
-    const interval = Number(form.interval_secs)
-    if (!form.name.trim() || !Number.isInteger(interval) || interval < 60 || interval > 86400 || (!pool && form.subscribed && !form.source_url.trim())) {setInvalid(true);return}
+    const rawInterval = Number(form.interval_secs) * Number(intervalUnit)
+    const interval = Math.round(rawInterval)
+    if (!form.name.trim() || !Number.isFinite(rawInterval) || Math.abs(rawInterval - interval) > 0.000001 || interval < 60 || interval > 86400 || (!pool && form.subscribed && !form.source_url.trim())) {setInvalid(true);return}
     const body:ProxyPoolWrite = {...form,name:form.name.trim(),source_url:form.source_url.trim() || null,content:form.content.trim() || null,interval_secs:interval,revision:pool?.revision ?? null}
     action.mutate({kind:'save',id:pool?.id,body},{onSuccess:result => {if (result) onSaved(result.skipped,result.duplicates)}})
   }
@@ -75,7 +88,8 @@ function PoolEditor({pool,onClose,onSaved}:{pool?:AdminProxyPool;onClose:()=>voi
       <Field label={t('proxyPools.name')}><Input autoFocus required maxLength={128} value={form.name} onChange={event => update('name',event.target.value)} /></Field>
       <Toggle checked={form.subscribed} onChange={value => update('subscribed',value)} label={t('proxyPools.subscription')} />
       {form.subscribed ? <Field label={t('proxyPools.sourceUrl')}><Input type="url" autoComplete="off" value={form.source_url} placeholder={pool?.source_host ? t('proxyPools.keepUrl',{host:pool.source_host}) : 'https://example.com/proxies.txt'} onChange={event => update('source_url',event.target.value)} /></Field> : null}
-      <div className="grid gap-3 sm:grid-cols-2"><Field label={t('proxyPools.interval')}><Input required type="number" min={60} max={86400} value={form.interval_secs} onChange={event => update('interval_secs',event.target.value)} /></Field><Field label={t('proxyPools.defaultScheme')}><Choice label={t('proxyPools.defaultScheme')} value={form.default_scheme} onChange={value => update('default_scheme',value)} options={['http','https','socks5','socks5h'].map(value => ({value,label:value.toUpperCase()}))} /></Field></div>
+      <div className="grid gap-3 sm:grid-cols-2"><Field label={t('proxyPools.interval')}><Input aria-label={t('proxyPools.interval')} required type="number" step="any" min={60 / Number(intervalUnit)} max={86400 / Number(intervalUnit)} value={form.interval_secs} onChange={event => update('interval_secs',event.target.value)} /><Choice label={t('proxyPools.intervalUnit')} value={intervalUnit} onChange={value => { const seconds = Number(form.interval_secs) * Number(intervalUnit); setIntervalUnit(value); update('interval_secs',String(seconds / Number(value))) }} options={[{value:'1',label:t('proxyPools.seconds')},{value:'60',label:t('proxyPools.minutes')},{value:'3600',label:t('proxyPools.hours')}]} /></Field><Field label={t('proxyPools.defaultScheme')}><Choice label={t('proxyPools.defaultScheme')} value={form.default_scheme} onChange={value => update('default_scheme',value)} options={['http','https','socks5','socks5h'].map(value => ({value,label:value.toUpperCase()}))} /></Field></div>
+      <p className="text-xs text-muted-foreground">{t('proxyPools.intervalHint')}</p>
       <Field label={t('proxyPools.probeUrl')}><Input required type="url" value={form.probe_url} onChange={event => update('probe_url',event.target.value)} /></Field>
       <Toggle checked={form.trust_proxy_dns} onChange={value => update('trust_proxy_dns',value)} label={t('proxyPools.trustDns')} />
       <Field label={t('proxyPools.content')}><TextArea rows={7} autoComplete="off" value={form.content} onChange={event => update('content',event.target.value)} /></Field>

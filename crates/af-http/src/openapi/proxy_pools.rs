@@ -16,10 +16,13 @@ fn endpoint_4() {}
 fn endpoint_5() {}
 #[utoipa::path(put,path="/api/admin/proxy-pool-bindings",operation_id="bindAdminProxyPool",tag="代理池",summary="设置全局或渠道代理池",request_body=AdminProxyPoolBindingRequest,responses((status=204,description="成功"),(status=400,description="输入无效",body=ManagementErrorBody),(status=401,description="会话无效",body=ManagementErrorBody),(status=403,description="需要管理员权限",body=ManagementErrorBody),(status=404,description="代理池不存在",body=ManagementErrorBody),(status=409,description="冲突或仍被引用",body=ManagementErrorBody),(status=500,description="操作失败",body=ManagementErrorBody)),security(("bearerAuth"=[])))]
 fn endpoint_6() {}
+#[utoipa::path(post,path="/api/admin/proxy-pool-cleanup",operation_id="cleanupAdminProxyItems",tag="代理池",summary="预览或执行批量清理，保留被引用的项目",request_body=AdminProxyCleanupRequest,responses((status=200,description="清理结果",body=AdminProxyCleanupResult),(status=400,description="输入无效",body=ManagementErrorBody),(status=401,description="会话无效",body=ManagementErrorBody),(status=403,description="需要管理员权限",body=ManagementErrorBody),(status=404,description="代理池不存在",body=ManagementErrorBody),(status=409,description="版本冲突或任务正在进行",body=ManagementErrorBody),(status=500,description="操作失败",body=ManagementErrorBody)),security(("bearerAuth"=[])))]
+fn endpoint_7() {}
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        endpoint_0, endpoint_1, endpoint_2, endpoint_3, endpoint_4, endpoint_5, endpoint_6
+        endpoint_0, endpoint_1, endpoint_2, endpoint_3, endpoint_4, endpoint_5, endpoint_6,
+        endpoint_7
     ),
     components(schemas(
         AdminProxyPool,
@@ -27,7 +30,9 @@ fn endpoint_6() {}
         AdminProxyPoolList,
         AdminProxyPoolWriteRequest,
         AdminProxyPoolImportResult,
-        AdminProxyPoolBindingRequest
+        AdminProxyPoolBindingRequest,
+        AdminProxyCleanupRequest,
+        AdminProxyCleanupResult
     ))
 )]
 struct ProxyPoolsApi;
@@ -42,6 +47,11 @@ mod tests {
         let document = serde_json::to_value(super::super::openapi_document()).unwrap();
         for (path, method, operation_id) in [
             ("/api/admin/proxy-pools", "get", "listAdminProxyPools"),
+            (
+                "/api/admin/proxy-pool-cleanup",
+                "post",
+                "cleanupAdminProxyItems",
+            ),
             ("/api/admin/proxy-pools", "post", "createAdminProxyPool"),
             ("/api/admin/proxy-pools/{id}", "put", "updateAdminProxyPool"),
             (
@@ -77,6 +87,27 @@ mod tests {
 
         let schemas = &document["components"]["schemas"];
         let request = &schemas["AdminProxyPoolWriteRequest"]["properties"];
+        assert_eq!(request["interval_secs"]["minimum"], 60);
+        assert_eq!(request["interval_secs"]["maximum"], 86400);
+        assert!(
+            schemas["AdminProxyPool"]["properties"]
+                .get("last_refresh_attempt_at")
+                .is_some()
+        );
+        assert!(
+            schemas["AdminProxyCleanupRequest"]["properties"]
+                .get("after_id")
+                .is_some()
+        );
+        assert_eq!(
+            schemas["AdminProxyCleanupRequest"]["properties"]["ids"]["maxItems"],
+            256
+        );
+        assert!(
+            schemas["AdminProxyCleanupResult"]["properties"]
+                .get("next_after_id")
+                .is_some()
+        );
         for field in ["source_url", "content"] {
             assert_eq!(request[field]["writeOnly"], true);
         }

@@ -1,4 +1,6 @@
 //! 代理池配置、成员与绑定。节点复用专属代理目录，手动绑定在订阅变动后仍然有效。
+mod cleanup;
+pub use cleanup::{ProxyCleanupMode, ProxyCleanupRequest, ProxyCleanupResult, ProxyCleanupTarget};
 use std::{collections::BTreeMap, future::Future, time::Duration};
 
 use af_domain::ProxyId;
@@ -40,6 +42,7 @@ pub struct ProxyPoolRecord {
     pub interval_secs: i32,
     pub revision: i64,
     pub last_refresh_at: Option<i64>,
+    pub last_refresh_attempt_at: Option<i64>,
     pub last_check_at: Option<i64>,
     pub status: String,
     pub work_until: i64,
@@ -175,6 +178,7 @@ impl ProxyPoolRepository {
             interval_secs: model.interval_secs,
             revision: model.revision,
             last_refresh_at: model.last_refresh_at,
+            last_refresh_attempt_at: model.last_refresh_attempt_at,
             last_check_at: model.last_check_at,
             status: model.status,
             work_until: model.work_until,
@@ -266,6 +270,10 @@ impl ProxyPoolRepository {
                     pools::Column::LastRefreshAt,
                     Expr::value(Option::<i64>::None),
                 )
+                .col_expr(
+                    pools::Column::LastRefreshAttemptAt,
+                    Expr::value(Option::<i64>::None),
+                )
                 .col_expr(pools::Column::LastCheckAt, Expr::value(Option::<i64>::None))
                 .col_expr(pools::Column::WorkUntil, Expr::value(0_i64))
                 .exec(&tx)
@@ -289,6 +297,8 @@ impl ProxyPoolRepository {
             nodes::Entity::update_many()
                 .filter(nodes::Column::PoolId.eq(id.get()))
                 .col_expr(nodes::Column::Healthy, Expr::value(false))
+                .col_expr(nodes::Column::CheckedAt, Expr::value(Option::<i64>::None))
+                .col_expr(nodes::Column::LatencyMs, Expr::value(Option::<i64>::None))
                 .exec(&tx)
                 .await
                 .map_err(internal)?;
@@ -414,13 +424,17 @@ impl ProxyPoolRepository {
         })
         .await
     }
-    pub async fn claim(&self, id: ProxyId, revision: i64, now: i64) -> Result<bool> {
+    pub async fn claim(&self, id: ProxyId, revision: i64, now: i64, refresh: bool) -> Result<bool> {
         self.run(async {
-            Ok(pools::Entity::update_many()
+            let mut update = pools::Entity::update_many()
                 .filter(pools::Column::Id.eq(id.get()))
                 .filter(pools::Column::Revision.eq(revision))
                 .filter(pools::Column::WorkUntil.lte(now))
-                .col_expr(pools::Column::WorkUntil, Expr::value(now + 120))
+                .col_expr(pools::Column::WorkUntil, Expr::value(now + 120));
+            if refresh {
+                update = update.col_expr(pools::Column::LastRefreshAttemptAt, Expr::value(now));
+            }
+            Ok(update
                 .exec(self.pool.connection())
                 .await
                 .map_err(internal)?
@@ -492,6 +506,7 @@ impl ProxyPoolRepository {
             }
             if let Some(id) = pool_id {
                 pools::Entity::find_by_id(id.get())
+                    .lock_exclusive()
                     .one(&tx)
                     .await
                     .map_err(internal)?
@@ -530,47 +545,24 @@ impl ProxyPoolRepository {
         .await
     }
     pub async fn delete(&self, id: ProxyId) -> Result<()> {
-        self.run(async {
-            let tx = self.pool.connection().begin().await.map_err(internal)?;
-            if bindings::Entity::find()
-                .filter(bindings::Column::PoolId.eq(id.get()))
-                .one(&tx)
-                .await
-                .map_err(internal)?
-                .is_some()
-                || credentials::Entity::find()
-                    .filter(credentials::Column::ProxyId.eq(id.get()))
-                    .filter(credentials::Column::DeletedAt.is_null())
-                    .one(&tx)
-                    .await
-                    .map_err(internal)?
-                    .is_some()
-            {
-                return Err(ProxyPoolRepositoryError::Conflict);
-            }
-            nodes::Entity::delete_many()
-                .filter(nodes::Column::PoolId.eq(id.get()))
-                .exec(&tx)
-                .await
-                .map_err(internal)?;
-            pools::Entity::delete_by_id(id.get())
-                .exec(&tx)
-                .await
-                .map_err(internal)?;
-            let now = TimeDateTimeWithTimeZone::now_utc();
-            proxies::Entity::update_many()
-                .filter(proxies::Column::Id.eq(id.get()))
-                .col_expr(proxies::Column::DeletedAt, Expr::value(now))
-                .col_expr(
-                    proxies::Column::ActiveName,
-                    Expr::value(Option::<String>::None),
-                )
-                .exec(&tx)
-                .await
-                .map_err(internal)?;
-            tx.commit().await.map_err(internal)
-        })
-        .await
+        let result = self
+            .cleanup(ProxyCleanupRequest {
+                target: ProxyCleanupTarget::Pools,
+                mode: ProxyCleanupMode::Selected,
+                pool_id: None,
+                revision: None,
+                ids: vec![id],
+                after_id: None,
+                preview: false,
+            })
+            .await?;
+        if !result.protected_ids.is_empty() {
+            return Err(ProxyPoolRepositoryError::Conflict);
+        }
+        if result.deleted_ids.is_empty() {
+            return Err(ProxyPoolRepositoryError::NotFound);
+        }
+        Ok(())
     }
 }
 fn internal<T>(_: T) -> ProxyPoolRepositoryError {
@@ -599,10 +591,13 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            crate::migration::Migrator::down(database.connection(), Some(1))
+            crate::migration::Migrator::down(database.connection(), Some(2))
                 .await
                 .is_err()
         );
+        crate::migration::Migrator::up(database.connection(), None)
+            .await
+            .unwrap();
         assert!(repo.get(id).await.unwrap().nodes.is_empty());
         let candidate = || {
             vec![(
@@ -623,11 +618,21 @@ mod tests {
             .await
             .unwrap();
         let node = repo.get(id).await.unwrap().nodes[0].proxy.proxy_id();
-        assert!(repo.claim(id, 1, 100).await.unwrap());
-        assert!(!repo.claim(id, 1, 101).await.unwrap());
+        assert!(repo.claim(id, 1, 100, true).await.unwrap());
+        assert!(!repo.claim(id, 1, 101, true).await.unwrap());
+        assert_eq!(
+            repo.get(id).await.unwrap().last_refresh_attempt_at,
+            Some(100)
+        );
         repo.finish(id, 1, "ready", vec![(node, 1, Some(10))])
             .await
             .unwrap();
+        assert!(repo.claim(id, 1, 150, false).await.unwrap());
+        assert_eq!(
+            repo.get(id).await.unwrap().last_refresh_attempt_at,
+            Some(100)
+        );
+        repo.finish(id, 1, "ready", vec![]).await.unwrap();
         repo.replace_nodes(id, 1, candidate(), |_, _| {
             panic!("unchanged node must reuse its ID")
         })
@@ -689,7 +694,7 @@ mod tests {
             repo.get(id).await,
             Err(ProxyPoolRepositoryError::NotFound)
         ));
-        crate::migration::Migrator::down(database.connection(), Some(1))
+        crate::migration::Migrator::down(database.connection(), Some(2))
             .await
             .unwrap();
         crate::migration::Migrator::up(database.connection(), None)

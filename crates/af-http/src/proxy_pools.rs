@@ -4,8 +4,8 @@ use crate::{
     management_error::ManagementError,
 };
 use af_admin::{
-    AdminCredentialProxyService, ProxyPoolError, ProxyPoolService, ProxyPoolView, ProxyPoolWrite,
-    SessionAuthenticator,
+    AdminCredentialProxyService, ProxyCleanupMode, ProxyCleanupRequest, ProxyCleanupTarget,
+    ProxyPoolError, ProxyPoolService, ProxyPoolView, ProxyPoolWrite, SessionAuthenticator,
 };
 use af_domain::ProxyId;
 use axum::{
@@ -79,6 +79,7 @@ pub(crate) struct AdminProxyPool {
     probe_url: String,
     revision: i64,
     last_refresh_at: Option<i64>,
+    last_refresh_attempt_at: Option<i64>,
     last_check_at: Option<i64>,
     status: String,
     busy: bool,
@@ -98,6 +99,7 @@ impl From<ProxyPoolView> for AdminProxyPool {
             probe_url: v.probe_url,
             revision: v.revision,
             last_refresh_at: v.last_refresh_at,
+            last_refresh_attempt_at: v.last_refresh_attempt_at,
             last_check_at: v.last_check_at,
             status: v.status,
             busy: v.busy,
@@ -124,6 +126,27 @@ impl From<ProxyPoolView> for AdminProxyPool {
 #[derive(Serialize, ToSchema)]
 pub(crate) struct AdminProxyPoolList {
     pools: Vec<AdminProxyPool>,
+}
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct AdminProxyCleanupRequest {
+    target: String,
+    mode: String,
+    pool_id: Option<i64>,
+    revision: Option<i64>,
+    #[schema(max_items = 256)]
+    ids: Vec<i64>,
+    after_id: Option<i64>,
+    preview: bool,
+}
+#[derive(Serialize, ToSchema)]
+pub(crate) struct AdminProxyCleanupResult {
+    eligible_ids: Vec<i64>,
+    deleted_ids: Vec<i64>,
+    protected_ids: Vec<i64>,
+    skipped_ids: Vec<i64>,
+    more_available: bool,
+    next_after_id: Option<i64>,
 }
 #[derive(Serialize, ToSchema)]
 pub(crate) struct AdminProxyPoolImportResult {
@@ -168,6 +191,10 @@ pub(crate) fn build_proxy_pool_router(
         .route(
             "/api/admin/proxy-pool-bindings",
             axum::routing::put(bind_admin_proxy_pool),
+        )
+        .route(
+            "/api/admin/proxy-pool-cleanup",
+            post(cleanup_admin_proxy_items),
         )
         .route_layer(middleware::from_fn(authorize_management_admin))
         .route_layer(middleware::from_fn_with_state(
@@ -275,6 +302,52 @@ async fn bind_admin_proxy_pool(
         .await
         .map_err(error)?;
     Ok(empty())
+}
+async fn cleanup_admin_proxy_items(
+    State(service): State<Arc<ProxyPoolService>>,
+    Extension(auth): Extension<af_admin::SessionAuthentication>,
+    request: Result<Json<AdminProxyCleanupRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let target = match request.target.as_str() {
+        "pools" => ProxyCleanupTarget::Pools,
+        "nodes" => ProxyCleanupTarget::Nodes,
+        _ => return Err(ManagementError::InvalidRequest),
+    };
+    let mode = match request.mode.as_str() {
+        "selected" => ProxyCleanupMode::Selected,
+        "failed" => ProxyCleanupMode::Failed,
+        "unused" => ProxyCleanupMode::Unused,
+        _ => return Err(ManagementError::InvalidRequest),
+    };
+    let parse = |raw| ProxyId::new(raw).map_err(|_| ManagementError::InvalidRequest);
+    let result = service
+        .cleanup(
+            auth.principal(),
+            ProxyCleanupRequest {
+                target,
+                mode,
+                pool_id: request.pool_id.map(parse).transpose()?,
+                revision: request.revision,
+                ids: request
+                    .ids
+                    .into_iter()
+                    .map(parse)
+                    .collect::<Result<_, _>>()?,
+                after_id: request.after_id.map(parse).transpose()?,
+                preview: request.preview,
+            },
+        )
+        .await
+        .map_err(error)?;
+    Ok(json(AdminProxyCleanupResult {
+        eligible_ids: result.eligible_ids,
+        deleted_ids: result.deleted_ids,
+        protected_ids: result.protected_ids,
+        skipped_ids: result.skipped_ids,
+        more_available: result.more_available,
+        next_after_id: result.next_after_id,
+    }))
 }
 fn id(raw: &str) -> Result<ProxyId, ManagementError> {
     if raw.is_empty() || !raw.bytes().all(|b| b.is_ascii_digit()) {

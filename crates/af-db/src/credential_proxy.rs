@@ -592,6 +592,14 @@ impl CredentialProxyRepository {
                 sea_orm::sea_query::Expr::value(false),
             )
             .col_expr(
+                crate::entity::proxy_pool_nodes::Column::CheckedAt,
+                sea_orm::sea_query::Expr::value(Option::<i64>::None),
+            )
+            .col_expr(
+                crate::entity::proxy_pool_nodes::Column::LatencyMs,
+                sea_orm::sea_query::Expr::value(Option::<i64>::None),
+            )
+            .col_expr(
                 crate::entity::proxy_pool_nodes::Column::Fingerprint,
                 sea_orm::sea_query::Expr::value(format!("manual-{}-{version}", proxy_id.get())),
             )

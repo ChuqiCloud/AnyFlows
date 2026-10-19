@@ -1,5 +1,6 @@
 //! 可订阅的代理池；健康检测与模型调用使用相同的受控网络边界。
 mod parser;
+pub use af_db::{ProxyCleanupMode, ProxyCleanupRequest, ProxyCleanupResult, ProxyCleanupTarget};
 
 use std::{
     future::Future,
@@ -77,6 +78,7 @@ pub struct ProxyPoolView {
     pub probe_url: String,
     pub revision: i64,
     pub last_refresh_at: Option<i64>,
+    pub last_refresh_attempt_at: Option<i64>,
     pub last_check_at: Option<i64>,
     pub status: String,
     pub busy: bool,
@@ -161,6 +163,7 @@ impl ProxyPoolService {
             probe_url: settings.probe_url,
             revision: pool.revision,
             last_refresh_at: pool.last_refresh_at,
+            last_refresh_attempt_at: pool.last_refresh_attempt_at,
             last_check_at: pool.last_check_at,
             status: pool.status,
             busy: pool.work_until > now(),
@@ -366,7 +369,11 @@ impl ProxyPoolService {
     }
     async fn maintain(&self, id: ProxyId, refresh: bool) -> Result<(), ProxyPoolError> {
         let pool = self.repository.get(id).await?;
-        if !self.repository.claim(id, pool.revision, now()).await? {
+        if !self
+            .repository
+            .claim(id, pool.revision, now(), refresh)
+            .await?
+        {
             return Err(ProxyPoolError::Conflict);
         }
         let result = self.maintain_claimed(&pool, refresh).await;
@@ -604,6 +611,16 @@ impl ProxyPoolService {
         self.invalidate().await;
         Ok(())
     }
+    pub async fn cleanup(
+        &self,
+        principal: SessionPrincipal,
+        request: ProxyCleanupRequest,
+    ) -> Result<ProxyCleanupResult, ProxyPoolError> {
+        admin(principal)?;
+        let result = self.repository.cleanup(request).await?;
+        self.invalidate().await;
+        Ok(result)
+    }
     pub async fn contains(&self, id: ProxyId) -> Result<bool, ProxyPoolError> {
         match self.repository.get(id).await {
             Ok(_) => Ok(true),
@@ -624,18 +641,23 @@ impl ProxyPoolService {
                 continue;
             };
             for pool in pools {
-                if !pool.proxy.enabled()
-                    || pool.work_until > now()
-                    || pool
-                        .last_check_at
-                        .is_some_and(|at| now() - at < i64::from(pool.interval_secs))
+                let (refresh_due, check_due) = maintenance_due(&pool, now());
+                if !pool.proxy.enabled() || pool.work_until > now() || (!refresh_due && !check_due)
                 {
                     continue;
                 }
-                tokio::select! {biased;()=&mut shutdown=>return,result=self.maintain(pool.proxy.proxy_id(),pool.subscribed)=>{if let Err(error)=result {tracing::warn!(error_kind=?error,pool_id=pool.proxy.proxy_id().get(),"代理池维护未完成");}}}
+                tokio::select! {biased;()=&mut shutdown=>return,result=self.maintain(pool.proxy.proxy_id(),refresh_due)=>{if let Err(error)=result {tracing::warn!(error_kind=?error,pool_id=pool.proxy.proxy_id().get(),"代理池维护未完成");}}}
             }
         }
     }
+}
+fn maintenance_due(pool: &ProxyPoolRecord, at: i64) -> (bool, bool) {
+    let due = |last: Option<i64>| {
+        last.is_none_or(|last| at.saturating_sub(last) >= i64::from(pool.interval_secs))
+    };
+    // 更新失败后按配置间隔重试；手动测活成功不能推迟订阅的同步周期。
+    let refresh_at = pool.last_refresh_attempt_at;
+    (pool.subscribed && due(refresh_at), due(pool.last_check_at))
 }
 fn now() -> i64 {
     time::OffsetDateTime::now_utc().unix_timestamp()
@@ -726,6 +748,24 @@ mod tests {
             .unwrap()
             .pool;
         let healthy_id = ProxyId::new(healthy.id).unwrap();
+        let mut schedule = repository.get(healthy_id).await.unwrap();
+        schedule.subscribed = true;
+        schedule.interval_secs = 1800;
+        schedule.last_refresh_attempt_at = Some(1000);
+        schedule.last_check_at = Some(1000);
+        assert_eq!(maintenance_due(&schedule, 2799), (false, false));
+        assert_eq!(maintenance_due(&schedule, 2800), (true, true));
+        schedule.last_check_at = Some(2800);
+        assert_eq!(
+            maintenance_due(&schedule, 2800),
+            (true, false),
+            "manual checks cannot postpone subscription refresh"
+        );
+        schedule.last_refresh_attempt_at = Some(2800);
+        assert_eq!(maintenance_due(&schedule, 4599), (false, false));
+        assert_eq!(maintenance_due(&schedule, 4600), (true, true));
+        schedule.subscribed = false;
+        assert_eq!(maintenance_due(&schedule, 4600), (false, true));
         let node_id = ProxyId::new(healthy.nodes[0].id).unwrap();
         repository
             .finish(healthy_id, 1, "ready", vec![(node_id, 1, Some(10))])

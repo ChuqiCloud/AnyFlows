@@ -12,6 +12,7 @@ pub struct Model {
     pub interval_secs: i32,
     pub revision: i64,
     pub last_refresh_at: Option<i64>,
+    pub last_refresh_attempt_at: Option<i64>,
     pub last_check_at: Option<i64>,
     pub status: String,
     pub work_until: i64,

@@ -1748,6 +1748,7 @@ async fn validate_proxy_binding(
         return Ok(());
     };
     let exists = proxies::Entity::find_by_id(proxy_id)
+        .lock_exclusive()
         .select_only()
         .column(proxies::Column::Id)
         .filter(proxies::Column::Enabled.eq(true))
