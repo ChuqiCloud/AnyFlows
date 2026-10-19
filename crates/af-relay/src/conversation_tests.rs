@@ -102,7 +102,19 @@ fn gateway_chat_stream_converts_to_all_four_full_and_streaming_responses() {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        assert_eq!(decoded_usage, vec![expected_usage]);
+        assert_eq!(decoded_usage.len(), 1);
+        if downstream == Protocol::Anthropic {
+            // Messages 跨协议流沿用开流时的本地估算；原始上游用量已在聚合结果中校验。
+            assert!(decoded_usage[0].input_tokens().get() > 0);
+            assert_eq!(
+                decoded_usage[0].output_tokens(),
+                expected_usage.output_tokens()
+            );
+            assert_eq!(decoded_usage[0].details(), expected_usage.details());
+            assert_eq!(decoded_usage[0].semantics(), UsageSemantics::CacheSeparated);
+        } else {
+            assert_eq!(decoded_usage[0], expected_usage);
+        }
     }
 }
 
