@@ -19,6 +19,7 @@ tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+async-trait.workspace = true
 wiremock = "0.6.5"
 
 [lints]

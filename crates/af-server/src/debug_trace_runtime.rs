@@ -205,7 +205,7 @@ impl DebugTraceCapture {
         self.submit_attempts(attempts, succeeded, routing_elapsed);
     }
 
-    /// 仅保存有界轮次、用量及脱敏诊断，不保存隐藏工具的原始输出。
+    /// 保留实际错误快照；未缓冲的工具响应只保存有界轮次、用量摘要。
     pub(crate) fn submit_tools(
         self,
         snapshot: &af_relay::ToolConversationReport,
@@ -220,41 +220,29 @@ impl DebugTraceCapture {
         ) else {
             return;
         };
-        let diagnostic = snapshot.report.successful_diagnostic().or_else(|| {
-            snapshot
-                .report
-                .failures()
-                .last()
-                .and_then(|failure| failure.diagnostic())
+        // 续答使用同一候选；展示最后一轮完整请求/响应，避免把首轮请求与续答错误拼接。
+        let diagnostic = snapshot.continuation_diagnostic.as_ref().or_else(|| {
+            snapshot.report.successful_diagnostic().or_else(|| {
+                snapshot
+                    .report
+                    .failures()
+                    .last()
+                    .and_then(|failure| failure.diagnostic())
+            })
         });
-        if let (Some(attempt), Some(diagnostic)) = (attempts.last_mut(), diagnostic) {
-            let rounds = snapshot
-                .observed_usage
-                .iter()
-                .map(|usage| {
-                    usage.map(|usage| serde_json::json!({
-                "input_tokens": usage.input_tokens().get(),
-                "output_tokens": usage.output_tokens().get(),
-                "total_tokens": usage.checked_total_tokens().ok().map(|count| count.get()),
-            }))
-                })
-                .collect::<Vec<_>>();
-            let summary = serde_json::json!({
-                "compatibility": {"sent_rounds":snapshot.sent_rounds,"round_usage":rounds},
-                "continuation_status":snapshot.continuation_diagnostic.as_ref().and_then(|d| d.response_status()),
-            }).to_string();
-            if let Ok(value) = DebugTraceAttemptDiagnosticWrite::new(
+        if let (Some(attempt), Some(diagnostic)) = (attempts.last_mut(), diagnostic)
+            && let Ok(value) = DebugTraceAttemptDiagnosticWrite::new(
                 diagnostic.request_method().to_owned(),
                 diagnostic.request_url().to_owned(),
                 diagnostic.request_headers_json().map(str::to_owned),
                 diagnostic.request_body_json().map(str::to_owned),
                 diagnostic.response_status(),
                 diagnostic.response_headers_json().map(str::to_owned),
-                Some(summary),
-                true,
-            ) {
-                *attempt = attempt.clone().with_diagnostic(value);
-            }
+                tool_response_body(snapshot, diagnostic.response_body_json(), self.policy),
+                diagnostic.response_streamed(),
+            )
+        {
+            *attempt = attempt.clone().with_diagnostic(value);
         }
         self.submit_attempts(
             attempts,
@@ -298,6 +286,40 @@ impl DebugTraceCapture {
         // 队列满或 worker 不可用时直接丢弃追踪，生产请求结果不受影响。
         let _ = self.queue.try_send(write);
     }
+}
+
+fn tool_response_body(
+    snapshot: &af_relay::ToolConversationReport,
+    response_body: Option<&str>,
+    policy: RelayDiagnosticPolicy,
+) -> Option<String> {
+    if !policy.capture_bodies() {
+        return None;
+    }
+    if let Some(body) = response_body {
+        return Some(body.to_owned());
+    }
+    let rounds = snapshot
+        .observed_usage
+        .iter()
+        .map(|usage| {
+            usage.map(|usage| {
+                serde_json::json!({
+                    "input_tokens": usage.input_tokens().get(),
+                    "output_tokens": usage.output_tokens().get(),
+                    "total_tokens": usage.checked_total_tokens().ok().map(|count| count.get()),
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    let summary = serde_json::json!({
+        "compatibility": {"sent_rounds":snapshot.sent_rounds,"round_usage":rounds},
+        "continuation_status":snapshot.continuation_diagnostic.as_ref().and_then(|d| d.response_status()),
+    });
+    Some(
+        af_relay::RelayDiagnosticSnapshot::body(&af_adapter::Bytes::from(summary.to_string()))
+            .with_limit(policy.max_body_bytes()),
+    )
 }
 
 /// 调试追踪持久化、设置回读与过期清理 worker。
@@ -578,5 +600,47 @@ mod tests {
         .unwrap();
         assert!(policy.capture_headers());
         assert!(!policy.capture_bodies());
+    }
+
+    fn tool_report() -> af_relay::ToolConversationReport {
+        af_relay::ToolConversationReport {
+            report: RelayAttemptReport::default(),
+            state: af_relay::ToolConversationState::Failed,
+            observed_usage: [None, None],
+            sent_rounds: 0,
+            continuation_diagnostic: None,
+        }
+    }
+
+    #[test]
+    fn tool_failure_preserves_sanitized_upstream_error_snapshot() {
+        let body = af_relay::RelayDiagnosticSnapshot::body(&af_adapter::Bytes::from_static(
+            br#"{"error":{"type":"FreeTierError","message":"network restricted"}}"#,
+        ))
+        .with_limit(1_024);
+        let policy = RelayDiagnosticPolicy::new(true, true, 1_024).unwrap();
+        assert_eq!(
+            tool_response_body(&tool_report(), Some(&body), policy),
+            Some(body)
+        );
+    }
+
+    #[test]
+    fn tool_summary_obeys_body_capture_and_size_settings() {
+        let snapshot = tool_report();
+        let disabled = RelayDiagnosticPolicy::new(true, false, 1_024).unwrap();
+        assert!(tool_response_body(&snapshot, Some("{}"), disabled).is_none());
+        assert!(tool_response_body(&snapshot, None, disabled).is_none());
+        let policy = RelayDiagnosticPolicy::new(true, true, 1_024).unwrap();
+        let body = tool_response_body(&snapshot, None, policy).unwrap();
+        let wrapper: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let summary: serde_json::Value =
+            serde_json::from_str(wrapper["content"].as_str().unwrap()).unwrap();
+        assert_eq!(summary["compatibility"]["sent_rounds"], 0);
+        let limited = RelayDiagnosticPolicy::new(true, true, 16).unwrap();
+        let body = tool_response_body(&snapshot, None, limited).unwrap();
+        let wrapper: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert!(wrapper["content"].as_str().unwrap().len() <= 16);
+        assert_eq!(wrapper["truncated"], true);
     }
 }

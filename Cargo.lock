@@ -329,6 +329,7 @@ dependencies = [
  "af-adapter",
  "af-domain",
  "af-protocol",
+ "async-trait",
  "futures-core",
  "serde",
  "serde_json",
