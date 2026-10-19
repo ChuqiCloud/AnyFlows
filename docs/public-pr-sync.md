@@ -11,7 +11,11 @@
 
 回传通过已鉴权的 GitHub API 获取合并 PR 补丁，支持 merge、squash 和 rebase 合并。补丁无法干净应用时工作流失败，不推送冲突分支；维护者需基于当前 Gitea 源码解决冲突并按正常流程提交。
 
-同步 PR 沿用来源 PR 的标题和说明。GitHub 普通讨论评论只回传到对应的 Gitea PR，新增、编辑和删除都会更新评论镜像，并按来源评论 ID 去重。同步只修改服务账号创建的镜像评论，Gitea 上的其他讨论保持不变。行内代码评审评论不复制，因为目标 PR 的代码行位置可能不同。Gitea 评论不会同步到公开 GitHub PR。
+同步 PR 沿用来源 PR 的标题和说明。GitHub 普通讨论评论回传到对应的 Gitea PR，Gitea 普通讨论评论也会同步到对应的公开 GitHub PR；新增、编辑和删除都会更新评论镜像，并按来源评论 ID 去重。同步只修改服务账号创建的镜像评论，目标仓库中的其他讨论保持不变。行内代码评审评论不复制，因为目标 PR 的代码行位置可能不同。
+
+Gitea 到 GitHub 的评论同步只针对已经导出并带有来源标记的公共核心 PR。Gitea PR 合并后，导出工作流会补齐已有评论；之后的新增、编辑和删除由 Gitea 事件工作流处理。找不到唯一来源标记时安全跳过，不创建无法确认来源的评论。
+
+Gitea 的 PR 讨论可能包含私有信息。启用反向同步前确认参与者同意将这些普通评论公开到 GitHub；同步机器人会在镜像正文中保留来源用户和评论链接。行内代码评审评论仍不会复制。
 
 来源 PR 信息读取失败或响应无效时，使用默认同步标题和说明继续推送，说明中保留当前来源提交；目标 PR 已存在时也会刷新说明，避免保留旧提交的评论映射。无法确认来源 PR 时不生成评论映射。补丁获取失败、代码冲突和公共边界检查失败仍会中止同步。
 
@@ -30,9 +34,13 @@
 
 | 名称 | 用途 |
 | --- | --- |
-| `PUBLIC_REPO_SYNC_TOKEN` | 仅限 `ChuqiCloud/AnyFlows` 的 GitHub Token，具有 Contents 和 Pull requests 读写权限 |
+| `PUBLIC_REPO_SYNC_TOKEN` | 仅限 `ChuqiCloud/AnyFlows` 的 GitHub Token，具有 Contents、Issues 和 Pull requests 读写权限 |
 
 两边的 Secret 名称属于各自平台，不要把 GitHub 一侧的 `GITEA_` 名称照搬到禁止该前缀的 Gitea 一侧。建议使用专用服务账号，令牌不写入代码或日志。
+
+Gitea 侧需要启用 `pull_request` 和 `issue_comment` Actions 事件。`pull_request` 事件负责合并后的标题和说明校正，`issue_comment` 事件负责评论的新增、编辑和删除。事件未触发时，可在 Gitea Actions 中手动运行 `Mirror Gitea PR discussion` 并填写 Gitea PR 编号。
+
+Gitea 工作流令牌需要 Contents、Issues 和 Pull requests 只读权限，API 地址沿用 Runner 的 `github.server_url`。事件任务先读取 PR 状态；仅已合并到 `develop` 的 PR 会进入同步。同步工具始终从 `develop` 检出，GitHub 写入令牌仅在同步步骤提供。
 
 ## 分支和重复执行
 

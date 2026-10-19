@@ -30,4 +30,4 @@ bash tools/ci/test-public-core-export.sh
 
 ## 自动导出
 
-Gitea `develop` 每次推送触发导出工作流，使用 `PUBLIC_REPO_SYNC_TOKEN` 更新 GitHub 的 `sync/gitea-public-core` 分支，创建或复用一个 PR，仍由维护者合并。Secret 配置及双向流程见 [公共 PR 同步](public-pr-sync.md)。
+Gitea `develop` 每次推送触发导出工作流，使用 `PUBLIC_REPO_SYNC_TOKEN` 更新 GitHub 的 `sync/gitea-public-core` 分支，创建或复用一个 PR，仍由维护者合并。导出完成后会同步来源 Gitea PR 的普通讨论；后续评论事件由独立工作流处理。Secret 配置及双向流程见 [公共 PR 同步](public-pr-sync.md)。
