@@ -4,16 +4,17 @@ import {
   listAdminProxyPools, createAdminProxyPool, updateAdminProxyPool,
   deleteAdminProxyPool, refreshAdminProxyPool, checkAdminProxyPool, bindAdminProxyPool, cleanupAdminProxyItems,
 } from '@/lib/api/generated/sdk.gen'
-import type { AdminProxyPool, AdminProxyPoolWriteRequestWritable } from '@/lib/api/generated/types.gen'
+import type { AdminProxyPool, AdminProxyPoolWriteRequestWritable, AdminProxyCleanupRequest, AdminProxyCleanupResult } from '@/lib/api/generated/types.gen'
 import { adminCredentialProxiesQueryKey } from './credential-proxy-api'
 
 export type { AdminProxyPool }
-export type CleanupRequest = { target: 'pools' | 'nodes'; mode: 'selected' | 'failed' | 'unused'; pool_id: number | null; revision: number | null; ids: number[]; after_id: number | null; preview: boolean }
-export type CleanupResult = { eligible_ids: number[]; deleted_ids: number[]; protected_ids: number[]; skipped_ids: number[]; more_available: boolean; next_after_id: number | null }
+export type CleanupRequest = Omit<AdminProxyCleanupRequest, 'target' | 'mode'> & { target: 'pools' | 'nodes'; mode: 'selected' | 'failed' | 'unused' }
+export type CleanupResult = Omit<AdminProxyCleanupResult, 'next_after_id'> & { next_after_id: number | null }
 export function useProxyCleanup() {
   const cache = useQueryClient()
   return useMutation({ mutationFn: async (body: CleanupRequest): Promise<CleanupResult> => {
-    return (await cleanupAdminProxyItems({ client: apiClient, body })).data
+    const { data } = await cleanupAdminProxyItems({ client: apiClient, body })
+    return { ...data, next_after_id: data.next_after_id ?? null }
   }, onSuccess: async (_, body) => {
     if (!body.preview) await Promise.all([cache.invalidateQueries({ queryKey: poolsKey }), cache.invalidateQueries({ queryKey: adminCredentialProxiesQueryKey })])
   } })
