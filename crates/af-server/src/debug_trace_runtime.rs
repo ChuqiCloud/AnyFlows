@@ -230,8 +230,8 @@ impl DebugTraceCapture {
                     .and_then(|failure| failure.diagnostic())
             })
         });
-        if let (Some(attempt), Some(diagnostic)) = (attempts.last_mut(), diagnostic) {
-            if let Ok(value) = DebugTraceAttemptDiagnosticWrite::new(
+        if let (Some(attempt), Some(diagnostic)) = (attempts.last_mut(), diagnostic)
+            && let Ok(value) = DebugTraceAttemptDiagnosticWrite::new(
                 diagnostic.request_method().to_owned(),
                 diagnostic.request_url().to_owned(),
                 diagnostic.request_headers_json().map(str::to_owned),
@@ -240,9 +240,9 @@ impl DebugTraceCapture {
                 diagnostic.response_headers_json().map(str::to_owned),
                 tool_response_body(snapshot, diagnostic.response_body_json(), self.policy),
                 diagnostic.response_streamed(),
-            ) {
-                *attempt = attempt.clone().with_diagnostic(value);
-            }
+            )
+        {
+            *attempt = attempt.clone().with_diagnostic(value);
         }
         self.submit_attempts(
             attempts,
