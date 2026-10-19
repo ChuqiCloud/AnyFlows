@@ -356,6 +356,8 @@ async fn public_profile_upgrade_preserves_frozen_revisions_and_blocks_used_rollb
         .iter()
         .position(|migration| migration.name() == "m20261018_000152_add_opencode_public_profile")
         .expect("公开访问档案迁移必须保留");
+    // 回滚至目标迁移之前，后续新增迁移不改变此测试的验证范围。
+    let rollback_steps = u32::try_from(Migrator::migrations().len() - boundary)?;
     Migrator::up(pool.connection(), Some(u32::try_from(boundary)?)).await?;
     let repo = ClientProfileRepository::new(pool.clone());
     let original = repo.revision("opencode", 1).await?;
@@ -368,12 +370,16 @@ async fn public_profile_upgrade_preserves_frozen_revisions_and_blocks_used_rollb
         public.definition.credential_kinds,
         vec![af_domain::CredentialKind::Public]
     );
-    Migrator::down(pool.connection(), Some(1)).await?;
+    Migrator::down(pool.connection(), Some(rollback_steps)).await?;
     assert!(repo.get("opencode-public").await.is_err());
     Migrator::up(pool.connection(), None).await?;
     pool.connection().execute_unprepared("INSERT INTO channels (id, name, type, protocol, model_mapping, param_override, header_override, settings) VALUES (903, 'public-rollback', 'opencode', 'openai_chat', '{}', '{}', '{}', '{}')").await?;
     repo.bind(ChannelId::new(903)?, public.binding, 0).await?;
-    assert!(Migrator::down(pool.connection(), Some(1)).await.is_err());
+    assert!(
+        Migrator::down(pool.connection(), Some(rollback_steps))
+            .await
+            .is_err()
+    );
     assert!(repo.get("opencode-public").await?.built_in);
     pool.close().await?;
     Ok(())
