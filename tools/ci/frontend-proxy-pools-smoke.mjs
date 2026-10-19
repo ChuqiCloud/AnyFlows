@@ -57,7 +57,7 @@ try {
   let pools = []
   let saved
   let binding
-  await page.route('**/api/**', async route => {
+  await page.route(url => url.pathname.startsWith('/api/'), async route => {
     const request = route.request()
     const url = new URL(request.url())
     const respond = data => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) })
