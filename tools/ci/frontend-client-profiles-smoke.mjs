@@ -58,6 +58,7 @@ try {
   browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
   page = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'zh-CN', reducedMotion: 'reduce' })
   page.setDefaultTimeout(12_000)
+  page.setDefaultNavigationTimeout(45_000)
   page.on('pageerror', error => errors.push(error.message))
   await page.addInitScript(() => { localStorage.setItem('anyflows.locale', 'zh') })
 

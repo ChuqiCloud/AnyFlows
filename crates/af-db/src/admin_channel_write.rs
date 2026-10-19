@@ -983,6 +983,11 @@ impl AdminChannelRepository {
             .with_subscriber(NoSubscriber::default())
             .await
             .map_err(map_db_error)?;
+        crate::entity::proxy_pool_bindings::Entity::delete_by_id(channel_id.get())
+            .exec(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_db_error)?;
         credentials::Entity::update_many()
             .filter(credentials::Column::ChannelId.eq(channel_id.get()))
             .filter(credentials::Column::DeletedAt.is_null())
@@ -1743,6 +1748,7 @@ async fn validate_proxy_binding(
         return Ok(());
     };
     let exists = proxies::Entity::find_by_id(proxy_id)
+        .lock_exclusive()
         .select_only()
         .column(proxies::Column::Id)
         .filter(proxies::Column::Enabled.eq(true))

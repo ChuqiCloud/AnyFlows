@@ -56,6 +56,8 @@ pub enum SystemSecretKind {
     PasskeyAuthenticationState(af_domain::UserId),
     /// 凭据专属代理认证密码；记录标识参与 AAD，禁止密文跨代理搬用。
     CredentialProxyPassword(af_domain::ProxyId),
+    /// 代理池订阅与检测地址，和节点密码隔离。
+    ProxyPoolSettings(af_domain::ProxyId),
 }
 
 impl SystemSecretKind {
@@ -79,6 +81,7 @@ impl SystemSecretKind {
             Self::PasskeyRegistrationState(_) => "passkey_registration_state",
             Self::PasskeyAuthenticationState(_) => "passkey_authentication_state",
             Self::CredentialProxyPassword(_) => "credential_proxy_password",
+            Self::ProxyPoolSettings(_) => "proxy_pool_settings",
         }
     }
 }
@@ -333,6 +336,7 @@ fn system_secret_aad(kind: SystemSecretKind) -> Vec<u8> {
         SystemSecretKind::PasskeyAuthenticationState(user_id) => {
             format!("passkey_authentication_challenges:user:{}", user_id.get())
         }
+        SystemSecretKind::ProxyPoolSettings(proxy_id) => format!("proxy_pools:{}", proxy_id.get()),
         SystemSecretKind::CredentialProxyPassword(proxy_id) => {
             format!("proxies:{}", proxy_id.get())
         }

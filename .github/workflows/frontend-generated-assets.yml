@@ -30,6 +30,8 @@ on:
       - 'crates/af-http/src/client_profiles.rs'
       - 'crates/af-http/src/openapi/client_profiles.rs'
       - 'crates/af-http/src/openapi/schema.rs'
+      - 'crates/af-http/src/proxy_pools.rs'
+      - 'crates/af-http/src/openapi/proxy_pools.rs'
 
 permissions:
   contents: read
@@ -70,6 +72,8 @@ jobs:
           rustup component add rustfmt
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          cache-on-failure: true
       - name: Generate contracts and dependency lock
         run: |
           set -euo pipefail

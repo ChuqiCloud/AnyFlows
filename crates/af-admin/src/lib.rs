@@ -23,6 +23,11 @@ pub use client_profiles::{
     ClientProfileRevisionPage, ClientProfileWrite, DatabaseAdminClientProfileService,
 };
 mod credential_proxy;
+mod proxy_pool;
+pub use proxy_pool::{
+    ProxyCleanupMode, ProxyCleanupRequest, ProxyCleanupResult, ProxyCleanupTarget, ProxyPoolError,
+    ProxyPoolImportResult, ProxyPoolNodeView, ProxyPoolService, ProxyPoolView, ProxyPoolWrite,
+};
 mod credential_read;
 mod custom_oauth2;
 mod debug_trace;

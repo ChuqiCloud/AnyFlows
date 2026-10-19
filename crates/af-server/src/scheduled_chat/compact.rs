@@ -78,23 +78,25 @@ impl ResponsesCompactRoutePlanner for ScheduledChatService {
             let account_loads = self
                 .load_account_concurrency(&route, protocol, request.model())
                 .await?;
-            let plan = self.build_responses_compact_plan(
-                route,
-                request,
-                request_id,
-                PreparedConcurrencyPlan {
-                    account_loads: account_loads.as_ref(),
-                    credential_health: credential_health.as_ref(),
-                    user_permit,
-                },
-            )?;
+            let plan = self
+                .build_responses_compact_plan(
+                    route,
+                    request,
+                    request_id,
+                    PreparedConcurrencyPlan {
+                        account_loads: account_loads.as_ref(),
+                        credential_health: credential_health.as_ref(),
+                        user_permit,
+                    },
+                )
+                .await?;
             Ok(Box::new(plan) as Box<dyn PlannedResponsesCompactExecution>)
         })
     }
 }
 
 impl ScheduledChatService {
-    fn build_responses_compact_plan(
+    async fn build_responses_compact_plan(
         &self,
         route: IndexedRoutePlan,
         request: CanonicalResponsesCompactionRequest,
@@ -160,7 +162,9 @@ impl ScheduledChatService {
                 let credential_id = CredentialId::new(runtime_credential.credential_id())
                     .map_err(|_| AfError::Internal)?;
                 let secret_owner_id = runtime_credential.secret_owner_id();
-                let client = self.client_for_credential(target, runtime_credential)?;
+                let client = self
+                    .client_for_credential(target, runtime_credential)
+                    .await?;
                 let mut context = RelayContext::new(client);
                 if let Some(base_url) = target.base_url() {
                     context = context

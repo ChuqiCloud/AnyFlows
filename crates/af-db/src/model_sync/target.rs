@@ -138,6 +138,11 @@ impl ModelSyncRepository {
                     headers,
                     mappings,
                     proxy_required: credential.proxy_id.is_some(),
+                    proxy_id: credential
+                        .proxy_id
+                        .map(af_domain::ProxyId::new)
+                        .transpose()
+                        .map_err(|_| ModelSyncRepositoryError::Invariant)?,
                     client_profile,
                     opencode_entry,
                 },

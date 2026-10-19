@@ -202,13 +202,13 @@ pub enum CredentialProxyDeleteOutcome {
 
 /// 创建代理时使用的非密文目录字段。
 pub struct CredentialProxyCreateRecord {
-    name: String,
-    scheme: CredentialProxyScheme,
-    host: String,
-    port: u16,
-    username: Option<String>,
-    trust_proxy_dns: bool,
-    enabled: bool,
+    pub(super) name: String,
+    pub(super) scheme: CredentialProxyScheme,
+    pub(super) host: String,
+    pub(super) port: u16,
+    pub(super) username: Option<String>,
+    pub(super) trust_proxy_dns: bool,
+    pub(super) enabled: bool,
 }
 
 impl CredentialProxyCreateRecord {
@@ -584,6 +584,28 @@ impl CredentialProxyRepository {
         if result.rows_affected != 1 {
             return Err(internal_error(CredentialProxyRepositoryError::Invariant));
         }
+        // 修改池成员后撤销旧检测结论；下次订阅可重新恢复来源中的原节点。
+        crate::entity::proxy_pool_nodes::Entity::update_many()
+            .filter(crate::entity::proxy_pool_nodes::Column::ProxyId.eq(proxy_id.get()))
+            .col_expr(
+                crate::entity::proxy_pool_nodes::Column::Healthy,
+                sea_orm::sea_query::Expr::value(false),
+            )
+            .col_expr(
+                crate::entity::proxy_pool_nodes::Column::CheckedAt,
+                sea_orm::sea_query::Expr::value(Option::<i64>::None),
+            )
+            .col_expr(
+                crate::entity::proxy_pool_nodes::Column::LatencyMs,
+                sea_orm::sea_query::Expr::value(Option::<i64>::None),
+            )
+            .col_expr(
+                crate::entity::proxy_pool_nodes::Column::Fingerprint,
+                sea_orm::sea_query::Expr::value(format!("manual-{}-{version}", proxy_id.get())),
+            )
+            .exec(&transaction)
+            .await
+            .map_err(|_| query_error("credential_proxy_pool_health"))?;
         for channel_id in channels {
             enqueue_scheduler_catalog_change(
                 &transaction,
@@ -713,7 +735,7 @@ async fn referenced_channels(
         .collect()
 }
 
-fn record_from_model(
+pub(super) fn record_from_model(
     model: proxies::Model,
 ) -> Result<CredentialProxyRecord, CredentialProxyRepositoryError> {
     let proxy_id = ProxyId::new(model.id)
@@ -798,7 +820,7 @@ fn pending_encrypted_json() -> Result<EncryptedJson, CredentialProxyRepositoryEr
     )
 }
 
-fn encrypted_json(
+pub(super) fn encrypted_json(
     envelope: EncryptedCredentialEnvelope,
 ) -> Result<EncryptedJson, CredentialProxyRepositoryError> {
     EncryptedJson::from_envelope(json!({
@@ -811,7 +833,7 @@ fn encrypted_json(
     .map_err(|_| internal_error(CredentialProxyRepositoryError::Invariant))
 }
 
-fn envelope_from_json(
+pub(super) fn envelope_from_json(
     secret: EncryptedJson,
 ) -> Result<EncryptedCredentialEnvelope, CredentialProxyRepositoryError> {
     let (key_id, nonce, ciphertext) = secret
