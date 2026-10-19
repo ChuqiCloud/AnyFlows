@@ -108,7 +108,9 @@ mod credential_probe;
 mod credential_probe_tests;
 mod credential_proxy;
 mod proxy_pool;
-pub use proxy_pool::{ProxyPoolRepository, ProxyPoolRepositoryError, ProxyPoolRecord, ProxyPoolNodeRecord};
+pub use proxy_pool::{
+    ProxyPoolNodeRecord, ProxyPoolRecord, ProxyPoolRepository, ProxyPoolRepositoryError,
+};
 #[cfg(test)]
 mod credential_proxy_tests;
 mod credential_state;

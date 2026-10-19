@@ -14,6 +14,9 @@ import {
   type AdminCredentialProxy,
 } from './credential-proxy-api'
 
+import { ProxyPoolPanel } from './proxy-pool-panel'
+import { useAdminProxyPools } from './proxy-pool-api'
+
 type EditorState = AdminCredentialProxy | 'create' | undefined
 
 /** 管理员专属代理目录，提供结构化出口配置与引用安全状态。 */
@@ -24,7 +27,9 @@ export function CredentialProxyPage() {
   const deleteMutation = useDeleteAdminCredentialProxy()
   const [editor, setEditor] = useState<EditorState>()
   const [deleting, setDeleting] = useState<AdminCredentialProxy>()
-  const proxies = query.data ?? []
+  const poolsQuery = useAdminProxyPools()
+  const poolIds = new Set((poolsQuery.data ?? []).map(pool => pool.id))
+  const proxies = (query.data ?? []).filter(proxy => !poolIds.has(proxy.id))
   const pagination = useClientTablePagination(proxies.length)
   const visibleProxies = proxies.slice(pagination.startIndex, pagination.endIndex)
   const enabledCount = proxies.filter((proxy) => proxy.enabled).length
@@ -71,6 +76,7 @@ export function CredentialProxyPage() {
         <div className="flex items-center gap-2"><Button type="button" size="sm" variant="bordered" isDisabled={query.isFetching} onClick={() => void query.refetch()}><RefreshCw className={query.isFetching ? 'size-3.5 animate-spin' : 'size-3.5'} aria-hidden="true" />{t('credentialProxies.actions.refresh')}</Button><Button type="button" size="sm" color="primary" onClick={() => setEditor('create')}><Plus className="size-3.5" aria-hidden="true" />{t('credentialProxies.actions.create')}</Button></div>
       </header>
 
+      <ProxyPoolPanel />
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--hairline)] py-2 text-xs text-muted-foreground"><span>{t('credentialProxies.summary.total', { count: proxies.length })}</span><span>{t('credentialProxies.summary.enabled', { count: enabledCount })}</span><span>{t('credentialProxies.summary.authenticated', { count: authenticatedCount })}</span></div>
 
       {query.isPending ? <div className="grid gap-2" aria-label={t('credentialProxies.loading')}>{[0, 1, 2].map((item) => <Skeleton key={item} className="h-20 rounded-lg" />)}</div>

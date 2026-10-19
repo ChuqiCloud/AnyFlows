@@ -193,8 +193,12 @@ impl ScheduledChatService {
         self
     }
 
-    pub(crate) fn with_proxy_pools(mut self, pools: Option<Arc<af_admin::ProxyPoolService>>) -> Self {
-        self.proxy_pools = pools; self
+    pub(crate) fn with_proxy_pools(
+        mut self,
+        pools: Option<Arc<af_admin::ProxyPoolService>>,
+    ) -> Self {
+        self.proxy_pools = pools;
+        self
     }
 
     /// 注入可选 Redis 粘性存储；未配置时继续使用非粘性路由。
@@ -426,7 +430,9 @@ impl ScheduledChatService {
                     .map_err(|_| AfError::Internal)?;
                 let secret_owner_id = runtime_credential.secret_owner_id();
                 let concurrency_owner_id = runtime_credential.concurrency_owner_id();
-                let client = self.client_for_credential(target, runtime_credential).await?;
+                let client = self
+                    .client_for_credential(target, runtime_credential)
+                    .await?;
                 let responses_websocket_pool = if target.responses_websocket_enabled()
                     && responses_websocket_session.is_some()
                 {
@@ -572,9 +578,23 @@ impl ScheduledChatService {
     ) -> Result<af_httpclient::PooledClient, AfError> {
         let timeout = target.timeout().map(af_domain::ChannelTimeout::duration);
         if let Some(pools) = &self.proxy_pools {
-            let manual = credential.proxy().map(af_db::SchedulerRuntimeProxyRecord::proxy_id);
-            if credential.proxy_required() && manual.is_none() { return Err(AfError::Internal); }
-            if let Some(client) = pools.resolve_client(manual, target.channel_id(), credential.routing_credential_id(), &self.clients, timeout).await.map_err(|_| AfError::Internal)? {
+            let manual = credential
+                .proxy()
+                .map(af_db::SchedulerRuntimeProxyRecord::proxy_id);
+            if credential.proxy_required() && manual.is_none() {
+                return Err(AfError::Internal);
+            }
+            if let Some(client) = pools
+                .resolve_client(
+                    manual,
+                    target.channel_id(),
+                    credential.routing_credential_id(),
+                    &self.clients,
+                    timeout,
+                )
+                .await
+                .map_err(|_| AfError::Internal)?
+            {
                 return Ok(client);
             }
         }

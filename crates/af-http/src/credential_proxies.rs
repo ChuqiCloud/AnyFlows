@@ -155,7 +155,10 @@ pub(crate) fn build_credential_proxy_router(
     service: Arc<dyn AdminCredentialProxyService>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
 ) -> Router {
-    let pool_router = crate::proxy_pools::build_proxy_pool_router(Arc::clone(&service), Arc::clone(&session_authenticator));
+    let pool_router = crate::proxy_pools::build_proxy_pool_router(
+        Arc::clone(&service),
+        Arc::clone(&session_authenticator),
+    );
     let authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(session_authenticator),
         authenticate_management_session,

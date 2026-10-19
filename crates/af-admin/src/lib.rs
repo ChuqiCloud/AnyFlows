@@ -24,7 +24,10 @@ pub use client_profiles::{
 };
 mod credential_proxy;
 mod proxy_pool;
-pub use proxy_pool::{ProxyPoolService, ProxyPoolError, ProxyPoolWrite, ProxyPoolView, ProxyPoolNodeView, ProxyPoolImportResult};
+pub use proxy_pool::{
+    ProxyPoolError, ProxyPoolImportResult, ProxyPoolNodeView, ProxyPoolService, ProxyPoolView,
+    ProxyPoolWrite,
+};
 mod credential_read;
 mod custom_oauth2;
 mod debug_trace;
