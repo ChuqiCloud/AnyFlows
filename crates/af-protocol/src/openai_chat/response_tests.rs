@@ -80,6 +80,83 @@ fn parses_deepseek_cache_breakdown_fields() {
     assert_eq!(usage.details().reasoning().get(), 1);
 }
 
+fn gateway_usage() -> Value {
+    json!({
+        "prompt_tokens": 15, "completion_tokens": 1, "total_tokens": 16,
+        "prompt_tokens_details": {
+            "cached_tokens": 0, "audio_tokens": 0, "reasoning_tokens": 0,
+            "accepted_prediction_tokens": 0, "rejected_prediction_tokens": 0
+        },
+        "completion_tokens_details": {
+            "cached_tokens": 0, "audio_tokens": 0, "reasoning_tokens": 0,
+            "accepted_prediction_tokens": 0, "rejected_prediction_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0, "prompt_cache_miss_tokens": 15,
+        "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0,
+        "prompt_cache_write_tokens": 0, "completion_thinking_tokens": 0,
+        "credit": 0, "cached_tokens": 0
+    })
+}
+
+#[test]
+fn parses_gateway_transport_metadata_and_zero_usage_placeholders() {
+    let mut response = response_with_choices(vec![text_choice(0, "OK")]);
+    response["elapsed_ms"] = json!(245);
+    response["first_chunk_at"] = json!(1_700_000_000.25);
+    response["usage"] = gateway_usage();
+    let parsed = parse_json(response).unwrap();
+    let usage = parsed.usage.unwrap();
+    assert_eq!(usage.input_tokens().get(), 15);
+    assert_eq!(usage.output_tokens().get(), 1);
+    assert_eq!(usage.details().cache_read().get(), 0);
+    assert!(
+        matches!(parsed.choices[0].message.content.as_slice(), [ContentBlock::Text(text)] if text == "OK")
+    );
+}
+
+#[test]
+fn gateway_usage_aliases_preserve_cache_and_reasoning_without_double_counting() {
+    let mut response = response_with_choices(vec![text_choice(0, "OK")]);
+    response["usage"] = json!({
+        "prompt_tokens": 15, "completion_tokens": 3, "total_tokens": 18,
+        "cached_tokens": 4, "cache_read_input_tokens": 4,
+        "prompt_cache_hit_tokens": 4, "prompt_cache_miss_tokens": 11,
+        "completion_thinking_tokens": 2
+    });
+    let parsed = parse_json(response.clone()).unwrap();
+    let usage = parsed.usage.unwrap();
+    assert_eq!(usage.details().cache_read().get(), 4);
+    assert_eq!(usage.details().reasoning().get(), 2);
+    response["usage"]["cache_read_input_tokens"] = json!(5);
+    assert_eq!(parse_json(response), Err(ParseResponseError::InvalidValue));
+}
+
+#[test]
+fn gateway_placeholders_reject_nonzero_unrepresentable_dimensions() {
+    for (field, nested) in [
+        ("cache_creation_input_tokens", None),
+        ("prompt_cache_write_tokens", None),
+        ("reasoning_tokens", Some("prompt_tokens_details")),
+        ("accepted_prediction_tokens", Some("prompt_tokens_details")),
+        ("rejected_prediction_tokens", Some("prompt_tokens_details")),
+        ("cached_tokens", Some("completion_tokens_details")),
+    ] {
+        for (value, expected) in [
+            (1, ParseResponseError::UnsupportedFeature),
+            (-1, ParseResponseError::InvalidValue),
+        ] {
+            let mut response = response_with_choices(vec![text_choice(0, "OK")]);
+            response["usage"] = gateway_usage();
+            if let Some(nested) = nested {
+                response["usage"][nested][field] = json!(value);
+            } else {
+                response["usage"][field] = json!(value);
+            }
+            assert_eq!(parse_json(response), Err(expected), "{field}");
+        }
+    }
+}
+
 #[test]
 fn top_level_reasoning_usage_is_validated_and_normalized() {
     let mut response = response_with_choices(vec![text_choice(0, "answer")]);
