@@ -1,10 +1,12 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { createContext, useContext, useId, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button as HeroButton, Input, Textarea as TextArea, Select, SelectItem, Switch, Drawer, DrawerContent, DrawerHeader } from '@heroui/react'
 import type { ComponentProps } from 'react'
 import { ProxyCheck, ProxySelection, ProxyCleanupControls } from './proxy-cleanup-controls'
 import { useAdminRouteChannelCatalog } from '@/features/routes/route-api'
 import { useAdminProxyPools, useProxyPoolAction, type AdminProxyPool, type ProxyPoolWrite } from './proxy-pool-api'
+
+const PoolPortalContext = createContext<HTMLElement | null>(null)
 
 export function ProxyPoolPanel() {
   const { t } = useTranslation()
@@ -67,6 +69,7 @@ function PoolNodes({pool}:{pool:AdminProxyPool}) {
 function PoolEditor({pool,onClose,onSaved}:{pool?:AdminProxyPool;onClose:()=>void;onSaved:(skipped:number,duplicates:number)=>void}) {
   const { t } = useTranslation()
   const action = useProxyPoolAction()
+  const [portal, setPortal] = useState<HTMLDivElement | null>(null)
   const initialInterval = pool?.interval_secs ?? 900
   const initialUnit = initialInterval % 3600 === 0 ? 3600 : initialInterval % 60 === 0 ? 60 : 1
   const [intervalUnit,setIntervalUnit] = useState(String(initialUnit))
@@ -83,24 +86,28 @@ function PoolEditor({pool,onClose,onSaved}:{pool?:AdminProxyPool;onClose:()=>voi
   }
   const readFile = async (file?:File) => {if (!file) return;if (file.size > 1_048_576) {setInvalid(true);return}try {update('content',await file.text())} catch {setInvalid(true)}}
   const title = t(pool ? 'proxyPools.edit' : 'proxyPools.create')
-  return <Drawer isOpen placement="right" onOpenChange={open => !open && onClose()} classNames={{base:'sm:max-w-xl'}}><DrawerContent><DrawerHeader>{title}</DrawerHeader>
+  return <Drawer isOpen placement="right" onOpenChange={open => !open && onClose()} classNames={{base:'w-full max-h-none sm:max-w-xl'}}><DrawerContent><div ref={setPortal} className="relative flex h-full min-h-0 flex-col"><PoolPortalContext.Provider value={portal}><DrawerHeader>{title}</DrawerHeader>
     <form className="grid min-h-0 gap-4 overflow-y-auto p-5" onSubmit={submit}>
-      <Field label={t('proxyPools.name')}><Input autoFocus required maxLength={128} value={form.name} onChange={event => update('name',event.target.value)} /></Field>
+      <Field label={t('proxyPools.name')}><Input aria-label={t('proxyPools.name')} autoFocus required maxLength={128} value={form.name} onChange={event => update('name',event.target.value)} /></Field>
       <Toggle checked={form.subscribed} onChange={value => update('subscribed',value)} label={t('proxyPools.subscription')} />
-      {form.subscribed ? <Field label={t('proxyPools.sourceUrl')}><Input type="url" autoComplete="off" value={form.source_url} placeholder={pool?.source_host ? t('proxyPools.keepUrl',{host:pool.source_host}) : 'https://example.com/proxies.txt'} onChange={event => update('source_url',event.target.value)} /></Field> : null}
+      {form.subscribed ? <Field label={t('proxyPools.sourceUrl')}><Input aria-label={t('proxyPools.sourceUrl')} type="url" autoComplete="off" value={form.source_url} placeholder={pool?.source_host ? t('proxyPools.keepUrl',{host:pool.source_host}) : 'https://example.com/proxies.txt'} onChange={event => update('source_url',event.target.value)} /></Field> : null}
       <div className="grid gap-3 sm:grid-cols-2"><Field label={t('proxyPools.interval')}><Input aria-label={t('proxyPools.interval')} required type="number" step="any" min={60 / Number(intervalUnit)} max={86400 / Number(intervalUnit)} value={form.interval_secs} onChange={event => update('interval_secs',event.target.value)} /><Choice label={t('proxyPools.intervalUnit')} value={intervalUnit} onChange={value => { const seconds = Number(form.interval_secs) * Number(intervalUnit); setIntervalUnit(value); update('interval_secs',String(seconds / Number(value))) }} options={[{value:'1',label:t('proxyPools.seconds')},{value:'60',label:t('proxyPools.minutes')},{value:'3600',label:t('proxyPools.hours')}]} /></Field><Field label={t('proxyPools.defaultScheme')}><Choice label={t('proxyPools.defaultScheme')} value={form.default_scheme} onChange={value => update('default_scheme',value)} options={['http','https','socks5','socks5h'].map(value => ({value,label:value.toUpperCase()}))} /></Field></div>
       <p className="text-xs text-muted-foreground">{t('proxyPools.intervalHint')}</p>
-      <Field label={t('proxyPools.probeUrl')}><Input required type="url" value={form.probe_url} onChange={event => update('probe_url',event.target.value)} /></Field>
+      <Field label={t('proxyPools.probeUrl')}><Input aria-label={t('proxyPools.probeUrl')} required type="url" value={form.probe_url} onChange={event => update('probe_url',event.target.value)} /></Field>
       <Toggle checked={form.trust_proxy_dns} onChange={value => update('trust_proxy_dns',value)} label={t('proxyPools.trustDns')} />
-      <Field label={t('proxyPools.content')}><TextArea rows={7} autoComplete="off" value={form.content} onChange={event => update('content',event.target.value)} /></Field>
+      <Field label={t('proxyPools.content')}><TextArea aria-label={t('proxyPools.content')} rows={7} autoComplete="off" value={form.content} onChange={event => update('content',event.target.value)} /></Field>
       <label className="grid gap-2 text-xs">{t('proxyPools.file')}<input type="file" accept=".txt,.csv,.json,text/plain,application/json" onChange={event => void readFile(event.target.files?.[0])} /></label>
       <p className="text-xs leading-5 text-muted-foreground">{t('proxyPools.formats')}</p>
       {invalid || action.isError ? <p role="alert" className="text-xs text-destructive">{t(invalid ? 'proxyPools.validationError' : 'proxyPools.actionError')}</p> : null}
       <div className="flex justify-end gap-2"><Button type="button" disabled={action.isPending} onClick={onClose}>{t('proxyPools.cancel')}</Button><Button type="submit" disabled={action.isPending}>{t('proxyPools.save')}</Button></div>
     </form>
-  </DrawerContent></Drawer>
+  </PoolPortalContext.Provider></div></DrawerContent></Drawer>
 }
 function Field({label,children}:{label:string;children:ReactNode}) {return <label className="grid gap-2 text-xs font-medium">{label}{children}</label>}
 function Button({disabled,...props}:Omit<ComponentProps<typeof HeroButton>,'isDisabled'> & {disabled?:boolean}) {return <HeroButton size="sm" variant="flat" isDisabled={disabled} {...props} />}
-function Choice({value,onChange,options,disabled,label}:{value:string;onChange:(value:string)=>void;options:{value:string;label:string}[];disabled?:boolean;label?:string}) {return <Select aria-label={label ?? 'Select'} size="sm" isDisabled={disabled} selectedKeys={new Set([value || 'none'])} onChange={event => onChange(event.target.value === 'none' ? '' : event.target.value)}>{options.map(option => <SelectItem key={option.value || 'none'}>{option.label}</SelectItem>)}</Select>}
+function Choice({value,onChange,options,disabled,label}:{value:string;onChange:(value:string)=>void;options:{value:string;label:string}[];disabled?:boolean;label?:string}) {
+  const portal = useContext(PoolPortalContext)
+  const labelId = useId()
+  return <div className="min-w-0"><span id={labelId} className="sr-only">{label ?? 'Select'}</span><Select aria-label={label ?? 'Select'} aria-labelledby={labelId} size="sm" isDisabled={disabled} selectedKeys={new Set([value || 'none'])} popoverProps={portal ? {portalContainer:portal} : undefined} onChange={event => onChange(event.target.value === 'none' ? '' : event.target.value)}>{options.map(option => <SelectItem key={option.value || 'none'}>{option.label}</SelectItem>)}</Select></div>
+}
 function Toggle({checked,onChange,label}:{checked:boolean;onChange:(value:boolean)=>void;label:string}) {return <Switch size="sm" isSelected={checked} onValueChange={onChange}>{label}</Switch>}
