@@ -83,9 +83,9 @@ try {
   assert.equal(saved.content,content)
   assert.equal(saved.source_url,null)
   await page.getByText(/跳过 1 条无效项，合并 1 条重复项/).waitFor()
-  assert.equal(await page.getByText('ci-password',{exact:true}).count(),0)
+  assert.equal((await page.locator('body').innerText()).includes('ci-password'),false)
   const choose = async (label,value,text) => {
-    if (isNext) {await page.getByRole('combobox',{name:label,exact:true}).click();await page.getByRole('option',{name:text,exact:true}).click()}
+    if (isNext) {await page.getByRole('button',{name:new RegExp(label)}).click();await page.getByRole('option',{name:text,exact:true}).click();await page.getByRole('listbox').waitFor({state:'hidden'})}
     else await page.getByRole('combobox',{name:label,exact:true}).selectOption(value)
   }
   await Promise.all([
