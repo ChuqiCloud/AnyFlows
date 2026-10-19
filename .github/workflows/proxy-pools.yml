@@ -1,0 +1,79 @@
+name: Proxy pools
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - 'crates/af-db/src/proxy_pool.rs'
+      - 'crates/af-db/src/proxy_pool/**'
+      - 'crates/af-db/src/entity/proxy_pool*.rs'
+      - 'crates/af-db/src/migration/*proxy_pools.rs'
+      - 'crates/af-db/src/migration/*proxy_pool_refresh_attempt.rs'
+      - 'crates/af-db/src/credential_proxy.rs'
+      - 'crates/af-db/src/admin_channel_write.rs'
+      - 'crates/af-server/src/channel_probe.rs'
+      - 'crates/af-server/src/model_discovery.rs'
+      - 'crates/af-server/src/scheduled_chat*'
+      - 'crates/af-server/src/scheduled_chat/**'
+      - 'crates/af-server/src/bootstrap.rs'
+      - 'crates/af-admin/src/proxy_pool.rs'
+      - 'crates/af-admin/src/proxy_pool/**'
+      - 'crates/af-http/src/proxy_pools.rs'
+      - 'crates/af-http/src/openapi/proxy_pools.rs'
+      - '.github/workflows/proxy-pools.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: proxy-pools-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_BUILD_JOBS: '1'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - name: Configure Gitea checkout
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        run: git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+      - name: Check out source
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+      - name: Install Rust tooling
+        run: |
+          bash tools/ci/install-rustup.sh
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup component add rustfmt
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          cache-on-failure: true
+      - name: Format and check pool integration
+        run: |
+          cargo fmt --all
+          cargo test -p af-db -p af-admin -p af-http -p af-server --lib proxy_pool --locked
+          cargo test -p af-http --lib document_keeps_stable_operation_and_schema_names --locked
+          cargo test -p af-server --lib bootstrap::tests::current_stages_start_and_shutdown_in_order --locked
+          cargo test -p af-server --lib channel_probe --locked
+          cargo test -p af-server --lib model_discovery --locked
+          cargo check -p af-server --locked
+          cargo clippy -p af-admin -p af-db -p af-http -p af-server --lib --locked -- -D warnings
+      - name: Export formatting patch
+        if: ${{ always() }}
+        run: |
+          echo 'ANYFLOWS_GENERATED_PATCH_BEGIN'
+          git diff --binary -- crates | gzip -9 | base64 -w120
+          echo
+          echo 'ANYFLOWS_GENERATED_PATCH_END'

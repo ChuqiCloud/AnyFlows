@@ -1,4 +1,4 @@
-use std::{fmt, future::Future, pin::Pin};
+use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
 use af_account::{PlainSystemSecret, SystemSecretCipher, SystemSecretKind};
 use af_db::{
@@ -300,6 +300,9 @@ pub type AdminCredentialProxyDeleteFuture<'a> =
 
 /// 管理员专属代理目录用例端口。
 pub trait AdminCredentialProxyService: Send + Sync {
+    fn proxy_pools(&self) -> Option<Arc<crate::ProxyPoolService>> {
+        None
+    }
     fn list<'a>(
         &'a self,
         principal: SessionPrincipal,
@@ -332,16 +335,42 @@ pub trait AdminCredentialProxyService: Send + Sync {
 pub struct DatabaseAdminCredentialProxyService {
     repository: CredentialProxyRepository,
     cipher: SystemSecretCipher,
+    pools: Option<Arc<crate::ProxyPoolService>>,
 }
 
 impl DatabaseAdminCredentialProxyService {
     #[must_use]
     pub fn new(repository: CredentialProxyRepository, cipher: SystemSecretCipher) -> Self {
-        Self { repository, cipher }
+        Self {
+            repository,
+            cipher,
+            pools: None,
+        }
     }
 }
 
+impl DatabaseAdminCredentialProxyService {
+    #[must_use]
+    pub fn with_proxy_pools(mut self, pools: Arc<crate::ProxyPoolService>) -> Self {
+        self.pools = Some(pools);
+        self
+    }
+    async fn reject_pool_mutation(&self, id: ProxyId) -> Result<(), AdminCredentialProxyError> {
+        if let Some(pools) = &self.pools
+            && pools
+                .contains(id)
+                .await
+                .map_err(|_| AdminCredentialProxyError::Internal)?
+        {
+            return Err(AdminCredentialProxyError::Referenced);
+        }
+        Ok(())
+    }
+}
 impl AdminCredentialProxyService for DatabaseAdminCredentialProxyService {
+    fn proxy_pools(&self) -> Option<Arc<crate::ProxyPoolService>> {
+        self.pools.clone()
+    }
     fn list<'a>(
         &'a self,
         principal: SessionPrincipal,
@@ -431,6 +460,7 @@ impl AdminCredentialProxyService for DatabaseAdminCredentialProxyService {
     ) -> AdminCredentialProxyFuture<'a> {
         Box::pin(async move {
             require_admin(principal)?;
+            self.reject_pool_mutation(proxy_id).await?;
             let AdminCredentialProxyUpdateCommand {
                 name,
                 scheme,
@@ -488,6 +518,7 @@ impl AdminCredentialProxyService for DatabaseAdminCredentialProxyService {
     ) -> AdminCredentialProxyDeleteFuture<'a> {
         Box::pin(async move {
             require_admin(principal)?;
+            self.reject_pool_mutation(proxy_id).await?;
             match self
                 .repository
                 .delete(proxy_id)

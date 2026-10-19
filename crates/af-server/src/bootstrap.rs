@@ -970,10 +970,19 @@ impl Bootstrap<DatabaseReady> {
             .map_err(BootstrapError::SystemSecret)?;
         let session_authenticator =
             session_authenticator.with_two_factor_cipher(system_secret_cipher.clone());
-        let admin_credential_proxy_service = Arc::new(DatabaseAdminCredentialProxyService::new(
-            credential_proxy_repository,
-            system_secret_cipher.clone(),
-        ));
+        let admin_credential_proxy_service = Arc::new(
+            DatabaseAdminCredentialProxyService::new(
+                credential_proxy_repository,
+                system_secret_cipher.clone(),
+            )
+            .with_proxy_pools(Arc::new(af_admin::ProxyPoolService::new(
+                af_db::ProxyPoolRepository::new(
+                    self.stage.database.clone(),
+                    Duration::from_secs(auth.lookup_timeout_secs()),
+                ),
+                system_secret_cipher.clone(),
+            ))),
+        );
         let smtp_delivery: Arc<dyn EmailDelivery> = Arc::new(SmtpEmailDelivery);
         let email_binding_service = match EmailBindingService::new(
             auth_challenge_repository.clone(),
@@ -1275,6 +1284,9 @@ impl Bootstrap<AuthenticationReady> {
         let (startup_config, max_cached_clients) = build_http_client_parts(&config)?;
         let upstream_clients = HttpClientProvider::new(startup_config.clone(), max_cached_clients)
             .map_err(BootstrapError::HttpClient)?;
+        if let Some(pools) = authentication.admin_credential_proxy_service.proxy_pools() {
+            pools.configure_clients(upstream_clients.clone());
+        }
         let alipay_provider = af_admin::AlipayAccountVerificationProvider::from_config(
             config.account_verification().alipay(),
             upstream_clients.clone(),
@@ -1417,11 +1429,19 @@ impl Bootstrap<RelayReady> {
         .map_err(BootstrapError::OAuthRuntime)?;
         let model_sync_repository =
             ModelSyncRepository::new(self.stage.infrastructure.infrastructure.database.clone());
-        let model_discoverer = Arc::new(DatabaseUpstreamModelDiscoverer::new(
-            model_sync_repository.clone(),
-            decryptor.clone(),
-            self.stage.upstream_clients.clone(),
-        ));
+        let model_discoverer = Arc::new(
+            DatabaseUpstreamModelDiscoverer::new(
+                model_sync_repository.clone(),
+                decryptor.clone(),
+                self.stage.upstream_clients.clone(),
+            )
+            .with_proxy_pools(
+                self.stage
+                    .infrastructure
+                    .admin_credential_proxy_service
+                    .proxy_pools(),
+            ),
+        );
         let admin_model_sync_service: Arc<dyn AdminModelSyncService> = Arc::new(
             DatabaseAdminModelSyncService::new(model_sync_repository, model_discoverer),
         );
@@ -1629,6 +1649,12 @@ impl Bootstrap<RelayReady> {
             ),
         )
         .with_proxy_cipher(self.stage.infrastructure.system_secret_cipher.clone())
+        .with_proxy_pools(
+            self.stage
+                .infrastructure
+                .admin_credential_proxy_service
+                .proxy_pools(),
+        )
         .with_group_repository(
             AdminGroupRepository::new(
                 self.stage.infrastructure.infrastructure.database.clone(),
@@ -2029,6 +2055,14 @@ impl Bootstrap<BillingReady> {
             channel_index.clone(),
             ChannelIndexRefreshConfig::default(),
         );
+        if let Some(pools) = infrastructure.admin_credential_proxy_service.proxy_pools() {
+            supervisor.spawn("proxy-pool-maintenance", move |task_shutdown| {
+                let pools = Arc::clone(&pools);
+                async move {
+                    pools.run_periodic_until(task_shutdown.cancelled()).await;
+                }
+            });
+        }
         register_scheduler_invalidation_tasks(&mut supervisor, scheduler_invalidation);
         register_oauth_loopback_servers(&mut supervisor, oauth_loopback_servers);
         if oauth_connection_coordinator.profile_count() > 0 {
@@ -2139,7 +2173,8 @@ impl Bootstrap<BillingReady> {
             decryptor,
             upstream_clients.clone(),
             Duration::from_secs(config.channel_probe().probe_timeout_secs()),
-        );
+        )
+        .with_proxy_pools(infrastructure.admin_credential_proxy_service.proxy_pools());
         let probe_config = channel_probe_config(&config);
         let admin_channel_probe: Arc<dyn AdminChannelProbe> = Arc::new(
             BoundedAdminChannelProbe::new(probe.clone(), probe_config.probe_timeout()),
@@ -3309,7 +3344,7 @@ mod tests {
             .unwrap();
         // Codex 使用固定的 1455 回调端口；端口被并行测试占用时，启动器会
         // 保留手动回调路径并跳过对应监听任务，因此这里只把实际注册的监听任务计入基线。
-        let expected_task_count = 10 + supervised.stage.oauth_loopback_servers.len();
+        let expected_task_count = 11 + supervised.stage.oauth_loopback_servers.len();
         let supervised = supervised.start_supervisor();
         assert_eq!(
             supervised.stage.supervisor.task_count(),

@@ -199,6 +199,7 @@ pub struct ModelDiscoveryTargetRecord {
     headers: Vec<ModelDiscoveryHeaderRecord>,
     mappings: Vec<ModelDiscoveryMappingRecord>,
     proxy_required: bool,
+    proxy_id: Option<af_domain::ProxyId>,
     client_profile: Option<af_domain::ClientProfileSnapshot>,
     opencode_entry: Option<af_domain::OpenCodeEntry>,
 }
@@ -271,6 +272,11 @@ impl ModelDiscoveryTargetRecord {
     #[must_use]
     pub fn mappings(&self) -> &[ModelDiscoveryMappingRecord] {
         &self.mappings
+    }
+
+    #[must_use]
+    pub const fn proxy_id(&self) -> Option<af_domain::ProxyId> {
+        self.proxy_id
     }
 
     #[must_use]

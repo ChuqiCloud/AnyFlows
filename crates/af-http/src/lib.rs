@@ -76,6 +76,7 @@ mod operations;
 mod passkey_auth;
 mod password_reset;
 mod payment_settings;
+mod proxy_pools;
 mod verification_settings;
 pub use verification_settings::build_verification_settings_router;
 mod payment_webhook;
