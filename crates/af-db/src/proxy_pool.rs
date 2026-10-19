@@ -4,8 +4,8 @@ use std::{collections::BTreeMap, future::Future, time::Duration};
 use af_domain::ProxyId;
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait, Set,
-    TransactionTrait, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
+    Set, TransactionTrait, sea_query::Expr,
 };
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
@@ -446,14 +446,16 @@ impl ProxyPoolRepository {
                 nodes::Entity::update_many()
                     .filter(nodes::Column::PoolId.eq(id.get()))
                     .filter(nodes::Column::ProxyId.eq(node.get()))
-                    .filter(nodes::Column::ProxyId.in_subquery(
-                        proxies::Entity::find()
-                            .select_only()
-                            .column(proxies::Column::Id)
-                            .filter(proxies::Column::Version.eq(version))
-                            .filter(proxies::Column::DeletedAt.is_null())
-                            .into_query(),
-                    ))
+                    .filter(
+                        nodes::Column::ProxyId.in_subquery(
+                            proxies::Entity::find()
+                                .select_only()
+                                .column(proxies::Column::Id)
+                                .filter(proxies::Column::Version.eq(version))
+                                .filter(proxies::Column::DeletedAt.is_null())
+                                .into_query(),
+                        ),
+                    )
                     .col_expr(nodes::Column::Healthy, Expr::value(latency.is_some()))
                     .col_expr(nodes::Column::LatencyMs, Expr::value(latency))
                     .col_expr(nodes::Column::CheckedAt, Expr::value(now))
@@ -587,7 +589,11 @@ mod tests {
             .create("订阅测试".to_owned(), true, 60, |_| Ok(envelope()))
             .await
             .unwrap();
-        assert!(crate::migration::Migrator::down(database.connection(), Some(1)).await.is_err());
+        assert!(
+            crate::migration::Migrator::down(database.connection(), Some(1))
+                .await
+                .is_err()
+        );
         assert!(repo.get(id).await.unwrap().nodes.is_empty());
         let candidate = || {
             vec![(
@@ -646,9 +652,13 @@ mod tests {
             .exec(database.connection())
             .await
             .unwrap();
-        repo.finish(id, 2, "ready", vec![(node, 1, Some(1))]).await.unwrap();
+        repo.finish(id, 2, "ready", vec![(node, 1, Some(1))])
+            .await
+            .unwrap();
         assert!(!repo.get(id).await.unwrap().nodes[0].healthy);
-        repo.finish(id, 2, "ready", vec![(node, 2, Some(2))]).await.unwrap();
+        repo.finish(id, 2, "ready", vec![(node, 2, Some(2))])
+            .await
+            .unwrap();
         assert!(repo.get(id).await.unwrap().nodes[0].healthy);
         repo.bind(0, None).await.unwrap();
         repo.delete(id).await.unwrap();
@@ -656,7 +666,11 @@ mod tests {
             repo.get(id).await,
             Err(ProxyPoolRepositoryError::NotFound)
         ));
-        crate::migration::Migrator::down(database.connection(), Some(1)).await.unwrap();
-        crate::migration::Migrator::up(database.connection(), None).await.unwrap();
+        crate::migration::Migrator::down(database.connection(), Some(1))
+            .await
+            .unwrap();
+        crate::migration::Migrator::up(database.connection(), None)
+            .await
+            .unwrap();
     }
 }
