@@ -53,7 +53,19 @@ fn gateway_chat_stream_converts_to_all_four_full_and_streaming_responses() {
         assert!(
             matches!(full.choices[0].message.content.as_slice(), [ContentBlock::Text(text)] if text == "OK")
         );
-        assert_eq!(full.usage.unwrap(), usage());
+        let expected_usage = if downstream == Protocol::Anthropic {
+            Usage::new(
+                usage().input_tokens(),
+                usage().output_tokens(),
+                *usage().details(),
+                UsageSource::Upstream,
+                UsageSemantics::CacheSeparated,
+            )
+            .unwrap()
+        } else {
+            usage()
+        };
+        assert_eq!(full.usage.unwrap(), expected_usage);
         let request = request(downstream, true).into_canonical();
         let mut encoder = ChatStreamEncoder::new(
             downstream,
@@ -83,6 +95,14 @@ fn gateway_chat_stream_converts_to_all_four_full_and_streaming_responses() {
             1
         );
         assert!(decoded.iter().any(|e| matches!(e, CanonicalStreamEvent::ContentDelta { delta: ContentDelta::Text(text), .. } if text == "OK")));
+        let decoded_usage = decoded
+            .iter()
+            .filter_map(|event| match event {
+                CanonicalStreamEvent::Usage(usage) => Some(*usage),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(decoded_usage, vec![expected_usage]);
     }
 }
 
