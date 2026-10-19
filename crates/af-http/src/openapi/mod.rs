@@ -7,6 +7,7 @@ mod balance_alert_settings;
 mod channels;
 mod client_profiles;
 mod credential_proxies;
+mod proxy_pools;
 mod credentials;
 mod custom_oauth2;
 mod dashboard;
@@ -115,6 +116,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(client_profiles::document());
     document.merge(credentials::document());
     document.merge(credential_proxies::document());
+    document.merge(proxy_pools::document());
     document.merge(custom_oauth2::document());
     document.merge(debug_traces::document());
     document.merge(payment_webhook::document());
@@ -327,6 +329,13 @@ mod tests {
             "importAdminCredentials",
             "exportAdminCredentials",
             "createAdminCredentialProxy",
+            "createAdminProxyPool",
+            "listAdminProxyPools",
+            "updateAdminProxyPool",
+            "deleteAdminProxyPool",
+            "refreshAdminProxyPool",
+            "checkAdminProxyPool",
+            "bindAdminProxyPool",
             "createAdminGroup",
             "createAdminRoute",
             "createAdminModel",
@@ -660,7 +669,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 586);
+        assert_eq!(schemas.len(), 592);
         assert!(schemas.contains_key("ServiceLevelPoint"));
         assert!(schemas.contains_key("ServiceLevelRow"));
         assert!(schemas.contains_key("ServiceLevelReport"));

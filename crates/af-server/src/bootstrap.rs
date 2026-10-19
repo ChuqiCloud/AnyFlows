@@ -973,7 +973,10 @@ impl Bootstrap<DatabaseReady> {
         let admin_credential_proxy_service = Arc::new(DatabaseAdminCredentialProxyService::new(
             credential_proxy_repository,
             system_secret_cipher.clone(),
-        ));
+        ).with_proxy_pools(Arc::new(af_admin::ProxyPoolService::new(
+            af_db::ProxyPoolRepository::new(self.stage.database.clone(), Duration::from_secs(auth.lookup_timeout_secs())),
+            system_secret_cipher.clone(),
+        ))));
         let smtp_delivery: Arc<dyn EmailDelivery> = Arc::new(SmtpEmailDelivery);
         let email_binding_service = match EmailBindingService::new(
             auth_challenge_repository.clone(),
@@ -1275,6 +1278,9 @@ impl Bootstrap<AuthenticationReady> {
         let (startup_config, max_cached_clients) = build_http_client_parts(&config)?;
         let upstream_clients = HttpClientProvider::new(startup_config.clone(), max_cached_clients)
             .map_err(BootstrapError::HttpClient)?;
+        if let Some(pools) = authentication.admin_credential_proxy_service.proxy_pools() {
+            pools.configure_clients(upstream_clients.clone());
+        }
         let alipay_provider = af_admin::AlipayAccountVerificationProvider::from_config(
             config.account_verification().alipay(),
             upstream_clients.clone(),
@@ -1629,6 +1635,7 @@ impl Bootstrap<RelayReady> {
             ),
         )
         .with_proxy_cipher(self.stage.infrastructure.system_secret_cipher.clone())
+        .with_proxy_pools(self.stage.infrastructure.admin_credential_proxy_service.proxy_pools())
         .with_group_repository(
             AdminGroupRepository::new(
                 self.stage.infrastructure.infrastructure.database.clone(),
@@ -2029,6 +2036,12 @@ impl Bootstrap<BillingReady> {
             channel_index.clone(),
             ChannelIndexRefreshConfig::default(),
         );
+        if let Some(pools) = infrastructure.admin_credential_proxy_service.proxy_pools() {
+            supervisor.spawn("proxy-pool-maintenance", move |task_shutdown| {
+                let pools = Arc::clone(&pools);
+                async move { pools.run_periodic_until(task_shutdown.cancelled()).await; }
+            });
+        }
         register_scheduler_invalidation_tasks(&mut supervisor, scheduler_invalidation);
         register_oauth_loopback_servers(&mut supervisor, oauth_loopback_servers);
         if oauth_connection_coordinator.profile_count() > 0 {

@@ -1,0 +1,173 @@
+//! 可订阅的代理池；健康检测与模型调用使用相同的受控网络边界。
+mod parser;
+
+use std::{future::Future, sync::OnceLock, time::{Duration, Instant}};
+
+use af_account::{PlainSystemSecret, SystemSecretCipher, SystemSecretKind};
+use af_db::{CredentialProxyCreateRecord, CredentialProxyRecord, CredentialProxyScheme, ProxyPoolRecord, ProxyPoolRepository, ProxyPoolRepositoryError};
+use af_domain::{ChannelId, CredentialId, ProxyId};
+use af_httpclient::{HeaderMap, HttpClientProvider, Method, PooledClient, ProxyConfig, RemoteDnsPolicy};
+use futures_util::{StreamExt as _, stream};
+use serde::{Deserialize, Serialize};
+
+use crate::{SessionPrincipal, SessionRole};
+
+#[derive(Clone, Copy, Debug, thiserror::Error, PartialEq, Eq)]
+pub enum ProxyPoolError {
+    #[error("代理池输入无效")] InvalidInput,
+    #[error("需要管理员权限")] Forbidden,
+    #[error("代理池不存在")] NotFound,
+    #[error("代理池冲突、正在操作或仍被引用")] Conflict,
+    #[error("代理池没有通过检测的可用节点")] Unavailable,
+    #[error("代理池操作失败")] Internal,
+}
+impl From<ProxyPoolRepositoryError> for ProxyPoolError {
+    fn from(value:ProxyPoolRepositoryError)->Self {match value {ProxyPoolRepositoryError::NotFound=>Self::NotFound,ProxyPoolRepositoryError::Conflict=>Self::Conflict,ProxyPoolRepositoryError::InvalidInput=>Self::InvalidInput,ProxyPoolRepositoryError::Internal=>Self::Internal}}
+}
+
+/// URL 不实现 Debug，也不通过管理投影回传，防止查询 token 泄露。
+#[derive(Serialize, Deserialize)]
+struct Settings { source_url:Option<String>, default_scheme:String, trust_proxy_dns:bool, probe_url:String }
+pub struct ProxyPoolWrite {
+    pub name:String, pub subscribed:bool, pub source_url:Option<String>, pub interval_secs:i32,
+    pub default_scheme:String, pub trust_proxy_dns:bool, pub probe_url:Option<String>,
+    pub content:Option<String>, pub revision:Option<i64>,
+}
+pub struct ProxyPoolView {
+    pub id:i64, pub name:String, pub subscribed:bool, pub source_host:Option<String>,
+    pub interval_secs:i32, pub default_scheme:String, pub trust_proxy_dns:bool, pub probe_url:String,
+    pub revision:i64, pub last_refresh_at:Option<i64>, pub last_check_at:Option<i64>, pub status:String,
+    pub busy:bool, pub nodes:Vec<ProxyPoolNodeView>, pub channel_ids:Vec<i64>,
+}
+pub struct ProxyPoolNodeView { pub id:i64, pub scheme:String, pub host:String, pub port:u16, pub password_configured:bool, pub healthy:bool, pub latency_ms:Option<i64>, pub checked_at:Option<i64>, pub remark:String, pub enabled:bool }
+pub struct ProxyPoolImportResult {pub pool:ProxyPoolView,pub skipped:usize,pub duplicates:usize}
+
+pub struct ProxyPoolService {repository:ProxyPoolRepository,cipher:SystemSecretCipher,clients:OnceLock<HttpClientProvider>}
+impl ProxyPoolService {
+    #[must_use]
+    pub fn new(repository:ProxyPoolRepository,cipher:SystemSecretCipher)->Self {Self {repository,cipher,clients:OnceLock::new()}}
+    pub fn configure_clients(&self,clients:HttpClientProvider) {let _=self.clients.set(clients);}
+    fn settings(&self,pool:&ProxyPoolRecord)->Result<Settings,ProxyPoolError> {
+        let plaintext=self.cipher.decrypt(SystemSecretKind::ProxyPoolSettings(pool.proxy.proxy_id()),&pool.settings_secret).map_err(|_|ProxyPoolError::Internal)?;
+        serde_json::from_str(plaintext.expose_secret()).map_err(|_|ProxyPoolError::Internal)
+    }
+    fn view(&self,pool:ProxyPoolRecord)->Result<ProxyPoolView,ProxyPoolError> {
+        let settings=self.settings(&pool)?;
+        Ok(ProxyPoolView {id:pool.proxy.proxy_id().get(),name:pool.proxy.name().to_owned(),subscribed:pool.subscribed,source_host:settings.source_url.and_then(|url|url::Url::parse(&url).ok()?.host_str().map(str::to_owned)),interval_secs:pool.interval_secs,default_scheme:settings.default_scheme,trust_proxy_dns:settings.trust_proxy_dns,probe_url:settings.probe_url,revision:pool.revision,last_refresh_at:pool.last_refresh_at,last_check_at:pool.last_check_at,status:pool.status,busy:pool.work_until>now(),nodes:pool.nodes.into_iter().map(|n|ProxyPoolNodeView{id:n.proxy.proxy_id().get(),scheme:n.proxy.scheme().as_str().to_owned(),host:n.proxy.host().to_owned(),port:n.proxy.port(),password_configured:n.proxy.password_configured(),healthy:n.healthy && n.proxy.enabled(),latency_ms:n.latency_ms,checked_at:n.checked_at,remark:n.remark,enabled:n.proxy.enabled()}).collect(),channel_ids:pool.channel_ids})
+    }
+    pub async fn list(&self,principal:SessionPrincipal)->Result<Vec<ProxyPoolView>,ProxyPoolError> {admin(principal)?;self.repository.list().await?.into_iter().map(|p|self.view(p)).collect()}
+    pub async fn save(&self,principal:SessionPrincipal,id:Option<ProxyId>,write:ProxyPoolWrite)->Result<ProxyPoolImportResult,ProxyPoolError> {
+        admin(principal)?;
+        if write.name.is_empty() || write.name.len()>128 || write.name.trim()!=write.name || write.name.chars().any(char::is_control) || !(60..=86400).contains(&write.interval_secs) {return Err(ProxyPoolError::InvalidInput);}
+        let scheme=parse_scheme(&write.default_scheme)?;
+        let old=match id {Some(id)=>Some(self.repository.get(id).await?),None=>None};
+        let previous=old.as_ref().map(|p|self.settings(p)).transpose()?;
+        let source_url=if write.subscribed {write.source_url.filter(|u|!u.is_empty()).or_else(||previous.as_ref().and_then(|s|s.source_url.clone())).ok_or(ProxyPoolError::InvalidInput).map(Some)?}else{None};
+        if let Some(url)=&source_url {validate_url(url,false)?;}
+        let probe_url=write.probe_url.filter(|u|!u.is_empty()).or_else(||previous.as_ref().map(|s|s.probe_url.clone())).unwrap_or_else(||"https://www.gstatic.com/generate_204".to_owned());
+        validate_url(&probe_url,true)?;
+        let parsed=write.content.as_deref().filter(|c|!c.trim().is_empty()).map(|text|parser::parse(text,scheme)).transpose()?;
+        let settings=Settings{source_url,default_scheme:write.default_scheme,trust_proxy_dns:write.trust_proxy_dns,probe_url};
+        let plain=PlainSystemSecret::new(serde_json::to_string(&settings).map_err(|_|ProxyPoolError::Internal)?).map_err(|_|ProxyPoolError::InvalidInput)?;
+        let id=if let Some(pool)=old {
+            if write.revision!=Some(pool.revision) {return Err(ProxyPoolError::Conflict);}
+            let id=pool.proxy.proxy_id();
+            let encrypted=self.cipher.encrypt(SystemSecretKind::ProxyPoolSettings(id),&plain).map_err(|_|ProxyPoolError::Internal)?;
+            self.repository.update(id,pool.revision,write.name,write.subscribed,write.interval_secs,encrypted).await?;id
+        } else {
+            self.repository.create(write.name,write.subscribed,write.interval_secs,|id|self.cipher.encrypt(SystemSecretKind::ProxyPoolSettings(id),&plain).map_err(|_|ProxyPoolRepositoryError::Internal)).await?
+        };
+        let (skipped,duplicates)=parsed.as_ref().map_or((0,0),|p|(p.skipped,p.duplicates));
+        if let Some(parsed)=parsed {let pool=self.repository.get(id).await?;self.store_nodes(&pool,parsed.nodes,settings.trust_proxy_dns).await?;}
+        Ok(ProxyPoolImportResult{pool:self.view(self.repository.get(id).await?)?,skipped,duplicates})
+    }
+    async fn store_nodes(&self,pool:&ProxyPoolRecord,candidates:Vec<parser::Candidate>,trust_dns:bool)->Result<(),ProxyPoolError> {
+        let records=candidates.iter().map(|node|(node.fingerprint.clone(),node.remark.clone(),CredentialProxyCreateRecord::new(format!("pool-{}-{}",pool.proxy.proxy_id().get(),&node.fingerprint[..16]),node.scheme,node.host.clone(),node.port,node.username.clone(),trust_dns,true))).collect();
+        self.repository.replace_nodes(pool.proxy.proxy_id(),pool.revision,records,|index,id|candidates[index].password.as_ref().map(|password|{
+            let plain=PlainSystemSecret::new(password.clone()).map_err(|_|ProxyPoolRepositoryError::InvalidInput)?;
+            self.cipher.encrypt(SystemSecretKind::CredentialProxyPassword(id),&plain).map_err(|_|ProxyPoolRepositoryError::Internal)
+        }).transpose()).await?;Ok(())
+    }
+    pub async fn action(&self,principal:SessionPrincipal,id:ProxyId,refresh:bool)->Result<ProxyPoolView,ProxyPoolError> {admin(principal)?;self.maintain(id,refresh).await?;self.view(self.repository.get(id).await?)}
+    async fn maintain(&self,id:ProxyId,refresh:bool)->Result<(),ProxyPoolError> {
+        let pool=self.repository.get(id).await?;
+        if !self.repository.claim(id,pool.revision,now()).await? {return Err(ProxyPoolError::Conflict);}
+        let result=self.maintain_claimed(&pool,refresh).await;
+        match result {
+            Ok(measurements)=> {let status=if measurements.iter().any(|(_,latency)|latency.is_some()){"ready"}else{"no_healthy_nodes"};self.repository.finish(id,pool.revision,status,measurements).await?;Ok(())},
+            Err(error)=> {self.repository.finish(id,pool.revision,"refresh_failed",Vec::new()).await?;Err(error)}
+        }
+    }
+    async fn maintain_claimed(&self,pool:&ProxyPoolRecord,refresh:bool)->Result<Vec<(ProxyId,Option<i64>)>,ProxyPoolError> {
+        let settings=self.settings(pool)?;
+        if refresh && let Some(source)=&settings.source_url {
+            let clients=self.clients.get().ok_or(ProxyPoolError::Internal)?;
+            let client=clients.get(Some(Duration::from_secs(15))).map_err(|_|ProxyPoolError::Internal)?;
+            let response=client.execute(Method::GET,source,HeaderMap::new(),None).await.map_err(|_|ProxyPoolError::Unavailable)?;
+            if !response.status().is_success() || response.content_length().is_some_and(|len|len>parser::MAX_IMPORT_BYTES as u64) {return Err(ProxyPoolError::Unavailable);}
+            let mut body=Vec::new();let mut chunks=response.into_bytes_stream();
+            while let Some(chunk)=chunks.next_chunk().await {let chunk=chunk.map_err(|_|ProxyPoolError::Unavailable)?;if body.len()+chunk.len()>parser::MAX_IMPORT_BYTES {return Err(ProxyPoolError::Unavailable);}body.extend_from_slice(&chunk);}
+            let text=std::str::from_utf8(&body).map_err(|_|ProxyPoolError::InvalidInput)?;
+            let parsed=parser::parse(text,parse_scheme(&settings.default_scheme)?)?;
+            self.store_nodes(pool,parsed.nodes,settings.trust_proxy_dns).await?;
+        }
+        let current=self.repository.get(pool.proxy.proxy_id()).await?;
+        let measurements=stream::iter(current.nodes.iter().map(|node|async {
+            let start=Instant::now();
+            let healthy=if node.proxy.enabled(){self.probe(&node.proxy,&settings.probe_url,settings.trust_proxy_dns).await}else{false};
+            (node.proxy.proxy_id(),healthy.then(||i64::try_from(start.elapsed().as_millis()).unwrap_or(i64::MAX)))
+        })).buffer_unordered(32).collect::<Vec<_>>().await;
+        Ok(measurements)
+    }
+    fn config(&self,node:&CredentialProxyRecord)->Result<ProxyConfig,ProxyPoolError> {
+        let password=node.password_secret().map(|secret|self.cipher.decrypt(SystemSecretKind::CredentialProxyPassword(node.proxy_id()),secret)).transpose().map_err(|_|ProxyPoolError::Internal)?;
+        ProxyConfig::from_parts(node.scheme().as_str(),node.host(),node.port(),node.username(),password.as_ref().map(af_account::DecryptedSystemSecret::expose_secret)).map_err(|_|ProxyPoolError::Internal)
+    }
+    async fn probe(&self,node:&CredentialProxyRecord,target:&str,trust_dns:bool)->bool {
+        let probe=async {
+            let client=self.clients.get().ok_or(ProxyPoolError::Internal)?.get_with_proxy(self.config(node)?,dns(trust_dns),Some(Duration::from_secs(5))).map_err(|_|ProxyPoolError::Internal)?;
+            let response=client.execute(Method::GET,target,HeaderMap::new(),None).await.map_err(|_|ProxyPoolError::Unavailable)?;
+            if !response.status().is_success() {return Err(ProxyPoolError::Unavailable);}
+            let mut stream=response.into_bytes_stream();let mut size=0;
+            while let Some(chunk)=stream.next_chunk().await {size+=chunk.map_err(|_|ProxyPoolError::Unavailable)?.len();if size>65536 {return Err(ProxyPoolError::Unavailable);}}
+            Ok::<(),ProxyPoolError>(())
+        };
+        tokio::time::timeout(Duration::from_secs(5),probe).await.is_ok_and(|result|result.is_ok())
+    }
+    /// 凭据显式绑定优先；只在无显式绑定时继承渠道/全局池。任何池错误均不能降级直连。
+    pub async fn resolve_client(&self,manual:Option<ProxyId>,channel:ChannelId,credential:CredentialId,clients:&HttpClientProvider,timeout:Option<Duration>)->Result<Option<PooledClient>,ProxyPoolError> {
+        let id=match manual {Some(id)=>id,None=>match self.repository.bound_pool(channel.get()).await?{Some(id)=>id,None=>return Ok(None)}};
+        let pool=match self.repository.get(id).await {Ok(pool)=>pool,Err(ProxyPoolRepositoryError::NotFound) if manual.is_some()=>return Ok(None),Err(error)=>return Err(error.into())};
+        let settings=self.settings(&pool)?;
+        let max_age=i64::from(pool.interval_secs).saturating_mul(2).max(60);
+        let healthy=pool.nodes.iter().filter(|node|node.healthy && node.proxy.enabled() && node.checked_at.is_some_and(|at|now().saturating_sub(at)<=max_age)).collect::<Vec<_>>();
+        if !pool.proxy.enabled() || healthy.is_empty(){return Err(ProxyPoolError::Unavailable);}
+        let index=usize::try_from(credential.get().unsigned_abs()%healthy.len() as u64).map_err(|_|ProxyPoolError::Internal)?;
+        let node=healthy[index];
+        let client=clients.get_with_proxy(self.config(&node.proxy)?,dns(settings.trust_proxy_dns),timeout).map_err(|_|ProxyPoolError::Internal)?;
+        Ok(Some(client))
+    }
+    pub async fn bind(&self,principal:SessionPrincipal,channel_id:i64,pool_id:Option<ProxyId>)->Result<(),ProxyPoolError>{admin(principal)?;self.repository.bind(channel_id,pool_id).await.map_err(Into::into)}
+    pub async fn delete(&self,principal:SessionPrincipal,id:ProxyId)->Result<(),ProxyPoolError>{admin(principal)?;self.repository.delete(id).await.map_err(Into::into)}
+    pub async fn contains(&self,id:ProxyId)->Result<bool,ProxyPoolError>{match self.repository.get(id).await{Ok(_)=>Ok(true),Err(ProxyPoolRepositoryError::NotFound)=>Ok(false),Err(error)=>Err(error.into())}}
+    pub async fn run_periodic_until<F>(&self,shutdown:F) where F:Future<Output=()> {
+        tokio::pin!(shutdown);
+        let mut interval=tokio::time::interval(Duration::from_secs(15));interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select!{biased;()=&mut shutdown=>return,_=interval.tick()=>{}}
+            let Ok(pools)=self.repository.list().await else {continue;};
+            for pool in pools {
+                if !pool.proxy.enabled() || pool.work_until>now() || pool.last_check_at.is_some_and(|at|now()-at<i64::from(pool.interval_secs)){continue;}
+                tokio::select!{biased;()=&mut shutdown=>return,result=self.maintain(pool.proxy.proxy_id(),pool.subscribed)=>{if let Err(error)=result {tracing::warn!(error_kind=?error,pool_id=pool.proxy.proxy_id().get(),"代理池维护未完成");}}}
+            }
+        }
+    }
+}
+fn now()->i64 {time::OffsetDateTime::now_utc().unix_timestamp()}
+fn admin(principal:SessionPrincipal)->Result<(),ProxyPoolError>{if principal.role()==SessionRole::Admin{Ok(())}else{Err(ProxyPoolError::Forbidden)}}
+fn dns(trust:bool)->RemoteDnsPolicy {if trust{RemoteDnsPolicy::TrustProxy}else{RemoteDnsPolicy::Deny}}
+fn parse_scheme(value:&str)->Result<CredentialProxyScheme,ProxyPoolError>{match value{"http"=>Ok(CredentialProxyScheme::Http),"https"=>Ok(CredentialProxyScheme::Https),"socks5"=>Ok(CredentialProxyScheme::Socks5),"socks5h"=>Ok(CredentialProxyScheme::Socks5h),_=>Err(ProxyPoolError::InvalidInput)}}
+fn validate_url(value:&str,probe:bool)->Result<(),ProxyPoolError> {
+    let url=url::Url::parse(value).map_err(|_|ProxyPoolError::InvalidInput)?;
+    if value.len()>2048 || url.host_str().is_none() || !url.username().is_empty() || url.password().is_some() || url.fragment().is_some() || (probe && (url.scheme()!="https" || url.query().is_some())) || (!probe && !matches!(url.scheme(),"http"|"https")) {return Err(ProxyPoolError::InvalidInput);}Ok(())
+}

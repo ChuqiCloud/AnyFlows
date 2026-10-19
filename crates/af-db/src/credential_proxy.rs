@@ -202,13 +202,13 @@ pub enum CredentialProxyDeleteOutcome {
 
 /// 创建代理时使用的非密文目录字段。
 pub struct CredentialProxyCreateRecord {
-    name: String,
-    scheme: CredentialProxyScheme,
-    host: String,
-    port: u16,
-    username: Option<String>,
-    trust_proxy_dns: bool,
-    enabled: bool,
+    pub(super) name: String,
+    pub(super) scheme: CredentialProxyScheme,
+    pub(super) host: String,
+    pub(super) port: u16,
+    pub(super) username: Option<String>,
+    pub(super) trust_proxy_dns: bool,
+    pub(super) enabled: bool,
 }
 
 impl CredentialProxyCreateRecord {
@@ -713,7 +713,7 @@ async fn referenced_channels(
         .collect()
 }
 
-fn record_from_model(
+pub(super) fn record_from_model(
     model: proxies::Model,
 ) -> Result<CredentialProxyRecord, CredentialProxyRepositoryError> {
     let proxy_id = ProxyId::new(model.id)
@@ -798,7 +798,7 @@ fn pending_encrypted_json() -> Result<EncryptedJson, CredentialProxyRepositoryEr
     )
 }
 
-fn encrypted_json(
+pub(super) fn encrypted_json(
     envelope: EncryptedCredentialEnvelope,
 ) -> Result<EncryptedJson, CredentialProxyRepositoryError> {
     EncryptedJson::from_envelope(json!({
@@ -811,7 +811,7 @@ fn encrypted_json(
     .map_err(|_| internal_error(CredentialProxyRepositoryError::Invariant))
 }
 
-fn envelope_from_json(
+pub(super) fn envelope_from_json(
     secret: EncryptedJson,
 ) -> Result<EncryptedCredentialEnvelope, CredentialProxyRepositoryError> {
     let (key_id, nonce, ciphertext) = secret

@@ -16,6 +16,7 @@ mod client_ip;
 mod client_profiles;
 pub use client_profiles::build_client_profile_router;
 mod credential_proxies;
+mod proxy_pools;
 mod credential_usage;
 mod credentials;
 mod custom_oauth2;

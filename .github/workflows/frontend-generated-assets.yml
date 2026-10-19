@@ -30,6 +30,8 @@ on:
       - 'crates/af-http/src/client_profiles.rs'
       - 'crates/af-http/src/openapi/client_profiles.rs'
       - 'crates/af-http/src/openapi/schema.rs'
+      - 'crates/af-http/src/proxy_pools.rs'
+      - 'crates/af-http/src/openapi/proxy_pools.rs'
 
 permissions:
   contents: read
