@@ -510,7 +510,9 @@ impl ScheduledChatService {
                 let credential_id = CredentialId::new(runtime_credential.credential_id())
                     .map_err(|_| AfError::Internal)?;
                 let secret_owner_id = runtime_credential.secret_owner_id();
-                let client = self.client_for_credential(target, runtime_credential)?;
+                let client = self
+                    .client_for_credential(target, runtime_credential)
+                    .await?;
                 let mut context = RelayContext::new(client);
                 if let Some(base_url) = target.base_url() {
                     context = context
@@ -636,7 +638,9 @@ impl ScheduledChatService {
         }
         let adaptor = get_task_adaptor(target.channel_type(), target.protocol())
             .map_err(|_| AfError::Internal)?;
-        let client = self.client_for_credential(&target, runtime_credential)?;
+        let client = self
+            .client_for_credential(&target, runtime_credential)
+            .await?;
         let mut context = RelayContext::new(client);
         if let Some(base_url) = target.base_url() {
             context = context

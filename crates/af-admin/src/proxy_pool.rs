@@ -101,11 +101,13 @@ pub struct ProxyPoolImportResult {
     pub duplicates: usize,
 }
 
+type RuntimeSnapshot = Option<(Instant, Arc<Vec<ProxyPoolRecord>>)>;
+
 pub struct ProxyPoolService {
     repository: ProxyPoolRepository,
     cipher: SystemSecretCipher,
     clients: OnceLock<HttpClientProvider>,
-    runtime: tokio::sync::Mutex<Option<(Instant, Arc<Vec<ProxyPoolRecord>>)>>,
+    runtime: tokio::sync::Mutex<RuntimeSnapshot>,
 }
 impl ProxyPoolService {
     #[must_use]
@@ -526,7 +528,7 @@ impl ProxyPoolService {
             };
             pool
         };
-        let settings = self.settings(&pool)?;
+        let settings = self.settings(pool)?;
         let max_age = i64::from(pool.interval_secs).saturating_mul(2).max(60);
         let healthy = pool
             .nodes
@@ -740,6 +742,24 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(first.identity(), repeated.identity());
+        let expected = clients
+            .get_with_proxy(
+                ProxyConfig::from_parts("http", "192.0.2.1", 8080, Some("alice"), Some("secret"))
+                    .unwrap(),
+                RemoteDnsPolicy::Deny,
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            first.identity(),
+            expected.identity(),
+            "pool selection must preserve proxy authentication"
+        );
+        let manual = service
+            .route_client(Some(node_id), channel, credential, &clients, None)
+            .await
+            .unwrap();
+        assert_eq!(manual.identity(), expected.identity());
         assert!(
             service
                 .resolve_client(Some(node_id), channel, credential, &clients, None)
@@ -809,5 +829,18 @@ mod tests {
             service.list(user).await,
             Err(ProxyPoolError::Forbidden)
         ));
+        service
+            .bind(principal, channel.get(), Some(empty_id))
+            .await
+            .unwrap();
+        channels.delete_channel(channel).await.unwrap();
+        assert!(
+            repository
+                .get(empty_id)
+                .await
+                .unwrap()
+                .channel_ids
+                .is_empty()
+        );
     }
 }

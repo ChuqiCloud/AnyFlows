@@ -327,6 +327,15 @@ impl ProxyPoolRepository {
             }
             let existing = nodes::Entity::find()
                 .filter(nodes::Column::PoolId.eq(id.get()))
+                .filter(
+                    nodes::Column::ProxyId.in_subquery(
+                        proxies::Entity::find()
+                            .select_only()
+                            .column(proxies::Column::Id)
+                            .filter(proxies::Column::DeletedAt.is_null())
+                            .into_query(),
+                    ),
+                )
                 .all(&tx)
                 .await
                 .map_err(internal)?
@@ -660,6 +669,20 @@ mod tests {
             .await
             .unwrap();
         assert!(repo.get(id).await.unwrap().nodes[0].healthy);
+        let proxies =
+            crate::CredentialProxyRepository::new(database.clone(), Duration::from_secs(5))
+                .unwrap();
+        assert_eq!(
+            proxies.delete(node).await.unwrap(),
+            crate::CredentialProxyDeleteOutcome::Deleted
+        );
+        repo.replace_nodes(id, 2, candidate(), |_, _| Ok(None))
+            .await
+            .unwrap();
+        let restored = repo.get(id).await.unwrap();
+        assert_eq!(restored.nodes.len(), 1);
+        assert_ne!(restored.nodes[0].proxy.proxy_id(), node);
+        assert!(!restored.nodes[0].healthy);
         repo.bind(0, None).await.unwrap();
         repo.delete(id).await.unwrap();
         assert!(matches!(

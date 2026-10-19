@@ -143,6 +143,7 @@ dependencies = [
  "getrandom 0.4.3",
  "hmac 0.12.1",
  "jsonwebtoken",
+ "percent-encoding",
  "rsa",
  "rust_decimal",
  "serde",

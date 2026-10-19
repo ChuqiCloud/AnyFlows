@@ -248,11 +248,9 @@ fn candidate(line: &str, default_scheme: CredentialProxyScheme) -> Option<Candid
         return None;
     }
     let decode = |value: &str| -> Option<String> {
-        // form_urlencoded 不适合 URI userinfo：加号必须保持字面值。
-        let encoded = format!("value={}", value.replace('+', "%2B"));
-        let value = url::form_urlencoded::parse(encoded.as_bytes())
-            .next()?
-            .1
+        let value = percent_encoding::percent_decode_str(value)
+            .decode_utf8()
+            .ok()?
             .into_owned();
         (!value.is_empty() && !value.chars().any(char::is_control)).then_some(value)
     };
@@ -368,11 +366,11 @@ mod tests {
     }
     #[test]
     fn extracts_authenticated_uris_comments_ipv6_and_deduplicates() {
-        let result=parse("HTTP 池:http://alice:p%40ss+word@192.0.2.1:3129\nsocks5://192.0.2.2:1080 #hk\nsocks5://192.0.2.2:1080 #another\n[2001:db8::1]:1080\n192.0.2.3:1080:bob:secret\ngarbage",CredentialProxyScheme::Socks5).unwrap();
+        let result=parse("HTTP 池:http://alice:p%40ss+word&tail@192.0.2.1:3129\nsocks5://192.0.2.2:1080 #hk\nsocks5://192.0.2.2:1080 #another\n[2001:db8::1]:1080\n192.0.2.3:1080:bob:secret\ngarbage",CredentialProxyScheme::Socks5).unwrap();
         assert_eq!(result.nodes.len(), 4);
         assert_eq!(result.duplicates, 1);
         assert_eq!(result.skipped, 1);
-        assert_eq!(result.nodes[0].password.as_deref(), Some("p@ss+word"));
+        assert_eq!(result.nodes[0].password.as_deref(), Some("p@ss+word&tail"));
         assert_eq!(result.nodes[1].remark, "hk");
         assert_eq!(result.nodes[2].host, "2001:db8::1");
     }
