@@ -107,6 +107,12 @@ impl ProxyPoolRepository {
         })
         .await
     }
+    pub async fn proxy(&self, id: ProxyId) -> Result<CredentialProxyRecord> {
+        self.run(async {
+            let model = proxies::Entity::find_by_id(id.get()).filter(proxies::Column::Enabled.eq(true)).filter(proxies::Column::DeletedAt.is_null()).one(self.pool.connection()).await.map_err(internal)?.ok_or(ProxyPoolRepositoryError::NotFound)?;
+            record_from_model(model).map_err(internal)
+        }).await
+    }
     async fn load(&self, model: pools::Model) -> Result<ProxyPoolRecord> {
         let proxy = proxies::Entity::find_by_id(model.id)
             .filter(proxies::Column::DeletedAt.is_null())

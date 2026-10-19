@@ -2,7 +2,7 @@ name: Proxy pools
 on:
   pull_request:
     branches: [develop, main]
-    paths: ['crates/af-db/src/proxy_pool*', 'crates/af-admin/src/proxy_pool*', 'crates/af-http/src/proxy_pools.rs', '.github/workflows/proxy-pools.yml']
+    paths: ['crates/af-db/src/proxy_pool*', 'crates/af-server/src/channel_probe.rs', 'crates/af-server/src/model_discovery.rs', 'crates/af-admin/src/proxy_pool*', 'crates/af-http/src/proxy_pools.rs', '.github/workflows/proxy-pools.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -46,6 +46,8 @@ jobs:
           cargo fmt --all
           cargo test -p af-db --lib proxy_pool --locked
           cargo test -p af-admin --lib proxy_pool --locked
+          cargo test -p af-server --lib channel_probe --locked
+          cargo test -p af-server --lib model_discovery --locked
           cargo test -p af-http --lib openapi::tests::document_keeps_stable_operation_and_schema_names --locked
           cargo check -p af-server --locked
           cargo clippy -p af-admin -p af-db -p af-http -p af-server --lib --locked -- -D warnings

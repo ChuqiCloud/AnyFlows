@@ -523,6 +523,15 @@ impl ProxyPoolService {
             .map_err(|_| ProxyPoolError::Internal)?;
         Ok(Some(client))
     }
+    /// 供渠道探活和模型发现复用：专属静态节点与池使用完全相同的路由优先级。
+    pub async fn route_client(&self, manual: Option<ProxyId>, channel: ChannelId, credential: CredentialId, clients: &HttpClientProvider, timeout: Option<Duration>) -> Result<PooledClient, ProxyPoolError> {
+        if let Some(client) = self.resolve_client(manual, channel, credential, clients, timeout).await? { return Ok(client); }
+        if let Some(id) = manual {
+            let proxy = self.repository.proxy(id).await?;
+            return clients.get_with_proxy(self.config(&proxy)?, dns(proxy.trust_proxy_dns()), timeout).map_err(|_| ProxyPoolError::Internal);
+        }
+        clients.get(timeout).map_err(|_| ProxyPoolError::Internal)
+    }
     pub async fn bind(
         &self,
         principal: SessionPrincipal,
