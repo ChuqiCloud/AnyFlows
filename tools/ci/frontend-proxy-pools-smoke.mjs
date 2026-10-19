@@ -97,7 +97,7 @@ try {
   await page.getByRole('button',{name:'新建代理池',exact:true}).click()
   await page.getByLabel('池名称',{exact:true}).fill('CI Proxy Pool')
   await page.getByRole('switch',{name:'启用 URL 订阅'}).click()
-  await page.getByLabel('订阅地址（GET，每行一个代理）').fill('https://subscription.example/proxies.txt')
+  await page.getByPlaceholder('https://example.com/proxies.txt').fill('https://subscription.example/proxies.txt')
   await choose('间隔单位','3600','小时')
   await page.getByLabel('订阅同步 / 测活间隔').fill('0.5')
   const content='http://ci-user:ci-password@192.0.2.1:8080 #hk\ninvalid\nhttp://ci-user:ci-password@192.0.2.1:8080'
@@ -151,7 +151,7 @@ try {
   assert.deepEqual(cleanupExecutions[1].ids,[13])
   await choose('节点状态','all','全部节点')
   await page.getByRole('checkbox',{name:'选择节点 #11'}).check()
-  await page.getByRole('button',{name:'批量删除节点',exact:true}).click()
+  await page.getByRole('region',{name:'代理池',exact:true}).getByRole('button',{name:'批量删除节点',exact:true}).click()
   await page.getByText('可删除 ID: #11',{exact:true}).waitFor()
   await Promise.all([
     page.waitForResponse(response => response.url().endsWith('/api/admin/proxy-pool-cleanup') && response.request().postDataJSON().preview === false),
