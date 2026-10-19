@@ -963,6 +963,23 @@ export type AdminPaymentSettingsRequest = {
     refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;
 };
+export type AdminProxyCleanupRequest = {
+    target: string;
+    mode: string;
+    pool_id?: number | null;
+    revision?: number | null;
+    ids: Array<number>;
+    after_id?: number | null;
+    preview: boolean;
+};
+export type AdminProxyCleanupResult = {
+    eligible_ids: Array<number>;
+    deleted_ids: Array<number>;
+    protected_ids: Array<number>;
+    skipped_ids: Array<number>;
+    more_available: boolean;
+    next_after_id?: number | null;
+};
 export type AdminProxyPool = {
     id: number;
     name: string;
@@ -974,6 +991,7 @@ export type AdminProxyPool = {
     probe_url: string;
     revision: number;
     last_refresh_at?: number | null;
+    last_refresh_attempt_at?: number | null;
     last_check_at?: number | null;
     status: string;
     busy: boolean;
@@ -6418,6 +6436,25 @@ export type BindAdminProxyPoolResponses = {
     204: void;
 };
 export type BindAdminProxyPoolResponse = BindAdminProxyPoolResponses[keyof BindAdminProxyPoolResponses];
+export type CleanupAdminProxyItemsData = {
+    body: AdminProxyCleanupRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/proxy-pool-cleanup';
+};
+export type CleanupAdminProxyItemsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CleanupAdminProxyItemsError = CleanupAdminProxyItemsErrors[keyof CleanupAdminProxyItemsErrors];
+export type CleanupAdminProxyItemsResponses = {
+    200: AdminProxyCleanupResult;
+};
+export type CleanupAdminProxyItemsResponse = CleanupAdminProxyItemsResponses[keyof CleanupAdminProxyItemsResponses];
 export type ListAdminCustomOAuth2ProvidersData = {
     body?: never;
     path?: never;

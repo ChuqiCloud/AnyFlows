@@ -336,6 +336,7 @@ mod tests {
             "refreshAdminProxyPool",
             "checkAdminProxyPool",
             "bindAdminProxyPool",
+            "cleanupAdminProxyItems",
             "createAdminGroup",
             "createAdminRoute",
             "createAdminModel",
@@ -669,7 +670,9 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 592);
+        assert_eq!(schemas.len(), 594);
+        assert!(schemas.contains_key("AdminProxyCleanupRequest"));
+        assert!(schemas.contains_key("AdminProxyCleanupResult"));
         assert!(schemas.contains_key("ServiceLevelPoint"));
         assert!(schemas.contains_key("ServiceLevelRow"));
         assert!(schemas.contains_key("ServiceLevelReport"));

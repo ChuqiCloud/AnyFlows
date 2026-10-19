@@ -186,8 +186,8 @@ impl ProxyPoolRepository {
                     None
                 };
                 // 锁定目录行后再检查引用；与凭据绑定写入共用同一目录保护边界。
-                if !preview {
-                    if proxies::Entity::find_by_id(proxy.id)
+                if !preview
+                    && (proxies::Entity::find_by_id(proxy.id)
                         .filter(proxies::Column::DeletedAt.is_null())
                         .lock_exclusive()
                         .one(&tx)
@@ -201,11 +201,10 @@ impl ProxyPoolRepository {
                             .one(&tx)
                             .await
                             .map_err(internal)?
-                            .is_none()
-                    {
-                        result.skipped_ids.push(proxy.id);
-                        continue;
-                    }
+                            .is_none())
+                {
+                    result.skipped_ids.push(proxy.id);
+                    continue;
                 }
                 let referenced = credentials::Entity::find()
                     .filter(credentials::Column::ProxyId.eq(proxy.id))
