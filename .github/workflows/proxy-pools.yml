@@ -1,7 +1,5 @@
 name: Proxy pools
 on:
-  push:
-    branches: ['feature/dynamic-proxy-pools']
   pull_request:
     branches: [develop, main]
     paths: ['crates/af-db/src/proxy_pool*', 'crates/af-admin/src/proxy_pool*', 'crates/af-http/src/proxy_pools.rs', '.github/workflows/proxy-pools.yml']

@@ -41,11 +41,13 @@ pub(super) fn parse(
             serde_json::from_str(text).map_err(|_| ProxyPoolError::InvalidInput)?;
         json_entries(&value, &mut entries, 0, default_scheme)?;
     } else {
-        entries.extend(
-            text.lines()
-                .filter(|line| !line.trim().is_empty())
-                .map(str::to_owned),
-        );
+        for line in text.lines().filter(|line| !line.trim().is_empty()) {
+            let mut starts = ["http://", "https://", "socks5://", "socks5h://"].into_iter().flat_map(|scheme| line.match_indices(scheme).map(|(index, _)| index)).collect::<Vec<_>>();
+            starts.sort_unstable();
+            if starts.len() > 1 {
+                for (index, start) in starts.iter().enumerate() { entries.push(line[*start..starts.get(index + 1).copied().unwrap_or(line.len())].trim().trim_end_matches([',', ';', '，', '；']).to_owned()); }
+            } else { entries.push(line.to_owned()); }
+        }
     }
     if entries.len() > 4096 {
         return Err(ProxyPoolError::InvalidInput);
@@ -102,8 +104,9 @@ fn json_entries(
                     .get("host")
                     .or_else(|| object.get("ip"))
                     .and_then(serde_json::Value::as_str)
-                    .ok_or(ProxyPoolError::InvalidInput)?;
-                let port = object.get("port").ok_or(ProxyPoolError::InvalidInput)?;
+                    ;
+                let Some(host) = host else { entries.push(String::new()); return Ok(()); };
+                let Some(port) = object.get("port") else { entries.push(String::new()); return Ok(()); };
                 let port = port
                     .as_str()
                     .map(str::to_owned)
@@ -156,7 +159,8 @@ fn candidate(line: &str, default_scheme: CredentialProxyScheme) -> Option<Candid
         .unwrap_or(0);
     let line = &line[start..];
     let mut fields = line.split_whitespace();
-    let raw = fields.next()?.trim_end_matches([',', ';']);
+    let raw = fields.next()?.trim_end_matches([',', ';', '"', '\'']);
+    let raw = raw.split(['，', '；', '。']).next()?;
     let (raw, fragment) = raw
         .split_once('#')
         .map_or((raw, None), |(uri, note)| (uri, Some(note)));
@@ -240,6 +244,7 @@ fn candidate(line: &str, default_scheme: CredentialProxyScheme) -> Option<Candid
         )
     );
     let note = if note.contains("://") || note.contains('@') { String::new() } else { note };
+    let note = decode(&note).unwrap_or(note);
     let remark = note
         .chars()
         .filter(|c| !c.is_control())
