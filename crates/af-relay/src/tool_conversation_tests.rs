@@ -9,7 +9,7 @@ use std::{
 
 use af_adapter::{
     Adaptor, AdaptorResult, AdaptorTarget, Credential, HeaderMap, HttpClientConfig, HttpClientPool,
-    OpenAiAdaptor, OpenCodeAdaptor, ProxyConfig, RelayContext, RemoteDnsPolicy,
+    OpenAiAdaptor, OpenCodeAdaptor, ProxyConfig, RelayContext, RemoteDnsPolicy, UpstreamRequest,
 };
 use af_domain::{ChannelType, OpenCodeEntry, Operation, Protocol, Role};
 use af_protocol::{
@@ -43,6 +43,7 @@ fn cancellation_preserves_completed_state_and_round_count() {
 
 struct FixtureAdaptor(Protocol);
 
+#[async_trait::async_trait]
 impl Adaptor for FixtureAdaptor {
     fn channel_type(&self) -> ChannelType {
         ChannelType::OpenCode
@@ -71,6 +72,17 @@ impl Adaptor for FixtureAdaptor {
     ) -> AdaptorResult<()> {
         OpenCodeAdaptor::new(OpenCodeEntry::InferenceV1, self.0, vec![])?
             .setup_headers(headers, credential, context)
+    }
+
+    async fn finalize_request(
+        &self,
+        request: UpstreamRequest,
+        credential: &Credential,
+        context: &RelayContext,
+    ) -> AdaptorResult<UpstreamRequest> {
+        OpenCodeAdaptor::new(OpenCodeEntry::InferenceV1, self.0, vec![])?
+            .finalize_request(request, credential, context)
+            .await
     }
 }
 
