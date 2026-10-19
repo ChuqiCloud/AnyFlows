@@ -219,6 +219,8 @@ fn candidate(line: &str, default_scheme: CredentialProxyScheme) -> Option<Candid
             url.set_password(Some(parts[3])).ok()?;
             url
         } else {
+            // 裸地址必须明确提供端口，避免把普通备注当作默认 80/443 代理。
+            raw.rsplit_once(':')?.1.parse::<u16>().ok()?;
             Url::parse(&format!("{}://{raw}", default_scheme.as_str())).ok()?
         }
     };
@@ -239,7 +241,7 @@ fn candidate(line: &str, default_scheme: CredentialProxyScheme) -> Option<Candid
     if host.len() > 255 {
         return None;
     }
-    let port = url.port().or_else(|| match scheme {
+    let port = url.port().or(match scheme {
         CredentialProxyScheme::Http => Some(80),
         CredentialProxyScheme::Https => Some(443),
         _ => None,
@@ -376,6 +378,9 @@ mod tests {
     }
     #[test]
     fn supports_json_objects_and_rejects_non_proxy_urls_and_oversized_input() {
+        let mixed = parse("ordinary-note\n192.0.2.1:80", CredentialProxyScheme::Http).unwrap();
+        assert_eq!(mixed.nodes.len(), 1);
+        assert_eq!(mixed.skipped, 1);
         let nodes=parse(r#"{"proxies":["socks5h://192.0.2.1:1080",{"host":"192.0.2.2","port":8080,"scheme":"http","username":"a","password":"b"}]}"#,CredentialProxyScheme::Socks5).unwrap();
         assert_eq!(nodes.nodes.len(), 2);
         let csv = parse(

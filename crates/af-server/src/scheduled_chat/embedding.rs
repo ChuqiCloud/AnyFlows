@@ -66,23 +66,25 @@ impl EmbeddingRoutePlanner for ScheduledChatService {
             let account_loads = self
                 .load_account_concurrency(&route, protocol, request.model())
                 .await?;
-            let plan = self.build_embedding_plan(
-                route,
-                request,
-                request_id,
-                PreparedConcurrencyPlan {
-                    account_loads: account_loads.as_ref(),
-                    credential_health: credential_health.as_ref(),
-                    user_permit,
-                },
-            )?;
+            let plan = self
+                .build_embedding_plan(
+                    route,
+                    request,
+                    request_id,
+                    PreparedConcurrencyPlan {
+                        account_loads: account_loads.as_ref(),
+                        credential_health: credential_health.as_ref(),
+                        user_permit,
+                    },
+                )
+                .await?;
             Ok(Box::new(plan) as Box<dyn PlannedEmbeddingExecution>)
         })
     }
 }
 
 impl ScheduledChatService {
-    fn build_embedding_plan(
+    async fn build_embedding_plan(
         &self,
         route: IndexedRoutePlan,
         request: CanonicalEmbeddingRequest,

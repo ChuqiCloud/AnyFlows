@@ -220,6 +220,7 @@ impl ProxyPoolService {
             Some(id) => Some(self.repository.get(id).await?),
             None => None,
         };
+        let expected_revision = old.as_ref().map_or(1, |pool| pool.revision + 1);
         let previous = old.as_ref().map(|p| self.settings(p)).transpose()?;
         let source_url = if write.subscribed {
             write
@@ -290,6 +291,9 @@ impl ProxyPoolService {
             .map_or((0, 0), |p| (p.skipped, p.duplicates));
         if let Some(parsed) = parsed {
             let pool = self.repository.get(id).await?;
+            if pool.revision != expected_revision {
+                return Err(ProxyPoolError::Conflict);
+            }
             self.store_nodes(&pool, parsed.nodes, settings.trust_proxy_dns)
                 .await?;
         }

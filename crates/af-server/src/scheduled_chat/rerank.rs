@@ -71,23 +71,25 @@ impl RerankRoutePlanner for ScheduledChatService {
                 self.load_account_concurrency(&route, Protocol::CohereRerank, request.model()),
             );
             let account_loads = merge_optional_maps(jina_loads?, cohere_loads?);
-            let plan = self.build_rerank_plan(
-                route,
-                request,
-                request_id,
-                PreparedConcurrencyPlan {
-                    account_loads: account_loads.as_ref(),
-                    credential_health: credential_health.as_ref(),
-                    user_permit,
-                },
-            )?;
+            let plan = self
+                .build_rerank_plan(
+                    route,
+                    request,
+                    request_id,
+                    PreparedConcurrencyPlan {
+                        account_loads: account_loads.as_ref(),
+                        credential_health: credential_health.as_ref(),
+                        user_permit,
+                    },
+                )
+                .await?;
             Ok(Box::new(plan) as Box<dyn PlannedRerankExecution>)
         })
     }
 }
 
 impl ScheduledChatService {
-    fn build_rerank_plan(
+    async fn build_rerank_plan(
         &self,
         route: IndexedRoutePlan,
         request: CanonicalRerankRequest,
