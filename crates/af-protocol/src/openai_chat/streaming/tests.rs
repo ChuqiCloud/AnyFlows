@@ -447,6 +447,103 @@ fn decoder_rejects_metadata_drift_and_delta_before_role() {
 }
 
 #[test]
+fn gateway_placeholder_ids_and_early_usage_keep_one_terminal_and_usage() {
+    let mut content = chunk(json!([{"index":0,"delta":{"content":"OK"}}]), None);
+    content["id"] = json!("chatcmpl-wb");
+    let mut stop = chunk(json!([{"index":0,"delta":{},"finish_reason":"stop"}]), None);
+    stop["id"] = json!("chatcmpl-wb");
+    let stream = [
+        sse(&chunk(
+            json!([{"index":0,"delta":{"role":"assistant"}}]),
+            None,
+        )),
+        sse(&content),
+        sse(&chunk(
+            json!([{"index":0,"delta":{"role":"assistant","content":""}}]),
+            Some(json!({
+                "prompt_tokens":15,"completion_tokens":1,"total_tokens":16,
+                "completion_thinking_tokens":0,"cached_tokens":0,
+                "cache_read_input_tokens":0,"cache_creation_input_tokens":0,
+                "prompt_cache_write_tokens":0,"credit":0
+            })),
+        )),
+        sse(&stop),
+        b"data: [DONE]\n\n".to_vec(),
+    ]
+    .concat();
+    for size in [1, 7, stream.len()] {
+        let mut decoder = OpenAiChatStreamDecoder::new();
+        let mut events = Vec::new();
+        for bytes in stream.chunks(size) {
+            events.extend(decoder.push(bytes).unwrap());
+        }
+        decoder.finish().unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, CanonicalStreamEvent::MessageStart { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, CanonicalStreamEvent::Finish { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, CanonicalStreamEvent::Usage(_)))
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, CanonicalStreamEvent::StreamEnd))
+                .count(),
+            1
+        );
+        assert!(events.iter().any(|e| matches!(e, CanonicalStreamEvent::ContentDelta { delta: ContentDelta::Text(text), .. } if text == "OK")));
+    }
+}
+
+#[test]
+fn placeholder_id_does_not_allow_real_identity_drift_or_missing_finish() {
+    for field in ["id", "model", "created"] {
+        let mut decoder = OpenAiChatStreamDecoder::new();
+        let mut start = chunk(json!([{"index":0,"delta":{"role":"assistant"}}]), None);
+        start["id"] = json!("chatcmpl-wb");
+        decoder.push(&sse(&start)).unwrap();
+        let pinned = chunk(json!([{"index":0,"delta":{"content":"OK"}}]), None);
+        decoder.push(&sse(&pinned)).unwrap();
+        let mut changed = pinned;
+        changed[field] = if field == "created" {
+            json!(1_700_000_001)
+        } else {
+            json!("different")
+        };
+        assert_eq!(
+            decoder.push(&sse(&changed)),
+            Err(ParseStreamError::InvalidSequence)
+        );
+    }
+    let mut decoder = OpenAiChatStreamDecoder::new();
+    decoder
+        .push(&sse(&chunk(
+            json!([{"index":0,"delta":{"role":"assistant","content":"OK"}}]),
+            Some(json!({"prompt_tokens":15,"completion_tokens":1,"total_tokens":16})),
+        )))
+        .unwrap();
+    assert_eq!(
+        decoder.push(b"data: [DONE]\n\n"),
+        Err(ParseStreamError::InvalidSequence)
+    );
+}
+
+#[test]
 fn decoder_rejects_known_unsupported_fields_and_invalid_tool_completion() {
     let mut unsupported = OpenAiChatStreamDecoder::new();
     assert_eq!(

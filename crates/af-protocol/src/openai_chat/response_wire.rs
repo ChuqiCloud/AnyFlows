@@ -32,6 +32,11 @@ pub(super) struct ChatResponseWire {
     /// 当前 Canonical 尚未建模的审核结果。
     #[serde(default)]
     pub(super) moderation: Option<Value>,
+    /// 兼容网关的传输统计，不参与生成结果或令牌结算。
+    #[serde(default, rename = "elapsed_ms")]
+    _elapsed_ms: Option<u64>,
+    #[serde(default, rename = "first_chunk_at")]
+    _first_chunk_at: Option<f64>,
 }
 
 /// 固定为 `chat.completion` 的对象类型。
@@ -168,6 +173,20 @@ pub(super) struct CompletionUsageWire {
     /// DeepSeek 兼容接口返回的缓存未命中输入令牌数。
     #[serde(default)]
     pub(super) prompt_cache_miss_tokens: Option<i64>,
+    #[serde(default)]
+    pub(super) cached_tokens: Option<i64>,
+    #[serde(default)]
+    pub(super) cache_read_input_tokens: Option<i64>,
+    #[serde(default)]
+    pub(super) completion_thinking_tokens: Option<i64>,
+    /// 未区分时长的缓存写入不能安全映射为 Canonical 缓存价格。
+    #[serde(default)]
+    pub(super) cache_creation_input_tokens: Option<i64>,
+    #[serde(default)]
+    pub(super) prompt_cache_write_tokens: Option<i64>,
+    /// 上游账户积分不是 Token 用量，不作为本地计费依据。
+    #[serde(default, rename = "credit")]
+    _credit: Option<serde_json::Number>,
 }
 
 /// OpenAI 输入提示令牌明细。
@@ -183,6 +202,13 @@ pub(super) struct PromptTokensDetailsWire {
     /// 未区分缓存时长的写入令牌数。
     #[serde(default)]
     pub(super) cache_write_tokens: Option<i64>,
+    /// 部分网关在输入明细中补齐这些输出维度的零值。
+    #[serde(default)]
+    pub(super) reasoning_tokens: Option<i64>,
+    #[serde(default)]
+    pub(super) accepted_prediction_tokens: Option<i64>,
+    #[serde(default)]
+    pub(super) rejected_prediction_tokens: Option<i64>,
 }
 
 /// OpenAI 输出补全令牌明细。
@@ -201,4 +227,7 @@ pub(super) struct CompletionTokensDetailsWire {
     /// 未命中预测输出的令牌数。
     #[serde(default)]
     pub(super) rejected_prediction_tokens: Option<i64>,
+    /// 输出缓存尚无可无损转换的 Canonical 维度，仅接受零占位。
+    #[serde(default)]
+    pub(super) cached_tokens: Option<i64>,
 }

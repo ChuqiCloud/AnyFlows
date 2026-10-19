@@ -117,6 +117,7 @@ jobs:
         run: |
           cargo test --quiet -p af-server --lib --all-features --locked scheduled_chat::
           cargo test --quiet -p af-server --lib --all-features --locked billing_chat::
+          cargo test --quiet -p af-server --lib --all-features --locked debug_trace_runtime::
 
       - name: Test shared client session creation
         env:
