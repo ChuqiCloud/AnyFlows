@@ -65,6 +65,7 @@ jobs:
           cargo fmt --all
           cargo test -p af-db -p af-admin -p af-http -p af-server --lib proxy_pool --locked
           cargo test -p af-http --lib document_keeps_stable_operation_and_schema_names --locked
+          cargo test -p af-server --lib bootstrap::tests::current_stages_start_and_shutdown_in_order --locked
           cargo test -p af-server --lib channel_probe --locked
           cargo test -p af-server --lib model_discovery --locked
           cargo check -p af-server --locked
