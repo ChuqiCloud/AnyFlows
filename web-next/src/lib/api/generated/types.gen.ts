@@ -963,6 +963,74 @@ export type AdminPaymentSettingsRequest = {
     refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;
 };
+export type AdminProxyCleanupRequest = {
+    target: string;
+    mode: string;
+    pool_id?: number | null;
+    revision?: number | null;
+    ids: Array<number>;
+    after_id?: number | null;
+    preview: boolean;
+};
+export type AdminProxyCleanupResult = {
+    eligible_ids: Array<number>;
+    deleted_ids: Array<number>;
+    protected_ids: Array<number>;
+    skipped_ids: Array<number>;
+    more_available: boolean;
+    next_after_id?: number | null;
+};
+export type AdminProxyPool = {
+    id: number;
+    name: string;
+    subscribed: boolean;
+    source_host?: string | null;
+    interval_secs: number;
+    default_scheme: string;
+    trust_proxy_dns: boolean;
+    probe_url: string;
+    revision: number;
+    last_refresh_at?: number | null;
+    last_refresh_attempt_at?: number | null;
+    last_check_at?: number | null;
+    status: string;
+    busy: boolean;
+    nodes: Array<AdminProxyPoolNode>;
+    channel_ids: Array<number>;
+};
+export type AdminProxyPoolBindingRequest = {
+    channel_id: number;
+    pool_id: number | null;
+};
+export type AdminProxyPoolImportResult = {
+    pool: AdminProxyPool;
+    skipped: number;
+    duplicates: number;
+};
+export type AdminProxyPoolList = {
+    pools: Array<AdminProxyPool>;
+};
+export type AdminProxyPoolNode = {
+    id: number;
+    scheme: string;
+    host: string;
+    port: number;
+    password_configured: boolean;
+    healthy: boolean;
+    latency_ms?: number | null;
+    checked_at?: number | null;
+    remark: string;
+    enabled: boolean;
+};
+export type AdminProxyPoolWriteRequest = {
+    name: string;
+    subscribed: boolean;
+    interval_secs: number;
+    default_scheme: string;
+    trust_proxy_dns: boolean;
+    probe_url?: string | null;
+    revision?: number | null;
+};
 export type AdminRedemptionAuditBatch = {
     batch_id: string;
     name: string;
@@ -2620,6 +2688,17 @@ export type AdminPaymentSettingsRequestWritable = {
     epay_refund_enabled: boolean;
     refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;
+};
+export type AdminProxyPoolWriteRequestWritable = {
+    name: string;
+    subscribed: boolean;
+    source_url?: string | null;
+    interval_secs: number;
+    default_scheme: string;
+    trust_proxy_dns: boolean;
+    probe_url?: string | null;
+    content?: string | null;
+    revision?: number | null;
 };
 export type AdminVerificationSettingsRequestWritable = {
     expected_version: number;
@@ -6216,6 +6295,166 @@ export type UpdateAdminCredentialProxyResponses = {
     200: AdminCredentialProxy;
 };
 export type UpdateAdminCredentialProxyResponse = UpdateAdminCredentialProxyResponses[keyof UpdateAdminCredentialProxyResponses];
+export type ListAdminProxyPoolsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/proxy-pools';
+};
+export type ListAdminProxyPoolsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminProxyPoolsError = ListAdminProxyPoolsErrors[keyof ListAdminProxyPoolsErrors];
+export type ListAdminProxyPoolsResponses = {
+    200: AdminProxyPoolList;
+};
+export type ListAdminProxyPoolsResponse = ListAdminProxyPoolsResponses[keyof ListAdminProxyPoolsResponses];
+export type CreateAdminProxyPoolData = {
+    body: AdminProxyPoolWriteRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/api/admin/proxy-pools';
+};
+export type CreateAdminProxyPoolErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateAdminProxyPoolError = CreateAdminProxyPoolErrors[keyof CreateAdminProxyPoolErrors];
+export type CreateAdminProxyPoolResponses = {
+    201: AdminProxyPoolImportResult;
+};
+export type CreateAdminProxyPoolResponse = CreateAdminProxyPoolResponses[keyof CreateAdminProxyPoolResponses];
+export type DeleteAdminProxyPoolData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/proxy-pools/{id}';
+};
+export type DeleteAdminProxyPoolErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type DeleteAdminProxyPoolError = DeleteAdminProxyPoolErrors[keyof DeleteAdminProxyPoolErrors];
+export type DeleteAdminProxyPoolResponses = {
+    204: void;
+};
+export type DeleteAdminProxyPoolResponse = DeleteAdminProxyPoolResponses[keyof DeleteAdminProxyPoolResponses];
+export type UpdateAdminProxyPoolData = {
+    body: AdminProxyPoolWriteRequestWritable;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/proxy-pools/{id}';
+};
+export type UpdateAdminProxyPoolErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminProxyPoolError = UpdateAdminProxyPoolErrors[keyof UpdateAdminProxyPoolErrors];
+export type UpdateAdminProxyPoolResponses = {
+    200: AdminProxyPoolImportResult;
+};
+export type UpdateAdminProxyPoolResponse = UpdateAdminProxyPoolResponses[keyof UpdateAdminProxyPoolResponses];
+export type RefreshAdminProxyPoolData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/proxy-pools/{id}/refresh';
+};
+export type RefreshAdminProxyPoolErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type RefreshAdminProxyPoolError = RefreshAdminProxyPoolErrors[keyof RefreshAdminProxyPoolErrors];
+export type RefreshAdminProxyPoolResponses = {
+    200: AdminProxyPool;
+};
+export type RefreshAdminProxyPoolResponse = RefreshAdminProxyPoolResponses[keyof RefreshAdminProxyPoolResponses];
+export type CheckAdminProxyPoolData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/proxy-pools/{id}/check';
+};
+export type CheckAdminProxyPoolErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CheckAdminProxyPoolError = CheckAdminProxyPoolErrors[keyof CheckAdminProxyPoolErrors];
+export type CheckAdminProxyPoolResponses = {
+    200: AdminProxyPool;
+};
+export type CheckAdminProxyPoolResponse = CheckAdminProxyPoolResponses[keyof CheckAdminProxyPoolResponses];
+export type BindAdminProxyPoolData = {
+    body: AdminProxyPoolBindingRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/proxy-pool-bindings';
+};
+export type BindAdminProxyPoolErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type BindAdminProxyPoolError = BindAdminProxyPoolErrors[keyof BindAdminProxyPoolErrors];
+export type BindAdminProxyPoolResponses = {
+    204: void;
+};
+export type BindAdminProxyPoolResponse = BindAdminProxyPoolResponses[keyof BindAdminProxyPoolResponses];
+export type CleanupAdminProxyItemsData = {
+    body: AdminProxyCleanupRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/proxy-pool-cleanup';
+};
+export type CleanupAdminProxyItemsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CleanupAdminProxyItemsError = CleanupAdminProxyItemsErrors[keyof CleanupAdminProxyItemsErrors];
+export type CleanupAdminProxyItemsResponses = {
+    200: AdminProxyCleanupResult;
+};
+export type CleanupAdminProxyItemsResponse = CleanupAdminProxyItemsResponses[keyof CleanupAdminProxyItemsResponses];
 export type ListAdminCustomOAuth2ProvidersData = {
     body?: never;
     path?: never;

@@ -245,6 +245,59 @@ async fn create_channel(repository: &AdminChannelRepository) -> Result<ChannelId
         .channel_id())
 }
 
+#[tokio::test]
+async fn proxy_pool_cleanup_rechecks_credential_bindings_after_preview()
+-> Result<(), Box<dyn Error>> {
+    let database = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let proxies = CredentialProxyRepository::new(database.clone(), Duration::from_secs(5))?;
+    let pools = crate::ProxyPoolRepository::new(database.clone(), Duration::from_secs(5));
+    let channels = AdminChannelRepository::new(database.clone(), Duration::from_secs(5))?;
+    let proxy = proxies
+        .create(
+            CredentialProxyCreateRecord::new(
+                "cleanup-reference".to_owned(),
+                CredentialProxyScheme::Http,
+                "192.0.2.1".to_owned(),
+                8080,
+                None,
+                false,
+                true,
+            ),
+            |_| Ok(None),
+        )
+        .await?;
+    let request = |preview| crate::ProxyCleanupRequest {
+        target: crate::ProxyCleanupTarget::Nodes,
+        mode: crate::ProxyCleanupMode::Selected,
+        pool_id: None,
+        revision: None,
+        ids: vec![proxy.proxy_id()],
+        after_id: None,
+        preview,
+    };
+    assert_eq!(
+        pools.cleanup(request(true)).await?.eligible_ids,
+        vec![proxy.proxy_id().get()]
+    );
+    let channel = create_channel(&channels).await?;
+    let credential = create_credential(&channels, channel, Some(proxy.proxy_id())).await?;
+    let result = pools.cleanup(request(false)).await?;
+    assert_eq!(result.protected_ids, vec![proxy.proxy_id().get()]);
+    assert!(result.deleted_ids.is_empty());
+    assert!(pools.proxy(proxy.proxy_id()).await.is_ok());
+    channels.delete_credential(channel, credential).await?;
+    assert_eq!(
+        pools.cleanup(request(false)).await?.deleted_ids,
+        vec![proxy.proxy_id().get()]
+    );
+    database.close().await?;
+    Ok(())
+}
+
 async fn create_credential(
     repository: &AdminChannelRepository,
     channel_id: ChannelId,

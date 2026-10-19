@@ -42,6 +42,7 @@ pub(crate) struct DatabaseChannelProbe {
     compact_states: CompactProbeStateRepository,
     decryptor: CredentialDecryptor,
     clients: HttpClientProvider,
+    proxy_pools: Option<std::sync::Arc<af_admin::ProxyPoolService>>,
     default_timeout: Duration,
 }
 
@@ -60,8 +61,17 @@ impl DatabaseChannelProbe {
             compact_states: CompactProbeStateRepository::new(database),
             decryptor,
             clients,
+            proxy_pools: None,
             default_timeout,
         }
+    }
+
+    pub(crate) fn with_proxy_pools(
+        mut self,
+        pools: Option<std::sync::Arc<af_admin::ProxyPoolService>>,
+    ) -> Self {
+        self.proxy_pools = pools;
+        self
     }
 
     async fn check_inner(&self, channel_id: ChannelId) -> Result<(), ProbeFailure> {
@@ -71,7 +81,7 @@ impl DatabaseChannelProbe {
             .await
             .map_err(|_| ProbeFailure::TargetRead)?
             .ok_or(ProbeFailure::TargetUnavailable)?;
-        if target.proxy_required() {
+        if target.proxy_required() && self.proxy_pools.is_none() {
             // 探活链尚未装配专属代理快照，绑定代理的凭据必须保持失败关闭。
             return Err(ProbeFailure::RequiredProxyUnavailable);
         }
@@ -94,10 +104,23 @@ impl DatabaseChannelProbe {
         let timeout = target
             .timeout()
             .map_or(self.default_timeout, af_domain::ChannelTimeout::duration);
-        let client = self
-            .clients
-            .get(Some(timeout))
-            .map_err(|_| ProbeFailure::ContextBuild)?;
+        let client = if let Some(pools) = &self.proxy_pools {
+            pools
+                .route_client(
+                    target.proxy_id(),
+                    target.channel_id(),
+                    af_domain::CredentialId::new(target.credential_id())
+                        .map_err(|_| ProbeFailure::RequiredProxyUnavailable)?,
+                    &self.clients,
+                    Some(timeout),
+                )
+                .await
+                .map_err(|_| ProbeFailure::RequiredProxyUnavailable)?
+        } else {
+            self.clients
+                .get(Some(timeout))
+                .map_err(|_| ProbeFailure::ContextBuild)?
+        };
         let mut context = RelayContext::new(client)
             .with_credential_scope(target.credential_id())
             .map_err(|_| ProbeFailure::ContextBuild)?

@@ -31,6 +31,7 @@ mod payment_webhook;
 mod platform_audit;
 mod playground_conversations;
 mod playground_shares;
+mod proxy_pools;
 mod redemptions;
 mod refund_webhook;
 mod refunds;
@@ -115,6 +116,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(client_profiles::document());
     document.merge(credentials::document());
     document.merge(credential_proxies::document());
+    document.merge(proxy_pools::document());
     document.merge(custom_oauth2::document());
     document.merge(debug_traces::document());
     document.merge(payment_webhook::document());
@@ -327,6 +329,14 @@ mod tests {
             "importAdminCredentials",
             "exportAdminCredentials",
             "createAdminCredentialProxy",
+            "createAdminProxyPool",
+            "listAdminProxyPools",
+            "updateAdminProxyPool",
+            "deleteAdminProxyPool",
+            "refreshAdminProxyPool",
+            "checkAdminProxyPool",
+            "bindAdminProxyPool",
+            "cleanupAdminProxyItems",
             "createAdminGroup",
             "createAdminRoute",
             "createAdminModel",
@@ -660,7 +670,9 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 586);
+        assert_eq!(schemas.len(), 594);
+        assert!(schemas.contains_key("AdminProxyCleanupRequest"));
+        assert!(schemas.contains_key("AdminProxyCleanupResult"));
         assert!(schemas.contains_key("ServiceLevelPoint"));
         assert!(schemas.contains_key("ServiceLevelRow"));
         assert!(schemas.contains_key("ServiceLevelReport"));

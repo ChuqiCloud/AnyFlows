@@ -140,6 +140,7 @@ pub(crate) struct ScheduledChatService {
     decryptor: CredentialDecryptor,
     clients: HttpClientProvider,
     proxy_cipher: Option<SystemSecretCipher>,
+    proxy_pools: Option<Arc<af_admin::ProxyPoolService>>,
     credential_states: CredentialStateRepository,
     responses_websocket: std::sync::Arc<ResponsesWebSocketRuntime>,
     sticky_sessions: Option<Arc<dyn StickySessionStore>>,
@@ -169,6 +170,7 @@ impl ScheduledChatService {
             decryptor,
             clients,
             proxy_cipher: None,
+            proxy_pools: None,
             credential_states,
             responses_websocket: std::sync::Arc::new(ResponsesWebSocketRuntime::default()),
             sticky_sessions: None,
@@ -188,6 +190,14 @@ impl ScheduledChatService {
     /// 注入专属代理密码解密器；未注入时任何代理绑定都失败关闭。
     pub(crate) fn with_proxy_cipher(mut self, cipher: SystemSecretCipher) -> Self {
         self.proxy_cipher = Some(cipher);
+        self
+    }
+
+    pub(crate) fn with_proxy_pools(
+        mut self,
+        pools: Option<Arc<af_admin::ProxyPoolService>>,
+    ) -> Self {
+        self.proxy_pools = pools;
         self
     }
 
@@ -420,7 +430,9 @@ impl ScheduledChatService {
                     .map_err(|_| AfError::Internal)?;
                 let secret_owner_id = runtime_credential.secret_owner_id();
                 let concurrency_owner_id = runtime_credential.concurrency_owner_id();
-                let client = self.client_for_credential(target, runtime_credential)?;
+                let client = self
+                    .client_for_credential(target, runtime_credential)
+                    .await?;
                 let responses_websocket_pool = if target.responses_websocket_enabled()
                     && responses_websocket_session.is_some()
                 {
@@ -559,12 +571,33 @@ impl ScheduledChatService {
     }
 
     /// 为单条凭据选择全局出口或强制专属代理，任何专属代理异常都不允许回退。
-    fn client_for_credential(
+    async fn client_for_credential(
         &self,
         target: &af_db::SchedulerRuntimeTargetRecord,
         credential: &af_db::SchedulerRuntimeCredentialRecord,
     ) -> Result<af_httpclient::PooledClient, AfError> {
         let timeout = target.timeout().map(af_domain::ChannelTimeout::duration);
+        if let Some(pools) = &self.proxy_pools {
+            let manual = credential
+                .proxy()
+                .map(af_db::SchedulerRuntimeProxyRecord::proxy_id);
+            if credential.proxy_required() && manual.is_none() {
+                return Err(AfError::Internal);
+            }
+            if let Some(client) = pools
+                .resolve_client(
+                    manual,
+                    target.channel_id(),
+                    credential.routing_credential_id(),
+                    &self.clients,
+                    timeout,
+                )
+                .await
+                .map_err(|_| AfError::Internal)?
+            {
+                return Ok(client);
+            }
+        }
         if !credential.proxy_required() {
             return self.clients.get(timeout).map_err(|_| AfError::Internal);
         }
