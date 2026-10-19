@@ -174,7 +174,11 @@ impl OpenAiChatStreamDecoder {
         )?;
         match &self.identity {
             None => self.identity = Some(identity),
-            Some(expected) if expected == &identity => {}
+            Some(expected) if expected.compatible_with(&identity) => {
+                if expected.id == "chatcmpl-wb" && identity.id != "chatcmpl-wb" {
+                    self.identity = Some(identity);
+                }
+            }
             Some(_) => return Err(ParseStreamError::InvalidSequence),
         }
 
@@ -194,7 +198,7 @@ impl OpenAiChatStreamDecoder {
         }
 
         if let Some(usage) = convert_usage(usage).map_err(map_response_error)? {
-            if self.choices.is_empty() || !self.all_choices_finished() {
+            if self.choices.is_empty() {
                 return Err(ParseStreamError::InvalidSequence);
             }
             // 结束分片可能携带临时统计，后续独立 usage 分片才是最终快照。
@@ -291,6 +295,15 @@ struct StreamIdentity {
 }
 
 impl StreamIdentity {
+    // 已观察到的中继占位 ID 可与真实 ID 交替出现；其余身份字段仍须一致。
+    fn compatible_with(&self, other: &Self) -> bool {
+        (self.id == other.id || self.id == "chatcmpl-wb" || other.id == "chatcmpl-wb")
+            && self.model == other.model
+            && self.created == other.created
+            && self.service_tier == other.service_tier
+            && self.system_fingerprint == other.system_fingerprint
+    }
+
     fn new(
         id: String,
         model: String,

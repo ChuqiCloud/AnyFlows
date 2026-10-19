@@ -16,6 +16,108 @@ const PROTOCOLS: [Protocol; 4] = [
     Protocol::Gemini,
 ];
 
+#[test]
+fn gateway_chat_stream_converts_to_all_four_full_and_streaming_responses() {
+    let frames = [
+        json!({"id":"real-response","object":"chat.completion.chunk","created":1_700_000_000,"model":"upstream-model","choices":[{"index":0,"delta":{"role":"assistant"}}]}),
+        json!({"id":"chatcmpl-wb","object":"chat.completion.chunk","created":1_700_000_000,"model":"upstream-model","choices":[{"index":0,"delta":{"content":"OK"}}]}),
+        json!({"id":"real-response","object":"chat.completion.chunk","created":1_700_000_000,"model":"upstream-model","choices":[{"index":0,"delta":{}}],"usage":{"prompt_tokens":41,"completion_tokens":1,"total_tokens":42,"cache_read_input_tokens":0,"completion_thinking_tokens":0}}),
+        json!({"id":"chatcmpl-wb","object":"chat.completion.chunk","created":1_700_000_000,"model":"upstream-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}),
+    ];
+    let mut raw = frames
+        .iter()
+        .map(|frame| format!("data: {frame}\n\n"))
+        .collect::<String>();
+    raw.push_str("data: [DONE]\n\n");
+    let mut decoder = ConversationDecoder::new(Protocol::OpenAiChat).unwrap();
+    let mut events = Vec::new();
+    for bytes in raw.as_bytes().chunks(7) {
+        events.extend(decoder.push(bytes).unwrap());
+    }
+    events.extend(decoder.finish().unwrap());
+    for downstream in PROTOCOLS {
+        let mut aggregate = crate::conversation_aggregate::Aggregate::default();
+        aggregate.push(events.clone()).unwrap();
+        let canonical = aggregate.finish().unwrap();
+        assert_eq!(canonical.usage.unwrap(), usage());
+        let body = build_response(
+            downstream,
+            canonical,
+            usage(),
+            "client",
+            "public-model",
+            1_700_000_000,
+        )
+        .unwrap();
+        let full = super::parse_response(downstream, &body).unwrap();
+        assert!(
+            matches!(full.choices[0].message.content.as_slice(), [ContentBlock::Text(text)] if text == "OK")
+        );
+        let expected_usage = if downstream == Protocol::Anthropic {
+            Usage::new(
+                usage().input_tokens(),
+                usage().output_tokens(),
+                *usage().details(),
+                UsageSource::Upstream,
+                UsageSemantics::CacheSeparated,
+            )
+            .unwrap()
+        } else {
+            usage()
+        };
+        assert_eq!(full.usage.unwrap(), expected_usage);
+        let request = request(downstream, true).into_canonical();
+        let mut encoder = ChatStreamEncoder::new(
+            downstream,
+            "client",
+            "public-model",
+            1_700_000_000,
+            &request,
+            true,
+        )
+        .unwrap();
+        let mut output = Vec::new();
+        for event in events.clone() {
+            if matches!(event, CanonicalStreamEvent::StreamEnd) {
+                output.extend(encoder.finish(Ok(usage()), true).unwrap());
+            } else {
+                output.extend(encoder.encode_event(event).unwrap());
+            }
+        }
+        let mut decoder = ConversationDecoder::new(downstream).unwrap();
+        let mut decoded = decoder.push(&output).unwrap();
+        decoded.extend(decoder.finish().unwrap());
+        assert_eq!(
+            decoded
+                .iter()
+                .filter(|e| matches!(e, CanonicalStreamEvent::StreamEnd))
+                .count(),
+            1
+        );
+        assert!(decoded.iter().any(|e| matches!(e, CanonicalStreamEvent::ContentDelta { delta: ContentDelta::Text(text), .. } if text == "OK")));
+        let decoded_usage = decoded
+            .iter()
+            .filter_map(|event| match event {
+                CanonicalStreamEvent::Usage(usage) => Some(*usage),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(decoded_usage.len(), 1);
+        if downstream == Protocol::Anthropic {
+            // Messages 跨协议流沿用开流时的本地估算；原始上游用量已在聚合结果中校验。
+            assert!(decoded_usage[0].input_tokens().get() > 0);
+            assert_eq!(
+                decoded_usage[0].output_tokens(),
+                expected_usage.output_tokens()
+            );
+            assert_eq!(decoded_usage[0].details(), expected_usage.details());
+            assert_eq!(decoded_usage[0].semantics(), UsageSemantics::CacheSeparated);
+        } else {
+            assert_eq!(decoded_usage[0], expected_usage);
+        }
+    }
+}
+
 fn request(protocol: Protocol, stream: bool) -> CanonicalRequestEnvelope {
     let mut request = CanonicalRequest::new(
         if protocol == Protocol::OpenAiResponses {

@@ -117,6 +117,7 @@ fn convert_response(wire: ChatResponseWire) -> Result<CanonicalResponse, ParseRe
         system_fingerprint,
         usage,
         moderation,
+        ..
     } = wire;
     let _ = request_id;
     if moderation.is_some() {
@@ -398,6 +399,15 @@ pub(super) fn convert_usage(
         }
         _ => return Err(ParseResponseError::InvalidValue),
     }
+    cache_read = merge_usage_alias(cache_read, usage.cached_tokens)?;
+    cache_read = merge_usage_alias(cache_read, usage.cache_read_input_tokens)?;
+    if let Some(miss) = usage.prompt_cache_miss_tokens
+        && cache_read.get().checked_add(miss) != Some(prompt_tokens.get())
+    {
+        return Err(ParseResponseError::InvalidValue);
+    }
+    require_zero_usage(usage.cache_creation_input_tokens)?;
+    require_zero_usage(usage.prompt_cache_write_tokens)?;
     let (mut reasoning, audio_output) =
         convert_completion_details(usage.completion_tokens_details)?;
     if let Some(value) = usage.reasoning_tokens {
@@ -407,6 +417,7 @@ pub(super) fn convert_usage(
         }
         reasoning = value;
     }
+    reasoning = merge_usage_alias(reasoning, usage.completion_thinking_tokens)?;
     let details = UsageDetails::new(
         cache_read,
         TokenCount::ZERO,
@@ -438,6 +449,9 @@ fn convert_prompt_details(
     if cache_write != TokenCount::ZERO {
         return Err(ParseResponseError::UnsupportedFeature);
     }
+    require_zero_usage(details.reasoning_tokens)?;
+    require_zero_usage(details.accepted_prediction_tokens)?;
+    require_zero_usage(details.rejected_prediction_tokens)?;
     Ok((cache_read, audio_input))
 }
 
@@ -451,6 +465,7 @@ fn convert_completion_details(
     let audio_output = optional_token(details.audio_tokens)?;
     let accepted = optional_token(details.accepted_prediction_tokens)?;
     let rejected = optional_token(details.rejected_prediction_tokens)?;
+    require_zero_usage(details.cached_tokens)?;
     if accepted != TokenCount::ZERO || rejected != TokenCount::ZERO {
         return Err(ParseResponseError::UnsupportedFeature);
     }
@@ -459,6 +474,27 @@ fn convert_completion_details(
 
 fn token_count(value: i64) -> Result<TokenCount, ParseResponseError> {
     TokenCount::new(value).map_err(|_| ParseResponseError::InvalidValue)
+}
+
+fn merge_usage_alias(
+    current: TokenCount,
+    alias: Option<i64>,
+) -> Result<TokenCount, ParseResponseError> {
+    let Some(alias) = alias else {
+        return Ok(current);
+    };
+    let alias = token_count(alias)?;
+    if current != TokenCount::ZERO && current != alias {
+        return Err(ParseResponseError::InvalidValue);
+    }
+    Ok(alias)
+}
+
+fn require_zero_usage(value: Option<i64>) -> Result<(), ParseResponseError> {
+    if optional_token(value)? != TokenCount::ZERO {
+        return Err(ParseResponseError::UnsupportedFeature);
+    }
+    Ok(())
 }
 
 fn optional_token(value: Option<i64>) -> Result<TokenCount, ParseResponseError> {

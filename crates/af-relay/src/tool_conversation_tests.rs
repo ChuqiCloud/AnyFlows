@@ -9,7 +9,7 @@ use std::{
 
 use af_adapter::{
     Adaptor, AdaptorResult, AdaptorTarget, Credential, HeaderMap, HttpClientConfig, HttpClientPool,
-    OpenAiAdaptor, OpenCodeAdaptor, ProxyConfig, RelayContext, RemoteDnsPolicy,
+    OpenAiAdaptor, OpenCodeAdaptor, ProxyConfig, RelayContext, RemoteDnsPolicy, UpstreamRequest,
 };
 use af_domain::{ChannelType, OpenCodeEntry, Operation, Protocol, Role};
 use af_protocol::{
@@ -43,6 +43,7 @@ fn cancellation_preserves_completed_state_and_round_count() {
 
 struct FixtureAdaptor(Protocol);
 
+#[async_trait::async_trait]
 impl Adaptor for FixtureAdaptor {
     fn channel_type(&self) -> ChannelType {
         ChannelType::OpenCode
@@ -71,6 +72,17 @@ impl Adaptor for FixtureAdaptor {
     ) -> AdaptorResult<()> {
         OpenCodeAdaptor::new(OpenCodeEntry::InferenceV1, self.0, vec![])?
             .setup_headers(headers, credential, context)
+    }
+
+    async fn finalize_request(
+        &self,
+        request: UpstreamRequest,
+        credential: &Credential,
+        context: &RelayContext,
+    ) -> AdaptorResult<UpstreamRequest> {
+        OpenCodeAdaptor::new(OpenCodeEntry::InferenceV1, self.0, vec![])?
+            .finalize_request(request, credential, context)
+            .await
     }
 }
 
@@ -275,6 +287,77 @@ async fn fixture(protocol: Protocol, repeat: bool) -> MockServer {
         .mount(&server)
         .await;
     server
+}
+
+#[tokio::test]
+async fn frozen_client_profile_overrides_adapter_identity_on_both_rounds() {
+    for public in [false, true] {
+        let server = fixture(Protocol::OpenAiChat, false).await;
+        let gate = Arc::new(Permits::default());
+        let key = if public {
+            "opencode-public"
+        } else {
+            "opencode"
+        };
+        let mut profile = af_domain::built_in_client_profiles()
+            .into_iter()
+            .find(|profile| profile.binding.key == key)
+            .unwrap();
+        profile.binding.key = "custom-opencode-check".to_owned();
+        profile.binding.revision = 7;
+        profile
+            .definition
+            .identity_headers
+            .insert("user-agent".to_owned(), "profile-check/7.0".to_owned());
+        profile
+            .definition
+            .identity_headers
+            .insert("x-opencode-client".to_owned(), "profile-check".to_owned());
+        let credential = if public {
+            Credential::public()
+        } else {
+            Credential::api_key("test-api-key").unwrap()
+        };
+        let machine = RelayStateMachine::new(vec![
+            candidate(&server, Protocol::OpenAiChat, gate, credential).with_client_profile(profile),
+        ])
+        .unwrap()
+        .with_diagnostic_policy(crate::RelayDiagnosticPolicy::new(true, false, 4096).unwrap());
+        let (result, handle) = relay_tool_conversation(
+            &machine,
+            plan(false, Protocol::OpenAiChat),
+            Protocol::OpenAiChat,
+            "profile-headers",
+        )
+        .await;
+        assert!(result.is_ok());
+        let snapshot = handle.snapshot();
+        assert_eq!(snapshot.state, ToolConversationState::Completed);
+        for diagnostic in [
+            snapshot.report.successful_diagnostic().unwrap(),
+            snapshot.continuation_diagnostic.as_ref().unwrap(),
+        ] {
+            let headers = diagnostic.request_headers_json().unwrap();
+            assert!(headers.contains("x-opencode-client"));
+            assert!(headers.contains("profile-check"));
+            assert!(!headers.contains("profile-check/7.0"));
+            assert!(!headers.contains("test-api-key"));
+        }
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 2);
+        for request in requests {
+            assert_eq!(request.headers["user-agent"], "profile-check/7.0");
+            assert_eq!(request.headers["x-opencode-client"], "profile-check");
+            assert_eq!(
+                request.headers["authorization"],
+                if public {
+                    "Bearer public"
+                } else {
+                    "Bearer test-api-key"
+                }
+            );
+        }
+    }
 }
 
 #[tokio::test]
