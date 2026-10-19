@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: read
+  issues: read
+  pull-requests: read
 
 concurrency:
   group: public-core-export-${{ github.ref }}
@@ -55,6 +57,7 @@ jobs:
           git -C gitea-source checkout -q --detach FETCH_HEAD
 
       - name: Read source PR context
+        id: source
         shell: bash
         env:
           GITEA_API_TOKEN: ${{ github.token }}
@@ -69,6 +72,7 @@ jobs:
           fi
 
           if [ -z "$pr_number" ]; then
+            echo 'source_pr_number=' >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -87,8 +91,10 @@ jobs:
                 number: .number, mergeCommitSha: .merge_commit_sha}' \
               <<<"$pr" > "$metadata.tmp"; then
             mv "$metadata.tmp" "$metadata"
+            echo "source_pr_number=$pr_number" >> "$GITHUB_OUTPUT"
           else
             rm -f "$metadata.tmp"
+            echo 'source_pr_number=' >> "$GITHUB_OUTPUT"
             echo "::warning::Source Gitea PR #$pr_number metadata is unavailable; using the default sync title and description."
           fi
 
@@ -241,3 +247,16 @@ jobs:
               --data "$payload" "$api/pulls")"
             number="$(jq -r '.number' <<<"$created")"
           fi
+
+      - name: Mirror Gitea PR discussion to GitHub
+        if: ${{ steps.source.outputs.source_pr_number != '' }}
+        shell: bash
+        env:
+          GITEA_API_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ env.PUBLIC_REPO_SYNC_TOKEN }}
+          GITHUB_API_URL: https://api.github.com
+        run: |
+          set -euo pipefail
+          python3 gitea-source/tools/repository/sync-gitea-pr-comments.py \
+            --pr "${{ steps.source.outputs.source_pr_number }}" \
+            --sync-metadata

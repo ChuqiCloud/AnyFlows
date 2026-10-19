@@ -1,0 +1,87 @@
+name: Mirror Gitea PR discussion
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, closed]
+    branches: [develop]
+  issue_comment:
+    types: [created, edited, deleted]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Gitea PR 编号
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: gitea-pr-discussion-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    if: >-
+      github.repository == 'acmecloud/AnyFlows' &&
+      (github.event_name == 'pull_request' ||
+       (github.event_name == 'issue_comment' && github.event.issue.pull_request != null) ||
+       github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GITEA_API_BASE: ${{ github.server_url }}/api/v1
+      GITEA_REPOSITORY: acmecloud/AnyFlows
+      GITEA_API_TOKEN: ${{ github.token }}
+      GITHUB_PUBLIC_REPOSITORY: ChuqiCloud/AnyFlows
+      GITHUB_API_URL: https://api.github.com
+      GITEA_PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
+    steps:
+      - name: Read source PR eligibility
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITEA_PR_NUMBER" =~ ^[1-9][0-9]*$ ]] || {
+            echo 'Gitea PR number is invalid' >&2
+            exit 1
+          }
+          source_pr="$(curl --fail --silent --show-error --connect-timeout 5 --max-time 30 \
+            -H "Authorization: token $GITEA_API_TOKEN" \
+            -H 'Accept: application/json' \
+            "$GITEA_API_BASE/repos/$GITEA_REPOSITORY/pulls/$GITEA_PR_NUMBER")"
+          jq -e --argjson number "$GITEA_PR_NUMBER" \
+            'type == "object" and .number == $number' <<<"$source_pr" >/dev/null
+          if jq -e '.merged == true and .base.ref == "develop" and
+            ((.merge_commit_sha // "") | test("^[0-9a-f]{40}$"))' \
+            <<<"$source_pr" >/dev/null; then
+            echo 'eligible=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'eligible=false' >> "$GITHUB_OUTPUT"
+            echo 'Source PR is not merged into develop; nothing to mirror.'
+          fi
+
+      - name: Check out synchronization tools
+        if: steps.source.outputs.eligible == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          persist-credentials: false
+          sparse-checkout: tools/repository
+
+      - name: Mirror Gitea PR discussion to GitHub
+        if: steps.source.outputs.eligible == 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_SYNC_TOKEN }}
+          SYNC_METADATA: ${{ github.event_name == 'pull_request' && '--sync-metadata' || '' }}
+        run: |
+          set -euo pipefail
+          test -n "$GITHUB_TOKEN" || {
+            echo 'PUBLIC_REPO_SYNC_TOKEN is not configured' >&2
+            exit 1
+          }
+          python3 tools/repository/sync-gitea-pr-comments.py \
+            --pr "$GITEA_PR_NUMBER" $SYNC_METADATA

@@ -45,6 +45,7 @@ class MetadataFallbackTests(unittest.TestCase):
                 **os.environ,
                 "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
                 "RUNNER_TEMP": str(root),
+                "GITHUB_OUTPUT": str(root / "outputs"),
                 "MOCK_RESPONSE_FILE": str(response_file),
                 "MOCK_HTTP_EXIT": str(http_exit),
                 "GITEA_COMMIT": SHA,
@@ -70,6 +71,12 @@ class MetadataFallbackTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             metadata = json.loads((root / "source-pr-metadata.json").read_text(encoding="utf-8"))
             self.assertFalse((root / "source-pr-metadata.json.tmp").exists())
+            if direction == "gitea":
+                expected_number = metadata["number"] or ""
+                self.assertEqual(
+                    (root / "outputs").read_text(encoding="utf-8"),
+                    f"source_pr_number={expected_number}\n",
+                )
             return metadata, result.stdout + result.stderr
 
     def valid_response(self):
@@ -176,6 +183,82 @@ class MetadataFallbackTests(unittest.TestCase):
             self.assertEqual(payload["title"], "同步 Gitea 公共核心")
             self.assertIn(SHA, payload["body"])
             self.assertNotIn("anyflows-pr-source", payload["body"])
+
+
+class GiteaDiscussionEligibilityTests(unittest.TestCase):
+    def run_eligibility(self, response, http_exit=0, pr_number="322"):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binaries = root / "bin"
+            binaries.mkdir()
+            (root / "response.json").write_text(response, encoding="utf-8")
+            curl = binaries / "curl"
+            curl.write_text(
+                '#!/bin/sh\n'
+                'printf "%s\\n" "$@" > "$MOCK_CURL_ARGS"\n'
+                'cat "$MOCK_RESPONSE_FILE"; exit "$MOCK_HTTP_EXIT"\n',
+                encoding="utf-8",
+            )
+            curl.chmod(0o700)
+            environment = {
+                **os.environ,
+                "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
+                "GITHUB_OUTPUT": str(root / "outputs"),
+                "GITEA_API_BASE": "http://gitea.internal:3000/api/v1",
+                "GITEA_REPOSITORY": "acmecloud/AnyFlows",
+                "GITEA_API_TOKEN": "test-token",
+                "GITEA_PR_NUMBER": pr_number,
+                "MOCK_RESPONSE_FILE": str(root / "response.json"),
+                "MOCK_HTTP_EXIT": str(http_exit),
+                "MOCK_CURL_ARGS": str(root / "curl-args"),
+            }
+            script = workflow_script(
+                "mirror-gitea-pr-discussion.yml", "Read source PR eligibility"
+            )
+            result = subprocess.run(
+                ["bash", "-c", script], cwd=root, env=environment,
+                capture_output=True, text=True,
+            )
+            outputs = root / "outputs"
+            curl_args = root / "curl-args"
+            return (
+                result,
+                outputs.read_text(encoding="utf-8") if outputs.exists() else "",
+                curl_args.read_text(encoding="utf-8") if curl_args.exists() else "",
+            )
+
+    def test_only_merged_develop_pr_is_eligible(self):
+        source = {
+            "number": 322, "merged": True, "base": {"ref": "develop"},
+            "merge_commit_sha": SHA,
+        }
+        for override, eligible in (
+            ({}, "true"),
+            ({"merged": False}, "false"),
+            ({"base": {"ref": "master"}}, "false"),
+            ({"merge_commit_sha": None}, "false"),
+            ({"merge_commit_sha": "invalid"}, "false"),
+        ):
+            with self.subTest(override=override):
+                result, output, arguments = self.run_eligibility(json.dumps({**source, **override}))
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(output, f"eligible={eligible}\n")
+                self.assertIn("http://gitea.internal:3000/api/v1/repos/acmecloud/AnyFlows/pulls/322", arguments)
+                self.assertIn("Authorization: token test-token", arguments)
+
+    def test_api_failure_is_not_treated_as_ineligible(self):
+        for response, status in (("", 22), ("not JSON", 0), ("{}", 0),
+                                 ('{"number":99}', 0)):
+            with self.subTest(response=response, status=status):
+                result, output, _ = self.run_eligibility(response, status)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(output, "")
+
+    def test_invalid_pr_number_is_rejected_before_request(self):
+        result, output, arguments = self.run_eligibility("{}", pr_number="../1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(output, "")
+        self.assertEqual(arguments, "")
 
 
 if __name__ == "__main__":
