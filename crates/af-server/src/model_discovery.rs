@@ -49,7 +49,13 @@ impl DatabaseUpstreamModelDiscoverer {
         }
     }
 
-    pub(crate) fn with_proxy_pools(mut self, pools: Option<std::sync::Arc<af_admin::ProxyPoolService>>) -> Self { self.proxy_pools = pools; self }
+    pub(crate) fn with_proxy_pools(
+        mut self,
+        pools: Option<std::sync::Arc<af_admin::ProxyPoolService>>,
+    ) -> Self {
+        self.proxy_pools = pools;
+        self
+    }
 
     async fn discover_inner(
         &self,
@@ -94,8 +100,22 @@ impl DatabaseUpstreamModelDiscoverer {
         }
         let timeout = target.timeout().map(af_domain::ChannelTimeout::duration);
         let client = if let Some(pools) = &self.proxy_pools {
-            pools.route_client(target.proxy_id(),target.channel_id(),af_domain::CredentialId::new(target.credential_id()).map_err(|_| UpstreamModelDiscoveryError::Internal)?, &self.clients, timeout).await.map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?
-        } else { self.clients.get(timeout).map_err(|_| UpstreamModelDiscoveryError::Internal)? };
+            pools
+                .route_client(
+                    target.proxy_id(),
+                    target.channel_id(),
+                    af_domain::CredentialId::new(target.credential_id())
+                        .map_err(|_| UpstreamModelDiscoveryError::Internal)?,
+                    &self.clients,
+                    timeout,
+                )
+                .await
+                .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?
+        } else {
+            self.clients
+                .get(timeout)
+                .map_err(|_| UpstreamModelDiscoveryError::Internal)?
+        };
         let mut context = RelayContext::new(client)
             .with_credential_scope(target.credential_id())
             .map_err(|_| UpstreamModelDiscoveryError::Internal)?

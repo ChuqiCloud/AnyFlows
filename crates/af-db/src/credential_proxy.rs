@@ -587,9 +587,17 @@ impl CredentialProxyRepository {
         // 修改池成员后撤销旧检测结论；下次订阅可重新恢复来源中的原节点。
         crate::entity::proxy_pool_nodes::Entity::update_many()
             .filter(crate::entity::proxy_pool_nodes::Column::ProxyId.eq(proxy_id.get()))
-            .col_expr(crate::entity::proxy_pool_nodes::Column::Healthy, sea_orm::sea_query::Expr::value(false))
-            .col_expr(crate::entity::proxy_pool_nodes::Column::Fingerprint, sea_orm::sea_query::Expr::value(format!("manual-{}-{version}", proxy_id.get())))
-            .exec(&transaction).await.map_err(|_| query_error("credential_proxy_pool_health"))?;
+            .col_expr(
+                crate::entity::proxy_pool_nodes::Column::Healthy,
+                sea_orm::sea_query::Expr::value(false),
+            )
+            .col_expr(
+                crate::entity::proxy_pool_nodes::Column::Fingerprint,
+                sea_orm::sea_query::Expr::value(format!("manual-{}-{version}", proxy_id.get())),
+            )
+            .exec(&transaction)
+            .await
+            .map_err(|_| query_error("credential_proxy_pool_health"))?;
         for channel_id in channels {
             enqueue_scheduler_catalog_change(
                 &transaction,

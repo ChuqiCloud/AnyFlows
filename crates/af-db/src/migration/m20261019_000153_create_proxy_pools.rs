@@ -128,6 +128,19 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        let used = Query::select()
+            .column(Alias::new("id"))
+            .from(Alias::new("proxy_pools"))
+            .limit(1)
+            .to_owned();
+        if manager
+            .get_connection()
+            .query_one(manager.get_database_backend().build(&used))
+            .await?
+            .is_some()
+        {
+            return Err(DbErr::Custom("代理池仍存在，不能回退代理池迁移".to_owned()));
+        }
         for table in ["proxy_pool_bindings", "proxy_pool_nodes", "proxy_pools"] {
             manager
                 .drop_table(Table::drop().table(Alias::new(table)).to_owned())

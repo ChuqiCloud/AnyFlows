@@ -66,7 +66,13 @@ impl DatabaseChannelProbe {
         }
     }
 
-    pub(crate) fn with_proxy_pools(mut self, pools: Option<std::sync::Arc<af_admin::ProxyPoolService>>) -> Self { self.proxy_pools = pools; self }
+    pub(crate) fn with_proxy_pools(
+        mut self,
+        pools: Option<std::sync::Arc<af_admin::ProxyPoolService>>,
+    ) -> Self {
+        self.proxy_pools = pools;
+        self
+    }
 
     async fn check_inner(&self, channel_id: ChannelId) -> Result<(), ProbeFailure> {
         let target = self
@@ -99,8 +105,22 @@ impl DatabaseChannelProbe {
             .timeout()
             .map_or(self.default_timeout, af_domain::ChannelTimeout::duration);
         let client = if let Some(pools) = &self.proxy_pools {
-            pools.route_client(target.proxy_id(),target.channel_id(),af_domain::CredentialId::new(target.credential_id()).map_err(|_| ProbeFailure::RequiredProxyUnavailable)?, &self.clients, Some(timeout)).await.map_err(|_| ProbeFailure::RequiredProxyUnavailable)?
-        } else { self.clients.get(Some(timeout)).map_err(|_| ProbeFailure::ContextBuild)? };
+            pools
+                .route_client(
+                    target.proxy_id(),
+                    target.channel_id(),
+                    af_domain::CredentialId::new(target.credential_id())
+                        .map_err(|_| ProbeFailure::RequiredProxyUnavailable)?,
+                    &self.clients,
+                    Some(timeout),
+                )
+                .await
+                .map_err(|_| ProbeFailure::RequiredProxyUnavailable)?
+        } else {
+            self.clients
+                .get(Some(timeout))
+                .map_err(|_| ProbeFailure::ContextBuild)?
+        };
         let mut context = RelayContext::new(client)
             .with_credential_scope(target.credential_id())
             .map_err(|_| ProbeFailure::ContextBuild)?

@@ -19,7 +19,13 @@ pub(super) struct Candidate {
     pub remark: String,
     pub fingerprint: String,
 }
-impl Drop for Candidate { fn drop(&mut self) { if let Some(password) = &mut self.password { password.zeroize(); } } }
+impl Drop for Candidate {
+    fn drop(&mut self) {
+        if let Some(password) = &mut self.password {
+            password.zeroize();
+        }
+    }
+}
 pub(super) struct Parsed {
     pub nodes: Vec<Candidate>,
     pub skipped: usize,
@@ -36,17 +42,31 @@ pub(super) fn parse(
     }
     let text = text.trim_start_matches('\u{feff}').trim();
     let mut entries = Vec::new();
-    if text.starts_with('{') || (text.starts_with('[') && !text.lines().next().is_some_and(|line| line.contains("]:"))) {
+    if text.starts_with('{')
+        || (text.starts_with('[') && !text.lines().next().is_some_and(|line| line.contains("]:")))
+    {
         let value: serde_json::Value =
             serde_json::from_str(text).map_err(|_| ProxyPoolError::InvalidInput)?;
         json_entries(&value, &mut entries, 0, default_scheme)?;
     } else {
         for line in text.lines().filter(|line| !line.trim().is_empty()) {
-            let mut starts = ["http://", "https://", "socks5://", "socks5h://"].into_iter().flat_map(|scheme| line.match_indices(scheme).map(|(index, _)| index)).collect::<Vec<_>>();
+            let mut starts = ["http://", "https://", "socks5://", "socks5h://"]
+                .into_iter()
+                .flat_map(|scheme| line.match_indices(scheme).map(|(index, _)| index))
+                .collect::<Vec<_>>();
             starts.sort_unstable();
             if starts.len() > 1 {
-                for (index, start) in starts.iter().enumerate() { entries.push(line[*start..starts.get(index + 1).copied().unwrap_or(line.len())].trim().trim_end_matches([',', ';', '，', '；']).to_owned()); }
-            } else { entries.push(line.to_owned()); }
+                for (index, start) in starts.iter().enumerate() {
+                    entries.push(
+                        line[*start..starts.get(index + 1).copied().unwrap_or(line.len())]
+                            .trim()
+                            .trim_end_matches([',', ';', '，', '；'])
+                            .to_owned(),
+                    );
+                }
+            } else {
+                entries.push(line.to_owned());
+            }
         }
     }
     if entries.len() > 4096 {
@@ -103,10 +123,15 @@ fn json_entries(
                 let host = object
                     .get("host")
                     .or_else(|| object.get("ip"))
-                    .and_then(serde_json::Value::as_str)
-                    ;
-                let Some(host) = host else { entries.push(String::new()); return Ok(()); };
-                let Some(port) = object.get("port") else { entries.push(String::new()); return Ok(()); };
+                    .and_then(serde_json::Value::as_str);
+                let Some(host) = host else {
+                    entries.push(String::new());
+                    return Ok(());
+                };
+                let Some(port) = object.get("port") else {
+                    entries.push(String::new());
+                    return Ok(());
+                };
                 let port = port
                     .as_str()
                     .map(str::to_owned)
@@ -121,15 +146,21 @@ fn json_entries(
                 } else {
                     host.to_owned()
                 };
-                let mut url = Url::parse(&format!("{scheme}://{host}:{port}"))
-                    .map_err(|_| ProxyPoolError::InvalidInput)?;
-                if let Some(user) = object.get("username").and_then(serde_json::Value::as_str) {
-                    url.set_username(user)
-                        .map_err(|()| ProxyPoolError::InvalidInput)?;
+                let Ok(mut url) = Url::parse(&format!("{scheme}://{host}:{port}")) else {
+                    entries.push(String::new());
+                    return Ok(());
+                };
+                if let Some(user) = object.get("username").and_then(serde_json::Value::as_str)
+                    && url.set_username(user).is_err()
+                {
+                    entries.push(String::new());
+                    return Ok(());
                 }
-                if let Some(password) = object.get("password").and_then(serde_json::Value::as_str) {
-                    url.set_password(Some(password))
-                        .map_err(|()| ProxyPoolError::InvalidInput)?;
+                if let Some(password) = object.get("password").and_then(serde_json::Value::as_str)
+                    && url.set_password(Some(password)).is_err()
+                {
+                    entries.push(String::new());
+                    return Ok(());
                 }
                 if let Some(remark) = object
                     .get("remark")
@@ -141,7 +172,7 @@ fn json_entries(
                 entries.push(url.to_string());
             }
         }
-        _ => return Err(ProxyPoolError::InvalidInput),
+        _ => entries.push(String::new()),
     }
     Ok(())
 }
@@ -230,7 +261,10 @@ fn candidate(line: &str, default_scheme: CredentialProxyScheme) -> Option<Candid
     } else {
         Some(decode(url.username())?)
     };
-    let password = match url.password() { Some(value) => Some(decode(value)?), None => None };
+    let password = match url.password() {
+        Some(value) => Some(decode(value)?),
+        None => None,
+    };
     if username.is_some() != password.is_some()
         || username.as_ref().is_some_and(|s| s.len() > 320)
         || password.as_ref().is_some_and(|s| s.len() > 4096)
@@ -243,8 +277,12 @@ fn candidate(line: &str, default_scheme: CredentialProxyScheme) -> Option<Candid
             serde_json::to_vec(&(scheme.as_str(), &host, port, &username, &password)).ok()?
         )
     );
-    let note = if note.contains("://") || note.contains('@') { String::new() } else { note };
     let note = decode(&note).unwrap_or(note);
+    let note = if note.contains("://") || note.contains('@') {
+        String::new()
+    } else {
+        note
+    };
     let remark = note
         .chars()
         .filter(|c| !c.is_control())
@@ -263,25 +301,71 @@ fn candidate(line: &str, default_scheme: CredentialProxyScheme) -> Option<Candid
 
 // CSV: host,port[,username,password[,scheme[,remark]]]. URI 行里的逗号保留为 userinfo。
 fn csv_entry(line: &str, default_scheme: CredentialProxyScheme) -> Option<String> {
-    if line.contains("://") { return None; }
-    let mut fields = Vec::new(); let mut current = String::new(); let mut quoted = false;
+    if line.contains("://") {
+        return None;
+    }
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut quoted = false;
     let mut chars = line.trim().chars().peekable();
-    while let Some(ch) = chars.next() { match ch { '"' if quoted && chars.peek() == Some(&'"') => { current.push('"'); chars.next(); }, '"' => quoted = !quoted, ',' if !quoted => { fields.push(current.trim().to_owned()); current.clear(); }, _ => current.push(ch) } }
-    if quoted { return None; }
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' if quoted && chars.peek() == Some(&'"') => {
+                current.push('"');
+                chars.next();
+            }
+            '"' => quoted = !quoted,
+            ',' if !quoted => {
+                fields.push(current.trim().to_owned());
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    if quoted {
+        return None;
+    }
     fields.push(current.trim().to_owned());
-    if fields.len() < 2 || fields.len() > 6 || fields[1].parse::<u16>().ok()? == 0 { return None; }
-    let scheme = fields.get(4).filter(|s| !s.is_empty()).map_or(default_scheme.as_str(), String::as_str);
-    let host = if fields[0].contains(':') && !fields[0].starts_with('[') { format!("[{}]",fields[0]) } else { fields[0].clone() };
-    let mut url = Url::parse(&format!("{scheme}://{host}:{}",fields[1])).ok()?;
-    if let Some(user) = fields.get(2).filter(|s| !s.is_empty()) { url.set_username(user).ok()?; }
-    if let Some(password) = fields.get(3).filter(|s| !s.is_empty()) { url.set_password(Some(password)).ok()?; }
-    if let Some(note) = fields.get(5).filter(|s| !s.is_empty()) { url.set_fragment(Some(note)); }
+    if fields.len() < 2 || fields.len() > 6 || fields[1].parse::<u16>().ok()? == 0 {
+        return None;
+    }
+    let scheme = fields
+        .get(4)
+        .filter(|s| !s.is_empty())
+        .map_or(default_scheme.as_str(), String::as_str);
+    let host = if fields[0].contains(':') && !fields[0].starts_with('[') {
+        format!("[{}]", fields[0])
+    } else {
+        fields[0].clone()
+    };
+    let mut url = Url::parse(&format!("{scheme}://{host}:{}", fields[1])).ok()?;
+    if let Some(user) = fields.get(2).filter(|s| !s.is_empty()) {
+        url.set_username(user).ok()?;
+    }
+    if let Some(password) = fields.get(3).filter(|s| !s.is_empty()) {
+        url.set_password(Some(password)).ok()?;
+    }
+    if let Some(note) = fields.get(5).filter(|s| !s.is_empty()) {
+        url.set_fragment(Some(note));
+    }
     Some(url.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn skips_invalid_json_members_and_redacts_encoded_uri_remarks() {
+        let result = parse(
+            r#"{"data":[{"host":"192.0.2.1","port":"invalid"},null,{"missing":"host"},"http://ci-user:ci-password@192.0.2.2:3129#socks5%3A%2F%2Fsecret%40host"]}"#,
+            CredentialProxyScheme::Socks5,
+        ).unwrap();
+        assert_eq!(result.nodes.len(), 1);
+        assert_eq!(result.skipped, 3);
+        assert_eq!(result.nodes[0].scheme, CredentialProxyScheme::Http);
+        assert_eq!(result.nodes[0].password.as_deref(), Some("ci-password"));
+        assert!(result.nodes[0].remark.is_empty());
+    }
     #[test]
     fn extracts_authenticated_uris_comments_ipv6_and_deduplicates() {
         let result=parse("HTTP 池:http://alice:p%40ss+word@192.0.2.1:3129\nsocks5://192.0.2.2:1080 #hk\nsocks5://192.0.2.2:1080 #another\n[2001:db8::1]:1080\n192.0.2.3:1080:bob:secret\ngarbage",CredentialProxyScheme::Socks5).unwrap();
@@ -296,10 +380,20 @@ mod tests {
     fn supports_json_objects_and_rejects_non_proxy_urls_and_oversized_input() {
         let nodes=parse(r#"{"proxies":["socks5h://192.0.2.1:1080",{"host":"192.0.2.2","port":8080,"scheme":"http","username":"a","password":"b"}]}"#,CredentialProxyScheme::Socks5).unwrap();
         assert_eq!(nodes.nodes.len(), 2);
-        let csv = parse("ip,port,user,password,scheme,remark\n192.0.2.1,8080,alice,secret,http,hk",CredentialProxyScheme::Socks5).unwrap();
-        assert_eq!(csv.nodes[0].scheme,CredentialProxyScheme::Http);
-        assert_eq!(csv.nodes[0].password.as_deref(),Some("secret"));
-        assert_eq!(parse("[2001:db8::1]:1080",CredentialProxyScheme::Socks5).unwrap().nodes.len(),1);
+        let csv = parse(
+            "ip,port,user,password,scheme,remark\n192.0.2.1,8080,alice,secret,http,hk",
+            CredentialProxyScheme::Socks5,
+        )
+        .unwrap();
+        assert_eq!(csv.nodes[0].scheme, CredentialProxyScheme::Http);
+        assert_eq!(csv.nodes[0].password.as_deref(), Some("secret"));
+        assert_eq!(
+            parse("[2001:db8::1]:1080", CredentialProxyScheme::Socks5)
+                .unwrap()
+                .nodes
+                .len(),
+            1
+        );
         assert!(
             parse(
                 "https://example.com/list?token=secret",

@@ -275,7 +275,9 @@ impl ModelDiscoveryTargetRecord {
     }
 
     #[must_use]
-    pub const fn proxy_id(&self) -> Option<af_domain::ProxyId> { self.proxy_id }
+    pub const fn proxy_id(&self) -> Option<af_domain::ProxyId> {
+        self.proxy_id
+    }
 
     #[must_use]
     pub const fn proxy_required(&self) -> bool {

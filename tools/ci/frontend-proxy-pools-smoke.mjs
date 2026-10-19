@@ -26,7 +26,7 @@ const errors = []
 try {
   await writeFile(html, '<!doctype html><html lang="zh" class="dark"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Proxy pools CI</title><div id="root"></div><script type="module" src="/.proxy-pools-smoke.tsx"></script></html>')
   await writeFile(entry, `
-    import React, { useState } from 'react';
+    import React from 'react';
     import { createRoot } from 'react-dom/client';
     import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
     ${isNext ? "import { HeroUIProvider } from '@heroui/react';" : ''}
@@ -87,8 +87,10 @@ try {
     if (isNext) {await page.getByRole('combobox',{name:label,exact:true}).click();await page.getByRole('option',{name:text,exact:true}).click()}
     else await page.getByRole('combobox',{name:label,exact:true}).selectOption(value)
   }
-  await choose('使用代理池','10','CI Proxy Pool')
-  await page.waitForFunction(() => true)
+  await Promise.all([
+    page.waitForResponse(response => response.url().endsWith('/api/admin/proxy-pool-bindings') && response.status() === 204),
+    choose('使用代理池','10','CI Proxy Pool'),
+  ])
   await page.getByRole('button',{name:'测活',exact:true}).click()
   await page.getByText('健康 · 23 ms',{exact:true}).waitFor()
   assert.deepEqual(binding,{channel_id:0,pool_id:10})

@@ -120,10 +120,16 @@ impl ProxyPoolService {
     pub fn configure_clients(&self, clients: HttpClientProvider) {
         let _ = self.clients.set(clients);
     }
-    async fn invalidate(&self) { *self.runtime.lock().await = None; }
+    async fn invalidate(&self) {
+        *self.runtime.lock().await = None;
+    }
     async fn snapshot(&self) -> Result<Arc<Vec<ProxyPoolRecord>>, ProxyPoolError> {
         let mut cache = self.runtime.lock().await;
-        if let Some((loaded, pools)) = cache.as_ref() && loaded.elapsed() < Duration::from_secs(5) { return Ok(Arc::clone(pools)); }
+        if let Some((loaded, pools)) = cache.as_ref()
+            && loaded.elapsed() < Duration::from_secs(5)
+        {
+            return Ok(Arc::clone(pools));
+        }
         let pools = Arc::new(self.repository.list().await?);
         *cache = Some((Instant::now(), Arc::clone(&pools)));
         Ok(pools)
@@ -165,7 +171,12 @@ impl ProxyPoolService {
                     host: n.proxy.host().to_owned(),
                     port: n.proxy.port(),
                     password_configured: n.proxy.password_configured(),
-                    healthy: n.healthy && n.proxy.enabled() && n.checked_at.is_some_and(|at| now().saturating_sub(at) <= i64::from(pool.interval_secs).saturating_mul(2).max(60)),
+                    healthy: n.healthy
+                        && n.proxy.enabled()
+                        && n.checked_at.is_some_and(|at| {
+                            now().saturating_sub(at)
+                                <= i64::from(pool.interval_secs).saturating_mul(2).max(60)
+                        }),
                     latency_ms: n.latency_ms,
                     checked_at: n.checked_at,
                     remark: n.remark,
@@ -355,7 +366,7 @@ impl ProxyPoolService {
         let result = self.maintain_claimed(&pool, refresh).await;
         match result {
             Ok(measurements) => {
-                let status = if measurements.iter().any(|(_, latency)| latency.is_some()) {
+                let status = if measurements.iter().any(|(_, _, latency)| latency.is_some()) {
                     "ready"
                 } else {
                     "no_healthy_nodes"
@@ -379,7 +390,7 @@ impl ProxyPoolService {
         &self,
         pool: &ProxyPoolRecord,
         refresh: bool,
-    ) -> Result<Vec<(ProxyId, Option<i64>)>, ProxyPoolError> {
+    ) -> Result<Vec<(ProxyId, i64, Option<i64>)>, ProxyPoolError> {
         let settings = self.settings(pool)?;
         if refresh && let Some(source) = &settings.source_url {
             let clients = self.clients.get().ok_or(ProxyPoolError::Internal)?;
@@ -416,10 +427,22 @@ impl ProxyPoolService {
             let settings = &settings;
             async move {
                 let start = Instant::now();
-                let healthy = if node.proxy.enabled() { self.probe(&node.proxy, &settings.probe_url, settings.trust_proxy_dns).await } else { false };
-                (node.proxy.proxy_id(), healthy.then(|| i64::try_from(start.elapsed().as_millis()).unwrap_or(i64::MAX)))
+                let healthy = if node.proxy.enabled() {
+                    self.probe(&node.proxy, &settings.probe_url, settings.trust_proxy_dns)
+                        .await
+                } else {
+                    false
+                };
+                (
+                    node.proxy.proxy_id(),
+                    node.proxy.version(),
+                    healthy.then(|| i64::try_from(start.elapsed().as_millis()).unwrap_or(i64::MAX)),
+                )
             }
-        })).buffer_unordered(32).collect::<Vec<_>>().await;
+        }))
+        .buffer_unordered(32)
+        .collect::<Vec<_>>()
+        .await;
         Ok(measurements)
     }
     fn config(&self, node: &CredentialProxyRecord) -> Result<ProxyConfig, ProxyPoolError> {
@@ -488,11 +511,19 @@ impl ProxyPoolService {
     ) -> Result<Option<PooledClient>, ProxyPoolError> {
         let snapshot = self.snapshot().await?;
         let pool = if let Some(id) = manual {
-            let Some(pool) = snapshot.iter().find(|pool| pool.proxy.proxy_id() == id) else { return Ok(None); };
+            let Some(pool) = snapshot.iter().find(|pool| pool.proxy.proxy_id() == id) else {
+                return Ok(None);
+            };
             pool
         } else {
-            let channel_pool = snapshot.iter().find(|pool| pool.channel_ids.contains(&channel.get()));
-            let Some(pool) = channel_pool.or_else(|| snapshot.iter().find(|pool| pool.channel_ids.contains(&0))) else { return Ok(None); };
+            let channel_pool = snapshot
+                .iter()
+                .find(|pool| pool.channel_ids.contains(&channel.get()));
+            let Some(pool) =
+                channel_pool.or_else(|| snapshot.iter().find(|pool| pool.channel_ids.contains(&0)))
+            else {
+                return Ok(None);
+            };
             pool
         };
         let settings = self.settings(&pool)?;
@@ -524,11 +555,25 @@ impl ProxyPoolService {
         Ok(Some(client))
     }
     /// 供渠道探活和模型发现复用：专属静态节点与池使用完全相同的路由优先级。
-    pub async fn route_client(&self, manual: Option<ProxyId>, channel: ChannelId, credential: CredentialId, clients: &HttpClientProvider, timeout: Option<Duration>) -> Result<PooledClient, ProxyPoolError> {
-        if let Some(client) = self.resolve_client(manual, channel, credential, clients, timeout).await? { return Ok(client); }
+    pub async fn route_client(
+        &self,
+        manual: Option<ProxyId>,
+        channel: ChannelId,
+        credential: CredentialId,
+        clients: &HttpClientProvider,
+        timeout: Option<Duration>,
+    ) -> Result<PooledClient, ProxyPoolError> {
+        if let Some(client) = self
+            .resolve_client(manual, channel, credential, clients, timeout)
+            .await?
+        {
+            return Ok(client);
+        }
         if let Some(id) = manual {
             let proxy = self.repository.proxy(id).await?;
-            return clients.get_with_proxy(self.config(&proxy)?, dns(proxy.trust_proxy_dns()), timeout).map_err(|_| ProxyPoolError::Internal);
+            return clients
+                .get_with_proxy(self.config(&proxy)?, dns(proxy.trust_proxy_dns()), timeout)
+                .map_err(|_| ProxyPoolError::Internal);
         }
         clients.get(timeout).map_err(|_| ProxyPoolError::Internal)
     }
@@ -631,41 +676,138 @@ fn validate_url(value: &str, probe: bool) -> Result<(), ProxyPoolError> {
 mod tests {
     use super::*;
     use af_config::CredentialEncryptionSettings;
-    use af_db::{AdminChannelRepository, AdminChannelWriteRecord, DatabaseOptions, MigrationOptions};
+    use af_db::{
+        AdminChannelRepository, AdminChannelWriteRecord, DatabaseOptions, MigrationOptions,
+    };
     use af_domain::{ChannelType, Protocol, Status, UserId};
     use af_httpclient::HttpClientConfig;
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
     #[tokio::test]
     async fn proxy_pool_enforces_manual_channel_global_precedence_and_never_falls_back() {
-        let database = af_db::connect_and_migrate(&DatabaseOptions::new("sqlite::memory:").unwrap(), MigrationOptions::default()).await.unwrap();
+        let database = af_db::connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
         let repository = ProxyPoolRepository::new(database.clone(), Duration::from_secs(5));
-        let key: CredentialEncryptionSettings = serde_json::from_value(serde_json::json!({"key_id":"test","key":URL_SAFE_NO_PAD.encode([7;32])})).unwrap();
-        let service = ProxyPoolService::new(repository.clone(), SystemSecretCipher::new(&key).unwrap());
+        let key: CredentialEncryptionSettings = serde_json::from_value(
+            serde_json::json!({"key_id":"test","key":URL_SAFE_NO_PAD.encode([7;32])}),
+        )
+        .unwrap();
+        let service =
+            ProxyPoolService::new(repository.clone(), SystemSecretCipher::new(&key).unwrap());
         let principal = SessionPrincipal::new(UserId::new(1).unwrap(), SessionRole::Admin);
-        let write = |name: &str, content: Option<&str>| ProxyPoolWrite { name:name.to_owned(),subscribed:false,source_url:None,interval_secs:60,default_scheme:"http".to_owned(),trust_proxy_dns:false,probe_url:None,content:content.map(str::to_owned),revision:None };
-        let healthy = service.save(principal,None,write("全局池",Some("http://alice:secret@192.0.2.1:8080"))).await.unwrap().pool;
+        let write = |name: &str, content: Option<&str>| ProxyPoolWrite {
+            name: name.to_owned(),
+            subscribed: false,
+            source_url: None,
+            interval_secs: 60,
+            default_scheme: "http".to_owned(),
+            trust_proxy_dns: false,
+            probe_url: None,
+            content: content.map(str::to_owned),
+            revision: None,
+        };
+        let healthy = service
+            .save(
+                principal,
+                None,
+                write("全局池", Some("http://alice:secret@192.0.2.1:8080")),
+            )
+            .await
+            .unwrap()
+            .pool;
         let healthy_id = ProxyId::new(healthy.id).unwrap();
         let node_id = ProxyId::new(healthy.nodes[0].id).unwrap();
-        repository.finish(healthy_id,1,"ready",vec![(node_id,Some(10))]).await.unwrap();
-        service.bind(principal,0,Some(healthy_id)).await.unwrap();
-        let clients = HttpClientProvider::new(HttpClientConfig::default(),4).unwrap();
+        repository
+            .finish(healthy_id, 1, "ready", vec![(node_id, 1, Some(10))])
+            .await
+            .unwrap();
+        service.bind(principal, 0, Some(healthy_id)).await.unwrap();
+        let clients = HttpClientProvider::new(HttpClientConfig::default(), 4).unwrap();
         let channel = ChannelId::new(123).unwrap();
         let credential = CredentialId::new(1).unwrap();
-        let first = service.resolve_client(None,channel,credential,&clients,None).await.unwrap().unwrap();
-        let repeated = service.resolve_client(None,channel,credential,&clients,None).await.unwrap().unwrap();
-        assert_eq!(first.identity(),repeated.identity());
-        assert!(service.resolve_client(Some(node_id),channel,credential,&clients,None).await.unwrap().is_none(),"static manual proxy takes precedence over the global pool");
-        let empty = service.save(principal,None,write("空池",None)).await.unwrap().pool;
+        let first = service
+            .resolve_client(None, channel, credential, &clients, None)
+            .await
+            .unwrap()
+            .unwrap();
+        let repeated = service
+            .resolve_client(None, channel, credential, &clients, None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(first.identity(), repeated.identity());
+        assert!(
+            service
+                .resolve_client(Some(node_id), channel, credential, &clients, None)
+                .await
+                .unwrap()
+                .is_none(),
+            "static manual proxy takes precedence over the global pool"
+        );
+        let empty = service
+            .save(principal, None, write("空池", None))
+            .await
+            .unwrap()
+            .pool;
         let empty_id = ProxyId::new(empty.id).unwrap();
-        assert!(matches!(service.resolve_client(Some(empty_id),channel,credential,&clients,None).await,Err(ProxyPoolError::Unavailable)));
-        let channels = AdminChannelRepository::new(database,Duration::from_secs(5)).unwrap();
-        let channel = channels.create_channel(AdminChannelWriteRecord::new("pool-channel".to_owned(),ChannelType::OpenAi,Protocol::OpenAiChat,Some("https://example.com".to_owned()),None,Status::Enabled,10,0,true,Vec::new(),Vec::new(),serde_json::json!({}),serde_json::json!({}),serde_json::json!({}),serde_json::json!({}),None)).await.unwrap().channel_id();
-        service.bind(principal,channel.get(),Some(empty_id)).await.unwrap();
-        assert!(matches!(service.resolve_client(None,channel,credential,&clients,None).await,Err(ProxyPoolError::Unavailable)),"empty channel pool cannot fall back to the healthy global pool");
-        service.bind(principal,channel.get(),None).await.unwrap();
-        assert!(service.resolve_client(None,channel,credential,&clients,None).await.unwrap().is_some());
-        let user = SessionPrincipal::new(UserId::new(2).unwrap(),SessionRole::User);
-        assert!(matches!(service.list(user).await,Err(ProxyPoolError::Forbidden)));
+        assert!(matches!(
+            service
+                .resolve_client(Some(empty_id), channel, credential, &clients, None)
+                .await,
+            Err(ProxyPoolError::Unavailable)
+        ));
+        let channels = AdminChannelRepository::new(database, Duration::from_secs(5)).unwrap();
+        let channel = channels
+            .create_channel(AdminChannelWriteRecord::new(
+                "pool-channel".to_owned(),
+                ChannelType::OpenAi,
+                Protocol::OpenAiChat,
+                Some("https://example.com".to_owned()),
+                None,
+                Status::Enabled,
+                10,
+                0,
+                true,
+                Vec::new(),
+                Vec::new(),
+                serde_json::json!({}),
+                serde_json::json!({}),
+                serde_json::json!({}),
+                serde_json::json!({}),
+                None,
+            ))
+            .await
+            .unwrap()
+            .channel_id();
+        service
+            .bind(principal, channel.get(), Some(empty_id))
+            .await
+            .unwrap();
+        assert!(
+            matches!(
+                service
+                    .resolve_client(None, channel, credential, &clients, None)
+                    .await,
+                Err(ProxyPoolError::Unavailable)
+            ),
+            "empty channel pool cannot fall back to the healthy global pool"
+        );
+        service.bind(principal, channel.get(), None).await.unwrap();
+        assert!(
+            service
+                .resolve_client(None, channel, credential, &clients, None)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        let user = SessionPrincipal::new(UserId::new(2).unwrap(), SessionRole::User);
+        assert!(matches!(
+            service.list(user).await,
+            Err(ProxyPoolError::Forbidden)
+        ));
     }
 }

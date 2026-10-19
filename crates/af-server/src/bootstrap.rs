@@ -1429,11 +1429,19 @@ impl Bootstrap<RelayReady> {
         .map_err(BootstrapError::OAuthRuntime)?;
         let model_sync_repository =
             ModelSyncRepository::new(self.stage.infrastructure.infrastructure.database.clone());
-        let model_discoverer = Arc::new(DatabaseUpstreamModelDiscoverer::new(
-            model_sync_repository.clone(),
-            decryptor.clone(),
-            self.stage.upstream_clients.clone(),
-        ).with_proxy_pools(self.stage.infrastructure.admin_credential_proxy_service.proxy_pools()));
+        let model_discoverer = Arc::new(
+            DatabaseUpstreamModelDiscoverer::new(
+                model_sync_repository.clone(),
+                decryptor.clone(),
+                self.stage.upstream_clients.clone(),
+            )
+            .with_proxy_pools(
+                self.stage
+                    .infrastructure
+                    .admin_credential_proxy_service
+                    .proxy_pools(),
+            ),
+        );
         let admin_model_sync_service: Arc<dyn AdminModelSyncService> = Arc::new(
             DatabaseAdminModelSyncService::new(model_sync_repository, model_discoverer),
         );
@@ -2165,7 +2173,8 @@ impl Bootstrap<BillingReady> {
             decryptor,
             upstream_clients.clone(),
             Duration::from_secs(config.channel_probe().probe_timeout_secs()),
-        ).with_proxy_pools(infrastructure.admin_credential_proxy_service.proxy_pools());
+        )
+        .with_proxy_pools(infrastructure.admin_credential_proxy_service.proxy_pools());
         let probe_config = channel_probe_config(&config);
         let admin_channel_probe: Arc<dyn AdminChannelProbe> = Arc::new(
             BoundedAdminChannelProbe::new(probe.clone(), probe_config.probe_timeout()),

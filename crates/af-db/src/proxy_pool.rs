@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, future::Future, time::Duration};
 use af_domain::ProxyId;
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait, Set,
     TransactionTrait, sea_query::Expr,
 };
 use tokio::time::timeout;
@@ -109,9 +109,16 @@ impl ProxyPoolRepository {
     }
     pub async fn proxy(&self, id: ProxyId) -> Result<CredentialProxyRecord> {
         self.run(async {
-            let model = proxies::Entity::find_by_id(id.get()).filter(proxies::Column::Enabled.eq(true)).filter(proxies::Column::DeletedAt.is_null()).one(self.pool.connection()).await.map_err(internal)?.ok_or(ProxyPoolRepositoryError::NotFound)?;
+            let model = proxies::Entity::find_by_id(id.get())
+                .filter(proxies::Column::Enabled.eq(true))
+                .filter(proxies::Column::DeletedAt.is_null())
+                .one(self.pool.connection())
+                .await
+                .map_err(internal)?
+                .ok_or(ProxyPoolRepositoryError::NotFound)?;
             record_from_model(model).map_err(internal)
-        }).await
+        })
+        .await
     }
     async fn load(&self, model: pools::Model) -> Result<ProxyPoolRecord> {
         let proxy = proxies::Entity::find_by_id(model.id)
@@ -418,7 +425,7 @@ impl ProxyPoolRepository {
         id: ProxyId,
         revision: i64,
         status: &str,
-        measurements: Vec<(ProxyId, Option<i64>)>,
+        measurements: Vec<(ProxyId, i64, Option<i64>)>,
     ) -> Result<()> {
         self.run(async {
             let tx = self.pool.connection().begin().await.map_err(internal)?;
@@ -435,10 +442,18 @@ impl ProxyPoolRepository {
             if result.rows_affected != 1 {
                 return Err(ProxyPoolRepositoryError::Conflict);
             }
-            for (node, latency) in measurements {
+            for (node, version, latency) in measurements {
                 nodes::Entity::update_many()
                     .filter(nodes::Column::PoolId.eq(id.get()))
                     .filter(nodes::Column::ProxyId.eq(node.get()))
+                    .filter(nodes::Column::ProxyId.in_subquery(
+                        proxies::Entity::find()
+                            .select_only()
+                            .column(proxies::Column::Id)
+                            .filter(proxies::Column::Version.eq(version))
+                            .filter(proxies::Column::DeletedAt.is_null())
+                            .into_query(),
+                    ))
                     .col_expr(nodes::Column::Healthy, Expr::value(latency.is_some()))
                     .col_expr(nodes::Column::LatencyMs, Expr::value(latency))
                     .col_expr(nodes::Column::CheckedAt, Expr::value(now))
@@ -555,6 +570,7 @@ fn internal<T>(_: T) -> ProxyPoolRepositoryError {
 mod tests {
     use super::*;
     use crate::{CredentialProxyScheme, DatabaseOptions, MigrationOptions};
+    use sea_orm_migration::MigratorTrait as _;
     fn envelope() -> EncryptedCredentialEnvelope {
         EncryptedCredentialEnvelope::new("test", [1; 24], vec![2; 32]).unwrap()
     }
@@ -566,11 +582,12 @@ mod tests {
         )
         .await
         .unwrap();
-        let repo = ProxyPoolRepository::new(database, Duration::from_secs(5));
+        let repo = ProxyPoolRepository::new(database.clone(), Duration::from_secs(5));
         let id = repo
             .create("订阅测试".to_owned(), true, 60, |_| Ok(envelope()))
             .await
             .unwrap();
+        assert!(crate::migration::Migrator::down(database.connection(), Some(1)).await.is_err());
         assert!(repo.get(id).await.unwrap().nodes.is_empty());
         let candidate = || {
             vec![(
@@ -593,7 +610,7 @@ mod tests {
         let node = repo.get(id).await.unwrap().nodes[0].proxy.proxy_id();
         assert!(repo.claim(id, 1, 100).await.unwrap());
         assert!(!repo.claim(id, 1, 101).await.unwrap());
-        repo.finish(id, 1, "ready", vec![(node, Some(10))])
+        repo.finish(id, 1, "ready", vec![(node, 1, Some(10))])
             .await
             .unwrap();
         repo.replace_nodes(id, 1, candidate(), |_, _| {
@@ -616,17 +633,30 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            repo.finish(id, 1, "ready", vec![(node, Some(1))])
+            repo.finish(id, 1, "ready", vec![(node, 1, Some(1))])
                 .await
                 .unwrap_err(),
             ProxyPoolRepositoryError::Conflict
         );
         assert!(!repo.get(id).await.unwrap().nodes[0].healthy);
+        // 模拟检测期间节点配置更新，旧版本的成功结果不得恢复健康。
+        proxies::Entity::update_many()
+            .filter(proxies::Column::Id.eq(node.get()))
+            .col_expr(proxies::Column::Version, Expr::value(2_i64))
+            .exec(database.connection())
+            .await
+            .unwrap();
+        repo.finish(id, 2, "ready", vec![(node, 1, Some(1))]).await.unwrap();
+        assert!(!repo.get(id).await.unwrap().nodes[0].healthy);
+        repo.finish(id, 2, "ready", vec![(node, 2, Some(2))]).await.unwrap();
+        assert!(repo.get(id).await.unwrap().nodes[0].healthy);
         repo.bind(0, None).await.unwrap();
         repo.delete(id).await.unwrap();
         assert!(matches!(
             repo.get(id).await,
             Err(ProxyPoolRepositoryError::NotFound)
         ));
+        crate::migration::Migrator::down(database.connection(), Some(1)).await.unwrap();
+        crate::migration::Migrator::up(database.connection(), None).await.unwrap();
     }
 }

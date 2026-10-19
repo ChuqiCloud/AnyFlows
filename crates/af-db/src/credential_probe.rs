@@ -297,7 +297,9 @@ impl ChannelProbeTargetRecord {
 
     /// 返回该凭据是否绑定专属代理；为 true 时当前探活不得回退直连。
     #[must_use]
-    pub const fn proxy_id(&self) -> Option<af_domain::ProxyId> { self.proxy_id }
+    pub const fn proxy_id(&self) -> Option<af_domain::ProxyId> {
+        self.proxy_id
+    }
 
     #[must_use]
     pub const fn proxy_required(&self) -> bool {
@@ -558,7 +560,11 @@ impl ChannelProbeTargetRepository {
                 envelope,
                 headers,
                 proxy_required: credential.proxy_id.is_some(),
-                proxy_id: credential.proxy_id.map(af_domain::ProxyId::new).transpose().map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?,
+                proxy_id: credential
+                    .proxy_id
+                    .map(af_domain::ProxyId::new)
+                    .transpose()
+                    .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?,
                 client_profile,
                 opencode_entry,
                 opencode_full_compatibility,
