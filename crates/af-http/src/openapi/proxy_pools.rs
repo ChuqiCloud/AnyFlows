@@ -34,3 +34,69 @@ struct ProxyPoolsApi;
 pub(super) fn document() -> utoipa::openapi::OpenApi {
     ProxyPoolsApi::openapi()
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn proxy_pool_contract_registers_admin_operations_and_hides_import_secrets() {
+        let document = serde_json::to_value(super::super::openapi_document()).unwrap();
+        for (path, method, operation_id) in [
+            ("/api/admin/proxy-pools", "get", "listAdminProxyPools"),
+            ("/api/admin/proxy-pools", "post", "createAdminProxyPool"),
+            ("/api/admin/proxy-pools/{id}", "put", "updateAdminProxyPool"),
+            (
+                "/api/admin/proxy-pools/{id}",
+                "delete",
+                "deleteAdminProxyPool",
+            ),
+            (
+                "/api/admin/proxy-pools/{id}/refresh",
+                "post",
+                "refreshAdminProxyPool",
+            ),
+            (
+                "/api/admin/proxy-pools/{id}/check",
+                "post",
+                "checkAdminProxyPool",
+            ),
+            (
+                "/api/admin/proxy-pool-bindings",
+                "put",
+                "bindAdminProxyPool",
+            ),
+        ] {
+            let operation = &document["paths"][path][method];
+            assert_eq!(operation["operationId"], operation_id);
+            assert_eq!(
+                operation["security"],
+                serde_json::json!([{"bearerAuth": []}])
+            );
+            assert!(operation["responses"].get("401").is_some());
+            assert!(operation["responses"].get("403").is_some());
+        }
+
+        let schemas = &document["components"]["schemas"];
+        let request = &schemas["AdminProxyPoolWriteRequest"]["properties"];
+        for field in ["source_url", "content"] {
+            assert_eq!(request[field]["writeOnly"], true);
+        }
+        for schema in ["AdminProxyPool", "AdminProxyPoolNode"] {
+            let response = schemas[schema]["properties"].as_object().unwrap();
+            for field in ["source_url", "content", "username", "password"] {
+                assert!(!response.contains_key(field));
+            }
+        }
+        assert!(
+            schemas["AdminProxyPoolNode"]["properties"]
+                .get("remark")
+                .is_some()
+        );
+        for field in ["skipped", "duplicates"] {
+            assert!(
+                schemas["AdminProxyPoolImportResult"]["properties"]
+                    .get(field)
+                    .is_some()
+            );
+        }
+    }
+}

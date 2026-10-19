@@ -50,6 +50,10 @@ pub(super) fn parse(
         json_entries(&value, &mut entries, 0, default_scheme)?;
     } else {
         for line in text.lines().filter(|line| !line.trim().is_empty()) {
+            if line.trim_start().starts_with(['#', ';']) || line.trim_start().starts_with("//") {
+                entries.push(line.to_owned());
+                continue;
+            }
             let mut starts = ["http://", "https://", "socks5://", "socks5h://"]
                 .into_iter()
                 .flat_map(|scheme| line.match_indices(scheme).map(|(index, _)| index))
@@ -195,14 +199,14 @@ fn candidate(line: &str, default_scheme: CredentialProxyScheme) -> Option<Candid
     let (raw, fragment) = raw
         .split_once('#')
         .map_or((raw, None), |(uri, note)| (uri, Some(note)));
-    let note = fragment.map(str::to_owned).unwrap_or_else(|| {
-        fields
-            .collect::<Vec<_>>()
-            .join(" ")
-            .trim_start_matches(['#', ';'])
-            .trim()
-            .to_owned()
-    });
+    let note = fragment
+        .into_iter()
+        .chain(fields)
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_start_matches(['#', ';'])
+        .trim()
+        .to_owned();
     let url = if raw.contains("://") {
         Url::parse(raw).ok()?
     } else {
@@ -354,6 +358,22 @@ fn csv_entry(line: &str, default_scheme: CredentialProxyScheme) -> Option<String
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn extracts_mixed_pool_text_without_importing_commented_out_uris() {
+        let result = parse(
+            "HTTP 池:http://alice:secret@192.0.2.1:3129,http://alice:secret@192.0.2.2:3129，socks5://192.0.2.3:1080#香港 节点\nsocks5://192.0.2.4:1080 #hk\n# http://192.0.2.5:80 socks5://192.0.2.6:1080\n; http://192.0.2.7:80\n// socks5://192.0.2.8:1080\n说明文字",
+            CredentialProxyScheme::Socks5,
+        )
+        .unwrap();
+        assert_eq!(result.nodes.len(), 4);
+        assert_eq!(result.skipped, 4);
+        assert_eq!(result.nodes[0].scheme, CredentialProxyScheme::Http);
+        assert_eq!(result.nodes[0].username.as_deref(), Some("alice"));
+        assert_eq!(result.nodes[1].password.as_deref(), Some("secret"));
+        assert_eq!(result.nodes[2].scheme, CredentialProxyScheme::Socks5);
+        assert_eq!(result.nodes[2].remark, "香港 节点");
+        assert_eq!(result.nodes[3].remark, "hk");
+    }
     #[test]
     fn skips_invalid_json_members_and_redacts_encoded_uri_remarks() {
         let result = parse(

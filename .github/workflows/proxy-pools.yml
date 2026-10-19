@@ -16,6 +16,7 @@ on:
       - 'crates/af-admin/src/proxy_pool.rs'
       - 'crates/af-admin/src/proxy_pool/**'
       - 'crates/af-http/src/proxy_pools.rs'
+      - 'crates/af-http/src/openapi/proxy_pools.rs'
       - '.github/workflows/proxy-pools.yml'
   workflow_dispatch:
 permissions:
@@ -63,7 +64,6 @@ jobs:
           cargo test -p af-db -p af-admin -p af-http -p af-server --lib proxy_pool --locked
           cargo test -p af-server --lib channel_probe --locked
           cargo test -p af-server --lib model_discovery --locked
-          cargo test -p af-http --lib openapi::tests::document_keeps_stable_operation_and_schema_names --locked
           cargo check -p af-server --locked
           cargo clippy -p af-admin -p af-db -p af-http -p af-server --lib --locked -- -D warnings
       - name: Export formatting patch
