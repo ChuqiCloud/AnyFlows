@@ -42,6 +42,7 @@ pub(super) const fn is_supported_runtime_target(
             ChannelType::OpenCode,
             Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic
         ) | (ChannelType::Anthropic, Protocol::Anthropic)
+            | (ChannelType::Nvidia, Protocol::OpenAiChat)
             | (ChannelType::Gemini, Protocol::Gemini)
             | (ChannelType::Jina, Protocol::JinaRerank)
             | (ChannelType::Cohere, Protocol::CohereRerank)

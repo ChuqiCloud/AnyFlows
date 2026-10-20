@@ -32,7 +32,7 @@ pub(crate) fn compatible_probe_credentials(
     let mut condition = Condition::all();
     if matches!(
         channel_type,
-        ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
+        ChannelType::Nvidia | ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
     ) {
         condition = condition.add(credentials::Column::Kind.eq(CredentialKind::ApiKey.as_str()));
     }

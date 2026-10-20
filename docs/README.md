@@ -23,6 +23,7 @@
 | [运行状态](runtime-status.md) | 节点负载、数据库与 Redis 健康、上下文缓存统计 |
 | [客户端档案](client-profiles.md) | 身份配置、修订管理、渠道绑定和 OpenCode 入口 |
 | [代理池](proxy-pools.md) | 多格式导入、订阅更新、节点测活和分层绑定 |
+| [NVIDIA 上游](nvidia-upstream.md) | NVIDIA API Catalog、自建 NIM、模型发现和渠道测活 |
 | [前端模板](frontend-template-development.md) | 内置前端、外部模板、预览和切换 |
 
 ## 开发与仓库维护

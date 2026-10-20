@@ -16,6 +16,7 @@ mod factory;
 mod gemini;
 mod jina;
 mod mimicry;
+mod nvidia;
 mod openai;
 mod opencode;
 pub use opencode::OpenCodeAdaptor;
@@ -46,8 +47,9 @@ pub use custom::{
 pub use error::{AdaptorError, AdaptorResult, AdaptorTransportError};
 pub use factory::{
     AdaptorSettings, AnthropicAdaptorSettings, BedrockAdaptorSettings, CohereAdaptorSettings,
-    CustomAdaptorSettings, GeminiAdaptorSettings, JinaAdaptorSettings, OpenAiAdaptorSettings,
-    OpenCodeAdaptorSettings, VertexAdaptorSettings, get_adaptor, get_task_adaptor,
+    CustomAdaptorSettings, GeminiAdaptorSettings, JinaAdaptorSettings, NvidiaAdaptorSettings,
+    OpenAiAdaptorSettings, OpenCodeAdaptorSettings, VertexAdaptorSettings, get_adaptor,
+    get_task_adaptor,
 };
 pub use gemini::GeminiAdaptor;
 pub use jina::JinaAdaptor;
@@ -55,6 +57,7 @@ pub use mimicry::{
     BuiltInClientSimulation, ClientSimulationContext, ClientSimulationHeaders,
     ClientSimulationMiddleware, MAX_CLIENT_SIMULATION_HEADER_VALUE_BYTES, apply_client_simulation,
 };
+pub use nvidia::NvidiaAdaptor;
 pub use openai::OpenAiAdaptor;
 pub use request::{
     MAX_UPSTREAM_REQUEST_BODY_BYTES, MAX_UPSTREAM_REQUEST_HEADER_COUNT,

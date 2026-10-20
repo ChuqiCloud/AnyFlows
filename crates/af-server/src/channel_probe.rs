@@ -719,6 +719,7 @@ fn supported_target(target: &ChannelProbeTargetRecord) -> bool {
             ChannelType::OpenCode,
             Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic
         ) | (ChannelType::Anthropic, Protocol::Anthropic)
+            | (ChannelType::Nvidia, Protocol::OpenAiChat)
             | (ChannelType::Gemini, Protocol::Gemini)
             | (ChannelType::Jina, Protocol::JinaRerank)
             | (ChannelType::Cohere, Protocol::CohereRerank)
@@ -772,6 +773,9 @@ fn adaptor_settings(target: &ChannelProbeTargetRecord) -> Result<AdaptorSettings
         ) => Ok(AdaptorSettings::OpenAi(
             OpenAiAdaptorSettings::for_protocol(target.protocol(), models)
                 .map_err(|_| ProbeFailure::AdapterBuild)?,
+        )),
+        (ChannelType::Nvidia, Protocol::OpenAiChat) => Ok(AdaptorSettings::Nvidia(
+            af_adapter::NvidiaAdaptorSettings::new(models),
         )),
         (ChannelType::Anthropic, Protocol::Anthropic) => Ok(AdaptorSettings::Anthropic(
             AnthropicAdaptorSettings::new(models),

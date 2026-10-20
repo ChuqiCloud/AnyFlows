@@ -268,6 +268,8 @@ string_enum! {
 string_enum! {
     /// 渠道选择的上游适配器类型。
     pub enum ChannelType {
+        /// NVIDIA API Catalog / NIM。
+        Nvidia => "nvidia",
         /// OpenAI 及其兼容 API。
         OpenAi => "openai",
         /// OpenCode 固定服务入口。
