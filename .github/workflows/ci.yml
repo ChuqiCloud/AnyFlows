@@ -449,6 +449,9 @@ jobs:
         if: needs.changes.outputs.full == 'true'
         run: bash tools/ci/test-container-test-runner.sh
 
+      - name: Check channel capability catalog
+        run: cargo run --locked --package xtask -- channel-capabilities check
+
       - name: Check OpenAPI contract
         run: |
           if cargo run --locked --package xtask -- openapi check; then

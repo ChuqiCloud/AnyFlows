@@ -7042,6 +7042,7 @@ dependencies = [
 name = "xtask"
 version = "0.3.0-beta.1"
 dependencies = [
+ "af-domain",
  "af-http",
  "cargo_metadata",
  "serde_json",

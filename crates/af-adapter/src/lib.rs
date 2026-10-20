@@ -49,7 +49,7 @@ pub use factory::{
     AdaptorSettings, AnthropicAdaptorSettings, BedrockAdaptorSettings, CohereAdaptorSettings,
     CustomAdaptorSettings, GeminiAdaptorSettings, JinaAdaptorSettings, NvidiaAdaptorSettings,
     OpenAiAdaptorSettings, OpenCodeAdaptorSettings, VertexAdaptorSettings, get_adaptor,
-    get_task_adaptor,
+    get_task_adaptor, standard_adaptor_settings,
 };
 pub use gemini::GeminiAdaptor;
 pub use jina::JinaAdaptor;

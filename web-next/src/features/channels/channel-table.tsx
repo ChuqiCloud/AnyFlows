@@ -8,6 +8,8 @@ import type { AdminChannel, AdminChannelProbeResponse } from '@/lib/api/generate
 import { cn } from '@/lib/utils'
 import { SiteTooltip } from '@/shared/components/site-tooltip'
 
+import { supportsProbe } from './channel-capabilities'
+
 export type ProbeDisplay = (AdminChannelProbeResponse & { failed?: false }) | { failed: true }
 
 type ChannelTableProps = {
@@ -121,12 +123,13 @@ function RowActions({ channel, probing, onProfile, onCredentials, onEdit, onProb
   onProbe: (channelId: number) => void
 }) {
   const { t } = useTranslation()
+  const probeSupported = supportsProbe(channel.type, channel.protocol)
   return (
     <div className="flex flex-wrap items-center justify-end gap-1">
       <Button isIconOnly type="button" size="sm" variant="light" className="size-10 md:size-8" aria-label={t('clientProfiles.channelSettings')} title={t('clientProfiles.channelSettings')} onClick={() => onProfile(channel)}><Fingerprint className="size-3.5" aria-hidden="true" /></Button>
 
       <SiteTooltip content={t('channels.actions.probe')}>
-        <Button isIconOnly aria-label={t('channels.actions.probe')} className="size-10 md:size-8" isDisabled={probing} size="sm" type="button" variant="light" onClick={() => onProbe(channel.id)}>
+        <Button isIconOnly aria-label={t('channels.actions.probe')} className="size-10 md:size-8" isDisabled={probing || !probeSupported} size="sm" type="button" variant="light" onClick={() => onProbe(channel.id)}>
           <Activity className="size-3.5" aria-hidden="true" />
         </Button>
       </SiteTooltip>

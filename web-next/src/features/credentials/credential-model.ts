@@ -1,3 +1,5 @@
+import { channelCapabilities } from '../channels/channel-capabilities.gen.ts'
+
 import type {
   AdminChannel,
   AdminChannelType,
@@ -45,25 +47,7 @@ export function credentialKindsForChannel(
   provider?: string | null,
 ): readonly WritableCredentialKind[] {
   if (channelType === 'openai' && provider?.trim().toLowerCase() === 'codex') return ['oauth']
-  switch (channelType) {
-    case 'bedrock':
-      return ['bedrock']
-    case 'vertex':
-      return ['oauth', 'service_account']
-    case 'anthropic':
-    case 'gemini':
-    case 'openai':
-      return ['api_key', 'oauth']
-    case 'opencode':
-      return ['api_key', 'public']
-    case 'nvidia':
-    case 'jina':
-    case 'cohere':
-    case 'xai':
-      return ['api_key']
-    case 'custom':
-      return ['api_key', 'oauth']
-  }
+  return channelCapabilities[channelType].creatableCredentialKinds
 }
 
 /** 从持久化状态与冷却窗口推导真实运行状态，不用前端健康分数猜测。 */
