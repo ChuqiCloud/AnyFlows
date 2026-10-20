@@ -1,26 +1,8 @@
 name: Proxy pools
 on:
-  pull_request:
-    branches: [develop, main]
-    paths:
-      - 'crates/af-db/src/proxy_pool.rs'
-      - 'crates/af-db/src/proxy_pool/**'
-      - 'crates/af-db/src/entity/proxy_pool*.rs'
-      - 'crates/af-db/src/migration/*proxy_pools.rs'
-      - 'crates/af-db/src/migration/*proxy_pool_refresh_attempt.rs'
-      - 'crates/af-db/src/credential_proxy.rs'
-      - 'crates/af-db/src/admin_channel_write.rs'
-      - 'crates/af-server/src/channel_probe.rs'
-      - 'crates/af-server/src/model_discovery.rs'
-      - 'crates/af-server/src/scheduled_chat*'
-      - 'crates/af-server/src/scheduled_chat/**'
-      - 'crates/af-server/src/bootstrap.rs'
-      - 'crates/af-admin/src/proxy_pool.rs'
-      - 'crates/af-admin/src/proxy_pool/**'
-      - 'crates/af-http/src/proxy_pools.rs'
-      - 'crates/af-http/src/openapi/proxy_pools.rs'
-      - '.github/workflows/proxy-pools.yml'
+  # 历史专项保留手动复测入口，日常检查由 CI 工作流承担。
   workflow_dispatch:
+
 permissions:
   contents: read
 concurrency:

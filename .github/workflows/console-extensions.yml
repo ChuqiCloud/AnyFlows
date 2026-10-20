@@ -1,12 +1,7 @@
 name: Console extensions
 
 on:
-  push:
-    branches: [main, 'feature/console-extension-entry']
-    paths: ['web/**', 'web-next/**', 'tools/ci/frontend-client-profiles-smoke.mjs', '.github/workflows/console-extensions.yml']
-  pull_request:
-    branches: [main, develop]
-    paths: ['web/**', 'web-next/**', 'tools/ci/frontend-client-profiles-smoke.mjs', '.github/workflows/console-extensions.yml']
+  # 历史专项保留手动复测入口，日常检查由 CI 工作流承担。
   workflow_dispatch:
 
 permissions:
@@ -42,7 +37,17 @@ jobs:
           git remote add origin "$repository_url"
           git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
           git checkout --detach FETCH_HEAD
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - name: Prepare pinned Node setup action
+        run: |
+          set -euo pipefail
+          action_path='.ci-actions/setup-node'
+          action_sha='49933ea5288caeca8642d1e84afbd3f7d6820020'
+          git init --quiet "$action_path"
+          git -C "$action_path" remote add origin https://github.com/actions/setup-node.git
+          git -C "$action_path" fetch --quiet --no-tags --depth=1 origin "$action_sha"
+          git -C "$action_path" checkout --quiet --detach FETCH_HEAD
+          test "$(git -C "$action_path" rev-parse HEAD)" = "$action_sha"
+      - uses: ./.ci-actions/setup-node
         with:
           node-version: '24'
       - name: Install package manager and locked dependencies
