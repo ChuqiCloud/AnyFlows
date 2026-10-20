@@ -925,7 +925,7 @@ impl RelayStateMachine {
                         for failure in &mut response.report.failures {
                             failure.candidate_index += candidate_index;
                         }
-                        failures.extend(response.report.failures.drain(..));
+                        failures.append(&mut response.report.failures);
                         response.report.failures = failures;
                         response.attempts =
                             NonZeroUsize::new(attempt_count.load(Ordering::Relaxed).max(1))
