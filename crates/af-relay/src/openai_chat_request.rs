@@ -250,6 +250,49 @@ mod tests {
     }
 
     #[test]
+    fn reasoning_tool_history_survives_usage_injection_canonical_rebuild_and_overrides() {
+        for stream in [false, true] {
+            let original = json!({
+                "model": "deepseek-flash",
+                "stream": stream,
+                "messages": [
+                    {"role": "user", "content": "look this up"},
+                    {
+                        "role": "assistant",
+                        "content": null,
+                        "reasoning_content": "I should use the lookup tool.",
+                        "tool_calls": [{
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {"name": "lookup", "arguments": "{}"}
+                        }]
+                    },
+                    {"role": "tool", "tool_call_id": "call-1", "content": "found it"}
+                ]
+            });
+            let body = Bytes::from(serde_json::to_vec(&original).unwrap());
+            let envelope = || openai_chat::parse_request_envelope(body.clone()).unwrap();
+            let prepared = prepare_openai_chat_request(envelope()).unwrap();
+            let canonical = CanonicalRequestEnvelope::from_canonical(envelope().into_canonical());
+            let rebuilt = prepare_openai_chat_request(canonical).unwrap();
+            let overrides =
+                OpenAiChatRequestOverrides::new("upstream-model", Some(0.25), None, None, None)
+                    .unwrap();
+            let (_, candidate_body) = overrides.prepare(envelope()).unwrap().into_parts();
+
+            for outbound in [prepared.body, rebuilt.body, candidate_body.unwrap()] {
+                let value: serde_json::Value = serde_json::from_slice(&outbound).unwrap();
+                assert_eq!(value["messages"], original["messages"]);
+                if stream {
+                    assert_eq!(value["stream_options"]["include_usage"], true);
+                }
+                let parsed = openai_chat::parse_request(&outbound).unwrap();
+                assert!(crate::estimate_openai_request_upper_bound(&parsed).is_ok());
+            }
+        }
+    }
+
+    #[test]
     fn candidate_overrides_map_model_and_apply_closed_sampling_fields() {
         let request = openai_chat::parse_request_envelope(Bytes::from_static(
             br#"{"model":"public-model","messages":[{"role":"user","content":"hello"}],"temperature":0.9,"top_p":0.7,"max_completion_tokens":64,"stop":["old"]}"#,

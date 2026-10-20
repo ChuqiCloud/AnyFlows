@@ -455,6 +455,11 @@ impl MessageConvertState {
     }
 
     fn add_text(&mut self, text: String) -> Result<ContentBlock, ParseRequestError> {
+        self.add_text_bytes(&text)?;
+        Ok(ContentBlock::Text(text))
+    }
+
+    fn add_text_bytes(&mut self, text: &str) -> Result<(), ParseRequestError> {
         if text.len() > MAX_TEXT_BYTES {
             return Err(ParseRequestError::StructureLimitExceeded);
         }
@@ -465,8 +470,7 @@ impl MessageConvertState {
         if self.text_bytes > MAX_TOTAL_TEXT_BYTES {
             return Err(ParseRequestError::StructureLimitExceeded);
         }
-        self.add_block()?;
-        Ok(ContentBlock::Text(text))
+        self.add_block()
     }
 
     fn add_media_bytes(&mut self, bytes: usize) -> Result<(), ParseRequestError> {
@@ -561,7 +565,19 @@ fn convert_assistant_message(
     message: AssistantMessageWire,
     state: &mut MessageConvertState,
 ) -> Result<Message, ParseRequestError> {
-    let mut content = match message.content {
+    if message.reasoning_content.is_some() && message.reasoning.is_some() {
+        return Err(ParseRequestError::InvalidValue);
+    }
+    let reasoning = message.reasoning_content.or(message.reasoning);
+    let mut content = Vec::new();
+    if let Some(text) = reasoning {
+        state.add_text_bytes(&text)?;
+        content.push(ContentBlock::Thinking {
+            text,
+            signature: None,
+        });
+    }
+    content.extend(match message.content {
         None => Vec::new(),
         Some(AssistantContentWire::Text(text)) => vec![state.add_text(text)?],
         Some(AssistantContentWire::Parts(parts)) => {
@@ -574,7 +590,7 @@ fn convert_assistant_message(
                 })
                 .collect::<Result<Vec<_>, _>>()?
         }
-    };
+    });
 
     let tool_calls = match message.tool_calls {
         Field::Missing => Vec::new(),

@@ -393,7 +393,7 @@ fn build_text_message(
     state: &mut MessageBuildState,
 ) -> Result<Value, BuildRequestError> {
     let content = build_text_content(blocks, state)?;
-    Ok(message_value(role, content, None, None))
+    Ok(message_value(role, content, None, None, None))
 }
 
 fn build_text_content(
@@ -428,6 +428,7 @@ fn build_user_message(
             Value::String(text.clone()),
             None,
             None,
+            None,
         ));
     }
 
@@ -453,7 +454,7 @@ fn build_user_message(
             }
         });
     }
-    Ok(message_value("user", Value::Array(parts), None, None))
+    Ok(message_value("user", Value::Array(parts), None, None, None))
 }
 
 fn build_assistant_message(
@@ -466,12 +467,22 @@ fn build_assistant_message(
 
     let mut texts = Vec::new();
     let mut tool_calls = Vec::new();
+    let mut reasoning_content = None;
+    let mut saw_text = false;
     let mut saw_tool_call = false;
     for block in blocks {
         match block {
             ContentBlock::Text(text) if !saw_tool_call => {
                 state.add_text(text)?;
+                saw_text = true;
                 texts.push(text.clone());
+            }
+            ContentBlock::Thinking {
+                text,
+                signature: None,
+            } if !saw_text && !saw_tool_call && reasoning_content.is_none() => {
+                state.add_text(text)?;
+                reasoning_content = Some(text.clone());
             }
             ContentBlock::ToolUse {
                 id,
@@ -496,7 +507,7 @@ fn build_assistant_message(
             }
         }
     }
-    if texts.is_empty() && tool_calls.is_empty() {
+    if texts.is_empty() && tool_calls.is_empty() && reasoning_content.is_none() {
         return Err(BuildRequestError::InvalidValue);
     }
     let content = if texts.is_empty() {
@@ -505,7 +516,13 @@ fn build_assistant_message(
         text_content_value(texts)
     };
     let tool_calls = (!tool_calls.is_empty()).then_some(tool_calls);
-    Ok(message_value("assistant", content, tool_calls, None))
+    Ok(message_value(
+        "assistant",
+        content,
+        tool_calls,
+        None,
+        reasoning_content,
+    ))
 }
 
 fn build_tool_call(
@@ -570,6 +587,7 @@ fn build_tool_message(
         content,
         None,
         Some(tool_use_id.clone()),
+        None,
     ))
 }
 
@@ -673,6 +691,7 @@ fn message_value(
     content: Value,
     tool_calls: Option<Vec<Value>>,
     tool_call_id: Option<String>,
+    reasoning_content: Option<String>,
 ) -> Value {
     let mut message = Map::new();
     message.insert("role".to_owned(), Value::String(role.to_owned()));
@@ -682,6 +701,12 @@ fn message_value(
     }
     if let Some(tool_call_id) = tool_call_id {
         message.insert("tool_call_id".to_owned(), Value::String(tool_call_id));
+    }
+    if let Some(reasoning_content) = reasoning_content {
+        message.insert(
+            "reasoning_content".to_owned(),
+            Value::String(reasoning_content),
+        );
     }
     Value::Object(message)
 }
