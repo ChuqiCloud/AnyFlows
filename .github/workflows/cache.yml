@@ -4,10 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches: [main, develop]
-    paths: ['crates/af-cache/**', '.github/workflows/cache.yml']
+    paths: ['crates/af-cache/**', 'tools/ci/run-cache-redis-test.sh', 'tools/ci/container-test-runner.sh', '.github/workflows/cache.yml']
   push:
     branches: [main]
-    paths: ['crates/af-cache/**', '.github/workflows/cache.yml']
+    paths: ['crates/af-cache/**', 'tools/ci/run-cache-redis-test.sh', 'tools/ci/container-test-runner.sh', '.github/workflows/cache.yml']
   workflow_dispatch:
 
 permissions:
@@ -22,15 +22,6 @@ jobs:
     if: github.event.action != 'closed'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    services:
-      redis:
-        image: redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3
-        ports: ['6379/tcp']
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 2s
-          --health-timeout 2s
-          --health-retries 30
     env:
       CARGO_BUILD_JOBS: '1'
       CARGO_INCREMENTAL: '0'
@@ -60,7 +51,4 @@ jobs:
       - name: Test cache contracts
         run: cargo test -p af-cache --locked
       - name: Test shared Redis admission
-        env:
-          AF_REQUIRE_LIVE_REDIS: '1'
-          AF_TEST_REDIS_URL: ${{ github.server_url == 'https://github.com' && format('redis://127.0.0.1:{0}/', job.services.redis.ports[6379]) || 'redis://redis:6379/' }}
-        run: cargo test -p af-cache --test redis_integration --locked -- --include-ignored
+        run: bash tools/ci/run-cache-redis-test.sh --cache-only

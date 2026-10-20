@@ -109,11 +109,21 @@ def main():
         "database checks must reuse Rust build artifacts",
     )
     cache = workflows["cache.yml"]["jobs"]["cache"]
-    require(
-        cache["services"]["redis"].get("ports") == ["6379/tcp"],
-        "cache.yml",
-        "use a dynamic Redis host port to avoid parallel job conflicts",
-    )
+    for filename, job_name in (("cache.yml", "cache"), ("ci.yml", "cache-redis"), ("conversation-compatibility.yml", "conversation")):
+        job = workflows[filename]["jobs"][job_name]
+        require(
+            "redis" not in job.get("services", {}),
+            filename,
+            "Redis tests must use a private network rather than a shared service alias",
+        )
+        redis_steps = [step for step in job["steps"] if "bash tools/ci/run-cache-redis-test.sh" in step.get("run", "")]
+        require(bool(redis_steps), filename, "keep the isolated Redis integration entry point")
+        for step in redis_steps:
+            require(
+                "AF_TEST_REDIS_URL" not in step.get("env", {}) and "AF_TEST_REDIS_URL" not in job.get("env", {}),
+                filename,
+                "let the Redis test runner create its isolated instance",
+            )
     require(
         any(str(step.get("uses", "")).startswith("Swatinem/rust-cache@") for step in cache["steps"]),
         "cache.yml",

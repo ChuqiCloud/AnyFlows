@@ -817,16 +817,6 @@ jobs:
     if: ${{ needs.changes.outputs.redis == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    services:
-      redis:
-        image: redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3
-        ports:
-          - 16379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 30
     steps:
       - name: Configure external Gitea checkout endpoint
         if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
@@ -863,16 +853,5 @@ jobs:
       - name: Cache Redis test build artifacts
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-      - name: Run Redis cache smoke test on Gitea
-        if: ${{ github.server_url != 'https://github.com' }}
-        env:
-          AF_TEST_REDIS_URL: redis://redis:6379/
-          AF_REQUIRE_LIVE_REDIS: "1"
-        run: bash tools/ci/run-cache-redis-test.sh
-
-      - name: Run Redis cache smoke test on GitHub
-        if: ${{ github.server_url == 'https://github.com' }}
-        env:
-          AF_TEST_REDIS_URL: redis://127.0.0.1:16379/
-          AF_REQUIRE_LIVE_REDIS: "1"
+      - name: Run isolated Redis cache smoke test
         run: bash tools/ci/run-cache-redis-test.sh
