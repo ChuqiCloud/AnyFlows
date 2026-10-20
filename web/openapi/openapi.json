@@ -20892,6 +20892,7 @@
               {
                 "type": "string",
                 "enum": [
+                  "nvidia",
                   "openai",
                   "opencode",
                   "anthropic",
@@ -21172,6 +21173,7 @@
       "AdminChannelType": {
         "type": "string",
         "enum": [
+          "nvidia",
           "openai",
           "opencode",
           "anthropic",
@@ -21223,6 +21225,7 @@
           "type": {
             "type": "string",
             "enum": [
+              "nvidia",
               "openai",
               "opencode",
               "anthropic",

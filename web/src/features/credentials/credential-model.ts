@@ -56,6 +56,7 @@ export function credentialKindsForChannel(
       return ['api_key', 'oauth']
     case 'opencode':
       return ['api_key', 'public']
+    case 'nvidia':
     case 'jina':
     case 'cohere':
     case 'xai':

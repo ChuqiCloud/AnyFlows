@@ -37,6 +37,40 @@ const RESPONSES_PROBE_RESPONSE: &[u8] = br#"{"id":"resp_probe","object":"respons
 static NEXT_DATABASE: AtomicU64 = AtomicU64::new(0);
 
 #[tokio::test]
+async fn nvidia_probe_uses_chat_endpoint_bearer_and_nim_token_budget() {
+    let key = [0x42; CREDENTIAL_ENCRYPTION_KEY_BYTES];
+    let database = test_database().await;
+    seed_probe_target(&database.seed, &key, Protocol::OpenAiChat, false, false).await;
+    database
+        .seed
+        .execute_unprepared(&format!(
+            "UPDATE channels SET type = 'nvidia' WHERE id = {TEST_CHANNEL_ID}"
+        ))
+        .await
+        .unwrap();
+    let response = br#"{"id":"chatcmpl-nim","object":"chat.completion","created":1700000000,"model":"probe-model-canary","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}"#;
+    let (proxy_address, captured, server) = spawn_proxy("200 OK", response);
+    assert_eq!(
+        probe(&database.pool, &key, proxy_address)
+            .check(channel_id())
+            .await,
+        ChannelProbeStatus::Healthy
+    );
+    let request = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    server.join().unwrap();
+    let head = request.head.to_ascii_lowercase();
+    assert!(head.starts_with("post http://probe-upstream.example/v1/chat/completions http/1.1"));
+    assert!(head.contains("authorization: bearer probe-secret-canary"));
+    let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(body["model"], MODEL_CANARY);
+    assert_eq!(body["max_tokens"], 1);
+    assert!(body.get("max_completion_tokens").is_none());
+    assert!(body.get("tool_choice").is_none());
+    assert_eq!(body["stream"], false);
+    database.close().await;
+}
+
+#[tokio::test]
 async fn valid_openai_response_is_healthy_and_sends_required_headers() {
     let key = [0x42; CREDENTIAL_ENCRYPTION_KEY_BYTES];
     let database = test_database().await;

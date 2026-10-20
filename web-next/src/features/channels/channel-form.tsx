@@ -42,10 +42,11 @@ type ChannelFormProps = {
 
 /* HeroUI Select 不接受空字符串 key，用哨兵 key 表达各枚举里的"关闭/空"选项。 */
 const OFF_KEY = '__off__'
-const adapterOptions = ['opencode', 'openai', 'anthropic', 'gemini', 'jina', 'cohere', 'xai'].map((id) => ({ ...findProvider(id)!, id }))
+const adapterOptions = ['nvidia', 'opencode', 'openai', 'anthropic', 'gemini', 'jina', 'cohere', 'xai'].map((id) => ({ ...findProvider(id)!, id }))
 const channelTypeOptions = [findProvider('codex_oauth')!, ...adapterOptions]
 const OPENAI_PROTOCOL_KEYS = ['openai_chat', 'openai_responses', 'openai_embeddings', 'openai_images', 'openai_audio', 'openai_speech'] as const
 const PROTOCOL_BY_TYPE = {
+  nvidia: ['openai_chat'],
   opencode: ['openai_chat', 'openai_responses', 'anthropic'],
   anthropic: ['anthropic'],
   gemini: ['gemini'],
@@ -164,8 +165,8 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                 <div className="flex h-9 items-center rounded-lg border border-[var(--hairline)] bg-surface-2 px-3 text-sm text-muted-foreground">{t('channels.form.codexOAuthFixedEndpoint')}</div>
               </ChannelFormField>
             ) : (
-              <ChannelFormField id="channel-url" label={t('channels.fields.baseUrl')} error={form.formState.errors.baseUrl?.message}>
-                <Input id="channel-url" placeholder="https://api.example.com/v1" aria-invalid={!!form.formState.errors.baseUrl} {...form.register('baseUrl')} />
+              <ChannelFormField id="channel-url" label={t('channels.fields.baseUrl')} error={form.formState.errors.baseUrl?.message} hint={channelType === 'nvidia' ? t('channels.form.nvidiaBaseUrlHint') : undefined}>
+                <Input id="channel-url" placeholder={channelType === 'nvidia' ? 'https://integrate.api.nvidia.com/v1' : 'https://api.example.com/v1'} aria-invalid={!!form.formState.errors.baseUrl} {...form.register('baseUrl')} />
               </ChannelFormField>
             )}
             <ChannelFormField id="channel-timeout" label={t('channels.fields.timeout')} error={form.formState.errors.timeoutSeconds?.message} hint={t('channels.form.timeoutHint')}>
@@ -200,6 +201,8 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                     const currentProtocol = form.getValues('protocol')
                     const nextProtocol = nextType === 'codex_oauth'
                       ? 'openai_responses'
+                      : nextType === 'nvidia'
+                        ? 'openai_chat'
                       : nextType === 'opencode'
                         ? (currentProtocol === 'anthropic' || currentProtocol === 'openai_responses' ? currentProtocol : 'openai_chat')
                       : nextType === 'anthropic'
@@ -221,6 +224,9 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                           ? currentProtocol
                           : 'openai_chat'
                     field.onChange(nextType)
+                    if (nextType === 'nvidia') {
+                      form.setValue('provider', 'nvidia', { shouldDirty: true, shouldValidate: true })
+                    }
                     if (nextType === 'opencode') {
                       form.setValue('provider', 'opencode', { shouldDirty: true, shouldValidate: true })
                       form.setValue('baseUrl', '', { shouldDirty: true, shouldValidate: true })
@@ -230,7 +236,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                       form.setValue('provider', 'codex', { shouldDirty: true, shouldValidate: true })
                       form.setValue('baseUrl', '', { shouldDirty: true, shouldValidate: true })
                       form.setValue('responsesWebsocketEnabled', false, { shouldDirty: true, shouldValidate: true })
-                    } else if (['codex', 'opencode'].includes(form.getValues('provider')) && nextType !== 'opencode') {
+                    } else if (['codex', 'opencode', 'nvidia'].includes(form.getValues('provider')) && nextType !== 'opencode') {
                       form.setValue('provider', nextType, { shouldDirty: true, shouldValidate: true })
                     }
                     form.setValue('protocol', nextProtocol, {
