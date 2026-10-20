@@ -573,7 +573,7 @@ fn adaptor_settings_for_target(
 #[cfg(test)]
 fn adaptor_settings(
     channel_type: ChannelType,
-    protocol: Protocol,
+    protocol: af_domain::Protocol,
 ) -> Result<AdaptorSettings, UpstreamModelDiscoveryError> {
     af_adapter::standard_adaptor_settings(channel_type, protocol, Vec::new(), None)
         .map_err(|_| UpstreamModelDiscoveryError::UnsupportedChannel)
