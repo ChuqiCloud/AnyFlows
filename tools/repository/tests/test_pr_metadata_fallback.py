@@ -181,7 +181,7 @@ class MetadataFallbackTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             payload = json.loads(payload_file.read_text(encoding="utf-8"))
             self.assertEqual(payload["title"], "同步 Gitea 公共核心")
-            self.assertIn(SHA, payload["body"])
+            self.assertEqual(payload["body"], "")
             self.assertNotIn("anyflows-pr-source", payload["body"])
 
 
