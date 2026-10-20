@@ -2,7 +2,9 @@ name: Mirror Gitea PR discussion
 
 on:
   pull_request:
-    types: [opened, edited, reopened, synchronize, closed]
+    # 合并后的首次同步由 export-public-core.yml 负责；避免 closed 事件
+    # 在 Gitea Actions 中重复运行并使用无效的 GitHub 同步令牌。
+    types: [opened, edited, reopened, synchronize]
     branches: [develop]
   issue_comment:
     types: [created, edited, deleted]
