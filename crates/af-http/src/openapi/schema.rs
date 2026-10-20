@@ -377,6 +377,7 @@ pub(crate) enum AdminRouteStrategySchema {
 #[derive(ToSchema)]
 #[schema(as = AdminChannelType, rename_all = "snake_case")]
 pub(crate) enum AdminChannelTypeSchema {
+    Nvidia,
     Openai,
     Opencode,
     Anthropic,
@@ -410,6 +411,7 @@ pub(crate) enum AdminChannelProtocolSchema {
 #[derive(ToSchema)]
 #[schema(as = AdminChannelWriteType, rename_all = "snake_case")]
 pub(crate) enum AdminChannelWriteTypeSchema {
+    Nvidia,
     Openai,
     Opencode,
     Anthropic,

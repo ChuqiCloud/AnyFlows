@@ -487,6 +487,7 @@
       "gemini": "Gemini"
     },
     "type": {
+      "nvidia": "NVIDIA NIM",
       "openai": "OpenAI",
       "codex_oauth": "OpenAI Codex OAuth",
       "anthropic": "Anthropic",
@@ -569,6 +570,7 @@
       "responsesWebsocketHint": "仅在请求提供稳定会话标识时复用连接；首事件前失败会回退一次 HTTP。",
       "responsesCompactModeHint": "自动模式只在健康检查确认支持后参与调度；强制开启仍只允许原生 Responses 渠道。",
       "responsesCompactModelMappingHint": "可选。普通模型映射完成后，仅对 Compact 请求追加这一层上游模型映射。",
+      "nvidiaBaseUrlHint": "留空使用 NVIDIA 官方托管 API。可填写自建 NIM 地址（可带 /v1）；仅支持 API Key 和 Chat Completions。",
       "opencodeBaseUrlHint": "使用内置服务地址，仅支持 API Key。可用模型以服务端访问权限和测试结果为准。",
       "opencodeFixedEndpoint": "内置 OpenCode 接口",
       "codexOAuthBaseUrlHint": "Codex OAuth 使用内置的 ChatGPT 接口地址，无需填写上游地址。",

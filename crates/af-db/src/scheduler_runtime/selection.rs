@@ -76,7 +76,7 @@ fn try_runtime_target(
             CredentialKind::ApiKey | CredentialKind::Oauth | CredentialKind::Public
         ) || (matches!(
             channel_type,
-            ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
+            ChannelType::Nvidia | ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
         ) && credential_kind != CredentialKind::ApiKey)
             || (credential_kind == CredentialKind::Public && channel_type != ChannelType::OpenCode)
             || (channel_type == ChannelType::OpenCode

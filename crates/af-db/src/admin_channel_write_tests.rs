@@ -15,6 +15,80 @@ use super::{
 };
 
 #[tokio::test]
+async fn nvidia_channel_persists_and_rejects_non_api_key_credentials() -> Result<(), Box<dyn Error>>
+{
+    let fixture = fixture().await?;
+    let create = |protocol| {
+        AdminChannelWriteRecord::new(
+            "NVIDIA".to_owned(),
+            ChannelType::Nvidia,
+            protocol,
+            None,
+            None,
+            Status::Enabled,
+            1,
+            1,
+            true,
+            Vec::new(),
+            Vec::new(),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            None,
+        )
+        .with_provider(Some("nvidia".to_owned()))
+    };
+    assert_eq!(
+        fixture
+            .repository
+            .create_channel(create(Protocol::OpenAiResponses))
+            .await
+            .unwrap_err(),
+        AdminChannelWriteRepositoryError::InvalidInput
+    );
+    let channel = fixture
+        .repository
+        .create_channel(create(Protocol::OpenAiChat))
+        .await?;
+    assert_eq!(channel.channel_type(), ChannelType::Nvidia);
+    assert_eq!(channel.protocol(), Protocol::OpenAiChat);
+    assert_eq!(channel.provider(), Some("nvidia"));
+    for kind in [
+        CredentialKind::Oauth,
+        CredentialKind::Public,
+        CredentialKind::Bedrock,
+        CredentialKind::ServiceAccount,
+    ] {
+        assert_eq!(
+            fixture
+                .repository
+                .create_credential(channel.channel_id(), credential_record(kind, None), |_| Ok(
+                    envelope(0x41)
+                ))
+                .await
+                .unwrap_err(),
+            AdminChannelWriteRepositoryError::InvalidInput
+        );
+    }
+    assert!(matches!(
+        fixture
+            .repository
+            .create_credential(
+                channel.channel_id(),
+                credential_record(CredentialKind::ApiKey, None),
+                |_| Ok(envelope(0x42))
+            )
+            .await?,
+        AdminCredentialCreateOutcome::Created(_)
+    ));
+    let (listed, _) = fixture.repository.list(None, 10).await?.into_parts();
+    assert_eq!(listed[0].channel_type(), ChannelType::Nvidia);
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn opencode_public_pool_rejects_paid_keys_duplicates_and_service_changes()
 -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;

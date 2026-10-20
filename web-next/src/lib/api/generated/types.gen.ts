@@ -147,7 +147,7 @@ export type AdminChannelAutoBanRules = {
 export type AdminChannelCreateRequest = {
     provider?: string | null;
     name: string;
-    type: 'openai' | 'opencode' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
+    type: 'nvidia' | 'openai' | 'opencode' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
     protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
@@ -189,11 +189,11 @@ export type AdminChannelProbeResponse = {
 };
 export type AdminChannelProbeStatus = 'healthy' | 'unhealthy' | 'timeout';
 export type AdminChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
-export type AdminChannelType = 'openai' | 'opencode' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai' | 'bedrock' | 'vertex' | 'custom';
+export type AdminChannelType = 'nvidia' | 'openai' | 'opencode' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai' | 'bedrock' | 'vertex' | 'custom';
 export type AdminChannelUpdateRequest = {
     provider?: string | null;
     name: string;
-    type: 'openai' | 'opencode' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
+    type: 'nvidia' | 'openai' | 'opencode' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
     protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
@@ -2487,7 +2487,7 @@ export type VideoTaskStatus = 'pending' | 'done' | 'expired' | 'failed';
 export type AdminChannelCreateRequestWritable = {
     provider?: string | null;
     name: string;
-    type: 'openai' | 'opencode' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
+    type: 'nvidia' | 'openai' | 'opencode' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
     protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
@@ -2528,7 +2528,7 @@ export type AdminChannelCreateRequestWritable = {
 export type AdminChannelUpdateRequestWritable = {
     provider?: string | null;
     name: string;
-    type: 'openai' | 'opencode' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
+    type: 'nvidia' | 'openai' | 'opencode' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
     protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;

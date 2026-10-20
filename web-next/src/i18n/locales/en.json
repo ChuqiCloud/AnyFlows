@@ -569,6 +569,7 @@
       "gemini": "Gemini"
     },
     "type": {
+      "nvidia": "NVIDIA NIM",
       "openai": "OpenAI",
       "codex_oauth": "OpenAI Codex OAuth",
       "anthropic": "Anthropic",
@@ -651,6 +652,7 @@
       "responsesWebsocketHint": "Reuses a connection only when the request has a stable session identifier. Failures before the first event fall back to HTTP once.",
       "responsesCompactModeHint": "Auto mode routes only after a real probe confirms support. Force-on is still limited to native Responses channels.",
       "responsesCompactModelMappingHint": "Optional. Applies a Compact-only upstream model mapping after the normal model mapping.",
+      "nvidiaBaseUrlHint": "Leave blank for the NVIDIA hosted API, or enter a self-hosted NIM URL (with or without /v1). Supports API Key and Chat Completions.",
       "opencodeBaseUrlHint": "Uses the built-in service endpoint and API keys. Model access depends on upstream permissions and probe results.",
       "opencodeFixedEndpoint": "Built-in OpenCode endpoint",
       "codexOAuthBaseUrlHint": "Codex OAuth uses the built-in ChatGPT endpoint. No upstream URL is required.",
