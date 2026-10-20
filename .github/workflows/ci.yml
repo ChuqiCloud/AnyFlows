@@ -117,8 +117,8 @@ jobs:
           {
             echo "frontend=$(matches '^(web/|web-next/|tools/ci/check-frontend-parity.mjs$)')"
             echo "rust=$(matches '^(crates/|tools/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$)')"
-            echo "database=$(matches '^(crates/af-db/|tools/ci/run-db-migration-test\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
-            echo "redis=$(matches '^(crates/af-cache/|tools/ci/run-cache-redis-test\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
+            echo "database=$(matches '^(crates/af-db/|tools/ci/(run-db-migration-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
+            echo "redis=$(matches '^(crates/af-cache/|tools/ci/(run-cache-redis-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
             echo "clickhouse=$(matches '^(crates/af-server/src/admin_dashboard_storage/clickhouse\.rs$|crates/af-server/tests/admin_dashboard_chain\.rs$|tools/ci/run-clickhouse-integration-test\.sh$)')"
             echo "deployment=$(matches '^(Dockerfile$|docker-compose\.ya?ml$|\.dockerignore$|scripts/deploy/)')"
             echo "systemd=$(matches '^(scripts/systemd/|tools/ci/(package-release|finalize-release|test-release-scripts|verify-release-tag)\.sh$|\.cnb/release\.yml$)')"

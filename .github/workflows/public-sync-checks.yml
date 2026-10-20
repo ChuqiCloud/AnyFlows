@@ -6,6 +6,8 @@ on:
     paths:
       - .github/workflows/**
       - tools/ci/check-workflow*.py
+      - tools/ci/*container-test-runner.sh
+      - tools/ci/run-cache-redis-test.sh
       - tools/repository/**
       - tools/ci/test-public-core-export.sh
   pull_request:
@@ -14,6 +16,8 @@ on:
     paths:
       - .github/workflows/**
       - tools/ci/check-workflow*.py
+      - tools/ci/*container-test-runner.sh
+      - tools/ci/run-cache-redis-test.sh
       - tools/repository/**
       - tools/ci/test-public-core-export.sh
 
@@ -57,6 +61,13 @@ jobs:
           policy_dependencies="$RUNNER_TEMP/workflow-policy"
           python3 -m pip install --quiet --disable-pip-version-check --target "$policy_dependencies" PyYAML==6.0.3
           PYTHONPATH="$policy_dependencies" python3 tools/ci/check-workflow-policy.py
+
+      - name: Check container test entry points
+        run: |
+          for script in tools/ci/container-test-runner.sh tools/ci/run-cache-redis-test.sh; do
+            bash -n "$script"
+          done
+          bash tools/ci/test-container-test-runner.sh
 
       - name: Check export and synchronization regressions
         run: bash tools/ci/test-public-core-export.sh

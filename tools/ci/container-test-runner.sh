@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-readonly CI_TEST_RUNNER_IMAGE="docker.io/library/rust:1.97.1-bookworm@sha256:77fac8b98f9f46062bb680b6d25d5bcaabfc400143952ebc572e924bcbedc3fa"
+# Match the Ubuntu 24.04 build jobs so copied test binaries can use their glibc.
+readonly CI_TEST_RUNNER_IMAGE="docker.gitea.com/runner-images:ubuntu-24.04@sha256:0e62e56b382ebf485bff1e51a05cbe27c708545a2e91425467fd31eb3e249521"
 
 ci_extract_test_binary() {
     sed -nE 's/^[[:space:]]*Executable .* \(([^()]*)\)$/\1/p' | tail -n 1
