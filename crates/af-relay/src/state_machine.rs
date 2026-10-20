@@ -756,8 +756,8 @@ impl RelayStateMachine {
 
     /// 按 Routing → Credential → Sending → Classifying/Streaming → Retry 执行一次请求。
     ///
-    /// 每个候选最多发送一次；可重试的上游故障才会切换候选，客户端参数错误不会继续
-    /// 扩散。状态机不持有计费会话，调用方应在外层让同一 BillingSession 覆盖整个执行。
+    /// 按配置重试可恢复的上游故障；客户端参数错误不会继续扩散。
+    /// 状态机不持有计费会话，调用方应在外层让同一 BillingSession 覆盖整个执行。
     pub async fn execute(&self, request: RelayRequest) -> Result<RelayResponse, RelayError> {
         self.execute_with_report(request)
             .await
@@ -925,7 +925,7 @@ impl RelayStateMachine {
                         for failure in &mut response.report.failures {
                             failure.candidate_index += candidate_index;
                         }
-                        failures.extend(response.report.failures.drain(..));
+                        failures.append(&mut response.report.failures);
                         response.report.failures = failures;
                         response.attempts =
                             NonZeroUsize::new(attempt_count.load(Ordering::Relaxed).max(1))
@@ -1224,8 +1224,16 @@ impl RelayStateMachine {
                 };
                 return Ok(RelayResponse {
                     response,
-                    attempts: NonZeroUsize::new(attempt_count.load(Ordering::Relaxed).max(1))
-                        .expect("候选索引从零开始时尝试次数必须为正"),
+                    // 保持候选遍历次数语义，并把同一候选的额外重试计入总次数。
+                    attempts: NonZeroUsize::new(
+                        index
+                            + 1
+                            + retry_counts
+                                .iter()
+                                .map(|&retries| usize::from(retries))
+                                .sum::<usize>(),
+                    )
+                    .expect("候选索引从零开始时尝试次数必须为正"),
                     state,
                     report: RelayAttemptReport::succeeded(
                         index,

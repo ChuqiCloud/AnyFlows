@@ -38,6 +38,10 @@ const MAX_RELAY_RETRY_DELAY_MS: u64 = 10_000;
 const AUTO_BAN_STATUS_CODES_KEY: &str = "status_codes";
 const AUTO_BAN_KEYWORDS_KEY: &str = "keywords";
 
+#[derive(Clone, Copy, Debug, thiserror::Error, Eq, PartialEq)]
+#[error("invalid relay execution settings")]
+pub struct RelayExecutionSettingsError;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ChannelSettingsError;
 
@@ -190,10 +194,12 @@ pub(crate) fn relay_execution_settings_from_values(
     })
 }
 
-pub fn validate_relay_execution_settings(settings: &Value) -> Result<(), ()> {
+pub fn validate_relay_execution_settings(
+    settings: &Value,
+) -> Result<(), RelayExecutionSettingsError> {
     relay_execution_settings(settings)
         .map(|_| ())
-        .map_err(|_| ())
+        .map_err(|_| RelayExecutionSettingsError)
 }
 
 /// 从渠道 settings 读取并验证的 Compact 探测事实。
