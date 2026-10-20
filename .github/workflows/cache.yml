@@ -1,12 +1,7 @@
 name: Cache contracts
 
 on:
-  pull_request:
-    branches: [main]
-    paths: ['crates/af-cache/**', '.github/workflows/cache.yml']
-  push:
-    branches: [main, 'feature/fingerprint-rate-limits']
-    paths: ['crates/af-cache/**', '.github/workflows/cache.yml']
+  # 历史专项保留手动复测入口，日常检查由 CI 工作流承担。
   workflow_dispatch:
 
 permissions:
@@ -20,15 +15,6 @@ jobs:
   cache:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    services:
-      redis:
-        image: redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3
-        ports: ['6379:6379']
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 2s
-          --health-timeout 2s
-          --health-retries 30
     env:
       CARGO_BUILD_JOBS: '1'
       CARGO_INCREMENTAL: '0'
@@ -46,6 +32,11 @@ jobs:
           toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal --component rustfmt --component clippy
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: cache-contracts
+          cache-on-failure: true
       - name: Check cache formatting
         run: cargo fmt -p af-cache -- --check
       - name: Lint cache contracts
@@ -53,7 +44,4 @@ jobs:
       - name: Test cache contracts
         run: cargo test -p af-cache --locked
       - name: Test shared Redis admission
-        env:
-          AF_REQUIRE_LIVE_REDIS: '1'
-          AF_TEST_REDIS_URL: redis://127.0.0.1:6379/
-        run: cargo test -p af-cache --test redis_integration --locked -- --include-ignored
+        run: bash tools/ci/run-cache-redis-test.sh --cache-only

@@ -12,6 +12,18 @@ readonly CACHE_SMOKE_TEST_NAMES=(
 readonly HTTP_SMOKE_TEST_TARGET="token_auth_chain"
 readonly HTTP_SMOKE_TEST_NAME="redis_rpm_admission_is_shared_across_http_instances"
 
+cache_only=false
+case "${1:-}" in
+    '') ;;
+    --cache-only) cache_only=true; shift ;;
+    *) echo "未知参数：$1" >&2; exit 2 ;;
+esac
+if (($# > 0)); then
+    echo "不支持额外参数" >&2
+    exit 2
+fi
+readonly instance_id="${BASHPID}-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+
 container_name=""
 network_name=""
 declare -a runner_names=()
@@ -65,7 +77,7 @@ run_cache_smoke_tests() {
     if [[ -n "${network_name}" ]]; then
         test_binary="$(ci_build_test_binary af-cache test redis_integration)"
         for test_name in "${CACHE_SMOKE_TEST_NAMES[@]}"; do
-            runner_name="anyflows-redis-cache-test-${BASHPID}-${test_name}"
+            runner_name="anyflows-redis-cache-test-${instance_id}-${test_name}"
             runner_names+=("${runner_name}")
             ci_run_test_binary "${network_name}" "${runner_name}" "${test_binary}" \
                 "AF_TEST_REDIS_URL=${redis_url}" \
@@ -96,7 +108,7 @@ run_http_smoke_test() {
 
     if [[ -n "${network_name}" ]]; then
         test_binary="$(ci_build_test_binary af-server test "${HTTP_SMOKE_TEST_TARGET}")"
-        runner_name="anyflows-redis-http-test-${BASHPID}"
+        runner_name="anyflows-redis-http-test-${instance_id}"
         runner_names+=("${runner_name}")
         ci_run_test_binary "${network_name}" "${runner_name}" "${test_binary}" \
             "AF_TEST_REDIS_URL=${redis_url}" \
@@ -113,8 +125,8 @@ run_http_smoke_test() {
 
 redis_url="${AF_TEST_REDIS_URL:-}"
 if [[ -z "${redis_url}" ]]; then
-    network_name="anyflows-redis-network-${BASHPID}"
-    container_name="anyflows-redis-${BASHPID}"
+    network_name="anyflows-redis-network-${instance_id}"
+    container_name="anyflows-redis-${instance_id}"
     docker network create "${network_name}" >/dev/null
     docker run --detach --name "${container_name}" --network "${network_name}" \
         --network-alias redis \
@@ -132,4 +144,6 @@ case "${redis_url}" in
 esac
 
 run_cache_smoke_tests
-run_http_smoke_test
+if [[ "${cache_only}" != true ]]; then
+    run_http_smoke_test
+fi

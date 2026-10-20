@@ -1,37 +1,8 @@
 name: Frontend generated assets
 
 on:
+  # 历史专项保留手动复测入口，日常检查由 CI 工作流承担。
   workflow_dispatch:
-  pull_request:
-    branches: [main, develop, master]
-    paths:
-      - '.github/workflows/frontend-generated-assets.yml'
-      - 'crates/af-http/src/registration.rs'
-      - 'crates/af-http/src/invitations.rs'
-      - 'crates/af-http/src/account_verification.rs'
-      - 'crates/af-http/src/verification_settings.rs'
-      - 'crates/af-http/src/openapi/verification_settings.rs'
-      - 'crates/af-http/src/frontend_templates.rs'
-      - 'crates/af-http/src/openapi/frontend_templates.rs'
-      - 'crates/af-http/src/site_settings.rs'
-      - 'crates/af-http/src/openapi/site_settings.rs'
-      - 'crates/af-admin/src/site_settings.rs'
-      - 'crates/af-http/src/management_credential_writes.rs'
-      - 'crates/af-http/src/openapi/credentials.rs'
-      - 'web-next/package.json'
-      - 'crates/af-server/src/runtime_frontend.rs'
-      - 'crates/af-server/src/frontend.rs'
-      - 'crates/af-server/build.rs'
-      - 'tools/xtask/src/main.rs'
-      - 'crates/af-http/src/management_service_levels.rs'
-      - 'crates/af-http/src/openapi/dashboard.rs'
-      - 'crates/af-http/src/runtime_status.rs'
-      - 'crates/af-http/src/openapi/runtime_status.rs'
-      - 'crates/af-http/src/client_profiles.rs'
-      - 'crates/af-http/src/openapi/client_profiles.rs'
-      - 'crates/af-http/src/openapi/schema.rs'
-      - 'crates/af-http/src/proxy_pools.rs'
-      - 'crates/af-http/src/openapi/proxy_pools.rs'
 
 permissions:
   contents: read
