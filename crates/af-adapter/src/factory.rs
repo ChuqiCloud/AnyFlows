@@ -5,8 +5,8 @@ use af_domain::{ChannelType, OpenCodeEntry, Protocol};
 use crate::{
     Adaptor, AdaptorError, AdaptorResult, AnthropicAdaptor, BedrockAdaptor, CohereAdaptor,
     CustomAdaptor, CustomAuthentication, CustomEndpointTemplate, CustomStreamEndpoint,
-    GeminiAdaptor, JinaAdaptor, OpenAiAdaptor, OpenCodeAdaptor, VertexAdaptor, VideoTaskAdaptor,
-    XaiVideoAdaptor,
+    GeminiAdaptor, JinaAdaptor, NvidiaAdaptor, OpenAiAdaptor, OpenCodeAdaptor, VertexAdaptor,
+    VideoTaskAdaptor, XaiVideoAdaptor,
 };
 
 /// OpenAI 适配器的强类型构造配置。
@@ -61,6 +61,29 @@ impl fmt::Debug for OpenAiAdaptorSettings {
         formatter
             .debug_struct("OpenAiAdaptorSettings")
             .field("protocol", &self.protocol)
+            .field("supported_model_count", &self.supported_models.len())
+            .finish()
+    }
+}
+
+/// NVIDIA Chat Completions 的强类型构造配置。
+#[derive(Clone, Eq, PartialEq)]
+pub struct NvidiaAdaptorSettings {
+    supported_models: Vec<String>,
+}
+
+impl NvidiaAdaptorSettings {
+    /// 保留完整上游模型 ID；空清单表示无内建限制。
+    #[must_use]
+    pub fn new(supported_models: Vec<String>) -> Self {
+        Self { supported_models }
+    }
+}
+
+impl fmt::Debug for NvidiaAdaptorSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("NvidiaAdaptorSettings")
             .field("supported_model_count", &self.supported_models.len())
             .finish()
     }
@@ -368,6 +391,8 @@ impl OpenCodeAdaptorSettings {
 #[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum AdaptorSettings {
+    /// NVIDIA API Catalog / NIM Chat Completions。
+    Nvidia(NvidiaAdaptorSettings),
     /// OpenAI Chat 及 Bearer-compatible 渠道配置。
     OpenAi(OpenAiAdaptorSettings),
     OpenCode(OpenCodeAdaptorSettings),
@@ -390,6 +415,10 @@ pub enum AdaptorSettings {
 impl fmt::Debug for AdaptorSettings {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Nvidia(settings) => formatter
+                .debug_tuple("AdaptorSettings::Nvidia")
+                .field(settings)
+                .finish(),
             Self::OpenCode(settings) => formatter
                 .debug_tuple("AdaptorSettings::OpenCode")
                 .field(settings)
@@ -439,6 +468,9 @@ pub fn get_adaptor(
     settings: AdaptorSettings,
 ) -> AdaptorResult<Arc<dyn Adaptor>> {
     match (channel_type, settings) {
+        (ChannelType::Nvidia, AdaptorSettings::Nvidia(settings)) => Ok(Arc::new(
+            NvidiaAdaptor::with_supported_models(settings.supported_models),
+        )),
         (ChannelType::OpenCode, AdaptorSettings::OpenCode(settings)) => Ok(Arc::new(
             OpenCodeAdaptor::new(settings.entry, settings.protocol, settings.supported_models)?,
         )),
@@ -486,6 +518,7 @@ pub fn get_adaptor(
         (
             channel_type @ (ChannelType::OpenCode
             | ChannelType::OpenAi
+            | ChannelType::Nvidia
             | ChannelType::Anthropic
             | ChannelType::Gemini
             | ChannelType::Bedrock
@@ -615,6 +648,20 @@ mod tests {
             first.supported_models(),
             ["private-model-a", "private-model-b"]
         );
+    }
+
+    #[test]
+    fn nvidia_factory_uses_dedicated_settings_and_adapter() {
+        let settings = AdaptorSettings::Nvidia(NvidiaAdaptorSettings::new(vec![
+            "meta/private-model".to_owned(),
+        ]));
+        assert!(!format!("{settings:?}").contains("meta/private-model"));
+        let adaptor = get_adaptor(ChannelType::Nvidia, settings).unwrap();
+        assert_eq!(adaptor.channel_type(), ChannelType::Nvidia);
+        assert_eq!(adaptor.default_protocol(), Protocol::OpenAiChat);
+        assert_eq!(adaptor.default_base_url(), NvidiaAdaptor::DEFAULT_BASE_URL);
+        assert_eq!(adaptor.supported_models(), ["meta/private-model"]);
+        assert!(get_adaptor(ChannelType::Nvidia, openai_settings(&[])).is_err());
     }
 
     #[test]
@@ -873,7 +920,7 @@ mod tests {
 
     #[test]
     fn factory_channel_enum_has_no_unimplemented_placeholders() {
-        assert_eq!(ChannelType::ALL.len(), 10);
+        assert_eq!(ChannelType::ALL.len(), 11);
         assert!(ChannelType::ALL.contains(&ChannelType::Jina));
         assert!(ChannelType::ALL.contains(&ChannelType::Cohere));
         assert!(ChannelType::ALL.contains(&ChannelType::Xai));

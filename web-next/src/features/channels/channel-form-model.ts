@@ -8,7 +8,7 @@ import type {
 
 export type ChannelEditorMode = 'create' | 'update'
 export type SensitiveEditMode = 'preserve' | 'replace' | 'clear'
-export type ChannelType = 'opencode' | 'openai' | 'codex_oauth' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai'
+export type ChannelType = 'nvidia' | 'opencode' | 'openai' | 'codex_oauth' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai'
 export type ChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini' | 'jina_rerank' | 'cohere_rerank' | 'xai_video'
 export type ResponsesCompactMode = 'auto' | 'force_on' | 'force_off'
 export type ClientSimulationProfile = '' | 'anthropic_cli_headers_v1'
@@ -107,7 +107,7 @@ export function buildChannelFormSchema(
     name: z.string().trim().min(1, messages.invalidField).max(128, messages.invalidField),
     baseUrl: z.string().trim().max(2048, messages.invalidField),
     timeoutSeconds: z.string(),
-    channelType: z.enum(['opencode', 'openai', 'codex_oauth', 'anthropic', 'gemini', 'jina', 'cohere', 'xai']),
+    channelType: z.enum(['nvidia', 'opencode', 'openai', 'codex_oauth', 'anthropic', 'gemini', 'jina', 'cohere', 'xai']),
     protocol: z.enum(['openai_chat', 'openai_responses', 'openai_embeddings', 'openai_images', 'openai_audio', 'openai_speech', 'anthropic', 'gemini', 'jina_rerank', 'cohere_rerank', 'xai_video']),
     tag: z.string().trim().max(64, messages.invalidField),
     status: z.enum(['enabled', 'disabled']),
@@ -133,6 +133,8 @@ export function buildChannelFormSchema(
   }).superRefine((values, context) => {
     const protocolMatchesType = values.channelType === 'codex_oauth'
       ? values.protocol === 'openai_responses'
+      : values.channelType === 'nvidia'
+        ? values.protocol === 'openai_chat'
       : values.channelType === 'opencode'
         ? ['openai_chat', 'openai_responses', 'anthropic'].includes(values.protocol)
       : values.channelType === 'anthropic'
@@ -243,6 +245,7 @@ export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues 
     timeoutSeconds: channel?.timeout_secs == null ? '' : String(channel.timeout_secs),
     channelType: codexOAuth
       ? 'codex_oauth'
+      : channel?.type === 'nvidia' ? 'nvidia'
       : channel?.type === 'opencode' ? 'opencode'
       : channel?.type === 'anthropic'
       ? 'anthropic'
