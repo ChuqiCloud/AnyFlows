@@ -164,7 +164,15 @@ jobs:
           fi
           git -C github-public config user.name 'gitea-sync[bot]'
           git -C github-public config user.email 'gitea-sync[bot]@users.noreply.github.com'
-          git -C github-public commit -q -m "同步 Gitea 公共核心 $GITEA_COMMIT"
+          if [ -n "${{ steps.source.outputs.source_pr_number }}" ]; then
+            commit_title="$(jq -r '.title // empty' "$RUNNER_TEMP/source-pr-metadata.json")"
+          else
+            commit_title="$(git -C gitea-source show -s --format=%s "$GITEA_COMMIT")"
+          fi
+          if [ -z "$commit_title" ]; then
+            commit_title="同步 Gitea 公共核心 $GITEA_COMMIT"
+          fi
+          git -C github-public commit -q -m "$commit_title"
           echo 'has_changes=true' >> "$GITHUB_OUTPUT"
 
       - name: Push public export branch
