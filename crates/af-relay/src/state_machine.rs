@@ -2,7 +2,10 @@ use std::{
     collections::BTreeSet,
     fmt,
     num::NonZeroUsize,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -17,14 +20,19 @@ use af_domain::{
 };
 use af_protocol::{StructuredErrorEvidence, extract_structured_error_evidence};
 use thiserror::Error;
+use tokio::time::sleep;
 
 use crate::{
     RelayAttemptDiagnostic, RelayAttemptGate, RelayAttemptGateError, RelayAttemptPermit,
     RelayBuildError, RelayDiagnosticPolicy, RelayError,
-    error::{classify_upstream_status, is_retryable, map_adaptor_error, parse_retry_after},
+    error::{
+        classify_upstream_status, is_retryable, is_same_candidate_retryable, map_adaptor_error,
+        parse_retry_after,
+    },
 };
 
 /// 单次转发候选的安全装配结果；调度器只负责按顺序提供候选，不在本类型内读库。
+#[derive(Clone)]
 pub struct RelayCandidate {
     adaptor: Arc<dyn Adaptor>,
     context: RelayContext,
@@ -36,6 +44,9 @@ pub struct RelayCandidate {
     channel_group: Option<ChannelId>,
     transport: TransportDispatcher,
     attempt_gate: Option<Arc<dyn RelayAttemptGate>>,
+    retry_limit: Option<u8>,
+    retry_delay_ms: Option<u64>,
+    race_width: Option<usize>,
 }
 
 impl RelayCandidate {
@@ -53,6 +64,9 @@ impl RelayCandidate {
             channel_group: None,
             transport: TransportDispatcher::http(),
             attempt_gate: None,
+            retry_limit: None,
+            retry_delay_ms: None,
+            race_width: None,
         }
     }
 
@@ -107,6 +121,24 @@ impl RelayCandidate {
         self.attempt_gate = Some(attempt_gate);
         self
     }
+
+    #[must_use]
+    pub const fn with_retry_limit(mut self, retry_limit: Option<u8>) -> Self {
+        self.retry_limit = retry_limit;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_retry_delay_ms(mut self, retry_delay_ms: Option<u64>) -> Self {
+        self.retry_delay_ms = retry_delay_ms;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_race_width(mut self, race_width: Option<usize>) -> Self {
+        self.race_width = race_width;
+        self
+    }
 }
 
 impl fmt::Debug for RelayCandidate {
@@ -128,6 +160,9 @@ impl fmt::Debug for RelayCandidate {
             .field("has_channel_group", &self.channel_group.is_some())
             .field("transport", &self.transport)
             .field("has_attempt_gate", &self.attempt_gate.is_some())
+            .field("retry_limit", &self.retry_limit)
+            .field("retry_delay_ms", &self.retry_delay_ms)
+            .field("race_width", &self.race_width)
             .finish()
     }
 }
@@ -401,6 +436,7 @@ impl RelayAttemptReport {
 }
 
 /// 候选无关的转发请求描述；模型名先校验，最终请求体边界在适配层校验。
+#[derive(Clone)]
 pub struct RelayRequest {
     model: String,
     operation: Operation,
@@ -491,6 +527,24 @@ pub struct RelayResponse {
     report: RelayAttemptReport,
     permit: Option<Box<dyn RelayAttemptPermit>>,
     continuation: Option<crate::frozen_candidate::FrozenCandidate>,
+}
+
+struct RaceResponse(Option<RelayResponse>);
+
+impl RaceResponse {
+    fn take(mut self) -> RelayResponse {
+        self.0.take().expect("竞速任务响应只能消费一次")
+    }
+}
+
+impl Drop for RaceResponse {
+    fn drop(&mut self) {
+        let Some(response) = self.0.take() else {
+            return;
+        };
+        let (_, _, permit) = response.into_parts_with_permit();
+        drop(permit);
+    }
 }
 
 impl RelayResponse {
@@ -606,6 +660,57 @@ impl RelayExecutionError {
 pub struct RelayStateMachine {
     candidates: Vec<RelayCandidate>,
     diagnostic_policy: Option<RelayDiagnosticPolicy>,
+    execution_policy: RelayExecutionPolicy,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RelayExecutionPolicy {
+    race_width: usize,
+    retry_limit: u8,
+    retry_delay: Duration,
+}
+
+impl RelayExecutionPolicy {
+    #[must_use]
+    pub const fn new(race_width: usize, retry_limit: u8, retry_delay: Duration) -> Self {
+        Self {
+            race_width: if race_width == 0 { 1 } else { race_width },
+            retry_limit,
+            retry_delay,
+        }
+    }
+    #[must_use]
+    pub const fn race_width(self) -> usize {
+        self.race_width
+    }
+    #[must_use]
+    pub const fn retry_limit(self) -> u8 {
+        self.retry_limit
+    }
+    #[must_use]
+    pub const fn retry_delay(self) -> Duration {
+        self.retry_delay
+    }
+    pub fn with_channel_settings(
+        self,
+        race_width: Option<usize>,
+        retry_limit: Option<u8>,
+        retry_delay_ms: Option<u64>,
+    ) -> Self {
+        Self {
+            race_width: race_width.unwrap_or(self.race_width).max(1),
+            retry_limit: retry_limit.unwrap_or(self.retry_limit),
+            retry_delay: Duration::from_millis(
+                retry_delay_ms.unwrap_or(self.retry_delay.as_millis() as u64),
+            ),
+        }
+    }
+}
+
+impl Default for RelayExecutionPolicy {
+    fn default() -> Self {
+        Self::new(1, 0, Duration::ZERO)
+    }
 }
 
 impl RelayStateMachine {
@@ -626,6 +731,7 @@ impl RelayStateMachine {
         Ok(Self {
             candidates,
             diagnostic_policy: None,
+            execution_policy: RelayExecutionPolicy::default(),
         })
     }
 
@@ -642,10 +748,16 @@ impl RelayStateMachine {
         self
     }
 
+    #[must_use]
+    pub const fn with_execution_policy(mut self, policy: RelayExecutionPolicy) -> Self {
+        self.execution_policy = policy;
+        self
+    }
+
     /// 按 Routing → Credential → Sending → Classifying/Streaming → Retry 执行一次请求。
     ///
-    /// 每个候选最多发送一次；可重试的上游故障才会切换候选，客户端参数错误不会继续
-    /// 扩散。状态机不持有计费会话，调用方应在外层让同一 BillingSession 覆盖整个执行。
+    /// 按配置重试可恢复的上游故障；客户端参数错误不会继续扩散。
+    /// 状态机不持有计费会话，调用方应在外层让同一 BillingSession 覆盖整个执行。
     pub async fn execute(&self, request: RelayRequest) -> Result<RelayResponse, RelayError> {
         self.execute_with_report(request)
             .await
@@ -688,8 +800,173 @@ impl RelayStateMachine {
         request: RelayRequest,
         freeze_continuation: bool,
     ) -> Result<RelayResponse, RelayExecutionError> {
+        let attempt_count = Arc::new(AtomicUsize::new(0));
+        let race_width = self
+            .candidates
+            .iter()
+            .map(|candidate| {
+                candidate
+                    .race_width
+                    .unwrap_or(self.execution_policy.race_width)
+            })
+            .max()
+            .unwrap_or(1);
+        if race_width > 1 {
+            return self
+                .execute_race(request, freeze_continuation, attempt_count)
+                .await;
+        }
+        self.execute_serial(request, freeze_continuation, attempt_count)
+            .await
+    }
+
+    async fn execute_race(
+        &self,
+        request: RelayRequest,
+        freeze_continuation: bool,
+        attempt_count: Arc<AtomicUsize>,
+    ) -> Result<RelayResponse, RelayExecutionError> {
+        let mut index = 0;
+        let mut last_error = RelayError::Upstream(UpstreamError::ModelUnsupported);
+        let mut failures = Vec::new();
+        while index < self.candidates.len() {
+            let channel = self.candidates[index].channel_group;
+            let mut end = index + 1;
+            while end < self.candidates.len()
+                && self.candidates[end].channel_group == channel
+                && end - index
+                    < self.candidates[index]
+                        .race_width
+                        .unwrap_or(self.execution_policy.race_width)
+            {
+                end += 1;
+            }
+            let race_width = self.candidates[index]
+                .race_width
+                .unwrap_or(self.execution_policy.race_width);
+            if race_width <= 1 {
+                let child = RelayStateMachine {
+                    candidates: vec![self.candidates[index].clone()],
+                    diagnostic_policy: self.diagnostic_policy,
+                    execution_policy: self.execution_policy,
+                };
+                match child
+                    .execute_serial(request.clone(), freeze_continuation, attempt_count.clone())
+                    .await
+                {
+                    Ok(mut response) => {
+                        response.report.successful_candidate_index = response
+                            .report
+                            .successful_candidate_index
+                            .map(|value| value + index);
+                        for failure in &mut response.report.failures {
+                            failure.candidate_index += index;
+                        }
+                        response.attempts =
+                            NonZeroUsize::new(attempt_count.load(Ordering::Relaxed).max(1))
+                                .expect("成功响应的上游尝试次数必须为正");
+                        return Ok(response);
+                    }
+                    Err(error) => {
+                        let (last_error, report) = error.into_parts();
+                        failures.extend(report.failures.into_iter().map(|mut failure| {
+                            failure.candidate_index += index;
+                            failure
+                        }));
+                        index = match last_error {
+                            RelayError::Upstream(error) => self.next_candidate_index(index, error),
+                            _ => end,
+                        };
+                        if index >= self.candidates.len() {
+                            return Err(RelayExecutionError::new(last_error, failures));
+                        }
+                        continue;
+                    }
+                }
+            }
+            let mut tasks = tokio::task::JoinSet::new();
+            for candidate_index in index..end {
+                let candidate = self.candidates[candidate_index].clone();
+                let policy = self.execution_policy;
+                let diagnostic_policy = self.diagnostic_policy;
+                let request = request.clone();
+                let attempt_count = attempt_count.clone();
+                tasks.spawn(async move {
+                    let child = RelayStateMachine {
+                        candidates: vec![candidate],
+                        diagnostic_policy,
+                        execution_policy: policy,
+                    };
+                    (
+                        candidate_index,
+                        child
+                            .execute_serial(request, freeze_continuation, attempt_count)
+                            .await
+                            .map(|response| RaceResponse(Some(response))),
+                    )
+                });
+            }
+            let mut last_error_index = index;
+            while let Some(joined) = tasks.join_next().await {
+                let (candidate_index, result) = match joined {
+                    Ok(result) => result,
+                    Err(_) => {
+                        last_error = RelayError::AttemptGateFailed;
+                        continue;
+                    }
+                };
+                match result {
+                    Ok(race_response) => {
+                        let mut response = race_response.take();
+                        response.report.successful_candidate_index = response
+                            .report
+                            .successful_candidate_index
+                            .map(|value| value + candidate_index);
+                        for failure in &mut response.report.failures {
+                            failure.candidate_index += candidate_index;
+                        }
+                        failures.append(&mut response.report.failures);
+                        response.report.failures = failures;
+                        response.attempts =
+                            NonZeroUsize::new(attempt_count.load(Ordering::Relaxed).max(1))
+                                .expect("成功响应的上游尝试次数必须为正");
+                        tasks.abort_all();
+                        while tasks.join_next().await.is_some() {}
+                        return Ok(response);
+                    }
+                    Err(error) => {
+                        let (error, report) = error.into_parts();
+                        failures.extend(report.failures.into_iter().map(|mut failure| {
+                            failure.candidate_index += candidate_index;
+                            failure
+                        }));
+                        last_error = error;
+                        last_error_index = candidate_index;
+                    }
+                }
+            }
+            if end >= self.candidates.len() {
+                return Err(RelayExecutionError::new(last_error, failures));
+            }
+            index = match last_error {
+                RelayError::Upstream(error) => {
+                    end.max(self.next_candidate_index(last_error_index, error))
+                }
+                _ => end,
+            };
+        }
+        Err(RelayExecutionError::new(last_error, failures))
+    }
+
+    async fn execute_serial(
+        &self,
+        request: RelayRequest,
+        freeze_continuation: bool,
+        attempt_count: Arc<AtomicUsize>,
+    ) -> Result<RelayResponse, RelayExecutionError> {
         let mut last_error = None;
         let mut failures = Vec::new();
+        let mut retry_counts = vec![0; self.candidates.len()];
         let mut index = 0;
         while let Some(candidate) = self.candidates.get(index) {
             let attempt_started_at = Instant::now();
@@ -873,6 +1150,7 @@ impl RelayStateMachine {
                 },
                 None => None,
             };
+            attempt_count.fetch_add(1, Ordering::Relaxed);
             let continuation = freeze_continuation.then(|| {
                 crate::frozen_candidate::FrozenCandidate::new(
                     candidate.adaptor.clone(),
@@ -899,6 +1177,20 @@ impl RelayStateMachine {
                     );
                     last_error = Some(RelayError::Upstream(mapped));
                     if is_retryable(mapped) {
+                        let limit = candidate
+                            .retry_limit
+                            .unwrap_or(self.execution_policy.retry_limit);
+                        if is_same_candidate_retryable(mapped)
+                            && reserve_candidate_retry(&mut retry_counts, index, limit)
+                        {
+                            let delay = candidate
+                                .retry_delay_ms
+                                .map_or(self.execution_policy.retry_delay, Duration::from_millis);
+                            if !delay.is_zero() {
+                                sleep(delay).await;
+                            }
+                            continue;
+                        }
                         index = self.next_candidate_index(index, mapped);
                         continue;
                     }
@@ -932,8 +1224,16 @@ impl RelayStateMachine {
                 };
                 return Ok(RelayResponse {
                     response,
-                    attempts: NonZeroUsize::new(index + 1)
-                        .expect("候选索引从零开始时尝试次数必须为正"),
+                    // 保持候选遍历次数语义，并把同一候选的额外重试计入总次数。
+                    attempts: NonZeroUsize::new(
+                        index
+                            + 1
+                            + retry_counts
+                                .iter()
+                                .map(|&retries| usize::from(retries))
+                                .sum::<usize>(),
+                    )
+                    .expect("候选索引从零开始时尝试次数必须为正"),
                     state,
                     report: RelayAttemptReport::succeeded(
                         index,
@@ -961,6 +1261,20 @@ impl RelayStateMachine {
                     );
                     last_error = Some(RelayError::Upstream(mapped));
                     if is_retryable(mapped) {
+                        let limit = candidate
+                            .retry_limit
+                            .unwrap_or(self.execution_policy.retry_limit);
+                        if is_same_candidate_retryable(mapped)
+                            && reserve_candidate_retry(&mut retry_counts, index, limit)
+                        {
+                            let delay = candidate
+                                .retry_delay_ms
+                                .map_or(self.execution_policy.retry_delay, Duration::from_millis);
+                            if !delay.is_zero() {
+                                sleep(delay).await;
+                            }
+                            continue;
+                        }
                         index = self.next_candidate_index(index, mapped);
                         continue;
                     }
@@ -990,6 +1304,20 @@ impl RelayStateMachine {
             );
             last_error = Some(RelayError::Upstream(classified));
             if is_retryable(classified) {
+                let limit = candidate
+                    .retry_limit
+                    .unwrap_or(self.execution_policy.retry_limit);
+                if is_same_candidate_retryable(classified)
+                    && reserve_candidate_retry(&mut retry_counts, index, limit)
+                {
+                    let delay = candidate
+                        .retry_delay_ms
+                        .map_or(self.execution_policy.retry_delay, Duration::from_millis);
+                    if !delay.is_zero() {
+                        sleep(delay).await;
+                    }
+                    continue;
+                }
                 index = self.next_candidate_index(index, classified);
                 continue;
             }
@@ -1080,6 +1408,17 @@ fn channel_groups_are_contiguous(candidates: &[RelayCandidate]) -> bool {
         }
         current = candidate.channel_group;
     }
+    true
+}
+
+fn reserve_candidate_retry(retry_counts: &mut [u8], candidate_index: usize, limit: u8) -> bool {
+    let Some(retries) = retry_counts.get_mut(candidate_index) else {
+        return false;
+    };
+    if *retries >= limit {
+        return false;
+    }
+    *retries += 1;
     true
 }
 

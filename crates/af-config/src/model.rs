@@ -115,6 +115,10 @@ pub const MAX_OPENAI_UPSTREAM_BASE_URL_BYTES: usize = 2_048;
 pub const MAX_OPENAI_UPSTREAM_MODEL_BYTES: usize = MAX_MODEL_NAME_BYTES;
 /// 静态单上游 API Key 的最大 UTF-8 字节数。
 pub const MAX_OPENAI_UPSTREAM_API_KEY_BYTES: usize = 16 * 1_024;
+pub const DEFAULT_RELAY_RETRY_LIMIT: u8 = 1;
+pub const MAX_RELAY_RETRY_LIMIT: u8 = 5;
+pub const DEFAULT_RELAY_RETRY_DELAY_MS: u64 = 100;
+pub const MAX_RELAY_RETRY_DELAY_MS: u64 = 10_000;
 /// 单实例默认允许保留的待完成 OAuth 授权数量。
 pub const DEFAULT_OAUTH_MAX_PENDING_AUTHORIZATIONS: usize = 256;
 /// 单实例允许保留的待完成 OAuth 授权硬上限。
@@ -1322,6 +1326,34 @@ impl HttpClientSettings {
     }
 }
 
+/// 全局上游请求策略；渠道设置可覆盖其中的重试与竞速参数。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct RelaySettings {
+    retry_limit: u8,
+    retry_delay_ms: u64,
+}
+
+impl RelaySettings {
+    #[must_use]
+    pub const fn retry_limit(&self) -> u8 {
+        self.retry_limit
+    }
+    #[must_use]
+    pub const fn retry_delay_ms(&self) -> u64 {
+        self.retry_delay_ms
+    }
+}
+
+impl Default for RelaySettings {
+    fn default() -> Self {
+        Self {
+            retry_limit: DEFAULT_RELAY_RETRY_LIMIT,
+            retry_delay_ms: DEFAULT_RELAY_RETRY_DELAY_MS,
+        }
+    }
+}
+
 /// 应用启动期配置。运营期 Option 热更新不属于此类型。
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1359,6 +1391,8 @@ pub struct AppConfig {
     openai_upstream: Option<OpenAiUpstreamConfig>,
     #[serde(default)]
     http_client: HttpClientSettings,
+    #[serde(default)]
+    relay: RelaySettings,
 }
 
 impl AppConfig {
@@ -1464,6 +1498,11 @@ impl AppConfig {
         &self.http_client
     }
 
+    #[must_use]
+    pub const fn relay(&self) -> &RelaySettings {
+        &self.relay
+    }
+
     /// 校验敏感文本与所有受控数值，确保错误在启动期暴露。
     pub fn validate(&self) -> Result<(), ConfigError> {
         // 基础鉴权不代表公网安全闭环已完成，当前仍只允许本机监听。
@@ -1480,6 +1519,16 @@ impl AppConfig {
         if self.server.shutdown_timeout_secs > MAX_SHUTDOWN_TIMEOUT_SECS {
             return Err(ConfigError::OutOfRange {
                 field: "server.shutdown_timeout_secs",
+            });
+        }
+        if self.relay.retry_limit > MAX_RELAY_RETRY_LIMIT {
+            return Err(ConfigError::OutOfRange {
+                field: "relay.retry_limit",
+            });
+        }
+        if self.relay.retry_delay_ms > MAX_RELAY_RETRY_DELAY_MS {
+            return Err(ConfigError::OutOfRange {
+                field: "relay.retry_delay_ms",
             });
         }
         if !valid_frontend_template_directory(&self.server.frontend_template_directory) {

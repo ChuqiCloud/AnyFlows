@@ -11,11 +11,11 @@ use crate::{
     CredentialProxyScheme,
     channel_settings::{
         auto_ban_rules, client_simulation_body_profile, client_simulation_profile, pool_mode,
-        responses_compact_mode, responses_compact_model_mapping, responses_compact_probe_result,
-        responses_websocket_enabled, validate_client_simulation_body_capability,
-        validate_client_simulation_capability, validate_responses_compact_capability,
-        validate_responses_compact_model_mapping, validate_responses_compact_probe_result,
-        validate_responses_websocket_capability,
+        relay_execution_settings, responses_compact_mode, responses_compact_model_mapping,
+        responses_compact_probe_result, responses_websocket_enabled,
+        validate_client_simulation_body_capability, validate_client_simulation_capability,
+        validate_responses_compact_capability, validate_responses_compact_model_mapping,
+        validate_responses_compact_probe_result, validate_responses_websocket_capability,
     },
     credential_probe::EncryptedCredentialEnvelope,
     entity::{channels, credentials, proxies},
@@ -53,6 +53,7 @@ pub(super) struct SchedulerRuntimeChannelSource {
     responses_compact_mode: ResponsesCompactMode,
     responses_compact_probe_result: ResponsesCompactProbeResult,
     responses_compact_model_mapping: ChannelModelMappings,
+    relay_settings: crate::channel_settings::RelayChannelSettings,
 }
 
 impl SchedulerRuntimeChannelSource {
@@ -140,6 +141,8 @@ impl SchedulerRuntimeChannelSource {
         .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let responses_compact_model_mapping = responses_compact_model_mapping(&settings)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let relay_settings = relay_execution_settings(&settings)
+            .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         validate_responses_compact_model_mapping(
             channel_type,
             protocol,
@@ -166,6 +169,7 @@ impl SchedulerRuntimeChannelSource {
             responses_compact_mode,
             responses_compact_probe_result,
             responses_compact_model_mapping,
+            relay_settings,
         }))
     }
 
@@ -298,6 +302,10 @@ impl SchedulerRuntimeChannelSource {
     /// 返回渠道显式开启的 Responses WebSocket 能力。
     pub(super) const fn responses_websocket_enabled(&self) -> bool {
         self.responses_websocket_enabled
+    }
+
+    pub(super) const fn relay_settings(&self) -> crate::channel_settings::RelayChannelSettings {
+        self.relay_settings
     }
 
     /// 返回渠道配置的 Responses Compact 三态策略。

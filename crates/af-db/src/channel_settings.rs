@@ -27,12 +27,180 @@ pub(crate) const POOL_MODE_KEY: &str = "pool_mode";
 pub(crate) const CLIENT_SIMULATION_PROFILE_KEY: &str = "client_simulation_profile";
 /// 渠道 settings 中显式选择的客户端仿真正文档案；缺失表示关闭。
 pub(crate) const CLIENT_SIMULATION_BODY_PROFILE_KEY: &str = "client_simulation_body_profile";
+pub(crate) const RELAY_RACE_WIDTH_KEY: &str = "relay_race_width";
+pub(crate) const RELAY_RETRY_LIMIT_KEY: &str = "relay_retry_limit";
+pub(crate) const RELAY_RETRY_DELAY_MS_KEY: &str = "relay_retry_delay_ms";
+
+const MAX_RELAY_RACE_WIDTH: u64 = 8;
+const MAX_RELAY_RETRY_LIMIT: u64 = 5;
+const MAX_RELAY_RETRY_DELAY_MS: u64 = 10_000;
 
 const AUTO_BAN_STATUS_CODES_KEY: &str = "status_codes";
 const AUTO_BAN_KEYWORDS_KEY: &str = "keywords";
 
+#[derive(Clone, Copy, Debug, thiserror::Error, Eq, PartialEq)]
+#[error("invalid relay execution settings")]
+pub struct RelayExecutionSettingsError;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ChannelSettingsError;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RelayChannelSettings {
+    race_width: Option<usize>,
+    retry_limit: Option<u8>,
+    retry_delay_ms: Option<u64>,
+}
+
+impl RelayChannelSettings {
+    pub const fn new(
+        race_width: Option<usize>,
+        retry_limit: Option<u8>,
+        retry_delay_ms: Option<u64>,
+    ) -> Self {
+        Self {
+            race_width,
+            retry_limit,
+            retry_delay_ms,
+        }
+    }
+    pub const fn race_width(self) -> Option<usize> {
+        self.race_width
+    }
+    pub const fn retry_limit(self) -> Option<u8> {
+        self.retry_limit
+    }
+    pub const fn retry_delay_ms(self) -> Option<u64> {
+        self.retry_delay_ms
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RelayChannelSettingsPatch {
+    race_width: Option<Option<usize>>,
+    retry_limit: Option<Option<u8>>,
+    retry_delay_ms: Option<Option<u64>>,
+}
+
+impl RelayChannelSettingsPatch {
+    pub const fn new(
+        race_width: Option<Option<usize>>,
+        retry_limit: Option<Option<u8>>,
+        retry_delay_ms: Option<Option<u64>>,
+    ) -> Self {
+        Self {
+            race_width,
+            retry_limit,
+            retry_delay_ms,
+        }
+    }
+
+    pub const fn replace_all(settings: RelayChannelSettings) -> Self {
+        Self::new(
+            Some(settings.race_width),
+            Some(settings.retry_limit),
+            Some(settings.retry_delay_ms),
+        )
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.race_width.is_none() && self.retry_limit.is_none() && self.retry_delay_ms.is_none()
+    }
+}
+
+pub(crate) fn set_relay_execution_settings_patch(
+    settings: &mut Value,
+    relay: RelayChannelSettingsPatch,
+) -> Result<(), ChannelSettingsError> {
+    validate_relay_execution_settings_patch(relay)?;
+    let object = settings.as_object_mut().ok_or(ChannelSettingsError)?;
+    let set_optional = |object: &mut Map<String, Value>, key: &str, value: Option<Option<u64>>| {
+        if let Some(value) = value {
+            if let Some(value) = value {
+                object.insert(key.to_owned(), Value::from(value));
+            } else {
+                object.remove(key);
+            }
+        }
+    };
+    set_optional(
+        object,
+        RELAY_RACE_WIDTH_KEY,
+        relay.race_width.map(|v| v.map(|v| v as u64)),
+    );
+    set_optional(
+        object,
+        RELAY_RETRY_LIMIT_KEY,
+        relay.retry_limit.map(|v| v.map(u64::from)),
+    );
+    set_optional(object, RELAY_RETRY_DELAY_MS_KEY, relay.retry_delay_ms);
+    Ok(())
+}
+
+fn validate_relay_execution_settings_patch(
+    relay: RelayChannelSettingsPatch,
+) -> Result<(), ChannelSettingsError> {
+    if relay
+        .race_width
+        .flatten()
+        .is_some_and(|value| !(1..=MAX_RELAY_RACE_WIDTH as usize).contains(&value))
+        || relay
+            .retry_limit
+            .flatten()
+            .is_some_and(|value| u64::from(value) > MAX_RELAY_RETRY_LIMIT)
+        || relay
+            .retry_delay_ms
+            .flatten()
+            .is_some_and(|value| value > MAX_RELAY_RETRY_DELAY_MS)
+    {
+        return Err(ChannelSettingsError);
+    }
+    Ok(())
+}
+
+pub(crate) fn relay_execution_settings(
+    settings: &Value,
+) -> Result<RelayChannelSettings, ChannelSettingsError> {
+    let object = settings.as_object().ok_or(ChannelSettingsError)?;
+    relay_execution_settings_from_values(
+        object.get(RELAY_RACE_WIDTH_KEY),
+        object.get(RELAY_RETRY_LIMIT_KEY),
+        object.get(RELAY_RETRY_DELAY_MS_KEY),
+    )
+}
+
+pub(crate) fn relay_execution_settings_from_values(
+    race_width: Option<&Value>,
+    retry_limit: Option<&Value>,
+    retry_delay_ms: Option<&Value>,
+) -> Result<RelayChannelSettings, ChannelSettingsError> {
+    let parse = |value: Option<&Value>,
+                 max: u64,
+                 allow_zero: bool|
+     -> Result<Option<u64>, ChannelSettingsError> {
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        let value = value.as_u64().ok_or(ChannelSettingsError)?;
+        if (!allow_zero && value == 0) || value > max {
+            return Err(ChannelSettingsError);
+        }
+        Ok(Some(value))
+    };
+    Ok(RelayChannelSettings {
+        race_width: parse(race_width, MAX_RELAY_RACE_WIDTH, false)?.map(|v| v as usize),
+        retry_limit: parse(retry_limit, MAX_RELAY_RETRY_LIMIT, true)?.map(|v| v as u8),
+        retry_delay_ms: parse(retry_delay_ms, MAX_RELAY_RETRY_DELAY_MS, true)?,
+    })
+}
+
+pub fn validate_relay_execution_settings(
+    settings: &Value,
+) -> Result<(), RelayExecutionSettingsError> {
+    relay_execution_settings(settings)
+        .map(|_| ())
+        .map_err(|_| RelayExecutionSettingsError)
+}
 
 /// 从渠道 settings 读取并验证的 Compact 探测事实。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

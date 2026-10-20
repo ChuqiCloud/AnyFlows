@@ -135,6 +135,7 @@ fn try_runtime_target(
     )
     .map(|target| target.with_timeout(channel.timeout()))
     .map(|target| target.with_auto_ban_rules(channel.auto_ban_rules().clone()))
+    .map(|target| target.with_relay_settings(channel.relay_settings()))
     .map(|target| target.with_pool_mode(channel.pool_mode()))
     .and_then(|target| target.with_client_simulation_profile(channel.client_simulation_profile()))
     .and_then(|target| {

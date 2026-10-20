@@ -20721,6 +20721,32 @@
           "responses_compact_probe": {
             "$ref": "#/components/schemas/AdminResponsesCompactProbe"
           },
+          "relay_race_width": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "渠道级竞速并发宽度；为空时继承全局默认值。",
+            "minimum": 0
+          },
+          "relay_retry_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "渠道级重试次数上限；为空时继承全局默认值。",
+            "minimum": 0
+          },
+          "relay_retry_delay_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "渠道级重试间隔毫秒；为空时继承全局默认值。",
+            "minimum": 0
+          },
           "models": {
             "type": "array",
             "items": {
@@ -21014,6 +21040,29 @@
               "maxLength": 256,
               "minLength": 1
             }
+          },
+          "relay_race_width": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "relay_retry_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "relay_retry_delay_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
           },
           "models": {
             "type": "array",
@@ -21361,6 +21410,29 @@
               "maxLength": 256,
               "minLength": 1
             }
+          },
+          "relay_race_width": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "relay_retry_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "relay_retry_delay_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
           },
           "models": {
             "type": "array",

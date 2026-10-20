@@ -54,6 +54,6 @@ pub use model::{
     MAX_TRUSTED_PROXY_CIDRS, MAX_TURNSTILE_SECRET_KEY_BYTES, MAX_TURNSTILE_SITE_KEY_BYTES,
     MAX_TURNSTILE_TIMEOUT_SECS, MIN_OAUTH_SESSION_TTL_SECS, OAuthConfidentialClientSettings,
     OAuthPublicClientSettings, OAuthSettings, OpenAiUpstreamConfig, PaymentSettings, RedisSettings,
-    ServerConfig, SubscriptionSettings, TelemetrySettings, TurnstileSettings,
+    RelaySettings, ServerConfig, SubscriptionSettings, TelemetrySettings, TurnstileSettings,
 };
 pub use secret::SecretString;
