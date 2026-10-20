@@ -357,7 +357,13 @@ jobs:
           set -euo pipefail
           browser_tools="$RUNNER_TEMP/anyflows-playwright"
           npm install --prefix "$browser_tools" --no-save --ignore-scripts playwright@1.56.1
-          "$browser_tools/node_modules/.bin/playwright" install --with-deps chromium
+          # GitHub-hosted Ubuntu already includes Chromium runtime libraries; --with-deps
+          # also refreshes the Microsoft APT source, which can transiently return 403.
+          if [[ "${{ github.server_url }}" == "https://github.com" ]]; then
+            "$browser_tools/node_modules/.bin/playwright" install chromium
+          else
+            "$browser_tools/node_modules/.bin/playwright" install --with-deps chromium
+          fi
           PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-gallery-smoke.mjs '${{ matrix.frontend }}'
           PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-verification-smoke.mjs '${{ matrix.frontend }}'
           PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-dashboard-smoke.mjs '${{ matrix.frontend }}'

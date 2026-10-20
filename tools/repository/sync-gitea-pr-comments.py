@@ -113,17 +113,12 @@ def source_marker(repository, pr_number, merge_sha):
 
 def render_target_body(source_pr, repository, gitea_base_url):
     source_body = source_pr.get("body") or ""
-    source_url = source_pr.get("html_url") or (
-        f"{gitea_base_url.rstrip('/')}/{repository}/pulls/{source_pr['number']}"
-    )
     merge_sha = source_pr.get("merge_commit_sha") or ""
-    body = source_body + ("\n\n" if source_body else "")
-    body += f"来源 PR：{source_url}\n"
-    body += f"来源 PR 编号：#{source_pr['number']}\n"
-    body += f"来源提交：{merge_sha}\n来源仓库：{gitea_base_url.rstrip('/')}/{repository}"
     if re.fullmatch(r"[0-9a-f]{40}", merge_sha):
-        body += f"\n\n{source_marker(repository, source_pr['number'], merge_sha)}"
-    return body
+        return source_body + ("\n\n" if source_body else "") + source_marker(
+            repository, source_pr["number"], merge_sha
+        )
+    return source_body
 
 
 def find_target(github, public_repository, source_pr, repository):
