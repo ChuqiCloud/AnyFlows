@@ -23,7 +23,7 @@ use crate::{
         RESPONSES_COMPACT_MODE_KEY, RESPONSES_COMPACT_MODEL_MAPPING_KEY,
         RESPONSES_COMPACT_PROBE_CHECKED_AT_KEY, RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY,
         RESPONSES_COMPACT_PROBE_RESULT_KEY, client_simulation_body_profile,
-        client_simulation_profile, parse_auto_ban_rules_value, pool_mode, relay_execution_settings,
+        client_simulation_profile, parse_auto_ban_rules_value, pool_mode,
         relay_execution_settings_from_values, responses_compact_mode,
         responses_compact_model_mapping, responses_compact_probe_record,
         responses_websocket_enabled, validate_client_simulation_body_capability,
@@ -156,15 +156,9 @@ impl AdminChannelRecord {
                 &settings,
                 RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY,
             ),
-            relay_race_width: relay_execution_settings(&settings)
-                .map_err(|_| internal_invariant())?
-                .race_width(),
-            relay_retry_limit: relay_execution_settings(&settings)
-                .map_err(|_| internal_invariant())?
-                .retry_limit(),
-            relay_retry_delay_ms: relay_execution_settings(&settings)
-                .map_err(|_| internal_invariant())?
-                .retry_delay_ms(),
+            relay_race_width: setting_value(&settings, RELAY_RACE_WIDTH_KEY),
+            relay_retry_limit: setting_value(&settings, RELAY_RETRY_LIMIT_KEY),
+            relay_retry_delay_ms: setting_value(&settings, RELAY_RETRY_DELAY_MS_KEY),
             settings_oversized,
             balance: model.balance,
             used_quota: model.used_quota,

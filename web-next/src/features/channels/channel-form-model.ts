@@ -59,6 +59,9 @@ export type ChannelFormValues = {
   responsesWebsocketEnabled: boolean
   responsesCompactMode: ResponsesCompactMode
   responsesCompactModelMapping: KeyValueRow[]
+  relayRaceWidth: string
+  relayRetryLimit: string
+  relayRetryDelayMs: string
   models: string[]
   groupIds: number[]
   modelMapping: KeyValueRow[]
@@ -124,6 +127,9 @@ export function buildChannelFormSchema(
     responsesWebsocketEnabled: z.boolean(),
     responsesCompactMode: z.enum(['auto', 'force_on', 'force_off']),
     responsesCompactModelMapping: z.array(keyValueRowSchema),
+    relayRaceWidth: z.string().refine((value) => value === '' || (/^\d+$/.test(value) && Number(value) >= 1 && Number(value) <= 8), messages.invalidField),
+    relayRetryLimit: z.string().refine((value) => value === '' || (/^\d+$/.test(value) && Number(value) <= 5), messages.invalidField),
+    relayRetryDelayMs: z.string().refine((value) => value === '' || (/^\d+$/.test(value) && Number(value) <= 10000), messages.invalidField),
     models: z.array(z.string()),
     groupIds: z.array(z.number()),
     modelMapping: z.array(keyValueRowSchema),
@@ -293,6 +299,9 @@ export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues 
       channel?.responses_compact_model_mapping ?? {},
       'compact-mapping',
     ),
+    relayRaceWidth: channel?.relay_race_width == null ? '' : String(channel.relay_race_width),
+    relayRetryLimit: channel?.relay_retry_limit == null ? '' : String(channel.relay_retry_limit),
+    relayRetryDelayMs: channel?.relay_retry_delay_ms == null ? '' : String(channel.relay_retry_delay_ms),
     models: [...(channel?.models ?? [])],
     groupIds: [...(channel?.group_ids ?? [])],
     modelMapping: stringMapRows(channel?.model_mapping ?? {}, 'mapping'),
@@ -358,6 +367,9 @@ function commonRequest(values: ChannelFormValues) {
     responses_websocket_enabled: values.responsesWebsocketEnabled,
     responses_compact_mode: values.responsesCompactMode,
     responses_compact_model_mapping: stringRowsObject(values.responsesCompactModelMapping),
+    relay_race_width: values.relayRaceWidth === '' ? null : Number(values.relayRaceWidth),
+    relay_retry_limit: values.relayRetryLimit === '' ? null : Number(values.relayRetryLimit),
+    relay_retry_delay_ms: values.relayRetryDelayMs === '' ? null : Number(values.relayRetryDelayMs),
     models: values.models,
     group_ids: values.groupIds,
     model_mapping: stringRowsObject(values.modelMapping),
