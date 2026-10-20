@@ -5,8 +5,8 @@ use af_domain::{ChannelType, OpenCodeEntry, Protocol};
 use crate::{
     Adaptor, AdaptorError, AdaptorResult, AnthropicAdaptor, BedrockAdaptor, CohereAdaptor,
     CustomAdaptor, CustomAuthentication, CustomEndpointTemplate, CustomStreamEndpoint,
-    GeminiAdaptor, JinaAdaptor, OpenAiAdaptor, OpenCodeAdaptor, VertexAdaptor, VideoTaskAdaptor,
-    XaiVideoAdaptor, NvidiaAdaptor,
+    GeminiAdaptor, JinaAdaptor, NvidiaAdaptor, OpenAiAdaptor, OpenCodeAdaptor, VertexAdaptor,
+    VideoTaskAdaptor, XaiVideoAdaptor,
 };
 
 /// OpenAI 适配器的强类型构造配置。
@@ -82,7 +82,8 @@ impl NvidiaAdaptorSettings {
 
 impl fmt::Debug for NvidiaAdaptorSettings {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("NvidiaAdaptorSettings")
+        formatter
+            .debug_struct("NvidiaAdaptorSettings")
             .field("supported_model_count", &self.supported_models.len())
             .finish()
     }
@@ -414,7 +415,10 @@ pub enum AdaptorSettings {
 impl fmt::Debug for AdaptorSettings {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Nvidia(settings) => formatter.debug_tuple("AdaptorSettings::Nvidia").field(settings).finish(),
+            Self::Nvidia(settings) => formatter
+                .debug_tuple("AdaptorSettings::Nvidia")
+                .field(settings)
+                .finish(),
             Self::OpenCode(settings) => formatter
                 .debug_tuple("AdaptorSettings::OpenCode")
                 .field(settings)
@@ -648,7 +652,9 @@ mod tests {
 
     #[test]
     fn nvidia_factory_uses_dedicated_settings_and_adapter() {
-        let settings = AdaptorSettings::Nvidia(NvidiaAdaptorSettings::new(vec!["meta/private-model".to_owned()]));
+        let settings = AdaptorSettings::Nvidia(NvidiaAdaptorSettings::new(vec![
+            "meta/private-model".to_owned(),
+        ]));
         assert!(!format!("{settings:?}").contains("meta/private-model"));
         let adaptor = get_adaptor(ChannelType::Nvidia, settings).unwrap();
         assert_eq!(adaptor.channel_type(), ChannelType::Nvidia);

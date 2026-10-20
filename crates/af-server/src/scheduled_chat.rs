@@ -1730,7 +1730,7 @@ fn target_matches_protocol(
                 Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic
             ) | (ChannelType::Anthropic, Protocol::Anthropic)
                 | (ChannelType::Nvidia, Protocol::OpenAiChat)
-            | (ChannelType::Gemini, Protocol::Gemini)
+                | (ChannelType::Gemini, Protocol::Gemini)
                 | (ChannelType::Jina, Protocol::JinaRerank)
                 | (ChannelType::Cohere, Protocol::CohereRerank)
                 | (ChannelType::Xai, Protocol::XaiVideo)
@@ -1954,20 +1954,50 @@ mod tests {
 
     #[tokio::test]
     async fn nvidia_production_plan_assembles_api_key_candidate() {
-        let credential = SchedulerRuntimeCredentialRecord::new(CREDENTIAL_ID, CredentialKind::ApiKey, valid_envelope(), false).unwrap();
+        let credential = SchedulerRuntimeCredentialRecord::new(
+            CREDENTIAL_ID,
+            CredentialKind::ApiKey,
+            valid_envelope(),
+            false,
+        )
+        .unwrap();
         let source = record_pool_with_target_for_group_and_model(
-            GroupId::new(7).unwrap(), "meta/llama-3.1-8b-instruct", vec![credential], ChannelType::Nvidia, Protocol::OpenAiChat,
+            GroupId::new(7).unwrap(),
+            "meta/llama-3.1-8b-instruct",
+            vec![credential],
+            ChannelType::Nvidia,
+            Protocol::OpenAiChat,
         );
         let service = service(vec![source]).await;
-        let route = service.scheduler.route_plan(GroupId::new(7).unwrap(), "meta/llama-3.1-8b-instruct").unwrap().unwrap();
-        let execution = service.build_plan(
-            PreparedExecutionRoute { route, upstream_protocol: Protocol::OpenAiChat, routed_model: "meta/llama-3.1-8b-instruct".to_owned() },
-            valid_request_for_model("meta/llama-3.1-8b-instruct"), Protocol::OpenAiChat,
-            "request-nvidia-production", None, PreparedConcurrencyPlan::disabled(),
-        ).await.unwrap();
+        let route = service
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "meta/llama-3.1-8b-instruct")
+            .unwrap()
+            .unwrap();
+        let execution = service
+            .build_plan(
+                PreparedExecutionRoute {
+                    route,
+                    upstream_protocol: Protocol::OpenAiChat,
+                    routed_model: "meta/llama-3.1-8b-instruct".to_owned(),
+                },
+                valid_request_for_model("meta/llama-3.1-8b-instruct"),
+                Protocol::OpenAiChat,
+                "request-nvidia-production",
+                None,
+                PreparedConcurrencyPlan::disabled(),
+            )
+            .await
+            .unwrap();
         assert_eq!(execution.attempt_targets.len(), 1);
-        assert_eq!(execution.attempt_targets[0].credential_id(), CredentialId::new(CREDENTIAL_ID).unwrap());
-        assert_eq!(execution.canonical_request().requested_model(), "meta/llama-3.1-8b-instruct");
+        assert_eq!(
+            execution.attempt_targets[0].credential_id(),
+            CredentialId::new(CREDENTIAL_ID).unwrap()
+        );
+        assert_eq!(
+            execution.canonical_request().requested_model(),
+            "meta/llama-3.1-8b-instruct"
+        );
         assert!(execution.tool_plan.is_none());
     }
 

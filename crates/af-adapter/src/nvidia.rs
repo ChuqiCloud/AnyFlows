@@ -63,7 +63,11 @@ impl Adaptor for NvidiaAdaptor {
             .is_some_and(|segment| segment == "v1");
         context.append_path(
             Self::DEFAULT_BASE_URL,
-            if has_v1 { "chat/completions" } else { "v1/chat/completions" },
+            if has_v1 {
+                "chat/completions"
+            } else {
+                "v1/chat/completions"
+            },
         )
     }
 
@@ -96,14 +100,18 @@ impl Adaptor for NvidiaAdaptor {
         };
         let mut value: serde_json::Value =
             serde_json::from_slice(&body).map_err(|_| AdaptorError::InvalidTaskRequest)?;
-        let object = value.as_object_mut().ok_or(AdaptorError::InvalidTaskRequest)?;
+        let object = value
+            .as_object_mut()
+            .ok_or(AdaptorError::InvalidTaskRequest)?;
         // 公共协议统一使用 max_completion_tokens；NIM 使用 max_tokens。
         // 在所有渠道覆盖完成后转换，保留实际输出上限。
         if let Some(max_tokens) = object.remove("max_completion_tokens") {
             object.insert("max_tokens".to_owned(), max_tokens);
         }
         if !object.contains_key("tools")
-            && object.get("tool_choice").and_then(serde_json::Value::as_str)
+            && object
+                .get("tool_choice")
+                .and_then(serde_json::Value::as_str)
                 .is_some_and(|choice| matches!(choice, "auto" | "none"))
         {
             object.remove("tool_choice");
@@ -117,7 +125,10 @@ impl Adaptor for NvidiaAdaptor {
 
 impl fmt::Debug for NvidiaAdaptor {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("NvidiaAdaptor").field("inner", &self.inner).finish()
+        formatter
+            .debug_struct("NvidiaAdaptor")
+            .field("inner", &self.inner)
+            .finish()
     }
 }
 
@@ -128,23 +139,60 @@ mod tests {
     use serde_json::json;
 
     fn context() -> RelayContext {
-        RelayContext::new(HttpClientPool::default().get(&HttpClientConfig::default()).unwrap())
+        RelayContext::new(
+            HttpClientPool::default()
+                .get(&HttpClientConfig::default())
+                .unwrap(),
+        )
     }
 
     #[test]
     fn nvidia_url_authentication_and_protocol_boundaries() {
         let adaptor = NvidiaAdaptor::with_supported_models(vec!["nvidia/model".to_owned()]);
         let target = AdaptorTarget::new("nvidia/model", Operation::Chat, ResponseMode::Stream);
-        assert_eq!(adaptor.build_url(&context(), target).unwrap(), "https://integrate.api.nvidia.com/v1/chat/completions");
-        for base in ["https://nim.example/proxy", "https://nim.example/proxy/v1", "https://nim.example/proxy/v1/"] {
-            assert_eq!(adaptor.build_url(&context().with_base_url(base).unwrap(), target).unwrap(), "https://nim.example/proxy/v1/chat/completions");
+        assert_eq!(
+            adaptor.build_url(&context(), target).unwrap(),
+            "https://integrate.api.nvidia.com/v1/chat/completions"
+        );
+        for base in [
+            "https://nim.example/proxy",
+            "https://nim.example/proxy/v1",
+            "https://nim.example/proxy/v1/",
+        ] {
+            assert_eq!(
+                adaptor
+                    .build_url(&context().with_base_url(base).unwrap(), target)
+                    .unwrap(),
+                "https://nim.example/proxy/v1/chat/completions"
+            );
         }
         let mut headers = HeaderMap::new();
-        adaptor.setup_headers(&mut headers, &Credential::api_key("nvidia-secret-canary").unwrap(), &context()).unwrap();
+        adaptor
+            .setup_headers(
+                &mut headers,
+                &Credential::api_key("nvidia-secret-canary").unwrap(),
+                &context(),
+            )
+            .unwrap();
         assert_eq!(headers["authorization"], "Bearer nvidia-secret-canary");
         assert!(!format!("{headers:?}").contains("nvidia-secret-canary"));
-        assert!(adaptor.setup_headers(&mut headers, &Credential::oauth("token").unwrap(), &context()).is_err());
-        assert!(adaptor.build_url(&context(), AdaptorTarget::new("nvidia/model", Operation::Responses, ResponseMode::Full)).is_err());
+        assert!(
+            adaptor
+                .setup_headers(
+                    &mut headers,
+                    &Credential::oauth("token").unwrap(),
+                    &context()
+                )
+                .is_err()
+        );
+        assert!(
+            adaptor
+                .build_url(
+                    &context(),
+                    AdaptorTarget::new("nvidia/model", Operation::Responses, ResponseMode::Full)
+                )
+                .is_err()
+        );
     }
 
     #[tokio::test]
@@ -153,9 +201,21 @@ mod tests {
         let credential = Credential::api_key("canary").unwrap();
         for tools in [false, true] {
             let mut value = json!({"model":"meta/llama", "max_completion_tokens":128, "stream":true, "tool_choice":"auto", "chat_template_kwargs":{"thinking":true}});
-            if tools { value["tools"] = json!([{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]); }
-            let request = UpstreamRequest::new(Method::POST, "https://integrate.api.nvidia.com/v1/chat/completions", HeaderMap::new(), Some(Bytes::from(serde_json::to_vec(&value).unwrap()))).unwrap().with_response_mode(ResponseMode::Stream);
-            let request = adaptor.finalize_request(request, &credential, &context()).await.unwrap();
+            if tools {
+                value["tools"] = json!([{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]);
+            }
+            let request = UpstreamRequest::new(
+                Method::POST,
+                "https://integrate.api.nvidia.com/v1/chat/completions",
+                HeaderMap::new(),
+                Some(Bytes::from(serde_json::to_vec(&value).unwrap())),
+            )
+            .unwrap()
+            .with_response_mode(ResponseMode::Stream);
+            let request = adaptor
+                .finalize_request(request, &credential, &context())
+                .await
+                .unwrap();
             let (_, _, _, body, mode, _) = request.into_parts();
             let actual: serde_json::Value = serde_json::from_slice(&body.unwrap()).unwrap();
             assert_eq!(mode, ResponseMode::Stream);
@@ -163,7 +223,10 @@ mod tests {
             assert!(actual.get("max_completion_tokens").is_none());
             assert_eq!(actual["model"], "meta/llama");
             assert_eq!(actual["stream"], true);
-            assert_eq!(actual["chat_template_kwargs"], value["chat_template_kwargs"]);
+            assert_eq!(
+                actual["chat_template_kwargs"],
+                value["chat_template_kwargs"]
+            );
             assert_eq!(actual.get("tool_choice").is_some(), tools);
             assert_eq!(actual.get("tools"), value.get("tools"));
         }

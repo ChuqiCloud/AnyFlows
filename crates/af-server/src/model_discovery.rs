@@ -275,7 +275,10 @@ async fn discover_openai(
     )
 }
 
-fn openai_models_url(context: &RelayContext, default_base_url: &str) -> Result<Url, UpstreamModelDiscoveryError> {
+fn openai_models_url(
+    context: &RelayContext,
+    default_base_url: &str,
+) -> Result<Url, UpstreamModelDiscoveryError> {
     if context.is_codex_oauth() {
         let target = context
             .append_path_from(
@@ -778,11 +781,27 @@ mod tests {
 
     #[test]
     fn nvidia_model_discovery_uses_its_own_default_and_keeps_namespaces() {
-        let adaptor = get_adaptor(ChannelType::Nvidia, adaptor_settings(ChannelType::Nvidia, Protocol::OpenAiChat).unwrap()).unwrap();
-        let context = RelayContext::new(HttpClientPool::default().get(&HttpClientConfig::default()).unwrap());
-        assert_eq!(openai_models_url(&context, adaptor.default_base_url()).unwrap().as_str(), "https://integrate.api.nvidia.com/v1/models");
+        let adaptor = get_adaptor(
+            ChannelType::Nvidia,
+            adaptor_settings(ChannelType::Nvidia, Protocol::OpenAiChat).unwrap(),
+        )
+        .unwrap();
+        let context = RelayContext::new(
+            HttpClientPool::default()
+                .get(&HttpClientConfig::default())
+                .unwrap(),
+        );
+        assert_eq!(
+            openai_models_url(&context, adaptor.default_base_url())
+                .unwrap()
+                .as_str(),
+            "https://integrate.api.nvidia.com/v1/models"
+        );
         assert!(adaptor_settings(ChannelType::Nvidia, Protocol::OpenAiResponses).is_err());
-        let wire: OpenAiModelsWire = serde_json::from_value(serde_json::json!({"data":[{"id":"meta/llama-3.1-8b-instruct"}]})).unwrap();
+        let wire: OpenAiModelsWire = serde_json::from_value(
+            serde_json::json!({"data":[{"id":"meta/llama-3.1-8b-instruct"}]}),
+        )
+        .unwrap();
         assert_eq!(wire.data[0].id, "meta/llama-3.1-8b-instruct");
     }
 
@@ -791,7 +810,9 @@ mod tests {
         let context = context("https://gateway.example/incorrect/v1")
             .with_oauth_identity(Some("codex"), Some("org-codex-test"));
         assert_eq!(
-            openai_models_url(&context, OpenAiAdaptor::DEFAULT_BASE_URL).unwrap().as_str(),
+            openai_models_url(&context, OpenAiAdaptor::DEFAULT_BASE_URL)
+                .unwrap()
+                .as_str(),
             "https://chatgpt.com/backend-api/codex/models?client_version=0.146.0"
         );
     }

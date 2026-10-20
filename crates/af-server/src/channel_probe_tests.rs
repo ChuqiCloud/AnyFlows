@@ -41,12 +41,21 @@ async fn nvidia_probe_uses_chat_endpoint_bearer_and_nim_token_budget() {
     let key = [0x42; CREDENTIAL_ENCRYPTION_KEY_BYTES];
     let database = test_database().await;
     seed_probe_target(&database.seed, &key, Protocol::OpenAiChat, false, false).await;
-    database.seed.execute_unprepared(&format!(
-        "UPDATE channels SET type = 'nvidia' WHERE id = {TEST_CHANNEL_ID}"
-    )).await.unwrap();
+    database
+        .seed
+        .execute_unprepared(&format!(
+            "UPDATE channels SET type = 'nvidia' WHERE id = {TEST_CHANNEL_ID}"
+        ))
+        .await
+        .unwrap();
     let response = br#"{"id":"chatcmpl-nim","object":"chat.completion","created":1700000000,"model":"probe-model-canary","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}"#;
     let (proxy_address, captured, server) = spawn_proxy("200 OK", response);
-    assert_eq!(probe(&database.pool, &key, proxy_address).check(channel_id()).await, ChannelProbeStatus::Healthy);
+    assert_eq!(
+        probe(&database.pool, &key, proxy_address)
+            .check(channel_id())
+            .await,
+        ChannelProbeStatus::Healthy
+    );
     let request = captured.recv_timeout(IO_TIMEOUT).unwrap();
     server.join().unwrap();
     let head = request.head.to_ascii_lowercase();

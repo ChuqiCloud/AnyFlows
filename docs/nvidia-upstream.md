@@ -4,7 +4,7 @@
 
 1. 在 [NVIDIA API Catalog](https://build.nvidia.com/) 获取 API Key，在渠道凭据中选择 API Key 并保存。
 2. 基础地址留空即可使用官方托管接口 `https://integrate.api.nvidia.com/v1`。自建 NIM 或网关可填写自己的基础地址，支持带或不带 `/v1`，并保留网关路径前缀。
-3. 使用渠道的模型发现功能读取 `/v1/models`，或手动填写上游支持的完整模型 ID，例如 `meta/llama-3.1-8b-instruct`。保留模型 ID 的命名空间；需要对外使用其他名字时配置模型映射。
+3. 使用渠道的模型发现功能读取 `/v1/models`，或手动填写上游支持的完整模型 ID，例如 `meta/llama-3.2-11b-vision-instruct`。模型可用性以当前目录和账号权限为准；保留模型 ID 的命名空间，需要对外使用其他名字时配置模型映射。
 4. 将模型绑定到分组并发布，保存凭据后执行渠道测活，再使用在线调试发送请求。
 
 适配器使用 `Authorization: Bearer <API Key>`，支持普通及流式对话，复用现有工具调用与响应转换。输出预算会转换为 NIM 的 `max_tokens` 参数；工具调用、推理、多模态和采样参数的可用性取决于选定模型。模型目录中可能包含非对话模型，只有支持 Chat Completions 的模型适用于此渠道。
