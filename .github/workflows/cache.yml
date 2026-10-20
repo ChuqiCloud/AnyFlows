@@ -25,7 +25,7 @@ jobs:
     services:
       redis:
         image: redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3
-        ports: ['6379:6379']
+        ports: ['6379/tcp']
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 2s
@@ -48,6 +48,11 @@ jobs:
           toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal --component rustfmt --component clippy
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: cache-contracts
+          cache-on-failure: true
       - name: Check cache formatting
         run: cargo fmt -p af-cache -- --check
       - name: Lint cache contracts
@@ -57,5 +62,5 @@ jobs:
       - name: Test shared Redis admission
         env:
           AF_REQUIRE_LIVE_REDIS: '1'
-          AF_TEST_REDIS_URL: redis://127.0.0.1:6379/
+          AF_TEST_REDIS_URL: ${{ github.server_url == 'https://github.com' && format('redis://127.0.0.1:{0}/', job.services.redis.ports[6379]) || 'redis://redis:6379/' }}
         run: cargo test -p af-cache --test redis_integration --locked -- --include-ignored
