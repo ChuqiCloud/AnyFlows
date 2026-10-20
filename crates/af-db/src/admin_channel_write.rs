@@ -30,14 +30,16 @@ use crate::{
     },
     admin_channel::valid_text,
     channel_settings::{
-        auto_ban_rules, clear_responses_compact_probe_record, client_simulation_body_profile,
+        RelayChannelSettings, RelayChannelSettingsPatch, auto_ban_rules,
+        clear_responses_compact_probe_record, client_simulation_body_profile,
         client_simulation_profile, pool_mode, responses_compact_mode,
         responses_compact_model_mapping, responses_websocket_enabled, set_auto_ban_rules,
         set_client_simulation_body_profile, set_client_simulation_profile, set_pool_mode,
-        set_responses_compact_mode, set_responses_compact_model_mapping,
-        set_responses_websocket_enabled, validate_client_simulation_body_capability,
-        validate_client_simulation_capability, validate_responses_compact_capability,
-        validate_responses_compact_model_mapping, validate_responses_websocket_capability,
+        set_relay_execution_settings_patch, set_responses_compact_mode,
+        set_responses_compact_model_mapping, set_responses_websocket_enabled,
+        validate_client_simulation_body_capability, validate_client_simulation_capability,
+        validate_responses_compact_capability, validate_responses_compact_model_mapping,
+        validate_responses_websocket_capability,
     },
     entity::{
         ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, channel_groups,
@@ -81,6 +83,7 @@ pub struct AdminChannelWriteRecord {
     responses_compact_mode: Option<ResponsesCompactMode>,
     responses_compact_model_mapping: Option<serde_json::Value>,
     tag: Option<String>,
+    relay_settings: Option<RelayChannelSettingsPatch>,
 }
 
 impl AdminChannelWriteRecord {
@@ -135,6 +138,7 @@ impl AdminChannelWriteRecord {
             responses_compact_model_mapping: None,
             auto_ban_rules: Some(ChannelAutoBanRules::default()),
             tag,
+            relay_settings: None,
         }
     }
 
@@ -189,6 +193,7 @@ impl AdminChannelWriteRecord {
             responses_compact_model_mapping: None,
             auto_ban_rules: None,
             tag,
+            relay_settings: None,
         }
     }
 
@@ -196,6 +201,12 @@ impl AdminChannelWriteRecord {
     #[must_use]
     pub fn with_provider(mut self, provider: Option<String>) -> Self {
         self.provider = provider;
+        self
+    }
+
+    #[must_use]
+    pub fn with_relay_execution_settings(mut self, settings: RelayChannelSettingsPatch) -> Self {
+        self.relay_settings = Some(settings);
         self
     }
 
@@ -711,6 +722,13 @@ impl AdminChannelRepository {
             .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
         set_auto_ban_rules(&mut settings, auto_ban_rules)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        set_relay_execution_settings_patch(
+            &mut settings,
+            fields.relay_settings.unwrap_or_else(|| {
+                RelayChannelSettingsPatch::replace_all(RelayChannelSettings::default())
+            }),
+        )
+        .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         let settings = SensitiveJson::from(settings);
         let inserted = channels::ActiveModel {
             name: Set(fields.name),
@@ -882,6 +900,10 @@ impl AdminChannelRepository {
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         set_auto_ban_rules(&mut settings, &effective_auto_ban_rules)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        if let Some(relay_settings) = fields.relay_settings {
+            set_relay_execution_settings_patch(&mut settings, relay_settings)
+                .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        }
         let now = TimeDateTimeWithTimeZone::now_utc();
         let ability_tag = fields.tag.clone();
         let ability_metadata = ChannelAbilityMetadata {
@@ -1348,6 +1370,7 @@ struct ValidatedChannelFields {
     responses_compact_mode: Option<ResponsesCompactMode>,
     responses_compact_model_mapping: Option<ChannelModelMappings>,
     tag: Option<String>,
+    relay_settings: Option<RelayChannelSettingsPatch>,
 }
 
 fn validate_channel_fields(
@@ -1416,6 +1439,8 @@ fn validate_channel_fields(
     }
     if let Some(settings) = &record.settings {
         validate_json_object(settings, false)?;
+        crate::validate_relay_execution_settings(settings)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         crate::channel_opencode_entry(record.channel_type, settings)?;
     }
     if let Some(enabled) = record.responses_websocket_enabled {
@@ -1503,6 +1528,7 @@ fn validate_channel_fields(
         responses_compact_mode: record.responses_compact_mode,
         responses_compact_model_mapping,
         tag: record.tag,
+        relay_settings: record.relay_settings,
     })
 }
 

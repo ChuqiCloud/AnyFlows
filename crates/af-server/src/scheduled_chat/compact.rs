@@ -192,7 +192,10 @@ impl ScheduledChatService {
                     build_adaptor_credential(&decrypted).map_err(|_| AfError::Internal)?;
                 let mut relay_candidate = RelayCandidate::new(adaptor.clone(), context, credential)
                     .with_header_overrides(headers.clone())
-                    .with_channel_group(target.channel_id());
+                    .with_channel_group(target.channel_id())
+                    .with_retry_limit(target.relay_retry_limit())
+                    .with_retry_delay_ms(target.relay_retry_delay_ms())
+                    .with_race_width(target.relay_race_width());
                 if let Some(profile) = target.client_profile() {
                     relay_candidate = relay_candidate.with_client_profile(profile.clone());
                 }
@@ -230,7 +233,9 @@ impl ScheduledChatService {
                 af_domain::UpstreamError::ModelUnsupported.into()
             });
         }
-        let machine = RelayStateMachine::new(relay_candidates).map_err(|_| AfError::Internal)?;
+        let machine = RelayStateMachine::new(relay_candidates)
+            .map_err(|_| AfError::Internal)?
+            .with_execution_policy(self.relay_execution_policy());
         Ok(ScheduledResponsesCompactExecution {
             target_group_id,
             machine,

@@ -201,6 +201,12 @@ struct ProjectionTargetWire {
     /// 旧投影缺少该字段时按空映射兼容。
     #[serde(default)]
     responses_compact_model_mapping: Option<Json>,
+    #[serde(default)]
+    relay_race_width: Option<usize>,
+    #[serde(default)]
+    relay_retry_limit: Option<u8>,
+    #[serde(default)]
+    relay_retry_delay_ms: Option<u64>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -424,6 +430,9 @@ impl ProjectionTargetWire {
                     .responses_compact_model_mapping()
                     .to_projection_json(),
             ),
+            relay_race_width: target.relay_race_width(),
+            relay_retry_limit: target.relay_retry_limit(),
+            relay_retry_delay_ms: target.relay_retry_delay_ms(),
         }
     }
 
@@ -504,6 +513,11 @@ impl ProjectionTargetWire {
         .with_timeout(timeout)
         .with_auto_ban_rules(auto_ban_rules)
         .with_pool_mode(self.pool_mode)
+        .with_relay_settings(crate::channel_settings::RelayChannelSettings::new(
+            self.relay_race_width,
+            self.relay_retry_limit,
+            self.relay_retry_delay_ms,
+        ))
         .with_client_simulation_profile(client_simulation_profile)
         .and_then(|target| {
             target.with_client_simulation_body_profile(client_simulation_body_profile)

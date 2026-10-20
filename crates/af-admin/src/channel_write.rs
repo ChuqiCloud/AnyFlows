@@ -10,7 +10,7 @@ use af_db::{
     AdminCredentialSecretRecord, AdminCredentialWriteRecord, ChannelModelMappings,
     ChannelParameterOverrides, MAX_ADMIN_CHANNEL_ABILITIES, MAX_ADMIN_CHANNEL_GROUPS,
     MAX_ADMIN_CHANNEL_JSON_BYTES, MAX_ADMIN_CHANNEL_MODEL_BYTES, MAX_ADMIN_CHANNEL_MODELS,
-    validate_channel_header_overrides,
+    RelayChannelSettings, RelayChannelSettingsPatch, validate_channel_header_overrides,
 };
 use af_domain::{
     ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationBodyProfile,
@@ -175,6 +175,12 @@ impl AdminChannelCreateCommand {
         self.fields.auto_ban_rules = Some(rules);
         Ok(self)
     }
+
+    #[must_use]
+    pub fn with_relay_execution_settings(mut self, settings: RelayChannelSettings) -> Self {
+        self.fields.relay_settings = Some(RelayChannelSettingsPatch::replace_all(settings));
+        self
+    }
 }
 
 impl fmt::Debug for AdminChannelCreateCommand {
@@ -308,6 +314,12 @@ impl AdminChannelUpdateCommand {
         self.fields.auto_ban_rules = Some(rules);
         Ok(self)
     }
+
+    #[must_use]
+    pub fn with_relay_execution_settings(mut self, settings: RelayChannelSettingsPatch) -> Self {
+        self.fields.relay_settings = Some(settings);
+        self
+    }
 }
 
 impl fmt::Debug for AdminChannelUpdateCommand {
@@ -342,6 +354,7 @@ struct AdminChannelWriteFields {
     responses_compact_mode: Option<ResponsesCompactMode>,
     responses_compact_model_mapping: Option<serde_json::Value>,
     auto_ban_rules: Option<ChannelAutoBanRules>,
+    relay_settings: Option<RelayChannelSettingsPatch>,
     tag: Option<String>,
 }
 
@@ -417,6 +430,8 @@ impl AdminChannelWriteFields {
         }
         if let Some(settings) = &settings {
             validate_json_object(settings, false)?;
+            af_db::validate_relay_execution_settings(settings)
+                .map_err(|_| AdminChannelWriteError::InvalidInput)?;
             af_db::channel_opencode_entry(channel_type, settings)
                 .map_err(|_| AdminChannelWriteError::InvalidInput)?;
         }
@@ -450,6 +465,7 @@ impl AdminChannelWriteFields {
             responses_compact_mode: None,
             responses_compact_model_mapping: None,
             auto_ban_rules: require_sensitive_fields.then_some(ChannelAutoBanRules::default()),
+            relay_settings: None,
             tag,
         })
     }
@@ -537,6 +553,7 @@ impl AdminChannelWriteFields {
         let responses_compact_mode = self.responses_compact_mode;
         let responses_compact_model_mapping = self.responses_compact_model_mapping;
         let auto_ban_rules = self.auto_ban_rules;
+        let relay_settings = self.relay_settings;
         let record = AdminChannelWriteRecord::new_update(
             self.name,
             self.channel_type,
@@ -558,6 +575,10 @@ impl AdminChannelWriteFields {
         .with_provider(self.provider);
         let record = match pool_mode {
             Some(enabled) => record.with_pool_mode(enabled),
+            None => record,
+        };
+        let record = match relay_settings {
+            Some(settings) => record.with_relay_execution_settings(settings),
             None => record,
         };
         let record = match client_simulation_profile {

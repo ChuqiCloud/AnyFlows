@@ -101,6 +101,12 @@ pub(crate) struct AdminChannelResponse {
     #[schema(schema_with = crate::openapi::schema::model_mapping_schema)]
     responses_compact_model_mapping: serde_json::Value,
     responses_compact_probe: AdminResponsesCompactProbeDto,
+    /// 渠道级竞速并发宽度；为空时继承全局默认值。
+    relay_race_width: Option<usize>,
+    /// 渠道级重试次数上限；为空时继承全局默认值。
+    relay_retry_limit: Option<u8>,
+    /// 渠道级重试间隔毫秒；为空时继承全局默认值。
+    relay_retry_delay_ms: Option<u64>,
     #[schema(schema_with = crate::openapi::schema::channel_models_schema)]
     models: Vec<String>,
     #[schema(schema_with = crate::openapi::schema::channel_group_ids_schema)]
@@ -209,6 +215,9 @@ impl AdminChannelResponse {
                 checked_at: channel.responses_compact_probe_checked_at(),
                 http_status: channel.responses_compact_probe_http_status(),
             },
+            relay_race_width: channel.relay_race_width(),
+            relay_retry_limit: channel.relay_retry_limit(),
+            relay_retry_delay_ms: channel.relay_retry_delay_ms(),
             models: channel.models().to_vec(),
             group_ids: channel
                 .group_ids()

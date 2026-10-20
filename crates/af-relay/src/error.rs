@@ -220,6 +220,20 @@ pub(crate) const fn is_retryable(error: UpstreamError) -> bool {
     )
 }
 
+/// 判定同一个上游目标是否值得立即重试；凭据/模型故障只应触发路由切换。
+pub(crate) const fn is_same_candidate_retryable(error: UpstreamError) -> bool {
+    match error {
+        UpstreamError::RateLimited { .. }
+        | UpstreamError::Overloaded { .. }
+        | UpstreamError::ServerError { .. } => true,
+        UpstreamError::Network {
+            kind: NetworkFailureKind::Policy,
+        } => false,
+        UpstreamError::Network { .. } => true,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::SocketAddr;
@@ -264,6 +278,24 @@ mod tests {
                 UpstreamError::network(expected)
             );
         }
+    }
+
+    #[test]
+    fn same_candidate_retries_only_transient_upstream_failures() {
+        assert!(is_same_candidate_retryable(UpstreamError::network(
+            NetworkFailureKind::Connect
+        )));
+        assert!(is_same_candidate_retryable(UpstreamError::overloaded()));
+        assert!(is_same_candidate_retryable(
+            UpstreamError::server_error(503).unwrap()
+        ));
+        assert!(!is_same_candidate_retryable(UpstreamError::AuthExpired));
+        assert!(!is_same_candidate_retryable(
+            UpstreamError::ModelUnsupported
+        ));
+        assert!(!is_same_candidate_retryable(UpstreamError::network(
+            NetworkFailureKind::Policy
+        )));
     }
 
     #[test]
