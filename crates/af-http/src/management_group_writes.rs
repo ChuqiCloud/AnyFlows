@@ -207,18 +207,30 @@ impl AdminGroupPeakWindow {
     }
 
     fn into_window(self) -> Result<GroupPeakWindow, ManagementError> {
-        GroupPeakWindow::new(self.weekdays, self.start_second, self.end_second,
-            self.ratio_micros, self.models, self.utc_offset_minutes)
-            .map_err(|_| ManagementError::InvalidRequest)
+        GroupPeakWindow::new(
+            self.weekdays,
+            self.start_second,
+            self.end_second,
+            self.ratio_micros,
+            self.models,
+            self.utc_offset_minutes,
+        )
+        .map_err(|_| ManagementError::InvalidRequest)
     }
 }
 
-fn parse_peak_schedule(windows: Option<Vec<AdminGroupPeakWindow>>) -> Result<Option<GroupPeakSchedule>, ManagementError> {
-    windows.map(|windows| {
-        let windows = windows.into_iter().map(AdminGroupPeakWindow::into_window)
-            .collect::<Result<Vec<_>, _>>()?;
-        GroupPeakSchedule::new(windows).map_err(|_| ManagementError::InvalidRequest)
-    }).transpose()
+fn parse_peak_schedule(
+    windows: Option<Vec<AdminGroupPeakWindow>>,
+) -> Result<Option<GroupPeakSchedule>, ManagementError> {
+    windows
+        .map(|windows| {
+            let windows = windows
+                .into_iter()
+                .map(AdminGroupPeakWindow::into_window)
+                .collect::<Result<Vec<_>, _>>()?;
+            GroupPeakSchedule::new(windows).map_err(|_| ManagementError::InvalidRequest)
+        })
+        .transpose()
 }
 
 fn parse_optional_group_id(value: Option<i64>) -> Result<Option<GroupId>, ManagementError> {
@@ -288,7 +300,13 @@ mod tests {
     #[test]
     fn weekly_schedule_parser_distinguishes_omission_empty_and_valid_rules() {
         assert_eq!(parse_peak_schedule(None).unwrap(), None);
-        assert!(parse_peak_schedule(Some(Vec::new())).unwrap().unwrap().windows().is_empty());
+        assert!(
+            parse_peak_schedule(Some(Vec::new()))
+                .unwrap()
+                .unwrap()
+                .windows()
+                .is_empty()
+        );
         let rule = serde_json::json!({
             "weekdays": [1, 3], "start_second": 82800, "end_second": 7200,
             "ratio_micros": 500000, "models": ["deepseek-chat"], "utc_offset_minutes": 480
@@ -299,7 +317,10 @@ mod tests {
         let response = AdminGroupPeakWindow::from_window(&schedule.windows()[0]);
         assert_eq!(serde_json::to_value(response).unwrap(), rule);
         let duplicates = serde_json::from_value(serde_json::json!([rule.clone(), rule])).unwrap();
-        assert!(matches!(parse_peak_schedule(Some(duplicates)), Err(ManagementError::InvalidRequest)));
+        assert!(matches!(
+            parse_peak_schedule(Some(duplicates)),
+            Err(ManagementError::InvalidRequest)
+        ));
     }
 
     #[test]

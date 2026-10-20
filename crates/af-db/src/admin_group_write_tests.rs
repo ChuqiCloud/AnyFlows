@@ -16,26 +16,50 @@ use crate::entity::{
 };
 
 #[tokio::test]
-async fn weekly_schedule_persists_omission_preserves_and_empty_explicitly_disables() -> Result<(), Box<dyn Error>> {
+async fn weekly_schedule_persists_omission_preserves_and_empty_explicitly_disables()
+-> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
     let schedule = GroupPeakSchedule::new(vec![GroupPeakWindow::new(
-        vec![1, 3, 5], 23 * 3_600, 3_600, 500_000, vec!["deepseek-chat".to_owned()], 480,
+        vec![1, 3, 5],
+        23 * 3_600,
+        3_600,
+        500_000,
+        vec!["deepseek-chat".to_owned()],
+        480,
     )?])?;
-    let created = fixture.repository.create(
-        write_record("weekly", "Weekly", None, true).with_peak_schedule(Some(schedule.clone()))
-    ).await?;
+    let created = fixture
+        .repository
+        .create(
+            write_record("weekly", "Weekly", None, true).with_peak_schedule(Some(schedule.clone())),
+        )
+        .await?;
     assert_eq!(created.peak_schedule(), Some(&schedule));
     let id = created.group_id();
-    let AdminGroupMutationOutcome::Mutated(updated) = fixture.repository.update(
-        id, write_record("weekly", "Omitted", None, true)
-    ).await? else { panic!("group must exist") };
+    let AdminGroupMutationOutcome::Mutated(updated) = fixture
+        .repository
+        .update(id, write_record("weekly", "Omitted", None, true))
+        .await?
+    else {
+        panic!("group must exist")
+    };
     assert_eq!(updated.peak_schedule(), Some(&schedule));
-    let AdminGroupMutationOutcome::Mutated(cleared) = fixture.repository.update(
-        id, write_record("weekly", "Disabled", None, true).with_peak_schedule(Some(GroupPeakSchedule::default()))
-    ).await? else { panic!("group must exist") };
+    let AdminGroupMutationOutcome::Mutated(cleared) = fixture
+        .repository
+        .update(
+            id,
+            write_record("weekly", "Disabled", None, true)
+                .with_peak_schedule(Some(GroupPeakSchedule::default())),
+        )
+        .await?
+    else {
+        panic!("group must exist")
+    };
     assert!(cleared.peak_schedule().unwrap().windows().is_empty());
     assert!(cleared.peak().is_some());
-    let model = groups::Entity::find_by_id(id.get()).one(fixture.pool.connection()).await?.unwrap();
+    let model = groups::Entity::find_by_id(id.get())
+        .one(fixture.pool.connection())
+        .await?
+        .unwrap();
     assert_eq!(model.peak_windows, Some(serde_json::json!([])));
     Ok(())
 }

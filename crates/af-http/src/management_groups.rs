@@ -141,8 +141,13 @@ impl AdminGroupResponse {
             peak_ratio_micros,
             peak_start,
             peak_end,
-            peak_windows: group.peak_schedule().map(|schedule| schedule.windows().iter()
-                .map(crate::management_group_writes::AdminGroupPeakWindow::from_window).collect()),
+            peak_windows: group.peak_schedule().map(|schedule| {
+                schedule
+                    .windows()
+                    .iter()
+                    .map(crate::management_group_writes::AdminGroupPeakWindow::from_window)
+                    .collect()
+            }),
             is_exclusive: group.is_exclusive(),
             daily_limit: group.daily_limit(),
             weekly_limit: group.weekly_limit(),

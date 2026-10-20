@@ -33,8 +33,14 @@ pub trait RequestPricingSnapshotSource: Send + Sync + 'static {
         protocol: Protocol,
         time: PricingWeekTime,
     ) -> RequestPricingSnapshotFuture<'a> {
-        self.capture_for_request(model, source_group_id, target_group_id,
-            organization_id, protocol, time.day_second())
+        self.capture_for_request(
+            model,
+            source_group_id,
+            target_group_id,
+            organization_id,
+            protocol,
+            time.day_second(),
+        )
     }
     /// 固定模型价格、来源/目标分组倍率及当前高峰状态；本方法不执行 IO。
     fn capture(
@@ -296,8 +302,15 @@ impl RequestPricingSnapshotSource for CachedRequestPricingSnapshotSource {
         Box::pin(async move {
             let time = PricingWeekTime::new(1, current_second)
                 .map_err(|_| RequestPricingSnapshotError::InvalidCurrentTime)?;
-            self.capture_for_request_at(model, source_group_id, target_group_id,
-                organization_id, protocol, time).await
+            self.capture_for_request_at(
+                model,
+                source_group_id,
+                target_group_id,
+                organization_id,
+                protocol,
+                time,
+            )
+            .await
         })
     }
 
@@ -311,8 +324,7 @@ impl RequestPricingSnapshotSource for CachedRequestPricingSnapshotSource {
         time: PricingWeekTime,
     ) -> RequestPricingSnapshotFuture<'a> {
         Box::pin(async move {
-            let mut snapshot =
-                self.capture_at(model, source_group_id, target_group_id, time)?;
+            let mut snapshot = self.capture_at(model, source_group_id, target_group_id, time)?;
             let (Some(organization_id), Some(repository)) =
                 (organization_id, self.contract_prices.as_ref())
             else {

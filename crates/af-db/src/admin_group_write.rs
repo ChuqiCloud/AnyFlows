@@ -262,10 +262,13 @@ impl AdminGroupRepository {
             .col_expr(groups::Column::Flags, Expr::value(record.flags))
             .col_expr(groups::Column::UpdatedAt, Expr::value(now));
         if record.peak_schedule.is_some() {
-            update = update.col_expr(groups::Column::PeakWindows,
-                Expr::value(encode_peak_schedule(record.peak_schedule.as_ref())?));
+            update = update.col_expr(
+                groups::Column::PeakWindows,
+                Expr::value(encode_peak_schedule(record.peak_schedule.as_ref())?),
+            );
         }
-        let result = update.exec(&transaction)
+        let result = update
+            .exec(&transaction)
             .with_subscriber(NoSubscriber::default())
             .await
             .map_err(map_write_db_error)?;
@@ -309,9 +312,15 @@ impl AdminGroupRepository {
     }
 }
 
-fn encode_peak_schedule(schedule: Option<&GroupPeakSchedule>) -> Result<Option<serde_json::Value>, AdminGroupRepositoryError> {
-    schedule.map(|schedule| serde_json::to_value(schedule.windows())
-        .map_err(|_| AdminGroupRepositoryError::Invariant)).transpose()
+fn encode_peak_schedule(
+    schedule: Option<&GroupPeakSchedule>,
+) -> Result<Option<serde_json::Value>, AdminGroupRepositoryError> {
+    schedule
+        .map(|schedule| {
+            serde_json::to_value(schedule.windows())
+                .map_err(|_| AdminGroupRepositoryError::Invariant)
+        })
+        .transpose()
 }
 
 async fn begin_transaction(

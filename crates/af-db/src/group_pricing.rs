@@ -117,11 +117,15 @@ impl GroupPricingRecord {
     }
 }
 
-pub(crate) fn parse_peak_schedule(value: Option<&serde_json::Value>) -> Result<Option<GroupPeakSchedule>, ()> {
-    value.map(|value| {
-        let windows = serde_json::from_value(value.clone()).map_err(|_| ())?;
-        GroupPeakSchedule::new(windows).map_err(|_| ())
-    }).transpose()
+pub(crate) fn parse_peak_schedule(
+    value: Option<&serde_json::Value>,
+) -> Result<Option<GroupPeakSchedule>, ()> {
+    value
+        .map(|value| {
+            let windows = serde_json::from_value(value.clone()).map_err(|_| ())?;
+            GroupPeakSchedule::new(windows).map_err(|_| ())
+        })
+        .transpose()
 }
 
 impl fmt::Debug for GroupPricingRecord {

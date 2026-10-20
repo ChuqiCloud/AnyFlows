@@ -7,7 +7,9 @@ const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
 /// 一次读取时钟，固定周计划使用的 UTC 星期和日内时间。
 pub(crate) fn current_pricing_time() -> Option<af_domain::PricingWeekTime> {
     let elapsed = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
-    Some(af_domain::PricingWeekTime::from_unix_seconds(elapsed.as_secs()))
+    Some(af_domain::PricingWeekTime::from_unix_seconds(
+        elapsed.as_secs(),
+    ))
 }
 
 /// 返回当前 UTC 公历日期；系统时钟异常或日期超出受控范围时失败关闭。

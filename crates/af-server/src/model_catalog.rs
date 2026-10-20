@@ -103,15 +103,16 @@ impl RuntimeModelCatalogReader {
     ) -> Result<Option<ModelCatalogItem>, ModelCatalogReadError> {
         let group_id = authentication.group_id();
         // 当前调度快照按实际候选分组建键，因此目录与请求使用同一来源和目标分组。
-        let pricing =
-            match self
-                .pricing_source
-                .capture_at(metadata.model(), group_id, group_id, current_second)
-            {
-                Ok(pricing) => pricing,
-                Err(RequestPricingSnapshotError::ModelNotFound) => return Ok(None),
-                Err(_) => return Err(ModelCatalogReadError::Internal),
-            };
+        let pricing = match self.pricing_source.capture_at(
+            metadata.model(),
+            group_id,
+            group_id,
+            current_second,
+        ) {
+            Ok(pricing) => pricing,
+            Err(RequestPricingSnapshotError::ModelNotFound) => return Ok(None),
+            Err(_) => return Err(ModelCatalogReadError::Internal),
+        };
         Self::catalog_item_from_pricing(
             metadata,
             pricing.billing_mode(),

@@ -264,13 +264,15 @@ impl GroupPricingSnapshot {
         let applied_peak = if let Some(schedule) = &target.peak_schedule {
             PricingRatio::new(schedule.ratio_for(model, time).unwrap_or(1_000_000))
                 .map_err(|_| GroupPricingLookupError::InvalidCurrentTime)?
-        } else { target.peak.map_or(PricingRatio::ONE, |peak| {
-            if peak.is_active(time.day_second()) {
-                peak.ratio
-            } else {
-                PricingRatio::ONE
-            }
-        }) };
+        } else {
+            target.peak.map_or(PricingRatio::ONE, |peak| {
+                if peak.is_active(time.day_second()) {
+                    peak.ratio
+                } else {
+                    PricingRatio::ONE
+                }
+            })
+        };
         Ok(PricingRatios::new(target.ratio, group_model, applied_peak))
     }
 }
@@ -483,11 +485,10 @@ impl GroupPricingSource for DatabaseGroupPricingSource {
                         })
                         .transpose()
                         .map_err(|_| GroupPricingSourceError::Invariant)?;
-                    Ok(GroupPricingSourceRecord::new(
-                        record.group_id(),
-                        ratio,
-                        peak,
-                    ).with_peak_schedule(record.peak_schedule().cloned()))
+                    Ok(
+                        GroupPricingSourceRecord::new(record.group_id(), ratio, peak)
+                            .with_peak_schedule(record.peak_schedule().cloned()),
+                    )
                 })
                 .collect::<Result<Vec<_>, GroupPricingSourceError>>()?;
             let group_model_ratios = catalog

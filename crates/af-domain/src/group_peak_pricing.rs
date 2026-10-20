@@ -77,22 +77,34 @@ impl GroupPeakWindow {
 
     /// 返回采用 ISO 编号的起始星期。
     #[must_use]
-    pub fn weekdays(&self) -> &[u8] { &self.weekdays }
+    pub fn weekdays(&self) -> &[u8] {
+        &self.weekdays
+    }
     /// 返回本地日内起点秒数。
     #[must_use]
-    pub const fn start_second(&self) -> u32 { self.start_second }
+    pub const fn start_second(&self) -> u32 {
+        self.start_second
+    }
     /// 返回本地日内终点秒数（不包含）。
     #[must_use]
-    pub const fn end_second(&self) -> u32 { self.end_second }
+    pub const fn end_second(&self) -> u32 {
+        self.end_second
+    }
     /// 返回额外应用的百万分比倍率。
     #[must_use]
-    pub const fn ratio_micros(&self) -> i64 { self.ratio_micros }
+    pub const fn ratio_micros(&self) -> i64 {
+        self.ratio_micros
+    }
     /// 返回精确匹配的公开计费模型名称，空列表表示全部。
     #[must_use]
-    pub fn models(&self) -> &[String] { &self.models }
+    pub fn models(&self) -> &[String] {
+        &self.models
+    }
     /// 返回计划使用的固定 UTC 偏移分钟数。
     #[must_use]
-    pub const fn utc_offset_minutes(&self) -> i16 { self.utc_offset_minutes }
+    pub const fn utc_offset_minutes(&self) -> i16 {
+        self.utc_offset_minutes
+    }
 
     fn validate(&self) -> Result<(), GroupPeakScheduleError> {
         if self.weekdays.is_empty()
@@ -107,7 +119,9 @@ impl GroupPeakWindow {
             || self.models.len() > MAX_GROUP_PEAK_MODELS
             || self.models.iter().collect::<BTreeSet<_>>().len() != self.models.len()
             || self.models.iter().any(|model| {
-                model.is_empty() || model.len() > 256 || model.trim() != model
+                model.is_empty()
+                    || model.len() > 256
+                    || model.trim() != model
                     || model.chars().any(char::is_control)
             })
         {
@@ -125,24 +139,27 @@ impl GroupPeakWindow {
         let mut intervals = Vec::with_capacity(self.weekdays.len() * 2);
         for day in &self.weekdays {
             let start = (i64::from(day - 1) * DAY + i64::from(self.start_second)
-                - i64::from(self.utc_offset_minutes) * 60).rem_euclid(WEEK);
+                - i64::from(self.utc_offset_minutes) * 60)
+                .rem_euclid(WEEK);
             let end = start + duration;
             intervals.push((start, end.min(WEEK)));
-            if end > WEEK { intervals.push((0, end - WEEK)); }
+            if end > WEEK {
+                intervals.push((0, end - WEEK));
+            }
         }
         intervals
     }
 
     fn intersects_models(&self, other: &Self) -> bool {
-        self.models.is_empty() || other.models.is_empty()
+        self.models.is_empty()
+            || other.models.is_empty()
             || self.models.iter().any(|model| other.models.contains(model))
     }
 
     fn contains_time(&self, time: PricingWeekTime) -> bool {
-        let local = (i64::from(time.0) + i64::from(self.utc_offset_minutes) * 60)
-            .rem_euclid(WEEK);
-        let duration = (i64::from(self.end_second) - i64::from(self.start_second) - 1)
-            .rem_euclid(DAY) + 1;
+        let local = (i64::from(time.0) + i64::from(self.utc_offset_minutes) * 60).rem_euclid(WEEK);
+        let duration =
+            (i64::from(self.end_second) - i64::from(self.start_second) - 1).rem_euclid(DAY) + 1;
         self.weekdays.iter().any(|day| {
             let start = i64::from(day - 1) * DAY + i64::from(self.start_second);
             (local - start).rem_euclid(WEEK) < duration
@@ -165,8 +182,12 @@ impl GroupPeakSchedule {
             let intervals = window.intervals();
             for other in &windows[..index] {
                 if window.intersects_models(other)
-                    && intervals.iter().any(|(start, end)| other.intervals().iter()
-                        .any(|(other_start, other_end)| start < other_end && other_start < end))
+                    && intervals.iter().any(|(start, end)| {
+                        other
+                            .intervals()
+                            .iter()
+                            .any(|(other_start, other_end)| start < other_end && other_start < end)
+                    })
                 {
                     return Err(GroupPeakScheduleError::OverlappingWindows);
                 }
@@ -177,15 +198,20 @@ impl GroupPeakSchedule {
 
     /// 返回持久化和管理接口使用的规则。
     #[must_use]
-    pub fn windows(&self) -> &[GroupPeakWindow] { &self.0 }
+    pub fn windows(&self) -> &[GroupPeakWindow] {
+        &self.0
+    }
 
     /// 按请求固定的时刻及公开计费模型匹配额外倍率。
     #[must_use]
     pub fn ratio_for(&self, model: &str, time: PricingWeekTime) -> Option<i64> {
-        self.0.iter().find(|window| {
-            (window.models.is_empty() || window.models.iter().any(|name| name == model))
-                && window.contains_time(time)
-        }).map(GroupPeakWindow::ratio_micros)
+        self.0
+            .iter()
+            .find(|window| {
+                (window.models.is_empty() || window.models.iter().any(|name| name == model))
+                    && window.contains_time(time)
+            })
+            .map(GroupPeakWindow::ratio_micros)
     }
 }
 
@@ -207,8 +233,23 @@ pub enum GroupPeakScheduleError {
 mod tests {
     use super::*;
 
-    fn window(days: Vec<u8>, start: u32, end: u32, ratio: i64, models: &[&str], offset: i16) -> GroupPeakWindow {
-        GroupPeakWindow::new(days, start, end, ratio, models.iter().map(|name| (*name).to_owned()).collect(), offset).unwrap()
+    fn window(
+        days: Vec<u8>,
+        start: u32,
+        end: u32,
+        ratio: i64,
+        models: &[&str],
+        offset: i16,
+    ) -> GroupPeakWindow {
+        GroupPeakWindow::new(
+            days,
+            start,
+            end,
+            ratio,
+            models.iter().map(|name| (*name).to_owned()).collect(),
+            offset,
+        )
+        .unwrap()
     }
 
     fn at(day: u8, hour: u32) -> PricingWeekTime {
@@ -217,11 +258,20 @@ mod tests {
 
     #[test]
     fn weekly_model_discount_obeys_half_open_boundaries() {
-        let schedule = GroupPeakSchedule::new(vec![
-            window(vec![1, 3, 5], 8 * 3_600, 20 * 3_600, 500_000, &["deepseek-chat"], 0),
-        ]).unwrap();
+        let schedule = GroupPeakSchedule::new(vec![window(
+            vec![1, 3, 5],
+            8 * 3_600,
+            20 * 3_600,
+            500_000,
+            &["deepseek-chat"],
+            0,
+        )])
+        .unwrap();
         assert_eq!(schedule.ratio_for("deepseek-chat", at(1, 8)), Some(500_000));
-        assert_eq!(schedule.ratio_for("deepseek-chat", at(1, 19)), Some(500_000));
+        assert_eq!(
+            schedule.ratio_for("deepseek-chat", at(1, 19)),
+            Some(500_000)
+        );
         assert_eq!(schedule.ratio_for("deepseek-chat", at(1, 20)), None);
         assert_eq!(schedule.ratio_for("deepseek-chat", at(2, 8)), None);
         assert_eq!(schedule.ratio_for("other-model", at(1, 8)), None);
@@ -229,9 +279,15 @@ mod tests {
 
     #[test]
     fn beijing_overnight_uses_start_day_across_week_boundary() {
-        let schedule = GroupPeakSchedule::new(vec![
-            window(vec![7], 23 * 3_600, 9 * 3_600, 2_000_000, &[], 480),
-        ]).unwrap();
+        let schedule = GroupPeakSchedule::new(vec![window(
+            vec![7],
+            23 * 3_600,
+            9 * 3_600,
+            2_000_000,
+            &[],
+            480,
+        )])
+        .unwrap();
         assert_eq!(schedule.ratio_for("any", at(7, 15)), Some(2_000_000));
         assert_eq!(schedule.ratio_for("any", at(1, 0)), Some(2_000_000));
         assert_eq!(schedule.ratio_for("any", at(1, 1)), None);
@@ -240,9 +296,8 @@ mod tests {
 
     #[test]
     fn timezone_can_shift_start_into_previous_utc_week() {
-        let schedule = GroupPeakSchedule::new(vec![
-            window(vec![1], 0, 3_600, 0, &[], 480),
-        ]).unwrap();
+        let schedule =
+            GroupPeakSchedule::new(vec![window(vec![1], 0, 3_600, 0, &[], 480)]).unwrap();
         assert_eq!(schedule.ratio_for("any", at(7, 16)), Some(0));
         assert_eq!(schedule.ratio_for("any", at(7, 17)), None);
         assert_eq!(schedule.ratio_for("any", at(1, 0)), None);
@@ -250,24 +305,31 @@ mod tests {
 
     #[test]
     fn end_of_day_supports_full_day_and_zero_multiplier() {
-        let schedule = GroupPeakSchedule::new(vec![
-            window(vec![6], 0, 86_400, 0, &[], 0),
-        ]).unwrap();
+        let schedule = GroupPeakSchedule::new(vec![window(vec![6], 0, 86_400, 0, &[], 0)]).unwrap();
         assert_eq!(schedule.ratio_for("any", at(6, 0)), Some(0));
         assert_eq!(schedule.ratio_for("any", at(6, 23)), Some(0));
         assert_eq!(schedule.ratio_for("any", at(7, 0)), None);
-        assert_eq!(GroupPeakSchedule::default().ratio_for("any", at(6, 0)), None);
+        assert_eq!(
+            GroupPeakSchedule::default().ratio_for("any", at(6, 0)),
+            None
+        );
     }
 
     #[test]
     fn overlaps_compare_model_scopes_timezones_and_week_wrap() {
         let sunday = window(vec![7], 23 * 3_600, 3_600, 2_000_000, &["ds"], 0);
         let monday = window(vec![1], 8 * 3_600, 10 * 3_600, 500_000, &["ds"], 480);
-        assert_eq!(GroupPeakSchedule::new(vec![sunday.clone(), monday.clone()]), Err(GroupPeakScheduleError::OverlappingWindows));
+        assert_eq!(
+            GroupPeakSchedule::new(vec![sunday.clone(), monday.clone()]),
+            Err(GroupPeakScheduleError::OverlappingWindows)
+        );
         let other_model = window(vec![1], 8 * 3_600, 10 * 3_600, 500_000, &["glm"], 480);
         assert!(GroupPeakSchedule::new(vec![sunday.clone(), other_model]).is_ok());
         let all_models = window(vec![1], 0, 2 * 3_600, 500_000, &[], 0);
-        assert_eq!(GroupPeakSchedule::new(vec![sunday.clone(), all_models]), Err(GroupPeakScheduleError::OverlappingWindows));
+        assert_eq!(
+            GroupPeakSchedule::new(vec![sunday.clone(), all_models]),
+            Err(GroupPeakScheduleError::OverlappingWindows)
+        );
         let adjacent = window(vec![1], 3_600, 2 * 3_600, 500_000, &["ds"], 0);
         assert!(GroupPeakSchedule::new(vec![sunday, adjacent]).is_ok());
     }
@@ -282,25 +344,39 @@ mod tests {
         }
         assert!(GroupPeakWindow::new(vec![1], 0, 1, -1, vec![], 0).is_err());
         assert!(GroupPeakWindow::new(vec![1], 0, 1, 1, vec![], 841).is_err());
-        for names in [vec!["".to_owned()], vec![" ds".to_owned()], vec!["ds".to_owned(), "ds".to_owned()], vec!["x".repeat(257)]] {
+        for names in [
+            vec!["".to_owned()],
+            vec![" ds".to_owned()],
+            vec!["ds".to_owned(), "ds".to_owned()],
+            vec!["x".repeat(257)],
+        ] {
             assert!(GroupPeakWindow::new(vec![1], 0, 1, 1, names, 0).is_err());
         }
         let one = window(vec![1], 0, 1, 1, &[], 0);
-        assert_eq!(GroupPeakSchedule::new(vec![one; 33]), Err(GroupPeakScheduleError::TooManyWindows));
+        assert_eq!(
+            GroupPeakSchedule::new(vec![one; 33]),
+            Err(GroupPeakScheduleError::TooManyWindows)
+        );
         let unchecked: GroupPeakWindow = serde_json::from_value(serde_json::json!({
             "weekdays": [0], "start_second": 0, "end_second": 1, "ratio_micros": 1
-        })).unwrap();
-        assert_eq!(GroupPeakSchedule::new(vec![unchecked]), Err(GroupPeakScheduleError::InvalidWindow));
+        }))
+        .unwrap();
+        assert_eq!(
+            GroupPeakSchedule::new(vec![unchecked]),
+            Err(GroupPeakScheduleError::InvalidWindow)
+        );
     }
 
     #[test]
     fn unix_clock_uses_iso_week_and_single_timestamp() {
         assert_eq!(PricingWeekTime::from_unix_seconds(0), at(4, 0));
         assert_eq!(PricingWeekTime::from_unix_seconds(4 * 86_400), at(1, 0));
-        assert_eq!(PricingWeekTime::from_unix_seconds(4 * 86_400 - 1), PricingWeekTime::new(7, 86_399).unwrap());
+        assert_eq!(
+            PricingWeekTime::from_unix_seconds(4 * 86_400 - 1),
+            PricingWeekTime::new(7, 86_399).unwrap()
+        );
         assert!(PricingWeekTime::new(0, 0).is_err());
         assert!(PricingWeekTime::new(1, 86_400).is_err());
         assert!(PricingWeekTime::from_unix_seconds(u64::MAX).day_second() < 86_400);
     }
 }
-
