@@ -14,7 +14,7 @@ use af_db::{
     DiscoveredModelRecord, MAX_MODEL_SYNC_CANDIDATES, ModelDiscoveryTargetLookup,
     ModelDiscoveryTargetRecord, ModelSyncRepository,
 };
-use af_domain::{ChannelId, ChannelType, Protocol};
+use af_domain::{ChannelId, ChannelType};
 use af_httpclient::HttpClientProvider;
 use serde::Deserialize;
 use url::Url;
@@ -698,6 +698,7 @@ struct GeminiModelWire {
 
 #[cfg(test)]
 mod tests {
+    use af_domain::Protocol;
     use af_httpclient::{HttpClientConfig, HttpClientPool};
 
     use super::*;
