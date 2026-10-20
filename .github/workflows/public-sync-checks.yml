@@ -2,19 +2,22 @@ name: Public sync checks
 
 on:
   push:
-    branches: [main, develop, 'fix/**', 'feat/**', 'sync/gitea-public-core']
-    paths:
-      - .github/workflows/**
-      - tools/ci/check-workflow-actions.py
-      - tools/repository/**
-      - tools/ci/test-public-core-export.sh
-  pull_request:
     branches: [main, develop]
     paths:
       - .github/workflows/**
-      - tools/ci/check-workflow-actions.py
+      - tools/ci/check-workflow*.py
       - tools/repository/**
       - tools/ci/test-public-core-export.sh
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    branches: [main, develop]
+    paths:
+      - .github/workflows/**
+      - tools/ci/check-workflow*.py
+      - tools/repository/**
+      - tools/ci/test-public-core-export.sh
+
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,8 +29,7 @@ concurrency:
 jobs:
   export:
     name: Validate public sync and export
-    # Same-repository branches are already checked on push.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    if: github.event.action != 'closed'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -47,6 +49,14 @@ jobs:
 
       - name: Check portable workflow action references
         run: python3 tools/ci/check-workflow-actions.py
+
+      - name: Check CI lifecycle policy
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          policy_dependencies="$RUNNER_TEMP/workflow-policy"
+          python3 -m pip install --quiet --disable-pip-version-check --target "$policy_dependencies" PyYAML==6.0.3
+          PYTHONPATH="$policy_dependencies" python3 tools/ci/check-workflow-policy.py
 
       - name: Check export and synchronization regressions
         run: bash tools/ci/test-public-core-export.sh

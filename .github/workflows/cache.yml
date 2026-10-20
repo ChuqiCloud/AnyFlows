@@ -2,10 +2,11 @@ name: Cache contracts
 
 on:
   pull_request:
-    branches: [main]
+    types: [opened, synchronize, reopened, closed]
+    branches: [main, develop]
     paths: ['crates/af-cache/**', '.github/workflows/cache.yml']
   push:
-    branches: [main, 'feature/fingerprint-rate-limits']
+    branches: [main]
     paths: ['crates/af-cache/**', '.github/workflows/cache.yml']
   workflow_dispatch:
 
@@ -18,6 +19,7 @@ concurrency:
 
 jobs:
   cache:
+    if: github.event.action != 'closed'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:

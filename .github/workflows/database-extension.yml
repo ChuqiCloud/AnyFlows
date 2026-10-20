@@ -2,12 +2,13 @@ name: Database extension
 
 on:
   push:
-    branches: [main, 'fix/**', 'feature/**']
+    branches: [main, develop]
     paths:
       - 'crates/af-db/**'
       - '.github/workflows/database-extension.yml'
   pull_request:
-    branches: [main]
+    types: [opened, synchronize, reopened, closed]
+    branches: [main, develop]
     paths:
       - 'crates/af-db/**'
       - '.github/workflows/database-extension.yml'
@@ -22,6 +23,7 @@ concurrency:
 
 jobs:
   migration-history:
+    if: github.event.action != 'closed'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -41,6 +43,11 @@ jobs:
           toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal --component rustfmt --component clippy
+      - name: Cache database extension build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: database-extension
+          cache-on-failure: true
       - name: Check database formatting
         run: cargo fmt -p af-db -- --check
       - name: Test extension migration history

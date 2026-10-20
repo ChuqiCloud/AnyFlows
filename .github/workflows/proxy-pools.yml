@@ -1,6 +1,7 @@
 name: Proxy pools
 on:
   pull_request:
+    types: [opened, synchronize, reopened, closed]
     branches: [develop, main]
     paths:
       - 'crates/af-db/src/proxy_pool.rs'
@@ -28,6 +29,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   validate:
+    if: github.event.action != 'closed'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:

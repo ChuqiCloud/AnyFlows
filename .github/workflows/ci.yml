@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, closed]
     branches: [main]
   workflow_dispatch:
 
@@ -29,6 +30,7 @@ env:
 
 jobs:
   changes:
+    if: github.event.action != 'closed'
     name: Detect changed components
     runs-on: ubuntu-24.04
     timeout-minutes: 5
