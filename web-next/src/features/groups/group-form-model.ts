@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import type { AdminGroup, AdminGroupWriteRequest } from '@/lib/api/generated/types.gen'
+import { groupPeakWindows, MAX_PEAK_RULES, peakRulesOverlap, ruleModels, secondTime, timeSecond, type PeakRuleForm } from './group-peak-model.ts'
 
 export type GroupEditorMode = 'create' | 'update'
 
@@ -9,9 +10,7 @@ export type GroupFormValues = {
   displayName: string
   ratio: string
   peakEnabled: boolean
-  peakRatio: string
-  peakStart: string
-  peakEnd: string
+  peakRules: PeakRuleForm[]
   isExclusive: boolean
   dailyLimit: string
   weeklyLimit: string
@@ -28,6 +27,11 @@ export type GroupValidationMessages = {
   invalidNumber: string
   invalidGroup: string
   invalidPeakWindow: string
+  invalidWeekdays: string
+  invalidModels: string
+  overlappingRules: string
+  invalidRules: string
+  invalidTimezone: string
 }
 
 const MICROS_PER_UNIT = 1_000_000n
@@ -35,7 +39,6 @@ const MAX_SAFE_INTEGER = BigInt(Number.MAX_SAFE_INTEGER)
 const MAX_I32 = 2_147_483_647n
 const RATIO_PATTERN = /^(0|[1-9][0-9]{0,9})(?:\.([0-9]{1,6}))?$/
 const INTEGER_PATTERN = /^(0|[1-9][0-9]*)$/
-const TIME_PATTERN = /^(?:[01][0-9]|2[0-3]):[0-5][0-9](?::[0-5][0-9])?$/
 
 /** 按百万分固定精度解析倍率，整个换算过程不经过浮点运算。 */
 export function ratioToMicros(value: string): number | undefined {
@@ -56,7 +59,7 @@ export function ratioFromMicros(value: number): string {
   return fraction ? `${whole}.${fraction}` : String(whole)
 }
 
-/** 前端复现公开分组写入边界，自引用回退和高峰三字段在同一校验器内闭合。 */
+/** 前端复现公开分组写入边界，统一校验回退目标、周计划和模型范围。 */
 export function buildGroupFormSchema(
   currentGroupId: number | undefined,
   messages: GroupValidationMessages,
@@ -66,9 +69,15 @@ export function buildGroupFormSchema(
     displayName: z.string().refine((value) => validText(value, 128), messages.invalidDisplayName),
     ratio: z.string().refine((value) => ratioToMicros(value) !== undefined, messages.invalidRatio),
     peakEnabled: z.boolean(),
-    peakRatio: z.string(),
-    peakStart: z.string(),
-    peakEnd: z.string(),
+    peakRules: z.array(z.object({
+      weekdays: z.array(z.number()),
+      start: z.string(),
+      end: z.string(),
+      ratio: z.string(),
+      modelScope: z.enum(['all', 'selected']),
+      models: z.string(),
+      utcOffset: z.string(),
+    })),
     isExclusive: z.boolean(),
     dailyLimit: optionalIntegerSchema(MAX_SAFE_INTEGER, messages.invalidNumber),
     weeklyLimit: optionalIntegerSchema(MAX_SAFE_INTEGER, messages.invalidNumber),
@@ -78,17 +87,28 @@ export function buildGroupFormSchema(
     claudeCodeOnly: z.boolean(),
   }).superRefine((values, context) => {
     if (values.peakEnabled) {
-      const validStart = TIME_PATTERN.test(values.peakStart)
-      const validEnd = TIME_PATTERN.test(values.peakEnd)
-      if (ratioToMicros(values.peakRatio) === undefined) {
-        context.addIssue({ code: 'custom', message: messages.invalidRatio, path: ['peakRatio'] })
+      if (values.peakRules.length === 0 || values.peakRules.length > MAX_PEAK_RULES) {
+        context.addIssue({ code: 'custom', message: messages.invalidRules, path: ['peakRules', 'root'] })
       }
-      if (!validStart) {
-        context.addIssue({ code: 'custom', message: messages.invalidPeakWindow, path: ['peakStart'] })
-      }
-      if (!validEnd || (validStart && normalizeTime(values.peakStart) === normalizeTime(values.peakEnd))) {
-        context.addIssue({ code: 'custom', message: messages.invalidPeakWindow, path: ['peakEnd'] })
-      }
+      values.peakRules.forEach((rule, index) => {
+        const issue = (field: keyof PeakRuleForm, message: string) =>
+          context.addIssue({ code: 'custom', message, path: ['peakRules', index, field] })
+        const start = timeSecond(rule.start)
+        const end = timeSecond(rule.end, true)
+        if (ratioToMicros(rule.ratio) === undefined) issue('ratio', messages.invalidRatio)
+        if (start === undefined) issue('start', messages.invalidPeakWindow)
+        if (end === undefined || start === end) issue('end', messages.invalidPeakWindow)
+        if (rule.weekdays.length === 0 || rule.weekdays.length > 7
+          || new Set(rule.weekdays).size !== rule.weekdays.length
+          || rule.weekdays.some((day) => !Number.isInteger(day) || day < 1 || day > 7)) issue('weekdays', messages.invalidWeekdays)
+        if (!/^-?(0|[1-9][0-9]*)$/.test(rule.utcOffset)
+          || Number(rule.utcOffset) < -720 || Number(rule.utcOffset) > 840) issue('utcOffset', messages.invalidTimezone)
+        const models = ruleModels(rule.models)
+        if (rule.modelScope === 'selected' && (models.length === 0 || models.length > 64
+          || new Set(models).size !== models.length
+          || models.some((model) => !validText(model, 256)))) issue('models', messages.invalidModels)
+        if (values.peakRules.slice(0, index).some((previous) => peakRulesOverlap(previous, rule))) issue('end', messages.overlappingRules)
+      })
     }
     const fallbackGroupId = parseOptionalInteger(values.fallbackGroupId, MAX_SAFE_INTEGER, 1n)
     if (currentGroupId !== undefined && fallbackGroupId === currentGroupId) {
@@ -98,15 +118,17 @@ export function buildGroupFormSchema(
 }
 
 export function defaultGroupFormValues(group?: AdminGroup): GroupFormValues {
-  const peakEnabled = group?.peak_ratio_micros !== null && group?.peak_ratio_micros !== undefined
+  const windows = groupPeakWindows(group)
   return {
     name: group?.name ?? '',
     displayName: group?.display_name ?? '',
     ratio: group ? ratioFromMicros(group.ratio_micros) : '1',
-    peakEnabled,
-    peakRatio: peakEnabled ? ratioFromMicros(group.peak_ratio_micros ?? 0) : '',
-    peakStart: peakEnabled ? group?.peak_start ?? '' : '',
-    peakEnd: peakEnabled ? group?.peak_end ?? '' : '',
+    peakEnabled: windows.length > 0,
+    peakRules: windows.map((window) => ({
+      weekdays: window.weekdays, start: secondTime(window.start_second), end: secondTime(window.end_second),
+      ratio: ratioFromMicros(window.ratio_micros), modelScope: window.models?.length ? 'selected' : 'all',
+      models: (window.models ?? []).join('\n'), utcOffset: String(window.utc_offset_minutes ?? 0),
+    })),
     isExclusive: group?.is_exclusive ?? false,
     dailyLimit: formatOptionalInteger(group?.daily_limit),
     weeklyLimit: formatOptionalInteger(group?.weekly_limit),
@@ -122,14 +144,21 @@ export function toGroupRequest(
   values: GroupFormValues,
   existing?: AdminGroup,
 ): AdminGroupWriteRequest {
-  const peakRatioMicros = values.peakEnabled ? requireRatio(values.peakRatio) : null
   return {
     name: values.name,
     display_name: values.displayName,
     ratio_micros: requireRatio(values.ratio),
-    peak_ratio_micros: peakRatioMicros,
-    peak_start: values.peakEnabled ? normalizeTime(values.peakStart) : null,
-    peak_end: values.peakEnabled ? normalizeTime(values.peakEnd) : null,
+    peak_ratio_micros: null,
+    peak_start: null,
+    peak_end: null,
+    peak_windows: values.peakEnabled ? values.peakRules.map((rule) => ({
+      weekdays: rule.weekdays,
+      start_second: timeSecond(rule.start)!,
+      end_second: timeSecond(rule.end, true)!,
+      ratio_micros: requireRatio(rule.ratio),
+      models: rule.modelScope === 'all' ? [] : ruleModels(rule.models),
+      utc_offset_minutes: Number(rule.utcOffset),
+    })) : [],
     is_exclusive: values.isExclusive,
     daily_limit: requireOptionalInteger(values.dailyLimit, MAX_SAFE_INTEGER),
     weekly_limit: requireOptionalInteger(values.weeklyLimit, MAX_SAFE_INTEGER),
@@ -171,11 +200,6 @@ function requireRatio(value: string) {
   const ratio = ratioToMicros(value)
   if (ratio === undefined) throw new Error('分组倍率未通过校验')
   return ratio
-}
-
-function normalizeTime(value: string) {
-  if (!TIME_PATTERN.test(value)) throw new Error('高峰时间未通过校验')
-  return value.length === 5 ? `${value}:00` : value
 }
 
 function validText(value: string, maximumBytes: number) {

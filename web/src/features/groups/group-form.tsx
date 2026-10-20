@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Controller, useForm } from 'react-hook-form'
+import { Controller, useFieldArray, useForm } from 'react-hook-form'
 import type { UseFormRegisterReturn } from 'react-hook-form'
 import { LoaderCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import type { AdminGroup } from '@/lib/api/generated/types.gen'
 import {
   groupWriteErrorCode,
@@ -16,6 +17,7 @@ import {
   useUpdateAdminGroup,
 } from './group-api'
 import { GroupFormField } from './group-form-field'
+import { MAX_PEAK_RULES, newPeakRule, utcOptions } from './group-peak-model'
 import {
   buildGroupFormSchema,
   defaultGroupFormValues,
@@ -43,12 +45,19 @@ export function GroupForm({ mode, group, groups, onCancel, onSaved }: GroupFormP
     invalidNumber: t('groups.validation.number'),
     invalidGroup: t('groups.validation.fallback'),
     invalidPeakWindow: t('groups.validation.peakWindow'),
+    invalidWeekdays: t('groups.validation.weekdays'),
+    invalidModels: t('groups.validation.models'),
+    overlappingRules: t('groups.validation.overlap'),
+    invalidRules: t('groups.validation.rules'),
+    invalidTimezone: t('groups.validation.timezone'),
   })
   const form = useForm<GroupFormValues>({
     defaultValues: defaultGroupFormValues(group),
     resolver: zodResolver(schema),
   })
   const peakEnabled = form.watch('peakEnabled')
+  const peakRules = form.watch('peakRules')
+  const peakFields = useFieldArray({ control: form.control, name: 'peakRules' })
   const fallbackOptions = groups.filter((item) => item.id !== group?.id)
 
   useEffect(() => {
@@ -99,21 +108,57 @@ export function GroupForm({ mode, group, groups, onCancel, onSaved }: GroupFormP
                 checked={field.value}
                 label={t('groups.fields.peakEnabled')}
                 description={t('groups.form.peakDescription')}
-                onCheckedChange={field.onChange}
+                onCheckedChange={(checked) => {
+                  field.onChange(checked)
+                  if (checked && peakFields.fields.length === 0) peakFields.append(newPeakRule())
+                }}
               />
             )}
           />
           {peakEnabled ? (
-            <div className="grid gap-3 rounded-lg border border-[var(--hairline)] bg-surface-2/35 p-3 sm:grid-cols-3">
-              <GroupFormField id="group-peak-ratio" label={t('groups.fields.peakRatio')} error={form.formState.errors.peakRatio?.message}>
-                <Input id="group-peak-ratio" inputMode="decimal" aria-invalid={!!form.formState.errors.peakRatio} {...form.register('peakRatio')} />
-              </GroupFormField>
-              <GroupFormField id="group-peak-start" label={t('groups.fields.peakStart')} error={form.formState.errors.peakStart?.message}>
-                <Input id="group-peak-start" type="time" step={1} aria-invalid={!!form.formState.errors.peakStart} {...form.register('peakStart')} />
-              </GroupFormField>
-              <GroupFormField id="group-peak-end" label={t('groups.fields.peakEnd')} hint={t('groups.form.utcHint')} error={form.formState.errors.peakEnd?.message}>
-                <Input id="group-peak-end" type="time" step={1} aria-invalid={!!form.formState.errors.peakEnd} {...form.register('peakEnd')} />
-              </GroupFormField>
+            <div className="grid gap-3 rounded-lg border border-[var(--hairline)] bg-surface-2/35 p-3">
+              {peakFields.fields.map((field, index) => {
+                const rule = peakRules[index]
+                return <div key={field.id} className="grid gap-3 border-b border-[var(--hairline)] pb-3 last:border-b-0 last:pb-0">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <GroupFormField id={`group-peak-ratio-${index}`} label={t('groups.fields.peakRatio')} error={form.formState.errors.peakRules?.[index]?.ratio?.message}>
+                      <Input id={`group-peak-ratio-${index}`} inputMode="decimal" {...form.register(`peakRules.${index}.ratio`)} />
+                    </GroupFormField>
+                    <GroupFormField id={`group-peak-zone-${index}`} label={t('groups.fields.timezone')} hint={t('groups.form.timezoneHint')} error={form.formState.errors.peakRules?.[index]?.utcOffset?.message}>
+                      <Select id={`group-peak-zone-${index}`} {...form.register(`peakRules.${index}.utcOffset`)}>
+                        {utcOptions(rule?.utcOffset ?? '480').map((zone) => <option key={zone.key} value={zone.key}>{zone.label}</option>)}
+                      </Select>
+                    </GroupFormField>
+                    <GroupFormField id={`group-peak-start-${index}`} label={t('groups.fields.peakStart')} error={form.formState.errors.peakRules?.[index]?.start?.message}>
+                      <Input id={`group-peak-start-${index}`} type="time" step={1} {...form.register(`peakRules.${index}.start`)} />
+                    </GroupFormField>
+                    <GroupFormField id={`group-peak-end-${index}`} label={t('groups.fields.peakEnd')} hint={t('groups.form.utcHint')} error={form.formState.errors.peakRules?.[index]?.end?.message}>
+                      <Input id={`group-peak-end-${index}`} placeholder="20:00 / 24:00" {...form.register(`peakRules.${index}.end`)} />
+                    </GroupFormField>
+                  </div>
+                  <fieldset className="grid gap-2 text-xs">
+                    <legend className="font-medium">{t('groups.fields.weekdays')}</legend>
+                    <div className="flex flex-wrap gap-3">
+                      {[1, 2, 3, 4, 5, 6, 7].map((day) => <label key={day} className="flex items-center gap-1"><input type="checkbox" checked={rule?.weekdays.includes(day) ?? false} onChange={(event) => form.setValue(`peakRules.${index}.weekdays`, event.target.checked ? [...(rule?.weekdays ?? []), day].sort() : (rule?.weekdays ?? []).filter((value) => value !== day), { shouldValidate: true })} />{t(`groups.weekdays.${day}`)}</label>)}
+                    </div>
+                    {form.formState.errors.peakRules?.[index]?.weekdays?.message ? <p role="alert" className="text-destructive">{form.formState.errors.peakRules?.[index]?.weekdays?.message}</p> : null}
+                  </fieldset>
+                  <div className="grid gap-2">
+                    <Select aria-label={t('groups.fields.modelScope')} {...form.register(`peakRules.${index}.modelScope`)}>
+                      <option value="all">{t('groups.values.allModels')}</option>
+                      <option value="selected">{t('groups.values.selectedModels')}</option>
+                    </Select>
+                    {rule?.modelScope === 'selected' ? <GroupFormField id={`group-peak-models-${index}`} label={t('groups.fields.models')} hint={t('groups.form.modelsHint')} error={form.formState.errors.peakRules?.[index]?.models?.message}>
+                      <Textarea id={`group-peak-models-${index}`} aria-invalid={!!form.formState.errors.peakRules?.[index]?.models} {...form.register(`peakRules.${index}.models`)} />
+                    </GroupFormField> : null}
+                    <Button type="button" variant="ghost" onClick={() => peakFields.remove(index)}>{t('groups.actions.removeRule')}</Button>
+                  </div>
+                </div>
+              })}
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" disabled={peakFields.fields.length >= MAX_PEAK_RULES} onClick={() => peakFields.append(newPeakRule())}>{t('groups.actions.addRule')}</Button>
+              </div>
+              {form.formState.errors.peakRules?.root?.message ? <p role="alert" className="text-xs text-destructive">{form.formState.errors.peakRules.root.message}</p> : null}
             </div>
           ) : null}
         </section>

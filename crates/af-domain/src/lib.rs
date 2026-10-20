@@ -16,6 +16,11 @@ mod concurrency;
 mod enums;
 mod error;
 mod gateway_identity;
+mod group_peak_pricing;
+pub use group_peak_pricing::{
+    GroupPeakSchedule, GroupPeakScheduleError, GroupPeakWindow, PricingWeekTime,
+    MAX_GROUP_PEAK_MODELS, MAX_GROUP_PEAK_WINDOWS,
+};
 mod network;
 mod opencode;
 pub use opencode::OpenCodeEntry;
