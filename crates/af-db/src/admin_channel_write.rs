@@ -1379,7 +1379,8 @@ fn validate_channel_fields(
                 ChannelType::OpenCode,
                 Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic
             ) | (ChannelType::Anthropic, Protocol::Anthropic)
-                | (ChannelType::Gemini, Protocol::Gemini)
+                | (ChannelType::Nvidia, Protocol::OpenAiChat)
+            | (ChannelType::Gemini, Protocol::Gemini)
                 | (ChannelType::Jina, Protocol::JinaRerank)
                 | (ChannelType::Cohere, Protocol::CohereRerank)
                 | (ChannelType::Xai, Protocol::XaiVideo)
@@ -1605,7 +1606,7 @@ fn validate_credential_channel_compatibility(
         .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
     if matches!(
         channel_type,
-        ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
+        ChannelType::Nvidia | ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
     ) && kind != CredentialKind::ApiKey
     {
         return Err(AdminChannelWriteRepositoryError::InvalidInput);

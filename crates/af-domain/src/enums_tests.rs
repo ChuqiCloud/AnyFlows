@@ -114,6 +114,7 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
         ChannelType,
         ChannelType::ALL,
         [
+            (ChannelType::Nvidia, "nvidia"),
             (ChannelType::OpenAi, "openai"),
             (ChannelType::OpenCode, "opencode"),
             (ChannelType::Anthropic, "anthropic"),

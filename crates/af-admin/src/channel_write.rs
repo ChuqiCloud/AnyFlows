@@ -385,7 +385,8 @@ impl AdminChannelWriteFields {
                     ChannelType::OpenCode,
                     Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic
                 ) | (ChannelType::Anthropic, Protocol::Anthropic)
-                    | (ChannelType::Gemini, Protocol::Gemini)
+                    | (ChannelType::Nvidia, Protocol::OpenAiChat)
+            | (ChannelType::Gemini, Protocol::Gemini)
                     | (ChannelType::Jina, Protocol::JinaRerank)
                     | (ChannelType::Cohere, Protocol::CohereRerank)
                     | (ChannelType::Xai, Protocol::XaiVideo)
