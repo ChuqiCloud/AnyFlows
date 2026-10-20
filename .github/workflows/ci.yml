@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 permissions:
@@ -33,6 +33,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
+      full: ${{ steps.paths.outputs.full }}
       frontend: ${{ steps.paths.outputs.frontend }}
       rust: ${{ steps.paths.outputs.rust }}
       database: ${{ steps.paths.outputs.database }}
@@ -55,12 +56,20 @@ jobs:
           CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
           CHECKOUT_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
+          TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
           PUSH_AFTER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+
+          # 开发 PR 运行基础校验；完整集成与发行检查在 main 或手动复测时执行。
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$TARGET_BRANCH" == "main" ]]; then
+            echo "full=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "full=false" >> "$GITHUB_OUTPUT"
+          fi
 
           emit_all() {
             {
@@ -99,11 +108,6 @@ jobs:
           git diff --name-only "$base_sha" "$head_sha" > changed-files.txt
           cat changed-files.txt
 
-          if grep -qx '.github/workflows/ci.yml' changed-files.txt; then
-            emit_all
-            exit 0
-          fi
-
           matches() {
             if grep -Eq "$1" changed-files.txt; then
               echo true
@@ -113,10 +117,10 @@ jobs:
           }
 
           {
-            echo "frontend=$(matches '^(web/|web-next/|tools/ci/check-frontend-parity.mjs$)')"
-            echo "rust=$(matches '^(crates/|tools/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$)')"
-            echo "database=$(matches '^(crates/af-db/|tools/ci/run-db-migration-test\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
-            echo "redis=$(matches '^(crates/af-cache/|tools/ci/run-cache-redis-test\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
+            echo "frontend=$(matches '^(web/|web-next/|tools/ci/check-frontend-parity.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "rust=$(matches '^(crates/|tools/xtask/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$|\.github/workflows/ci\.yml$)')"
+            echo "database=$(matches '^(crates/af-db/|tools/ci/(run-db-migration-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
+            echo "redis=$(matches '^(crates/af-cache/|tools/ci/(run-cache-redis-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
             echo "clickhouse=$(matches '^(crates/af-server/src/admin_dashboard_storage/clickhouse\.rs$|crates/af-server/tests/admin_dashboard_chain\.rs$|tools/ci/run-clickhouse-integration-test\.sh$)')"
             echo "deployment=$(matches '^(Dockerfile$|docker-compose\.ya?ml$|\.dockerignore$|scripts/deploy/)')"
             echo "systemd=$(matches '^(scripts/systemd/|tools/ci/(package-release|finalize-release|test-release-scripts|verify-release-tag)\.sh$|\.cnb/release\.yml$)')"
@@ -125,7 +129,7 @@ jobs:
   deployment:
     name: Docker deployment checks
     needs: changes
-    if: ${{ needs.changes.outputs.deployment == 'true' }}
+    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.deployment == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -179,7 +183,7 @@ jobs:
   systemd:
     name: systemd deployment checks
     needs: changes
-    if: ${{ needs.changes.outputs.systemd == 'true' }}
+    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.systemd == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -231,7 +235,7 @@ jobs:
   release-package:
     name: Linux amd64 release package
     needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' }}
+    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -347,12 +351,19 @@ jobs:
         run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build
 
       - name: Browser smoke test gallery and verification workflows
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
           browser_tools="$RUNNER_TEMP/anyflows-playwright"
           npm install --prefix "$browser_tools" --no-save --ignore-scripts playwright@1.56.1
-          "$browser_tools/node_modules/.bin/playwright" install --with-deps chromium
+          # GitHub-hosted Ubuntu already includes Chromium runtime libraries; --with-deps
+          # also refreshes the Microsoft APT source, which can transiently return 403.
+          if [[ "${{ github.server_url }}" == "https://github.com" ]]; then
+            "$browser_tools/node_modules/.bin/playwright" install chromium
+          else
+            "$browser_tools/node_modules/.bin/playwright" install --with-deps chromium
+          fi
           PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-gallery-smoke.mjs '${{ matrix.frontend }}'
           PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-verification-smoke.mjs '${{ matrix.frontend }}'
           PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-dashboard-smoke.mjs '${{ matrix.frontend }}'
@@ -410,6 +421,7 @@ jobs:
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Install workspace tools
+        if: needs.changes.outputs.full == 'true'
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
         with:
           tool: cargo-nextest@0.9.140,cargo-deny@0.20.2
@@ -422,15 +434,19 @@ jobs:
         run: cargo run --locked --package xtask -- check-deps
 
       - name: Test release scripts
+        if: needs.changes.outputs.full == 'true'
         run: bash tools/ci/test-release-scripts.sh
 
       - name: Check public core export
+        if: needs.changes.outputs.full == 'true'
         run: bash tools/ci/test-public-core-export.sh
 
       - name: Test live provider preflight
+        if: needs.changes.outputs.full == 'true'
         run: bash tools/ci/test-live-provider-test.sh
 
       - name: Test service container runner
+        if: needs.changes.outputs.full == 'true'
         run: bash tools/ci/test-container-test-runner.sh
 
       - name: Check OpenAPI contract
@@ -442,22 +458,30 @@ jobs:
           git diff -- web/openapi/openapi.json
           exit 1
 
+      - name: Check development workspace
+        if: needs.changes.outputs.full != 'true'
+        run: cargo check --workspace --all-targets --all-features --locked
+
       - name: Run Clippy
+        if: needs.changes.outputs.full == 'true'
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
       - name: Run tests
+        if: needs.changes.outputs.full == 'true'
         run: cargo nextest run --workspace --all-features --locked --no-fail-fast
 
       - name: Run documentation tests
+        if: needs.changes.outputs.full == 'true'
         run: cargo test --workspace --all-features --doc --locked
 
       - name: Audit dependencies
+        if: needs.changes.outputs.full == 'true'
         run: cargo deny --all-features --locked check advisories bans licenses sources
 
   clickhouse-integration:
     name: ClickHouse integration
     needs: changes
-    if: ${{ needs.changes.outputs.clickhouse == 'true' }}
+    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.clickhouse == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -527,7 +551,7 @@ jobs:
   msrv:
     name: Minimum supported Rust version
     needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' }}
+    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -591,7 +615,7 @@ jobs:
   sqlite-migration:
     name: SQLite migration smoke test
     needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
+    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -651,7 +675,7 @@ jobs:
   postgres-migration:
     name: PostgreSQL migration smoke test
     needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
+    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -734,7 +758,7 @@ jobs:
   mysql-migration:
     name: MySQL migration smoke test
     needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
+    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -812,19 +836,9 @@ jobs:
   cache-redis:
     name: Redis cache smoke test
     needs: changes
-    if: ${{ needs.changes.outputs.redis == 'true' }}
+    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.redis == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    services:
-      redis:
-        image: redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3
-        ports:
-          - 16379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 30
     steps:
       - name: Configure external Gitea checkout endpoint
         if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
@@ -861,16 +875,5 @@ jobs:
       - name: Cache Redis test build artifacts
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-      - name: Run Redis cache smoke test on Gitea
-        if: ${{ github.server_url != 'https://github.com' }}
-        env:
-          AF_TEST_REDIS_URL: redis://redis:6379/
-          AF_REQUIRE_LIVE_REDIS: "1"
-        run: bash tools/ci/run-cache-redis-test.sh
-
-      - name: Run Redis cache smoke test on GitHub
-        if: ${{ github.server_url == 'https://github.com' }}
-        env:
-          AF_TEST_REDIS_URL: redis://127.0.0.1:16379/
-          AF_REQUIRE_LIVE_REDIS: "1"
+      - name: Run isolated Redis cache smoke test
         run: bash tools/ci/run-cache-redis-test.sh

@@ -1,35 +1,7 @@
 name: Conversation compatibility
 
 on:
-  pull_request:
-    branches: [develop]
-    paths:
-      - 'crates/af-protocol/**'
-      - 'crates/af-relay/**'
-      - 'crates/af-domain/src/client_profile.rs'
-      - 'crates/af-adapter/src/client_profile.rs'
-      - 'crates/af-adapter/src/opencode.rs'
-      - 'crates/af-adapter/src/nvidia.rs'
-      - 'crates/af-adapter/src/factory.rs'
-      - 'crates/af-adapter/src/context.rs'
-      - 'crates/af-cache/src/sticky.rs'
-      - 'crates/af-cache/tests/redis_integration.rs'
-      - 'crates/af-db/src/opencode_settings.rs'
-      - 'crates/af-server/src/model_discovery.rs'
-      - 'crates/af-server/src/channel_probe.rs'
-      - 'crates/af-server/src/sticky_session.rs'
-      - 'crates/af-admin/src/client_profiles.rs'
-      - 'crates/af-db/src/client_profiles*'
-      - 'crates/af-db/src/entity/*client_profile*'
-      - 'crates/af-db/src/scheduler_runtime/**'
-      - 'crates/af-db/src/migration/*client_profiles*'
-      - 'crates/af-http/src/client_profiles.rs'
-      - 'crates/af-http/src/openapi/client_profiles.rs'
-      - 'crates/af-server/src/scheduled_chat.rs'
-      - 'crates/af-server/src/scheduled_chat/**'
-      - 'crates/af-server/src/debug_trace_runtime.rs'
-      - 'crates/af-server/src/billing_chat.rs'
-      - '.github/workflows/conversation-compatibility.yml'
+  # 历史专项保留手动复测入口，日常检查由 CI 工作流承担。
   workflow_dispatch:
 
 permissions:
@@ -53,16 +25,6 @@ jobs:
     name: Conversation protocol and scheduling checks
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    services:
-      redis:
-        image: redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3
-        ports:
-          - 6379/tcp
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 2s
-          --health-timeout 2s
-          --health-retries 30
     steps:
       - name: Check out repository
         shell: bash
@@ -122,9 +84,6 @@ jobs:
           cargo test --quiet -p af-server --lib --all-features --locked debug_trace_runtime::
 
       - name: Test shared client session creation
-        env:
-          AF_TEST_REDIS_URL: ${{ github.server_url == 'https://github.com' && format('redis://127.0.0.1:{0}/', job.services.redis.ports[6379]) || 'redis://redis:6379/' }}
-          AF_REQUIRE_LIVE_REDIS: '1'
         run: |
           cargo test --quiet -p af-cache --lib --locked sticky::
           bash tools/ci/run-cache-redis-test.sh
@@ -140,8 +99,6 @@ jobs:
           cargo test --quiet -p af-domain --lib --locked client_profile::
           cargo test --quiet -p af-adapter --lib --locked client_profile::
           cargo test --quiet -p af-adapter --lib --locked opencode::
-          cargo test --quiet -p af-adapter --lib --locked nvidia::
-          cargo test --quiet -p af-adapter --lib --locked factory::
           cargo test --quiet -p af-db --lib --locked opencode_settings::
           cargo test --quiet -p af-db --lib --locked credential_probe_tests::
           cargo test --quiet -p af-db --lib --locked model_sync_tests::

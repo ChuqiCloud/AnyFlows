@@ -113,6 +113,15 @@ class GiteaToGithubSyncTests(unittest.TestCase):
         source["merge_commit_sha"] = "c" * 40
         self.assertIsNone(SYNC.find_target(github, PUBLIC_REPOSITORY, source, REPOSITORY))
 
+    def test_target_body_keeps_only_source_text_and_hidden_mapping_marker(self):
+        body = SYNC.render_target_body(source_pr(), REPOSITORY, "https://gitea.invalid")
+        self.assertEqual(
+            body,
+            "修复说明\n\n<!-- anyflows-pr-source:gitea:acmecloud/AnyFlows:17:" + MERGE_SHA + " -->",
+        )
+        for visible_note in ("来源 PR：", "来源 PR 编号：", "来源提交：", "来源仓库："):
+            self.assertNotIn(visible_note, body)
+
     def test_reconcile_updates_adds_and_removes_only_owned_mirrors(self):
         source_comments = [
             {
