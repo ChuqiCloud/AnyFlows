@@ -141,10 +141,10 @@ pub(super) struct AssistantMessageWire {
     pub(super) content: Option<AssistantContentWire>,
     /// DeepSeek 兼容接口返回的助手推理文本；续聊时客户端可能原样带回。
     #[serde(default, rename = "reasoning_content")]
-    _reasoning_content: Option<String>,
+    pub(super) reasoning_content: Option<String>,
     /// 部分 OpenAI 兼容服务使用的推理文本别名。
     #[serde(default, rename = "reasoning")]
-    _reasoning: Option<String>,
+    pub(super) reasoning: Option<String>,
     /// 助手发起的函数工具调用。
     #[serde(default, deserialize_with = "deserialize_nullable_field")]
     pub(super) tool_calls: Field<Vec<ToolCallWire>>,
