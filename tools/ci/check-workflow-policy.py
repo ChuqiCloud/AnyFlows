@@ -108,6 +108,17 @@ def main():
         "database-extension.yml",
         "database checks must reuse Rust build artifacts",
     )
+    cache = workflows["cache.yml"]["jobs"]["cache"]
+    require(
+        cache["services"]["redis"].get("ports") == ["6379/tcp"],
+        "cache.yml",
+        "use a dynamic Redis host port to avoid parallel job conflicts",
+    )
+    require(
+        any(str(step.get("uses", "")).startswith("Swatinem/rust-cache@") for step in cache["steps"]),
+        "cache.yml",
+        "cache contract checks must reuse Rust build artifacts",
+    )
     require(
         workflows["verify-preview-opencode.yml"].get("concurrency", {}).get("cancel-in-progress") == "true",
         "verify-preview-opencode.yml",
