@@ -5,9 +5,9 @@ use std::{
 
 use af_account::CredentialDecryptor;
 use af_adapter::{
-    Adaptor, AdaptorError, AdaptorSendExt as _, AdaptorSettings, AdaptorTarget, AdaptorTransportError,
-    Bytes, HeaderMap, HeaderName, HeaderValue, Method, Operation, RelayContext, ResponseMode,
-    UpstreamRequest, get_adaptor,
+    Adaptor, AdaptorError, AdaptorSendExt as _, AdaptorSettings, AdaptorTarget,
+    AdaptorTransportError, Bytes, HeaderMap, HeaderName, HeaderValue, Method, Operation,
+    RelayContext, ResponseMode, UpstreamRequest, get_adaptor,
 };
 use af_db::{
     ChannelProbeTargetRecord, ChannelProbeTargetRepository, CompactProbeStateRepository,

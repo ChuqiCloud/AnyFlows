@@ -580,7 +580,8 @@ fn runtime_target_enforces_api_key_only_channels_without_repository_selection() 
             let credential = SchedulerRuntimeCredentialRecord::new(
                 1,
                 kind,
-                EncryptedCredentialEnvelope::new("runtime-test-key", [0x43; 24], vec![0x25; 16]).unwrap(),
+                EncryptedCredentialEnvelope::new("runtime-test-key", [0x43; 24], vec![0x25; 16])
+                    .unwrap(),
                 false,
             )
             .unwrap();

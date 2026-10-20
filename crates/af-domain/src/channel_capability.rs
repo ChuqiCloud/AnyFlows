@@ -167,7 +167,10 @@ mod tests {
         for &channel in ChannelType::ALL {
             assert!(!channel.creatable_credential_kinds().is_empty());
             for &kind in channel.creatable_credential_kinds() {
-                assert!(channel.supports_credential_kind(kind), "{channel:?}/{kind:?}");
+                assert!(
+                    channel.supports_credential_kind(kind),
+                    "{channel:?}/{kind:?}"
+                );
             }
         }
         // Read compatibility must not expand the choices offered for new credentials.

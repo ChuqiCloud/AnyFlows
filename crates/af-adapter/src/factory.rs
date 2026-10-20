@@ -634,7 +634,8 @@ mod tests {
             Protocol::Anthropic,
         ] {
             assert!(
-                standard_adaptor_settings(ChannelType::OpenCode, protocol, Vec::new(), None).is_err()
+                standard_adaptor_settings(ChannelType::OpenCode, protocol, Vec::new(), None)
+                    .is_err()
             );
             for entry in [OpenCodeEntry::InferenceV1, OpenCodeEntry::ZenV1] {
                 let settings = standard_adaptor_settings(
