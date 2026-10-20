@@ -74,6 +74,11 @@ jobs:
       - name: Check affected crates
         run: cargo clippy -p af-protocol -p af-relay -p af-server --all-targets --all-features --locked -- -D warnings
 
+      - name: Test channel capability catalog and adapter assembly
+        run: |
+          cargo test --quiet -p af-domain --lib --locked channel_capability::
+          cargo test --quiet -p af-adapter --lib --locked factory::
+
       - name: Test protocol parsing and relay lifecycle
         run: cargo test --quiet -p af-protocol -p af-relay --all-features --locked
 

@@ -29,21 +29,15 @@ pub(crate) fn compatible_probe_credentials(
     channel_type: ChannelType,
     profile: Option<&af_domain::ClientProfileSnapshot>,
 ) -> Condition {
-    let mut condition = Condition::all();
-    if matches!(
-        channel_type,
-        ChannelType::Nvidia | ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
-    ) {
-        condition = condition.add(credentials::Column::Kind.eq(CredentialKind::ApiKey.as_str()));
-    }
-    if channel_type == ChannelType::OpenCode {
-        condition = condition.add(credentials::Column::Kind.is_in([
-            CredentialKind::ApiKey.as_str(),
-            CredentialKind::Public.as_str(),
-        ]));
-    } else {
-        condition = condition.add(credentials::Column::Kind.ne(CredentialKind::Public.as_str()));
-    }
+    let mut condition = Condition::all().add(
+        credentials::Column::Kind.is_in(
+            CredentialKind::ALL
+                .iter()
+                .copied()
+                .filter(|kind| channel_type.supports_credential_kind(*kind))
+                .map(|kind| kind.as_str()),
+        ),
+    );
     if let Some(profile) = profile {
         condition = condition.add(
             credentials::Column::Kind.is_in(

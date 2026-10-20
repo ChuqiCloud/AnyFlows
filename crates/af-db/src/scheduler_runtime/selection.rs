@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use af_domain::{ChannelId, ChannelType, CredentialKind};
+use af_domain::{ChannelId, CredentialKind};
 
 use super::{
     SchedulerRuntimeCredentialRecord, SchedulerRuntimeTargetRecord,
@@ -74,16 +74,7 @@ fn try_runtime_target(
         if !matches!(
             credential_kind,
             CredentialKind::ApiKey | CredentialKind::Oauth | CredentialKind::Public
-        ) || (matches!(
-            channel_type,
-            ChannelType::Nvidia | ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
-        ) && credential_kind != CredentialKind::ApiKey)
-            || (credential_kind == CredentialKind::Public && channel_type != ChannelType::OpenCode)
-            || (channel_type == ChannelType::OpenCode
-                && !matches!(
-                    credential_kind,
-                    CredentialKind::Public | CredentialKind::ApiKey
-                ))
+        ) || !channel_type.supports_credential_kind(credential_kind)
             || (channel.client_simulation_profile().is_some()
                 && credential_kind != CredentialKind::Oauth)
         {

@@ -3,6 +3,7 @@ import { ScanSearch } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AiActivity } from '@/components/ai/ai-activity'
+import { supportsModelDiscovery } from '@/features/channels/channel-capabilities'
 import type { AdminChannel } from '@/lib/api/generated/types.gen'
 
 type ModelSyncToolbarProps = {
@@ -27,12 +28,13 @@ const PLACEHOLDER_CHANNEL_KEY = '__placeholder__'
 export function ModelSyncToolbar(props: ModelSyncToolbarProps) {
   const { t } = useTranslation()
   const selected = props.channels.find((channel) => channel.id === props.channelId)
+  const discoverySupported = selected ? supportsModelDiscovery(selected.type, selected.protocol) : false
   // HeroUI Select 的动态选项必须走 items + 渲染函数；空字符串 key 用哨兵表达。
   const channelItems = [
     { key: PLACEHOLDER_CHANNEL_KEY, label: t(props.loading ? 'modelManagement.sync.channel.loading' : 'modelManagement.sync.channel.placeholder'), disabled: false },
     ...props.channels.map((channel) => ({
       key: String(channel.id),
-      disabled: channel.status !== 'enabled',
+      disabled: channel.status !== 'enabled' || !supportsModelDiscovery(channel.type, channel.protocol),
       label: t('modelManagement.sync.channel.option', {
         name: channel.name,
         protocol: t(`channels.protocol.${channel.protocol}`),
@@ -60,7 +62,7 @@ export function ModelSyncToolbar(props: ModelSyncToolbarProps) {
             {(item) => <SelectItem key={item.key} isDisabled={item.disabled}>{item.label}</SelectItem>}
           </Select>
         </div>
-        <Button type="button" color="primary" size="sm" isDisabled={!selected || selected.status !== 'enabled' || props.previewing} onClick={props.onPreview}>
+        <Button type="button" color="primary" size="sm" isDisabled={!selected || selected.status !== 'enabled' || !discoverySupported || props.previewing} onClick={props.onPreview}>
           {props.previewing ? null : <ScanSearch className="size-3.5" aria-hidden="true" />}
           {t(props.previewing ? 'modelManagement.sync.actions.previewing' : 'modelManagement.sync.actions.preview')}
         </Button>

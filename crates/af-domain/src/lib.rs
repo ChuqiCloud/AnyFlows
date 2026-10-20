@@ -5,6 +5,7 @@ mod billing;
 mod billing_contract;
 mod billing_runtime;
 mod channel;
+mod channel_capability;
 mod client_profile;
 pub use client_profile::{
     ClientProfileBehavior, ClientProfileBinding, ClientProfileDefinition, ClientProfileError,

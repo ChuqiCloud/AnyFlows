@@ -6,9 +6,8 @@ use std::{
 use af_account::CredentialDecryptor;
 use af_adapter::{
     Adaptor, AdaptorError, AdaptorSendExt as _, AdaptorSettings, AdaptorTarget,
-    AdaptorTransportError, AnthropicAdaptorSettings, Bytes, CohereAdaptorSettings,
-    GeminiAdaptorSettings, HeaderMap, HeaderName, HeaderValue, JinaAdaptorSettings, Method,
-    OpenAiAdaptorSettings, Operation, RelayContext, ResponseMode, UpstreamRequest, get_adaptor,
+    AdaptorTransportError, Bytes, HeaderMap, HeaderName, HeaderValue, Method, Operation,
+    RelayContext, ResponseMode, UpstreamRequest, get_adaptor,
 };
 use af_db::{
     ChannelProbeTargetRecord, ChannelProbeTargetRepository, CompactProbeStateRepository,
@@ -705,25 +704,7 @@ fn validate_probe_response(protocol: Protocol, body: &[u8]) -> Result<(), ProbeF
 }
 
 fn supported_target(target: &ChannelProbeTargetRecord) -> bool {
-    matches!(
-        (target.channel_type(), target.protocol()),
-        (
-            ChannelType::OpenAi,
-            Protocol::OpenAiChat
-                | Protocol::OpenAiResponses
-                | Protocol::OpenAiEmbeddings
-                | Protocol::OpenAiImages
-                | Protocol::OpenAiAudio
-                | Protocol::OpenAiSpeech
-        ) | (
-            ChannelType::OpenCode,
-            Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic
-        ) | (ChannelType::Anthropic, Protocol::Anthropic)
-            | (ChannelType::Nvidia, Protocol::OpenAiChat)
-            | (ChannelType::Gemini, Protocol::Gemini)
-            | (ChannelType::Jina, Protocol::JinaRerank)
-            | (ChannelType::Cohere, Protocol::CohereRerank)
-    )
+    target.channel_type().supports_probe(target.protocol())
 }
 
 fn map_transport_failure(error: AdaptorError) -> ProbeFailure {
@@ -751,46 +732,13 @@ fn adaptor_settings(target: &ChannelProbeTargetRecord) -> Result<AdaptorSettings
     {
         models.push(compact_model.to_owned());
     }
-    match (target.channel_type(), target.protocol()) {
-        (ChannelType::OpenCode, protocol) => Ok(AdaptorSettings::OpenCode(
-            af_adapter::OpenCodeAdaptorSettings::new(
-                target
-                    .opencode_entry()
-                    .ok_or(ProbeFailure::UnsupportedTarget)?,
-                protocol,
-                models,
-            )
-            .map_err(|_| ProbeFailure::AdapterBuild)?,
-        )),
-        (
-            ChannelType::OpenAi,
-            Protocol::OpenAiChat
-            | Protocol::OpenAiResponses
-            | Protocol::OpenAiEmbeddings
-            | Protocol::OpenAiImages
-            | Protocol::OpenAiAudio
-            | Protocol::OpenAiSpeech,
-        ) => Ok(AdaptorSettings::OpenAi(
-            OpenAiAdaptorSettings::for_protocol(target.protocol(), models)
-                .map_err(|_| ProbeFailure::AdapterBuild)?,
-        )),
-        (ChannelType::Nvidia, Protocol::OpenAiChat) => Ok(AdaptorSettings::Nvidia(
-            af_adapter::NvidiaAdaptorSettings::new(models),
-        )),
-        (ChannelType::Anthropic, Protocol::Anthropic) => Ok(AdaptorSettings::Anthropic(
-            AnthropicAdaptorSettings::new(models),
-        )),
-        (ChannelType::Gemini, Protocol::Gemini) => {
-            Ok(AdaptorSettings::Gemini(GeminiAdaptorSettings::new(models)))
-        }
-        (ChannelType::Jina, Protocol::JinaRerank) => {
-            Ok(AdaptorSettings::Jina(JinaAdaptorSettings::new(models)))
-        }
-        (ChannelType::Cohere, Protocol::CohereRerank) => {
-            Ok(AdaptorSettings::Cohere(CohereAdaptorSettings::new(models)))
-        }
-        _ => Err(ProbeFailure::UnsupportedTarget),
-    }
+    af_adapter::standard_adaptor_settings(
+        target.channel_type(),
+        target.protocol(),
+        models,
+        target.opencode_entry(),
+    )
+    .map_err(|_| ProbeFailure::AdapterBuild)
 }
 
 fn probe_embedding_request(model: &str) -> Result<CanonicalEmbeddingRequest, ProbeFailure> {

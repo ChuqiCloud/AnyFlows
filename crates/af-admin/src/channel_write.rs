@@ -384,26 +384,7 @@ impl AdminChannelWriteFields {
     ) -> Result<Self, AdminChannelWriteError> {
         if !valid_text(&name, 128)
             || weight < 0
-            || !matches!(
-                (channel_type, protocol),
-                (
-                    ChannelType::OpenAi,
-                    Protocol::OpenAiChat
-                        | Protocol::OpenAiResponses
-                        | Protocol::OpenAiEmbeddings
-                        | Protocol::OpenAiImages
-                        | Protocol::OpenAiAudio
-                        | Protocol::OpenAiSpeech
-                ) | (
-                    ChannelType::OpenCode,
-                    Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic
-                ) | (ChannelType::Anthropic, Protocol::Anthropic)
-                    | (ChannelType::Nvidia, Protocol::OpenAiChat)
-                    | (ChannelType::Gemini, Protocol::Gemini)
-                    | (ChannelType::Jina, Protocol::JinaRerank)
-                    | (ChannelType::Cohere, Protocol::CohereRerank)
-                    | (ChannelType::Xai, Protocol::XaiVideo)
-            )
+            || !channel_type.supports_runtime(protocol)
             || (channel_type == ChannelType::OpenCode && base_url.is_some())
             || base_url
                 .as_deref()
