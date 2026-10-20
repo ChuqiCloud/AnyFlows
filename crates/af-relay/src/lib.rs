@@ -102,8 +102,8 @@ pub use openai_speech::{
 pub use rerank::{RelayRerankOutcome, RerankResponse, relay_rerank_with_report};
 pub use state_machine::{
     RelayAttemptFailure, RelayAttemptReport, RelayCandidate, RelayCandidateRequest,
-    RelayClientSimulationAttempt, RelayExecutionError, RelayRequest, RelayResponse, RelayState,
-    RelayStateMachine,
+    RelayClientSimulationAttempt, RelayExecutionError, RelayExecutionPolicy, RelayRequest,
+    RelayResponse, RelayState, RelayStateMachine,
 };
 pub use tool_conversation::{
     ToolConversationPlan, ToolConversationReport, ToolConversationReportHandle,

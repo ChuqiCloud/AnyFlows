@@ -400,6 +400,9 @@ fn known_field(path: &str) -> Option<&'static str> {
         "http_client.request_timeout_secs" => "http_client.request_timeout_secs",
         "http_client.proxy_url" => "http_client.proxy_url",
         "http_client.trust_proxy_dns" => "http_client.trust_proxy_dns",
+        "relay" => "relay",
+        "relay.retry_limit" => "relay.retry_limit",
+        "relay.retry_delay_ms" => "relay.retry_delay_ms",
         _ => return None,
     })
 }

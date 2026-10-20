@@ -591,7 +591,10 @@
       "poolMode": "外部池",
       "responsesWebsocket": "WebSocket",
       "clientSimulation": "客户端仿真",
-      "clientSimulationBody": "正文补丁"
+      "clientSimulationBody": "正文补丁",
+      "relayRaceWidth": "竞速并发数",
+      "relayRetryLimit": "重试次数",
+      "relayRetryDelayMs": "重试间隔（毫秒）"
     },
     "probe": {
       "notTested": "尚未测试",
@@ -638,6 +641,8 @@
       "basic": "基础配置",
       "routing": "路由范围",
       "overrides": "请求转换",
+      "relayExecution": "上游执行策略",
+      "relayInherited": "留空继承全局默认值",
       "autoBanHint": "启用后，渠道发生符合下方规则的故障时会自动停用。",
       "autoBanPoolModeHint": "外部账号池模式开启时保留此配置，但不会自动停用渠道。",
       "autoBanRulesHint": "仅匹配精确 5xx 状态码和上游结构化 type、code、status；空规则不会停用渠道。",

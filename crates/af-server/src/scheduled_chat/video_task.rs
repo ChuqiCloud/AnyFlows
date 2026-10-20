@@ -536,7 +536,12 @@ impl ScheduledChatService {
                     build_adaptor_credential(&decrypted).map_err(|_| AfError::Internal)?;
                 let mut relay_target = VideoTaskTarget::new(adaptor.clone(), context, credential)
                     .with_header_overrides(headers.clone())
-                    .with_channel_group(target.channel_id());
+                    .with_channel_group(target.channel_id())
+                    .with_execution_policy(self.relay_execution_policy().with_channel_settings(
+                        target.relay_race_width(),
+                        target.relay_retry_limit(),
+                        target.relay_retry_delay_ms(),
+                    ));
                 if let Some(concurrency) = &self.concurrency {
                     relay_target = relay_target.with_attempt_gate(concurrency.account_gate(
                         runtime_credential.concurrency_owner_id(),
@@ -663,7 +668,8 @@ impl ScheduledChatService {
         let credential = build_adaptor_credential(&decrypted).map_err(|_| AfError::Internal)?;
         let mut relay_target = VideoTaskTarget::new(adaptor, context, credential)
             .with_header_overrides(header_overrides(&target)?)
-            .with_channel_group(target.channel_id());
+            .with_channel_group(target.channel_id())
+            .without_retry();
         if let Some(concurrency) = &self.concurrency {
             relay_target = relay_target.with_attempt_gate(concurrency.account_gate(
                 runtime_credential.concurrency_owner_id(),

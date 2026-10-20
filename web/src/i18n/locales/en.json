@@ -507,7 +507,10 @@
       "poolMode": "External pool",
       "responsesWebsocket": "WebSocket",
       "clientSimulation": "Client simulation",
-      "clientSimulationBody": "Body patch"
+      "clientSimulationBody": "Body patch",
+      "relayRaceWidth": "Race concurrency",
+      "relayRetryLimit": "Retry limit",
+      "relayRetryDelayMs": "Retry delay (ms)"
     },
     "probe": {
       "notTested": "Not tested",
@@ -554,6 +557,8 @@
       "basic": "Basic settings",
       "routing": "Routing scope",
       "overrides": "Request transformation",
+      "relayExecution": "Upstream execution",
+      "relayInherited": "Blank inherits the global default",
       "autoBanHint": "Allow the runtime to disable this channel after a deterministic failure.",
       "autoBanPoolModeHint": "This setting is preserved in external pool mode, but the channel is not automatically disabled.",
       "autoBanRulesHint": "Matches exact 5xx statuses and structured upstream type, code, or status fields. Empty rules never disable a channel.",

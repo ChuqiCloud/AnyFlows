@@ -123,6 +123,9 @@ export type AdminChannel = {
         [key: string]: string;
     };
     responses_compact_probe: AdminResponsesCompactProbe;
+    relay_race_width?: number | null;
+    relay_retry_limit?: number | null;
+    relay_retry_delay_ms?: number | null;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -166,6 +169,9 @@ export type AdminChannelCreateRequest = {
     responses_compact_model_mapping?: {
         [key: string]: string;
     };
+    relay_race_width?: number | null;
+    relay_retry_limit?: number | null;
+    relay_retry_delay_ms?: number | null;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -212,6 +218,9 @@ export type AdminChannelUpdateRequest = {
     responses_compact_model_mapping?: {
         [key: string]: string;
     } | null;
+    relay_race_width?: number | null;
+    relay_retry_limit?: number | null;
+    relay_retry_delay_ms?: number | null;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -2506,6 +2515,9 @@ export type AdminChannelCreateRequestWritable = {
     responses_compact_model_mapping?: {
         [key: string]: string;
     };
+    relay_race_width?: number | null;
+    relay_retry_limit?: number | null;
+    relay_retry_delay_ms?: number | null;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -2547,6 +2559,9 @@ export type AdminChannelUpdateRequestWritable = {
     responses_compact_model_mapping?: {
         [key: string]: string;
     } | null;
+    relay_race_width?: number | null;
+    relay_retry_limit?: number | null;
+    relay_retry_delay_ms?: number | null;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
