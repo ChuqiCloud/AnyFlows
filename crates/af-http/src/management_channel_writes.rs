@@ -8,7 +8,7 @@ use axum::{
     response::Response,
 };
 use http::StatusCode;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use utoipa::ToSchema;
 
 use crate::{
@@ -29,6 +29,41 @@ struct NullableClientSimulationProfile(Option<af_domain::ClientSimulationProfile
 #[serde(transparent)]
 /// 渠道写接口要求显式提交的可空客户端仿真正文档案。
 struct NullableClientSimulationBodyProfile(Option<af_domain::ClientSimulationBodyProfile>);
+
+struct FieldUpdate<T> {
+    provided: bool,
+    value: Option<T>,
+}
+
+impl<T> Default for FieldUpdate<T> {
+    fn default() -> Self {
+        Self {
+            provided: false,
+            value: None,
+        }
+    }
+}
+
+impl<T> FieldUpdate<T> {
+    fn into_patch(self) -> Option<Option<T>> {
+        self.provided.then_some(self.value)
+    }
+}
+
+impl<'de, T> Deserialize<'de> for FieldUpdate<T>
+where
+    T: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(Self {
+            provided: true,
+            value: Option::<T>::deserialize(deserializer)?,
+        })
+    }
+}
 
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -97,6 +132,12 @@ pub(crate) struct AdminChannelCreateRequest {
     #[serde(default = "empty_json_object")]
     #[schema(schema_with = crate::openapi::schema::model_mapping_write_schema)]
     responses_compact_model_mapping: serde_json::Value,
+    #[serde(default)]
+    relay_race_width: Option<usize>,
+    #[serde(default)]
+    relay_retry_limit: Option<u8>,
+    #[serde(default)]
+    relay_retry_delay_ms: Option<u64>,
     #[schema(schema_with = crate::openapi::schema::channel_write_models_schema)]
     models: Vec<String>,
     #[schema(schema_with = crate::openapi::schema::channel_write_group_ids_schema)]
@@ -175,6 +216,15 @@ pub(crate) struct AdminChannelUpdateRequest {
     /// 与三态能力必须同时出现；均省略时保留原值。
     #[schema(schema_with = crate::openapi::schema::optional_model_mapping_write_schema)]
     responses_compact_model_mapping: Option<serde_json::Value>,
+    #[serde(default)]
+    #[schema(value_type = Option<usize>)]
+    relay_race_width: FieldUpdate<usize>,
+    #[serde(default)]
+    #[schema(value_type = Option<u8>)]
+    relay_retry_limit: FieldUpdate<u8>,
+    #[serde(default)]
+    #[schema(value_type = Option<u64>)]
+    relay_retry_delay_ms: FieldUpdate<u64>,
     #[schema(schema_with = crate::openapi::schema::channel_write_models_schema)]
     models: Vec<String>,
     #[schema(schema_with = crate::openapi::schema::channel_write_group_ids_schema)]
@@ -301,6 +351,13 @@ impl AdminChannelCreateRequest {
             self.responses_compact_model_mapping,
         )
         .map_err(map_write_error)
+        .map(|command| {
+            command.with_relay_execution_settings(af_admin::RelayChannelSettings::new(
+                self.relay_race_width,
+                self.relay_retry_limit,
+                self.relay_retry_delay_ms,
+            ))
+        })
     }
 }
 
@@ -360,12 +417,28 @@ impl AdminChannelUpdateRequest {
             (None, None) => command,
             _ => return Err(ManagementError::InvalidRequest),
         };
-        match self.responses_websocket_enabled {
+        let command = match self.responses_websocket_enabled {
             Some(enabled) => command
                 .with_responses_websocket_enabled(enabled)
                 .map_err(map_write_error),
             None => Ok(command),
-        }
+        }?;
+        Ok(
+            match (
+                self.relay_race_width.into_patch(),
+                self.relay_retry_limit.into_patch(),
+                self.relay_retry_delay_ms.into_patch(),
+            ) {
+                (None, None, None) => command,
+                (race_width, retry_limit, retry_delay_ms) => {
+                    command.with_relay_execution_settings(af_admin::RelayChannelSettingsPatch::new(
+                        race_width,
+                        retry_limit,
+                        retry_delay_ms,
+                    ))
+                }
+            },
+        )
     }
 }
 

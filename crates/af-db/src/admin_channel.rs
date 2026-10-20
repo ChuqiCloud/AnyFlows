@@ -19,10 +19,12 @@ use crate::{
     ability_write::{AbilityWriteError, ChannelRoutingSnapshot, load_channel_routing_snapshots},
     channel_settings::{
         AUTO_BAN_RULES_KEY, CLIENT_SIMULATION_BODY_PROFILE_KEY, CLIENT_SIMULATION_PROFILE_KEY,
+        RELAY_RACE_WIDTH_KEY, RELAY_RETRY_DELAY_MS_KEY, RELAY_RETRY_LIMIT_KEY,
         RESPONSES_COMPACT_MODE_KEY, RESPONSES_COMPACT_MODEL_MAPPING_KEY,
         RESPONSES_COMPACT_PROBE_CHECKED_AT_KEY, RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY,
         RESPONSES_COMPACT_PROBE_RESULT_KEY, client_simulation_body_profile,
-        client_simulation_profile, parse_auto_ban_rules_value, pool_mode, responses_compact_mode,
+        client_simulation_profile, parse_auto_ban_rules_value, pool_mode,
+        relay_execution_settings_from_values, responses_compact_mode,
         responses_compact_model_mapping, responses_compact_probe_record,
         responses_websocket_enabled, validate_client_simulation_body_capability,
         validate_client_simulation_capability, validate_responses_compact_capability,
@@ -60,6 +62,9 @@ pub struct AdminChannelRecord {
     responses_compact_probe_result: ResponsesCompactProbeResult,
     responses_compact_probe_checked_at: Option<i64>,
     responses_compact_probe_http_status: Option<u16>,
+    relay_race_width: Option<usize>,
+    relay_retry_limit: Option<u8>,
+    relay_retry_delay_ms: Option<u64>,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
     model_mapping: JsonValue,
@@ -151,6 +156,9 @@ impl AdminChannelRecord {
                 &settings,
                 RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY,
             ),
+            relay_race_width: setting_value(&settings, RELAY_RACE_WIDTH_KEY),
+            relay_retry_limit: setting_value(&settings, RELAY_RETRY_LIMIT_KEY),
+            relay_retry_delay_ms: setting_value(&settings, RELAY_RETRY_DELAY_MS_KEY),
             settings_oversized,
             balance: model.balance,
             used_quota: model.used_quota,
@@ -285,6 +293,16 @@ impl AdminChannelRecord {
     #[must_use]
     pub const fn responses_compact_probe_http_status(&self) -> Option<u16> {
         self.responses_compact_probe_http_status
+    }
+
+    pub const fn relay_race_width(&self) -> Option<usize> {
+        self.relay_race_width
+    }
+    pub const fn relay_retry_limit(&self) -> Option<u8> {
+        self.relay_retry_limit
+    }
+    pub const fn relay_retry_delay_ms(&self) -> Option<u64> {
+        self.relay_retry_delay_ms
     }
 
     /// 返回按 Canonical 原文排序的渠道模型集合。
@@ -585,6 +603,9 @@ struct AdminChannelRow {
     responses_compact_probe_result: Option<JsonValue>,
     responses_compact_probe_checked_at: Option<JsonValue>,
     responses_compact_probe_http_status: Option<JsonValue>,
+    relay_race_width: Option<JsonValue>,
+    relay_retry_limit: Option<JsonValue>,
+    relay_retry_delay_ms: Option<JsonValue>,
     settings_oversized: bool,
     balance: Option<i64>,
     used_quota: i64,
@@ -626,6 +647,9 @@ impl AdminChannelRow {
                 .try_get("", "responses_compact_probe_checked_at")?,
             responses_compact_probe_http_status: result
                 .try_get("", "responses_compact_probe_http_status")?,
+            relay_race_width: result.try_get("", "relay_race_width")?,
+            relay_retry_limit: result.try_get("", "relay_retry_limit")?,
+            relay_retry_delay_ms: result.try_get("", "relay_retry_delay_ms")?,
             settings_oversized: result.try_get("", "settings_oversized")?,
             balance: result.try_get("", "balance")?,
             used_quota: result.try_get("", "used_quota")?,
@@ -679,6 +703,12 @@ impl AdminChannelRow {
         if self.settings_oversized {
             return Err(internal_invariant());
         }
+        let relay_settings = relay_execution_settings_from_values(
+            self.relay_race_width.as_ref(),
+            self.relay_retry_limit.as_ref(),
+            self.relay_retry_delay_ms.as_ref(),
+        )
+        .map_err(|_| internal_invariant())?;
         let settings = compact_settings_projection(
             self.client_simulation_profile,
             self.client_simulation_body_profile,
@@ -783,6 +813,9 @@ impl AdminChannelRow {
             responses_compact_probe_result,
             responses_compact_probe_checked_at,
             responses_compact_probe_http_status,
+            relay_race_width: relay_settings.race_width(),
+            relay_retry_limit: relay_settings.retry_limit(),
+            relay_retry_delay_ms: relay_settings.retry_delay_ms(),
             models: self.models,
             group_ids: self.group_ids,
             model_mapping,
@@ -937,6 +970,18 @@ pub(crate) fn channel_base_query(database_backend: DbBackend) -> SelectStatement
         .expr_as(
             bounded_setting(RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY),
             Alias::new("responses_compact_probe_http_status"),
+        )
+        .expr_as(
+            bounded_setting(RELAY_RACE_WIDTH_KEY),
+            Alias::new("relay_race_width"),
+        )
+        .expr_as(
+            bounded_setting(RELAY_RETRY_LIMIT_KEY),
+            Alias::new("relay_retry_limit"),
+        )
+        .expr_as(
+            bounded_setting(RELAY_RETRY_DELAY_MS_KEY),
+            Alias::new("relay_retry_delay_ms"),
         )
         .expr_as(
             Expr::case(settings_length.gt(MAX_ADMIN_CHANNEL_JSON_BYTES), true).finally(false),

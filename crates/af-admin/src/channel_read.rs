@@ -95,6 +95,9 @@ pub struct AdminChannel {
     responses_compact_probe_result: ResponsesCompactProbeResult,
     responses_compact_probe_checked_at: Option<i64>,
     responses_compact_probe_http_status: Option<u16>,
+    relay_race_width: Option<usize>,
+    relay_retry_limit: Option<u8>,
+    relay_retry_delay_ms: Option<u64>,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
     model_mapping: serde_json::Value,
@@ -153,6 +156,9 @@ impl AdminChannel {
             responses_compact_probe_result: ResponsesCompactProbeResult::Unknown,
             responses_compact_probe_checked_at: None,
             responses_compact_probe_http_status: None,
+            relay_race_width: None,
+            relay_retry_limit: None,
+            relay_retry_delay_ms: None,
             models,
             group_ids,
             model_mapping,
@@ -274,6 +280,15 @@ impl AdminChannel {
     pub const fn responses_compact_probe_http_status(&self) -> Option<u16> {
         self.responses_compact_probe_http_status
     }
+    pub const fn relay_race_width(&self) -> Option<usize> {
+        self.relay_race_width
+    }
+    pub const fn relay_retry_limit(&self) -> Option<u8> {
+        self.relay_retry_limit
+    }
+    pub const fn relay_retry_delay_ms(&self) -> Option<u64> {
+        self.relay_retry_delay_ms
+    }
     /// 返回渠道声明的 Canonical 模型集合。
     #[must_use]
     pub fn models(&self) -> &[String] {
@@ -355,6 +370,11 @@ impl AdminChannel {
             record.responses_compact_probe_checked_at(),
             record.responses_compact_probe_http_status(),
         )
+        .with_relay_execution_settings(
+            record.relay_race_width(),
+            record.relay_retry_limit(),
+            record.relay_retry_delay_ms(),
+        )
     }
 
     fn with_responses_websocket_enabled(mut self, enabled: bool) -> Self {
@@ -380,6 +400,18 @@ impl AdminChannel {
 
     fn with_auto_ban_rules(mut self, rules: ChannelAutoBanRules) -> Self {
         self.auto_ban_rules = rules;
+        self
+    }
+
+    fn with_relay_execution_settings(
+        mut self,
+        race_width: Option<usize>,
+        retry_limit: Option<u8>,
+        retry_delay_ms: Option<u64>,
+    ) -> Self {
+        self.relay_race_width = race_width;
+        self.relay_retry_limit = retry_limit;
+        self.relay_retry_delay_ms = retry_delay_ms;
         self
     }
 

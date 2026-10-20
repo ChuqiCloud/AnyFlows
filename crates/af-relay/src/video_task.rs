@@ -12,8 +12,11 @@ use af_protocol::{
 
 use crate::{
     RelayAttemptFailure, RelayAttemptGate, RelayAttemptGateError, RelayAttemptReport, RelayError,
-    RelayExecutionError,
-    error::{classify_upstream_status, is_retryable, map_adaptor_error, parse_retry_after},
+    RelayExecutionError, RelayExecutionPolicy,
+    error::{
+        classify_upstream_status, is_retryable, is_same_candidate_retryable, map_adaptor_error,
+        parse_retry_after,
+    },
     state_machine::{is_credential_scoped, release_attempt_permit},
 };
 
@@ -25,6 +28,8 @@ pub struct VideoTaskTarget {
     header_overrides: HeaderMap,
     channel_group: Option<ChannelId>,
     attempt_gate: Option<Arc<dyn RelayAttemptGate>>,
+    retry_limit: u8,
+    retry_delay_ms: u64,
 }
 
 impl VideoTaskTarget {
@@ -42,6 +47,8 @@ impl VideoTaskTarget {
             header_overrides: HeaderMap::new(),
             channel_group: None,
             attempt_gate: None,
+            retry_limit: 0,
+            retry_delay_ms: 0,
         }
     }
 
@@ -65,6 +72,20 @@ impl VideoTaskTarget {
         self.attempt_gate = Some(attempt_gate);
         self
     }
+
+    #[must_use]
+    pub fn with_execution_policy(mut self, policy: RelayExecutionPolicy) -> Self {
+        self.retry_limit = policy.retry_limit();
+        self.retry_delay_ms = u64::try_from(policy.retry_delay().as_millis()).unwrap_or(u64::MAX);
+        self
+    }
+
+    #[must_use]
+    pub const fn without_retry(mut self) -> Self {
+        self.retry_limit = 0;
+        self.retry_delay_ms = 0;
+        self
+    }
 }
 
 impl fmt::Debug for VideoTaskTarget {
@@ -76,6 +97,8 @@ impl fmt::Debug for VideoTaskTarget {
             .field("header_override_count", &self.header_overrides.len())
             .field("has_channel_group", &self.channel_group.is_some())
             .field("has_attempt_gate", &self.attempt_gate.is_some())
+            .field("retry_limit", &self.retry_limit)
+            .field("retry_delay_ms", &self.retry_delay_ms)
             .finish()
     }
 }
@@ -245,6 +268,7 @@ pub async fn relay_video_task_submission(
     let mut failures = Vec::new();
     let mut last_error = None;
     let mut index = 0;
+    let mut retry_counts = vec![0; candidates.len()];
     while let Some(candidate) = candidates.get(index) {
         let started_at = Instant::now();
         let request = match candidate.target.adaptor.build_video_submission_request(
@@ -306,6 +330,18 @@ pub async fn relay_video_task_submission(
                     ));
                 }
                 if is_retryable(mapped) {
+                    if is_same_candidate_retryable(mapped)
+                        && retry_counts[index] < candidate.target.retry_limit
+                    {
+                        retry_counts[index] += 1;
+                        if candidate.target.retry_delay_ms != 0 {
+                            tokio::time::sleep(std::time::Duration::from_millis(
+                                candidate.target.retry_delay_ms,
+                            ))
+                            .await;
+                        }
+                        continue;
+                    }
                     index = next_candidate_index(candidates, index, mapped);
                     continue;
                 }
@@ -354,6 +390,18 @@ pub async fn relay_video_task_submission(
                 ));
                 last_error = Some(RelayError::Upstream(mapped));
                 if is_retryable(mapped) {
+                    if is_same_candidate_retryable(mapped)
+                        && retry_counts[index] < candidate.target.retry_limit
+                    {
+                        retry_counts[index] += 1;
+                        if candidate.target.retry_delay_ms != 0 {
+                            tokio::time::sleep(std::time::Duration::from_millis(
+                                candidate.target.retry_delay_ms,
+                            ))
+                            .await;
+                        }
+                        continue;
+                    }
                     index = next_candidate_index(candidates, index, mapped);
                     continue;
                 }
@@ -377,6 +425,18 @@ pub async fn relay_video_task_submission(
         ));
         last_error = Some(RelayError::Upstream(classified));
         if is_retryable(classified) {
+            if is_same_candidate_retryable(classified)
+                && retry_counts[index] < candidate.target.retry_limit
+            {
+                retry_counts[index] += 1;
+                if candidate.target.retry_delay_ms != 0 {
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        candidate.target.retry_delay_ms,
+                    ))
+                    .await;
+                }
+                continue;
+            }
             index = next_candidate_index(candidates, index, classified);
             continue;
         }

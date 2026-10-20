@@ -86,6 +86,10 @@ pub use billing_contract::{BillingContractPriceSnapshotError, OrganizationContra
 #[cfg(test)]
 mod billing_batch_tests;
 mod channel_settings;
+pub use channel_settings::{
+    RelayChannelSettings, RelayChannelSettingsPatch, RelayExecutionSettingsError,
+    validate_relay_execution_settings,
+};
 mod opencode_settings;
 pub use opencode_settings::{channel_opencode_entry, channel_opencode_full_compatibility};
 mod client_profiles;

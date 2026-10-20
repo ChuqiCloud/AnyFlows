@@ -1648,6 +1648,7 @@ impl Bootstrap<RelayReady> {
                 self.stage.infrastructure.infrastructure.database.clone(),
             ),
         )
+        .with_relay_settings(*self.config.relay())
         .with_proxy_cipher(self.stage.infrastructure.system_secret_cipher.clone())
         .with_proxy_pools(
             self.stage

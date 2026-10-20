@@ -12,6 +12,7 @@ use sea_orm::entity::prelude::Json;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+use crate::channel_settings::RelayChannelSettings;
 use crate::{
     CredentialProxyScheme,
     credential_probe::EncryptedCredentialEnvelope,
@@ -518,6 +519,7 @@ pub struct SchedulerRuntimeTargetRecord {
     responses_compact_mode: ResponsesCompactMode,
     responses_compact_probe_result: ResponsesCompactProbeResult,
     responses_compact_model_mapping: ChannelModelMappings,
+    relay_settings: RelayChannelSettings,
 }
 
 impl SchedulerRuntimeTargetRecord {
@@ -684,6 +686,7 @@ impl SchedulerRuntimeTargetRecord {
             responses_compact_mode: ResponsesCompactMode::Auto,
             responses_compact_probe_result: ResponsesCompactProbeResult::Unknown,
             responses_compact_model_mapping,
+            relay_settings: RelayChannelSettings::default(),
         })
     }
 
@@ -721,6 +724,12 @@ impl SchedulerRuntimeTargetRecord {
     #[must_use]
     pub fn with_timeout(mut self, timeout: Option<ChannelTimeout>) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    #[must_use]
+    pub fn with_relay_settings(mut self, settings: RelayChannelSettings) -> Self {
+        self.relay_settings = settings;
         self
     }
 
@@ -1026,6 +1035,16 @@ impl SchedulerRuntimeTargetRecord {
     /// 返回 Compact 专属模型映射，供 Redis 投影复用已验证值。
     pub(super) const fn responses_compact_model_mapping(&self) -> &ChannelModelMappings {
         &self.responses_compact_model_mapping
+    }
+
+    pub const fn relay_race_width(&self) -> Option<usize> {
+        self.relay_settings.race_width()
+    }
+    pub const fn relay_retry_limit(&self) -> Option<u8> {
+        self.relay_settings.retry_limit()
+    }
+    pub const fn relay_retry_delay_ms(&self) -> Option<u64> {
+        self.relay_settings.retry_delay_ms()
     }
 
     /// 返回已验证的 Canonical 参数覆盖。
