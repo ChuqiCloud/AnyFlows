@@ -241,6 +241,7 @@ mod tests {
     use super::*;
 
     use af_adapter::{HeaderName, HeaderValue};
+    use af_domain::UpstreamServerStatus;
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use url::Url;
     use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
@@ -286,9 +287,9 @@ mod tests {
             NetworkFailureKind::Connect
         )));
         assert!(is_same_candidate_retryable(UpstreamError::overloaded()));
-        assert!(is_same_candidate_retryable(
-            UpstreamError::server_error(503).unwrap()
-        ));
+        assert!(is_same_candidate_retryable(UpstreamError::ServerError {
+            status: UpstreamServerStatus::new(503).unwrap(),
+        }));
         assert!(!is_same_candidate_retryable(UpstreamError::AuthExpired));
         assert!(!is_same_candidate_retryable(
             UpstreamError::ModelUnsupported

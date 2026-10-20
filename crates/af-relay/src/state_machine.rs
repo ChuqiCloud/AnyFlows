@@ -436,6 +436,7 @@ impl RelayAttemptReport {
 }
 
 /// 候选无关的转发请求描述；模型名先校验，最终请求体边界在适配层校验。
+#[derive(Clone)]
 pub struct RelayRequest {
     model: String,
     operation: Operation,
@@ -690,7 +691,7 @@ impl RelayExecutionPolicy {
     pub const fn retry_delay(self) -> Duration {
         self.retry_delay
     }
-    pub const fn with_channel_settings(
+    pub fn with_channel_settings(
         self,
         race_width: Option<usize>,
         retry_limit: Option<u8>,
@@ -826,6 +827,7 @@ impl RelayStateMachine {
         attempt_count: Arc<AtomicUsize>,
     ) -> Result<RelayResponse, RelayExecutionError> {
         let mut index = 0;
+        let mut last_error = RelayError::Upstream(UpstreamError::ModelUnsupported);
         let mut failures = Vec::new();
         while index < self.candidates.len() {
             let channel = self.candidates[index].channel_group;
@@ -904,7 +906,6 @@ impl RelayStateMachine {
                     )
                 });
             }
-            let mut last_error = RelayError::Upstream(UpstreamError::ModelUnsupported);
             let mut last_error_index = index;
             while let Some(joined) = tasks.join_next().await {
                 let (candidate_index, result) = match joined {

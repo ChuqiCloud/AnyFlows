@@ -74,7 +74,7 @@ impl VideoTaskTarget {
     }
 
     #[must_use]
-    pub const fn with_execution_policy(mut self, policy: RelayExecutionPolicy) -> Self {
+    pub fn with_execution_policy(mut self, policy: RelayExecutionPolicy) -> Self {
         self.retry_limit = policy.retry_limit();
         self.retry_delay_ms = u64::try_from(policy.retry_delay().as_millis()).unwrap_or(u64::MAX);
         self

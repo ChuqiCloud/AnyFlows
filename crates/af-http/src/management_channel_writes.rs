@@ -352,12 +352,10 @@ impl AdminChannelCreateRequest {
         )
         .map_err(map_write_error)
         .map(|command| {
-            command.with_relay_execution_settings(af_db::RelayChannelSettingsPatch::replace_all(
-                af_db::RelayChannelSettings::new(
-                    self.relay_race_width,
-                    self.relay_retry_limit,
-                    self.relay_retry_delay_ms,
-                ),
+            command.with_relay_execution_settings(af_admin::RelayChannelSettings::new(
+                self.relay_race_width,
+                self.relay_retry_limit,
+                self.relay_retry_delay_ms,
             ))
         })
     }
@@ -432,9 +430,13 @@ impl AdminChannelUpdateRequest {
                 self.relay_retry_delay_ms.into_patch(),
             ) {
                 (None, None, None) => command,
-                (race_width, retry_limit, retry_delay_ms) => command.with_relay_execution_settings(
-                    af_db::RelayChannelSettingsPatch::new(race_width, retry_limit, retry_delay_ms),
-                ),
+                (race_width, retry_limit, retry_delay_ms) => {
+                    command.with_relay_execution_settings(af_admin::RelayChannelSettingsPatch::new(
+                        race_width,
+                        retry_limit,
+                        retry_delay_ms,
+                    ))
+                }
             },
         )
     }
