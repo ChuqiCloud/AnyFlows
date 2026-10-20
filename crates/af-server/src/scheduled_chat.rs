@@ -38,6 +38,7 @@ use af_adapter::{
     OpenAiAdaptorSettings, RelayContext, ResponsesWebSocketPoolKey, TransportDispatcher,
     get_adaptor,
 };
+use af_config::RelaySettings;
 use af_db::{
     AdminGroupLookupOutcome, AdminGroupRepository, ChannelStateRepository,
     CredentialStateRepository, SmartRouteRuntimeRepository,
@@ -154,6 +155,7 @@ pub(crate) struct ScheduledChatService {
     smart_routes: Option<Arc<dyn SmartRouteResolver>>,
     smart_route_feedback: Option<SmartRouteRuntimeRepository>,
     utc_date_clock: Arc<UtcDateClock>,
+    relay_settings: RelaySettings,
 }
 
 impl ScheduledChatService {
@@ -184,6 +186,7 @@ impl ScheduledChatService {
             smart_routes: None,
             smart_route_feedback: None,
             utc_date_clock: Arc::new(crate::utc_time::current_utc_date),
+            relay_settings: RelaySettings::default(),
         }
     }
 
@@ -191,6 +194,19 @@ impl ScheduledChatService {
     pub(crate) fn with_proxy_cipher(mut self, cipher: SystemSecretCipher) -> Self {
         self.proxy_cipher = Some(cipher);
         self
+    }
+
+    pub(crate) fn with_relay_settings(mut self, settings: RelaySettings) -> Self {
+        self.relay_settings = settings;
+        self
+    }
+
+    pub(crate) fn relay_execution_policy(&self) -> af_relay::RelayExecutionPolicy {
+        af_relay::RelayExecutionPolicy::new(
+            1,
+            self.relay_settings.retry_limit(),
+            std::time::Duration::from_millis(self.relay_settings.retry_delay_ms()),
+        )
     }
 
     pub(crate) fn with_proxy_pools(
@@ -487,7 +503,10 @@ impl ScheduledChatService {
                 let mut relay_candidate =
                     RelayCandidate::new(adaptor.clone(), context.clone(), credential)
                         .with_header_overrides(headers.clone())
-                        .with_channel_group(target.channel_id());
+                        .with_channel_group(target.channel_id())
+                        .with_retry_limit(target.relay_retry_limit())
+                        .with_retry_delay_ms(target.relay_retry_delay_ms())
+                        .with_race_width(target.relay_race_width());
                 if let Some(profile) = target.client_simulation_profile() {
                     relay_candidate = relay_candidate
                         .with_client_simulation(Arc::new(BuiltInClientSimulation::new(profile)));
@@ -545,7 +564,9 @@ impl ScheduledChatService {
                 af_domain::UpstreamError::ModelUnsupported.into()
             });
         }
-        let machine = RelayStateMachine::new(relay_candidates).map_err(|_| AfError::Internal)?;
+        let machine = RelayStateMachine::new(relay_candidates)
+            .map_err(|_| AfError::Internal)?
+            .with_execution_policy(self.relay_execution_policy());
         Ok(ScheduledChatExecution {
             target_group_id,
             pricing_model: routed_model,

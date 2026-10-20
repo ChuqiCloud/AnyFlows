@@ -532,6 +532,21 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
           </ChannelFormField>
         </section>
 
+        <section className="grid gap-3" aria-labelledby="channel-relay-fields">
+          <h3 id="channel-relay-fields" className="text-xs font-semibold">{t('channels.form.relayExecution')}</h3>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <ChannelFormField id="channel-relay-race" label={t('channels.fields.relayRaceWidth')} hint={t('channels.form.relayInherited')} error={form.formState.errors.relayRaceWidth?.message}>
+              <Input id="channel-relay-race" inputMode="numeric" placeholder="1" {...form.register('relayRaceWidth')} />
+            </ChannelFormField>
+            <ChannelFormField id="channel-relay-retry" label={t('channels.fields.relayRetryLimit')} hint={t('channels.form.relayInherited')} error={form.formState.errors.relayRetryLimit?.message}>
+              <Input id="channel-relay-retry" inputMode="numeric" placeholder="0" {...form.register('relayRetryLimit')} />
+            </ChannelFormField>
+            <ChannelFormField id="channel-relay-delay" label={t('channels.fields.relayRetryDelayMs')} hint={t('channels.form.relayInherited')} error={form.formState.errors.relayRetryDelayMs?.message}>
+              <Input id="channel-relay-delay" inputMode="numeric" placeholder="0" {...form.register('relayRetryDelayMs')} />
+            </ChannelFormField>
+          </div>
+        </section>
+
         <section className="grid gap-4" aria-labelledby="channel-override-fields">
           <h3 id="channel-override-fields" className="text-xs font-semibold">{t('channels.form.overrides')}</h3>
           <ChannelFormField id="channel-mapping" htmlFor={false} label={t('channels.fields.modelMapping')} error={form.formState.errors.modelMapping?.message} hint={t('channels.form.mappingHint')}>
