@@ -1,13 +1,7 @@
 name: Cache contracts
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, closed]
-    branches: [main, develop]
-    paths: ['crates/af-cache/**', 'tools/ci/run-cache-redis-test.sh', 'tools/ci/container-test-runner.sh', '.github/workflows/cache.yml']
-  push:
-    branches: [main]
-    paths: ['crates/af-cache/**', 'tools/ci/run-cache-redis-test.sh', 'tools/ci/container-test-runner.sh', '.github/workflows/cache.yml']
+  # 历史专项保留手动复测入口，日常检查由 CI 工作流承担。
   workflow_dispatch:
 
 permissions:
@@ -19,7 +13,6 @@ concurrency:
 
 jobs:
   cache:
-    if: github.event.action != 'closed'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:

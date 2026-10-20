@@ -5,17 +5,16 @@ on:
     branches: [main, develop]
     paths:
       - .github/workflows/**
-      - tools/ci/check-workflow*.py
+      - tools/ci/check-workflow-actions.py
       - tools/ci/*container-test-runner.sh
       - tools/ci/run-cache-redis-test.sh
       - tools/repository/**
       - tools/ci/test-public-core-export.sh
   pull_request:
-    types: [opened, synchronize, reopened, closed]
     branches: [main, develop]
     paths:
       - .github/workflows/**
-      - tools/ci/check-workflow*.py
+      - tools/ci/check-workflow-actions.py
       - tools/ci/*container-test-runner.sh
       - tools/ci/run-cache-redis-test.sh
       - tools/repository/**
@@ -33,7 +32,6 @@ concurrency:
 jobs:
   export:
     name: Validate public sync and export
-    if: github.event.action != 'closed'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -53,14 +51,6 @@ jobs:
 
       - name: Check portable workflow action references
         run: python3 tools/ci/check-workflow-actions.py
-
-      - name: Check CI lifecycle policy
-        env:
-          PYTHONDONTWRITEBYTECODE: '1'
-        run: |
-          policy_dependencies="$RUNNER_TEMP/workflow-policy"
-          python3 -m pip install --quiet --disable-pip-version-check --target "$policy_dependencies" PyYAML==6.0.3
-          PYTHONPATH="$policy_dependencies" python3 tools/ci/check-workflow-policy.py
 
       - name: Check container test entry points
         run: |

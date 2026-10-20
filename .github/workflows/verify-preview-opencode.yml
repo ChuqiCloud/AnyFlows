@@ -17,10 +17,6 @@ permissions:
   contents: read
   actions: read
 
-concurrency:
-  group: verify-preview-opencode-${{ github.ref }}-${{ inputs.preview_run }}-${{ inputs.access_mode }}
-  cancel-in-progress: true
-
 jobs:
   live:
     if: github.server_url != 'https://github.com'

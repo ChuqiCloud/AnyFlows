@@ -1,13 +1,7 @@
 name: Console extensions
 
 on:
-  push:
-    branches: [main]
-    paths: ['web/**', 'web-next/**', 'tools/ci/frontend-client-profiles-smoke.mjs', '.github/workflows/console-extensions.yml']
-  pull_request:
-    types: [opened, synchronize, reopened, closed]
-    branches: [main, develop]
-    paths: ['web/**', 'web-next/**', 'tools/ci/frontend-client-profiles-smoke.mjs', '.github/workflows/console-extensions.yml']
+  # 历史专项保留手动复测入口，日常检查由 CI 工作流承担。
   workflow_dispatch:
 
 permissions:
@@ -19,7 +13,6 @@ concurrency:
 
 jobs:
   frontend:
-    if: github.event.action != 'closed'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:

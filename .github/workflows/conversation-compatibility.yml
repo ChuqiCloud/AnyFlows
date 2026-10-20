@@ -1,36 +1,7 @@
 name: Conversation compatibility
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, closed]
-    branches: [develop]
-    paths:
-      - 'crates/af-protocol/**'
-      - 'crates/af-relay/**'
-      - 'crates/af-domain/src/client_profile.rs'
-      - 'crates/af-adapter/src/client_profile.rs'
-      - 'crates/af-adapter/src/opencode.rs'
-      - 'crates/af-adapter/src/context.rs'
-      - 'crates/af-cache/src/sticky.rs'
-      - 'crates/af-cache/tests/redis_integration.rs'
-      - 'tools/ci/run-cache-redis-test.sh'
-      - 'tools/ci/container-test-runner.sh'
-      - 'crates/af-db/src/opencode_settings.rs'
-      - 'crates/af-server/src/model_discovery.rs'
-      - 'crates/af-server/src/channel_probe.rs'
-      - 'crates/af-server/src/sticky_session.rs'
-      - 'crates/af-admin/src/client_profiles.rs'
-      - 'crates/af-db/src/client_profiles*'
-      - 'crates/af-db/src/entity/*client_profile*'
-      - 'crates/af-db/src/scheduler_runtime/**'
-      - 'crates/af-db/src/migration/*client_profiles*'
-      - 'crates/af-http/src/client_profiles.rs'
-      - 'crates/af-http/src/openapi/client_profiles.rs'
-      - 'crates/af-server/src/scheduled_chat.rs'
-      - 'crates/af-server/src/scheduled_chat/**'
-      - 'crates/af-server/src/debug_trace_runtime.rs'
-      - 'crates/af-server/src/billing_chat.rs'
-      - '.github/workflows/conversation-compatibility.yml'
+  # 历史专项保留手动复测入口，日常检查由 CI 工作流承担。
   workflow_dispatch:
 
 permissions:
@@ -51,7 +22,6 @@ env:
 
 jobs:
   conversation:
-    if: github.event.action != 'closed'
     name: Conversation protocol and scheduling checks
     runs-on: ubuntu-24.04
     timeout-minutes: 30
