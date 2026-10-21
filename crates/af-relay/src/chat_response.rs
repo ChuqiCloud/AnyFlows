@@ -109,9 +109,70 @@ pub(crate) fn encode_full_response(
 #[cfg(test)]
 mod tests {
     use af_protocol::openai_chat;
-    use serde_json::Value;
+    use serde_json::{Value, json};
 
     use super::*;
+
+    #[test]
+    fn native_chat_response_preserves_logprobs_and_gateway_tool_indices() {
+        let original = Bytes::from(
+            serde_json::to_vec(&json!({
+                "id": "chatcmpl-tools",
+                "object": "chat.completion",
+                "created": 1_700_000_000,
+                "model": "upstream-model",
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": null,
+                        "tool_calls": [{
+                            "index": 7,
+                            "id": "call-weather",
+                            "type": "function",
+                            "function": {"name": "weather", "arguments": "{\"city\":\"北京\"}"}
+                        }]
+                    },
+                    "finish_reason": "tool_calls",
+                    "logprobs": {"content": null, "reasoning_content": [{"token": "Need", "logprob": -0.1}]}
+                }],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8}
+            }))
+            .unwrap(),
+        );
+        let canonical = openai_chat::parse_response(&original).unwrap();
+        let usage = canonical.usage.unwrap();
+        let ChatResponse::Full {
+            body,
+            usage: result,
+        } = encode_full_response(
+            Protocol::OpenAiChat,
+            original.clone(),
+            &canonical,
+            Ok(usage),
+            "public-model",
+            "request-compat",
+        )
+        .unwrap()
+        else {
+            panic!("Expected a full Chat response");
+        };
+        assert_eq!(body, original);
+        assert_eq!(result.unwrap(), usage);
+        for protocol in [Protocol::Anthropic, Protocol::Gemini] {
+            assert!(
+                encode_full_response(
+                    protocol,
+                    original.clone(),
+                    &canonical,
+                    Ok(usage),
+                    "public-model",
+                    "request-compat",
+                )
+                .is_err()
+            );
+        }
+    }
 
     #[test]
     fn openai_response_is_rebuilt_as_anthropic_without_upstream_identity() {

@@ -1,6 +1,7 @@
 use std::fmt;
 
 use af_domain::{Role, UpstreamError};
+use serde_json::Value;
 
 use crate::{ResponsesCompactionItem, Usage};
 
@@ -103,6 +104,13 @@ pub enum CanonicalStreamEvent {
         text: String,
         /// 上游提供的推理签名。
         signature: Option<String>,
+    },
+    /// 当前候选的 token 概率增量，保留同协议扩展字段。
+    LogprobsDelta {
+        /// 候选结果索引。
+        choice_index: u32,
+        /// 当前分片携带的概率明细。
+        logprobs: Value,
     },
     /// 工具调用开始。
     ToolCallStart {
@@ -208,6 +216,11 @@ impl fmt::Debug for CanonicalStreamEvent {
                 .field("content_index", content_index)
                 .field("text", &Redacted)
                 .field("signature", &Redacted)
+                .finish(),
+            Self::LogprobsDelta { choice_index, .. } => formatter
+                .debug_struct("LogprobsDelta")
+                .field("choice_index", choice_index)
+                .field("logprobs", &Redacted)
                 .finish(),
             Self::ToolCallStart {
                 choice_index,

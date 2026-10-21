@@ -21,7 +21,8 @@ use crate::openai_chat::{
         validate_call_id, validate_model, validate_tool_name, validate_value_shape,
     },
     parse_response::{
-        MAX_RESPONSE_CHOICES, convert_finish_reason, convert_usage, validate_response_id,
+        MAX_RESPONSE_CHOICES, convert_finish_reason, convert_usage, validate_logprobs,
+        validate_response_id, validate_service_tier,
     },
 };
 use crate::{CanonicalStreamEvent, ContentDelta, FinishReason};
@@ -160,18 +161,13 @@ impl OpenAiChatStreamDecoder {
             system_fingerprint,
             usage,
             moderation,
+            ..
         } = chunk;
         let _ = request_id;
         if !matches!(object, ChatStreamObjectWire::ChatCompletionChunk) || moderation.is_some() {
             return Err(ParseStreamError::UnsupportedFeature);
         }
-        let identity = StreamIdentity::new(
-            id,
-            model,
-            created,
-            service_tier.map(|tier| tier.as_str().to_owned()),
-            system_fingerprint,
-        )?;
+        let identity = StreamIdentity::new(id, model, created, service_tier, system_fingerprint)?;
         match &self.identity {
             None => self.identity = Some(identity),
             Some(expected) if expected.compatible_with(&identity) => {
@@ -220,8 +216,8 @@ impl OpenAiChatStreamDecoder {
             finish_reason,
             logprobs,
         } = choice;
-        if logprobs.is_some() {
-            return Err(ParseStreamError::UnsupportedFeature);
+        if let Some(logprobs) = &logprobs {
+            validate_logprobs(logprobs).map_err(map_response_error)?;
         }
         if !self.choices.contains_key(&index) {
             if self.choices.len() >= MAX_RESPONSE_CHOICES {
@@ -239,13 +235,24 @@ impl OpenAiChatStreamDecoder {
             .map_err(map_response_error)?;
         if state.finished {
             // 部分兼容服务在最终用量分片中重发相同终态；不重发正文或结束事件。
-            if usage_trailer && reason == state.finish_reason && empty_usage_delta(&delta) {
+            if usage_trailer
+                && reason == state.finish_reason
+                && empty_usage_delta(&delta)
+                && logprobs.is_none()
+            {
                 return Ok(());
             }
             return Err(ParseStreamError::InvalidSequence);
         }
 
         decode_delta(index, delta, state, &mut self.totals, output)?;
+        if let Some(logprobs) = logprobs {
+            require_started(state)?;
+            output.push(CanonicalStreamEvent::LogprobsDelta {
+                choice_index: index,
+                logprobs,
+            });
+        }
         if let Some(reason) = reason {
             finish_choice(index, reason, state, &mut self.totals, output)?;
         }
@@ -315,6 +322,9 @@ impl StreamIdentity {
         validate_model(&model).map_err(map_request_error)?;
         if created < 0 {
             return Err(ParseStreamError::InvalidValue);
+        }
+        if let Some(tier) = &service_tier {
+            validate_service_tier(tier).map_err(map_response_error)?;
         }
         if system_fingerprint.as_ref().is_some_and(|value| {
             value.is_empty()
@@ -722,9 +732,7 @@ fn uses_known_unsupported_feature(value: &Value) -> bool {
                 let Some(choice) = choice.as_object() else {
                     return false;
                 };
-                if choice.get("logprobs").is_some_and(|value| !value.is_null())
-                    || choice.get("finish_reason").and_then(Value::as_str) == Some("function_call")
-                {
+                if choice.get("finish_reason").and_then(Value::as_str) == Some("function_call") {
                     return true;
                 }
                 let Some(delta) = choice.get("delta").and_then(Value::as_object) else {

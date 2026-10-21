@@ -14,6 +14,8 @@ pub enum StreamCapability {
     MultipleChoices,
     /// 非零候选索引。
     ArbitraryChoiceIndex,
+    /// OpenAI Chat token 概率增量。
+    LogprobsDelta,
     /// 文本增量。
     TextDelta,
     /// 图片增量。
@@ -61,6 +63,7 @@ impl StreamCapability {
         Self::MessageStart,
         Self::MultipleChoices,
         Self::ArbitraryChoiceIndex,
+        Self::LogprobsDelta,
         Self::TextDelta,
         Self::ImageDelta,
         Self::AudioDelta,
@@ -94,6 +97,7 @@ impl fmt::Display for StreamCapability {
             Self::MessageStart => formatter.write_str("message.start"),
             Self::MultipleChoices => formatter.write_str("choices.multiple"),
             Self::ArbitraryChoiceIndex => formatter.write_str("choices.arbitrary_index"),
+            Self::LogprobsDelta => formatter.write_str("choices.logprobs_delta"),
             Self::TextDelta => formatter.write_str("content.text_delta"),
             Self::ImageDelta => formatter.write_str("content.image_delta"),
             Self::AudioDelta => formatter.write_str("content.audio_delta"),
@@ -136,6 +140,7 @@ pub(super) const OPENAI_CHAT: &[StreamCapability] = &[
     StreamCapability::MessageStart,
     StreamCapability::MultipleChoices,
     StreamCapability::ArbitraryChoiceIndex,
+    StreamCapability::LogprobsDelta,
     StreamCapability::TextDelta,
     StreamCapability::ReasoningDelta,
     StreamCapability::ToolCalls,
@@ -251,6 +256,10 @@ pub fn validate_stream_event_capabilities(
                 require(protocol, StreamCapability::ReasoningSignatures)?;
             }
             Ok(())
+        }
+        CanonicalStreamEvent::LogprobsDelta { choice_index, .. } => {
+            validate_choice_index(protocol, *choice_index)?;
+            require(protocol, StreamCapability::LogprobsDelta)
         }
         CanonicalStreamEvent::ToolCallStart { choice_index, .. }
         | CanonicalStreamEvent::ToolCallArgsDelta { choice_index, .. }
