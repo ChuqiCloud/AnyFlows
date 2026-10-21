@@ -42,7 +42,7 @@ use af_db::{
     CredentialStateRepository, SmartRouteRuntimeRepository,
 };
 use af_domain::{
-    AfError, ChannelType, ClientSimulationBodyPatchResult, ClientSimulationBodyProfile,
+    AfError, ChannelId, ChannelType, ClientSimulationBodyPatchResult, ClientSimulationBodyProfile,
     ConcurrencyLimit, CredentialId, CredentialQuotaDimension, GatewayPrincipal, GroupId, Operation,
     Protocol,
 };
