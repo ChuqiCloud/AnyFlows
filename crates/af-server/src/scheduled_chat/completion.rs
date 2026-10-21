@@ -82,6 +82,30 @@ impl Feedback {
 pub(super) struct Completion(pub(super) Option<Feedback>);
 
 impl GenerationCompletionHook for Completion {
+    fn on_delivery(
+        mut self: Box<Self>,
+        usage: Result<Usage, UsageResolutionError>,
+        outcome: af_relay::StreamDeliveryOutcome,
+    ) -> GenerationCompletionFuture {
+        Box::pin(async move {
+            if let Some(feedback) = self.0.take() {
+                feedback
+                    .finish(
+                        outcome == af_relay::StreamDeliveryOutcome::Completed
+                            && !matches!(usage, Err(UsageResolutionError::Interrupted)),
+                        matches!(
+                            outcome,
+                            af_relay::StreamDeliveryOutcome::ClientClosed
+                                | af_relay::StreamDeliveryOutcome::WriteTimeout
+                                | af_relay::StreamDeliveryOutcome::MaxDuration
+                                | af_relay::StreamDeliveryOutcome::Internal
+                        ),
+                    )
+                    .await;
+            }
+        })
+    }
+
     fn on_complete(
         mut self: Box<Self>,
         usage: Result<Usage, UsageResolutionError>,

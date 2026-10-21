@@ -1439,8 +1439,10 @@ impl PlannedChatExecution for ScheduledChatExecution {
                         .ok_or(AfError::Internal)
                 }
                 Ok(ChatResponse::Stream { body, usage }) => {
-                    let body =
-                        body.with_completion_hook(Box::new(completion::Completion(Some(feedback))));
+                    let body = af_relay::with_delivery_completion(
+                        body,
+                        Box::new(completion::Completion(Some(feedback))),
+                    );
                     let body = match user_permit {
                         Some(permit) => {
                             body.with_completion_hook(user_permit_completion_hook(permit))
