@@ -655,7 +655,10 @@ impl AdminRouteRecord {
             channels.push(AdminRouteChannelRecord {
                 id: RouteChannelId::new(channel.id).map_err(|_| internal_invariant())?,
                 channel_id: ChannelId::new(channel.channel_id).map_err(|_| internal_invariant())?,
-                credential_id: channel.credential_id.map(CredentialId::new).transpose()
+                credential_id: channel
+                    .credential_id
+                    .map(CredentialId::new)
+                    .transpose()
                     .map_err(|_| internal_invariant())?,
                 priority: channel.priority,
                 weight: channel.weight,
@@ -694,14 +697,25 @@ fn validate_write_record(record: &AdminRouteWriteRecord) -> Result<(), AdminRout
     {
         return Err(AdminRouteRepositoryError::Invariant);
     }
-    if record.channels.iter().any(|item| item.credential_id.is_none() && record.channels.iter().filter(|other| other.channel_id == item.channel_id).count() > 1) {
+    if record.channels.iter().any(|item| {
+        item.credential_id.is_none()
+            && record
+                .channels
+                .iter()
+                .filter(|other| other.channel_id == item.channel_id)
+                .count()
+                > 1
+    }) {
         return Err(AdminRouteRepositoryError::Invariant);
     }
     let mut seen = HashSet::with_capacity(record.channels.len());
     for channel in &record.channels {
         if channel.priority < 0
             || channel.weight < 0
-            || !seen.insert((channel.channel_id.get(), channel.credential_id.map(CredentialId::get)))
+            || !seen.insert((
+                channel.channel_id.get(),
+                channel.credential_id.map(CredentialId::get),
+            ))
         {
             return Err(AdminRouteRepositoryError::Invariant);
         }
@@ -833,7 +847,9 @@ async fn validate_channel_references(
         .collect::<HashMap<_, _>>();
     if desired.iter().any(|item| {
         !channel_set.contains(&item.channel_id.get())
-            || item.credential_id.is_some_and(|id| credential_channels.get(&id.get()) != Some(&item.channel_id.get()))
+            || item.credential_id.is_some_and(|id| {
+                credential_channels.get(&id.get()) != Some(&item.channel_id.get())
+            })
     }) {
         return Err(AdminRouteRepositoryError::InvalidReference);
     }
@@ -884,7 +900,10 @@ async fn sync_route_channels(
         .map(|row| ((row.channel_id, row.credential_id), row))
         .collect::<HashMap<_, _>>();
     for item in desired {
-        let key = (item.channel_id.get(), item.credential_id.map(CredentialId::get));
+        let key = (
+            item.channel_id.get(),
+            item.credential_id.map(CredentialId::get),
+        );
         if let Some(row) = existing_by_key.remove(&key) {
             route_channels::Entity::update_many()
                 .filter(route_channels::Column::Id.eq(row.id))

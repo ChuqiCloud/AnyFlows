@@ -1,7 +1,14 @@
-use std::{collections::{BTreeMap, BTreeSet}, fmt, future::Future, pin::Pin, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+};
 
 use af_cache::{
-    MAX_HEALTH_BATCH_SIZE, RedisHealthEvent, RedisHealthFailure, RedisHealthSnapshot, RedisHealthStore, RedisHealthTarget,
+    MAX_HEALTH_BATCH_SIZE, RedisHealthEvent, RedisHealthFailure, RedisHealthSnapshot,
+    RedisHealthStore, RedisHealthTarget,
 };
 use af_domain::{ChannelId, CredentialId, RateLimitScope, UpstreamError};
 use af_relay::RelayAttemptReport;
@@ -250,9 +257,15 @@ fn append_failure(
         }
         UpstreamError::Network { .. } | UpstreamError::ServerError { .. } => {
             let failure = health_failure(error).expect("网络和服务端错误必须有闭合健康分类");
-            events.push(RedisHealthEvent::failed(RedisHealthTarget::Credential(target.credential_id()), failure));
+            events.push(RedisHealthEvent::failed(
+                RedisHealthTarget::Credential(target.credential_id()),
+                failure,
+            ));
             if !target.pool_mode() {
-                events.push(RedisHealthEvent::failed(RedisHealthTarget::Channel(target.channel_id()), failure));
+                events.push(RedisHealthEvent::failed(
+                    RedisHealthTarget::Channel(target.channel_id()),
+                    failure,
+                ));
             }
         }
     }
@@ -299,33 +312,58 @@ async fn load_exact_states(
     targets: &[RedisHealthTarget],
 ) -> Result<Vec<RuntimeHealthState>, SchedulerHealthRuntimeError> {
     // Shadows share authentication health; read each target once and restore input order.
-    let unique = targets.iter().copied().collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>();
+    let unique = targets
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
     let mut states_by_target = BTreeMap::new();
     for batch in unique.chunks(MAX_HEALTH_BATCH_SIZE) {
         let states = store.states(batch).await?;
-        if states.len() != batch.len() || states.iter().zip(batch).any(|(state, target)| state.target != *target) {
+        if states.len() != batch.len()
+            || states
+                .iter()
+                .zip(batch)
+                .any(|(state, target)| state.target != *target)
+        {
             return Err(SchedulerHealthRuntimeError::Invariant);
         }
         states_by_target.extend(states.into_iter().map(|state| (state.target, state)));
     }
-    targets.iter().map(|target| states_by_target.get(target).copied().ok_or(SchedulerHealthRuntimeError::Invariant)).collect()
+    targets
+        .iter()
+        .map(|target| {
+            states_by_target
+                .get(target)
+                .copied()
+                .ok_or(SchedulerHealthRuntimeError::Invariant)
+        })
+        .collect()
 }
 
 pub(crate) struct AdminCredentialHealthRuntime(pub(crate) Arc<dyn SchedulerHealthStore>);
 
 impl af_http::AdminCredentialHealthReader for AdminCredentialHealthRuntime {
-    fn snapshots<'a>(&'a self, ids: &'a [(CredentialId, CredentialId)]) -> af_http::CredentialHealthFuture<'a> {
+    fn snapshots<'a>(
+        &'a self,
+        ids: &'a [(CredentialId, CredentialId)],
+    ) -> af_http::CredentialHealthFuture<'a> {
         Box::pin(async move {
             let states = load_credential_health(&self.0, ids).await.map_err(|_| ())?;
-            ids.iter().map(|(id, _)| {
-                let state = states.get(&id.get()).ok_or(())?;
-                Ok(af_http::CredentialHealthSnapshot {
-                    credential_id: id.get(),
-                    penalty_micros: state.penalty_micros,
-                    cooling: state.cooling,
-                    weight_multiplier_micros: crate::credential_order::health_weight_multiplier(state.penalty_micros),
+            ids.iter()
+                .map(|(id, _)| {
+                    let state = states.get(&id.get()).ok_or(())?;
+                    Ok(af_http::CredentialHealthSnapshot {
+                        credential_id: id.get(),
+                        penalty_micros: state.penalty_micros,
+                        cooling: state.cooling,
+                        weight_multiplier_micros: crate::credential_order::health_weight_multiplier(
+                            state.penalty_micros,
+                        ),
+                    })
                 })
-            }).collect()
+                .collect()
         })
     }
 }

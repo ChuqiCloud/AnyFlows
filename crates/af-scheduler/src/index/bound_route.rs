@@ -101,7 +101,14 @@ fn build_bound_route_plan(
         }
     }
 
-    if bindings.iter().any(|binding| binding.credential_id.is_none() && bindings.iter().filter(|other| other.channel_id == binding.channel_id).count() > 1) {
+    if bindings.iter().any(|binding| {
+        binding.credential_id.is_none()
+            && bindings
+                .iter()
+                .filter(|other| other.channel_id == binding.channel_id)
+                .count()
+                > 1
+    }) {
         return Err(WeightedRetryPlanError::Invariant.into());
     }
 
@@ -134,7 +141,11 @@ fn build_bound_route_plan(
             .collect::<BTreeSet<_>>();
         let retained = channel_bindings
             .into_iter()
-            .filter(|binding| binding.credential_id.is_none_or(|id| available_credentials.contains(&id.get())))
+            .filter(|binding| {
+                binding
+                    .credential_id
+                    .is_none_or(|id| available_credentials.contains(&id.get()))
+            })
             .collect::<Vec<_>>();
         let Some(effective_priority) = retained.iter().map(|binding| binding.priority).max() else {
             continue;
@@ -148,7 +159,9 @@ fn build_bound_route_plan(
         let mut route_bindings = BTreeMap::new();
         for binding in &retained {
             for credential in target.credentials().iter().filter(|credential| {
-                binding.credential_id.is_none_or(|id| id.get() == credential.credential_id())
+                binding
+                    .credential_id
+                    .is_none_or(|id| id.get() == credential.credential_id())
             }) {
                 let scheduling_values = if binding.credential_id.is_some() {
                     (binding.priority, binding.weight)
@@ -156,7 +169,11 @@ fn build_bound_route_plan(
                     (credential.priority(), credential.weight())
                 };
                 scheduling.insert(credential.credential_id(), scheduling_values);
-                route_bindings.insert(CredentialId::new(credential.credential_id()).map_err(|_| WeightedRetryPlanError::Invariant)?, binding.route_channel_id);
+                route_bindings.insert(
+                    CredentialId::new(credential.credential_id())
+                        .map_err(|_| WeightedRetryPlanError::Invariant)?,
+                    binding.route_channel_id,
+                );
             }
         }
         let last_selected_at_millis = retained

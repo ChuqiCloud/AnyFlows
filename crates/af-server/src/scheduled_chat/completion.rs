@@ -1,6 +1,8 @@
 use super::*;
 use af_protocol::Usage;
-use af_relay::{GenerationCompletionFuture, GenerationCompletionHook, RelayAttemptReport, UsageResolutionError};
+use af_relay::{
+    GenerationCompletionFuture, GenerationCompletionHook, RelayAttemptReport, UsageResolutionError,
+};
 
 pub(super) struct Feedback {
     pub(super) report: RelayAttemptReport,
@@ -26,24 +28,49 @@ impl Feedback {
                 // Downstream cancellation does not lower the upstream Key's health.
                 self.report.discard_pending_success();
             } else {
-                self.report.reject_success(af_domain::UpstreamError::network(af_domain::NetworkFailureKind::ResponseBody));
+                self.report
+                    .reject_success(af_domain::UpstreamError::network(
+                        af_domain::NetworkFailureKind::ResponseBody,
+                    ));
             }
         }
         let report = &self.report;
         record_client_simulation_metrics(report);
         if let Some(capture) = self.debug_trace {
-            capture.submit(report, &self.attempt_targets, succeeded, self.started.elapsed());
+            capture.submit(
+                report,
+                &self.attempt_targets,
+                succeeded,
+                self.started.elapsed(),
+            );
         }
         tokio::join!(
-            persist_credential_feedback(&self.credential_states, &self.scheduler, &self.attempt_targets, report),
+            persist_credential_feedback(
+                &self.credential_states,
+                &self.scheduler,
+                &self.attempt_targets,
+                report
+            ),
             persist_scheduler_health_feedback(self.health.as_ref(), &self.attempt_targets, report),
-            persist_channel_auto_ban_feedback(self.channel_states.as_ref(), &self.scheduler, &self.auto_ban_targets, report),
-            persist_feedback(self.smart_route_feedback.as_ref(), &self.route_channel_ids, report),
+            persist_channel_auto_ban_feedback(
+                self.channel_states.as_ref(),
+                &self.scheduler,
+                &self.auto_ban_targets,
+                report
+            ),
+            persist_feedback(
+                self.smart_route_feedback.as_ref(),
+                &self.route_channel_ids,
+                report
+            ),
         );
         if succeeded
             && let (Some(store), Some(scope), Some(channel)) = (
-                self.sticky_sessions.as_ref(), self.session_scope.as_ref(),
-                report.successful_candidate_index().and_then(|index| self.attempt_targets.get(index)),
+                self.sticky_sessions.as_ref(),
+                self.session_scope.as_ref(),
+                report
+                    .successful_candidate_index()
+                    .and_then(|index| self.attempt_targets.get(index)),
             )
             && let Err(error) = store.bind(scope.as_str(), channel.channel_id().get()).await
         {
@@ -55,11 +82,19 @@ impl Feedback {
 pub(super) struct Completion(pub(super) Option<Feedback>);
 
 impl GenerationCompletionHook for Completion {
-    fn on_complete(mut self: Box<Self>, usage: Result<Usage, UsageResolutionError>) -> GenerationCompletionFuture {
+    fn on_complete(
+        mut self: Box<Self>,
+        usage: Result<Usage, UsageResolutionError>,
+    ) -> GenerationCompletionFuture {
         Box::pin(async move {
             if let Some(feedback) = self.0.take() {
                 // A completed stream can lack reliable usage without an upstream failure.
-                feedback.finish(!matches!(usage, Err(UsageResolutionError::Interrupted)), false).await;
+                feedback
+                    .finish(
+                        !matches!(usage, Err(UsageResolutionError::Interrupted)),
+                        false,
+                    )
+                    .await;
             }
         })
     }

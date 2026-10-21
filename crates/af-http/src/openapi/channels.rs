@@ -14,9 +14,8 @@ use crate::{
     openapi::schema::{
         AdminChannelProtocolSchema, AdminChannelTypeSchema, AdminRoutingStatusSchema,
         AdminRoutingWriteStatusSchema, ClientSimulationBodyProfileSchema,
-        ClientSimulationProfileSchema, ResponsesCompactModeSchema,
-        ResponsesCompactProbeResultSchema,
-        CredentialSelectionStrategySchema,
+        ClientSimulationProfileSchema, CredentialSelectionStrategySchema,
+        ResponsesCompactModeSchema, ResponsesCompactProbeResultSchema,
     },
 };
 

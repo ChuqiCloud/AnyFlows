@@ -185,8 +185,11 @@ impl AdminRouteChannelWriteRequest {
     fn into_command(self) -> Result<AdminRouteChannelCommand, ManagementError> {
         let channel_id =
             ChannelId::new(self.channel_id).map_err(|_| ManagementError::InvalidRequest)?;
-        let credential_id =
-            self.credential_id.map(CredentialId::new).transpose().map_err(|_| ManagementError::InvalidRequest)?;
+        let credential_id = self
+            .credential_id
+            .map(CredentialId::new)
+            .transpose()
+            .map_err(|_| ManagementError::InvalidRequest)?;
         AdminRouteChannelCommand::new(
             channel_id,
             credential_id,

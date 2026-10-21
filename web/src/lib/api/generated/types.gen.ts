@@ -126,6 +126,7 @@ export type AdminChannel = {
     relay_race_width?: number | null;
     relay_retry_limit?: number | null;
     relay_retry_delay_ms?: number | null;
+    credential_strategy: null | CredentialSelectionStrategy;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -172,6 +173,7 @@ export type AdminChannelCreateRequest = {
     relay_race_width?: number | null;
     relay_retry_limit?: number | null;
     relay_retry_delay_ms?: number | null;
+    credential_strategy?: null | CredentialSelectionStrategy;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -221,6 +223,7 @@ export type AdminChannelUpdateRequest = {
     relay_race_width?: number | null;
     relay_retry_limit?: number | null;
     relay_retry_delay_ms?: number | null;
+    credential_strategy?: null | CredentialSelectionStrategy;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -265,6 +268,13 @@ export type AdminCredential = {
     created_at: number;
     updated_at: number;
 };
+export type AdminCredentialBatchDeleteRequest = {
+    credential_ids: Array<number>;
+};
+export type AdminCredentialBatchDeleteResponse = {
+    deleted: Array<number>;
+    failed: Array<number>;
+};
 export type AdminCredentialCreateRequest = {
     kind: 'public' | 'api_key' | 'oauth' | 'bedrock' | 'service_account';
     secret: null | AdminCredentialSecret;
@@ -296,6 +306,7 @@ export type AdminCredentialImportItem = {
 };
 export type AdminCredentialImportRequest = {
     files: Array<AdminCredentialImportFile>;
+    kind?: string | null;
 };
 export type AdminCredentialImportResponse = {
     total: number;
@@ -1167,7 +1178,7 @@ export type AdminRoute = {
 export type AdminRouteChannelResponse = {
     id: number;
     channel_id: number;
-    credential_id: number;
+    credential_id?: number | null;
     priority: number;
     weight: number;
     enabled: boolean;
@@ -1181,7 +1192,7 @@ export type AdminRouteChannelResponse = {
 };
 export type AdminRouteChannelWriteRequest = {
     channel_id: number;
-    credential_id: number;
+    credential_id?: number | null;
     priority: number;
     weight: number;
     enabled: boolean;
@@ -1627,6 +1638,20 @@ export type ClientSimulationBodyPatchResult = 'applied' | 'rejected';
 export type ClientSimulationBodyProfile = 'anthropic_cli_system_date_v1';
 export type ClientSimulationProfile = 'anthropic_cli_headers_v1';
 export type ClientSimulationResult = 'not_applied' | 'applied' | 'failed';
+export type CredentialHealthRequest = {
+    credential_ids: Array<number>;
+};
+export type CredentialHealthResponse = {
+    available: boolean;
+    credentials: Array<CredentialHealthSnapshot>;
+};
+export type CredentialHealthSnapshot = {
+    credential_id: number;
+    penalty_micros: number;
+    cooling: boolean;
+    weight_multiplier_micros: number;
+};
+export type CredentialSelectionStrategy = 'weighted' | 'round_robin' | 'priority';
 export type CredentialUsageSnapshot = {
     status: CredentialUsageStatus;
     windows: Array<CredentialUsageWindow>;
@@ -2528,6 +2553,7 @@ export type AdminChannelCreateRequestWritable = {
     relay_race_width?: number | null;
     relay_retry_limit?: number | null;
     relay_retry_delay_ms?: number | null;
+    credential_strategy?: null | CredentialSelectionStrategy;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -2572,6 +2598,7 @@ export type AdminChannelUpdateRequestWritable = {
     relay_race_width?: number | null;
     relay_retry_limit?: number | null;
     relay_retry_delay_ms?: number | null;
+    credential_strategy?: null | CredentialSelectionStrategy;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -6220,6 +6247,45 @@ export type GetAdminCredentialUsageResponses = {
     200: CredentialUsageSnapshot;
 };
 export type GetAdminCredentialUsageResponse = GetAdminCredentialUsageResponses[keyof GetAdminCredentialUsageResponses];
+export type BatchDeleteAdminCredentialsData = {
+    body: AdminCredentialBatchDeleteRequest;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/batch-delete';
+};
+export type BatchDeleteAdminCredentialsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+};
+export type BatchDeleteAdminCredentialsError = BatchDeleteAdminCredentialsErrors[keyof BatchDeleteAdminCredentialsErrors];
+export type BatchDeleteAdminCredentialsResponses = {
+    200: AdminCredentialBatchDeleteResponse;
+};
+export type BatchDeleteAdminCredentialsResponse = BatchDeleteAdminCredentialsResponses[keyof BatchDeleteAdminCredentialsResponses];
+export type GetAdminCredentialHealthData = {
+    body: CredentialHealthRequest;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/health';
+};
+export type GetAdminCredentialHealthErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminCredentialHealthError = GetAdminCredentialHealthErrors[keyof GetAdminCredentialHealthErrors];
+export type GetAdminCredentialHealthResponses = {
+    200: CredentialHealthResponse;
+};
+export type GetAdminCredentialHealthResponse = GetAdminCredentialHealthResponses[keyof GetAdminCredentialHealthResponses];
 export type ListAdminCredentialProxiesData = {
     body?: never;
     path?: never;

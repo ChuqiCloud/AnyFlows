@@ -165,14 +165,23 @@ impl AdminRouteWriteFields {
         {
             return Err(AdminRouteWriteError::InvalidInput);
         }
-        if channels.iter().any(|item| item.credential_id.is_none() && channels.iter().filter(|other| other.channel_id == item.channel_id).count() > 1) {
+        if channels.iter().any(|item| {
+            item.credential_id.is_none()
+                && channels
+                    .iter()
+                    .filter(|other| other.channel_id == item.channel_id)
+                    .count()
+                    > 1
+        }) {
             return Err(AdminRouteWriteError::InvalidInput);
         }
         let mut seen = std::collections::HashSet::with_capacity(channels.len());
-        if channels
-            .iter()
-            .any(|channel| !seen.insert((channel.channel_id.get(), channel.credential_id.map(CredentialId::get))))
-        {
+        if channels.iter().any(|channel| {
+            !seen.insert((
+                channel.channel_id.get(),
+                channel.credential_id.map(CredentialId::get),
+            ))
+        }) {
             return Err(AdminRouteWriteError::InvalidInput);
         }
         Ok(Self {

@@ -341,7 +341,10 @@ impl SmartRouteRuntimeRepository {
                 SmartRouteRuntimeCandidate::new(
                     RouteChannelId::new(row.id).map_err(|_| invariant())?,
                     ChannelId::new(row.channel_id).map_err(|_| invariant())?,
-                    row.credential_id.map(CredentialId::new).transpose().map_err(|_| invariant())?,
+                    row.credential_id
+                        .map(CredentialId::new)
+                        .transpose()
+                        .map_err(|_| invariant())?,
                     row.priority,
                     u32::try_from(row.weight).map_err(|_| invariant())?,
                     row.last_selected_at

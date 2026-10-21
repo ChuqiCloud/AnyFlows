@@ -2617,9 +2617,11 @@ impl Bootstrap<Supervised> {
             .merge(af_http::build_credential_health_router(
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
                 Arc::clone(&self.stage.infrastructure.admin_channel_reader),
-                self.stage.scheduler_health.as_ref().map(|store| Arc::new(
-                    crate::health_runtime::AdminCredentialHealthRuntime(Arc::clone(store))
-                ) as Arc<dyn af_http::AdminCredentialHealthReader>),
+                self.stage.scheduler_health.as_ref().map(|store| {
+                    Arc::new(crate::health_runtime::AdminCredentialHealthRuntime(
+                        Arc::clone(store),
+                    )) as Arc<dyn af_http::AdminCredentialHealthReader>
+                }),
             ))
             .merge(af_http::build_account_verification_router(
                 Arc::new(

@@ -1258,26 +1258,50 @@ impl RelayStateMachine {
             if response.status().is_success() {
                 if let Some(protocol) = candidate.response_validation {
                     match crate::response_readiness::validate(
-                        response, protocol, request.response_mode, candidate.first_output_timeout,
-                    ).await {
+                        response,
+                        protocol,
+                        request.response_mode,
+                        candidate.first_output_timeout,
+                    )
+                    .await
+                    {
                         Ok(ready) => response = ready,
                         Err(error) => {
                             release_attempt_permit(permit).await;
-                            failures.push(RelayAttemptFailure::new(index, error, attempt_started_at.elapsed())
-                                .with_diagnostic(diagnostic).with_client_simulation(client_simulation));
+                            failures.push(
+                                RelayAttemptFailure::new(
+                                    index,
+                                    error,
+                                    attempt_started_at.elapsed(),
+                                )
+                                .with_diagnostic(diagnostic)
+                                .with_client_simulation(client_simulation),
+                            );
                             last_error = Some(RelayError::Upstream(error));
-                            let limit = candidate.retry_limit.unwrap_or(self.execution_policy.retry_limit);
-                            if (is_same_candidate_retryable(error) || error == UpstreamError::ProtocolError)
-                                && reserve_candidate_retry(&mut retry_counts, index, limit) {
-                                let delay = candidate.retry_delay_ms.map_or(self.execution_policy.retry_delay, Duration::from_millis);
-                                if !delay.is_zero() { sleep(delay).await; }
+                            let limit = candidate
+                                .retry_limit
+                                .unwrap_or(self.execution_policy.retry_limit);
+                            if (is_same_candidate_retryable(error)
+                                || error == UpstreamError::ProtocolError)
+                                && reserve_candidate_retry(&mut retry_counts, index, limit)
+                            {
+                                let delay = candidate.retry_delay_ms.map_or(
+                                    self.execution_policy.retry_delay,
+                                    Duration::from_millis,
+                                );
+                                if !delay.is_zero() {
+                                    sleep(delay).await;
+                                }
                                 continue;
                             }
                             if is_retryable(error) || error == UpstreamError::ProtocolError {
                                 index = self.next_candidate_index(index, error);
                                 continue;
                             }
-                            return Err(RelayExecutionError::new(RelayError::Upstream(error), failures));
+                            return Err(RelayExecutionError::new(
+                                RelayError::Upstream(error),
+                                failures,
+                            ));
                         }
                     }
                 }
@@ -1399,7 +1423,12 @@ impl RelayStateMachine {
 
     fn next_candidate_index(&self, index: usize, error: UpstreamError) -> usize {
         if is_credential_scoped(error)
-            || matches!(error, UpstreamError::Overloaded { .. } | UpstreamError::ServerError { .. } | UpstreamError::ProtocolError)
+            || matches!(
+                error,
+                UpstreamError::Overloaded { .. }
+                    | UpstreamError::ServerError { .. }
+                    | UpstreamError::ProtocolError
+            )
             || matches!(error, UpstreamError::Network { kind } if kind != af_domain::NetworkFailureKind::Policy)
         {
             if self.candidates[index].adaptor.channel_type() == af_domain::ChannelType::OpenCode

@@ -156,7 +156,9 @@ fn collect_import_value(value: &serde_json::Value, output: &mut Vec<ImportedOAut
         serde_json::Value::Object(object) => {
             for key in ["keys", "credentials"] {
                 if let Some(items) = object.get(key).and_then(serde_json::Value::as_array) {
-                    items.iter().for_each(|item| collect_import_value(item, output));
+                    items
+                        .iter()
+                        .for_each(|item| collect_import_value(item, output));
                     return;
                 }
             }
@@ -179,8 +181,30 @@ fn collect_import_value(value: &serde_json::Value, output: &mut Vec<ImportedOAut
                 .and_then(serde_json::Value::as_object);
             let nested = object.get("tokens").and_then(serde_json::Value::as_object);
             let source = nested.or(credentials).unwrap_or(object);
-            let access_token = first_string(source, &["access_token", "accessToken", "api_key", "apiKey", "key", "token"])
-                .or_else(|| first_string(object, &["access_token", "accessToken", "api_key", "apiKey", "key", "token"]));
+            let access_token = first_string(
+                source,
+                &[
+                    "access_token",
+                    "accessToken",
+                    "api_key",
+                    "apiKey",
+                    "key",
+                    "token",
+                ],
+            )
+            .or_else(|| {
+                first_string(
+                    object,
+                    &[
+                        "access_token",
+                        "accessToken",
+                        "api_key",
+                        "apiKey",
+                        "key",
+                        "token",
+                    ],
+                )
+            });
             let Some(access_token) = access_token else {
                 return;
             };
@@ -480,9 +504,20 @@ pub(crate) async fn import_admin_credentials(
         .get_channel(authentication.principal(), channel_id)
         .await
         .map_err(map_channel_read_error)?;
-    let kind = request.kind.unwrap_or(if channel.channel_type() == ChannelType::OpenAi && channel.protocol() == Protocol::OpenAiResponses { CredentialKind::Oauth } else { CredentialKind::ApiKey });
+    let kind = request.kind.unwrap_or(
+        if channel.channel_type() == ChannelType::OpenAi
+            && channel.protocol() == Protocol::OpenAiResponses
+        {
+            CredentialKind::Oauth
+        } else {
+            CredentialKind::ApiKey
+        },
+    );
     if !matches!(kind, CredentialKind::ApiKey | CredentialKind::Oauth)
-        || (kind == CredentialKind::Oauth && (channel.channel_type() != ChannelType::OpenAi || channel.protocol() != Protocol::OpenAiResponses)) {
+        || (kind == CredentialKind::Oauth
+            && (channel.channel_type() != ChannelType::OpenAi
+                || channel.protocol() != Protocol::OpenAiResponses))
+    {
         return Err(ManagementError::InvalidRequest);
     }
     let writer = state
@@ -541,13 +576,25 @@ pub(crate) async fn import_admin_credentials(
             let secret_result = if kind == CredentialKind::ApiKey {
                 AdminCredentialSecret::api_key(token.access_token)
             } else {
-                PlainOAuthCredential::new(token.access_token, token.refresh_token, token.expires_at_epoch_seconds, token.scope).map(AdminCredentialSecret::oauth_bundle)
+                PlainOAuthCredential::new(
+                    token.access_token,
+                    token.refresh_token,
+                    token.expires_at_epoch_seconds,
+                    token.scope,
+                )
+                .map(AdminCredentialSecret::oauth_bundle)
             };
             let secret = match secret_result {
                 Ok(secret) => secret,
                 Err(_) => {
                     response.failed += 1;
-                    response.items.push(AdminCredentialImportItem { file: file.name.clone(), index, action: "failed", credential_id: None, message: "凭据格式无效" });
+                    response.items.push(AdminCredentialImportItem {
+                        file: file.name.clone(),
+                        index,
+                        action: "failed",
+                        credential_id: None,
+                        message: "凭据格式无效",
+                    });
                     continue;
                 }
             };
@@ -566,8 +613,12 @@ pub(crate) async fn import_admin_credentials(
                 AdminCredentialQuotaDimension::Global,
                 None,
                 (kind == CredentialKind::Oauth).then(|| "codex".to_owned()),
-                (kind == CredentialKind::Oauth).then_some(token.account_key).flatten(),
-                (kind == CredentialKind::Oauth).then_some(token.project_id).flatten(),
+                (kind == CredentialKind::Oauth)
+                    .then_some(token.account_key)
+                    .flatten(),
+                (kind == CredentialKind::Oauth)
+                    .then_some(token.project_id)
+                    .flatten(),
             ) {
                 Ok(command) => command,
                 Err(_) => {
@@ -789,21 +840,42 @@ pub(crate) async fn batch_delete_admin_credentials(
     if request.credential_ids.is_empty() || request.credential_ids.len() > MAX_IMPORT_ITEMS {
         return Err(ManagementError::InvalidRequest);
     }
-    let ids = request.credential_ids.into_iter().map(|id| CredentialId::new(id)
-        .map_err(|_| ManagementError::InvalidRequest)).collect::<Result<std::collections::BTreeSet<_>, _>>()?;
+    let ids = request
+        .credential_ids
+        .into_iter()
+        .map(|id| CredentialId::new(id).map_err(|_| ManagementError::InvalidRequest))
+        .collect::<Result<std::collections::BTreeSet<_>, _>>()?;
     let principal = authentication.principal();
-    let reader = state.admin_channel_reader.as_ref().ok_or(ManagementError::Internal)?;
-    let writer = state.admin_channel_writer.as_ref().ok_or(ManagementError::Internal)?;
+    let reader = state
+        .admin_channel_reader
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let writer = state
+        .admin_channel_writer
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
     let mut credentials = Vec::with_capacity(ids.len());
     for id in ids {
-        credentials.push(reader.get_credential(principal, channel_id, id).await.map_err(map_channel_read_error)?);
+        credentials.push(
+            reader
+                .get_credential(principal, channel_id, id)
+                .await
+                .map_err(map_channel_read_error)?,
+        );
     }
     // 先删除影子，避免同批次母凭据级联后把影子误报为失败。
     credentials.sort_by_key(|item| (item.parent_id().is_none(), item.credential_id()));
-    let mut response = AdminCredentialBatchDeleteResponse { deleted: Vec::new(), failed: Vec::new() };
+    let mut response = AdminCredentialBatchDeleteResponse {
+        deleted: Vec::new(),
+        failed: Vec::new(),
+    };
     for credential in credentials {
         let id = credential.credential_id();
-        if writer.delete_credential(principal, channel_id, id).await.is_ok() {
+        if writer
+            .delete_credential(principal, channel_id, id)
+            .await
+            .is_ok()
+        {
             response.deleted.push(id.get());
         } else {
             response.failed.push(id.get());

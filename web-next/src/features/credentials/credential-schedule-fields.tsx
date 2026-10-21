@@ -25,11 +25,6 @@ export function CredentialScheduleFields({ form, credential, mode, disabled }: {
     { key: 'enabled', label: t('credentials.status.enabled'), isDisabled: false },
     { key: 'disabled', label: t('credentials.status.disabled'), isDisabled: false },
   ]
-  const multiKeyModeItems = [
-    { key: 'none', label: t('credentials.schedule.modeNone') },
-    { key: 'random', label: t('credentials.schedule.modeRandom') },
-    { key: 'round_robin', label: t('credentials.schedule.modeRoundRobin') },
-  ]
 
   return (
     <div className="grid gap-3">

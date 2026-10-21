@@ -59,8 +59,8 @@ use crate::management_channel_writes::{
 };
 use crate::management_channels::{get_admin_channel, list_admin_channels};
 use crate::management_credential_writes::{
-    batch_delete_admin_credentials, create_admin_credential, delete_admin_credential, export_admin_credentials,
-    import_admin_credentials, update_admin_credential,
+    batch_delete_admin_credentials, create_admin_credential, delete_admin_credential,
+    export_admin_credentials, import_admin_credentials, update_admin_credential,
 };
 use crate::management_credentials::{get_admin_credential, list_admin_credentials};
 use crate::management_dashboard::get_admin_dashboard;

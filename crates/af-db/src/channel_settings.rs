@@ -78,7 +78,10 @@ impl RelayChannelSettings {
             credential_strategy: None,
         }
     }
-    pub const fn with_credential_strategy(mut self, strategy: Option<CredentialSelectionStrategy>) -> Self {
+    pub const fn with_credential_strategy(
+        mut self,
+        strategy: Option<CredentialSelectionStrategy>,
+    ) -> Self {
         self.credential_strategy = strategy;
         self
     }
@@ -118,7 +121,10 @@ impl RelayChannelSettingsPatch {
         }
     }
 
-    pub const fn with_credential_strategy(mut self, strategy: Option<Option<CredentialSelectionStrategy>>) -> Self {
+    pub const fn with_credential_strategy(
+        mut self,
+        strategy: Option<Option<CredentialSelectionStrategy>>,
+    ) -> Self {
         self.credential_strategy = strategy;
         self
     }
@@ -127,11 +133,15 @@ impl RelayChannelSettingsPatch {
             Some(settings.race_width),
             Some(settings.retry_limit),
             Some(settings.retry_delay_ms),
-        ).with_credential_strategy(Some(settings.credential_strategy))
+        )
+        .with_credential_strategy(Some(settings.credential_strategy))
     }
 
     pub const fn is_empty(self) -> bool {
-        self.race_width.is_none() && self.retry_limit.is_none() && self.retry_delay_ms.is_none() && self.credential_strategy.is_none()
+        self.race_width.is_none()
+            && self.retry_limit.is_none()
+            && self.retry_delay_ms.is_none()
+            && self.credential_strategy.is_none()
     }
 }
 
@@ -163,8 +173,15 @@ pub(crate) fn set_relay_execution_settings_patch(
     set_optional(object, RELAY_RETRY_DELAY_MS_KEY, relay.retry_delay_ms);
     if let Some(strategy) = relay.credential_strategy {
         match strategy {
-            Some(strategy) => { object.insert(CREDENTIAL_STRATEGY_KEY.to_owned(), serde_json::to_value(strategy).map_err(|_| ChannelSettingsError)?); }
-            None => { object.remove(CREDENTIAL_STRATEGY_KEY); }
+            Some(strategy) => {
+                object.insert(
+                    CREDENTIAL_STRATEGY_KEY.to_owned(),
+                    serde_json::to_value(strategy).map_err(|_| ChannelSettingsError)?,
+                );
+            }
+            None => {
+                object.remove(CREDENTIAL_STRATEGY_KEY);
+            }
         }
     }
     Ok(())
@@ -226,7 +243,9 @@ pub(crate) fn relay_execution_settings_from_values(
         race_width: parse(race_width, MAX_RELAY_RACE_WIDTH, false)?.map(|v| v as usize),
         retry_limit: parse(retry_limit, MAX_RELAY_RETRY_LIMIT, true)?.map(|v| v as u8),
         retry_delay_ms: parse(retry_delay_ms, MAX_RELAY_RETRY_DELAY_MS, true)?,
-        credential_strategy: credential_strategy.map(|value| serde_json::from_value(value.clone()).map_err(|_| ChannelSettingsError)).transpose()?,
+        credential_strategy: credential_strategy
+            .map(|value| serde_json::from_value(value.clone()).map_err(|_| ChannelSettingsError))
+            .transpose()?,
     })
 }
 

@@ -111,16 +111,26 @@ pub(crate) fn apply_channel_credential_strategy(
     sequence: u64,
     health: Option<&BTreeMap<i64, RuntimeHealthState>>,
 ) {
-    if strategy == af_db::CredentialSelectionStrategy::Weighted { return; }
+    if strategy == af_db::CredentialSelectionStrategy::Weighted {
+        return;
+    }
     let rank = |credential: &SchedulerRuntimeCredentialRecord| {
-        (Reverse(credential.priority()), health.and_then(|states| states.get(&credential.credential_id())).map_or(0, |state| state.penalty_micros()))
+        (
+            Reverse(credential.priority()),
+            health
+                .and_then(|states| states.get(&credential.credential_id()))
+                .map_or(0, |state| state.penalty_micros()),
+        )
     };
     credentials.sort_by_key(|credential| (rank(credential), credential.credential_id()));
     if strategy == af_db::CredentialSelectionStrategy::RoundRobin {
         let mut offset = 0;
         while offset < credentials.len() {
             let key = rank(credentials[offset]);
-            let count = credentials[offset..].iter().take_while(|credential| rank(credential) == key).count();
+            let count = credentials[offset..]
+                .iter()
+                .take_while(|credential| rank(credential) == key)
+                .count();
             let rotation = (sequence % count as u64) as usize;
             credentials[offset..offset + count].rotate_left(rotation);
             offset += count;

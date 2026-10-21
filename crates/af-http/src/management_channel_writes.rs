@@ -358,11 +358,14 @@ impl AdminChannelCreateRequest {
         )
         .map_err(map_write_error)
         .map(|command| {
-            command.with_relay_execution_settings(af_admin::RelayChannelSettings::new(
-                self.relay_race_width,
-                self.relay_retry_limit,
-                self.relay_retry_delay_ms,
-            ).with_credential_strategy(self.credential_strategy))
+            command.with_relay_execution_settings(
+                af_admin::RelayChannelSettings::new(
+                    self.relay_race_width,
+                    self.relay_retry_limit,
+                    self.relay_retry_delay_ms,
+                )
+                .with_credential_strategy(self.credential_strategy),
+            )
         })
     }
 }
@@ -437,13 +440,15 @@ impl AdminChannelUpdateRequest {
                 self.credential_strategy.into_patch(),
             ) {
                 (None, None, None, None) => command,
-                (race_width, retry_limit, retry_delay_ms, credential_strategy) => {
-                    command.with_relay_execution_settings(af_admin::RelayChannelSettingsPatch::new(
-                        race_width,
-                        retry_limit,
-                        retry_delay_ms,
-                    ).with_credential_strategy(credential_strategy))
-                }
+                (race_width, retry_limit, retry_delay_ms, credential_strategy) => command
+                    .with_relay_execution_settings(
+                        af_admin::RelayChannelSettingsPatch::new(
+                            race_width,
+                            retry_limit,
+                            retry_delay_ms,
+                        )
+                        .with_credential_strategy(credential_strategy),
+                    ),
             },
         )
     }
