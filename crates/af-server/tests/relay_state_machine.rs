@@ -408,7 +408,12 @@ async fn invalid_success_body_retries_before_falling_back() {
     assert_eq!(response.report().successful_candidate_index(), Some(1));
     assert_eq!(response.report().failures().len(), 2);
     assert_eq!(
-        response.into_response().into_body().into_bytes().await.unwrap(),
+        response
+            .into_response()
+            .into_body()
+            .into_bytes()
+            .await
+            .unwrap(),
         Bytes::from_static(valid)
     );
     server.join().unwrap();

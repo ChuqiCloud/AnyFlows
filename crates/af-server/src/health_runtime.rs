@@ -414,7 +414,10 @@ mod tests {
             })
         }
 
-        fn apply<'a>(&'a self, _events: &'a [RedisHealthEvent]) -> SchedulerHealthStoreFuture<'a, ()> {
+        fn apply<'a>(
+            &'a self,
+            _events: &'a [RedisHealthEvent],
+        ) -> SchedulerHealthStoreFuture<'a, ()> {
             Box::pin(async { Ok(()) })
         }
     }

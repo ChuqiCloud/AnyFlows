@@ -625,7 +625,11 @@ mod tests {
 
     #[test]
     fn explicit_strategies_deprioritize_unhealthy_keys_within_priority() {
-        let credentials = vec![credential(1, 2, 10), credential(2, 2, 10), credential(3, 1, 10)];
+        let credentials = vec![
+            credential(1, 2, 10),
+            credential(2, 2, 10),
+            credential(3, 1, 10),
+        ];
         let health = BTreeMap::from([(
             1,
             RuntimeHealthState::new(
