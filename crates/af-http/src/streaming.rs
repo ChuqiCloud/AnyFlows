@@ -298,7 +298,7 @@ mod tests {
         );
         let chunks = body.into_data_stream().collect::<Vec<_>>().await;
         assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0].as_ref().unwrap(), b"data: [DONE]\n\n");
+        assert_eq!(chunks[0].as_ref().unwrap().as_ref(), b"data: [DONE]\n\n");
         assert_eq!(receiver.await.unwrap(), PumpOutcome::Completed);
     }
 
