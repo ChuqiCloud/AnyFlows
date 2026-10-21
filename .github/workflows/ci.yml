@@ -623,7 +623,7 @@ jobs:
   sqlite-migration:
     name: SQLite migration smoke test
     needs: changes
-    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.database == 'true' }}
+    if: ${{ needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -683,7 +683,7 @@ jobs:
   postgres-migration:
     name: PostgreSQL migration smoke test
     needs: changes
-    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.database == 'true' }}
+    if: ${{ needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -766,7 +766,7 @@ jobs:
   mysql-migration:
     name: MySQL migration smoke test
     needs: changes
-    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.database == 'true' }}
+    if: ${{ needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
