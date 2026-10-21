@@ -93,6 +93,7 @@ impl GeminiGenerateContentStreamEncoder {
                 text,
                 signature,
             } => self.encode_reasoning(choice_index, content_index, text, signature),
+            CanonicalStreamEvent::LogprobsDelta { .. } => Err(EncodeStreamError::UnsupportedEvent),
             CanonicalStreamEvent::ToolCallStart {
                 choice_index,
                 tool_index,

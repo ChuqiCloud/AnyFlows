@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use af_domain::{Operation, Protocol, Role};
+use serde_json::json;
 
 use super::{
     ProtocolCapability, RequestCapability, ResponseCapability, StreamCapability,
@@ -177,6 +178,52 @@ fn stream_validator_identifies_usage_detail_gap() {
             crate::CacheHint::Ephemeral5Minutes
         ))
     );
+}
+
+#[test]
+fn logprobs_are_preserved_only_by_openai_chat_and_rejected_elsewhere() {
+    let choice = ResponseChoice::new(
+        0,
+        Message::new(
+            Role::Assistant,
+            vec![ContentBlock::Text("answer".to_owned())],
+        ),
+        FinishReason::Stop,
+    )
+    .with_logprobs(Some(json!({"content": [{"token": "answer"}]})));
+    let response = CanonicalResponse::new(
+        Operation::Chat,
+        "id".to_owned(),
+        "model".to_owned(),
+        None,
+        vec![choice],
+        None,
+    );
+    assert!(super::validate_response_capabilities(Protocol::OpenAiChat, &response).is_ok());
+    let error = super::validate_response_capabilities(Protocol::Anthropic, &response)
+        .expect_err("Anthropic cannot represent OpenAI Chat token probabilities losslessly");
+    assert_eq!(
+        error.capability(),
+        ProtocolCapability::Response(ResponseCapability::Logprobs)
+    );
+
+    let event = CanonicalStreamEvent::LogprobsDelta {
+        choice_index: 0,
+        logprobs: json!({"content": [{"token": "answer"}]}),
+    };
+    assert!(validate_stream_event_capabilities(Protocol::OpenAiChat, &event).is_ok());
+    for protocol in [
+        Protocol::OpenAiResponses,
+        Protocol::Anthropic,
+        Protocol::Gemini,
+    ] {
+        let error = validate_stream_event_capabilities(protocol, &event)
+            .expect_err("other protocols cannot represent Chat-shaped logprobs");
+        assert_eq!(
+            error.capability(),
+            ProtocolCapability::Stream(StreamCapability::LogprobsDelta)
+        );
+    }
 }
 
 fn assert_closed_and_unique<T>(declared: &[T], all: &[T])

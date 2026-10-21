@@ -205,6 +205,7 @@ impl OpenAiChatUsageEstimator {
             }
             CanonicalStreamEvent::ToolCallEnd { .. }
             | CanonicalStreamEvent::ToolCallSignature { .. }
+            | CanonicalStreamEvent::LogprobsDelta { .. }
             | CanonicalStreamEvent::CompactionStart { .. }
             | CanonicalStreamEvent::CompactionEnd { .. }
             | CanonicalStreamEvent::Finish { .. }

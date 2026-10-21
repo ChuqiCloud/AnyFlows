@@ -101,6 +101,7 @@ impl OpenAiResponsesStreamEncoder {
                 )?;
                 self.encode_events(events)
             }
+            CanonicalStreamEvent::LogprobsDelta { .. } => Err(EncodeStreamError::UnsupportedEvent),
             CanonicalStreamEvent::ToolCallStart {
                 choice_index,
                 tool_index,

@@ -107,6 +107,8 @@ pub struct ResponseChoice {
     pub finish_reason: FinishReason,
     /// 实际命中的停止序列；仅在协议明确返回时存在。
     pub stop_sequence: Option<String>,
+    /// OpenAI Chat 的 token 概率明细；原样保留，供同协议响应回传。
+    pub logprobs: Option<Value>,
 }
 
 impl ResponseChoice {
@@ -118,6 +120,7 @@ impl ResponseChoice {
             message,
             finish_reason,
             stop_sequence: None,
+            logprobs: None,
         }
     }
 
@@ -125,6 +128,13 @@ impl ResponseChoice {
     #[must_use]
     pub fn with_stop_sequence(mut self, stop_sequence: Option<String>) -> Self {
         self.stop_sequence = stop_sequence;
+        self
+    }
+
+    /// 附加 OpenAI Chat 的 token 概率明细。
+    #[must_use]
+    pub fn with_logprobs(mut self, logprobs: Option<Value>) -> Self {
+        self.logprobs = logprobs;
         self
     }
 }
@@ -140,6 +150,7 @@ impl fmt::Debug for ResponseChoice {
                 "stop_sequence",
                 &self.stop_sequence.as_ref().map(|_| "<已脱敏>"),
             )
+            .field("logprobs", &self.logprobs.as_ref().map(|_| "<已脱敏>"))
             .finish()
     }
 }

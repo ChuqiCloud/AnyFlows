@@ -12,7 +12,7 @@ use super::{
     },
     parse_response::{
         MAX_RESPONSE_CHOICES, MAX_RESPONSE_FINGERPRINT_BYTES, ParseResponseError, parse_response,
-        validate_response_id,
+        validate_response_id, validate_service_tier,
     },
 };
 use crate::{
@@ -158,14 +158,18 @@ fn build_choice(
         message.insert("reasoning_content".to_owned(), Value::String(reasoning));
     }
 
-    Ok(object_value([
+    let mut encoded = object_value([
         ("index", Value::Number(u64::from(choice.index).into())),
         ("message", Value::Object(message)),
         (
             "finish_reason",
             Value::String(finish_reason_name(choice.finish_reason).to_owned()),
         ),
-    ]))
+    ]);
+    if let Some(logprobs) = &choice.logprobs {
+        encoded["logprobs"] = logprobs.clone();
+    }
+    Ok(encoded)
 }
 
 fn build_message_content(
@@ -332,11 +336,10 @@ fn merge_raw(
         .map_err(|_| BuildResponseError::RawProtocolMismatch)?;
     for (key, value) in fields {
         match key.as_str() {
-            "service_tier"
-                if matches!(
-                    value.as_str(),
-                    Some("auto" | "default" | "flex" | "scale" | "priority")
-                ) => {}
+            "service_tier" => {
+                let tier = value.as_str().ok_or(BuildResponseError::InvalidValue)?;
+                validate_service_tier(tier).map_err(map_response_validation_error)?;
+            }
             "system_fingerprint" => {
                 let fingerprint = value.as_str().ok_or(BuildResponseError::InvalidValue)?;
                 if fingerprint.is_empty()
@@ -346,7 +349,6 @@ fn merge_raw(
                     return Err(BuildResponseError::InvalidValue);
                 }
             }
-            "service_tier" => return Err(BuildResponseError::InvalidValue),
             _ => return Err(BuildResponseError::UnsupportedFeature),
         }
         if root.insert(key.clone(), value.clone()).is_some() {

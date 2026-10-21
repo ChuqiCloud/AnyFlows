@@ -159,6 +159,20 @@ impl ToolCompatibilitySession {
                     });
                 }
             }
+            Event::LogprobsDelta {
+                choice_index: 0,
+                logprobs,
+            } => {
+                self.round.require_open()?;
+                // 隐藏工具调用的概率明细可能暴露内部工具参数，不转发到客户端。
+                if !self.round.hidden {
+                    self.round.make_visible(&mut output)?;
+                    output.push(Event::LogprobsDelta {
+                        choice_index: 0,
+                        logprobs,
+                    });
+                }
+            }
             Event::ToolCallStart {
                 choice_index: 0,
                 tool_index,

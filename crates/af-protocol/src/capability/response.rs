@@ -16,6 +16,8 @@ pub enum ResponseCapability {
     MultipleChoices,
     /// 非零候选索引。
     ArbitraryChoiceIndex,
+    /// OpenAI Chat 候选的 token 概率明细。
+    Logprobs,
     /// 提示在生成前整体被拦截。
     PromptBlocked,
     /// 文本内容块。
@@ -75,6 +77,7 @@ impl ResponseCapability {
         Self::Operation(Operation::CountTokens),
         Self::MultipleChoices,
         Self::ArbitraryChoiceIndex,
+        Self::Logprobs,
         Self::PromptBlocked,
         Self::Text,
         Self::ImageUrl,
@@ -111,6 +114,7 @@ impl fmt::Display for ResponseCapability {
             Self::Operation(operation) => write!(formatter, "operation.{operation}"),
             Self::MultipleChoices => formatter.write_str("choices.multiple"),
             Self::ArbitraryChoiceIndex => formatter.write_str("choices.arbitrary_index"),
+            Self::Logprobs => formatter.write_str("choices.logprobs"),
             Self::PromptBlocked => formatter.write_str("prompt.blocked"),
             Self::Text => formatter.write_str("content.text"),
             Self::ImageUrl => formatter.write_str("content.image.url"),
@@ -160,6 +164,7 @@ pub(super) const OPENAI_CHAT: &[ResponseCapability] = &[
     ResponseCapability::Operation(Operation::Chat),
     ResponseCapability::MultipleChoices,
     ResponseCapability::ArbitraryChoiceIndex,
+    ResponseCapability::Logprobs,
     ResponseCapability::Text,
     ResponseCapability::Thinking,
     ResponseCapability::ToolCalls,
@@ -260,6 +265,9 @@ pub fn validate_response_capabilities(
         )?;
         if choice.stop_sequence.is_some() {
             require(protocol, ResponseCapability::StopSequence)?;
+        }
+        if choice.logprobs.is_some() {
+            require(protocol, ResponseCapability::Logprobs)?;
         }
     }
     if let Some(usage) = response.usage.as_ref() {

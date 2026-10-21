@@ -145,7 +145,7 @@ fn preserves_tools_usage_details_and_same_protocol_metadata() {
             },
             "finish_reason": "tool_calls"
         }],
-        "service_tier": "priority",
+        "service_tier": "priority-v2",
         "system_fingerprint": "fp-matrix",
         "usage": {
             "prompt_tokens": 8,
@@ -154,6 +154,39 @@ fn preserves_tools_usage_details_and_same_protocol_metadata() {
             "prompt_tokens_details": {"cached_tokens": 2, "audio_tokens": 1},
             "completion_tokens_details": {"reasoning_tokens": 1, "audio_tokens": 1}
         }
+    });
+    let parsed = parse_response(&serde_json::to_vec(&source).unwrap()).unwrap();
+
+    let built = build_response(&parsed).unwrap();
+    assert_eq!(built, source);
+    assert_eq!(
+        parse_response(&serde_json::to_vec(&built).unwrap()).unwrap(),
+        parsed
+    );
+}
+
+#[test]
+fn preserves_chat_logprobs_with_content_and_reasoning_details() {
+    let source = json!({
+        "id": "chatcmpl-logprobs",
+        "object": "chat.completion",
+        "created": 1_700_000_000,
+        "model": "matrix-model",
+        "choices": [{
+            "index": 0,
+            "message": { "role": "assistant", "content": "answer" },
+            "finish_reason": "stop",
+            "logprobs": {
+                "content": [{
+                    "token": "answer",
+                    "logprob": -0.1,
+                    "bytes": [97, 110, 115, 119, 101, 114],
+                    "top_logprobs": [{"token": "answer", "logprob": -0.1}]
+                }],
+                "reasoning_content": [{"token": "think", "logprob": -0.2}],
+                "provider_extension": {"kept": true}
+            }
+        }]
     });
     let parsed = parse_response(&serde_json::to_vec(&source).unwrap()).unwrap();
 

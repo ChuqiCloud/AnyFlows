@@ -522,25 +522,16 @@ fn rejects_cross_protocol_raw_collisions_and_invalid_raw_values() {
         Err(BuildRequestError::InvalidValue)
     );
 
-    for key in [
-        "logprobs",
-        "top_logprobs",
-        "prompt_cache_key",
-        "prompt_cache_retention",
-    ] {
+    for key in ["prompt_cache_key", "prompt_cache_retention"] {
         let mut fields = Map::new();
         fields.insert(
             key.to_owned(),
-            match key {
-                "logprobs" => json!(true),
-                "top_logprobs" => json!(1),
-                "prompt_cache_key" => json!("cache-key"),
-                _ => json!("24h"),
+            if key == "prompt_cache_key" {
+                json!("cache-key")
+            } else {
+                json!("24h")
             },
         );
-        if key == "top_logprobs" {
-            fields.insert("logprobs".to_owned(), json!(true));
-        }
         let request =
             minimal_request().with_validated_raw_passthrough(Some((Protocol::OpenAiChat, fields)));
         assert_eq!(
@@ -548,6 +539,19 @@ fn rejects_cross_protocol_raw_collisions_and_invalid_raw_values() {
             Err(BuildRequestError::UnsupportedFeature)
         );
     }
+}
+
+#[test]
+fn forwards_logprobs_request_options_to_openai_chat() {
+    let mut fields = Map::new();
+    fields.insert("logprobs".to_owned(), json!(true));
+    fields.insert("top_logprobs".to_owned(), json!(3));
+    let request =
+        minimal_request().with_validated_raw_passthrough(Some((Protocol::OpenAiChat, fields)));
+
+    let built = build_request(&request).unwrap();
+    assert_eq!(built["logprobs"], true);
+    assert_eq!(built["top_logprobs"], 3);
 }
 
 #[test]

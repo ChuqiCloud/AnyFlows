@@ -204,6 +204,7 @@ fn event_kind(event: &CanonicalStreamEvent) -> &'static str {
             text: _,
             signature: _,
         } => "reasoning_delta",
+        CanonicalStreamEvent::LogprobsDelta { .. } => "logprobs_delta",
         CanonicalStreamEvent::ToolCallStart {
             choice_index: _,
             tool_index: _,

@@ -52,6 +52,7 @@ pub(crate) async fn collect_conversation(
 pub(crate) struct Aggregate {
     choices: BTreeMap<u32, Choice>,
     usage: Option<Usage>,
+    logprobs_bytes: usize,
     done: bool,
 }
 
@@ -61,6 +62,7 @@ struct Choice {
     tools: BTreeMap<u32, Tool>,
     order: Vec<Part>,
     finish: Option<(FinishReason, Option<String>)>,
+    logprobs: Option<serde_json::Value>,
 }
 
 enum Part {
@@ -156,6 +158,21 @@ impl Aggregate {
                         }
                         _ => return Err(UpstreamError::ProtocolError),
                     }
+                }
+                Event::LogprobsDelta {
+                    choice_index,
+                    logprobs,
+                } => {
+                    let bytes = serde_json::to_vec(&logprobs)
+                        .map_err(|_| UpstreamError::ProtocolError)?
+                        .len();
+                    self.logprobs_bytes = self
+                        .logprobs_bytes
+                        .checked_add(bytes)
+                        .filter(|bytes| *bytes <= MAX_UPSTREAM_RESPONSE_BODY_BYTES)
+                        .ok_or(UpstreamError::ProtocolError)?;
+                    let choice = self.choice(choice_index)?;
+                    merge_logprobs(&mut choice.logprobs, logprobs)?;
                 }
                 Event::ToolCallStart {
                     choice_index,
@@ -280,7 +297,8 @@ impl Aggregate {
                 }
                 Ok(
                     ResponseChoice::new(index, Message::new(Role::Assistant, content), reason)
-                        .with_stop_sequence(stop),
+                        .with_stop_sequence(stop)
+                        .with_logprobs(choice.logprobs),
                 )
             })
             .collect::<Result<Vec<_>, UpstreamError>>()?;
@@ -295,9 +313,116 @@ impl Aggregate {
     }
 }
 
+fn merge_logprobs(
+    target: &mut Option<serde_json::Value>,
+    incoming: serde_json::Value,
+) -> Result<(), UpstreamError> {
+    let serde_json::Value::Object(incoming) = incoming else {
+        return Err(UpstreamError::ProtocolError);
+    };
+    let Some(current) = target else {
+        *target = Some(serde_json::Value::Object(incoming));
+        return Ok(());
+    };
+    let Some(current) = current.as_object_mut() else {
+        return Err(UpstreamError::ProtocolError);
+    };
+    for (key, value) in incoming {
+        let Some(previous) = current.get_mut(&key) else {
+            current.insert(key, value);
+            continue;
+        };
+        // Some gateways emit null placeholders in chunks before the token details arrive.
+        // Treat null as an empty update or replace a previous null with the first real value.
+        if value.is_null() {
+            continue;
+        }
+        if previous.is_null() {
+            *previous = value;
+            continue;
+        }
+        match (previous, value) {
+            (serde_json::Value::Array(previous), serde_json::Value::Array(next)) => {
+                previous.extend(next);
+            }
+            (previous, next) if *previous == next => {}
+            _ => return Err(UpstreamError::ProtocolError),
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn aggregates_stream_logprobs_arrays_without_losing_fields() {
+        let mut aggregate = Aggregate::default();
+        aggregate
+            .push(vec![
+                Event::MessageStart {
+                    choice_index: 0,
+                    role: Role::Assistant,
+                },
+                Event::LogprobsDelta {
+                    choice_index: 0,
+                    logprobs: serde_json::json!({
+                        "content": null,
+                        "reasoning_content": null
+                    }),
+                },
+                Event::LogprobsDelta {
+                    choice_index: 0,
+                    logprobs: serde_json::json!({
+                        "content": [{"token": "one", "logprob": -0.1}],
+                        "reasoning_content": [{"token": "think", "logprob": -0.2}]
+                    }),
+                },
+                Event::LogprobsDelta {
+                    choice_index: 0,
+                    logprobs: serde_json::json!({
+                        "content": [{"token": "two", "logprob": -0.3}],
+                        "reasoning_content": [{"token": "more-think", "logprob": -0.4}]
+                    }),
+                },
+                Event::LogprobsDelta {
+                    choice_index: 0,
+                    logprobs: serde_json::json!({
+                        "content": null,
+                        "reasoning_content": null
+                    }),
+                },
+                Event::ContentDelta {
+                    choice_index: 0,
+                    content_index: 0,
+                    delta: ContentDelta::Text("one two".to_owned()),
+                },
+                Event::Finish {
+                    choice_index: 0,
+                    reason: FinishReason::Stop,
+                    stop_sequence: None,
+                },
+                Event::StreamEnd,
+            ])
+            .unwrap();
+
+        let response = aggregate.finish().unwrap();
+        assert_eq!(
+            response.choices[0].logprobs,
+            Some(serde_json::json!({
+                "content": [
+                    {"token": "one", "logprob": -0.1},
+                    {"token": "two", "logprob": -0.3}
+                ],
+                "reasoning_content": [
+                    {"token": "think", "logprob": -0.2},
+                    {"token": "more-think", "logprob": -0.4}
+                ]
+            }))
+        );
+    }
+
     #[test]
     fn incomplete_streams_fail_closed() {
         let mut aggregate = Aggregate::default();

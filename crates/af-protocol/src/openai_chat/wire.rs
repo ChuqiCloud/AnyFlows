@@ -339,6 +339,9 @@ pub(super) enum ToolCallWire {
 pub(super) struct FunctionToolCallPayloadWire {
     /// 当前调用的稳定标识。
     pub(super) id: String,
+    /// 部分兼容服务在完整响应和回传历史中也附带流式工具索引。
+    #[serde(default, rename = "index")]
+    _index: Option<u32>,
     /// 被调用的函数及其参数。
     pub(super) function: FunctionCallWire,
 }
