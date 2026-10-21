@@ -586,12 +586,20 @@ mod tests {
         .await
         .unwrap();
         let repo = ProxyPoolRepository::new(database.clone(), Duration::from_secs(5));
+        let rollback_steps = u32::try_from(
+            crate::migration::Migrator::migrations().len()
+                - crate::migration::Migrator::migrations()
+                    .iter()
+                    .position(|migration| migration.name() == "m20261019_000153_create_proxy_pools")
+                    .expect("代理池迁移必须保留"),
+        )
+        .unwrap();
         let id = repo
             .create("订阅测试".to_owned(), true, 60, |_| Ok(envelope()))
             .await
             .unwrap();
         assert!(
-            crate::migration::Migrator::down(database.connection(), Some(2))
+            crate::migration::Migrator::down(database.connection(), Some(rollback_steps))
                 .await
                 .is_err()
         );
@@ -694,7 +702,7 @@ mod tests {
             repo.get(id).await,
             Err(ProxyPoolRepositoryError::NotFound)
         ));
-        crate::migration::Migrator::down(database.connection(), Some(2))
+        crate::migration::Migrator::down(database.connection(), Some(rollback_steps))
             .await
             .unwrap();
         crate::migration::Migrator::up(database.connection(), None)
