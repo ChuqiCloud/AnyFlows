@@ -16,6 +16,7 @@ use crate::{
         AdminRoutingWriteStatusSchema, ClientSimulationBodyProfileSchema,
         ClientSimulationProfileSchema, ResponsesCompactModeSchema,
         ResponsesCompactProbeResultSchema,
+        CredentialSelectionStrategySchema,
     },
 };
 
@@ -153,6 +154,7 @@ fn probe_admin_channel() {}
         ClientSimulationProfileSchema,
         ResponsesCompactModeSchema,
         ResponsesCompactProbeResultSchema,
+        CredentialSelectionStrategySchema,
         AdminChannelResponse,
         AdminChannelListResponse,
         AdminChannelCreateRequest,

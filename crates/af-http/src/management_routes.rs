@@ -23,7 +23,7 @@ pub(crate) struct AdminRouteChannelResponse {
     #[schema(minimum = 1)]
     channel_id: i64,
     #[schema(minimum = 1)]
-    credential_id: i64,
+    credential_id: Option<i64>,
     #[schema(minimum = 0)]
     priority: i32,
     #[schema(minimum = 0)]
@@ -50,7 +50,7 @@ impl AdminRouteChannelResponse {
         Self {
             id: channel.id().get(),
             channel_id: channel.channel_id().get(),
-            credential_id: channel.credential_id().get(),
+            credential_id: channel.credential_id().map(af_domain::CredentialId::get),
             priority: channel.priority(),
             weight: channel.weight(),
             enabled: channel.enabled(),

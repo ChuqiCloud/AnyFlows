@@ -31,13 +31,7 @@ export function CredentialScheduleFields({ form, credential, mode, disabled }: {
             <option value="disabled">{t('credentials.status.disabled')}</option>
           </Select>
         </CredentialField>
-        <CredentialField id="credential-multi-key-mode" label={t('credentials.schedule.multiKeyMode')}>
-          <Select id="credential-multi-key-mode" disabled={disabled} {...form.register('multiKeyMode')}>
-            <option value="none">{t('credentials.schedule.modeNone')}</option>
-            <option value="random">{t('credentials.schedule.modeRandom')}</option>
-            <option value="round_robin">{t('credentials.schedule.modeRoundRobin')}</option>
-          </Select>
-        </CredentialField>
+
       </div>
 
       <div className="flex items-start justify-between gap-4 rounded-lg border border-[var(--hairline)] px-3 py-2.5">

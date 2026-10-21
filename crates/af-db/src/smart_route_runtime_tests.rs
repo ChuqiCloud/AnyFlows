@@ -102,7 +102,7 @@ async fn attempt_feedback_updates_statistics_and_rolls_back_invalid_batches()
     let route_channel = route_channels::ActiveModel {
         route_id: Set(route.id),
         channel_id: Set(channel.id),
-        credential_id: Set(credential.id),
+        credential_id: Set(Some(credential.id)),
         priority: Set(10),
         weight: Set(20),
         enabled: Set(true),

@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
-import { Download, FileUp, KeyRound, Plus, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Download, KeyRound, Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button, Skeleton } from '@heroui/react'
 import type { AdminCredential } from '@/lib/api/generated/types.gen'
 import { navigateTo } from '@/lib/router-navigation'
 import { useAdminChannel, useAdminChannels } from '@/features/channels/channel-api'
-import { exportAdminCredentialFiles, importAdminCredentialFiles, useAdminChannelCredentials, type AdminCredentialImportResult } from './credential-api'
+import { exportAdminCredentialFiles, useAdminChannelCredentials, type AdminCredentialImportResult } from './credential-api'
 import { CredentialChannelToolbar } from './credential-channel-toolbar'
 import { CredentialEditorSheet } from './credential-editor-sheet'
+import { CredentialImport } from './credential-import'
 import { CredentialList } from './credential-list'
 import { CredentialSummary } from './credential-summary'
 
@@ -30,7 +31,6 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
   const { fetchNextPage: fetchNextCredentialsPage, refetch: refetchCredentials } = credentialsQuery
   const credentials = useMemo(() => credentialsQuery.data?.pages.flatMap((page) => page.credentials) ?? [], [credentialsQuery.data])
   const [editor, setEditor] = useState<EditorState>()
-  const [importing, setImporting] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [importResult, setImportResult] = useState<AdminCredentialImportResult>()
   const [fileError, setFileError] = useState<string>()
@@ -59,24 +59,6 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
   const refreshAll = async () => {
     await Promise.all([channelsQuery.refetch(), selectedChannel ? credentialsQuery.refetch() : Promise.resolve()])
   }
-  const importFiles = async (event: ChangeEvent<HTMLInputElement>) => {
-    if (!selectedChannel || selectedChannel.type !== 'openai' || !event.target.files?.length) return
-    const selectedFiles = Array.from(event.target.files)
-    event.target.value = ''
-    setImportResult(undefined)
-    setFileError(undefined)
-    if (selectedFiles.length > 64 || selectedFiles.some((file) => file.size > 2 * 1024 * 1024) || selectedFiles.reduce((size, file) => size + file.size, 0) > 24 * 1024 * 1024) {
-      setFileError(t('credentials.fileTransfer.sizeLimit'))
-      return
-    }
-    setImporting(true)
-    try {
-      const files = await Promise.all(selectedFiles.map(async (file) => ({ name: file.name, content: await file.text() })))
-      const result = await importAdminCredentialFiles(selectedChannel.id, files)
-      setImportResult(result)
-      await refetchCredentials()
-    } catch { setFileError(t('credentials.fileTransfer.importFailed')) } finally { setImporting(false) }
-  }
   const exportFiles = async () => {
     if (!selectedChannel || selectedChannel.type !== 'openai') return
     setFileError(undefined)
@@ -100,7 +82,6 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Button type="button" size="sm" variant="bordered" isDisabled={channelsQuery.isFetching || credentialsQuery.isFetching} onClick={refreshAll}><RefreshCw className={`size-3.5 ${channelsQuery.isFetching || credentialsQuery.isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />{t('credentials.actions.refresh')}</Button>
           <Button type="button" color="primary" size="sm" isDisabled={!selectedChannel} onClick={() => setEditor('create')}><Plus className="size-3.5" aria-hidden="true" />{t('credentials.actions.add')}</Button>
-          {canImportCodex ? <label className="inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md border border-default-200 px-3 py-1.5 text-sm focus-within:ring-2 focus-within:ring-primary"><FileUp className="size-3.5" aria-hidden="true" />{t(importing ? 'credentials.fileTransfer.importing' : 'credentials.fileTransfer.import')}<input type="file" className="sr-only" multiple accept=".json,.txt" disabled={importing} onChange={importFiles} /></label> : null}
           {canImportCodex ? <Button type="button" size="sm" variant="flat" isDisabled={exporting} onClick={() => void exportFiles()}><Download className="size-3.5" aria-hidden="true" />{t(exporting ? 'credentials.fileTransfer.exporting' : 'credentials.fileTransfer.export')}</Button> : null}
         </div>
       </header>
@@ -120,8 +101,9 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
       ) : selectedChannel ? (
         <>
           <CredentialChannelToolbar channels={visibleChannels} selected={selectedChannel} loadingMore={channelsQuery.isFetchingNextPage} hasNextPage={Boolean(channelsQuery.hasNextPage)} onSelect={selectChannel} onLoadMore={() => { void channelsQuery.fetchNextPage() }} />
+          <CredentialImport key={selectedChannel.id} channel={selectedChannel} onImported={async (result) => { setImportResult(result); await refetchCredentials() }} />
           <CredentialSummary credentials={credentials} />
-          <CredentialList channel={selectedChannel} credentials={credentials} loading={credentialsQuery.isPending} loadError={credentialsQuery.isError && !credentialsQuery.data} refreshing={credentialsQuery.isFetching} refreshError={credentialsQuery.isRefetchError} loadingMore={credentialsQuery.isFetchingNextPage} hasNextPage={Boolean(credentialsQuery.hasNextPage)} active onRefresh={refreshCredentials} onLoadMore={loadMoreCredentials} onEdit={setEditor} />
+          <CredentialList key={selectedChannel.id} channel={selectedChannel} credentials={credentials} loading={credentialsQuery.isPending} loadError={credentialsQuery.isError && !credentialsQuery.data} refreshing={credentialsQuery.isFetching} refreshError={credentialsQuery.isRefetchError} loadingMore={credentialsQuery.isFetchingNextPage} hasNextPage={Boolean(credentialsQuery.hasNextPage)} active onRefresh={refreshCredentials} onLoadMore={loadMoreCredentials} onEdit={setEditor} />
           <CredentialEditorSheet key={`${selectedChannel.id}:${editor === 'create' ? 'create' : editor?.id ?? 'closed'}`} open={editor !== undefined} channel={selectedChannel} credential={editor === 'create' ? undefined : editor} credentials={credentials} onOpenChange={(open) => { if (!open) setEditor(undefined) }} />
         </>
       ) : null}

@@ -98,6 +98,7 @@ pub struct AdminChannel {
     relay_race_width: Option<usize>,
     relay_retry_limit: Option<u8>,
     relay_retry_delay_ms: Option<u64>,
+    credential_strategy: Option<crate::CredentialSelectionStrategy>,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
     model_mapping: serde_json::Value,
@@ -159,6 +160,7 @@ impl AdminChannel {
             relay_race_width: None,
             relay_retry_limit: None,
             relay_retry_delay_ms: None,
+            credential_strategy: None,
             models,
             group_ids,
             model_mapping,
@@ -280,6 +282,7 @@ impl AdminChannel {
     pub const fn responses_compact_probe_http_status(&self) -> Option<u16> {
         self.responses_compact_probe_http_status
     }
+    pub const fn credential_strategy(&self) -> Option<crate::CredentialSelectionStrategy> { self.credential_strategy }
     pub const fn relay_race_width(&self) -> Option<usize> {
         self.relay_race_width
     }
@@ -374,7 +377,7 @@ impl AdminChannel {
             record.relay_race_width(),
             record.relay_retry_limit(),
             record.relay_retry_delay_ms(),
-        )
+        ).with_credential_strategy(record.credential_strategy())
     }
 
     fn with_responses_websocket_enabled(mut self, enabled: bool) -> Self {
@@ -414,6 +417,8 @@ impl AdminChannel {
         self.relay_retry_delay_ms = retry_delay_ms;
         self
     }
+
+    fn with_credential_strategy(mut self, strategy: Option<crate::CredentialSelectionStrategy>) -> Self { self.credential_strategy = strategy; self }
 
     fn with_pool_mode(mut self, enabled: bool) -> Self {
         self.pool_mode = enabled;

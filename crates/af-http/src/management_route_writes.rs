@@ -26,7 +26,7 @@ pub(crate) struct AdminRouteChannelWriteRequest {
     #[schema(minimum = 1)]
     channel_id: i64,
     #[schema(minimum = 1)]
-    credential_id: i64,
+    credential_id: Option<i64>,
     #[schema(minimum = 0)]
     priority: i32,
     #[schema(minimum = 0)]
@@ -186,7 +186,7 @@ impl AdminRouteChannelWriteRequest {
         let channel_id =
             ChannelId::new(self.channel_id).map_err(|_| ManagementError::InvalidRequest)?;
         let credential_id =
-            CredentialId::new(self.credential_id).map_err(|_| ManagementError::InvalidRequest)?;
+            self.credential_id.map(CredentialId::new).transpose().map_err(|_| ManagementError::InvalidRequest)?;
         AdminRouteChannelCommand::new(
             channel_id,
             credential_id,
@@ -273,7 +273,7 @@ mod tests {
     fn channel_command_rejects_negative_order_values() {
         let request = AdminRouteChannelWriteRequest {
             channel_id: 1,
-            credential_id: 2,
+            credential_id: Some(2),
             priority: -1,
             weight: 1,
             enabled: true,

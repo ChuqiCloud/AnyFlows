@@ -34,6 +34,7 @@ mod openai_responses_stream;
 mod openai_speech;
 mod opencode_tools;
 mod rerank;
+mod response_readiness;
 mod state_machine;
 mod tool_conversation;
 pub use opencode_tools::opencode_compatibility_tools;

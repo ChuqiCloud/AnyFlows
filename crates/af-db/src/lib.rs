@@ -87,7 +87,7 @@ pub use billing_contract::{BillingContractPriceSnapshotError, OrganizationContra
 mod billing_batch_tests;
 mod channel_settings;
 pub use channel_settings::{
-    RelayChannelSettings, RelayChannelSettingsPatch, RelayExecutionSettingsError,
+    CredentialSelectionStrategy, RelayChannelSettings, RelayChannelSettingsPatch, RelayExecutionSettingsError,
     validate_relay_execution_settings,
 };
 mod opencode_settings;

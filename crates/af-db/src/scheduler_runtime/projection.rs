@@ -207,6 +207,8 @@ struct ProjectionTargetWire {
     relay_retry_limit: Option<u8>,
     #[serde(default)]
     relay_retry_delay_ms: Option<u64>,
+    #[serde(default)]
+    credential_strategy: Option<crate::CredentialSelectionStrategy>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -433,6 +435,7 @@ impl ProjectionTargetWire {
             relay_race_width: target.relay_race_width(),
             relay_retry_limit: target.relay_retry_limit(),
             relay_retry_delay_ms: target.relay_retry_delay_ms(),
+            credential_strategy: target.credential_strategy(),
         }
     }
 
@@ -517,7 +520,7 @@ impl ProjectionTargetWire {
             self.relay_race_width,
             self.relay_retry_limit,
             self.relay_retry_delay_ms,
-        ))
+        ).with_credential_strategy(self.credential_strategy))
         .with_client_simulation_profile(client_simulation_profile)
         .and_then(|target| {
             target.with_client_simulation_body_profile(client_simulation_body_profile)

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Button, Chip } from '@heroui/react'
 import type { AdminCredential } from '@/lib/api/generated/types.gen'
+import type { CredentialHealthSnapshot } from './credential-api'
 import { cn } from '@/lib/utils'
 import { SiteTooltip } from '@/shared/components/site-tooltip'
 import { updateCredentialStatusRequest } from './credential-form-model'
@@ -30,6 +31,9 @@ const stateStyles = {
 } as const
 
 type CredentialItemProps = {
+  selected?: boolean
+  onSelect?: () => void
+  health?: CredentialHealthSnapshot
   channelType: string
   credential: AdminCredential
   parent?: AdminCredential
@@ -43,7 +47,7 @@ type CredentialItemProps = {
 }
 
 /** 以真实持久化与冷却事实呈现账号状态，不接触任何密文明文。 */
-export function CredentialItem({ channelType, credential, parent, language, pending, active, onToggle, onEdit, onDelete, onRefresh }: CredentialItemProps) {
+export function CredentialItem({ selected, onSelect, health, channelType, credential, parent, language, pending, active, onToggle, onEdit, onDelete, onRefresh }: CredentialItemProps) {
   const { t } = useTranslation()
   const [oauthOpen, setOAuthOpen] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
@@ -90,10 +94,12 @@ export function CredentialItem({ channelType, credential, parent, language, pend
         <div className="grid size-9 place-items-center rounded-lg bg-surface-2 text-muted-foreground"><Icon className="size-4" aria-hidden="true" /></div>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
+            {onSelect ? <input type="checkbox" aria-label={t('credentials.batch.selectOne', { defaultValue: '选择凭据 #{{id}}', id: credential.id })} checked={Boolean(selected)} onChange={onSelect} /> : null}
             <h3 className="text-xs font-semibold">#{credential.id}</h3>
             {shadow ? <Chip className="gap-1 bg-info/10 text-info" size="sm" variant="flat"><GitFork className="size-3" aria-hidden="true" />{t('credentials.spark.badge')}</Chip> : null}
             <Chip size="sm" variant="flat">{t(`credentials.kind.${credential.kind}`, { defaultValue: credential.kind })}</Chip>
             <Chip className={cn(stateStyles[runtimeState])} size="sm" variant="flat">{t(`credentials.runtime.${runtimeState}`)}</Chip>
+            {health && health.weight_multiplier_micros < 1_000_000 ? <Chip className="bg-warning/10 text-warning" size="sm" variant="flat">{t('credentials.health.reduced', { percent: Math.round(health.weight_multiplier_micros / 10_000) })}</Chip> : null}
             {parentBlocked ? <Chip className="bg-destructive/10 text-destructive" size="sm" variant="flat">{t('credentials.runtime.parentBlocked')}</Chip> : null}
             {isOAuth ? <Chip className="max-w-48 truncate" size="sm" variant="flat">{credential.oauth_provider ?? t('credentials.oauth.unbound')}</Chip> : null}
           </div>
@@ -107,6 +113,7 @@ export function CredentialItem({ channelType, credential, parent, language, pend
               ? t('credentials.item.inheritedProxy', { id: parent.proxy_id })
               : t('credentials.item.inheritedGlobalProxy')}</span> : credential.proxy_id ? <span>{t('credentials.item.proxy', { id: credential.proxy_id })}</span> : null}
           </div>
+          {health && health.weight_multiplier_micros < 1_000_000 ? <p className="mt-1.5 text-[0.6875rem] text-warning">{health.cooling ? t('credentials.health.cooling') : t('credentials.health.reducedDescription', { percent: Math.round(health.weight_multiplier_micros / 10_000) })}</p> : null}
           <p className="mt-1.5 text-[0.6875rem] text-muted-foreground">
             {credential.oauth_token_pending
               ? t('credentials.item.authorizationRequired')
