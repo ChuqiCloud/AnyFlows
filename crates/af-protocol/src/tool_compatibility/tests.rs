@@ -106,9 +106,20 @@ fn forward(session: &mut ToolCompatibilitySession, event: Event) -> Vec<Event> {
 }
 
 fn hidden_round(session: &mut ToolCompatibilitySession, output: Option<i64>) {
+    for event in [start(), call(0, "hidden-id", "read")] {
+        assert!(forward(session, event).is_empty());
+    }
+    assert!(
+        forward(
+            session,
+            Event::LogprobsDelta {
+                choice_index: 0,
+                logprobs: json!({"content": [{"token": "private-city"}]}),
+            }
+        )
+        .is_empty()
+    );
     for event in [
-        start(),
-        call(0, "hidden-id", "read"),
         args(0, "{\"city\":\"private-city\"}"),
         end(0),
         finish(FinishReason::ToolCalls),

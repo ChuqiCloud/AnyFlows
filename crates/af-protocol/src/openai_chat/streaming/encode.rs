@@ -16,7 +16,7 @@ use crate::openai_chat::{
         MAX_TOOL_CALLS, MAX_TOTAL_ARGUMENT_BYTES, MAX_TOTAL_ARGUMENT_NODES, MAX_TOTAL_TEXT_BYTES,
         validate_call_id, validate_model, validate_tool_name, validate_value_shape,
     },
-    parse_response::{MAX_RESPONSE_CHOICES, validate_response_id},
+    parse_response::{MAX_RESPONSE_CHOICES, validate_logprobs, validate_response_id},
 };
 use crate::{
     CanonicalStreamEvent, ContentDelta, FinishReason, Usage, validate_stream_event_capabilities,
@@ -159,6 +159,31 @@ impl OpenAiChatStreamEncoder {
                     None,
                     self.include_usage_null,
                 )
+            }
+            CanonicalStreamEvent::LogprobsDelta {
+                choice_index,
+                logprobs,
+            } => {
+                active_choice(&mut self.choices, choice_index)?;
+                validate_logprobs(&logprobs).map_err(|error| match error {
+                    crate::openai_chat::ParseResponseError::StructureLimitExceeded => {
+                        EncodeStreamError::StructureLimitExceeded
+                    }
+                    _ => EncodeStreamError::InvalidSequence,
+                })?;
+                encode_chunk(EncodedChunk {
+                    id: &self.identity.id,
+                    object: "chat.completion.chunk",
+                    created: self.identity.created,
+                    model: &self.identity.model,
+                    choices: vec![EncodedChoice {
+                        index: choice_index,
+                        delta: EncodedDelta::default(),
+                        logprobs: Some(&logprobs),
+                        finish_reason: None,
+                    }],
+                    usage: self.include_usage_null.then_some(None),
+                })
             }
             CanonicalStreamEvent::CompactionStart { .. }
             | CanonicalStreamEvent::CompactionEnd { .. } => {

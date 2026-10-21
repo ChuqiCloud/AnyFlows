@@ -327,6 +327,20 @@ fn accepts_empty_response_metadata_in_tool_call_history() {
 }
 
 #[test]
+fn accepts_optional_tool_indices_in_assistant_history() {
+    let baseline = assistant_arguments_request("{}".to_owned());
+    let expected = parse_json(baseline.clone()).unwrap();
+    for index in [json!(0), json!(7), Value::Null] {
+        let mut request = baseline.clone();
+        request["messages"][0]["tool_calls"][0]["index"] = index;
+        assert_eq!(parse_json(request), Ok(expected.clone()));
+    }
+    let mut invalid = baseline;
+    invalid["messages"][0]["tool_calls"][0]["index"] = json!(-1);
+    assert_eq!(parse_json(invalid), Err(ParseRequestError::InvalidValue));
+}
+
+#[test]
 fn preserves_reasoning_metadata_in_assistant_history() {
     let baseline = request_with_messages(vec![
         json!({ "role": "user", "content": "first" }),

@@ -16,7 +16,7 @@ use super::{
         ResponseMessageWire,
     },
 };
-use crate::bounded_json::{BoundedJsonError, JsonLimits, parse_value};
+use crate::bounded_json::{BoundedJsonError, JsonLimits, parse_value, validate_object};
 use crate::{
     CanonicalResponse, ContentBlock, FinishReason, Message, ResponseChoice, TokenCount, Usage,
     UsageDetails, UsageSemantics, UsageSource,
@@ -71,9 +71,7 @@ fn choice_uses_unsupported_feature(choice: &Value) -> bool {
     let Some(choice) = choice.as_object() else {
         return false;
     };
-    if choice.get("logprobs").is_some_and(|value| !value.is_null())
-        || choice.get("finish_reason").and_then(Value::as_str) == Some("function_call")
-    {
+    if choice.get("finish_reason").and_then(Value::as_str) == Some("function_call") {
         return true;
     }
     let Some(message) = choice.get("message").and_then(Value::as_object) else {
@@ -148,10 +146,8 @@ fn convert_response(wire: ChatResponseWire) -> Result<CanonicalResponse, ParseRe
     let usage = convert_usage(usage)?;
     let mut raw = Map::new();
     if let Some(service_tier) = service_tier {
-        raw.insert(
-            "service_tier".to_owned(),
-            Value::String(service_tier.as_str().to_owned()),
-        );
+        validate_service_tier(&service_tier)?;
+        raw.insert("service_tier".to_owned(), Value::String(service_tier));
     }
     if let Some(system_fingerprint) = system_fingerprint {
         if system_fingerprint.is_empty()
@@ -184,6 +180,13 @@ pub(super) fn validate_response_id(id: &str) -> Result<(), ParseResponseError> {
         || id.trim() != id
         || id.chars().any(char::is_control)
     {
+        return Err(ParseResponseError::InvalidValue);
+    }
+    Ok(())
+}
+
+pub(super) fn validate_service_tier(value: &str) -> Result<(), ParseResponseError> {
+    if value.is_empty() || value.len() > 128 || value.chars().any(char::is_control) {
         return Err(ParseResponseError::InvalidValue);
     }
     Ok(())
@@ -257,8 +260,8 @@ fn convert_choice(
         finish_reason,
         logprobs,
     } = choice;
-    if logprobs.is_some() {
-        return Err(ParseResponseError::UnsupportedFeature);
+    if let Some(logprobs) = &logprobs {
+        validate_logprobs(logprobs)?;
     }
     let reason = convert_finish_reason(finish_reason)?;
     let message = convert_message(message, state)?;
@@ -270,7 +273,21 @@ fn convert_choice(
     {
         return Err(ParseResponseError::InvalidValue);
     }
-    Ok(ResponseChoice::new(index, message, reason))
+    Ok(ResponseChoice::new(index, message, reason).with_logprobs(logprobs))
+}
+
+pub(super) fn validate_logprobs(value: &Value) -> Result<(), ParseResponseError> {
+    let fields = value.as_object().ok_or(ParseResponseError::InvalidValue)?;
+    validate_object(fields, RESPONSE_JSON_LIMITS, super::MAX_BODY_BYTES).map_err(map_json_error)?;
+    for key in ["content", "refusal", "reasoning_content"] {
+        if fields
+            .get(key)
+            .is_some_and(|value| !value.is_null() && !value.is_array())
+        {
+            return Err(ParseResponseError::InvalidValue);
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn convert_finish_reason(

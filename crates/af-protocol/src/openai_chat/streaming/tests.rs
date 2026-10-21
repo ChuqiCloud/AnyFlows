@@ -621,6 +621,87 @@ fn decoder_requires_done_and_rejects_data_after_done() {
 }
 
 #[test]
+fn decoder_preserves_logprobs_delta_fields() {
+    let stream = [
+        sse(&chunk(
+            json!([{
+                "index": 0,
+                "delta": {"role": "assistant"},
+                "logprobs": {
+                    "content": [{"token": "Hello", "logprob": -0.1}],
+                    "reasoning_content": [{"token": "Think", "logprob": -0.2}]
+                },
+                "finish_reason": null
+            }]),
+            None,
+        )),
+        sse(&chunk(
+            json!([{
+                "index": 0,
+                "delta": {"content": "Hello"},
+                "finish_reason": "stop"
+            }]),
+            None,
+        )),
+        b"data: [DONE]\n\n".to_vec(),
+    ]
+    .concat();
+    let mut decoder = OpenAiChatStreamDecoder::new();
+    let mut events = decoder.push(&stream).unwrap();
+    decoder.finish().unwrap();
+
+    assert_eq!(
+        events.remove(1),
+        CanonicalStreamEvent::LogprobsDelta {
+            choice_index: 0,
+            logprobs: json!({
+                "content": [{"token": "Hello", "logprob": -0.1}],
+                "reasoning_content": [{"token": "Think", "logprob": -0.2}]
+            })
+        }
+    );
+    assert!(events.iter().any(|event| matches!(
+        event,
+        CanonicalStreamEvent::ContentDelta {
+            delta: ContentDelta::Text(text),
+            ..
+        } if text == "Hello"
+    )));
+    assert!(events.iter().any(|event| matches!(
+        event,
+        CanonicalStreamEvent::Finish {
+            reason: FinishReason::Stop,
+            ..
+        }
+    )));
+    assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
+}
+
+#[test]
+fn decoder_accepts_gateway_transport_metadata_without_affecting_usage() {
+    let mut frame = chunk(
+        json!([{"index": 0, "delta": {"role": "assistant", "content": "OK"}, "finish_reason": "stop"}]),
+        Some(json!({"prompt_tokens": 5, "completion_tokens": 1, "total_tokens": 6})),
+    );
+    frame["service_tier"] = json!("priority-v2");
+    frame["elapsed_ms"] = json!(245.5);
+    frame["first_chunk_at"] = json!("2026-10-21T03:15:00Z");
+    let stream = [sse(&frame), b"data: [DONE]\n\n".to_vec()].concat();
+    let mut decoder = OpenAiChatStreamDecoder::new();
+    let mut events = Vec::new();
+    for bytes in stream.chunks(7) {
+        events.extend(decoder.push(bytes).unwrap());
+    }
+    decoder.finish().unwrap();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        CanonicalStreamEvent::Usage(usage)
+            if usage.input_tokens().get() == 5 && usage.output_tokens().get() == 1
+    )));
+    assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
+}
+
+#[test]
 fn compatible_gateway_stream_uses_last_usage_once_at_every_byte_boundary() {
     let provisional = json!({"prompt_tokens":2041,"completion_tokens":1,"total_tokens":2042,"reasoning_tokens":0});
     let final_usage = json!({"prompt_tokens":41,"completion_tokens":1,"total_tokens":42});
@@ -694,6 +775,13 @@ fn encoder_round_trips_supported_canonical_events() {
         CanonicalStreamEvent::MessageStart {
             choice_index: 0,
             role: Role::Assistant,
+        },
+        CanonicalStreamEvent::LogprobsDelta {
+            choice_index: 0,
+            logprobs: json!({
+                "content": [{"token": "answer", "logprob": -0.1}],
+                "reasoning_content": [{"token": "think", "logprob": -0.2}]
+            }),
         },
         CanonicalStreamEvent::ReasoningDelta {
             choice_index: 0,
@@ -956,4 +1044,9 @@ fn streaming_debug_output_never_contains_metadata_or_payloads() {
     ] {
         assert!(!rendered.contains(private));
     }
+    let logprobs = CanonicalStreamEvent::LogprobsDelta {
+        choice_index: 0,
+        logprobs: json!({"content": [{"token": "logprobs-secret-canary"}]}),
+    };
+    assert!(!format!("{logprobs:?}").contains("logprobs-secret-canary"));
 }

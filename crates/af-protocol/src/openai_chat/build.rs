@@ -274,13 +274,10 @@ fn merge_raw(
 }
 
 fn validate_response_safe_raw_fields(fields: &Map<String, Value>) -> Result<(), BuildRequestError> {
-    // 这些请求选项会触发当前响应 IR 无法保存的 logprobs 或缓存写入明细，
+    // 这些请求选项会触发当前响应 IR 无法保存的缓存写入明细，
     // 为避免出站成功后在响应边界必然失败，这里先明确拒绝。
     for key in fields.keys() {
-        if matches!(
-            key.as_str(),
-            "logprobs" | "top_logprobs" | "prompt_cache_key" | "prompt_cache_retention"
-        ) {
+        if matches!(key.as_str(), "prompt_cache_key" | "prompt_cache_retention") {
             return Err(BuildRequestError::UnsupportedFeature);
         }
     }

@@ -101,8 +101,8 @@ fn gateway_usage() -> Value {
 #[test]
 fn parses_gateway_transport_metadata_and_zero_usage_placeholders() {
     let mut response = response_with_choices(vec![text_choice(0, "OK")]);
-    response["elapsed_ms"] = json!(245);
-    response["first_chunk_at"] = json!(1_700_000_000.25);
+    response["elapsed_ms"] = json!(245.5);
+    response["first_chunk_at"] = json!("2026-10-21T03:15:00Z");
     response["usage"] = gateway_usage();
     let parsed = parse_json(response).unwrap();
     let usage = parsed.usage.unwrap();
@@ -381,12 +381,6 @@ fn rejects_known_response_features_without_canonical_mapping() {
     let mut moderation = response_with_choices(vec![text_choice(0, "hello")]);
     moderation["moderation"] = json!({ "input": {} });
 
-    let logprobs = response_with_choices(vec![json!({
-        "index": 0,
-        "message": { "role": "assistant", "content": "hello" },
-        "finish_reason": "stop",
-        "logprobs": { "content": [] }
-    })]);
     let refusal = response_with_choices(vec![json!({
         "index": 0,
         "message": { "role": "assistant", "content": null, "refusal": "blocked" },
@@ -420,19 +414,94 @@ fn rejects_known_response_features_without_canonical_mapping() {
         "finish_reason": "tool_calls"
     })]);
 
-    for value in [
-        moderation,
-        logprobs,
-        refusal,
-        annotations,
-        legacy_finish,
-        custom_tool,
-    ] {
+    for value in [moderation, refusal, annotations, legacy_finish, custom_tool] {
         assert_eq!(
             parse_json(value),
             Err(ParseResponseError::UnsupportedFeature)
         );
     }
+}
+
+#[test]
+fn accepts_optional_tool_call_index_and_preserves_call_association() {
+    let response = parse_json(response_with_choices(vec![json!({
+        "index": 0,
+        "message": {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [{
+                "index": 0,
+                "id": "call-with-index",
+                "type": "function",
+                "function": { "name": "lookup", "arguments": "{\"city\":\"Paris\"}" }
+            }]
+        },
+        "finish_reason": "tool_calls"
+    })]))
+    .expect("optional tool index from compatible providers should be accepted");
+
+    assert!(matches!(
+        &response.choices[0].message.content[0],
+        ContentBlock::ToolUse { id, name, input, .. }
+            if id == "call-with-index" && name == "lookup" && input == &json!({"city":"Paris"})
+    ));
+}
+
+#[test]
+fn rejects_malformed_tool_call_index_and_logprobs_shapes() {
+    let indexed_tool = |index| {
+        response_with_choices(vec![json!({
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "index": index,
+                    "id": "call-with-index",
+                    "type": "function",
+                    "function": { "name": "lookup", "arguments": "{}" }
+                }]
+            },
+            "finish_reason": "tool_calls"
+        })])
+    };
+    assert_eq!(
+        parse_json(indexed_tool("0")),
+        Err(ParseResponseError::InvalidValue)
+    );
+
+    let mut invalid_logprobs = response_with_choices(vec![json!({
+        "index": 0,
+        "message": { "role": "assistant", "content": "hello" },
+        "finish_reason": "stop",
+        "logprobs": { "content": {} }
+    })]);
+    assert_eq!(
+        parse_json(invalid_logprobs.clone()),
+        Err(ParseResponseError::InvalidValue)
+    );
+    invalid_logprobs["choices"][0]["logprobs"] = json!([]);
+    assert_eq!(
+        parse_json(invalid_logprobs),
+        Err(ParseResponseError::InvalidValue)
+    );
+}
+
+#[test]
+fn response_choice_debug_redacts_logprobs_payload() {
+    let response = response_with_choices(vec![json!({
+        "index": 0,
+        "message": { "role": "assistant", "content": "hello" },
+        "finish_reason": "stop",
+        "logprobs": {
+            "content": [{ "token": "logprob-secret-canary", "logprob": -0.25 }],
+            "reasoning_content": [{ "token": "reasoning-secret-canary", "logprob": -0.5 }]
+        }
+    })]);
+    let parsed = parse_json(response).unwrap();
+    let rendered = format!("{:?}", parsed.choices[0]);
+    assert!(!rendered.contains("logprob-secret-canary"));
+    assert!(!rendered.contains("reasoning-secret-canary"));
 }
 
 #[test]
