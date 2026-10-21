@@ -21,7 +21,7 @@
 
 - 修复 DeepSeek 工具对话中 `reasoning_content` / `reasoning` 历史内容丢失，以及渠道执行策略表单显示翻译键的问题。([#49](https://github.com/ChuqiCloud/AnyFlows/pull/49))
 - 修复 OpenCode 非调试模式下错误摘要及响应记录缺失，补充第三方 Chat 响应的缓存、推理和用量兼容。([#42](https://github.com/ChuqiCloud/AnyFlows/pull/42))
-- 修复新增迁移、峰值计费字段和代理池后台任务引起的回归基线问题；更新 TLS 证书校验依赖与根证书数据。([#43](https://github.com/ChuqiCloud/AnyFlows/pull/43)、[#49](https://github.com/ChuqiCloud/AnyFlows/pull/49))
+- 修复新增迁移、峰值计费字段和代理池后台任务引起的回归基线问题；更新 TLS 证书校验依赖与根证书数据，移除已失效的公告忽略规则。([#43](https://github.com/ChuqiCloud/AnyFlows/pull/43)、[#49](https://github.com/ChuqiCloud/AnyFlows/pull/49))
 
 ### CI 与仓库同步
 
