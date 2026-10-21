@@ -74,8 +74,8 @@ where
             policy,
             &mut hard_deadline,
         ))
-            .catch_unwind()
-            .await;
+        .catch_unwind()
+        .await;
         let mut outcome = match result {
             Ok(outcome) => outcome,
             Err(_) => {
