@@ -140,7 +140,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         row.try_get::<Option<TimeTime>>("", "peak_start")?,
         Some(peak_start)
     );
-    assert_eq!(row.try_get::<Option<TimeTime>>("", "peak_end")?, Some(peak_end));
+    assert_eq!(
+        row.try_get::<Option<TimeTime>>("", "peak_end")?,
+        Some(peak_end)
+    );
     assert!(
         row.try_get::<Option<serde_json::Value>>("", "peak_windows")?
             .is_none()
