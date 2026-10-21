@@ -233,6 +233,7 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
+    use af_relay::{GenerationCompletionFuture, StreamDeliveryHook};
     use tokio::sync::oneshot;
 
     use super::*;
@@ -285,6 +286,43 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn completed_outcome_waits_until_body_eof_is_consumed() {
+        let (sender, receiver) = oneshot::channel();
+        let body = openai_chat_body(
+            futures_util::stream::iter([Ok(Bytes::from_static(b"data: [DONE]\n\n"))]),
+            StreamDeliveryPolicy::default(),
+            Some(Box::new(RecordingDelivery(sender))),
+        );
+        let chunks = body.into_data_stream().collect::<Vec<_>>().await;
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].as_ref().unwrap(), b"data: [DONE]\n\n");
+        assert_eq!(receiver.await.unwrap(), PumpOutcome::Completed);
+    }
+
+    #[tokio::test]
+    async fn incomplete_upstream_stream_surfaces_body_error_and_failure_outcome() {
+        let (sender, receiver) = oneshot::channel();
+        let body = openai_chat_body(
+            futures_util::stream::iter([Err(UpstreamError::ProtocolError)]),
+            StreamDeliveryPolicy::default(),
+            Some(Box::new(RecordingDelivery(sender))),
+        );
+        let chunks = body.into_data_stream().collect::<Vec<_>>().await;
+        assert!(chunks.iter().any(Result::is_err));
+        assert_eq!(receiver.await.unwrap(), PumpOutcome::UpstreamFailed);
+    }
+
+    struct RecordingDelivery(oneshot::Sender<PumpOutcome>);
+
+    impl StreamDeliveryHook for RecordingDelivery {
+        fn on_delivery(self: Box<Self>, outcome: PumpOutcome) -> GenerationCompletionFuture {
+            Box::pin(async move {
+                let _ = self.0.send(outcome);
+            })
+        }
     }
 
     struct DropAwareStream {
