@@ -240,19 +240,10 @@ fn preserves_explicit_function_tool_strictness() {
 
 #[test]
 fn rejects_content_that_openai_chat_cannot_encode_losslessly() {
-    let unsupported_blocks = [
-        (
-            ContentBlock::Thinking {
-                text: "secret".to_owned(),
-                signature: None,
-            },
-            RequestCapability::Thinking,
-        ),
-        (
-            ContentBlock::CacheControl(CacheHint::Ephemeral5Minutes),
-            RequestCapability::CacheControl(CacheHint::Ephemeral5Minutes),
-        ),
-    ];
+    let unsupported_blocks = [(
+        ContentBlock::CacheControl(CacheHint::Ephemeral5Minutes),
+        RequestCapability::CacheControl(CacheHint::Ephemeral5Minutes),
+    )];
     for (block, capability) in unsupported_blocks {
         let request = CanonicalRequest::new(
             Operation::Chat,
@@ -262,6 +253,23 @@ fn rejects_content_that_openai_chat_cannot_encode_losslessly() {
         );
         assert_unsupported_capability(&request, capability);
     }
+
+    let thinking_in_user_message = CanonicalRequest::new(
+        Operation::Chat,
+        "gpt-test".to_owned(),
+        vec![Message::new(
+            Role::User,
+            vec![ContentBlock::Thinking {
+                text: "secret".to_owned(),
+                signature: None,
+            }],
+        )],
+        false,
+    );
+    assert_eq!(
+        build_request(&thinking_in_user_message),
+        Err(BuildRequestError::UnsupportedFeature)
+    );
 
     let image_without_mime = CanonicalRequest::new(
         Operation::Chat,
@@ -293,6 +301,104 @@ fn rejects_content_that_openai_chat_cannot_encode_losslessly() {
         false,
     );
     assert_unsupported_capability(&url_audio, RequestCapability::AudioUrl);
+}
+
+#[test]
+fn preserves_reasoning_through_assistant_tool_continuations() {
+    let request = parsed_request(json!({
+        "model": "deepseek-flash",
+        "messages": [
+            {"role": "user", "content": "look this up"},
+            {
+                "role": "assistant",
+                "content": null,
+                "reasoning_content": "I should call the lookup tool",
+                "tool_calls": [{
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {"name": "lookup", "arguments": "{}"}
+                }]
+            },
+            {"role": "tool", "tool_call_id": "call-1", "content": "found it"},
+            {
+                "role": "assistant",
+                "content": "Here is the result.",
+                "reasoning_content": "The tool returned the requested result."
+            }
+        ]
+    }));
+
+    let encoded = build_request(&request).unwrap();
+    assert_eq!(
+        encoded["messages"][1]["reasoning_content"],
+        "I should call the lookup tool"
+    );
+    assert_eq!(
+        encoded["messages"][3]["reasoning_content"],
+        "The tool returned the requested result."
+    );
+    assert_eq!(parsed_request(encoded), request);
+}
+
+#[test]
+fn distinguishes_missing_null_and_empty_reasoning_when_rebuilding() {
+    for metadata in [json!({}), json!({"reasoning_content": null})] {
+        let mut assistant = json!({"role": "assistant", "content": "answer"});
+        assistant
+            .as_object_mut()
+            .unwrap()
+            .extend(metadata.as_object().unwrap().clone());
+        let request = parsed_request(json!({"model": "deepseek-flash", "messages": [assistant]}));
+        let encoded = build_request(&request).unwrap();
+        assert!(encoded["messages"][0].get("reasoning_content").is_none());
+    }
+    for text in ["", "actual reasoning"] {
+        let request = parsed_request(json!({
+            "model": "deepseek-flash",
+            "messages": [{"role": "assistant", "content": "answer", "reasoning": text}]
+        }));
+        let encoded = build_request(&request).unwrap();
+        assert_eq!(encoded["messages"][0]["reasoning_content"], text);
+        assert_eq!(parsed_request(encoded), request);
+    }
+}
+
+#[test]
+fn rejects_reasoning_signatures_duplicate_blocks_and_unrepresentable_order() {
+    let thinking = ContentBlock::Thinking {
+        text: "reasoning".to_owned(),
+        signature: None,
+    };
+    let text = ContentBlock::Text("answer".to_owned());
+    for blocks in [
+        vec![thinking.clone(), thinking.clone(), text.clone()],
+        vec![text, thinking.clone()],
+        vec![
+            ContentBlock::ToolUse {
+                id: "call-1".to_owned(),
+                name: "lookup".to_owned(),
+                input: json!({}),
+                signature: None,
+            },
+            thinking,
+        ],
+    ] {
+        let mut request = minimal_request();
+        request.messages = vec![Message::new(Role::Assistant, blocks)];
+        assert_eq!(
+            build_request(&request),
+            Err(BuildRequestError::UnsupportedFeature)
+        );
+    }
+    let mut signed = minimal_request();
+    signed.messages = vec![Message::new(
+        Role::Assistant,
+        vec![ContentBlock::Thinking {
+            text: "reasoning".to_owned(),
+            signature: Some("signature".to_owned()),
+        }],
+    )];
+    assert_unsupported_capability(&signed, RequestCapability::ThinkingSignatures);
 }
 
 #[test]

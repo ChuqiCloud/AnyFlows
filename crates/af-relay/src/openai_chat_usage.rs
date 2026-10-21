@@ -299,11 +299,18 @@ fn estimate_input_tokens(
 ) -> Result<TokenCount, UsageResolutionError> {
     let mut total = REPLY_PRIMING_TOKENS;
     let allow_encrypted_reasoning = request.operation == af_domain::Operation::Responses;
+    let allow_chat_reasoning = request.operation == af_domain::Operation::Chat;
     for message in &request.messages {
         checked_add(&mut total, MESSAGE_OVERHEAD_TOKENS)?;
         checked_add(&mut total, counter.count(message.role.as_str())?)?;
         for block in &message.content {
-            add_input_block(&mut total, block, counter, allow_encrypted_reasoning)?;
+            add_input_block(
+                &mut total,
+                block,
+                counter,
+                allow_encrypted_reasoning,
+                allow_chat_reasoning,
+            )?;
         }
     }
     for tool in &request.tools {
@@ -327,6 +334,7 @@ fn add_input_block(
     block: &ContentBlock,
     counter: TokenCounter,
     allow_encrypted_reasoning: bool,
+    allow_chat_reasoning: bool,
 ) -> Result<(), UsageResolutionError> {
     match block {
         ContentBlock::Text(text) => checked_add(total, counter.count(text)?),
@@ -361,7 +369,13 @@ fn add_input_block(
             checked_add(total, NAMED_FIELD_OVERHEAD_TOKENS)?;
             checked_add(total, counter.count(tool_use_id)?)?;
             for nested in content {
-                add_input_block(total, nested, counter, allow_encrypted_reasoning)?;
+                add_input_block(
+                    total,
+                    nested,
+                    counter,
+                    allow_encrypted_reasoning,
+                    allow_chat_reasoning,
+                )?;
             }
             Ok(())
         }
@@ -376,6 +390,10 @@ fn add_input_block(
             checked_add(total, signature_tokens)?;
             checked_add(total, counter.count(text)?)
         }
+        ContentBlock::Thinking {
+            text,
+            signature: None,
+        } if allow_chat_reasoning => checked_add(total, counter.count(text)?),
         ContentBlock::Thinking { .. }
         | ContentBlock::CacheControl(_)
         | ContentBlock::Compaction(_) => Err(UsageResolutionError::UnsupportedContent),
@@ -821,24 +839,44 @@ mod tests {
     }
 
     #[test]
-    fn thinking_without_responses_encrypted_contract_remains_unsupported() {
-        for (operation, signature) in [
-            (Operation::Chat, Some("signed".to_owned())),
-            (Operation::Chat, None),
-            (Operation::Responses, None),
-        ] {
-            let request = CanonicalRequest::new(
+    fn chat_reasoning_text_is_counted_but_signed_and_responses_summary_remain_unsupported() {
+        let make_request = |operation, signature| {
+            CanonicalRequest::new(
                 operation,
                 "gpt-test".to_owned(),
                 vec![Message::new(
                     Role::Assistant,
                     vec![ContentBlock::Thinking {
-                        text: "reasoning".to_owned(),
+                        text: "reasoning words that consume input tokens".to_owned(),
                         signature,
                     }],
                 )],
                 false,
-            );
+            )
+        };
+
+        let plain_chat = make_request(Operation::Chat, None);
+        let reasoning_estimate = estimate_openai_request_upper_bound(&plain_chat).unwrap();
+        let without_reasoning = CanonicalRequest::new(
+            Operation::Chat,
+            "gpt-test".to_owned(),
+            vec![Message::new(
+                Role::Assistant,
+                vec![ContentBlock::Text(String::new())],
+            )],
+            false,
+        );
+        assert!(
+            reasoning_estimate.input_tokens()
+                > estimate_openai_request_upper_bound(&without_reasoning)
+                    .unwrap()
+                    .input_tokens()
+        );
+
+        for request in [
+            make_request(Operation::Chat, Some("signed".to_owned())),
+            make_request(Operation::Responses, None),
+        ] {
             assert_eq!(
                 estimate_openai_request_upper_bound(&request),
                 Err(UsageResolutionError::UnsupportedContent)

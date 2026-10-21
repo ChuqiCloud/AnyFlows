@@ -33,10 +33,8 @@ use crate::{
 };
 use af_account::{CredentialDecryptor, SystemSecretCipher, SystemSecretKind};
 use af_adapter::{
-    AdaptorSettings, AnthropicAdaptorSettings, BuiltInClientSimulation, CohereAdaptorSettings,
-    GeminiAdaptorSettings, HeaderMap, HeaderName, HeaderValue, JinaAdaptorSettings,
-    OpenAiAdaptorSettings, RelayContext, ResponsesWebSocketPoolKey, TransportDispatcher,
-    get_adaptor,
+    AdaptorSettings, BuiltInClientSimulation, HeaderMap, HeaderName, HeaderValue, RelayContext,
+    ResponsesWebSocketPoolKey, TransportDispatcher, get_adaptor,
 };
 use af_config::RelaySettings;
 use af_db::{
@@ -1735,77 +1733,20 @@ fn target_matches_protocol(
     target: &af_db::SchedulerRuntimeTargetRecord,
     protocol: Protocol,
 ) -> bool {
-    target.protocol() == protocol
-        && matches!(
-            (target.channel_type(), protocol),
-            (
-                ChannelType::OpenAi,
-                Protocol::OpenAiChat
-                    | Protocol::OpenAiResponses
-                    | Protocol::OpenAiEmbeddings
-                    | Protocol::OpenAiImages
-                    | Protocol::OpenAiAudio
-                    | Protocol::OpenAiSpeech
-            ) | (
-                ChannelType::OpenCode,
-                Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic
-            ) | (ChannelType::Anthropic, Protocol::Anthropic)
-                | (ChannelType::Nvidia, Protocol::OpenAiChat)
-                | (ChannelType::Gemini, Protocol::Gemini)
-                | (ChannelType::Jina, Protocol::JinaRerank)
-                | (ChannelType::Cohere, Protocol::CohereRerank)
-                | (ChannelType::Xai, Protocol::XaiVideo)
-        )
+    target.protocol() == protocol && target.channel_type().supports_runtime(protocol)
 }
 
 fn adaptor_settings(
     target: &af_db::SchedulerRuntimeTargetRecord,
     upstream_model: String,
 ) -> Result<AdaptorSettings, AfError> {
-    match (target.channel_type(), target.protocol()) {
-        (ChannelType::OpenCode, protocol) => Ok(AdaptorSettings::OpenCode(
-            af_adapter::OpenCodeAdaptorSettings::new(
-                target.opencode_entry().ok_or(AfError::Internal)?,
-                protocol,
-                vec![upstream_model],
-            )
-            .map_err(|_| AfError::Internal)?,
-        )),
-        (
-            ChannelType::OpenAi,
-            Protocol::OpenAiChat
-            | Protocol::OpenAiResponses
-            | Protocol::OpenAiEmbeddings
-            | Protocol::OpenAiImages
-            | Protocol::OpenAiAudio
-            | Protocol::OpenAiSpeech,
-        ) => Ok(AdaptorSettings::OpenAi(
-            OpenAiAdaptorSettings::for_protocol(target.protocol(), vec![upstream_model])
-                .map_err(|_| AfError::Internal)?,
-        )),
-        (ChannelType::Nvidia, Protocol::OpenAiChat) => Ok(AdaptorSettings::Nvidia(
-            af_adapter::NvidiaAdaptorSettings::new(vec![upstream_model]),
-        )),
-        (ChannelType::Anthropic, Protocol::Anthropic) => Ok(AdaptorSettings::Anthropic(
-            AnthropicAdaptorSettings::new(vec![upstream_model]),
-        )),
-        (ChannelType::Gemini, Protocol::Gemini) => {
-            Ok(AdaptorSettings::Gemini(GeminiAdaptorSettings::new(vec![
-                upstream_model,
-            ])))
-        }
-        (ChannelType::Jina, Protocol::JinaRerank) => {
-            Ok(AdaptorSettings::Jina(JinaAdaptorSettings::new(vec![
-                upstream_model,
-            ])))
-        }
-        (ChannelType::Cohere, Protocol::CohereRerank) => {
-            Ok(AdaptorSettings::Cohere(CohereAdaptorSettings::new(vec![
-                upstream_model,
-            ])))
-        }
-        _ => Err(AfError::Internal),
-    }
+    af_adapter::standard_adaptor_settings(
+        target.channel_type(),
+        target.protocol(),
+        vec![upstream_model],
+        target.opencode_entry(),
+    )
+    .map_err(|_| AfError::Internal)
 }
 
 fn select_upstream_protocol(

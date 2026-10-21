@@ -29,26 +29,7 @@ pub(super) const fn is_supported_runtime_target(
     channel_type: ChannelType,
     protocol: Protocol,
 ) -> bool {
-    matches!(
-        (channel_type, protocol),
-        (
-            ChannelType::OpenAi,
-            Protocol::OpenAiChat
-                | Protocol::OpenAiResponses
-                | Protocol::OpenAiEmbeddings
-                | Protocol::OpenAiImages
-                | Protocol::OpenAiAudio
-                | Protocol::OpenAiSpeech
-        ) | (
-            ChannelType::OpenCode,
-            Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic
-        ) | (ChannelType::Anthropic, Protocol::Anthropic)
-            | (ChannelType::Nvidia, Protocol::OpenAiChat)
-            | (ChannelType::Gemini, Protocol::Gemini)
-            | (ChannelType::Jina, Protocol::JinaRerank)
-            | (ChannelType::Cohere, Protocol::CohereRerank)
-            | (ChannelType::Xai, Protocol::XaiVideo)
-    )
+    channel_type.supports_runtime(protocol)
 }
 
 /// 渠道转发时需要附加的非认证请求头。
@@ -608,14 +589,10 @@ impl SchedulerRuntimeTargetRecord {
         headers: Vec<(String, String)>,
     ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
         if !is_supported_runtime_target(channel_type, protocol)
-            || (channel_type == ChannelType::OpenCode
-                && (base_url.is_some()
-                    || credentials.iter().any(|c| {
-                        !matches!(
-                            c.credential_kind(),
-                            CredentialKind::ApiKey | CredentialKind::Public
-                        )
-                    })))
+            || (channel_type == ChannelType::OpenCode && base_url.is_some())
+            || credentials
+                .iter()
+                .any(|c| !channel_type.supports_credential_kind(c.credential_kind()))
             || (credentials
                 .iter()
                 .any(|c| c.credential_kind() == CredentialKind::Public)

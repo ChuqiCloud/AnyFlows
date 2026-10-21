@@ -690,6 +690,9 @@
       "autoBanStatusCodes": "HTTP status codes",
       "autoBanKeywords": "Structured error keywords",
       "poolMode": "External account pool mode",
+      "relayRaceWidth": "Race concurrency",
+      "relayRetryLimit": "Retry limit",
+      "relayRetryDelayMs": "Retry delay (ms)",
       "clientSimulationProfile": "Client simulation profile",
       "clientSimulationBodyProfile": "Client simulation body profile",
       "responsesWebsocket": "Enable Responses WebSocket",
@@ -1823,12 +1826,14 @@
     "badges": {
       "exclusive": "Exclusive",
       "claudeCodeOnly": "Claude Code only",
-      "peak": "Peak pricing"
+      "peak": "Scheduled pricing"
     },
     "values": {
       "ratio": "{{value}}x",
-      "peakWindow": "{{ratio}}x · {{start}}-{{end}} UTC",
-      "noPeak": "No peak window",
+      "ruleCount": "{{count}} scheduled rules",
+      "allModels": "All models",
+      "selectedModels": "Selected models",
+      "noPeak": "No scheduled pricing",
       "daily": "Daily",
       "weekly": "Weekly",
       "monthly": "Monthly",
@@ -1847,7 +1852,9 @@
       "refresh": "Refresh",
       "retry": "Retry",
       "cancel": "Cancel",
-      "save": "Save changes"
+      "save": "Save changes",
+      "addRule": "Add time slot",
+      "removeRule": "Remove time slot"
     },
     "empty": {
       "title": "No groups to manage",
@@ -1869,8 +1876,10 @@
       "limits": "Resource limits",
       "routing": "Access and fallback",
       "ratioHint": "Use a non-negative ratio with up to 6 decimal places. 1 keeps the base price.",
-      "peakDescription": "Apply an additional peak ratio during a fixed daily UTC window.",
-      "utcHint": "All times use UTC.",
+      "peakDescription": "Apply an additional ratio to all or selected models on weekly days and time slots. 2 doubles the price; 0.5 halves it. This multiplies the base ratio.",
+      "utcHint": "An earlier end crosses midnight and belongs to the starting weekday. 00:00 to 24:00 covers the full day.",
+      "timezoneHint": "Uses a fixed UTC offset without daylight saving changes.",
+      "modelsHint": "Public model names separated by commas or newlines, e.g. deepseek-chat.",
       "optionalLimitHint": "Leave blank for no group-level limit.",
       "fallbackHint": "Target group used when client limits apply. A group cannot fall back to itself.",
       "exclusiveDescription": "Only users and API keys explicitly bound to this group may use it.",
@@ -1880,8 +1889,12 @@
       "name": "Stable name",
       "displayName": "Display name",
       "ratio": "Base ratio",
-      "peakEnabled": "Enable peak pricing",
-      "peakRatio": "Peak ratio",
+      "peakEnabled": "Enable weekly scheduled pricing",
+      "peakRatio": "Time slot ratio",
+      "weekdays": "Weekly days",
+      "timezone": "Time zone",
+      "modelScope": "Model scope",
+      "models": "Selected models",
       "peakStart": "Start time",
       "peakEnd": "End time",
       "dailyLimit": "Daily limit",
@@ -1898,7 +1911,12 @@
       "ratio": "Enter a non-negative ratio with up to 6 decimal places.",
       "number": "Enter an in-range non-negative integer, or leave blank for no limit.",
       "fallback": "Select a valid fallback group other than the current group.",
-      "peakWindow": "Select valid, distinct UTC start and end times."
+      "peakWindow": "Enter valid, distinct times. The end time may be 24:00.",
+      "weekdays": "Select at least one weekday.",
+      "models": "Enter 1 to 64 unique model names, each up to 256 bytes.",
+      "overlap": "Time slots overlap for the same models. Adjust the days, times, or model scope.",
+      "rules": "Configure 1 to 32 rules when scheduled pricing is enabled.",
+      "timezone": "Select a valid UTC time zone."
     },
     "errors": {
       "group_conflict": "The stable name is already used by another active group.",
@@ -1906,6 +1924,15 @@
       "invalid_request": "The group fields are invalid. Check them and try again.",
       "internal_error": "The data may have committed, but runtime refresh or storage failed. Refresh the list before retrying.",
       "unknown": "The group operation failed. Refresh the list to confirm its current state."
+    },
+    "weekdays": {
+      "1": "Mon",
+      "2": "Tue",
+      "3": "Wed",
+      "4": "Thu",
+      "5": "Fri",
+      "6": "Sat",
+      "7": "Sun"
     },
     "delete": {
       "title": "Delete group",

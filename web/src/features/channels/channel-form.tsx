@@ -1,3 +1,4 @@
+import { channelEditorTypes, protocolsForChannel, selectChannelProtocol } from './channel-capabilities'
 import { useEffect } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { LoaderCircle, ShieldAlert } from 'lucide-react'
@@ -45,12 +46,9 @@ type ChannelFormProps = {
   onSaved: (channel: AdminChannel) => void
 }
 
-const adapterOptions = ['nvidia', 'opencode', 'openai', 'anthropic', 'gemini', 'jina', 'cohere', 'xai']
-  .map((id) => ({ ...findProvider(id)!, id }))
-const channelTypeOptions = [
-  findProvider('codex_oauth')!,
-  ...adapterOptions,
-]
+const channelTypeOptions = channelEditorTypes.map((id) => ({
+  ...(findProvider(id) ?? { name: id, logo: id }), id,
+}))
 
 export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormProps) {
   const { t, i18n } = useTranslation()
@@ -196,30 +194,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                   onChange={(value) => {
                     const nextType = value as ChannelType
                     const currentProtocol = form.getValues('protocol')
-                    const nextProtocol = nextType === 'codex_oauth'
-                      ? 'openai_responses'
-                      : nextType === 'nvidia'
-                        ? 'openai_chat'
-                      : nextType === 'opencode'
-                        ? (currentProtocol === 'anthropic' || currentProtocol === 'openai_responses' ? currentProtocol : 'openai_chat')
-                      : nextType === 'anthropic'
-                      ? 'anthropic'
-                      : nextType === 'gemini'
-                        ? 'gemini'
-                        : nextType === 'jina'
-                          ? 'jina_rerank'
-                          : nextType === 'cohere'
-                            ? 'cohere_rerank'
-                            : nextType === 'xai'
-                              ? 'xai_video'
-                          : currentProtocol === 'openai_chat'
-                          || currentProtocol === 'openai_responses'
-                          || currentProtocol === 'openai_embeddings'
-                          || currentProtocol === 'openai_images'
-                          || currentProtocol === 'openai_audio'
-                          || currentProtocol === 'openai_speech'
-                          ? currentProtocol
-                          : 'openai_chat'
+                    const nextProtocol = selectChannelProtocol(nextType, currentProtocol)
                     field.onChange(nextType)
                     if (nextType === 'nvidia') {
                       form.setValue('provider', 'nvidia', { shouldDirty: true, shouldValidate: true })
@@ -264,36 +239,9 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                     resetUnsupportedClientSimulation(channelType, nextProtocol)
                   }}
                 >
-                  {codexOAuth ? (
-                    <option value="openai_responses">{t('channels.protocol.openai_responses')}</option>
-                  ) : opencode ? (
-                    <>
-                      <option value="openai_chat">{t('channels.protocol.openai_chat')}</option>
-                      <option value="openai_responses">{t('channels.protocol.openai_responses')}</option>
-                      <option value="anthropic">{t('channels.protocol.anthropic')}</option>
-                    </>
-                  ) : channelType === 'nvidia' ? (
-                    <option value="openai_chat">{t('channels.protocol.openai_chat')}</option>
-                  ) : channelType === 'anthropic' ? (
-                    <option value="anthropic">{t('channels.protocol.anthropic')}</option>
-                  ) : channelType === 'gemini' ? (
-                    <option value="gemini">{t('channels.protocol.gemini')}</option>
-                  ) : channelType === 'jina' ? (
-                    <option value="jina_rerank">{t('channels.protocol.jina_rerank')}</option>
-                  ) : channelType === 'cohere' ? (
-                    <option value="cohere_rerank">{t('channels.protocol.cohere_rerank')}</option>
-                  ) : channelType === 'xai' ? (
-                    <option value="xai_video">{t('channels.protocol.xai_video')}</option>
-                  ) : (
-                    <>
-                      <option value="openai_chat">{t('channels.protocol.openai_chat')}</option>
-                      <option value="openai_responses">{t('channels.protocol.openai_responses')}</option>
-                      <option value="openai_embeddings">{t('channels.protocol.openai_embeddings')}</option>
-                      <option value="openai_images">{t('channels.protocol.openai_images')}</option>
-                      <option value="openai_audio">{t('channels.protocol.openai_audio')}</option>
-                      <option value="openai_speech">{t('channels.protocol.openai_speech')}</option>
-                    </>
-                  )}
+                  {protocolsForChannel(channelType).map((key) => (
+                    <option key={key} value={key}>{t('channels.protocol.' + key)}</option>
+                  ))}
                 </Select>
               )} />
             </ChannelFormField>

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { AdminGroup } from '@/lib/api/generated/types.gen'
 import { ratioFromMicros } from './group-form-model'
+import { groupPeakWindows, secondTime, utcLabel } from './group-peak-model'
 import { GroupQuotaWindows } from './group-quota-windows'
 
 type GroupTableProps = {
@@ -20,23 +21,27 @@ function GroupBadges({ group }: { group: AdminGroup }) {
     <div className="flex flex-wrap gap-1">
       {group.is_exclusive ? <Badge className="border-transparent bg-info/10 text-info">{t('groups.badges.exclusive')}</Badge> : null}
       {group.flags.claude_code_only === true ? <Badge>{t('groups.badges.claudeCodeOnly')}</Badge> : null}
-      {group.peak_ratio_micros !== null ? <Badge className="border-transparent bg-warning/10 text-warning">{t('groups.badges.peak')}</Badge> : null}
+      {groupPeakWindows(group).length > 0 ? <Badge className="border-transparent bg-warning/10 text-warning">{t('groups.badges.peak')}</Badge> : null}
     </div>
   )
 }
 
 function PricingValue({ group }: { group: AdminGroup }) {
   const { t } = useTranslation()
+  const windows = groupPeakWindows(group)
   return (
     <div className="tabular-nums">
       <div className="font-medium">{t('groups.values.ratio', { value: ratioFromMicros(group.ratio_micros) })}</div>
-      {group.peak_ratio_micros !== null ? (
+      {windows.length > 0 ? (
         <div className="mt-1 text-[0.6875rem] leading-4 text-muted-foreground">
-          {t('groups.values.peakWindow', {
-            ratio: ratioFromMicros(group.peak_ratio_micros),
-            start: shortTime(group.peak_start),
-            end: shortTime(group.peak_end),
-          })}
+          <div>{t('groups.values.ruleCount', { count: windows.length })}</div>
+          {windows.map((window, index) => <div key={index} className="mt-1 break-words">
+            {window.weekdays.map((day) => t(`groups.weekdays.${day}`)).join(' / ')}
+            {' · '}{secondTime(window.start_second)}–{secondTime(window.end_second)}
+            {' '}{utcLabel(window.utc_offset_minutes ?? 0)}
+            {' · '}{t('groups.values.ratio', { value: ratioFromMicros(window.ratio_micros) })}
+            {' · '}{window.models?.length ? window.models.join(', ') : t('groups.values.allModels')}
+          </div>)}
         </div>
       ) : <div className="mt-1 text-[0.6875rem] text-muted-foreground">{t('groups.values.noPeak')}</div>}
     </div>
@@ -147,8 +152,4 @@ export function GroupTable({ groups, onDelete, onEdit }: GroupTableProps) {
       </div>
     </>
   )
-}
-
-function shortTime(value: string | null) {
-  return value?.endsWith(':00') ? value.slice(0, -3) : value ?? ''
 }

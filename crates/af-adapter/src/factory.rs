@@ -412,6 +412,50 @@ pub enum AdaptorSettings {
     Custom(CustomAdaptorSettings),
 }
 
+/// 构造常规渠道在探活、模型发现和生产调度中共用的适配器配置。
+///
+/// 这些调用方只需要提供渠道、协议、模型清单以及 OpenCode 的固定入口；各处不再
+/// 复制相同的配置分派。Bedrock、Vertex 和 Custom 仍通过各自带有额外参数的专用
+/// 构造路径创建；xAI 视频使用独立的异步任务工厂。
+pub fn standard_adaptor_settings(
+    channel_type: ChannelType,
+    protocol: Protocol,
+    supported_models: Vec<String>,
+    opencode_entry: Option<OpenCodeEntry>,
+) -> AdaptorResult<AdaptorSettings> {
+    if !channel_type.supports_protocol(protocol) {
+        return Err(AdaptorError::InvalidChannelSettings { channel_type });
+    }
+    match channel_type {
+        ChannelType::OpenCode => Ok(AdaptorSettings::OpenCode(OpenCodeAdaptorSettings::new(
+            opencode_entry.ok_or(AdaptorError::InvalidChannelSettings { channel_type })?,
+            protocol,
+            supported_models,
+        )?)),
+        ChannelType::OpenAi => Ok(AdaptorSettings::OpenAi(
+            OpenAiAdaptorSettings::for_protocol(protocol, supported_models)?,
+        )),
+        ChannelType::Nvidia => Ok(AdaptorSettings::Nvidia(NvidiaAdaptorSettings::new(
+            supported_models,
+        ))),
+        ChannelType::Anthropic => Ok(AdaptorSettings::Anthropic(AnthropicAdaptorSettings::new(
+            supported_models,
+        ))),
+        ChannelType::Gemini => Ok(AdaptorSettings::Gemini(GeminiAdaptorSettings::new(
+            supported_models,
+        ))),
+        ChannelType::Jina => Ok(AdaptorSettings::Jina(JinaAdaptorSettings::new(
+            supported_models,
+        ))),
+        ChannelType::Cohere => Ok(AdaptorSettings::Cohere(CohereAdaptorSettings::new(
+            supported_models,
+        ))),
+        ChannelType::Bedrock | ChannelType::Vertex | ChannelType::Custom | ChannelType::Xai => {
+            Err(AdaptorError::InvalidChannelSettings { channel_type })
+        }
+    }
+}
+
 impl fmt::Debug for AdaptorSettings {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -557,6 +601,55 @@ mod tests {
         AdaptorSettings::OpenAi(OpenAiAdaptorSettings::new(
             models.iter().map(|model| (*model).to_owned()).collect(),
         ))
+    }
+
+    #[test]
+    fn standard_factory_matches_production_capabilities_and_preserves_models() {
+        for &channel in ChannelType::ALL {
+            for &protocol in Protocol::ALL {
+                let models = vec!["private/model-a".to_owned(), "compact-model".to_owned()];
+                let settings = standard_adaptor_settings(
+                    channel,
+                    protocol,
+                    models.clone(),
+                    Some(OpenCodeEntry::InferenceV1),
+                );
+                if channel.supports_runtime(protocol) && channel != ChannelType::Xai {
+                    let adaptor = get_adaptor(channel, settings.unwrap()).unwrap();
+                    assert_eq!(adaptor.channel_type(), channel);
+                    assert_eq!(adaptor.default_protocol(), protocol);
+                    assert_eq!(adaptor.supported_models(), models);
+                } else {
+                    assert!(settings.is_err(), "{channel:?}/{protocol:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn standard_factory_requires_an_explicit_opencode_entry() {
+        for protocol in [
+            Protocol::OpenAiChat,
+            Protocol::OpenAiResponses,
+            Protocol::Anthropic,
+        ] {
+            assert!(
+                standard_adaptor_settings(ChannelType::OpenCode, protocol, Vec::new(), None)
+                    .is_err()
+            );
+            for entry in [OpenCodeEntry::InferenceV1, OpenCodeEntry::ZenV1] {
+                let settings = standard_adaptor_settings(
+                    ChannelType::OpenCode,
+                    protocol,
+                    Vec::new(),
+                    Some(entry),
+                )
+                .unwrap();
+                let adaptor = get_adaptor(ChannelType::OpenCode, settings).unwrap();
+                assert_eq!(adaptor.default_protocol(), protocol);
+                assert_eq!(adaptor.default_base_url(), entry.root());
+            }
+        }
     }
 
     fn anthropic_settings(models: &[&str]) -> AdaptorSettings {

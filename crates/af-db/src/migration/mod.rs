@@ -116,6 +116,7 @@ mod m20261018_000151_create_client_profiles;
 mod m20261018_000152_add_opencode_public_profile;
 mod m20261019_000153_create_proxy_pools;
 mod m20261019_000154_add_proxy_pool_refresh_attempt;
+mod m20261021_000155_add_group_peak_windows;
 mod schema;
 
 #[cfg(test)]
@@ -503,6 +504,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261018_000152_add_opencode_public_profile::Migration),
             Box::new(m20261019_000153_create_proxy_pools::Migration),
             Box::new(m20261019_000154_add_proxy_pool_refresh_attempt::Migration),
+            Box::new(m20261021_000155_add_group_peak_windows::Migration),
         ]
     }
 }

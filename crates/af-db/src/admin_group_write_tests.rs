@@ -1,6 +1,6 @@
 use std::{error::Error, time::Duration};
 
-use af_domain::GroupId;
+use af_domain::{GroupId, GroupPeakSchedule, GroupPeakWindow};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, PaginatorTrait, QueryFilter, Statement,
     sea_query::Expr,
@@ -14,6 +14,55 @@ use super::{
 use crate::entity::{
     abilities, channel_groups, group_model_ratios, groups, scheduler_outbox_events,
 };
+
+#[tokio::test]
+async fn weekly_schedule_persists_omission_preserves_and_empty_explicitly_disables()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let schedule = GroupPeakSchedule::new(vec![GroupPeakWindow::new(
+        vec![1, 3, 5],
+        23 * 3_600,
+        3_600,
+        500_000,
+        vec!["deepseek-chat".to_owned()],
+        480,
+    )?])?;
+    let created = fixture
+        .repository
+        .create(
+            write_record("weekly", "Weekly", None, true).with_peak_schedule(Some(schedule.clone())),
+        )
+        .await?;
+    assert_eq!(created.peak_schedule(), Some(&schedule));
+    let id = created.group_id();
+    let AdminGroupMutationOutcome::Mutated(updated) = fixture
+        .repository
+        .update(id, write_record("weekly", "Omitted", None, true))
+        .await?
+    else {
+        panic!("group must exist")
+    };
+    assert_eq!(updated.peak_schedule(), Some(&schedule));
+    let AdminGroupMutationOutcome::Mutated(cleared) = fixture
+        .repository
+        .update(
+            id,
+            write_record("weekly", "Disabled", None, true)
+                .with_peak_schedule(Some(GroupPeakSchedule::default())),
+        )
+        .await?
+    else {
+        panic!("group must exist")
+    };
+    assert!(cleared.peak_schedule().unwrap().windows().is_empty());
+    assert!(cleared.peak().is_some());
+    let model = groups::Entity::find_by_id(id.get())
+        .one(fixture.pool.connection())
+        .await?
+        .unwrap();
+    assert_eq!(model.peak_windows, Some(serde_json::json!([])));
+    Ok(())
+}
 
 #[tokio::test]
 async fn create_and_update_enforce_name_fallback_and_complete_fields() -> Result<(), Box<dyn Error>>

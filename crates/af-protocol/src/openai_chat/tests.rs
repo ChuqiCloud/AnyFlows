@@ -327,34 +327,60 @@ fn accepts_empty_response_metadata_in_tool_call_history() {
 }
 
 #[test]
-fn accepts_reasoning_metadata_in_assistant_history() {
+fn preserves_reasoning_metadata_in_assistant_history() {
     let baseline = request_with_messages(vec![
         json!({ "role": "user", "content": "first" }),
         json!({ "role": "assistant", "content": "answer" }),
         json!({ "role": "user", "content": "follow up" }),
     ]);
+    let baseline_request = parse_json(baseline.clone()).unwrap();
+
+    for (field, text) in [
+        ("reasoning_content", "internal reasoning"),
+        ("reasoning", "internal reasoning"),
+        ("reasoning_content", ""),
+        ("reasoning", ""),
+    ] {
+        let mut request = baseline.clone();
+        request["messages"][1]
+            .as_object_mut()
+            .unwrap()
+            .insert(field.to_owned(), Value::String(text.to_owned()));
+        request["messages"][1][if field == "reasoning" {
+            "reasoning_content"
+        } else {
+            "reasoning"
+        }] = Value::Null;
+        let parsed = parse_json(request).unwrap();
+        assert!(matches!(
+            parsed.messages[1].content.as_slice(),
+            [
+                ContentBlock::Thinking { text: reasoning, signature: None },
+                ContentBlock::Text(answer)
+            ] if reasoning == text && answer == "answer"
+        ));
+    }
 
     for metadata in [
-        json!({ "reasoning_content": "internal reasoning" }),
         json!({ "reasoning_content": null }),
-        json!({ "reasoning": "internal reasoning" }),
         json!({ "reasoning": null }),
-        json!({
-            "reasoning_content": "internal reasoning",
-            "reasoning": null
-        }),
+        json!({ "reasoning_content": null, "reasoning": null }),
     ] {
         let mut request = baseline.clone();
         request["messages"][1]
             .as_object_mut()
             .unwrap()
             .extend(metadata.as_object().unwrap().clone());
-        assert_eq!(
-            parse_json(request),
-            parse_json(baseline.clone()),
-            "{metadata}"
-        );
+        assert_eq!(parse_json(request), Ok(baseline_request.clone()));
     }
+
+    let mut conflicting = baseline;
+    conflicting["messages"][1]["reasoning_content"] = json!("first");
+    conflicting["messages"][1]["reasoning"] = json!("second");
+    assert_eq!(
+        parse_json(conflicting),
+        Err(ParseRequestError::InvalidValue)
+    );
 }
 
 #[test]
@@ -376,6 +402,60 @@ fn rejects_non_empty_unsupported_assistant_response_metadata() {
             "{metadata}"
         );
     }
+}
+
+#[test]
+fn reasoning_uses_text_and_content_block_budgets() {
+    use super::convert::{
+        MAX_CONTENT_BLOCKS, MAX_PARTS_PER_MESSAGE, MAX_TEXT_BYTES, MAX_TOTAL_TEXT_BYTES,
+    };
+
+    let oversized = request_with_messages(vec![json!({
+        "role": "assistant",
+        "content": "answer",
+        "reasoning_content": "x".repeat(MAX_TEXT_BYTES + 1)
+    })]);
+    assert_eq!(
+        parse_json(oversized),
+        Err(ParseRequestError::StructureLimitExceeded)
+    );
+
+    let mut at_limit = request_with_messages(vec![json!({
+        "role": "assistant",
+        "content": vec![json!({"type": "text", "text": "a"}); MAX_PARTS_PER_MESSAGE - 1],
+        "reasoning_content": "reasoning"
+    })]);
+    assert!(parse_json(at_limit.clone()).is_ok());
+    at_limit["messages"][0]["content"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"type": "text", "text": "one too many"}));
+    assert_eq!(
+        parse_json(at_limit),
+        Err(ParseRequestError::StructureLimitExceeded)
+    );
+
+    let message = json!({
+        "role": "assistant",
+        "content": vec![json!({"type": "text", "text": "a"}); MAX_PARTS_PER_MESSAGE - 1],
+        "reasoning_content": "reasoning"
+    });
+    let mut messages = vec![message; MAX_CONTENT_BLOCKS / MAX_PARTS_PER_MESSAGE];
+    assert!(parse_json(request_with_messages(messages.clone())).is_ok());
+    messages.push(json!({"role": "assistant", "reasoning_content": "extra"}));
+    assert_eq!(
+        parse_json(request_with_messages(messages)),
+        Err(ParseRequestError::StructureLimitExceeded)
+    );
+
+    let reasoning = json!({"role": "assistant", "reasoning_content": "x".repeat(MAX_TEXT_BYTES)});
+    let mut messages = vec![reasoning; MAX_TOTAL_TEXT_BYTES / MAX_TEXT_BYTES];
+    assert!(parse_json(request_with_messages(messages.clone())).is_ok());
+    messages.push(json!({"role": "assistant", "reasoning_content": "x"}));
+    assert_eq!(
+        parse_json(request_with_messages(messages)),
+        Err(ParseRequestError::StructureLimitExceeded)
+    );
 }
 
 #[test]

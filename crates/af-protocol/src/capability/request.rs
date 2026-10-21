@@ -210,6 +210,7 @@ pub(super) const OPENAI_CHAT: &[RequestCapability] = &[
     RequestCapability::ToolChoice,
     RequestCapability::ToolCalls,
     RequestCapability::ToolResults,
+    RequestCapability::Thinking,
     RequestCapability::ReasoningEffort(ReasoningEffort::None),
     RequestCapability::ReasoningEffort(ReasoningEffort::Minimal),
     RequestCapability::ReasoningEffort(ReasoningEffort::Low),

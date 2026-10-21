@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, fmt, time::Duration};
 
-use af_domain::GroupId;
+use af_domain::{GroupId, GroupPeakSchedule};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use thiserror::Error;
 use tokio::time::timeout;
@@ -52,30 +52,37 @@ impl fmt::Debug for GroupPeakPricingRecord {
 }
 
 /// 已通过持久化边界校验的单个有效分组计费配置。
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct GroupPricingRecord {
     group_id: GroupId,
     ratio_micros: i64,
     peak: Option<GroupPeakPricingRecord>,
+    peak_schedule: Option<GroupPeakSchedule>,
 }
 
 impl GroupPricingRecord {
     /// 返回有效分组标识。
     #[must_use]
-    pub const fn group_id(self) -> GroupId {
+    pub const fn group_id(&self) -> GroupId {
         self.group_id
     }
 
     /// 返回分组基础倍率的百万分比整数值。
     #[must_use]
-    pub const fn ratio_micros(self) -> i64 {
+    pub const fn ratio_micros(&self) -> i64 {
         self.ratio_micros
     }
 
     /// 返回可选高峰倍率窗口。
     #[must_use]
-    pub const fn peak(self) -> Option<GroupPeakPricingRecord> {
+    pub const fn peak(&self) -> Option<GroupPeakPricingRecord> {
         self.peak
+    }
+
+    /// 返回周计划；未配置时使用旧版每日窗口。
+    #[must_use]
+    pub const fn peak_schedule(&self) -> Option<&GroupPeakSchedule> {
+        self.peak_schedule.as_ref()
     }
 
     fn try_from_model(model: groups::Model) -> Result<Self, GroupPricingRepositoryError> {
@@ -104,8 +111,21 @@ impl GroupPricingRecord {
             group_id,
             ratio_micros: model.ratio_micros,
             peak,
+            peak_schedule: parse_peak_schedule(model.peak_windows.as_ref())
+                .map_err(|_| GroupPricingRepositoryError::Invariant)?,
         })
     }
+}
+
+pub(crate) fn parse_peak_schedule(
+    value: Option<&serde_json::Value>,
+) -> Result<Option<GroupPeakSchedule>, ()> {
+    value
+        .map(|value| {
+            let windows = serde_json::from_value(value.clone()).map_err(|_| ())?;
+            GroupPeakSchedule::new(windows).map_err(|_| ())
+        })
+        .transpose()
 }
 
 impl fmt::Debug for GroupPricingRecord {

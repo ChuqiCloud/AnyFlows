@@ -5,6 +5,7 @@ mod billing;
 mod billing_contract;
 mod billing_runtime;
 mod channel;
+mod channel_capability;
 mod client_profile;
 pub use client_profile::{
     ClientProfileBehavior, ClientProfileBinding, ClientProfileDefinition, ClientProfileError,
@@ -15,6 +16,11 @@ mod concurrency;
 mod enums;
 mod error;
 mod gateway_identity;
+mod group_peak_pricing;
+pub use group_peak_pricing::{
+    GroupPeakSchedule, GroupPeakScheduleError, GroupPeakWindow, MAX_GROUP_PEAK_MODELS,
+    MAX_GROUP_PEAK_WINDOWS, PricingWeekTime,
+};
 mod network;
 mod opencode;
 pub use opencode::OpenCodeEntry;

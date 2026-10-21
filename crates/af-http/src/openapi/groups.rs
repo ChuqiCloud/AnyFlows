@@ -6,7 +6,7 @@ use utoipa::OpenApi;
 
 use crate::{
     management_error::ManagementErrorBody,
-    management_group_writes::AdminGroupWriteRequest,
+    management_group_writes::{AdminGroupPeakWindow, AdminGroupWriteRequest},
     management_groups::{AdminGroupListResponse, AdminGroupResponse, AdminGroupWindowResponse},
 };
 
@@ -124,6 +124,7 @@ fn delete_admin_group() {}
         AdminGroupWindowResponse,
         AdminGroupListResponse,
         AdminGroupWriteRequest,
+        AdminGroupPeakWindow,
         ManagementErrorBody
     ))
 )]

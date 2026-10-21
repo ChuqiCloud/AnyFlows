@@ -3,9 +3,8 @@ use std::{collections::BTreeMap, fmt};
 use af_account::CredentialDecryptor;
 use af_adapter::{
     Adaptor, AdaptorError, AdaptorSendExt as _, AdaptorSettings, AdaptorTransportError,
-    AnthropicAdaptor, AnthropicAdaptorSettings, GeminiAdaptor, GeminiAdaptorSettings, HeaderMap,
-    HeaderName, HeaderValue, Method, OpenAiAdaptor, OpenAiAdaptorSettings, RelayContext,
-    UpstreamRequest, get_adaptor,
+    AnthropicAdaptor, GeminiAdaptor, HeaderMap, HeaderName, HeaderValue, Method, OpenAiAdaptor,
+    RelayContext, UpstreamRequest, get_adaptor,
 };
 use af_admin::{
     UpstreamModelDiscoverer, UpstreamModelDiscovery, UpstreamModelDiscoveryError,
@@ -15,7 +14,7 @@ use af_db::{
     DiscoveredModelRecord, MAX_MODEL_SYNC_CANDIDATES, ModelDiscoveryTargetLookup,
     ModelDiscoveryTargetRecord, ModelSyncRepository,
 };
-use af_domain::{ChannelId, ChannelType, Protocol};
+use af_domain::{ChannelId, ChannelType};
 use af_httpclient::HttpClientProvider;
 use serde::Deserialize;
 use url::Url;
@@ -562,68 +561,28 @@ fn apply_header_overrides(
 fn adaptor_settings_for_target(
     target: &ModelDiscoveryTargetRecord,
 ) -> Result<AdaptorSettings, UpstreamModelDiscoveryError> {
-    if target.channel_type() == ChannelType::OpenCode {
-        return af_adapter::OpenCodeAdaptorSettings::new(
-            target
-                .opencode_entry()
-                .ok_or(UpstreamModelDiscoveryError::ChannelUnavailable)?,
-            target.protocol(),
-            Vec::new(),
-        )
-        .map(AdaptorSettings::OpenCode)
-        .map_err(|_| UpstreamModelDiscoveryError::UnsupportedChannel);
-    }
-    adaptor_settings(target.channel_type(), target.protocol())
+    af_adapter::standard_adaptor_settings(
+        target.channel_type(),
+        target.protocol(),
+        Vec::new(),
+        target.opencode_entry(),
+    )
+    .map_err(|_| UpstreamModelDiscoveryError::UnsupportedChannel)
 }
 
+#[cfg(test)]
 fn adaptor_settings(
     channel_type: ChannelType,
-    protocol: Protocol,
+    protocol: af_domain::Protocol,
 ) -> Result<AdaptorSettings, UpstreamModelDiscoveryError> {
-    match (channel_type, protocol) {
-        (
-            ChannelType::OpenAi,
-            Protocol::OpenAiChat
-            | Protocol::OpenAiResponses
-            | Protocol::OpenAiEmbeddings
-            | Protocol::OpenAiImages
-            | Protocol::OpenAiAudio
-            | Protocol::OpenAiSpeech,
-        ) => Ok(AdaptorSettings::OpenAi(
-            OpenAiAdaptorSettings::for_protocol(protocol, Vec::new())
-                .map_err(|_| UpstreamModelDiscoveryError::UnsupportedChannel)?,
-        )),
-        (ChannelType::Nvidia, Protocol::OpenAiChat) => Ok(AdaptorSettings::Nvidia(
-            af_adapter::NvidiaAdaptorSettings::new(Vec::new()),
-        )),
-        (ChannelType::Anthropic, Protocol::Anthropic) => Ok(AdaptorSettings::Anthropic(
-            AnthropicAdaptorSettings::new(Vec::new()),
-        )),
-        (ChannelType::Gemini, Protocol::Gemini) => Ok(AdaptorSettings::Gemini(
-            GeminiAdaptorSettings::new(Vec::new()),
-        )),
-        _ => Err(UpstreamModelDiscoveryError::UnsupportedChannel),
-    }
+    af_adapter::standard_adaptor_settings(channel_type, protocol, Vec::new(), None)
+        .map_err(|_| UpstreamModelDiscoveryError::UnsupportedChannel)
 }
 
 fn supported_target(target: &ModelDiscoveryTargetRecord) -> bool {
-    matches!(
-        (target.channel_type(), target.protocol()),
-        (
-            ChannelType::OpenAi,
-            Protocol::OpenAiChat
-                | Protocol::OpenAiResponses
-                | Protocol::OpenAiEmbeddings
-                | Protocol::OpenAiImages
-                | Protocol::OpenAiAudio
-                | Protocol::OpenAiSpeech
-        ) | (
-            ChannelType::OpenCode,
-            Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic
-        ) | (ChannelType::Anthropic, Protocol::Anthropic)
-            | (ChannelType::Nvidia, Protocol::OpenAiChat)
-            | (ChannelType::Gemini, Protocol::Gemini)
-    )
+    target
+        .channel_type()
+        .supports_model_discovery(target.protocol())
 }
 
 fn enforce_candidate_bound(count: usize) -> Result<(), UpstreamModelDiscoveryError> {
@@ -739,6 +698,7 @@ struct GeminiModelWire {
 
 #[cfg(test)]
 mod tests {
+    use af_domain::Protocol;
     use af_httpclient::{HttpClientConfig, HttpClientPool};
 
     use super::*;

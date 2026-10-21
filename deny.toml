@@ -8,6 +8,10 @@ yanked = "deny"
 unused-ignored-advisory = "deny"
 ignore = [
     { id = "RUSTSEC-2023-0071", reason = "SQLx MySQL 仅执行 RSA 公钥加密，不执行该公告涉及的私钥运算。" },
+    # 0.26.11 不携带证书，只重新导出 1.x 的 TLS_SERVER_ROOTS：
+    # https://github.com/rustls/webpki-roots/blob/v/0.26.11/webpki-roots/src/lib.rs
+    # 当前 cargo-deny 不支持按版本忽略公告，以下 bans 仅允许该兼容包及 >=1.0.10。
+    { id = "RUSTSEC-2026-0381", reason = "SQLx 使用的 webpki-roots 0.26.11 仅转发已修复的 1.x 根证书；bans 禁止其余受影响版本。" },
 ]
 
 [licenses]
@@ -126,6 +130,10 @@ allow = ["MPL-2.0"]
 multiple-versions = "warn"
 wildcards = "deny"
 highlight = "all"
+deny = [
+    { name = "webpki-roots", version = "<0.26.11", reason = "旧版内置根证书受 RUSTSEC-2026-0381 影响。" },
+    { name = "webpki-roots", version = ">0.26.11, <1.0.10", reason = "仅允许转发 1.x 的 0.26.11 兼容包；实际根证书必须 >=1.0.10。" },
+]
 
 [sources]
 unknown-registry = "deny"

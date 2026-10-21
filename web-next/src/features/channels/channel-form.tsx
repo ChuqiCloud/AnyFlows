@@ -1,3 +1,4 @@
+import { channelEditorTypes, protocolsForChannel, selectChannelProtocol } from './channel-capabilities'
 import { ProviderPicker } from '@/components/brand/provider-picker'
 import { findProvider } from '@/components/brand/provider-catalog'
 import { useEffect } from 'react'
@@ -42,18 +43,9 @@ type ChannelFormProps = {
 
 /* HeroUI Select 不接受空字符串 key，用哨兵 key 表达各枚举里的"关闭/空"选项。 */
 const OFF_KEY = '__off__'
-const adapterOptions = ['nvidia', 'opencode', 'openai', 'anthropic', 'gemini', 'jina', 'cohere', 'xai'].map((id) => ({ ...findProvider(id)!, id }))
-const channelTypeOptions = [findProvider('codex_oauth')!, ...adapterOptions]
-const OPENAI_PROTOCOL_KEYS = ['openai_chat', 'openai_responses', 'openai_embeddings', 'openai_images', 'openai_audio', 'openai_speech'] as const
-const PROTOCOL_BY_TYPE = {
-  nvidia: ['openai_chat'],
-  opencode: ['openai_chat', 'openai_responses', 'anthropic'],
-  anthropic: ['anthropic'],
-  gemini: ['gemini'],
-  jina: ['jina_rerank'],
-  cohere: ['cohere_rerank'],
-  xai: ['xai_video'],
-} as const
+const channelTypeOptions = channelEditorTypes.map((id) => ({
+  ...(findProvider(id) ?? { name: id, logo: id }), id,
+}))
 
 export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormProps) {
   const { t, i18n } = useTranslation()
@@ -199,30 +191,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                   onChange={(value) => {
                     const nextType = value as ChannelType
                     const currentProtocol = form.getValues('protocol')
-                    const nextProtocol = nextType === 'codex_oauth'
-                      ? 'openai_responses'
-                      : nextType === 'nvidia'
-                        ? 'openai_chat'
-                      : nextType === 'opencode'
-                        ? (currentProtocol === 'anthropic' || currentProtocol === 'openai_responses' ? currentProtocol : 'openai_chat')
-                      : nextType === 'anthropic'
-                      ? 'anthropic'
-                      : nextType === 'gemini'
-                        ? 'gemini'
-                        : nextType === 'jina'
-                          ? 'jina_rerank'
-                          : nextType === 'cohere'
-                            ? 'cohere_rerank'
-                            : nextType === 'xai'
-                              ? 'xai_video'
-                          : currentProtocol === 'openai_chat'
-                          || currentProtocol === 'openai_responses'
-                          || currentProtocol === 'openai_embeddings'
-                          || currentProtocol === 'openai_images'
-                          || currentProtocol === 'openai_audio'
-                          || currentProtocol === 'openai_speech'
-                          ? currentProtocol
-                          : 'openai_chat'
+                    const nextProtocol = selectChannelProtocol(nextType, currentProtocol)
                     field.onChange(nextType)
                     if (nextType === 'nvidia') {
                       form.setValue('provider', 'nvidia', { shouldDirty: true, shouldValidate: true })
@@ -255,14 +224,9 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                 <Select
                   aria-label={t('channels.fields.protocol')}
                   id="channel-protocol"
-                    items={codexOAuth
-                      ? [{ key: 'openai_responses', label: t('channels.protocol.openai_responses') }]
-                      : (channelType in PROTOCOL_BY_TYPE
-                    ? PROTOCOL_BY_TYPE[channelType as keyof typeof PROTOCOL_BY_TYPE]
-                    : OPENAI_PROTOCOL_KEYS
-                  ).map((key) => ({ key, label: t(`channels.protocol.${key}`) }))}
-                    selectedKeys={[field.value]}
-                    isDisabled={codexOAuth}
+                  items={protocolsForChannel(channelType).map((key) => ({ key, label: t('channels.protocol.' + key) }))}
+                  selectedKeys={[field.value]}
+                  isDisabled={codexOAuth}
                   size="sm"
                   onSelectionChange={(keys) => {
                     const nextProtocol = String(Array.from(keys)[0]) as ChannelFormValues['protocol']
