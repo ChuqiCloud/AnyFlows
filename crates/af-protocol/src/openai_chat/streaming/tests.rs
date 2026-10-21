@@ -637,15 +637,25 @@ fn decoder_accepts_delayed_tool_identity_and_empty_continuations() {
             events.extend(decoder.push(bytes).unwrap());
         }
         decoder.finish().unwrap();
-        let calls: Vec<_> = events.iter().filter_map(|event| match event {
-            CanonicalStreamEvent::ToolCallStart { id, name, .. } => Some((id.as_str(), name.as_str())),
-            _ => None,
-        }).collect();
+        let calls: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                CanonicalStreamEvent::ToolCallStart { id, name, .. } => {
+                    Some((id.as_str(), name.as_str()))
+                }
+                _ => None,
+            })
+            .collect();
         assert_eq!(calls, vec![("call_delayed", "routing_probe")]);
-        let arguments: String = events.iter().filter_map(|event| match event {
-            CanonicalStreamEvent::ToolCallArgsDelta { partial_json, .. } => Some(partial_json.as_str()),
-            _ => None,
-        }).collect();
+        let arguments: String = events
+            .iter()
+            .filter_map(|event| match event {
+                CanonicalStreamEvent::ToolCallArgsDelta { partial_json, .. } => {
+                    Some(partial_json.as_str())
+                }
+                _ => None,
+            })
+            .collect();
         assert_eq!(arguments, "{\"value\":\"ok\"}");
         assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
     }
@@ -679,11 +689,25 @@ fn decoder_rejects_unresolved_or_changed_tool_identity() {
     ] {
         let mut decoder = OpenAiChatStreamDecoder::new();
         decoder.push(&sse(&chunk(json!([{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_original","type":"function","function":{"name":"lookup","arguments":"{"}}]}}]), None))).unwrap();
-        assert!(decoder.push(&sse(&chunk(json!([{"index":0,"delta":{"tool_calls":[continuation]}}]), None))).is_err());
+        assert!(
+            decoder
+                .push(&sse(&chunk(
+                    json!([{"index":0,"delta":{"tool_calls":[continuation]}}]),
+                    None
+                )))
+                .is_err()
+        );
     }
     let mut decoder = OpenAiChatStreamDecoder::new();
     decoder.push(&sse(&chunk(json!([{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"function":{"arguments":"{}"}}]}}]), None))).unwrap();
-    assert!(decoder.push(&sse(&chunk(json!([{"index":0,"delta":{},"finish_reason":"tool_calls"}]), None))).is_err());
+    assert!(
+        decoder
+            .push(&sse(&chunk(
+                json!([{"index":0,"delta":{},"finish_reason":"tool_calls"}]),
+                None
+            )))
+            .is_err()
+    );
 }
 
 #[test]

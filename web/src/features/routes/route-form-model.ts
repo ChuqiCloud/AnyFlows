@@ -62,7 +62,7 @@ export function defaultRouteFormValues(route?: AdminRoute): RouteFormValues {
     .map((candidate) => ({
       id: `candidate-${candidate.id}`,
       channelId: candidate.channel_id,
-      credentialId: candidate.credential_id,
+      credentialId: candidate.credential_id ?? null,
       weight: String(candidate.weight),
       enabled: candidate.enabled,
       stats: {
