@@ -623,6 +623,27 @@ mod tests {
         );
     }
 
+    #[test]
+    fn explicit_strategies_deprioritize_unhealthy_keys_within_priority() {
+        let credentials = vec![credential(1, 2, 10), credential(2, 2, 10), credential(3, 1, 10)];
+        let health = BTreeMap::from([(
+            1,
+            RuntimeHealthState::new(
+                RedisHealthTarget::Credential(CredentialId::new(1).unwrap()),
+                HEALTH_PENALTY_SCALE,
+                false,
+            ),
+        )]);
+        for strategy in [
+            af_db::CredentialSelectionStrategy::Priority,
+            af_db::CredentialSelectionStrategy::RoundRobin,
+        ] {
+            let mut ordered = credentials.iter().collect::<Vec<_>>();
+            apply_channel_credential_strategy(&mut ordered, strategy, 1, Some(&health));
+            assert_eq!(credential_ids(ordered), vec![2, 1, 3]);
+        }
+    }
+
     fn credential_ids(credentials: Vec<&SchedulerRuntimeCredentialRecord>) -> Vec<i64> {
         credentials
             .into_iter()

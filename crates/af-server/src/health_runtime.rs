@@ -389,6 +389,68 @@ mod tests {
 
     use super::*;
 
+    #[derive(Default)]
+    struct BatchHealthStore {
+        requests: std::sync::Mutex<Vec<Vec<RedisHealthTarget>>>,
+        reverse: bool,
+    }
+
+    impl SchedulerHealthStore for BatchHealthStore {
+        fn states<'a>(
+            &'a self,
+            targets: &'a [RedisHealthTarget],
+        ) -> SchedulerHealthStoreFuture<'a, Vec<RuntimeHealthState>> {
+            Box::pin(async move {
+                assert!(targets.len() <= MAX_HEALTH_BATCH_SIZE);
+                self.requests.lock().unwrap().push(targets.to_vec());
+                let mut states = targets
+                    .iter()
+                    .map(|target| RuntimeHealthState::new(*target, 0, false))
+                    .collect::<Vec<_>>();
+                if self.reverse {
+                    states.reverse();
+                }
+                Ok(states)
+            })
+        }
+
+        fn apply<'a>(&'a self, _events: &'a [RedisHealthEvent]) -> SchedulerHealthStoreFuture<'a, ()> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[tokio::test]
+    async fn large_credential_health_read_batches_and_deduplicates_targets() {
+        let store = Arc::new(BatchHealthStore::default());
+        let reader: Arc<dyn SchedulerHealthStore> = store.clone();
+        let mut ids = (1..=130)
+            .map(|id| {
+                let id = CredentialId::new(id).unwrap();
+                (id, id)
+            })
+            .collect::<Vec<_>>();
+        ids.push(ids[0]);
+        let states = load_credential_health(&reader, &ids).await.unwrap();
+        assert_eq!(states.len(), 130);
+        assert!(ids.iter().all(|(id, _)| states.contains_key(&id.get())));
+        let requests = store.requests.lock().unwrap();
+        assert_eq!(requests.len(), 260_usize.div_ceil(MAX_HEALTH_BATCH_SIZE));
+        assert_eq!(requests.iter().map(Vec::len).sum::<usize>(), 260);
+    }
+
+    #[tokio::test]
+    async fn health_read_rejects_reordered_store_results() {
+        let store: Arc<dyn SchedulerHealthStore> = Arc::new(BatchHealthStore {
+            reverse: true,
+            ..BatchHealthStore::default()
+        });
+        let id = CredentialId::new(1).unwrap();
+        assert_eq!(
+            load_credential_health(&store, &[(id, id)]).await,
+            Err(SchedulerHealthRuntimeError::Invariant)
+        );
+    }
+
     #[test]
     fn health_feedback_is_dual_level_and_skips_bad_request() {
         let target = CredentialAttemptTarget::new(
