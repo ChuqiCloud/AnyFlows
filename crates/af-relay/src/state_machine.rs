@@ -49,7 +49,6 @@ pub struct RelayCandidate {
     race_width: Option<usize>,
     response_validation: Option<af_domain::Protocol>,
     first_output_timeout: Duration,
-    priority: i32,
 }
 
 impl RelayCandidate {
@@ -72,7 +71,6 @@ impl RelayCandidate {
             race_width: None,
             response_validation: None,
             first_output_timeout: Duration::from_secs(300),
-            priority: 0,
         }
     }
 
@@ -125,13 +123,6 @@ impl RelayCandidate {
     #[must_use]
     pub const fn with_first_output_timeout(mut self, timeout: Duration) -> Self {
         self.first_output_timeout = timeout;
-        self
-    }
-
-    /// 同一竞速组只使用相同 Key 优先级。
-    #[must_use]
-    pub const fn with_priority(mut self, priority: i32) -> Self {
-        self.priority = priority;
         self
     }
 
@@ -870,7 +861,6 @@ impl RelayStateMachine {
             let mut end = index + 1;
             while end < self.candidates.len()
                 && self.candidates[end].channel_group == channel
-                && self.candidates[end].priority == self.candidates[index].priority
                 && end - index
                     < self.candidates[index]
                         .race_width

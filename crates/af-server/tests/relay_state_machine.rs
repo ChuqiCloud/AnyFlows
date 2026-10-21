@@ -351,6 +351,8 @@ async fn race_waits_for_usable_output_and_cancels_loser_permit() {
             .with_attempt_gate(Arc::new(SemaphoreAttemptGate(slots)))
     };
     let machine = RelayStateMachine::new(vec![
+        // Scheduling already orders the candidate list by Key priority. The
+        // configured race width must still span adjacent priority tiers.
         make_candidate(slow_address, slow_slots.clone()),
         make_candidate(fast_address, fast_slots.clone()),
     ])

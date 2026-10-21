@@ -625,7 +625,7 @@ mod tests {
 
     #[test]
     fn explicit_strategies_deprioritize_unhealthy_keys_within_priority() {
-        let credentials = vec![
+        let credentials = [
             credential(1, 2, 10),
             credential(2, 2, 10),
             credential(3, 1, 10),
