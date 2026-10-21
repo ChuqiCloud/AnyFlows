@@ -1,6 +1,6 @@
 use std::fmt;
 
-use af_domain::GroupId;
+use af_domain::{GroupId, GroupPeakSchedule};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbErr, EntityTrait,
     QueryFilter, Set, TransactionTrait,
@@ -49,6 +49,7 @@ pub struct AdminGroupWriteRecord {
     display_name: String,
     ratio_micros: i64,
     peak: Option<AdminGroupPeakWriteRecord>,
+    peak_schedule: Option<GroupPeakSchedule>,
     is_exclusive: bool,
     daily_limit: Option<i64>,
     weekly_limit: Option<i64>,
@@ -83,6 +84,7 @@ impl AdminGroupWriteRecord {
             display_name,
             ratio_micros,
             peak,
+            peak_schedule: None,
             is_exclusive,
             daily_limit,
             weekly_limit,
@@ -91,6 +93,13 @@ impl AdminGroupWriteRecord {
             fallback_group_id,
             flags,
         }
+    }
+
+    /// 设置新周计划；未设置时更新操作保留数据库现有计划。
+    #[must_use]
+    pub fn with_peak_schedule(mut self, schedule: Option<GroupPeakSchedule>) -> Self {
+        self.peak_schedule = schedule;
+        self
     }
 }
 
@@ -171,6 +180,7 @@ impl AdminGroupRepository {
         ensure_name_available(&transaction, &record.name, None).await?;
         ensure_fallback_exists(&transaction, record.fallback_group_id).await?;
         let (peak_ratio_micros, peak_start, peak_end) = peak_columns(record.peak)?;
+        let peak_windows = encode_peak_schedule(record.peak_schedule.as_ref())?;
         let inserted = groups::ActiveModel {
             name: Set(record.name),
             display_name: Set(record.display_name),
@@ -178,6 +188,7 @@ impl AdminGroupRepository {
             peak_ratio_micros: Set(peak_ratio_micros),
             peak_start: Set(peak_start),
             peak_end: Set(peak_end),
+            peak_windows: Set(peak_windows),
             is_exclusive: Set(record.is_exclusive),
             daily_limit: Set(record.daily_limit),
             weekly_limit: Set(record.weekly_limit),
@@ -212,7 +223,7 @@ impl AdminGroupRepository {
         ensure_fallback_exists(&transaction, record.fallback_group_id).await?;
         let (peak_ratio_micros, peak_start, peak_end) = peak_columns(record.peak)?;
         let now = TimeDateTimeWithTimeZone::now_utc();
-        let result = groups::Entity::update_many()
+        let mut update = groups::Entity::update_many()
             .filter(groups::Column::Id.eq(group_id.get()))
             .filter(groups::Column::DeletedAt.is_null())
             .col_expr(groups::Column::Name, Expr::value(record.name))
@@ -249,7 +260,14 @@ impl AdminGroupRepository {
                 Expr::value(record.fallback_group_id.map(GroupId::get)),
             )
             .col_expr(groups::Column::Flags, Expr::value(record.flags))
-            .col_expr(groups::Column::UpdatedAt, Expr::value(now))
+            .col_expr(groups::Column::UpdatedAt, Expr::value(now));
+        if record.peak_schedule.is_some() {
+            update = update.col_expr(
+                groups::Column::PeakWindows,
+                Expr::value(encode_peak_schedule(record.peak_schedule.as_ref())?),
+            );
+        }
+        let result = update
             .exec(&transaction)
             .with_subscriber(NoSubscriber::default())
             .await
@@ -292,6 +310,17 @@ impl AdminGroupRepository {
         commit_transaction(transaction).await?;
         Ok(AdminGroupDeleteOutcome::Deleted)
     }
+}
+
+fn encode_peak_schedule(
+    schedule: Option<&GroupPeakSchedule>,
+) -> Result<Option<serde_json::Value>, AdminGroupRepositoryError> {
+    schedule
+        .map(|schedule| {
+            serde_json::to_value(schedule.windows())
+                .map_err(|_| AdminGroupRepositoryError::Invariant)
+        })
+        .transpose()
 }
 
 async fn begin_transaction(

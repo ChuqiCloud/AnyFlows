@@ -5,7 +5,7 @@ use af_db::{
     AdminGroupRepository, AdminGroupRepositoryError, AdminGroupWriteRecord,
     MAX_ADMIN_GROUP_FLAGS_BYTES,
 };
-use af_domain::GroupId;
+use af_domain::{GroupId, GroupPeakSchedule};
 use thiserror::Error;
 
 use crate::{AdminGroup, SessionPrincipal, SessionRole};
@@ -50,6 +50,12 @@ pub struct AdminGroupCreateCommand {
 }
 
 impl AdminGroupCreateCommand {
+    /// 应用已校验的周计划；未提供则采用旧版窗口。
+    #[must_use]
+    pub fn with_peak_schedule(mut self, schedule: Option<GroupPeakSchedule>) -> Self {
+        self.fields.peak_schedule = schedule;
+        self
+    }
     /// 校验分组名称、定点倍率、限额、回退引用和受限 JSON 对象。
     #[allow(
         clippy::too_many_arguments,
@@ -102,6 +108,12 @@ pub struct AdminGroupUpdateCommand {
 }
 
 impl AdminGroupUpdateCommand {
+    /// 应用已校验的周计划；未提供则保留现有周计划。
+    #[must_use]
+    pub fn with_peak_schedule(mut self, schedule: Option<GroupPeakSchedule>) -> Self {
+        self.fields.peak_schedule = schedule;
+        self
+    }
     /// 校验完整更新边界，避免无效配置进入仓储事务。
     #[allow(
         clippy::too_many_arguments,
@@ -157,6 +169,7 @@ struct AdminGroupWriteFields {
     display_name: String,
     ratio_micros: i64,
     peak: Option<AdminGroupPeakCommand>,
+    peak_schedule: Option<GroupPeakSchedule>,
     is_exclusive: bool,
     daily_limit: Option<i64>,
     weekly_limit: Option<i64>,
@@ -207,6 +220,7 @@ impl AdminGroupWriteFields {
             display_name,
             ratio_micros,
             peak,
+            peak_schedule: None,
             is_exclusive,
             daily_limit,
             weekly_limit,
@@ -231,6 +245,7 @@ impl AdminGroupWriteFields {
             self.fallback_group_id,
             self.flags,
         )
+        .with_peak_schedule(self.peak_schedule)
     }
 }
 

@@ -33,6 +33,7 @@
 | [贡献指南](../CONTRIBUTING.md) | 开发环境、提交规范和检查范围 |
 | [仓库与扩展边界](repository-boundary.md) | 公共核心和私有扩展的职责 |
 | [前端扩展](frontend-extensions.md) | 扩展页面、导航和能力发现 |
+| [渠道适配器](channel-adapter-architecture.md) | 能力声明、适配器装配、前端生成与新增渠道步骤 |
 | [服务账号身份](service-identity.md) | 独立身份、认证和运行时契约 |
 | [服务账号模型授权](service-model-authorization.md) | 模型授权和请求权限 |
 | [公共核心导出](public-core-export.md) | 可复现导出和内容保护 |

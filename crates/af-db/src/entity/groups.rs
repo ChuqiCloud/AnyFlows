@@ -17,6 +17,9 @@ pub struct Model {
     pub peak_ratio_micros: Option<i64>,
     pub peak_start: Option<TimeTime>,
     pub peak_end: Option<TimeTime>,
+    /// 周计划；NULL 回退旧版每日窗口，空数组显式关闭分时倍率。
+    #[sea_orm(column_type = "JsonBinary", nullable)]
+    pub peak_windows: Option<Json>,
     pub is_exclusive: bool,
     pub daily_limit: Option<i64>,
     pub weekly_limit: Option<i64>,

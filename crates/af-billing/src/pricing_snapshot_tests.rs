@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use af_domain::{GroupId, Quota};
+use af_domain::{GroupId, GroupPeakSchedule, GroupPeakWindow, PricingWeekTime, Quota};
 use af_protocol::{TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource};
 use rust_decimal::Decimal;
 
@@ -95,6 +95,97 @@ async fn capture_fixes_model_version_and_all_ratios_for_both_billing_phases() {
         .unwrap();
     assert_eq!(price.quota(), Quota::new(450_000).unwrap());
     assert!(!price.is_free());
+}
+
+#[tokio::test]
+async fn weekly_pricing_freezes_discount_for_settlement_and_supports_zero() {
+    struct WeeklyGroups;
+    impl GroupPricingSource for WeeklyGroups {
+        fn load<'a>(&'a self) -> GroupPricingSourceFuture<'a> {
+            Box::pin(async {
+                let group = GroupId::new(1).unwrap();
+                let schedule = GroupPeakSchedule::new(vec![
+                    GroupPeakWindow::new(
+                        vec![1],
+                        0,
+                        3_600,
+                        500_000,
+                        vec!["snapshot-model".to_owned()],
+                        0,
+                    )
+                    .unwrap(),
+                    GroupPeakWindow::new(vec![7], 0, 86_400, 0, Vec::new(), 0).unwrap(),
+                ])
+                .unwrap();
+                Ok(GroupPricingSourceCatalog::new(
+                    vec![
+                        GroupPricingSourceRecord::new(
+                            group,
+                            PricingRatio::new(2_000_000).unwrap(),
+                            None,
+                        )
+                        .with_peak_schedule(Some(schedule)),
+                    ],
+                    Vec::new(),
+                ))
+            })
+        }
+    }
+    let source = CachedRequestPricingSnapshotSource::new(
+        ModelPriceCache::load(Arc::new(ModelSource)).await.unwrap(),
+        GroupPricingCache::load(Arc::new(WeeklyGroups))
+            .await
+            .unwrap(),
+    );
+    let group = GroupId::new(1).unwrap();
+    let started = source
+        .capture_for_request_at(
+            "snapshot-model",
+            group,
+            group,
+            None,
+            af_domain::Protocol::OpenAiChat,
+            PricingWeekTime::new(1, 0).unwrap(),
+        )
+        .await
+        .unwrap();
+    let after = source
+        .capture_at(
+            "snapshot-model",
+            group,
+            group,
+            PricingWeekTime::new(1, 3_600).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(started.ratios().applied_peak().micros(), 500_000);
+    assert_eq!(after.ratios().applied_peak(), PricingRatio::ONE);
+    let usage = million_input_usage();
+    let context = PricingContext::new(&usage);
+    assert_eq!(
+        started.resolver().resolve(&context).unwrap().quota(),
+        Quota::new(500_000).unwrap()
+    );
+    assert_eq!(
+        after.resolver().resolve(&context).unwrap().quota(),
+        Quota::new(1_000_000).unwrap()
+    );
+    assert_eq!(
+        started.resolver().resolve(&context).unwrap().quota(),
+        Quota::new(500_000).unwrap()
+    );
+    let zero = source
+        .capture_at(
+            "snapshot-model",
+            group,
+            group,
+            PricingWeekTime::new(7, 0).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(zero.ratios().applied_peak().micros(), 0);
+    assert_eq!(
+        zero.resolver().resolve(&context).unwrap().quota(),
+        Quota::new(0).unwrap()
+    );
 }
 
 #[tokio::test]

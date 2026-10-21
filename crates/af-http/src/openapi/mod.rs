@@ -670,7 +670,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 594);
+        assert_eq!(schemas.len(), 595);
         assert!(schemas.contains_key("AdminProxyCleanupRequest"));
         assert!(schemas.contains_key("AdminProxyCleanupResult"));
         assert!(schemas.contains_key("ServiceLevelPoint"));
@@ -971,6 +971,7 @@ mod tests {
         assert!(schemas.contains_key("AdminCredentialProxyWriteRequest"));
         assert!(schemas.contains_key("AdminCredentialProxyScheme"));
         assert!(schemas.contains_key("AdminGroupWindow"));
+        assert!(schemas.contains_key("AdminGroupPeakWindow"));
         assert!(schemas.contains_key("AdminDebugTrace"));
         assert!(schemas.contains_key("AdminDebugTraceAttempt"));
         assert!(schemas.contains_key("AdminDebugTraceDownstreamRequest"));

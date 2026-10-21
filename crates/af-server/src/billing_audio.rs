@@ -141,7 +141,7 @@ impl BillingAudioService {
         let local_estimate = audio_usage_estimate(&billing_request, local_duration)?;
         let snapshot = self
             .pricing_source
-            .capture_for_request(
+            .capture_for_request_at(
                 &model,
                 principal.group_id(),
                 planned.target_group_id(),
@@ -149,7 +149,7 @@ impl BillingAudioService {
                     .organization_principal()
                     .map(|organization| organization.organization_id()),
                 af_domain::Protocol::OpenAiAudio,
-                crate::utc_time::current_utc_day_second().ok_or(AfError::Internal)?,
+                crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?,
             )
             .await
             .map_err(map_snapshot_error)?;

@@ -47,6 +47,10 @@ fn validate_destructive_test_target(database_url: &str) -> Result<(), Box<dyn Er
 #[tokio::test]
 #[ignore = "仅由显式启用的隔离数据库迁移流水线执行"]
 async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
+    use sea_orm::{ConnectionTrait, DbBackend, Statement, prelude::TimeTime};
+
+    use super::iden::groups;
+
     let database_url = test_database_url();
     validate_destructive_test_target(&database_url)?;
 
@@ -66,6 +70,35 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
             .is_empty()
     );
 
+    // 默认分组由业务初始化创建，迁移本身不会插入；在历史结构中显式准备升级数据。
+    let backend = pool.connection().get_database_backend();
+    let peak_start = TimeTime::from_hms(8, 0, 0)?;
+    let peak_end = TimeTime::from_hms(20, 0, 0)?;
+    let insert = Query::insert()
+        .into_table(groups::Entity)
+        .columns([
+            groups::Column::Id,
+            groups::Column::Name,
+            groups::Column::DisplayName,
+            groups::Column::RatioMicros,
+            groups::Column::PeakRatioMicros,
+            groups::Column::PeakStart,
+            groups::Column::PeakEnd,
+            groups::Column::Flags,
+        ])
+        .values_panic([
+            1_i64.into(),
+            "legacy-peak".into(),
+            "Legacy peak".into(),
+            1_500_000_i64.into(),
+            2_000_000_i64.into(),
+            peak_start.into(),
+            peak_end.into(),
+            serde_json::json!({}).into(),
+        ])
+        .to_owned();
+    pool.connection().execute(backend.build(&insert)).await?;
+
     Migrator::up(pool.connection(), None).await?;
     assert!(
         Migrator::get_pending_migrations(pool.connection())
@@ -73,8 +106,6 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
             .is_empty()
     );
 
-    use sea_orm::{ConnectionTrait, DbBackend, Statement};
-    let backend = pool.connection().get_database_backend();
     let sql = match backend {
         DbBackend::MySql => {
             "SELECT `invitation_invitee_quota` FROM `authentication_settings` WHERE `id` = 1"
@@ -87,6 +118,36 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         .await?
         .ok_or("authentication settings must survive the upgrade")?;
     assert_eq!(row.try_get::<i64>("", "invitation_invitee_quota")?, 0);
+    let sql = match backend {
+        DbBackend::MySql => {
+            "SELECT `ratio_micros`, `peak_ratio_micros`, `peak_start`, `peak_end`, `peak_windows` FROM `groups` WHERE `id` = 1"
+        }
+        _ => {
+            "SELECT ratio_micros, peak_ratio_micros, peak_start, peak_end, peak_windows FROM groups WHERE id = 1"
+        }
+    };
+    let row = pool
+        .connection()
+        .query_one(Statement::from_string(backend, sql.to_owned()))
+        .await?
+        .ok_or("legacy peak group must survive the upgrade")?;
+    assert_eq!(row.try_get::<i64>("", "ratio_micros")?, 1_500_000);
+    assert_eq!(
+        row.try_get::<Option<i64>>("", "peak_ratio_micros")?,
+        Some(2_000_000)
+    );
+    assert_eq!(
+        row.try_get::<Option<TimeTime>>("", "peak_start")?,
+        Some(peak_start)
+    );
+    assert_eq!(
+        row.try_get::<Option<TimeTime>>("", "peak_end")?,
+        Some(peak_end)
+    );
+    assert!(
+        row.try_get::<Option<serde_json::Value>>("", "peak_windows")?
+            .is_none()
+    );
     let profiles = crate::ClientProfileRepository::new(pool.clone());
     assert_eq!(
         profiles

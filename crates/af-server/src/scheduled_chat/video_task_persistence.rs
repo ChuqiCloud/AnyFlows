@@ -558,10 +558,11 @@ impl PersistentVideoTaskCoordinator {
             .snapshot()
             .map_err(|_| PersistentVideoTaskError::Billing)?;
         let ratios = snapshot
-            .ratios_for_request(
+            .ratios_for_model_at(
                 claim.principal().group_id(),
                 target_group_id,
-                crate::utc_time::current_utc_day_second()
+                claim.requested_model(),
+                crate::utc_time::current_pricing_time()
                     .ok_or(PersistentVideoTaskError::Invariant)?,
             )
             .map_err(|_| PersistentVideoTaskError::Billing)?;

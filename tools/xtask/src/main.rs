@@ -8,6 +8,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process;
 
+mod channel_capabilities;
+
 use cargo_metadata::{DependencyKind, Metadata, MetadataCommand};
 
 const PRODUCT_CRATES: [&str; 16] = [
@@ -37,6 +39,8 @@ enum Command {
     CheckDependencies,
     ExportOpenApi,
     CheckOpenApi,
+    ExportChannelCapabilities,
+    CheckChannelCapabilities,
 }
 
 #[derive(Debug, Clone)]
@@ -99,6 +103,8 @@ fn run() -> Result<(), Box<dyn Error>> {
         Command::CheckDependencies => check_dependencies(),
         Command::ExportOpenApi => export_openapi(),
         Command::CheckOpenApi => check_openapi(),
+        Command::ExportChannelCapabilities => channel_capabilities::export(),
+        Command::CheckChannelCapabilities => channel_capabilities::check(),
     }
 }
 
@@ -112,9 +118,11 @@ fn parse_command(args: &[String]) -> Result<Command, io::Error> {
         ["check-deps"] => Ok(Command::CheckDependencies),
         ["openapi", "export"] => Ok(Command::ExportOpenApi),
         ["openapi", "check"] => Ok(Command::CheckOpenApi),
+        ["channel-capabilities", "export"] => Ok(Command::ExportChannelCapabilities),
+        ["channel-capabilities", "check"] => Ok(Command::CheckChannelCapabilities),
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "usage: cargo xtask <check-deps|openapi export|openapi check>",
+            "usage: cargo xtask <check-deps|openapi export|openapi check|channel-capabilities export|channel-capabilities check>",
         )),
     }
 }

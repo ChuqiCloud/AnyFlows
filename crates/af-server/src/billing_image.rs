@@ -133,7 +133,7 @@ impl BillingImageService {
             .await?;
         let snapshot = self
             .pricing_source
-            .capture_for_request(
+            .capture_for_request_at(
                 &model,
                 principal.group_id(),
                 planned.target_group_id(),
@@ -141,7 +141,7 @@ impl BillingImageService {
                     .organization_principal()
                     .map(|organization| organization.organization_id()),
                 af_domain::Protocol::OpenAiImages,
-                crate::utc_time::current_utc_day_second().ok_or(AfError::Internal)?,
+                crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?,
             )
             .await
             .map_err(map_snapshot_error)?;

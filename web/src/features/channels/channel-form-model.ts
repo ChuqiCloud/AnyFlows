@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { asChannelEditorType, channelEditorTypes, channelProtocols, protocolsForChannel, selectChannelProtocol, type ChannelEditorType, type ChannelProtocol } from './channel-capabilities.ts'
+
 import type {
   AdminChannel,
   AdminChannelCreateRequestWritable,
@@ -8,8 +10,8 @@ import type {
 
 export type ChannelEditorMode = 'create' | 'update'
 export type SensitiveEditMode = 'preserve' | 'replace' | 'clear'
-export type ChannelType = 'nvidia' | 'opencode' | 'openai' | 'codex_oauth' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai'
-export type ChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini' | 'jina_rerank' | 'cohere_rerank' | 'xai_video'
+export type ChannelType = ChannelEditorType
+export type { ChannelProtocol }
 export type ResponsesCompactMode = 'auto' | 'force_on' | 'force_off'
 export type ClientSimulationProfile = '' | 'anthropic_cli_headers_v1'
 export type ClientSimulationBodyProfile = '' | 'anthropic_cli_system_date_v1'
@@ -110,8 +112,8 @@ export function buildChannelFormSchema(
     name: z.string().trim().min(1, messages.invalidField).max(128, messages.invalidField),
     baseUrl: z.string().trim().max(2048, messages.invalidField),
     timeoutSeconds: z.string(),
-    channelType: z.enum(['nvidia', 'opencode', 'openai', 'codex_oauth', 'anthropic', 'gemini', 'jina', 'cohere', 'xai']),
-    protocol: z.enum(['openai_chat', 'openai_responses', 'openai_embeddings', 'openai_images', 'openai_audio', 'openai_speech', 'anthropic', 'gemini', 'jina_rerank', 'cohere_rerank', 'xai_video']),
+    channelType: z.enum(channelEditorTypes),
+    protocol: z.enum(channelProtocols),
     tag: z.string().trim().max(64, messages.invalidField),
     status: z.enum(['enabled', 'disabled']),
     weight: z.number().int(messages.invalidField).min(0, messages.invalidField),
@@ -137,28 +139,7 @@ export function buildChannelFormSchema(
     headerOverrideMode: z.enum(['preserve', 'replace', 'clear']),
     headerOverride: z.array(keyValueRowSchema),
   }).superRefine((values, context) => {
-    const protocolMatchesType = values.channelType === 'codex_oauth'
-      ? values.protocol === 'openai_responses'
-      : values.channelType === 'nvidia'
-        ? values.protocol === 'openai_chat'
-      : values.channelType === 'opencode'
-        ? ['openai_chat', 'openai_responses', 'anthropic'].includes(values.protocol)
-      : values.channelType === 'anthropic'
-      ? values.protocol === 'anthropic'
-      : values.channelType === 'gemini'
-        ? values.protocol === 'gemini'
-        : values.channelType === 'jina'
-          ? values.protocol === 'jina_rerank'
-          : values.channelType === 'cohere'
-            ? values.protocol === 'cohere_rerank'
-            : values.channelType === 'xai'
-              ? values.protocol === 'xai_video'
-          : values.protocol === 'openai_chat'
-          || values.protocol === 'openai_responses'
-          || values.protocol === 'openai_embeddings'
-          || values.protocol === 'openai_images'
-          || values.protocol === 'openai_audio'
-          || values.protocol === 'openai_speech'
+    const protocolMatchesType = protocolsForChannel(values.channelType).includes(values.protocol)
     if (!protocolMatchesType) addIssue(context, 'protocol', messages.invalidField)
     const nativeAnthropic = values.channelType === 'anthropic' && values.protocol === 'anthropic'
     if (values.clientSimulationProfile && !nativeAnthropic) {
@@ -244,43 +225,14 @@ export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues 
   const codexOAuth = channel?.type === 'openai'
     && channel.protocol === 'openai_responses'
     && channel.provider?.trim().toLowerCase() === 'codex'
+  const channelType = codexOAuth ? 'codex_oauth' : asChannelEditorType(channel?.type)
   return {
     provider: codexOAuth ? 'codex' : channel?.provider ?? channel?.type ?? 'openai',
     name: channel?.name ?? '',
     baseUrl: codexOAuth || channel?.type === 'opencode' ? '' : channel?.base_url ?? '',
     timeoutSeconds: channel?.timeout_secs == null ? '' : String(channel.timeout_secs),
-    channelType: codexOAuth
-      ? 'codex_oauth'
-      : channel?.type === 'nvidia' ? 'nvidia'
-      : channel?.type === 'opencode' ? 'opencode'
-      : channel?.type === 'anthropic'
-      ? 'anthropic'
-      : channel?.type === 'gemini'
-        ? 'gemini'
-        : channel?.type === 'jina'
-          ? 'jina'
-          : channel?.type === 'cohere'
-            ? 'cohere'
-            : channel?.type === 'xai' ? 'xai' : 'openai',
-    protocol: channel?.protocol === 'anthropic'
-      ? 'anthropic'
-      : channel?.protocol === 'gemini'
-        ? 'gemini'
-        : channel?.protocol === 'jina_rerank'
-          ? 'jina_rerank'
-          : channel?.protocol === 'cohere_rerank'
-            ? 'cohere_rerank'
-            : channel?.protocol === 'xai_video'
-              ? 'xai_video'
-          : channel?.protocol === 'openai_responses'
-          ? 'openai_responses'
-          : channel?.protocol === 'openai_embeddings'
-            ? 'openai_embeddings'
-            : channel?.protocol === 'openai_images'
-              ? 'openai_images'
-              : channel?.protocol === 'openai_audio'
-                ? 'openai_audio'
-                : channel?.protocol === 'openai_speech' ? 'openai_speech' : 'openai_chat',
+    channelType,
+    protocol: selectChannelProtocol(channelType, channel?.protocol),
     tag: channel?.tag ?? '',
     status: channel?.status === 'enabled' ? 'enabled' : 'disabled',
     weight: channel?.weight ?? 10,

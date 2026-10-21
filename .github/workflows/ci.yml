@@ -420,15 +420,24 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-      - name: Install workspace tools
+      - name: Install dependency audit tool
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: cargo-deny@0.20.2
+          fallback: none
+
+      - name: Install workspace test tool
         if: needs.changes.outputs.full == 'true'
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
         with:
-          tool: cargo-nextest@0.9.140,cargo-deny@0.20.2
+          tool: cargo-nextest@0.9.140
           fallback: none
 
       - name: Check formatting
         run: cargo fmt --all -- --check
+
+      - name: Audit dependencies
+        run: cargo deny --all-features --locked check advisories bans licenses sources
 
       - name: Check crate dependency policy
         run: cargo run --locked --package xtask -- check-deps
@@ -448,6 +457,9 @@ jobs:
       - name: Test service container runner
         if: needs.changes.outputs.full == 'true'
         run: bash tools/ci/test-container-test-runner.sh
+
+      - name: Check channel capability catalog
+        run: cargo run --locked --package xtask -- channel-capabilities check
 
       - name: Check OpenAPI contract
         run: |
@@ -473,10 +485,6 @@ jobs:
       - name: Run documentation tests
         if: needs.changes.outputs.full == 'true'
         run: cargo test --workspace --all-features --doc --locked
-
-      - name: Audit dependencies
-        if: needs.changes.outputs.full == 'true'
-        run: cargo deny --all-features --locked check advisories bans licenses sources
 
   clickhouse-integration:
     name: ClickHouse integration
@@ -615,7 +623,7 @@ jobs:
   sqlite-migration:
     name: SQLite migration smoke test
     needs: changes
-    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.database == 'true' }}
+    if: ${{ needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -675,7 +683,7 @@ jobs:
   postgres-migration:
     name: PostgreSQL migration smoke test
     needs: changes
-    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.database == 'true' }}
+    if: ${{ needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -758,7 +766,7 @@ jobs:
   mysql-migration:
     name: MySQL migration smoke test
     needs: changes
-    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.database == 'true' }}
+    if: ${{ needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:

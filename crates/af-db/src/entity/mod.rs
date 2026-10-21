@@ -315,6 +315,10 @@ where
     {
         return Err(DbErr::Custom("分组基础倍率不能为负数".to_owned()));
     }
+    if let Some(value) = model.peak_windows.try_as_ref() {
+        crate::group_pricing::parse_peak_schedule(value.as_ref())
+            .map_err(|()| DbErr::Custom("分组分时计费周计划无效".to_owned()))?;
+    }
     let peak_changed = insert
         || model.peak_ratio_micros.is_set()
         || model.peak_start.is_set()

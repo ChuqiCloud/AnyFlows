@@ -339,6 +339,7 @@ async fn admin_can_read_group_list_and_detail_with_no_store_responses() {
             "peak_ratio_micros": 1500000,
             "peak_start": "08:05:06",
             "peak_end": "22:30:00",
+            "peak_windows": null,
             "is_exclusive": true,
             "daily_limit": 10000,
             "weekly_limit": null,

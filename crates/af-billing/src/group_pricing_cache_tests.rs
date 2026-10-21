@@ -8,7 +8,7 @@ use crate::{
     GroupPricingSource, GroupPricingSourceCatalog, GroupPricingSourceError,
     GroupPricingSourceFuture, GroupPricingSourceRecord, PricingRatio,
 };
-use af_domain::GroupId;
+use af_domain::{GroupId, GroupPeakSchedule, GroupPeakWindow, PricingWeekTime};
 
 type SourceResult = Result<GroupPricingSourceCatalog, GroupPricingSourceError>;
 
@@ -80,6 +80,80 @@ async fn snapshot_applies_base_special_and_cross_midnight_peak_ratios() {
         .ratios_for_request(source_group, target_group, 1_200)
         .unwrap();
     assert_eq!(after_midnight.applied_peak().micros(), 2_000_000);
+}
+
+#[tokio::test]
+async fn weekly_schedule_matches_public_model_and_replaces_legacy_peak() {
+    let group = GroupId::new(1).unwrap();
+    let legacy = GroupPeakPricing::new(PricingRatio::new(3_000_000).unwrap(), 0, 86_399).unwrap();
+    let schedule = GroupPeakSchedule::new(vec![
+        GroupPeakWindow::new(
+            vec![7],
+            23 * 3_600,
+            9 * 3_600,
+            500_000,
+            vec!["deepseek-chat".to_owned()],
+            480,
+        )
+        .unwrap(),
+    ])
+    .unwrap();
+    let record =
+        GroupPricingSourceRecord::new(group, PricingRatio::new(1_200_000).unwrap(), Some(legacy))
+            .with_peak_schedule(Some(schedule));
+    let cache = GroupPricingCache::load(Arc::new(SequenceSource::new([Ok(
+        GroupPricingSourceCatalog::new(vec![record], Vec::new()),
+    )])))
+    .await
+    .unwrap();
+    let snapshot = cache.snapshot().unwrap();
+    let monday = PricingWeekTime::new(1, 0).unwrap();
+    let matched = snapshot
+        .ratios_for_model_at(group, group, "deepseek-chat", monday)
+        .unwrap();
+    assert_eq!(matched.group().micros(), 1_200_000);
+    assert_eq!(matched.applied_peak().micros(), 500_000);
+    assert_eq!(
+        snapshot
+            .ratios_for_model_at(group, group, "other-model", monday)
+            .unwrap()
+            .applied_peak(),
+        PricingRatio::ONE
+    );
+    assert_eq!(
+        snapshot
+            .ratios_for_model_at(
+                group,
+                group,
+                "deepseek-chat",
+                PricingWeekTime::new(1, 3_600).unwrap()
+            )
+            .unwrap()
+            .applied_peak(),
+        PricingRatio::ONE
+    );
+}
+
+#[tokio::test]
+async fn explicitly_empty_schedule_disables_legacy_peak() {
+    let group = GroupId::new(1).unwrap();
+    let legacy = GroupPeakPricing::new(PricingRatio::new(2_000_000).unwrap(), 0, 3_600).unwrap();
+    let record = GroupPricingSourceRecord::new(group, PricingRatio::ONE, Some(legacy))
+        .with_peak_schedule(Some(GroupPeakSchedule::default()));
+    let cache = GroupPricingCache::load(Arc::new(SequenceSource::new([Ok(
+        GroupPricingSourceCatalog::new(vec![record], Vec::new()),
+    )])))
+    .await
+    .unwrap();
+    assert_eq!(
+        cache
+            .snapshot()
+            .unwrap()
+            .ratios_for_model_at(group, group, "any", PricingWeekTime::new(1, 0).unwrap())
+            .unwrap()
+            .applied_peak(),
+        PricingRatio::ONE
+    );
 }
 
 #[tokio::test]

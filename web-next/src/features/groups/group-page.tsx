@@ -11,6 +11,7 @@ import { useAdminGroupCatalog } from './group-api'
 import { GroupDeleteDialog } from './group-delete-dialog'
 import { GroupEditorSheet } from './group-editor-sheet'
 import { GroupTable } from './group-table'
+import { groupPeakWindows } from './group-peak-model'
 
 type EditorState = AdminGroup | 'create' | undefined
 
@@ -24,7 +25,7 @@ export function GroupPage() {
   const pagination = useClientTablePagination(groups.length)
   const visibleGroups = groups.slice(pagination.startIndex, pagination.endIndex)
   const exclusiveCount = groups.filter((group) => group.is_exclusive).length
-  const peakCount = groups.filter((group) => group.peak_ratio_micros !== null).length
+  const peakCount = groups.filter((group) => groupPeakWindows(group).length > 0).length
 
   return (
     <div className="flex flex-col gap-4">

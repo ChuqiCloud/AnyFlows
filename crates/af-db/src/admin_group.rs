@@ -1,6 +1,6 @@
 use std::{fmt, time::Duration};
 
-use af_domain::{GroupId, SubscriptionCycle, SubscriptionWindow};
+use af_domain::{GroupId, GroupPeakSchedule, SubscriptionCycle, SubscriptionWindow};
 use sea_orm::{
     ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
     entity::prelude::TimeDateTimeWithTimeZone,
@@ -91,6 +91,7 @@ pub struct AdminGroupRecord {
     display_name: String,
     ratio_micros: i64,
     peak: Option<AdminGroupPeakRecord>,
+    peak_schedule: Option<GroupPeakSchedule>,
     is_exclusive: bool,
     daily_limit: Option<i64>,
     weekly_limit: Option<i64>,
@@ -132,6 +133,12 @@ impl AdminGroupRecord {
     #[must_use]
     pub const fn peak(&self) -> Option<AdminGroupPeakRecord> {
         self.peak
+    }
+
+    /// 返回显式周计划；空计划表示停用，未配置时回退旧每日窗口。
+    #[must_use]
+    pub const fn peak_schedule(&self) -> Option<&GroupPeakSchedule> {
+        self.peak_schedule.as_ref()
     }
 
     /// 返回是否为独占分组。
@@ -260,6 +267,8 @@ impl AdminGroupRecord {
             display_name: model.display_name,
             ratio_micros: model.ratio_micros,
             peak,
+            peak_schedule: crate::group_pricing::parse_peak_schedule(model.peak_windows.as_ref())
+                .map_err(|_| internal_invariant())?,
             is_exclusive: model.is_exclusive,
             daily_limit: model.daily_limit,
             weekly_limit: model.weekly_limit,

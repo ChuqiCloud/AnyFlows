@@ -5,6 +5,7 @@ import { AiActivity } from '@/components/ai/ai-activity'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
+import { supportsModelDiscovery } from '@/features/channels/channel-capabilities'
 import type { AdminChannel } from '@/lib/api/generated/types.gen'
 
 type ModelSyncToolbarProps = {
@@ -26,6 +27,7 @@ type ModelSyncToolbarProps = {
 export function ModelSyncToolbar(props: ModelSyncToolbarProps) {
   const { t } = useTranslation()
   const selected = props.channels.find((channel) => channel.id === props.channelId)
+  const discoverySupported = selected ? supportsModelDiscovery(selected.type, selected.protocol) : false
 
   return (
     <div className="grid gap-3 rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
@@ -39,7 +41,7 @@ export function ModelSyncToolbar(props: ModelSyncToolbarProps) {
           >
             <option value="">{t(props.loading ? 'modelManagement.sync.channel.loading' : 'modelManagement.sync.channel.placeholder')}</option>
             {props.channels.map((channel) => (
-              <option key={channel.id} value={channel.id} disabled={channel.status !== 'enabled'}>
+              <option key={channel.id} value={channel.id} disabled={channel.status !== 'enabled' || !supportsModelDiscovery(channel.type, channel.protocol)}>
                 {t('modelManagement.sync.channel.option', {
                   name: channel.name,
                   protocol: t(`channels.protocol.${channel.protocol}`),
@@ -49,7 +51,7 @@ export function ModelSyncToolbar(props: ModelSyncToolbarProps) {
             ))}
           </Select>
         </label>
-        <Button type="button" size="sm" disabled={!selected || selected.status !== 'enabled' || props.previewing} onClick={props.onPreview}>
+        <Button type="button" size="sm" disabled={!selected || selected.status !== 'enabled' || !discoverySupported || props.previewing} onClick={props.onPreview}>
           {props.previewing ? null : <ScanSearch aria-hidden="true" />}
           {t(props.previewing ? 'modelManagement.sync.actions.previewing' : 'modelManagement.sync.actions.preview')}
         </Button>

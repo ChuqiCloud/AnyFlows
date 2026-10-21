@@ -9,6 +9,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import type { AdminChannel, AdminChannelProbeResponse } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
 
+import { supportsProbe } from './channel-capabilities'
+
 export type ProbeDisplay = (AdminChannelProbeResponse & { failed?: false }) | { failed: true }
 
 type ChannelTableProps = {
@@ -122,13 +124,14 @@ function RowActions({ channel, probing, onProfile, onCredentials, onEdit, onProb
   onProbe: (channelId: number) => void
 }) {
   const { t } = useTranslation()
+  const probeSupported = supportsProbe(channel.type, channel.protocol)
   return (
     <div className="flex flex-wrap items-center justify-end gap-1">
       <Button type="button" size="icon-sm" variant="ghost" className="size-10 md:size-8" aria-label={t('clientProfiles.channelSettings')} title={t('clientProfiles.channelSettings')} onClick={() => onProfile(channel)}><Fingerprint aria-hidden="true" /></Button>
 
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button type="button" size="icon-sm" variant="ghost" className="size-10 md:size-8" disabled={probing} aria-label={t('channels.actions.probe')} onClick={() => onProbe(channel.id)}>
+          <Button type="button" size="icon-sm" variant="ghost" className="size-10 md:size-8" disabled={probing || !probeSupported} aria-label={t('channels.actions.probe')} onClick={() => onProbe(channel.id)}>
             <Activity aria-hidden="true" />
           </Button>
         </TooltipTrigger>

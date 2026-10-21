@@ -4,7 +4,7 @@ use af_db::{
     AdminGroupLookupOutcome, AdminGroupRecord, AdminGroupRepository, AdminGroupRepositoryError,
     MAX_ADMIN_GROUP_PAGE_SIZE,
 };
-use af_domain::GroupId;
+use af_domain::{GroupId, GroupPeakSchedule};
 use thiserror::Error;
 
 use crate::{SessionPrincipal, SessionRole};
@@ -133,6 +133,7 @@ pub struct AdminGroup {
     display_name: String,
     ratio_micros: i64,
     peak: Option<AdminGroupPeak>,
+    peak_schedule: Option<GroupPeakSchedule>,
     is_exclusive: bool,
     daily_limit: Option<i64>,
     weekly_limit: Option<i64>,
@@ -172,6 +173,7 @@ impl AdminGroup {
             display_name,
             ratio_micros,
             peak,
+            peak_schedule: None,
             is_exclusive,
             daily_limit,
             weekly_limit,
@@ -213,6 +215,19 @@ impl AdminGroup {
     #[must_use]
     pub const fn peak(&self) -> Option<AdminGroupPeak> {
         self.peak
+    }
+
+    /// 返回周计划；NULL 表示回退旧窗口。
+    #[must_use]
+    pub const fn peak_schedule(&self) -> Option<&GroupPeakSchedule> {
+        self.peak_schedule.as_ref()
+    }
+
+    /// 组合已校验的分时计费周计划。
+    #[must_use]
+    pub fn with_peak_schedule(mut self, schedule: Option<GroupPeakSchedule>) -> Self {
+        self.peak_schedule = schedule;
+        self
     }
 
     /// 返回是否为独占分组。
@@ -311,6 +326,7 @@ impl AdminGroup {
             record.fallback_group_id(),
             record.flags().clone(),
         )
+        .with_peak_schedule(record.peak_schedule().cloned())
     }
 }
 

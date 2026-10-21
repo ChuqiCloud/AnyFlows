@@ -569,6 +569,40 @@ fn responses_runtime_target_rejects_chat_only_stop_sequences() {
 }
 
 #[test]
+fn runtime_target_enforces_api_key_only_channels_without_repository_selection() {
+    for (channel, protocol) in [
+        (ChannelType::Nvidia, Protocol::OpenAiChat),
+        (ChannelType::Jina, Protocol::JinaRerank),
+        (ChannelType::Cohere, Protocol::CohereRerank),
+        (ChannelType::Xai, Protocol::XaiVideo),
+    ] {
+        for kind in [CredentialKind::ApiKey, CredentialKind::Oauth] {
+            let credential = SchedulerRuntimeCredentialRecord::new(
+                1,
+                kind,
+                EncryptedCredentialEnvelope::new("runtime-test-key", [0x43; 24], vec![0x25; 16])
+                    .unwrap(),
+                false,
+            )
+            .unwrap();
+            let target = SchedulerRuntimeTargetRecord::new_pool(
+                ChannelId::new(1).unwrap(),
+                channel,
+                protocol,
+                None,
+                vec![credential],
+                Vec::new(),
+            );
+            assert_eq!(
+                target.is_ok(),
+                kind == CredentialKind::ApiKey,
+                "{channel:?}/{kind:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn anthropic_runtime_target_accepts_messages_pair_and_rejects_mismatch() {
     let credential = runtime_credential_record(1);
     assert!(

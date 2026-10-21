@@ -1388,26 +1388,7 @@ fn validate_channel_fields(
             .is_some_and(|value| !valid_trimmed_text(value, 64))
         || record.weight < 0
         || !matches!(record.status, Status::Enabled | Status::Disabled)
-        || !matches!(
-            (record.channel_type, record.protocol),
-            (
-                ChannelType::OpenAi,
-                Protocol::OpenAiChat
-                    | Protocol::OpenAiResponses
-                    | Protocol::OpenAiEmbeddings
-                    | Protocol::OpenAiImages
-                    | Protocol::OpenAiAudio
-                    | Protocol::OpenAiSpeech
-            ) | (
-                ChannelType::OpenCode,
-                Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic
-            ) | (ChannelType::Anthropic, Protocol::Anthropic)
-                | (ChannelType::Nvidia, Protocol::OpenAiChat)
-                | (ChannelType::Gemini, Protocol::Gemini)
-                | (ChannelType::Jina, Protocol::JinaRerank)
-                | (ChannelType::Cohere, Protocol::CohereRerank)
-                | (ChannelType::Xai, Protocol::XaiVideo)
-        )
+        || !record.channel_type.supports_runtime(record.protocol)
         || (record.channel_type == ChannelType::OpenCode && record.base_url.is_some())
         || (codex_oauth
             && (record.channel_type != ChannelType::OpenAi
@@ -1630,17 +1611,7 @@ fn validate_credential_channel_compatibility(
         .r#type
         .parse::<ChannelType>()
         .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
-    if matches!(
-        channel_type,
-        ChannelType::Nvidia | ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
-    ) && kind != CredentialKind::ApiKey
-    {
-        return Err(AdminChannelWriteRepositoryError::InvalidInput);
-    }
-    if (kind == CredentialKind::Public && channel_type != ChannelType::OpenCode)
-        || (channel_type == ChannelType::OpenCode
-            && !matches!(kind, CredentialKind::ApiKey | CredentialKind::Public))
-    {
+    if !channel_type.supports_credential_kind(kind) {
         return Err(AdminChannelWriteRepositoryError::InvalidInput);
     }
     let is_codex_oauth = channel
