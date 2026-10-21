@@ -1,3 +1,43 @@
+## 0.3.0-beta.2 - 2026-10-21
+
+本版本基于 `v0.3.0-beta.1`，增加代理池、NVIDIA NIM 和 OpenCode 接入，完善渠道执行策略与分时计费。发布包包含 Linux amd64 二进制、Classic 与 Next 两套内置前端、systemd 安装脚本和 SHA-256 校验文件。
+
+### 新增
+
+- 自定义代理池：支持粘贴文本、TXT/CSV/JSON 文件和 GET 订阅，识别 HTTP/HTTPS、SOCKS5/SOCKS5H、认证信息、IPv6 与混合备注；支持自定义同步间隔、节点测活、健康筛选、凭据/渠道/全局绑定，以及批量删除和清理。([#43](https://github.com/ChuqiCloud/AnyFlows/pull/43))
+- NVIDIA NIM 内置渠道：支持官方托管接口与自建 NIM 地址、API Key、模型发现、凭据探活、流式与非流式 Chat Completions。([#44](https://github.com/ChuqiCloud/AnyFlows/pull/44))
+- OpenCode 专用渠道：支持 Inference v1、Zen v1、公开访问凭据、流式响应聚合及工具兼容中继。([#35](https://github.com/ChuqiCloud/AnyFlows/pull/35)、[#37](https://github.com/ChuqiCloud/AnyFlows/pull/37)、[#40](https://github.com/ChuqiCloud/AnyFlows/pull/40))
+- 客户端档案管理：支持不可变修订、渠道绑定、历史修订回滚与引用保护，两套前端均提供管理入口。([#34](https://github.com/ChuqiCloud/AnyFlows/pull/34)、[#36](https://github.com/ChuqiCloud/AnyFlows/pull/36))
+- 渠道上游执行策略：可配置并发竞速、重试次数和退避间隔；渠道设置优先，未配置时继承全局默认值。([#46](https://github.com/ChuqiCloud/AnyFlows/pull/46))
+- 分组分时计费：支持每周固定日期、多个时间段、固定 UTC 偏移时区、跨午夜和全天规则；可对分组全部模型或指定模型设置加价、折扣及零倍率，并校验重叠时段。([#49](https://github.com/ChuqiCloud/AnyFlows/pull/49))
+
+### 改进
+
+- 完善 OpenAI Chat、OpenAI Responses、Anthropic Messages 和 Gemini GenerateContent 之间的双向对话转换，保留工具调用关联、推理内容和用量信息，兼容第三方重复角色、结束标记及占位字段。([#34](https://github.com/ChuqiCloud/AnyFlows/pull/34)、[#42](https://github.com/ChuqiCloud/AnyFlows/pull/42))
+- 工具兼容中继增加可逆工具名映射、双轮调用、隐藏调用隔离与预算约束，保留 OpenCode 工具定义的版本和许可信息。([#38](https://github.com/ChuqiCloud/AnyFlows/pull/38)、[#39](https://github.com/ChuqiCloud/AnyFlows/pull/39)、[#40](https://github.com/ChuqiCloud/AnyFlows/pull/40))
+- 统一渠道能力目录与适配器装配；渠道配置、探活、模型发现、调度及两套前端共享能力定义，减少新增渠道时的重复维护。([#49](https://github.com/ChuqiCloud/AnyFlows/pull/49))
+
+### 修复
+
+- 修复 DeepSeek 工具对话中 `reasoning_content` / `reasoning` 历史内容丢失，以及渠道执行策略表单显示翻译键的问题。([#49](https://github.com/ChuqiCloud/AnyFlows/pull/49))
+- 修复 OpenCode 非调试模式下错误摘要及响应记录缺失，补充第三方 Chat 响应的缓存、推理和用量兼容。([#42](https://github.com/ChuqiCloud/AnyFlows/pull/42))
+- 修复新增迁移、峰值计费字段和代理池后台任务引起的回归基线问题；更新 TLS 证书校验依赖与根证书数据，移除已失效的公告忽略规则。([#43](https://github.com/ChuqiCloud/AnyFlows/pull/43)、[#49](https://github.com/ChuqiCloud/AnyFlows/pull/49))
+
+### CI 与仓库同步
+
+- 同步公共 PR 标题、说明和评论，移除可见来源尾注，首次同步提交沿用 PR 标题，并修复合并后重复触发讨论同步的问题。([#41](https://github.com/ChuqiCloud/AnyFlows/pull/41)、[#45](https://github.com/ChuqiCloud/AnyFlows/pull/45)、[#47](https://github.com/ChuqiCloud/AnyFlows/pull/47)、[#48](https://github.com/ChuqiCloud/AnyFlows/pull/48))
+- 修复 GitHub Action 引用与 Playwright 安装兼容，精简历史专项自动检查，并完善数据库迁移检查。([#41](https://github.com/ChuqiCloud/AnyFlows/pull/41)、[#45](https://github.com/ChuqiCloud/AnyFlows/pull/45)、[#49](https://github.com/ChuqiCloud/AnyFlows/pull/49))
+
+### 升级与兼容
+
+- 新增客户端档案、OpenCode 公开档案、代理池及分组分时计费迁移。升级前备份数据库、配置和计费 WAL，首次启动时执行数据库迁移。
+- 旧峰值计费配置继续兼容；显式保存空的分时规则列表会关闭旧峰值规则。
+- 并发竞速会同时发起多个上游请求，可能增加上游用量；默认值与渠道覆盖值应按实际额度配置。
+- OpenCode 免费模型仍受上游访问策略约束。NVIDIA 渠道的工具、多模态和推理能力以对应上游模型为准。
+- 本版本为社区版 Beta 预发布，用于测试和部署验收；企业扩展不包含在发布包中。
+
+完整变更：[v0.3.0-beta.1...v0.3.0-beta.2](https://github.com/ChuqiCloud/AnyFlows/compare/v0.3.0-beta.1...v0.3.0-beta.2)。
+
 ## 0.3.0-beta.1 - 2026-10-18
 
 这是 AnyFlows 社区开放版的首个 Beta 版本。公共核心已与企业扩展拆分，社区版可以独立部署；企业空间、企业 SSO 等私有能力不包含在本版本中。
