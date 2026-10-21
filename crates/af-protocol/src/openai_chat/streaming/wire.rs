@@ -23,6 +23,11 @@ pub(super) struct ChatStreamChunkWire {
     pub(super) usage: Option<CompletionUsageWire>,
     #[serde(default)]
     pub(super) moderation: Option<Value>,
+    /// 兼容网关的传输统计，不参与生成内容或用量结算。
+    #[serde(default, rename = "elapsed_ms")]
+    _elapsed_ms: Option<Value>,
+    #[serde(default, rename = "first_chunk_at")]
+    _first_chunk_at: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -115,7 +120,7 @@ pub(super) struct EncodedChunk<'a> {
 pub(super) struct EncodedChoice<'a> {
     pub(super) index: u32,
     pub(super) delta: EncodedDelta<'a>,
-    pub(super) logprobs: Option<()>,
+    pub(super) logprobs: Option<&'a Value>,
     pub(super) finish_reason: Option<&'static str>,
 }
 

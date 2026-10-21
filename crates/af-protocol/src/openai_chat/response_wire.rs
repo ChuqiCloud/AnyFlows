@@ -34,9 +34,9 @@ pub(super) struct ChatResponseWire {
     pub(super) moderation: Option<Value>,
     /// 兼容网关的传输统计，不参与生成结果或令牌结算。
     #[serde(default, rename = "elapsed_ms")]
-    _elapsed_ms: Option<u64>,
+    _elapsed_ms: Option<Value>,
     #[serde(default, rename = "first_chunk_at")]
-    _first_chunk_at: Option<f64>,
+    _first_chunk_at: Option<Value>,
 }
 
 /// 固定为 `chat.completion` 的对象类型。
@@ -57,7 +57,7 @@ pub(super) struct ResponseChoiceWire {
     pub(super) message: ResponseMessageWire,
     /// 候选结束原因。
     pub(super) finish_reason: FinishReasonWire,
-    /// 当前 Canonical 尚未建模的 token logprobs。
+    /// Token 概率明细，保留兼容服务的扩展字段。
     #[serde(default)]
     pub(super) logprobs: Option<Value>,
 }
@@ -118,34 +118,8 @@ pub(super) enum AssistantRoleWire {
     Assistant,
 }
 
-/// 上游实际使用的服务等级。
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum ServiceTierWire {
-    /// 由项目配置自动选择。
-    Auto,
-    /// 标准处理等级。
-    Default,
-    /// 弹性处理等级。
-    Flex,
-    /// Scale 处理等级。
-    Scale,
-    /// Priority 处理等级。
-    Priority,
-}
-
-impl ServiceTierWire {
-    /// 返回 OpenAI wire 字符串。
-    pub(super) const fn as_str(&self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Default => "default",
-            Self::Flex => "flex",
-            Self::Scale => "scale",
-            Self::Priority => "priority",
-        }
-    }
-}
+/// 上游实际使用的服务等级；使用原始字符串兼容新增的网关等级名称。
+pub(super) type ServiceTierWire = String;
 
 /// OpenAI Chat 返回的令牌用量。
 #[derive(Deserialize)]
