@@ -692,7 +692,7 @@ fn decoder_accepts_gateway_transport_metadata_without_affecting_usage() {
     for bytes in stream.chunks(7) {
         events.extend(decoder.push(bytes).unwrap());
     }
-    events.extend(decoder.finish().unwrap());
+    decoder.finish().unwrap();
     assert!(events.iter().any(|event| matches!(
         event,
         CanonicalStreamEvent::Usage(usage)

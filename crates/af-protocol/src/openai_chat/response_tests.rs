@@ -123,7 +123,7 @@ fn gateway_usage_aliases_preserve_cache_and_reasoning_without_double_counting() 
         "prompt_cache_hit_tokens": 4, "prompt_cache_miss_tokens": 11,
         "completion_thinking_tokens": 2
     });
-    let parsed = parse_json(response).unwrap();
+    let parsed = parse_json(response.clone()).unwrap();
     let usage = parsed.usage.unwrap();
     assert_eq!(usage.details().cache_read().get(), 4);
     assert_eq!(usage.details().reasoning().get(), 2);
