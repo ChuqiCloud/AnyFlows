@@ -104,7 +104,6 @@ fn is_usable(event: &CanonicalStreamEvent) -> bool {
         CanonicalStreamEvent::ReasoningDelta { text, .. } => !text.is_empty(),
         CanonicalStreamEvent::ToolCallStart { name, .. } => !name.is_empty(),
         CanonicalStreamEvent::ToolCallArgsDelta { partial_json, .. } => !partial_json.is_empty(),
-        CanonicalStreamEvent::Finish { .. } | CanonicalStreamEvent::CompactionEnd { .. } => true,
         _ => false,
     }
 }
