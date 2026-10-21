@@ -610,6 +610,7 @@ export type AdminGroup = {
     peak_ratio_micros: number | null;
     peak_start: string | null;
     peak_end: string | null;
+    peak_windows: Array<AdminGroupPeakWindow> | null;
     is_exclusive: boolean;
     daily_limit: number | null;
     weekly_limit: number | null;
@@ -627,6 +628,14 @@ export type AdminGroupListResponse = {
     groups: Array<AdminGroup>;
     next_cursor: number | null;
 };
+export type AdminGroupPeakWindow = {
+    weekdays: Array<number>;
+    start_second: number;
+    end_second: number;
+    ratio_micros: number;
+    models?: Array<string>;
+    utc_offset_minutes?: number;
+};
 export type AdminGroupWindow = {
     usage: number;
     started_at: number;
@@ -639,6 +648,7 @@ export type AdminGroupWriteRequest = {
     peak_ratio_micros?: number | null;
     peak_start?: string | null;
     peak_end?: string | null;
+    peak_windows?: Array<AdminGroupPeakWindow> | null;
     is_exclusive: boolean;
     daily_limit?: number | null;
     weekly_limit?: number | null;

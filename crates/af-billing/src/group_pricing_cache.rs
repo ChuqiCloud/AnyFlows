@@ -13,7 +13,7 @@ use af_db::{
     DatabasePool, GroupPricingRepository, GroupPricingRepositoryError,
     MAX_GROUP_MODEL_RATIO_ENTRIES, MAX_GROUP_PRICING_ENTRIES,
 };
-use af_domain::GroupId;
+use af_domain::{GroupId, GroupPeakSchedule, PricingWeekTime};
 use thiserror::Error;
 
 use crate::{PricingError, PricingRatio, PricingRatios};
@@ -93,11 +93,12 @@ impl fmt::Debug for GroupPeakPricing {
 }
 
 /// 来源提供的单个有效分组计费配置。
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct GroupPricingSourceRecord {
     group_id: GroupId,
     ratio: PricingRatio,
     peak: Option<GroupPeakPricing>,
+    peak_schedule: Option<GroupPeakSchedule>,
 }
 
 impl GroupPricingSourceRecord {
@@ -112,7 +113,15 @@ impl GroupPricingSourceRecord {
             group_id,
             ratio,
             peak,
+            peak_schedule: None,
         }
+    }
+
+    /// 设置已校验周计划；显式空计划优先于旧窗口。
+    #[must_use]
+    pub fn with_peak_schedule(mut self, schedule: Option<GroupPeakSchedule>) -> Self {
+        self.peak_schedule = schedule;
+        self
     }
 }
 
@@ -183,10 +192,11 @@ impl fmt::Debug for GroupPricingSourceCatalog {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 struct GroupPricing {
     ratio: PricingRatio,
     peak: Option<GroupPeakPricing>,
+    peak_schedule: Option<GroupPeakSchedule>,
 }
 
 /// 一次完整加载后发布的只读分组计费目录。
@@ -225,26 +235,44 @@ impl GroupPricingSnapshot {
         if current_second >= SECONDS_PER_DAY {
             return Err(GroupPricingLookupError::InvalidCurrentTime);
         }
+        // 兼容旧调用方；正式请求通过带模型和星期的入口捕获。
+        let time = PricingWeekTime::new(1, current_second)
+            .map_err(|_| GroupPricingLookupError::InvalidCurrentTime)?;
+        self.ratios_for_model_at(source_group_id, target_group_id, "", time)
+    }
+
+    /// 为公开计费模型匹配一次周计划，未配置周计划时回退旧每日窗口。
+    pub fn ratios_for_model_at(
+        &self,
+        source_group_id: GroupId,
+        target_group_id: GroupId,
+        model: &str,
+        time: PricingWeekTime,
+    ) -> Result<PricingRatios, GroupPricingLookupError> {
         if !self.groups.contains_key(&source_group_id) {
             return Err(GroupPricingLookupError::SourceGroupNotFound);
         }
         let target = self
             .groups
             .get(&target_group_id)
-            .copied()
             .ok_or(GroupPricingLookupError::TargetGroupNotFound)?;
         let group_model = self
             .group_model_ratios
             .get(&(source_group_id, target_group_id))
             .copied()
             .unwrap_or(PricingRatio::ONE);
-        let applied_peak = target.peak.map_or(PricingRatio::ONE, |peak| {
-            if peak.is_active(current_second) {
-                peak.ratio
-            } else {
-                PricingRatio::ONE
-            }
-        });
+        let applied_peak = if let Some(schedule) = &target.peak_schedule {
+            PricingRatio::new(schedule.ratio_for(model, time).unwrap_or(1_000_000))
+                .map_err(|_| GroupPricingLookupError::InvalidCurrentTime)?
+        } else {
+            target.peak.map_or(PricingRatio::ONE, |peak| {
+                if peak.is_active(time.day_second()) {
+                    peak.ratio
+                } else {
+                    PricingRatio::ONE
+                }
+            })
+        };
         Ok(PricingRatios::new(target.ratio, group_model, applied_peak))
     }
 }
@@ -444,7 +472,6 @@ impl GroupPricingSource for DatabaseGroupPricingSource {
             let groups = catalog
                 .groups()
                 .iter()
-                .copied()
                 .map(|record| {
                     let ratio = pricing_ratio(record.ratio_micros())?;
                     let peak = record
@@ -458,11 +485,10 @@ impl GroupPricingSource for DatabaseGroupPricingSource {
                         })
                         .transpose()
                         .map_err(|_| GroupPricingSourceError::Invariant)?;
-                    Ok(GroupPricingSourceRecord::new(
-                        record.group_id(),
-                        ratio,
-                        peak,
-                    ))
+                    Ok(
+                        GroupPricingSourceRecord::new(record.group_id(), ratio, peak)
+                            .with_peak_schedule(record.peak_schedule().cloned()),
+                    )
                 })
                 .collect::<Result<Vec<_>, GroupPricingSourceError>>()?;
             let group_model_ratios = catalog
@@ -500,6 +526,7 @@ fn build_snapshot(
                 GroupPricing {
                     ratio: record.ratio,
                     peak: record.peak,
+                    peak_schedule: record.peak_schedule,
                 },
             )
             .is_some()

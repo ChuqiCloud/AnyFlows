@@ -1,6 +1,6 @@
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
-use af_domain::{BillingContractPriceSnapshot, GroupId, OrganizationId, Protocol};
+use af_domain::{BillingContractPriceSnapshot, GroupId, OrganizationId, PricingWeekTime, Protocol};
 use thiserror::Error;
 
 use crate::{
@@ -12,6 +12,36 @@ use crate::{
 
 /// 从进程内不可变目录同步固定一次请求的完整定价事实。
 pub trait RequestPricingSnapshotSource: Send + Sync + 'static {
+    /// 使用一次捕获的星期和日内时间，按公开计费模型匹配周计划。
+    fn capture_at(
+        &self,
+        model: &str,
+        source_group_id: GroupId,
+        target_group_id: GroupId,
+        time: PricingWeekTime,
+    ) -> Result<RequestPricingSnapshot, RequestPricingSnapshotError> {
+        self.capture(model, source_group_id, target_group_id, time.day_second())
+    }
+
+    /// 带星期的请求捕获入口；旧实现可继续使用每日时间接口。
+    fn capture_for_request_at<'a>(
+        &'a self,
+        model: &'a str,
+        source_group_id: GroupId,
+        target_group_id: GroupId,
+        organization_id: Option<OrganizationId>,
+        protocol: Protocol,
+        time: PricingWeekTime,
+    ) -> RequestPricingSnapshotFuture<'a> {
+        self.capture_for_request(
+            model,
+            source_group_id,
+            target_group_id,
+            organization_id,
+            protocol,
+            time.day_second(),
+        )
+    }
     /// 固定模型价格、来源/目标分组倍率及当前高峰状态；本方法不执行 IO。
     fn capture(
         &self,
@@ -214,6 +244,18 @@ impl RequestPricingSnapshotSource for CachedRequestPricingSnapshotSource {
         target_group_id: GroupId,
         current_second: u32,
     ) -> Result<RequestPricingSnapshot, RequestPricingSnapshotError> {
+        let time = PricingWeekTime::new(1, current_second)
+            .map_err(|_| RequestPricingSnapshotError::InvalidCurrentTime)?;
+        self.capture_at(model, source_group_id, target_group_id, time)
+    }
+
+    fn capture_at(
+        &self,
+        model: &str,
+        source_group_id: GroupId,
+        target_group_id: GroupId,
+        time: PricingWeekTime,
+    ) -> Result<RequestPricingSnapshot, RequestPricingSnapshotError> {
         ensure_fresh(&self.model_prices, &self.group_pricing)?;
         let model_snapshot = self.model_prices.snapshot()?;
         let group_snapshot = self.group_pricing.snapshot()?;
@@ -223,7 +265,7 @@ impl RequestPricingSnapshotSource for CachedRequestPricingSnapshotSource {
             .get(model)
             .ok_or(RequestPricingSnapshotError::ModelNotFound)?;
         let ratios = group_snapshot
-            .ratios_for_request(source_group_id, target_group_id, current_second)
+            .ratios_for_model_at(source_group_id, target_group_id, model, time)
             .map_err(map_lookup_error)?;
         let model_mode = model_price.mode();
         // Expression 与固定五价同属需预扣和结算的按量请求，但保留独立目录模式供展示边界判断。
@@ -258,8 +300,31 @@ impl RequestPricingSnapshotSource for CachedRequestPricingSnapshotSource {
         current_second: u32,
     ) -> RequestPricingSnapshotFuture<'a> {
         Box::pin(async move {
-            let mut snapshot =
-                self.capture(model, source_group_id, target_group_id, current_second)?;
+            let time = PricingWeekTime::new(1, current_second)
+                .map_err(|_| RequestPricingSnapshotError::InvalidCurrentTime)?;
+            self.capture_for_request_at(
+                model,
+                source_group_id,
+                target_group_id,
+                organization_id,
+                protocol,
+                time,
+            )
+            .await
+        })
+    }
+
+    fn capture_for_request_at<'a>(
+        &'a self,
+        model: &'a str,
+        source_group_id: GroupId,
+        target_group_id: GroupId,
+        organization_id: Option<OrganizationId>,
+        protocol: Protocol,
+        time: PricingWeekTime,
+    ) -> RequestPricingSnapshotFuture<'a> {
+        Box::pin(async move {
+            let mut snapshot = self.capture_at(model, source_group_id, target_group_id, time)?;
             let (Some(organization_id), Some(repository)) =
                 (organization_id, self.contract_prices.as_ref())
             else {

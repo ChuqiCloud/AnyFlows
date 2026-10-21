@@ -48,6 +48,9 @@ pub(crate) struct AdminGroupResponse {
         required = true
     )]
     peak_end: Option<String>,
+    /// NULL 使用旧每日窗口，空数组关闭分时倍率，非空数组按周计划匹配。
+    #[schema(required = true, max_items = 32)]
+    peak_windows: Option<Vec<crate::management_group_writes::AdminGroupPeakWindow>>,
     is_exclusive: bool,
     #[schema(minimum = 0, required = true)]
     daily_limit: Option<i64>,
@@ -138,6 +141,13 @@ impl AdminGroupResponse {
             peak_ratio_micros,
             peak_start,
             peak_end,
+            peak_windows: group.peak_schedule().map(|schedule| {
+                schedule
+                    .windows()
+                    .iter()
+                    .map(crate::management_group_writes::AdminGroupPeakWindow::from_window)
+                    .collect()
+            }),
             is_exclusive: group.is_exclusive(),
             daily_limit: group.daily_limit(),
             weekly_limit: group.weekly_limit(),

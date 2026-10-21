@@ -289,13 +289,13 @@ impl BillingChatService {
         let pricing_model = planned.pricing_model().to_owned();
         let snapshot = self
             .pricing_source
-            .capture_for_request(
+            .capture_for_request_at(
                 &pricing_model,
                 source_group_id,
                 target_group_id,
                 subject.organization_id(),
                 response_protocol,
-                crate::utc_time::current_utc_day_second().ok_or(AfError::Internal)?,
+                crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?,
             )
             .await
             .map_err(map_snapshot_error)?;

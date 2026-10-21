@@ -87,6 +87,19 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         .await?
         .ok_or("authentication settings must survive the upgrade")?;
     assert_eq!(row.try_get::<i64>("", "invitation_invitee_quota")?, 0);
+    let sql = match backend {
+        DbBackend::MySql => "SELECT `peak_windows` FROM `groups` LIMIT 1",
+        _ => "SELECT peak_windows FROM groups LIMIT 1",
+    };
+    let row = pool
+        .connection()
+        .query_one(Statement::from_string(backend, sql.to_owned()))
+        .await?
+        .ok_or("default group must survive the upgrade")?;
+    assert!(
+        row.try_get::<Option<serde_json::Value>>("", "peak_windows")?
+            .is_none()
+    );
     let profiles = crate::ClientProfileRepository::new(pool.clone());
     assert_eq!(
         profiles

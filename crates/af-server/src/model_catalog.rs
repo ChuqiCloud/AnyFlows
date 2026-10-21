@@ -15,13 +15,13 @@ use af_db::{
     AdminModelLifecycleRecord, AdminModelModalitiesRecord, AdminModelRecord, AdminModelRepository,
     MAX_ADMIN_MODEL_PAGE_SIZE,
 };
-use af_domain::{GroupId, Protocol};
+use af_domain::{GroupId, PricingWeekTime, Protocol};
 use af_scheduler::{ChannelIndexSnapshot, InMemoryChannelIndex};
 
 mod gateway;
 mod providers;
 
-type CatalogClock = Arc<dyn Fn() -> Option<u32> + Send + Sync>;
+type CatalogClock = Arc<dyn Fn() -> Option<PricingWeekTime> + Send + Sync>;
 const MAX_METADATA_SCAN_PAGES: usize = 100;
 
 /// 组合模型价格、调度运行时与请求定价快照的模型目录读取服务。
@@ -46,7 +46,7 @@ impl RuntimeModelCatalogReader {
             model_prices,
             pricing_source,
             model_metadata,
-            clock: Arc::new(crate::utc_time::current_utc_day_second),
+            clock: Arc::new(crate::utc_time::current_pricing_time),
         }
     }
 
@@ -99,19 +99,20 @@ impl RuntimeModelCatalogReader {
         authentication: SessionAuthentication,
         available_protocols: Vec<Protocol>,
         supports_responses_compact: bool,
-        current_second: u32,
+        current_second: PricingWeekTime,
     ) -> Result<Option<ModelCatalogItem>, ModelCatalogReadError> {
         let group_id = authentication.group_id();
         // 当前调度快照按实际候选分组建键，因此目录与请求使用同一来源和目标分组。
-        let pricing =
-            match self
-                .pricing_source
-                .capture(metadata.model(), group_id, group_id, current_second)
-            {
-                Ok(pricing) => pricing,
-                Err(RequestPricingSnapshotError::ModelNotFound) => return Ok(None),
-                Err(_) => return Err(ModelCatalogReadError::Internal),
-            };
+        let pricing = match self.pricing_source.capture_at(
+            metadata.model(),
+            group_id,
+            group_id,
+            current_second,
+        ) {
+            Ok(pricing) => pricing,
+            Err(RequestPricingSnapshotError::ModelNotFound) => return Ok(None),
+            Err(_) => return Err(ModelCatalogReadError::Internal),
+        };
         Self::catalog_item_from_pricing(
             metadata,
             pricing.billing_mode(),
