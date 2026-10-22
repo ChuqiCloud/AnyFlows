@@ -781,6 +781,7 @@ async fn ensure_name_available(
     if query
         .select_only()
         .column(routes::Column::Id)
+        .into_tuple::<i64>()
         .one(transaction)
         .with_subscriber(NoSubscriber::default())
         .await
@@ -801,6 +802,7 @@ async fn active_route_exists(
         .filter(routes::Column::DeletedAt.is_null())
         .select_only()
         .column(routes::Column::Id)
+        .into_tuple::<i64>()
         .one(transaction)
         .with_subscriber(NoSubscriber::default())
         .await

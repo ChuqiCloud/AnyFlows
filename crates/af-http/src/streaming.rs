@@ -1,20 +1,26 @@
 use std::{
     error::Error,
     fmt,
+    future::Future,
     panic::AssertUnwindSafe,
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
 };
 
-use af_domain::UpstreamError;
+use af_domain::{AfError, NetworkFailureKind, Protocol, UpstreamError};
 use af_relay::{StreamDeliveryHook, StreamDeliveryOutcome as PumpOutcome};
-use axum::body::{Body, Bytes};
+use axum::{
+    body::{Body, Bytes},
+    response::{IntoResponse, Response},
+};
 use futures_core::Stream;
 use futures_util::{FutureExt as _, StreamExt as _};
 use tokio::{
     sync::{mpsc, oneshot},
-    time::{sleep, timeout},
+    time::{
+        Instant, Interval, MissedTickBehavior, Sleep, interval_at, sleep, sleep_until, timeout,
+    },
 };
 use tracing::Instrument as _;
 
@@ -23,6 +29,7 @@ const DEFAULT_STREAM_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 /// 单个 HTTP SSE 响应允许存活的默认硬上限。
 const DEFAULT_STREAM_MAX_DURATION: Duration = Duration::from_secs(900);
 const STREAM_CHANNEL_CAPACITY: usize = 1;
+const STREAM_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
 
 /// SSE 下游交付的空闲写超时与整流硬期限。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -32,6 +39,13 @@ pub(crate) struct StreamDeliveryPolicy {
 }
 
 impl StreamDeliveryPolicy {
+    pub(crate) fn after_wait(self, elapsed: Duration) -> Self {
+        Self {
+            max_duration: self.max_duration.saturating_sub(elapsed),
+            ..self
+        }
+    }
+
     #[cfg(test)]
     fn new(write_timeout: Duration, max_duration: Duration) -> Option<Self> {
         if write_timeout.is_zero() || max_duration < write_timeout {
@@ -50,6 +64,176 @@ impl Default for StreamDeliveryPolicy {
             write_timeout: DEFAULT_STREAM_WRITE_TIMEOUT,
             max_duration: DEFAULT_STREAM_MAX_DURATION,
         }
+    }
+}
+
+/// Keep ordinary admission failures as HTTP errors, then protect slow routing
+/// and upstream first-output waits from reverse-proxy idle timeouts.
+pub(crate) async fn await_chat_response<F>(
+    execution: F,
+    stream: bool,
+    protocol: Protocol,
+    policy: StreamDeliveryPolicy,
+) -> Result<Response, AfError>
+where
+    F: Future<Output = Result<Response, AfError>> + Send + 'static,
+{
+    await_chat_response_with_interval(
+        execution,
+        stream,
+        protocol,
+        policy,
+        STREAM_HEARTBEAT_INTERVAL,
+    )
+    .await
+}
+
+async fn await_chat_response_with_interval<F>(
+    execution: F,
+    stream: bool,
+    protocol: Protocol,
+    policy: StreamDeliveryPolicy,
+    heartbeat_interval: Duration,
+) -> Result<Response, AfError>
+where
+    F: Future<Output = Result<Response, AfError>> + Send + 'static,
+{
+    if !stream {
+        return execution.await;
+    }
+    let deadline = Instant::now() + policy.max_duration;
+    let mut execution = Box::pin(execution);
+    match timeout(heartbeat_interval.min(policy.max_duration), &mut execution).await {
+        Ok(Ok(response)) => {
+            if !response
+                .headers()
+                .get(http::header::CONTENT_TYPE)
+                .is_some_and(|value| value.as_bytes().starts_with(b"text/event-stream"))
+            {
+                return Ok(response);
+            }
+            Ok(response.map(|body| {
+                Body::from_stream(PendingResponseStream::new(
+                    None,
+                    Some(Box::pin(body.into_data_stream())),
+                    protocol,
+                    heartbeat_interval,
+                    deadline,
+                ))
+            }))
+        }
+        Ok(Err(error)) => Err(error),
+        Err(_) => Ok(sse_response(Body::from_stream(PendingResponseStream::new(
+            Some(execution),
+            None,
+            protocol,
+            heartbeat_interval,
+            deadline,
+        )))),
+    }
+}
+
+impl PendingResponseStream {
+    fn new(
+        execution: Option<PendingExecution>,
+        body: Option<ResponseBytes>,
+        protocol: Protocol,
+        heartbeat_interval: Duration,
+        deadline: Instant,
+    ) -> Self {
+        let mut heartbeat = interval_at(Instant::now(), heartbeat_interval);
+        heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        Self {
+            execution,
+            body,
+            protocol,
+            heartbeat,
+            waiting_deadline: Box::pin(sleep_until(deadline)),
+            finished: false,
+        }
+    }
+}
+
+pub(crate) fn sse_response(body: Body) -> Response {
+    let mut response = body.into_response();
+    response.headers_mut().insert(
+        http::header::CONTENT_TYPE,
+        http::HeaderValue::from_static("text/event-stream; charset=utf-8"),
+    );
+    response.headers_mut().insert(
+        http::header::CACHE_CONTROL,
+        http::HeaderValue::from_static("no-cache, no-transform"),
+    );
+    response.headers_mut().insert(
+        http::HeaderName::from_static("x-accel-buffering"),
+        http::HeaderValue::from_static("no"),
+    );
+    response
+}
+
+type PendingExecution = Pin<Box<dyn Future<Output = Result<Response, AfError>> + Send>>;
+type ResponseBytes = Pin<Box<dyn Stream<Item = Result<Bytes, axum::Error>> + Send>>;
+
+struct PendingResponseStream {
+    execution: Option<PendingExecution>,
+    body: Option<ResponseBytes>,
+    protocol: Protocol,
+    heartbeat: Interval,
+    waiting_deadline: Pin<Box<Sleep>>,
+    finished: bool,
+}
+
+impl PendingResponseStream {
+    fn fail(&mut self, error: AfError) -> Poll<Option<Result<Bytes, axum::Error>>> {
+        self.execution = None;
+        self.body = None;
+        self.finished = true;
+        Poll::Ready(Some(Ok(crate::error_response::stream_error_frame(
+            self.protocol,
+            error,
+        ))))
+    }
+}
+
+impl Stream for PendingResponseStream {
+    type Item = Result<Bytes, axum::Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if self.finished {
+            return Poll::Ready(None);
+        }
+        if let Some(execution) = self.execution.as_mut() {
+            match execution.as_mut().poll(context) {
+                Poll::Ready(Ok(response)) => {
+                    self.execution = None;
+                    self.body = Some(Box::pin(response.into_body().into_data_stream()));
+                }
+                Poll::Ready(Err(error)) => return self.fail(error),
+                Poll::Pending => {
+                    if self.waiting_deadline.as_mut().poll(context).is_ready() {
+                        return self.fail(AfError::Upstream(UpstreamError::network(
+                            NetworkFailureKind::RequestTimeout,
+                        )));
+                    }
+                }
+            }
+        }
+        if let Some(body) = self.body.as_mut() {
+            match body.as_mut().poll_next(context) {
+                Poll::Ready(item) => {
+                    if item.is_none() || item.as_ref().is_some_and(Result::is_err) {
+                        self.finished = true;
+                        self.body = None;
+                    }
+                    return Poll::Ready(item);
+                }
+                Poll::Pending => {}
+            }
+        }
+        if self.heartbeat.poll_tick(context).is_ready() {
+            return Poll::Ready(Some(Ok(Bytes::from_static(b": keep-alive\n\n"))));
+        }
+        Poll::Pending
     }
 }
 
@@ -247,6 +431,189 @@ mod tests {
         assert!(
             StreamDeliveryPolicy::new(Duration::from_secs(1), Duration::from_secs(1)).is_some()
         );
+    }
+
+    #[tokio::test]
+    async fn fast_errors_and_non_streaming_responses_keep_http_semantics() {
+        let error = await_chat_response_with_interval(
+            async { Err(AfError::InvalidApiKey) },
+            true,
+            Protocol::OpenAiChat,
+            StreamDeliveryPolicy::default(),
+            Duration::from_millis(1),
+        )
+        .await;
+        assert!(matches!(error, Err(AfError::InvalidApiKey)));
+        let response = await_chat_response_with_interval(
+            async { Ok(Body::from("{\"ok\":true}").into_response()) },
+            false,
+            Protocol::OpenAiChat,
+            StreamDeliveryPolicy::default(),
+            Duration::from_millis(1),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            axum::body::to_bytes(response.into_body(), 1024)
+                .await
+                .unwrap(),
+            "{\"ok\":true}"
+        );
+    }
+
+    #[tokio::test]
+    async fn waiting_stream_sends_heartbeat_then_preserves_delivery_and_payload() {
+        let (send_response, receive_response) = oneshot::channel();
+        let response = await_chat_response_with_interval(
+            async move { receive_response.await.unwrap() },
+            true,
+            Protocol::OpenAiChat,
+            StreamDeliveryPolicy::default(),
+            Duration::from_millis(1),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.headers()["x-accel-buffering"], "no");
+        let mut stream = response.into_body().into_data_stream();
+        assert_eq!(stream.next().await.unwrap().unwrap(), ": keep-alive\n\n");
+        let (delivered, outcome) = oneshot::channel();
+        let source = futures_util::stream::iter([Ok(Bytes::from_static(b"data: [DONE]\n\n"))]);
+        let body = openai_chat_body(
+            source,
+            StreamDeliveryPolicy::default(),
+            Some(Box::new(RecordingDelivery(delivered))),
+        );
+        send_response.send(Ok(sse_response(body))).unwrap();
+        let chunks = stream.collect::<Vec<_>>().await;
+        let payload: Vec<u8> = chunks
+            .into_iter()
+            .map(Result::unwrap)
+            .filter(|chunk| !chunk.starts_with(b":"))
+            .flatten()
+            .collect();
+        assert_eq!(payload, b"data: [DONE]\n\n");
+        assert_eq!(outcome.await.unwrap(), PumpOutcome::Completed);
+    }
+
+    #[tokio::test]
+    async fn dropping_waiting_response_cancels_execution() {
+        let (source, dropped) = DropAwareStream::pending();
+        let response = await_chat_response_with_interval(
+            async move {
+                let _source = source;
+                std::future::pending::<Result<Response, AfError>>().await
+            },
+            true,
+            Protocol::OpenAiChat,
+            StreamDeliveryPolicy::default(),
+            Duration::from_millis(1),
+        )
+        .await
+        .unwrap();
+        drop(response);
+        timeout(Duration::from_secs(1), dropped)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn slow_execution_failure_is_a_protocol_error_without_success_terminal() {
+        for protocol in [
+            Protocol::OpenAiChat,
+            Protocol::OpenAiResponses,
+            Protocol::Anthropic,
+            Protocol::Gemini,
+        ] {
+            let (sender, receiver) = oneshot::channel();
+            let response = await_chat_response_with_interval(
+                async move { receiver.await.unwrap() },
+                true,
+                protocol,
+                StreamDeliveryPolicy::default(),
+                Duration::from_millis(1),
+            )
+            .await
+            .unwrap();
+            let mut body = response.into_body().into_data_stream();
+            assert_eq!(body.next().await.unwrap().unwrap(), ": keep-alive\n\n");
+            sender.send(Err(AfError::Internal)).unwrap();
+            let frame = body.next().await.unwrap().unwrap();
+            let text = std::str::from_utf8(&frame).unwrap();
+            let data = text
+                .lines()
+                .find_map(|line| line.strip_prefix("data: "))
+                .unwrap();
+            let value: serde_json::Value = serde_json::from_str(data).unwrap();
+            match protocol {
+                Protocol::OpenAiResponses => {
+                    assert!(text.starts_with("event: error\n"));
+                    assert_eq!(value["type"], "error");
+                    assert_eq!(value["code"], "internal_error");
+                    assert_eq!(value["sequence_number"], 0);
+                }
+                Protocol::Anthropic => {
+                    assert!(text.starts_with("event: error\n"));
+                    assert_eq!(value["type"], "error");
+                }
+                _ => assert!(value["error"].is_object()),
+            }
+            assert!(!text.contains("[DONE]"));
+            assert!(body.next().await.is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn waiting_execution_has_a_hard_deadline_and_is_dropped() {
+        let (source, dropped) = DropAwareStream::pending();
+        let policy =
+            StreamDeliveryPolicy::new(Duration::from_millis(5), Duration::from_millis(20)).unwrap();
+        let response = await_chat_response_with_interval(
+            async move {
+                let _source = source;
+                std::future::pending::<Result<Response, AfError>>().await
+            },
+            true,
+            Protocol::OpenAiChat,
+            policy,
+            Duration::from_millis(1),
+        )
+        .await
+        .unwrap();
+        let body = timeout(
+            Duration::from_secs(1),
+            axum::body::to_bytes(response.into_body(), 16384),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let text = std::str::from_utf8(&body).unwrap();
+        assert!(text.contains("upstream_unavailable"));
+        assert!(!text.contains("[DONE]"));
+        dropped.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn fast_stream_with_idle_body_still_sends_heartbeats_and_cancels() {
+        let (source, dropped) = DropAwareStream::pending();
+        let body = openai_chat_body(source, StreamDeliveryPolicy::default(), None);
+        let response = await_chat_response_with_interval(
+            async move { Ok(sse_response(body)) },
+            true,
+            Protocol::OpenAiChat,
+            StreamDeliveryPolicy::default(),
+            Duration::from_millis(1),
+        )
+        .await
+        .unwrap();
+        let mut stream = response.into_body().into_data_stream();
+        assert_eq!(stream.next().await.unwrap().unwrap(), ": keep-alive\n\n");
+        assert_eq!(stream.next().await.unwrap().unwrap(), ": keep-alive\n\n");
+        drop(stream);
+        timeout(Duration::from_secs(1), dropped)
+            .await
+            .unwrap()
+            .unwrap();
     }
 
     #[tokio::test]

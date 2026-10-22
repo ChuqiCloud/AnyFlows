@@ -21,15 +21,13 @@ use axum::{
     extract::{Extension, State},
     response::{IntoResponse, Response},
 };
-use http::{
-    HeaderMap, HeaderValue, StatusCode,
-    header::{CACHE_CONTROL, CONTENT_TYPE},
-};
+use http::{HeaderMap, StatusCode, header::CONTENT_TYPE};
+use tracing::Instrument as _;
 
 use crate::{
     AudioService, ChatService, EmbeddingService, ImageService, OpenAiHttpError, RerankService,
     ResponsesCompactService, SpeechService, VideoTaskService,
-    streaming::{StreamDeliveryPolicy, openai_chat_body},
+    streaming::{StreamDeliveryPolicy, await_chat_response, openai_chat_body, sse_response},
 };
 
 /// HTTP 层持有的框架私有服务状态。
@@ -389,18 +387,47 @@ pub(crate) async fn chat_completions(
     let request =
         parse_request_envelope(body).map_err(|_| OpenAiHttpError::from(AfError::InvalidRequest))?;
     let request = prepare_model_request(request, &authentication).map_err(OpenAiHttpError::from)?;
-    let response = state
-        .chat
-        .execute_model(
-            &authentication,
-            request,
-            Protocol::OpenAiChat,
-            request_id.as_str(),
-            diagnostic,
-        )
-        .await
-        .map_err(OpenAiHttpError::from)?;
-    Ok(render_chat_response(response, state.stream_delivery))
+    execute_chat_response(
+        &state,
+        authentication,
+        request,
+        Protocol::OpenAiChat,
+        request_id,
+        diagnostic,
+    )
+    .await
+    .map_err(OpenAiHttpError::from)
+}
+
+pub(crate) async fn execute_chat_response(
+    state: &HttpState,
+    authentication: GatewayModelAuthentication,
+    request: CanonicalRequestEnvelope,
+    protocol: Protocol,
+    request_id: RequestId,
+    diagnostic: RelayDiagnosticInput,
+) -> Result<Response, AfError> {
+    let stream = request.canonical().stream;
+    let service = state.chat_service().clone();
+    let delivery = state.stream_delivery();
+    let execution = async move {
+        let started = tokio::time::Instant::now();
+        let response = service
+            .execute_model(
+                &authentication,
+                request,
+                protocol,
+                request_id.as_str(),
+                diagnostic,
+            )
+            .await?;
+        Ok(render_chat_response(
+            response,
+            delivery.after_wait(started.elapsed()),
+        ))
+    }
+    .in_current_span();
+    await_chat_response(execution, stream, protocol, delivery).await
 }
 
 /// 把已按客户端协议编码的 Relay 结果转换为统一 HTTP 完整或 SSE 响应。
@@ -414,22 +441,7 @@ pub(crate) fn render_chat_response(
         }
         ChatResponse::Stream { mut body, usage: _ } => {
             let completion = body.take_delivery_hook();
-            let mut response = openai_chat_body(body, stream_delivery, completion).into_response();
-            response.headers_mut().insert(
-                CONTENT_TYPE,
-                HeaderValue::from_static("text/event-stream; charset=utf-8"),
-            );
-            response.headers_mut().insert(
-                CACHE_CONTROL,
-                HeaderValue::from_static("no-cache, no-transform"),
-            );
-            response.headers_mut().insert(
-                http::HeaderName::from_static("x-accel-buffering"),
-                HeaderValue::from_static("no"),
-            );
-            // 不设置 Content-Length 或 Content-Encoding，交由 Hyper 按流式帧发送。
-            *response.status_mut() = StatusCode::OK;
-            response
+            sse_response(openai_chat_body(body, stream_delivery, completion))
         }
     }
 }

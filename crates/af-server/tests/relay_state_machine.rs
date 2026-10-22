@@ -379,6 +379,99 @@ async fn race_waits_for_usable_output_and_cancels_loser_permit() {
 }
 
 #[tokio::test]
+async fn race_refills_failed_slot_without_waiting_for_silent_peer() {
+    let (slow_address, slow_server) =
+        spawn_racing_stream(Arc::new(std::sync::Barrier::new(1)), false);
+    let (fast_address, fast_server) =
+        spawn_racing_stream(Arc::new(std::sync::Barrier::new(1)), true);
+    let (failed_address, failed_server) = spawn_proxy(vec![ProxyResponse {
+        status_line: "401 Unauthorized",
+        body: br#"{"error":{"code":"invalid_api_key","message":"invalid API key"}}"#,
+    }]);
+    let slow_slots = Arc::new(tokio::sync::Semaphore::new(1));
+    let (unused_gate, unused_acquired, _) = attempt_gate(GateMode::Permit);
+    let make_candidate = |address, channel| {
+        grouped_candidate(&proxy_client(address), "http://race.invalid", channel)
+            .with_race_width(Some(2))
+            .with_retry_limit(Some(0))
+            .with_response_validation(Protocol::OpenAiChat)
+            .with_first_output_timeout(TEST_TIMEOUT)
+    };
+    let machine = RelayStateMachine::new(vec![
+        make_candidate(slow_address, 1)
+            .with_attempt_gate(Arc::new(SemaphoreAttemptGate(slow_slots.clone()))),
+        make_candidate(failed_address, 1),
+        make_candidate(fast_address, 1),
+        make_candidate(fast_address, 2).with_attempt_gate(unused_gate),
+    ])
+    .unwrap();
+    let response = tokio::time::timeout(
+        Duration::from_secs(3),
+        machine.execute_with_report(request().with_response_mode(ResponseMode::Stream)),
+    )
+    .await
+    .expect("a failed slot must refill before the silent candidate's timeout")
+    .unwrap();
+    assert_eq!(response.report().successful_candidate_index(), Some(2));
+    assert_eq!(response.attempts().get(), 3);
+    assert_eq!(response.report().failures().len(), 1);
+    assert_eq!(response.report().failures()[0].candidate_index(), 1);
+    assert_eq!(unused_acquired.load(Ordering::Acquire), 0);
+    assert_eq!(slow_slots.available_permits(), 1);
+    let body = response
+        .into_response()
+        .into_body()
+        .into_bytes()
+        .await
+        .unwrap();
+    assert!(String::from_utf8_lossy(&body).contains("winner"));
+    slow_server.join().unwrap();
+    failed_server.join().unwrap();
+    fast_server.join().unwrap();
+}
+
+#[tokio::test]
+async fn race_channel_failure_skips_unstarted_keys_and_then_falls_back() {
+    let (address, server) = spawn_proxy(vec![ProxyResponse {
+        status_line: "200 OK",
+        body: br#"{"ok":"fallback"}"#,
+    }]);
+    let client = proxy_client(address);
+    let slots = Arc::new(tokio::sync::Semaphore::new(0));
+    let (unused_gate, unused_acquired, _) = attempt_gate(GateMode::Permit);
+    let make_candidate = |channel| {
+        grouped_candidate(&client, "http://race.invalid", channel)
+            .with_race_width(Some(2))
+            .with_retry_limit(Some(0))
+    };
+    let machine = RelayStateMachine::new(vec![
+        candidate(&client, "http://unsupported.invalid", &["another-model"])
+            .with_channel_group(ChannelId::new(1).unwrap())
+            .with_race_width(Some(2)),
+        make_candidate(1).with_attempt_gate(Arc::new(SemaphoreAttemptGate(slots.clone()))),
+        make_candidate(1).with_attempt_gate(unused_gate),
+        make_candidate(2),
+    ])
+    .unwrap();
+    // A pending sibling must finish before the next channel may start.
+    let execution = machine.execute_with_report(request());
+    tokio::pin!(execution);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(30), &mut execution)
+            .await
+            .is_err()
+    );
+    slots.close();
+    let response = tokio::time::timeout(TEST_TIMEOUT, execution)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(response.report().successful_candidate_index(), Some(3));
+    assert_eq!(unused_acquired.load(Ordering::Acquire), 0);
+    server.join().unwrap();
+}
+
+#[tokio::test]
 async fn invalid_success_body_retries_before_falling_back() {
     let valid = br#"{"id":"chatcmpl-ready","object":"chat.completion","created":1,"model":"test-model","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}"#;
     let (address, server) = spawn_proxy(vec![
