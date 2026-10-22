@@ -397,17 +397,16 @@ fn rejects_roles_and_content_outside_the_closed_subset() {
         Err(BuildRequestError::UnsupportedFeature)
     );
 
-    for (block, capability) in [(
+    let (block, capability) = (
         ContentBlock::Audio {
             source: MediaSource::Base64("aGk=".to_owned()),
             mime_type: "audio/mpeg".to_owned(),
         },
         RequestCapability::AudioBase64,
-    )] {
-        let mut request = minimal_request();
-        request.messages[0].content = vec![block];
-        assert_unsupported_capability(&request, capability);
-    }
+    );
+    let mut audio = minimal_request();
+    audio.messages[0].content = vec![block];
+    assert_unsupported_capability(&audio, capability);
 
     let mut tool_result_in_user = minimal_request();
     tool_result_in_user.messages[0].content = vec![tool_result("toolu_1")];
