@@ -334,7 +334,7 @@ fn builds_cross_protocol_choices_and_inclusive_usage() {
 }
 
 #[test]
-fn rejects_missing_identity_indexes_finish_and_function_ids() {
+fn rejects_missing_identity_indexes_and_finish_but_normalizes_function_ids() {
     let missing_id = json!({
         "modelVersion": "gemini-test",
         "candidates": [text_candidate(0, "hello", "STOP")]
@@ -373,18 +373,36 @@ fn rejects_missing_identity_indexes_finish_and_function_ids() {
         Err(ParseResponseError::InvalidValue)
     );
 
-    let missing_call_id = response(vec![json!({
-        "index": 0,
-        "content": {
-            "role": "model",
-            "parts": [{"functionCall": {"name": "lookup", "args": {}}}]
-        },
-        "finishReason": "STOP"
-    })]);
-    assert_eq!(
-        parse_json(missing_call_id),
-        Err(ParseResponseError::UnsupportedFeature)
-    );
+    let missing_call_id = response(vec![
+        json!({
+            "index": 0,
+            "content": {
+                "role": "model",
+                "parts": [
+                    {"functionCall": {"name": "lookup", "args": {}}},
+                    {"functionCall": {"id": "call_gemini_0_0", "name": "lookup", "args": {}}}
+                ]
+            },
+            "finishReason": "STOP"
+        }),
+        json!({
+            "index": 1,
+            "content": {
+                "role": "model",
+                "parts": [{"functionCall": {"name": "lookup", "args": {}}}]
+            },
+            "finishReason": "STOP"
+        }),
+    ]);
+    let parsed = parse_json(missing_call_id).unwrap();
+    let ContentBlock::ToolUse { id, .. } = &parsed.choices[0].message.content[0] else {
+        panic!("expected normalized function call");
+    };
+    assert_eq!(id, "call_gemini_0_1");
+    let ContentBlock::ToolUse { id, .. } = &parsed.choices[1].message.content[0] else {
+        panic!("expected a second normalized function call");
+    };
+    assert_eq!(id, "call_gemini_1_0");
 
     let wrong_role = response(vec![json!({
         "index": 0,

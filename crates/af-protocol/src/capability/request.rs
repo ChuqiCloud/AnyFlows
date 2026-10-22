@@ -246,6 +246,7 @@ pub(super) const OPENAI_RESPONSES: &[RequestCapability] = &[
     RequestCapability::StructuredToolResults,
     RequestCapability::Thinking,
     RequestCapability::ThinkingSignatures,
+    RequestCapability::ReasoningOutput,
     RequestCapability::ReasoningEffort(ReasoningEffort::None),
     RequestCapability::ReasoningEffort(ReasoningEffort::Minimal),
     RequestCapability::ReasoningEffort(ReasoningEffort::Low),
@@ -279,6 +280,8 @@ pub(super) const ANTHROPIC: &[RequestCapability] = &[
     RequestCapability::ToolCalls,
     RequestCapability::ToolResults,
     RequestCapability::ToolResultErrors,
+    RequestCapability::Thinking,
+    RequestCapability::ThinkingSignatures,
     RequestCapability::CacheControl(CacheHint::Ephemeral5Minutes),
     RequestCapability::CacheControl(CacheHint::Ephemeral1Hour),
     RequestCapability::ReasoningEffort(ReasoningEffort::None),
@@ -295,6 +298,7 @@ pub(super) const ANTHROPIC: &[RequestCapability] = &[
     RequestCapability::StopSequences,
     RequestCapability::Streaming,
     RequestCapability::UserMetadata,
+    RequestCapability::SameProtocolRaw,
 ];
 
 pub(super) const GEMINI: &[RequestCapability] = &[
@@ -326,6 +330,7 @@ pub(super) const GEMINI: &[RequestCapability] = &[
     RequestCapability::TopP,
     RequestCapability::MaxOutputTokens,
     RequestCapability::StopSequences,
+    RequestCapability::Streaming,
 ];
 
 /// 校验目标协议能否逐项表达 Canonical 请求。
@@ -387,9 +392,8 @@ pub fn validate_request_capabilities(
     if request.continuation.conversation_id().is_some() {
         require(protocol, RequestCapability::ConversationContinuation)?;
     }
-    if request.continuation.prompt_cache_key().is_some() {
-        require(protocol, RequestCapability::PromptCacheContinuation)?;
-    }
+    // The prompt-cache key is an optional routing hint. It is consumed by the
+    // gateway for affinity and must not disqualify an otherwise valid channel.
     for message in &request.messages {
         require(protocol, RequestCapability::MessageRole(message.role))?;
         validate_content(protocol, &message.content)?;

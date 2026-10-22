@@ -88,8 +88,9 @@ pub use openai_responses_compact::{
 };
 pub use reasoning_suffix::{ReasoningModelSuffixError, apply_reasoning_model_suffix};
 pub use request::{
-    Attachment, ReasoningConfig, ReasoningConfigError, ReasoningEffort, RequestContinuation,
-    RequestMetadata, Sampling, SamplingError, StreamOptions, ToolChoice, ToolDef,
+    Attachment, ReasoningConfig, ReasoningConfigError, ReasoningEffort, ReasoningSummary,
+    RequestContinuation, RequestMetadata, Sampling, SamplingError, StreamOptions, ToolChoice,
+    ToolDef,
 };
 pub use request_envelope::{CanonicalRequestEnvelope, SameProtocolDecision, SameProtocolRequest};
 pub use rerank::{

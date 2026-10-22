@@ -278,7 +278,7 @@ fn preserves_conversation_and_remote_tool_output() {
 }
 
 #[test]
-fn encodes_undeclared_strictness_as_false() {
+fn preserves_undeclared_responses_strictness() {
     let mut request = minimal_request();
     request.tools.push(ToolDef {
         name: "lookup".to_owned(),
@@ -289,13 +289,13 @@ fn encodes_undeclared_strictness_as_false() {
     request.tool_choice = ToolChoice::Auto;
 
     let value = build_request(&request).unwrap();
-    assert_eq!(value["tools"][0]["strict"], false);
+    assert!(value["tools"][0].get("strict").is_none());
     assert_eq!(
         parse_request(&serde_json::to_vec(&value).unwrap())
             .unwrap()
             .tools[0]
             .strict,
-        Some(false)
+        None
     );
 }
 

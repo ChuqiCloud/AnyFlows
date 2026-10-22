@@ -94,11 +94,9 @@ fn build_tools(tools: &[ToolDef]) -> Result<(Vec<Value>, HashSet<String>), Build
             function.insert("description".to_owned(), Value::String(description.clone()));
         }
         function.insert("parameters".to_owned(), tool.input_schema.clone());
-        // Responses 的函数工具要求布尔 strict；来源未声明时保持非严格语义。
-        function.insert(
-            "strict".to_owned(),
-            Value::Bool(tool.strict.unwrap_or(false)),
-        );
+        if let Some(strict) = tool.strict {
+            function.insert("strict".to_owned(), Value::Bool(strict));
+        }
         encoded.push(Value::Object(function));
     }
     Ok((encoded, names))
@@ -136,26 +134,37 @@ fn insert_reasoning(
     let Some(reasoning) = request.reasoning else {
         return Ok(());
     };
-    if reasoning.budget_tokens().is_some() || reasoning.include_thinking() {
+    if reasoning.budget_tokens().is_some() {
         return Err(BuildRequestError::UnsupportedFeature);
     }
-    let effort = match reasoning.effort() {
-        Some(ReasoningEffort::None) => "none",
-        Some(ReasoningEffort::Minimal) => "minimal",
-        Some(ReasoningEffort::Low) => "low",
-        Some(ReasoningEffort::Medium) => "medium",
-        Some(ReasoningEffort::High) => "high",
-        Some(ReasoningEffort::ExtraHigh) => "xhigh",
-        Some(ReasoningEffort::Max) => "max",
-        None => return Err(BuildRequestError::InvalidValue),
-    };
-    root.insert(
-        "reasoning".to_owned(),
-        Value::Object(Map::from_iter([(
-            "effort".to_owned(),
-            Value::String(effort.to_owned()),
-        )])),
-    );
+    let mut config = Map::new();
+    if let Some(effort) = reasoning.effort() {
+        let effort = match effort {
+            ReasoningEffort::None => "none",
+            ReasoningEffort::Minimal => "minimal",
+            ReasoningEffort::Low => "low",
+            ReasoningEffort::Medium => "medium",
+            ReasoningEffort::High => "high",
+            ReasoningEffort::ExtraHigh => "xhigh",
+            ReasoningEffort::Max => "max",
+        };
+        config.insert("effort".to_owned(), Value::String(effort.to_owned()));
+    }
+    if let Some(summary) = reasoning.summary().or_else(|| {
+        reasoning
+            .include_thinking()
+            .then_some(crate::ReasoningSummary::Auto)
+    }) {
+        let summary = match summary {
+            crate::ReasoningSummary::Auto => "auto",
+            crate::ReasoningSummary::Concise => "concise",
+            crate::ReasoningSummary::Detailed => "detailed",
+        };
+        config.insert("summary".to_owned(), Value::String(summary.to_owned()));
+    }
+    if !config.is_empty() {
+        root.insert("reasoning".to_owned(), Value::Object(config));
+    }
     Ok(())
 }
 

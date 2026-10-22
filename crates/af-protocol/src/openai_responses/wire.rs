@@ -453,7 +453,8 @@ pub(super) struct FunctionToolWire {
     /// 工具参数 JSON Schema。
     pub(super) parameters: Value,
     /// 是否严格遵循 Schema。
-    pub(super) strict: bool,
+    #[serde(default)]
+    pub(super) strict: Option<bool>,
     /// 工具说明。
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) description: Field<String>,
@@ -515,6 +516,17 @@ pub(super) struct ReasoningWire {
     /// 推理强度。
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) effort: Field<ReasoningEffortWire>,
+    /// 推理摘要的展示偏好。
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) summary: Field<ReasoningSummaryModeWire>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum ReasoningSummaryModeWire {
+    Auto,
+    Concise,
+    Detailed,
 }
 
 /// OpenAI 推理强度。

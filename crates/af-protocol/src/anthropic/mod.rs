@@ -86,7 +86,6 @@ fn uses_known_unsupported_feature(value: &Value) -> bool {
         return false;
     };
     if [
-        "cache_control",
         "container",
         "context_management",
         "inference_geo",
@@ -157,7 +156,6 @@ fn content_block_is_unsupported(block: &Value) -> bool {
                 | "search_result"
                 | "server_tool_use"
                 | "text_editor_code_execution_tool_result"
-                | "thinking"
                 | "tool_reference"
                 | "tool_search_tool_result"
                 | "web_fetch_tool_result"
@@ -177,7 +175,6 @@ fn tool_is_unsupported(tool: &Value) -> bool {
     tool.as_object().is_some_and(|tool| {
         [
             "allowed_callers",
-            "cache_control",
             "defer_loading",
             "input_examples",
             "strict",

@@ -25,6 +25,8 @@ where
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct MessagesRequestWire {
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) cache_control: Field<CacheControlWire>,
     /// 客户端请求的模型名。
     pub(super) model: String,
     /// 最大输出令牌数。
@@ -152,9 +154,19 @@ pub(super) enum AssistantContentPartWire {
     /// 文本内容块。
     #[serde(rename = "text")]
     Text(TextBlockWire),
+    /// 原样回传的思考内容及签名。
+    #[serde(rename = "thinking")]
+    Thinking(ThinkingBlockWire),
     /// 工具调用块。
     #[serde(rename = "tool_use")]
     ToolUse(ToolUseBlockWire),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ThinkingBlockWire {
+    pub(super) thinking: String,
+    pub(super) signature: String,
 }
 
 /// 文本内容块。
@@ -291,6 +303,11 @@ pub(super) struct ToolWire {
     pub(super) description: Field<String>,
     /// 工具参数 JSON Schema。
     pub(super) input_schema: Value,
+    /// 允许提前发送工具参数增量的上游提示。
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) eager_input_streaming: Field<bool>,
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) cache_control: Field<CacheControlWire>,
 }
 
 /// Anthropic 工具选择策略。

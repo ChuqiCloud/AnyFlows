@@ -9,12 +9,13 @@ use super::{
     wire::{
         ContextManagementTypeWire, ContextManagementWire, ConversationWire, Field,
         FunctionToolWire, FunctionTypeWire, NamedToolChoiceWire, ReasoningEffortWire,
-        ReasoningWire, ResponsesRequestWire, ToolChoiceModeWire, ToolChoiceWire, ToolWire,
+        ReasoningSummaryModeWire, ReasoningWire, ResponsesRequestWire, ToolChoiceModeWire,
+        ToolChoiceWire, ToolWire,
     },
 };
 use crate::{
-    CanonicalRequest, ReasoningConfig, ReasoningEffort, RequestContinuation, RequestMetadata,
-    Sampling, TokenCount, ToolChoice, ToolDef,
+    CanonicalRequest, ReasoningConfig, ReasoningEffort, ReasoningSummary, RequestContinuation,
+    RequestMetadata, Sampling, TokenCount, ToolChoice, ToolDef,
 };
 
 pub(super) const MAX_MESSAGES: usize = 256;
@@ -243,7 +244,7 @@ fn convert_tools(
             name,
             description,
             input_schema: parameters,
-            strict: Some(strict),
+            strict,
         });
     }
     Ok((converted, names))
@@ -338,25 +339,34 @@ fn convert_tool_choice(
 fn convert_reasoning(
     reasoning: Field<ReasoningWire>,
 ) -> Result<Option<ReasoningConfig>, ParseRequestError> {
-    let effort = match reasoning {
+    let (effort, summary) = match reasoning {
         Field::Missing => return Ok(None),
         Field::Value(ReasoningWire {
             effort: Field::Missing,
-        }) => return Ok(None),
-        Field::Value(ReasoningWire {
-            effort: Field::Value(effort),
-        }) => effort,
+            summary: Field::Missing,
+        }) => {
+            return Ok(None);
+        }
+        Field::Value(ReasoningWire { effort, summary }) => (effort, summary),
     };
     let effort = match effort {
-        ReasoningEffortWire::None => ReasoningEffort::None,
-        ReasoningEffortWire::Minimal => ReasoningEffort::Minimal,
-        ReasoningEffortWire::Low => ReasoningEffort::Low,
-        ReasoningEffortWire::Medium => ReasoningEffort::Medium,
-        ReasoningEffortWire::High => ReasoningEffort::High,
-        ReasoningEffortWire::ExtraHigh => ReasoningEffort::ExtraHigh,
-        ReasoningEffortWire::Max => ReasoningEffort::Max,
+        Field::Missing => None,
+        Field::Value(ReasoningEffortWire::None) => Some(ReasoningEffort::None),
+        Field::Value(ReasoningEffortWire::Minimal) => Some(ReasoningEffort::Minimal),
+        Field::Value(ReasoningEffortWire::Low) => Some(ReasoningEffort::Low),
+        Field::Value(ReasoningEffortWire::Medium) => Some(ReasoningEffort::Medium),
+        Field::Value(ReasoningEffortWire::High) => Some(ReasoningEffort::High),
+        Field::Value(ReasoningEffortWire::ExtraHigh) => Some(ReasoningEffort::ExtraHigh),
+        Field::Value(ReasoningEffortWire::Max) => Some(ReasoningEffort::Max),
     };
-    ReasoningConfig::new(Some(effort), None, false)
+    let summary = match summary {
+        Field::Missing => None,
+        Field::Value(ReasoningSummaryModeWire::Auto) => Some(ReasoningSummary::Auto),
+        Field::Value(ReasoningSummaryModeWire::Concise) => Some(ReasoningSummary::Concise),
+        Field::Value(ReasoningSummaryModeWire::Detailed) => Some(ReasoningSummary::Detailed),
+    };
+    ReasoningConfig::new(effort, None, false)
+        .map(|reasoning| reasoning.with_summary(summary))
         .map(Some)
         .map_err(|_| ParseRequestError::InvalidValue)
 }

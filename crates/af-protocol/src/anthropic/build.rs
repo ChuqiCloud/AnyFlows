@@ -10,9 +10,9 @@ use super::{
         MAX_MEDIA_URL_BYTES, MAX_MESSAGES, MAX_NORMALIZED_MESSAGES, MAX_PARTS_PER_MESSAGE,
         MAX_STOP_BYTES, MAX_STOP_SEQUENCES, MAX_TEXT_BYTES, MAX_TOOL_CALLS,
         MAX_TOOL_DESCRIPTION_BYTES, MAX_TOOLS, MAX_TOTAL_ARGUMENT_BYTES, MAX_TOTAL_ARGUMENT_NODES,
-        MAX_TOTAL_TEXT_BYTES, MAX_USER_ID_BYTES, decoded_base64_len, normalize_remote_media_url,
-        validate_call_id, validate_model, validate_schema, validate_tool_name,
-        validate_value_shape,
+        MAX_TOTAL_SIGNATURE_BYTES, MAX_TOTAL_TEXT_BYTES, MAX_USER_ID_BYTES, decoded_base64_len,
+        normalize_remote_media_url, validate_call_id, validate_model, validate_schema,
+        validate_signature, validate_tool_name, validate_value_shape,
     },
 };
 use crate::bounded_json::validate_object;
@@ -51,7 +51,7 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
     if request.stream_options.include_usage()
         || !request.attachments.is_empty()
         || request.tools.iter().any(|tool| tool.strict == Some(true))
-        || !request.continuation.is_empty()
+        || request.continuation.has_server_managed_state()
     {
         return Err(BuildRequestError::UnsupportedFeature);
     }
@@ -83,7 +83,7 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
     let max_tokens = insert_sampling(&mut root, request)?;
     insert_reasoning(&mut root, request, max_tokens)?;
     insert_metadata(&mut root, request)?;
-    reject_raw(&root, request)?;
+    merge_raw(&mut root, request)?;
     validate_final_request(&root)?;
     Ok(Value::Object(root))
 }
@@ -327,8 +327,8 @@ fn insert_metadata(
     Ok(())
 }
 
-fn reject_raw(
-    root: &Map<String, Value>,
+fn merge_raw(
+    root: &mut Map<String, Value>,
     request: &CanonicalRequest,
 ) -> Result<(), BuildRequestError> {
     let Some(raw) = request.raw_passthrough() else {
@@ -340,15 +340,62 @@ fn reject_raw(
     if fields.is_empty() {
         return Ok(());
     }
-    if fields
-        .keys()
-        .any(|key| root.contains_key(key) || MODELED_FIELDS.contains(&key.as_str()))
-    {
-        return Err(BuildRequestError::FieldConflict);
+    for (key, value) in fields {
+        match key.as_str() {
+            "cache_control" => {
+                serde_json::from_value::<super::wire::CacheControlWire>(value.clone())
+                    .map_err(|_| BuildRequestError::InvalidValue)?;
+                root.insert(key.clone(), value.clone());
+            }
+            "tools" if value.is_array() => {
+                for options in value.as_array().ok_or(BuildRequestError::InvalidValue)? {
+                    let options = options.as_object().ok_or(BuildRequestError::InvalidValue)?;
+                    let name = options
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .ok_or(BuildRequestError::InvalidValue)?;
+                    let tool = root
+                        .get_mut("tools")
+                        .and_then(Value::as_array_mut)
+                        .and_then(|tools| {
+                            tools
+                                .iter_mut()
+                                .find(|tool| tool.get("name").and_then(Value::as_str) == Some(name))
+                        })
+                        .and_then(Value::as_object_mut)
+                        .ok_or(BuildRequestError::InvalidValue)?;
+                    for (option, value) in options {
+                        match option.as_str() {
+                            "name" => {}
+                            "eager_input_streaming" if value.is_boolean() => {
+                                tool.insert(option.clone(), value.clone());
+                            }
+                            "cache_control" => {
+                                serde_json::from_value::<super::wire::CacheControlWire>(
+                                    value.clone(),
+                                )
+                                .map_err(|_| BuildRequestError::InvalidValue)?;
+                                tool.insert(option.clone(), value.clone());
+                            }
+                            _ => return Err(BuildRequestError::InvalidValue),
+                        }
+                    }
+                }
+            }
+            _ if root.contains_key(key) || MODELED_FIELDS.contains(&key.as_str()) => {
+                return Err(BuildRequestError::FieldConflict);
+            }
+            _ => {
+                return Err(BuildRequestError::UnsupportedCapability(
+                    UnsupportedCapability::request(
+                        Protocol::Anthropic,
+                        RequestCapability::SameProtocolRaw,
+                    ),
+                ));
+            }
+        }
     }
-    Err(BuildRequestError::UnsupportedCapability(
-        UnsupportedCapability::request(Protocol::Anthropic, RequestCapability::SameProtocolRaw),
-    ))
+    Ok(())
 }
 
 fn build_messages(messages: &[Message]) -> Result<(Option<Value>, Vec<Value>), BuildRequestError> {
@@ -508,6 +555,23 @@ fn build_assistant_content(
     for block in blocks {
         match block {
             ContentBlock::Text(text) => parts.push(build_text_part(text, state)?),
+            ContentBlock::Thinking { text, signature } => {
+                let signature = signature
+                    .as_deref()
+                    .ok_or(BuildRequestError::UnsupportedFeature)?;
+                validate_signature(signature).map_err(map_request_validation_error)?;
+                state.signature_bytes = state
+                    .signature_bytes
+                    .checked_add(signature.len())
+                    .ok_or(BuildRequestError::StructureLimitExceeded)?;
+                if state.signature_bytes > MAX_TOTAL_SIGNATURE_BYTES {
+                    return Err(BuildRequestError::StructureLimitExceeded);
+                }
+                state.add_text(text)?;
+                parts.push(serde_json::json!({
+                    "type": "thinking", "thinking": text, "signature": signature
+                }));
+            }
             ContentBlock::ToolUse {
                 id,
                 name,
@@ -525,7 +589,6 @@ fn build_assistant_content(
             ContentBlock::Image { .. }
             | ContentBlock::Audio { .. }
             | ContentBlock::ToolResult { .. }
-            | ContentBlock::Thinking { .. }
             | ContentBlock::Compaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
@@ -790,6 +853,7 @@ struct MessageBuildState {
     argument_bytes: usize,
     argument_nodes: usize,
     cache_breakpoints: usize,
+    signature_bytes: usize,
     seen_tool_call_ids: HashSet<String>,
     pending_tool_call_ids: HashSet<String>,
 }
