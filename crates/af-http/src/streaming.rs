@@ -158,7 +158,7 @@ pub(crate) fn sse_response(body: Body) -> Response {
     let mut response = body.into_response();
     response.headers_mut().insert(
         http::header::CONTENT_TYPE,
-        http::HeaderValue::from_static("text/event-stream"),
+        http::HeaderValue::from_static("text/event-stream; charset=utf-8"),
     );
     response.headers_mut().insert(
         http::header::CACHE_CONTROL,
