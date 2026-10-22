@@ -99,7 +99,42 @@ pub(crate) fn rate_limit_error_response(
 
 fn protocol_error_response(protocol: Protocol, mapped: MappedError) -> axum::response::Response {
     log_error(protocol, mapped);
-    let body = match protocol {
+    let body = protocol_error_body(protocol, mapped);
+    let mut response = (mapped.status(), Json(body)).into_response();
+    if let Some(retry_after) = mapped.retry_after {
+        response.headers_mut().insert(
+            RETRY_AFTER,
+            HeaderValue::from_str(&retry_after.to_string())
+                .expect("受控正整数秒数必须始终是有效响应头"),
+        );
+    }
+    response
+}
+
+pub(crate) fn stream_error_frame(protocol: Protocol, error: AfError) -> axum::body::Bytes {
+    let mapped = classify_error(error);
+    log_error(protocol, mapped);
+    let event = if matches!(protocol, Protocol::Anthropic | Protocol::OpenAiResponses) {
+        "event: error\n"
+    } else {
+        ""
+    };
+    let body = if protocol == Protocol::OpenAiResponses {
+        serde_json::json!({
+            "type": "error",
+            "code": mapped.code.as_str(),
+            "message": mapped.message(),
+            "param": null,
+            "sequence_number": 0,
+        })
+    } else {
+        protocol_error_body(protocol, mapped)
+    };
+    axum::body::Bytes::from(format!("{event}data: {body}\n\n"))
+}
+
+fn protocol_error_body(protocol: Protocol, mapped: MappedError) -> serde_json::Value {
+    match protocol {
         Protocol::Anthropic => anthropic::encode_error(mapped.code, mapped.message()),
         Protocol::Gemini => gemini::encode_error(mapped.code, mapped.message()),
         Protocol::OpenAiChat
@@ -111,16 +146,7 @@ fn protocol_error_response(protocol: Protocol, mapped: MappedError) -> axum::res
         | Protocol::JinaRerank
         | Protocol::CohereRerank
         | Protocol::XaiVideo => openai_chat::encode_error(mapped.code, mapped.message()),
-    };
-    let mut response = (mapped.status(), Json(body)).into_response();
-    if let Some(retry_after) = mapped.retry_after {
-        response.headers_mut().insert(
-            RETRY_AFTER,
-            HeaderValue::from_str(&retry_after.to_string())
-                .expect("受控正整数秒数必须始终是有效响应头"),
-        );
     }
-    response
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

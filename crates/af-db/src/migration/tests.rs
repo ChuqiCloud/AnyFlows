@@ -165,6 +165,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
             profile
         );
     }
+    crate::smart_route_runtime_tests::check_admin_route_crud(&pool).await?;
     pool.close().await?;
     Ok(())
 }

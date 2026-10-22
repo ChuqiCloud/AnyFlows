@@ -11,7 +11,7 @@ use axum::{
 use http::HeaderMap;
 
 use crate::{
-    chat_completions::{HttpState, prepare_model_request, render_chat_response},
+    chat_completions::{HttpState, execute_chat_response, prepare_model_request},
     error_response::OpenAiResponsesHttpError,
 };
 
@@ -28,16 +28,14 @@ pub(crate) async fn openai_responses(
         .map_err(|_| OpenAiResponsesHttpError::from(AfError::InvalidRequest))?;
     let request =
         prepare_model_request(request, &authentication).map_err(OpenAiResponsesHttpError::from)?;
-    let response = state
-        .chat_service()
-        .execute_model(
-            &authentication,
-            request,
-            Protocol::OpenAiResponses,
-            request_id.as_str(),
-            diagnostic,
-        )
-        .await
-        .map_err(OpenAiResponsesHttpError::from)?;
-    Ok(render_chat_response(response, state.stream_delivery()))
+    execute_chat_response(
+        &state,
+        authentication,
+        request,
+        Protocol::OpenAiResponses,
+        request_id,
+        diagnostic,
+    )
+    .await
+    .map_err(OpenAiResponsesHttpError::from)
 }
