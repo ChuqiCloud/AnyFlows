@@ -237,17 +237,28 @@ fn preserves_function_error_object_without_stringifying_it() {
 }
 
 #[test]
-fn rejects_missing_function_ids_instead_of_inventing_them() {
+fn normalizes_missing_function_ids_and_matches_missing_response_ids() {
     let call_without_id = json!({
-        "contents": [{
-            "role": "model",
-            "parts": [{"functionCall": {"name": "lookup", "args": {}}}]
-        }]
+        "contents": [
+            {
+                "role": "model",
+                "parts": [{"functionCall": {"name": "lookup", "args": {}}}]
+            },
+            {
+                "role": "user",
+                "parts": [{"functionResponse": {"name": "lookup", "response": {"ok": true}}}]
+            }
+        ]
     });
-    assert_eq!(
-        parse(call_without_id),
-        Err(ParseRequestError::UnsupportedFeature)
-    );
+    let parsed = parse(call_without_id).unwrap();
+    let ContentBlock::ToolUse { id, .. } = &parsed.messages[0].content[0] else {
+        panic!("expected normalized function call");
+    };
+    assert_eq!(id, "call_gemini_0");
+    let ContentBlock::ToolResult { tool_use_id, .. } = &parsed.messages[1].content[0] else {
+        panic!("expected matched function response");
+    };
+    assert_eq!(tool_use_id, id);
 
     let response_without_id = json!({
         "contents": [
@@ -265,10 +276,11 @@ fn rejects_missing_function_ids_instead_of_inventing_them() {
             }
         ]
     });
-    assert_eq!(
-        parse(response_without_id),
-        Err(ParseRequestError::UnsupportedFeature)
-    );
+    let parsed = parse(response_without_id).unwrap();
+    let ContentBlock::ToolResult { tool_use_id, .. } = &parsed.messages[1].content[0] else {
+        panic!("expected matched function response");
+    };
+    assert_eq!(tool_use_id, "call-1");
 }
 
 #[test]

@@ -311,13 +311,13 @@ fn convert_function_call(
         namespace,
         status,
     } = call;
-    if field_is_present(&id)
-        || field_is_present(&caller)
-        || field_is_present(&namespace)
-        || field_is_present(&status)
-    {
+    if field_is_present(&caller) || field_is_present(&namespace) {
         return Err(ParseRequestError::UnsupportedFeature);
     }
+    if let Field::Value(id) = id {
+        validate_call_id(&id)?;
+    }
+    let _ = status;
     validate_call_id(&call_id)?;
     validate_tool_name(&name)?;
     if !state.seen_tool_call_ids.insert(call_id.clone()) {
@@ -372,8 +372,11 @@ fn convert_function_output(
         id,
         caller,
     } = output;
-    if field_is_present(&id) || field_is_present(&caller) {
+    if field_is_present(&caller) {
         return Err(ParseRequestError::UnsupportedFeature);
+    }
+    if let Field::Value(id) = id {
+        validate_call_id(&id)?;
     }
     validate_call_id(&call_id)?;
     if !state.seen_tool_result_ids.insert(call_id.clone()) {

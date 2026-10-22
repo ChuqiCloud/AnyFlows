@@ -78,6 +78,42 @@ fn builds_minimal_non_streaming_request() {
 }
 
 #[test]
+fn rebuilds_anthropic_thinking_cache_and_tool_streaming_options() {
+    let request = parsed_request(json!({
+        "model": "claude-test",
+        "max_tokens": 256,
+        "cache_control": {"type": "ephemeral", "ttl": "1h"},
+        "messages": [
+            {"role": "assistant", "content": [
+                {"type": "thinking", "thinking": "preserve this", "signature": "opaque-signature"},
+                {"type": "tool_use", "id": "toolu_1", "name": "lookup", "input": {},
+                 "cache_control": {"type": "ephemeral"}}
+            ]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "ok"}]}
+        ],
+        "tools": [{
+            "name": "lookup",
+            "input_schema": {"type": "object"},
+            "eager_input_streaming": true,
+            "cache_control": {"type": "ephemeral", "ttl": "1h"}
+        }]
+    }));
+
+    let value = build_request(&request).unwrap();
+    assert_eq!(value["cache_control"]["ttl"], "1h");
+    assert_eq!(value["tools"][0]["eager_input_streaming"], true);
+    assert_eq!(value["tools"][0]["cache_control"]["ttl"], "1h");
+    assert_eq!(
+        value["messages"][0]["content"][0]["signature"],
+        "opaque-signature"
+    );
+    assert_eq!(
+        value["messages"][0]["content"][1]["cache_control"]["type"],
+        "ephemeral"
+    );
+}
+
+#[test]
 fn builds_streaming_request_without_private_usage_switch() {
     let mut request = minimal_request();
     request.stream = true;
@@ -361,26 +397,16 @@ fn rejects_roles_and_content_outside_the_closed_subset() {
         Err(BuildRequestError::UnsupportedFeature)
     );
 
-    for (block, capability) in [
-        (
-            ContentBlock::Audio {
-                source: MediaSource::Base64("aGk=".to_owned()),
-                mime_type: "audio/mpeg".to_owned(),
-            },
-            RequestCapability::AudioBase64,
-        ),
-        (
-            ContentBlock::Thinking {
-                text: "secret".to_owned(),
-                signature: Some("signature".to_owned()),
-            },
-            RequestCapability::Thinking,
-        ),
-    ] {
-        let mut request = minimal_request();
-        request.messages[0].content = vec![block];
-        assert_unsupported_capability(&request, capability);
-    }
+    let (block, capability) = (
+        ContentBlock::Audio {
+            source: MediaSource::Base64("aGk=".to_owned()),
+            mime_type: "audio/mpeg".to_owned(),
+        },
+        RequestCapability::AudioBase64,
+    );
+    let mut audio = minimal_request();
+    audio.messages[0].content = vec![block];
+    assert_unsupported_capability(&audio, capability);
 
     let mut tool_result_in_user = minimal_request();
     tool_result_in_user.messages[0].content = vec![tool_result("toolu_1")];

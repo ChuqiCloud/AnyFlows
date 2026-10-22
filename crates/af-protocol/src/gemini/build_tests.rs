@@ -296,7 +296,10 @@ fn rejects_unmapped_top_level_capabilities_and_invalid_parameters() {
 
     let mut streaming = minimal_request();
     streaming.stream = true;
-    assert_unsupported_capability(&streaming, RequestCapability::Streaming);
+    assert_eq!(
+        build_request(&streaming),
+        Err(BuildRequestError::UnsupportedFeature)
+    );
 
     let mut stream_options = minimal_request();
     stream_options.stream_options = StreamOptions::new(true);

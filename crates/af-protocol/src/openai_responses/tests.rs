@@ -516,7 +516,6 @@ fn rejects_known_unmodeled_top_level_and_item_features() {
         json!({"model": "gpt-test", "background": true}),
         json!({"model": "gpt-test", "text": {"format": {"type": "json_object"}}}),
         json!({"model": "gpt-test", "stream_options": {"include_obfuscation": false}}),
-        json!({"model": "gpt-test", "reasoning": {"summary": "auto"}}),
     ];
     for request in top_level {
         assert_eq!(
@@ -530,13 +529,6 @@ fn rejects_known_unmodeled_top_level_and_item_features() {
         json!({
             "model": "gpt-test",
             "input": [{"type": "message", "role": "assistant", "content": "x", "phase": "final_answer"}]
-        }),
-        json!({
-            "model": "gpt-test",
-            "input": [{
-                "type": "function_call", "call_id": "call-1", "name": "lookup",
-                "arguments": "{}", "status": "completed"
-            }]
         }),
     ];
     for request in items {
