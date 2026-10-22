@@ -104,13 +104,16 @@ struct ImportedOAuthToken {
 }
 
 /// 从 sub2api 常见的 JSON、JSON 数组、逐行 JSON 和逐行 token 中批量提取 Codex token。
-fn parse_import_file(content: &str) -> Result<Vec<ImportedOAuthToken>, &'static str> {
+fn parse_import_file(
+    content: &str,
+    kind: CredentialKind,
+) -> Result<Vec<ImportedOAuthToken>, &'static str> {
     if content.len() > MAX_IMPORT_FILE_BYTES || content.trim().is_empty() {
         return Err("文件为空或超过大小限制");
     }
     let mut values = Vec::new();
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(content) {
-        collect_import_value(&value, &mut values);
+        collect_import_value(&value, kind, &mut values);
     } else {
         for line in content
             .lines()
@@ -118,7 +121,7 @@ fn parse_import_file(content: &str) -> Result<Vec<ImportedOAuthToken>, &'static 
             .filter(|line| !line.is_empty())
         {
             if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
-                collect_import_value(&value, &mut values);
+                collect_import_value(&value, kind, &mut values);
             } else if line.starts_with('{') || line.starts_with('[') {
                 return Err("JSON 文件格式无效");
             } else {
@@ -140,11 +143,15 @@ fn parse_import_file(content: &str) -> Result<Vec<ImportedOAuthToken>, &'static 
     Ok(values)
 }
 
-fn collect_import_value(value: &serde_json::Value, output: &mut Vec<ImportedOAuthToken>) {
+fn collect_import_value(
+    value: &serde_json::Value,
+    kind: CredentialKind,
+    output: &mut Vec<ImportedOAuthToken>,
+) {
     match value {
         serde_json::Value::Array(items) => items
             .iter()
-            .for_each(|item| collect_import_value(item, output)),
+            .for_each(|item| collect_import_value(item, kind, output)),
         serde_json::Value::String(token) => {
             let mut item = ImportedOAuthToken {
                 access_token: token.clone(),
@@ -154,18 +161,26 @@ fn collect_import_value(value: &serde_json::Value, output: &mut Vec<ImportedOAut
             output.push(item);
         }
         serde_json::Value::Object(object) => {
+            if kind == CredentialKind::Oauth
+                && object
+                    .get("platform")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|platform| !platform.eq_ignore_ascii_case("openai"))
+            {
+                return;
+            }
             for key in ["keys", "credentials"] {
                 if let Some(items) = object.get(key).and_then(serde_json::Value::as_array) {
                     items
                         .iter()
-                        .for_each(|item| collect_import_value(item, output));
+                        .for_each(|item| collect_import_value(item, kind, output));
                     return;
                 }
             }
             if let Some(accounts) = object.get("accounts").and_then(serde_json::Value::as_array) {
                 accounts
                     .iter()
-                    .for_each(|item| collect_import_value(item, output));
+                    .for_each(|item| collect_import_value(item, kind, output));
                 return;
             }
             if let Some(tokens) = object.get("tokens")
@@ -173,7 +188,7 @@ fn collect_import_value(value: &serde_json::Value, output: &mut Vec<ImportedOAut
             {
                 items
                     .iter()
-                    .for_each(|item| collect_import_value(item, output));
+                    .for_each(|item| collect_import_value(item, kind, output));
                 return;
             }
             let credentials = object
@@ -533,7 +548,7 @@ pub(crate) async fn import_admin_credentials(
         items: Vec::new(),
     };
     for file in request.files {
-        let tokens = match parse_import_file(&file.content) {
+        let tokens = match parse_import_file(&file.content, kind) {
             Ok(tokens) => tokens,
             Err(message) => {
                 response.failed += 1;
@@ -1127,6 +1142,7 @@ mod tests {
                 ]
             })
             .to_string(),
+            CredentialKind::Oauth,
         )
         .unwrap();
         assert_eq!(tokens.len(), 2);
@@ -1139,12 +1155,16 @@ mod tests {
 
     #[test]
     fn imports_line_delimited_tokens_and_rejects_empty_payloads() {
-        let tokens = parse_import_file("access-one\n{\"accessToken\":\"access-two\"}\n").unwrap();
+        let tokens = parse_import_file(
+            "access-one\n{\"accessToken\":\"access-two\"}\n",
+            CredentialKind::Oauth,
+        )
+        .unwrap();
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0].access_token, "access-one");
         assert_eq!(tokens[1].access_token, "access-two");
-        assert!(parse_import_file("[]").is_err());
-        assert!(parse_import_file("{broken-json").is_err());
+        assert!(parse_import_file("[]", CredentialKind::Oauth).is_err());
+        assert!(parse_import_file("{broken-json", CredentialKind::Oauth).is_err());
     }
 
     #[test]
@@ -1163,6 +1183,7 @@ mod tests {
                 "user_id": "different-user"
             })
             .to_string(),
+            CredentialKind::Oauth,
         )
         .unwrap();
         assert_eq!(tokens[0].account_key.as_deref(), Some("account-from-jwt"));
@@ -1180,11 +1201,30 @@ mod tests {
                 {"platform": "claude", "credentials": {"access_token": "other-access"}}
             ]})
             .to_string(),
+            CredentialKind::Oauth,
         )
         .unwrap();
         assert_eq!(tokens.len(), 1);
         assert_eq!(tokens[0].account_key.as_deref(), Some("codex-account"));
         assert_eq!(tokens[0].refresh_token.as_deref(), Some("codex-refresh"));
+    }
+
+    #[test]
+    fn api_key_import_accepts_provider_keys_and_common_containers() {
+        for payload in [
+            json!(["provider-one", {"api_key": "provider-two"}]),
+            json!({"keys": ["provider-one", {"apiKey": "provider-two"}]}),
+            json!({"credentials": ["provider-one", {"key": "provider-two"}]}),
+            json!({"accounts": [
+                {"platform": "nvidia", "credentials": {"api_key": "provider-one"}},
+                {"platform": "deepseek", "credentials": {"api_key": "provider-two"}}
+            ]}),
+        ] {
+            let tokens = parse_import_file(&payload.to_string(), CredentialKind::ApiKey).unwrap();
+            assert_eq!(tokens.len(), 2);
+            assert_eq!(tokens[0].access_token, "provider-one");
+            assert_eq!(tokens[1].access_token, "provider-two");
+        }
     }
 
     fn request(kind: &str, secret: Value) -> Value {

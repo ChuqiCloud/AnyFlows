@@ -694,7 +694,7 @@ async fn retries_rate_limit_on_the_next_candidate() {
 }
 
 #[tokio::test]
-async fn channel_failure_skips_remaining_credentials_in_the_same_channel() {
+async fn server_failure_tries_remaining_credentials_in_the_same_channel() {
     let (address, server) = spawn_proxy(vec![
         ProxyResponse {
             status_line: "503 Service Unavailable",
@@ -702,7 +702,7 @@ async fn channel_failure_skips_remaining_credentials_in_the_same_channel() {
         },
         ProxyResponse {
             status_line: "200 OK",
-            body: br#"{"ok":"next-channel"}"#,
+            body: br#"{"ok":"next-key"}"#,
         },
     ]);
     let client = proxy_client(address);
@@ -714,8 +714,8 @@ async fn channel_failure_skips_remaining_credentials_in_the_same_channel() {
     .unwrap();
 
     let response = machine.execute_with_report(request()).await.unwrap();
-    assert_eq!(response.attempts().get(), 3);
-    assert_eq!(response.report().successful_candidate_index(), Some(2));
+    assert_eq!(response.attempts().get(), 2);
+    assert_eq!(response.report().successful_candidate_index(), Some(1));
     assert_eq!(response.report().failures().len(), 1);
     assert_eq!(response.report().failures()[0].candidate_index(), 0);
     assert_eq!(
@@ -731,7 +731,7 @@ async fn channel_failure_skips_remaining_credentials_in_the_same_channel() {
             .into_bytes()
             .await
             .unwrap(),
-        Bytes::from_static(br#"{"ok":"next-channel"}"#)
+        Bytes::from_static(br#"{"ok":"next-key"}"#)
     );
     server.join().unwrap();
 }

@@ -2042,7 +2042,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn playground_smart_route_maps_model_and_preserves_regular_key_boundary() {
+    async fn smart_route_maps_model_for_playground_and_regular_keys_within_their_group() {
         let (service, group_id) = service_with_smart_route(valid_envelope()).await;
         let playground = GatewayPrincipal::playground(
             af_domain::TokenId::new(1).unwrap(),
@@ -2069,14 +2069,29 @@ mod tests {
             af_domain::UserId::new(1).unwrap(),
             group_id,
         );
+        let plan = service
+            .plan(
+                &regular,
+                None,
+                valid_request_for_model("smart-chat"),
+                Protocol::OpenAiChat,
+                "request-regular-smart-route",
+                diagnostic(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(plan.target_group_id(), group_id);
+        assert_eq!(plan.pricing_model(), "gpt-routed");
+
+        let outside_group = principal(group_id.get() + 1);
         assert!(matches!(
             service
                 .plan(
-                    &regular,
+                    &outside_group,
                     None,
                     valid_request_for_model("smart-chat"),
                     Protocol::OpenAiChat,
-                    "request-regular-smart-route",
+                    "request-smart-route-outside-group",
                     diagnostic(),
                 )
                 .await,
