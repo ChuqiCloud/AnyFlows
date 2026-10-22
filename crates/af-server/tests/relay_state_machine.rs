@@ -432,16 +432,10 @@ async fn race_refills_failed_slot_without_waiting_for_silent_peer() {
 
 #[tokio::test]
 async fn race_channel_failure_skips_unstarted_keys_and_then_falls_back() {
-    let (address, server) = spawn_proxy(vec![
-        ProxyResponse {
-            status_line: "400 Bad Request",
-            body: b"{}",
-        },
-        ProxyResponse {
-            status_line: "200 OK",
-            body: br#"{"ok":"fallback"}"#,
-        },
-    ]);
+    let (address, server) = spawn_proxy(vec![ProxyResponse {
+        status_line: "200 OK",
+        body: br#"{"ok":"fallback"}"#,
+    }]);
     let client = proxy_client(address);
     let slots = Arc::new(tokio::sync::Semaphore::new(0));
     let (unused_gate, unused_acquired, _) = attempt_gate(GateMode::Permit);
@@ -451,7 +445,9 @@ async fn race_channel_failure_skips_unstarted_keys_and_then_falls_back() {
             .with_retry_limit(Some(0))
     };
     let machine = RelayStateMachine::new(vec![
-        make_candidate(1),
+        candidate(&client, "http://unsupported.invalid", &["another-model"])
+            .with_channel_group(ChannelId::new(1).unwrap())
+            .with_race_width(Some(2)),
         make_candidate(1).with_attempt_gate(Arc::new(SemaphoreAttemptGate(slots.clone()))),
         make_candidate(1).with_attempt_gate(unused_gate),
         make_candidate(2),
