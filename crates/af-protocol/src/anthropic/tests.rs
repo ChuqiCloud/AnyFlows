@@ -315,7 +315,7 @@ fn rejects_unknown_null_invalid_and_known_unsupported_fields() {
         "role": "assistant",
         "content": [{"type": "thinking", "thinking": "secret", "signature": "sig"}]
     });
-    assert_json_error(thinking_block, ParseRequestError::UnsupportedFeature);
+    assert!(parse_json(thinking_block).is_ok());
 }
 
 #[test]
@@ -467,7 +467,7 @@ fn validates_media_tools_and_schema_boundaries() {
         "input_schema": {"type": "object"},
         "cache_control": {"type": "ephemeral"}
     }]);
-    assert_json_error(server_tool_option, ParseRequestError::UnsupportedFeature);
+    assert!(parse_json(server_tool_option).is_ok());
 
     let mut non_object_input = tool_history_request();
     non_object_input["messages"][0]["content"][0]["input"] = json!([]);

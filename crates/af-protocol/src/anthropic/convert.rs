@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
-use af_domain::{MAX_MODEL_NAME_BYTES, Operation, Role};
+use af_domain::{MAX_MODEL_NAME_BYTES, Operation, Protocol, Role};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use url::Url;
 
 use super::{
@@ -44,11 +44,14 @@ pub(super) const MAX_USER_ID_BYTES: usize = 512;
 pub(super) const MAX_MEDIA_URL_BYTES: usize = 8 * 1024;
 pub(super) const MAX_MEDIA_BYTES: usize = 20 * 1024 * 1024;
 pub(super) const MAX_CACHE_BREAKPOINTS: usize = 4;
+pub(super) const MAX_SIGNATURE_BYTES: usize = 64 * 1024;
+pub(super) const MAX_TOTAL_SIGNATURE_BYTES: usize = 1024 * 1024;
 
 pub(super) fn convert_request(
     wire: MessagesRequestWire,
 ) -> Result<CanonicalRequest, ParseRequestError> {
     let MessagesRequestWire {
+        cache_control,
         model,
         max_tokens,
         system,
@@ -69,9 +72,48 @@ pub(super) fn convert_request(
     let sampling = convert_sampling(max_tokens, temperature, top_p, stop_sequences)?;
     let reasoning = convert_reasoning(thinking, output_config, max_tokens)?;
     let metadata = convert_metadata(metadata)?;
-    let (tools, tool_names) = convert_tools(tools)?;
+    let mut raw = Map::new();
+    let tools = field_value(tools).unwrap_or_default();
+    let mut cache_breakpoints = 0;
+    if let Field::Value(cache) = cache_control {
+        raw.insert("cache_control".to_owned(), cache_value(cache));
+        cache_breakpoints += 1;
+    }
+    let mut tool_options = Vec::new();
+    for tool in &tools {
+        let mut options = Map::new();
+        options.insert("name".to_owned(), Value::String(tool.name.clone()));
+        if let Field::Value(eager) = &tool.eager_input_streaming {
+            options.insert("eager_input_streaming".to_owned(), Value::Bool(*eager));
+        }
+        if let Field::Value(cache) = &tool.cache_control {
+            let ttl = match cache.ttl {
+                Field::Value(CacheTtlWire::OneHour) => "1h",
+                _ => "5m",
+            };
+            options.insert(
+                "cache_control".to_owned(),
+                serde_json::json!({"type": "ephemeral", "ttl": ttl}),
+            );
+            cache_breakpoints += 1;
+        }
+        if options.len() > 1 {
+            tool_options.push(Value::Object(options));
+        }
+    }
+    if !tool_options.is_empty() {
+        raw.insert("tools".to_owned(), Value::Array(tool_options));
+    }
+    let (tools, tool_names) = convert_tools(Field::Value(tools))?;
     let tool_choice = convert_tool_choice(tool_choice, &tool_names)?;
     let messages = convert_messages(system, messages)?;
+    cache_breakpoints += messages
+        .iter()
+        .map(|message| count_cache_hints(&message.content))
+        .sum::<usize>();
+    if cache_breakpoints > MAX_CACHE_BREAKPOINTS {
+        return Err(ParseRequestError::StructureLimitExceeded);
+    }
 
     let mut request = CanonicalRequest::new(Operation::Chat, model, messages, stream);
     request.tools = tools;
@@ -79,7 +121,27 @@ pub(super) fn convert_request(
     request.reasoning = reasoning;
     request.sampling = sampling;
     request.metadata = metadata;
-    Ok(request)
+    Ok(request
+        .with_validated_raw_passthrough((!raw.is_empty()).then_some((Protocol::Anthropic, raw))))
+}
+
+fn cache_value(cache: CacheControlWire) -> Value {
+    let ttl = match cache.ttl {
+        Field::Value(CacheTtlWire::OneHour) => "1h",
+        _ => "5m",
+    };
+    serde_json::json!({"type": "ephemeral", "ttl": ttl})
+}
+
+fn count_cache_hints(blocks: &[ContentBlock]) -> usize {
+    blocks
+        .iter()
+        .map(|block| match block {
+            ContentBlock::CacheControl(_) => 1,
+            ContentBlock::ToolResult { content, .. } => count_cache_hints(content),
+            _ => 0,
+        })
+        .sum()
 }
 
 pub(super) fn validate_model(model: &str) -> Result<(), ParseRequestError> {
@@ -353,6 +415,21 @@ fn convert_assistant_message(
                 match part {
                     AssistantContentPartWire::Text(block) => {
                         push_text_block(&mut content, block, state)?;
+                    }
+                    AssistantContentPartWire::Thinking(block) => {
+                        validate_signature(&block.signature)?;
+                        state.signature_bytes = state
+                            .signature_bytes
+                            .checked_add(block.signature.len())
+                            .ok_or(ParseRequestError::StructureLimitExceeded)?;
+                        if state.signature_bytes > MAX_TOTAL_SIGNATURE_BYTES {
+                            return Err(ParseRequestError::StructureLimitExceeded);
+                        }
+                        state.reserve_text(&block.thinking)?;
+                        content.push(ContentBlock::Thinking {
+                            text: block.thinking,
+                            signature: Some(block.signature),
+                        });
                     }
                     AssistantContentPartWire::ToolUse(block) => {
                         let (tool_use, cache_control) = convert_tool_use(block, state)?;
@@ -646,6 +723,16 @@ pub(super) fn validate_call_id(id: &str) -> Result<(), ParseRequestError> {
     Ok(())
 }
 
+pub(super) fn validate_signature(signature: &str) -> Result<(), ParseRequestError> {
+    if signature.is_empty() || signature.chars().any(char::is_control) {
+        return Err(ParseRequestError::InvalidValue);
+    }
+    if signature.len() > MAX_SIGNATURE_BYTES {
+        return Err(ParseRequestError::StructureLimitExceeded);
+    }
+    Ok(())
+}
+
 pub(super) fn validate_schema(
     schema: &Value,
     total_schema_bytes: &mut usize,
@@ -738,6 +825,7 @@ struct MessageConvertState {
     argument_bytes: usize,
     argument_nodes: usize,
     cache_breakpoints: usize,
+    signature_bytes: usize,
     seen_tool_call_ids: HashSet<String>,
     pending_tool_call_ids: HashSet<String>,
 }
@@ -755,6 +843,11 @@ impl MessageConvertState {
     }
 
     fn add_text(&mut self, text: String) -> Result<ContentBlock, ParseRequestError> {
+        self.reserve_text(&text)?;
+        Ok(ContentBlock::Text(text))
+    }
+
+    fn reserve_text(&mut self, text: &str) -> Result<(), ParseRequestError> {
         if text.len() > MAX_TEXT_BYTES {
             return Err(ParseRequestError::StructureLimitExceeded);
         }
@@ -765,8 +858,7 @@ impl MessageConvertState {
         if self.text_bytes > MAX_TOTAL_TEXT_BYTES {
             return Err(ParseRequestError::StructureLimitExceeded);
         }
-        self.add_block()?;
-        Ok(ContentBlock::Text(text))
+        self.add_block()
     }
 
     fn add_media_bytes(&mut self, bytes: usize) -> Result<(), ParseRequestError> {

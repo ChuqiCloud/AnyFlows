@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use af_domain::{Operation, Role};
 use base64::{
@@ -331,6 +331,16 @@ fn convert_messages(
     }
 
     let mut state = MessageConvertState::default();
+    // 提前预留显式 ID，避免缺省 ID 与后续历史中的客户端 ID 冲突。
+    for content in &contents {
+        for part in &content.parts {
+            if let Field::Value(call) = &part.function_call
+                && let Field::Value(id) = &call.id
+            {
+                state.reserved_tool_call_ids.insert(id.clone());
+            }
+        }
+    }
     let mut messages = Vec::with_capacity(contents.len() + 1);
     if let Field::Value(system) = system_instruction {
         messages.push(convert_system_instruction(system, &mut state)?);
@@ -498,7 +508,18 @@ fn convert_function_call(
     signature: Option<String>,
     state: &mut MessageConvertState,
 ) -> Result<ContentBlock, ParseRequestError> {
-    let id = field_value(call.id).ok_or(ParseRequestError::UnsupportedFeature)?;
+    let id = field_value(call.id).unwrap_or_else(|| {
+        let mut serial = state.seen_tool_call_ids.len();
+        loop {
+            let id = format!("call_gemini_{serial}");
+            if !state.seen_tool_call_ids.contains(&id)
+                && !state.reserved_tool_call_ids.contains(&id)
+            {
+                break id;
+            }
+            serial += 1;
+        }
+    });
     validate_call_id(&id)?;
     validate_tool_name(&call.name)?;
     if !state.seen_tool_call_ids.insert(id.clone()) {
@@ -511,6 +532,7 @@ fn convert_function_call(
     state
         .pending_tool_calls
         .insert(id.clone(), call.name.clone());
+    state.pending_tool_call_order.push_back(id.clone());
     state.add_block()?;
     Ok(ContentBlock::ToolUse {
         id,
@@ -541,7 +563,15 @@ fn convert_function_response(
         return Err(ParseRequestError::UnsupportedFeature);
     }
     let response = field_value(function_response).ok_or(ParseRequestError::InvalidValue)?;
-    let id = field_value(response.id).ok_or(ParseRequestError::UnsupportedFeature)?;
+    let id = match field_value(response.id) {
+        Some(id) => id,
+        None => state
+            .pending_tool_call_order
+            .iter()
+            .find(|id| state.pending_tool_calls.get(*id) == Some(&response.name))
+            .cloned()
+            .ok_or(ParseRequestError::InvalidValue)?,
+    };
     validate_call_id(&id)?;
     validate_tool_name(&response.name)?;
     let expected_name = state
@@ -555,6 +585,9 @@ fn convert_function_response(
         validate_json_object(&response.response, TOOL_PAYLOAD_LIMITS, MAX_RESULT_BYTES)?;
     state.add_result(bytes, nodes)?;
     state.pending_tool_calls.remove(&id);
+    state
+        .pending_tool_call_order
+        .retain(|pending| pending != &id);
     state.add_block()?;
     let is_error = response
         .response
@@ -718,7 +751,9 @@ struct MessageConvertState {
     json_nodes: usize,
     signature_bytes: usize,
     seen_tool_call_ids: HashSet<String>,
+    reserved_tool_call_ids: HashSet<String>,
     pending_tool_calls: HashMap<String, String>,
+    pending_tool_call_order: VecDeque<String>,
 }
 
 impl MessageConvertState {

@@ -52,7 +52,7 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
         || request.metadata.user_id().is_some()
         || request.metadata.session_id().is_some()
         || request.tools.iter().any(|tool| tool.strict == Some(true))
-        || !request.continuation.is_empty()
+        || request.continuation.has_server_managed_state()
     {
         return Err(BuildRequestError::UnsupportedFeature);
     }
