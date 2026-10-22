@@ -421,6 +421,8 @@ struct ChoiceState {
     reasoning_index: Option<u32>,
     candidate_tokens: Option<TokenCount>,
     seen_call_ids: HashSet<String>,
+    reserved_call_ids: HashSet<String>,
+    next_call_id: usize,
 }
 
 #[derive(Default)]
@@ -459,6 +461,14 @@ fn decode_content(
         return Err(ParseStreamError::StructureLimitExceeded);
     }
     let emitted = !content.parts.is_empty();
+    state.reserved_call_ids.clear();
+    for part in &content.parts {
+        if let Field::Value(call) = &part.function_call
+            && let Field::Value(id) = &call.id
+        {
+            state.reserved_call_ids.insert(id.clone());
+        }
+    }
     for part in content.parts {
         decode_part(choice_index, part, state, totals, output)?;
     }
@@ -558,7 +568,21 @@ fn decode_function_call(
     totals: &mut DecodeTotals,
     output: &mut Vec<CanonicalStreamEvent>,
 ) -> Result<(), ParseStreamError> {
-    let id = field_value(call.id).ok_or(ParseStreamError::UnsupportedFeature)?;
+    let id = match field_value(call.id) {
+        Some(id) => id,
+        None => loop {
+            let candidate = format!("call_gemini_{choice_index}_{}", state.next_call_id);
+            state.next_call_id = state
+                .next_call_id
+                .checked_add(1)
+                .ok_or(ParseStreamError::StructureLimitExceeded)?;
+            if !state.seen_call_ids.contains(&candidate)
+                && !state.reserved_call_ids.contains(&candidate)
+            {
+                break candidate;
+            }
+        },
+    };
     validate_call_id(&id).map_err(map_request_error)?;
     validate_tool_name(&call.name).map_err(map_request_error)?;
     if !state.seen_call_ids.insert(id.clone()) {

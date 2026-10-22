@@ -73,8 +73,38 @@ impl CanonicalRequestEnvelope {
             Protocol::OpenAiChat | Protocol::Anthropic | Protocol::Gemini => Operation::Chat,
             _ => return None,
         };
+        // Chat 类协议缺省为非严格工具；原生 Responses 保留缺省值。
+        if protocol == Protocol::OpenAiResponses && self.canonical.operation == Operation::Chat {
+            for tool in &mut self.canonical.tools {
+                tool.strict.get_or_insert(false);
+            }
+        }
+        if protocol != Protocol::OpenAiResponses
+            && self.canonical.continuation.has_server_managed_state()
+        {
+            return None;
+        }
         if protocol != Protocol::Gemini && normalize_text_tool_results(&mut self.canonical)? {
             self.source = None;
+        }
+        if protocol != Protocol::Anthropic {
+            let mut changed = false;
+            for message in &mut self.canonical.messages {
+                changed |= remove_cache_hints(&mut message.content);
+            }
+            if changed {
+                self.source = None;
+            }
+        }
+        if protocol != Protocol::OpenAiResponses {
+            let normalized = self
+                .canonical
+                .reasoning
+                .map(|reasoning| reasoning.with_summary(None));
+            if self.canonical.reasoning != normalized {
+                self.canonical.reasoning = normalized;
+                self.source = None;
+            }
         }
         let foreign_raw = self
             .canonical
@@ -85,7 +115,11 @@ impl CanonicalRequestEnvelope {
             if !fields.iter().all(|(key, value)| match key.as_str() {
                 "store" | "logprobs" => value.as_bool() == Some(false),
                 "n" => value.as_u64() == Some(1),
-                "parallel_tool_calls" => self.canonical.tools.is_empty(),
+                "parallel_tool_calls" => {
+                    value.as_bool() == Some(true) || self.canonical.tools.is_empty()
+                }
+                "prompt_cache_key" | "prompt_cache_retention" | "cache_control" => true,
+                "tools" if raw.source_protocol() == Protocol::Anthropic => true,
                 "include" => value.as_array().is_some_and(Vec::is_empty),
                 _ => false,
             }) {
@@ -204,6 +238,18 @@ impl CanonicalRequestEnvelope {
             requested_model,
         })
     }
+}
+
+fn remove_cache_hints(blocks: &mut Vec<ContentBlock>) -> bool {
+    let original_len = blocks.len();
+    blocks.retain(|block| !matches!(block, ContentBlock::CacheControl(_)));
+    let mut changed = blocks.len() != original_len;
+    for block in blocks {
+        if let ContentBlock::ToolResult { content, .. } = block {
+            changed |= remove_cache_hints(content);
+        }
+    }
+    changed
 }
 
 // 文本工具协议使用完整 JSON 表达结构化结果，原生 Gemini 继续保留对象。
@@ -400,6 +446,32 @@ mod tests {
     }
 
     #[test]
+    fn prompt_cache_affinity_does_not_block_cross_protocol_routes() {
+        let request = responses_request(
+            br#"{"model":"model-test","input":"hi","store":false,"prompt_cache_key":"agent-session","max_output_tokens":128}"#,
+        );
+        for target in [Protocol::OpenAiChat, Protocol::Anthropic, Protocol::Gemini] {
+            let converted = request.clone().for_conversation_protocol(target).unwrap();
+            assert_eq!(
+                converted.canonical().continuation.prompt_cache_key(),
+                Some("agent-session")
+            );
+            match target {
+                Protocol::OpenAiChat => {
+                    assert!(crate::openai_chat::build_request(converted.canonical()).is_ok())
+                }
+                Protocol::Anthropic => {
+                    assert!(crate::anthropic::build_request(converted.canonical()).is_ok())
+                }
+                Protocol::Gemini => {
+                    assert!(crate::gemini::build_request(converted.canonical()).is_ok())
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[test]
     fn gemini_tool_result_objects_remain_native_or_convert_to_complete_json_text() {
         let request = crate::gemini::parse_request_envelope(
             "models/gemini-test",
@@ -463,10 +535,12 @@ mod tests {
         );
         let request = responses_request(
             br#"{"model":"gpt-test","input":"hi","previous_response_id":"resp_previous"}"#,
-        )
-        .for_conversation_protocol(Protocol::OpenAiChat)
-        .unwrap();
-        assert!(crate::openai_chat::build_request(request.canonical()).is_err());
+        );
+        assert!(
+            request
+                .for_conversation_protocol(Protocol::OpenAiChat)
+                .is_none()
+        );
     }
 
     fn responses_request(body: &'static [u8]) -> CanonicalRequestEnvelope {

@@ -126,7 +126,11 @@ fn uses_known_unsupported_feature(value: &Value) -> bool {
     if request
         .get("reasoning")
         .and_then(Value::as_object)
-        .is_some_and(|reasoning| reasoning.keys().any(|key| key != "effort"))
+        .is_some_and(|reasoning| {
+            reasoning
+                .keys()
+                .any(|key| !matches!(key.as_str(), "effort" | "summary"))
+        })
     {
         return true;
     }
@@ -178,11 +182,11 @@ fn input_item_uses_unsupported_feature(item: &Value) -> bool {
                 .and_then(Value::as_array)
                 .is_some_and(|parts| parts.iter().any(content_uses_unsupported_feature))
         }
-        Some("function_call") => ["caller", "id", "namespace", "status"]
+        Some("function_call") => ["caller", "namespace"]
             .iter()
             .any(|key| item.contains_key(*key)),
         Some("function_call_output") => {
-            ["caller", "id"].iter().any(|key| item.contains_key(*key))
+            item.contains_key("caller")
                 || item
                     .get("output")
                     .and_then(Value::as_array)

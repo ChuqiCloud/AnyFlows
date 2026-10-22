@@ -34,7 +34,7 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
     if !request.attachments.is_empty() {
         return Err(BuildRequestError::UnsupportedFeature);
     }
-    if !request.continuation.is_empty() {
+    if request.continuation.has_server_managed_state() {
         return Err(BuildRequestError::UnsupportedFeature);
     }
 
@@ -158,11 +158,11 @@ fn insert_reasoning(
     let Some(reasoning) = request.reasoning else {
         return Ok(());
     };
-    if reasoning.budget_tokens().is_some() || reasoning.include_thinking() {
+    if reasoning.budget_tokens().is_some() {
         return Err(BuildRequestError::UnsupportedFeature);
     }
     let Some(effort) = reasoning.effort() else {
-        return Err(BuildRequestError::InvalidValue);
+        return Ok(());
     };
     let value = match effort {
         ReasoningEffort::None => "none",
@@ -266,20 +266,8 @@ fn merge_raw(
         }
     }
     validate_raw_fields(fields).map_err(map_request_validation_error)?;
-    validate_response_safe_raw_fields(fields)?;
     for (key, value) in fields {
         root.insert(key.clone(), value.clone());
-    }
-    Ok(())
-}
-
-fn validate_response_safe_raw_fields(fields: &Map<String, Value>) -> Result<(), BuildRequestError> {
-    // 这些请求选项会触发当前响应 IR 无法保存的缓存写入明细，
-    // 为避免出站成功后在响应边界必然失败，这里先明确拒绝。
-    for key in fields.keys() {
-        if matches!(key.as_str(), "prompt_cache_key" | "prompt_cache_retention") {
-            return Err(BuildRequestError::UnsupportedFeature);
-        }
     }
     Ok(())
 }

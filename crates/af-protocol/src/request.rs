@@ -100,12 +100,24 @@ pub enum ReasoningEffort {
     Max,
 }
 
+/// 推理摘要的展示偏好。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReasoningSummary {
+    /// 由上游选择摘要长度。
+    Auto,
+    /// 简短摘要。
+    Concise,
+    /// 详细摘要。
+    Detailed,
+}
+
 /// 协议无关的推理参数。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ReasoningConfig {
     effort: Option<ReasoningEffort>,
     budget_tokens: Option<TokenCount>,
     include_thinking: bool,
+    summary: Option<ReasoningSummary>,
 }
 
 impl ReasoningConfig {
@@ -124,6 +136,7 @@ impl ReasoningConfig {
             effort,
             budget_tokens,
             include_thinking,
+            summary: None,
         })
     }
 
@@ -143,6 +156,19 @@ impl ReasoningConfig {
     #[must_use]
     pub const fn include_thinking(&self) -> bool {
         self.include_thinking
+    }
+
+    /// 设置可选的推理摘要偏好。
+    #[must_use]
+    pub const fn with_summary(mut self, summary: Option<ReasoningSummary>) -> Self {
+        self.summary = summary;
+        self
+    }
+
+    /// 返回推理摘要偏好。
+    #[must_use]
+    pub const fn summary(&self) -> Option<ReasoningSummary> {
+        self.summary
     }
 }
 
@@ -326,6 +352,12 @@ impl RequestContinuation {
         self.previous_response_id.is_none()
             && self.conversation_id.is_none()
             && self.prompt_cache_key.is_none()
+    }
+
+    /// 判断是否携带需要同一协议服务端状态的会话引用。
+    #[must_use]
+    pub const fn has_server_managed_state(&self) -> bool {
+        self.previous_response_id.is_some() || self.conversation_id.is_some()
     }
 }
 

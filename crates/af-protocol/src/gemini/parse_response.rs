@@ -370,10 +370,32 @@ fn convert_candidate(
         return Err(ParseResponseError::InvalidValue);
     }
 
+    let reserved_call_ids = match &content {
+        Field::Missing => HashSet::new(),
+        Field::Value(content) => content
+            .parts
+            .iter()
+            .filter_map(|part| match &part.function_call {
+                Field::Value(call) => match &call.id {
+                    Field::Value(id) => Some(id.clone()),
+                    Field::Missing => None,
+                },
+                Field::Missing => None,
+            })
+            .collect::<HashSet<_>>(),
+    };
     let mut seen_call_ids = HashSet::new();
-    let content = match field_value(content) {
-        None => Vec::new(),
-        Some(content) => convert_content(content, state, &mut seen_call_ids)?,
+    let mut next_call_id = 0;
+    let content = match content {
+        Field::Missing => Vec::new(),
+        Field::Value(content) => convert_content(
+            content,
+            index,
+            state,
+            &mut seen_call_ids,
+            &reserved_call_ids,
+            &mut next_call_id,
+        )?,
     };
     let has_tool_use = content
         .iter()
@@ -402,8 +424,11 @@ fn convert_candidate(
 
 fn convert_content(
     content: ContentWire,
+    choice_index: u32,
     state: &mut ResponseConvertState,
     seen_call_ids: &mut HashSet<String>,
+    reserved_call_ids: &HashSet<String>,
+    next_call_id: &mut usize,
 ) -> Result<Vec<ContentBlock>, ParseResponseError> {
     match field_value(content.role).as_deref() {
         None | Some("model") => {}
@@ -415,14 +440,26 @@ fn convert_content(
     content
         .parts
         .into_iter()
-        .map(|part| convert_part(part, state, seen_call_ids))
+        .map(|part| {
+            convert_part(
+                part,
+                choice_index,
+                state,
+                seen_call_ids,
+                reserved_call_ids,
+                next_call_id,
+            )
+        })
         .collect()
 }
 
 fn convert_part(
     part: PartWire,
+    choice_index: u32,
     state: &mut ResponseConvertState,
     seen_call_ids: &mut HashSet<String>,
+    reserved_call_ids: &HashSet<String>,
+    next_call_id: &mut usize,
 ) -> Result<ContentBlock, ParseResponseError> {
     let PartWire {
         text,
@@ -465,7 +502,15 @@ fn convert_part(
             if thought {
                 return Err(ParseResponseError::UnsupportedFeature);
             }
-            convert_function_call(call, signature, state, seen_call_ids)
+            convert_function_call(
+                call,
+                signature,
+                choice_index,
+                state,
+                seen_call_ids,
+                reserved_call_ids,
+                next_call_id,
+            )
         }
         (Field::Missing, Field::Missing, Field::Missing, Field::Value(_)) => {
             Err(ParseResponseError::UnsupportedFeature)
@@ -477,10 +522,25 @@ fn convert_part(
 fn convert_function_call(
     call: FunctionCallWire,
     signature: Option<String>,
+    choice_index: u32,
     state: &mut ResponseConvertState,
     seen_call_ids: &mut HashSet<String>,
+    reserved_call_ids: &HashSet<String>,
+    next_call_id: &mut usize,
 ) -> Result<ContentBlock, ParseResponseError> {
-    let id = field_value(call.id).ok_or(ParseResponseError::UnsupportedFeature)?;
+    let id = match field_value(call.id) {
+        Some(id) => id,
+        None => loop {
+            let serial = *next_call_id;
+            *next_call_id = (*next_call_id)
+                .checked_add(1)
+                .ok_or(ParseResponseError::StructureLimitExceeded)?;
+            let candidate = format!("call_gemini_{choice_index}_{serial}");
+            if !seen_call_ids.contains(&candidate) && !reserved_call_ids.contains(&candidate) {
+                break candidate;
+            }
+        },
+    };
     validate_call_id(&id).map_err(map_request_validation_error)?;
     validate_tool_name(&call.name).map_err(map_request_validation_error)?;
     if !seen_call_ids.insert(id.clone()) {

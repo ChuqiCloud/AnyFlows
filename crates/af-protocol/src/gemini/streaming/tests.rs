@@ -286,6 +286,36 @@ fn decoder_rejects_duplicate_json_missing_identity_and_index() {
 }
 
 #[test]
+fn decoder_generates_missing_function_ids_without_colliding_with_explicit_ids() {
+    let frame = response(
+        json!([{
+            "index": 0,
+            "content": {
+                "role": "model",
+                "parts": [
+                    {"functionCall": {"name": "first", "args": {}}},
+                    {"functionCall": {"id": "call_gemini_0_0", "name": "second", "args": {}}}
+                ]
+            },
+            "finishReason": "STOP"
+        }]),
+        None,
+    );
+    let mut decoder = GeminiGenerateContentStreamDecoder::new();
+    let mut events = decoder.push(&sse(&frame)).unwrap();
+    events.extend(decoder.finish().unwrap());
+
+    let ids = events
+        .iter()
+        .filter_map(|event| match event {
+            CanonicalStreamEvent::ToolCallStart { id, .. } => Some(id.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(ids, ["call_gemini_0_1", "call_gemini_0_0"]);
+}
+
+#[test]
 fn decoder_rejects_metadata_drift_unsupported_parts_and_invalid_signature() {
     let first = response(
         json!([{"index": 0, "content": {"parts": [{"text": "first"}]}}]),

@@ -534,10 +534,15 @@ fn rejects_cross_protocol_raw_collisions_and_invalid_raw_values() {
         );
         let request =
             minimal_request().with_validated_raw_passthrough(Some((Protocol::OpenAiChat, fields)));
-        assert_eq!(
-            build_request(&request),
-            Err(BuildRequestError::UnsupportedFeature)
-        );
+        assert_eq!(build_request(&request).unwrap()[key], fields_value(key));
+    }
+}
+
+fn fields_value(key: &str) -> Value {
+    if key == "prompt_cache_key" {
+        json!("cache-key")
+    } else {
+        json!("24h")
     }
 }
 
