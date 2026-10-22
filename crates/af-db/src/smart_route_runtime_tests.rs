@@ -1,17 +1,142 @@
 use std::{error::Error, time::Duration};
 
-use af_domain::{RouteChannelId, RouteMode, RouteStrategy};
+use af_domain::{ChannelId, CredentialId, RouteChannelId, RouteMode, RouteStrategy};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 
 use super::{
-    DatabaseOptions, MigrationOptions, SmartRouteAttemptFeedback, SmartRouteRuntimeRepository,
+    AdminRouteChannelWriteRecord, AdminRouteDeleteOutcome, AdminRouteLookupOutcome,
+    AdminRouteMutationOutcome, AdminRouteRepository, AdminRouteRepositoryError,
+    AdminRouteWriteRecord, DatabaseOptions, MigrationOptions, SmartRouteAttemptFeedback,
+    SmartRouteRuntimeRepository,
     entity::{
         ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, channels, credentials,
         route_channels, routes,
     },
     validate_smart_route_model_mapping,
 };
+
+#[tokio::test]
+async fn admin_route_crud_preserves_candidate_statistics() -> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    check_admin_route_crud(&pool).await?;
+    pool.close().await?;
+    Ok(())
+}
+
+// Also run against the isolated PostgreSQL/MySQL migration databases in CI.
+pub(crate) async fn check_admin_route_crud(
+    pool: &super::DatabasePool,
+) -> Result<(), Box<dyn Error>> {
+    let repository = AdminRouteRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let runtime = SmartRouteRuntimeRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let channel = insert_channel(pool).await?;
+    let credential = insert_credential(pool, channel.id).await?;
+    let write = |name: &str| {
+        AdminRouteWriteRecord::new(
+            name.to_owned(),
+            "admin-route-crud-model".to_owned(),
+            RouteMode::Pattern,
+            RouteStrategy::Weighted,
+            serde_json::json!({}),
+            true,
+            vec![AdminRouteChannelWriteRecord::new(
+                ChannelId::new(channel.id).expect("valid channel id"),
+                CredentialId::new(credential.id).expect("valid credential id"),
+                1,
+                10,
+                true,
+            )],
+        )
+    };
+    let created = repository.create(write("admin-route-crud")).await?;
+    let route_id = created.route_id();
+    let binding_id = created.channels()[0].id();
+    assert!(matches!(
+        repository.create(write("admin-route-crud")).await,
+        Err(AdminRouteRepositoryError::Conflict)
+    ));
+    let other = repository.create(write("admin-route-crud-other")).await?;
+    assert!(matches!(
+        repository
+            .update(other.route_id(), write("admin-route-crud"))
+            .await,
+        Err(AdminRouteRepositoryError::Conflict)
+    ));
+    runtime
+        .record_attempts(&[
+            SmartRouteAttemptFeedback::new(binding_id, true, 17)?,
+            SmartRouteAttemptFeedback::new(binding_id, false, 24)?,
+        ])
+        .await?;
+    let AdminRouteMutationOutcome::Mutated(updated) = repository
+        .update(route_id, write("admin-route-crud"))
+        .await?
+    else {
+        panic!("existing route must remain editable");
+    };
+    assert_eq!(updated.channels().len(), 1);
+    let binding = &updated.channels()[0];
+    assert_eq!(binding.id(), binding_id);
+    assert_eq!(binding.success_count(), 1);
+    assert_eq!(binding.fail_count(), 1);
+    assert_eq!(binding.total_latency(), 41);
+    assert!(binding.last_selected_at().is_some());
+    assert!(binding.last_failure_at().is_some());
+    assert!(matches!(
+        repository.get(route_id).await?,
+        AdminRouteLookupOutcome::Found(_)
+    ));
+    assert!(
+        runtime
+            .matching_rules("admin-route-crud-model")
+            .await?
+            .iter()
+            .any(|rule| rule.route_id() == route_id && rule.candidates().len() == 1)
+    );
+    assert_eq!(
+        repository.delete(route_id).await?,
+        AdminRouteDeleteOutcome::Deleted
+    );
+    assert_eq!(
+        repository.delete(route_id).await?,
+        AdminRouteDeleteOutcome::NotFound
+    );
+    assert!(matches!(
+        repository.get(route_id).await?,
+        AdminRouteLookupOutcome::NotFound
+    ));
+    assert!(matches!(
+        repository
+            .update(route_id, write("admin-route-crud"))
+            .await?,
+        AdminRouteMutationOutcome::NotFound
+    ));
+    assert!(
+        route_channels::Entity::find_by_id(binding_id.get())
+            .one(pool.connection())
+            .await?
+            .is_none()
+    );
+    assert!(
+        runtime
+            .matching_rules("admin-route-crud-model")
+            .await?
+            .iter()
+            .all(|rule| rule.route_id() != route_id)
+    );
+    let replacement = repository.create(write("admin-route-crud")).await?;
+    repository.delete(replacement.route_id()).await?;
+    repository.delete(other.route_id()).await?;
+    channels::Entity::delete_by_id(channel.id)
+        .exec(pool.connection())
+        .await?;
+    Ok(())
+}
 
 #[tokio::test]
 async fn matching_rules_use_fixed_specificity_and_deterministic_model_mapping()
