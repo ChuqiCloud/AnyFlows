@@ -14,7 +14,7 @@ export type RouteMappingRow = {
 export type RouteCandidateRow = {
   id: string
   channelId: number
-  credentialId: number
+  credentialId: number | null
   weight: string
   enabled: boolean
   stats?: RouteCandidateStats
@@ -62,7 +62,7 @@ export function defaultRouteFormValues(route?: AdminRoute): RouteFormValues {
     .map((candidate) => ({
       id: `candidate-${candidate.id}`,
       channelId: candidate.channel_id,
-      credentialId: candidate.credential_id,
+      credentialId: candidate.credential_id ?? null,
       weight: String(candidate.weight),
       enabled: candidate.enabled,
       stats: {
@@ -115,9 +115,10 @@ export function validateRouteForm(values: RouteFormValues): RouteFormErrors {
     const key = `${candidate.channelId}:${candidate.credentialId}`
     const weight = parseNonNegativeInt32(candidate.weight)
     if (!positiveSafeInteger(candidate.channelId)
-      || !positiveSafeInteger(candidate.credentialId)
+      || (candidate.credentialId !== null && !positiveSafeInteger(candidate.credentialId))
       || weight === undefined
-      || seenCandidates.has(key)) {
+      || seenCandidates.has(key)
+      || values.candidates.some((other) => other !== candidate && other.channelId === candidate.channelId && (other.credentialId === null || candidate.credentialId === null))) {
       errors.candidates = 'invalidCandidates'
       break
     }
@@ -126,7 +127,7 @@ export function validateRouteForm(values: RouteFormValues): RouteFormErrors {
   return errors
 }
 
-/** 按可视顺序生成优先级，列表顶部始终拥有最高优先级。 */
+/** 加权候选使用同级权重；顺序策略按列表生成优先级。 */
 export function toRouteWriteRequest(values: RouteFormValues): AdminRouteWriteRequest {
   const errors = validateRouteForm(values)
   if (Object.keys(errors).length > 0) throw new Error('智能路由表单未通过校验')
@@ -140,7 +141,7 @@ export function toRouteWriteRequest(values: RouteFormValues): AdminRouteWriteReq
     channels: values.candidates.map((candidate, index) => ({
       channel_id: candidate.channelId,
       credential_id: candidate.credentialId,
-      priority: values.candidates.length - index,
+      priority: values.strategy === 'weighted' ? 0 : values.candidates.length - index,
       weight: parseNonNegativeInt32(candidate.weight) ?? 0,
       enabled: candidate.enabled,
     })),

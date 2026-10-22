@@ -34,7 +34,9 @@ mod openai_responses_stream;
 mod openai_speech;
 mod opencode_tools;
 mod rerank;
+mod response_readiness;
 mod state_machine;
+mod stream_delivery;
 mod tool_conversation;
 pub use opencode_tools::opencode_compatibility_tools;
 mod tool_conversation_stream;
@@ -105,6 +107,7 @@ pub use state_machine::{
     RelayClientSimulationAttempt, RelayExecutionError, RelayExecutionPolicy, RelayRequest,
     RelayResponse, RelayState, RelayStateMachine,
 };
+pub use stream_delivery::{StreamDeliveryHook, StreamDeliveryOutcome, with_delivery_completion};
 pub use tool_conversation::{
     ToolConversationPlan, ToolConversationReport, ToolConversationReportHandle,
     ToolConversationState, relay_tool_conversation,

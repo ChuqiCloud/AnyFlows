@@ -23,6 +23,19 @@ pub trait GenerationCompletionHook: Send + 'static {
         self: Box<Self>,
         usage: Result<Usage, UsageResolutionError>,
     ) -> GenerationCompletionFuture;
+
+    /// HTTP 交付结束后收尾；提前中断不能沿用上游的成功 usage。
+    fn on_delivery(
+        self: Box<Self>,
+        usage: Result<Usage, UsageResolutionError>,
+        outcome: crate::StreamDeliveryOutcome,
+    ) -> GenerationCompletionFuture {
+        self.on_complete(if outcome == crate::StreamDeliveryOutcome::Completed {
+            usage
+        } else {
+            Err(UsageResolutionError::Interrupted)
+        })
+    }
 }
 
 /// 已完成协议校验与下游重编码的统一生成 SSE 流。
@@ -34,6 +47,11 @@ pub trait GenerationStream:
         self: Box<Self>,
         hook: Box<dyn GenerationCompletionHook>,
     ) -> Box<dyn GenerationStream>;
+
+    /// 将交付收尾责任移交给 HTTP Body；直接消费流时仍在 EOF 收尾。
+    fn take_delivery_hook(&mut self) -> Option<Box<dyn crate::StreamDeliveryHook>> {
+        None
+    }
 }
 
 /// 把后续安装的多个完成回调合并为同一终态 Future，避免计费与槽位收尾互相覆盖。

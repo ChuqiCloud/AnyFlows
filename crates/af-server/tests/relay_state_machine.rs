@@ -278,6 +278,149 @@ fn read_request(stream: &mut TcpStream) -> Vec<u8> {
     request
 }
 
+struct SemaphoreAttemptGate(Arc<tokio::sync::Semaphore>);
+
+struct SemaphoreAttemptPermit(tokio::sync::OwnedSemaphorePermit);
+
+impl RelayAttemptGate for SemaphoreAttemptGate {
+    fn acquire(&self) -> RelayAttemptGateFuture<'_> {
+        Box::pin(async move {
+            let permit = self
+                .0
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|_| RelayAttemptGateError::Internal)?;
+            Ok(Box::new(SemaphoreAttemptPermit(permit)) as Box<dyn RelayAttemptPermit>)
+        })
+    }
+}
+
+impl RelayAttemptPermit for SemaphoreAttemptPermit {
+    fn release(self: Box<Self>) -> RelayAttemptReleaseFuture {
+        Box::pin(async move { drop(self.0) })
+    }
+}
+
+fn spawn_racing_stream(
+    barrier: Arc<std::sync::Barrier>,
+    completes: bool,
+) -> (SocketAddr, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream.set_read_timeout(Some(TEST_TIMEOUT)).unwrap();
+        read_request(&mut stream);
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n")
+            .unwrap();
+        let role = b"data: {\"id\":\"chatcmpl-race\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"test-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"}}]}\n\n";
+        write!(stream, "{:x}\r\n", role.len()).unwrap();
+        stream.write_all(role).unwrap();
+        stream.write_all(b"\r\n").unwrap();
+        stream.flush().unwrap();
+        barrier.wait();
+        if completes {
+            let output = b"data: {\"id\":\"chatcmpl-race\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"test-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"winner\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+            write!(stream, "{:x}\r\n", output.len()).unwrap();
+            stream.write_all(output).unwrap();
+            stream.write_all(b"\r\n0\r\n\r\n").unwrap();
+            stream.flush().unwrap();
+        } else {
+            // Both upstreams have replied 200, but this one never emits usable output.
+            let mut buffer = [0_u8; 1];
+            assert_eq!(stream.read(&mut buffer).unwrap(), 0);
+        }
+    });
+    (address, server)
+}
+
+#[tokio::test]
+async fn race_waits_for_usable_output_and_cancels_loser_permit() {
+    let barrier = Arc::new(std::sync::Barrier::new(2));
+    let (slow_address, slow_server) = spawn_racing_stream(barrier.clone(), false);
+    let (fast_address, fast_server) = spawn_racing_stream(barrier, true);
+    let slow_slots = Arc::new(tokio::sync::Semaphore::new(1));
+    let fast_slots = Arc::new(tokio::sync::Semaphore::new(1));
+    let make_candidate = |address, slots: Arc<tokio::sync::Semaphore>| {
+        grouped_candidate(&proxy_client(address), "http://race.invalid", 1)
+            .with_race_width(Some(2))
+            .with_response_validation(Protocol::OpenAiChat)
+            .with_first_output_timeout(TEST_TIMEOUT)
+            .with_attempt_gate(Arc::new(SemaphoreAttemptGate(slots)))
+    };
+    let machine = RelayStateMachine::new(vec![
+        // Scheduling already orders the candidate list by Key priority. The
+        // configured race width must still span adjacent priority tiers.
+        make_candidate(slow_address, slow_slots.clone()),
+        make_candidate(fast_address, fast_slots.clone()),
+    ])
+    .unwrap();
+    let response = tokio::time::timeout(
+        TEST_TIMEOUT,
+        machine.execute_with_report(request().with_response_mode(ResponseMode::Stream)),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(response.report().successful_candidate_index(), Some(1));
+    assert_eq!(response.attempts().get(), 2);
+    assert_eq!(slow_slots.available_permits(), 1);
+    assert_eq!(fast_slots.available_permits(), 0);
+    let (response, _, permit) = response.into_parts_with_permit();
+    let body = response.into_body().into_bytes().await.unwrap();
+    assert!(String::from_utf8_lossy(&body).contains("winner"));
+    assert!(String::from_utf8_lossy(&body).contains("[DONE]"));
+    permit.unwrap().release().await;
+    assert_eq!(fast_slots.available_permits(), 1);
+    slow_server.join().unwrap();
+    fast_server.join().unwrap();
+}
+
+#[tokio::test]
+async fn invalid_success_body_retries_before_falling_back() {
+    let valid = br#"{"id":"chatcmpl-ready","object":"chat.completion","created":1,"model":"test-model","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}"#;
+    let (address, server) = spawn_proxy(vec![
+        ProxyResponse {
+            status_line: "200 OK",
+            body: b"{}",
+        },
+        ProxyResponse {
+            status_line: "200 OK",
+            body: b"{}",
+        },
+        ProxyResponse {
+            status_line: "200 OK",
+            body: valid,
+        },
+    ]);
+    let client = proxy_client(address);
+    let machine = RelayStateMachine::new(vec![
+        grouped_candidate(&client, "http://invalid.invalid", 1)
+            .with_response_validation(Protocol::OpenAiChat)
+            .with_retry_limit(Some(1))
+            .with_retry_delay_ms(Some(0)),
+        grouped_candidate(&client, "http://fallback.invalid", 2)
+            .with_response_validation(Protocol::OpenAiChat),
+    ])
+    .unwrap();
+    let response = machine.execute_with_report(request()).await.unwrap();
+    assert_eq!(response.attempts().get(), 3);
+    assert_eq!(response.report().successful_candidate_index(), Some(1));
+    assert_eq!(response.report().failures().len(), 2);
+    assert_eq!(
+        response
+            .into_response()
+            .into_body()
+            .into_bytes()
+            .await
+            .unwrap(),
+        Bytes::from_static(valid)
+    );
+    server.join().unwrap();
+}
+
 #[test]
 fn rejects_empty_and_oversized_candidate_lists() {
     assert_eq!(
@@ -551,7 +694,7 @@ async fn retries_rate_limit_on_the_next_candidate() {
 }
 
 #[tokio::test]
-async fn channel_failure_skips_remaining_credentials_in_the_same_channel() {
+async fn server_failure_tries_remaining_credentials_in_the_same_channel() {
     let (address, server) = spawn_proxy(vec![
         ProxyResponse {
             status_line: "503 Service Unavailable",
@@ -559,7 +702,7 @@ async fn channel_failure_skips_remaining_credentials_in_the_same_channel() {
         },
         ProxyResponse {
             status_line: "200 OK",
-            body: br#"{"ok":"next-channel"}"#,
+            body: br#"{"ok":"next-key"}"#,
         },
     ]);
     let client = proxy_client(address);
@@ -571,8 +714,8 @@ async fn channel_failure_skips_remaining_credentials_in_the_same_channel() {
     .unwrap();
 
     let response = machine.execute_with_report(request()).await.unwrap();
-    assert_eq!(response.attempts().get(), 3);
-    assert_eq!(response.report().successful_candidate_index(), Some(2));
+    assert_eq!(response.attempts().get(), 2);
+    assert_eq!(response.report().successful_candidate_index(), Some(1));
     assert_eq!(response.report().failures().len(), 1);
     assert_eq!(response.report().failures()[0].candidate_index(), 0);
     assert_eq!(
@@ -588,7 +731,7 @@ async fn channel_failure_skips_remaining_credentials_in_the_same_channel() {
             .into_bytes()
             .await
             .unwrap(),
-        Bytes::from_static(br#"{"ok":"next-channel"}"#)
+        Bytes::from_static(br#"{"ok":"next-key"}"#)
     );
     server.join().unwrap();
 }

@@ -554,6 +554,9 @@
       "editDescription": "Read fields can be changed directly. Sensitive objects follow the blank-value rule."
     },
     "form": {
+      "keyWeighted": "Priority and weight",
+      "keyRoundRobin": "Round robin within the same priority",
+      "keyPriority": "Fixed order with failover",
       "basic": "Basic settings",
       "routing": "Routing scope",
       "overrides": "Request transformation",
@@ -593,6 +596,7 @@
       "submitError": "The channel could not be saved. Check the fields and try again."
     },
     "fields": {
+      "credentialStrategy": "Channel Key scheduling strategy",
       "name": "Name",
       "baseUrl": "Upstream base URL",
       "timeout": "Channel timeout (seconds)",
@@ -882,6 +886,7 @@
       "editDescription": "Update the rule and candidate order. Stored secrets remain represented by redacted metadata."
     },
     "form": {
+      "allCredentials": "All available Keys (channel scheduling policy)",
       "identity": "Identity",
       "name": "Rule name",
       "enabled": "Enable rule",
@@ -949,6 +954,26 @@
     }
   },
   "credentials": {
+    "health": {
+      "degraded": "Reduced health weight",
+      "cooling": "Health cooldown",
+      "reduced": "Effective weight {{percent}}%",
+      "reducedDescription": "Recent request failures reduced the scheduling weight to {{percent}}% of its configured value. Successful requests gradually restore it."
+    },
+    "batch": {
+      "importTitle": "Batch import",
+      "kind": "Credential type",
+      "input": "One Key per line or JSON",
+      "placeholder": "Enter one Key per line, a JSON array, or an object with keys / credentials.",
+      "files": "Choose files",
+      "selectFiltered": "Select filtered credentials",
+      "status": "Filter by status",
+      "all": "All statuses",
+      "deleteSelected": "Delete selected ({{count}})",
+      "confirmTitle": "Delete credentials",
+      "confirm": "Soft-delete {{count}} credentials and their shadow descendants. Related route bindings will become unavailable. Check the selected statuses and count before continuing.",
+      "selectOne": "Select credential #{{id}}"
+    },
     "title": "Credentials and account pool",
     "usage": {
       "action": "View upstream usage",

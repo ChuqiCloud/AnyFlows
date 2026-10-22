@@ -183,7 +183,10 @@ pub(crate) fn prepare_request(
     }
 }
 
-fn parse_response(protocol: Protocol, body: &[u8]) -> Result<CanonicalResponse, UpstreamError> {
+pub(crate) fn parse_response(
+    protocol: Protocol,
+    body: &[u8],
+) -> Result<CanonicalResponse, UpstreamError> {
     match protocol {
         Protocol::OpenAiChat => {
             openai_chat::parse_response(body).map_err(|_| UpstreamError::ProtocolError)

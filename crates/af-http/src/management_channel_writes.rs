@@ -138,6 +138,9 @@ pub(crate) struct AdminChannelCreateRequest {
     relay_retry_limit: Option<u8>,
     #[serde(default)]
     relay_retry_delay_ms: Option<u64>,
+    #[serde(default)]
+    #[schema(value_type = Option<crate::openapi::schema::CredentialSelectionStrategySchema>)]
+    credential_strategy: Option<af_admin::CredentialSelectionStrategy>,
     #[schema(schema_with = crate::openapi::schema::channel_write_models_schema)]
     models: Vec<String>,
     #[schema(schema_with = crate::openapi::schema::channel_write_group_ids_schema)]
@@ -225,6 +228,9 @@ pub(crate) struct AdminChannelUpdateRequest {
     #[serde(default)]
     #[schema(value_type = Option<u64>)]
     relay_retry_delay_ms: FieldUpdate<u64>,
+    #[serde(default)]
+    #[schema(value_type = Option<crate::openapi::schema::CredentialSelectionStrategySchema>)]
+    credential_strategy: FieldUpdate<af_admin::CredentialSelectionStrategy>,
     #[schema(schema_with = crate::openapi::schema::channel_write_models_schema)]
     models: Vec<String>,
     #[schema(schema_with = crate::openapi::schema::channel_write_group_ids_schema)]
@@ -352,11 +358,14 @@ impl AdminChannelCreateRequest {
         )
         .map_err(map_write_error)
         .map(|command| {
-            command.with_relay_execution_settings(af_admin::RelayChannelSettings::new(
-                self.relay_race_width,
-                self.relay_retry_limit,
-                self.relay_retry_delay_ms,
-            ))
+            command.with_relay_execution_settings(
+                af_admin::RelayChannelSettings::new(
+                    self.relay_race_width,
+                    self.relay_retry_limit,
+                    self.relay_retry_delay_ms,
+                )
+                .with_credential_strategy(self.credential_strategy),
+            )
         })
     }
 }
@@ -428,15 +437,18 @@ impl AdminChannelUpdateRequest {
                 self.relay_race_width.into_patch(),
                 self.relay_retry_limit.into_patch(),
                 self.relay_retry_delay_ms.into_patch(),
+                self.credential_strategy.into_patch(),
             ) {
-                (None, None, None) => command,
-                (race_width, retry_limit, retry_delay_ms) => {
-                    command.with_relay_execution_settings(af_admin::RelayChannelSettingsPatch::new(
-                        race_width,
-                        retry_limit,
-                        retry_delay_ms,
-                    ))
-                }
+                (None, None, None, None) => command,
+                (race_width, retry_limit, retry_delay_ms, credential_strategy) => command
+                    .with_relay_execution_settings(
+                        af_admin::RelayChannelSettingsPatch::new(
+                            race_width,
+                            retry_limit,
+                            retry_delay_ms,
+                        )
+                        .with_credential_strategy(credential_strategy),
+                    ),
             },
         )
     }

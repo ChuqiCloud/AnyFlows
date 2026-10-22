@@ -53,7 +53,7 @@ export function RouteCandidateEditor({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
   const [newChannelId, setNewChannelId] = useState<number>()
-  const [newCredentialId, setNewCredentialId] = useState<number>()
+  const [newCredentialId, setNewCredentialId] = useState<number | null>(null)
   const availableChannels = channels
   const requestedChannelIds = useMemo(() => {
     const ids = [...rows.map((row) => row.channelId)]
@@ -73,7 +73,10 @@ export function RouteCandidateEditor({
     [availableChannels],
   )
   const credentialItems = useMemo(
-    () => selectedCredentials.map((credential) => ({ key: String(credential.id), label: credentialLabel(credential, t) })),
+    () => [
+      { key: 'all', label: t('routes.form.allCredentials', { defaultValue: '全部可用 Key（按渠道策略调度）' }) },
+      ...selectedCredentials.map((credential) => ({ key: String(credential.id), label: credentialLabel(credential, t) })),
+    ],
     [selectedCredentials, t],
   )
 
@@ -82,10 +85,7 @@ export function RouteCandidateEditor({
     setNewChannelId(channels[0]?.id)
   }, [channels, newChannelId])
 
-  useEffect(() => {
-    if (newCredentialId !== undefined && selectedCredentials.some((credential) => credential.id === newCredentialId)) return
-    setNewCredentialId(selectedCredentials[0]?.id)
-  }, [newCredentialId, selectedCredentials])
+
 
   const selectedChannelQueryIndex = newChannelId === undefined
     ? -1
@@ -94,12 +94,11 @@ export function RouteCandidateEditor({
   const loading = catalogLoading || selectedChannelQuery?.isPending === true
   const error = catalogError || selectedChannelQuery?.isError === true
   const canAdd = newChannelId !== undefined
-    && newCredentialId !== undefined
-    && !rows.some((row) => row.channelId === newChannelId && row.credentialId === newCredentialId)
+    && !rows.some((row) => row.channelId === newChannelId && (row.credentialId === null || newCredentialId === null || row.credentialId === newCredentialId))
     && rows.length < 64
 
   const addCandidate = () => {
-    if (!canAdd || newChannelId === undefined || newCredentialId === undefined) return
+    if (!canAdd || newChannelId === undefined) return
     onChange([...rows, {
       id: createRouteRowId('candidate'),
       channelId: newChannelId,
@@ -131,7 +130,7 @@ export function RouteCandidateEditor({
               placeholder={t('routes.form.selectChannel')}
               selectedKeys={newChannelId === undefined ? [] : [String(newChannelId)]}
               size="sm"
-              onSelectionChange={(keys) => setNewChannelId(parseId(String(Array.from(keys)[0] ?? '')))}
+              onSelectionChange={(keys) => { setNewChannelId(parseId(String(Array.from(keys)[0] ?? ''))); setNewCredentialId(null) }}
             >
               {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
             </Select>
@@ -140,12 +139,12 @@ export function RouteCandidateEditor({
             <span id="route-new-credential-label">{t('routes.form.credential')}</span>
             <Select
               aria-labelledby="route-new-credential-label"
-              isDisabled={loading || selectedCredentials.length === 0}
+              isDisabled={catalogLoading}
               items={credentialItems}
-              placeholder={t('routes.form.selectCredential')}
-              selectedKeys={newCredentialId === undefined ? [] : [String(newCredentialId)]}
+              placeholder={t('routes.form.allCredentials', { defaultValue: '全部可用 Key（按渠道策略调度）' })}
+              selectedKeys={[newCredentialId === null ? 'all' : String(newCredentialId)]}
               size="sm"
-              onSelectionChange={(keys) => setNewCredentialId(parseId(String(Array.from(keys)[0] ?? '')))}
+              onSelectionChange={(keys) => setNewCredentialId(parseId(String(Array.from(keys)[0] ?? '')) ?? null)}
             >
               {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
             </Select>
@@ -219,14 +218,14 @@ function SortableCandidateRow({ row, position, channels, credentialsByChannel, o
     ...channels.map((item) => ({ key: String(item.id), label: `${item.name} · #${item.id}` })),
   ]
   const rowCredentialItems = [
-    ...(credential ? [] : [{ key: String(row.credentialId), label: t('routes.form.unknownCredential', { id: row.credentialId }) }]),
+    { key: 'all', label: t('routes.form.allCredentials', { defaultValue: '全部可用 Key（按渠道策略调度）' }) },
+    ...(credential || row.credentialId === null ? [] : [{ key: String(row.credentialId), label: t('routes.form.unknownCredential', { id: row.credentialId }) }]),
     ...credentials.map((item) => ({ key: String(item.id), label: credentialLabel(item, t) })),
   ]
 
   const updateChannel = (channelId: number | undefined) => {
     if (channelId === undefined) return
-    const nextCredential = (credentialsByChannel[channelId] ?? [])[0]
-    onChange({ channelId, credentialId: nextCredential?.id ?? 0, stats: undefined })
+    onChange({ channelId, credentialId: null, stats: undefined })
   }
 
   return (
@@ -270,9 +269,9 @@ function SortableCandidateRow({ row, position, channels, credentialsByChannel, o
           <Select
             aria-labelledby={`route-candidate-credential-${row.id}`}
             items={rowCredentialItems}
-            selectedKeys={[String(row.credentialId)]}
+            selectedKeys={[row.credentialId === null ? 'all' : String(row.credentialId)]}
             size="sm"
-            onSelectionChange={(keys) => onChange({ credentialId: parseId(String(Array.from(keys)[0] ?? '')) ?? 0, stats: undefined })}
+            onSelectionChange={(keys) => onChange({ credentialId: parseId(String(Array.from(keys)[0] ?? '')) ?? null, stats: undefined })}
           >
             {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
           </Select>

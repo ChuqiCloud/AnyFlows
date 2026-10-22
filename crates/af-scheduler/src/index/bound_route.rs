@@ -23,7 +23,7 @@ use super::{
 pub struct BoundRouteCandidate {
     route_channel_id: RouteChannelId,
     channel_id: ChannelId,
-    credential_id: CredentialId,
+    credential_id: Option<CredentialId>,
     priority: i32,
     weight: u32,
     last_selected_at_millis: Option<i64>,
@@ -34,7 +34,7 @@ impl BoundRouteCandidate {
     pub fn new(
         route_channel_id: RouteChannelId,
         channel_id: ChannelId,
-        credential_id: CredentialId,
+        credential_id: impl Into<Option<CredentialId>>,
         priority: i32,
         weight: u32,
         last_selected_at_millis: Option<i64>,
@@ -45,7 +45,7 @@ impl BoundRouteCandidate {
         Ok(Self {
             route_channel_id,
             channel_id,
-            credential_id,
+            credential_id: credential_id.into(),
             priority,
             weight,
             last_selected_at_millis,
@@ -101,6 +101,17 @@ fn build_bound_route_plan(
         }
     }
 
+    if bindings.iter().any(|binding| {
+        binding.credential_id.is_none()
+            && bindings
+                .iter()
+                .filter(|other| other.channel_id == binding.channel_id)
+                .count()
+                > 1
+    }) {
+        return Err(WeightedRetryPlanError::Invariant.into());
+    }
+
     let ability_channels = snapshot
         .candidates(group_id, model)?
         .iter()
@@ -130,7 +141,11 @@ fn build_bound_route_plan(
             .collect::<BTreeSet<_>>();
         let retained = channel_bindings
             .into_iter()
-            .filter(|binding| available_credentials.contains(&binding.credential_id.get()))
+            .filter(|binding| {
+                binding
+                    .credential_id
+                    .is_none_or(|id| available_credentials.contains(&id.get()))
+            })
             .collect::<Vec<_>>();
         let Some(effective_priority) = retained.iter().map(|binding| binding.priority).max() else {
             continue;
@@ -140,19 +155,27 @@ fn build_bound_route_plan(
             .filter(|binding| binding.priority == effective_priority)
             .try_fold(0_u32, |total, binding| total.checked_add(binding.weight))
             .ok_or(WeightedRetryPlanError::Invariant)?;
-        let scheduling = retained
-            .iter()
-            .map(|binding| {
-                (
-                    binding.credential_id.get(),
-                    (binding.priority, binding.weight),
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
-        let route_bindings = retained
-            .iter()
-            .map(|binding| (binding.credential_id, binding.route_channel_id))
-            .collect::<BTreeMap<_, _>>();
+        let mut scheduling = BTreeMap::new();
+        let mut route_bindings = BTreeMap::new();
+        for binding in &retained {
+            for credential in target.credentials().iter().filter(|credential| {
+                binding
+                    .credential_id
+                    .is_none_or(|id| id.get() == credential.credential_id())
+            }) {
+                let scheduling_values = if binding.credential_id.is_some() {
+                    (binding.priority, binding.weight)
+                } else {
+                    (credential.priority(), credential.weight())
+                };
+                scheduling.insert(credential.credential_id(), scheduling_values);
+                route_bindings.insert(
+                    CredentialId::new(credential.credential_id())
+                        .map_err(|_| WeightedRetryPlanError::Invariant)?,
+                    binding.route_channel_id,
+                );
+            }
+        }
         let last_selected_at_millis = retained
             .iter()
             .filter_map(|binding| binding.last_selected_at_millis)

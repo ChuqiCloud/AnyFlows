@@ -25,7 +25,7 @@ pub const MAX_SMART_ROUTE_RUNTIME_RULES: usize = 256;
 pub struct SmartRouteRuntimeCandidate {
     route_channel_id: RouteChannelId,
     channel_id: ChannelId,
-    credential_id: CredentialId,
+    credential_id: Option<CredentialId>,
     priority: i32,
     weight: u32,
     last_selected_at_millis: Option<i64>,
@@ -36,7 +36,7 @@ impl SmartRouteRuntimeCandidate {
     pub fn new(
         route_channel_id: RouteChannelId,
         channel_id: ChannelId,
-        credential_id: CredentialId,
+        credential_id: impl Into<Option<CredentialId>>,
         priority: i32,
         weight: u32,
         last_selected_at_millis: Option<i64>,
@@ -47,7 +47,7 @@ impl SmartRouteRuntimeCandidate {
         Ok(Self {
             route_channel_id,
             channel_id,
-            credential_id,
+            credential_id: credential_id.into(),
             priority,
             weight,
             last_selected_at_millis,
@@ -68,7 +68,7 @@ impl SmartRouteRuntimeCandidate {
 
     /// 返回绑定凭据。
     #[must_use]
-    pub const fn credential_id(self) -> CredentialId {
+    pub const fn credential_id(self) -> Option<CredentialId> {
         self.credential_id
     }
 
@@ -341,7 +341,10 @@ impl SmartRouteRuntimeRepository {
                 SmartRouteRuntimeCandidate::new(
                     RouteChannelId::new(row.id).map_err(|_| invariant())?,
                     ChannelId::new(row.channel_id).map_err(|_| invariant())?,
-                    CredentialId::new(row.credential_id).map_err(|_| invariant())?,
+                    row.credential_id
+                        .map(CredentialId::new)
+                        .transpose()
+                        .map_err(|_| invariant())?,
                     row.priority,
                     u32::try_from(row.weight).map_err(|_| invariant())?,
                     row.last_selected_at
@@ -358,14 +361,7 @@ impl SmartRouteRuntimeRepository {
         &self,
         feedback: &[SmartRouteAttemptFeedback],
     ) -> Result<(), SmartRouteRuntimeRepositoryError> {
-        if feedback.len() > MAX_ADMIN_ROUTE_CHANNELS {
-            return Err(invariant());
-        }
-        let mut seen = BTreeSet::new();
-        if feedback
-            .iter()
-            .any(|item| !seen.insert(item.route_channel_id))
-        {
+        if feedback.len() > MAX_ADMIN_ROUTE_CHANNELS * 48 {
             return Err(invariant());
         }
         let operation = async {

@@ -25,11 +25,6 @@ export function CredentialScheduleFields({ form, credential, mode, disabled }: {
     { key: 'enabled', label: t('credentials.status.enabled'), isDisabled: false },
     { key: 'disabled', label: t('credentials.status.disabled'), isDisabled: false },
   ]
-  const multiKeyModeItems = [
-    { key: 'none', label: t('credentials.schedule.modeNone') },
-    { key: 'random', label: t('credentials.schedule.modeRandom') },
-    { key: 'round_robin', label: t('credentials.schedule.modeRoundRobin') },
-  ]
 
   return (
     <div className="grid gap-3">
@@ -54,25 +49,7 @@ export function CredentialScheduleFields({ form, credential, mode, disabled }: {
             )}
           />
         </CredentialField>
-        <CredentialField id="credential-multi-key-mode" label={t('credentials.schedule.multiKeyMode')}>
-          <Controller
-            control={form.control}
-            name="multiKeyMode"
-            render={({ field }) => (
-              <Select
-                aria-label={t('credentials.schedule.multiKeyMode')}
-                id="credential-multi-key-mode"
-                isDisabled={disabled}
-                items={multiKeyModeItems}
-                selectedKeys={field.value ? [field.value] : []}
-                size="sm"
-                onSelectionChange={(keys) => field.onChange(String(Array.from(keys)[0] ?? ''))}
-              >
-                {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
-              </Select>
-            )}
-          />
-        </CredentialField>
+
       </div>
 
       <div className="flex items-start justify-between gap-4 rounded-lg border border-[var(--hairline)] px-3 py-2.5">

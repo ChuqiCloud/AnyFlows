@@ -37,7 +37,7 @@ pub const MAX_ADMIN_ROUTE_MAPPING_BYTES: usize = 16 * 1024;
 pub struct AdminRouteChannelRecord {
     id: RouteChannelId,
     channel_id: ChannelId,
-    credential_id: CredentialId,
+    credential_id: Option<CredentialId>,
     priority: i32,
     weight: i32,
     enabled: bool,
@@ -63,7 +63,7 @@ impl AdminRouteChannelRecord {
     }
     /// 返回绑定的凭据标识。
     #[must_use]
-    pub const fn credential_id(&self) -> CredentialId {
+    pub const fn credential_id(&self) -> Option<CredentialId> {
         self.credential_id
     }
     /// 返回候选优先级。
@@ -188,7 +188,7 @@ impl fmt::Debug for AdminRouteRecord {
 /// 路由候选写入字段；敏感凭据内容不在该契约中出现。
 pub struct AdminRouteChannelWriteRecord {
     channel_id: ChannelId,
-    credential_id: CredentialId,
+    credential_id: Option<CredentialId>,
     priority: i32,
     weight: i32,
     enabled: bool,
@@ -197,16 +197,16 @@ pub struct AdminRouteChannelWriteRecord {
 impl AdminRouteChannelWriteRecord {
     /// 组装已经完成正数 ID 校验的候选配置。
     #[must_use]
-    pub const fn new(
+    pub fn new(
         channel_id: ChannelId,
-        credential_id: CredentialId,
+        credential_id: impl Into<Option<CredentialId>>,
         priority: i32,
         weight: i32,
         enabled: bool,
     ) -> Self {
         Self {
             channel_id,
-            credential_id,
+            credential_id: credential_id.into(),
             priority,
             weight,
             enabled,
@@ -655,7 +655,10 @@ impl AdminRouteRecord {
             channels.push(AdminRouteChannelRecord {
                 id: RouteChannelId::new(channel.id).map_err(|_| internal_invariant())?,
                 channel_id: ChannelId::new(channel.channel_id).map_err(|_| internal_invariant())?,
-                credential_id: CredentialId::new(channel.credential_id)
+                credential_id: channel
+                    .credential_id
+                    .map(CredentialId::new)
+                    .transpose()
                     .map_err(|_| internal_invariant())?,
                 priority: channel.priority,
                 weight: channel.weight,
@@ -694,11 +697,25 @@ fn validate_write_record(record: &AdminRouteWriteRecord) -> Result<(), AdminRout
     {
         return Err(AdminRouteRepositoryError::Invariant);
     }
+    if record.channels.iter().any(|item| {
+        item.credential_id.is_none()
+            && record
+                .channels
+                .iter()
+                .filter(|other| other.channel_id == item.channel_id)
+                .count()
+                > 1
+    }) {
+        return Err(AdminRouteRepositoryError::Invariant);
+    }
     let mut seen = HashSet::with_capacity(record.channels.len());
     for channel in &record.channels {
         if channel.priority < 0
             || channel.weight < 0
-            || !seen.insert((channel.channel_id.get(), channel.credential_id.get()))
+            || !seen.insert((
+                channel.channel_id.get(),
+                channel.credential_id.map(CredentialId::get),
+            ))
         {
             return Err(AdminRouteRepositoryError::Invariant);
         }
@@ -804,7 +821,7 @@ async fn validate_channel_references(
         .collect::<Vec<_>>();
     let credential_ids = desired
         .iter()
-        .map(|item| item.credential_id.get())
+        .filter_map(|item| item.credential_id.map(CredentialId::get))
         .collect::<Vec<_>>();
     let channels = channels::Entity::find()
         .filter(channels::Column::Id.is_in(channel_ids))
@@ -830,7 +847,9 @@ async fn validate_channel_references(
         .collect::<HashMap<_, _>>();
     if desired.iter().any(|item| {
         !channel_set.contains(&item.channel_id.get())
-            || credential_channels.get(&item.credential_id.get()) != Some(&item.channel_id.get())
+            || item.credential_id.is_some_and(|id| {
+                credential_channels.get(&id.get()) != Some(&item.channel_id.get())
+            })
     }) {
         return Err(AdminRouteRepositoryError::InvalidReference);
     }
@@ -850,7 +869,7 @@ async fn insert_route_channels(
         .map(|item| route_channels::ActiveModel {
             route_id: Set(route_id),
             channel_id: Set(item.channel_id.get()),
-            credential_id: Set(item.credential_id.get()),
+            credential_id: Set(item.credential_id.map(CredentialId::get)),
             priority: Set(item.priority),
             weight: Set(item.weight),
             enabled: Set(item.enabled),
@@ -881,7 +900,10 @@ async fn sync_route_channels(
         .map(|row| ((row.channel_id, row.credential_id), row))
         .collect::<HashMap<_, _>>();
     for item in desired {
-        let key = (item.channel_id.get(), item.credential_id.get());
+        let key = (
+            item.channel_id.get(),
+            item.credential_id.map(CredentialId::get),
+        );
         if let Some(row) = existing_by_key.remove(&key) {
             route_channels::Entity::update_many()
                 .filter(route_channels::Column::Id.eq(row.id))

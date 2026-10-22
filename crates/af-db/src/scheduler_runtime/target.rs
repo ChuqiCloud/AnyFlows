@@ -1014,6 +1014,9 @@ impl SchedulerRuntimeTargetRecord {
         &self.responses_compact_model_mapping
     }
 
+    pub const fn credential_strategy(&self) -> Option<crate::CredentialSelectionStrategy> {
+        self.relay_settings.credential_strategy()
+    }
     pub const fn relay_race_width(&self) -> Option<usize> {
         self.relay_settings.race_width()
     }

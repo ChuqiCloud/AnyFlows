@@ -199,12 +199,17 @@ where
     let required_positive = [
         model.route_id.try_as_ref().copied(),
         model.channel_id.try_as_ref().copied(),
-        model.credential_id.try_as_ref().copied(),
     ];
     if insert && required_positive.iter().any(Option::is_none) {
         return Err(DbErr::Custom("智能路由候选引用缺失".to_owned()));
     }
     if required_positive.iter().flatten().any(|value| *value <= 0)
+        || model
+            .credential_id
+            .try_as_ref()
+            .copied()
+            .flatten()
+            .is_some_and(|value| value <= 0)
         || model.priority.try_as_ref().is_some_and(|value| *value < 0)
         || model.weight.try_as_ref().is_some_and(|value| *value < 0)
         || model

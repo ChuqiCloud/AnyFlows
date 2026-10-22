@@ -556,6 +556,9 @@
       "editDescription": "读取字段可直接修改，敏感对象按留空规则单独处理。"
     },
     "form": {
+      "keyWeighted": "按优先级和权重",
+      "keyRoundRobin": "同优先级轮询",
+      "keyPriority": "固定顺序，失败回退",
       "basic": "基础配置",
       "routing": "路由范围",
       "overrides": "请求转换",
@@ -595,6 +598,7 @@
       "submitError": "保存失败，请检查字段或稍后重试。"
     },
     "fields": {
+      "credentialStrategy": "渠道 Key 调度策略",
       "name": "名称",
       "baseUrl": "上游基础地址",
       "timeout": "渠道超时（秒）",
@@ -884,6 +888,7 @@
       "editDescription": "完整更新规则和候选顺序；已保存的密文凭据只显示脱敏元数据。"
     },
     "form": {
+      "allCredentials": "全部可用 Key（按渠道策略调度）",
       "identity": "基本信息",
       "name": "规则名称",
       "enabled": "启用规则",
@@ -951,6 +956,26 @@
     }
   },
   "credentials": {
+    "health": {
+      "degraded": "健康降权",
+      "cooling": "健康冷却中",
+      "reduced": "有效权重 {{percent}}%",
+      "reducedDescription": "近期多次请求失败，调度权重已降至配置值的 {{percent}}%；成功请求后逐步恢复。"
+    },
+    "batch": {
+      "importTitle": "批量导入",
+      "kind": "凭据类型",
+      "input": "逐行 Key 或 JSON",
+      "placeholder": "每行一个 Key，或粘贴 JSON 数组、keys / credentials 对象。",
+      "files": "选择文件",
+      "selectFiltered": "全选筛选结果",
+      "status": "按状态筛选",
+      "all": "全部状态",
+      "deleteSelected": "删除所选（{{count}}）",
+      "confirmTitle": "批量删除凭据",
+      "confirm": "将软删除 {{count}} 个凭据及其影子后代，相关路由绑定将失效。请确认所选状态和数量。",
+      "selectOne": "选择凭据 #{{id}}"
+    },
     "title": "凭据与账号池",
     "usage": {
       "action": "查看上游额度",
