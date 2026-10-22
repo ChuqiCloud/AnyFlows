@@ -199,9 +199,7 @@ jobs:
           done
           source_title="$(jq -r '.title' "$RUNNER_TEMP/source-pr-metadata.json")"
           source_body="$(jq -r '.body' "$RUNNER_TEMP/source-pr-metadata.json")"
-          body="$(jq -rn --arg source_body "$source_body" --arg url "$PUBLIC_PR_URL" \
-            --arg sha "$PUBLIC_HEAD_SHA" \
-            '$source_body + (if $source_body == "" then "" else "\n\n" end) + "来源 PR：" + $url + "\n来源提交：" + $sha')"
+          body="$source_body"
           if jq -e --arg branch "${{ steps.apply.outputs.sync_branch }}" \
             '.[] | select(.head.ref == $branch)' >/dev/null <<<"$existing"; then
             target_pr_number="$(jq -r --arg branch "${{ steps.apply.outputs.sync_branch }}" \

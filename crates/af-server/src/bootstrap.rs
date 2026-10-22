@@ -257,6 +257,7 @@ pub struct RelayReady {
 /// 计费 WAL、定价缓存、额度仓储及内部可靠队列均已完成装配。
 pub struct BillingReady {
     infrastructure: AuthenticationReady,
+    scheduler_health: Option<Arc<dyn crate::health_runtime::SchedulerHealthStore>>,
     chat: Arc<dyn ChatService>,
     responses_compact: Arc<dyn ResponsesCompactService>,
     audio: Arc<dyn AudioService>,
@@ -297,6 +298,7 @@ pub struct BillingReady {
 /// 后台任务监督域已经建立，周期 flush、订阅周期、渠道索引、渠道探活与可靠队列 worker 已注册。
 pub struct Supervised {
     infrastructure: AuthenticationReady,
+    scheduler_health: Option<Arc<dyn crate::health_runtime::SchedulerHealthStore>>,
     chat: Arc<dyn ChatService>,
     responses_compact: Arc<dyn ResponsesCompactService>,
     audio: Arc<dyn AudioService>,
@@ -1682,7 +1684,7 @@ impl Bootstrap<RelayReady> {
             Some(runtime) => route_service.with_concurrency(runtime),
             None => route_service,
         };
-        let route_service = match scheduler_health {
+        let route_service = match scheduler_health.clone() {
             Some(store) => route_service.with_scheduler_health(store),
             None => route_service,
         };
@@ -1939,6 +1941,7 @@ impl Bootstrap<RelayReady> {
             database_migration_extension: None,
             stage: BillingReady {
                 infrastructure,
+                scheduler_health,
                 chat,
                 responses_compact,
                 audio,
@@ -1994,6 +1997,7 @@ impl Bootstrap<BillingReady> {
         let mut supervisor = BackgroundTaskSupervisor::new(shutdown.clone());
         let BillingReady {
             infrastructure,
+            scheduler_health,
             chat,
             responses_compact,
             audio,
@@ -2196,6 +2200,7 @@ impl Bootstrap<BillingReady> {
             database_migration_extension: None,
             stage: Supervised {
                 infrastructure,
+                scheduler_health,
                 chat,
                 responses_compact,
                 audio,
@@ -2609,6 +2614,15 @@ impl Bootstrap<Supervised> {
             Some(payment_webhook_routes),
         );
         let router = router
+            .merge(af_http::build_credential_health_router(
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+                Arc::clone(&self.stage.infrastructure.admin_channel_reader),
+                self.stage.scheduler_health.as_ref().map(|store| {
+                    Arc::new(crate::health_runtime::AdminCredentialHealthRuntime(
+                        Arc::clone(store),
+                    )) as Arc<dyn af_http::AdminCredentialHealthReader>
+                }),
+            ))
             .merge(af_http::build_account_verification_router(
                 Arc::new(
                     af_admin::AccountVerificationService::new(
@@ -2756,6 +2770,7 @@ impl Bootstrap<ListenerReady> {
         } = stage;
         let Supervised {
             infrastructure,
+            scheduler_health: _,
             supervisor,
             billing,
             usage_record_queue,

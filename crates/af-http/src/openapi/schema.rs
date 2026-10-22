@@ -11,6 +11,15 @@ use utoipa::{
     },
 };
 
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
+#[schema(as = CredentialSelectionStrategy, rename_all = "snake_case")]
+pub(crate) enum CredentialSelectionStrategySchema {
+    Weighted,
+    RoundRobin,
+    Priority,
+}
+
 /// 生成允许任意属性的 JSON 对象 schema。
 pub(crate) fn free_form_object_schema() -> RefOr<Schema> {
     ObjectBuilder::new()

@@ -185,6 +185,7 @@ class CommentSyncTests(unittest.TestCase):
 
         self.assertNotIn(502, gitea.comments)
         self.assertEqual(gitea.comments[501]["body"], SYNC.render_comment(source[0], 42, github_pr()["html_url"]))
+        self.assertNotIn("来源评论：", gitea.comments[501]["body"])
         self.assertIn("Private Gitea discussion", gitea.comments[503]["body"])
         self.assertEqual(sum(method == "POST" for method, _, _ in gitea.requests), 1)
         self.assertEqual(sum(method == "PATCH" for method, _, _ in gitea.requests), 1)

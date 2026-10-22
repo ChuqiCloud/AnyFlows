@@ -94,11 +94,10 @@ def source_id(comment, pr_number, sync_username):
 def render_comment(comment, pr_number, pr_url):
     user = comment.get("user") or {}
     comment_id = comment["id"]
-    url = comment.get("html_url") or f"{pr_url}#issuecomment-{comment_id}"
     marker = f"<!-- anyflows-pr-sync-comment:github:{pr_number}:{comment_id} -->"
     return (
         f"GitHub 用户 `{user.get('login', 'unknown')}`（{comment['created_at']}）\n\n"
-        f"{comment['body']}\n\n来源评论：{url}\n\n{marker}"
+        f"{comment['body']}\n\n{marker}"
     )
 
 

@@ -212,7 +212,7 @@ impl BillingChatService {
                     channel_id,
                 });
                 Ok(ChatResponse::Stream {
-                    body: body.with_completion_hook(completion),
+                    body: af_relay::with_delivery_completion(body, completion),
                     usage,
                 })
             }
@@ -472,7 +472,7 @@ impl ChatService for BillingChatService {
                         channel_id,
                     });
                     Ok(ChatResponse::Stream {
-                        body: body.with_completion_hook(completion),
+                        body: af_relay::with_delivery_completion(body, completion),
                         usage,
                     })
                 }

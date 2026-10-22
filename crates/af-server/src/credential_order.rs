@@ -104,6 +104,40 @@ fn order_credentials_with_optional_health<'a>(
     ordered
 }
 
+/// 渠道显式策略覆盖同优先级的选择顺序，健康降权仍优先于轮询或固定顺序。
+pub(crate) fn apply_channel_credential_strategy(
+    credentials: &mut [&SchedulerRuntimeCredentialRecord],
+    strategy: af_db::CredentialSelectionStrategy,
+    sequence: u64,
+    health: Option<&BTreeMap<i64, RuntimeHealthState>>,
+) {
+    if strategy == af_db::CredentialSelectionStrategy::Weighted {
+        return;
+    }
+    let rank = |credential: &SchedulerRuntimeCredentialRecord| {
+        (
+            Reverse(credential.priority()),
+            health
+                .and_then(|states| states.get(&credential.credential_id()))
+                .map_or(0, |state| state.penalty_micros()),
+        )
+    };
+    credentials.sort_by_key(|credential| (rank(credential), credential.credential_id()));
+    if strategy == af_db::CredentialSelectionStrategy::RoundRobin {
+        let mut offset = 0;
+        while offset < credentials.len() {
+            let key = rank(credentials[offset]);
+            let count = credentials[offset..]
+                .iter()
+                .take_while(|credential| rank(credential) == key)
+                .count();
+            let rotation = (sequence % count as u64) as usize;
+            credentials[offset..offset + count].rotate_left(rotation);
+            offset += count;
+        }
+    }
+}
+
 /// 在优先级不变的前提下，把普通回退凭据按实时负载稳定重排。
 ///
 /// 相同负载保持请求级加权抽签顺序，使配置权重仍能决定同负载账号的首选概率。
@@ -306,17 +340,21 @@ fn effective_credential_weight(
     else {
         return configured;
     };
-    let penalty = state.penalty_micros().min(64 * HEALTH_PENALTY_SCALE);
-    let raw_multiplier = HEALTH_PENALTY_SCALE
-        .checked_mul(HEALTH_PENALTY_SCALE)
-        .expect("健康固定精度平方必须可表示")
-        / (HEALTH_PENALTY_SCALE + penalty);
-    let multiplier = raw_multiplier.max(MIN_HEALTH_MULTIPLIER_MICROS);
+    let multiplier = health_weight_multiplier(state.penalty_micros());
     configured
         .checked_mul(multiplier)
         .expect("凭据权重与健康乘数乘积必须可表示")
         .div_ceil(HEALTH_PENALTY_SCALE)
         .max(1)
+}
+
+pub(crate) fn health_weight_multiplier(penalty_micros: u64) -> u64 {
+    let penalty = penalty_micros.min(64 * HEALTH_PENALTY_SCALE);
+    let raw_multiplier = HEALTH_PENALTY_SCALE
+        .checked_mul(HEALTH_PENALTY_SCALE)
+        .expect("健康固定精度平方必须可表示")
+        / (HEALTH_PENALTY_SCALE + penalty);
+    raw_multiplier.max(MIN_HEALTH_MULTIPLIER_MICROS)
 }
 
 fn zero_weight_key(
@@ -583,6 +621,31 @@ mod tests {
             effective_credential_weight(&credentials[1], Some(&health)),
             50
         );
+    }
+
+    #[test]
+    fn explicit_strategies_deprioritize_unhealthy_keys_within_priority() {
+        let credentials = [
+            credential(1, 2, 10),
+            credential(2, 2, 10),
+            credential(3, 1, 10),
+        ];
+        let health = BTreeMap::from([(
+            1,
+            RuntimeHealthState::new(
+                RedisHealthTarget::Credential(CredentialId::new(1).unwrap()),
+                HEALTH_PENALTY_SCALE,
+                false,
+            ),
+        )]);
+        for strategy in [
+            af_db::CredentialSelectionStrategy::Priority,
+            af_db::CredentialSelectionStrategy::RoundRobin,
+        ] {
+            let mut ordered = credentials.iter().collect::<Vec<_>>();
+            apply_channel_credential_strategy(&mut ordered, strategy, 1, Some(&health));
+            assert_eq!(credential_ids(ordered), vec![2, 1, 3]);
+        }
     }
 
     fn credential_ids(credentials: Vec<&SchedulerRuntimeCredentialRecord>) -> Vec<i64> {

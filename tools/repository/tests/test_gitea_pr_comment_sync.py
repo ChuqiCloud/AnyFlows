@@ -168,6 +168,7 @@ class GiteaToGithubSyncTests(unittest.TestCase):
             github.comments[501]["body"],
             SYNC.render_comment(source_comments[0], 17, source_pr()["html_url"]),
         )
+        self.assertNotIn("来源评论：", github.comments[501]["body"])
         self.assertIn("GitHub 原生讨论", github.comments[503]["body"])
         self.assertEqual(sum(method == "POST" for method, _, _ in github.requests), 1)
         self.assertEqual(sum(method == "PATCH" for method, _, _ in github.requests), 2)

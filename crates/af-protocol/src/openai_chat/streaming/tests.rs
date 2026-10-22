@@ -621,6 +621,96 @@ fn decoder_requires_done_and_rejects_data_after_done() {
 }
 
 #[test]
+fn decoder_accepts_delayed_tool_identity_and_empty_continuations() {
+    let stream = [
+        sse(&chunk(json!([{"index":0,"delta":{"role":"assistant","tool_calls":[]}}]), None)),
+        sse(&chunk(json!([{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"value\":"}}]}}]), None)),
+        sse(&chunk(json!([{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_delayed","type":"function","function":{"name":"routing_probe"}}]}}]), None)),
+        sse(&chunk(json!([{"index":0,"delta":{"tool_calls":[{"index":0,"id":"","type":"","function":{"name":"","arguments":"\"ok\"}"}}]}}]), None)),
+        sse(&chunk(json!([{"index":0,"delta":{"tool_calls":[]},"finish_reason":"tool_calls"}]), None)),
+        b"data: [DONE]\n\n".to_vec(),
+    ].concat();
+    for size in [1, 7, stream.len()] {
+        let mut decoder = OpenAiChatStreamDecoder::new();
+        let mut events = Vec::new();
+        for bytes in stream.chunks(size) {
+            events.extend(decoder.push(bytes).unwrap());
+        }
+        decoder.finish().unwrap();
+        let calls: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                CanonicalStreamEvent::ToolCallStart { id, name, .. } => {
+                    Some((id.as_str(), name.as_str()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(calls, vec![("call_delayed", "routing_probe")]);
+        let arguments: String = events
+            .iter()
+            .filter_map(|event| match event {
+                CanonicalStreamEvent::ToolCallArgsDelta { partial_json, .. } => {
+                    Some(partial_json.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(arguments, "{\"value\":\"ok\"}");
+        assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
+    }
+}
+
+#[test]
+fn decoder_accepts_fragmented_tool_names_before_arguments() {
+    let frames = [
+        json!([{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_fragment","function":{"name":"routing_"}}]}}]),
+        json!([{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"name":"probe","arguments":"{}"}}]}}]),
+        json!([{"index":0,"delta":{},"finish_reason":"tool_calls"}]),
+    ];
+    let mut decoder = OpenAiChatStreamDecoder::new();
+    let mut events = Vec::new();
+    for choices in frames {
+        events.extend(decoder.push(&sse(&chunk(choices, None))).unwrap());
+    }
+    events.extend(decoder.push(b"data: [DONE]\n\n").unwrap());
+    decoder.finish().unwrap();
+    assert!(events.iter().any(|event| matches!(event,
+        CanonicalStreamEvent::ToolCallStart { name, .. } if name == "routing_probe"
+    )));
+}
+
+#[test]
+fn decoder_rejects_unresolved_or_changed_tool_identity() {
+    for continuation in [
+        json!({"index":0,"id":"different","function":{"arguments":"}"}}),
+        json!({"index":0,"function":{"name":"different","arguments":"}"}}),
+        json!({"index":0,"type":"unsupported"}),
+    ] {
+        let mut decoder = OpenAiChatStreamDecoder::new();
+        decoder.push(&sse(&chunk(json!([{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_original","type":"function","function":{"name":"lookup","arguments":"{"}}]}}]), None))).unwrap();
+        assert!(
+            decoder
+                .push(&sse(&chunk(
+                    json!([{"index":0,"delta":{"tool_calls":[continuation]}}]),
+                    None
+                )))
+                .is_err()
+        );
+    }
+    let mut decoder = OpenAiChatStreamDecoder::new();
+    decoder.push(&sse(&chunk(json!([{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"function":{"arguments":"{}"}}]}}]), None))).unwrap();
+    assert!(
+        decoder
+            .push(&sse(&chunk(
+                json!([{"index":0,"delta":{},"finish_reason":"tool_calls"}]),
+                None
+            )))
+            .is_err()
+    );
+}
+
+#[test]
 fn decoder_preserves_logprobs_delta_fields() {
     let stream = [
         sse(&chunk(
