@@ -446,6 +446,32 @@ mod tests {
     }
 
     #[test]
+    fn prompt_cache_affinity_does_not_block_cross_protocol_routes() {
+        let request = responses_request(
+            br#"{"model":"model-test","input":"hi","store":false,"prompt_cache_key":"agent-session","max_output_tokens":128}"#,
+        );
+        for target in [Protocol::OpenAiChat, Protocol::Anthropic, Protocol::Gemini] {
+            let converted = request.clone().for_conversation_protocol(target).unwrap();
+            assert_eq!(
+                converted.canonical().continuation.prompt_cache_key(),
+                Some("agent-session")
+            );
+            match target {
+                Protocol::OpenAiChat => {
+                    assert!(crate::openai_chat::build_request(converted.canonical()).is_ok())
+                }
+                Protocol::Anthropic => {
+                    assert!(crate::anthropic::build_request(converted.canonical()).is_ok())
+                }
+                Protocol::Gemini => {
+                    assert!(crate::gemini::build_request(converted.canonical()).is_ok())
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[test]
     fn gemini_tool_result_objects_remain_native_or_convert_to_complete_json_text() {
         let request = crate::gemini::parse_request_envelope(
             "models/gemini-test",

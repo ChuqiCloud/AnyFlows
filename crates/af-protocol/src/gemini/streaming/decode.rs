@@ -463,10 +463,10 @@ fn decode_content(
     let emitted = !content.parts.is_empty();
     state.reserved_call_ids.clear();
     for part in &content.parts {
-        if let Field::Value(call) = &part.function_call {
-            if let Field::Value(id) = &call.id {
-                state.reserved_call_ids.insert(id.clone());
-            }
+        if let Field::Value(call) = &part.function_call
+            && let Field::Value(id) = &call.id
+        {
+            state.reserved_call_ids.insert(id.clone());
         }
     }
     for part in content.parts {

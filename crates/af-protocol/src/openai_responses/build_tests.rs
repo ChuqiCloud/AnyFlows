@@ -122,6 +122,49 @@ fn round_trips_stateless_encrypted_reasoning_and_include() {
 }
 
 #[test]
+fn rebuilds_agent_tool_history_with_reasoning_summary_and_optional_strict() {
+    for strict in [None, Some(false)] {
+        let mut body = json!({
+            "model": "gpt-test",
+            "input": [
+                {"role": "user", "content": [{"type": "input_text", "text": "Check weather"}]},
+                {
+                    "type": "function_call", "id": "fc_weather", "call_id": "call_weather",
+                    "name": "weather", "arguments": "{}", "status": "completed"
+                },
+                {
+                    "type": "function_call_output", "id": "item_weather_result",
+                    "call_id": "call_weather", "output": "sunny"
+                }
+            ],
+            "tools": [{"type": "function", "name": "weather", "parameters": {"type": "object"}}],
+            "reasoning": {"effort": "medium", "summary": "auto"},
+            "include": ["reasoning.encrypted_content"],
+            "prompt_cache_key": "agent-session",
+            "store": false,
+            "stream": true
+        });
+        if let Some(strict) = strict {
+            body["tools"][0]["strict"] = Value::Bool(strict);
+        }
+        let request = parsed_request(body.clone());
+        let rebuilt = build_request(&request).unwrap();
+
+        assert_eq!(rebuilt["reasoning"], body["reasoning"]);
+        assert_eq!(rebuilt["include"], body["include"]);
+        assert_eq!(rebuilt["prompt_cache_key"], "agent-session");
+        assert_eq!(
+            rebuilt["tools"][0].get("strict"),
+            body["tools"][0].get("strict")
+        );
+        assert_eq!(rebuilt["input"][1]["call_id"], "call_weather");
+        assert_eq!(rebuilt["input"][2]["call_id"], "call_weather");
+        assert_eq!(rebuilt["input"][2]["output"], "sunny");
+        assert_eq!(parsed_request(rebuilt), request);
+    }
+}
+
+#[test]
 fn round_trips_compaction_context_and_item() {
     let request = parsed_request(json!({
         "model": "gpt-5.5",

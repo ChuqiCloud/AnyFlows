@@ -334,10 +334,10 @@ fn convert_messages(
     // 提前预留显式 ID，避免缺省 ID 与后续历史中的客户端 ID 冲突。
     for content in &contents {
         for part in &content.parts {
-            if let Field::Value(call) = &part.function_call {
-                if let Field::Value(id) = &call.id {
-                    state.reserved_tool_call_ids.insert(id.clone());
-                }
+            if let Field::Value(call) = &part.function_call
+                && let Field::Value(id) = &call.id
+            {
+                state.reserved_tool_call_ids.insert(id.clone());
             }
         }
     }
