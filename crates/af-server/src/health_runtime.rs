@@ -1,7 +1,14 @@
-use std::{collections::BTreeMap, fmt, future::Future, pin::Pin, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+};
 
 use af_cache::{
-    RedisHealthEvent, RedisHealthFailure, RedisHealthSnapshot, RedisHealthStore, RedisHealthTarget,
+    MAX_HEALTH_BATCH_SIZE, RedisHealthEvent, RedisHealthFailure, RedisHealthSnapshot,
+    RedisHealthStore, RedisHealthTarget,
 };
 use af_domain::{ChannelId, CredentialId, RateLimitScope, UpstreamError};
 use af_relay::RelayAttemptReport;
@@ -173,15 +180,15 @@ pub(crate) async fn persist_scheduler_health_feedback(
         );
         return;
     };
-    if events.is_empty() {
-        return;
-    }
-    if let Err(error) = store.apply(&events).await {
-        tracing::warn!(
-            target: "af_server::scheduler_health",
-            error_kind = error.as_str(),
-            "写入调度健康反馈失败，当前业务结果继续返回"
-        );
+    for batch in events.chunks(MAX_HEALTH_BATCH_SIZE) {
+        if let Err(error) = store.apply(batch).await {
+            tracing::warn!(
+                target: "af_server::scheduler_health",
+                error_kind = error.as_str(),
+                "写入调度健康反馈失败，当前业务结果继续返回"
+            );
+            break;
+        }
     }
 }
 
@@ -237,6 +244,10 @@ fn append_failure(
             RedisHealthFailure::Overloaded,
         )),
         UpstreamError::ModelUnsupported | UpstreamError::ProtocolError => {
+            events.push(RedisHealthEvent::failed(
+                RedisHealthTarget::Credential(target.credential_id()),
+                health_failure(error).expect("模型和协议错误必须有闭合健康分类"),
+            ));
             if !target.pool_mode() {
                 events.push(RedisHealthEvent::failed(
                     RedisHealthTarget::Channel(target.channel_id()),
@@ -246,12 +257,16 @@ fn append_failure(
         }
         UpstreamError::Network { .. } | UpstreamError::ServerError { .. } => {
             let failure = health_failure(error).expect("网络和服务端错误必须有闭合健康分类");
-            let health_target = if target.pool_mode() {
-                RedisHealthTarget::Credential(target.credential_id())
-            } else {
-                RedisHealthTarget::Channel(target.channel_id())
-            };
-            events.push(RedisHealthEvent::failed(health_target, failure));
+            events.push(RedisHealthEvent::failed(
+                RedisHealthTarget::Credential(target.credential_id()),
+                failure,
+            ));
+            if !target.pool_mode() {
+                events.push(RedisHealthEvent::failed(
+                    RedisHealthTarget::Channel(target.channel_id()),
+                    failure,
+                ));
+            }
         }
     }
 }
@@ -296,16 +311,61 @@ async fn load_exact_states(
     store: &Arc<dyn SchedulerHealthStore>,
     targets: &[RedisHealthTarget],
 ) -> Result<Vec<RuntimeHealthState>, SchedulerHealthRuntimeError> {
-    let states = store.states(targets).await?;
-    if states.len() != targets.len()
-        || states
-            .iter()
-            .zip(targets)
-            .any(|(state, target)| state.target != *target)
-    {
-        return Err(SchedulerHealthRuntimeError::Invariant);
+    // Shadows share authentication health; read each target once and restore input order.
+    let unique = targets
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mut states_by_target = BTreeMap::new();
+    for batch in unique.chunks(MAX_HEALTH_BATCH_SIZE) {
+        let states = store.states(batch).await?;
+        if states.len() != batch.len()
+            || states
+                .iter()
+                .zip(batch)
+                .any(|(state, target)| state.target != *target)
+        {
+            return Err(SchedulerHealthRuntimeError::Invariant);
+        }
+        states_by_target.extend(states.into_iter().map(|state| (state.target, state)));
     }
-    Ok(states)
+    targets
+        .iter()
+        .map(|target| {
+            states_by_target
+                .get(target)
+                .copied()
+                .ok_or(SchedulerHealthRuntimeError::Invariant)
+        })
+        .collect()
+}
+
+pub(crate) struct AdminCredentialHealthRuntime(pub(crate) Arc<dyn SchedulerHealthStore>);
+
+impl af_http::AdminCredentialHealthReader for AdminCredentialHealthRuntime {
+    fn snapshots<'a>(
+        &'a self,
+        ids: &'a [(CredentialId, CredentialId)],
+    ) -> af_http::CredentialHealthFuture<'a> {
+        Box::pin(async move {
+            let states = load_credential_health(&self.0, ids).await.map_err(|_| ())?;
+            ids.iter()
+                .map(|(id, _)| {
+                    let state = states.get(&id.get()).ok_or(())?;
+                    Ok(af_http::CredentialHealthSnapshot {
+                        credential_id: id.get(),
+                        penalty_micros: state.penalty_micros,
+                        cooling: state.cooling,
+                        weight_multiplier_micros: crate::credential_order::health_weight_multiplier(
+                            state.penalty_micros,
+                        ),
+                    })
+                })
+                .collect()
+        })
+    }
 }
 
 impl SchedulerHealthRuntimeError {
@@ -328,6 +388,71 @@ mod tests {
     use af_domain::{CredentialKind, RateLimitScope, UpstreamServerStatus};
 
     use super::*;
+
+    #[derive(Default)]
+    struct BatchHealthStore {
+        requests: std::sync::Mutex<Vec<Vec<RedisHealthTarget>>>,
+        reverse: bool,
+    }
+
+    impl SchedulerHealthStore for BatchHealthStore {
+        fn states<'a>(
+            &'a self,
+            targets: &'a [RedisHealthTarget],
+        ) -> SchedulerHealthStoreFuture<'a, Vec<RuntimeHealthState>> {
+            Box::pin(async move {
+                assert!(targets.len() <= MAX_HEALTH_BATCH_SIZE);
+                self.requests.lock().unwrap().push(targets.to_vec());
+                let mut states = targets
+                    .iter()
+                    .map(|target| RuntimeHealthState::new(*target, 0, false))
+                    .collect::<Vec<_>>();
+                if self.reverse {
+                    states.reverse();
+                }
+                Ok(states)
+            })
+        }
+
+        fn apply<'a>(
+            &'a self,
+            _events: &'a [RedisHealthEvent],
+        ) -> SchedulerHealthStoreFuture<'a, ()> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[tokio::test]
+    async fn large_credential_health_read_batches_and_deduplicates_targets() {
+        let store = Arc::new(BatchHealthStore::default());
+        let reader: Arc<dyn SchedulerHealthStore> = store.clone();
+        let mut ids = (1..=130)
+            .map(|id| {
+                let id = CredentialId::new(id).unwrap();
+                (id, id)
+            })
+            .collect::<Vec<_>>();
+        ids.push(ids[0]);
+        let states = load_credential_health(&reader, &ids).await.unwrap();
+        assert_eq!(states.len(), 130);
+        assert!(ids.iter().all(|(id, _)| states.contains_key(&id.get())));
+        let requests = store.requests.lock().unwrap();
+        assert_eq!(requests.len(), 260_usize.div_ceil(MAX_HEALTH_BATCH_SIZE));
+        assert_eq!(requests.iter().map(Vec::len).sum::<usize>(), 260);
+    }
+
+    #[tokio::test]
+    async fn health_read_rejects_reordered_store_results() {
+        let store: Arc<dyn SchedulerHealthStore> = Arc::new(BatchHealthStore {
+            reverse: true,
+            ..BatchHealthStore::default()
+        });
+        let id = CredentialId::new(1).unwrap();
+        assert_eq!(
+            load_credential_health(&store, &[(id, id)]).await,
+            Err(SchedulerHealthRuntimeError::Invariant)
+        );
+    }
 
     #[test]
     fn health_feedback_is_dual_level_and_skips_bad_request() {
@@ -355,17 +480,17 @@ mod tests {
             },
         );
         append_success(&mut events, target);
-        assert_eq!(events.len(), 4);
+        assert_eq!(events.len(), 5);
         assert_eq!(
             events[0].target(),
-            RedisHealthTarget::Channel(ChannelId::new(7).unwrap())
-        );
-        assert_eq!(
-            events[2].target(),
             RedisHealthTarget::Credential(CredentialId::new(9).unwrap())
         );
         assert_eq!(
             events[3].target(),
+            RedisHealthTarget::Credential(CredentialId::new(9).unwrap())
+        );
+        assert_eq!(
+            events[4].target(),
             RedisHealthTarget::CredentialShared(CredentialId::new(9).unwrap())
         );
     }

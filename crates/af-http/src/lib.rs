@@ -15,8 +15,13 @@ mod chat_service;
 mod client_ip;
 mod client_profiles;
 pub use client_profiles::build_client_profile_router;
+mod credential_health;
 mod credential_proxies;
 mod credential_usage;
+pub use credential_health::{
+    AdminCredentialHealthReader, CredentialHealthFuture, CredentialHealthSnapshot,
+    build_credential_health_router,
+};
 mod credentials;
 mod custom_oauth2;
 mod debug_traces;

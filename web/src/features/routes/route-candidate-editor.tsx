@@ -57,7 +57,7 @@ export function RouteCandidateEditor({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
   const [newChannelId, setNewChannelId] = useState<number>()
-  const [newCredentialId, setNewCredentialId] = useState<number>()
+  const [newCredentialId, setNewCredentialId] = useState<number | null>(null)
   const requestedChannelIds = useMemo(() => {
     const ids = [...rows.map((row) => row.channelId)]
     if (newChannelId !== undefined) ids.push(newChannelId)
@@ -76,10 +76,7 @@ export function RouteCandidateEditor({
     setNewChannelId(channels[0]?.id)
   }, [channels, newChannelId])
 
-  useEffect(() => {
-    if (newCredentialId !== undefined && selectedCredentials.some((credential) => credential.id === newCredentialId)) return
-    setNewCredentialId(selectedCredentials[0]?.id)
-  }, [newCredentialId, selectedCredentials])
+
 
   const availableChannels = channels
   const selectedChannelQueryIndex = newChannelId === undefined
@@ -89,12 +86,11 @@ export function RouteCandidateEditor({
   const loading = catalogLoading || selectedChannelQuery?.isPending === true
   const error = catalogError || selectedChannelQuery?.isError === true
   const canAdd = newChannelId !== undefined
-    && newCredentialId !== undefined
-    && !rows.some((row) => row.channelId === newChannelId && row.credentialId === newCredentialId)
+    && !rows.some((row) => row.channelId === newChannelId && (row.credentialId === null || newCredentialId === null || row.credentialId === newCredentialId))
     && rows.length < 64
 
   const addCandidate = () => {
-    if (!canAdd || newChannelId === undefined || newCredentialId === undefined) return
+    if (!canAdd || newChannelId === undefined) return
     onChange([...rows, {
       id: createRouteRowId('candidate'),
       channelId: newChannelId,
@@ -122,7 +118,7 @@ export function RouteCandidateEditor({
             <Select
               value={newChannelId === undefined ? '' : String(newChannelId)}
               disabled={loading || availableChannels.length === 0}
-              onChange={(event) => setNewChannelId(parseId(event.target.value))}
+              onChange={(event) => { setNewChannelId(parseId(event.target.value)); setNewCredentialId(null) }}
             >
               <option value="">{t('routes.form.selectChannel')}</option>
               {availableChannels.map((channel) => (
@@ -135,11 +131,11 @@ export function RouteCandidateEditor({
           <label className="grid gap-1.5 text-xs font-medium">
             {t('routes.form.credential')}
             <Select
-              value={newCredentialId === undefined ? '' : String(newCredentialId)}
-              disabled={loading || selectedCredentials.length === 0}
-              onChange={(event) => setNewCredentialId(parseId(event.target.value))}
+              value={newCredentialId === null ? '' : String(newCredentialId)}
+              disabled={catalogLoading}
+              onChange={(event) => setNewCredentialId(parseId(event.target.value) ?? null)}
             >
-              <option value="">{t('routes.form.selectCredential')}</option>
+              <option value="">{t('routes.form.allCredentials', { defaultValue: '全部可用 Key（按渠道策略调度）' })}</option>
               {selectedCredentials.map((credential) => (
                 <option key={credential.id} value={credential.id}>
                   {credentialLabel(credential, t)}
@@ -213,8 +209,7 @@ function SortableCandidateRow({ row, position, channels, credentialsByChannel, o
 
   const updateChannel = (channelId: number | undefined) => {
     if (channelId === undefined) return
-    const nextCredential = (credentialsByChannel[channelId] ?? [])[0]
-    onChange({ channelId, credentialId: nextCredential?.id ?? 0, stats: undefined })
+    onChange({ channelId, credentialId: null, stats: undefined })
   }
 
   return (
@@ -250,8 +245,9 @@ function SortableCandidateRow({ row, position, channels, credentialsByChannel, o
         </label>
         <label className="grid gap-1 text-[0.6875rem] text-muted-foreground">
           <span>{t('routes.form.credential')}</span>
-          <Select value={String(row.credentialId)} onChange={(event) => onChange({ credentialId: parseId(event.target.value) ?? 0, stats: undefined })}>
-            {credential ? null : <option value={row.credentialId}>{t('routes.form.unknownCredential', { id: row.credentialId })}</option>}
+          <Select value={row.credentialId === null ? '' : String(row.credentialId)} onChange={(event) => onChange({ credentialId: parseId(event.target.value) ?? null, stats: undefined })}>
+            <option value="">{t('routes.form.allCredentials', { defaultValue: '全部可用 Key（按渠道策略调度）' })}</option>
+            {credential || row.credentialId === null ? null : <option value={row.credentialId}>{t('routes.form.unknownCredential', { id: row.credentialId })}</option>}
             {credentials.map((item) => <option key={item.id} value={item.id}>{credentialLabel(item, t)}</option>)}
           </Select>
         </label>

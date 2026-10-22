@@ -94,6 +94,8 @@ pub(super) struct StreamToolCallWire {
 pub(super) enum StreamToolTypeWire {
     #[serde(rename = "function")]
     Function,
+    #[serde(rename = "")]
+    Empty,
 }
 
 #[derive(Deserialize)]

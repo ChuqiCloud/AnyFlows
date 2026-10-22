@@ -6,7 +6,6 @@ import {
   completeAdminOAuthManualCallback,
   createAdminCredential,
   deleteAdminCredential,
-  importAdminCredentials,
   listAdminCredentials,
   listAdminOAuthProviders,
   updateAdminCredential,
@@ -44,11 +43,54 @@ export async function getAdminCredentialUsage(channelId: number, credentialId: n
   return result.data
 }
 
-export async function importAdminCredentialFiles(channelId: number, files: Array<{ name: string; content: string }>, signal?: AbortSignal) {
-  const result = await importAdminCredentials({
-    client: apiClient, path: { channel_id: channelId }, body: { files }, signal,
+export async function importAdminCredentialFiles(channelId: number, files: Array<{ name: string; content: string }>, kind: 'api_key' | 'oauth', signal?: AbortSignal) {
+  const result = await apiClient.post<{ 200: AdminCredentialImportResponse }, unknown, true>({
+    security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }],
+    url: '/api/admin/channels/{channel_id}/credentials/import',
+    path: { channel_id: channelId }, body: { files, kind }, signal,
   })
   return result.data
+}
+
+export async function batchDeleteAdminCredentialIds(channelId: number, credentialIds: number[]) {
+  const result = await apiClient.post<{ 200: { deleted: number[]; failed: number[] } }, unknown, true>({
+    security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }],
+    url: '/api/admin/channels/{channel_id}/credentials/batch-delete',
+    path: { channel_id: channelId }, body: { credential_ids: credentialIds },
+  })
+  return result.data
+}
+
+export type CredentialHealthSnapshot = {
+  credential_id: number
+  penalty_micros: number
+  cooling: boolean
+  weight_multiplier_micros: number
+}
+
+export function useAdminCredentialHealth(channelId: number, ids: readonly number[], enabled: boolean) {
+  return useQuery({
+    queryKey: [...adminChannelCredentialsQueryKey(channelId), 'health', ids],
+    enabled: enabled && ids.length > 0,
+    staleTime: 10_000,
+    refetchInterval: enabled ? 30_000 : false,
+    refetchIntervalInBackground: false,
+    queryFn: async ({ signal }) => {
+      const states: CredentialHealthSnapshot[] = []
+      for (let offset = 0; offset < ids.length; offset += 100) {
+        const result = await apiClient.post<{ 200: { available: boolean; credentials: CredentialHealthSnapshot[] } }, unknown, true>({
+          security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }],
+          url: '/api/admin/channels/{channel_id}/credentials/health',
+          path: { channel_id: channelId },
+          body: { credential_ids: ids.slice(offset, offset + 100) },
+          signal,
+        })
+        if (!result.data.available) return null
+        states.push(...result.data.credentials)
+      }
+      return states
+    },
+  })
 }
 
 export async function exportAdminCredentialFiles(channelId: number, signal?: AbortSignal) {

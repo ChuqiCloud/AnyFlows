@@ -16,9 +16,9 @@ use crate::{
     },
     credential_feedback::{CredentialAttemptTarget, persist_credential_feedback},
     credential_order::{
-        CredentialLoad, order_credentials, order_credentials_by_load,
-        order_credentials_by_load_and_health, order_credentials_by_load_with_session_affinity,
-        order_credentials_with_health,
+        CredentialLoad, apply_channel_credential_strategy, order_credentials,
+        order_credentials_by_load, order_credentials_by_load_and_health,
+        order_credentials_by_load_with_session_affinity, order_credentials_with_health,
     },
     debug_trace_runtime::{DebugTraceCapture, DebugTraceRuntime},
     health_runtime::{
@@ -42,7 +42,7 @@ use af_db::{
     CredentialStateRepository, SmartRouteRuntimeRepository,
 };
 use af_domain::{
-    AfError, ChannelType, ClientSimulationBodyPatchResult, ClientSimulationBodyProfile,
+    AfError, ChannelId, ChannelType, ClientSimulationBodyPatchResult, ClientSimulationBodyProfile,
     ConcurrencyLimit, CredentialId, CredentialQuotaDimension, GatewayPrincipal, GroupId, Operation,
     Protocol,
 };
@@ -66,6 +66,7 @@ use af_telemetry::{
 
 mod audio;
 mod compact;
+mod completion;
 mod embedding;
 mod image;
 mod opencode;
@@ -154,6 +155,7 @@ pub(crate) struct ScheduledChatService {
     smart_route_feedback: Option<SmartRouteRuntimeRepository>,
     utc_date_clock: Arc<UtcDateClock>,
     relay_settings: RelaySettings,
+    credential_sequences: Arc<std::sync::Mutex<BTreeMap<ChannelId, u64>>>,
 }
 
 impl ScheduledChatService {
@@ -185,6 +187,7 @@ impl ScheduledChatService {
             smart_route_feedback: None,
             utc_date_clock: Arc::new(crate::utc_time::current_utc_date),
             relay_settings: RelaySettings::default(),
+            credential_sequences: Arc::default(),
         }
     }
 
@@ -402,7 +405,8 @@ impl ScheduledChatService {
             } else {
                 None
             };
-            let ordered_credentials = match (wait_plan.kind(), account_loads, credential_health) {
+            let mut ordered_credentials = match (wait_plan.kind(), account_loads, credential_health)
+            {
                 (RouteWaitKind::Fallback, Some(loads), health) if client_scope.is_some() => {
                     order_credentials_by_load_with_session_affinity(
                         order_scope,
@@ -435,6 +439,29 @@ impl ScheduledChatService {
                 ),
                 _ => order_credentials(order_scope, target.channel_id(), &eligible_credentials),
             };
+            let strategy = target.credential_strategy().unwrap_or_default();
+            let sequence = if strategy == af_db::CredentialSelectionStrategy::RoundRobin {
+                let mut sequences = self
+                    .credential_sequences
+                    .lock()
+                    .map_err(|_| AfError::Internal)?;
+                // 已删除的渠道不占用长期计数槽位。
+                if sequences.len() > 4096 {
+                    sequences.clear();
+                }
+                let sequence = sequences.entry(target.channel_id()).or_default();
+                let current = *sequence;
+                *sequence = sequence.wrapping_add(1);
+                current
+            } else {
+                0
+            };
+            apply_channel_credential_strategy(
+                &mut ordered_credentials,
+                strategy,
+                sequence,
+                credential_health,
+            );
             health_filtered |= !eligible_credentials.is_empty() && ordered_credentials.is_empty();
             for runtime_credential in ordered_credentials {
                 if relay_candidates.len() == RelayStateMachine::MAX_CANDIDATES {
@@ -502,9 +529,25 @@ impl ScheduledChatService {
                     RelayCandidate::new(adaptor.clone(), context.clone(), credential)
                         .with_header_overrides(headers.clone())
                         .with_channel_group(target.channel_id())
+                        .with_first_output_timeout(
+                            target.timeout().map_or(
+                                self.clients
+                                    .base_config()
+                                    .map_err(|_| AfError::Internal)?
+                                    .timeouts()
+                                    .read(),
+                                af_domain::ChannelTimeout::duration,
+                            ),
+                        )
                         .with_retry_limit(target.relay_retry_limit())
                         .with_retry_delay_ms(target.relay_retry_delay_ms())
                         .with_race_width(target.relay_race_width());
+                if matches!(
+                    request.canonical().operation,
+                    Operation::Chat | Operation::Responses
+                ) {
+                    relay_candidate = relay_candidate.with_response_validation(upstream_protocol);
+                }
                 if let Some(profile) = target.client_simulation_profile() {
                     relay_candidate = relay_candidate
                         .with_client_simulation(Arc::new(BuiltInClientSimulation::new(profile)));
@@ -844,84 +887,96 @@ impl ScheduledChatService {
     ) -> Result<PreparedRouteSelection, AfError> {
         let mut unhealthy_route_seen = false;
         let group_chain = self.route_group_chain(principal).await?;
-        for group_id in group_chain.iter().copied() {
-            let Some(unfiltered_route) = self
-                .scheduler
-                .route_plan(group_id, &request.canonical().model)
-                .map_err(map_scheduler_error)?
-            else {
-                continue;
-            };
-            let unfiltered_protocol =
-                select_upstream_protocol(&unfiltered_route, request, response_protocol)?;
-            if route_availability(
-                &unfiltered_route,
-                unfiltered_protocol,
-                &request.canonical().model,
-                request_id,
-                None,
-            ) == RouteAvailability::Unsupported
-            {
-                // 模型存在但协议不匹配或没有静态凭据时属于不支持，不能伪装成运行时过载。
-                continue;
+        let rules = if principal.is_playground() {
+            match &self.smart_routes {
+                Some(resolver) => resolver
+                    .matching_rules(&request.canonical().model)
+                    .await
+                    .map_err(|_| AfError::Internal)?,
+                None => Vec::new(),
             }
-
-            let route = if self.health.is_some() {
-                let (channel_ids, channel_health) = self
-                    .load_channel_health(group_id, &request.canonical().model)
-                    .await?;
-                let route = self
+        } else {
+            Vec::new()
+        };
+        if rules.is_empty() {
+            for group_id in group_chain.iter().copied() {
+                let Some(unfiltered_route) = self
                     .scheduler
-                    .route_plan_with_health(group_id, &request.canonical().model, &channel_health)
-                    .map_err(map_scheduler_error)?;
-                if route.is_none() && !channel_ids.is_empty() {
-                    unhealthy_route_seen = true;
+                    .route_plan(group_id, &request.canonical().model)
+                    .map_err(map_scheduler_error)?
+                else {
+                    continue;
+                };
+                let unfiltered_protocol =
+                    select_upstream_protocol(&unfiltered_route, request, response_protocol)?;
+                if route_availability(
+                    &unfiltered_route,
+                    unfiltered_protocol,
+                    &request.canonical().model,
+                    request_id,
+                    None,
+                ) == RouteAvailability::Unsupported
+                {
+                    // 模型存在但协议不匹配或没有静态凭据时属于不支持，不能伪装成运行时过载。
+                    continue;
                 }
-                route
-            } else {
-                Some(unfiltered_route)
-            };
-            let Some(mut route) = route else {
-                continue;
-            };
-            let upstream_protocol = select_upstream_protocol(&route, request, response_protocol)?;
-            route.configure_wait_policy(self.sticky_wait_policy);
-            self.apply_sticky_binding(&mut route, upstream_protocol, session_scope)
-                .await;
-            let credential_health = self
-                .load_credential_health(&route, upstream_protocol, &request.canonical().model)
-                .await?;
-            let order_scope = session_scope.map_or(request_id, StableSessionScope::as_str);
-            match route_availability(
-                &route,
-                upstream_protocol,
-                &request.canonical().model,
-                order_scope,
-                credential_health.as_ref(),
-            ) {
-                RouteAvailability::Available => {
-                    return Ok(PreparedRouteSelection {
-                        route,
-                        upstream_protocol,
-                        routed_model: request.canonical().model.clone(),
-                        credential_health,
-                    });
-                }
-                RouteAvailability::Unhealthy => unhealthy_route_seen = true,
-                RouteAvailability::Unsupported => {
-                    // 健康过滤可能只留下其他协议；未过滤计划可用时仍应归类为健康故障。
-                    unhealthy_route_seen |= self.health.is_some();
+
+                let route = if self.health.is_some() {
+                    let (channel_ids, channel_health) = self
+                        .load_channel_health(group_id, &request.canonical().model)
+                        .await?;
+                    let route = self
+                        .scheduler
+                        .route_plan_with_health(
+                            group_id,
+                            &request.canonical().model,
+                            &channel_health,
+                        )
+                        .map_err(map_scheduler_error)?;
+                    if route.is_none() && !channel_ids.is_empty() {
+                        unhealthy_route_seen = true;
+                    }
+                    route
+                } else {
+                    Some(unfiltered_route)
+                };
+                let Some(mut route) = route else {
+                    continue;
+                };
+                let upstream_protocol =
+                    select_upstream_protocol(&route, request, response_protocol)?;
+                route.configure_wait_policy(self.sticky_wait_policy);
+                self.apply_sticky_binding(&mut route, upstream_protocol, session_scope)
+                    .await;
+                let credential_health = self
+                    .load_credential_health(&route, upstream_protocol, &request.canonical().model)
+                    .await?;
+                let order_scope = session_scope.map_or(request_id, StableSessionScope::as_str);
+                match route_availability(
+                    &route,
+                    upstream_protocol,
+                    &request.canonical().model,
+                    order_scope,
+                    credential_health.as_ref(),
+                ) {
+                    RouteAvailability::Available => {
+                        return Ok(PreparedRouteSelection {
+                            route,
+                            upstream_protocol,
+                            routed_model: request.canonical().model.clone(),
+                            credential_health,
+                        });
+                    }
+                    RouteAvailability::Unhealthy => unhealthy_route_seen = true,
+                    RouteAvailability::Unsupported => {
+                        // 健康过滤可能只留下其他协议；未过滤计划可用时仍应归类为健康故障。
+                        unhealthy_route_seen |= self.health.is_some();
+                    }
                 }
             }
         }
 
-        if principal.is_playground()
-            && let Some(resolver) = self.smart_routes.as_ref()
-        {
-            let rules = resolver
-                .matching_rules(&request.canonical().model)
-                .await
-                .map_err(|_| AfError::Internal)?;
+        if !rules.is_empty() {
             for group_id in group_chain {
                 for rule in &rules {
                     let bindings = bound_candidates(rule)?;
@@ -1351,51 +1406,28 @@ impl PlannedChatExecution for ScheduledChatExecution {
                     _ => return Err(AfError::InvalidRequest),
                 }
             };
-            record_client_simulation_metrics(&report);
-            if let Some(capture) = debug_trace {
-                capture.submit(
-                    &report,
-                    &attempt_targets,
-                    result.is_ok(),
-                    routing_started_at.elapsed(),
-                );
-            }
             let successful_channel_id = report
                 .successful_candidate_index()
                 .and_then(|index| attempt_targets.get(index))
                 .map(CredentialAttemptTarget::channel_id);
-            let ((), (), (), ()) = tokio::join!(
-                persist_credential_feedback(
-                    &credential_states,
-                    &scheduler,
-                    &attempt_targets,
-                    &report,
-                ),
-                persist_scheduler_health_feedback(health.as_ref(), &attempt_targets, &report),
-                persist_channel_auto_ban_feedback(
-                    channel_states.as_ref(),
-                    &scheduler,
-                    &auto_ban_targets,
-                    &report,
-                ),
-                persist_feedback(smart_route_feedback.as_ref(), &route_channel_ids, &report,),
-            );
-            if result.is_ok()
-                && let (Some(store), Some(scope), Some(channel_id)) = (
-                    sticky_sessions.as_ref(),
-                    session_scope.as_ref(),
-                    successful_channel_id.map(af_domain::ChannelId::get),
-                )
-                && let Err(error) = store.bind(scope.as_str(), channel_id).await
-            {
-                tracing::warn!(
-                    target: "af_server::sticky_session",
-                    error_kind = sticky_cache_error_kind(&error),
-                    "写入粘性会话绑定失败，当前响应继续返回"
-                );
-            }
+            let feedback = completion::Feedback {
+                report,
+                attempt_targets,
+                auto_ban_targets,
+                route_channel_ids,
+                credential_states,
+                scheduler,
+                sticky_sessions,
+                session_scope,
+                health,
+                channel_states,
+                debug_trace,
+                smart_route_feedback,
+                started: routing_started_at,
+            };
             match result {
                 Ok(ChatResponse::Full { body, usage }) => {
+                    feedback.finish(true, false).await;
                     if let Some(permit) = user_permit {
                         permit.release().await;
                     }
@@ -1409,6 +1441,10 @@ impl PlannedChatExecution for ScheduledChatExecution {
                         .ok_or(AfError::Internal)
                 }
                 Ok(ChatResponse::Stream { body, usage }) => {
+                    let body = af_relay::with_delivery_completion(
+                        body,
+                        Box::new(completion::Completion(Some(feedback))),
+                    );
                     let body = match user_permit {
                         Some(permit) => {
                             body.with_completion_hook(user_permit_completion_hook(permit))
@@ -1425,6 +1461,7 @@ impl PlannedChatExecution for ScheduledChatExecution {
                         .ok_or(AfError::Internal)
                 }
                 Err(error) => {
+                    feedback.finish(false, false).await;
                     if let Some(permit) = user_permit {
                         permit.release().await;
                     }

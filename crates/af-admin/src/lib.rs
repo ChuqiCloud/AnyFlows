@@ -95,8 +95,8 @@ mod wallet;
 pub use af_account::{PlainCredentialSecret as AdminCredentialSecret, PlainOAuthCredential};
 pub use af_db::PlatformAuditOutcome;
 pub use af_db::{
-    CredentialProxyScheme, DatabaseTimestamp, NetworkSettingsMode, RelayChannelSettings,
-    RelayChannelSettingsPatch,
+    CredentialProxyScheme, CredentialSelectionStrategy, DatabaseTimestamp, NetworkSettingsMode,
+    RelayChannelSettings, RelayChannelSettingsPatch,
 };
 pub use announcement::{
     AnnouncementAudience, AnnouncementFuture, AnnouncementListFuture, AnnouncementService,

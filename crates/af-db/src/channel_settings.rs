@@ -45,11 +45,24 @@ pub struct RelayExecutionSettingsError;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ChannelSettingsError;
 
+/// 同渠道 Key 的选择策略；所有策略均先过滤不可用 Key 并遵守 Key 优先级。
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialSelectionStrategy {
+    #[default]
+    Weighted,
+    RoundRobin,
+    Priority,
+}
+
+pub(crate) const CREDENTIAL_STRATEGY_KEY: &str = "credential_strategy";
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RelayChannelSettings {
     race_width: Option<usize>,
     retry_limit: Option<u8>,
     retry_delay_ms: Option<u64>,
+    credential_strategy: Option<CredentialSelectionStrategy>,
 }
 
 impl RelayChannelSettings {
@@ -62,7 +75,18 @@ impl RelayChannelSettings {
             race_width,
             retry_limit,
             retry_delay_ms,
+            credential_strategy: None,
         }
+    }
+    pub const fn with_credential_strategy(
+        mut self,
+        strategy: Option<CredentialSelectionStrategy>,
+    ) -> Self {
+        self.credential_strategy = strategy;
+        self
+    }
+    pub const fn credential_strategy(self) -> Option<CredentialSelectionStrategy> {
+        self.credential_strategy
     }
     pub const fn race_width(self) -> Option<usize> {
         self.race_width
@@ -80,6 +104,7 @@ pub struct RelayChannelSettingsPatch {
     race_width: Option<Option<usize>>,
     retry_limit: Option<Option<u8>>,
     retry_delay_ms: Option<Option<u64>>,
+    credential_strategy: Option<Option<CredentialSelectionStrategy>>,
 }
 
 impl RelayChannelSettingsPatch {
@@ -92,19 +117,31 @@ impl RelayChannelSettingsPatch {
             race_width,
             retry_limit,
             retry_delay_ms,
+            credential_strategy: None,
         }
     }
 
+    pub const fn with_credential_strategy(
+        mut self,
+        strategy: Option<Option<CredentialSelectionStrategy>>,
+    ) -> Self {
+        self.credential_strategy = strategy;
+        self
+    }
     pub const fn replace_all(settings: RelayChannelSettings) -> Self {
         Self::new(
             Some(settings.race_width),
             Some(settings.retry_limit),
             Some(settings.retry_delay_ms),
         )
+        .with_credential_strategy(Some(settings.credential_strategy))
     }
 
     pub const fn is_empty(self) -> bool {
-        self.race_width.is_none() && self.retry_limit.is_none() && self.retry_delay_ms.is_none()
+        self.race_width.is_none()
+            && self.retry_limit.is_none()
+            && self.retry_delay_ms.is_none()
+            && self.credential_strategy.is_none()
     }
 }
 
@@ -134,6 +171,19 @@ pub(crate) fn set_relay_execution_settings_patch(
         relay.retry_limit.map(|v| v.map(u64::from)),
     );
     set_optional(object, RELAY_RETRY_DELAY_MS_KEY, relay.retry_delay_ms);
+    if let Some(strategy) = relay.credential_strategy {
+        match strategy {
+            Some(strategy) => {
+                object.insert(
+                    CREDENTIAL_STRATEGY_KEY.to_owned(),
+                    serde_json::to_value(strategy).map_err(|_| ChannelSettingsError)?,
+                );
+            }
+            None => {
+                object.remove(CREDENTIAL_STRATEGY_KEY);
+            }
+        }
+    }
     Ok(())
 }
 
@@ -166,6 +216,7 @@ pub(crate) fn relay_execution_settings(
         object.get(RELAY_RACE_WIDTH_KEY),
         object.get(RELAY_RETRY_LIMIT_KEY),
         object.get(RELAY_RETRY_DELAY_MS_KEY),
+        object.get(CREDENTIAL_STRATEGY_KEY),
     )
 }
 
@@ -173,6 +224,7 @@ pub(crate) fn relay_execution_settings_from_values(
     race_width: Option<&Value>,
     retry_limit: Option<&Value>,
     retry_delay_ms: Option<&Value>,
+    credential_strategy: Option<&Value>,
 ) -> Result<RelayChannelSettings, ChannelSettingsError> {
     let parse = |value: Option<&Value>,
                  max: u64,
@@ -191,6 +243,9 @@ pub(crate) fn relay_execution_settings_from_values(
         race_width: parse(race_width, MAX_RELAY_RACE_WIDTH, false)?.map(|v| v as usize),
         retry_limit: parse(retry_limit, MAX_RELAY_RETRY_LIMIT, true)?.map(|v| v as u8),
         retry_delay_ms: parse(retry_delay_ms, MAX_RELAY_RETRY_DELAY_MS, true)?,
+        credential_strategy: credential_strategy
+            .map(|value| serde_json::from_value(value.clone()).map_err(|_| ChannelSettingsError))
+            .transpose()?,
     })
 }
 

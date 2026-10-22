@@ -47,6 +47,8 @@ pub struct RelayCandidate {
     retry_limit: Option<u8>,
     retry_delay_ms: Option<u64>,
     race_width: Option<usize>,
+    response_validation: Option<af_domain::Protocol>,
+    first_output_timeout: Duration,
 }
 
 impl RelayCandidate {
@@ -67,6 +69,8 @@ impl RelayCandidate {
             retry_limit: None,
             retry_delay_ms: None,
             race_width: None,
+            response_validation: None,
+            first_output_timeout: Duration::from_secs(300),
         }
     }
 
@@ -105,6 +109,20 @@ impl RelayCandidate {
     #[must_use]
     pub const fn with_channel_group(mut self, channel_id: ChannelId) -> Self {
         self.channel_group = Some(channel_id);
+        self
+    }
+
+    /// 校验成功响应后再选定候选；流式请求等待首个有效输出。
+    #[must_use]
+    pub const fn with_response_validation(mut self, protocol: af_domain::Protocol) -> Self {
+        self.response_validation = Some(protocol);
+        self
+    }
+
+    /// 继承渠道或全局客户端的首输出等待上限。
+    #[must_use]
+    pub const fn with_first_output_timeout(mut self, timeout: Duration) -> Self {
+        self.first_output_timeout = timeout;
         self
     }
 
@@ -413,14 +431,23 @@ impl RelayAttemptReport {
         self.successful_client_simulation
     }
 
-    pub(crate) fn complete_success(&mut self, elapsed: Duration) {
+    /// 流到达逻辑终点后补全最终耗时。
+    pub fn complete_success(&mut self, elapsed: Duration) {
         if self.successful_candidate_index.is_some() {
             self.successful_elapsed = Some(elapsed);
         }
     }
 
+    /// 下游放弃读取时撤销尚未完成的成功反馈，不给上游附加失败惩罚。
+    pub fn discard_pending_success(&mut self) {
+        self.successful_candidate_index = None;
+        self.successful_elapsed = None;
+        self.successful_diagnostic = None;
+        self.successful_client_simulation = None;
+    }
+
     /// 把已经取得 HTTP 成功、但未通过协议验证的候选改记为失败。
-    pub(crate) fn reject_success(&mut self, error: UpstreamError) {
+    pub fn reject_success(&mut self, error: UpstreamError) {
         if let Some(candidate_index) = self.successful_candidate_index.take() {
             let elapsed = self
                 .successful_elapsed
@@ -862,6 +889,8 @@ impl RelayStateMachine {
                         for failure in &mut response.report.failures {
                             failure.candidate_index += index;
                         }
+                        failures.append(&mut response.report.failures);
+                        response.report.failures = failures;
                         response.attempts =
                             NonZeroUsize::new(attempt_count.load(Ordering::Relaxed).max(1))
                                 .expect("成功响应的上游尝试次数必须为正");
@@ -1200,7 +1229,7 @@ impl RelayStateMachine {
                     ));
                 }
             };
-            let (response, transport_fallback) = outcome.into_parts();
+            let (mut response, transport_fallback) = outcome.into_parts();
             if let Some(error_kind) = transport_fallback {
                 tracing::warn!(
                     target: "af_relay::transport_dispatcher",
@@ -1217,6 +1246,55 @@ impl RelayStateMachine {
             }
 
             if response.status().is_success() {
+                if let Some(protocol) = candidate.response_validation {
+                    match crate::response_readiness::validate(
+                        response,
+                        protocol,
+                        request.response_mode,
+                        candidate.first_output_timeout,
+                    )
+                    .await
+                    {
+                        Ok(ready) => response = ready,
+                        Err(error) => {
+                            release_attempt_permit(permit).await;
+                            failures.push(
+                                RelayAttemptFailure::new(
+                                    index,
+                                    error,
+                                    attempt_started_at.elapsed(),
+                                )
+                                .with_diagnostic(diagnostic)
+                                .with_client_simulation(client_simulation),
+                            );
+                            last_error = Some(RelayError::Upstream(error));
+                            let limit = candidate
+                                .retry_limit
+                                .unwrap_or(self.execution_policy.retry_limit);
+                            if (is_same_candidate_retryable(error)
+                                || error == UpstreamError::ProtocolError)
+                                && reserve_candidate_retry(&mut retry_counts, index, limit)
+                            {
+                                let delay = candidate.retry_delay_ms.map_or(
+                                    self.execution_policy.retry_delay,
+                                    Duration::from_millis,
+                                );
+                                if !delay.is_zero() {
+                                    sleep(delay).await;
+                                }
+                                continue;
+                            }
+                            if is_retryable(error) || error == UpstreamError::ProtocolError {
+                                index = self.next_candidate_index(index, error);
+                                continue;
+                            }
+                            return Err(RelayExecutionError::new(
+                                RelayError::Upstream(error),
+                                failures,
+                            ));
+                        }
+                    }
+                }
                 let state = if request.response_mode == ResponseMode::Stream {
                     RelayState::Streaming
                 } else {
@@ -1334,7 +1412,15 @@ impl RelayStateMachine {
     }
 
     fn next_candidate_index(&self, index: usize, error: UpstreamError) -> usize {
-        if is_credential_scoped(error) {
+        if is_credential_scoped(error)
+            || matches!(
+                error,
+                UpstreamError::Overloaded { .. }
+                    | UpstreamError::ServerError { .. }
+                    | UpstreamError::ProtocolError
+            )
+            || matches!(error, UpstreamError::Network { kind } if kind != af_domain::NetworkFailureKind::Policy)
+        {
             if self.candidates[index].adaptor.channel_type() == af_domain::ChannelType::OpenCode
                 && !self.candidates.get(index + 1).is_some_and(|next| {
                     next.channel_group.is_some()
