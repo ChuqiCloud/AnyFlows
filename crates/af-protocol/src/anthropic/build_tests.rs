@@ -103,8 +103,14 @@ fn rebuilds_anthropic_thinking_cache_and_tool_streaming_options() {
     assert_eq!(value["cache_control"]["ttl"], "1h");
     assert_eq!(value["tools"][0]["eager_input_streaming"], true);
     assert_eq!(value["tools"][0]["cache_control"]["ttl"], "1h");
-    assert_eq!(value["messages"][0]["content"][0]["signature"], "opaque-signature");
-    assert_eq!(value["messages"][0]["content"][1]["cache_control"]["type"], "ephemeral");
+    assert_eq!(
+        value["messages"][0]["content"][0]["signature"],
+        "opaque-signature"
+    );
+    assert_eq!(
+        value["messages"][0]["content"][1]["cache_control"]["type"],
+        "ephemeral"
+    );
 }
 
 #[test]
