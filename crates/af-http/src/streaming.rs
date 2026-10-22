@@ -8,12 +8,13 @@ use std::{
 };
 
 use af_domain::UpstreamError;
+use af_relay::{StreamDeliveryHook, StreamDeliveryOutcome as PumpOutcome};
 use axum::body::{Body, Bytes};
 use futures_core::Stream;
 use futures_util::{FutureExt as _, StreamExt as _};
 use tokio::{
-    sync::mpsc,
-    time::{Sleep, sleep, timeout},
+    sync::{mpsc, oneshot},
+    time::{sleep, timeout},
 };
 use tracing::Instrument as _;
 
@@ -53,42 +54,78 @@ impl Default for StreamDeliveryPolicy {
 }
 
 /// 创建保持背压的 Axum Body；接收端释放会同步取消上游生产任务。
-pub(crate) fn openai_chat_body<S>(source: S, policy: StreamDeliveryPolicy) -> Body
+pub(crate) fn openai_chat_body<S>(
+    source: S,
+    policy: StreamDeliveryPolicy,
+    completion: Option<Box<dyn StreamDeliveryHook>>,
+) -> Body
 where
     S: Stream<Item = Result<Bytes, UpstreamError>> + Send + 'static,
 {
     let (sender, receiver) = mpsc::channel(STREAM_CHANNEL_CAPACITY);
+    let (terminal_sender, terminal) = oneshot::channel();
+    let (acknowledged, delivered) = oneshot::channel();
     let task = async move {
         let mut source = Box::pin(source);
-        let outcome = AssertUnwindSafe(pump_stream(&mut source, &sender, policy))
-            .catch_unwind()
-            .await;
-        match outcome {
-            Ok(outcome) => log_outcome(outcome),
+        let mut hard_deadline = Box::pin(sleep(policy.max_duration));
+        let result = AssertUnwindSafe(pump_stream(
+            &mut source,
+            &sender,
+            policy,
+            &mut hard_deadline,
+        ))
+        .catch_unwind()
+        .await;
+        let mut outcome = match result {
+            Ok(outcome) => outcome,
             Err(_) => {
-                let _ = sender.try_send(Err(StreamBodyError::Internal));
                 tracing::error!(
                     error_kind = "stream_delivery_panic",
                     "SSE 下游交付任务发生 panic"
                 );
+                PumpOutcome::Internal
             }
+        };
+        let _ = terminal_sender.send(outcome);
+        // 关闭通道后接收端才能观察 EOF；排队成功不等于 Body 已完整消费。
+        drop(sender);
+        drop(source);
+        if outcome == PumpOutcome::Completed {
+            outcome = tokio::select! {
+                biased;
+                () = hard_deadline.as_mut() => PumpOutcome::MaxDuration,
+                result = timeout(policy.write_timeout, delivered) => match result {
+                    Ok(Ok(())) => PumpOutcome::Completed,
+                    Ok(Err(_)) => PumpOutcome::ClientClosed,
+                    Err(_) => PumpOutcome::WriteTimeout,
+                },
+            };
+        }
+        log_outcome(outcome);
+        if let Some(completion) = completion {
+            completion.on_delivery(outcome).await;
         }
     }
     .in_current_span();
     // JoinHandle 丢弃后任务继续运行；生命周期由接收端关闭和硬期限共同约束。
     drop(tokio::spawn(task));
-    Body::from_stream(ReceiverStream { receiver })
+    Body::from_stream(ReceiverStream {
+        receiver,
+        terminal,
+        acknowledged: Some(acknowledged),
+        terminated: false,
+    })
 }
 
 async fn pump_stream<S>(
     source: &mut Pin<Box<S>>,
-    sender: &mpsc::Sender<Result<Bytes, StreamBodyError>>,
+    sender: &mpsc::Sender<Bytes>,
     policy: StreamDeliveryPolicy,
+    hard_deadline: &mut Pin<Box<tokio::time::Sleep>>,
 ) -> PumpOutcome
 where
     S: Stream<Item = Result<Bytes, UpstreamError>> + Send + 'static,
 {
-    let mut hard_deadline = Box::pin(sleep(policy.max_duration));
     loop {
         let item = tokio::select! {
             biased;
@@ -98,20 +135,11 @@ where
         };
         let bytes = match item {
             Some(Ok(bytes)) => bytes,
-            Some(Err(_)) => {
-                send_terminal_error(
-                    sender,
-                    StreamBodyError::Upstream,
-                    policy.write_timeout,
-                    &mut hard_deadline,
-                )
-                .await;
-                return PumpOutcome::UpstreamFailed;
-            }
+            Some(Err(_)) => return PumpOutcome::UpstreamFailed,
             None => return PumpOutcome::Completed,
         };
 
-        let send = sender.send(Ok(bytes));
+        let send = sender.send(bytes);
         let result = tokio::select! {
             biased;
             () = sender.closed() => return PumpOutcome::ClientClosed,
@@ -126,24 +154,9 @@ where
     }
 }
 
-async fn send_terminal_error(
-    sender: &mpsc::Sender<Result<Bytes, StreamBodyError>>,
-    error: StreamBodyError,
-    write_timeout: Duration,
-    hard_deadline: &mut Pin<Box<Sleep>>,
-) {
-    let send = sender.send(Err(error));
-    tokio::select! {
-        biased;
-        () = sender.closed() => {}
-        () = hard_deadline.as_mut() => {}
-        _ = timeout(write_timeout, send) => {}
-    }
-}
-
 fn log_outcome(outcome: PumpOutcome) {
     match outcome {
-        PumpOutcome::Completed | PumpOutcome::ClientClosed => {}
+        PumpOutcome::Completed | PumpOutcome::ClientClosed | PumpOutcome::Internal => {}
         PumpOutcome::UpstreamFailed => tracing::warn!(
             error_kind = "stream_upstream_failed",
             "SSE 已提交后上游流失败"
@@ -157,15 +170,6 @@ fn log_outcome(outcome: PumpOutcome) {
             "SSE 响应超过生命周期硬上限"
         ),
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PumpOutcome {
-    Completed,
-    ClientClosed,
-    UpstreamFailed,
-    WriteTimeout,
-    MaxDuration,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -186,14 +190,39 @@ impl fmt::Display for StreamBodyError {
 impl Error for StreamBodyError {}
 
 struct ReceiverStream {
-    receiver: mpsc::Receiver<Result<Bytes, StreamBodyError>>,
+    receiver: mpsc::Receiver<Bytes>,
+    terminal: oneshot::Receiver<PumpOutcome>,
+    acknowledged: Option<oneshot::Sender<()>>,
+    terminated: bool,
 }
 
 impl Stream for ReceiverStream {
     type Item = Result<Bytes, StreamBodyError>;
 
     fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.receiver.poll_recv(context)
+        if self.terminated {
+            return Poll::Ready(None);
+        }
+        match self.receiver.poll_recv(context) {
+            Poll::Ready(Some(bytes)) => return Poll::Ready(Some(Ok(bytes))),
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(None) => {}
+        }
+        let outcome = match std::future::Future::poll(Pin::new(&mut self.terminal), context) {
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(result) => result.unwrap_or(PumpOutcome::Internal),
+        };
+        self.terminated = true;
+        match outcome {
+            PumpOutcome::Completed => {
+                if let Some(sender) = self.acknowledged.take() {
+                    let _ = sender.send(());
+                }
+                Poll::Ready(None)
+            }
+            PumpOutcome::UpstreamFailed => Poll::Ready(Some(Err(StreamBodyError::Upstream))),
+            _ => Poll::Ready(Some(Err(StreamBodyError::Internal))),
+        }
     }
 }
 
@@ -204,6 +233,7 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
+    use af_relay::{GenerationCompletionFuture, StreamDeliveryHook};
     use tokio::sync::oneshot;
 
     use super::*;
@@ -224,7 +254,7 @@ mod tests {
         let (stream, dropped) = DropAwareStream::ready_chunks(3);
         let policy =
             StreamDeliveryPolicy::new(Duration::from_millis(20), Duration::from_secs(1)).unwrap();
-        let _body = openai_chat_body(stream, policy);
+        let _body = openai_chat_body(stream, policy, None);
 
         tokio::time::timeout(Duration::from_secs(1), dropped)
             .await
@@ -235,7 +265,7 @@ mod tests {
     #[tokio::test]
     async fn dropping_body_cancels_pending_source() {
         let (stream, dropped) = DropAwareStream::pending();
-        let body = openai_chat_body(stream, StreamDeliveryPolicy::default());
+        let body = openai_chat_body(stream, StreamDeliveryPolicy::default(), None);
         drop(body);
 
         tokio::time::timeout(Duration::from_secs(1), dropped)
@@ -250,12 +280,49 @@ mod tests {
         let policy =
             StreamDeliveryPolicy::new(Duration::from_millis(100), Duration::from_millis(100))
                 .unwrap();
-        let _body = openai_chat_body(stream, policy);
+        let _body = openai_chat_body(stream, policy, None);
 
         tokio::time::timeout(Duration::from_secs(1), dropped)
             .await
             .unwrap()
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn completed_outcome_waits_until_body_eof_is_consumed() {
+        let (sender, receiver) = oneshot::channel();
+        let body = openai_chat_body(
+            futures_util::stream::iter([Ok(Bytes::from_static(b"data: [DONE]\n\n"))]),
+            StreamDeliveryPolicy::default(),
+            Some(Box::new(RecordingDelivery(sender))),
+        );
+        let chunks = body.into_data_stream().collect::<Vec<_>>().await;
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].as_ref().unwrap().as_ref(), b"data: [DONE]\n\n");
+        assert_eq!(receiver.await.unwrap(), PumpOutcome::Completed);
+    }
+
+    #[tokio::test]
+    async fn incomplete_upstream_stream_surfaces_body_error_and_failure_outcome() {
+        let (sender, receiver) = oneshot::channel();
+        let body = openai_chat_body(
+            futures_util::stream::iter([Err(UpstreamError::ProtocolError)]),
+            StreamDeliveryPolicy::default(),
+            Some(Box::new(RecordingDelivery(sender))),
+        );
+        let chunks = body.into_data_stream().collect::<Vec<_>>().await;
+        assert!(chunks.iter().any(Result::is_err));
+        assert_eq!(receiver.await.unwrap(), PumpOutcome::UpstreamFailed);
+    }
+
+    struct RecordingDelivery(oneshot::Sender<PumpOutcome>);
+
+    impl StreamDeliveryHook for RecordingDelivery {
+        fn on_delivery(self: Box<Self>, outcome: PumpOutcome) -> GenerationCompletionFuture {
+            Box::pin(async move {
+                let _ = self.0.send(outcome);
+            })
+        }
     }
 
     struct DropAwareStream {

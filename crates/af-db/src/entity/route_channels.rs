@@ -9,7 +9,7 @@ pub struct Model {
     pub id: i64,
     pub route_id: i64,
     pub channel_id: i64,
-    pub credential_id: i64,
+    pub credential_id: Option<i64>,
     pub priority: i32,
     pub weight: i32,
     pub enabled: bool,

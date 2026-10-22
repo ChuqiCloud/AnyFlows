@@ -54,7 +54,7 @@ impl Default for AdminRouteListQuery {
 pub struct AdminRouteChannel {
     id: RouteChannelId,
     channel_id: ChannelId,
-    credential_id: CredentialId,
+    credential_id: Option<CredentialId>,
     priority: i32,
     weight: i32,
     enabled: bool,
@@ -80,7 +80,7 @@ impl AdminRouteChannel {
     }
     /// 返回凭据 ID。
     #[must_use]
-    pub const fn credential_id(&self) -> CredentialId {
+    pub const fn credential_id(&self) -> Option<CredentialId> {
         self.credential_id
     }
     /// 返回优先级。

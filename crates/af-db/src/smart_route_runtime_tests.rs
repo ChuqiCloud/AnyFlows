@@ -102,7 +102,7 @@ async fn attempt_feedback_updates_statistics_and_rolls_back_invalid_batches()
     let route_channel = route_channels::ActiveModel {
         route_id: Set(route.id),
         channel_id: Set(channel.id),
-        credential_id: Set(credential.id),
+        credential_id: Set(Some(credential.id)),
         priority: Set(10),
         weight: Set(20),
         enabled: Set(true),
@@ -147,6 +147,54 @@ async fn attempt_feedback_updates_statistics_and_rolls_back_invalid_batches()
     assert_eq!(rolled_back.fail_count, 1);
     assert_eq!(rolled_back.total_latency, 41);
 
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn channel_bindings_are_unique_and_survive_credential_deletion() -> Result<(), Box<dyn Error>>
+{
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let route = insert_route(
+        &pool,
+        "channel-binding",
+        "gpt-5.5",
+        RouteMode::Pattern,
+        serde_json::json!({}),
+    )
+    .await?;
+    let channel = insert_channel(&pool).await?;
+    let credential = insert_credential(&pool, channel.id).await?;
+    let binding = route_channels::ActiveModel {
+        route_id: Set(route.id),
+        channel_id: Set(channel.id),
+        credential_id: Set(None),
+        ..Default::default()
+    };
+    let saved = binding.clone().insert(pool.connection()).await?;
+    assert!(binding.insert(pool.connection()).await.is_err());
+    credentials::Entity::delete_by_id(credential.id)
+        .exec(pool.connection())
+        .await?;
+    assert!(
+        route_channels::Entity::find_by_id(saved.id)
+            .one(pool.connection())
+            .await?
+            .is_some()
+    );
+    channels::Entity::delete_by_id(channel.id)
+        .exec(pool.connection())
+        .await?;
+    assert!(
+        route_channels::Entity::find_by_id(saved.id)
+            .one(pool.connection())
+            .await?
+            .is_none()
+    );
     pool.close().await?;
     Ok(())
 }

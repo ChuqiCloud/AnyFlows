@@ -412,8 +412,9 @@ pub(crate) fn render_chat_response(
         ChatResponse::Full { body, usage: _ } => {
             (StatusCode::OK, [(CONTENT_TYPE, "application/json")], body).into_response()
         }
-        ChatResponse::Stream { body, usage: _ } => {
-            let mut response = openai_chat_body(body, stream_delivery).into_response();
+        ChatResponse::Stream { mut body, usage: _ } => {
+            let completion = body.take_delivery_hook();
+            let mut response = openai_chat_body(body, stream_delivery, completion).into_response();
             response.headers_mut().insert(
                 CONTENT_TYPE,
                 HeaderValue::from_static("text/event-stream; charset=utf-8"),

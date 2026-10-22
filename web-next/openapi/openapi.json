@@ -15277,6 +15277,192 @@
         ]
       }
     },
+    "/api/admin/channels/{channel_id}/credentials/batch-delete": {
+      "post": {
+        "tags": [
+          "凭据管理"
+        ],
+        "summary": "批量软删除渠道凭据及其影子",
+        "operationId": "batchDeleteAdminCredentials",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCredentialBatchDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "逐项删除结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCredentialBatchDeleteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "批次无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "渠道或凭据不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/channels/{channel_id}/credentials/health": {
+      "post": {
+        "tags": [
+          "凭据管理"
+        ],
+        "summary": "读取渠道 Key 的调度健康状态",
+        "operationId": "getAdminCredentialHealth",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialHealthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "脱敏健康状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialHealthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "批次无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "渠道或凭据不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "健康存储不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/proxies": {
       "get": {
         "tags": [
@@ -20603,6 +20789,7 @@
           "responses_compact_mode",
           "responses_compact_model_mapping",
           "responses_compact_probe",
+          "credential_strategy",
           "models",
           "group_ids",
           "model_mapping",
@@ -20746,6 +20933,16 @@
             "format": "int64",
             "description": "渠道级重试间隔毫秒；为空时继承全局默认值。",
             "minimum": 0
+          },
+          "credential_strategy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CredentialSelectionStrategy"
+              }
+            ]
           },
           "models": {
             "type": "array",
@@ -21063,6 +21260,16 @@
             ],
             "format": "int64",
             "minimum": 0
+          },
+          "credential_strategy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CredentialSelectionStrategy"
+              }
+            ]
           },
           "models": {
             "type": "array",
@@ -21434,6 +21641,16 @@
             "format": "int64",
             "minimum": 0
           },
+          "credential_strategy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CredentialSelectionStrategy"
+              }
+            ]
+          },
           "models": {
             "type": "array",
             "items": {
@@ -21756,6 +21973,47 @@
         },
         "additionalProperties": false
       },
+      "AdminCredentialBatchDeleteRequest": {
+        "type": "object",
+        "required": [
+          "credential_ids"
+        ],
+        "properties": {
+          "credential_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "maxItems": 2048,
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminCredentialBatchDeleteResponse": {
+        "type": "object",
+        "required": [
+          "deleted",
+          "failed"
+        ],
+        "properties": {
+          "deleted": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "failed": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        }
+      },
       "AdminCredentialCreateRequest": {
         "type": "object",
         "required": [
@@ -21966,6 +22224,12 @@
             "items": {
               "$ref": "#/components/schemas/AdminCredentialImportFile"
             }
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -27235,7 +27499,6 @@
         "required": [
           "id",
           "channel_id",
-          "credential_id",
           "priority",
           "weight",
           "enabled",
@@ -27256,7 +27519,10 @@
             "minimum": 1
           },
           "credential_id": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
             "minimum": 1
           },
@@ -27326,7 +27592,6 @@
         "description": "管理端写入路由候选的结构化字段。",
         "required": [
           "channel_id",
-          "credential_id",
           "priority",
           "weight",
           "enabled"
@@ -27338,7 +27603,10 @@
             "minimum": 1
           },
           "credential_id": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
             "minimum": 1
           },
@@ -29958,6 +30226,79 @@
           "not_applied",
           "applied",
           "failed"
+        ]
+      },
+      "CredentialHealthRequest": {
+        "type": "object",
+        "required": [
+          "credential_ids"
+        ],
+        "properties": {
+          "credential_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "maxItems": 100,
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "CredentialHealthResponse": {
+        "type": "object",
+        "required": [
+          "available",
+          "credentials"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "credentials": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CredentialHealthSnapshot"
+            }
+          }
+        }
+      },
+      "CredentialHealthSnapshot": {
+        "type": "object",
+        "description": "脱敏的凭据调度健康状态，不包含 Key、上游正文或内部 Redis 键。",
+        "required": [
+          "credential_id",
+          "penalty_micros",
+          "cooling",
+          "weight_multiplier_micros"
+        ],
+        "properties": {
+          "credential_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "penalty_micros": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "cooling": {
+            "type": "boolean"
+          },
+          "weight_multiplier_micros": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "CredentialSelectionStrategy": {
+        "type": "string",
+        "enum": [
+          "weighted",
+          "round_robin",
+          "priority"
         ]
       },
       "CredentialUsageSnapshot": {

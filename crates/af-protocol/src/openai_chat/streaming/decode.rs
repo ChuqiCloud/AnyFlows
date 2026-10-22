@@ -10,7 +10,7 @@ use super::{
     ParseStreamError, SseEvent, SseParseError, SseParser,
     wire::{
         ChatStreamChunkWire, ChatStreamObjectWire, StreamChoiceWire, StreamDeltaWire,
-        StreamFunctionWire, StreamRoleWire, StreamToolCallWire, StreamToolTypeWire,
+        StreamFunctionWire, StreamRoleWire, StreamToolCallWire,
     },
 };
 use crate::bounded_json::{BoundedJsonError, JsonLimits, parse_value};
@@ -359,6 +359,7 @@ struct ToolState {
     id: String,
     name: String,
     arguments: String,
+    started: bool,
     ended: bool,
 }
 
@@ -445,10 +446,9 @@ fn decode_delta(
         emitted = true;
     }
     if let Some(tool_calls) = tool_calls {
-        if tool_calls.is_empty() {
-            return Err(ParseStreamError::InvalidValue);
+        if !tool_calls.is_empty() {
+            require_started(state)?;
         }
-        require_started(state)?;
         let mut seen_tools = HashSet::with_capacity(tool_calls.len());
         for tool in tool_calls {
             if !seen_tools.insert(tool.index) {
@@ -469,7 +469,7 @@ fn empty_usage_delta(delta: &StreamDeltaWire) -> bool {
             .as_ref()
             .is_none_or(String::is_empty)
         && delta.reasoning_details.as_ref().is_none_or(Vec::is_empty)
-        && delta.tool_calls.is_none()
+        && delta.tool_calls.as_ref().is_none_or(Vec::is_empty)
         && delta.refusal.is_none()
         && delta.audio.is_none()
         && delta.function_call.is_none()
@@ -531,58 +531,76 @@ fn decode_tool_delta(
         kind,
         function,
     } = tool;
-    let arguments = match choice.tools.entry(index) {
+    let existing = match choice.tools.entry(index) {
         std::collections::btree_map::Entry::Vacant(entry) => {
             if totals.tool_calls >= MAX_TOOL_CALLS {
                 return Err(ParseStreamError::StructureLimitExceeded);
             }
-            let id = id.ok_or(ParseStreamError::InvalidSequence)?;
-            if !matches!(kind, Some(StreamToolTypeWire::Function)) {
-                return Err(ParseStreamError::InvalidSequence);
-            }
-            let StreamFunctionWire { name, arguments } =
-                function.ok_or(ParseStreamError::InvalidSequence)?;
-            let name = name.ok_or(ParseStreamError::InvalidSequence)?;
-            validate_call_id(&id).map_err(map_request_error)?;
-            validate_tool_name(&name).map_err(map_request_error)?;
             totals.tool_calls += 1;
-            entry.insert(ToolState {
-                id: id.clone(),
-                name: name.clone(),
-                arguments: String::new(),
-                ended: false,
-            });
-            output.push(CanonicalStreamEvent::ToolCallStart {
-                choice_index,
-                tool_index: index,
-                id,
-                name,
-            });
-            arguments
+            entry.insert(ToolState::default())
         }
-        std::collections::btree_map::Entry::Occupied(entry) => {
-            let existing = entry.get();
-            if existing.ended {
-                return Err(ParseStreamError::InvalidSequence);
-            }
-            if id.as_ref().is_some_and(|value| value != &existing.id)
-                || !matches!(kind, None | Some(StreamToolTypeWire::Function))
-            {
-                return Err(ParseStreamError::InvalidSequence);
-            }
-            let Some(StreamFunctionWire { name, arguments }) = function else {
-                return Err(ParseStreamError::InvalidValue);
-            };
-            if name.as_ref().is_some_and(|value| value != &existing.name) {
-                return Err(ParseStreamError::InvalidSequence);
-            }
-            Some(arguments.ok_or(ParseStreamError::InvalidValue)?)
-        }
+        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
     };
+    if existing.ended {
+        return Err(ParseStreamError::InvalidSequence);
+    }
+    let _ = kind;
+    // Empty identity fields in continuation chunks do not replace confirmed values.
+    if let Some(id) = id.filter(|id| !id.is_empty()) {
+        validate_call_id(&id).map_err(map_request_error)?;
+        if !existing.id.is_empty() && existing.id != id {
+            return Err(ParseStreamError::InvalidSequence);
+        }
+        existing.id = id;
+    }
+    let StreamFunctionWire { name, arguments } = function.unwrap_or(StreamFunctionWire {
+        name: None,
+        arguments: None,
+    });
+    if let Some(name) = name.filter(|name| !name.is_empty()) {
+        if existing.name.is_empty() {
+            existing.name = name;
+        } else if existing.name != name {
+            if existing.started || !existing.arguments.is_empty() {
+                return Err(ParseStreamError::InvalidSequence);
+            }
+            existing.name.push_str(&name);
+        }
+        validate_tool_name(&existing.name).map_err(map_request_error)?;
+    }
     if let Some(arguments) = arguments
         && !arguments.is_empty()
     {
         append_arguments(choice_index, index, arguments, choice, totals, output)?;
+    }
+    let tool = choice.tools.get_mut(&index).expect("工具状态已创建");
+    if !tool.started && !tool.arguments.is_empty() && !tool.id.is_empty() && !tool.name.is_empty() {
+        start_tool(choice_index, index, tool, output)?;
+    }
+    Ok(())
+}
+
+fn start_tool(
+    choice_index: u32,
+    tool_index: u32,
+    tool: &mut ToolState,
+    output: &mut Vec<CanonicalStreamEvent>,
+) -> Result<(), ParseStreamError> {
+    validate_call_id(&tool.id).map_err(map_request_error)?;
+    validate_tool_name(&tool.name).map_err(map_request_error)?;
+    tool.started = true;
+    output.push(CanonicalStreamEvent::ToolCallStart {
+        choice_index,
+        tool_index,
+        id: tool.id.clone(),
+        name: tool.name.clone(),
+    });
+    if !tool.arguments.is_empty() {
+        output.push(CanonicalStreamEvent::ToolCallArgsDelta {
+            choice_index,
+            tool_index,
+            partial_json: tool.arguments.clone(),
+        });
     }
     Ok(())
 }
@@ -613,11 +631,13 @@ fn append_arguments(
     }
     tool.arguments.push_str(&partial_json);
     totals.argument_bytes = next_total_bytes;
-    output.push(CanonicalStreamEvent::ToolCallArgsDelta {
-        choice_index,
-        tool_index,
-        partial_json,
-    });
+    if tool.started {
+        output.push(CanonicalStreamEvent::ToolCallArgsDelta {
+            choice_index,
+            tool_index,
+            partial_json,
+        });
+    }
     Ok(())
 }
 
@@ -636,6 +656,9 @@ fn finish_choice(
         return Err(ParseStreamError::InvalidSequence);
     }
     for (&tool_index, tool) in &mut state.tools {
+        if !tool.started {
+            start_tool(choice_index, tool_index, tool, output)?;
+        }
         finish_tool(tool, totals)?;
         output.push(CanonicalStreamEvent::ToolCallEnd {
             choice_index,

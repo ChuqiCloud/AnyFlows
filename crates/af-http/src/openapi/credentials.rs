@@ -6,8 +6,14 @@ use serde::Serialize;
 use utoipa::{OpenApi, ToSchema};
 
 use crate::{
+    credential_health::{
+        CredentialHealthRequest, CredentialHealthResponse, CredentialHealthSnapshot,
+    },
     credential_usage::{CredentialUsageSnapshot, CredentialUsageStatus, CredentialUsageWindow},
-    management_credential_writes::{AdminCredentialImportRequest, AdminCredentialImportResponse},
+    management_credential_writes::{
+        AdminCredentialBatchDeleteRequest, AdminCredentialBatchDeleteResponse,
+        AdminCredentialImportRequest, AdminCredentialImportResponse,
+    },
     management_credentials::{AdminCredentialListResponse, AdminCredentialResponse},
     management_error::ManagementErrorBody,
     openapi::schema::{
@@ -353,6 +359,45 @@ fn update_admin_credential() {}
 )]
 fn delete_admin_credential() {}
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/channels/{channel_id}/credentials/batch-delete",
+    operation_id = "batchDeleteAdminCredentials",
+    tag = "凭据管理",
+    summary = "批量软删除渠道凭据及其影子",
+    params(("channel_id" = i64, Path, minimum = 1)),
+    request_body = AdminCredentialBatchDeleteRequest,
+    responses(
+        (status = 200, description = "逐项删除结果", body = AdminCredentialBatchDeleteResponse),
+        (status = 400, description = "批次无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
+        (status = 404, description = "渠道或凭据不存在", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn batch_delete_admin_credentials() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/channels/{channel_id}/credentials/health",
+    operation_id = "getAdminCredentialHealth",
+    tag = "凭据管理",
+    summary = "读取渠道 Key 的调度健康状态",
+    params(("channel_id" = i64, Path, minimum = 1)),
+    request_body = CredentialHealthRequest,
+    responses(
+        (status = 200, description = "脱敏健康状态", body = CredentialHealthResponse),
+        (status = 400, description = "批次无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
+        (status = 404, description = "渠道或凭据不存在", body = ManagementErrorBody),
+        (status = 500, description = "健康存储不可用", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn get_admin_credential_health() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -363,7 +408,9 @@ fn delete_admin_credential() {}
         get_admin_credential,
         get_admin_credential_usage,
         update_admin_credential,
-        delete_admin_credential
+        delete_admin_credential,
+        batch_delete_admin_credentials,
+        get_admin_credential_health
     ),
     components(schemas(
         AdminCredentialKindSchema,
@@ -377,6 +424,11 @@ fn delete_admin_credential() {}
         AdminCredentialUpdateRequestSchema,
         AdminCredentialImportRequest,
         AdminCredentialImportResponse,
+        AdminCredentialBatchDeleteRequest,
+        AdminCredentialBatchDeleteResponse,
+        CredentialHealthRequest,
+        CredentialHealthResponse,
+        CredentialHealthSnapshot,
         AdminCredentialResponse,
         CredentialUsageSnapshot,
         CredentialUsageStatus,

@@ -65,6 +65,7 @@ pub struct AdminChannelRecord {
     relay_race_width: Option<usize>,
     relay_retry_limit: Option<u8>,
     relay_retry_delay_ms: Option<u64>,
+    credential_strategy: Option<crate::CredentialSelectionStrategy>,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
     model_mapping: JsonValue,
@@ -159,6 +160,10 @@ impl AdminChannelRecord {
             relay_race_width: setting_value(&settings, RELAY_RACE_WIDTH_KEY),
             relay_retry_limit: setting_value(&settings, RELAY_RETRY_LIMIT_KEY),
             relay_retry_delay_ms: setting_value(&settings, RELAY_RETRY_DELAY_MS_KEY),
+            credential_strategy: setting_value(
+                &settings,
+                crate::channel_settings::CREDENTIAL_STRATEGY_KEY,
+            ),
             settings_oversized,
             balance: model.balance,
             used_quota: model.used_quota,
@@ -295,6 +300,9 @@ impl AdminChannelRecord {
         self.responses_compact_probe_http_status
     }
 
+    pub const fn credential_strategy(&self) -> Option<crate::CredentialSelectionStrategy> {
+        self.credential_strategy
+    }
     pub const fn relay_race_width(&self) -> Option<usize> {
         self.relay_race_width
     }
@@ -606,6 +614,7 @@ struct AdminChannelRow {
     relay_race_width: Option<JsonValue>,
     relay_retry_limit: Option<JsonValue>,
     relay_retry_delay_ms: Option<JsonValue>,
+    credential_strategy: Option<JsonValue>,
     settings_oversized: bool,
     balance: Option<i64>,
     used_quota: i64,
@@ -650,6 +659,7 @@ impl AdminChannelRow {
             relay_race_width: result.try_get("", "relay_race_width")?,
             relay_retry_limit: result.try_get("", "relay_retry_limit")?,
             relay_retry_delay_ms: result.try_get("", "relay_retry_delay_ms")?,
+            credential_strategy: result.try_get("", "credential_strategy")?,
             settings_oversized: result.try_get("", "settings_oversized")?,
             balance: result.try_get("", "balance")?,
             used_quota: result.try_get("", "used_quota")?,
@@ -707,6 +717,7 @@ impl AdminChannelRow {
             self.relay_race_width.as_ref(),
             self.relay_retry_limit.as_ref(),
             self.relay_retry_delay_ms.as_ref(),
+            self.credential_strategy.as_ref(),
         )
         .map_err(|_| internal_invariant())?;
         let settings = compact_settings_projection(
@@ -816,6 +827,7 @@ impl AdminChannelRow {
             relay_race_width: relay_settings.race_width(),
             relay_retry_limit: relay_settings.retry_limit(),
             relay_retry_delay_ms: relay_settings.retry_delay_ms(),
+            credential_strategy: relay_settings.credential_strategy(),
             models: self.models,
             group_ids: self.group_ids,
             model_mapping,
@@ -982,6 +994,10 @@ pub(crate) fn channel_base_query(database_backend: DbBackend) -> SelectStatement
         .expr_as(
             bounded_setting(RELAY_RETRY_DELAY_MS_KEY),
             Alias::new("relay_retry_delay_ms"),
+        )
+        .expr_as(
+            bounded_setting(crate::channel_settings::CREDENTIAL_STRATEGY_KEY),
+            Alias::new("credential_strategy"),
         )
         .expr_as(
             Expr::case(settings_length.gt(MAX_ADMIN_CHANNEL_JSON_BYTES), true).finally(false),

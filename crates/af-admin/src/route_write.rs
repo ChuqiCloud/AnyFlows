@@ -16,7 +16,7 @@ use crate::{AdminRoute, SessionPrincipal, SessionRole};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AdminRouteChannelCommand {
     channel_id: ChannelId,
-    credential_id: CredentialId,
+    credential_id: Option<CredentialId>,
     priority: i32,
     weight: i32,
     enabled: bool,
@@ -26,7 +26,7 @@ impl AdminRouteChannelCommand {
     /// 校验候选 ID、优先级与权重。
     pub fn new(
         channel_id: ChannelId,
-        credential_id: CredentialId,
+        credential_id: impl Into<Option<CredentialId>>,
         priority: i32,
         weight: i32,
         enabled: bool,
@@ -36,7 +36,7 @@ impl AdminRouteChannelCommand {
         }
         Ok(Self {
             channel_id,
-            credential_id,
+            credential_id: credential_id.into(),
             priority,
             weight,
             enabled,
@@ -165,11 +165,23 @@ impl AdminRouteWriteFields {
         {
             return Err(AdminRouteWriteError::InvalidInput);
         }
+        if channels.iter().any(|item| {
+            item.credential_id.is_none()
+                && channels
+                    .iter()
+                    .filter(|other| other.channel_id == item.channel_id)
+                    .count()
+                    > 1
+        }) {
+            return Err(AdminRouteWriteError::InvalidInput);
+        }
         let mut seen = std::collections::HashSet::with_capacity(channels.len());
-        if channels
-            .iter()
-            .any(|channel| !seen.insert((channel.channel_id.get(), channel.credential_id.get())))
-        {
+        if channels.iter().any(|channel| {
+            !seen.insert((
+                channel.channel_id.get(),
+                channel.credential_id.map(CredentialId::get),
+            ))
+        }) {
             return Err(AdminRouteWriteError::InvalidInput);
         }
         Ok(Self {
