@@ -12,7 +12,7 @@ use http::HeaderMap;
 use url::form_urlencoded;
 
 use crate::{
-    chat_completions::{HttpState, prepare_model_request, render_chat_response},
+    chat_completions::{HttpState, execute_chat_response, prepare_model_request},
     error_response::GeminiHttpError,
 };
 
@@ -44,18 +44,16 @@ pub(crate) async fn gemini_generate_content(
     }
     .map_err(|_| GeminiHttpError::from(AfError::InvalidRequest))?;
     let request = prepare_model_request(request, &authentication).map_err(GeminiHttpError::from)?;
-    let response = state
-        .chat_service()
-        .execute_model(
-            &authentication,
-            request,
-            Protocol::Gemini,
-            request_id.as_str(),
-            diagnostic,
-        )
-        .await
-        .map_err(GeminiHttpError::from)?;
-    Ok(render_chat_response(response, state.stream_delivery()))
+    execute_chat_response(
+        &state,
+        authentication,
+        request,
+        Protocol::Gemini,
+        request_id,
+        diagnostic,
+    )
+    .await
+    .map_err(GeminiHttpError::from)
 }
 
 struct GeminiTarget<'a> {

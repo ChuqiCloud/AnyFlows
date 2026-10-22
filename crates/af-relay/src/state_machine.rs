@@ -859,13 +859,7 @@ impl RelayStateMachine {
         while index < self.candidates.len() {
             let channel = self.candidates[index].channel_group;
             let mut end = index + 1;
-            while end < self.candidates.len()
-                && self.candidates[end].channel_group == channel
-                && end - index
-                    < self.candidates[index]
-                        .race_width
-                        .unwrap_or(self.execution_policy.race_width)
-            {
+            while end < self.candidates.len() && self.candidates[end].channel_group == channel {
                 end += 1;
             }
             let race_width = self.candidates[index]
@@ -904,7 +898,7 @@ impl RelayStateMachine {
                         }));
                         index = match last_error {
                             RelayError::Upstream(error) => self.next_candidate_index(index, error),
-                            _ => end,
+                            _ => index + 1,
                         };
                         if index >= self.candidates.len() {
                             return Err(RelayExecutionError::new(last_error, failures));
@@ -914,7 +908,7 @@ impl RelayStateMachine {
                 }
             }
             let mut tasks = tokio::task::JoinSet::new();
-            for candidate_index in index..end {
+            let spawn_candidate = |tasks: &mut tokio::task::JoinSet<_>, candidate_index: usize| {
                 let candidate = self.candidates[candidate_index].clone();
                 let policy = self.execution_policy;
                 let diagnostic_policy = self.diagnostic_policy;
@@ -934,13 +928,22 @@ impl RelayStateMachine {
                             .map(|response| RaceResponse(Some(response))),
                     )
                 });
+            };
+            let mut next = index;
+            while next < end && tasks.len() < race_width {
+                spawn_candidate(&mut tasks, next);
+                next += 1;
             }
-            let mut last_error_index = index;
+            let mut fallback_index = end;
             while let Some(joined) = tasks.join_next().await {
                 let (candidate_index, result) = match joined {
                     Ok(result) => result,
                     Err(_) => {
                         last_error = RelayError::AttemptGateFailed;
+                        if next < end {
+                            spawn_candidate(&mut tasks, next);
+                            next += 1;
+                        }
                         continue;
                     }
                 };
@@ -969,20 +972,27 @@ impl RelayStateMachine {
                             failure.candidate_index += candidate_index;
                             failure
                         }));
+                        if let RelayError::Upstream(upstream) = error {
+                            let following = self.next_candidate_index(candidate_index, upstream);
+                            if following > candidate_index + 1 {
+                                // Channel-wide failures stop refilling this channel, while
+                                // already running candidates may still produce a valid winner.
+                                next = end;
+                                fallback_index = fallback_index.max(following);
+                            }
+                        }
                         last_error = error;
-                        last_error_index = candidate_index;
+                        if next < end {
+                            spawn_candidate(&mut tasks, next);
+                            next += 1;
+                        }
                     }
                 }
             }
-            if end >= self.candidates.len() {
+            if fallback_index >= self.candidates.len() {
                 return Err(RelayExecutionError::new(last_error, failures));
             }
-            index = match last_error {
-                RelayError::Upstream(error) => {
-                    end.max(self.next_candidate_index(last_error_index, error))
-                }
-                _ => end,
-            };
+            index = fallback_index;
         }
         Err(RelayExecutionError::new(last_error, failures))
     }
