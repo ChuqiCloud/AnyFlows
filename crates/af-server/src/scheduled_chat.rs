@@ -887,15 +887,17 @@ impl ScheduledChatService {
     ) -> Result<PreparedRouteSelection, AfError> {
         let mut unhealthy_route_seen = false;
         let group_chain = self.route_group_chain(principal).await?;
-        let rules = match &self.smart_routes {
-            Some(resolver) => resolver
-                .matching_rules(&request.canonical().model)
-                .await
-                .map_err(|_| AfError::Internal)?,
-            None => Vec::new(),
+        let rules = if principal.is_playground() {
+            match &self.smart_routes {
+                Some(resolver) => resolver
+                    .matching_rules(&request.canonical().model)
+                    .await
+                    .map_err(|_| AfError::Internal)?,
+                None => Vec::new(),
+            }
+        } else {
+            Vec::new()
         };
-        // Explicit model rules take precedence for every principal. The bound
-        // planner still enforces the principal's group and model permissions.
         if rules.is_empty() {
             for group_id in group_chain.iter().copied() {
                 let Some(unfiltered_route) = self
@@ -2042,7 +2044,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn smart_route_maps_model_for_playground_and_regular_keys_within_their_group() {
+    async fn playground_smart_route_maps_model_and_preserves_regular_key_boundary() {
         let (service, group_id) = service_with_smart_route(valid_envelope()).await;
         let playground = GatewayPrincipal::playground(
             af_domain::TokenId::new(1).unwrap(),
@@ -2069,29 +2071,14 @@ mod tests {
             af_domain::UserId::new(1).unwrap(),
             group_id,
         );
-        let plan = service
-            .plan(
-                &regular,
-                None,
-                valid_request_for_model("smart-chat"),
-                Protocol::OpenAiChat,
-                "request-regular-smart-route",
-                diagnostic(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(plan.target_group_id(), group_id);
-        assert_eq!(plan.pricing_model(), "gpt-routed");
-
-        let outside_group = principal(group_id.get() + 1);
         assert!(matches!(
             service
                 .plan(
-                    &outside_group,
+                    &regular,
                     None,
                     valid_request_for_model("smart-chat"),
                     Protocol::OpenAiChat,
-                    "request-smart-route-outside-group",
+                    "request-regular-smart-route",
                     diagnostic(),
                 )
                 .await,

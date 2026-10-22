@@ -152,7 +152,8 @@ async fn attempt_feedback_updates_statistics_and_rolls_back_invalid_batches()
 }
 
 #[tokio::test]
-async fn channel_bindings_are_unique_and_survive_credential_deletion() -> Result<(), Box<dyn Error>> {
+async fn channel_bindings_are_unique_and_survive_credential_deletion() -> Result<(), Box<dyn Error>>
+{
     let pool = crate::connect_and_migrate(
         &DatabaseOptions::new("sqlite::memory:")?,
         MigrationOptions::default(),
