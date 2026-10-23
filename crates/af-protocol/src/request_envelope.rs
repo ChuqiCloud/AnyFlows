@@ -567,7 +567,7 @@ mod tests {
         let request = crate::gemini::parse_request_envelope(
             "models/gemini-test",
             Bytes::from_static(
-                br#"{"contents":[{"role":"user","parts":[{"text":"run a lookup"}]},{"role":"model","parts":[{"text":"I should inspect it","thought":true,"thoughtSignature":"c2ln"},{"functionCall":{"id":"call-1","name":"lookup","args":{}},"thoughtSignature":"dG9vbC1zaWc="}]}]}"#,
+                br#"{"tools":[{"functionDeclarations":[{"name":"lookup","parameters":{"type":"object"}}]}],"contents":[{"role":"user","parts":[{"text":"run a lookup"}]},{"role":"model","parts":[{"text":"I should inspect it","thought":true,"thoughtSignature":"c2ln"},{"functionCall":{"id":"call-1","name":"lookup","args":{}},"thoughtSignature":"dG9vbC1zaWc="}]},{"role":"user","parts":[{"functionResponse":{"id":"call-1","name":"lookup","response":{"ok":true}}}]}]}"#,
             ),
         )
         .unwrap();
