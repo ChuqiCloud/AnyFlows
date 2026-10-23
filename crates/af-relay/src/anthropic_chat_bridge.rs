@@ -1,47 +1,196 @@
-use af_domain::{AfError, Protocol, UpstreamError};
-use af_protocol::{CanonicalResponse, CanonicalStreamEvent, ContentBlock, ContentDelta};
+use std::collections::BTreeMap;
 
-/// Chat 没有 Anthropic 原生思考签名；以可直接回放的文本保留其推理内容。
+use af_domain::{AfError, Operation, Protocol, UpstreamError};
+use af_protocol::{
+    CanonicalResponse, CanonicalStreamEvent, ContentBlock, ContentDelta, TokenCount, Usage,
+    UsageDetails, UsageSemantics,
+};
+
+/// 跨协议保留明文和工具调用；不把来源签名冒充目标供应商的签名。
 pub(crate) fn adapt_response(
     upstream: Protocol,
     downstream: Protocol,
     response: &mut CanonicalResponse,
 ) -> Result<(), UpstreamError> {
-    if downstream != Protocol::Anthropic || upstream == Protocol::Anthropic {
+    if upstream == downstream {
         return Ok(());
     }
     for choice in &mut response.choices {
-        for block in &mut choice.message.content {
+        if downstream != Protocol::Anthropic {
+            choice.stop_sequence = None;
+        }
+        if downstream != Protocol::OpenAiChat {
+            choice.logprobs = None;
+        }
+        let mut blocks = Vec::with_capacity(choice.message.content.len());
+        for block in std::mem::take(&mut choice.message.content) {
             match block {
-                ContentBlock::Thinking {
-                    text,
-                    signature: None,
-                } => {
-                    if upstream != Protocol::OpenAiChat {
-                        return Err(UpstreamError::ProtocolError);
+                ContentBlock::Thinking { text, .. } if downstream == Protocol::Anthropic => {
+                    if !text.is_empty() {
+                        blocks.push(ContentBlock::Text(text));
                     }
-                    *block = ContentBlock::Text(std::mem::take(text));
                 }
-                ContentBlock::Thinking {
-                    signature: Some(_), ..
+                ContentBlock::Thinking { text, .. } => {
+                    if !text.is_empty() {
+                        blocks.push(ContentBlock::Thinking {
+                            text,
+                            signature: None,
+                        });
+                    }
                 }
-                | ContentBlock::ToolUse {
-                    signature: Some(_), ..
+                ContentBlock::ToolUse {
+                    id, name, input, ..
                 } => {
-                    return Err(UpstreamError::ProtocolError);
+                    blocks.push(ContentBlock::ToolUse {
+                        id,
+                        name,
+                        input,
+                        signature: None,
+                    });
                 }
-                _ => {}
+                ContentBlock::CacheControl(_) | ContentBlock::Compaction(_) => {}
+                block => blocks.push(block),
             }
         }
+        choice.message.content =
+            if matches!(downstream, Protocol::OpenAiChat | Protocol::OpenAiResponses) {
+                ordered_openai_blocks(blocks, downstream)
+            } else {
+                blocks
+            };
     }
+    let operation = if downstream == Protocol::OpenAiResponses {
+        Operation::Responses
+    } else {
+        Operation::Chat
+    };
+    let usage = response
+        .usage
+        .map(|usage| adapt_usage(downstream, usage))
+        .transpose()?;
+    // 协议私有响应字段只属于来源，跨协议新建信封避免泄漏或错误合并。
+    *response = CanonicalResponse::new(
+        operation,
+        response.id.clone(),
+        response.model.clone(),
+        response.created_at,
+        std::mem::take(&mut response.choices),
+        usage,
+    );
     Ok(())
 }
 
+fn ordered_openai_blocks(blocks: Vec<ContentBlock>, downstream: Protocol) -> Vec<ContentBlock> {
+    let mut reasoning = String::new();
+    let mut content = Vec::new();
+    let mut tools = Vec::new();
+    let mut body_started = false;
+    for block in blocks {
+        match block {
+            ContentBlock::Thinking { text, .. } if !body_started => reasoning.push_str(&text),
+            ContentBlock::Thinking { text, .. } => content.push(ContentBlock::Text(text)),
+            block @ ContentBlock::ToolUse { .. } => {
+                body_started = true;
+                tools.push(block);
+            }
+            block => {
+                body_started = true;
+                content.push(block);
+            }
+        }
+    }
+    let mut output = Vec::with_capacity(content.len() + tools.len() + 1);
+    if !reasoning.is_empty() {
+        output.push(ContentBlock::Thinking {
+            text: reasoning,
+            signature: None,
+        });
+    }
+    if downstream == Protocol::OpenAiChat {
+        let mut text = String::new();
+        let mut has_text = false;
+        for block in content {
+            if let ContentBlock::Text(part) = block {
+                has_text = true;
+                text.push_str(&part);
+            } else {
+                output.push(block);
+            }
+        }
+        if has_text {
+            output.push(ContentBlock::Text(text));
+        }
+    } else {
+        output.extend(content);
+    }
+    output.extend(tools);
+    output
+}
+
+/// 保持计费总量和可表达明细，避免供应商特有细分使整个响应失败。
+pub(crate) fn adapt_usage(downstream: Protocol, usage: Usage) -> Result<Usage, UpstreamError> {
+    if !matches!(
+        downstream,
+        Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic | Protocol::Gemini
+    ) {
+        return Err(UpstreamError::ProtocolError);
+    }
+    let cache_creation = downstream == Protocol::Anthropic;
+    let audio = matches!(downstream, Protocol::OpenAiChat | Protocol::Gemini);
+    let details = usage.details();
+    if (cache_creation
+        || (details.cache_creation_5m() == TokenCount::ZERO
+            && details.cache_creation_1h() == TokenCount::ZERO))
+        && (audio
+            || (details.audio_input() == TokenCount::ZERO
+                && details.audio_output() == TokenCount::ZERO))
+    {
+        return Ok(usage);
+    }
+    Usage::new(
+        usage
+            .checked_input_tokens()
+            .map_err(|_| UpstreamError::ProtocolError)?,
+        usage.output_tokens(),
+        UsageDetails::new(
+            details.cache_read(),
+            if cache_creation {
+                details.cache_creation_5m()
+            } else {
+                TokenCount::ZERO
+            },
+            if cache_creation {
+                details.cache_creation_1h()
+            } else {
+                TokenCount::ZERO
+            },
+            details.reasoning(),
+            if audio {
+                details.audio_input()
+            } else {
+                TokenCount::ZERO
+            },
+            if audio {
+                details.audio_output()
+            } else {
+                TokenCount::ZERO
+            },
+        ),
+        usage.source(),
+        UsageSemantics::Inclusive,
+    )
+    .map_err(|_| UpstreamError::ProtocolError)
+}
+
 /// 每个连续片段使用独立下游块，避免推理与正文交错时重开已关闭的块。
-#[derive(Default)]
-pub(crate) struct ChatThinkingTextBridge {
+pub(crate) struct CrossProtocolStreamBridge {
+    downstream: Protocol,
     active: Option<(ContentKey, u32)>,
     next_index: u32,
+    responses_body_started: bool,
+    deferred_tools: BTreeMap<u32, Vec<CanonicalStreamEvent>>,
+    deferred_bytes: usize,
+    deferred_events: usize,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -50,43 +199,175 @@ enum ContentKey {
     Thinking(u32),
 }
 
-impl ChatThinkingTextBridge {
+impl CrossProtocolStreamBridge {
+    pub(crate) fn new(downstream: Protocol) -> Self {
+        Self {
+            downstream,
+            active: None,
+            next_index: 0,
+            responses_body_started: false,
+            deferred_tools: BTreeMap::new(),
+            deferred_bytes: 0,
+            deferred_events: 0,
+        }
+    }
+
     pub(crate) fn adapt(
         &mut self,
         event: CanonicalStreamEvent,
-    ) -> Result<CanonicalStreamEvent, AfError> {
-        Ok(match event {
+    ) -> Result<Vec<CanonicalStreamEvent>, AfError> {
+        if matches!(
+            self.downstream,
+            Protocol::OpenAiResponses | Protocol::Anthropic
+        ) {
+            let tool = match &event {
+                CanonicalStreamEvent::ToolCallStart {
+                    tool_index,
+                    id,
+                    name,
+                    ..
+                } => Some((*tool_index, id.len().saturating_add(name.len()))),
+                CanonicalStreamEvent::ToolCallArgsDelta {
+                    tool_index,
+                    partial_json,
+                    ..
+                } => Some((*tool_index, partial_json.len())),
+                CanonicalStreamEvent::ToolCallEnd { tool_index, .. } => Some((*tool_index, 0)),
+                _ => None,
+            };
+            if let Some((tool_index, bytes)) = tool {
+                self.responses_body_started = true;
+                self.deferred_events = self
+                    .deferred_events
+                    .checked_add(1)
+                    .ok_or(AfError::Internal)?;
+                self.deferred_bytes = self
+                    .deferred_bytes
+                    .checked_add(bytes)
+                    .ok_or(AfError::Internal)?;
+                if self.deferred_bytes > 16 * 1024 * 1024
+                    || self.deferred_events > 65_536
+                    || self.deferred_tools.len() >= 1024
+                        && !self.deferred_tools.contains_key(&tool_index)
+                {
+                    return Err(AfError::Internal);
+                }
+                self.deferred_tools
+                    .entry(tool_index)
+                    .or_default()
+                    .push(event);
+                return Ok(Vec::new());
+            }
+        }
+        let event = match event {
             CanonicalStreamEvent::ReasoningDelta {
                 choice_index,
                 content_index,
                 text,
-                signature: None,
-            } => CanonicalStreamEvent::ContentDelta {
-                choice_index,
-                content_index: self.content_index(ContentKey::Thinking(content_index))?,
-                delta: ContentDelta::Text(text),
-            },
-            CanonicalStreamEvent::ReasoningDelta {
-                signature: Some(_), ..
+                ..
+            } => {
+                if text.is_empty() {
+                    return Ok(Vec::new());
+                }
+                if self.downstream == Protocol::Anthropic
+                    || self.downstream == Protocol::OpenAiResponses && self.responses_body_started
+                {
+                    CanonicalStreamEvent::ContentDelta {
+                        choice_index,
+                        content_index: self.content_index(ContentKey::Thinking(content_index))?,
+                        delta: ContentDelta::Text(text),
+                    }
+                } else {
+                    let content_index = if self.downstream == Protocol::OpenAiChat {
+                        0
+                    } else {
+                        self.content_index(ContentKey::Thinking(
+                            if self.downstream == Protocol::OpenAiResponses {
+                                0
+                            } else {
+                                content_index
+                            },
+                        ))?
+                    };
+                    CanonicalStreamEvent::ReasoningDelta {
+                        choice_index,
+                        content_index,
+                        text,
+                        signature: None,
+                    }
+                }
             }
-            | CanonicalStreamEvent::ToolCallSignature { .. } => return Err(AfError::Internal),
+            CanonicalStreamEvent::ToolCallSignature { .. } => return Ok(Vec::new()),
+            CanonicalStreamEvent::LogprobsDelta { .. }
+                if self.downstream != Protocol::OpenAiChat =>
+            {
+                return Ok(Vec::new());
+            }
+            CanonicalStreamEvent::CompactionStart { .. }
+            | CanonicalStreamEvent::CompactionEnd { .. } => return Ok(Vec::new()),
             CanonicalStreamEvent::ContentDelta {
                 choice_index,
                 content_index,
                 delta,
-            } => CanonicalStreamEvent::ContentDelta {
-                choice_index,
-                content_index: self.content_index(ContentKey::Text(content_index))?,
-                delta,
-            },
+            } => {
+                self.responses_body_started = true;
+                CanonicalStreamEvent::ContentDelta {
+                    choice_index,
+                    content_index: if self.downstream == Protocol::OpenAiChat {
+                        1
+                    } else {
+                        self.content_index(ContentKey::Text(content_index))?
+                    },
+                    delta,
+                }
+            }
             event @ (CanonicalStreamEvent::ToolCallStart { .. }
-            | CanonicalStreamEvent::ToolCallEnd { .. }
-            | CanonicalStreamEvent::Finish { .. }) => {
+            | CanonicalStreamEvent::ToolCallEnd { .. }) => {
                 self.active = None;
                 event
             }
+            CanonicalStreamEvent::Finish {
+                choice_index,
+                reason,
+                stop_sequence,
+            } => {
+                self.active = None;
+                let finish = CanonicalStreamEvent::Finish {
+                    choice_index,
+                    reason,
+                    stop_sequence: if self.downstream == Protocol::Anthropic {
+                        stop_sequence
+                    } else {
+                        None
+                    },
+                };
+                let mut output = Vec::new();
+                for (index, events) in std::mem::take(&mut self.deferred_tools)
+                    .into_values()
+                    .enumerate()
+                {
+                    let index = u32::try_from(index).map_err(|_| AfError::Internal)?;
+                    for mut event in events {
+                        match &mut event {
+                            CanonicalStreamEvent::ToolCallStart { tool_index, .. }
+                            | CanonicalStreamEvent::ToolCallArgsDelta { tool_index, .. }
+                            | CanonicalStreamEvent::ToolCallEnd { tool_index, .. } => {
+                                *tool_index = index
+                            }
+                            _ => unreachable!("only tool lifecycle events are deferred"),
+                        }
+                        output.push(event);
+                    }
+                }
+                output.push(finish);
+                return Ok(output);
+            }
+            CanonicalStreamEvent::Usage(usage) => CanonicalStreamEvent::Usage(
+                adapt_usage(self.downstream, usage).map_err(|_| AfError::Internal)?,
+            ),
             event => event,
-        })
+        };
+        Ok(vec![event])
     }
 
     fn content_index(&mut self, key: ContentKey) -> Result<u32, AfError> {
@@ -112,6 +393,35 @@ mod tests {
     use crate::chat_stream_encoder::ChatStreamEncoder;
     use crate::conversation_decoder::ConversationDecoder;
 
+    const PROTOCOLS: [Protocol; 4] = [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Anthropic,
+        Protocol::Gemini,
+    ];
+
+    fn request() -> CanonicalRequest {
+        CanonicalRequest::new(
+            Operation::Chat,
+            "public-model".to_owned(),
+            vec![Message::new(
+                Role::User,
+                vec![ContentBlock::Text("question".to_owned())],
+            )],
+            true,
+        )
+    }
+
+    fn decode_stream(target: Protocol, bytes: &[u8]) -> Vec<CanonicalStreamEvent> {
+        let mut decoder = ConversationDecoder::new(target).unwrap();
+        let mut events = Vec::new();
+        for chunk in bytes.chunks(7) {
+            events.extend(decoder.push(chunk).unwrap());
+        }
+        events.extend(decoder.finish().unwrap());
+        events
+    }
+
     fn response() -> CanonicalResponse {
         openai_chat::parse_response(&serde_json::to_vec(&json!({
             "id":"upstream", "object":"chat.completion", "created":1700000000,
@@ -120,6 +430,374 @@ mod tests {
                 "finish_reason":"stop"
             }], "usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}
         })).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn native_full_responses_keep_all_source_content_and_metadata() {
+        for source in PROTOCOLS {
+            let mut response = response();
+            response.choices[0]
+                .message
+                .content
+                .push(ContentBlock::Thinking {
+                    text: String::new(),
+                    signature: Some("native-signature".to_owned()),
+                });
+            response.choices[0].logprobs = Some(json!({"content":[]}));
+            let original = response.clone();
+            adapt_response(source, source, &mut response).unwrap();
+            assert_eq!(response, original);
+        }
+    }
+
+    #[test]
+    fn full_cross_protocol_matrix_keeps_text_and_tools_without_foreign_signatures() {
+        for source in PROTOCOLS {
+            for target in PROTOCOLS {
+                if source == target {
+                    continue;
+                }
+                let mut response = response();
+                response.choices[0].message.content = vec![
+                    ContentBlock::Thinking {
+                        text: "plan".to_owned(),
+                        signature: Some("foreign-signature-canary".to_owned()),
+                    },
+                    ContentBlock::Text("answer".to_owned()),
+                    ContentBlock::ToolUse {
+                        id: "call_a".to_owned(),
+                        name: "lookup".to_owned(),
+                        input: json!({"key":"a"}),
+                        signature: Some("foreign-tool-canary".to_owned()),
+                    },
+                    ContentBlock::Thinking {
+                        text: "reconsider".to_owned(),
+                        signature: Some("foreign-signature-canary".to_owned()),
+                    },
+                    ContentBlock::Text("after tool".to_owned()),
+                ];
+                response.choices[0].finish_reason = FinishReason::ToolCalls;
+                let usage = response.usage.unwrap();
+                adapt_response(source, target, &mut response).unwrap();
+                let bytes = crate::conversation::build_response(
+                    target,
+                    response,
+                    usage,
+                    "matrix",
+                    "public-model",
+                    1_700_000_000,
+                )
+                .unwrap();
+                let wire = std::str::from_utf8(&bytes).unwrap();
+                assert!(
+                    !wire.contains("foreign-signature-canary")
+                        && !wire.contains("foreign-tool-canary")
+                );
+                let decoded = crate::conversation::parse_response(target, &bytes).unwrap();
+                let visible = decoded.choices[0]
+                    .message
+                    .content
+                    .iter()
+                    .filter_map(|block| match block {
+                        ContentBlock::Text(text) | ContentBlock::Thinking { text, .. } => {
+                            Some(text.as_str())
+                        }
+                        _ => None,
+                    })
+                    .collect::<String>();
+                assert_eq!(
+                    visible, "plananswerreconsiderafter tool",
+                    "{source:?} -> {target:?}"
+                );
+                assert!(decoded.choices[0].message.content.iter().any(|block| matches!(block, ContentBlock::ToolUse { id, name, input, signature: None } if id == "call_a" && name == "lookup" && input == &json!({"key":"a"}))));
+                assert_eq!(
+                    decoded.usage.unwrap().checked_total_tokens().unwrap(),
+                    usage.checked_total_tokens().unwrap()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn usage_projection_keeps_billing_totals_and_supported_details() {
+        let count = |value| TokenCount::new(value).unwrap();
+        let usage = Usage::new(
+            count(10),
+            count(9),
+            UsageDetails::new(count(4), count(5), count(6), count(3), count(1), count(2)),
+            af_protocol::UsageSource::Upstream,
+            UsageSemantics::CacheSeparated,
+        )
+        .unwrap();
+        for target in PROTOCOLS {
+            let adapted = adapt_usage(target, usage).unwrap();
+            assert_eq!(
+                adapted.checked_input_tokens().unwrap(),
+                usage.checked_input_tokens().unwrap()
+            );
+            assert_eq!(
+                adapted.checked_total_tokens().unwrap(),
+                usage.checked_total_tokens().unwrap()
+            );
+            assert_eq!(adapted.output_tokens(), usage.output_tokens());
+            assert_eq!(adapted.details().cache_read(), count(4));
+            assert_eq!(adapted.details().reasoning(), count(3));
+            assert_eq!(adapted.source(), usage.source());
+            let mut response = response();
+            let source = if target == Protocol::OpenAiChat {
+                Protocol::Gemini
+            } else {
+                Protocol::OpenAiChat
+            };
+            adapt_response(source, target, &mut response).unwrap();
+            let bytes = crate::conversation::build_response(
+                target,
+                response,
+                usage,
+                "usage",
+                "public-model",
+                1_700_000_000,
+            )
+            .unwrap();
+            let parsed = crate::conversation::parse_response(target, &bytes).unwrap();
+            assert_eq!(
+                parsed.usage.unwrap().checked_total_tokens().unwrap(),
+                usage.checked_total_tokens().unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn streaming_four_by_four_preserves_plaintext_lifecycle_and_native_signatures() {
+        const SIGNATURE: &str = "c2lnbmF0dXJlLWNhbmFyeQ==";
+        for source in PROTOCOLS {
+            for target in PROTOCOLS {
+                let mut encoder = ChatStreamEncoder::new(
+                    target,
+                    "matrix",
+                    "public-model",
+                    1_700_000_000,
+                    &request(),
+                    true,
+                )
+                .unwrap()
+                .with_upstream_protocol(source);
+                let signature = (source != Protocol::OpenAiChat).then(|| SIGNATURE.to_owned());
+                let mut events = vec![
+                    CanonicalStreamEvent::MessageStart {
+                        choice_index: 0,
+                        role: Role::Assistant,
+                    },
+                    CanonicalStreamEvent::ReasoningDelta {
+                        choice_index: 0,
+                        content_index: 0,
+                        text: "plan".to_owned(),
+                        signature: signature.clone(),
+                    },
+                    CanonicalStreamEvent::ContentDelta {
+                        choice_index: 0,
+                        content_index: 1,
+                        delta: ContentDelta::Text("answer".to_owned()),
+                    },
+                    CanonicalStreamEvent::ToolCallStart {
+                        choice_index: 0,
+                        tool_index: 0,
+                        id: "call_lookup".to_owned(),
+                        name: "lookup".to_owned(),
+                    },
+                ];
+                if source == Protocol::Gemini {
+                    events.push(CanonicalStreamEvent::ToolCallSignature {
+                        choice_index: 0,
+                        tool_index: 0,
+                        signature: SIGNATURE.to_owned(),
+                    });
+                }
+                events.extend([
+                    CanonicalStreamEvent::ToolCallArgsDelta {
+                        choice_index: 0,
+                        tool_index: 0,
+                        partial_json: "{}".to_owned(),
+                    },
+                    CanonicalStreamEvent::ToolCallEnd {
+                        choice_index: 0,
+                        tool_index: 0,
+                    },
+                    CanonicalStreamEvent::Finish {
+                        choice_index: 0,
+                        reason: FinishReason::ToolCalls,
+                        stop_sequence: None,
+                    },
+                    CanonicalStreamEvent::Usage(response().usage.unwrap()),
+                ]);
+                let mut bytes = Vec::new();
+                for event in events {
+                    bytes.extend(encoder.encode_event(event).unwrap());
+                }
+                bytes.extend(encoder.finish(Ok(response().usage.unwrap()), true).unwrap());
+                let wire = std::str::from_utf8(&bytes).unwrap();
+                if source != target {
+                    assert!(!wire.contains(SIGNATURE), "{source:?} -> {target:?}");
+                } else if signature.is_some() {
+                    assert!(wire.contains(SIGNATURE));
+                }
+                let decoded = decode_stream(target, &bytes);
+                let visible = decoded
+                    .iter()
+                    .filter_map(|event| match event {
+                        CanonicalStreamEvent::ReasoningDelta { text, .. }
+                        | CanonicalStreamEvent::ContentDelta {
+                            delta: ContentDelta::Text(text),
+                            ..
+                        } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<String>();
+                assert_eq!(visible, "plananswer", "{source:?} -> {target:?}");
+                assert_eq!(decoded.iter().filter(|event| matches!(event, CanonicalStreamEvent::ToolCallStart { id, name, .. } if id == "call_lookup" && name == "lookup")).count(), 1);
+                assert_eq!(
+                    decoded
+                        .iter()
+                        .filter(|event| matches!(event, CanonicalStreamEvent::ToolCallEnd { .. }))
+                        .count(),
+                    1
+                );
+                assert_eq!(
+                    decoded
+                        .iter()
+                        .filter(|event| matches!(event, CanonicalStreamEvent::Usage(_)))
+                        .count(),
+                    1
+                );
+                assert_eq!(
+                    decoded
+                        .iter()
+                        .filter(|event| matches!(event, CanonicalStreamEvent::StreamEnd))
+                        .count(),
+                    1
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn foreign_parallel_tools_and_interleaved_text_encode_for_every_target() {
+        for target in PROTOCOLS {
+            let source = if target == Protocol::Gemini {
+                Protocol::OpenAiChat
+            } else {
+                Protocol::Gemini
+            };
+            let mut encoder = ChatStreamEncoder::new(
+                target,
+                "parallel",
+                "public-model",
+                1_700_000_000,
+                &request(),
+                true,
+            )
+            .unwrap()
+            .with_upstream_protocol(source);
+            let mut bytes = Vec::new();
+            for event in [
+                CanonicalStreamEvent::MessageStart {
+                    choice_index: 0,
+                    role: Role::Assistant,
+                },
+                CanonicalStreamEvent::ReasoningDelta {
+                    choice_index: 0,
+                    content_index: 7,
+                    text: "plan".to_owned(),
+                    signature: Some("foreign".to_owned()),
+                },
+                CanonicalStreamEvent::ContentDelta {
+                    choice_index: 0,
+                    content_index: 8,
+                    delta: ContentDelta::Text("answer".to_owned()),
+                },
+                CanonicalStreamEvent::ToolCallStart {
+                    choice_index: 0,
+                    tool_index: 0,
+                    id: "call_a".to_owned(),
+                    name: "lookup".to_owned(),
+                },
+                CanonicalStreamEvent::ToolCallStart {
+                    choice_index: 0,
+                    tool_index: 1,
+                    id: "call_b".to_owned(),
+                    name: "lookup".to_owned(),
+                },
+                CanonicalStreamEvent::ToolCallArgsDelta {
+                    choice_index: 0,
+                    tool_index: 1,
+                    partial_json: "{\"key\":\"b\"}".to_owned(),
+                },
+                CanonicalStreamEvent::ToolCallArgsDelta {
+                    choice_index: 0,
+                    tool_index: 0,
+                    partial_json: "{\"key\":\"a\"}".to_owned(),
+                },
+                CanonicalStreamEvent::ToolCallEnd {
+                    choice_index: 0,
+                    tool_index: 1,
+                },
+                CanonicalStreamEvent::ToolCallEnd {
+                    choice_index: 0,
+                    tool_index: 0,
+                },
+                CanonicalStreamEvent::ContentDelta {
+                    choice_index: 0,
+                    content_index: 8,
+                    delta: ContentDelta::Text("after tools".to_owned()),
+                },
+                CanonicalStreamEvent::ReasoningDelta {
+                    choice_index: 0,
+                    content_index: 9,
+                    text: "reconsider".to_owned(),
+                    signature: Some("foreign".to_owned()),
+                },
+                CanonicalStreamEvent::Finish {
+                    choice_index: 0,
+                    reason: FinishReason::ToolCalls,
+                    stop_sequence: None,
+                },
+            ] {
+                bytes.extend(encoder.encode_event(event).unwrap());
+            }
+            bytes.extend(
+                encoder
+                    .finish(Ok(response().usage.unwrap()), false)
+                    .unwrap(),
+            );
+            let decoded = decode_stream(target, &bytes);
+            let visible = decoded
+                .iter()
+                .filter_map(|event| match event {
+                    CanonicalStreamEvent::ReasoningDelta { text, .. }
+                    | CanonicalStreamEvent::ContentDelta {
+                        delta: ContentDelta::Text(text),
+                        ..
+                    } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<String>();
+            assert_eq!(visible, "plananswerafter toolsreconsider", "{target:?}");
+            let ids = decoded
+                .iter()
+                .filter_map(|event| match event {
+                    CanonicalStreamEvent::ToolCallStart { id, .. } => Some(id.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(ids, ["call_a", "call_b"]);
+            assert_eq!(
+                decoded
+                    .iter()
+                    .filter(|event| matches!(event, CanonicalStreamEvent::ToolCallEnd { .. }))
+                    .count(),
+                2
+            );
+        }
     }
 
     #[test]
@@ -157,7 +835,7 @@ mod tests {
     }
 
     #[test]
-    fn native_signatures_are_preserved_and_foreign_signatures_are_rejected() {
+    fn native_signatures_are_preserved_and_foreign_signatures_become_replayable_text() {
         let mut response = response();
         if let ContentBlock::Thinking { signature, .. } =
             &mut response.choices[0].message.content[0]
@@ -172,9 +850,14 @@ mod tests {
             Protocol::OpenAiResponses,
             Protocol::Gemini,
         ] {
+            let mut adapted = response.clone();
+            adapt_response(source, Protocol::Anthropic, &mut adapted).unwrap();
             assert_eq!(
-                adapt_response(source, Protocol::Anthropic, &mut response.clone()),
-                Err(UpstreamError::ProtocolError)
+                adapted.choices[0].message.content,
+                vec![
+                    ContentBlock::Text("plan".to_owned()),
+                    ContentBlock::Text("answer".to_owned())
+                ]
             );
         }
     }
@@ -339,25 +1022,43 @@ mod tests {
     }
 
     #[test]
-    fn streaming_bridge_rejects_unexpected_source_signatures() {
-        assert!(
-            ChatThinkingTextBridge::default()
+    fn streaming_bridge_keeps_foreign_text_and_suppresses_signature_only_events() {
+        let mut bridge = CrossProtocolStreamBridge::new(Protocol::Anthropic);
+        assert_eq!(
+            bridge
                 .adapt(CanonicalStreamEvent::ReasoningDelta {
                     choice_index: 0,
                     content_index: 0,
                     text: "plan".to_owned(),
                     signature: Some("foreign".to_owned()),
                 })
-                .is_err()
+                .unwrap(),
+            vec![CanonicalStreamEvent::ContentDelta {
+                choice_index: 0,
+                content_index: 0,
+                delta: ContentDelta::Text("plan".to_owned())
+            }]
         );
         assert!(
-            ChatThinkingTextBridge::default()
+            bridge
                 .adapt(CanonicalStreamEvent::ToolCallSignature {
                     choice_index: 0,
                     tool_index: 0,
                     signature: "foreign".to_owned(),
                 })
-                .is_err()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            bridge
+                .adapt(CanonicalStreamEvent::ReasoningDelta {
+                    choice_index: 0,
+                    content_index: 0,
+                    text: String::new(),
+                    signature: Some("foreign".to_owned())
+                })
+                .unwrap()
+                .is_empty()
         );
     }
 
@@ -389,15 +1090,20 @@ mod tests {
                     role: Role::Assistant,
                 })
                 .unwrap();
+            let bytes = encoder
+                .encode_event(CanonicalStreamEvent::ReasoningDelta {
+                    choice_index: 0,
+                    content_index: 0,
+                    text: "plan".to_owned(),
+                    signature: Some("foreign".to_owned()),
+                })
+                .unwrap();
+            let wire = String::from_utf8(bytes).unwrap();
+            assert!(wire.contains("plan"));
             assert!(
-                encoder
-                    .encode_event(CanonicalStreamEvent::ReasoningDelta {
-                        choice_index: 0,
-                        content_index: 0,
-                        text: "plan".to_owned(),
-                        signature: Some("foreign".to_owned()),
-                    })
-                    .is_err()
+                !wire.contains("foreign")
+                    && !wire.contains("signature_delta")
+                    && !wire.contains("thinking_delta")
             );
         }
     }

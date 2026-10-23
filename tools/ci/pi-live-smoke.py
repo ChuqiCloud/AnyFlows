@@ -17,6 +17,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 seed_spec = importlib.util.spec_from_file_location("opencode_live_smoke", Path(__file__).with_name("opencode-live-smoke.py"))
 seed_module = importlib.util.module_from_spec(seed_spec)
 seed_spec.loader.exec_module(seed_module)
+fixture_spec = importlib.util.spec_from_file_location("pi_upstream_fixture", Path(__file__).with_name("pi-upstream-fixture.py"))
+fixture_module = importlib.util.module_from_spec(fixture_spec)
+fixture_spec.loader.exec_module(fixture_module)
 
 BASE = seed_module.BASE
 MODEL = seed_module.MODEL
@@ -95,14 +98,14 @@ def append_trace(path, event):
         stream.write(json.dumps(event, ensure_ascii=False) + "\n")
 
 
-def pi_turn(node, cli, profile, case_name, session_id, thinking, index, prompt, expected, timeout=180):
+def pi_turn(node, cli, profile, case_name, session_id, model, thinking, index, prompt, expected, timeout=180):
     proxy = proxy_server
     proxy.case_name = f"{case_name}-turn-{index}"
     proxy.responses = []
     command = [node, str(cli), "--print", "--mode", "json", "--session-dir", str(profile / "sessions"),
                "--session-id", session_id, "--no-extensions", "--no-mcp", "--no-context-files",
                "--no-skills", "--no-prompt-templates", "--no-themes", "--tools", "read",
-               "--model", f"anyflows/{MODEL}", "--thinking", thinking, "--", prompt]
+               "--model", f"anyflows/{model}", "--thinking", thinking, "--", prompt]
     environment = {**os.environ, "PI_CODING_AGENT_DIR": str(profile), "PI_TELEMETRY": "0", "PI_OFFLINE": "1"}
     try:
         result = subprocess.run(command, cwd=TRACE_DIR, env=environment, text=True, encoding="utf-8",
@@ -127,11 +130,17 @@ def pi_turn(node, cli, profile, case_name, session_id, thinking, index, prompt, 
             read_executed = True
     final = next((m for m in reversed(messages) if m.get("role") == "assistant"), {})
     text_parts = [part.get("text", "") for part in final.get("content", []) if part.get("type") == "text"]
-    # Anthropic receives unsigned Chat reasoning as separate text blocks. Assert
-    # the final answer block, so an earlier reasoning mention cannot pass a case.
-    answer = " ".join(text_parts[-1].split()) if text_parts else ""
-    passed = (result.returncode == 0 and answer == " ".join(expected)
+    # Inspect every visible text block. Foreign reasoning may be a separate
+    # replayable text block for Messages, but cannot substitute for the answer.
+    answer = " ".join(" ".join(text_parts).split())
+    expected_text = " ".join(expected)
+    recognized_answers = {expected_text, "Controlled fixture reasoning. " + expected_text}
+    usage = final.get("usage", {})
+    usage_present = isinstance(usage, dict) and any(isinstance(usage.get(name), (int, float)) and usage[name] > 0
+                                                   for name in ["input", "output", "totalTokens"])
+    passed = (result.returncode == 0 and answer in recognized_answers
               and final.get("stopReason") == "stop"
+              and usage_present
               and bool(proxy.responses) and all(meta["status"] == 200 for meta in proxy.responses)
               and (index != 3 or read_executed))
     print(json.dumps({"case": case_name, "turn": index, "pass": passed,
@@ -147,7 +156,8 @@ def main():
     profile = Path(os.environ["PI_PROFILE_DIR"])
     node = os.environ["PI_NODE"]
     cli = Path(os.environ["PI_CLI"])
-    key = seed_module.seed_preview(context_window=1_000_000)
+    fixture_server = fixture_module.start_fixture(TRACE_DIR)
+    key = fixture_module.seed_preview(seed_module, fixture_server)
     proxy_server = ThreadingHTTPServer(("127.0.0.1", 0), CaptureProxy)
     proxy_server.preview_key = key
     proxy_server.case_name = "starting"
@@ -162,35 +172,48 @@ def main():
         fixture = TRACE_DIR / "read-fixture.txt"
         fixture.write_text("PI_LIVE_FILE_482", encoding="utf-8")
         failures = []
-        for thinking in ["off", "medium"]:
-            for protocol, api_name, suffix in [("responses", "openai-responses", "/v1"),
-                                               ("chat", "openai-completions", "/v1"),
-                                               ("messages", "anthropic-messages", ""),
-                                               ("gemini", "google-generative-ai", "/v1beta")]:
-                case_name = f"{protocol}-{thinking}"
-                case_profile = profile / case_name
-                case_profile.mkdir(parents=True, exist_ok=True)
-                provider = models["providers"]["anyflows"]
-                provider["api"] = api_name
-                provider["baseUrl"] = base + suffix
-                (case_profile / "models.json").write_text(json.dumps(models), encoding="utf-8")
-                session_id = str(uuid.uuid4())
-                prompts = [
-                    ("Remember the marker PI_MEMORY_731. Reply exactly SAVED. Do not use tools.", ["SAVED"]),
-                    ("What marker did I ask you to remember? Reply with only the marker. Do not use tools.", ["PI_MEMORY_731"]),
-                    (f"Use the read tool to read {fixture.as_posix()}. Reply with only its contents.", ["PI_LIVE_FILE_482"]),
-                    ("Reply with both tokens from this conversation, memory token first, separated by a space. Do not use tools.", ["PI_MEMORY_731", "PI_LIVE_FILE_482"]),
-                ]
-                for index, (prompt, expected) in enumerate(prompts, 1):
-                    if not pi_turn(node, cli, case_profile, case_name, session_id, thinking, index, prompt, expected):
-                        failures.append(f"{case_name}/turn-{index}")
-                        break
+        for target in fixture_module.PROTOCOLS:
+            for thinking in ["off", "medium"]:
+                for protocol, api_name, suffix in [("responses", "openai-responses", "/v1"),
+                                                   ("chat", "openai-completions", "/v1"),
+                                                   ("messages", "anthropic-messages", ""),
+                                                   ("gemini", "google-generative-ai", "/v1beta")]:
+                    case_name = f"{protocol}-to-{target}-{thinking}"
+                    model = fixture_module.model_for(target)
+                    case_profile = profile / case_name
+                    case_profile.mkdir(parents=True, exist_ok=True)
+                    provider = models["providers"]["anyflows"]
+                    provider["api"] = api_name
+                    provider["baseUrl"] = base + suffix
+                    provider["models"][0]["id"] = model
+                    provider["models"][0]["name"] = model
+                    (case_profile / "models.json").write_text(json.dumps(models), encoding="utf-8")
+                    session_id = str(uuid.uuid4())
+                    prompts = [
+                        ("Remember the marker PI_MEMORY_731. Reply exactly SAVED. Do not use tools.", ["SAVED"]),
+                        ("What marker did I ask you to remember? Reply with only the marker. Do not use tools.", ["PI_MEMORY_731"]),
+                        (f"Use the read tool to read {fixture.as_posix()}. Reply with only its contents.", ["PI_LIVE_FILE_482"]),
+                        ("Reply with both tokens from this conversation, memory token first, separated by a space. Do not use tools.", ["PI_MEMORY_731", "PI_LIVE_FILE_482"]),
+                    ]
+                    for index, (prompt, expected) in enumerate(prompts, 1):
+                        fixture_module.begin_turn(fixture_server, protocol, target, thinking, index, fixture)
+                        passed = pi_turn(node, cli, case_profile, case_name, session_id, model, thinking, index, prompt, expected)
+                        try:
+                            fixture_module.verify_turn(fixture_server)
+                        except AssertionError as error:
+                            print(json.dumps({"case":case_name,"turn":index,"fixture_pass":False,"reason":str(error)}), flush=True)
+                            passed = False
+                        if not passed:
+                            failures.append(f"{case_name}/turn-{index}")
+                            break
         if failures:
             raise RuntimeError("Failed Pi cases: " + ", ".join(failures))
-        print("Pi preview acceptance passed: four protocols, off/medium reasoning, four-turn memory and read-tool continuation.", flush=True)
+        print("Pi controlled acceptance passed: 16 protocol routes, off/medium reasoning, four-turn memory, tool execution and complete output replay; no paid upstream requests.", flush=True)
     finally:
         proxy_server.shutdown()
         proxy_server.server_close()
+        fixture_server.shutdown()
+        fixture_server.server_close()
 
 
 if __name__ == "__main__":

@@ -47,9 +47,7 @@ use af_domain::{
     Protocol,
 };
 use af_httpclient::{HttpClientProvider, ProxyConfig, RemoteDnsPolicy};
-use af_protocol::{
-    CanonicalRequestEnvelope, ClientSimulationBodyPatch, UtcDate, validate_request_capabilities,
-};
+use af_protocol::{CanonicalRequestEnvelope, ClientSimulationBodyPatch, UtcDate};
 use af_relay::{
     AnthropicRequestOverrides, ChatResponse, GeminiRequestOverrides, OpenAiChatRequestOverrides,
     OpenAiResponsesRequestOverrides, RelayCandidate, RelayCandidateRequest, RelayDiagnosticInput,
@@ -1855,20 +1853,7 @@ fn select_upstream_protocol(
             continue;
         }
         has_conversation_candidate = true;
-        let Some(converted) = request.clone().for_conversation_protocol(protocol) else {
-            continue;
-        };
-        // Chat 的无签名推理可保留为文本；其他来源不能补造 Anthropic 签名。
-        if response_protocol == Protocol::Anthropic
-            && !matches!(protocol, Protocol::Anthropic | Protocol::OpenAiChat)
-            && converted
-                .canonical()
-                .reasoning
-                .is_some_and(|reasoning| reasoning.include_thinking())
-        {
-            continue;
-        }
-        if validate_request_capabilities(protocol, converted.canonical()).is_ok() {
+        if request.clone().plan_conversation(protocol).is_some() {
             return Ok(protocol);
         }
     }
@@ -2892,7 +2877,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn protocol_selection_rejects_requests_no_candidate_can_express() {
+    async fn protocol_selection_preserves_foreign_thinking_as_readable_history() {
         let service = service(vec![record(false, valid_envelope())]).await;
         let route = service
             .scheduler
@@ -2915,12 +2900,12 @@ mod tests {
 
         assert_eq!(
             select_upstream_protocol(&route, &canonical.into(), Protocol::Anthropic),
-            Err(AfError::InvalidRequest)
+            Ok(Protocol::OpenAiChat)
         );
     }
 
     #[tokio::test]
-    async fn protocol_selection_keeps_anthropic_thinking_output_on_native_channels() {
+    async fn protocol_selection_allows_anthropic_thinking_on_gemini_channels() {
         let service = service(vec![gemini_record(valid_envelope_for(
             CREDENTIAL_ID + 1,
             0x25,
@@ -2937,7 +2922,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             select_upstream_protocol(&route, &request, Protocol::Anthropic),
-            Err(AfError::InvalidRequest)
+            Ok(Protocol::Gemini)
         );
     }
 

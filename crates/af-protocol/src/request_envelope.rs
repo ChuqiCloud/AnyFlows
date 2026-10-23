@@ -1,9 +1,9 @@
 use std::fmt;
 
-use af_domain::{Operation, Protocol};
+use af_domain::Protocol;
 use bytes::Bytes;
 
-use crate::{CanonicalRequest, ContentBlock, Sampling, StreamOptions, TokenCount};
+use crate::{CanonicalRequest, Sampling, TokenCount};
 
 /// Canonical 请求及其可选的已验证源协议正文。
 ///
@@ -16,6 +16,10 @@ pub struct CanonicalRequestEnvelope {
     // 来源证明独立于原始正文；重建正文不能使供应商签名跨协议重放。
     origin_protocol: Option<Protocol>,
     requested_model: Option<String>,
+    native_template: Option<ValidatedSourceRequest>,
+    // 仅供语义转换读取；不能用作恢复直通资格的底稿。
+    source_context: Option<ValidatedSourceRequest>,
+    native_only: bool,
 }
 
 impl CanonicalRequestEnvelope {
@@ -27,6 +31,9 @@ impl CanonicalRequestEnvelope {
             source: None,
             origin_protocol: None,
             requested_model: None,
+            native_template: None,
+            source_context: None,
+            native_only: false,
         }
     }
 
@@ -41,20 +48,41 @@ impl CanonicalRequestEnvelope {
             source: None,
             origin_protocol,
             requested_model: Some(requested_model),
+            native_template: None,
+            source_context: None,
+            native_only: false,
         }
     }
 
     /// 由协议解析器附加已完成信任边界校验的原始正文。
-    pub(crate) const fn from_validated_source(
+    pub(crate) fn from_validated_source(
         canonical: CanonicalRequest,
         protocol: Protocol,
         body: Bytes,
     ) -> Self {
+        Self::from_compatible_source(canonical, protocol, body, false)
+    }
+
+    pub(crate) fn from_compatible_source(
+        canonical: CanonicalRequest,
+        protocol: Protocol,
+        body: Bytes,
+        native_only: bool,
+    ) -> Self {
         Self {
             canonical,
-            source: Some(ValidatedSourceRequest { protocol, body }),
+            source: Some(ValidatedSourceRequest {
+                protocol,
+                body: body.clone(),
+            }),
             origin_protocol: Some(protocol),
             requested_model: None,
+            native_template: Some(ValidatedSourceRequest {
+                protocol,
+                body: body.clone(),
+            }),
+            source_context: Some(ValidatedSourceRequest { protocol, body }),
+            native_only,
         }
     }
 
@@ -67,103 +95,26 @@ impl CanonicalRequestEnvelope {
     /// 为对话协议转换操作类型和流选项，保留消息、工具关联及客户端模型别名。
     /// 无法跨协议表达的私有参数不得静默丢弃；无状态等默认选项可安全归一化。
     #[must_use]
-    pub fn for_conversation_protocol(mut self, protocol: Protocol) -> Option<Self> {
-        if !matches!(
-            self.canonical.operation,
-            Operation::Chat | Operation::Responses
-        ) {
-            return None;
-        }
-        // Vendor signatures are opaque continuation state and are only replayable to their source.
-        if self
-            .origin_protocol
-            .is_some_and(|source| source != protocol)
-            && self
-                .canonical
-                .messages
-                .iter()
-                .any(|message| blocks_have_provider_signatures(&message.content))
-        {
-            return None;
-        }
-        let operation = match protocol {
-            Protocol::OpenAiResponses => Operation::Responses,
-            Protocol::OpenAiChat | Protocol::Anthropic | Protocol::Gemini => Operation::Chat,
-            _ => return None,
-        };
-        // Chat 类协议缺省为非严格工具；原生 Responses 保留缺省值。
-        if protocol == Protocol::OpenAiResponses && self.canonical.operation == Operation::Chat {
-            for tool in &mut self.canonical.tools {
-                tool.strict.get_or_insert(false);
-            }
-        }
-        if protocol != Protocol::OpenAiResponses
-            && self.canonical.continuation.has_server_managed_state()
-        {
-            return None;
-        }
-        if protocol != Protocol::Gemini && normalize_text_tool_results(&mut self.canonical)? {
-            self.source = None;
-        }
-        if protocol != Protocol::Anthropic {
-            let mut changed = false;
-            for message in &mut self.canonical.messages {
-                changed |= remove_cache_hints(&mut message.content);
-            }
-            if changed {
-                self.source = None;
-            }
-        }
-        if protocol != Protocol::OpenAiResponses {
-            let normalized = self
-                .canonical
-                .reasoning
-                .map(|reasoning| reasoning.with_summary(None));
-            if self.canonical.reasoning != normalized {
-                self.canonical.reasoning = normalized;
-                self.source = None;
-            }
-        }
-        let foreign_raw = self
-            .canonical
-            .raw_passthrough()
-            .filter(|raw| raw.source_protocol() != protocol);
-        if let Some(raw) = foreign_raw {
-            let fields = raw.fields_for_protocol(raw.source_protocol()).ok()?;
-            if !fields.iter().all(|(key, value)| match key.as_str() {
-                "store" | "logprobs" => value.as_bool() == Some(false),
-                "n" => value.as_u64() == Some(1),
-                "parallel_tool_calls" => {
-                    value.as_bool() == Some(true) || self.canonical.tools.is_empty()
-                }
-                "prompt_cache_key" | "prompt_cache_retention" | "cache_control" => true,
-                "tools" if raw.source_protocol() == Protocol::Anthropic => true,
-                // 申请返回加密推理只影响可选输出。真正回传的加密内容仍由消息
-                // 能力检查处理，不能因这项请求偏好排除可用的跨协议渠道。
-                "include" => value.as_array().is_some_and(|items| {
-                    items
-                        .iter()
-                        .all(|item| item.as_str() == Some("reasoning.encrypted_content"))
-                }),
-                _ => false,
-            }) {
-                return None;
-            }
-            self.canonical = self.canonical.with_validated_raw_passthrough(None);
-            self.source = None;
-        }
-        if self.canonical.operation != operation
-            || self
-                .source_protocol()
-                .is_some_and(|source| source != protocol)
-        {
-            self.source = None;
-        }
-        self.canonical.operation = operation;
-        if protocol != Protocol::OpenAiChat {
-            self.canonical.stream_options = StreamOptions::EMPTY;
-        }
-        Some(self)
+    pub fn for_conversation_protocol(self, protocol: Protocol) -> Option<Self> {
+        crate::conversation_plan::normalize(self, protocol).ok()
+    }
+
+    /// 生成与执行共用的候选正文，避免能力预选与实际构造不一致。
+    pub fn plan_conversation(
+        self,
+        protocol: Protocol,
+    ) -> Option<crate::ConversationConversionPlan> {
+        crate::ConversationConversionPlan::prepare(self, protocol).ok()
+    }
+
+    pub(crate) const fn native_only(&self) -> bool {
+        self.native_only
+    }
+
+    pub(crate) fn source_context(&self) -> Option<(Protocol, &Bytes)> {
+        self.source_context
+            .as_ref()
+            .map(|source| (source.protocol, &source.body))
     }
 
     /// 在客户端未声明输出上限时注入网关默认值，并取消原始正文直通资格。
@@ -235,6 +186,9 @@ impl CanonicalRequestEnvelope {
             source: None,
             origin_protocol: self.origin_protocol,
             requested_model: self.requested_model,
+            native_template: None,
+            source_context: self.source_context,
+            native_only: self.native_only,
         }
     }
 
@@ -243,7 +197,21 @@ impl CanonicalRequestEnvelope {
     /// 模型映射、参数覆盖或内部字段注入后不得再原字节直通。调用方通常应改走
     /// [`Self::into_canonical`] 并由目标协议构造器重新编码；协议专属构造器只有在重新解析
     /// 已验证正文、受控覆盖自有字段且保持其余字段语义时，才可把原文作为重构底稿。
-    pub fn into_same_protocol(self, target_protocol: Protocol) -> SameProtocolDecision {
+    pub fn into_same_protocol(mut self, target_protocol: Protocol) -> SameProtocolDecision {
+        if self.source.is_none()
+            && let Some(template) = self.native_template.as_ref()
+            && template.protocol == target_protocol
+            && let Ok(body) = crate::conversation_plan::patch_native_body(
+                template.protocol,
+                &template.body,
+                &self.canonical,
+            )
+        {
+            self.source = Some(ValidatedSourceRequest {
+                protocol: template.protocol,
+                body,
+            });
+        }
         if self
             .source
             .as_ref()
@@ -257,6 +225,7 @@ impl CanonicalRequestEnvelope {
             source: Some(source),
             origin_protocol,
             requested_model,
+            ..
         } = self
         else {
             unreachable!("已检查的源协议正文必须存在");
@@ -269,78 +238,6 @@ impl CanonicalRequestEnvelope {
             requested_model,
         })
     }
-}
-
-fn remove_cache_hints(blocks: &mut Vec<ContentBlock>) -> bool {
-    let original_len = blocks.len();
-    blocks.retain(|block| !matches!(block, ContentBlock::CacheControl(_)));
-    let mut changed = blocks.len() != original_len;
-    for block in blocks {
-        if let ContentBlock::ToolResult { content, .. } = block {
-            changed |= remove_cache_hints(content);
-        }
-    }
-    changed
-}
-
-fn blocks_have_provider_signatures(blocks: &[ContentBlock]) -> bool {
-    blocks.iter().any(|block| match block {
-        ContentBlock::ToolUse {
-            signature: Some(_), ..
-        }
-        | ContentBlock::Thinking {
-            signature: Some(_), ..
-        } => true,
-        ContentBlock::ToolResult { content, .. } => blocks_have_provider_signatures(content),
-        ContentBlock::Text(_)
-        | ContentBlock::Image { .. }
-        | ContentBlock::Audio { .. }
-        | ContentBlock::ToolUse {
-            signature: None, ..
-        }
-        | ContentBlock::Thinking {
-            signature: None, ..
-        }
-        | ContentBlock::CacheControl(_)
-        | ContentBlock::Compaction(_) => false,
-    })
-}
-
-// 文本工具协议使用完整 JSON 表达结构化结果，原生 Gemini 继续保留对象。
-fn normalize_text_tool_results(request: &mut CanonicalRequest) -> Option<bool> {
-    let mut changed = false;
-    for message in &mut request.messages {
-        for block in &mut message.content {
-            let ContentBlock::ToolResult {
-                content,
-                structured_content,
-                is_error,
-                ..
-            } = block
-            else {
-                continue;
-            };
-            let Some(value) = structured_content.as_ref() else {
-                continue;
-            };
-            if !content.is_empty() {
-                return None;
-            }
-            // 普通文本在 Gemini 中使用单字段 result 包装；其余对象完整序列化。
-            let text = if !*is_error
-                && value.as_object().is_some_and(|object| object.len() == 1)
-                && let Some(text) = value.get("result").and_then(serde_json::Value::as_str)
-            {
-                text.to_owned()
-            } else {
-                serde_json::to_string(value).ok()?
-            };
-            content.push(ContentBlock::Text(text));
-            *structured_content = None;
-            changed = true;
-        }
-    }
-    Some(changed)
 }
 
 impl From<CanonicalRequest> for CanonicalRequestEnvelope {
@@ -357,6 +254,7 @@ impl fmt::Debug for CanonicalRequestEnvelope {
             .field("source_protocol", &self.source_protocol())
             .field("origin_protocol", &self.origin_protocol)
             .field("has_requested_model_alias", &self.requested_model.is_some())
+            .field("native_only", &self.native_only)
             .field(
                 "source_body_bytes",
                 &self.source.as_ref().map(|source| source.body.len()),
@@ -443,7 +341,8 @@ mod tests {
     use bytes::Bytes;
 
     use super::*;
-    use crate::openai_responses;
+    use crate::{ContentBlock, StreamOptions, openai_responses};
+    use af_domain::Operation;
 
     #[test]
     fn native_requests_keep_standard_options_and_source_body() {
@@ -553,14 +452,14 @@ mod tests {
     }
 
     #[test]
-    fn protocol_specific_output_and_encrypted_history_are_not_silently_dropped() {
+    fn output_preferences_and_foreign_encrypted_history_do_not_block_readable_messages() {
         let request = responses_request(
             br#"{"model":"model-test","input":"hi","include":["file_search_call.results"]}"#,
         );
         assert!(
             request
                 .for_conversation_protocol(Protocol::OpenAiChat)
-                .is_none()
+                .is_some()
         );
         let request = responses_request(
             br#"{"model":"model-test","input":[{"type":"reasoning","id":"rs_test","encrypted_content":"opaque","summary":[]},{"role":"user","content":"hi"}],"include":["reasoning.encrypted_content"]}"#,
@@ -574,12 +473,12 @@ mod tests {
         assert!(
             request
                 .for_conversation_protocol(Protocol::OpenAiChat)
-                .is_none()
+                .is_some()
         );
     }
 
     #[test]
-    fn provider_signed_reasoning_and_tool_calls_stay_on_the_source_protocol() {
+    fn provider_signatures_stay_native_while_readable_history_can_cross_protocols() {
         let request = crate::gemini::parse_request_envelope(
             "models/gemini-test",
             Bytes::from_static(
@@ -611,19 +510,28 @@ mod tests {
                 Protocol::Gemini,
             ] {
                 let converted = rewritten.clone().for_conversation_protocol(target);
-                assert_eq!(converted.is_some(), target == origin, "target {target:?}");
+                assert!(converted.is_some(), "target {target:?}");
                 if let Some(converted) = converted {
-                    assert_eq!(converted.canonical().messages, request.canonical().messages);
-                    let native_body = match origin {
-                        Protocol::Gemini => {
-                            crate::gemini::build_request(converted.canonical()).is_ok()
+                    if target == origin {
+                        assert_eq!(converted.canonical().messages, request.canonical().messages);
+                    } else {
+                        for message in &converted.canonical().messages {
+                            assert!(message.content.iter().all(|block| !matches!(
+                                block,
+                                ContentBlock::Thinking {
+                                    signature: Some(_),
+                                    ..
+                                } | ContentBlock::ToolUse {
+                                    signature: Some(_),
+                                    ..
+                                }
+                            )));
                         }
-                        Protocol::OpenAiResponses => {
-                            crate::openai_responses::build_request(converted.canonical()).is_ok()
-                        }
-                        _ => unreachable!(),
-                    };
-                    assert!(native_body, "native {origin:?}");
+                    }
+                    assert!(
+                        converted.plan_conversation(target).is_some(),
+                        "target {target:?}"
+                    );
                 }
             }
         }
@@ -705,12 +613,12 @@ mod tests {
     }
 
     #[test]
-    fn conversion_preserves_unrepresentable_options_as_explicit_failures() {
+    fn storage_preferences_are_optional_but_missing_remote_history_is_explicit() {
         let request = responses_request(br#"{"model":"gpt-test","input":"hi","store":true}"#);
         assert!(
             request
                 .for_conversation_protocol(Protocol::OpenAiChat)
-                .is_none()
+                .is_some()
         );
         let request = responses_request(
             br#"{"model":"gpt-test","input":"hi","previous_response_id":"resp_previous"}"#,

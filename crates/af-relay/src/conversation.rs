@@ -4,6 +4,10 @@ use std::time::Duration;
 #[path = "conversation_tests.rs"]
 mod tests;
 
+#[cfg(test)]
+#[path = "conversation_matrix_contract.rs"]
+mod matrix_contract;
+
 use af_adapter::{Bytes, Method, ResponseMode, StatusCode};
 use af_domain::{AfError, Operation, Protocol, UpstreamError};
 use af_protocol::{
@@ -41,18 +45,6 @@ pub async fn relay_conversation_with_report(
         Ok(prepared) => prepared,
         Err(error) => return (Err(error), RelayAttemptReport::default()),
     };
-    // Chat 的无签名推理可无损保留为文本；其他来源仍需原生签名表达。
-    if response_protocol == Protocol::Anthropic
-        && !matches!(
-            upstream_protocol,
-            Protocol::Anthropic | Protocol::OpenAiChat
-        )
-        && canonical
-            .reasoning
-            .is_some_and(|reasoning| reasoning.include_thinking())
-    {
-        return (Err(AfError::InvalidRequest), RelayAttemptReport::default());
-    }
     let created_at = match unix_timestamp() {
         Ok(value) => value,
         Err(error) => return (Err(error), RelayAttemptReport::default()),
@@ -177,9 +169,11 @@ pub(crate) fn prepare_request(
     request: CanonicalRequestEnvelope,
     protocol: Protocol,
 ) -> Result<(CanonicalRequest, Bytes), AfError> {
-    let request = request
-        .for_conversation_protocol(protocol)
-        .ok_or(AfError::InvalidRequest)?;
+    // 候选选择与实际执行必须使用同一份目标转换计划。
+    let (request, _) = request
+        .plan_conversation(protocol)
+        .ok_or(AfError::InvalidRequest)?
+        .into_parts();
     match protocol {
         Protocol::OpenAiChat => prepare_openai_chat_request(request).map(|r| (r.canonical, r.body)),
         Protocol::OpenAiResponses => {
@@ -230,7 +224,7 @@ pub(crate) fn build_response(
         model.to_owned(),
         Some(response.created_at.unwrap_or(created_at)),
         response.choices,
-        Some(usage),
+        Some(crate::anthropic_chat_bridge::adapt_usage(protocol, usage)?),
     );
     let value = match protocol {
         Protocol::OpenAiChat => {
