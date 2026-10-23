@@ -120,7 +120,13 @@ impl CanonicalRequestEnvelope {
                 }
                 "prompt_cache_key" | "prompt_cache_retention" | "cache_control" => true,
                 "tools" if raw.source_protocol() == Protocol::Anthropic => true,
-                "include" => value.as_array().is_some_and(Vec::is_empty),
+                // 申请返回加密推理只影响可选输出。真正回传的加密内容仍由消息
+                // 能力检查处理，不能因这项请求偏好排除可用的跨协议渠道。
+                "include" => value.as_array().is_some_and(|items| {
+                    items
+                        .iter()
+                        .all(|item| item.as_str() == Some("reasoning.encrypted_content"))
+                }),
                 _ => false,
             }) {
                 return None;
@@ -469,6 +475,46 @@ mod tests {
                 _ => unreachable!(),
             }
         }
+    }
+
+    #[test]
+    fn optional_encrypted_reasoning_output_does_not_block_cross_protocol_routes() {
+        let request = responses_request(
+            br#"{"model":"model-test","input":"hi","max_output_tokens":128,"store":false,"include":["reasoning.encrypted_content"],"reasoning":{"effort":"low","summary":"auto"}}"#,
+        );
+        for target in [Protocol::OpenAiChat, Protocol::Anthropic, Protocol::Gemini] {
+            let converted = request.clone().for_conversation_protocol(target);
+            assert!(converted.is_some(), "target {target:?}");
+            let converted = converted.unwrap();
+            assert!(converted.canonical().raw_passthrough().is_none());
+            let built = match target {
+                Protocol::OpenAiChat => {
+                    crate::openai_chat::build_request(converted.canonical()).is_ok()
+                }
+                Protocol::Anthropic => {
+                    crate::anthropic::build_request(converted.canonical()).is_ok()
+                }
+                Protocol::Gemini => crate::gemini::build_request(converted.canonical()).is_ok(),
+                _ => unreachable!(),
+            };
+            assert!(built, "target {target:?}");
+        }
+    }
+
+    #[test]
+    fn protocol_specific_output_and_encrypted_history_are_not_silently_dropped() {
+        let request = responses_request(
+            br#"{"model":"model-test","input":"hi","include":["file_search_call.results"]}"#,
+        );
+        assert!(
+            request
+                .for_conversation_protocol(Protocol::OpenAiChat)
+                .is_none()
+        );
+        let request = responses_request(
+            br#"{"model":"model-test","input":[{"type":"reasoning","id":"rs_test","encrypted_content":"opaque","summary":[]},{"role":"user","content":"hi"}],"include":["reasoning.encrypted_content"]}"#,
+        ).for_conversation_protocol(Protocol::OpenAiChat).unwrap();
+        assert!(crate::openai_chat::build_request(request.canonical()).is_err());
     }
 
     #[test]

@@ -58,11 +58,22 @@ mod verification_settings;
 mod videos;
 mod wallet;
 
+use utoipa::OpenApi as _;
 use utoipa::openapi::{
     Components, Info, OpenApi, Paths,
     security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
     tag::Tag,
 };
+
+#[utoipa::path(
+    get,
+    path = "/api/version",
+    operation_id = "getVersion",
+    tag = "运行状态",
+    summary = "读取服务构建版本",
+    responses((status = 200, description = "机器可读的服务构建身份", body = crate::VersionInfo))
+)]
+fn get_version() {}
 
 /// 构建可导出、可供客户端生成和 Apifox 导入的完整管理 API 文档。
 pub fn openapi_document() -> OpenApi {
@@ -126,6 +137,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(passkey_auth::document());
     document.merge(platform_audit::document());
     document.merge(runtime_status::document());
+    document.merge(VersionApi::openapi());
     document.merge(oauth_login::oidc_document());
 
     document.tags = Some(vec![
@@ -205,6 +217,10 @@ pub fn openapi_document() -> OpenApi {
         );
     document
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(get_version), components(schemas(crate::VersionInfo)))]
+struct VersionApi;
 
 /// Builds the core OpenAPI document and merges documents supplied by private
 /// extensions. The default [`openapi_document`] remains deterministic for

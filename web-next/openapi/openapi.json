@@ -18975,6 +18975,27 @@
         ]
       }
     },
+    "/api/version": {
+      "get": {
+        "tags": [
+          "运行状态"
+        ],
+        "summary": "读取服务构建版本",
+        "operationId": "getVersion",
+        "responses": {
+          "200": {
+            "description": "机器可读的服务构建身份",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/oauth/oidc/start": {
       "post": {
         "tags": [
@@ -35117,6 +35138,33 @@
           }
         },
         "additionalProperties": false
+      },
+      "VersionInfo": {
+        "type": "object",
+        "description": "服务构建身份；不包含运行配置、凭据或节点私有信息。",
+        "required": [
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "Cargo 包版本。"
+          },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "构建源码的完整提交 SHA；无 Git 信息且未注入时为 null。"
+          },
+          "build_time": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "UTC 构建时间（RFC 3339）；未注入时为 null。"
+          }
+        }
       },
       "VideoAspectRatio": {
         "type": "string",

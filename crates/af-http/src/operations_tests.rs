@@ -21,7 +21,8 @@ use tower::ServiceExt;
 
 use crate::{
     HEALTH_PATH, READINESS_PATH, REQUEST_ID_HEADER_NAME, ReadinessFuture, ReadinessHandle,
-    ReadinessProbe, operations::operations_router, router::build_router_with_routes,
+    ReadinessProbe, VERSION_ALIAS_PATH, VERSION_PATH, operations::operations_router,
+    router::build_router_with_routes,
 };
 
 const HEALTH_BODY: &str = r#"{"status":"ok"}"#;
@@ -212,6 +213,27 @@ async fn lifecycle_and_dependency_state_drive_only_readiness() {
 }
 
 #[tokio::test]
+async fn version_routes_return_machine_readable_build_identity_without_probing() {
+    let (router, _, _, calls) = test_router(64);
+
+    for path in [VERSION_PATH, VERSION_ALIAS_PATH] {
+        let response = router
+            .clone()
+            .oneshot(request(Method::GET, path))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_operations_headers(&response);
+        let body = to_bytes(response.into_body(), 4096).await.unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(value["version"], env!("CARGO_PKG_VERSION"));
+        assert!(value.get("commit").is_some());
+        assert!(value.get("build_time").is_some());
+    }
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
 async fn operations_routes_reject_methods_and_oversized_bodies_before_probing() {
     let (router, readiness, _, calls) = test_router(16);
     readiness.mark_ready();
@@ -223,7 +245,12 @@ async fn operations_routes_reject_methods_and_oversized_bodies_before_probing() 
         Method::DELETE,
         Method::OPTIONS,
     ] {
-        for path in [HEALTH_PATH, READINESS_PATH] {
+        for path in [
+            HEALTH_PATH,
+            READINESS_PATH,
+            VERSION_PATH,
+            VERSION_ALIAS_PATH,
+        ] {
             let response = router
                 .clone()
                 .oneshot(request(method.clone(), path))

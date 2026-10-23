@@ -16,6 +16,10 @@ RUN corepack pnpm@10.33.0 --dir web build
 FROM rust:1.97.1-bookworm AS builder
 
 WORKDIR /workspace
+ARG AF_BUILD_COMMIT
+ARG AF_BUILD_TIME
+ENV AF_BUILD_COMMIT=$AF_BUILD_COMMIT \
+    AF_BUILD_TIME=$AF_BUILD_TIME
 ENV CARGO_BUILD_JOBS=1 \
     CARGO_INCREMENTAL=0
 COPY Cargo.toml Cargo.lock rust-toolchain.toml rustfmt.toml clippy.toml deny.toml ./
