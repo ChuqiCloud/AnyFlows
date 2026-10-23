@@ -3679,7 +3679,8 @@ mod tests {
     }
 
     fn request_for_model(model: &str) -> CanonicalRequestEnvelope {
-        CanonicalRequest::new(Operation::Chat, model.to_owned(), Vec::new(), false).into()
+        // 路由现在验证实际出站正文；调度夹具也必须是入口可接受的完整请求。
+        valid_request_for_model(model)
     }
 
     fn valid_request_for_model(model: &str) -> CanonicalRequestEnvelope {
@@ -3694,13 +3695,10 @@ mod tests {
     }
 
     fn responses_request() -> CanonicalRequestEnvelope {
-        CanonicalRequest::new(
-            Operation::Responses,
-            "gpt-scheduled".to_owned(),
-            Vec::new(),
-            false,
-        )
-        .into()
+        af_protocol::openai_responses::parse_request_envelope(Bytes::from_static(
+            br#"{"model":"gpt-scheduled","input":[{"role":"user","content":"hello"}],"stream":false}"#,
+        ))
+        .unwrap()
     }
 
     fn principal(group_id: i64) -> GatewayPrincipal {
