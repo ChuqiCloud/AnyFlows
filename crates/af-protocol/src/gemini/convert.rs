@@ -291,33 +291,36 @@ fn convert_thinking_config(
         return Err(ParseRequestError::InvalidValue);
     }
     let include_thinking = field_value(config.include_thoughts).unwrap_or(false);
-    let (effort, budget_tokens) = match (config.thinking_budget, config.thinking_level) {
-        (Field::Value(value), Field::Missing) if value < -1 => {
-            return Err(ParseRequestError::InvalidValue);
-        }
-        (Field::Value(-1), Field::Missing) => (None, None),
-        (Field::Value(0), Field::Missing) => (Some(ReasoningEffort::None), None),
-        (Field::Value(value), Field::Missing) => (
-            None,
-            Some(TokenCount::new(value).map_err(|_| ParseRequestError::InvalidValue)?),
-        ),
-        (Field::Missing, Field::Value(ThinkingLevelWire::Unspecified)) => {
-            return Err(ParseRequestError::InvalidValue);
-        }
-        (Field::Missing, Field::Value(level)) => {
-            let effort = match level {
-                ThinkingLevelWire::Minimal => ReasoningEffort::Minimal,
-                ThinkingLevelWire::Low => ReasoningEffort::Low,
-                ThinkingLevelWire::Medium => ReasoningEffort::Medium,
-                ThinkingLevelWire::High => ReasoningEffort::High,
-                ThinkingLevelWire::Unspecified => unreachable!("未指定强度已提前拒绝"),
-            };
-            (Some(effort), None)
-        }
-        (Field::Missing, Field::Missing) => (None, None),
-        (Field::Value(_), Field::Value(_)) => unreachable!("预算与强度冲突已提前拒绝"),
-    };
+    let (effort, budget_tokens, dynamic_budget) =
+        match (config.thinking_budget, config.thinking_level) {
+            (Field::Value(value), Field::Missing) if value < -1 => {
+                return Err(ParseRequestError::InvalidValue);
+            }
+            (Field::Value(-1), Field::Missing) => (None, None, true),
+            (Field::Value(0), Field::Missing) => (Some(ReasoningEffort::None), None, false),
+            (Field::Value(value), Field::Missing) => (
+                None,
+                Some(TokenCount::new(value).map_err(|_| ParseRequestError::InvalidValue)?),
+                false,
+            ),
+            (Field::Missing, Field::Value(ThinkingLevelWire::Unspecified)) => {
+                return Err(ParseRequestError::InvalidValue);
+            }
+            (Field::Missing, Field::Value(level)) => {
+                let effort = match level {
+                    ThinkingLevelWire::Minimal => ReasoningEffort::Minimal,
+                    ThinkingLevelWire::Low => ReasoningEffort::Low,
+                    ThinkingLevelWire::Medium => ReasoningEffort::Medium,
+                    ThinkingLevelWire::High => ReasoningEffort::High,
+                    ThinkingLevelWire::Unspecified => unreachable!("未指定强度已提前拒绝"),
+                };
+                (Some(effort), None, false)
+            }
+            (Field::Missing, Field::Missing) => (None, None, false),
+            (Field::Value(_), Field::Value(_)) => unreachable!("预算与强度冲突已提前拒绝"),
+        };
     ReasoningConfig::new(effort, budget_tokens, include_thinking)
+        .and_then(|reasoning| reasoning.with_dynamic_budget(dynamic_budget))
         .map(Some)
         .map_err(|_| ParseRequestError::InvalidValue)
 }
@@ -434,9 +437,8 @@ fn convert_user_content(
             regular.push(convert_regular_part(part, Role::User, state)?);
         }
     }
-    if !state.pending_tool_calls.is_empty() {
-        return Err(ParseRequestError::InvalidValue);
-    }
+    // Parallel responses may span consecutive user contents. Regular parts
+    // above, model turns and EOF still require all pending calls to be resolved.
     if !regular.is_empty() {
         messages.push(Message::new(Role::User, regular));
     }

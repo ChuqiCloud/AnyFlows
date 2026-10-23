@@ -405,7 +405,7 @@ impl OutputDecodeState {
         item_id: &str,
         output_index: u32,
         arguments: &str,
-        name: &str,
+        name: Option<&str>,
     ) -> Result<(), ParseStreamError> {
         let Some(ActiveItem::Function(function)) = self.active.as_mut() else {
             return Err(ParseStreamError::InvalidSequence);
@@ -414,7 +414,9 @@ impl OutputDecodeState {
             || function.id != item_id
             || function.arguments_done
             || function.arguments != arguments
-            || function.name != name
+            // Several compatible providers omit the redundant name on done.
+            // The item identity already binds it to the verified start event.
+            || name.is_some_and(|name| !name.is_empty() && function.name != name)
         {
             return Err(ParseStreamError::InvalidSequence);
         }

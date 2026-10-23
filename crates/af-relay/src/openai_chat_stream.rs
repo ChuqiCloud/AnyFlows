@@ -205,15 +205,16 @@ impl Stream for OpenAiChatStream {
         if let Some(bytes) = self.prefetched.pop_front() {
             return Poll::Ready(Some(Ok(bytes)));
         }
-        if self.completion_future.is_some() {
-            return self.poll_terminal_completion(context);
-        }
-        if self.terminated {
-            return Poll::Ready(None);
-        }
-
         // 连续心跳和空块不能在一次 poll 中占满执行器。
         for _ in 0..64 {
+            // A logical terminal event may encode no bytes (Gemini uses EOF).
+            // Recheck after every transform before touching the released source.
+            if self.completion_future.is_some() {
+                return self.poll_terminal_completion(context);
+            }
+            if self.terminated {
+                return Poll::Ready(None);
+            }
             let next = self
                 .source
                 .as_mut()
@@ -462,6 +463,97 @@ mod tests {
         let usage = usage.resolve().await.unwrap();
         assert_eq!(usage.input_tokens().get(), 11);
         assert_eq!(usage.output_tokens().get(), 7);
+    }
+
+    #[tokio::test]
+    async fn separate_anthropic_message_stop_ends_gemini_without_polling_released_source() {
+        for with_hook in [false, true] {
+            let prefix = Bytes::from_static(
+                b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-id\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"upstream-model\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"answer\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":7}}\n\n",
+            );
+            let mut source = TestStream::new(vec![
+                Ok(prefix),
+                Ok(Bytes::from_static(
+                    b"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+                )),
+            ]);
+            // Logical completion must close the downstream even if the upstream
+            // keeps the transport open after message_stop.
+            source.stay_pending = true;
+            let response =
+                UpstreamResponse::stream(StatusCode::OK, HeaderMap::new(), source).unwrap();
+            let (stream, usage) = OpenAiChatStream::new(
+                response.into_body(),
+                gemini_encoder().with_upstream_protocol(Protocol::Anthropic),
+                estimator(),
+            );
+            let mut stream =
+                stream.with_decoder(ConversationDecoder::new(Protocol::Anthropic).unwrap());
+            let (sender, completed) = oneshot::channel();
+            if with_hook {
+                stream = stream.with_completion_hook(Box::new(RecordingHook { sender }));
+            }
+            let mut stream = stream.prefetch_first(Duration::from_secs(1)).await.unwrap();
+            let output = tokio::time::timeout(Duration::from_secs(1), async {
+                let mut output = Vec::new();
+                while let Some(chunk) = stream.next_chunk().await {
+                    output.extend(chunk.unwrap());
+                }
+                assert_eq!(stream.next_chunk().await, None);
+                output
+            })
+            .await
+            .expect("separate message_stop must resolve to EOF");
+            let resolved = usage.resolve().await.unwrap();
+            assert_eq!(resolved.source(), UsageSource::Upstream);
+            assert_eq!(resolved.input_tokens().get(), 11);
+            assert_eq!(resolved.output_tokens().get(), 7);
+            if with_hook {
+                assert_eq!(completed.await.unwrap().unwrap(), resolved);
+            }
+            let mut decoder = af_protocol::gemini::GeminiGenerateContentStreamDecoder::new();
+            let mut events = decoder.push(&output).unwrap();
+            events.extend(decoder.finish().unwrap());
+            assert!(events.iter().any(|event| matches!(event,
+                CanonicalStreamEvent::ContentDelta {
+                    delta: af_protocol::ContentDelta::Text(text), ..
+                } if text == "answer")));
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| matches!(event, CanonicalStreamEvent::StreamEnd))
+                    .count(),
+                1
+            );
+            let decoded_usage: Vec<_> = events
+                .iter()
+                .filter_map(|event| match event {
+                    CanonicalStreamEvent::Usage(value) => Some(*value),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(decoded_usage.len(), 1);
+            let decoded_usage = decoded_usage[0];
+            assert_eq!(decoded_usage.source(), UsageSource::Upstream);
+            assert_eq!(
+                resolved.semantics(),
+                af_protocol::UsageSemantics::CacheSeparated
+            );
+            assert_eq!(
+                decoded_usage.semantics(),
+                af_protocol::UsageSemantics::Inclusive
+            );
+            assert_eq!(
+                decoded_usage.checked_input_tokens().unwrap(),
+                resolved.checked_input_tokens().unwrap()
+            );
+            assert_eq!(decoded_usage.output_tokens(), resolved.output_tokens());
+            assert_eq!(
+                decoded_usage.checked_total_tokens().unwrap(),
+                resolved.checked_total_tokens().unwrap()
+            );
+            assert_eq!(decoded_usage.details(), resolved.details());
+        }
     }
 
     #[tokio::test]

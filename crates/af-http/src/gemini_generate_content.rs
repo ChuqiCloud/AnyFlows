@@ -75,10 +75,6 @@ fn parse_target<'a>(model_action: &'a str, query: Option<&str>) -> Result<Gemini
     }
 
     let alt = parse_alt(query)?;
-    if stream_action && alt == Some(ResponseAlt::Json) {
-        // 当前入口只实现官方 SSE wire，不把流悄悄聚合成 JSON 数组。
-        return Err(());
-    }
     Ok(GeminiTarget {
         model,
         stream: stream_action || alt == Some(ResponseAlt::Sse),
@@ -97,14 +93,19 @@ fn parse_alt(query: Option<&str>) -> Result<Option<ResponseAlt>, ()> {
     };
     let mut alt = None;
     for (name, value) in form_urlencoded::parse(query.as_bytes()) {
-        if name != "alt" || alt.is_some() {
-            return Err(());
+        if name != "alt" {
+            // SDK 的配额、字段选择和重试提示不改变该端点的对话语义。
+            continue;
         }
-        alt = Some(match value.as_ref() {
+        let current = match value.to_ascii_lowercase().as_str() {
             "json" => ResponseAlt::Json,
             "sse" => ResponseAlt::Sse,
             _ => return Err(()),
-        });
+        };
+        if alt.is_some_and(|previous| previous != current) {
+            return Err(());
+        }
+        alt = Some(current);
     }
     Ok(alt)
 }
@@ -148,16 +149,37 @@ mod tests {
     }
 
     #[test]
-    fn unknown_actions_and_unimplemented_query_semantics_fail_closed() {
+    fn unknown_actions_and_unsupported_wire_formats_are_rejected() {
         for (path, query) in [
             ("gemini-2.5-pro:GenerateContent", None),
             ("gemini-2.5-pro:embedContent", None),
             ("gemini-2.5-pro:generateContent", Some("alt=proto")),
-            ("gemini-2.5-pro:streamGenerateContent", Some("alt=json")),
-            ("gemini-2.5-pro:generateContent", Some("alt=sse&alt=sse")),
-            ("gemini-2.5-pro:generateContent", Some("fields=private")),
+            ("gemini-2.5-pro:generateContent", Some("alt=sse&alt=json")),
         ] {
             assert!(parse_target(path, query).is_err());
+        }
+    }
+
+    #[test]
+    fn sdk_query_hints_and_repeated_format_values_do_not_block_conversations() {
+        for (path, query, stream) in [
+            (
+                "gemini:generateContent",
+                "fields=candidates&prettyPrint=false",
+                false,
+            ),
+            (
+                "gemini:generateContent",
+                "alt=SSE&alt=sse&quotaUser=agent",
+                true,
+            ),
+            (
+                "gemini:streamGenerateContent",
+                "alt=json&prettyPrint=false",
+                true,
+            ),
+        ] {
+            assert_eq!(parse_target(path, Some(query)).unwrap().stream, stream);
         }
     }
 }

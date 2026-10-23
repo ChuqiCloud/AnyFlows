@@ -216,6 +216,8 @@ pub(super) const OPENAI_CHAT: &[RequestCapability] = &[
     RequestCapability::ToolResults,
     RequestCapability::Thinking,
     RequestCapability::UnsignedThinking,
+    // Chat-compatible upstreams may return reasoning_content without a separate output flag.
+    RequestCapability::ReasoningOutput,
     RequestCapability::ReasoningEffort(ReasoningEffort::None),
     RequestCapability::ReasoningEffort(ReasoningEffort::Minimal),
     RequestCapability::ReasoningEffort(ReasoningEffort::Low),
@@ -356,10 +358,16 @@ pub fn validate_request_capabilities(
         require(protocol, RequestCapability::StrictToolDefinitions)?;
     }
     if let Some(reasoning) = request.reasoning {
-        if let Some(effort) = reasoning.effort() {
+        let effort_only = matches!(protocol, Protocol::OpenAiChat | Protocol::OpenAiResponses);
+        let effort = if effort_only {
+            reasoning.effort_for_effort_only_protocol()
+        } else {
+            reasoning.effort()
+        };
+        if let Some(effort) = effort {
             require(protocol, RequestCapability::ReasoningEffort(effort))?;
         }
-        if reasoning.budget_tokens().is_some() {
+        if reasoning.budget_tokens().is_some() && !effort_only {
             require(protocol, RequestCapability::ReasoningBudget)?;
         }
         if reasoning.include_thinking() {

@@ -1,6 +1,7 @@
 //! 端到端转发生命周期与故障转移编排。
 
 mod anthropic;
+mod anthropic_chat_bridge;
 mod anthropic_request;
 mod anthropic_stream;
 mod attempt_gate;

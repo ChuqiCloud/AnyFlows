@@ -4,6 +4,10 @@ use std::time::Duration;
 #[path = "conversation_tests.rs"]
 mod tests;
 
+#[cfg(test)]
+#[path = "conversation_matrix_contract.rs"]
+mod matrix_contract;
+
 use af_adapter::{Bytes, Method, ResponseMode, StatusCode};
 use af_domain::{AfError, Operation, Protocol, UpstreamError};
 use af_protocol::{
@@ -41,15 +45,6 @@ pub async fn relay_conversation_with_report(
         Ok(prepared) => prepared,
         Err(error) => return (Err(error), RelayAttemptReport::default()),
     };
-    // 跨协议响应不能补造 Anthropic thinking 签名，派发前保留该能力边界。
-    if response_protocol == Protocol::Anthropic
-        && upstream_protocol != Protocol::Anthropic
-        && canonical
-            .reasoning
-            .is_some_and(|reasoning| reasoning.include_thinking())
-    {
-        return (Err(AfError::InvalidRequest), RelayAttemptReport::default());
-    }
     let created_at = match unix_timestamp() {
         Ok(value) => value,
         Err(error) => return (Err(error), RelayAttemptReport::default()),
@@ -63,7 +58,7 @@ pub async fn relay_conversation_with_report(
             &canonical,
             include_usage,
         ) {
-            Ok(encoder) => Some(encoder),
+            Ok(encoder) => Some(encoder.with_upstream_protocol(upstream_protocol)),
             Err(error) => return (Err(error), RelayAttemptReport::default()),
         }
     } else {
@@ -129,7 +124,7 @@ pub async fn relay_conversation_with_report(
                     .next()
                     .is_some_and(|mime| mime.trim().eq_ignore_ascii_case("text/event-stream"))
             });
-        let response = if is_sse {
+        let mut response = if is_sse {
             crate::collect_conversation_response(upstream_protocol, response.into_body()).await?
         } else {
             let body = response
@@ -142,6 +137,11 @@ pub async fn relay_conversation_with_report(
         let usage = estimator
             .resolve_response(&response)
             .map_err(|_| UpstreamError::ProtocolError)?;
+        crate::anthropic_chat_bridge::adapt_response(
+            upstream_protocol,
+            response_protocol,
+            &mut response,
+        )?;
         let body = build_response(
             response_protocol,
             response,
@@ -169,9 +169,11 @@ pub(crate) fn prepare_request(
     request: CanonicalRequestEnvelope,
     protocol: Protocol,
 ) -> Result<(CanonicalRequest, Bytes), AfError> {
-    let request = request
-        .for_conversation_protocol(protocol)
-        .ok_or(AfError::InvalidRequest)?;
+    // 候选选择与实际执行必须使用同一份目标转换计划。
+    let (request, _) = request
+        .plan_conversation(protocol)
+        .ok_or(AfError::InvalidRequest)?
+        .into_parts();
     match protocol {
         Protocol::OpenAiChat => prepare_openai_chat_request(request).map(|r| (r.canonical, r.body)),
         Protocol::OpenAiResponses => {
@@ -222,7 +224,7 @@ pub(crate) fn build_response(
         model.to_owned(),
         Some(response.created_at.unwrap_or(created_at)),
         response.choices,
-        Some(usage),
+        Some(crate::anthropic_chat_bridge::adapt_usage(protocol, usage)?),
     );
     let value = match protocol {
         Protocol::OpenAiChat => {

@@ -1,0 +1,162 @@
+name: Verify Pi preview protocol matrix
+
+on:
+  workflow_dispatch:
+    inputs:
+      preview_run:
+        description: 'Successful preview run; runtime sources must match, acceptance scripts may differ'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  live:
+    if: github.server_url != 'https://github.com'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out acceptance scripts
+        env:
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repository_url="$SOURCE_URL"
+          if [[ "$repository_url" == http://gitea_cps3:* ]]; then
+            repository_url="https://gitea.acmecloud.cn/${{ github.repository }}.git"
+          fi
+          auth="$(printf 'x-access-token:%s' "$SOURCE_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$repository_url"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$SOURCE_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Download and verify the matching preview binary
+        env:
+          SOURCE_API: ${{ github.api_url }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+          PREVIEW_RUN: ${{ inputs.preview_run }}
+        run: |
+          set -euo pipefail
+          [[ "$PREVIEW_RUN" =~ ^[1-9][0-9]*$ ]]
+          api="$SOURCE_API"
+          if [[ "$api" == http://gitea_cps3:* ]]; then api='https://gitea.acmecloud.cn/api/v1'; fi
+          repo="$api/repos/$SOURCE_REPOSITORY"
+          mkdir preview
+          curl --silent --show-error --fail --user "x-access-token:$SOURCE_TOKEN" "$repo/actions/runs/$PREVIEW_RUN" > preview/run.json
+          jq -e '.conclusion == "success" and (.path | startswith("build-preview.yml"))' preview/run.json > /dev/null
+          sha="$(jq -r .head_sha preview/run.json)"
+          if [[ "$sha" != "$SOURCE_SHA" ]]; then
+            auth="$(printf 'x-access-token:%s' "$SOURCE_TOKEN" | base64 -w0)"
+            git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$sha"
+            git diff --name-only "$sha" "$SOURCE_SHA" > preview/acceptance-changes.txt
+            python3 - <<'PY'
+          from pathlib import Path
+          allowed = {
+              '.github/workflows/verify-preview-pi.yml',
+              'tools/ci/pi-live-smoke.py',
+              'tools/ci/pi-upstream-fixture.py',
+              'tools/ci/opencode-live-smoke.py',
+              'docs/conversation-compatibility.md',
+          }
+          changed = set(Path('preview/acceptance-changes.txt').read_text().splitlines())
+          if changed - allowed:
+              raise SystemExit('Preview runtime differs from acceptance source: ' + ', '.join(sorted(changed - allowed)))
+          PY
+          fi
+          printf 'Verified binary commit=%s acceptance commit=%s\n' "$sha" "$SOURCE_SHA"
+          curl --silent --show-error --fail --user "x-access-token:$SOURCE_TOKEN" "$repo/actions/runs/$PREVIEW_RUN/artifacts" > preview/artifacts.json
+          artifact_id="$(jq -r --arg sha "$sha" '.artifacts[] | select(.name == ("anyflows-preview-linux-amd64-" + $sha)) | .id' preview/artifacts.json)"
+          [[ "$artifact_id" =~ ^[1-9][0-9]*$ ]]
+          curl --silent --show-error --fail --location --user "x-access-token:$SOURCE_TOKEN" "$repo/actions/artifacts/$artifact_id/zip" -o preview/package.zip
+          unzip -q preview/package.zip -d preview/download
+          (cd preview/download && sha256sum --check --strict SHA256SUMS)
+          tar -xzf preview/download/anyflows-preview-*.tar.gz -C preview
+          package="$(find preview -mindepth 1 -maxdepth 1 -type d -name 'anyflows-*' -print -quit)"
+          test -x "$package/anyflows"
+          grep -Fx "commit=$sha" "$package/VERSION"
+          echo "PREVIEW_PACKAGE=$(realpath "$package")" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22.19.0'
+
+      - name: Install Pi 1.4.0 in the runner temporary directory
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          node --version
+          node -e 'if (Number(process.versions.node.split(".")[0]) < 22 || (Number(process.versions.node.split(".")[0]) === 22 && Number(process.versions.node.split(".")[1]) < 19)) process.exit(1)'
+          npm install --prefix "$RUNNER_TEMP/pi-live" --no-save --no-audit --no-fund @earendil-works/pi-coding-agent@1.4.0
+          test "$(node -p "require('$RUNNER_TEMP/pi-live/node_modules/@earendil-works/pi-coding-agent/package.json').version")" = '1.4.0'
+          echo "PI_NODE=$(command -v node)" >> "$GITHUB_ENV"
+          echo "PI_CLI=$RUNNER_TEMP/pi-live/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" >> "$GITHUB_ENV"
+          echo "PI_PROFILE_DIR=$RUNNER_TEMP/pi-live/profile" >> "$GITHUB_ENV"
+
+      - name: Start the preview and run all sixteen controlled Pi routes
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+          PI_MATRIX_REPETITIONS: '3'
+        run: |
+          set -euo pipefail
+          script="$(realpath tools/ci/pi-live-smoke.py)"
+          cd "$PREVIEW_PACKAGE"
+          export AF_CONFIG_FILE="$PWD/anyflows.conf"
+          export AF_SERVER__BIND='127.0.0.1:18080'
+          export AF_AUTH__SESSION_SIGNING_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
+          export AF_CREDENTIAL_ENCRYPTION__KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
+          export AF_HTTP_CLIENT__PROXY_URL='http://127.0.0.1:18081'
+          export AF_HTTP_CLIENT__TRUST_PROXY_DNS='true'
+          ./anyflows > server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for _ in $(seq 1 90); do
+            kill -0 "$server_pid" 2>/dev/null || break
+            if curl --silent --fail --max-time 2 http://127.0.0.1:18080/readyz > /dev/null; then ready=1; break; fi
+            sleep 1
+          done
+          test "$ready" = 1 || { echo 'Preview readiness failed; server log remains in the runner workspace' >&2; exit 1; }
+          if ! python3 "$script"; then
+            python3 - <<'PY'
+          import os
+          from pathlib import Path
+          trace = Path(os.environ['RUNNER_TEMP']) / 'pi-live-smoke-traces'
+          trace.mkdir(parents=True, exist_ok=True)
+          lines = Path('server.log').read_text(encoding='utf-8', errors='replace').splitlines()
+          failures = [line for line in lines if any(marker in line for marker in (
+              'stream_delivery_panic', 'stream_upstream_failed', 'stream_write_timeout',
+              'stream_max_duration', 'panicked at', '未终止的 OpenAI Chat 流',
+          ))]
+          (trace / 'server-stream-failures.log').write_text('\n'.join(failures[-100:]), encoding='utf-8')
+          PY
+            exit 1
+          fi
+
+      - name: Prepare controlled failure capture uploader
+        if: failure()
+        run: |
+          set -euo pipefail
+          action_path='.ci-actions/gitea-upload-artifact'
+          action_sha='62ac910c5d3dfa85c7cb2df15afe2e342b2407c2'
+          git init --quiet "$action_path"
+          git -C "$action_path" remote add origin https://gitea.com/actions/gitea-upload-artifact.git
+          git -C "$action_path" fetch --quiet --no-tags --depth=1 origin "$action_sha"
+          git -C "$action_path" checkout --quiet --detach FETCH_HEAD
+          test "$(git -C "$action_path" rev-parse HEAD)" = "$action_sha"
+
+      - name: Preserve controlled failure captures
+        if: failure()
+        uses: ./.ci-actions/gitea-upload-artifact
+        with:
+          name: pi-controlled-failure-${{ github.run_id }}
+          path: ${{ runner.temp }}/pi-live-smoke-traces
+          retention-days: 1
+          if-no-files-found: warn

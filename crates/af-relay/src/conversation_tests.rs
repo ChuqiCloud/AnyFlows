@@ -496,10 +496,12 @@ fn captured_agent_requests_preserve_native_fields_and_conversion_boundaries() {
         native["generationConfig"]["thinkingConfig"]["includeThoughts"],
         true
     );
-    assert!(matches!(
-        prepare_request(gemini, Protocol::OpenAiChat),
-        Err(AfError::InvalidRequest)
-    ));
+    let (canonical, chat) = prepare_request(gemini, Protocol::OpenAiChat).unwrap();
+    assert!(canonical.reasoning.unwrap().dynamic_budget());
+    let chat: Value = serde_json::from_slice(&chat).unwrap();
+    assert!(chat.get("reasoning_effort").is_none());
+    assert_eq!(chat["max_completion_tokens"], 8192);
+    assert_eq!(chat["messages"][0]["content"], "hello");
 }
 
 #[test]
@@ -761,6 +763,12 @@ async fn native_messages_sse_preserves_thinking_and_signature_in_both_response_m
             choice_index: 0,
             content_index: 0,
             text: "plan".to_owned(),
+            signature: None,
+        },
+        CanonicalStreamEvent::ReasoningDelta {
+            choice_index: 0,
+            content_index: 0,
+            text: String::new(),
             signature: Some("native-signature".to_owned()),
         },
         CanonicalStreamEvent::ContentDelta {
@@ -875,6 +883,126 @@ async fn native_messages_sse_preserves_thinking_and_signature_in_both_response_m
                 assert_eq!(thinking, "plan");
                 assert_eq!(signatures, "native-signature");
                 assert!(usage.resolve().await.is_ok());
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn anthropic_thinking_request_uses_chat_text_bridge_in_both_response_modes() {
+    use af_adapter::{
+        Credential, HttpClientConfig, HttpClientPool, OpenAiAdaptor, ProxyConfig, RelayContext,
+        RemoteDnsPolicy,
+    };
+    use std::sync::Arc;
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{body_partial_json, method, path},
+    };
+
+    for stream in [false, true] {
+        let server = MockServer::start().await;
+        let response = if stream {
+            let frames = [
+                json!({"id":"upstream","object":"chat.completion.chunk","created":1700000000,"model":"upstream-model","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"plan"}}]}),
+                json!({"id":"upstream","object":"chat.completion.chunk","created":1700000000,"model":"upstream-model","choices":[{"index":0,"delta":{"content":"answer"}}]}),
+                json!({"id":"upstream","object":"chat.completion.chunk","created":1700000000,"model":"upstream-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":41,"completion_tokens":4,"total_tokens":45}}),
+            ];
+            let mut raw = frames
+                .iter()
+                .map(|frame| format!("data: {frame}\n\n"))
+                .collect::<String>();
+            raw.push_str("data: [DONE]\n\n");
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(raw)
+        } else {
+            ResponseTemplate::new(200).set_body_json(json!({"id":"upstream","object":"chat.completion","created":1700000000,"model":"upstream-model","choices":[{"index":0,"message":{"role":"assistant","reasoning_content":"plan","content":"answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":41,"completion_tokens":4,"total_tokens":45}}))
+        };
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .and(body_partial_json(
+                json!({"model":"public-model","stream":stream}),
+            ))
+            .respond_with(response)
+            .expect(1)
+            .mount(&server)
+            .await;
+        let client = HttpClientPool::default()
+            .get(
+                &HttpClientConfig::new(
+                    ProxyConfig::parse(server.uri()).unwrap(),
+                    af_adapter::HttpTimeouts::default(),
+                )
+                .with_remote_dns_policy(RemoteDnsPolicy::TrustProxy),
+            )
+            .unwrap();
+        let machine = RelayStateMachine::new(vec![crate::RelayCandidate::new(
+            Arc::new(OpenAiAdaptor::new()),
+            RelayContext::new(client)
+                .with_base_url("http://upstream.example")
+                .unwrap(),
+            Credential::api_key("fixture").unwrap(),
+        )])
+        .unwrap();
+        let request = anthropic::parse_request_envelope(Bytes::from(
+            serde_json::to_vec(&json!({
+                "model":"public-model", "max_tokens":384000, "stream":stream,
+                "thinking":{"type":"enabled","budget_tokens":8192,"display":"summarized"},
+                "messages":[{"role":"user","content":"Think then answer"}]
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+        let (result, report) = relay_conversation_with_report(
+            &machine,
+            request,
+            Protocol::OpenAiChat,
+            Protocol::Anthropic,
+            "chat-thinking",
+        )
+        .await;
+        assert!(report.successful_candidate_index().is_some());
+        match result.unwrap() {
+            ChatResponse::Full { body, usage } => {
+                let response = anthropic::parse_response(&body).unwrap();
+                assert_eq!(
+                    response.choices[0].message.content,
+                    vec![
+                        ContentBlock::Text("plan".to_owned()),
+                        ContentBlock::Text("answer".to_owned())
+                    ]
+                );
+                assert_eq!(usage.unwrap().input_tokens().get(), 41);
+            }
+            ChatResponse::Stream { mut body, usage } => {
+                let mut decoder = ConversationDecoder::new(Protocol::Anthropic).unwrap();
+                let mut events = Vec::new();
+                while let Some(chunk) = std::future::poll_fn(|context| {
+                    futures_core::Stream::poll_next(std::pin::Pin::new(body.as_mut()), context)
+                })
+                .await
+                {
+                    events.extend(decoder.push(&chunk.unwrap()).unwrap());
+                }
+                events.extend(decoder.finish().unwrap());
+                assert!(
+                    !events
+                        .iter()
+                        .any(|event| matches!(event, CanonicalStreamEvent::ReasoningDelta { .. }))
+                );
+                let texts = events
+                    .iter()
+                    .filter_map(|event| match event {
+                        CanonicalStreamEvent::ContentDelta {
+                            delta: ContentDelta::Text(text),
+                            ..
+                        } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(texts, ["plan", "answer"]);
+                assert_eq!(usage.resolve().await.unwrap().input_tokens().get(), 41);
             }
         }
     }

@@ -277,8 +277,12 @@ impl OpenAiResponsesStreamDecoder {
                 ..
             } => {
                 self.require_in_progress()?;
-                self.outputs
-                    .function_arguments_done(&item_id, output_index, &arguments, &name)
+                self.outputs.function_arguments_done(
+                    &item_id,
+                    output_index,
+                    &arguments,
+                    name.as_deref(),
+                )
             }
             StreamEventWire::ReasoningSummaryPartAdded {
                 item_id,

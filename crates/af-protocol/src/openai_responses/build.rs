@@ -134,11 +134,8 @@ fn insert_reasoning(
     let Some(reasoning) = request.reasoning else {
         return Ok(());
     };
-    if reasoning.budget_tokens().is_some() {
-        return Err(BuildRequestError::UnsupportedFeature);
-    }
     let mut config = Map::new();
-    if let Some(effort) = reasoning.effort() {
+    if let Some(effort) = reasoning.effort_for_effort_only_protocol() {
         let effort = match effort {
             ReasoningEffort::None => "none",
             ReasoningEffort::Minimal => "minimal",

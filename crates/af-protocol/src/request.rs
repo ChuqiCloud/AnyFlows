@@ -116,6 +116,7 @@ pub enum ReasoningSummary {
 pub struct ReasoningConfig {
     effort: Option<ReasoningEffort>,
     budget_tokens: Option<TokenCount>,
+    dynamic_budget: bool,
     include_thinking: bool,
     summary: Option<ReasoningSummary>,
 }
@@ -132,12 +133,28 @@ impl ReasoningConfig {
         {
             return Err(ReasoningConfigError::DisabledWithActiveOptions);
         }
+        if matches!(budget_tokens, Some(budget) if budget.get() == 0) {
+            return Err(ReasoningConfigError::InvalidBudget);
+        }
         Ok(Self {
             effort,
             budget_tokens,
+            dynamic_budget: false,
             include_thinking,
             summary: None,
         })
+    }
+
+    /// 标记来源协议是否明确要求供应商动态分配推理预算。
+    pub const fn with_dynamic_budget(
+        mut self,
+        dynamic_budget: bool,
+    ) -> Result<Self, ReasoningConfigError> {
+        if dynamic_budget && (self.effort.is_some() || self.budget_tokens.is_some()) {
+            return Err(ReasoningConfigError::ConflictingDynamicBudget);
+        }
+        self.dynamic_budget = dynamic_budget;
+        Ok(self)
     }
 
     /// 返回归一化推理强度。
@@ -150,6 +167,12 @@ impl ReasoningConfig {
     #[must_use]
     pub const fn budget_tokens(&self) -> Option<TokenCount> {
         self.budget_tokens
+    }
+
+    /// 返回来源协议是否明确要求供应商动态分配推理预算。
+    #[must_use]
+    pub const fn dynamic_budget(&self) -> bool {
+        self.dynamic_budget
     }
 
     /// 返回是否要求上游输出思考内容。
@@ -170,6 +193,41 @@ impl ReasoningConfig {
     pub const fn summary(&self) -> Option<ReasoningSummary> {
         self.summary
     }
+
+    /// 为只支持推理强度的协议近似换算固定预算，保留原配置用于原生回放及计量。
+    ///
+    /// 1024/2048/8192/16384 是跨协议兼容档位，与常见代理客户端的
+    /// minimal/low/medium/high 预算一致；它们不是供应商保证的精确令牌上限。
+    /// 动态预算仍由供应商自动选择，不视为固定预算。
+    pub(crate) const fn effort_for_effort_only_protocol(self) -> Option<ReasoningEffort> {
+        let Some(budget) = self.budget_tokens else {
+            return self.effort;
+        };
+        let normalized = match budget.get() {
+            1..=1024 => ReasoningEffort::Minimal,
+            1025..=2048 => ReasoningEffort::Low,
+            2049..=8192 => ReasoningEffort::Medium,
+            _ => ReasoningEffort::High,
+        };
+        match self.effort {
+            Some(effort) if reasoning_effort_rank(effort) > reasoning_effort_rank(normalized) => {
+                Some(effort)
+            }
+            _ => Some(normalized),
+        }
+    }
+}
+
+const fn reasoning_effort_rank(effort: ReasoningEffort) -> u8 {
+    match effort {
+        ReasoningEffort::None => 0,
+        ReasoningEffort::Minimal => 1,
+        ReasoningEffort::Low => 2,
+        ReasoningEffort::Medium => 3,
+        ReasoningEffort::High => 4,
+        ReasoningEffort::ExtraHigh => 5,
+        ReasoningEffort::Max => 6,
+    }
 }
 
 /// 推理配置校验错误，不保留外部参数。
@@ -177,6 +235,10 @@ impl ReasoningConfig {
 pub enum ReasoningConfigError {
     /// 显式关闭推理时仍携带预算或要求输出思考内容。
     DisabledWithActiveOptions,
+    /// 动态推理预算与固定预算或明确推理强度冲突。
+    ConflictingDynamicBudget,
+    /// 固定推理预算必须大于零。
+    InvalidBudget,
 }
 
 impl fmt::Display for ReasoningConfigError {
@@ -185,6 +247,10 @@ impl fmt::Display for ReasoningConfigError {
             Self::DisabledWithActiveOptions => {
                 formatter.write_str("关闭推理时不得设置预算或输出思考内容")
             }
+            Self::ConflictingDynamicBudget => {
+                formatter.write_str("动态推理预算不得与固定预算或推理强度并存")
+            }
+            Self::InvalidBudget => formatter.write_str("固定推理预算必须大于零"),
         }
     }
 }

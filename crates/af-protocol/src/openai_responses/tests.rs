@@ -611,13 +611,10 @@ fn rejects_known_unmodeled_top_level_and_item_features() {
 
     let items = [json!({
         "model": "gpt-test",
-        "input": [{"type": "message", "role": "assistant", "content": "x", "phase": "final_answer"}]
+        "input": [{"type": "message", "role": "assistant", "content": "x", "future_metadata": true}]
     })];
     for request in items {
-        assert_eq!(
-            parse_json(request),
-            Err(ParseRequestError::UnsupportedFeature)
-        );
+        assert_eq!(parse_json(request), Err(ParseRequestError::InvalidValue));
     }
 }
 

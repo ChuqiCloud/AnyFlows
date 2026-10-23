@@ -518,6 +518,70 @@ fn enforces_tool_choice_and_tool_result_relationships() {
 }
 
 #[test]
+fn parses_parallel_results_across_consecutive_user_messages() {
+    let request = parse_json(json!({
+        "model": "claude-test",
+        "max_tokens": 256,
+        "messages": [
+            {"role": "assistant", "content": [
+                {"type": "tool_use", "id": "toolu_a", "name": "lookup", "input": {}},
+                {"type": "tool_use", "id": "toolu_b", "name": "lookup", "input": {}}
+            ]},
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_b", "content": "b"}
+            ]},
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_a", "content": "a"},
+                {"type": "text", "text": "continue"}
+            ]}
+        ]
+    }))
+    .unwrap();
+    assert_eq!(request.messages.len(), 4);
+    for (message, expected) in request.messages[1..3].iter().zip(["toolu_b", "toolu_a"]) {
+        assert_eq!(message.role, Role::Tool);
+        assert!(matches!(message.content.as_slice(),
+            [ContentBlock::ToolResult { tool_use_id, .. }] if tool_use_id == expected));
+    }
+    assert_eq!(request.messages[3].role, Role::User);
+    assert!(matches!(request.messages[3].content.as_slice(),
+        [ContentBlock::Text(text)] if text == "continue"));
+}
+
+#[test]
+fn split_parallel_results_still_require_completion_before_content_or_turn_end() {
+    let base = json!({
+        "model": "claude-test",
+        "max_tokens": 256,
+        "messages": [
+            {"role": "assistant", "content": [
+                {"type": "tool_use", "id": "toolu_a", "name": "lookup", "input": {}},
+                {"type": "tool_use", "id": "toolu_b", "name": "lookup", "input": {}}
+            ]},
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_a", "content": "a"}
+            ]}
+        ]
+    });
+    assert_json_error(base.clone(), ParseRequestError::InvalidValue);
+    for interruption in [
+        json!({"role": "user", "content": "continue"}),
+        json!({"role": "user", "content": [{"type": "text", "text": "continue"}]}),
+        json!({"role": "assistant", "content": "continue"}),
+    ] {
+        let mut body = base.clone();
+        body["messages"].as_array_mut().unwrap().push(interruption);
+        assert_json_error(body, ParseRequestError::InvalidValue);
+    }
+    let mut mixed = base;
+    mixed["messages"][1]["content"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"type": "text", "text": "continue"}));
+    assert_json_error(mixed, ParseRequestError::InvalidValue);
+}
+
+#[test]
 fn debug_and_errors_do_not_expose_external_values() {
     let request = parse_json(json!({
         "model": "secret-model-z9",
