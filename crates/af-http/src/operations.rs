@@ -18,11 +18,17 @@ use http::{
     StatusCode,
     header::{CACHE_CONTROL, CONTENT_TYPE},
 };
+use serde::Serialize;
+use utoipa::ToSchema;
 
 /// 进程存活探针路径。
 pub const HEALTH_PATH: &str = "/healthz";
 /// 服务就绪探针路径。
 pub const READINESS_PATH: &str = "/readyz";
+/// 机器可读的构建版本路径。
+pub const VERSION_PATH: &str = "/api/version";
+/// 构建版本路径的根级兼容别名。
+pub const VERSION_ALIAS_PATH: &str = "/version";
 
 const STARTING: u8 = 0;
 const READY: u8 = 1;
@@ -30,6 +36,33 @@ const DRAINING: u8 = 2;
 const HEALTH_BODY: &str = r#"{"status":"ok"}"#;
 const READY_BODY: &str = r#"{"status":"ready"}"#;
 const NOT_READY_BODY: &str = r#"{"status":"not_ready"}"#;
+
+/// 服务构建身份；不包含运行配置、凭据或节点私有信息。
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct VersionInfo {
+    /// Cargo 包版本。
+    pub version: String,
+    /// 构建源码的完整提交 SHA；无 Git 信息且未注入时为 null。
+    pub commit: Option<String>,
+    /// UTC 构建时间（RFC 3339）；未注入时为 null。
+    pub build_time: Option<String>,
+}
+
+impl VersionInfo {
+    fn current() -> Self {
+        Self {
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            commit: build_metadata(option_env!("AF_BUILD_COMMIT")),
+            build_time: build_metadata(option_env!("AF_BUILD_TIME")),
+        }
+    }
+}
+
+fn build_metadata(value: Option<&'static str>) -> Option<String> {
+    value
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_owned)
+}
 
 /// 一次有界就绪检查返回的异步结果。
 pub type ReadinessFuture<'a> = Pin<Box<dyn Future<Output = bool> + Send + 'a>>;
@@ -114,6 +147,8 @@ pub(crate) fn operations_router(readiness: ReadinessHandle) -> Router {
     Router::new()
         .route(HEALTH_PATH, get(healthz))
         .route(READINESS_PATH, get(readyz))
+        .route(VERSION_PATH, get(version))
+        .route(VERSION_ALIAS_PATH, get(version))
         .with_state(readiness)
 }
 
@@ -127,6 +162,18 @@ async fn readyz(State(readiness): State<ReadinessHandle>) -> Response {
     } else {
         operational_response(StatusCode::SERVICE_UNAVAILABLE, NOT_READY_BODY)
     }
+}
+
+async fn version() -> Response {
+    (
+        StatusCode::OK,
+        [
+            (CONTENT_TYPE, "application/json; charset=utf-8"),
+            (CACHE_CONTROL, "no-store"),
+        ],
+        axum::Json(VersionInfo::current()),
+    )
+        .into_response()
 }
 
 fn operational_response(status: StatusCode, body: &'static str) -> Response {
