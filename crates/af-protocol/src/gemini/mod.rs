@@ -95,12 +95,28 @@ fn parse_request_envelope_for_mode(
     body: Bytes,
     stream: bool,
 ) -> Result<CanonicalRequestEnvelope, ParseRequestError> {
-    let mut canonical = parse_request(model_resource, &body)?;
+    if body.len() > MAX_BODY_BYTES {
+        return Err(ParseRequestError::BodyTooLarge);
+    }
+    let value = bounded_json::parse_value(&body, REQUEST_JSON_LIMITS).map_err(map_json_error)?;
+    let compatible = crate::request_compat::normalize(Protocol::Gemini, value.clone())
+        .map_err(|()| ParseRequestError::InvalidValue)?;
+    let validation =
+        serde_json::to_vec(&compatible.validation).map_err(|_| ParseRequestError::InvalidValue)?;
+    let mut canonical = parse_request(model_resource, &validation)?;
     canonical.stream = stream;
-    Ok(CanonicalRequestEnvelope::from_validated_source(
+    let body = if compatible.body == value {
+        body
+    } else {
+        Bytes::from(
+            serde_json::to_vec(&compatible.body).map_err(|_| ParseRequestError::InvalidValue)?,
+        )
+    };
+    Ok(CanonicalRequestEnvelope::from_compatible_source(
         canonical,
         Protocol::Gemini,
         body,
+        compatible.native_only,
     ))
 }
 

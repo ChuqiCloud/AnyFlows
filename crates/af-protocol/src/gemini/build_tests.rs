@@ -286,6 +286,29 @@ fn maps_tool_choices_sampling_and_reasoning() {
 }
 
 #[test]
+fn rebuilds_dynamic_and_fixed_thinking_budgets_without_changing_omission() {
+    for thinking in [
+        json!({"thinkingBudget": -1, "includeThoughts": true}),
+        json!({"includeThoughts": true}),
+        json!({"thinkingBudget": 1024, "includeThoughts": true}),
+    ] {
+        let request = parsed_request(json!({
+            "contents": [{
+                "role": "user",
+                "parts": [{"text": "Remember this marker"}]
+            }],
+            "generationConfig": {
+                "maxOutputTokens": 384_000,
+                "thinkingConfig": thinking
+            }
+        }));
+        let rebuilt = build_request(&request).unwrap();
+        assert_eq!(rebuilt["generationConfig"]["maxOutputTokens"], 384_000);
+        assert_eq!(rebuilt["generationConfig"]["thinkingConfig"], thinking);
+    }
+}
+
+#[test]
 fn rejects_unmapped_top_level_capabilities_and_invalid_parameters() {
     let mut operation = minimal_request();
     operation.operation = Operation::Embedding;

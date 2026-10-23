@@ -33,6 +33,67 @@ fn session() -> ToolCompatibilitySession {
     ToolCompatibilitySession::prepare(request(), vec![tool("read")]).unwrap()
 }
 
+#[test]
+fn native_empty_catalog_defaults_can_use_injected_tools_but_explicit_none_stays_disabled() {
+    for explicit_none in [false, true] {
+        for protocol in [
+            Protocol::OpenAiChat,
+            Protocol::OpenAiResponses,
+            Protocol::Anthropic,
+            Protocol::Gemini,
+        ] {
+            let mut wire = match protocol {
+                Protocol::OpenAiChat => {
+                    json!({"model":"model","messages":[{"role":"user","content":"question"}],"max_completion_tokens":128})
+                }
+                Protocol::OpenAiResponses => {
+                    json!({"model":"model","input":"question","max_output_tokens":128})
+                }
+                Protocol::Anthropic => {
+                    json!({"model":"model","messages":[{"role":"user","content":"question"}],"max_tokens":128})
+                }
+                Protocol::Gemini => {
+                    json!({"contents":[{"role":"user","parts":[{"text":"question"}]}],"generationConfig":{"maxOutputTokens":128}})
+                }
+                _ => unreachable!(),
+            };
+            if explicit_none {
+                match protocol {
+                    Protocol::Gemini => {
+                        wire["toolConfig"] = json!({"functionCallingConfig":{"mode":"NONE"}})
+                    }
+                    Protocol::Anthropic => wire["tool_choice"] = json!({"type":"none"}),
+                    _ => wire["tool_choice"] = json!("none"),
+                }
+            }
+            let body = Bytes::from(serde_json::to_vec(&wire).unwrap());
+            let request = match protocol {
+                Protocol::OpenAiChat => crate::openai_chat::parse_request_envelope(body).unwrap(),
+                Protocol::OpenAiResponses => {
+                    crate::openai_responses::parse_request_envelope(body).unwrap()
+                }
+                Protocol::Anthropic => crate::anthropic::parse_request_envelope(body).unwrap(),
+                Protocol::Gemini => {
+                    crate::gemini::parse_request_envelope("models/model", body).unwrap()
+                }
+                _ => unreachable!(),
+            }
+            .for_conversation_protocol(Protocol::OpenAiChat)
+            .unwrap();
+            let session = ToolCompatibilitySession::prepare(request, vec![tool("read")]).unwrap();
+            assert_eq!(
+                session.request().canonical().tool_choice,
+                if explicit_none {
+                    ToolChoice::None
+                } else {
+                    ToolChoice::Auto
+                },
+                "{protocol:?}"
+            );
+        }
+    }
+}
+
 fn usage(output: i64) -> Usage {
     Usage::new(
         TokenCount::new(100).unwrap(),
@@ -223,15 +284,20 @@ fn rewriting_removes_source_passthrough_and_preserves_requested_model() {
 }
 
 #[test]
-fn private_fields_opaque_state_and_signed_collisions_fail_without_data_loss() {
+fn source_owned_preferences_survive_while_opaque_state_and_signed_collisions_are_rejected() {
     let raw = crate::openai_chat::parse_request_envelope(Bytes::from_static(
         br#"{"model":"m","messages":[{"role":"user","content":"hi"}],"max_tokens":100,"seed":42}"#,
     ))
     .unwrap();
-    assert_eq!(
-        ToolCompatibilitySession::prepare(raw, vec![tool("read")]).unwrap_err(),
-        ToolCompatibilityError::UnsupportedRequest
-    );
+    let session = ToolCompatibilitySession::prepare(raw, vec![tool("read")]).unwrap();
+    let planned = session
+        .request()
+        .clone()
+        .plan_conversation(Protocol::OpenAiChat)
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(planned.body()).unwrap();
+    assert_eq!(body["seed"], 42);
+    assert_eq!(body["tools"][0]["function"]["name"], "read");
     let mut opaque = request().into_canonical();
     opaque.continuation = RequestContinuation::new(Some("private-response".to_owned()), None, None);
     assert_eq!(

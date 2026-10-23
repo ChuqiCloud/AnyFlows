@@ -7,7 +7,8 @@ use serde_json::{Map, Value, json};
 use super::{BuildRequestError, build_request, parse_request};
 use crate::{
     Attachment, CacheHint, CanonicalRequest, ContentBlock, MediaSource, Message,
-    ProtocolCapability, RequestCapability, RequestContinuation, RequestMetadata, StreamOptions,
+    ProtocolCapability, ReasoningConfig, RequestCapability, RequestContinuation, RequestMetadata,
+    StreamOptions, TokenCount,
 };
 
 fn parsed_request(value: Value) -> CanonicalRequest {
@@ -112,6 +113,28 @@ fn preserves_tools_reasoning_sampling_metadata_and_raw_fields() {
     assert_eq!(
         parse_request(&serde_json::to_vec(&value).unwrap()).unwrap(),
         request
+    );
+}
+
+#[test]
+fn maps_fixed_reasoning_budget_to_effort_and_keeps_dynamic_budget_automatic() {
+    let mut fixed = minimal_request();
+    fixed.reasoning =
+        Some(ReasoningConfig::new(None, Some(TokenCount::new(2048).unwrap()), true).unwrap());
+    assert_eq!(build_request(&fixed).unwrap()["reasoning_effort"], "low");
+
+    let mut dynamic = minimal_request();
+    dynamic.reasoning = Some(
+        ReasoningConfig::new(None, None, true)
+            .unwrap()
+            .with_dynamic_budget(true)
+            .unwrap(),
+    );
+    assert!(
+        build_request(&dynamic)
+            .unwrap()
+            .get("reasoning_effort")
+            .is_none()
     );
 }
 

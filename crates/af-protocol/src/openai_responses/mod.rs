@@ -30,6 +30,8 @@ pub use streaming::{
 #[cfg(test)]
 mod build_tests;
 #[cfg(test)]
+mod replay_tests;
+#[cfg(test)]
 mod response_tests;
 #[cfg(test)]
 mod tests;
@@ -105,11 +107,27 @@ pub fn parse_request(body: &[u8]) -> Result<CanonicalRequest, ParseRequestError>
 
 /// 解析请求并保留只可用于 OpenAI Responses 同协议直通的原始正文。
 pub fn parse_request_envelope(body: Bytes) -> Result<CanonicalRequestEnvelope, ParseRequestError> {
-    let canonical = parse_request(&body)?;
-    Ok(CanonicalRequestEnvelope::from_validated_source(
+    if body.len() > MAX_BODY_BYTES {
+        return Err(ParseRequestError::BodyTooLarge);
+    }
+    let value = bounded_json::parse_value(&body, REQUEST_JSON_LIMITS).map_err(map_json_error)?;
+    let compatible = crate::request_compat::normalize(Protocol::OpenAiResponses, value.clone())
+        .map_err(|()| ParseRequestError::InvalidValue)?;
+    let validation =
+        serde_json::to_vec(&compatible.validation).map_err(|_| ParseRequestError::InvalidValue)?;
+    let canonical = parse_request(&validation)?;
+    let body = if compatible.body == value {
+        body
+    } else {
+        Bytes::from(
+            serde_json::to_vec(&compatible.body).map_err(|_| ParseRequestError::InvalidValue)?,
+        )
+    };
+    Ok(CanonicalRequestEnvelope::from_compatible_source(
         canonical,
         Protocol::OpenAiResponses,
         body,
+        compatible.native_only,
     ))
 }
 
@@ -171,17 +189,10 @@ fn input_item_uses_unsupported_feature(item: &Value) -> bool {
     }
 
     match kind {
-        None | Some("message") => {
-            if ["id", "phase", "status"]
-                .iter()
-                .any(|key| item.contains_key(*key))
-            {
-                return true;
-            }
-            item.get("content")
-                .and_then(Value::as_array)
-                .is_some_and(|parts| parts.iter().any(content_uses_unsupported_feature))
-        }
+        None | Some("message") => item
+            .get("content")
+            .and_then(Value::as_array)
+            .is_some_and(|parts| parts.iter().any(content_uses_unsupported_feature)),
         Some("function_call") => ["caller", "namespace"]
             .iter()
             .any(|key| item.contains_key(*key)),

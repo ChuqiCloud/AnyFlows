@@ -52,7 +52,7 @@ impl Error for ReasoningModelSuffixError {}
 /// 将客户端模型末尾的闭合推理后缀归一为基础模型与 `ReasoningConfig`。
 ///
 /// 未命中保留后缀时原样返回信封并保留同协议直通资格；命中后会保存原始客户端
-/// 模型作为脱敏审计上下文，并永久丢弃原始正文。后缀匹配区分大小写，且只允许一层。
+/// 模型作为脱敏审计上下文，取消原字节直通但保留受控重构底稿。后缀区分大小写且只允许一层。
 pub fn apply_reasoning_model_suffix(
     request: CanonicalRequestEnvelope,
 ) -> Result<CanonicalRequestEnvelope, ReasoningModelSuffixError> {
@@ -65,15 +65,10 @@ pub fn apply_reasoning_model_suffix(
     }
 
     let reasoning = merge_reasoning(request.canonical().reasoning, suffix)?;
-    let origin_protocol = request.origin_protocol();
-    let mut canonical = request.into_canonical();
+    let mut canonical = request.canonical().clone();
     canonical.model = base_model.to_owned();
     canonical.reasoning = Some(reasoning);
-    Ok(CanonicalRequestEnvelope::from_normalized_model(
-        canonical,
-        requested_model,
-        origin_protocol,
-    ))
+    Ok(request.with_normalized_model(canonical, requested_model))
 }
 
 fn split_reasoning_suffix(model: &str) -> Option<(&str, ReasoningSuffix)> {
@@ -88,6 +83,7 @@ fn merge_reasoning(
 ) -> Result<ReasoningConfig, ReasoningModelSuffixError> {
     let effort = current.and_then(|reasoning| reasoning.effort());
     let budget = current.and_then(|reasoning| reasoning.budget_tokens());
+    let dynamic_budget = current.is_some_and(|reasoning| reasoning.dynamic_budget());
     let include_thinking = current.is_some_and(|reasoning| reasoning.include_thinking());
 
     match suffix {
@@ -96,14 +92,17 @@ fn merge_reasoning(
                 return Err(ReasoningModelSuffixError::ConflictingReasoning);
             }
             ReasoningConfig::new(effort, budget, true)
+                .and_then(|reasoning| reasoning.with_dynamic_budget(dynamic_budget))
         }
         ReasoningSuffix::Effort(suffix_effort) => {
             if effort.is_some_and(|current_effort| current_effort != suffix_effort) {
                 return Err(ReasoningModelSuffixError::ConflictingReasoning);
             }
             ReasoningConfig::new(Some(suffix_effort), budget, include_thinking)
+                .and_then(|reasoning| reasoning.with_dynamic_budget(dynamic_budget))
         }
     }
+    .map(|reasoning| reasoning.with_summary(current.and_then(|reasoning| reasoning.summary())))
     .map_err(map_reasoning_config_error)
 }
 
@@ -175,7 +174,7 @@ mod tests {
             assert_eq!(reasoning.include_thinking(), include_thinking);
             assert!(matches!(
                 normalized.into_same_protocol(Protocol::OpenAiChat),
-                SameProtocolDecision::Rebuild(_)
+                SameProtocolDecision::Passthrough(_)
             ));
         }
     }
@@ -219,7 +218,7 @@ mod tests {
                 normalized
                     .clone()
                     .for_conversation_protocol(target)
-                    .is_none()
+                    .is_some()
             );
         }
         let native = normalized
@@ -229,7 +228,7 @@ mod tests {
         assert!(crate::gemini::build_request(native.canonical()).is_ok());
         assert!(matches!(
             native.into_same_protocol(Protocol::Gemini),
-            SameProtocolDecision::Rebuild(_)
+            SameProtocolDecision::Passthrough(_)
         ));
     }
 
@@ -287,6 +286,85 @@ mod tests {
         disabled.model = "model-none".to_owned();
         assert_eq!(
             apply_reasoning_model_suffix(disabled.into()),
+            Err(ReasoningModelSuffixError::ConflictingReasoning)
+        );
+    }
+
+    #[test]
+    fn suffix_retains_source_extensions_for_native_and_cross_protocol_plans() {
+        let source = openai_chat::parse_request_envelope(Bytes::from_static(br#"{"model":"model-high","messages":[{"role":"user","content":"hello"}],"seed":17,"response_format":{"type":"json_object"}}"#)).unwrap();
+        let context = source.source_context().unwrap().1.clone();
+        let normalized = apply_reasoning_model_suffix(source).unwrap();
+        assert_eq!(normalized.source_context().unwrap().1, &context);
+        let native = normalized
+            .clone()
+            .plan_conversation(Protocol::OpenAiChat)
+            .unwrap();
+        let native: serde_json::Value = serde_json::from_slice(native.body()).unwrap();
+        assert_eq!(native["model"], "model");
+        assert_eq!(native["reasoning_effort"], "high");
+        assert_eq!(native["seed"], 17);
+        assert_eq!(native["response_format"]["type"], "json_object");
+        let converted = normalized.plan_conversation(Protocol::Gemini).unwrap();
+        let converted: serde_json::Value = serde_json::from_slice(converted.body()).unwrap();
+        assert_eq!(converted["generationConfig"]["seed"], 17);
+        assert_eq!(
+            converted["generationConfig"]["responseMimeType"],
+            "application/json"
+        );
+        assert_eq!(
+            converted["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "HIGH"
+        );
+    }
+
+    #[test]
+    fn suffix_preserves_explicit_reasoning_summary_and_native_only_tools() {
+        let source = crate::openai_responses::parse_request_envelope(Bytes::from_static(br#"{"model":"model-high","input":"hello","reasoning":{"summary":"concise"},"tools":[{"type":"web_search"}]}"#)).unwrap();
+        let normalized = apply_reasoning_model_suffix(source).unwrap();
+        assert!(normalized.native_only());
+        assert_eq!(
+            normalized.canonical().reasoning.unwrap().summary(),
+            Some(crate::ReasoningSummary::Concise)
+        );
+        assert!(
+            normalized
+                .clone()
+                .plan_conversation(Protocol::OpenAiChat)
+                .is_none()
+        );
+        let native = normalized
+            .plan_conversation(Protocol::OpenAiResponses)
+            .unwrap();
+        let native: serde_json::Value = serde_json::from_slice(native.body()).unwrap();
+        assert_eq!(native["reasoning"]["effort"], "high");
+        assert_eq!(native["reasoning"]["summary"], "concise");
+        assert_eq!(native["tools"][0]["type"], "web_search");
+    }
+
+    #[test]
+    fn thinking_suffix_preserves_dynamic_budget_and_effort_suffix_rejects_it() {
+        let mut canonical = CanonicalRequest::new(
+            Operation::Chat,
+            "model-thinking".to_owned(),
+            Vec::new(),
+            false,
+        );
+        canonical.reasoning = Some(
+            ReasoningConfig::new(None, None, false)
+                .unwrap()
+                .with_dynamic_budget(true)
+                .unwrap(),
+        );
+        let normalized = apply_reasoning_model_suffix(canonical.into()).unwrap();
+        let reasoning = normalized.canonical().reasoning.unwrap();
+        assert!(reasoning.dynamic_budget());
+        assert!(reasoning.include_thinking());
+
+        let mut conflicting = normalized.into_canonical();
+        conflicting.model = "model-high".to_owned();
+        assert_eq!(
+            apply_reasoning_model_suffix(conflicting.into()),
             Err(ReasoningModelSuffixError::ConflictingReasoning)
         );
     }

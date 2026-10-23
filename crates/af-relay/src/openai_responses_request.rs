@@ -3,8 +3,8 @@ use std::fmt;
 use af_adapter::Bytes;
 use af_domain::{AfError, MAX_MODEL_NAME_BYTES, Protocol};
 use af_protocol::{
-    CanonicalRequest, CanonicalRequestEnvelope, SameProtocolDecision, Sampling, TokenCount,
-    openai_responses::{MAX_OUTPUT_TOKENS, build_request},
+    CanonicalRequest, CanonicalRequestEnvelope, Sampling, TokenCount,
+    openai_responses::MAX_OUTPUT_TOKENS,
 };
 use thiserror::Error;
 
@@ -55,23 +55,24 @@ impl OpenAiResponsesRequestOverrides {
         &self,
         request: CanonicalRequestEnvelope,
     ) -> Result<RelayCandidateRequest, OpenAiResponsesRequestOverrideError> {
-        let (mut canonical, source_body) = into_openai_responses_parts(request);
-        canonical.model.clone_from(&self.model);
-        let current = &canonical.sampling;
+        let current = &request.canonical().sampling;
         let max_output_tokens = match (current.max_output_tokens(), self.max_output_tokens) {
             (Some(requested), Some(limit)) => Some(requested.min(limit)),
             (requested, None) => requested,
             (None, limit) => limit,
         };
-        canonical.sampling = Sampling::new(
+        let sampling = Sampling::new(
             self.temperature.or(current.temperature()),
             self.top_p.or(current.top_p()),
             max_output_tokens,
             current.stop_sequences().to_vec(),
         )
         .map_err(|_| OpenAiResponsesRequestOverrideError)?;
-        let body = build_stateless_body(&canonical, source_body.as_ref())
-            .map_err(|_| OpenAiResponsesRequestOverrideError)?;
+        let (_, body) = request
+            .with_routed_parameters(self.model.clone(), sampling)
+            .plan_conversation(Protocol::OpenAiResponses)
+            .ok_or(OpenAiResponsesRequestOverrideError)?
+            .into_parts();
         RelayCandidateRequest::new(self.model.clone(), Some(body))
             .map_err(map_candidate_request_error)
     }
@@ -101,91 +102,20 @@ pub(crate) struct PreparedOpenAiResponsesRequest {
     pub(crate) client_model: String,
 }
 
-/// 从 Canonical 或已验证的同协议底稿重构 Responses 请求，并固定 `store:false`。
-///
-/// 该边界避免产生网关无法管理的上游状态，同时保留已校验的无状态 Agent 扩展。
+/// 使用统一目标转换计划，并执行其无状态 Responses 策略。
 pub(crate) fn prepare_openai_responses_request(
     request: CanonicalRequestEnvelope,
 ) -> Result<PreparedOpenAiResponsesRequest, AfError> {
     let client_model = request.requested_model().to_owned();
-    let (canonical, source_body) = into_openai_responses_parts(request);
-    let body = build_stateless_body(&canonical, source_body.as_ref())?;
+    let (request, body) = request
+        .plan_conversation(Protocol::OpenAiResponses)
+        .ok_or(AfError::InvalidRequest)?
+        .into_parts();
     Ok(PreparedOpenAiResponsesRequest {
-        canonical,
+        canonical: request.into_canonical(),
         body,
         client_model,
     })
-}
-
-fn into_openai_responses_parts(
-    request: CanonicalRequestEnvelope,
-) -> (CanonicalRequest, Option<Bytes>) {
-    match request.into_same_protocol(Protocol::OpenAiResponses) {
-        SameProtocolDecision::Passthrough(passthrough) => {
-            let (canonical, body) = passthrough.into_parts();
-            (canonical, Some(body))
-        }
-        SameProtocolDecision::Rebuild(request) => (request.into_canonical(), None),
-    }
-}
-
-fn build_stateless_body(
-    request: &CanonicalRequest,
-    source_body: Option<&Bytes>,
-) -> Result<Bytes, AfError> {
-    if request.continuation.previous_response_id().is_some()
-        || request.continuation.conversation_id().is_some()
-    {
-        // 续接需要公开 ID 到上游 ID 的持久映射；未实现前不能透传伪造标识。
-        return Err(AfError::InvalidRequest);
-    }
-    // 同协议请求以已验证原文为底稿，只覆盖网关拥有的字段，避免 Agent 扩展被重编码丢失。
-    let mut value = match source_body {
-        Some(body) => serde_json::from_slice(body).map_err(|_| AfError::InvalidRequest)?,
-        None => build_request(request).map_err(|_| AfError::InvalidRequest)?,
-    };
-    let object = value.as_object_mut().ok_or(AfError::Internal)?;
-    if object.get("store").and_then(serde_json::Value::as_bool) == Some(true) {
-        return Err(AfError::InvalidRequest);
-    }
-    object.insert(
-        "model".to_owned(),
-        serde_json::Value::String(request.model.clone()),
-    );
-    insert_optional_number(object, "temperature", request.sampling.temperature())?;
-    insert_optional_number(object, "top_p", request.sampling.top_p())?;
-    match request.sampling.max_output_tokens() {
-        Some(tokens) => {
-            object.insert(
-                "max_output_tokens".to_owned(),
-                serde_json::Value::Number(tokens.get().into()),
-            );
-        }
-        None => {
-            object.remove("max_output_tokens");
-        }
-    }
-    object.insert("store".to_owned(), serde_json::Value::Bool(false));
-    serde_json::to_vec(&value)
-        .map(Bytes::from)
-        .map_err(|_| AfError::Internal)
-}
-
-fn insert_optional_number(
-    object: &mut serde_json::Map<String, serde_json::Value>,
-    key: &str,
-    value: Option<f64>,
-) -> Result<(), AfError> {
-    match value {
-        Some(value) => {
-            let number = serde_json::Number::from_f64(value).ok_or(AfError::InvalidRequest)?;
-            object.insert(key.to_owned(), serde_json::Value::Number(number));
-        }
-        None => {
-            object.remove(key);
-        }
-    }
-    Ok(())
 }
 
 fn valid_model(model: &str) -> bool {
@@ -347,9 +277,8 @@ mod tests {
     }
 
     #[test]
-    fn requested_storage_and_remote_continuation_fail_closed() {
+    fn remote_continuation_requires_resolved_local_history() {
         for request in [
-            json!({"model": "gpt-test", "input": "hello", "store": true}),
             json!({"model": "gpt-test", "previous_response_id": "resp-private"}),
             json!({"model": "gpt-test", "conversation": "conv-private"}),
         ] {
@@ -379,5 +308,49 @@ mod tests {
         let candidate = overrides.prepare(request).unwrap();
         let debug = format!("{overrides:?}{candidate:?}");
         assert!(!debug.contains("private-upstream-model"));
+    }
+
+    #[test]
+    fn storage_preference_is_normalized_and_extensions_survive_routing() {
+        let original = json!({
+            "model": "public-model",
+            "input": [{
+                "role": "user",
+                "content": [{"type": "input_text", "text": "hello", "x_part": {"keep": true}}],
+                "x_message": {"keep": [1, 2]}
+            }],
+            "stream": true,
+            "store": true,
+            "x_vendor": {"keep": {"enabled": true}}
+        });
+        let request = envelope(original.clone())
+            .with_default_max_output_tokens(TokenCount::new(256).unwrap());
+        let prepared = prepare_openai_responses_request(request.clone()).unwrap();
+        assert_eq!(prepared.client_model, "public-model");
+        let (_, candidate) =
+            OpenAiResponsesRequestOverrides::new("upstream-model", Some(0.25), None, Some(128))
+                .unwrap()
+                .prepare(request)
+                .unwrap()
+                .into_parts();
+        for body in [prepared.body, candidate.unwrap()] {
+            let value: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(value["input"], original["input"]);
+            assert_eq!(value["x_vendor"], original["x_vendor"]);
+            assert_eq!(value["store"], false);
+            assert_eq!(value["stream"], true);
+        }
+    }
+
+    #[test]
+    fn candidate_overrides_cannot_bypass_remote_continuation_policy() {
+        let overrides =
+            OpenAiResponsesRequestOverrides::new("upstream-model", None, None, None).unwrap();
+        for request in [
+            json!({"model": "gpt-test", "previous_response_id": "resp-private"}),
+            json!({"model": "gpt-test", "conversation": "conv-private"}),
+        ] {
+            assert!(overrides.prepare(envelope(request)).is_err());
+        }
     }
 }

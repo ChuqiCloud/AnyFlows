@@ -487,7 +487,11 @@ fn convert_user_parts(
         }
     }
 
-    if !state.pending_tool_call_ids.is_empty() {
+    // Consecutive user messages may each carry a subset of parallel results.
+    // Keep waiting across result-only messages, but ordinary user content must
+    // still follow the complete result set. Assistant turns and EOF enforce the
+    // same boundary in convert_messages.
+    if saw_regular_content && !state.pending_tool_call_ids.is_empty() {
         return Err(ParseRequestError::InvalidValue);
     }
     if !user_content.is_empty() {

@@ -163,7 +163,7 @@ pub async fn relay_openai_chat_with_report(
             &canonical,
             include_usage,
         ) {
-            Ok(encoder) => Some(encoder),
+            Ok(encoder) => Some(encoder.with_upstream_protocol(Protocol::OpenAiChat)),
             Err(error) => return RelayOpenAiChatOutcome::failed(error),
         }
     } else {
@@ -323,21 +323,10 @@ fn is_valid_model(model: &str) -> bool {
 /// 在发送上游请求前拒绝目标协议无法可靠构造的响应语义。
 fn validate_downstream_request(
     protocol: Protocol,
-    request: &af_protocol::CanonicalRequest,
+    _request: &af_protocol::CanonicalRequest,
 ) -> Result<(), AfError> {
     match protocol {
-        Protocol::OpenAiChat => Ok(()),
-        Protocol::Anthropic => {
-            // OpenAI Chat 不提供 Anthropic thinking 签名，不能在响应阶段伪造或静默丢弃。
-            if request
-                .reasoning
-                .is_some_and(|reasoning| reasoning.include_thinking())
-            {
-                return Err(AfError::InvalidRequest);
-            }
-            Ok(())
-        }
-        Protocol::Gemini => Ok(()),
+        Protocol::OpenAiChat | Protocol::Anthropic | Protocol::Gemini => Ok(()),
         Protocol::OpenAiResponses
         | Protocol::OpenAiEmbeddings
         | Protocol::OpenAiImages
@@ -386,7 +375,7 @@ mod tests {
     }
 
     #[test]
-    fn anthropic_downstream_rejects_unsigned_openai_thinking_before_dispatch() {
+    fn anthropic_downstream_allows_openai_thinking_text_bridge() {
         let request = af_protocol::anthropic::parse_request(
             br#"{"model":"gpt-test","max_tokens":2048,"messages":[{"role":"user","content":"hello"}],"thinking":{"type":"enabled","budget_tokens":1024}}"#,
         )
@@ -394,7 +383,7 @@ mod tests {
 
         assert_eq!(
             validate_downstream_request(Protocol::Anthropic, &request),
-            Err(AfError::InvalidRequest)
+            Ok(())
         );
         assert_eq!(
             validate_downstream_request(Protocol::OpenAiChat, &request),

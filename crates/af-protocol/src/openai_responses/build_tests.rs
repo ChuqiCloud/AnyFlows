@@ -444,7 +444,28 @@ fn rejects_wrong_operation_and_unmodeled_request_features() {
         )
         .unwrap(),
     );
-    assert_unsupported_capability(&reasoning, RequestCapability::ReasoningBudget);
+    assert_eq!(
+        build_request(&reasoning).unwrap()["reasoning"]["effort"],
+        "high"
+    );
+
+    let mut fixed_budget = minimal_request();
+    fixed_budget.reasoning =
+        Some(ReasoningConfig::new(None, Some(TokenCount::new(8192).unwrap()), true).unwrap());
+    assert_eq!(
+        build_request(&fixed_budget).unwrap()["reasoning"]["effort"],
+        "medium"
+    );
+    let mut dynamic_budget = minimal_request();
+    dynamic_budget.reasoning = Some(
+        ReasoningConfig::new(None, None, true)
+            .unwrap()
+            .with_dynamic_budget(true)
+            .unwrap(),
+    );
+    let dynamic = build_request(&dynamic_budget).unwrap();
+    assert!(dynamic["reasoning"].get("effort").is_none());
+    assert_eq!(dynamic["reasoning"]["summary"], "auto");
 }
 
 #[test]
