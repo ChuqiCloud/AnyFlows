@@ -164,7 +164,7 @@ fn injected_tool_round_keeps_default_auto_and_real_continuation_history() {
             serde_json::from_slice(&encode_tool_request(plan.request().clone(), protocol).unwrap())
                 .unwrap();
         assert_eq!(first["stream"], true);
-        assert_eq!(plan.request().canonical().stream, false);
+        assert!(!plan.request().canonical().stream);
         let mut continuation = None;
         for event in events(true, false)
             .into_iter()

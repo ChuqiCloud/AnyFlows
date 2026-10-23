@@ -80,6 +80,7 @@ jobs:
           cargo test --quiet -p af-adapter --lib --locked factory::
 
       - name: Test protocol parsing and relay lifecycle
+        if: ${{ !cancelled() }}
         run: |
           status=0
           cargo test --quiet -p af-protocol --all-features --locked || status=1
