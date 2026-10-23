@@ -813,11 +813,39 @@ mod tests {
             let ids = decoded
                 .iter()
                 .filter_map(|event| match event {
-                    CanonicalStreamEvent::ToolCallStart { id, .. } => Some(id.as_str()),
+                    CanonicalStreamEvent::ToolCallStart { tool_index, id, .. } => {
+                        Some((*tool_index, id.as_str()))
+                    }
                     _ => None,
                 })
-                .collect::<Vec<_>>();
-            assert_eq!(ids, ["call_a", "call_b"]);
+                .collect::<BTreeMap<_, _>>();
+            assert_eq!(
+                ids,
+                BTreeMap::from([(0, "call_a"), (1, "call_b")]),
+                "{target:?}: parallel call identities"
+            );
+            let mut arguments = BTreeMap::<u32, String>::new();
+            for event in &decoded {
+                if let CanonicalStreamEvent::ToolCallArgsDelta {
+                    tool_index,
+                    partial_json,
+                    ..
+                } = event
+                {
+                    arguments
+                        .entry(*tool_index)
+                        .or_default()
+                        .push_str(partial_json);
+                }
+            }
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&arguments[&0]).unwrap(),
+                json!({"key":"a"})
+            );
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&arguments[&1]).unwrap(),
+                json!({"key":"b"})
+            );
             assert_eq!(
                 decoded
                     .iter()
