@@ -225,10 +225,7 @@ fn normalize_request(protocol: Protocol, value: &mut Value) -> Result<(), ()> {
                             *item = json!({"role":"user","content":item.take()});
                         }
                         let map = object(item)?;
-                        optional(
-                            map,
-                            &["id", "status", "phase", "encrypted_content", "summary"],
-                        );
+                        optional(map, &["id", "status", "encrypted_content", "summary"]);
                         let kind = map.get("type").and_then(Value::as_str).unwrap_or("message");
                         match kind {
                             "message" => normalize_message(map, protocol)?,

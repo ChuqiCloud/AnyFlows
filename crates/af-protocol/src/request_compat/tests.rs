@@ -354,3 +354,90 @@ fn output_format_preferences_are_convertible_but_media_modes_stay_native() {
         &json!({"generationConfig":{"responseModalities":["AUDIO"]}})
     ));
 }
+
+#[test]
+fn caller_owned_tool_extensions_preserve_native_fields_and_convert_input_schema() {
+    let schema = json!({"type":"object","properties":{"query":{"type":"string"}},"required":["query"],"additionalProperties":false});
+    let targets = [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Anthropic,
+        Protocol::Gemini,
+    ];
+    for (protocol, value) in [
+        (
+            Protocol::Anthropic,
+            json!({
+                "model":"test-model","max_tokens":4096,"messages":[{"role":"user","content":"check"}],
+                "tools":[{"type":"custom","name":"lookup","description":"Find a record","strict":true,"input_schema":schema}]
+            }),
+        ),
+        (
+            Protocol::OpenAiResponses,
+            json!({
+                "model":"test-model","max_output_tokens":4096,"input":"check",
+                "tools":[{"type":"function","name":"lookup","description":"Find a record","parameters":schema,
+                    "strict":true,"allowed_callers":["direct"],"defer_loading":true,"output_schema":{"type":"object","properties":{"found":{"type":"boolean"}}}}]
+            }),
+        ),
+    ] {
+        assert!(!has_opaque_semantics(protocol, &value));
+        let envelope = parse(protocol, value.clone());
+        let native = source(envelope.clone(), protocol);
+        assert_eq!(
+            native["tools"], value["tools"],
+            "native extensions must remain intact"
+        );
+        for target in targets {
+            let plan = envelope
+                .clone()
+                .plan_conversation(target)
+                .unwrap_or_else(|| {
+                    panic!("{protocol:?}->{target:?}: caller-owned tool was blocked")
+                });
+            let converted = parse(target, serde_json::from_slice(plan.body()).unwrap());
+            let [tool] = converted.canonical().tools.as_slice() else {
+                panic!("{protocol:?}->{target:?}: caller-owned tool definition lost")
+            };
+            assert_eq!(tool.name, "lookup");
+            assert_eq!(tool.description.as_deref(), Some("Find a record"));
+            assert_eq!(
+                tool.input_schema, schema,
+                "{protocol:?}->{target:?}: input schema changed"
+            );
+        }
+    }
+}
+
+#[test]
+fn provider_executed_tool_types_remain_native_only() {
+    for (protocol, value) in [
+        (
+            Protocol::Anthropic,
+            json!({"tools":[{"type":"web_search_20250305","name":"web_search"}]}),
+        ),
+        (
+            Protocol::Anthropic,
+            json!({"tools":[{"type":"computer_20250124","name":"computer"}]}),
+        ),
+        (
+            Protocol::OpenAiResponses,
+            json!({"tools":[{"type":"web_search_preview"}]}),
+        ),
+        (
+            Protocol::OpenAiResponses,
+            json!({"tools":[{"type":"code_interpreter","container":{"type":"auto"}}]}),
+        ),
+    ] {
+        assert!(
+            has_opaque_semantics(protocol, &value),
+            "{protocol:?}: provider execution state cannot be converted into a caller-owned function"
+        );
+    }
+    for kind in [Value::Null, json!("custom"), json!("function")] {
+        assert!(!has_opaque_semantics(
+            Protocol::Anthropic,
+            &json!({"tools":[{"type":kind,"name":"lookup","strict":true,"input_schema":{"type":"object"}}]})
+        ));
+    }
+}

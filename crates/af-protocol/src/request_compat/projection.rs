@@ -728,12 +728,19 @@ pub(super) fn has_opaque_semantics(protocol: Protocol, body: &Value) -> bool {
                             .any(|key| key != "functionDeclarations" && key != "metadata")
                     })
                 } else if protocol == Protocol::Anthropic {
-                    tool.get("type").is_some() || tool.get("strict") == Some(&Value::Bool(true))
+                    // `custom` tools are ordinary caller-owned functions. A
+                    // strict input preference does not require Anthropic's
+                    // server-side tool execution or make the schema opaque.
+                    tool.get("type")
+                        .filter(|kind| !kind.is_null())
+                        .is_some_and(|kind| {
+                            kind.as_str() != Some("custom") && kind.as_str() != Some("function")
+                        })
                 } else {
+                    // Function-loading/caller/output-schema annotations remain
+                    // in the native source context. The function definition's
+                    // name and input schema still convert to every target.
                     tool.get("type").and_then(Value::as_str) != Some("function")
-                        || ["allowed_callers", "defer_loading", "output_schema"]
-                            .iter()
-                            .any(|key| tool.get(*key).is_some())
                 }
             })
         })
