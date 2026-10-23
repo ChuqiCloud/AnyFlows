@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import threading
@@ -24,6 +25,9 @@ fixture_spec.loader.exec_module(fixture_module)
 BASE = seed_module.BASE
 MODEL = seed_module.MODEL
 TRACE_DIR = Path(os.environ.get("RUNNER_TEMP", "/tmp")) / "pi-live-smoke-traces"
+DIAGNOSTIC_TEXT_LIMIT = 384
+DIAGNOSTIC_BODY_LIMIT = 64 * 1024
+DIAGNOSTIC_ITEMS_LIMIT = 6
 
 
 class CaptureProxy(BaseHTTPRequestHandler):
@@ -36,6 +40,7 @@ class CaptureProxy(BaseHTTPRequestHandler):
         request_body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
         trace = TRACE_DIR / f"{self.server.case_name}.jsonl"
         responses = self.server.responses
+        captures = self.server.response_captures
         identity = uuid.uuid4().hex
         request_path = TRACE_DIR / f"{self.server.case_name}-{identity}.request.bin"
         response_path = TRACE_DIR / f"{self.server.case_name}-{identity}.response.bin"
@@ -66,6 +71,8 @@ class CaptureProxy(BaseHTTPRequestHandler):
             self.end_headers()
             request_id = response.headers.get("x-request-id") or response.headers.get("request-id")
             responses.append({"status": response.status, "request_id": request_id})
+            captures.append({"status": response.status, "request_id": request_id,
+                             "content_type": content_type, "body_file": response_path.name})
             append_trace(trace, {"direction": "client_response", "status": response.status,
                                  "request_id": request_id,
                                  "headers": {k: v for k, v in response.headers.items() if k.lower() != "set-cookie"},
@@ -98,10 +105,111 @@ def append_trace(path, event):
         stream.write(json.dumps(event, ensure_ascii=False) + "\n")
 
 
+def diagnostic_text(value, secrets=()):
+    """Bound controlled error text after removing credentials, never print headers."""
+    text = str(value)
+    for secret in secrets:
+        if secret:
+            text = text.replace(secret, "[redacted]")
+    text = re.sub(r"(?i)\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]+", "[redacted authorization]", text)
+    text = re.sub(r'''(?ix)
+        ["']?(?:authorization|proxy-authorization|x-api-key|x-goog-api-key|api[_-]?key|
+        access[_-]?token|refresh[_-]?token|password|secret)["']?\s*[:=]\s*
+        (?:"[^"]*"|'[^']*'|[^\s,;}\]]+)
+    ''', "[redacted credential]", text)
+    text = re.sub(r"(?i)(https?://)[^/\s:@]+:[^/\s@]+@", r"\1[redacted]@", text)
+    text = re.sub(r"(?i)([?&](?:key|token|api_key|access_token)=)[^&\s]+", r"\1[redacted]", text)
+    text = re.sub(r"\bsk-[A-Za-z0-9_-]+", "[redacted key]", text)
+    text = " ".join(text.split())
+    return text[:DIAGNOSTIC_TEXT_LIMIT] + ("…" if len(text) > DIAGNOSTIC_TEXT_LIMIT else "")
+
+
+def error_summary(value, secrets=(), depth=0):
+    """Select error fields only; arbitrary response/request objects stay private."""
+    if depth >= 3:
+        return None
+    if isinstance(value, str):
+        return diagnostic_text(value, secrets)
+    if isinstance(value, (bool, int, float)) or value is None:
+        return value
+    if not isinstance(value, dict):
+        return None
+    summary = {}
+    for key in ["type", "code", "message", "errorMessage", "status", "stopReason",
+                "reason", "error", "incomplete_details"]:
+        if key in value and value[key] is not None:
+            item = error_summary(value[key], secrets, depth + 1)
+            if item is not None:
+                summary[key] = item
+    return summary or None
+
+
+def captured_response_diagnostics(captures, secrets=()):
+    reports = []
+    for capture in captures[:DIAGNOSTIC_ITEMS_LIMIT]:
+        report = {"status": capture["status"], "body_file": capture["body_file"]}
+        path = TRACE_DIR / capture["body_file"]
+        try:
+            with path.open("rb") as stream:
+                size = path.stat().st_size
+                head = stream.read(DIAGNOSTIC_BODY_LIMIT)
+                tail = b""
+                if size > DIAGNOSTIC_BODY_LIMIT:
+                    stream.seek(max(DIAGNOSTIC_BODY_LIMIT, size - DIAGNOSTIC_BODY_LIMIT))
+                    tail = stream.read(DIAGNOSTIC_BODY_LIMIT)
+            report["body_bytes"] = size
+            report["body_sample_truncated"] = size > len(head) + len(tail)
+            samples = [head.decode("utf-8", "replace")]
+            if tail:
+                samples.append(tail.decode("utf-8", "replace"))
+            errors = []
+            for sample in samples:
+                candidates = [sample] if "event-stream" not in capture["content_type"].lower() else []
+                candidates.extend(line[5:].strip() for line in sample.splitlines() if line.startswith("data:"))
+                for candidate in candidates:
+                    try:
+                        value = json.loads(candidate)
+                    except ValueError:
+                        continue
+                    if not isinstance(value, dict):
+                        continue
+                    terminal = value.get("response")
+                    if isinstance(terminal, dict):
+                        value = terminal
+                    failed = (capture["status"] >= 400 or value.get("error") is not None
+                              or value.get("type") in {"error", "response.failed", "response.incomplete"}
+                              or value.get("status") in {"failed", "incomplete"})
+                    summary = error_summary(value, secrets) if failed else None
+                    if summary and summary not in errors and len(errors) < DIAGNOSTIC_ITEMS_LIMIT:
+                        errors.append(summary)
+            report["errors"] = errors
+            if capture["status"] >= 400 and not errors:
+                report["error_body_excerpt"] = diagnostic_text(samples[0], secrets)
+        except OSError as error:
+            report["capture_error"] = type(error).__name__
+        reports.append(report)
+    return {"captures": reports, "omitted_captures": max(0, len(captures) - len(reports))}
+
+
+def fixture_diagnostics(server):
+    case = server.active
+    failures = server.failures[case["failure_start"]:]
+    hits = server.hits[case["start"]:]
+    secrets = (proxy_server.preview_key, "preview-capture-proxy")
+    return {"expected_requests": 2 if case["turn"] == 3 else 1, "observed_requests": len(hits),
+            "hits": [{key: hit[key] for key in ["target", "valid", "stream", "tool", "tool_result"] if key in hit}
+                     for hit in hits[:DIAGNOSTIC_ITEMS_LIMIT]],
+            "failures": [{"kind": diagnostic_text(item.get("kind", ""), secrets),
+                          "message": diagnostic_text(item.get("message", ""), secrets)}
+                         for item in failures[:DIAGNOSTIC_ITEMS_LIMIT]],
+            "omitted_failures": max(0, len(failures) - DIAGNOSTIC_ITEMS_LIMIT)}
+
+
 def pi_turn(node, cli, profile, case_name, session_id, model, thinking, index, prompt, expected, timeout=180):
     proxy = proxy_server
     proxy.case_name = f"{case_name}-turn-{index}"
     proxy.responses = []
+    proxy.response_captures = []
     command = [node, str(cli), "--print", "--mode", "json", "--session-dir", str(profile / "sessions"),
                "--session-id", session_id, "--no-extensions", "--no-mcp", "--no-context-files",
                "--no-skills", "--no-prompt-templates", "--no-themes", "--tools", "read",
@@ -117,6 +225,8 @@ def pi_turn(node, cli, profile, case_name, session_id, model, thinking, index, p
     (TRACE_DIR / f"{case_name}-turn-{index}.pi.jsonl").write_text(result.stdout, encoding="utf-8")
     messages = []
     read_executed = False
+    pi_errors = []
+    secrets = (proxy.preview_key, "preview-capture-proxy")
     for line in result.stdout.splitlines():
         try:
             item = json.loads(line)
@@ -126,6 +236,15 @@ def pi_turn(node, cli, profile, case_name, session_id, model, thinking, index, p
             continue
         if item.get("type") == "message_end":
             messages.append(item.get("message", {}))
+            message = item.get("message", {})
+            if isinstance(message, dict) and (message.get("errorMessage") or message.get("stopReason") in {"error", "aborted"}):
+                summary = error_summary(message, secrets)
+                if summary and len(pi_errors) < DIAGNOSTIC_ITEMS_LIMIT:
+                    pi_errors.append(summary)
+        if item.get("type") == "error" or item.get("error") is not None:
+            summary = error_summary(item, secrets)
+            if summary and len(pi_errors) < DIAGNOSTIC_ITEMS_LIMIT:
+                pi_errors.append(summary)
         if item.get("type") == "tool_execution_end" and item.get("toolName") == "read" and not item.get("isError", False):
             read_executed = True
     final = next((m for m in reversed(messages) if m.get("role") == "assistant"), {})
@@ -143,8 +262,18 @@ def pi_turn(node, cli, profile, case_name, session_id, model, thinking, index, p
               and usage_present
               and bool(proxy.responses) and all(meta["status"] == 200 for meta in proxy.responses)
               and (index != 3 or read_executed))
-    print(json.dumps({"case": case_name, "turn": index, "pass": passed,
-                      "responses": proxy.responses}), flush=True)
+    report = {"case": case_name, "turn": index, "pass": passed, "responses": proxy.responses}
+    if not passed:
+        report["diagnostics"] = {"exit_code": result.returncode,
+                                 "stop_reason": diagnostic_text(final.get("stopReason"), secrets),
+                                 "assistant_messages": sum(m.get("role") == "assistant" for m in messages),
+                                 "answer_matches": answer in recognized_answers,
+                                 "answer_chars": len(answer),
+                                 "answer_excerpt": diagnostic_text(answer, secrets),
+                                 "usage_present": usage_present, "read_executed": read_executed,
+                                 "pi_errors": pi_errors,
+                                 "responses": captured_response_diagnostics(proxy.response_captures, secrets)}
+    print(json.dumps(report), flush=True)
     return passed
 
 
@@ -162,6 +291,7 @@ def main():
     proxy_server.preview_key = key
     proxy_server.case_name = "starting"
     proxy_server.responses = []
+    proxy_server.response_captures = []
     threading.Thread(target=proxy_server.serve_forever, daemon=True).start()
     try:
         base = f"http://127.0.0.1:{proxy_server.server_address[1]}"
@@ -201,7 +331,9 @@ def main():
                         try:
                             fixture_module.verify_turn(fixture_server)
                         except AssertionError as error:
-                            print(json.dumps({"case":case_name,"turn":index,"fixture_pass":False,"reason":str(error)}), flush=True)
+                            print(json.dumps({"case":case_name,"turn":index,"fixture_pass":False,
+                                              "reason":diagnostic_text(error, (key,)),
+                                              "fixture_diagnostics":fixture_diagnostics(fixture_server)}), flush=True)
                             passed = False
                         if not passed:
                             failures.append(f"{case_name}/turn-{index}")

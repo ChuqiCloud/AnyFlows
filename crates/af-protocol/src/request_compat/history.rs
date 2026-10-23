@@ -1,5 +1,69 @@
 use super::*;
 
+#[cfg(test)]
+#[path = "history_tests.rs"]
+mod tests;
+
+struct HistoricalResult {
+    block: Value,
+    source_message: usize,
+    // Share the wrapper across parallel results without copying the content
+    // array or large vendor metadata once per tool result.
+    envelope: Option<std::sync::Arc<Map<String, Value>>>,
+}
+
+fn result_content_key(protocol: Protocol) -> Option<&'static str> {
+    match protocol {
+        Protocol::Anthropic => Some("content"),
+        Protocol::Gemini => Some("parts"),
+        _ => None,
+    }
+}
+
+fn result_message(protocol: Protocol, result: &HistoricalResult, blocks: Vec<Value>) -> Value {
+    let mut wrapper = result.envelope.as_deref().cloned().unwrap_or_default();
+    wrapper.insert("role".to_owned(), json!("user"));
+    wrapper.insert(
+        result_content_key(protocol)
+            .expect("only block protocols have a result wrapper")
+            .to_owned(),
+        Value::Array(blocks),
+    );
+    Value::Object(wrapper)
+}
+
+fn append_result_messages(
+    protocol: Protocol,
+    output: &mut Vec<Value>,
+    answers: Vec<HistoricalResult>,
+) {
+    if !matches!(protocol, Protocol::Anthropic | Protocol::Gemini) {
+        output.extend(answers.into_iter().map(|answer| answer.block));
+        return;
+    }
+    let key = result_content_key(protocol).expect("block protocol");
+    let mut active: Option<(usize, Value)> = None;
+    for answer in answers {
+        if let Some((source, message)) = &mut active
+            && *source == answer.source_message
+        {
+            message[key]
+                .as_array_mut()
+                .expect("result content is an array")
+                .push(answer.block);
+        } else {
+            if let Some((_, message)) = active.take() {
+                output.push(message);
+            }
+            let message = result_message(protocol, &answer, vec![answer.block.clone()]);
+            active = Some((answer.source_message, message));
+        }
+    }
+    if let Some((_, message)) = active {
+        output.push(message);
+    }
+}
+
 pub(super) fn opaque_text(value: &Value) -> String {
     fn readable(value: &Value) -> Value {
         match value {
@@ -144,7 +208,7 @@ fn calls_mut(protocol: Protocol, message: &mut Value) -> Vec<&mut Value> {
 fn repair_unmatched_calls(
     protocol: Protocol,
     message: &mut Value,
-    matched: &std::collections::HashMap<String, Value>,
+    matched: &std::collections::HashMap<String, HistoricalResult>,
 ) -> Result<(), ()> {
     if protocol == Protocol::OpenAiResponses {
         if message.get("type").and_then(Value::as_str) == Some("function_call")
@@ -236,8 +300,27 @@ pub(super) fn normalize_tool_history(
         return Ok(false);
     };
     let mut results = Vec::new();
-    for message in messages.iter() {
-        results.extend(result_blocks(protocol, message));
+    for (source_message, message) in messages.iter().enumerate() {
+        let blocks = result_blocks(protocol, message);
+        if blocks.is_empty() {
+            continue;
+        }
+        let envelope = result_content_key(protocol).and_then(|key| {
+            message.as_object().map(|message| {
+                std::sync::Arc::new(
+                    message
+                        .iter()
+                        .filter(|(field, _)| field.as_str() != key)
+                        .map(|(field, value)| (field.clone(), value.clone()))
+                        .collect::<Map<_, _>>(),
+                )
+            })
+        });
+        results.extend(blocks.into_iter().map(|block| HistoricalResult {
+            block,
+            source_message,
+            envelope: envelope.clone(),
+        }));
     }
     let mut reserved = std::collections::HashSet::new();
     for message in messages.iter_mut() {
@@ -290,9 +373,9 @@ pub(super) fn normalize_tool_history(
     let mut orphan = Vec::new();
     for mut result in results {
         let raw = if protocol == Protocol::Gemini {
-            result.get_mut("functionResponse").ok_or(())?
+            result.block.get_mut("functionResponse").ok_or(())?
         } else {
-            &mut result
+            &mut result.block
         };
         let raw = object(raw)?;
         let idkey = if protocol == Protocol::Gemini {
@@ -376,34 +459,39 @@ pub(super) fn normalize_tool_history(
             .collect::<Vec<_>>();
         if !answers.is_empty() {
             match protocol {
-                Protocol::Anthropic => output.push(json!({"role":"user","content":answers})),
-                Protocol::Gemini => output.push(json!({"role":"user","parts":answers})),
+                Protocol::Anthropic | Protocol::Gemini => {
+                    append_result_messages(protocol, &mut output, answers)
+                }
                 Protocol::OpenAiResponses => {
-                    deferred_responses.extend(answers);
+                    deferred_responses.extend(answers.into_iter().map(|answer| answer.block));
                     if !entries.peek().is_some_and(|next| {
                         next.get("type").and_then(Value::as_str) == Some("function_call")
                     }) {
                         output.append(&mut deferred_responses);
                     }
                 }
-                _ => output.extend(answers),
+                _ => output.extend(answers.into_iter().map(|answer| answer.block)),
             }
         }
     }
     output.append(&mut deferred_responses);
     for result in orphan {
         if projection {
-            let text = opaque_text(&result);
+            let text = opaque_text(&result.block);
             output.push(if protocol == Protocol::Gemini {
-                json!({"role":"user","parts":[{"text":text}]})
+                result_message(protocol, &result, vec![json!({"text":text})])
+            } else if protocol == Protocol::Anthropic {
+                result_message(protocol, &result, vec![json!({"type":"text","text":text})])
             } else {
                 json!({"role":"user","content":text})
             });
         } else {
             match protocol {
-                Protocol::Anthropic => output.push(json!({"role":"user","content":[result]})),
-                Protocol::Gemini => output.push(json!({"role":"user","parts":[result]})),
-                _ => output.push(result),
+                Protocol::Anthropic | Protocol::Gemini => {
+                    let message = result_message(protocol, &result, vec![result.block.clone()]);
+                    output.push(message);
+                }
+                _ => output.push(result.block),
             }
         }
     }

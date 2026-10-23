@@ -63,6 +63,53 @@ fn scalar_null_role_content_and_extensions_normalize_at_all_ingresses() {
 }
 
 #[test]
+fn empty_stop_defaults_are_omitted_at_compatible_ingresses() {
+    for protocol in [Protocol::OpenAiChat, Protocol::Anthropic, Protocol::Gemini] {
+        for empty in [json!([]), json!("")] {
+            let (mut value, key) = match protocol {
+                Protocol::OpenAiChat => (
+                    json!({"model":"test-model","messages":[{"role":"user","content":"hello"}]}),
+                    "stop",
+                ),
+                Protocol::Anthropic => (
+                    json!({"model":"test-model","max_tokens":256,"messages":[{"role":"user","content":"hello"}]}),
+                    "stop_sequences",
+                ),
+                Protocol::Gemini => (
+                    json!({"contents":[{"role":"user","parts":[{"text":"hello"}]}],"generationConfig":{}}),
+                    "stopSequences",
+                ),
+                _ => unreachable!(),
+            };
+            if protocol == Protocol::Gemini {
+                value["generationConfig"][key] = empty;
+            } else {
+                value[key] = empty;
+            }
+            let envelope = parse(protocol, value);
+            for target in [
+                Protocol::OpenAiChat,
+                Protocol::OpenAiResponses,
+                Protocol::Anthropic,
+                Protocol::Gemini,
+            ] {
+                assert!(
+                    envelope.clone().plan_conversation(target).is_some(),
+                    "{protocol:?}->{target:?}"
+                );
+            }
+            let body = source(envelope, protocol);
+            let config = if protocol == Protocol::Gemini {
+                &body["generationConfig"]
+            } else {
+                &body
+            };
+            assert!(config.get(key).is_none());
+        }
+    }
+}
+
+#[test]
 fn legacy_functions_and_object_results_become_paired_standard_history() {
     let value = json!({"model":"test-model","functions":[{"name":"lookup"}],"function_call":"auto","messages":[
         {"role":"user","content":"check"},

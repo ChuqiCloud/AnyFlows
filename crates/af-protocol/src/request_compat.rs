@@ -332,11 +332,24 @@ fn output_limit(map: &mut Map<String, Value>, key: &str) {
 }
 
 fn normalize_optional_parameters(protocol: Protocol, root: &mut Map<String, Value>) {
+    for key in ["stop", "stop_sequences"] {
+        if root.get(key).is_some_and(|value| {
+            value.as_array().is_some_and(Vec::is_empty) || value.as_str().is_some_and(str::is_empty)
+        }) {
+            root.remove(key);
+        }
+    }
     if protocol == Protocol::Gemini {
         if let Some(config) = root
             .get_mut("generationConfig")
             .and_then(Value::as_object_mut)
         {
+            if config.get("stopSequences").is_some_and(|value| {
+                value.as_array().is_some_and(Vec::is_empty)
+                    || value.as_str().is_some_and(str::is_empty)
+            }) {
+                config.remove("stopSequences");
+            }
             clamp_number(config, "temperature", 2.0);
             clamp_number(config, "topP", 1.0);
             output_limit(config, "maxOutputTokens");

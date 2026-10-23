@@ -1,5 +1,9 @@
 use super::*;
 
+#[cfg(test)]
+#[path = "projection_tests.rs"]
+mod tests;
+
 fn retain(map: &mut Map<String, Value>, keys: &[&str], extensions: &mut usize) {
     map.retain(|key, _| {
         let keep = keys.contains(&key.as_str());
@@ -522,6 +526,7 @@ fn project_gemini(root: &mut Map<String, Value>, extensions: &mut usize) -> Resu
             );
         }
     }
+    let mut allowed_names = None;
     if let Some(config) = root.get_mut("toolConfig").and_then(Value::as_object_mut) {
         retain(config, &["functionCallingConfig"], extensions);
         if let Some(function) = config
@@ -529,7 +534,51 @@ fn project_gemini(root: &mut Map<String, Value>, extensions: &mut usize) -> Resu
             .and_then(Value::as_object_mut)
         {
             retain(function, &["mode", "allowedFunctionNames"], extensions);
+            // Represent allowed subsets through the declarations themselves.
+            // Native requests retain their original mode and allowed names.
+            let project_allowed_names = match function.get("mode").and_then(Value::as_str) {
+                Some("VALIDATED") => {
+                    function.insert("mode".to_owned(), json!("AUTO"));
+                    true
+                }
+                None | Some("AUTO" | "ANY") => true,
+                _ => false,
+            };
+            if project_allowed_names && let Some(names) = function.remove("allowedFunctionNames") {
+                allowed_names = Some(
+                    names
+                        .as_array()
+                        .ok_or(())?
+                        .iter()
+                        .map(|name| name.as_str().map(str::to_owned).ok_or(()))
+                        .collect::<Result<Vec<_>, _>>()?,
+                );
+            }
         }
+    }
+    if let Some(names) = allowed_names
+        && !names.is_empty()
+        && let Some(tools) = root.get_mut("tools").and_then(Value::as_array_mut)
+    {
+        for tool in tools.iter_mut() {
+            if let Some(declarations) = tool
+                .get_mut("functionDeclarations")
+                .and_then(Value::as_array_mut)
+            {
+                declarations.retain(|declaration| {
+                    declaration
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .is_some_and(|name| names.iter().any(|allowed| allowed == name))
+                });
+            }
+        }
+        tools.retain(|tool| {
+            !tool
+                .get("functionDeclarations")
+                .and_then(Value::as_array)
+                .is_some_and(Vec::is_empty)
+        });
     }
     for key in ["contents", "systemInstruction"] {
         if let Some(value) = root.get_mut(key) {
@@ -550,12 +599,13 @@ fn project_gemini(root: &mut Map<String, Value>, extensions: &mut usize) -> Resu
                     .and_then(Value::as_array_mut)
                     .ok_or(())?
                 {
+                    let native_inline_media = gemini_native_inline_media(part);
                     let map = object(part)?;
                     let known = map.contains_key("text")
                         || map.contains_key("inlineData")
                         || map.contains_key("functionCall")
                         || map.contains_key("functionResponse");
-                    if !known {
+                    if !known || native_inline_media {
                         *extensions += 1;
                         *part = json!({"text":opaque_text(part)});
                         continue;
@@ -671,6 +721,7 @@ pub(super) fn has_opaque_semantics(protocol: Protocol, body: &Value) -> bool {
                     .iter()
                     .any(|key| part.get(*key).is_some())
                     || part.get("fileData").is_some()
+                    || gemini_native_inline_media(part)
                 {
                     return true;
                 }
@@ -743,6 +794,16 @@ pub(super) fn has_opaque_semantics(protocol: Protocol, body: &Value) -> bool {
                     tool.get("type").and_then(Value::as_str) != Some("function")
                 }
             })
+        })
+}
+
+fn gemini_native_inline_media(part: &Value) -> bool {
+    part.get("inlineData")
+        .and_then(|data| data.get("mimeType"))
+        .and_then(Value::as_str)
+        .is_some_and(|mime| {
+            let mime = mime.to_ascii_lowercase();
+            !mime.is_empty() && !mime.starts_with("image/") && !mime.starts_with("audio/")
         })
 }
 
