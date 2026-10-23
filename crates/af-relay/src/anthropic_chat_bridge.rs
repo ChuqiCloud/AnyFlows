@@ -819,10 +819,11 @@ mod tests {
                     _ => None,
                 })
                 .collect::<BTreeMap<_, _>>();
+            assert_eq!(ids.len(), 2, "{target:?}: parallel call identities");
+            let indices: BTreeMap<_, _> = ids.into_iter().map(|(index, id)| (id, index)).collect();
             assert_eq!(
-                ids,
-                BTreeMap::from([(0, "call_a"), (1, "call_b")]),
-                "{target:?}: parallel call identities"
+                indices.keys().copied().collect::<Vec<_>>(),
+                ["call_a", "call_b"]
             );
             let mut arguments = BTreeMap::<u32, String>::new();
             for event in &decoded {
@@ -839,11 +840,11 @@ mod tests {
                 }
             }
             assert_eq!(
-                serde_json::from_str::<serde_json::Value>(&arguments[&0]).unwrap(),
+                serde_json::from_str::<serde_json::Value>(&arguments[&indices["call_a"]]).unwrap(),
                 json!({"key":"a"})
             );
             assert_eq!(
-                serde_json::from_str::<serde_json::Value>(&arguments[&1]).unwrap(),
+                serde_json::from_str::<serde_json::Value>(&arguments[&indices["call_b"]]).unwrap(),
                 json!({"key":"b"})
             );
             assert_eq!(
