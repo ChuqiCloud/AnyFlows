@@ -1,4 +1,4 @@
-name: Verify Pi preview compatibility
+name: Verify Pi preview protocol matrix
 
 on:
   workflow_dispatch:
@@ -82,7 +82,7 @@ jobs:
           echo "PI_CLI=$RUNNER_TEMP/pi-live/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" >> "$GITHUB_ENV"
           echo "PI_PROFILE_DIR=$RUNNER_TEMP/pi-live/profile" >> "$GITHUB_ENV"
 
-      - name: Start the preview and run native Pi conversations
+      - name: Start the preview and run all sixteen controlled Pi routes
         env:
           RUNNER_TEMP: ${{ runner.temp }}
         run: |

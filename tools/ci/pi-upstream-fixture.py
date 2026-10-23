@@ -93,7 +93,8 @@ def seed_preview(seed, fixture):
 
 def begin_turn(server, source, target, thinking, turn, fixture_path):
     server.active = {"source": source, "target": target, "thinking": thinking,
-                     "turn": turn, "fixture_path": str(fixture_path), "start": len(server.hits)}
+                     "turn": turn, "fixture_path": str(fixture_path), "start": len(server.hits),
+                     "failure_start": len(server.failures)}
 
 
 def verify_turn(server):
@@ -104,7 +105,7 @@ def verify_turn(server):
         raise AssertionError(f"Controlled upstream expected {expected_count} requests, observed {len(hits)}")
     if any(hit["target"] != case["target"] or not hit["valid"] for hit in hits):
         raise AssertionError("Controlled upstream route or history assertion failed")
-    if server.failures:
+    if server.failures[case["failure_start"]:]:
         raise AssertionError("Controlled upstream encountered a fixture assertion failure")
 
 

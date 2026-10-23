@@ -384,7 +384,7 @@ mod tests {
     use bytes::Bytes;
 
     use super::*;
-    use crate::{ContentBlock, StreamOptions, openai_responses};
+    use crate::{ContentBlock, openai_responses};
     use af_domain::Operation;
 
     #[test]
