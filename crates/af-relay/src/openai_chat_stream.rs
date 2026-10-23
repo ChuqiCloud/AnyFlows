@@ -525,8 +525,34 @@ mod tests {
                     .count(),
                 1
             );
-            assert!(events.iter().any(|event| matches!(event,
-                CanonicalStreamEvent::Usage(value) if *value == resolved)));
+            let decoded_usage: Vec<_> = events
+                .iter()
+                .filter_map(|event| match event {
+                    CanonicalStreamEvent::Usage(value) => Some(*value),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(decoded_usage.len(), 1);
+            let decoded_usage = decoded_usage[0];
+            assert_eq!(decoded_usage.source(), UsageSource::Upstream);
+            assert_eq!(
+                resolved.semantics(),
+                af_protocol::UsageSemantics::CacheSeparated
+            );
+            assert_eq!(
+                decoded_usage.semantics(),
+                af_protocol::UsageSemantics::Inclusive
+            );
+            assert_eq!(
+                decoded_usage.checked_input_tokens().unwrap(),
+                resolved.checked_input_tokens().unwrap()
+            );
+            assert_eq!(decoded_usage.output_tokens(), resolved.output_tokens());
+            assert_eq!(
+                decoded_usage.checked_total_tokens().unwrap(),
+                resolved.checked_total_tokens().unwrap()
+            );
+            assert_eq!(decoded_usage.details(), resolved.details());
         }
     }
 
