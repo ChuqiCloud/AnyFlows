@@ -70,6 +70,26 @@ impl ToolNames {
             forward.insert(original, alias);
         }
         let mut canonical = request.canonical().clone();
+        if canonical.tools.is_empty()
+            && canonical.tool_choice == ToolChoice::None
+            && request.source_context().is_some_and(|(protocol, body)| {
+                serde_json::from_slice::<serde_json::Value>(body).is_ok_and(|body| {
+                    let choice = if protocol == af_domain::Protocol::Gemini {
+                        body.get("toolConfig")
+                            .and_then(|config| config.get("functionCallingConfig"))
+                            .and_then(|config| config.get("mode"))
+                    } else {
+                        body.get("tool_choice")
+                            .or_else(|| body.get("function_call"))
+                    };
+                    choice.is_none_or(serde_json::Value::is_null)
+                })
+            })
+        {
+            // 协议解析器用 None 表示空目录缺省；工具注入后应恢复缺省 Auto。
+            // 调用方明确声明的 none 仍然禁止任何工具替代。
+            canonical.tool_choice = ToolChoice::Auto;
+        }
         for message in &mut canonical.messages {
             rewrite(&mut message.content, 0, &forward)?;
         }

@@ -10,7 +10,8 @@ use af_adapter::Bytes;
 use af_domain::{Protocol, Role};
 use af_protocol::{
     CanonicalRequestEnvelope, CanonicalStreamEvent as Event, ContentBlock, ContentDelta,
-    FinishReason, anthropic, gemini, openai_chat, openai_responses,
+    FinishReason, TokenCount, Usage, UsageSemantics, UsageSource, anthropic, gemini, openai_chat,
+    openai_responses,
 };
 use serde_json::{Value, json};
 
@@ -473,20 +474,65 @@ fn converted_response(
     let mut original_wire_response = None;
     let response = if stream {
         let events = response_events(&upstream);
-        let mut upstream_encoder =
-            ChatStreamEncoder::new(target, "matrix-upstream", MODEL, CREATED, request, true)
-                .unwrap()
-                .with_upstream_protocol(target);
         let mut encoded = Vec::new();
-        for event in events {
-            encoded.extend(
-                upstream_encoder
-                    .encode_event(event)
-                    .unwrap_or_else(|e| panic!("{label}: upstream encode: {e:?}")),
-            );
+        if target == Protocol::Anthropic {
+            // A provider fixture must use the native encoder and its supplied
+            // usage. The relay's downstream encoder estimates initial input
+            // before upstream metadata arrives and is not an upstream fixture.
+            let initial = Usage::new(
+                usage.input_tokens(),
+                TokenCount::ZERO,
+                *usage.details(),
+                UsageSource::Upstream,
+                UsageSemantics::CacheSeparated,
+            )
+            .unwrap();
+            let mut encoder = anthropic::AnthropicMessagesStreamEncoder::new(
+                "msg_matrix_upstream",
+                MODEL,
+                initial,
+            )
+            .unwrap();
+            for event in events {
+                encoded.extend(
+                    encoder
+                        .encode(event)
+                        .unwrap_or_else(|e| panic!("{label}: native upstream encode: {e:?}")),
+                );
+            }
+            encoded.extend(encoder.encode(Event::StreamEnd).unwrap());
+        } else {
+            let mut upstream_encoder =
+                ChatStreamEncoder::new(target, "matrix-upstream", MODEL, CREATED, request, true)
+                    .unwrap()
+                    .with_upstream_protocol(target);
+            for event in events {
+                encoded.extend(
+                    upstream_encoder
+                        .encode_event(event)
+                        .unwrap_or_else(|e| panic!("{label}: upstream encode: {e:?}")),
+                );
+            }
+            encoded.extend(upstream_encoder.finish(Ok(usage), true).unwrap());
         }
-        encoded.extend(upstream_encoder.finish(Ok(usage), true).unwrap());
         let decoded = decode(target, &encoded, label);
+        let decoded_usage: Vec<_> = decoded
+            .iter()
+            .filter_map(|event| match event {
+                Event::Usage(value) => Some(value),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            decoded_usage.len(),
+            1,
+            "{label}: upstream fixture usage count"
+        );
+        assert_eq!(
+            decoded_usage[0].output_tokens(),
+            usage.output_tokens(),
+            "{label}: upstream fixture changed output usage before conversion"
+        );
         let mut encoder =
             ChatStreamEncoder::new(source, "matrix-downstream", MODEL, CREATED, request, true)
                 .unwrap()

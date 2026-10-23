@@ -11,8 +11,7 @@ use super::{
     },
 };
 use crate::{
-    CanonicalStreamEvent, ContentDelta, FinishReason, TokenCount, Usage, UsageDetails,
-    UsageSemantics, UsageSource,
+    CanonicalStreamEvent, ContentDelta, FinishReason, TokenCount, Usage,
     anthropic::{
         ParseRequestError, ParseResponseError,
         convert::{
@@ -674,16 +673,12 @@ fn convert_stop(
 }
 
 fn merge_usage(initial: Usage, delta: MessageDeltaUsageWire) -> Result<Usage, ParseStreamError> {
-    reject_server_tool_usage(delta.server_tool_use)?;
     let details = initial.details();
     let cache_creation = details
         .cache_creation_5m()
         .get()
         .checked_add(details.cache_creation_1h().get())
         .ok_or(ParseStreamError::InvalidValue)?;
-    require_same_optional(delta.input_tokens, initial.input_tokens().get())?;
-    require_same_optional(delta.cache_read_input_tokens, details.cache_read().get())?;
-    require_same_optional(delta.cache_creation_input_tokens, cache_creation)?;
 
     let output_tokens = token_count(delta.output_tokens)?;
     if output_tokens < initial.output_tokens() {
@@ -698,57 +693,47 @@ fn merge_usage(initial: Usage, delta: MessageDeltaUsageWire) -> Result<Usage, Pa
         return Err(ParseStreamError::InvalidSequence);
     }
 
-    let usage = Usage::new(
-        initial.input_tokens(),
-        output_tokens,
-        UsageDetails::new(
-            details.cache_read(),
-            details.cache_creation_5m(),
-            details.cache_creation_1h(),
-            reasoning,
-            TokenCount::ZERO,
-            TokenCount::ZERO,
-        ),
-        UsageSource::Upstream,
-        UsageSemantics::CacheSeparated,
-    )
-    .map_err(|_| ParseStreamError::InvalidValue)?;
-    usage
-        .checked_total_tokens()
-        .map_err(|_| ParseStreamError::InvalidValue)?;
-    Ok(usage)
-}
-
-fn require_same_optional(value: Option<i64>, expected: i64) -> Result<(), ParseStreamError> {
-    if let Some(value) = value {
-        if value < 0 {
-            return Err(ParseStreamError::InvalidValue);
-        }
-        if value != expected {
-            return Err(ParseStreamError::InvalidSequence);
-        }
-    }
-    Ok(())
-}
-
-fn reject_server_tool_usage(
-    usage: Option<super::super::response_wire::ServerToolUsageWire>,
-) -> Result<(), ParseStreamError> {
-    let Some(usage) = usage else {
-        return Ok(());
+    // 初始输入可能由网关估算；最终快照明确提供的字段是权威值。
+    // 未提供 TTL 明细时仅沿用相同缓存总量的已知拆分，不编造缓存类别。
+    let creation_total = match (
+        delta.cache_creation_input_tokens,
+        delta.cache_creation.as_ref(),
+    ) {
+        (Some(total), _) => total,
+        (None, Some(creation)) => creation
+            .ephemeral_5m_input_tokens
+            .checked_add(creation.ephemeral_1h_input_tokens)
+            .ok_or(ParseStreamError::InvalidValue)?,
+        (None, None) => cache_creation,
     };
-    for value in [usage.web_fetch_requests, usage.web_search_requests]
-        .into_iter()
-        .flatten()
-    {
-        if value < 0 {
-            return Err(ParseStreamError::InvalidValue);
-        }
-        if value != 0 {
-            return Err(ParseStreamError::UnsupportedFeature);
-        }
-    }
-    Ok(())
+    let creation = delta.cache_creation.or_else(|| {
+        (creation_total == cache_creation).then_some(
+            super::super::response_wire::CacheCreationWire {
+                ephemeral_5m_input_tokens: details.cache_creation_5m().get(),
+                ephemeral_1h_input_tokens: details.cache_creation_1h().get(),
+            },
+        )
+    });
+    let wire = super::super::response_wire::UsageWire {
+        input_tokens: delta.input_tokens.unwrap_or(initial.input_tokens().get()),
+        cache_creation_input_tokens: Some(creation_total),
+        cache_read_input_tokens: Some(
+            delta
+                .cache_read_input_tokens
+                .unwrap_or(details.cache_read().get()),
+        ),
+        cache_creation: creation,
+        output_tokens: output_tokens.get(),
+        output_tokens_details: Some(super::super::response_wire::OutputTokensDetailsWire {
+            thinking_tokens: reasoning.get(),
+        }),
+        inference_geo: None,
+        server_tool_use: delta.server_tool_use,
+        service_tier: delta.service_tier,
+    };
+    convert_usage(wire)
+        .map(|(usage, _)| usage)
+        .map_err(map_response_error)
 }
 
 fn token_count(value: i64) -> Result<TokenCount, ParseStreamError> {

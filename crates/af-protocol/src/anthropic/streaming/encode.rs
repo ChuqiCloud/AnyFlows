@@ -44,6 +44,7 @@ pub struct AnthropicMessagesStreamEncoder {
     identity: EncodeIdentity,
     initial_usage: UsageParts,
     initial_usage_value: Value,
+    estimated_initial_usage: bool,
     active_block: Option<ActiveBlock>,
     seen_blocks: HashSet<BlockKey>,
     totals: EncodeTotals,
@@ -72,6 +73,7 @@ impl AnthropicMessagesStreamEncoder {
             identity,
             initial_usage,
             initial_usage_value,
+            estimated_initial_usage: false,
             active_block: None,
             seen_blocks: HashSet::new(),
             totals: EncodeTotals::default(),
@@ -83,6 +85,14 @@ impl AnthropicMessagesStreamEncoder {
             done: false,
             failed: false,
         })
+    }
+
+    /// 网关起点使用估算输入时，允许完整终态以权威输入/缓存快照替换估算。
+    /// 输出和推理累计数仍不得回退，默认构造器保持原生严格口径。
+    #[must_use]
+    pub fn with_estimated_input_correction(mut self) -> Self {
+        self.estimated_initial_usage = true;
+        self
     }
 
     /// 编码一个 Canonical 事件；部分状态事件只更新生命周期，可能返回空字节。
@@ -403,7 +413,11 @@ impl AnthropicMessagesStreamEncoder {
             .as_ref()
             .ok_or(EncodeStreamError::InvalidSequence)?;
         let final_parts = usage_parts(&usage)?;
-        validate_final_usage(self.initial_usage, final_parts)?;
+        validate_final_usage(
+            self.initial_usage,
+            final_parts,
+            self.estimated_initial_usage,
+        )?;
         let usage = message_delta_usage(&usage)?;
         let bytes = encode_sse(
             "message_delta",
@@ -732,11 +746,13 @@ fn usage_parts(usage: &Usage) -> Result<UsageParts, EncodeStreamError> {
 fn validate_final_usage(
     initial: UsageParts,
     final_usage: UsageParts,
+    estimated_initial: bool,
 ) -> Result<(), EncodeStreamError> {
-    if final_usage.input_tokens != initial.input_tokens
-        || final_usage.cache_read != initial.cache_read
-        || final_usage.cache_creation_5m != initial.cache_creation_5m
-        || final_usage.cache_creation_1h != initial.cache_creation_1h
+    if (!estimated_initial
+        && (final_usage.input_tokens != initial.input_tokens
+            || final_usage.cache_read != initial.cache_read
+            || final_usage.cache_creation_5m != initial.cache_creation_5m
+            || final_usage.cache_creation_1h != initial.cache_creation_1h))
         || final_usage.output_tokens < initial.output_tokens
         || final_usage.reasoning < initial.reasoning
     {
@@ -750,6 +766,7 @@ fn message_delta_usage(usage: &Usage) -> Result<Value, EncodeStreamError> {
     let mut delta = Map::new();
     for key in [
         "cache_creation_input_tokens",
+        "cache_creation",
         "cache_read_input_tokens",
         "input_tokens",
         "output_tokens",

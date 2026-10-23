@@ -25,9 +25,12 @@ impl ConversationConversionPlan {
         let request = normalize(request, target)?;
         let body = match request.clone().into_same_protocol(target) {
             SameProtocolDecision::Passthrough(native) => native.body().clone(),
-            SameProtocolDecision::Rebuild(_) => build(request.canonical(), target)?,
+            SameProtocolDecision::Rebuild(_) => crate::conversation_features::apply(
+                &request,
+                target,
+                build(request.canonical(), target)?,
+            )?,
         };
-        let body = crate::conversation_features::apply(&request, target, body)?;
         let body = transport_body(body, request.canonical(), target)?;
         Ok(Self { request, body })
     }
@@ -108,6 +111,19 @@ pub(crate) fn normalize(
         return Ok(request);
     }
     if request.origin_protocol() == Some(target) && request.normalized_protocol().is_none() {
+        if target == Protocol::Anthropic
+            && request.source_protocol().is_none()
+            && let Some(reasoning) = request.canonical().reasoning
+        {
+            let normalized = normalize_reasoning(
+                reasoning,
+                target,
+                request.canonical().sampling.max_output_tokens(),
+            )?;
+            if normalized != reasoning {
+                request = request.with_native_reasoning(normalized);
+            }
+        }
         // 原生扩展、签名、输出偏好由其原生渠道解释，不能因中间表示未建模而丢弃。
         return Ok(request);
     }
@@ -139,8 +155,13 @@ pub(crate) fn normalize(
             tool.input_schema = json!({"type":"object","properties":{}});
         }
     }
-    if canonical.tools.is_empty() {
-        canonical.tool_choice = ToolChoice::None;
+    if canonical.tools.is_empty()
+        && matches!(
+            canonical.tool_choice,
+            ToolChoice::Required | ToolChoice::Named { .. }
+        )
+    {
+        canonical.tool_choice = ToolChoice::Auto;
     }
     let mut system = Vec::new();
     for message in &mut canonical.messages {
@@ -387,6 +408,9 @@ pub(crate) fn patch_native_body(
         .ok_or(ConversationConversionError::InvalidRequest)?;
     if protocol != Protocol::Gemini {
         root.insert("model".to_owned(), json!(request.model));
+        if request.stream || root.contains_key("stream") {
+            root.insert("stream".to_owned(), Value::Bool(request.stream));
+        }
     }
     let object = if protocol == Protocol::Gemini {
         root.entry("generationConfig")

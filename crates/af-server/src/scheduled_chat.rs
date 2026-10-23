@@ -2898,10 +2898,13 @@ mod tests {
             }],
         ));
 
-        assert_eq!(
-            select_upstream_protocol(&route, &canonical.into(), Protocol::Anthropic),
-            Ok(Protocol::OpenAiChat)
-        );
+        let request: CanonicalRequestEnvelope = canonical.into();
+        let selected = select_upstream_protocol(&route, &request, Protocol::Anthropic).unwrap();
+        assert_eq!(selected, Protocol::OpenAiChat);
+        let body = request.plan_conversation(selected).unwrap().body().clone();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["messages"][0]["reasoning_content"], "signed history");
+        assert!(!body.to_string().contains("opaque-provider-signature"));
     }
 
     #[tokio::test]
@@ -2920,10 +2923,42 @@ mod tests {
             br#"{"model":"gpt-scheduled","max_tokens":2048,"thinking":{"type":"enabled","budget_tokens":1024},"messages":[{"role":"user","content":"hello"}]}"#,
         ))
         .unwrap();
+        let selected = select_upstream_protocol(&route, &request, Protocol::Anthropic).unwrap();
+        assert_eq!(selected, Protocol::Gemini);
+        let plan = request.plan_conversation(selected).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(plan.body()).unwrap();
         assert_eq!(
-            select_upstream_protocol(&route, &request, Protocol::Anthropic),
-            Ok(Protocol::Gemini)
+            body["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            1024
         );
+        assert_eq!(body["generationConfig"]["maxOutputTokens"], 2048);
+        assert_eq!(body["contents"][0]["parts"][0]["text"], "hello");
+    }
+
+    #[tokio::test]
+    async fn gemini_signed_readable_history_can_use_chat_without_replaying_provider_signature() {
+        let service = service(vec![record(false, valid_envelope())]).await;
+        let route = service
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        let request = af_protocol::gemini::parse_request_envelope(
+            "models/gpt-scheduled",
+            Bytes::from_static(
+                br#"{"generationConfig":{"maxOutputTokens":256},"contents":[{"role":"user","parts":[{"text":"hello"}]},{"role":"model","parts":[{"text":"considered hello","thought":true,"thoughtSignature":"dGhvdWdodC1zaWduYXR1cmU="},{"text":"answer"}]},{"role":"user","parts":[{"text":"continue"}]}]}"#,
+            ),
+        )
+        .unwrap();
+        let selected = select_upstream_protocol(&route, &request, Protocol::Gemini).unwrap();
+        assert_eq!(selected, Protocol::OpenAiChat);
+        let plan = request.plan_conversation(selected).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(plan.body()).unwrap();
+        assert_eq!(body["messages"][1]["reasoning_content"], "considered hello");
+        assert_eq!(body["messages"][1]["content"], "answer");
+        assert_eq!(body["messages"][2]["content"], "continue");
+        assert!(!body.to_string().contains("dGhvdWdodC1zaWduYXR1cmU="));
+        assert!(!body.to_string().contains("thoughtSignature"));
     }
 
     #[tokio::test]
@@ -3000,7 +3035,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn responses_summary_history_skips_anthropic_and_selects_gemini() {
+    async fn responses_summary_history_is_readable_on_anthropic_channels() {
         let group_id = GroupId::new(7).unwrap();
         let service = service(vec![
             protocol_record(group_id, "gpt-scheduled", CHANNEL_ID, Protocol::Anthropic),
@@ -3020,9 +3055,14 @@ mod tests {
         .unwrap();
         let selected =
             select_upstream_protocol(&route, &request, Protocol::OpenAiResponses).unwrap();
-        assert_eq!(selected, Protocol::Gemini);
-        let converted = request.for_conversation_protocol(selected).unwrap();
-        assert!(af_protocol::gemini::build_request(converted.canonical()).is_ok());
+        assert_eq!(selected, Protocol::Anthropic);
+        let plan = request.plan_conversation(selected).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(plan.body()).unwrap();
+        let rendered = body.to_string();
+        for text in ["considered the question", "answer", "continue"] {
+            assert!(rendered.contains(text));
+        }
+        assert!(!rendered.contains("signature"));
     }
 
     #[tokio::test]
@@ -3053,7 +3093,7 @@ mod tests {
             af_domain::UserId::new(1).unwrap(),
             source_group,
         );
-        let request = gemini_signed_thinking_request("gpt-scheduled");
+        let request = gemini_native_media_request("gpt-scheduled");
         let selection = service
             .prepare_route_selection(
                 playground.into(),
@@ -3109,7 +3149,7 @@ mod tests {
         let selection = service
             .prepare_route_selection(
                 playground.into(),
-                &gemini_signed_thinking_request("smart-thinking"),
+                &gemini_native_media_request("smart-thinking"),
                 Protocol::Gemini,
                 "smart-rule-capability-fallback",
                 None,
@@ -3162,7 +3202,7 @@ mod tests {
                     service
                         .prepare_route_selection(
                             playground.into(),
-                            &gemini_signed_thinking_request(request_model),
+                            &gemini_native_media_request(request_model),
                             Protocol::Gemini,
                             "health-capability-gap",
                             None
@@ -3511,14 +3551,31 @@ mod tests {
             .unwrap()
     }
 
-    fn gemini_signed_thinking_request(model: &str) -> CanonicalRequestEnvelope {
-        af_protocol::gemini::parse_request_envelope(
+    fn gemini_native_media_request(model: &str) -> CanonicalRequestEnvelope {
+        let body = json!({
+            "generationConfig":{"maxOutputTokens":256},
+            "contents":[{"role":"user","parts":[
+                {"text":"Describe the video"},
+                {"fileData":{"mimeType":"video/mp4","fileUri":"gs://fixture/video"}}
+            ]}],
+            "x_vendor":{"keep":[1,2]}
+        });
+        let request = af_protocol::gemini::parse_request_envelope(
             &format!("models/{model}"),
-            Bytes::from_static(
-                br#"{"generationConfig":{"maxOutputTokens":256,"thinkingConfig":{"thinkingBudget":128,"includeThoughts":true}},"contents":[{"role":"user","parts":[{"text":"hello"}]},{"role":"model","parts":[{"text":"considered hello","thought":true,"thoughtSignature":"dGhvdWdodC1zaWduYXR1cmU="},{"text":"answer"}]},{"role":"user","parts":[{"text":"continue"}]}]}"#,
-            ),
+            Bytes::from(serde_json::to_vec(&body).unwrap()),
         )
-        .unwrap()
+        .unwrap();
+        let native = request.clone().plan_conversation(Protocol::Gemini).unwrap();
+        let preserved: serde_json::Value = serde_json::from_slice(native.body()).unwrap();
+        assert_eq!(preserved["contents"], body["contents"]);
+        assert_eq!(preserved["x_vendor"], body["x_vendor"]);
+        assert!(
+            request
+                .clone()
+                .plan_conversation(Protocol::OpenAiChat)
+                .is_none()
+        );
+        request
     }
 
     fn record_pool(credentials: Vec<SchedulerRuntimeCredentialRecord>) -> ChannelIndexSourceRecord {

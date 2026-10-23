@@ -76,7 +76,8 @@ impl ChatStreamEncoder {
                     client_model,
                     initial_usage,
                 )
-                .map_err(|_| AfError::Internal)?;
+                .map_err(|_| AfError::Internal)?
+                .with_estimated_input_correction();
                 Ok(Self::Anthropic {
                     encoder: Box::new(encoder),
                     usage_estimator,
@@ -216,14 +217,12 @@ impl ChatStreamEncoder {
                         .map_err(|_| AfError::Internal)?,
                 );
             }
-            Self::Anthropic {
-                encoder,
-                usage_estimator,
-                ..
-            } => {
-                let usage = usage_estimator
-                    .resolve_estimated()
-                    .map_err(|_| AfError::Internal)?;
+            Self::Anthropic { encoder, .. } => {
+                let usage = adapt_usage(
+                    Protocol::Anthropic,
+                    billing_usage.map_err(|_| AfError::Internal)?,
+                )
+                .map_err(|_| AfError::Internal)?;
                 output.extend(
                     encoder
                         .encode(CanonicalStreamEvent::Usage(usage))

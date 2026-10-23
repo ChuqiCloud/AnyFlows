@@ -763,8 +763,12 @@ fn content_is_opaque(protocol: Protocol, content: Option<&Value>) -> bool {
                 _ => false,
             };
             !supported
-                || part.get("citations").is_some()
-                || part.get("caller").is_some()
+                || part.get("citations").is_some_and(|value| {
+                    !value.is_null() && value.as_array().is_none_or(|items| !items.is_empty())
+                })
+                || part.get("caller").is_some_and(|value| {
+                    !value.is_null() && value.get("type").and_then(Value::as_str) != Some("direct")
+                })
                 || (kind == "tool_result" && content_is_opaque(protocol, part.get("content")))
                 || ["annotations", "logprobs"].iter().any(|key| {
                     part.get(*key)

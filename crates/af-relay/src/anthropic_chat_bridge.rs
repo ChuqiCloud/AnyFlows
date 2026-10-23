@@ -188,7 +188,8 @@ pub(crate) struct CrossProtocolStreamBridge {
     active: Option<(ContentKey, u32)>,
     next_index: u32,
     responses_body_started: bool,
-    deferred_tools: BTreeMap<u32, Vec<CanonicalStreamEvent>>,
+    deferred_tools: BTreeMap<(u32, u32), Vec<CanonicalStreamEvent>>,
+    deferred_order: Vec<(u32, u32)>,
     deferred_bytes: usize,
     deferred_events: usize,
 }
@@ -207,6 +208,7 @@ impl CrossProtocolStreamBridge {
             next_index: 0,
             responses_body_started: false,
             deferred_tools: BTreeMap::new(),
+            deferred_order: Vec::new(),
             deferred_bytes: 0,
             deferred_events: 0,
         }
@@ -218,24 +220,40 @@ impl CrossProtocolStreamBridge {
     ) -> Result<Vec<CanonicalStreamEvent>, AfError> {
         if matches!(
             self.downstream,
-            Protocol::OpenAiResponses | Protocol::Anthropic
+            Protocol::OpenAiResponses | Protocol::Anthropic | Protocol::Gemini
         ) {
             let tool = match &event {
                 CanonicalStreamEvent::ToolCallStart {
+                    choice_index,
                     tool_index,
                     id,
                     name,
                     ..
-                } => Some((*tool_index, id.len().saturating_add(name.len()))),
+                } => Some((
+                    (*choice_index, *tool_index),
+                    id.len().saturating_add(name.len()),
+                )),
                 CanonicalStreamEvent::ToolCallArgsDelta {
+                    choice_index,
                     tool_index,
                     partial_json,
                     ..
-                } => Some((*tool_index, partial_json.len())),
-                CanonicalStreamEvent::ToolCallEnd { tool_index, .. } => Some((*tool_index, 0)),
+                } => Some(((*choice_index, *tool_index), partial_json.len())),
+                CanonicalStreamEvent::ToolCallEnd {
+                    choice_index,
+                    tool_index,
+                } => Some(((*choice_index, *tool_index), 0)),
                 _ => None,
             };
             if let Some((tool_index, bytes)) = tool {
+                if matches!(event, CanonicalStreamEvent::ToolCallStart { .. }) {
+                    if self.deferred_tools.contains_key(&tool_index) {
+                        return Err(AfError::Internal);
+                    }
+                    self.deferred_order.push(tool_index);
+                } else if !self.deferred_tools.contains_key(&tool_index) {
+                    return Err(AfError::Internal);
+                }
                 self.responses_body_started = true;
                 self.deferred_events = self
                     .deferred_events
@@ -342,10 +360,20 @@ impl CrossProtocolStreamBridge {
                     },
                 };
                 let mut output = Vec::new();
-                for (index, events) in std::mem::take(&mut self.deferred_tools)
-                    .into_values()
-                    .enumerate()
-                {
+                let mut tools = Vec::new();
+                self.deferred_order.retain(|key| {
+                    if key.0 == choice_index {
+                        tools.push(*key);
+                        false
+                    } else {
+                        true
+                    }
+                });
+                for (index, key) in tools.into_iter().enumerate() {
+                    let events = self
+                        .deferred_tools
+                        .remove(&key)
+                        .expect("selected tool is still buffered");
                     let index = u32::try_from(index).map_err(|_| AfError::Internal)?;
                     for mut event in events {
                         match &mut event {
@@ -801,6 +829,80 @@ mod tests {
     }
 
     #[test]
+    fn deferred_tools_preserve_start_order_independently_of_indices_and_completion() {
+        for target in [
+            Protocol::Anthropic,
+            Protocol::OpenAiResponses,
+            Protocol::Gemini,
+        ] {
+            let mut bridge = CrossProtocolStreamBridge::new(target);
+            for event in [
+                CanonicalStreamEvent::ToolCallStart {
+                    choice_index: 0,
+                    tool_index: 9,
+                    id: "first".to_owned(),
+                    name: "lookup".to_owned(),
+                },
+                CanonicalStreamEvent::ToolCallStart {
+                    choice_index: 0,
+                    tool_index: 3,
+                    id: "second".to_owned(),
+                    name: "lookup".to_owned(),
+                },
+                CanonicalStreamEvent::ToolCallArgsDelta {
+                    choice_index: 0,
+                    tool_index: 3,
+                    partial_json: "{}".to_owned(),
+                },
+                CanonicalStreamEvent::ToolCallEnd {
+                    choice_index: 0,
+                    tool_index: 3,
+                },
+                CanonicalStreamEvent::ToolCallArgsDelta {
+                    choice_index: 0,
+                    tool_index: 9,
+                    partial_json: "{}".to_owned(),
+                },
+                CanonicalStreamEvent::ToolCallEnd {
+                    choice_index: 0,
+                    tool_index: 9,
+                },
+            ] {
+                assert!(bridge.adapt(event).unwrap().is_empty());
+            }
+            let output = bridge
+                .adapt(CanonicalStreamEvent::Finish {
+                    choice_index: 0,
+                    reason: FinishReason::ToolCalls,
+                    stop_sequence: None,
+                })
+                .unwrap();
+            let starts = output
+                .iter()
+                .filter_map(|event| match event {
+                    CanonicalStreamEvent::ToolCallStart { id, tool_index, .. } => {
+                        Some((id.as_str(), *tool_index))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(starts, [("first", 0), ("second", 1)]);
+            assert!(matches!(
+                &output[..],
+                [
+                    CanonicalStreamEvent::ToolCallStart { tool_index: 0, .. },
+                    CanonicalStreamEvent::ToolCallArgsDelta { tool_index: 0, .. },
+                    CanonicalStreamEvent::ToolCallEnd { tool_index: 0, .. },
+                    CanonicalStreamEvent::ToolCallStart { tool_index: 1, .. },
+                    CanonicalStreamEvent::ToolCallArgsDelta { tool_index: 1, .. },
+                    CanonicalStreamEvent::ToolCallEnd { tool_index: 1, .. },
+                    CanonicalStreamEvent::Finish { .. }
+                ]
+            ));
+        }
+    }
+
+    #[test]
     fn chat_full_thinking_becomes_replayable_text_without_changing_usage() {
         let mut response = response();
         let usage = response.usage;
@@ -884,7 +986,6 @@ mod tests {
         .unwrap()
         .with_upstream_protocol(Protocol::OpenAiChat);
         let mut bytes = Vec::new();
-        let mut expected_usage = crate::openai_chat_usage::OpenAiChatUsageEstimator::new(&request);
         for event in [
             CanonicalStreamEvent::MessageStart {
                 choice_index: 0,
@@ -944,7 +1045,6 @@ mod tests {
                 stop_sequence: None,
             },
         ] {
-            expected_usage.observe(&event);
             bytes.extend(encoder.encode_event(event).unwrap());
         }
         bytes.extend(encoder.finish(Ok(response().usage.unwrap()), true).unwrap());
@@ -954,7 +1054,7 @@ mod tests {
             events.extend(decoder.push(chunk).unwrap());
         }
         events.extend(decoder.finish().unwrap());
-        let expected_usage = expected_usage.resolve_estimated().unwrap();
+        let expected_usage = response().usage.unwrap();
         let actual_usage = events
             .iter()
             .find_map(|event| match event {

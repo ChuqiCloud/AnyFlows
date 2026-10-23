@@ -78,6 +78,14 @@ impl CanonicalRequestEnvelope {
         self
     }
 
+    /// 原生预算受渠道输出上限约束时，只覆盖推理字段并保留其余原生内容。
+    pub(crate) fn with_native_reasoning(mut self, reasoning: crate::ReasoningConfig) -> Self {
+        self.canonical.reasoning = Some(reasoning);
+        self.source = None;
+        self.patch_reasoning = true;
+        self
+    }
+
     pub(crate) fn from_compatible_source(
         canonical: CanonicalRequest,
         protocol: Protocol,
@@ -213,6 +221,17 @@ impl CanonicalRequestEnvelope {
     #[must_use]
     pub fn into_canonical(self) -> CanonicalRequest {
         self.canonical
+    }
+
+    /// 修改传输模式而保留来源上下文、扩展字段和目标归一状态。
+    #[must_use]
+    pub fn with_stream_mode(mut self, stream: bool) -> Self {
+        if self.canonical.stream != stream {
+            self.canonical.stream = stream;
+            self.source = None;
+            self.normalization_dirty = self.normalized_protocol.is_some();
+        }
+        self
     }
 
     /// 用重建后的 Canonical 请求替换正文，同时保留客户端模型别名并取消直通资格。
@@ -454,6 +473,45 @@ mod tests {
         assert_eq!(normalized.canonical().sampling.temperature(), Some(1.0));
         assert_eq!(normalized.canonical().model, "upstream");
         assert_eq!(normalized.requested_model(), "model");
+    }
+
+    #[test]
+    fn native_anthropic_routed_output_limit_also_constrains_thinking_budget() {
+        let request = crate::anthropic::parse_request_envelope(Bytes::from_static(br#"{"model":"model","max_tokens":8192,"thinking":{"type":"enabled","budget_tokens":4096},"messages":[{"role":"user","content":"hello"},{"role":"assistant","content":[{"type":"thinking","thinking":"recorded plan","signature":"native-signature"},{"type":"text","text":"answer"}]},{"role":"user","content":"continue"}],"x_vendor":{"keep":true}}"#)).unwrap();
+        let original_messages = request.canonical().messages.clone();
+        for output in [1024, 2048] {
+            let routed = request.clone().with_routed_parameters(
+                "upstream".to_owned(),
+                Sampling::new(
+                    None,
+                    None,
+                    Some(TokenCount::new(output).unwrap()),
+                    Vec::new(),
+                )
+                .unwrap(),
+            );
+            let plan = routed.plan_conversation(Protocol::Anthropic).unwrap();
+            assert_eq!(plan.request().canonical().messages, original_messages);
+            let value: serde_json::Value = serde_json::from_slice(plan.body()).unwrap();
+            assert_eq!(value["model"], "upstream");
+            assert_eq!(value["max_tokens"], output);
+            assert_eq!(value["x_vendor"]["keep"], true);
+            assert_eq!(
+                value["messages"][1]["content"][0]["signature"],
+                "native-signature"
+            );
+            if output > 1024 {
+                assert_eq!(value["thinking"]["budget_tokens"], output - 1);
+            } else {
+                assert_eq!(value["thinking"]["type"], "adaptive");
+            }
+            let repeated = plan
+                .request()
+                .clone()
+                .plan_conversation(Protocol::Anthropic)
+                .unwrap();
+            assert_eq!(repeated.body(), plan.body());
+        }
     }
 
     #[test]

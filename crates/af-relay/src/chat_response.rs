@@ -162,16 +162,30 @@ mod tests {
         assert_eq!(body, original);
         assert_eq!(result.unwrap(), usage);
         for protocol in [Protocol::Anthropic, Protocol::Gemini] {
+            let ChatResponse::Full {
+                body,
+                usage: result,
+            } = encode_full_response(
+                protocol,
+                original.clone(),
+                &canonical,
+                Ok(usage),
+                "public-model",
+                "request-compat",
+            )
+            .unwrap()
+            else {
+                panic!("expected full response");
+            };
+            assert_eq!(result.unwrap(), usage);
+            let decoded = match protocol {
+                Protocol::Anthropic => anthropic::parse_response(&body).unwrap(),
+                Protocol::Gemini => gemini::parse_response(&body).unwrap(),
+                _ => unreachable!(),
+            };
+            assert!(decoded.choices[0].logprobs.is_none());
             assert!(
-                encode_full_response(
-                    protocol,
-                    original.clone(),
-                    &canonical,
-                    Ok(usage),
-                    "public-model",
-                    "request-compat",
-                )
-                .is_err()
+                matches!(&decoded.choices[0].message.content[0], af_protocol::ContentBlock::ToolUse { id, name, input, .. } if id == "call-weather" && name == "weather" && input == &json!({"city":"北京"}))
             );
         }
     }

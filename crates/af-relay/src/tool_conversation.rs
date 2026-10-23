@@ -11,8 +11,8 @@ mod tests;
 use af_adapter::{Bytes, Method, ResponseMode, UpstreamBody};
 use af_domain::{AfError, NetworkFailureKind, Protocol, UpstreamError};
 use af_protocol::{
-    CanonicalRequestEnvelope, StreamOptions, TokenCount, ToolCompatibilitySession, ToolDef, Usage,
-    UsageDetails, UsageSemantics, UsageSource,
+    CanonicalRequestEnvelope, TokenCount, ToolCompatibilitySession, ToolDef, Usage, UsageDetails,
+    UsageSemantics, UsageSource,
 };
 
 use crate::{
@@ -363,12 +363,9 @@ pub(crate) fn encode_tool_request(
     request: CanonicalRequestEnvelope,
     protocol: Protocol,
 ) -> Result<Bytes, AfError> {
-    let mut canonical = request.into_canonical();
-    canonical.stream = true;
-    if protocol == Protocol::OpenAiChat {
-        canonical.stream_options = StreamOptions::new(true);
-    }
-    prepare_request(canonical.into(), protocol).map(|(_, body)| body)
+    // Transport streaming must retain source context, native capability guards,
+    // and output format preferences through both controlled tool rounds.
+    prepare_request(request.with_stream_mode(true), protocol).map(|(_, body)| body)
 }
 
 impl GenerationCompletionHook for ReportCompletion {

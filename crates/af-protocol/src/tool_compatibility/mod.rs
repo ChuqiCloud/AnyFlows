@@ -57,8 +57,9 @@ impl ToolCompatibilitySession {
     ) -> Result<Self, ToolCompatibilityError> {
         let canonical = request.canonical();
         if !matches!(canonical.operation, Operation::Chat | Operation::Responses)
-            || canonical.raw_passthrough().is_some()
-            || !canonical.continuation.is_empty()
+            || request.native_only()
+            || (canonical.raw_passthrough().is_some() && request.source_context().is_none())
+            || canonical.continuation.has_server_managed_state()
         {
             return Err(ToolCompatibilityError::UnsupportedRequest);
         }
