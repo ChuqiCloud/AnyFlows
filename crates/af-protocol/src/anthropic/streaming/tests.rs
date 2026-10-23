@@ -647,6 +647,96 @@ fn encoder_preserves_stop_sequence_and_uses_final_usage_snapshot() {
 }
 
 #[test]
+fn final_usage_snapshot_replaces_estimated_input_and_cache_breakdown() {
+    let mut final_value = event_payload(&message_delta("end_turn", None, 9, 3));
+    final_value["usage"]["input_tokens"] = json!(31);
+    final_value["usage"]["cache_read_input_tokens"] = json!(6);
+    final_value["usage"]["cache_creation_input_tokens"] = json!(11);
+    final_value["usage"]["cache_creation"] =
+        json!({"ephemeral_5m_input_tokens":7,"ephemeral_1h_input_tokens":4});
+    let bytes = [
+        message_start(0, 0),
+        event("message_delta", final_value.clone()),
+        event("message_stop", json!({"type":"message_stop"})),
+    ]
+    .concat();
+    let mut decoder = AnthropicMessagesStreamDecoder::new();
+    let events = decoder.push(&bytes).unwrap();
+    decoder.finish().unwrap();
+    let final_usage = events
+        .iter()
+        .find_map(|event| match event {
+            CanonicalStreamEvent::Usage(usage) => Some(*usage),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(final_usage.input_tokens().get(), 31);
+    assert_eq!(final_usage.output_tokens().get(), 9);
+    assert_eq!(final_usage.details().cache_read().get(), 6);
+    assert_eq!(final_usage.details().cache_creation_5m().get(), 7);
+    assert_eq!(final_usage.details().cache_creation_1h().get(), 4);
+    assert_eq!(final_usage.details().reasoning().get(), 3);
+    assert_eq!(final_usage.checked_total_tokens().unwrap().get(), 57);
+
+    // A supplied TTL breakdown must still agree with its explicit total.
+    final_value["usage"]["cache_creation_input_tokens"] = json!(12);
+    let mut invalid = AnthropicMessagesStreamDecoder::new();
+    invalid.push(&message_start(0, 0)).unwrap();
+    assert_eq!(
+        invalid.push(&event("message_delta", final_value)),
+        Err(ParseStreamError::InvalidValue)
+    );
+}
+
+#[test]
+fn encoder_estimated_start_accepts_authoritative_final_usage_without_changing_totals() {
+    let initial = Usage::new(
+        TokenCount::new(100).unwrap(),
+        TokenCount::ZERO,
+        UsageDetails::new(
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+        ),
+        UsageSource::Estimated,
+        UsageSemantics::Inclusive,
+    )
+    .unwrap();
+    let final_usage = usage(31, 9, 3);
+    let mut encoder = AnthropicMessagesStreamEncoder::new("msg_authoritative", "model", initial)
+        .unwrap()
+        .with_estimated_input_correction();
+    let mut bytes = Vec::new();
+    for event in [
+        CanonicalStreamEvent::MessageStart {
+            choice_index: 0,
+            role: Role::Assistant,
+        },
+        CanonicalStreamEvent::ContentDelta {
+            choice_index: 0,
+            content_index: 0,
+            delta: ContentDelta::Text("answer".to_owned()),
+        },
+        CanonicalStreamEvent::Finish {
+            choice_index: 0,
+            reason: FinishReason::Stop,
+            stop_sequence: None,
+        },
+        CanonicalStreamEvent::Usage(final_usage),
+        CanonicalStreamEvent::StreamEnd,
+    ] {
+        bytes.extend(encoder.encode(event).unwrap());
+    }
+    let mut decoder = AnthropicMessagesStreamDecoder::new();
+    let decoded = decoder.push(&bytes).unwrap();
+    decoder.finish().unwrap();
+    assert!(decoded.contains(&CanonicalStreamEvent::Usage(final_usage)));
+}
+
+#[test]
 fn encoder_fails_closed_on_missing_signature_or_usage_regression() {
     let mut signature = AnthropicMessagesStreamEncoder::new(
         "msg_signature_test",

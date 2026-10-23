@@ -7,6 +7,10 @@ mod canonical;
 mod capability;
 mod client_simulation_body_patch;
 pub mod cohere_rerank_v2;
+mod conversation_content;
+mod conversation_features;
+mod conversation_history;
+mod conversation_plan;
 mod embedding;
 mod error_evidence;
 pub mod gemini;
@@ -20,6 +24,7 @@ pub mod openai_responses;
 pub mod openai_responses_compact;
 mod reasoning_suffix;
 mod request;
+mod request_compat;
 mod request_envelope;
 mod rerank;
 pub mod rerank_v1;
@@ -64,6 +69,7 @@ pub use capability::{
 pub use client_simulation_body_patch::{
     ClientSimulationBodyPatch, ClientSimulationBodyPatchError, UtcDate,
 };
+pub use conversation_plan::{ConversationConversionError, ConversationConversionPlan};
 pub use embedding::{
     CanonicalEmbeddingRequest, CanonicalEmbeddingRequestError, CanonicalEmbeddingResponse,
     CanonicalEmbeddingResponseError, EmbeddingDimensions, EmbeddingDimensionsError, EmbeddingInput,

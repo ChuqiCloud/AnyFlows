@@ -148,6 +148,120 @@ fn plan(stream: bool, protocol: Protocol) -> ToolConversationPlan {
     .unwrap()
 }
 
+#[test]
+fn injected_tool_round_keeps_default_auto_and_real_continuation_history() {
+    for protocol in [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Anthropic,
+    ] {
+        let mut plan = plan(false, protocol);
+        assert_eq!(
+            plan.request().canonical().tool_choice,
+            af_protocol::ToolChoice::Auto
+        );
+        let first: Value =
+            serde_json::from_slice(&encode_tool_request(plan.request().clone(), protocol).unwrap())
+                .unwrap();
+        assert_eq!(first["stream"], true);
+        assert!(!plan.request().canonical().stream);
+        let mut continuation = None;
+        for event in events(true, false)
+            .into_iter()
+            .chain([Event::Usage(usage(40, 10)), Event::StreamEnd])
+        {
+            if let af_protocol::ToolCompatibilityStep::Continue { request, .. } =
+                plan.session.push(event).unwrap()
+            {
+                continuation = Some(request);
+            }
+        }
+        let continuation = continuation.expect("默认 Auto 允许注入工具进入受控续答");
+        assert_eq!(
+            continuation
+                .canonical()
+                .sampling
+                .max_output_tokens()
+                .unwrap()
+                .get(),
+            118
+        );
+        let second = encode_tool_request(*continuation, protocol).unwrap();
+        let rendered = std::str::from_utf8(&second).unwrap();
+        assert!(rendered.contains("call_read"));
+        assert!(rendered.contains("private-file"));
+        assert!(rendered.contains("Tool unavailable"));
+        assert!(!rendered.contains("Historical tool call"));
+        assert_eq!(plan.session.observed_usage()[0], Some(usage(40, 10)));
+    }
+}
+
+#[test]
+fn controlled_transport_streaming_keeps_output_format_on_both_tool_rounds() {
+    let schema = json!({"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false});
+    let body = json!({
+        "model":"free-model",
+        "messages":[{"role":"user","content":"Reply violet"}],
+        "tool_choice":"auto",
+        "max_completion_tokens":128,
+        "stream":false,
+        "response_format":{"type":"json_schema","json_schema":{"name":"answer_format","schema":schema,"strict":true}}
+    });
+    for protocol in [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Anthropic,
+    ] {
+        let request = af_protocol::openai_chat::parse_request_envelope(Bytes::from(
+            serde_json::to_vec(&body).unwrap(),
+        ))
+        .unwrap();
+        let mut plan = ToolConversationPlan::prepare(
+            request,
+            protocol,
+            tools(),
+            TokenCount::new(4096).unwrap(),
+            Duration::from_secs(3),
+        )
+        .unwrap();
+        let first = encode_tool_request(plan.request().clone(), protocol).unwrap();
+        let mut second = None;
+        for event in events(true, false)
+            .into_iter()
+            .chain([Event::Usage(usage(40, 10)), Event::StreamEnd])
+        {
+            if let af_protocol::ToolCompatibilityStep::Continue { request, .. } =
+                plan.session.push(event).unwrap()
+            {
+                second = Some(encode_tool_request(*request, protocol).unwrap());
+            }
+        }
+        for body in [first, second.expect("隐藏工具第一轮必须产生一次续答")] {
+            let value: Value = serde_json::from_slice(&body).unwrap();
+            let actual = match protocol {
+                Protocol::OpenAiChat => &value["response_format"]["json_schema"]["schema"],
+                Protocol::OpenAiResponses => &value["text"]["format"]["schema"],
+                Protocol::Anthropic => &value["output_config"]["format"]["schema"],
+                _ => unreachable!(),
+            };
+            assert_eq!(actual, &schema, "{protocol:?}");
+            assert_eq!(value["stream"], true);
+            if protocol == Protocol::OpenAiChat {
+                assert_eq!(value["stream_options"]["include_usage"], true);
+            }
+        }
+        assert!(!plan.request().canonical().stream);
+    }
+}
+
+#[test]
+fn controlled_transport_streaming_retains_native_content_guards() {
+    let request = af_protocol::openai_chat::parse_request_envelope(Bytes::from_static(
+        br#"{"model":"free-model","messages":[{"role":"user","content":[{"type":"future_video","url":"https://media.example/video"}]}],"max_completion_tokens":128}"#,
+    )).unwrap();
+    assert!(encode_tool_request(request, Protocol::Anthropic).is_err());
+}
+
 fn usage(input: i64, output: i64) -> Usage {
     Usage::new(
         TokenCount::new(input).unwrap(),

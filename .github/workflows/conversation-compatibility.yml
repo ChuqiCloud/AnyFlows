@@ -3,6 +3,12 @@ name: Conversation compatibility
 on:
   # 历史专项保留手动复测入口，日常检查由 CI 工作流承担。
   workflow_dispatch:
+    inputs:
+      scope:
+        description: 'full or protocol-relay; full includes scheduling, billing and runtime checks'
+        required: false
+        default: full
+        type: string
 
 permissions:
   contents: read
@@ -44,6 +50,15 @@ jobs:
           git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
           git checkout --detach FETCH_HEAD
 
+      - name: Validate check scope
+        env:
+          CHECK_SCOPE: ${{ inputs.scope || 'full' }}
+        run: |
+          case "$CHECK_SCOPE" in
+            full|protocol-relay) ;;
+            *) echo 'Unsupported check scope' >&2; exit 1 ;;
+          esac
+
       - name: Install Rust toolchain
         shell: bash
         run: |
@@ -80,24 +95,34 @@ jobs:
           cargo test --quiet -p af-adapter --lib --locked factory::
 
       - name: Test protocol parsing and relay lifecycle
-        run: cargo test --quiet -p af-protocol -p af-relay --all-features --locked
+        if: ${{ !cancelled() }}
+        run: |
+          status=0
+          cargo test --quiet -p af-protocol --all-features --locked || status=1
+          cargo test --quiet -p af-relay --all-features --locked || status=1
+          exit "$status"
 
       - name: Test public operational endpoints
+        if: ${{ inputs.scope != 'protocol-relay' }}
         run: |
           cargo test --quiet -p af-http --lib --locked operations_tests::
+          cargo test --quiet -p af-http --lib --locked gemini_generate_content::tests::
 
       - name: Test conversation scheduling
+        if: ${{ inputs.scope != 'protocol-relay' }}
         run: |
           cargo test --quiet -p af-server --lib --all-features --locked scheduled_chat::
           cargo test --quiet -p af-server --lib --all-features --locked billing_chat::
           cargo test --quiet -p af-server --lib --all-features --locked debug_trace_runtime::
 
       - name: Test shared client session creation
+        if: ${{ inputs.scope != 'protocol-relay' }}
         run: |
           cargo test --quiet -p af-cache --lib --locked sticky::
           bash tools/ci/run-cache-redis-test.sh
 
       - name: Test client profile configuration and runtime snapshots
+        if: ${{ inputs.scope != 'protocol-relay' }}
         run: |
           cargo test --quiet -p af-domain --lib --locked enums_tests::
           cargo test --quiet -p af-account --lib --locked credential_

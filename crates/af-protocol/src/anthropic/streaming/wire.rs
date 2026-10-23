@@ -2,8 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::super::response_wire::{
-    AssistantRoleWire, MessageObjectWire, OutputTokensDetailsWire, RefusalStopDetailsWire,
-    ServerToolUsageWire, ServiceTierWire, StopReasonWire, ToolCallerWire, UsageWire,
+    AssistantRoleWire, CacheCreationWire, MessageObjectWire, OutputTokensDetailsWire,
+    RefusalStopDetailsWire, ServerToolUsageWire, ServiceTierWire, StopReasonWire, ToolCallerWire,
+    UsageWire,
 };
 
 /// Anthropic Messages 的单个流式 data 事件。
@@ -131,6 +132,8 @@ pub(super) struct MessageDeltaUsageWire {
     pub(super) input_tokens: Option<i64>,
     #[serde(default)]
     pub(super) cache_creation_input_tokens: Option<i64>,
+    #[serde(default)]
+    pub(super) cache_creation: Option<CacheCreationWire>,
     #[serde(default)]
     pub(super) cache_read_input_tokens: Option<i64>,
     pub(super) output_tokens: i64,

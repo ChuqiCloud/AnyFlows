@@ -167,6 +167,92 @@ fn unsigned_thinking_capability_matches_request_builders() {
 }
 
 #[test]
+fn effort_only_protocols_approximate_fixed_reasoning_budget() {
+    for (budget, effort) in [
+        (1024, "minimal"),
+        (2048, "low"),
+        (8192, "medium"),
+        (16384, "high"),
+    ] {
+        let mut request = CanonicalRequest::new(
+            Operation::Chat,
+            "test-model".to_owned(),
+            vec![Message::new(
+                Role::User,
+                vec![ContentBlock::Text("hello".to_owned())],
+            )],
+            false,
+        );
+        request.reasoning = Some(
+            crate::ReasoningConfig::new(None, Some(TokenCount::new(budget).unwrap()), true)
+                .unwrap(),
+        );
+        assert!(validate_request_capabilities(Protocol::OpenAiChat, &request).is_ok());
+        assert_eq!(
+            openai_chat::build_request(&request).unwrap()["reasoning_effort"],
+            effort
+        );
+        request.operation = Operation::Responses;
+        assert!(validate_request_capabilities(Protocol::OpenAiResponses, &request).is_ok());
+        assert_eq!(
+            openai_responses::build_request(&request).unwrap()["reasoning"]["effort"],
+            effort
+        );
+    }
+}
+
+#[test]
+fn budget_conversion_preserves_native_source_and_exact_budget() {
+    let gemini_body = bytes::Bytes::from_static(
+        br#"{"contents":[{"role":"user","parts":[{"text":"hello"}]}],"generationConfig":{"maxOutputTokens":20000,"thinkingConfig":{"thinkingBudget":8192,"includeThoughts":true}}}"#,
+    );
+    let anthropic_body = bytes::Bytes::from_static(
+        br#"{"model":"test-model","max_tokens":20000,"messages":[{"role":"user","content":"hello"}],"thinking":{"type":"enabled","budget_tokens":8192}}"#,
+    );
+    let gemini = gemini::parse_request_envelope("models/test-model", gemini_body.clone()).unwrap();
+    let anthropic = anthropic::parse_request_envelope(anthropic_body.clone()).unwrap();
+    for (source, protocol, body) in [
+        (gemini, Protocol::Gemini, gemini_body),
+        (anthropic, Protocol::Anthropic, anthropic_body),
+    ] {
+        let chat = source
+            .clone()
+            .for_conversation_protocol(Protocol::OpenAiChat)
+            .unwrap();
+        assert_eq!(
+            openai_chat::build_request(chat.canonical()).unwrap()["reasoning_effort"],
+            "medium"
+        );
+        assert_eq!(
+            source.canonical().reasoning.unwrap().budget_tokens(),
+            Some(TokenCount::new(8192).unwrap())
+        );
+        let native = match protocol {
+            Protocol::Gemini => gemini::build_request(source.canonical()).unwrap(),
+            Protocol::Anthropic => anthropic::build_request(source.canonical()).unwrap(),
+            _ => unreachable!(),
+        };
+        let budget = match protocol {
+            Protocol::Gemini => &native["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            Protocol::Anthropic => &native["thinking"]["budget_tokens"],
+            _ => unreachable!(),
+        };
+        assert_eq!(budget.as_i64(), Some(8192));
+        if protocol == Protocol::Gemini {
+            assert_eq!(
+                native["generationConfig"]["thinkingConfig"]["includeThoughts"],
+                true
+            );
+        }
+        let crate::SameProtocolDecision::Passthrough(native) = source.into_same_protocol(protocol)
+        else {
+            panic!("跨协议候选不能改动原生源正文");
+        };
+        assert_eq!(native.body(), &body);
+    }
+}
+
+#[test]
 fn signed_thinking_still_uses_signature_capability() {
     let request = CanonicalRequest::new(
         Operation::Chat,

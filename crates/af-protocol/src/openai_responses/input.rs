@@ -212,13 +212,16 @@ fn convert_message(
         content,
         role,
         kind,
+        id,
         phase,
         status,
     } = message;
-    if field_is_present(&phase) || field_is_present(&status) {
-        return Err(ParseRequestError::UnsupportedFeature);
+    if let Field::Value(id) = id {
+        validate_call_id(&id)?;
     }
-    let _ = kind;
+    // Item identity/phase annotate a supplied message. Native envelopes retain
+    // them verbatim; other protocols replay the role and content.
+    let _ = (kind, status);
 
     let role = match role {
         MessageRoleWire::System => Role::System,
@@ -226,6 +229,9 @@ fn convert_message(
         MessageRoleWire::User => Role::User,
         MessageRoleWire::Assistant => Role::Assistant,
     };
+    if field_is_present(&phase) && role != Role::Assistant {
+        return Err(ParseRequestError::InvalidValue);
+    }
     let content = convert_message_content(content, role, state)?;
     Ok(Message::new(role, content))
 }
@@ -371,6 +377,7 @@ fn convert_function_output(
         output,
         id,
         caller,
+        status,
     } = output;
     if field_is_present(&caller) {
         return Err(ParseRequestError::UnsupportedFeature);
@@ -378,6 +385,7 @@ fn convert_function_output(
     if let Field::Value(id) = id {
         validate_call_id(&id)?;
     }
+    let _ = status;
     validate_call_id(&call_id)?;
     if !state.seen_tool_result_ids.insert(call_id.clone()) {
         return Err(ParseRequestError::InvalidValue);

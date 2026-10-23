@@ -3,8 +3,8 @@ use std::fmt;
 use af_adapter::Bytes;
 use af_domain::{AfError, MAX_MODEL_NAME_BYTES, Protocol};
 use af_protocol::{
-    CanonicalRequest, CanonicalRequestEnvelope, SameProtocolDecision, Sampling, TokenCount,
-    anthropic::{MAX_OUTPUT_TOKENS, MAX_STOP_BYTES, MAX_STOP_SEQUENCES, build_request},
+    CanonicalRequest, CanonicalRequestEnvelope, Sampling, TokenCount,
+    anthropic::{MAX_OUTPUT_TOKENS, MAX_STOP_BYTES, MAX_STOP_SEQUENCES},
 };
 use thiserror::Error;
 
@@ -60,21 +60,23 @@ impl AnthropicRequestOverrides {
         })
     }
 
-    /// 消费请求信封、丢弃直通资格，并构造候选级 Anthropic 正文。
+    /// 应用渠道模型与采样策略，再由统一转换计划生成候选正文。
     pub fn prepare(
         &self,
         request: CanonicalRequestEnvelope,
     ) -> Result<RelayCandidateRequest, AnthropicRequestOverrideError> {
-        let mut canonical = request.into_canonical();
-        canonical.model.clone_from(&self.model);
-        apply_sampling(
-            &mut canonical,
+        let sampling = apply_sampling(
+            &request.canonical().sampling,
             self.temperature,
             self.top_p,
             self.max_output_tokens,
             self.stop_sequences.as_deref(),
         )?;
-        let body = build_body(&canonical).map_err(|_| AnthropicRequestOverrideError)?;
+        let (_, body) = request
+            .with_routed_parameters(self.model.clone(), sampling)
+            .plan_conversation(Protocol::Anthropic)
+            .ok_or(AnthropicRequestOverrideError)?
+            .into_parts();
         RelayCandidateRequest::new(self.model.clone(), Some(body))
             .map_err(map_candidate_request_error)
     }
@@ -105,46 +107,35 @@ pub(crate) struct PreparedAnthropicRequest {
     pub(crate) client_model: String,
 }
 
-/// 在不削弱协议校验的前提下选择原字节直通或 Canonical 重构。
+/// 使用统一目标转换计划，保留同源扩展并执行跨协议归一。
 pub(crate) fn prepare_anthropic_request(
     request: CanonicalRequestEnvelope,
 ) -> Result<PreparedAnthropicRequest, AfError> {
     let client_model = request.requested_model().to_owned();
-    match request.into_same_protocol(Protocol::Anthropic) {
-        SameProtocolDecision::Passthrough(passthrough) => {
-            let (canonical, body) = passthrough.into_parts();
-            Ok(PreparedAnthropicRequest {
-                canonical,
-                body,
-                client_model,
-            })
-        }
-        SameProtocolDecision::Rebuild(request) => {
-            let canonical = request.into_canonical();
-            let body = build_body(&canonical).map_err(|_| AfError::InvalidRequest)?;
-            Ok(PreparedAnthropicRequest {
-                canonical,
-                body,
-                client_model,
-            })
-        }
-    }
+    let (request, body) = request
+        .plan_conversation(Protocol::Anthropic)
+        .ok_or(AfError::InvalidRequest)?
+        .into_parts();
+    Ok(PreparedAnthropicRequest {
+        canonical: request.into_canonical(),
+        body,
+        client_model,
+    })
 }
 
 fn apply_sampling(
-    request: &mut CanonicalRequest,
+    current: &Sampling,
     temperature: Option<f64>,
     top_p: Option<f64>,
     max_output_tokens: Option<TokenCount>,
     stop_sequences: Option<&[String]>,
-) -> Result<(), AnthropicRequestOverrideError> {
-    let current = &request.sampling;
+) -> Result<Sampling, AnthropicRequestOverrideError> {
     let max_output_tokens = match (current.max_output_tokens(), max_output_tokens) {
         (Some(requested), Some(limit)) => Some(requested.min(limit)),
         (requested, None) => requested,
         (None, limit) => limit,
     };
-    request.sampling = Sampling::new(
+    Sampling::new(
         temperature.or(current.temperature()),
         top_p.or(current.top_p()),
         max_output_tokens,
@@ -152,13 +143,7 @@ fn apply_sampling(
             .map(<[String]>::to_vec)
             .unwrap_or_else(|| current.stop_sequences().to_vec()),
     )
-    .map_err(|_| AnthropicRequestOverrideError)?;
-    Ok(())
-}
-
-fn build_body(request: &CanonicalRequest) -> Result<Bytes, ()> {
-    let value = build_request(request).map_err(|_| ())?;
-    serde_json::to_vec(&value).map(Bytes::from).map_err(|_| ())
+    .map_err(|_| AnthropicRequestOverrideError)
 }
 
 fn valid_model(model: &str) -> bool {
@@ -248,5 +233,37 @@ mod tests {
             AnthropicRequestOverrides::new("claude", None, None, None, Some(vec![String::new()]),)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn native_extensions_survive_preparation_and_candidate_overrides() {
+        let original = json!({
+            "model": "public-model",
+            "max_tokens": 256,
+            "messages": [{
+                "role": "user",
+                "content": [{"type": "text", "text": "hello", "x_part": {"keep": true}}],
+                "x_message": {"keep": [1, 2]}
+            }],
+            "stream": true,
+            "x_vendor": {"keep": {"enabled": true}}
+        });
+        let request =
+            anthropic::parse_request_envelope(Bytes::from(serde_json::to_vec(&original).unwrap()))
+                .unwrap();
+        let prepared = prepare_anthropic_request(request.clone()).unwrap();
+        assert_eq!(prepared.client_model, "public-model");
+        let (_, candidate) =
+            AnthropicRequestOverrides::new("upstream-model", Some(0.25), None, Some(128), None)
+                .unwrap()
+                .prepare(request)
+                .unwrap()
+                .into_parts();
+        for body in [prepared.body, candidate.unwrap()] {
+            let value: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(value["messages"], original["messages"]);
+            assert_eq!(value["x_vendor"], original["x_vendor"]);
+            assert_eq!(value["stream"], true);
+        }
     }
 }

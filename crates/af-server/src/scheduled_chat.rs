@@ -47,9 +47,7 @@ use af_domain::{
     Protocol,
 };
 use af_httpclient::{HttpClientProvider, ProxyConfig, RemoteDnsPolicy};
-use af_protocol::{
-    CanonicalRequestEnvelope, ClientSimulationBodyPatch, UtcDate, validate_request_capabilities,
-};
+use af_protocol::{CanonicalRequestEnvelope, ClientSimulationBodyPatch, UtcDate};
 use af_relay::{
     AnthropicRequestOverrides, ChatResponse, GeminiRequestOverrides, OpenAiChatRequestOverrides,
     OpenAiResponsesRequestOverrides, RelayCandidate, RelayCandidateRequest, RelayDiagnosticInput,
@@ -1855,20 +1853,7 @@ fn select_upstream_protocol(
             continue;
         }
         has_conversation_candidate = true;
-        let Some(converted) = request.clone().for_conversation_protocol(protocol) else {
-            continue;
-        };
-        // Anthropic thinking 输出必须保留原生签名，不能从其他协议补造。
-        if response_protocol == Protocol::Anthropic
-            && protocol != Protocol::Anthropic
-            && converted
-                .canonical()
-                .reasoning
-                .is_some_and(|reasoning| reasoning.include_thinking())
-        {
-            continue;
-        }
-        if validate_request_capabilities(protocol, converted.canonical()).is_ok() {
+        if request.clone().plan_conversation(protocol).is_some() {
             return Ok(protocol);
         }
     }
@@ -2823,7 +2808,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn protocol_selection_skips_candidates_that_cannot_express_reasoning_options() {
+    async fn protocol_selection_maps_fixed_budget_for_effort_only_channels() {
         let group_id = GroupId::new(7).unwrap();
         let record_for = |channel_id, channel_type, protocol| {
             let credential_id = channel_id + 100;
@@ -2878,16 +2863,21 @@ mod tests {
 
         let envelope = canonical.into();
         let selected = select_upstream_protocol(&route, &envelope, Protocol::Anthropic).unwrap();
-        assert_eq!(selected, Protocol::Gemini);
+        assert_eq!(selected, Protocol::OpenAiChat);
         let converted = envelope
             .for_conversation_protocol(selected)
             .unwrap()
             .into_canonical();
-        assert!(af_protocol::gemini::build_request(&converted).is_ok());
+        assert_eq!(
+            converted.reasoning.unwrap().budget_tokens().unwrap().get(),
+            128
+        );
+        let body = af_protocol::openai_chat::build_request(&converted).unwrap();
+        assert_eq!(body["reasoning_effort"], "minimal");
     }
 
     #[tokio::test]
-    async fn protocol_selection_rejects_requests_no_candidate_can_express() {
+    async fn protocol_selection_preserves_foreign_thinking_as_readable_history() {
         let service = service(vec![record(false, valid_envelope())]).await;
         let route = service
             .scheduler
@@ -2900,17 +2890,25 @@ mod tests {
             Vec::new(),
             false,
         );
-        canonical.reasoning =
-            Some(ReasoningConfig::new(None, Some(TokenCount::new(128).unwrap()), true).unwrap());
+        canonical.messages.push(Message::new(
+            af_domain::Role::Assistant,
+            vec![ContentBlock::Thinking {
+                text: "signed history".to_owned(),
+                signature: Some("opaque-provider-signature".to_owned()),
+            }],
+        ));
 
-        assert_eq!(
-            select_upstream_protocol(&route, &canonical.into(), Protocol::Anthropic),
-            Err(AfError::InvalidRequest)
-        );
+        let request: CanonicalRequestEnvelope = canonical.into();
+        let selected = select_upstream_protocol(&route, &request, Protocol::Anthropic).unwrap();
+        assert_eq!(selected, Protocol::OpenAiChat);
+        let body = request.plan_conversation(selected).unwrap().body().clone();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["messages"][0]["reasoning_content"], "signed history");
+        assert!(!body.to_string().contains("opaque-provider-signature"));
     }
 
     #[tokio::test]
-    async fn protocol_selection_keeps_anthropic_thinking_output_on_native_channels() {
+    async fn protocol_selection_allows_anthropic_thinking_on_gemini_channels() {
         let service = service(vec![gemini_record(valid_envelope_for(
             CREDENTIAL_ID + 1,
             0x25,
@@ -2925,14 +2923,119 @@ mod tests {
             br#"{"model":"gpt-scheduled","max_tokens":2048,"thinking":{"type":"enabled","budget_tokens":1024},"messages":[{"role":"user","content":"hello"}]}"#,
         ))
         .unwrap();
+        let selected = select_upstream_protocol(&route, &request, Protocol::Anthropic).unwrap();
+        assert_eq!(selected, Protocol::Gemini);
+        let plan = request.plan_conversation(selected).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(plan.body()).unwrap();
         assert_eq!(
-            select_upstream_protocol(&route, &request, Protocol::Anthropic),
-            Err(AfError::InvalidRequest)
+            body["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            1024
         );
+        assert_eq!(body["generationConfig"]["maxOutputTokens"], 2048);
+        assert_eq!(body["contents"][0]["parts"][0]["text"], "hello");
     }
 
     #[tokio::test]
-    async fn responses_summary_history_skips_anthropic_and_selects_gemini() {
+    async fn gemini_signed_readable_history_can_use_chat_without_replaying_provider_signature() {
+        let service = service(vec![record(false, valid_envelope())]).await;
+        let route = service
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        let request = af_protocol::gemini::parse_request_envelope(
+            "models/gpt-scheduled",
+            Bytes::from_static(
+                br#"{"generationConfig":{"maxOutputTokens":256},"contents":[{"role":"user","parts":[{"text":"hello"}]},{"role":"model","parts":[{"text":"considered hello","thought":true,"thoughtSignature":"dGhvdWdodC1zaWduYXR1cmU="},{"text":"answer"}]},{"role":"user","parts":[{"text":"continue"}]}]}"#,
+            ),
+        )
+        .unwrap();
+        let selected = select_upstream_protocol(&route, &request, Protocol::Gemini).unwrap();
+        assert_eq!(selected, Protocol::OpenAiChat);
+        let plan = request.plan_conversation(selected).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(plan.body()).unwrap();
+        assert_eq!(body["messages"][1]["reasoning_content"], "considered hello");
+        assert_eq!(body["messages"][1]["content"], "answer");
+        assert_eq!(body["messages"][2]["content"], "continue");
+        assert!(!body.to_string().contains("dGhvdWdodC1zaWduYXR1cmU="));
+        assert!(!body.to_string().contains("thoughtSignature"));
+    }
+
+    #[tokio::test]
+    async fn pi_reasoning_requests_can_schedule_chat_and_reserve_usage() {
+        let service = service(vec![record(false, valid_envelope())]).await;
+        for stream in [false, true] {
+            let anthropic = af_protocol::anthropic::parse_request_envelope(Bytes::from(
+                serde_json::to_vec(&json!({
+                    "model": "gpt-scheduled", "max_tokens": 384000, "stream": stream,
+                    "thinking": {"type": "enabled", "budget_tokens": 8192, "display": "summarized"},
+                    "messages": [{"role": "user", "content": [{
+                        "type": "text", "text": "hello",
+                        "cache_control": {"type": "ephemeral"}
+                    }]}]
+                }))
+                .unwrap(),
+            ))
+            .unwrap();
+            let gemini_body = Bytes::from(
+                serde_json::to_vec(&json!({
+                    "generationConfig": {"maxOutputTokens": 384000,
+                        "thinkingConfig": {"thinkingBudget": -1, "includeThoughts": true}},
+                    "contents": [{"role": "user", "parts": [{"text": "hello"}]}]
+                }))
+                .unwrap(),
+            );
+            let gemini = if stream {
+                af_protocol::gemini::parse_stream_request_envelope(
+                    "models/gpt-scheduled",
+                    gemini_body,
+                )
+            } else {
+                af_protocol::gemini::parse_request_envelope("models/gpt-scheduled", gemini_body)
+            }
+            .unwrap();
+            for (client, request) in [(Protocol::Anthropic, anthropic), (Protocol::Gemini, gemini)]
+            {
+                let route = service
+                    .scheduler
+                    .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+                    .unwrap()
+                    .unwrap();
+                let selected = select_upstream_protocol(&route, &request, client).unwrap();
+                assert_eq!(selected, Protocol::OpenAiChat);
+                let converted = request.clone().for_conversation_protocol(selected).unwrap();
+                let body = af_protocol::openai_chat::build_request(converted.canonical()).unwrap();
+                assert_eq!(body["max_completion_tokens"], 384000);
+                if client == Protocol::Anthropic {
+                    assert_eq!(body["reasoning_effort"], "medium");
+                } else {
+                    assert!(body.get("reasoning_effort").is_none());
+                    assert!(converted.canonical().reasoning.unwrap().dynamic_budget());
+                }
+                let execution = service
+                    .build_plan(
+                        prepared_execution_route(route, selected),
+                        request,
+                        client,
+                        "pi-thinking-compat",
+                        None,
+                        PreparedConcurrencyPlan::disabled(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(execution.upstream_protocol, Protocol::OpenAiChat);
+                assert_eq!(execution.response_protocol, client);
+                assert_eq!(execution.attempt_targets.len(), 1);
+                assert_eq!(
+                    execution.usage_upper_bound().unwrap().output_tokens().get(),
+                    384000
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn responses_summary_history_is_readable_on_anthropic_channels() {
         let group_id = GroupId::new(7).unwrap();
         let service = service(vec![
             protocol_record(group_id, "gpt-scheduled", CHANNEL_ID, Protocol::Anthropic),
@@ -2952,9 +3055,14 @@ mod tests {
         .unwrap();
         let selected =
             select_upstream_protocol(&route, &request, Protocol::OpenAiResponses).unwrap();
-        assert_eq!(selected, Protocol::Gemini);
-        let converted = request.for_conversation_protocol(selected).unwrap();
-        assert!(af_protocol::gemini::build_request(converted.canonical()).is_ok());
+        assert_eq!(selected, Protocol::Anthropic);
+        let plan = request.plan_conversation(selected).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(plan.body()).unwrap();
+        let rendered = body.to_string();
+        for text in ["considered the question", "answer", "continue"] {
+            assert!(rendered.contains(text));
+        }
+        assert!(!rendered.contains("signature"));
     }
 
     #[tokio::test]
@@ -2985,7 +3093,7 @@ mod tests {
             af_domain::UserId::new(1).unwrap(),
             source_group,
         );
-        let request = gemini_thinking_request("gpt-scheduled");
+        let request = gemini_native_media_request("gpt-scheduled");
         let selection = service
             .prepare_route_selection(
                 playground.into(),
@@ -3041,7 +3149,7 @@ mod tests {
         let selection = service
             .prepare_route_selection(
                 playground.into(),
-                &gemini_thinking_request("smart-thinking"),
+                &gemini_native_media_request("smart-thinking"),
                 Protocol::Gemini,
                 "smart-rule-capability-fallback",
                 None,
@@ -3094,7 +3202,7 @@ mod tests {
                     service
                         .prepare_route_selection(
                             playground.into(),
-                            &gemini_thinking_request(request_model),
+                            &gemini_native_media_request(request_model),
                             Protocol::Gemini,
                             "health-capability-gap",
                             None
@@ -3443,14 +3551,31 @@ mod tests {
             .unwrap()
     }
 
-    fn gemini_thinking_request(model: &str) -> CanonicalRequestEnvelope {
-        af_protocol::gemini::parse_request_envelope(
+    fn gemini_native_media_request(model: &str) -> CanonicalRequestEnvelope {
+        let body = json!({
+            "generationConfig":{"maxOutputTokens":256},
+            "contents":[{"role":"user","parts":[
+                {"text":"Describe the video"},
+                {"fileData":{"mimeType":"video/mp4","fileUri":"gs://fixture/video"}}
+            ]}],
+            "x_vendor":{"keep":[1,2]}
+        });
+        let request = af_protocol::gemini::parse_request_envelope(
             &format!("models/{model}"),
-            Bytes::from_static(
-                br#"{"generationConfig":{"maxOutputTokens":256,"thinkingConfig":{"thinkingBudget":128,"includeThoughts":true}},"contents":[{"role":"user","parts":[{"text":"hello"}]}]}"#,
-            ),
+            Bytes::from(serde_json::to_vec(&body).unwrap()),
         )
-        .unwrap()
+        .unwrap();
+        let native = request.clone().plan_conversation(Protocol::Gemini).unwrap();
+        let preserved: serde_json::Value = serde_json::from_slice(native.body()).unwrap();
+        assert_eq!(preserved["contents"], body["contents"]);
+        assert_eq!(preserved["x_vendor"], body["x_vendor"]);
+        assert!(
+            request
+                .clone()
+                .plan_conversation(Protocol::OpenAiChat)
+                .is_none()
+        );
+        request
     }
 
     fn record_pool(credentials: Vec<SchedulerRuntimeCredentialRecord>) -> ChannelIndexSourceRecord {
@@ -3554,7 +3679,8 @@ mod tests {
     }
 
     fn request_for_model(model: &str) -> CanonicalRequestEnvelope {
-        CanonicalRequest::new(Operation::Chat, model.to_owned(), Vec::new(), false).into()
+        // 路由现在验证实际出站正文；调度夹具也必须是入口可接受的完整请求。
+        valid_request_for_model(model)
     }
 
     fn valid_request_for_model(model: &str) -> CanonicalRequestEnvelope {
@@ -3569,13 +3695,10 @@ mod tests {
     }
 
     fn responses_request() -> CanonicalRequestEnvelope {
-        CanonicalRequest::new(
-            Operation::Responses,
-            "gpt-scheduled".to_owned(),
-            Vec::new(),
-            false,
-        )
-        .into()
+        af_protocol::openai_responses::parse_request_envelope(Bytes::from_static(
+            br#"{"model":"gpt-scheduled","input":[{"role":"user","content":"hello"}],"stream":false}"#,
+        ))
+        .unwrap()
     }
 
     fn principal(group_id: i64) -> GatewayPrincipal {

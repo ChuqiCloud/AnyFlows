@@ -11,8 +11,8 @@ mod tests;
 use af_adapter::{Bytes, Method, ResponseMode, UpstreamBody};
 use af_domain::{AfError, NetworkFailureKind, Protocol, UpstreamError};
 use af_protocol::{
-    CanonicalRequestEnvelope, StreamOptions, TokenCount, ToolCompatibilitySession, ToolDef, Usage,
-    UsageDetails, UsageSemantics, UsageSource,
+    CanonicalRequestEnvelope, TokenCount, ToolCompatibilitySession, ToolDef, Usage, UsageDetails,
+    UsageSemantics, UsageSource,
 };
 
 use crate::{
@@ -225,7 +225,10 @@ async fn execute(
     let deadline = tokio::time::Instant::now() + plan.total_timeout;
     let canonical = plan.request().canonical();
     if response_protocol == Protocol::Anthropic
-        && plan.upstream_protocol != Protocol::Anthropic
+        && !matches!(
+            plan.upstream_protocol,
+            Protocol::Anthropic | Protocol::OpenAiChat
+        )
         && canonical
             .reasoning
             .is_some_and(|reasoning| reasoning.include_thinking())
@@ -238,14 +241,17 @@ async fn execute(
     let estimator = OpenAiChatUsageEstimator::new(canonical);
     let created_at = unix_timestamp()?;
     let encoder = if downstream_stream {
-        Some(ChatStreamEncoder::new(
-            response_protocol,
-            request_id,
-            &client_model,
-            created_at,
-            canonical,
-            include_usage,
-        )?)
+        Some(
+            ChatStreamEncoder::new(
+                response_protocol,
+                request_id,
+                &client_model,
+                created_at,
+                canonical,
+                include_usage,
+            )?
+            .with_upstream_protocol(plan.upstream_protocol),
+        )
     } else {
         None
     };
@@ -284,6 +290,7 @@ async fn execute(
         snapshot.report = report;
         snapshot.sent_rounds = 1;
     });
+    let upstream_protocol = plan.upstream_protocol;
     let source = continuation
         .ok_or(UpstreamError::ProtocolError)
         .and_then(|continuation| {
@@ -312,10 +319,15 @@ async fn execute(
             usage,
         });
     }
-    let result = collect(source).await.and_then(|response| {
+    let result = collect(source).await.and_then(|mut response| {
         let usage = estimator
             .resolve_response(&response)
             .map_err(|_| UpstreamError::ProtocolError)?;
+        crate::anthropic_chat_bridge::adapt_response(
+            upstream_protocol,
+            response_protocol,
+            &mut response,
+        )?;
         let body = build_response(
             response_protocol,
             response,
@@ -351,12 +363,9 @@ pub(crate) fn encode_tool_request(
     request: CanonicalRequestEnvelope,
     protocol: Protocol,
 ) -> Result<Bytes, AfError> {
-    let mut canonical = request.into_canonical();
-    canonical.stream = true;
-    if protocol == Protocol::OpenAiChat {
-        canonical.stream_options = StreamOptions::new(true);
-    }
-    prepare_request(canonical.into(), protocol).map(|(_, body)| body)
+    // Transport streaming must retain source context, native capability guards,
+    // and output format preferences through both controlled tool rounds.
+    prepare_request(request.with_stream_mode(true), protocol).map(|(_, body)| body)
 }
 
 impl GenerationCompletionHook for ReportCompletion {
