@@ -16,7 +16,7 @@ const MESSAGE_OVERHEAD_TOKENS: i64 = 3;
 const REPLY_PRIMING_TOKENS: i64 = 3;
 const NAMED_FIELD_OVERHEAD_TOKENS: i64 = 1;
 const TOOL_OVERHEAD_TOKENS: i64 = 8;
-const ENCRYPTED_REASONING_ITEM_OVERHEAD_TOKENS: i64 = 16;
+const OPAQUE_SIGNATURE_ITEM_OVERHEAD_TOKENS: i64 = 16;
 const MAX_ESTIMATED_OUTPUT_BYTES: usize = 12 * 1024 * 1024;
 
 /// OpenAI Chat usage 无法可靠得到时的闭合原因。
@@ -348,15 +348,23 @@ fn add_input_block(
             input,
             signature,
         } => {
-            if signature.is_some() {
-                return Err(UsageResolutionError::UnsupportedContent);
-            }
             checked_add(total, TOOL_OVERHEAD_TOKENS)?;
             checked_add(total, counter.count(id)?)?;
             checked_add(total, counter.count(name)?)?;
             let arguments =
                 serde_json::to_string(input).map_err(|_| UsageResolutionError::EstimationFailed)?;
-            checked_add(total, counter.count(&arguments)?)
+            checked_add(total, counter.count(&arguments)?)?;
+            if let Some(signature) = signature {
+                if signature.is_empty() {
+                    return Err(UsageResolutionError::UnsupportedContent);
+                }
+                checked_add(total, OPAQUE_SIGNATURE_ITEM_OVERHEAD_TOKENS)?;
+                checked_add(
+                    total,
+                    i64::try_from(signature.len()).map_err(|_| UsageResolutionError::Overflow)?,
+                )?;
+            }
+            Ok(())
         }
         ContentBlock::ToolResult {
             tool_use_id,
@@ -364,9 +372,6 @@ fn add_input_block(
             structured_content,
             is_error: _,
         } => {
-            if structured_content.is_some() {
-                return Err(UsageResolutionError::UnsupportedContent);
-            }
             checked_add(total, NAMED_FIELD_OVERHEAD_TOKENS)?;
             checked_add(total, counter.count(tool_use_id)?)?;
             for nested in content {
@@ -378,26 +383,35 @@ fn add_input_block(
                     allow_chat_reasoning,
                 )?;
             }
+            if let Some(value) = structured_content {
+                let serialized = serde_json::to_string(value)
+                    .map_err(|_| UsageResolutionError::EstimationFailed)?;
+                checked_add(total, counter.count(&serialized)?)?;
+            }
             Ok(())
         }
         ContentBlock::Thinking {
             text,
             signature: Some(signature),
-        } if allow_encrypted_reasoning && !signature.is_empty() => {
+        } if !signature.is_empty() => {
             // 加密推理内容是不透明字节串，按一字节一 Token 预扣可避免 tokenizer 低估。
             let signature_tokens =
                 i64::try_from(signature.len()).map_err(|_| UsageResolutionError::Overflow)?;
-            checked_add(total, ENCRYPTED_REASONING_ITEM_OVERHEAD_TOKENS)?;
+            checked_add(total, OPAQUE_SIGNATURE_ITEM_OVERHEAD_TOKENS)?;
             checked_add(total, signature_tokens)?;
             checked_add(total, counter.count(text)?)
         }
         ContentBlock::Thinking {
             text,
             signature: None,
-        } if allow_chat_reasoning => checked_add(total, counter.count(text)?),
-        ContentBlock::Thinking { .. }
-        | ContentBlock::CacheControl(_)
-        | ContentBlock::Compaction(_) => Err(UsageResolutionError::UnsupportedContent),
+        } if allow_chat_reasoning || allow_encrypted_reasoning => {
+            checked_add(total, counter.count(text)?)
+        }
+        // Cache markers affect upstream prompt reuse, not model-visible content.
+        ContentBlock::CacheControl(_) => Ok(()),
+        ContentBlock::Thinking { .. } | ContentBlock::Compaction(_) => {
+            Err(UsageResolutionError::UnsupportedContent)
+        }
     }
 }
 
@@ -522,15 +536,8 @@ impl OutputAccumulator {
                     self.push_reasoning(choice_index, text);
                 }
                 ContentBlock::ToolUse {
-                    id,
-                    name,
-                    input,
-                    signature,
+                    id, name, input, ..
                 } => {
-                    if signature.is_some() {
-                        self.fail(UsageResolutionError::UnsupportedContent);
-                        continue;
-                    }
                     let tool_index = self
                         .choices
                         .get(&choice_index)
@@ -693,6 +700,157 @@ mod tests {
     }
 
     #[test]
+    fn cache_control_markers_do_not_change_estimated_input_tokens() {
+        let plain = CanonicalRequest::new(
+            Operation::Chat,
+            "gpt-4o".to_owned(),
+            vec![Message::new(
+                Role::User,
+                vec![ContentBlock::Text("cached prompt text".to_owned())],
+            )],
+            false,
+        );
+        let cached = CanonicalRequest::new(
+            Operation::Chat,
+            "gpt-4o".to_owned(),
+            vec![Message::new(
+                Role::User,
+                vec![
+                    ContentBlock::Text("cached prompt text".to_owned()),
+                    ContentBlock::CacheControl(af_protocol::CacheHint::Ephemeral5Minutes),
+                    ContentBlock::CacheControl(af_protocol::CacheHint::Ephemeral1Hour),
+                ],
+            )],
+            false,
+        );
+
+        assert_eq!(
+            estimate_openai_request_upper_bound(&cached)
+                .unwrap()
+                .input_tokens(),
+            estimate_openai_request_upper_bound(&plain)
+                .unwrap()
+                .input_tokens()
+        );
+    }
+
+    #[test]
+    fn structured_tool_results_use_conservative_serialized_json_estimate() {
+        let structured = json!({
+            "nested": [{"ok": true, "value": null}, {"count": 3}],
+            "items": ["alpha", "beta"]
+        });
+        let request = CanonicalRequest::new(
+            Operation::Chat,
+            "gpt-4o".to_owned(),
+            vec![Message::new(
+                Role::Tool,
+                vec![ContentBlock::ToolResult {
+                    tool_use_id: "call_123".to_owned(),
+                    content: vec![ContentBlock::Text("additional output".to_owned())],
+                    structured_content: Some(structured.clone()),
+                    is_error: true,
+                }],
+            )],
+            false,
+        );
+        let empty_result = CanonicalRequest::new(
+            Operation::Chat,
+            "gpt-4o".to_owned(),
+            vec![Message::new(Role::Tool, Vec::new())],
+            false,
+        );
+        let serialized = serde_json::to_string(&structured).unwrap();
+        let expected = estimate_openai_request_upper_bound(&empty_result)
+            .unwrap()
+            .input_tokens()
+            .get()
+            + NAMED_FIELD_OVERHEAD_TOKENS
+            + TokenCounter::for_model("gpt-4o").count("call_123").unwrap()
+            + TokenCounter::for_model("gpt-4o")
+                .count("additional output")
+                .unwrap()
+            + TokenCounter::for_model("gpt-4o")
+                .count(&serialized)
+                .unwrap();
+
+        assert_eq!(
+            estimate_openai_request_upper_bound(&request)
+                .unwrap()
+                .input_tokens()
+                .get(),
+            expected
+        );
+    }
+
+    #[test]
+    fn provider_multiturn_history_parses_and_has_a_precharge_estimate() {
+        let anthropic = af_protocol::anthropic::parse_request(
+            br#"{
+                "model":"claude-test",
+                "max_tokens":256,
+                "system":[{
+                    "type":"text",
+                    "text":"follow the system rules",
+                    "cache_control":{"type":"ephemeral","ttl":"1h"}
+                }],
+                "messages":[
+                    {"role":"user","content":[
+                        {"type":"text","text":"first question"},
+                        {"type":"text","text":"cached continuation","cache_control":{"type":"ephemeral"}}
+                    ]},
+                    {"role":"assistant","content":[
+                        {"type":"thinking","thinking":"checked the request","signature":"anthropic-signature"},
+                        {"type":"text","text":"first answer"}
+                    ]},
+                    {"role":"user","content":[{"type":"text","text":"continue"}]}
+                ]
+            }"#,
+        )
+        .unwrap();
+        let gemini = af_protocol::gemini::parse_request(
+            "models/gemini-test",
+            br#"{
+                "contents":[
+                    {"role":"model","parts":[
+                        {"text":"inspect the status","thought":true,"thoughtSignature":"c2ln"},
+                        {"functionCall":{
+                            "id":"call-1","name":"lookup","args":{"query":"status"}
+                        },"thoughtSignature":"dG9vbC1zaWc="}
+                    ]},
+                    {"role":"user","parts":[{"functionResponse":{
+                        "id":"call-1","name":"lookup","response":{
+                            "result":{"ok":true,"items":[1,2]},"nullable":null
+                        }
+                    }}]},
+                    {"role":"model","parts":[{"text":"The status is ready."}]},
+                    {"role":"user","parts":[{"text":"continue"}]}
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert!(estimate_openai_request_upper_bound(&anthropic).is_ok());
+        let signed_usage = estimate_openai_request_upper_bound(&gemini).unwrap();
+        let mut unsigned = gemini;
+        for message in &mut unsigned.messages {
+            for block in &mut message.content {
+                if let ContentBlock::Thinking { signature, .. }
+                | ContentBlock::ToolUse { signature, .. } = block
+                {
+                    *signature = None;
+                }
+            }
+        }
+        let unsigned_usage = estimate_openai_request_upper_bound(&unsigned).unwrap();
+        let opaque_bytes = i64::try_from("c2ln".len() + "dG9vbC1zaWc=".len()).unwrap();
+        assert_eq!(
+            signed_usage.input_tokens().get() - unsigned_usage.input_tokens().get(),
+            2 * OPAQUE_SIGNATURE_ITEM_OVERHEAD_TOKENS + opaque_bytes
+        );
+    }
+
+    #[test]
     fn text_fixture_pins_chat_overhead_and_tokenizer_result() {
         let mut estimator = OpenAiChatUsageEstimator::new(&text_request("gpt-4o"));
         estimator.observe(&CanonicalStreamEvent::MessageStart {
@@ -834,13 +992,13 @@ mod tests {
 
         let upper_bound = estimate_openai_request_upper_bound(&request).unwrap();
         let encrypted_floor =
-            i64::try_from(signature.len()).unwrap() + ENCRYPTED_REASONING_ITEM_OVERHEAD_TOKENS;
+            i64::try_from(signature.len()).unwrap() + OPAQUE_SIGNATURE_ITEM_OVERHEAD_TOKENS;
         assert!(upper_bound.input_tokens().get() > encrypted_floor);
         assert_eq!(upper_bound.source(), UsageSource::Estimated);
     }
 
     #[test]
-    fn chat_reasoning_text_is_counted_but_signed_and_responses_summary_remain_unsupported() {
+    fn reasoning_text_and_provider_signatures_are_conservatively_estimated() {
         let make_request = |operation, signature| {
             CanonicalRequest::new(
                 operation,
@@ -874,15 +1032,24 @@ mod tests {
                     .input_tokens()
         );
 
-        for request in [
-            make_request(Operation::Chat, Some("signed".to_owned())),
-            make_request(Operation::Responses, None),
-        ] {
-            assert_eq!(
-                estimate_openai_request_upper_bound(&request),
-                Err(UsageResolutionError::UnsupportedContent)
+        for operation in [Operation::Chat, Operation::Responses] {
+            let signed = estimate_openai_request_upper_bound(&make_request(
+                operation,
+                Some("signed".to_owned()),
+            ))
+            .unwrap();
+            let unsigned =
+                estimate_openai_request_upper_bound(&make_request(operation, None)).unwrap();
+            assert!(
+                signed.input_tokens().get()
+                    >= unsigned.input_tokens().get()
+                        + OPAQUE_SIGNATURE_ITEM_OVERHEAD_TOKENS
+                        + i64::try_from("signed".len()).unwrap()
             );
         }
+        let responses_summary =
+            estimate_openai_request_upper_bound(&make_request(Operation::Responses, None)).unwrap();
+        assert!(responses_summary.input_tokens() > TokenCount::ZERO);
     }
 
     #[test]
@@ -920,6 +1087,73 @@ mod tests {
                 .resolve_response(&response_with_usage),
             Ok(upstream_usage())
         );
+    }
+
+    #[test]
+    fn signed_tool_response_fallback_matches_stream_estimate_without_upstream_usage() {
+        let request = text_request("compatible-model");
+        let response = CanonicalResponse::new(
+            Operation::Chat,
+            "response-id".to_owned(),
+            "compatible-model".to_owned(),
+            Some(1),
+            vec![ResponseChoice::new(
+                0,
+                Message::new(
+                    Role::Assistant,
+                    vec![
+                        ContentBlock::Thinking {
+                            text: "check status".to_owned(),
+                            signature: Some("opaque-thinking".to_owned()),
+                        },
+                        ContentBlock::ToolUse {
+                            id: "call-1".to_owned(),
+                            name: "lookup".to_owned(),
+                            input: json!({"query": "status"}),
+                            signature: Some("opaque-tool".to_owned()),
+                        },
+                    ],
+                ),
+                FinishReason::ToolCalls,
+            )],
+            None,
+        );
+        let full_usage = OpenAiChatUsageEstimator::new(&request)
+            .resolve_response(&response)
+            .unwrap();
+        let mut stream = OpenAiChatUsageEstimator::new(&request);
+        for event in [
+            CanonicalStreamEvent::MessageStart {
+                choice_index: 0,
+                role: Role::Assistant,
+            },
+            CanonicalStreamEvent::ReasoningDelta {
+                choice_index: 0,
+                content_index: 0,
+                text: "check status".to_owned(),
+                signature: Some("opaque-thinking".to_owned()),
+            },
+            CanonicalStreamEvent::ToolCallStart {
+                choice_index: 0,
+                tool_index: 0,
+                id: "call-1".to_owned(),
+                name: "lookup".to_owned(),
+            },
+            CanonicalStreamEvent::ToolCallArgsDelta {
+                choice_index: 0,
+                tool_index: 0,
+                partial_json: "{\"query\":\"status\"}".to_owned(),
+            },
+            CanonicalStreamEvent::ToolCallSignature {
+                choice_index: 0,
+                tool_index: 0,
+                signature: "opaque-tool".to_owned(),
+            },
+        ] {
+            stream.observe(&event);
+        }
+        assert_eq!(full_usage, stream.resolve().unwrap());
+        assert!(full_usage.output_tokens() > TokenCount::ZERO);
     }
 
     #[tokio::test]

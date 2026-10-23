@@ -13,6 +13,8 @@ use crate::{CanonicalRequest, ContentBlock, Sampling, StreamOptions, TokenCount}
 pub struct CanonicalRequestEnvelope {
     canonical: CanonicalRequest,
     source: Option<ValidatedSourceRequest>,
+    // 来源证明独立于原始正文；重建正文不能使供应商签名跨协议重放。
+    origin_protocol: Option<Protocol>,
     requested_model: Option<String>,
 }
 
@@ -23,18 +25,21 @@ impl CanonicalRequestEnvelope {
         Self {
             canonical,
             source: None,
+            origin_protocol: None,
             requested_model: None,
         }
     }
 
-    /// 保存模型别名归一前的客户端模型，并永久丢弃原始正文直通资格。
+    /// 保存模型别名归一前的客户端模型与来源协议，并永久丢弃原始正文直通资格。
     pub(crate) fn from_normalized_model(
         canonical: CanonicalRequest,
         requested_model: String,
+        origin_protocol: Option<Protocol>,
     ) -> Self {
         Self {
             canonical,
             source: None,
+            origin_protocol,
             requested_model: Some(requested_model),
         }
     }
@@ -48,6 +53,7 @@ impl CanonicalRequestEnvelope {
         Self {
             canonical,
             source: Some(ValidatedSourceRequest { protocol, body }),
+            origin_protocol: Some(protocol),
             requested_model: None,
         }
     }
@@ -66,6 +72,18 @@ impl CanonicalRequestEnvelope {
             self.canonical.operation,
             Operation::Chat | Operation::Responses
         ) {
+            return None;
+        }
+        // Vendor signatures are opaque continuation state and are only replayable to their source.
+        if self
+            .origin_protocol
+            .is_some_and(|source| source != protocol)
+            && self
+                .canonical
+                .messages
+                .iter()
+                .any(|message| blocks_have_provider_signatures(&message.content))
+        {
             return None;
         }
         let operation = match protocol {
@@ -176,6 +194,10 @@ impl CanonicalRequestEnvelope {
         }
     }
 
+    pub(crate) const fn origin_protocol(&self) -> Option<Protocol> {
+        self.origin_protocol
+    }
+
     /// 返回客户端提交的原始模型别名；未发生归一时返回 Canonical 模型。
     ///
     /// 返回值属于敏感请求上下文，不得直接写入日志。
@@ -211,6 +233,7 @@ impl CanonicalRequestEnvelope {
         Self {
             canonical,
             source: None,
+            origin_protocol: self.origin_protocol,
             requested_model: self.requested_model,
         }
     }
@@ -232,6 +255,7 @@ impl CanonicalRequestEnvelope {
         let Self {
             canonical,
             source: Some(source),
+            origin_protocol,
             requested_model,
         } = self
         else {
@@ -241,6 +265,7 @@ impl CanonicalRequestEnvelope {
             protocol: source.protocol,
             canonical,
             body: source.body,
+            origin_protocol,
             requested_model,
         })
     }
@@ -256,6 +281,29 @@ fn remove_cache_hints(blocks: &mut Vec<ContentBlock>) -> bool {
         }
     }
     changed
+}
+
+fn blocks_have_provider_signatures(blocks: &[ContentBlock]) -> bool {
+    blocks.iter().any(|block| match block {
+        ContentBlock::ToolUse {
+            signature: Some(_), ..
+        }
+        | ContentBlock::Thinking {
+            signature: Some(_), ..
+        } => true,
+        ContentBlock::ToolResult { content, .. } => blocks_have_provider_signatures(content),
+        ContentBlock::Text(_)
+        | ContentBlock::Image { .. }
+        | ContentBlock::Audio { .. }
+        | ContentBlock::ToolUse {
+            signature: None, ..
+        }
+        | ContentBlock::Thinking {
+            signature: None, ..
+        }
+        | ContentBlock::CacheControl(_)
+        | ContentBlock::Compaction(_) => false,
+    })
 }
 
 // 文本工具协议使用完整 JSON 表达结构化结果，原生 Gemini 继续保留对象。
@@ -307,6 +355,7 @@ impl fmt::Debug for CanonicalRequestEnvelope {
             .debug_struct("CanonicalRequestEnvelope")
             .field("canonical", &self.canonical)
             .field("source_protocol", &self.source_protocol())
+            .field("origin_protocol", &self.origin_protocol)
             .field("has_requested_model_alias", &self.requested_model.is_some())
             .field(
                 "source_body_bytes",
@@ -336,6 +385,7 @@ pub enum SameProtocolDecision {
 /// 已证明源协议与目标协议一致、且请求语义未被改写的正文。
 pub struct SameProtocolRequest {
     protocol: Protocol,
+    origin_protocol: Option<Protocol>,
     canonical: CanonicalRequest,
     body: Bytes,
     requested_model: Option<String>,
@@ -380,6 +430,7 @@ impl fmt::Debug for SameProtocolRequest {
         formatter
             .debug_struct("SameProtocolRequest")
             .field("protocol", &self.protocol)
+            .field("origin_protocol", &self.origin_protocol)
             .field("canonical", &self.canonical)
             .field("body_bytes", &self.body.len())
             .field("has_requested_model_alias", &self.requested_model.is_some())
@@ -513,8 +564,90 @@ mod tests {
         );
         let request = responses_request(
             br#"{"model":"model-test","input":[{"type":"reasoning","id":"rs_test","encrypted_content":"opaque","summary":[]},{"role":"user","content":"hi"}],"include":["reasoning.encrypted_content"]}"#,
-        ).for_conversation_protocol(Protocol::OpenAiChat).unwrap();
-        assert!(crate::openai_chat::build_request(request.canonical()).is_err());
+        );
+        assert!(
+            request
+                .clone()
+                .for_conversation_protocol(Protocol::OpenAiResponses)
+                .is_some()
+        );
+        assert!(
+            request
+                .for_conversation_protocol(Protocol::OpenAiChat)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provider_signed_reasoning_and_tool_calls_stay_on_the_source_protocol() {
+        let request = crate::gemini::parse_request_envelope(
+            "models/gemini-test",
+            Bytes::from_static(
+                br#"{"tools":[{"functionDeclarations":[{"name":"lookup","parameters":{"type":"object"}}]}],"contents":[{"role":"user","parts":[{"text":"run a lookup"}]},{"role":"model","parts":[{"text":"I should inspect it","thought":true,"thoughtSignature":"c2ln"},{"functionCall":{"id":"call-1","name":"lookup","args":{}},"thoughtSignature":"dG9vbC1zaWc="}]},{"role":"user","parts":[{"functionResponse":{"id":"call-1","name":"lookup","response":{"ok":true}}}]}]}"#,
+            ),
+        )
+        .unwrap();
+
+        assert_signed_origin_survives_rebuilds(request, Protocol::Gemini);
+    }
+
+    fn assert_signed_origin_survives_rebuilds(request: CanonicalRequestEnvelope, origin: Protocol) {
+        let with_default = request
+            .clone()
+            .with_default_max_output_tokens(TokenCount::new(8_192).unwrap());
+        let routed = request.clone().with_routed_parameters(
+            "routed-model".to_owned(),
+            with_default.canonical().sampling.clone(),
+        );
+        let rebuilt = request
+            .clone()
+            .with_rebuilt_canonical(request.canonical().clone());
+        for rewritten in [with_default, routed, rebuilt] {
+            assert_eq!(rewritten.source_protocol(), None);
+            for target in [
+                Protocol::OpenAiChat,
+                Protocol::OpenAiResponses,
+                Protocol::Anthropic,
+                Protocol::Gemini,
+            ] {
+                let converted = rewritten.clone().for_conversation_protocol(target);
+                assert_eq!(converted.is_some(), target == origin, "target {target:?}");
+                if let Some(converted) = converted {
+                    assert_eq!(converted.canonical().messages, request.canonical().messages);
+                    let native_body = match origin {
+                        Protocol::Gemini => {
+                            crate::gemini::build_request(converted.canonical()).is_ok()
+                        }
+                        Protocol::OpenAiResponses => {
+                            crate::openai_responses::build_request(converted.canonical()).is_ok()
+                        }
+                        _ => unreachable!(),
+                    };
+                    assert!(native_body, "native {origin:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rewritten_encrypted_responses_history_keeps_its_origin() {
+        let request = responses_request(
+            br#"{"model":"gpt-test","input":[{"type":"reasoning","encrypted_content":"opaque","summary":[]},{"role":"user","content":"hi"}]}"#,
+        );
+        assert_signed_origin_survives_rebuilds(request, Protocol::OpenAiResponses);
+    }
+
+    #[test]
+    fn rewritten_unsigned_history_still_allows_cross_protocol_routes() {
+        let request = responses_request(br#"{"model":"model-test","input":"hi"}"#)
+            .with_default_max_output_tokens(TokenCount::new(128).unwrap());
+        let request = request.with_routed_parameters(
+            "routed-model".to_owned(),
+            Sampling::new(None, None, Some(TokenCount::new(128).unwrap()), Vec::new()).unwrap(),
+        );
+        for target in [Protocol::OpenAiChat, Protocol::Anthropic, Protocol::Gemini] {
+            assert!(request.clone().for_conversation_protocol(target).is_some());
+        }
     }
 
     #[test]

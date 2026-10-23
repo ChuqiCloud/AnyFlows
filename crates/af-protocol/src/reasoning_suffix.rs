@@ -65,12 +65,14 @@ pub fn apply_reasoning_model_suffix(
     }
 
     let reasoning = merge_reasoning(request.canonical().reasoning, suffix)?;
+    let origin_protocol = request.origin_protocol();
     let mut canonical = request.into_canonical();
     canonical.model = base_model.to_owned();
     canonical.reasoning = Some(reasoning);
     Ok(CanonicalRequestEnvelope::from_normalized_model(
         canonical,
         requested_model,
+        origin_protocol,
     ))
 }
 
@@ -192,6 +194,43 @@ mod tests {
             assert_eq!(normalized.requested_model(), model);
             assert_eq!(normalized.source_protocol(), Some(Protocol::OpenAiChat));
         }
+    }
+
+    #[test]
+    fn normalized_model_preserves_signed_history_protocol_without_passthrough() {
+        let request = crate::gemini::parse_request_envelope(
+            "models/gemini-test-high",
+            Bytes::from_static(
+                br#"{"contents":[{"role":"user","parts":[{"text":"hello"}]},{"role":"model","parts":[{"text":"summary","thought":true,"thoughtSignature":"c2ln"}]},{"role":"user","parts":[{"text":"continue"}]}]}"#,
+            ),
+        )
+        .unwrap();
+        let original_messages = request.canonical().messages.clone();
+        let normalized = apply_reasoning_model_suffix(request).unwrap();
+        assert_eq!(normalized.source_protocol(), None);
+        assert_eq!(normalized.requested_model(), "gemini-test-high");
+        assert_eq!(normalized.canonical().model, "gemini-test");
+        for target in [
+            Protocol::OpenAiChat,
+            Protocol::OpenAiResponses,
+            Protocol::Anthropic,
+        ] {
+            assert!(
+                normalized
+                    .clone()
+                    .for_conversation_protocol(target)
+                    .is_none()
+            );
+        }
+        let native = normalized
+            .for_conversation_protocol(Protocol::Gemini)
+            .unwrap();
+        assert_eq!(native.canonical().messages, original_messages);
+        assert!(crate::gemini::build_request(native.canonical()).is_ok());
+        assert!(matches!(
+            native.into_same_protocol(Protocol::Gemini),
+            SameProtocolDecision::Rebuild(_)
+        ));
     }
 
     #[test]

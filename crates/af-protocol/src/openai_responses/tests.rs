@@ -77,6 +77,91 @@ fn accepts_ai_sdk_stateless_reasoning_contract() {
 }
 
 #[test]
+fn accepts_replayable_reasoning_summary_without_encrypted_content() {
+    let request = parse_json(json!({
+        "model": "gpt-5.5",
+        "input": [
+            {"role": "user", "content": [{"type": "input_text", "text": "first"}]},
+            {
+                "type": "reasoning",
+                "id": "rs_summary_only",
+                "summary": [{"type": "summary_text", "text": "brief reasoning"}],
+                "status": "completed"
+            },
+            {"role": "assistant", "content": [{"type": "output_text", "text": "answer"}]},
+            {"role": "user", "content": [{"type": "input_text", "text": "continue"}]}
+        ],
+        "store": false,
+        "stream": true
+    }))
+    .unwrap();
+
+    assert!(matches!(
+        &request.messages[1].content[0],
+        ContentBlock::Thinking { text, signature: None } if text == "brief reasoning"
+    ));
+
+    let rebuilt = super::build_request(&request).unwrap();
+    assert_eq!(
+        rebuilt["input"][1],
+        json!({
+            "type": "reasoning",
+            "summary": [{"type": "summary_text", "text": "brief reasoning"}]
+        })
+    );
+    assert_eq!(parse_json(rebuilt).unwrap(), request);
+}
+
+#[test]
+fn accepts_reasoning_item_with_optional_encrypted_content_and_summary_omitted() {
+    let request = parse_json(json!({
+        "model": "gpt-5.5",
+        "input": [{"type": "reasoning", "id": "rs_optional_fields"}]
+    }))
+    .unwrap();
+
+    assert!(matches!(
+        &request.messages[0].content[0],
+        ContentBlock::Thinking { text, signature: None } if text.is_empty()
+    ));
+}
+
+#[test]
+fn rejects_invalid_encrypted_content_even_with_a_replayable_summary() {
+    for encrypted_content in ["", "invalid\nvalue"] {
+        assert_eq!(
+            parse_json(json!({
+                "model": "gpt-5.5",
+                "input": [{
+                    "type": "reasoning",
+                    "encrypted_content": encrypted_content,
+                    "summary": [{"type": "summary_text", "text": "summary"}]
+                }]
+            })),
+            Err(ParseRequestError::InvalidValue)
+        );
+    }
+}
+
+#[test]
+fn treats_nullable_encrypted_content_as_missing_for_summary_replay() {
+    let request = parse_json(json!({
+        "model": "gpt-5.5",
+        "input": [{
+            "type": "reasoning",
+            "encrypted_content": null,
+            "summary": [{"type": "summary_text", "text": "visible summary"}]
+        }]
+    }))
+    .unwrap();
+
+    assert!(matches!(
+        &request.messages[0].content[0],
+        ContentBlock::Thinking { text, signature: None } if text == "visible summary"
+    ));
+}
+
+#[test]
 fn accepts_ai_sdk_multi_turn_assistant_output_text() {
     let request = parse_json(json!({
         "model": "gpt-5.5",
@@ -524,13 +609,10 @@ fn rejects_known_unmodeled_top_level_and_item_features() {
         );
     }
 
-    let items = [
-        json!({"model": "gpt-test", "input": [{"type": "reasoning", "id": "r-1"}]}),
-        json!({
-            "model": "gpt-test",
-            "input": [{"type": "message", "role": "assistant", "content": "x", "phase": "final_answer"}]
-        }),
-    ];
+    let items = [json!({
+        "model": "gpt-test",
+        "input": [{"type": "message", "role": "assistant", "content": "x", "phase": "final_answer"}]
+    })];
     for request in items {
         assert_eq!(
             parse_json(request),

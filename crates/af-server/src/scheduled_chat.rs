@@ -47,7 +47,9 @@ use af_domain::{
     Protocol,
 };
 use af_httpclient::{HttpClientProvider, ProxyConfig, RemoteDnsPolicy};
-use af_protocol::{CanonicalRequestEnvelope, ClientSimulationBodyPatch, UtcDate};
+use af_protocol::{
+    CanonicalRequestEnvelope, ClientSimulationBodyPatch, UtcDate, validate_request_capabilities,
+};
 use af_relay::{
     AnthropicRequestOverrides, ChatResponse, GeminiRequestOverrides, OpenAiChatRequestOverrides,
     OpenAiResponsesRequestOverrides, RelayCandidate, RelayCandidateRequest, RelayDiagnosticInput,
@@ -886,6 +888,7 @@ impl ScheduledChatService {
         session_scope: Option<&StableSessionScope>,
     ) -> Result<PreparedRouteSelection, AfError> {
         let mut unhealthy_route_seen = false;
+        let mut incompatible_route_seen = false;
         let group_chain = self.route_group_chain(principal).await?;
         let rules = if principal.is_playground() {
             match &self.smart_routes {
@@ -908,7 +911,14 @@ impl ScheduledChatService {
                     continue;
                 };
                 let unfiltered_protocol =
-                    select_upstream_protocol(&unfiltered_route, request, response_protocol)?;
+                    match select_upstream_protocol(&unfiltered_route, request, response_protocol) {
+                        Ok(protocol) => protocol,
+                        Err(AfError::InvalidRequest) => {
+                            incompatible_route_seen = true;
+                            continue;
+                        }
+                        Err(error) => return Err(error),
+                    };
                 if route_availability(
                     &unfiltered_route,
                     unfiltered_protocol,
@@ -944,7 +954,15 @@ impl ScheduledChatService {
                     continue;
                 };
                 let upstream_protocol =
-                    select_upstream_protocol(&route, request, response_protocol)?;
+                    match select_upstream_protocol(&route, request, response_protocol) {
+                        Ok(protocol) => protocol,
+                        Err(AfError::InvalidRequest) => {
+                            // 未过滤计划已经确认兼容；过滤后失去兼容协议属于健康故障。
+                            unhealthy_route_seen = true;
+                            continue;
+                        }
+                        Err(error) => return Err(error),
+                    };
                 route.configure_wait_policy(self.sticky_wait_policy);
                 self.apply_sticky_binding(&mut route, upstream_protocol, session_scope)
                     .await;
@@ -993,8 +1011,18 @@ impl ScheduledChatService {
                     else {
                         continue;
                     };
-                    let unfiltered_protocol =
-                        select_upstream_protocol(&unfiltered_route, request, response_protocol)?;
+                    let unfiltered_protocol = match select_upstream_protocol(
+                        &unfiltered_route,
+                        request,
+                        response_protocol,
+                    ) {
+                        Ok(protocol) => protocol,
+                        Err(AfError::InvalidRequest) => {
+                            incompatible_route_seen = true;
+                            continue;
+                        }
+                        Err(error) => return Err(error),
+                    };
                     if route_availability(
                         &unfiltered_route,
                         unfiltered_protocol,
@@ -1027,7 +1055,14 @@ impl ScheduledChatService {
                         break;
                     };
                     let upstream_protocol =
-                        select_upstream_protocol(&route, request, response_protocol)?;
+                        match select_upstream_protocol(&route, request, response_protocol) {
+                            Ok(protocol) => protocol,
+                            Err(AfError::InvalidRequest) => {
+                                unhealthy_route_seen = true;
+                                break;
+                            }
+                            Err(error) => return Err(error),
+                        };
                     route.configure_wait_policy(self.sticky_wait_policy);
                     self.apply_sticky_binding(&mut route, upstream_protocol, session_scope)
                         .await;
@@ -1065,6 +1100,8 @@ impl ScheduledChatService {
         }
         Err(if unhealthy_route_seen {
             af_domain::UpstreamError::overloaded().into()
+        } else if incompatible_route_seen {
+            AfError::InvalidRequest
         } else {
             af_domain::UpstreamError::ModelUnsupported.into()
         })
@@ -1802,6 +1839,7 @@ fn select_upstream_protocol(
     }
     // 优先使用原生渠道，其次选择可表达该请求的对话协议。
     // 不把 Embeddings、音视频等不同能力的端点纳入对话转换。
+    let mut has_conversation_candidate = false;
     for protocol in [
         response_protocol,
         Protocol::OpenAiChat,
@@ -1809,19 +1847,36 @@ fn select_upstream_protocol(
         Protocol::Anthropic,
         Protocol::Gemini,
     ] {
-        if route
+        let has_candidate = route
             .candidates()
             .iter()
-            .any(|candidate| target_matches_protocol(candidate.runtime_target(), protocol))
-            && request
-                .clone()
-                .for_conversation_protocol(protocol)
-                .is_some()
+            .any(|candidate| target_matches_protocol(candidate.runtime_target(), protocol));
+        if !has_candidate {
+            continue;
+        }
+        has_conversation_candidate = true;
+        let Some(converted) = request.clone().for_conversation_protocol(protocol) else {
+            continue;
+        };
+        // Anthropic thinking 输出必须保留原生签名，不能从其他协议补造。
+        if response_protocol == Protocol::Anthropic
+            && protocol != Protocol::Anthropic
+            && converted
+                .canonical()
+                .reasoning
+                .is_some_and(|reasoning| reasoning.include_thinking())
         {
+            continue;
+        }
+        if validate_request_capabilities(protocol, converted.canonical()).is_ok() {
             return Ok(protocol);
         }
     }
-    Ok(response_protocol)
+    if has_conversation_candidate {
+        Err(AfError::InvalidRequest)
+    } else {
+        Ok(response_protocol)
+    }
 }
 
 fn map_scheduler_error(error: IndexedWeightedSchedulerError) -> AfError {
@@ -1863,7 +1918,10 @@ mod tests {
         RouteStrategy, UpstreamError,
     };
     use af_httpclient::{HttpClientConfig, HttpClientProvider};
-    use af_protocol::{CanonicalRequest, RequestContinuation, RequestMetadata, openai_chat};
+    use af_protocol::{
+        CanonicalRequest, ContentBlock, Message, ReasoningConfig, RequestContinuation,
+        RequestMetadata, TokenCount, openai_chat,
+    };
     use af_scheduler::{
         ChannelIndexSource, ChannelIndexSourceFuture, ChannelIndexSourceRecord,
         InMemoryChannelIndex,
@@ -2600,6 +2658,456 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn native_anthropic_signed_tool_history_can_reserve_usage() {
+        let service = service(vec![anthropic_record(valid_envelope())]).await;
+        for stream in [false, true] {
+            let request = af_protocol::anthropic::parse_request_envelope(Bytes::from(
+                serde_json::to_vec(&json!({
+                    "model": "gpt-scheduled",
+                    "max_tokens": 2048,
+                    "stream": stream,
+                    "thinking": {"type": "enabled", "budget_tokens": 1024},
+                    "system": [{
+                        "type": "text",
+                        "text": "Check the service before answering.",
+                        "cache_control": {"type": "ephemeral", "ttl": "1h"}
+                    }],
+                    "tools": [{
+                        "name": "lookup",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {"query": {"type": "string"}}
+                        }
+                    }],
+                    "messages": [
+                        {"role": "user", "content": [{
+                            "type": "text",
+                            "text": "Check the service status.",
+                            "cache_control": {"type": "ephemeral"}
+                        }]},
+                        {"role": "assistant", "content": [
+                            {
+                                "type": "thinking",
+                                "thinking": "I should check the current status.",
+                                "signature": "anthropic-signed-history-canary"
+                            },
+                            {
+                                "type": "tool_use",
+                                "id": "toolu_status",
+                                "name": "lookup",
+                                "input": {"query": "status"}
+                            }
+                        ]},
+                        {"role": "user", "content": [{
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_status",
+                            "content": "The service is ready.",
+                            "cache_control": {"type": "ephemeral"}
+                        }]},
+                        {"role": "assistant", "content": "The service is ready."},
+                        {"role": "user", "content": "Check it again."}
+                    ]
+                }))
+                .unwrap(),
+            ))
+            .unwrap();
+            let route = service
+                .scheduler
+                .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+                .unwrap()
+                .unwrap();
+            let selected = select_upstream_protocol(&route, &request, Protocol::Anthropic).unwrap();
+            assert_eq!(selected, Protocol::Anthropic);
+            let execution = service
+                .build_plan(
+                    prepared_execution_route(route, selected),
+                    request,
+                    Protocol::Anthropic,
+                    "request-anthropic-signed-history",
+                    None,
+                    PreparedConcurrencyPlan::disabled(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(execution.upstream_protocol, Protocol::Anthropic);
+            assert_eq!(execution.response_protocol, Protocol::Anthropic);
+            assert_eq!(execution.attempt_targets.len(), 1);
+            let upper_bound = execution.usage_upper_bound().unwrap();
+            assert!(upper_bound.input_tokens() > TokenCount::ZERO);
+            assert_eq!(upper_bound.output_tokens().get(), 2048);
+        }
+    }
+
+    #[tokio::test]
+    async fn native_gemini_signed_tool_history_can_reserve_usage() {
+        let service = service(vec![gemini_record(valid_envelope_for(
+            CREDENTIAL_ID + 1,
+            0x25,
+        ))])
+        .await;
+        for stream in [false, true] {
+            let body = Bytes::from(
+                serde_json::to_vec(&json!({
+                    "generationConfig": {"maxOutputTokens": 128},
+                    "tools": [{"functionDeclarations": [{
+                        "name": "lookup",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"query": {"type": "string"}}
+                        }
+                    }]}],
+                    "contents": [
+                        {"role": "user", "parts": [{"text": "Check the service status."}]},
+                        {"role": "model", "parts": [
+                            {
+                                "text": "I should check the current status.",
+                                "thought": true,
+                                "thoughtSignature": "dGhvdWdodC1zaWduYXR1cmU="
+                            },
+                            {
+                                "functionCall": {
+                                    "id": "call_status",
+                                    "name": "lookup",
+                                    "args": {"query": "status"}
+                                },
+                                "thoughtSignature": "dG9vbC1zaWduYXR1cmU="
+                            }
+                        ]},
+                        {"role": "user", "parts": [{
+                            "functionResponse": {
+                                "id": "call_status",
+                                "name": "lookup",
+                                "response": {
+                                    "result": {"ok": true, "checks": ["database", "cache"]},
+                                    "nullable": null
+                                }
+                            }
+                        }]},
+                        {"role": "model", "parts": [{"text": "The service is ready."}]},
+                        {"role": "user", "parts": [{"text": "Check it again."}]}
+                    ]
+                }))
+                .unwrap(),
+            );
+            let request = if stream {
+                af_protocol::gemini::parse_stream_request_envelope("models/gpt-scheduled", body)
+            } else {
+                af_protocol::gemini::parse_request_envelope("models/gpt-scheduled", body)
+            }
+            .unwrap();
+            let route = service
+                .scheduler
+                .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+                .unwrap()
+                .unwrap();
+            let selected = select_upstream_protocol(&route, &request, Protocol::Gemini).unwrap();
+            assert_eq!(selected, Protocol::Gemini);
+            let execution = service
+                .build_plan(
+                    prepared_execution_route(route, selected),
+                    request,
+                    Protocol::Gemini,
+                    "request-gemini-signed-history",
+                    None,
+                    PreparedConcurrencyPlan::disabled(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(execution.upstream_protocol, Protocol::Gemini);
+            assert_eq!(execution.response_protocol, Protocol::Gemini);
+            assert_eq!(execution.attempt_targets.len(), 1);
+            let upper_bound = execution.usage_upper_bound().unwrap();
+            assert!(upper_bound.input_tokens() > TokenCount::ZERO);
+            assert_eq!(upper_bound.output_tokens().get(), 128);
+        }
+    }
+
+    #[tokio::test]
+    async fn protocol_selection_skips_candidates_that_cannot_express_reasoning_options() {
+        let group_id = GroupId::new(7).unwrap();
+        let record_for = |channel_id, channel_type, protocol| {
+            let credential_id = channel_id + 100;
+            let credential = SchedulerRuntimeCredentialRecord::new(
+                credential_id,
+                CredentialKind::ApiKey,
+                valid_envelope_for(credential_id, 0x29),
+                false,
+            )
+            .unwrap();
+            let target = SchedulerRuntimeTargetRecord::new_pool(
+                ChannelId::new(channel_id).unwrap(),
+                channel_type,
+                protocol,
+                Some("https://scheduled-chat.example".to_owned()),
+                vec![credential],
+                Vec::new(),
+            )
+            .unwrap();
+            ChannelIndexSourceRecord::with_runtime_target(
+                group_id,
+                "gpt-scheduled",
+                10,
+                0,
+                Arc::new(target),
+            )
+            .unwrap()
+        };
+        let index = InMemoryChannelIndex::load(Arc::new(StaticSource {
+            records: vec![
+                record_for(CHANNEL_ID, ChannelType::OpenAi, Protocol::OpenAiChat),
+                record_for(CHANNEL_ID + 1, ChannelType::Gemini, Protocol::Gemini),
+            ],
+        }))
+        .await
+        .unwrap();
+        let route = IndexedWeightedScheduler::new(index)
+            .route_plan(group_id, "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        let mut canonical = CanonicalRequest::new(
+            Operation::Chat,
+            "gpt-scheduled".to_owned(),
+            vec![Message::new(
+                af_domain::Role::User,
+                vec![ContentBlock::Text("hello".to_owned())],
+            )],
+            false,
+        );
+        canonical.reasoning =
+            Some(ReasoningConfig::new(None, Some(TokenCount::new(128).unwrap()), false).unwrap());
+
+        let envelope = canonical.into();
+        let selected = select_upstream_protocol(&route, &envelope, Protocol::Anthropic).unwrap();
+        assert_eq!(selected, Protocol::Gemini);
+        let converted = envelope
+            .for_conversation_protocol(selected)
+            .unwrap()
+            .into_canonical();
+        assert!(af_protocol::gemini::build_request(&converted).is_ok());
+    }
+
+    #[tokio::test]
+    async fn protocol_selection_rejects_requests_no_candidate_can_express() {
+        let service = service(vec![record(false, valid_envelope())]).await;
+        let route = service
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        let mut canonical = CanonicalRequest::new(
+            Operation::Chat,
+            "gpt-scheduled".to_owned(),
+            Vec::new(),
+            false,
+        );
+        canonical.reasoning =
+            Some(ReasoningConfig::new(None, Some(TokenCount::new(128).unwrap()), true).unwrap());
+
+        assert_eq!(
+            select_upstream_protocol(&route, &canonical.into(), Protocol::Anthropic),
+            Err(AfError::InvalidRequest)
+        );
+    }
+
+    #[tokio::test]
+    async fn protocol_selection_keeps_anthropic_thinking_output_on_native_channels() {
+        let service = service(vec![gemini_record(valid_envelope_for(
+            CREDENTIAL_ID + 1,
+            0x25,
+        ))])
+        .await;
+        let route = service
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        let request = af_protocol::anthropic::parse_request_envelope(Bytes::from_static(
+            br#"{"model":"gpt-scheduled","max_tokens":2048,"thinking":{"type":"enabled","budget_tokens":1024},"messages":[{"role":"user","content":"hello"}]}"#,
+        ))
+        .unwrap();
+        assert_eq!(
+            select_upstream_protocol(&route, &request, Protocol::Anthropic),
+            Err(AfError::InvalidRequest)
+        );
+    }
+
+    #[tokio::test]
+    async fn responses_summary_history_skips_anthropic_and_selects_gemini() {
+        let group_id = GroupId::new(7).unwrap();
+        let service = service(vec![
+            protocol_record(group_id, "gpt-scheduled", CHANNEL_ID, Protocol::Anthropic),
+            protocol_record(group_id, "gpt-scheduled", CHANNEL_ID + 1, Protocol::Gemini),
+        ])
+        .await;
+        let route = service
+            .scheduler
+            .route_plan(group_id, "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        let request = af_protocol::openai_responses::parse_request_envelope(
+            Bytes::from_static(
+                br#"{"model":"gpt-scheduled","input":[{"role":"user","content":"hello"},{"type":"reasoning","summary":[{"type":"summary_text","text":"considered the question"}]},{"role":"assistant","content":[{"type":"output_text","text":"answer"}]},{"role":"user","content":"continue"}]}"#,
+            ),
+        )
+        .unwrap();
+        let selected =
+            select_upstream_protocol(&route, &request, Protocol::OpenAiResponses).unwrap();
+        assert_eq!(selected, Protocol::Gemini);
+        let converted = request.for_conversation_protocol(selected).unwrap();
+        assert!(af_protocol::gemini::build_request(converted.canonical()).is_ok());
+    }
+
+    #[tokio::test]
+    async fn capability_mismatch_continues_to_the_configured_fallback_group() {
+        let (mut service, source_group, fallback_group) =
+            service_with_group_fallback(valid_envelope()).await;
+        let index = InMemoryChannelIndex::load(Arc::new(StaticSource {
+            records: vec![
+                protocol_record(
+                    source_group,
+                    "gpt-scheduled",
+                    CHANNEL_ID,
+                    Protocol::OpenAiChat,
+                ),
+                protocol_record(
+                    fallback_group,
+                    "gpt-scheduled",
+                    CHANNEL_ID + 1,
+                    Protocol::Gemini,
+                ),
+            ],
+        }))
+        .await
+        .unwrap();
+        service.scheduler = IndexedWeightedScheduler::new(index);
+        let playground = GatewayPrincipal::playground(
+            af_domain::TokenId::new(1).unwrap(),
+            af_domain::UserId::new(1).unwrap(),
+            source_group,
+        );
+        let request = gemini_thinking_request("gpt-scheduled");
+        let selection = service
+            .prepare_route_selection(
+                playground.into(),
+                &request,
+                Protocol::Gemini,
+                "group-capability-fallback",
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(selection.route.target_group_id(), fallback_group);
+        assert_eq!(selection.upstream_protocol, Protocol::Gemini);
+
+        let regular = GatewayPrincipal::new(
+            af_domain::TokenId::new(2).unwrap(),
+            af_domain::UserId::new(1).unwrap(),
+            source_group,
+        );
+        assert!(matches!(
+            service
+                .prepare_route_selection(
+                    regular.into(),
+                    &request,
+                    Protocol::Gemini,
+                    "group-capability-exhausted",
+                    None
+                )
+                .await,
+            Err(AfError::InvalidRequest)
+        ));
+    }
+
+    #[tokio::test]
+    async fn capability_mismatch_continues_to_the_next_smart_route_rule() {
+        let (mut service, group_id) = service_with_smart_route(valid_envelope()).await;
+        let index = InMemoryChannelIndex::load(Arc::new(StaticSource {
+            records: vec![
+                protocol_record(group_id, "gpt-routed", CHANNEL_ID, Protocol::OpenAiChat),
+                protocol_record(group_id, "gpt-routed", CHANNEL_ID + 1, Protocol::Gemini),
+            ],
+        }))
+        .await
+        .unwrap();
+        service.scheduler = IndexedWeightedScheduler::new(index);
+        service = service.with_smart_route_resolver(Arc::new(ProtocolSmartRouteResolver {
+            rules: vec![vec![CHANNEL_ID], vec![CHANNEL_ID + 1]],
+        }));
+        let playground = GatewayPrincipal::playground(
+            af_domain::TokenId::new(1).unwrap(),
+            af_domain::UserId::new(1).unwrap(),
+            group_id,
+        );
+        let selection = service
+            .prepare_route_selection(
+                playground.into(),
+                &gemini_thinking_request("smart-thinking"),
+                Protocol::Gemini,
+                "smart-rule-capability-fallback",
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(selection.route.target_group_id(), group_id);
+        assert_eq!(selection.upstream_protocol, Protocol::Gemini);
+        assert_eq!(selection.routed_model, "gpt-routed");
+    }
+
+    #[tokio::test]
+    async fn health_filtering_of_the_only_compatible_protocol_stays_overloaded() {
+        for smart_route in [false, true] {
+            let (mut service, group_id) = service_with_smart_route(valid_envelope()).await;
+            let routed_model = if smart_route {
+                "gpt-routed"
+            } else {
+                "gpt-scheduled"
+            };
+            let index = InMemoryChannelIndex::load(Arc::new(StaticSource {
+                records: vec![
+                    protocol_record(group_id, routed_model, CHANNEL_ID, Protocol::OpenAiChat),
+                    protocol_record(group_id, routed_model, CHANNEL_ID + 1, Protocol::Gemini),
+                ],
+            }))
+            .await
+            .unwrap();
+            service.scheduler = IndexedWeightedScheduler::new(index);
+            service = service.with_scheduler_health(Arc::new(CoolingChannelHealth {
+                channel_id: ChannelId::new(CHANNEL_ID + 1).unwrap(),
+            }));
+            if smart_route {
+                service = service.with_smart_route_resolver(Arc::new(ProtocolSmartRouteResolver {
+                    rules: vec![vec![CHANNEL_ID, CHANNEL_ID + 1]],
+                }));
+            }
+            let playground = GatewayPrincipal::playground(
+                af_domain::TokenId::new(1).unwrap(),
+                af_domain::UserId::new(1).unwrap(),
+                group_id,
+            );
+            let request_model = if smart_route {
+                "smart-thinking"
+            } else {
+                "gpt-scheduled"
+            };
+            assert!(
+                matches!(
+                    service
+                        .prepare_route_selection(
+                            playground.into(),
+                            &gemini_thinking_request(request_model),
+                            Protocol::Gemini,
+                            "health-capability-gap",
+                            None
+                        )
+                        .await,
+                    Err(AfError::Upstream(UpstreamError::Overloaded { .. }))
+                ),
+                "smart route: {smart_route}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn missing_candidates_proxy_binding_and_decryption_fail_closed() {
         let principal = principal(7);
         let empty = service(Vec::new()).await;
@@ -2902,6 +3410,49 @@ mod tests {
         record_pool(vec![credential])
     }
 
+    fn protocol_record(
+        group_id: GroupId,
+        model: &str,
+        channel_id: i64,
+        protocol: Protocol,
+    ) -> ChannelIndexSourceRecord {
+        let channel_type = match protocol {
+            Protocol::OpenAiChat => ChannelType::OpenAi,
+            Protocol::Anthropic => ChannelType::Anthropic,
+            Protocol::Gemini => ChannelType::Gemini,
+            _ => unreachable!(),
+        };
+        let credential_id = channel_id + 10;
+        let credential = SchedulerRuntimeCredentialRecord::new(
+            credential_id,
+            CredentialKind::ApiKey,
+            valid_envelope_for(credential_id, 0x29),
+            false,
+        )
+        .unwrap();
+        let target = SchedulerRuntimeTargetRecord::new(
+            ChannelId::new(channel_id).unwrap(),
+            channel_type,
+            protocol,
+            Some("https://scheduled-chat.example".to_owned()),
+            credential,
+            Vec::new(),
+        )
+        .unwrap();
+        ChannelIndexSourceRecord::with_runtime_target(group_id, model, 10, 0, Arc::new(target))
+            .unwrap()
+    }
+
+    fn gemini_thinking_request(model: &str) -> CanonicalRequestEnvelope {
+        af_protocol::gemini::parse_request_envelope(
+            &format!("models/{model}"),
+            Bytes::from_static(
+                br#"{"generationConfig":{"maxOutputTokens":256,"thinkingConfig":{"thinkingBudget":128,"includeThoughts":true}},"contents":[{"role":"user","parts":[{"text":"hello"}]}]}"#,
+            ),
+        )
+        .unwrap()
+    }
+
     fn record_pool(credentials: Vec<SchedulerRuntimeCredentialRecord>) -> ChannelIndexSourceRecord {
         record_pool_with_protocol(credentials, Protocol::OpenAiChat)
     }
@@ -3107,6 +3658,79 @@ mod tests {
     }
 
     struct StaticSmartRouteResolver;
+
+    struct ProtocolSmartRouteResolver {
+        rules: Vec<Vec<i64>>,
+    }
+
+    impl SmartRouteResolver for ProtocolSmartRouteResolver {
+        fn matching_rules<'a>(&'a self, requested_model: &'a str) -> SmartRouteRulesFuture<'a> {
+            Box::pin(async move {
+                if requested_model != "smart-thinking" {
+                    return Ok(Vec::new());
+                }
+                self.rules
+                    .iter()
+                    .enumerate()
+                    .map(|(index, channel_ids)| {
+                        let candidates = channel_ids
+                            .iter()
+                            .map(|channel_id| {
+                                SmartRouteRuntimeCandidate::new(
+                                    RouteChannelId::new(*channel_id).unwrap(),
+                                    ChannelId::new(*channel_id).unwrap(),
+                                    CredentialId::new(*channel_id + 10).unwrap(),
+                                    10,
+                                    10,
+                                    None,
+                                )
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        SmartRouteRuntimeRule::new(
+                            RouteId::new(i64::try_from(index + 1).unwrap()).unwrap(),
+                            RouteMode::ExplicitGroup,
+                            RouteStrategy::Weighted,
+                            "gpt-routed".to_owned(),
+                            candidates,
+                        )
+                    })
+                    .collect()
+            })
+        }
+    }
+
+    struct CoolingChannelHealth {
+        channel_id: ChannelId,
+    }
+
+    impl SchedulerHealthStore for CoolingChannelHealth {
+        fn states<'a>(
+            &'a self,
+            targets: &'a [af_cache::RedisHealthTarget],
+        ) -> crate::health_runtime::SchedulerHealthStoreFuture<'a, Vec<RuntimeHealthState>>
+        {
+            Box::pin(async move {
+                Ok(targets
+                    .iter()
+                    .copied()
+                    .map(|target| {
+                        RuntimeHealthState::new(
+                            target,
+                            0,
+                            target == af_cache::RedisHealthTarget::Channel(self.channel_id),
+                        )
+                    })
+                    .collect())
+            })
+        }
+
+        fn apply<'a>(
+            &'a self,
+            _events: &'a [af_cache::RedisHealthEvent],
+        ) -> crate::health_runtime::SchedulerHealthStoreFuture<'a, ()> {
+            Box::pin(async { Ok(()) })
+        }
+    }
 
     impl SmartRouteResolver for StaticSmartRouteResolver {
         fn matching_rules<'a>(&'a self, requested_model: &'a str) -> SmartRouteRulesFuture<'a> {
