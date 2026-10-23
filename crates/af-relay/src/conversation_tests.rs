@@ -496,10 +496,12 @@ fn captured_agent_requests_preserve_native_fields_and_conversion_boundaries() {
         native["generationConfig"]["thinkingConfig"]["includeThoughts"],
         true
     );
-    assert!(matches!(
-        prepare_request(gemini, Protocol::OpenAiChat),
-        Err(AfError::InvalidRequest)
-    ));
+    let (canonical, chat) = prepare_request(gemini, Protocol::OpenAiChat).unwrap();
+    assert!(canonical.reasoning.unwrap().dynamic_budget());
+    let chat: Value = serde_json::from_slice(&chat).unwrap();
+    assert!(chat.get("reasoning_effort").is_none());
+    assert_eq!(chat["max_completion_tokens"], 8192);
+    assert_eq!(chat["messages"][0]["content"], "hello");
 }
 
 #[test]
