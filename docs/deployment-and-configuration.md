@@ -109,6 +109,14 @@ curl --fail http://127.0.0.1:8080/readyz
 
 修改配置使用 `sudoedit /etc/anyflows/anyflows.env`，保存后重启服务。`/healthz` 表示进程存活，`/readyz` 用于检查服务是否就绪。
 
+使用 `GET /api/version`（兼容别名 `/version`）核对部署版本。接口无需登录，返回 JSON，并设置 `Cache-Control: no-store`：
+
+```json
+{"version":"0.3.0-beta.2","commit":"完整源码提交 SHA","build_time":"2026-10-23T00:00:00Z"}
+```
+
+`commit` 标识编译时的源码提交，`build_time` 为 UTC 构建时间。缺少 Git 元数据且未显式注入时，`commit` 为 `null`；未注入构建时间时，`build_time` 为 `null`。官方发布和预览流水线注入两项信息。自行打包可在编译前设置 `AF_BUILD_COMMIT`、`AF_BUILD_TIME`；Docker 构建使用同名 `--build-arg`。这两项在编译时固定，修改运行时环境变量不会改变构建身份。
+
 安装失败时先看 `sudo journalctl -u anyflows -n 100 --no-pager`。端口占用、配置错误和数据库连接失败应按日志处理；不要删除数据库、配置或 WAL 重试安装。
 
 升级前请阅读 [升级与备份](migrations-and-release.md)。其他部署方式和参数见 [容器部署](docker-compose.md)、[配置参考](configuration.md)。

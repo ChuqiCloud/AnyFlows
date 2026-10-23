@@ -150,6 +150,7 @@ pub use oauth_connections::{
 pub use openapi::{openapi_document, openapi_document_with_extensions};
 pub use operations::{
     HEALTH_PATH, READINESS_PATH, ReadinessFuture, ReadinessHandle, ReadinessProbe,
+    VERSION_ALIAS_PATH, VERSION_PATH, VersionInfo,
 };
 pub use payment_webhook::{PaymentWebhookProcessorRegistry, build_payment_webhook_router};
 pub use refund_webhook::{RefundReceiptProcessorRegistry, build_refund_receipt_webhook_router};
