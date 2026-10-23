@@ -30,6 +30,8 @@ pub use streaming::{
 #[cfg(test)]
 mod build_tests;
 #[cfg(test)]
+mod replay_tests;
+#[cfg(test)]
 mod response_tests;
 #[cfg(test)]
 mod tests;
@@ -171,17 +173,10 @@ fn input_item_uses_unsupported_feature(item: &Value) -> bool {
     }
 
     match kind {
-        None | Some("message") => {
-            if ["id", "phase", "status"]
-                .iter()
-                .any(|key| item.contains_key(*key))
-            {
-                return true;
-            }
-            item.get("content")
-                .and_then(Value::as_array)
-                .is_some_and(|parts| parts.iter().any(content_uses_unsupported_feature))
-        }
+        None | Some("message") => item
+            .get("content")
+            .and_then(Value::as_array)
+            .is_some_and(|parts| parts.iter().any(content_uses_unsupported_feature)),
         Some("function_call") => ["caller", "namespace"]
             .iter()
             .any(|key| item.contains_key(*key)),

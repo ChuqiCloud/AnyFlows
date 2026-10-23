@@ -5,6 +5,7 @@ use af_protocol::{
     openai_responses::OpenAiResponsesStreamEncoder,
 };
 
+use crate::anthropic_chat_bridge::ChatThinkingTextBridge;
 use crate::openai_chat_usage::{OpenAiChatUsageEstimator, UsageResolutionError};
 
 /// OpenAI Chat 上游流对应的闭合下游协议编码器。
@@ -19,6 +20,8 @@ pub(crate) enum ChatStreamEncoder {
     Anthropic {
         encoder: Box<AnthropicMessagesStreamEncoder>,
         usage_estimator: OpenAiChatUsageEstimator,
+        chat_thinking: Option<ChatThinkingTextBridge>,
+        reject_foreign_thinking: bool,
     },
     Gemini {
         encoder: Box<GeminiGenerateContentStreamEncoder>,
@@ -73,6 +76,8 @@ impl ChatStreamEncoder {
                 Ok(Self::Anthropic {
                     encoder: Box::new(encoder),
                     usage_estimator,
+                    chat_thinking: None,
+                    reject_foreign_thinking: false,
                 })
             }
             Protocol::Gemini => {
@@ -95,6 +100,22 @@ impl ChatStreamEncoder {
         }
     }
 
+    /// 只对已知无原生签名的 Chat 来源启用文本桥；其他来源保持严格签名边界。
+    pub(crate) fn with_upstream_protocol(mut self, upstream: Protocol) -> Self {
+        if let Self::Anthropic {
+            chat_thinking,
+            reject_foreign_thinking,
+            ..
+        } = &mut self
+        {
+            *chat_thinking =
+                (upstream == Protocol::OpenAiChat).then(ChatThinkingTextBridge::default);
+            *reject_foreign_thinking =
+                !matches!(upstream, Protocol::Anthropic | Protocol::OpenAiChat);
+        }
+        self
+    }
+
     /// 编码一个非终点事件；Anthropic 始终忽略上游 usage，避免初始与最终口径漂移。
     pub(crate) fn encode_event(&mut self, event: CanonicalStreamEvent) -> Result<Vec<u8>, AfError> {
         match self {
@@ -111,11 +132,22 @@ impl ChatStreamEncoder {
             Self::Anthropic {
                 encoder,
                 usage_estimator,
+                chat_thinking,
+                reject_foreign_thinking,
             } => {
                 if matches!(event, CanonicalStreamEvent::Usage(_)) {
                     return Ok(Vec::new());
                 }
+                if *reject_foreign_thinking
+                    && matches!(event, CanonicalStreamEvent::ReasoningDelta { .. })
+                {
+                    return Err(AfError::Internal);
+                }
                 usage_estimator.observe(&event);
+                let event = match chat_thinking {
+                    Some(bridge) => bridge.adapt(event)?,
+                    None => event,
+                };
                 encoder.encode(event).map_err(|_| AfError::Internal)
             }
             Self::Gemini { encoder } => encoder.encode(event).map_err(|_| AfError::Internal),
@@ -167,6 +199,7 @@ impl ChatStreamEncoder {
             Self::Anthropic {
                 encoder,
                 usage_estimator,
+                ..
             } => {
                 let usage = usage_estimator
                     .resolve_estimated()

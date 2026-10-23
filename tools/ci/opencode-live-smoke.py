@@ -47,10 +47,9 @@ def request(method, path, body=None, token=None, stream=False):
     return json.loads(raw) if raw else None
 
 
-def main():
+def seed_preview(access="public", upstream_key="", context_window=32768):
+    """Seed the fixed upstream fixture and return a temporary downstream key."""
     global ADMIN_TOKEN
-    access = os.environ.get("OPENCODE_LIVE_ACCESS", "public")
-    upstream_key = os.environ.get("OPENCODE_LIVE_API_KEY", "") if access == "api_key" else ""
     if access not in ["public", "api_key"] or (access == "api_key" and not upstream_key):
         raise RuntimeError("API Key acceptance requires the configured repository secret")
     password = secrets.token_urlsafe(24)
@@ -69,7 +68,7 @@ def main():
         "visibility": "authenticated", "lifecycle": "active",
     }, admin)
     request("POST", "/api/admin/model-prices/batch", {"items": [{
-        "model": MODEL, "expected_version": None, "context_window": 32768,
+        "model": MODEL, "expected_version": None, "context_window": context_window,
         "billing_mode": "free", "prices": {name: "0" for name in
             ["input", "output", "cache_read", "cache_creation_5m", "cache_creation_1h"]},
     }]}, admin)
@@ -109,6 +108,13 @@ def main():
         time.sleep(1)
     else:
         raise RuntimeError("The published model did not reach the runtime catalog")
+    return key
+
+
+def main():
+    access = os.environ.get("OPENCODE_LIVE_ACCESS", "public")
+    upstream_key = os.environ.get("OPENCODE_LIVE_API_KEY", "") if access == "api_key" else ""
+    key = seed_preview(access, upstream_key)
 
     first = "Remember marker AF-627. Reply exactly SAVED. Do not call tools."
     second = "What marker did I ask you to remember? Reply with the marker only. Do not call tools."

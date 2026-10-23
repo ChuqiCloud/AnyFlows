@@ -88,6 +88,7 @@ fn merge_reasoning(
 ) -> Result<ReasoningConfig, ReasoningModelSuffixError> {
     let effort = current.and_then(|reasoning| reasoning.effort());
     let budget = current.and_then(|reasoning| reasoning.budget_tokens());
+    let dynamic_budget = current.is_some_and(|reasoning| reasoning.dynamic_budget());
     let include_thinking = current.is_some_and(|reasoning| reasoning.include_thinking());
 
     match suffix {
@@ -96,12 +97,14 @@ fn merge_reasoning(
                 return Err(ReasoningModelSuffixError::ConflictingReasoning);
             }
             ReasoningConfig::new(effort, budget, true)
+                .and_then(|reasoning| reasoning.with_dynamic_budget(dynamic_budget))
         }
         ReasoningSuffix::Effort(suffix_effort) => {
             if effort.is_some_and(|current_effort| current_effort != suffix_effort) {
                 return Err(ReasoningModelSuffixError::ConflictingReasoning);
             }
             ReasoningConfig::new(Some(suffix_effort), budget, include_thinking)
+                .and_then(|reasoning| reasoning.with_dynamic_budget(dynamic_budget))
         }
     }
     .map_err(map_reasoning_config_error)
@@ -287,6 +290,33 @@ mod tests {
         disabled.model = "model-none".to_owned();
         assert_eq!(
             apply_reasoning_model_suffix(disabled.into()),
+            Err(ReasoningModelSuffixError::ConflictingReasoning)
+        );
+    }
+
+    #[test]
+    fn thinking_suffix_preserves_dynamic_budget_and_effort_suffix_rejects_it() {
+        let mut canonical = CanonicalRequest::new(
+            Operation::Chat,
+            "model-thinking".to_owned(),
+            Vec::new(),
+            false,
+        );
+        canonical.reasoning = Some(
+            ReasoningConfig::new(None, None, false)
+                .unwrap()
+                .with_dynamic_budget(true)
+                .unwrap(),
+        );
+        let normalized = apply_reasoning_model_suffix(canonical.into()).unwrap();
+        let reasoning = normalized.canonical().reasoning.unwrap();
+        assert!(reasoning.dynamic_budget());
+        assert!(reasoning.include_thinking());
+
+        let mut conflicting = normalized.into_canonical();
+        conflicting.model = "model-high".to_owned();
+        assert_eq!(
+            apply_reasoning_model_suffix(conflicting.into()),
             Err(ReasoningModelSuffixError::ConflictingReasoning)
         );
     }

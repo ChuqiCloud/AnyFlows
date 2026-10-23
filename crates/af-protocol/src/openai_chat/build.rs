@@ -158,10 +158,7 @@ fn insert_reasoning(
     let Some(reasoning) = request.reasoning else {
         return Ok(());
     };
-    if reasoning.budget_tokens().is_some() {
-        return Err(BuildRequestError::UnsupportedFeature);
-    }
-    let Some(effort) = reasoning.effort() else {
+    let Some(effort) = reasoning.effort_for_effort_only_protocol() else {
         return Ok(());
     };
     let value = match effort {

@@ -258,6 +258,8 @@ fn build_thinking_config(reasoning: crate::ReasoningConfig) -> Result<Value, Bui
                     return Err(BuildRequestError::InvalidValue);
                 }
                 config.insert("thinkingBudget".to_owned(), Value::Number(budget.into()));
+            } else if reasoning.dynamic_budget() {
+                config.insert("thinkingBudget".to_owned(), Value::Number((-1).into()));
             }
         }
     }

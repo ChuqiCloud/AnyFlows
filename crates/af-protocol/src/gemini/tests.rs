@@ -60,6 +60,56 @@ fn stream_path_sets_canonical_mode_without_losing_source_proof() {
 }
 
 #[test]
+fn preserves_agent_dynamic_thinking_and_large_output_budget() {
+    let body = json!({
+        "systemInstruction": {
+            "role": "user",
+            "parts": [{"text": "Use the declared tools when needed"}]
+        },
+        "contents": [{
+            "role": "user",
+            "parts": [{"text": "Remember this marker"}]
+        }],
+        "tools": [{
+            "functionDeclarations": [{
+                "name": "read",
+                "description": "Read a local file",
+                "parametersJsonSchema": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"]
+                }
+            }]
+        }],
+        "generationConfig": {
+            "maxOutputTokens": 384_000,
+            "thinkingConfig": {
+                "includeThoughts": true,
+                "thinkingBudget": -1
+            }
+        }
+    });
+    let encoded = Bytes::from(serde_json::to_vec(&body).unwrap());
+    let envelope = parse_stream_request_envelope("models/deepseek-flash", encoded.clone()).unwrap();
+    let request = envelope.canonical();
+    assert_eq!(request.sampling.max_output_tokens().unwrap().get(), 384_000);
+    assert_eq!(request.messages[0].role, Role::System);
+    assert_eq!(request.tools[0].name, "read");
+    let reasoning = request.reasoning.unwrap();
+    assert_eq!(reasoning.effort(), None);
+    assert_eq!(reasoning.budget_tokens(), None);
+    assert!(reasoning.dynamic_budget());
+    assert!(reasoning.include_thinking());
+
+    let crate::SameProtocolDecision::Passthrough(source) =
+        envelope.into_same_protocol(af_domain::Protocol::Gemini)
+    else {
+        panic!("原生 Gemini 动态思考请求必须保留同协议正文");
+    };
+    assert_eq!(source.body(), &encoded);
+}
+
+#[test]
 fn parses_system_media_tools_structured_results_and_thinking() {
     let thought_signature = STANDARD.encode("thought-signature");
     let tool_signature = STANDARD.encode("tool-signature");
@@ -547,6 +597,7 @@ fn validates_sampling_and_thinking_boundaries() {
     let dynamic = parse(dynamic).unwrap().reasoning.unwrap();
     assert_eq!(dynamic.effort(), None);
     assert_eq!(dynamic.budget_tokens(), None);
+    assert!(dynamic.dynamic_budget());
     assert!(dynamic.include_thinking());
 }
 

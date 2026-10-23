@@ -222,10 +222,13 @@ pub(super) struct InputMessageWire {
     /// 可选的固定 Item 类型。
     #[serde(rename = "type", default, deserialize_with = "deserialize_field")]
     pub(super) kind: Field<MessageTypeWire>,
-    /// 助手输出阶段当前尚未进入 Canonical。
+    /// 回放输出消息或持久输入消息的对象标识。
     #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) id: Field<String>,
+    /// 助手输出阶段；null 等同于未指定。
+    #[serde(default, deserialize_with = "deserialize_nullable_field")]
     pub(super) phase: Field<MessagePhaseWire>,
-    /// 返回 Item 的生命周期状态当前尚未进入 Canonical。
+    /// 已提供内容的生命周期元数据，不改变历史消息的角色或正文。
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) status: Field<ItemStatusWire>,
 }
@@ -427,6 +430,9 @@ pub(super) struct FunctionCallOutputItemWire {
     /// 调用来源当前尚未进入 Canonical。
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) caller: Field<Value>,
+    /// 函数调用结果的可选完成状态。
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) status: Field<ItemStatusWire>,
 }
 
 /// 固定函数调用结果 Item 类型。

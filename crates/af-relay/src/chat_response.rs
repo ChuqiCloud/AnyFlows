@@ -72,7 +72,7 @@ pub(crate) fn encode_full_response(
             return Err(AfError::Internal);
         }
     };
-    let response = CanonicalResponse::new(
+    let mut response = CanonicalResponse::new(
         response.operation,
         response_id,
         client_model.to_owned(),
@@ -80,6 +80,8 @@ pub(crate) fn encode_full_response(
         response.choices.clone(),
         Some(usage),
     );
+    crate::anthropic_chat_bridge::adapt_response(Protocol::OpenAiChat, protocol, &mut response)
+        .map_err(AfError::from)?;
     let value = match protocol {
         Protocol::Anthropic => anthropic::build_response(&response)
             .map_err(|_| AfError::from(UpstreamError::ProtocolError))?,
@@ -209,6 +211,40 @@ mod tests {
         assert!(!text.contains("upstream-private-id"));
         assert!(!text.contains("upstream-private-model"));
         assert!(!text.contains("\"service_tier\":\"default\""));
+    }
+
+    #[test]
+    fn openai_reasoning_and_answer_are_preserved_as_replayable_anthropic_text() {
+        let original = Bytes::from_static(
+            br#"{"id":"upstream","object":"chat.completion","created":1700000000,"model":"upstream","choices":[{"index":0,"message":{"role":"assistant","reasoning_content":"plan","content":"answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}"#,
+        );
+        let canonical = openai_chat::parse_response(&original).unwrap();
+        let usage = canonical.usage.unwrap();
+        let ChatResponse::Full {
+            body,
+            usage: actual,
+        } = encode_full_response(
+            Protocol::Anthropic,
+            original,
+            &canonical,
+            Ok(usage),
+            "public-model",
+            "bridge",
+        )
+        .unwrap()
+        else {
+            panic!("expected JSON")
+        };
+        let value: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(actual.unwrap(), usage);
+        assert_eq!(value["content"][0]["type"], "text");
+        assert_eq!(value["content"][0]["text"], "plan");
+        assert_eq!(value["content"][1]["text"], "answer");
+        assert!(
+            !String::from_utf8(body.to_vec())
+                .unwrap()
+                .contains("signature")
+        );
     }
 
     #[test]

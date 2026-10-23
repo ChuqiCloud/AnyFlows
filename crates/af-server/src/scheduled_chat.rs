@@ -1858,9 +1858,9 @@ fn select_upstream_protocol(
         let Some(converted) = request.clone().for_conversation_protocol(protocol) else {
             continue;
         };
-        // Anthropic thinking 输出必须保留原生签名，不能从其他协议补造。
+        // Chat 的无签名推理可保留为文本；其他来源不能补造 Anthropic 签名。
         if response_protocol == Protocol::Anthropic
-            && protocol != Protocol::Anthropic
+            && !matches!(protocol, Protocol::Anthropic | Protocol::OpenAiChat)
             && converted
                 .canonical()
                 .reasoning
@@ -2823,7 +2823,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn protocol_selection_skips_candidates_that_cannot_express_reasoning_options() {
+    async fn protocol_selection_maps_fixed_budget_for_effort_only_channels() {
         let group_id = GroupId::new(7).unwrap();
         let record_for = |channel_id, channel_type, protocol| {
             let credential_id = channel_id + 100;
@@ -2878,12 +2878,17 @@ mod tests {
 
         let envelope = canonical.into();
         let selected = select_upstream_protocol(&route, &envelope, Protocol::Anthropic).unwrap();
-        assert_eq!(selected, Protocol::Gemini);
+        assert_eq!(selected, Protocol::OpenAiChat);
         let converted = envelope
             .for_conversation_protocol(selected)
             .unwrap()
             .into_canonical();
-        assert!(af_protocol::gemini::build_request(&converted).is_ok());
+        assert_eq!(
+            converted.reasoning.unwrap().budget_tokens().unwrap().get(),
+            128
+        );
+        let body = af_protocol::openai_chat::build_request(&converted).unwrap();
+        assert_eq!(body["reasoning_effort"], "minimal");
     }
 
     #[tokio::test]
@@ -2900,8 +2905,13 @@ mod tests {
             Vec::new(),
             false,
         );
-        canonical.reasoning =
-            Some(ReasoningConfig::new(None, Some(TokenCount::new(128).unwrap()), true).unwrap());
+        canonical.messages.push(Message::new(
+            af_domain::Role::Assistant,
+            vec![ContentBlock::Thinking {
+                text: "signed history".to_owned(),
+                signature: Some("opaque-provider-signature".to_owned()),
+            }],
+        ));
 
         assert_eq!(
             select_upstream_protocol(&route, &canonical.into(), Protocol::Anthropic),
@@ -2929,6 +2939,79 @@ mod tests {
             select_upstream_protocol(&route, &request, Protocol::Anthropic),
             Err(AfError::InvalidRequest)
         );
+    }
+
+    #[tokio::test]
+    async fn pi_reasoning_requests_can_schedule_chat_and_reserve_usage() {
+        let service = service(vec![record(false, valid_envelope())]).await;
+        for stream in [false, true] {
+            let anthropic = af_protocol::anthropic::parse_request_envelope(Bytes::from(
+                serde_json::to_vec(&json!({
+                    "model": "gpt-scheduled", "max_tokens": 384000, "stream": stream,
+                    "thinking": {"type": "enabled", "budget_tokens": 8192, "display": "summarized"},
+                    "messages": [{"role": "user", "content": [{
+                        "type": "text", "text": "hello",
+                        "cache_control": {"type": "ephemeral"}
+                    }]}]
+                }))
+                .unwrap(),
+            ))
+            .unwrap();
+            let gemini_body = Bytes::from(
+                serde_json::to_vec(&json!({
+                    "generationConfig": {"maxOutputTokens": 384000,
+                        "thinkingConfig": {"thinkingBudget": -1, "includeThoughts": true}},
+                    "contents": [{"role": "user", "parts": [{"text": "hello"}]}]
+                }))
+                .unwrap(),
+            );
+            let gemini = if stream {
+                af_protocol::gemini::parse_stream_request_envelope(
+                    "models/gpt-scheduled",
+                    gemini_body,
+                )
+            } else {
+                af_protocol::gemini::parse_request_envelope("models/gpt-scheduled", gemini_body)
+            }
+            .unwrap();
+            for (client, request) in [(Protocol::Anthropic, anthropic), (Protocol::Gemini, gemini)]
+            {
+                let route = service
+                    .scheduler
+                    .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+                    .unwrap()
+                    .unwrap();
+                let selected = select_upstream_protocol(&route, &request, client).unwrap();
+                assert_eq!(selected, Protocol::OpenAiChat);
+                let converted = request.clone().for_conversation_protocol(selected).unwrap();
+                let body = af_protocol::openai_chat::build_request(converted.canonical()).unwrap();
+                assert_eq!(body["max_completion_tokens"], 384000);
+                if client == Protocol::Anthropic {
+                    assert_eq!(body["reasoning_effort"], "medium");
+                } else {
+                    assert!(body.get("reasoning_effort").is_none());
+                    assert!(converted.canonical().reasoning.unwrap().dynamic_budget());
+                }
+                let execution = service
+                    .build_plan(
+                        prepared_execution_route(route, selected),
+                        request,
+                        client,
+                        "pi-thinking-compat",
+                        None,
+                        PreparedConcurrencyPlan::disabled(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(execution.upstream_protocol, Protocol::OpenAiChat);
+                assert_eq!(execution.response_protocol, client);
+                assert_eq!(execution.attempt_targets.len(), 1);
+                assert_eq!(
+                    execution.usage_upper_bound().unwrap().output_tokens().get(),
+                    384000
+                );
+            }
+        }
     }
 
     #[tokio::test]
@@ -2985,7 +3068,7 @@ mod tests {
             af_domain::UserId::new(1).unwrap(),
             source_group,
         );
-        let request = gemini_thinking_request("gpt-scheduled");
+        let request = gemini_signed_thinking_request("gpt-scheduled");
         let selection = service
             .prepare_route_selection(
                 playground.into(),
@@ -3041,7 +3124,7 @@ mod tests {
         let selection = service
             .prepare_route_selection(
                 playground.into(),
-                &gemini_thinking_request("smart-thinking"),
+                &gemini_signed_thinking_request("smart-thinking"),
                 Protocol::Gemini,
                 "smart-rule-capability-fallback",
                 None,
@@ -3094,7 +3177,7 @@ mod tests {
                     service
                         .prepare_route_selection(
                             playground.into(),
-                            &gemini_thinking_request(request_model),
+                            &gemini_signed_thinking_request(request_model),
                             Protocol::Gemini,
                             "health-capability-gap",
                             None
@@ -3443,11 +3526,11 @@ mod tests {
             .unwrap()
     }
 
-    fn gemini_thinking_request(model: &str) -> CanonicalRequestEnvelope {
+    fn gemini_signed_thinking_request(model: &str) -> CanonicalRequestEnvelope {
         af_protocol::gemini::parse_request_envelope(
             &format!("models/{model}"),
             Bytes::from_static(
-                br#"{"generationConfig":{"maxOutputTokens":256,"thinkingConfig":{"thinkingBudget":128,"includeThoughts":true}},"contents":[{"role":"user","parts":[{"text":"hello"}]}]}"#,
+                br#"{"generationConfig":{"maxOutputTokens":256,"thinkingConfig":{"thinkingBudget":128,"includeThoughts":true}},"contents":[{"role":"user","parts":[{"text":"hello"}]},{"role":"model","parts":[{"text":"considered hello","thought":true,"thoughtSignature":"dGhvdWdodC1zaWduYXR1cmU="},{"text":"answer"}]},{"role":"user","parts":[{"text":"continue"}]}]}"#,
             ),
         )
         .unwrap()

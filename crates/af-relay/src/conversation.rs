@@ -41,9 +41,12 @@ pub async fn relay_conversation_with_report(
         Ok(prepared) => prepared,
         Err(error) => return (Err(error), RelayAttemptReport::default()),
     };
-    // 跨协议响应不能补造 Anthropic thinking 签名，派发前保留该能力边界。
+    // Chat 的无签名推理可无损保留为文本；其他来源仍需原生签名表达。
     if response_protocol == Protocol::Anthropic
-        && upstream_protocol != Protocol::Anthropic
+        && !matches!(
+            upstream_protocol,
+            Protocol::Anthropic | Protocol::OpenAiChat
+        )
         && canonical
             .reasoning
             .is_some_and(|reasoning| reasoning.include_thinking())
@@ -63,7 +66,7 @@ pub async fn relay_conversation_with_report(
             &canonical,
             include_usage,
         ) {
-            Ok(encoder) => Some(encoder),
+            Ok(encoder) => Some(encoder.with_upstream_protocol(upstream_protocol)),
             Err(error) => return (Err(error), RelayAttemptReport::default()),
         }
     } else {
@@ -129,7 +132,7 @@ pub async fn relay_conversation_with_report(
                     .next()
                     .is_some_and(|mime| mime.trim().eq_ignore_ascii_case("text/event-stream"))
             });
-        let response = if is_sse {
+        let mut response = if is_sse {
             crate::collect_conversation_response(upstream_protocol, response.into_body()).await?
         } else {
             let body = response
@@ -142,6 +145,11 @@ pub async fn relay_conversation_with_report(
         let usage = estimator
             .resolve_response(&response)
             .map_err(|_| UpstreamError::ProtocolError)?;
+        crate::anthropic_chat_bridge::adapt_response(
+            upstream_protocol,
+            response_protocol,
+            &mut response,
+        )?;
         let body = build_response(
             response_protocol,
             response,

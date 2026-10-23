@@ -167,6 +167,41 @@ fn unsigned_thinking_capability_matches_request_builders() {
 }
 
 #[test]
+fn effort_only_protocols_approximate_fixed_reasoning_budget() {
+    for (budget, effort) in [
+        (1024, "minimal"),
+        (2048, "low"),
+        (8192, "medium"),
+        (16384, "high"),
+    ] {
+        let mut request = CanonicalRequest::new(
+            Operation::Chat,
+            "test-model".to_owned(),
+            vec![Message::new(
+                Role::User,
+                vec![ContentBlock::Text("hello".to_owned())],
+            )],
+            false,
+        );
+        request.reasoning = Some(
+            crate::ReasoningConfig::new(None, Some(TokenCount::new(budget).unwrap()), true)
+                .unwrap(),
+        );
+        assert!(validate_request_capabilities(Protocol::OpenAiChat, &request).is_ok());
+        assert_eq!(
+            openai_chat::build_request(&request).unwrap()["reasoning_effort"],
+            effort
+        );
+        request.operation = Operation::Responses;
+        assert!(validate_request_capabilities(Protocol::OpenAiResponses, &request).is_ok());
+        assert_eq!(
+            openai_responses::build_request(&request).unwrap()["reasoning"]["effort"],
+            effort
+        );
+    }
+}
+
+#[test]
 fn signed_thinking_still_uses_signature_capability() {
     let request = CanonicalRequest::new(
         Operation::Chat,
