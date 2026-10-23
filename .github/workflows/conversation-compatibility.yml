@@ -83,7 +83,8 @@ jobs:
         run: cargo test --quiet -p af-protocol -p af-relay --all-features --locked
 
       - name: Test public operational endpoints
-        run: cargo test --quiet -p af-http --lib --locked operations_tests::
+        run: |
+          cargo test --quiet -p af-http --lib --locked operations_tests::
 
       - name: Test conversation scheduling
         run: |
