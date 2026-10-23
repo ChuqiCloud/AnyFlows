@@ -14,7 +14,7 @@ pub(crate) fn apply(
     let Some((source, context)) = request.source_context() else {
         return Ok(body);
     };
-    if source == target {
+    if source == target && request.normalized_protocol().is_none() {
         return Ok(body);
     }
     let context: Value =

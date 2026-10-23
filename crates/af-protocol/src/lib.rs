@@ -7,6 +7,7 @@ mod canonical;
 mod capability;
 mod client_simulation_body_patch;
 pub mod cohere_rerank_v2;
+mod conversation_content;
 mod conversation_features;
 mod conversation_history;
 mod conversation_plan;

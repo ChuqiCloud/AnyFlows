@@ -112,17 +112,17 @@ pub(crate) fn normalize_history(
                 }
                 continue;
             }
-            if let Some(&call_index) = call_positions.get(&position) {
-                if calls[call_index].result.is_some() {
-                    let mut block = block.clone();
-                    let ContentBlock::ToolUse { id, .. } = &mut block else {
-                        unreachable!("工具索引只包含调用块");
-                    };
-                    *id = normalized_ids[call_index].clone();
-                    blocks.push(block);
-                    pending.push(call_index);
-                    continue;
-                }
+            if let Some(&call_index) = call_positions.get(&position)
+                && calls[call_index].result.is_some()
+            {
+                let mut block = block.clone();
+                let ContentBlock::ToolUse { id, .. } = &mut block else {
+                    unreachable!("工具索引只包含调用块");
+                };
+                *id = normalized_ids[call_index].clone();
+                blocks.push(block);
+                pending.push(call_index);
+                continue;
             }
             if !pending.is_empty() && !matches!(block, ContentBlock::CacheControl(_)) {
                 flush_blocks(

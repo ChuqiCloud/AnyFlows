@@ -380,10 +380,10 @@ fn project_content(
         };
         if let Some(keys) = keys {
             retain(map, keys, extensions);
-            if kind == "tool_result" {
-                if let Some(content) = map.get_mut("content") {
-                    project_content(content, protocol, extensions)?;
-                }
+            if kind == "tool_result"
+                && let Some(content) = map.get_mut("content")
+            {
+                project_content(content, protocol, extensions)?;
             }
             for (key, keys) in [
                 ("image_url", &["url", "detail"][..]),
@@ -497,16 +497,13 @@ fn project_gemini(root: &mut Map<String, Value>, extensions: &mut usize) -> Resu
         if let Some(thinking) = config
             .get_mut("thinkingConfig")
             .and_then(Value::as_object_mut)
+            && (thinking.contains_key("thinkingBudget")
+                || thinking
+                    .get("thinkingLevel")
+                    .and_then(Value::as_str)
+                    .is_some_and(|level| !matches!(level, "MINIMAL" | "LOW" | "MEDIUM" | "HIGH")))
         {
-            if thinking.contains_key("thinkingBudget") {
-                thinking.remove("thinkingLevel");
-            } else if thinking
-                .get("thinkingLevel")
-                .and_then(Value::as_str)
-                .is_some_and(|level| !matches!(level, "MINIMAL" | "LOW" | "MEDIUM" | "HIGH"))
-            {
-                thinking.remove("thinkingLevel");
-            }
+            thinking.remove("thinkingLevel");
         }
         if config
             .get("candidateCount")

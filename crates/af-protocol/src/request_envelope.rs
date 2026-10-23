@@ -20,6 +20,9 @@ pub struct CanonicalRequestEnvelope {
     // 仅供语义转换读取；不能用作恢复直通资格的底稿。
     source_context: Option<ValidatedSourceRequest>,
     native_only: bool,
+    normalized_protocol: Option<Protocol>,
+    patch_reasoning: bool,
+    normalization_dirty: bool,
 }
 
 impl CanonicalRequestEnvelope {
@@ -34,10 +37,14 @@ impl CanonicalRequestEnvelope {
             native_template: None,
             source_context: None,
             native_only: false,
+            normalized_protocol: None,
+            patch_reasoning: false,
+            normalization_dirty: false,
         }
     }
 
     /// 保存模型别名归一前的客户端模型与来源协议，并永久丢弃原始正文直通资格。
+    #[cfg(test)]
     pub(crate) fn from_normalized_model(
         canonical: CanonicalRequest,
         requested_model: String,
@@ -51,16 +58,24 @@ impl CanonicalRequestEnvelope {
             native_template: None,
             source_context: None,
             native_only: false,
+            normalized_protocol: None,
+            patch_reasoning: false,
+            normalization_dirty: false,
         }
     }
 
-    /// 由协议解析器附加已完成信任边界校验的原始正文。
-    pub(crate) fn from_validated_source(
+    /// 模型后缀只改变网关拥有的模型/推理字段，保留来源扩展和原生底稿。
+    pub(crate) fn with_normalized_model(
+        mut self,
         canonical: CanonicalRequest,
-        protocol: Protocol,
-        body: Bytes,
+        requested_model: String,
     ) -> Self {
-        Self::from_compatible_source(canonical, protocol, body, false)
+        self.canonical = canonical;
+        self.requested_model = Some(requested_model);
+        self.source = None;
+        self.patch_reasoning = true;
+        self.normalization_dirty = self.normalized_protocol.is_some();
+        self
     }
 
     pub(crate) fn from_compatible_source(
@@ -83,6 +98,9 @@ impl CanonicalRequestEnvelope {
             }),
             source_context: Some(ValidatedSourceRequest { protocol, body }),
             native_only,
+            normalized_protocol: None,
+            patch_reasoning: false,
+            normalization_dirty: false,
         }
     }
 
@@ -111,6 +129,25 @@ impl CanonicalRequestEnvelope {
         self.native_only
     }
 
+    pub(crate) const fn normalized_protocol(&self) -> Option<Protocol> {
+        self.normalized_protocol
+    }
+
+    pub(crate) const fn normalization_dirty(&self) -> bool {
+        self.normalization_dirty
+    }
+
+    pub(crate) fn with_conversation_canonical(
+        self,
+        canonical: CanonicalRequest,
+        target: Protocol,
+    ) -> Self {
+        let mut request = self.with_rebuilt_canonical(canonical);
+        request.normalized_protocol = Some(target);
+        request.normalization_dirty = false;
+        request
+    }
+
     pub(crate) fn source_context(&self) -> Option<(Protocol, &Bytes)> {
         self.source_context
             .as_ref()
@@ -133,6 +170,7 @@ impl CanonicalRequestEnvelope {
         )
         .expect("已验证的采样参数补充输出上限后必须仍然有效");
         self.source = None;
+        self.normalization_dirty = self.normalized_protocol.is_some();
         self
     }
 
@@ -167,6 +205,7 @@ impl CanonicalRequestEnvelope {
         self.canonical.model = model;
         self.canonical.sampling = sampling;
         self.source = None;
+        self.normalization_dirty = self.normalized_protocol.is_some();
         self
     }
 
@@ -189,6 +228,9 @@ impl CanonicalRequestEnvelope {
             native_template: None,
             source_context: self.source_context,
             native_only: self.native_only,
+            normalized_protocol: self.normalized_protocol,
+            patch_reasoning: self.patch_reasoning,
+            normalization_dirty: self.normalized_protocol.is_some(),
         }
     }
 
@@ -205,6 +247,7 @@ impl CanonicalRequestEnvelope {
                 template.protocol,
                 &template.body,
                 &self.canonical,
+                self.patch_reasoning,
             )
         {
             self.source = Some(ValidatedSourceRequest {
@@ -343,6 +386,97 @@ mod tests {
     use super::*;
     use crate::{ContentBlock, StreamOptions, openai_responses};
     use af_domain::Operation;
+
+    #[test]
+    fn repeated_target_normalization_and_planning_are_idempotent() {
+        let request = crate::openai_chat::parse_request_envelope(Bytes::from_static(br#"{"model":"model","messages":[{"role":"user","content":"question"}],"max_completion_tokens":4096,"seed":17,"response_format":{"type":"json_schema","json_schema":{"name":"answer","schema":{"type":"object","properties":{"answer":{"type":"string"}}},"strict":true}}}"#)).unwrap();
+        for target in [
+            Protocol::OpenAiChat,
+            Protocol::OpenAiResponses,
+            Protocol::Anthropic,
+            Protocol::Gemini,
+        ] {
+            let direct = request.clone().plan_conversation(target).unwrap();
+            let normalized = request.clone().for_conversation_protocol(target).unwrap();
+            assert_eq!(
+                normalized
+                    .clone()
+                    .for_conversation_protocol(target)
+                    .unwrap(),
+                normalized
+            );
+            assert_eq!(normalized.source_context(), request.source_context());
+            let planned = normalized.plan_conversation(target).unwrap();
+            assert_eq!(planned.body(), direct.body(), "{target:?}");
+            let repeated = planned.request().clone().plan_conversation(target).unwrap();
+            assert_eq!(repeated.body(), planned.body(), "{target:?}");
+            assert_eq!(repeated.request(), planned.request());
+        }
+    }
+
+    #[test]
+    fn returning_to_origin_converts_current_operation_instead_of_taking_native_shortcut() {
+        let source =
+            responses_request(br#"{"model":"model","input":"hello","max_output_tokens":4096}"#);
+        let converted = source
+            .for_conversation_protocol(Protocol::OpenAiChat)
+            .unwrap();
+        let returned = converted
+            .for_conversation_protocol(Protocol::OpenAiResponses)
+            .unwrap();
+        assert_eq!(returned.canonical().operation, Operation::Responses);
+        assert!(
+            returned
+                .plan_conversation(Protocol::OpenAiResponses)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn routed_sampling_invalidates_only_the_normalization_result() {
+        let source = crate::openai_chat::parse_request_envelope(Bytes::from_static(br#"{"model":"model","messages":[{"role":"user","content":"hello"}],"max_completion_tokens":4096}"#)).unwrap();
+        let normalized = source
+            .for_conversation_protocol(Protocol::Anthropic)
+            .unwrap();
+        let routed = normalized.with_routed_parameters(
+            "upstream".to_owned(),
+            Sampling::new(
+                Some(1.7),
+                None,
+                Some(TokenCount::new(128).unwrap()),
+                Vec::new(),
+            )
+            .unwrap(),
+        );
+        let normalized = routed
+            .for_conversation_protocol(Protocol::Anthropic)
+            .unwrap();
+        assert_eq!(normalized.canonical().sampling.temperature(), Some(1.0));
+        assert_eq!(normalized.canonical().model, "upstream");
+        assert_eq!(normalized.requested_model(), "model");
+    }
+
+    #[test]
+    fn oversized_foreign_stop_is_omitted_as_a_whole_and_source_is_retained() {
+        let long_stop = "界".repeat(400);
+        let body = Bytes::from(serde_json::to_vec(&serde_json::json!({"contents":[{"role":"user","parts":[{"text":"hello"}]}],"generationConfig":{"maxOutputTokens":4096,"stopSequences":[long_stop,"valid stop"]}})).unwrap());
+        let request = crate::gemini::parse_request_envelope("models/model", body.clone()).unwrap();
+        for target in [Protocol::OpenAiChat, Protocol::Anthropic] {
+            let plan = request.clone().plan_conversation(target).unwrap();
+            assert_eq!(
+                plan.request().canonical().sampling.stop_sequences(),
+                &["valid stop"]
+            );
+            assert_eq!(plan.request().source_context().unwrap().1, &body);
+            let value: serde_json::Value = serde_json::from_slice(plan.body()).unwrap();
+            let key = if target == Protocol::Anthropic {
+                "stop_sequences"
+            } else {
+                "stop"
+            };
+            assert_eq!(value[key], serde_json::json!(["valid stop"]));
+        }
+    }
 
     #[test]
     fn native_requests_keep_standard_options_and_source_body() {

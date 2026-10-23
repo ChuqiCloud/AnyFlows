@@ -53,74 +53,98 @@ const SCENARIOS: [Scenario; 8] = [
 #[test]
 fn all_256_wire_routes_preserve_replay_tools_and_terminal_usage() {
     let mut completed = 0;
+    let mut failures = Vec::new();
     for source in PROTOCOLS {
         for target in PROTOCOLS {
             for scenario in SCENARIOS {
                 for streaming in [false, true] {
                     let label = format!("{source:?}->{target:?}/{scenario:?}/stream={streaming}");
-                    let wire = request_fixture(source, scenario, streaming);
-                    let inbound = parse_wire(source, wire.clone(), streaming);
-                    let plan = inbound
-                        .clone()
-                        .plan_conversation(target)
-                        .unwrap_or_else(|| panic!("{label}: missing conversion plan"));
-                    let prepared = parse_wire(
-                        target,
-                        serde_json::from_slice(plan.body()).unwrap(),
-                        streaming,
-                    );
-                    assert_request_semantics(&prepared, scenario, &label);
-                    let (relay, body) =
-                        prepare_request(inbound.clone(), target).unwrap_or_else(|error| {
-                            panic!("{label}: production request prepare: {error:?}")
-                        });
-                    assert_eq!(
-                        body,
-                        *plan.body(),
-                        "{label}: router/relay conversion differs"
-                    );
-                    assert_eq!(
-                        &relay,
-                        plan.request().canonical(),
-                        "{label}: router/relay IR differs"
-                    );
-
-                    let tool_count = match scenario {
-                        Scenario::ToolLoop => 1,
-                        Scenario::ParallelReordered => 2,
-                        _ => 0,
-                    };
-                    let response = converted_response(
-                        source, target, &relay, scenario, tool_count, streaming, &label,
-                    );
-                    let next = replay_response(source, wire, response, tool_count);
-                    let replayed = parse_wire(source, next, streaming);
-                    let next_plan = replayed
-                        .plan_conversation(target)
-                        .unwrap_or_else(|| panic!("{label}: output could not be replayed"));
-                    let next_target = parse_wire(
-                        target,
-                        serde_json::from_slice(next_plan.body()).unwrap(),
-                        streaming,
-                    );
-                    assert_request_semantics(&next_target, scenario, &label);
-                    let text = all_text(next_target.canonical());
-                    assert!(text.contains("matrix-followup"), "{label}: followup lost");
-                    if tool_count == 0 {
-                        assert!(
-                            text.contains("matrix-answer"),
-                            "{label}: assistant output lost"
+                    let outcome = std::panic::catch_unwind(|| {
+                        let wire = request_fixture(source, scenario, streaming);
+                        let inbound = parse_wire(source, wire.clone(), streaming);
+                        let plan = inbound
+                            .clone()
+                            .plan_conversation(target)
+                            .unwrap_or_else(|| panic!("{label}: missing conversion plan"));
+                        let prepared = parse_wire(
+                            target,
+                            serde_json::from_slice(plan.body()).unwrap(),
+                            streaming,
                         );
-                    } else {
-                        assert_tool_pairs(next_target.canonical(), tool_count, &label);
-                        assert!(text.contains("matrix-result"), "{label}: tool output lost");
-                    }
+                        assert_request_semantics(&prepared, scenario, &label);
+                        let (relay, body) = prepare_request(inbound.clone(), target)
+                            .unwrap_or_else(|error| {
+                                panic!("{label}: production request prepare: {error:?}")
+                            });
+                        assert_eq!(
+                            body,
+                            *plan.body(),
+                            "{label}: router/relay conversion differs"
+                        );
+                        assert_eq!(
+                            &relay,
+                            plan.request().canonical(),
+                            "{label}: router/relay IR differs"
+                        );
+
+                        let tool_count = match scenario {
+                            Scenario::ToolLoop => 1,
+                            Scenario::ParallelReordered => 2,
+                            _ => 0,
+                        };
+                        let response = converted_response(
+                            source, target, &relay, scenario, tool_count, streaming, &label,
+                        );
+                        let next = replay_response(source, wire, response, tool_count);
+                        let replayed = parse_wire(source, next, streaming);
+                        let next_plan = replayed
+                            .plan_conversation(target)
+                            .unwrap_or_else(|| panic!("{label}: output could not be replayed"));
+                        let next_target = parse_wire(
+                            target,
+                            serde_json::from_slice(next_plan.body()).unwrap(),
+                            streaming,
+                        );
+                        assert_request_semantics(&next_target, scenario, &label);
+                        let text = all_text(next_target.canonical());
+                        assert!(text.contains("matrix-followup"), "{label}: followup lost");
+                        if tool_count == 0 {
+                            assert!(
+                                text.contains("matrix-answer"),
+                                "{label}: assistant output lost"
+                            );
+                        } else {
+                            assert_tool_pairs(next_target.canonical(), tool_count, &label);
+                            assert!(text.contains("matrix-result"), "{label}: tool output lost");
+                            for index in 0..tool_count {
+                                let call_id = format!("call_output_{index}");
+                                assert!(next_target.canonical().messages.iter().flat_map(|m| &m.content).any(|block| {
+                                matches!(block, ContentBlock::ToolUse { id, .. } if id == &call_id)
+                            }), "{label}: emitted tool ID changed or was lost");
+                                assert!(next_target.canonical().messages.iter().flat_map(|m| &m.content).any(|block| {
+                                matches!(block, ContentBlock::ToolResult { tool_use_id, .. } if tool_use_id == &call_id)
+                            }), "{label}: emitted tool result association lost");
+                                assert!(
+                                    text.contains(&format!("matrix-result-output-{index}")),
+                                    "{label}: emitted tool result body lost"
+                                );
+                            }
+                        }
+                    });
                     completed += 1;
+                    if outcome.is_err() {
+                        failures.push(label);
+                    }
                 }
             }
         }
     }
     assert_eq!(completed, 256);
+    assert!(
+        failures.is_empty(),
+        "Failed wire contracts: {}",
+        failures.join(", ")
+    );
 }
 
 fn parse_wire(protocol: Protocol, value: Value, streaming: bool) -> CanonicalRequestEnvelope {
@@ -732,4 +756,69 @@ fn replay_response(protocol: Protocol, mut request: Value, response: Value, tool
         _ => unreachable!(),
     }
     request
+}
+
+#[test]
+fn interleaved_reasoning_history_is_replayable_to_every_target() {
+    for source in [Protocol::Anthropic, Protocol::Gemini] {
+        let mut wire = request_fixture(source, Scenario::ReasoningHistory, false);
+        if source == Protocol::Anthropic {
+            let content = wire["messages"][1]["content"].as_array_mut().unwrap();
+            content.push(json!({"type":"thinking","thinking":"matrix-late-reasoning","signature":"anthropic-late-signature"}));
+            content.push(json!({"type":"text","text":"matrix-late-answer"}));
+        } else {
+            let content = wire["contents"][1]["parts"].as_array_mut().unwrap();
+            content.push(json!({"text":"matrix-late-reasoning","thought":true,"thoughtSignature":"bGF0ZS1zaWduYXR1cmU="}));
+            content.push(json!({"text":"matrix-late-answer"}));
+        }
+        let inbound = parse_wire(source, wire, false);
+        for target in PROTOCOLS {
+            let plan = inbound
+                .clone()
+                .plan_conversation(target)
+                .unwrap_or_else(|| {
+                    panic!("{source:?}->{target:?}: interleaved reasoning rejected")
+                });
+            let parsed = parse_wire(target, serde_json::from_slice(plan.body()).unwrap(), false);
+            let text = all_text(parsed.canonical());
+            for marker in [
+                "matrix-reasoning",
+                "matrix-assistant-memory-883",
+                "matrix-late-reasoning",
+                "matrix-late-answer",
+            ] {
+                assert!(
+                    text.contains(marker),
+                    "{source:?}->{target:?}: {marker} lost"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn multiple_text_tool_results_remain_complete_for_every_target() {
+    let mut wire = request_fixture(Protocol::Anthropic, Scenario::ToolLoop, false);
+    wire["messages"][2]["content"][0]["content"] = json!([
+        {"type":"text","text":"matrix-result-first"},
+        {"type":"text","text":"matrix-result-second"}
+    ]);
+    let inbound = parse_wire(Protocol::Anthropic, wire, false);
+    for target in PROTOCOLS {
+        let plan = inbound
+            .clone()
+            .plan_conversation(target)
+            .unwrap_or_else(|| panic!("Anthropic->{target:?}: multi-block tool result rejected"));
+        let parsed = parse_wire(target, serde_json::from_slice(plan.body()).unwrap(), false);
+        assert_tool_pairs(parsed.canonical(), 1, "multi-block tool result");
+        let text = all_text(parsed.canonical());
+        assert!(
+            text.contains("matrix-result-first"),
+            "{target:?}: first tool result block lost"
+        );
+        assert!(
+            text.contains("matrix-result-second"),
+            "{target:?}: second tool result block lost"
+        );
+    }
 }

@@ -139,15 +139,14 @@ fn schema(value: &mut Value) {
     if value.is_null() {
         *value = json!({"type":"object","properties":{}});
     }
-    if let Some(map) = value.as_object_mut() {
-        if !map.contains_key("type")
-            && !map.contains_key("$ref")
-            && !["oneOf", "anyOf", "allOf", "not"]
-                .iter()
-                .any(|k| map.contains_key(*k))
-        {
-            map.insert("type".to_owned(), json!("object"));
-        }
+    if let Some(map) = value.as_object_mut()
+        && !map.contains_key("type")
+        && !map.contains_key("$ref")
+        && !["oneOf", "anyOf", "allOf", "not"]
+            .iter()
+            .any(|k| map.contains_key(*k))
+    {
+        map.insert("type".to_owned(), json!("object"));
     }
 }
 
@@ -347,14 +346,13 @@ fn normalize_optional_parameters(protocol: Protocol, root: &mut Map<String, Valu
             if let Some(thinking) = config
                 .get_mut("thinkingConfig")
                 .and_then(Value::as_object_mut)
+                && let Some(budget) = thinking.get("thinkingBudget").and_then(Value::as_i64)
             {
-                if let Some(budget) = thinking.get("thinkingBudget").and_then(Value::as_i64) {
-                    // -1 is Gemini's native dynamic thinking budget.
-                    if budget < -1 {
-                        thinking.remove("thinkingBudget");
-                    } else if budget > 1_000_000 {
-                        thinking.insert("thinkingBudget".to_owned(), json!(1_000_000));
-                    }
+                // -1 is Gemini's native dynamic thinking budget.
+                if budget < -1 {
+                    thinking.remove("thinkingBudget");
+                } else if budget > 1_000_000 {
+                    thinking.insert("thinkingBudget".to_owned(), json!(1_000_000));
                 }
             }
         }
@@ -363,14 +361,13 @@ fn normalize_optional_parameters(protocol: Protocol, root: &mut Map<String, Valu
             .and_then(Value::as_object_mut)
             .and_then(|config| config.get_mut("functionCallingConfig"))
             .and_then(Value::as_object_mut)
-        {
-            if config.get("mode").is_some_and(|mode| {
+            && config.get("mode").is_some_and(|mode| {
                 !mode
                     .as_str()
                     .is_some_and(|mode| matches!(mode, "AUTO" | "ANY" | "NONE" | "VALIDATED"))
-            }) {
-                config.insert("mode".to_owned(), json!("AUTO"));
-            }
+            })
+        {
+            config.insert("mode".to_owned(), json!("AUTO"));
         }
         return;
     }
@@ -392,21 +389,20 @@ fn normalize_optional_parameters(protocol: Protocol, root: &mut Map<String, Valu
             .get("max_tokens")
             .and_then(Value::as_i64)
             .unwrap_or(1_000_000);
-        if let Some(thinking) = root.get_mut("thinking").and_then(Value::as_object_mut) {
-            if thinking.get("type").and_then(Value::as_str) == Some("enabled") {
-                if maximum <= 1024 {
-                    // Adaptive thinking is valid without an explicit budget.
-                    thinking.insert("type".to_owned(), json!("adaptive"));
-                    thinking.remove("budget_tokens");
-                } else if let Some(budget) = thinking.get("budget_tokens").and_then(Value::as_i64) {
-                    thinking.insert(
-                        "budget_tokens".to_owned(),
-                        json!(budget.clamp(1024, maximum - 1)),
-                    );
-                } else {
-                    thinking.insert("type".to_owned(), json!("adaptive"));
-                    thinking.remove("budget_tokens");
-                }
+        if let Some(thinking) = root.get_mut("thinking").and_then(Value::as_object_mut)
+            && thinking.get("type").and_then(Value::as_str) == Some("enabled")
+        {
+            if maximum > 1024
+                && let Some(budget) = thinking.get("budget_tokens").and_then(Value::as_i64)
+            {
+                thinking.insert(
+                    "budget_tokens".to_owned(),
+                    json!(budget.clamp(1024, maximum - 1)),
+                );
+            } else {
+                // Adaptive thinking is valid without an explicit budget.
+                thinking.insert("type".to_owned(), json!("adaptive"));
+                thinking.remove("budget_tokens");
             }
         }
     }
@@ -489,10 +485,11 @@ fn normalize_function(map: &mut Map<String, Value>, key: &str) -> Result<(), ()>
 }
 
 fn stringify_field(map: &mut Map<String, Value>, key: &str, include_null: bool) {
-    if let Some(value) = map.get_mut(key) {
-        if !value.is_string() && (include_null || !value.is_null()) {
-            *value = Value::String(value.to_string());
-        }
+    if let Some(value) = map.get_mut(key)
+        && !value.is_string()
+        && (include_null || !value.is_null())
+    {
+        *value = Value::String(value.to_string());
     }
 }
 
@@ -580,28 +577,28 @@ fn normalize_content(value: &mut Value, protocol: Protocol, result: bool) -> Res
                 } else if kind == "text" {
                     map.insert("type".to_owned(), json!("input_text"));
                 }
-                if let Some(text) = map.get_mut("text") {
-                    if text.is_number() || text.is_boolean() {
-                        *text = Value::String(text.to_string());
-                    }
+                if let Some(text) = map.get_mut("text")
+                    && (text.is_number() || text.is_boolean())
+                {
+                    *text = Value::String(text.to_string());
                 }
             }
             if kind == "tool_result" {
                 normalize_result(map, "content", protocol)?;
                 scalars(map, &["is_error"], &[]);
             }
-            if kind == "tool_use" {
-                if let Some(Value::String(raw)) = map.get("input") {
-                    if let Ok(parsed) = serde_json::from_str::<Value>(raw) {
-                        map.insert("input".to_owned(), parsed);
-                    }
-                }
+            if kind == "tool_use"
+                && let Some(Value::String(raw)) = map.get("input")
+                && let Ok(parsed) = serde_json::from_str::<Value>(raw)
+            {
+                map.insert("input".to_owned(), parsed);
             }
             optional(map, &["cache_control", "annotations", "logprobs"]);
-            if let Some(image) = map.get_mut("image_url") {
-                if protocol == Protocol::OpenAiChat && image.is_string() {
-                    *image = json!({"url":image.take()});
-                }
+            if let Some(image) = map.get_mut("image_url")
+                && protocol == Protocol::OpenAiChat
+                && image.is_string()
+            {
+                *image = json!({"url":image.take()});
             }
         }
     } else if result && !value.is_string() {
@@ -653,15 +650,15 @@ fn legacy_chat(root: &mut Map<String, Value>) -> Result<(), ()> {
             }
         }
     }
-    if let Some(choice) = root.remove("function_call") {
-        if root.get("tool_choice").is_none_or(Value::is_null) {
-            let choice = if choice.is_object() {
-                json!({"type":"function","function":choice})
-            } else {
-                choice
-            };
-            root.insert("tool_choice".to_owned(), choice);
-        }
+    if let Some(choice) = root.remove("function_call")
+        && root.get("tool_choice").is_none_or(Value::is_null)
+    {
+        let choice = if choice.is_object() {
+            json!({"type":"function","function":choice})
+        } else {
+            choice
+        };
+        root.insert("tool_choice".to_owned(), choice);
     }
     let Some(messages) = root.get_mut("messages").and_then(Value::as_array_mut) else {
         return Ok(());
@@ -873,10 +870,10 @@ fn normalize_gemini(root: &mut Map<String, Value>) -> Result<(), ()> {
                     if let Some(call) = part.get_mut("functionCall").and_then(Value::as_object_mut)
                     {
                         optional(call, &["id", "args"]);
-                        if let Some(Value::String(raw)) = call.get("args") {
-                            if let Ok(parsed) = serde_json::from_str::<Value>(raw) {
-                                call.insert("args".to_owned(), parsed);
-                            }
+                        if let Some(Value::String(raw)) = call.get("args")
+                            && let Ok(parsed) = serde_json::from_str::<Value>(raw)
+                        {
+                            call.insert("args".to_owned(), parsed);
                         }
                     }
                     if let Some(result) = part
@@ -884,10 +881,10 @@ fn normalize_gemini(root: &mut Map<String, Value>) -> Result<(), ()> {
                         .and_then(Value::as_object_mut)
                     {
                         optional(result, &["id"]);
-                        if let Some(response) = result.get_mut("response") {
-                            if !response.is_object() {
-                                *response = json!({"result":response.take()});
-                            }
+                        if let Some(response) = result.get_mut("response")
+                            && !response.is_object()
+                        {
+                            *response = json!({"result":response.take()});
                         }
                     }
                 }

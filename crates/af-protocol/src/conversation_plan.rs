@@ -94,11 +94,20 @@ pub(crate) fn normalize(
         return Err(ConversationConversionError::UnsupportedOperation);
     }
     if target == Protocol::Anthropic {
+        let default = request
+            .canonical()
+            .reasoning
+            .and_then(|reasoning| reasoning.budget_tokens())
+            .map_or(4096, |budget| budget.get().saturating_add(1).max(4096))
+            .min(anthropic::MAX_OUTPUT_TOKENS);
         request = request.with_default_max_output_tokens(
-            TokenCount::new(4096).map_err(|_| ConversationConversionError::InvalidRequest)?,
+            TokenCount::new(default).map_err(|_| ConversationConversionError::InvalidRequest)?,
         );
     }
-    if request.origin_protocol() == Some(target) {
+    if request.normalized_protocol() == Some(target) && !request.normalization_dirty() {
+        return Ok(request);
+    }
+    if request.origin_protocol() == Some(target) && request.normalized_protocol().is_none() {
         // 原生扩展、签名、输出偏好由其原生渠道解释，不能因中间表示未建模而丢弃。
         return Ok(request);
     }
@@ -162,6 +171,11 @@ pub(crate) fn normalize(
         Protocol::Gemini => 5,
         _ => 4,
     };
+    let stop_bytes = if target == Protocol::Gemini {
+        4096
+    } else {
+        1024
+    };
     canonical.sampling = Sampling::new(
         canonical
             .sampling
@@ -173,7 +187,7 @@ pub(crate) fn normalize(
             .sampling
             .stop_sequences()
             .iter()
-            .filter(|s| !s.is_empty())
+            .filter(|s| !s.is_empty() && s.len() <= stop_bytes)
             .take(stop_limit)
             .cloned()
             .collect(),
@@ -185,9 +199,11 @@ pub(crate) fn normalize(
             normalize_reasoning(reasoning, target, canonical.sampling.max_output_tokens())
         })
         .transpose()?;
+    crate::conversation_content::normalize_content(&mut canonical, target)
+        .map_err(|_| ConversationConversionError::InvalidRequest)?;
     crate::conversation_history::normalize_history(&mut canonical, target)
         .map_err(|_| ConversationConversionError::InvalidRequest)?;
-    Ok(request.with_rebuilt_canonical(canonical))
+    Ok(request.with_conversation_canonical(canonical, target))
 }
 
 fn normalize_blocks(
@@ -362,6 +378,7 @@ pub(crate) fn patch_native_body(
     protocol: Protocol,
     body: &Bytes,
     request: &CanonicalRequest,
+    patch_reasoning: bool,
 ) -> Result<Bytes, ConversationConversionError> {
     let mut value: Value =
         serde_json::from_slice(body).map_err(|_| ConversationConversionError::InvalidRequest)?;
@@ -408,9 +425,114 @@ pub(crate) fn patch_native_body(
                 .then(|| json!(request.sampling.stop_sequences())),
         );
     }
+    if patch_reasoning {
+        patch_native_reasoning(&mut value, request, protocol)?;
+    }
     serde_json::to_vec(&value)
         .map(Bytes::from)
         .map_err(|_| ConversationConversionError::InvalidRequest)
+}
+
+fn patch_native_reasoning(
+    value: &mut Value,
+    request: &CanonicalRequest,
+    protocol: Protocol,
+) -> Result<(), ConversationConversionError> {
+    // 只借用构造器编码推理字段，不能让其余原生扩展或历史形状阻止受控覆盖。
+    let operation = if protocol == Protocol::OpenAiResponses {
+        Operation::Responses
+    } else {
+        Operation::Chat
+    };
+    let mut reasoning_request = CanonicalRequest::new(
+        operation,
+        request.model.clone(),
+        vec![Message::new(
+            Role::User,
+            vec![ContentBlock::Text("reasoning configuration".to_owned())],
+        )],
+        false,
+    );
+    reasoning_request.reasoning = request.reasoning;
+    reasoning_request.tool_choice = ToolChoice::None;
+    reasoning_request.sampling =
+        Sampling::new(None, None, request.sampling.max_output_tokens(), Vec::new())
+            .map_err(|_| ConversationConversionError::InvalidRequest)?;
+    let built = build(&reasoning_request, protocol)?;
+    let built: Value =
+        serde_json::from_slice(&built).map_err(|_| ConversationConversionError::InvalidRequest)?;
+    let root = value
+        .as_object_mut()
+        .ok_or(ConversationConversionError::InvalidRequest)?;
+    if protocol == Protocol::Gemini {
+        let config = root
+            .entry("generationConfig")
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+            .ok_or(ConversationConversionError::InvalidRequest)?;
+        merge_owned_fields(
+            config,
+            "thinkingConfig",
+            built
+                .get("generationConfig")
+                .and_then(|config| config.get("thinkingConfig")),
+            &["thinkingLevel", "thinkingBudget", "includeThoughts"],
+        )?;
+    } else if protocol == Protocol::Anthropic {
+        merge_owned_fields(
+            root,
+            "thinking",
+            built.get("thinking"),
+            &["type", "budget_tokens", "display"],
+        )?;
+        if let Some(effort) = built
+            .get("output_config")
+            .and_then(|config| config.get("effort"))
+        {
+            root.entry("output_config")
+                .or_insert_with(|| json!({}))
+                .as_object_mut()
+                .ok_or(ConversationConversionError::InvalidRequest)?
+                .insert("effort".to_owned(), effort.clone());
+        }
+    } else if protocol == Protocol::OpenAiResponses {
+        let config = root
+            .entry("reasoning")
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+            .ok_or(ConversationConversionError::InvalidRequest)?;
+        if let Some(built) = built.get("reasoning").and_then(Value::as_object) {
+            config.extend(built.clone());
+        }
+    } else if protocol == Protocol::OpenAiChat {
+        insert_optional(
+            root,
+            "reasoning_effort",
+            built.get("reasoning_effort").cloned(),
+        );
+    }
+    Ok(())
+}
+
+fn merge_owned_fields(
+    root: &mut Map<String, Value>,
+    key: &str,
+    built: Option<&Value>,
+    fields: &[&str],
+) -> Result<(), ConversationConversionError> {
+    if let Some(built) = built.and_then(Value::as_object) {
+        let object = root
+            .entry(key.to_owned())
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+            .ok_or(ConversationConversionError::InvalidRequest)?;
+        for field in fields {
+            insert_optional(object, field, built.get(*field).cloned());
+        }
+    } else {
+        root.remove(key);
+    }
+    Ok(())
 }
 
 fn insert_optional(object: &mut Map<String, Value>, key: &str, value: Option<Value>) {
