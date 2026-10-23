@@ -68,6 +68,18 @@ impl CanonicalRequestEnvelope {
         ) {
             return None;
         }
+        // Vendor signatures are opaque continuation state and are only replayable to their source.
+        if self
+            .source_protocol()
+            .is_some_and(|source| source != protocol)
+            && self
+                .canonical
+                .messages
+                .iter()
+                .any(|message| blocks_have_provider_signatures(&message.content))
+        {
+            return None;
+        }
         let operation = match protocol {
             Protocol::OpenAiResponses => Operation::Responses,
             Protocol::OpenAiChat | Protocol::Anthropic | Protocol::Gemini => Operation::Chat,
@@ -256,6 +268,29 @@ fn remove_cache_hints(blocks: &mut Vec<ContentBlock>) -> bool {
         }
     }
     changed
+}
+
+fn blocks_have_provider_signatures(blocks: &[ContentBlock]) -> bool {
+    blocks.iter().any(|block| match block {
+        ContentBlock::ToolUse {
+            signature: Some(_), ..
+        }
+        | ContentBlock::Thinking {
+            signature: Some(_), ..
+        } => true,
+        ContentBlock::ToolResult { content, .. } => blocks_have_provider_signatures(content),
+        ContentBlock::Text(_)
+        | ContentBlock::Image { .. }
+        | ContentBlock::Audio { .. }
+        | ContentBlock::ToolUse {
+            signature: None, ..
+        }
+        | ContentBlock::Thinking {
+            signature: None, ..
+        }
+        | ContentBlock::CacheControl(_)
+        | ContentBlock::Compaction(_) => false,
+    })
 }
 
 // 文本工具协议使用完整 JSON 表达结构化结果，原生 Gemini 继续保留对象。
@@ -513,8 +548,41 @@ mod tests {
         );
         let request = responses_request(
             br#"{"model":"model-test","input":[{"type":"reasoning","id":"rs_test","encrypted_content":"opaque","summary":[]},{"role":"user","content":"hi"}],"include":["reasoning.encrypted_content"]}"#,
-        ).for_conversation_protocol(Protocol::OpenAiChat).unwrap();
-        assert!(crate::openai_chat::build_request(request.canonical()).is_err());
+        );
+        assert!(
+            request
+                .clone()
+                .for_conversation_protocol(Protocol::OpenAiResponses)
+                .is_some()
+        );
+        assert!(
+            request
+                .for_conversation_protocol(Protocol::OpenAiChat)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provider_signed_reasoning_and_tool_calls_stay_on_the_source_protocol() {
+        let request = crate::gemini::parse_request_envelope(
+            "models/gemini-test",
+            Bytes::from_static(
+                br#"{"contents":[{"role":"user","parts":[{"text":"run a lookup"}]},{"role":"model","parts":[{"text":"I should inspect it","thought":true,"thoughtSignature":"c2ln"},{"functionCall":{"id":"call-1","name":"lookup","args":{}},"thoughtSignature":"dG9vbC1zaWc="}]}]}"#,
+            ),
+        )
+        .unwrap();
+
+        assert!(
+            request
+                .clone()
+                .for_conversation_protocol(Protocol::Gemini)
+                .is_some()
+        );
+        assert!(
+            request
+                .for_conversation_protocol(Protocol::Anthropic)
+                .is_none()
+        );
     }
 
     #[test]

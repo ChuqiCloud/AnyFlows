@@ -47,7 +47,9 @@ use af_domain::{
     Protocol,
 };
 use af_httpclient::{HttpClientProvider, ProxyConfig, RemoteDnsPolicy};
-use af_protocol::{CanonicalRequestEnvelope, ClientSimulationBodyPatch, UtcDate};
+use af_protocol::{
+    CanonicalRequestEnvelope, ClientSimulationBodyPatch, UtcDate, validate_request_capabilities,
+};
 use af_relay::{
     AnthropicRequestOverrides, ChatResponse, GeminiRequestOverrides, OpenAiChatRequestOverrides,
     OpenAiResponsesRequestOverrides, RelayCandidate, RelayCandidateRequest, RelayDiagnosticInput,
@@ -1802,6 +1804,7 @@ fn select_upstream_protocol(
     }
     // 优先使用原生渠道，其次选择可表达该请求的对话协议。
     // 不把 Embeddings、音视频等不同能力的端点纳入对话转换。
+    let mut has_conversation_candidate = false;
     for protocol in [
         response_protocol,
         Protocol::OpenAiChat,
@@ -1809,19 +1812,26 @@ fn select_upstream_protocol(
         Protocol::Anthropic,
         Protocol::Gemini,
     ] {
-        if route
+        let has_candidate = route
             .candidates()
             .iter()
-            .any(|candidate| target_matches_protocol(candidate.runtime_target(), protocol))
-            && request
-                .clone()
-                .for_conversation_protocol(protocol)
-                .is_some()
-        {
+            .any(|candidate| target_matches_protocol(candidate.runtime_target(), protocol));
+        if !has_candidate {
+            continue;
+        }
+        has_conversation_candidate = true;
+        let Some(converted) = request.clone().for_conversation_protocol(protocol) else {
+            continue;
+        };
+        if validate_request_capabilities(protocol, converted.canonical()).is_ok() {
             return Ok(protocol);
         }
     }
-    Ok(response_protocol)
+    if has_conversation_candidate {
+        Err(AfError::InvalidRequest)
+    } else {
+        Ok(response_protocol)
+    }
 }
 
 fn map_scheduler_error(error: IndexedWeightedSchedulerError) -> AfError {
@@ -1863,7 +1873,10 @@ mod tests {
         RouteStrategy, UpstreamError,
     };
     use af_httpclient::{HttpClientConfig, HttpClientProvider};
-    use af_protocol::{CanonicalRequest, RequestContinuation, RequestMetadata, openai_chat};
+    use af_protocol::{
+        CanonicalRequest, ReasoningConfig, RequestContinuation, RequestMetadata, TokenCount,
+        openai_chat,
+    };
     use af_scheduler::{
         ChannelIndexSource, ChannelIndexSourceFuture, ChannelIndexSourceRecord,
         InMemoryChannelIndex,
@@ -2597,6 +2610,90 @@ mod tests {
                 assert_eq!(execution.attempt_targets.len(), 1);
             }
         }
+    }
+
+    #[tokio::test]
+    async fn protocol_selection_skips_candidates_that_cannot_express_reasoning_options() {
+        let group_id = GroupId::new(7).unwrap();
+        let record_for = |channel_id, channel_type, protocol| {
+            let credential_id = channel_id + 100;
+            let credential = SchedulerRuntimeCredentialRecord::new(
+                credential_id,
+                CredentialKind::ApiKey,
+                valid_envelope_for(credential_id, 0x29),
+                false,
+            )
+            .unwrap();
+            let target = SchedulerRuntimeTargetRecord::new_pool(
+                ChannelId::new(channel_id).unwrap(),
+                channel_type,
+                protocol,
+                Some("https://scheduled-chat.example".to_owned()),
+                vec![credential],
+                Vec::new(),
+            )
+            .unwrap();
+            ChannelIndexSourceRecord::with_runtime_target(
+                group_id,
+                "gpt-scheduled",
+                10,
+                0,
+                Arc::new(target),
+            )
+            .unwrap()
+        };
+        let index = InMemoryChannelIndex::load(Arc::new(StaticSource {
+            records: vec![
+                record_for(CHANNEL_ID, ChannelType::OpenAi, Protocol::OpenAiChat),
+                record_for(CHANNEL_ID + 1, ChannelType::Gemini, Protocol::Gemini),
+            ],
+        }))
+        .await
+        .unwrap();
+        let route = IndexedWeightedScheduler::new(index)
+            .route_plan(group_id, "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        let mut canonical = CanonicalRequest::new(
+            Operation::Chat,
+            "gpt-scheduled".to_owned(),
+            Vec::new(),
+            false,
+        );
+        canonical.reasoning =
+            Some(ReasoningConfig::new(None, Some(TokenCount::new(128).unwrap()), true).unwrap());
+
+        let envelope = canonical.into();
+        let selected = select_upstream_protocol(&route, &envelope, Protocol::Anthropic).unwrap();
+        assert_eq!(selected, Protocol::Gemini);
+        let converted = envelope
+            .for_conversation_protocol(selected)
+            .unwrap()
+            .into_canonical();
+        assert!(af_protocol::gemini::build_request(&converted).is_ok());
+    }
+
+    #[tokio::test]
+    async fn protocol_selection_rejects_requests_no_candidate_can_express() {
+        let service = service(vec![record(false, valid_envelope())]).await;
+        let route = service
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        let mut canonical = CanonicalRequest::new(
+            Operation::Chat,
+            "gpt-scheduled".to_owned(),
+            Vec::new(),
+            false,
+        );
+        canonical.reasoning =
+            Some(ReasoningConfig::new(None, Some(TokenCount::new(128).unwrap()), true).unwrap());
+
+        assert_eq!(
+            select_upstream_protocol(&route, &canonical.into(), Protocol::Anthropic),
+            Err(AfError::InvalidRequest)
+        );
     }
 
     #[tokio::test]

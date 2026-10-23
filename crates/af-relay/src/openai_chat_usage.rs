@@ -364,9 +364,6 @@ fn add_input_block(
             structured_content,
             is_error: _,
         } => {
-            if structured_content.is_some() {
-                return Err(UsageResolutionError::UnsupportedContent);
-            }
             checked_add(total, NAMED_FIELD_OVERHEAD_TOKENS)?;
             checked_add(total, counter.count(tool_use_id)?)?;
             for nested in content {
@@ -377,6 +374,11 @@ fn add_input_block(
                     allow_encrypted_reasoning,
                     allow_chat_reasoning,
                 )?;
+            }
+            if let Some(value) = structured_content {
+                let serialized = serde_json::to_string(value)
+                    .map_err(|_| UsageResolutionError::EstimationFailed)?;
+                checked_add(total, counter.count(&serialized)?)?;
             }
             Ok(())
         }
@@ -394,10 +396,14 @@ fn add_input_block(
         ContentBlock::Thinking {
             text,
             signature: None,
-        } if allow_chat_reasoning => checked_add(total, counter.count(text)?),
-        ContentBlock::Thinking { .. }
-        | ContentBlock::CacheControl(_)
-        | ContentBlock::Compaction(_) => Err(UsageResolutionError::UnsupportedContent),
+        } if allow_chat_reasoning || allow_encrypted_reasoning => {
+            checked_add(total, counter.count(text)?)
+        }
+        // Cache markers affect upstream prompt reuse, not model-visible content.
+        ContentBlock::CacheControl(_) => Ok(()),
+        ContentBlock::Thinking { .. } | ContentBlock::Compaction(_) => {
+            Err(UsageResolutionError::UnsupportedContent)
+        }
     }
 }
 
@@ -693,6 +699,135 @@ mod tests {
     }
 
     #[test]
+    fn cache_control_markers_do_not_change_estimated_input_tokens() {
+        let plain = CanonicalRequest::new(
+            Operation::Chat,
+            "gpt-4o".to_owned(),
+            vec![Message::new(
+                Role::User,
+                vec![ContentBlock::Text("cached prompt text".to_owned())],
+            )],
+            false,
+        );
+        let cached = CanonicalRequest::new(
+            Operation::Chat,
+            "gpt-4o".to_owned(),
+            vec![Message::new(
+                Role::User,
+                vec![
+                    ContentBlock::Text("cached prompt text".to_owned()),
+                    ContentBlock::CacheControl(af_protocol::CacheHint::Ephemeral5Minutes),
+                    ContentBlock::CacheControl(af_protocol::CacheHint::Ephemeral1Hour),
+                ],
+            )],
+            false,
+        );
+
+        assert_eq!(
+            estimate_openai_request_upper_bound(&cached)
+                .unwrap()
+                .input_tokens(),
+            estimate_openai_request_upper_bound(&plain)
+                .unwrap()
+                .input_tokens()
+        );
+    }
+
+    #[test]
+    fn structured_tool_results_use_conservative_serialized_json_estimate() {
+        let structured = json!({
+            "nested": [{"ok": true, "value": null}, {"count": 3}],
+            "items": ["alpha", "beta"]
+        });
+        let request = CanonicalRequest::new(
+            Operation::Chat,
+            "gpt-4o".to_owned(),
+            vec![Message::new(
+                Role::Tool,
+                vec![ContentBlock::ToolResult {
+                    tool_use_id: "call_123".to_owned(),
+                    content: vec![ContentBlock::Text("additional output".to_owned())],
+                    structured_content: Some(structured.clone()),
+                    is_error: true,
+                }],
+            )],
+            false,
+        );
+        let empty_result = CanonicalRequest::new(
+            Operation::Chat,
+            "gpt-4o".to_owned(),
+            vec![Message::new(Role::Tool, Vec::new())],
+            false,
+        );
+        let serialized = serde_json::to_string(&structured).unwrap();
+        let expected = estimate_openai_request_upper_bound(&empty_result)
+            .unwrap()
+            .input_tokens()
+            .get()
+            + NAMED_FIELD_OVERHEAD_TOKENS
+            + TokenCounter::for_model("gpt-4o").count("call_123").unwrap()
+            + TokenCounter::for_model("gpt-4o")
+                .count("additional output")
+                .unwrap()
+            + TokenCounter::for_model("gpt-4o")
+                .count(&serialized)
+                .unwrap();
+
+        assert_eq!(
+            estimate_openai_request_upper_bound(&request)
+                .unwrap()
+                .input_tokens()
+                .get(),
+            expected
+        );
+    }
+
+    #[test]
+    fn provider_multiturn_history_parses_and_has_a_precharge_estimate() {
+        let anthropic = af_protocol::anthropic::parse_request(
+            br#"{
+                "model":"claude-test",
+                "max_tokens":256,
+                "system":[{
+                    "type":"text",
+                    "text":"follow the system rules",
+                    "cache_control":{"type":"ephemeral","ttl":"1h"}
+                }],
+                "messages":[
+                    {"role":"user","content":[
+                        {"type":"text","text":"first question"},
+                        {"type":"text","text":"cached continuation","cache_control":{"type":"ephemeral"}}
+                    ]},
+                    {"role":"assistant","content":[{"type":"text","text":"first answer"}]},
+                    {"role":"user","content":[{"type":"text","text":"continue"}]}
+                ]
+            }"#,
+        )
+        .unwrap();
+        let gemini = af_protocol::gemini::parse_request(
+            "models/gemini-test",
+            br#"{
+                "contents":[
+                    {"role":"model","parts":[{"functionCall":{
+                        "id":"call-1","name":"lookup","args":{"query":"status"}
+                    }}]},
+                    {"role":"user","parts":[{"functionResponse":{
+                        "id":"call-1","name":"lookup","response":{
+                            "result":{"ok":true,"items":[1,2]},"nullable":null
+                        }
+                    }}]},
+                    {"role":"model","parts":[{"text":"The status is ready."}]},
+                    {"role":"user","parts":[{"text":"continue"}]}
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert!(estimate_openai_request_upper_bound(&anthropic).is_ok());
+        assert!(estimate_openai_request_upper_bound(&gemini).is_ok());
+    }
+
+    #[test]
     fn text_fixture_pins_chat_overhead_and_tokenizer_result() {
         let mut estimator = OpenAiChatUsageEstimator::new(&text_request("gpt-4o"));
         estimator.observe(&CanonicalStreamEvent::MessageStart {
@@ -840,7 +975,7 @@ mod tests {
     }
 
     #[test]
-    fn chat_reasoning_text_is_counted_but_signed_and_responses_summary_remain_unsupported() {
+    fn plain_reasoning_text_is_estimated_but_signed_chat_history_remains_unsupported() {
         let make_request = |operation, signature| {
             CanonicalRequest::new(
                 operation,
@@ -874,15 +1009,16 @@ mod tests {
                     .input_tokens()
         );
 
-        for request in [
-            make_request(Operation::Chat, Some("signed".to_owned())),
-            make_request(Operation::Responses, None),
-        ] {
-            assert_eq!(
-                estimate_openai_request_upper_bound(&request),
-                Err(UsageResolutionError::UnsupportedContent)
-            );
-        }
+        assert_eq!(
+            estimate_openai_request_upper_bound(&make_request(
+                Operation::Chat,
+                Some("signed".to_owned())
+            )),
+            Err(UsageResolutionError::UnsupportedContent)
+        );
+        let responses_summary =
+            estimate_openai_request_upper_bound(&make_request(Operation::Responses, None)).unwrap();
+        assert!(responses_summary.input_tokens() > TokenCount::ZERO);
     }
 
     #[test]
