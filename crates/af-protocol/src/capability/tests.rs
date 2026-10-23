@@ -6,11 +6,12 @@ use serde_json::json;
 use super::{
     ProtocolCapability, RequestCapability, ResponseCapability, StreamCapability,
     protocol_capabilities, supports_request_capability, supports_response_capability,
-    supports_stream_capability, validate_stream_event_capabilities,
+    supports_stream_capability, validate_request_capabilities, validate_stream_event_capabilities,
 };
 use crate::{
     CanonicalRequest, CanonicalResponse, CanonicalStreamEvent, ContentBlock, FinishReason, Message,
     ResponseChoice, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource, anthropic,
+    gemini, openai_chat, openai_responses,
 };
 
 #[test]
@@ -77,6 +78,20 @@ fn matrix_exposes_protocol_specific_differences() {
         Protocol::OpenAiChat,
         RequestCapability::ThinkingSignatures
     ));
+    for protocol in [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Gemini,
+    ] {
+        assert!(supports_request_capability(
+            protocol,
+            RequestCapability::UnsignedThinking
+        ));
+    }
+    assert!(!supports_request_capability(
+        Protocol::Anthropic,
+        RequestCapability::UnsignedThinking
+    ));
 
     assert!(supports_response_capability(
         Protocol::Anthropic,
@@ -94,6 +109,85 @@ fn matrix_exposes_protocol_specific_differences() {
         Protocol::OpenAiResponses,
         StreamCapability::Error
     ));
+}
+
+#[test]
+fn unsigned_thinking_capability_matches_request_builders() {
+    let mut request = CanonicalRequest::new(
+        Operation::Chat,
+        "test-model".to_owned(),
+        vec![
+            Message::new(Role::User, vec![ContentBlock::Text("hello".to_owned())]),
+            Message::new(
+                Role::Assistant,
+                vec![
+                    ContentBlock::Thinking {
+                        text: "plain summary".to_owned(),
+                        signature: None,
+                    },
+                    ContentBlock::Text("answer".to_owned()),
+                ],
+            ),
+            Message::new(Role::User, vec![ContentBlock::Text("continue".to_owned())]),
+        ],
+        false,
+    );
+
+    let error = validate_request_capabilities(Protocol::Anthropic, &request)
+        .expect_err("Anthropic requires a signature to replay thinking");
+    assert_eq!(
+        error.capability(),
+        ProtocolCapability::Request(RequestCapability::UnsignedThinking)
+    );
+    assert_eq!(
+        anthropic::build_request(&request),
+        Err(anthropic::BuildRequestError::UnsupportedCapability(error))
+    );
+
+    assert!(validate_request_capabilities(Protocol::OpenAiChat, &request).is_ok());
+    let chat = openai_chat::build_request(&request).unwrap();
+    assert_eq!(chat["messages"][1]["reasoning_content"], "plain summary");
+
+    assert!(validate_request_capabilities(Protocol::Gemini, &request).is_ok());
+    let gemini = gemini::build_request(&request).unwrap();
+    assert_eq!(
+        gemini["contents"][1]["parts"][0],
+        json!({"text": "plain summary", "thought": true})
+    );
+
+    request.operation = Operation::Responses;
+    assert!(validate_request_capabilities(Protocol::OpenAiResponses, &request).is_ok());
+    let responses = openai_responses::build_request(&request).unwrap();
+    assert_eq!(
+        responses["input"][1],
+        json!({"type": "reasoning", "summary": [
+            {"type": "summary_text", "text": "plain summary"}
+        ]})
+    );
+}
+
+#[test]
+fn signed_thinking_still_uses_signature_capability() {
+    let request = CanonicalRequest::new(
+        Operation::Chat,
+        "test-model".to_owned(),
+        vec![Message::new(
+            Role::Assistant,
+            vec![ContentBlock::Thinking {
+                text: "signed thinking".to_owned(),
+                signature: Some("opaque-signature".to_owned()),
+            }],
+        )],
+        false,
+    );
+
+    assert!(validate_request_capabilities(Protocol::Anthropic, &request).is_ok());
+    let error = validate_request_capabilities(Protocol::OpenAiChat, &request)
+        .expect_err("OpenAI Chat cannot preserve thinking signatures");
+    assert_eq!(
+        error.capability(),
+        ProtocolCapability::Request(RequestCapability::ThinkingSignatures)
+    );
 }
 
 #[test]

@@ -40,6 +40,8 @@ pub enum RequestCapability {
     ToolResultErrors,
     /// 助手思考内容。
     Thinking,
+    /// 无签名的助手思考内容或明文摘要。
+    UnsignedThinking,
     /// 助手思考签名。
     ThinkingSignatures,
     /// 提示缓存断点。
@@ -110,6 +112,7 @@ impl RequestCapability {
         Self::StructuredToolResults,
         Self::ToolResultErrors,
         Self::Thinking,
+        Self::UnsignedThinking,
         Self::ThinkingSignatures,
         Self::CacheControl(CacheHint::Ephemeral5Minutes),
         Self::CacheControl(CacheHint::Ephemeral1Hour),
@@ -158,6 +161,7 @@ impl fmt::Display for RequestCapability {
             Self::StructuredToolResults => formatter.write_str("content.tool_result.structured"),
             Self::ToolResultErrors => formatter.write_str("content.tool_result.error"),
             Self::Thinking => formatter.write_str("content.thinking"),
+            Self::UnsignedThinking => formatter.write_str("content.thinking.unsigned"),
             Self::ThinkingSignatures => formatter.write_str("content.thinking.signature"),
             Self::CacheControl(CacheHint::Ephemeral5Minutes) => {
                 formatter.write_str("content.cache_control.5m")
@@ -211,6 +215,7 @@ pub(super) const OPENAI_CHAT: &[RequestCapability] = &[
     RequestCapability::ToolCalls,
     RequestCapability::ToolResults,
     RequestCapability::Thinking,
+    RequestCapability::UnsignedThinking,
     RequestCapability::ReasoningEffort(ReasoningEffort::None),
     RequestCapability::ReasoningEffort(ReasoningEffort::Minimal),
     RequestCapability::ReasoningEffort(ReasoningEffort::Low),
@@ -245,6 +250,7 @@ pub(super) const OPENAI_RESPONSES: &[RequestCapability] = &[
     RequestCapability::ToolResults,
     RequestCapability::StructuredToolResults,
     RequestCapability::Thinking,
+    RequestCapability::UnsignedThinking,
     RequestCapability::ThinkingSignatures,
     RequestCapability::ReasoningOutput,
     RequestCapability::ReasoningEffort(ReasoningEffort::None),
@@ -318,6 +324,7 @@ pub(super) const GEMINI: &[RequestCapability] = &[
     RequestCapability::StructuredToolResults,
     RequestCapability::ToolResultErrors,
     RequestCapability::Thinking,
+    RequestCapability::UnsignedThinking,
     RequestCapability::ThinkingSignatures,
     RequestCapability::ReasoningEffort(ReasoningEffort::None),
     RequestCapability::ReasoningEffort(ReasoningEffort::Minimal),
@@ -441,6 +448,8 @@ fn validate_content(
                 require(protocol, RequestCapability::Thinking)?;
                 if signature.is_some() {
                     require(protocol, RequestCapability::ThinkingSignatures)?;
+                } else {
+                    require(protocol, RequestCapability::UnsignedThinking)?;
                 }
             }
             ContentBlock::CacheControl(hint) => {

@@ -206,6 +206,7 @@ fn rewriting_removes_source_passthrough_and_preserves_requested_model() {
     let envelope = CanonicalRequestEnvelope::from_normalized_model(
         source.canonical().clone(),
         "public-alias".to_owned(),
+        source.origin_protocol(),
     );
     for request in [source, envelope] {
         let session = ToolCompatibilitySession::prepare(request, vec![tool("read")]).unwrap();

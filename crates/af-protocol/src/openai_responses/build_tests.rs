@@ -472,7 +472,7 @@ fn rejects_unrepresentable_content_and_media() {
         assert_unsupported_capability(&request, capability);
     }
 
-    let missing_reasoning_signature = CanonicalRequest::new(
+    let unsigned_reasoning_summary = CanonicalRequest::new(
         Operation::Responses,
         "gpt-test".to_owned(),
         vec![Message::new(
@@ -484,9 +484,13 @@ fn rejects_unrepresentable_content_and_media() {
         )],
         false,
     );
+    let rebuilt = build_request(&unsigned_reasoning_summary).unwrap();
     assert_eq!(
-        build_request(&missing_reasoning_signature),
-        Err(BuildRequestError::UnsupportedFeature)
+        rebuilt["input"][0],
+        json!({
+            "type": "reasoning",
+            "summary": [{"type": "summary_text", "text": "secret"}]
+        })
     );
 
     let misplaced_reasoning = CanonicalRequest::new(

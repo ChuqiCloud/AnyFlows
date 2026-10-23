@@ -163,7 +163,7 @@ fn convert_reasoning_item(
     let _ = status;
 
     let signature = match encrypted_content {
-        Field::Missing => return Err(ParseRequestError::UnsupportedFeature),
+        Field::Missing => None,
         Field::Value(value)
             if value.is_empty()
                 || value.len() > MAX_ENCRYPTED_REASONING_BYTES
@@ -171,7 +171,7 @@ fn convert_reasoning_item(
         {
             return Err(ParseRequestError::InvalidValue);
         }
-        Field::Value(value) => value,
+        Field::Value(value) => Some(value),
     };
     let summaries = match summary {
         Field::Missing => Vec::new(),
@@ -628,13 +628,10 @@ impl InputConvertState {
     fn add_thinking(
         &mut self,
         text: String,
-        signature: String,
+        signature: Option<String>,
     ) -> Result<ContentBlock, ParseRequestError> {
         self.add_text_bytes(text.len())?;
-        Ok(ContentBlock::Thinking {
-            text,
-            signature: Some(signature),
-        })
+        Ok(ContentBlock::Thinking { text, signature })
     }
 
     fn add_text_bytes(&mut self, bytes: usize) -> Result<(), ParseRequestError> {
