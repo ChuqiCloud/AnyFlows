@@ -1119,13 +1119,8 @@ async fn invalid_requests_and_wrong_model_never_reach_upstream() {
         ),
         (
             "POST",
-            br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}],"stream":true,"stream_options":{"include_obfuscation":false}}"#.as_slice(),
-            400,
-            "invalid_request",
-        ),
-        (
-            "POST",
-            br#"{"model":"private-wrong-model","messages":[{"role":"user","content":"hello"}]}"#.as_slice(),
+            br#"{"model":"private-wrong-model","messages":[{"role":"user","content":"hello"}]}"#
+                .as_slice(),
             404,
             "model_not_found",
         ),
@@ -1170,12 +1165,6 @@ async fn responses_stateful_requests_and_wrong_model_never_reach_upstream() {
         (
             "POST",
             br#"{"model":"test-model","model":"private-duplicate","input":"hello"}"#.as_slice(),
-            400,
-            "invalid_request",
-        ),
-        (
-            "POST",
-            br#"{"model":"test-model","input":"hello","store":true}"#.as_slice(),
             400,
             "invalid_request",
         ),
@@ -1359,7 +1348,7 @@ async fn verified_same_protocol_full_request_and_response_preserve_exact_bytes()
 }
 
 #[tokio::test]
-async fn responses_full_request_is_stateless_and_preserves_validated_source() {
+async fn responses_store_true_request_is_stateless_and_preserves_validated_source() {
     let upstream_body = br#"{
   "id": "resp_private_upstream",
   "object": "response",
@@ -1375,6 +1364,7 @@ async fn responses_full_request_is_stateless_and_preserves_validated_source() {
     let request_body = br#"{
   "model": "test-model",
   "input": "hello",
+  "store": true,
   "include": ["reasoning.encrypted_content"],
   "max_output_tokens": 32
 }"#;
@@ -1551,7 +1541,7 @@ async fn gemini_full_request_and_response_cross_the_canonical_boundary() {
 }
 
 #[tokio::test]
-async fn streaming_response_is_incremental_canonical_and_unbuffered() {
+async fn streaming_obfuscation_option_preserves_incremental_canonical_output() {
     let first = br#"data: {"id":"upstream-private-id","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","content":"first-part"},"finish_reason":null}]}
 
 "#;
@@ -1565,7 +1555,7 @@ data: [DONE]
     let (proxy_address, captured, release, proxy) = spawn_streaming_proxy(first, rest);
     let (address, shutdown, server) = start_server(proxy_address, ServerConfig::default()).await;
     let authorization = format!("Bearer {CLIENT_KEY}");
-    let request_body = br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}],"stream":true,"stream_options":{"include_usage":true}}"#;
+    let request_body = br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}],"stream":true,"stream_options":{"include_usage":true,"include_obfuscation":false}}"#;
     let mut client = connect_and_send(address, request_body, &authorization).await;
 
     let first_response = read_until(&mut client, b"first-part").await;
@@ -1585,6 +1575,10 @@ data: [DONE]
     let upstream_json: Value = serde_json::from_slice(&upstream.body).unwrap();
     assert_eq!(upstream_json["stream"], true);
     assert_eq!(upstream_json["stream_options"]["include_usage"], true);
+    assert_eq!(
+        upstream_json["stream_options"]["include_obfuscation"],
+        false
+    );
     release.send(()).unwrap();
 
     let mut complete = first_response;
