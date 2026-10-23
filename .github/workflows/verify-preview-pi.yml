@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       preview_run:
-        description: 'Successful Build preview package run ID whose head SHA must match this workflow commit'
+        description: 'Successful preview run; runtime sources must match, acceptance scripts may differ'
         required: true
         type: string
 
@@ -52,7 +52,25 @@ jobs:
           curl --silent --show-error --fail --user "x-access-token:$SOURCE_TOKEN" "$repo/actions/runs/$PREVIEW_RUN" > preview/run.json
           jq -e '.conclusion == "success" and (.path | startswith("build-preview.yml"))' preview/run.json > /dev/null
           sha="$(jq -r .head_sha preview/run.json)"
-          test "$sha" = "$SOURCE_SHA" || { echo 'Selected preview run SHA differs from this workflow SHA' >&2; exit 1; }
+          if [[ "$sha" != "$SOURCE_SHA" ]]; then
+            auth="$(printf 'x-access-token:%s' "$SOURCE_TOKEN" | base64 -w0)"
+            git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$sha"
+            git diff --name-only "$sha" "$SOURCE_SHA" > preview/acceptance-changes.txt
+            python3 - <<'PY'
+          from pathlib import Path
+          allowed = {
+              '.github/workflows/verify-preview-pi.yml',
+              'tools/ci/pi-live-smoke.py',
+              'tools/ci/pi-upstream-fixture.py',
+              'tools/ci/opencode-live-smoke.py',
+              'docs/conversation-compatibility.md',
+          }
+          changed = set(Path('preview/acceptance-changes.txt').read_text().splitlines())
+          if changed - allowed:
+              raise SystemExit('Preview runtime differs from acceptance source: ' + ', '.join(sorted(changed - allowed)))
+          PY
+          fi
+          printf 'Verified binary commit=%s acceptance commit=%s\n' "$sha" "$SOURCE_SHA"
           curl --silent --show-error --fail --user "x-access-token:$SOURCE_TOKEN" "$repo/actions/runs/$PREVIEW_RUN/artifacts" > preview/artifacts.json
           artifact_id="$(jq -r --arg sha "$sha" '.artifacts[] | select(.name == ("anyflows-preview-linux-amd64-" + $sha)) | .id' preview/artifacts.json)"
           [[ "$artifact_id" =~ ^[1-9][0-9]*$ ]]
@@ -85,6 +103,7 @@ jobs:
       - name: Start the preview and run all sixteen controlled Pi routes
         env:
           RUNNER_TEMP: ${{ runner.temp }}
+          PI_MATRIX_REPETITIONS: '3'
         run: |
           set -euo pipefail
           script="$(realpath tools/ci/pi-live-smoke.py)"
@@ -105,4 +124,39 @@ jobs:
             sleep 1
           done
           test "$ready" = 1 || { echo 'Preview readiness failed; server log remains in the runner workspace' >&2; exit 1; }
-          python3 "$script"
+          if ! python3 "$script"; then
+            python3 - <<'PY'
+          import os
+          from pathlib import Path
+          trace = Path(os.environ['RUNNER_TEMP']) / 'pi-live-smoke-traces'
+          trace.mkdir(parents=True, exist_ok=True)
+          lines = Path('server.log').read_text(encoding='utf-8', errors='replace').splitlines()
+          failures = [line for line in lines if any(marker in line for marker in (
+              'stream_delivery_panic', 'stream_upstream_failed', 'stream_write_timeout',
+              'stream_max_duration', 'panicked at', '未终止的 OpenAI Chat 流',
+          ))]
+          (trace / 'server-stream-failures.log').write_text('\n'.join(failures[-100:]), encoding='utf-8')
+          PY
+            exit 1
+          fi
+
+      - name: Prepare controlled failure capture uploader
+        if: failure()
+        run: |
+          set -euo pipefail
+          action_path='.ci-actions/gitea-upload-artifact'
+          action_sha='62ac910c5d3dfa85c7cb2df15afe2e342b2407c2'
+          git init --quiet "$action_path"
+          git -C "$action_path" remote add origin https://gitea.com/actions/gitea-upload-artifact.git
+          git -C "$action_path" fetch --quiet --no-tags --depth=1 origin "$action_sha"
+          git -C "$action_path" checkout --quiet --detach FETCH_HEAD
+          test "$(git -C "$action_path" rev-parse HEAD)" = "$action_sha"
+
+      - name: Preserve controlled failure captures
+        if: failure()
+        uses: ./.ci-actions/gitea-upload-artifact
+        with:
+          name: pi-controlled-failure-${{ github.run_id }}
+          path: ${{ runner.temp }}/pi-live-smoke-traces
+          retention-days: 1
+          if-no-files-found: warn
