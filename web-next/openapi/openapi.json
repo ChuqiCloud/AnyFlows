@@ -35139,6 +35139,33 @@
         },
         "additionalProperties": false
       },
+      "VersionInfo": {
+        "type": "object",
+        "description": "服务构建身份；不包含运行配置、凭据或节点私有信息。",
+        "required": [
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "Cargo 包版本。"
+          },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "构建源码的完整提交 SHA；无 Git 信息且未注入时为 null。"
+          },
+          "build_time": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "UTC 构建时间（RFC 3339）；未注入时为 null。"
+          }
+        }
+      },
       "VideoAspectRatio": {
         "type": "string",
         "enum": [
@@ -35423,32 +35450,6 @@
           "expired",
           "failed"
         ]
-      },
-      "VersionInfo": {
-        "type": "object",
-        "required": [
-          "version"
-        ],
-        "properties": {
-          "version": {
-            "type": "string",
-            "description": "Cargo 包版本。"
-          },
-          "commit": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "构建源码的完整提交 SHA；无 Git 信息且未注入时为 null。"
-          },
-          "build_time": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "UTC 构建时间（RFC 3339）；未注入时为 null。"
-          }
-        }
       }
     },
     "securitySchemes": {

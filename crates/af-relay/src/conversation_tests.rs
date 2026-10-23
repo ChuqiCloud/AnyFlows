@@ -453,7 +453,7 @@ fn tool_compatibility_keeps_hidden_rounds_out_of_all_four_downstream_protocols()
 }
 
 #[test]
-fn captured_agent_requests_preserve_native_fields_and_convert_to_chat() {
+fn captured_agent_requests_preserve_native_fields_and_conversion_boundaries() {
     let responses = openai_responses::parse_request_envelope(Bytes::from_static(
         br#"{"model":"public-model","input":[{"role":"developer","content":"Answer briefly"},{"role":"user","content":[{"type":"input_text","text":"hello"}]}],"stream":true,"prompt_cache_key":"agent-session","store":false,"max_output_tokens":8192,"reasoning":{"effort":"low","summary":"auto"},"include":["reasoning.encrypted_content"],"tools":[{"type":"function","name":"read","parameters":{"type":"object","properties":{"path":{"type":"string"}}},"strict":false}]}"#,
     )).unwrap();
@@ -492,8 +492,14 @@ fn captured_agent_requests_preserve_native_fields_and_convert_to_chat() {
         native["generationConfig"]["thinkingConfig"]["thinkingBudget"],
         -1
     );
-    let (_, chat) = prepare_request(gemini, Protocol::OpenAiChat).unwrap();
-    assert_eq!(parse_request(Protocol::OpenAiChat, &chat).messages.len(), 1);
+    assert_eq!(
+        native["generationConfig"]["thinkingConfig"]["includeThoughts"],
+        true
+    );
+    assert!(matches!(
+        prepare_request(gemini, Protocol::OpenAiChat),
+        Err(AfError::InvalidRequest)
+    ));
 }
 
 #[test]
