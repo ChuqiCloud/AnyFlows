@@ -1,7 +1,7 @@
 use serde::{Deserialize, Deserializer, de::Error as _};
 use serde_json::{Map, Value};
 
-/// 区分字段缺失与显式提供；协议边界统一拒绝 `null`。
+/// 区分字段缺失与显式提供；字段专属反序列化器决定 `null` 的语义。
 #[derive(Default)]
 pub(super) enum Field<T> {
     /// 请求未提供该字段。
@@ -19,6 +19,18 @@ where
     Option::<T>::deserialize(deserializer)?
         .map(Field::Value)
         .ok_or_else(|| D::Error::custom("字段不得为 null"))
+}
+
+/// Responses reasoning schema permits `encrypted_content: null`; treat it as absent.
+fn deserialize_nullable_field<'de, D, T>(deserializer: D) -> Result<Field<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(|value| match value {
+        Some(value) => Field::Value(value),
+        None => Field::Missing,
+    })
 }
 
 /// OpenAI Responses 入站请求。
@@ -123,7 +135,7 @@ pub(super) enum InputWire {
 pub(super) enum InputItemWire {
     /// 系统、开发者、用户或助手消息。
     Message(InputMessageWire),
-    /// 无状态续传使用的加密推理 Item。
+    /// 可带不透明签名的推理 Item；部分客户端只回放摘要。
     Reasoning(ReasoningInputItemWire),
     /// 先前的函数调用。
     FunctionCall(FunctionCallItemWire),
@@ -161,8 +173,8 @@ pub(super) struct ReasoningInputItemWire {
     /// 上游或前一跳分配的可选 Item 标识。
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) id: Field<String>,
-    /// 无状态续传所需的不透明加密推理内容。
-    #[serde(default, deserialize_with = "deserialize_field")]
+    /// 无状态续传使用的不透明加密推理内容；摘要回放时可以缺失。
+    #[serde(default, deserialize_with = "deserialize_nullable_field")]
     pub(super) encrypted_content: Field<String>,
     /// 可选的人类可读推理摘要。
     #[serde(default, deserialize_with = "deserialize_field")]
