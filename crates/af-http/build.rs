@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::{path::Path, process::Command};
 
 fn main() {
     println!("cargo:rerun-if-env-changed=AF_BUILD_COMMIT");
@@ -22,8 +22,18 @@ fn main() {
 }
 
 fn watch_git_path(path: &str) {
-    if let Some(path) = git_value("rev-parse", &["--path-format=absolute", "--git-path", path]) {
-        println!("cargo:rerun-if-changed={path}");
+    if let Some(resolved) = git_value("rev-parse", &["--path-format=absolute", "--git-path", path])
+    {
+        let resolved = Path::new(&resolved);
+        if resolved.is_file() {
+            println!("cargo:rerun-if-changed={}", resolved.display());
+        } else if path.starts_with("refs/") {
+            // 已打包的分支引用可能尚无 loose ref；监测其目录以发现新提交。
+            if let Some(parent) = resolved.ancestors().skip(1).find(|path| path.is_dir()) {
+                println!("cargo:rerun-if-changed={}", parent.display());
+            }
+        }
+        // 不监测缺失的 packed-refs，否则 Cargo 会在每次命令时重新构建。
     }
 }
 
