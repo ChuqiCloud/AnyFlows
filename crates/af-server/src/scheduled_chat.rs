@@ -1874,8 +1874,8 @@ mod tests {
     };
     use af_httpclient::{HttpClientConfig, HttpClientProvider};
     use af_protocol::{
-        CanonicalRequest, ReasoningConfig, RequestContinuation, RequestMetadata, TokenCount,
-        openai_chat,
+        CanonicalRequest, ContentBlock, Message, ReasoningConfig, RequestContinuation,
+        RequestMetadata, TokenCount, openai_chat,
     };
     use af_scheduler::{
         ChannelIndexSource, ChannelIndexSourceFuture, ChannelIndexSourceRecord,
@@ -2657,7 +2657,10 @@ mod tests {
         let mut canonical = CanonicalRequest::new(
             Operation::Chat,
             "gpt-scheduled".to_owned(),
-            Vec::new(),
+            vec![Message::new(
+                af_domain::Role::User,
+                vec![ContentBlock::Text("hello".to_owned())],
+            )],
             false,
         );
         canonical.reasoning =
