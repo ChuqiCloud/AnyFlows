@@ -2478,6 +2478,11 @@ export type UserWalletSummary = {
     used_quota: number;
     frozen_quota: number;
 };
+export type VersionInfo = {
+    version: string;
+    commit?: string | null;
+    build_time?: string | null;
+};
 export type VideoAspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:4' | '3:2' | '2:3';
 export type VideoFailure = {
     code: VideoFailureCode;
@@ -7073,6 +7078,16 @@ export type GetAdminRuntimeStatusResponses = {
     200: RuntimeStatus;
 };
 export type GetAdminRuntimeStatusResponse = GetAdminRuntimeStatusResponses[keyof GetAdminRuntimeStatusResponses];
+export type GetVersionData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/version';
+};
+export type GetVersionResponses = {
+    200: VersionInfo;
+};
+export type GetVersionResponse = GetVersionResponses[keyof GetVersionResponses];
 export type StartOidcLoginData = {
     body?: never;
     path?: never;

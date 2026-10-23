@@ -44,6 +44,8 @@
   timeout: 40m
   script: |
     cargo clean --release --workspace
+    export AF_BUILD_COMMIT="$(git rev-parse HEAD)"
+    export AF_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     cargo build --release --locked --package af-server
 
 .release-package-stage: &release-package-stage

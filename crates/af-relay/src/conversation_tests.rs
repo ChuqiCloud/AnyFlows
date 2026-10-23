@@ -1,4 +1,4 @@
-use af_adapter::{HeaderMap, StatusCode, UpstreamResponse};
+use af_adapter::{Bytes, HeaderMap, StatusCode, UpstreamResponse};
 use af_domain::Role;
 use af_protocol::{
     CanonicalStreamEvent, ContentBlock, ContentDelta, FinishReason, Message, ResponseChoice,
@@ -449,6 +449,82 @@ fn tool_compatibility_keeps_hidden_rounds_out_of_all_four_downstream_protocols()
                 );
             }
         }
+    }
+}
+
+#[test]
+fn captured_agent_requests_preserve_native_fields_and_conversion_boundaries() {
+    let responses = openai_responses::parse_request_envelope(Bytes::from_static(
+        br#"{"model":"public-model","input":[{"role":"developer","content":"Answer briefly"},{"role":"user","content":[{"type":"input_text","text":"hello"}]}],"stream":true,"prompt_cache_key":"agent-session","store":false,"max_output_tokens":8192,"reasoning":{"effort":"low","summary":"auto"},"include":["reasoning.encrypted_content"],"tools":[{"type":"function","name":"read","parameters":{"type":"object","properties":{"path":{"type":"string"}}},"strict":false}]}"#,
+    )).unwrap();
+    let (_, native) = prepare_request(responses.clone(), Protocol::OpenAiResponses).unwrap();
+    let native: Value = serde_json::from_slice(&native).unwrap();
+    assert_eq!(native["reasoning"]["summary"], "auto");
+    assert_eq!(native["include"], json!(["reasoning.encrypted_content"]));
+    assert_eq!(native["tools"][0]["strict"], false);
+    let (_, chat) = prepare_request(responses, Protocol::OpenAiChat).unwrap();
+    let chat: Value = serde_json::from_slice(&chat).unwrap();
+    assert_eq!(chat["reasoning_effort"], "low");
+    assert_eq!(chat["tools"][0]["function"]["name"], "read");
+    assert!(chat.get("include").is_none());
+    assert!(chat.get("reasoning").is_none());
+
+    let anthropic = anthropic::parse_request_envelope(Bytes::from_static(
+        br#"{"model":"public-model","max_tokens":8192,"stream":true,"system":[{"type":"text","text":"Answer briefly","cache_control":{"type":"ephemeral"}}],"messages":[{"role":"user","content":[{"type":"text","text":"hello","cache_control":{"type":"ephemeral"}}]}],"thinking":{"type":"disabled"},"tools":[{"name":"read","input_schema":{"type":"object","properties":{}},"eager_input_streaming":true,"cache_control":{"type":"ephemeral"}}]}"#,
+    )).unwrap();
+    let (_, native) = prepare_request(anthropic.clone(), Protocol::Anthropic).unwrap();
+    let native: Value = serde_json::from_slice(&native).unwrap();
+    assert_eq!(native["system"][0]["cache_control"]["type"], "ephemeral");
+    assert_eq!(native["tools"][0]["eager_input_streaming"], true);
+    let (_, chat) = prepare_request(anthropic, Protocol::OpenAiChat).unwrap();
+    let chat = parse_request(Protocol::OpenAiChat, &chat);
+    assert_eq!(chat.messages.len(), 2);
+    assert_eq!(chat.tools[0].name, "read");
+    assert!(chat.raw_passthrough().is_none());
+
+    let gemini = gemini::parse_stream_request_envelope(
+        "models/public-model",
+        Bytes::from_static(br#"{"contents":[{"role":"user","parts":[{"text":"hello"}]}],"generationConfig":{"maxOutputTokens":8192,"thinkingConfig":{"includeThoughts":true,"thinkingBudget":-1}}}"#),
+    ).unwrap();
+    let (_, native) = prepare_request(gemini.clone(), Protocol::Gemini).unwrap();
+    let native: Value = serde_json::from_slice(&native).unwrap();
+    assert_eq!(
+        native["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+        -1
+    );
+    assert_eq!(
+        native["generationConfig"]["thinkingConfig"]["includeThoughts"],
+        true
+    );
+    assert!(matches!(
+        prepare_request(gemini, Protocol::OpenAiChat),
+        Err(AfError::InvalidRequest)
+    ));
+}
+
+#[test]
+fn agent_gemini_tool_history_without_ids_converts_to_every_protocol() {
+    let request = gemini::parse_request_envelope(
+        "models/public-model",
+        Bytes::from_static(br#"{"contents":[{"role":"user","parts":[{"text":"Read both files"}]},{"role":"model","parts":[{"functionCall":{"name":"read","args":{"path":"a.txt"}}},{"functionCall":{"name":"read","args":{"path":"b.txt"}}}]},{"role":"user","parts":[{"functionResponse":{"name":"read","response":{"output":"a"}}},{"functionResponse":{"name":"read","response":{"output":"b"}}}]}],"tools":[{"functionDeclarations":[{"name":"read","parametersJsonSchema":{"type":"object","properties":{"path":{"type":"string"}}}}]}],"generationConfig":{"maxOutputTokens":8192}}"#),
+    ).unwrap();
+    for target in PROTOCOLS {
+        let (_, body) = prepare_request(request.clone(), target).unwrap();
+        let parsed = parse_request(target, &body);
+        let [
+            ContentBlock::ToolUse { id: first, .. },
+            ContentBlock::ToolUse { id: second, .. },
+        ] = parsed.messages[1].content.as_slice()
+        else {
+            panic!("expected parallel calls")
+        };
+        assert_ne!(first, second);
+        for (message, id) in parsed.messages[2..].iter().zip([first, second]) {
+            assert!(
+                matches!(&message.content[0], ContentBlock::ToolResult { tool_use_id, .. } if tool_use_id == id)
+            );
+        }
+        assert_eq!(parsed.messages.len(), 4);
     }
 }
 
