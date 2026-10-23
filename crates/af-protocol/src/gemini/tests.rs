@@ -412,6 +412,65 @@ fn rejects_duplicate_keys_at_any_depth() {
 }
 
 #[test]
+fn parses_parallel_results_across_consecutive_user_contents() {
+    let request = parse(json!({
+        "contents": [
+            {"role": "model", "parts": [
+                {"functionCall": {"id": "call_a", "name": "lookup", "args": {}}},
+                {"functionCall": {"id": "call_b", "name": "lookup", "args": {}}}
+            ]},
+            {"role": "user", "parts": [
+                {"functionResponse": {"id": "call_b", "name": "lookup", "response": {"result": "b"}}}
+            ]},
+            {"role": "user", "parts": [
+                {"functionResponse": {"id": "call_a", "name": "lookup", "response": {"result": "a"}}},
+                {"text": "continue"}
+            ]}
+        ]
+    }))
+    .unwrap();
+    assert_eq!(request.messages.len(), 4);
+    for (message, expected) in request.messages[1..3].iter().zip(["call_b", "call_a"]) {
+        assert_eq!(message.role, Role::Tool);
+        assert!(matches!(message.content.as_slice(),
+            [ContentBlock::ToolResult { tool_use_id, .. }] if tool_use_id == expected));
+    }
+    assert_eq!(request.messages[3].role, Role::User);
+    assert!(matches!(request.messages[3].content.as_slice(),
+        [ContentBlock::Text(text)] if text == "continue"));
+}
+
+#[test]
+fn split_parallel_results_still_require_completion_before_content_or_turn_end() {
+    let base = json!({
+        "contents": [
+            {"role": "model", "parts": [
+                {"functionCall": {"id": "call_a", "name": "lookup", "args": {}}},
+                {"functionCall": {"id": "call_b", "name": "lookup", "args": {}}}
+            ]},
+            {"role": "user", "parts": [
+                {"functionResponse": {"id": "call_a", "name": "lookup", "response": {"result": "a"}}}
+            ]}
+        ]
+    });
+    assert_eq!(parse(base.clone()), Err(ParseRequestError::InvalidValue));
+    for interruption in [
+        json!({"role": "user", "parts": [{"text": "continue"}]}),
+        json!({"role": "model", "parts": [{"text": "continue"}]}),
+    ] {
+        let mut body = base.clone();
+        body["contents"].as_array_mut().unwrap().push(interruption);
+        assert_eq!(parse(body), Err(ParseRequestError::InvalidValue));
+    }
+    let mut mixed = base;
+    mixed["contents"][1]["parts"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"text": "continue"}));
+    assert_eq!(parse(mixed), Err(ParseRequestError::InvalidValue));
+}
+
+#[test]
 fn validates_model_resource_and_rejects_body_model() {
     let body = serde_json::to_vec(&minimal_body()).unwrap();
     for invalid in [

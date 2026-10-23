@@ -437,9 +437,8 @@ fn convert_user_content(
             regular.push(convert_regular_part(part, Role::User, state)?);
         }
     }
-    if !state.pending_tool_calls.is_empty() {
-        return Err(ParseRequestError::InvalidValue);
-    }
+    // Parallel responses may span consecutive user contents. Regular parts
+    // above, model turns and EOF still require all pending calls to be resolved.
     if !regular.is_empty() {
         messages.push(Message::new(Role::User, regular));
     }
