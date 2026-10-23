@@ -142,7 +142,7 @@ symphonia = { version = "0.5.5", default-features = false, features = [
 thiserror = "2.0.18"
 tiktoken-rs = { version = "0.12.0", default-features = false }
 time = { version = "0.3.55", default-features = false, features = ["std", "parsing"] }
-tokio = { version = "1.53.0", features = [
+tokio = { version = "1.53.3", features = [
     "macros",
     "net",
     "io-util",
