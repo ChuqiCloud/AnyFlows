@@ -10,7 +10,9 @@ pub(super) fn defaults(
     let file = match File::open(path) {
         Ok(file) if file.metadata().map_err(|_| "env_file_read")?.is_file() => file,
         Ok(_) => return Err("env_file_read"),
-        Err(error) if explicit.is_none() && error.kind() == ErrorKind::NotFound => return Ok(vec![]),
+        Err(error) if explicit.is_none() && error.kind() == ErrorKind::NotFound => {
+            return Ok(vec![]);
+        }
         Err(_) => return Err("env_file_read"),
     };
     let mut entries = Vec::new();
@@ -41,7 +43,8 @@ mod tests {
     use super::*;
 
     fn directory() -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!("af-launcher-env-test-{}", uuid::Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("af-launcher-env-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&path).unwrap();
         path
     }
@@ -54,7 +57,11 @@ mod tests {
             defaults(&root, Some(&root.join("missing"))),
             Err("env_file_read")
         );
-        std::fs::write(root.join(".env"), "AF_TEST='quoted value'\nAF_TEST=ignored\n").unwrap();
+        std::fs::write(
+            root.join(".env"),
+            "AF_TEST='quoted value'\nAF_TEST=ignored\n",
+        )
+        .unwrap();
         assert_eq!(
             defaults(&root, None).unwrap(),
             vec![("AF_TEST".to_owned(), "quoted value".to_owned())]

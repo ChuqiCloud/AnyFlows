@@ -229,6 +229,7 @@ jobs:
           printf '%s\n' '#!/bin/sh' 'exit 0' \
             | sudo tee /usr/local/libexec/anyflows/anyflows >/dev/null
           sudo chmod 0755 /usr/local/libexec/anyflows/anyflows
+          sudo cp /usr/local/libexec/anyflows/anyflows /usr/local/libexec/anyflows/anyflows-launcher
           systemd-analyze verify scripts/systemd/anyflows.service
 
       - name: Verify release archive includes systemd assets

@@ -180,8 +180,10 @@ impl Settings {
 
 impl Supervisor {
     async fn new(mut settings: Settings) -> Result<Self, &'static str> {
-        settings.environment =
-            environment::defaults(&settings.working_directory, settings.env_file.as_deref())?;
+        if !settings.select_only {
+            settings.environment =
+                environment::defaults(&settings.working_directory, settings.env_file.as_deref())?;
+        }
         fs::create_dir_all(&settings.state).map_err(|_| "state_directory")?;
         settings.state = settings
             .state
