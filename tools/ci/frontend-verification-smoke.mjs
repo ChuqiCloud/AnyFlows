@@ -336,7 +336,7 @@ try {
   let software = { edition: 'community', version: '0.3.0', core_version: '0.3.0', commit: 'a'.repeat(40), build_time: '2026-10-24T00:00:00Z', target: 'x86_64-unknown-linux-gnu', deployment: 'binary', node_id: 'node-fixture', check_enabled: true, install_enabled: true, install_blocked_reason: null, restart_required: false, checked_at: null, latest: null, update_available: false }
   let softwareChecks = 0
   let softwareInstalls = 0
-  await page.route('**/api/admin/software*', async (route) => {
+  await page.route((url) => url.pathname.startsWith('/api/admin/software'), async (route) => {
     const path = new URL(route.request().url()).pathname
     if (path.endsWith('/check')) {
       softwareChecks += 1
