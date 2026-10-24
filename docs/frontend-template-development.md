@@ -1,12 +1,14 @@
-# 前端模板
+# 前端模板与扩展
 
-AnyFlows 同时内置 Classic 和 Next。管理员可在模板设置中预览、搜索、分页查看并切换模板，不需要更换后端或数据库。内置预览是布局示意图，外部模板预览由模板作者提供。
+AnyFlows 内置 Classic 和 Next。静态模板可在运行时切换，源码扩展随前端构建装配。接口定义及客户端生成见 [贡献指南](../CONTRIBUTING.md)。
 
-外部模板是完整的静态前端产物。服务扫描、校验后将资源读入内存，启用后从站点根路径提供；服务器不执行模板中的脚本。浏览器会执行模板的 JavaScript，因此只安装可信来源的模板。
+## 静态模板
 
-## 构建和目录
+模板是可独立构建的完整静态站点。后端校验资源并读入内存，启用后从站点根路径提供；JavaScript 在浏览器执行，应使用可信来源。
 
-模板需能独立构建，不依赖运行中的后端或数据库。将构建输出的内容放入运行目录下的 `public/templates/<id>/`：
+### 目录与元数据
+
+将 `dist/` 内的构建产物直接放入运行目录下的 `public/templates/<id>/`，不包含源码、依赖或环境密钥：
 
 ```text
 public/templates/dark-console/
@@ -18,7 +20,7 @@ public/templates/dark-console/
     └── app-<hash>.css
 ```
 
-复制 `dist/` 内的文件，不要再套一层 `dist/`，也不要复制源码、依赖或环境密钥。元数据示例：
+`template.json` 示例：
 
 ```json
 {
@@ -28,50 +30,65 @@ public/templates/dark-console/
   "version": "1.0.0",
   "api_contract": "0.2",
   "entry": "index.html",
-  "description": "深色控制台",
-  "author": "Template Team",
   "preview": "preview.png"
 }
 ```
 
-`api_contract` 应声明模板实际兼容的后端契约，示例值不代替发布前验证。
-
 | 字段或内容 | 要求 |
 | --- | --- |
-| `schema_version` | 固定为 1，拒绝未知字段 |
-| `id` | 与目录名一致，最多 64 个 ASCII 小写字母、数字、`-` 或 `_` |
-| 保留 ID | 外部模板不能使用 `embedded`、`embedded-next` |
-| `name`、`version`、`api_contract` | 非空短文本，无控制字符 |
-| `entry` | 固定为 `index.html`，且文件存在 |
-| `description` / `author` | 可选，分别最多 1000 / 160 字节，无控制字符 |
+| `schema_version` | 固定为 1，不接受未知字段 |
+| `id` | 与目录名一致，最多 64 个 ASCII 小写字母、数字、`-` 或 `_`；保留 `embedded`、`embedded-next` |
+| `name` | 非空，最多 160 字节，无控制字符 |
+| `version`、`api_contract` | 非空，各最多 64 字节，无控制字符；契约声明需通过兼容验证 |
+| `entry` | 固定为 `index.html`，文件须存在 |
+| `description`、`author` | 可选，分别最多 1000、160 字节，无控制字符 |
 | `preview` | 可选的本地相对 PNG、JPEG、WebP，最多 2 MiB，签名与格式一致 |
-| 资源 | 单文件最多 8 MiB，整套最多 64 MiB，最多 4096 个文件 |
-| `template.json` | 最多 64 KiB |
+| 资源 | 单文件最多 8 MiB，合计最多 64 MiB、4096 个文件；元数据最多 64 KiB |
 
-目录穿越、符号链接、特殊文件、远程预览地址和 HTML/SVG 预览均被拒绝。声明的预览文件无效时，模板不能启用。资源必须完整，缺失文件返回 404，不从内置前端补齐。
+目录穿越、符号链接、特殊文件、远程预览和 HTML/SVG 预览会被拒绝。声明的预览无效时不能启用模板；缺失资源返回 404。
 
-## 扫描与切换
+### 安装与切换
 
-默认模板路径是相对运行目录的 `public/templates`，可通过 `AF_SERVER__FRONTEND_TEMPLATE_DIRECTORY` 覆盖，仍须使用运行目录内的相对路径。
+`AF_SERVER__FRONTEND_TEMPLATE_DIRECTORY` 可指定运行目录内的其他相对路径。systemd 默认模板位置是 `/var/lib/anyflows/public/templates`，需授予 `anyflows` 用户读取权限；Docker 默认挂载到 `/app/public/templates`。多节点使用相同模板。
 
-systemd 的运行目录是 `/var/lib/anyflows`，默认外部模板因此放在 `/var/lib/anyflows/public/templates/<id>/`，并确保 `anyflows` 用户可读。Docker 需把目录挂载到容器工作目录对应位置。多节点需分发相同模板。
+复制后在后台重新扫描、预览并启用。扫描创建内存快照，更新磁盘文件后需再次扫描。选择保存到数据库，重启后恢复；切换后页面刷新。
 
-复制完成后在后台重新扫描，再预览并启用。扫描会生成资源内存快照，直接修改磁盘文件不会自动刷新；更新后再次扫描。选择保存到数据库，重启后恢复。
+`embedded` 和空值选择 Classic，`embedded-next` 选择 Next。外部模板缺失或损坏时，重新扫描后回退 Classic；修复后可重新选择。
 
-`embedded` 选择 Classic，`embedded-next` 选择 Next；空值保持 Classic 回退语义。已选外部模板损坏或消失时，重新扫描会回退 Classic；修复后重新扫描和选择。切换后页面刷新，不中断进行中的 API 请求。
+### 接口与缓存
 
-模板资源使用 `/assets/...` 等根路径。`/api`、`/v1`、`/healthz`、`/readyz`、`/metrics` 始终由后端处理，不回退到模板 HTML。
+接口以对应版本的 [OpenAPI](../web/openapi/openapi.json) 为准，在线说明位于 `/api`。服务不提供 `/openapi.json`、Swagger UI 或 ReDoc。
 
-## 接口和缓存
+资源使用 `/assets/...` 等根路径。`/api/...`、`/v1`、`/healthz`、`/readyz`、`/metrics` 及子路径由后端处理，不回退到模板 HTML。跨域构建使用 `VITE_API_BASE_URL`，后端需配置对应 CORS Origin；构建变量不得包含生产密钥。
 
-以相同后端版本的 [OpenAPI 文件](../web/openapi/openapi.json) 为准。服务没有直接提供 `/openapi.json`、Swagger UI 或 ReDoc 路由；在线查阅可使用 `/api` 页面。
+`assets/` 使用一年 immutable 缓存，HTML 等入口重新验证。更新 JS/CSS 时使用新的内容哈希文件名并更新入口引用。
 
-同源请求使用 `/api/...`、`/v1/...`。使用本仓前端工程构建跨域版本时，设置 `VITE_API_BASE_URL`，并在后端配置对应 CORS Origin。不要把生产密钥写入构建变量。
+## 构建扩展
 
-`assets/` 资源使用一年 immutable 缓存，HTML 等入口重新验证。每次发布改变 JS/CSS 的内容哈希文件名并更新入口引用，避免覆盖同名资源后浏览器继续读旧内容。
+Classic 和 Next 从各自的 `src/extensions/modules/*/index.ts` 加载 `ConsoleExtension`。模块声明唯一 ID、翻译资源及懒加载路由，接口见 [`registry.ts`](../web/src/extensions/registry.ts) 和 [`model.ts`](../web/src/extensions/model.ts)。发行仓库装配模块、合并 OpenAPI、生成客户端并构建两套前端；私有源码和生成契约不提交到社区仓库。
 
-开发内置前端和生成客户端的方法见 [贡献指南](../CONTRIBUTING.md)。源码扩展模块与静态模板是不同机制，见 [前端扩展](frontend-extensions.md)。
+### 路由与权限
+
+- 路径位于 `/console/extensions/<name>` 且唯一，声明 `user` 或 `admin` 角色及至少一个必需能力。
+- `GET /api/extensions` 返回所需全部能力后显示导航；直接访问需处理加载、失败及能力缺失。后端独立校验身份、归属和权限。
+- `navigation` 可配置分组 ID、翻译标题、图标和排序。宿主按角色及能力过滤后分组，未声明时使用默认分组。
+- 用户路由可声明唯一的 `entryPoint: 'account-verification'`，作为实名认证完成后的入口；能力缺失时隐藏。
+
+Classic 使用 hash 路由，Next 使用浏览器路由。扩展复用宿主的初始化、会话、API 客户端和查询缓存，页面分别适配两套主题。
+
+### 登录扩展
+
+`loginMethods` 声明模块内唯一的方法 ID、翻译标签、图标和懒加载表单。宿主提供返回操作及注册开放状态。回调方法实现 `exchangeTicket`，返回 `LoginResponse` 后由宿主建立会话：
+
+```text
+/#/oauth/callback?method=<module>:<method>&ticket=<ticket>
+```
+
+Next 同时支持该 fragment 和浏览器回调路由。宿主清除回调参数后兑换 ticket，其他有效的单值参数传给对应方法；未知或重复方法被拒绝。扩展复用宿主会话存储，ticket、受保护响应和凭据不得写入查询缓存或浏览器持久化存储。
 
 ## 发布前检查
 
-确认登录、退出、模型列表、控制台和 Playground 可用；直接刷新控制台深链接仍可加载。检查移动端布局、请求失败、权限不足、流式响应、资源缓存与 404。最后验证模板扫描、切换、重启恢复和损坏回退。
+- 登录、退出、模型列表、控制台、Playground 及流式响应。
+- 深链接刷新、移动端布局、空数据、请求失败和权限不足状态。
+- 模板扫描、预览、切换、重启恢复、损坏回退、资源缓存及 404。
+- 扩展角色、能力过滤、直接访问、登录回调及双前端共享契约。
