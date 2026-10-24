@@ -158,12 +158,14 @@ fn both_compaction_sse_forms_preserve_native_state_and_usage() {
             stream.extend(frame(json!({"type":"content_block_stop","index":0})));
             stream.extend(frame(json!({"type":"message_delta", "delta":{"stop_reason":"compaction","stop_sequence":null},"usage":final_usage})));
             stream.extend(frame(json!({"type":"message_stop"})));
+            stream.extend_from_slice(b": keep-alive\n\n");
             let mut decoder = AnthropicMessagesStreamDecoder::new();
             let mut events = Vec::new();
             for chunk in stream.chunks(7) {
                 events.extend(decoder.push(chunk).unwrap());
             }
             decoder.finish().unwrap();
+            assert!(matches!(events.last(), Some(Event::StreamEnd)));
             assert_eq!(decoder.billing_usage().unwrap().input_tokens().get(), 92);
             assert_eq!(decoder.billing_usage().unwrap().output_tokens().get(), 7);
             assert!(events.iter().any(|event| matches!(event, Event::AnthropicCompactionEnd{item,..} if item.as_value() == &block)));
@@ -183,6 +185,67 @@ fn both_compaction_sse_forms_preserve_native_state_and_usage() {
             assert!(events.iter().any(|event| matches!(event, Event::AnthropicCompactionEnd{item,..} if item.as_value() == &block)));
             assert!(events.iter().any(|event| matches!(event, Event::AnthropicUsageMetadata{raw} if raw["iterations"] == iterations())));
             assert_eq!(replay.billing_usage(), decoder.billing_usage());
+        }
+    }
+}
+
+#[test]
+fn terminal_sse_accepts_only_comment_heartbeats_without_appending_canonical_events() {
+    let mut initial_usage = usage();
+    initial_usage["output_tokens"] = json!(0);
+    let mut final_usage = usage();
+    final_usage["iterations"] = iterations();
+    for terminal_stream in [
+        compaction_stream_with_usage(initial_usage, final_usage),
+        frame(json!({"type":"error", "error":{"type":"overloaded_error","message":"unavailable"}})),
+    ] {
+        let mut baseline = AnthropicMessagesStreamDecoder::new();
+        let expected = baseline.push(&terminal_stream).unwrap();
+        baseline.finish().unwrap();
+        let mut wire = terminal_stream;
+        // 包含空行、各种 SSE 换行及跨字节分片的 UTF-8 注释。
+        wire.extend_from_slice("\n\r\n: keep-alive\n\n: 心跳\r\n\r\n\r\r".as_bytes());
+        for chunk_size in [1, 7, wire.len()] {
+            let mut decoder = AnthropicMessagesStreamDecoder::new();
+            let mut events = Vec::new();
+            for chunk in wire.chunks(chunk_size) {
+                events.extend(decoder.push(chunk).unwrap());
+            }
+            decoder.finish().unwrap();
+            assert_eq!(events, expected);
+            assert_eq!(decoder.initial_usage(), baseline.initial_usage());
+            assert_eq!(decoder.billing_usage(), baseline.billing_usage());
+        }
+    }
+
+    let mut decoder = AnthropicMessagesStreamDecoder::new();
+    assert_eq!(decoder.push(b": keep-alive\n\n").unwrap(), [Event::Ping]);
+}
+
+#[test]
+fn terminal_sse_rejects_data_even_when_mixed_with_comment_heartbeats() {
+    let mut initial_usage = usage();
+    initial_usage["output_tokens"] = json!(0);
+    let terminal_stream = compaction_stream_with_usage(initial_usage, usage());
+    for trailing in [
+        frame(json!({"type":"ping"})),
+        frame(json!({"type":"message_stop"})),
+        b"data:\n\n".to_vec(),
+        b": keep-alive\nevent: ping\ndata: {\"type\":\"ping\"}\n\n".to_vec(),
+        b": keep-alive\n\nevent: ping\ndata: {\"type\":\"ping\"}\n\n".to_vec(),
+    ] {
+        let wire = [terminal_stream.as_slice(), trailing.as_slice()].concat();
+        for chunk_size in [1, 7, wire.len()] {
+            let mut decoder = AnthropicMessagesStreamDecoder::new();
+            let error = wire
+                .chunks(chunk_size)
+                .find_map(|chunk| decoder.push(chunk).err());
+            assert_eq!(error, Some(ParseStreamError::DataAfterDone));
+            assert_eq!(
+                decoder.push(b": keep-alive\n\n"),
+                Err(ParseStreamError::DecoderFailed)
+            );
+            assert_eq!(decoder.finish(), Err(ParseStreamError::DecoderFailed));
         }
     }
 }

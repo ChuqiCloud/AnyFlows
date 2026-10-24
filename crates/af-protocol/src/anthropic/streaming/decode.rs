@@ -140,12 +140,16 @@ impl AnthropicMessagesStreamDecoder {
         frame: SseEvent,
         output: &mut Vec<CanonicalStreamEvent>,
     ) -> Result<(), ParseStreamError> {
+        if frame.is_comment() {
+            // SSE 传输心跳可晚于逻辑终点；仍由 parser 验证 framing、UTF-8 和预算。
+            // 终态后忽略纯注释，避免在 Canonical 终止事件后追加 Ping。
+            if !self.done {
+                output.push(CanonicalStreamEvent::Ping);
+            }
+            return Ok(());
+        }
         if self.done {
             return Err(ParseStreamError::DataAfterDone);
-        }
-        if frame.is_comment() {
-            output.push(CanonicalStreamEvent::Ping);
-            return Ok(());
         }
 
         let value =

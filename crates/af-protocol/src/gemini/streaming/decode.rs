@@ -120,6 +120,9 @@ impl GeminiGenerateContentStreamDecoder {
         output: &mut Vec<CanonicalStreamEvent>,
     ) -> Result<(), ParseStreamError> {
         if self.done {
+            if frame.is_comment() {
+                return Ok(());
+            }
             return Err(ParseStreamError::DataAfterDone);
         }
         if frame.is_comment() {

@@ -351,6 +351,10 @@ async fn assert_native_compaction_sse(content: Value) {
             .unwrap()
             .starts_with("text/event-stream")
     );
+    assert_eq!(
+        compaction_billing_summary(&database).await,
+        (1, 112, 7, 2, 2, 3)
+    );
     let body = decode_http_response_body(&response);
     let mut decoder = AnthropicMessagesStreamDecoder::new();
     let mut events = Vec::new();
@@ -403,10 +407,6 @@ async fn assert_native_compaction_sse(content: Value) {
         .find(|event| event["type"] == "message_delta")
         .unwrap();
     assert_public_compaction_usage(&final_delta["usage"]);
-    assert_eq!(
-        compaction_billing_summary(&database).await,
-        (1, 112, 7, 2, 2, 3)
-    );
 }
 
 fn assert_compaction_sse_fixture(body: &[u8], block: &Value) {
