@@ -19,7 +19,7 @@ concurrency:
 jobs:
   propose:
     if: >-
-      github.repository == 'ChuqiCloud/AnyFlows' &&
+      github.server_url == 'https://github.com' && github.repository == 'ChuqiCloud/AnyFlows' &&
       github.event_name == 'pull_request_target' &&
       github.event.pull_request.merged == true &&
       github.event.pull_request.base.ref == 'main' &&
@@ -27,8 +27,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      GITEA_BASE_URL: https://gitea.acmecloud.cn
-      GITEA_REPOSITORY: acmecloud/AnyFlows
+      GITEA_BASE_URL: ${{ secrets.GITEA_BASE_URL }}
+      GITEA_REPOSITORY: ${{ secrets.GITEA_REPOSITORY }}
       GITEA_TARGET_BRANCH: develop
       GITEA_USERNAME: ${{ secrets.GITEA_SYNC_USERNAME }}
       GITEA_TOKEN: ${{ secrets.GITEA_SYNC_TOKEN }}
@@ -41,6 +41,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test -n "$GITEA_BASE_URL" || { echo 'GITEA_BASE_URL is not configured' >&2; exit 1; }
+          test -n "$GITEA_REPOSITORY" || { echo 'GITEA_REPOSITORY is not configured' >&2; exit 1; }
           test -n "$GITEA_USERNAME" || { echo 'GITEA_SYNC_USERNAME is not configured' >&2; exit 1; }
           test -n "$GITEA_TOKEN" || { echo 'GITEA_SYNC_TOKEN is not configured' >&2; exit 1; }
 
@@ -227,7 +229,7 @@ jobs:
   mirror-comment:
     needs: propose
     if: >-
-      always() && github.repository == 'ChuqiCloud/AnyFlows' &&
+      always() && github.server_url == 'https://github.com' && github.repository == 'ChuqiCloud/AnyFlows' &&
       (needs.propose.result == 'success' || needs.propose.result == 'skipped') &&
       ((github.event_name == 'issue_comment' && github.event.issue.pull_request != null &&
         github.event.comment.user.type != 'Bot' &&
@@ -236,8 +238,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
-      GITEA_BASE_URL: https://gitea.acmecloud.cn
-      GITEA_REPOSITORY: acmecloud/AnyFlows
+      GITEA_BASE_URL: ${{ secrets.GITEA_BASE_URL }}
+      GITEA_REPOSITORY: ${{ secrets.GITEA_REPOSITORY }}
       GITEA_SYNC_USERNAME: ${{ secrets.GITEA_SYNC_USERNAME }}
       GITEA_TOKEN: ${{ secrets.GITEA_SYNC_TOKEN }}
       GITHUB_TOKEN: ${{ github.token }}
@@ -257,6 +259,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test -n "$GITEA_BASE_URL" || { echo 'GITEA_BASE_URL is not configured' >&2; exit 1; }
+          test -n "$GITEA_REPOSITORY" || { echo 'GITEA_REPOSITORY is not configured' >&2; exit 1; }
           test -n "$GITEA_SYNC_USERNAME" || { echo 'GITEA_SYNC_USERNAME is not configured' >&2; exit 1; }
           test -n "$GITEA_TOKEN" || { echo 'GITEA_SYNC_TOKEN is not configured' >&2; exit 1; }
 

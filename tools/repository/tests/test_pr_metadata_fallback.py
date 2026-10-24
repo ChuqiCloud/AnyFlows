@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -26,6 +27,28 @@ def workflow_script(name, step):
 
 
 class MetadataFallbackTests(unittest.TestCase):
+    def test_public_renderer_writes_location_free_v2_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            metadata = Path(directory) / "source.json"
+            metadata.write_text(json.dumps({
+                "number": 17, "mergeCommitSha": SHA,
+                "title": "修复 source/project",
+                "body": "参见 [修复说明](https://example.test/source/project/pulls/17)。",
+            }), encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(ROOT / "tools/repository/sync-gitea-pr-comments.py"),
+                 "--render-metadata", str(metadata)],
+                env={**os.environ, "GITEA_REPOSITORY": "source/project",
+                     "GITEA_SOURCE_REPOSITORY_URL": "https://example.test/source/project"},
+                capture_output=True, text=True, encoding="utf-8",
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            rendered = json.loads(result.stdout)
+            self.assertEqual(rendered["title"], "修复 来源仓库")
+            self.assertEqual(rendered["body"], f"参见 修复说明。\n\n<!-- anyflows-pr-source:v2:17:{SHA} -->")
+            self.assertNotIn("example.test", result.stdout)
+            self.assertNotIn("source/project", result.stdout)
+
     def run_metadata(self, direction, response, http_exit=0):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -49,8 +72,8 @@ class MetadataFallbackTests(unittest.TestCase):
                 "MOCK_RESPONSE_FILE": str(response_file),
                 "MOCK_HTTP_EXIT": str(http_exit),
                 "GITEA_COMMIT": SHA,
-                "GITEA_API_BASE": "https://gitea.invalid/api/v1",
-                "GITEA_REPOSITORY": "acmecloud/AnyFlows",
+                "GITEA_API_BASE": "https://example.test/api/v1",
+                "GITEA_REPOSITORY": "source/project",
                 "GITEA_API_TOKEN": "test-token",
                 "GITHUB_TOKEN": "test-token",
                 "PUBLIC_PR_NUMBER": "322",
@@ -82,7 +105,7 @@ class MetadataFallbackTests(unittest.TestCase):
     def valid_response(self):
         return {
             "number": 322, "title": "Source title", "body": BODY,
-            "html_url": "https://gitea.invalid/pulls/322",
+            "html_url": "https://example.test/pulls/322",
             "merged": True, "merge_commit_sha": SHA, "base": {"ref": "develop"},
         }
 
@@ -99,7 +122,7 @@ class MetadataFallbackTests(unittest.TestCase):
             for response, status in (("", 22), ("", 28), ("not JSON", 0), ("{}", 0), ("null", 0)):
                 with self.subTest(direction=direction, response=response, status=status):
                     metadata, output = self.run_metadata(direction, response, status)
-                    expected_title = ("同步 Gitea 公共核心" if direction == "gitea"
+                    expected_title = ("同步公共核心" if direction == "gitea"
                                       else "同步 GitHub 公共核心变更 #322")
                     self.assertEqual(metadata["title"], expected_title)
                     self.assertEqual(metadata["body"], "")
@@ -135,11 +158,11 @@ class MetadataFallbackTests(unittest.TestCase):
             existing_file = root / "existing.json"
             existing_file.write_text(json.dumps([{
                 "number": 42,
-                "body": "<!-- anyflows-pr-source:gitea:acmecloud/AnyFlows:321:"
+                "body": "<!-- anyflows-pr-source:gitea:source/project:321:"
                         + "b" * 40 + " -->",
             }]), encoding="utf-8")
             (root / "source-pr-metadata.json").write_text(json.dumps({
-                "title": "同步 Gitea 公共核心", "body": "", "url": "",
+                "title": "同步公共核心", "body": "", "url": "",
                 "number": None, "mergeCommitSha": "",
             }), encoding="utf-8")
             curl = binaries / "curl"
@@ -167,12 +190,18 @@ class MetadataFallbackTests(unittest.TestCase):
                 "MOCK_PAYLOAD_FILE": str(payload_file),
                 "MOCK_EXISTING_FILE": str(existing_file),
                 "GITEA_COMMIT": SHA,
-                "GITEA_REPOSITORY": "acmecloud/AnyFlows",
-                "GITEA_SOURCE_REPOSITORY_URL": "https://gitea.invalid/acmecloud/AnyFlows",
+                "GITEA_REPOSITORY": "source/project",
+                "GITEA_SOURCE_REPOSITORY_URL": "https://example.test/source/project",
                 "GITHUB_PUBLIC_REPOSITORY": "ChuqiCloud/AnyFlows",
                 "GITHUB_PUBLIC_BRANCH": "main",
                 "PUBLIC_REPO_SYNC_TOKEN": "test-token",
             }
+            renderer = root / "gitea-source/tools/repository/sync-gitea-pr-comments.py"
+            renderer.parent.mkdir(parents=True)
+            renderer.write_text(
+                (ROOT / "tools/repository/sync-gitea-pr-comments.py").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
             script = workflow_script("export-public-core.yml", "Create or reuse GitHub pull request")
             script = script.replace("${{ steps.branch.outputs.export_branch }}",
                                     "sync/gitea-public-core")
@@ -180,7 +209,7 @@ class MetadataFallbackTests(unittest.TestCase):
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             payload = json.loads(payload_file.read_text(encoding="utf-8"))
-            self.assertEqual(payload["title"], "同步 Gitea 公共核心")
+            self.assertEqual(payload["title"], "同步公共核心")
             self.assertEqual(payload["body"], "")
             self.assertNotIn("anyflows-pr-source", payload["body"])
 
@@ -204,8 +233,8 @@ class GiteaDiscussionEligibilityTests(unittest.TestCase):
                 **os.environ,
                 "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
                 "GITHUB_OUTPUT": str(root / "outputs"),
-                "GITEA_API_BASE": "http://gitea.internal:3000/api/v1",
-                "GITEA_REPOSITORY": "acmecloud/AnyFlows",
+                "GITEA_API_BASE": "http://source.internal:3000/api/v1",
+                "GITEA_REPOSITORY": "source/project",
                 "GITEA_API_TOKEN": "test-token",
                 "GITEA_PR_NUMBER": pr_number,
                 "MOCK_RESPONSE_FILE": str(root / "response.json"),
@@ -243,7 +272,7 @@ class GiteaDiscussionEligibilityTests(unittest.TestCase):
                 result, output, arguments = self.run_eligibility(json.dumps({**source, **override}))
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(output, f"eligible={eligible}\n")
-                self.assertIn("http://gitea.internal:3000/api/v1/repos/acmecloud/AnyFlows/pulls/322", arguments)
+                self.assertIn("http://source.internal:3000/api/v1/repos/source/project/pulls/322", arguments)
                 self.assertIn("Authorization: token test-token", arguments)
 
     def test_api_failure_is_not_treated_as_ineligible(self):

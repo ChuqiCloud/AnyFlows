@@ -14,7 +14,7 @@ SPEC.loader.exec_module(SYNC)
 
 SHA = "a" * 40
 PUBLIC_REPOSITORY = "ChuqiCloud/AnyFlows"
-PRIVATE_REPOSITORY = "acmecloud/AnyFlows"
+PRIVATE_REPOSITORY = "source/project"
 SYNC_USERNAME = "sync-bot"
 
 
@@ -53,14 +53,14 @@ class GiteaApi:
         self.requests.append((method, path, body))
         if method == "GET" and path == "/user":
             return {"login": SYNC_USERNAME}
-        if method == "DELETE" and path.startswith("/repos/acmecloud/AnyFlows/issues/comments/"):
+        if method == "DELETE" and path.startswith("/repos/source/project/issues/comments/"):
             self.comments.pop(int(path.rsplit("/", 1)[1]), None)
             return None
-        if method == "PATCH" and path.startswith("/repos/acmecloud/AnyFlows/issues/comments/"):
+        if method == "PATCH" and path.startswith("/repos/source/project/issues/comments/"):
             comment = self.comments[int(path.rsplit("/", 1)[1])]
             comment.update(body)
             return comment
-        if method == "POST" and path == "/repos/acmecloud/AnyFlows/issues/55/comments":
+        if method == "POST" and path == "/repos/source/project/issues/55/comments":
             comment = {"id": self.next_id, "user": {"login": SYNC_USERNAME}, **body}
             self.next_id += 1
             self.comments[comment["id"]] = comment
@@ -68,13 +68,13 @@ class GiteaApi:
         raise AssertionError(f"Unexpected Gitea request: {method} {path}")
 
     def pages(self, path, size_parameter, size):
-        if path == "/repos/acmecloud/AnyFlows/pulls?state=all":
+        if path == "/repos/source/project/pulls?state=all":
             return [{
                 "number": 55,
                 "head": {"ref": f"sync/github-pr-42-{SHA}"},
                 "base": {"ref": "develop"},
             }]
-        if path == "/repos/acmecloud/AnyFlows/issues/55/comments":
+        if path == "/repos/source/project/issues/55/comments":
             return list(self.comments.values())
         raise AssertionError(f"Unexpected Gitea page request: {path}")
 
@@ -144,6 +144,27 @@ class CommentSyncTests(unittest.TestCase):
         pr["body"] = pr["body"].replace(source_sha, "c" * 40)
         with self.assertRaisesRegex(SYNC.SyncError, "does not match"):
             SYNC.find_target(PrivatePull(), PRIVATE_REPOSITORY, pr, PUBLIC_REPOSITORY)
+
+    def test_v2_export_marker_keeps_merge_and_repository_guards(self):
+        source_sha = "b" * 40
+        pr = {
+            "number": 90,
+            "base": {"ref": "main"},
+            "head": {"ref": SYNC.EXPORT_BRANCH, "repo": {"full_name": PUBLIC_REPOSITORY}},
+            "body": f"Export details\n\n<!-- anyflows-pr-source:v2:17:{source_sha} -->",
+        }
+
+        class PrivatePull:
+            def request(self, method, path):
+                return {"number": 17, "merged": True, "merge_commit_sha": source_sha,
+                        "base": {"ref": "develop"}}
+
+        self.assertEqual(SYNC.find_target(PrivatePull(), PRIVATE_REPOSITORY, pr, PUBLIC_REPOSITORY), 17)
+        pr["head"]["repo"]["full_name"] = "fork/project"
+        self.assertIsNone(SYNC.find_target(PrivatePull(), PRIVATE_REPOSITORY, pr, PUBLIC_REPOSITORY))
+        pr["head"]["repo"]["full_name"] = PUBLIC_REPOSITORY
+        pr["body"] += "\nUnrelated text"
+        self.assertIsNone(SYNC.find_target(PrivatePull(), PRIVATE_REPOSITORY, pr, PUBLIC_REPOSITORY))
 
     def test_reconcile_updates_adds_and_removes_only_owned_mirrors(self):
         existing = [

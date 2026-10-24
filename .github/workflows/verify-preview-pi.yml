@@ -20,15 +20,12 @@ jobs:
     steps:
       - name: Check out acceptance scripts
         env:
-          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          SOURCE_URL: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL || github.server_url }}/${{ github.repository }}.git
           SOURCE_SHA: ${{ github.sha }}
           SOURCE_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           repository_url="$SOURCE_URL"
-          if [[ "$repository_url" == http://gitea_cps3:* ]]; then
-            repository_url="https://gitea.acmecloud.cn/${{ github.repository }}.git"
-          fi
           auth="$(printf 'x-access-token:%s' "$SOURCE_TOKEN" | base64 -w0)"
           git init .
           git remote add origin "$repository_url"
@@ -37,7 +34,7 @@ jobs:
 
       - name: Download and verify the matching preview binary
         env:
-          SOURCE_API: ${{ github.api_url }}
+          SOURCE_API: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL && format('{0}/api/v1', vars.SOURCE_BASE_URL) || github.api_url }}
           SOURCE_REPOSITORY: ${{ github.repository }}
           SOURCE_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ github.sha }}
@@ -46,7 +43,6 @@ jobs:
           set -euo pipefail
           [[ "$PREVIEW_RUN" =~ ^[1-9][0-9]*$ ]]
           api="$SOURCE_API"
-          if [[ "$api" == http://gitea_cps3:* ]]; then api='https://gitea.acmecloud.cn/api/v1'; fi
           repo="$api/repos/$SOURCE_REPOSITORY"
           mkdir preview
           curl --silent --show-error --fail --user "x-access-token:$SOURCE_TOKEN" "$repo/actions/runs/$PREVIEW_RUN" > preview/run.json

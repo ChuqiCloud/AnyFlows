@@ -20,7 +20,6 @@ hmac.workspace = true
 hickory-resolver.workspace = true
 jsonwebtoken.workspace = true
 quick-xml.workspace = true
-saml-rs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

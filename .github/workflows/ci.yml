@@ -42,12 +42,15 @@ jobs:
       deployment: ${{ steps.paths.outputs.deployment }}
       systemd: ${{ steps.paths.outputs.systemd }}
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Detect changed paths
         id: paths
@@ -239,12 +242,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
@@ -316,12 +322,15 @@ jobs:
       matrix:
         frontend: [web, web-next]
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
@@ -380,12 +389,15 @@ jobs:
       # 多代码生成单元降低大型测试 crate 的编译峰值，链接器按需重读符号表以换取更低内存。
       RUSTFLAGS: "-C link-arg=-Wl,--no-keep-memory"
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
@@ -507,12 +519,15 @@ jobs:
           --health-timeout 5s
           --health-retries 30
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
@@ -565,12 +580,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
@@ -632,12 +650,15 @@ jobs:
       # 数据库冒烟会链接 af-db 测试二进制，受限 runner 通过按需重读符号表控制链接峰值内存。
       RUSTFLAGS: "-C link-arg=-Wl,--no-keep-memory"
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
@@ -706,12 +727,15 @@ jobs:
           --health-timeout 5s
           --health-retries 30
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
@@ -790,12 +814,15 @@ jobs:
           --health-timeout 5s
           --health-retries 30
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
@@ -850,12 +877,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
