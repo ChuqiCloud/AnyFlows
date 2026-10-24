@@ -65,7 +65,7 @@ public/templates/dark-console/
 
 ## 构建扩展
 
-Classic 和 Next 从各自的 `src/extensions/modules/*/index.ts` 加载 `ConsoleExtension`。模块声明唯一 ID、翻译资源及懒加载路由，接口见 [`registry.ts`](../web/src/extensions/registry.ts) 和 [`model.ts`](../web/src/extensions/model.ts)。发行仓库装配模块、合并 OpenAPI、生成客户端并构建两套前端；私有源码和生成契约不提交到社区仓库。
+Classic 和 Next 从各自的 `src/extensions/modules/*/index.ts` 加载 `ConsoleExtension`。模块声明唯一 ID、翻译资源及懒加载路由，接口见 [`registry.ts`](../web/src/extensions/registry.ts) 和 [`model.ts`](../web/src/extensions/model.ts)。修改后需重新构建对应前端。
 
 ### 路由与权限
 

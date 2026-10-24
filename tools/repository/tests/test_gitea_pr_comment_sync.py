@@ -13,7 +13,7 @@ SYNC = module_from_spec(SPEC)
 SPEC.loader.exec_module(SYNC)
 
 
-REPOSITORY = "acmecloud/AnyFlows"
+REPOSITORY = "source/project"
 PUBLIC_REPOSITORY = "ChuqiCloud/AnyFlows"
 MERGE_SHA = "b" * 40
 
@@ -23,7 +23,7 @@ def source_pr():
         "number": 17,
         "title": "修复同步流程",
         "body": "修复说明",
-        "html_url": "https://gitea.invalid/acmecloud/AnyFlows/pulls/17",
+        "html_url": "https://example.test/source/project/pulls/17",
         "merged": True,
         "merge_commit_sha": MERGE_SHA,
         "base": {"ref": "develop"},
@@ -31,7 +31,7 @@ def source_pr():
 
 
 class GiteaApi:
-    base = "https://gitea.invalid/api/v1"
+    base = "https://example.test/api/v1"
 
     def __init__(self, comments):
         self.source = source_pr()
@@ -56,8 +56,8 @@ class GithubApi:
         self.target = {
             "number": 55,
             "title": "旧标题",
-            "body": SYNC.render_target_body(source_pr(), REPOSITORY, "https://gitea.invalid"),
-            "head": {"ref": SYNC.EXPORT_BRANCH},
+            "body": SYNC.render_target_body(source_pr(), REPOSITORY, "https://example.test"),
+            "head": {"ref": SYNC.EXPORT_BRANCH, "repo": {"full_name": PUBLIC_REPOSITORY}},
             "base": {"ref": "main"},
         }
 
@@ -112,15 +112,61 @@ class GiteaToGithubSyncTests(unittest.TestCase):
         )
         source["merge_commit_sha"] = "c" * 40
         self.assertIsNone(SYNC.find_target(github, PUBLIC_REPOSITORY, source, REPOSITORY))
+        github.target["head"]["repo"]["full_name"] = "fork/project"
+        self.assertIsNone(SYNC.find_target(github, PUBLIC_REPOSITORY, source_pr(), REPOSITORY))
+
+    def test_legacy_target_marker_remains_readable_and_is_replaced_on_update(self):
+        github = GithubApi([])
+        github.target["body"] = "修复说明\n\n" + SYNC.legacy_source_marker(REPOSITORY, 17, MERGE_SHA)
+        self.assertEqual(
+            SYNC.find_target(github, PUBLIC_REPOSITORY, source_pr(), REPOSITORY)["number"], 55
+        )
+        SYNC.mirror(GiteaApi([]), github, REPOSITORY, PUBLIC_REPOSITORY, 17, True)
+        self.assertIn("<!-- anyflows-pr-source:v2:17:", github.target["body"])
+        self.assertNotIn(REPOSITORY, github.target["body"])
+        self.assertNotIn("anyflows-pr-source:gitea:", github.target["body"])
+
+    def test_source_marker_must_be_trailing_and_belong_to_a_merged_develop_pr(self):
+        for override in ({"merged": False}, {"base": {"ref": "main"}},
+                         {"merge_commit_sha": "invalid"}):
+            self.assertIsNone(SYNC.find_target(
+                GithubApi([]), PUBLIC_REPOSITORY, {**source_pr(), **override}, REPOSITORY
+            ))
+        github = GithubApi([])
+        github.target["body"] += "\nUnrelated text"
+        self.assertIsNone(SYNC.find_target(github, PUBLIC_REPOSITORY, source_pr(), REPOSITORY))
 
     def test_target_body_keeps_only_source_text_and_hidden_mapping_marker(self):
-        body = SYNC.render_target_body(source_pr(), REPOSITORY, "https://gitea.invalid")
+        body = SYNC.render_target_body(source_pr(), REPOSITORY, "https://example.test")
         self.assertEqual(
             body,
-            "修复说明\n\n<!-- anyflows-pr-source:gitea:acmecloud/AnyFlows:17:" + MERGE_SHA + " -->",
+            "修复说明\n\n<!-- anyflows-pr-source:v2:17:" + MERGE_SHA + " -->",
         )
         for visible_note in ("来源 PR：", "来源 PR 编号：", "来源提交：", "来源仓库："):
             self.assertNotIn(visible_note, body)
+
+    def test_public_output_omits_source_locations_and_keeps_link_labels(self):
+        text = "参见 [变更](https://example.test/source/project/pulls/17)。\nhttps://example.test/source/project/issues/2\nsource/project example.test"
+        source = {**source_pr(), "body": text}
+        body = SYNC.render_target_body(source, REPOSITORY, "https://example.test")
+        self.assertIn("参见 变更。", body)
+        self.assertNotIn("example.test", body)
+        self.assertNotIn(REPOSITORY, body)
+        comment = {"id": 9, "body": text, "user": {"login": "alice"}, "created_at": "2026-10-24"}
+        rendered = SYNC.render_comment(comment, 17, source_pr()["html_url"], REPOSITORY)
+        self.assertIn("维护者 `alice`", rendered)
+        self.assertIn("<!-- anyflows-pr-sync-comment:source:17:9 -->", rendered)
+        for private_value in ("Gitea", "example.test", REPOSITORY):
+            self.assertNotIn(private_value, rendered)
+        mixed_case = SYNC.public_text("https://EXAMPLE.TEST/Source/Project/pulls/17 Source/Project", REPOSITORY, "https://example.test")
+        self.assertNotIn("example.test", mixed_case.casefold())
+        self.assertNotIn(REPOSITORY, mixed_case.casefold())
+
+    def test_source_comment_markers_read_old_and_new_formats(self):
+        for prefix in ("anyflows-pr-sync-comment:source", "anyflows-pr-sync-comment:gitea", "gitea-source-comment"):
+            comment = {"user": {"login": "sync-bot"}, "body": f"copy\n\n<!-- {prefix}:17:9 -->"}
+            self.assertEqual(SYNC.source_id(comment, 17, "sync-bot"), 9)
+            self.assertIsNone(SYNC.source_id(comment, 17, "reviewer"))
 
     def test_reconcile_updates_adds_and_removes_only_owned_mirrors(self):
         source_comments = [
@@ -128,14 +174,14 @@ class GiteaToGithubSyncTests(unittest.TestCase):
                 "id": 1,
                 "user": {"login": "alice"},
                 "created_at": "2026-10-19T00:00:00Z",
-                "html_url": "https://gitea.invalid/comment/1",
+                "html_url": "https://example.test/comment/1",
                 "body": "已编辑",
             },
             {
                 "id": 3,
                 "user": {"login": "bob"},
                 "created_at": "2026-10-19T00:01:00Z",
-                "html_url": "https://gitea.invalid/comment/3",
+                "html_url": "https://example.test/comment/3",
                 "body": "新增讨论",
             },
         ]
@@ -162,7 +208,7 @@ class GiteaToGithubSyncTests(unittest.TestCase):
         SYNC.mirror(gitea, github, REPOSITORY, PUBLIC_REPOSITORY, 17, True)
 
         self.assertEqual(github.target["title"], source_pr()["title"])
-        self.assertEqual(github.target["body"], SYNC.render_target_body(source_pr(), REPOSITORY, "https://gitea.invalid"))
+        self.assertEqual(github.target["body"], SYNC.render_target_body(source_pr(), REPOSITORY, "https://example.test"))
         self.assertNotIn(502, github.comments)
         self.assertEqual(
             github.comments[501]["body"],

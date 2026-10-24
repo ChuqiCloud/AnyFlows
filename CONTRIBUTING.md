@@ -1,6 +1,6 @@
 # 贡献指南
 
-问题反馈、文档修正和功能改进均通过公共仓库提交。开发分支从 `main` 创建，Pull Request 的目标分支为 `main`；无需私有仓库权限。
+问题反馈、文档修正和功能改进均通过公共仓库提交。开发分支从 `main` 创建，Pull Request 的目标分支为 `main`。
 
 ## 提交问题
 
@@ -36,7 +36,7 @@ corepack pnpm check
 
 Next 使用 `web-next` 目录。共享行为的改动需检查两套前端，并在根目录运行 `node tools/ci/check-frontend-parity.mjs`。
 
-文档改动检查链接、命令和实现是否一致。远程 CI 按路径选择：`develop` PR 执行编译与契约检查，`main` PR 和推送执行相关组件的完整回归；数据库、缓存和部署检查按改动范围运行。手动运行 `ci.yml` 可选择全部组件，浏览器专项仅手动运行。触发条件见 [CI 配置](.github/workflows/ci.yml)。
+文档改动检查链接、命令和实现是否一致。CI 按路径选择前端、Rust、数据库和部署检查；手动运行可执行完整检查。触发条件见 [CI 配置](.github/workflows/ci.yml)。
 
 ## 接口与双前端
 
@@ -69,9 +69,7 @@ node tools/ci/check-frontend-parity.mjs
 
 标题和描述说明问题与修改后的行为，必要时附复现步骤或截图。改动保持集中，测试覆盖实际风险，避免重复测试和无关格式改动。
 
-不要提交密钥、生产配置、编译目录或私有企业实现。扩展契约见 [仓库与扩展边界](docs/repository-boundary.md)。
-
-GitHub `main` 接收社区贡献，合并后自动创建 PR 回传 Gitea `develop`；Gitea 的公共改动通过导出 PR 同步到 GitHub。两端均由维护者审查合并，导出会阻止覆盖尚未回传的社区改动。`docs/public-core-source.json` 由同步工具维护，不手工修改。
+不要提交密钥、生产配置或编译目录。
 
 ## 版本标签
 

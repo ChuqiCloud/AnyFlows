@@ -16,16 +16,16 @@ concurrency:
 
 jobs:
   export:
-    if: ${{ github.repository == 'acmecloud/AnyFlows' }}
+    if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_REPOSITORY != '' && github.repository == vars.SOURCE_REPOSITORY }}
     name: Export Gitea develop to GitHub
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       GITHUB_PUBLIC_REPOSITORY: ChuqiCloud/AnyFlows
       GITHUB_PUBLIC_BRANCH: main
-      GITEA_SOURCE_REPOSITORY_URL: https://gitea.acmecloud.cn/acmecloud/AnyFlows
-      GITEA_REPOSITORY: acmecloud/AnyFlows
-      GITEA_API_BASE: ${{ github.server_url }}/api/v1
+      GITEA_SOURCE_REPOSITORY_URL: ${{ vars.SOURCE_BASE_URL || github.server_url }}/${{ github.repository }}
+      GITEA_REPOSITORY: ${{ github.repository }}
+      GITEA_API_BASE: ${{ vars.SOURCE_BASE_URL || github.server_url }}/api/v1
       PUBLIC_REPO_SYNC_TOKEN: ${{ secrets.PUBLIC_REPO_SYNC_TOKEN }}
       GITEA_COMMIT: ${{ github.sha }}
     steps:
@@ -45,7 +45,7 @@ jobs:
       - name: Check out Gitea source
         shell: bash
         env:
-          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_REPOSITORY_URL: ${{ vars.SOURCE_BASE_URL || github.server_url }}/${{ github.repository }}.git
           CHECKOUT_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -64,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           metadata="$RUNNER_TEMP/source-pr-metadata.json"
-          jq -n '{title: "同步 Gitea 公共核心", body: "", url: "", number: null, mergeCommitSha: ""}' > "$metadata"
+          jq -n '{title: "同步公共核心", body: "", url: "", number: null, mergeCommitSha: ""}' > "$metadata"
           message="$(git -C gitea-source show -s --format=%B "$GITEA_COMMIT")"
           pr_number=""
           if [[ "$message" =~ \(\#([0-9]+)\) ]]; then
@@ -164,14 +164,8 @@ jobs:
           fi
           git -C github-public config user.name 'gitea-sync[bot]'
           git -C github-public config user.email 'gitea-sync[bot]@users.noreply.github.com'
-          if [ -n "${{ steps.source.outputs.source_pr_number }}" ]; then
-            commit_title="$(jq -r '.title // empty' "$RUNNER_TEMP/source-pr-metadata.json")"
-          else
-            commit_title="$(git -C gitea-source show -s --format=%s "$GITEA_COMMIT")"
-          fi
-          if [ -z "$commit_title" ]; then
-            commit_title="同步 Gitea 公共核心 $GITEA_COMMIT"
-          fi
+          public_metadata="$(python3 gitea-source/tools/repository/sync-gitea-pr-comments.py --render-metadata "$RUNNER_TEMP/source-pr-metadata.json")"
+          commit_title="$(jq -r '.title' <<<"$public_metadata")"
           git -C github-public commit -q -m "$commit_title"
           echo 'has_changes=true' >> "$GITHUB_OUTPUT"
 
@@ -209,18 +203,9 @@ jobs:
           api="https://api.github.com/repos/$GITHUB_PUBLIC_REPOSITORY"
           head="${{ steps.branch.outputs.export_branch }}"
           metadata="$RUNNER_TEMP/source-pr-metadata.json"
-          source_title="$(jq -r '.title' "$metadata")"
-          source_body="$(jq -r '.body' "$metadata")"
-          source_pr_number="$(jq -r '.number // empty' "$metadata")"
-          body="$(jq -rn --arg source_body "$source_body" \
-            --arg pr "$source_pr_number" \
-            --arg source_repo "$GITEA_REPOSITORY" \
-            --arg merge_sha "$(jq -r '.mergeCommitSha // ""' "$metadata")" \
-            '$source_body +
-             (if $pr != "" and ($merge_sha | test("^[0-9a-f]{40}$")) then
-               (if $source_body == "" then "" else "\n\n" end) +
-               "<!-- anyflows-pr-source:gitea:" + $source_repo + ":" + $pr + ":" + $merge_sha + " -->"
-              else "" end)')"
+          public_metadata="$(python3 gitea-source/tools/repository/sync-gitea-pr-comments.py --render-metadata "$metadata")"
+          source_title="$(jq -r '.title' <<<"$public_metadata")"
+          body="$(jq -r '.body' <<<"$public_metadata")"
           existing="$(curl --fail --silent --show-error \
             -H "Authorization: Bearer $PUBLIC_REPO_SYNC_TOKEN" \
             -H 'Accept: application/vnd.github+json' \

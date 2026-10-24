@@ -39,7 +39,7 @@
     "positiveRequests": "有缓存用量的请求",
     "upstreamRequests": "上游确认请求",
     "estimatedRequests": "估算用量请求",
-    "cacheHint": "最近 24 小时的公共调用账本，每分钟更新。缓存令牌只汇总上游确认的用量，未报告不等于未命中；输入总量包含缓存令牌。此处不统计 Redis 存储占用、提供商内部缓存容量或企业扩展的独立服务账号账本。",
+    "cacheHint": "最近 24 小时的公共调用账本，每分钟更新。缓存令牌只汇总上游确认的用量，未报告不等于未命中；输入总量包含缓存令牌。此处不统计 Redis 存储占用或提供商内部缓存容量。",
     "states": {
       "starting": "采样中",
       "healthy": "正常",
@@ -4333,14 +4333,14 @@
       "models": "浏览模型"
     },
     "enterprise": {
-      "title": "开通企业账号",
-      "body": "企业访问从个人账户和审核申请开始。平台批准后才会创建企业，避免浏览器自行接管或创建企业空间。",
+      "title": "个人与企业主体认证",
+      "body": "登录后可在账号认证中提交个人或企业主体材料，查看审核进度和结果。",
       "steps": {
-        "account": "创建个人账户并登录",
-        "apply": "提交企业开通申请",
-        "setup": "批准后完成 Owner 初始化"
+        "account": "创建账户并登录",
+        "apply": "提交主体信息与认证材料",
+        "setup": "查看审核进度与结果"
       },
-      "login": "前往企业登录"
+      "login": "前往登录"
     }
   },
   "invitations": {
@@ -7658,8 +7658,8 @@
     "title": "账号认证",
     "settingsTitle": "实名认证配置",
     "adminTitle": "个人与企业认证审核",
-    "description": "提交个人或企业身份材料，查看审核进度与完整申请记录。企业认证通过后可申请开通企业空间。",
-    "adminDescription": "审核个人与企业账号的身份材料。企业空间开通申请在企业管理中单独处理。",
+    "description": "提交个人或企业主体的认证材料，查看审核进度与申请记录。",
+    "adminDescription": "审核个人与企业主体的认证材料，并记录审核结果。",
     "individual": "个人认证",
     "enterprise": "企业认证",
     "kind": "认证类型",
@@ -7684,7 +7684,7 @@
     "fileError": "请检查文件数量、格式与大小，并至少选择一份有效材料。",
     "submit": "提交认证",
     "history": "认证记录",
-    "workspaceHistory": "企业空间申请记录",
+    "workspaceHistory": "申请记录",
     "status": {
       "1": "待审核",
       "2": "审核中",
@@ -7727,14 +7727,14 @@
     "supplement": "要求补充",
     "reject": "驳回",
     "updated": "更新时间",
-    "enterpriseGranted": "企业认证已通过，已获得企业空间申请资格。",
-    "applyWorkspace": "申请企业空间",
-    "enterWorkspace": "进入企业空间",
-    "verifyFirst": "先完成企业认证",
-    "verifyFirstHint": "企业认证用于确认账号所属主体。认证通过后即可提交企业空间开通申请，空间权限由平台管理员审批。",
+    "enterpriseGranted": "企业主体认证已通过。",
+    "applyWorkspace": "继续",
+    "enterWorkspace": "进入控制台",
+    "verifyFirst": "先完成企业主体认证",
+    "verifyFirstHint": "企业主体认证用于核验账号所属单位，请提交主体信息和认证材料。",
     "openCenter": "前往账号认证",
     "accounts": "账号认证审核",
-    "organizations": "企业空间认证记录",
+    "organizations": "企业主体认证记录",
     "pdfHint": "若浏览器无法内嵌显示 PDF，可下载后查看。",
     "legacyMissing": "旧记录未保存文件正文，无法预览或下载。",
     "legacyHistoryHint": "本次升级起保留每次提交与审核版本；更早的历史仅展示系统实际留存的记录。",
