@@ -2602,8 +2602,8 @@
   },
   "usageLogs": {
     "title": "Request logs",
-    "subtitle": "Review your settled model requests, response speed, token usage, and billed quota.",
-    "adminSubtitle": "Review settled requests across the site with response speed, token usage, and billed quota.",
+    "subtitle": "Review your model calls, failures, response times, and charges.",
+    "adminSubtitle": "Review site-wide model calls, request users, failures, and charges.",
     "count": "{{count}} records on this page",
     "filteredCount": "Showing {{visible}} of {{count}}",
     "page": "Page {{page}}",
@@ -2617,7 +2617,7 @@
       "tokens": "Token usage",
       "billing": "Billing result"
     },
-    "listLabel": "Settled request list",
+    "listLabel": "Request logs",
     "status": {
       "settled": "Settled",
       "settledOnly": "Settled only",
@@ -2757,17 +2757,20 @@
       "copyRequestIdFailed": "Copy failed. Select the request ID in details.",
       "retry": "Retry",
       "previous": "Previous",
-      "next": "Next"
+      "next": "Next",
+      "copyValue": "Copy value",
+      "copiedValue": "Value copied",
+      "copyValueFailed": "Copy failed. Select and copy the value manually."
     },
     "empty": {
       "title": "No request logs yet",
-      "body": "Settled requests appear after your first model request is billed.",
+      "body": "Settled requests and failure summaries will appear here.",
       "filteredTitle": "No matches on this page",
-      "filteredBody": "Adjust the model or protocol filter, or browse another page."
+      "filteredBody": "Adjust the model or protocol filters, or check another page."
     },
     "error": {
       "title": "Unable to load request logs",
-      "body": "Couldn't load settled requests. Try again shortly."
+      "body": "The server did not return request logs. Please try again later."
     },
     "userSheet": {
       "title": "User profile",
@@ -2797,7 +2800,15 @@
         "internal": "Internal details",
         "request": "Request ID",
         "channel": "Channel"
-      }
+      },
+      "details": "Error details",
+      "errorCode": "Error code",
+      "errorMessage": "Error message",
+      "errorKind": "Internal category",
+      "principal": "Request principal",
+      "unknownUser": "User not recorded",
+      "organization": "Organization",
+      "team": "Team"
     }
   },
   "debugTraces": {
