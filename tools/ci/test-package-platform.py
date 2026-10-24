@@ -41,6 +41,7 @@ class PackagePlatformTests(unittest.TestCase):
                             info = next(name for name in names if name.endswith('/build-info.json'))
                             self.assertEqual(json.load(stream.extractfile(info))['target'], target)
                     self.assertEqual(any(name.endswith('/install.sh') for name in names), 'linux' in target)
+                    self.assertTrue(any(name.endswith('/LICENSE') for name in names))
                     before = archive.read_bytes()
                     module.package(root, 'v1.2.3', target, binary, output, 0)
                     self.assertEqual(archive.read_bytes(), before)

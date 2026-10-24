@@ -36,7 +36,7 @@ def package(root, tag, target, binary, output, epoch):
     executable = 'anyflows.exe' if windows else 'anyflows'
     output.mkdir(parents=True, exist_ok=True)
     files = {executable: (binary.read_bytes(), 0o755)}
-    for path in ['README.md', '.env.example', 'anyflows.conf', 'CHANGELOG.md', 'docs/online-updates.md']:
+    for path in ['README.md', 'LICENSE', '.env.example', 'anyflows.conf', 'CHANGELOG.md', 'docs/online-updates.md']:
         files[Path(path).name] = ((root / path).read_bytes(), 0o644)
     if 'linux' in target:
         for path in ['scripts/systemd/install.sh', 'scripts/systemd/anyflows.service']:
