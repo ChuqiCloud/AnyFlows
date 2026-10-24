@@ -2529,6 +2529,12 @@ impl Bootstrap<Supervised> {
             http_extensions =
                 http_extensions.with_service_account_models(Arc::clone(authenticator));
         }
+        let host_manages_software = http_extensions.descriptors().iter().any(|descriptor| {
+            descriptor
+                .capabilities
+                .iter()
+                .any(|capability| capability == "software.updates")
+        });
         let router = build_router(
             self.config.server(),
             self.stage.chat.clone(),
@@ -2613,6 +2619,21 @@ impl Bootstrap<Supervised> {
             Some(http_extensions),
             Some(payment_webhook_routes),
         );
+        let router = if host_manages_software {
+            router
+        } else {
+            router.merge(af_http::build_software_update_router(
+                Arc::new(crate::software_updates::CommunitySoftwareUpdates::new(
+                    self.stage.upstream_clients.clone(),
+                    crate::software_updates::web_updates_enabled(
+                        std::env::var("ANYFLOWS_ENABLE_BINARY_UPDATE")
+                            .ok()
+                            .as_deref(),
+                    ),
+                )),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+        };
         let router = router
             .merge(af_http::build_credential_health_router(
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
@@ -2721,6 +2742,17 @@ impl Bootstrap<RouterReady> {
             readiness,
         } = stage;
         readiness.mark_ready();
+        if matches!(af_launcher::ManagedContext::from_env(), Ok(Some(_))) {
+            let ready = readiness.clone();
+            tokio::spawn(async move {
+                while !ready.is_draining() {
+                    if ready.check().await && af_launcher::notify_ready().await.is_ok() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            });
+        }
         Ok(Bootstrap {
             config,
             shutdown_timeout,

@@ -7,6 +7,14 @@ use std::{
 const TEST_INDEX: &str = "<!doctype html><html lang=\"zh-CN\"><meta charset=\"UTF-8\"><title>AnyFlows</title><body data-anyflows-build-fixture></body></html>";
 
 fn main() {
+    println!(
+        "cargo:rustc-env=AF_BUILD_TARGET={}",
+        env::var("TARGET").expect("Cargo TARGET")
+    );
+    println!("cargo:rerun-if-env-changed=AF_BUILD_DEPLOYMENT");
+    if let Ok(deployment) = env::var("AF_BUILD_DEPLOYMENT") {
+        println!("cargo:rustc-env=AF_BUILD_DEPLOYMENT={deployment}");
+    }
     let manifest_directory = PathBuf::from(
         env::var_os("CARGO_MANIFEST_DIR").expect("Cargo 必须提供 CARGO_MANIFEST_DIR"),
     );

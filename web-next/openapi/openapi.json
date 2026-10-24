@@ -18975,6 +18975,174 @@
         ]
       }
     },
+    "/api/admin/software": {
+      "get": {
+        "tags": [
+          "版本与更新"
+        ],
+        "summary": "读取当前节点的软件版本与更新能力",
+        "operationId": "getAdminSoftware",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoftwareStatus"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/software/check": {
+      "post": {
+        "tags": [
+          "版本与更新"
+        ],
+        "summary": "手动检查公开版本，结果缓存一分钟",
+        "operationId": "checkAdminSoftwareUpdate",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoftwareStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoftwareUpdateErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoftwareUpdateErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoftwareUpdateErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/software/install": {
+      "post": {
+        "tags": [
+          "版本与更新"
+        ],
+        "summary": "校验并替换当前节点二进制，完成后需要管理员重启",
+        "operationId": "installAdminSoftwareUpdate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallSoftwareUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoftwareStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoftwareUpdateErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoftwareUpdateErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoftwareUpdateErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoftwareUpdateErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoftwareUpdateErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/version": {
       "get": {
         "tags": [
@@ -30511,6 +30679,22 @@
           }
         }
       },
+      "InstallSoftwareUpdate": {
+        "type": "object",
+        "required": [
+          "tag",
+          "expected_node_id"
+        ],
+        "properties": {
+          "tag": {
+            "type": "string"
+          },
+          "expected_node_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "IssuedAdminRedemptionBatch": {
         "type": "object",
         "description": "批次创建响应；完整兑换码只在本次响应中出现。",
@@ -33087,6 +33271,169 @@
           }
         },
         "additionalProperties": false
+      },
+      "SoftwareRelease": {
+        "type": "object",
+        "required": [
+          "version",
+          "tag",
+          "url",
+          "notes"
+        ],
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "published_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "package_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "package_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SoftwareStatus": {
+        "type": "object",
+        "required": [
+          "edition",
+          "version",
+          "core_version",
+          "target",
+          "deployment",
+          "node_id",
+          "launch_mode",
+          "update_phase",
+          "check_enabled",
+          "install_enabled",
+          "restart_required",
+          "update_available"
+        ],
+        "properties": {
+          "edition": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "core_version": {
+            "type": "string"
+          },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "build_time": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "deployment": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "launch_mode": {
+            "type": "string",
+            "description": "direct or launcher; no launcher is required for direct binary deployment."
+          },
+          "launcher_protocol": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "launcher_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "update_phase": {
+            "type": "string"
+          },
+          "launcher_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "check_enabled": {
+            "type": "boolean"
+          },
+          "install_enabled": {
+            "type": "boolean"
+          },
+          "install_blocked_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "restart_required": {
+            "type": "boolean"
+          },
+          "checked_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "latest": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SoftwareRelease"
+              }
+            ]
+          },
+          "update_available": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SoftwareUpdateErrorBody": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        }
       },
       "SubscriptionCatalogPlan": {
         "type": "object",

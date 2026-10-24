@@ -46,7 +46,7 @@ AnyFlows 是一个可自行部署的 AI API 网关。将不同厂商的模型接
 
 ## 二进制部署
 
-Linux 服务器可使用发布包部署。包内包含二进制程序和两套前端，运行时不需要 Rust 或 Node.js。
+Linux 服务器可使用发布包部署。包内包含主程序、启动器和两套前端，运行时不需要 Rust 或 Node.js。默认通过启动器运行并开启在线更新，也支持直接运行主程序。
 
 从 [Releases](https://github.com/ChuqiCloud/AnyFlows/releases) 下载归档及对应的 `.sha256` 文件。目前社区发布包提供 Linux amd64 版本；Beta 为测试版。
 
@@ -74,7 +74,7 @@ OpenAI 兼容客户端通常使用 `https://api.example.com/v1` 作为 Base URL�
 
 ## 文档
 
-配置和升级见 [配置参考](docs/configuration.md)、[升级与备份](docs/migrations-and-release.md)。账号、渠道及开发参考见 [文档目录](docs/README.md)。
+配置和升级见 [配置参考](docs/configuration.md)、[升级与备份](docs/migrations-and-release.md)、[版本检测与手动在线升级](docs/online-updates.md)。账号、渠道及开发参考见 [文档目录](docs/README.md)。
 
 ## 参与开发
 

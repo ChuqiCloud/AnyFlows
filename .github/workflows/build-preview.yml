@@ -76,7 +76,7 @@ jobs:
         run: |
           export AF_BUILD_COMMIT="$(git rev-parse HEAD)"
           export AF_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          cargo build --release --locked --package af-server
+          cargo build --release --locked --package af-server --package af-launcher
 
       - name: Package and start the archive
         run: |

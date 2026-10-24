@@ -12,6 +12,7 @@ on:
         options:
           - extensions
           - usage-logs
+          - software-updates
 
 permissions:
   contents: read
@@ -83,6 +84,9 @@ jobs:
             extensions)
               PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-client-profiles-smoke.mjs '${{ matrix.frontend }}'
               PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-proxy-pools-smoke.mjs '${{ matrix.frontend }}'
+              ;;
+            software-updates)
+              PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-verification-smoke.mjs '${{ matrix.frontend }}'
               ;;
             usage-logs)
               PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-usage-logs-smoke.mjs '${{ matrix.frontend }}'

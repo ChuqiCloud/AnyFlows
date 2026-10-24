@@ -120,7 +120,8 @@ impl ReadinessHandle {
         self.inner.phase.load(Ordering::Acquire) == DRAINING
     }
 
-    async fn check(&self) -> bool {
+    /// Execute the same bounded dependency check used by the HTTP readiness endpoint.
+    pub async fn check(&self) -> bool {
         if self.inner.phase.load(Ordering::Acquire) != READY {
             return false;
         }

@@ -44,6 +44,7 @@ pub(crate) mod schema;
 mod session;
 mod setup;
 mod site_settings;
+mod software_updates;
 mod speech;
 mod subscriptions;
 mod tokens;
@@ -137,6 +138,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(passkey_auth::document());
     document.merge(platform_audit::document());
     document.merge(runtime_status::document());
+    document.merge(software_updates::document());
     document.merge(VersionApi::openapi());
     document.merge(oauth_login::oidc_document());
 

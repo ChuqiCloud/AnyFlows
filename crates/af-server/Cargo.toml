@@ -17,6 +17,7 @@ af-db = { path = "../af-db", version = "0.3.0-beta.3" }
 af-domain = { path = "../af-domain", version = "0.3.0-beta.3" }
 af-http = { path = "../af-http", version = "0.3.0-beta.3" }
 af-httpclient = { path = "../af-httpclient", version = "0.3.0-beta.3" }
+af-launcher = { path = "../af-launcher", version = "0.3.0-beta.3" }
 af-protocol = { path = "../af-protocol", version = "0.3.0-beta.3" }
 af-relay = { path = "../af-relay", version = "0.3.0-beta.3" }
 af-scheduler = { path = "../af-scheduler", version = "0.3.0-beta.3" }
@@ -29,6 +30,7 @@ lru.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+semver.workspace = true
 sha2.workspace = true
 symphonia.workspace = true
 thiserror.workspace = true
