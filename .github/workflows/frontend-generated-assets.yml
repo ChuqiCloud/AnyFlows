@@ -17,6 +17,10 @@ on:
         description: Optional web-next direct dependencies (name@version, space separated)
         type: string
         default: ''
+      transitive_updates:
+        description: Optional transitive dependencies in both frontends (name@version, space separated)
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -88,6 +92,7 @@ jobs:
         env:
           WEB_UPDATES: ${{ github.event.inputs.web_updates }}
           WEB_NEXT_UPDATES: ${{ github.event.inputs.web_next_updates }}
+          TRANSITIVE_UPDATES: ${{ github.event.inputs.transitive_updates }}
         run: |
           node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
@@ -101,23 +106,40 @@ jobs:
             if (result.status !== 0) throw new Error(`pnpm failed for ${frontend}`);
           }
 
+          function targets(value) {
+            const result = value.trim() ? value.trim().split(/\s+/) : [];
+            for (const target of result) {
+              if (!/^((?:@[a-z0-9._-]+\/)?[a-z0-9._-]+)@(\d+\.\d+\.\d+)$/.test(target)) {
+                throw new Error(`Expected a dependency name and exact version: ${target}`);
+              }
+            }
+            return result;
+          }
+
+          const transitive = targets(process.env.TRANSITIVE_UPDATES || '');
           for (const [frontend, updates] of [
             ['web', process.env.WEB_UPDATES || ''],
             ['web-next', process.env.WEB_NEXT_UPDATES || ''],
           ]) {
-            const targets = updates.trim() ? updates.trim().split(/\s+/) : [];
+            const direct = targets(updates);
             const manifest = JSON.parse(readFileSync(`${frontend}/package.json`, 'utf8'));
-            for (const target of targets) {
+            for (const target of direct) {
               const match = target.match(/^((?:@[a-z0-9._-]+\/)?[a-z0-9._-]+)@(\d+\.\d+\.\d+)$/);
               if (!match || !(manifest.dependencies?.[match[1]] || manifest.devDependencies?.[match[1]])) {
                 throw new Error(`Expected a declared direct dependency and exact version: ${target}`);
               }
             }
-            if (targets.length) {
+            if (direct.length) {
               pnpm(frontend, ['up', '--depth=0', '--no-save',
-                '--lockfile-only', '--ignore-scripts', ...targets]);
+                '--lockfile-only', '--ignore-scripts', ...direct]);
             }
-            pnpm(frontend, ['install', '--no-frozen-lockfile', '--lockfile-only', '--ignore-scripts']);
+            if (transitive.length) {
+              pnpm(frontend, ['up', '--depth=100', '--no-save',
+                '--lockfile-only', '--ignore-scripts', ...transitive]);
+            }
+            if (!direct.length && !transitive.length) {
+              pnpm(frontend, ['install', '--no-frozen-lockfile', '--lockfile-only', '--ignore-scripts']);
+            }
           }
           NODE
       - name: Export source patch for review
