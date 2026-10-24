@@ -29,7 +29,7 @@ Responses 上游请求使用 `store:false`，对话历史由客户端完整回�
 
 客户端生成的普通文本摘要可作为 assistant 历史回放，在四种协议的 16 个转换方向中保留摘要内容、角色及后续消息。Chat 和 Gemini 可通过普通对话请求生成摘要，再由客户端回传摘要及需要保留的历史；网关按普通消息转换这类内容。
 
-Responses 支持原生 `context_management` 压缩控制、`compaction_trigger` 扩展和不透明的 `compaction` item。同协议转发保留这些控制与状态。独立的 `POST /v1/responses/compact` 使用专用压缩路径，需要上游支持该端点。
+Responses 支持原生 `context_management` 压缩控制、`compaction_trigger` 扩展和不透明的 `compaction` item。同协议转发保留这些控制与状态。`compact_threshold` 可省略或设为 `null`，由上游决定阈值；显式整数按原值转发。独立的 `POST /v1/responses/compact` 使用专用压缩路径，需要上游支持该端点。
 
 Anthropic Messages 支持 `compaction` 按需压缩和 `context_management` 上下文编辑，适配器按请求补充压缩所需的 beta，并合并客户端已有的 beta。原生压缩块及其签名、扩展字段、流式摘要增量和压缩结束原因均按 Messages 协议保留，客户端应完整回传压缩块以继续对话。
 

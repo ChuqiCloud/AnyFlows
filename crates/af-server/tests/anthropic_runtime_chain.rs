@@ -216,171 +216,195 @@ async fn native_anthropic_runtime_streams_real_usage_and_public_identity() {
 
 #[tokio::test]
 async fn native_compaction_json_preserves_replay_state_and_bills_additional_iterations_once() {
-    for content in [json!("runtime summary 已保留"), Value::Null] {
-        let block = native_compaction_block(content);
-        let upstream_usage = compaction_usage();
-        let upstream_body = serde_json::to_vec(&json!({
-            "id":"msg_private_compaction", "type":"message", "role":"assistant",
-            "model":"private-upstream-model", "content":[block.clone()],
-            "stop_reason":"compaction", "stop_sequence":null, "usage":upstream_usage
-        }))
-        .unwrap();
-        let request = compaction_request(false);
-        let request_body = serde_json::to_vec(&request).unwrap();
-        let database = TestDatabase::new();
-        seed_database(
-            &database,
-            UPSTREAM_BASE_URL,
-            UPSTREAM_MODEL,
-            UPSTREAM_KEY,
-            None,
-        )
-        .await;
-        let (proxy_address, captured, proxy) = spawn_proxy(
-            "200 OK",
-            &upstream_body,
-            &[("Content-Type", "application/json")],
-        );
-        let (address, shutdown, server) =
-            start_gateway(&database, &format!("http://{proxy_address}")).await;
-
-        let response = send_request(
-            address,
-            "POST",
-            "/v1/messages",
-            &request_body,
-            &[
-                ("Content-Type", "application/json"),
-                ("x-api-key", CLIENT_KEY),
-                ("anthropic-beta", "caller-beta, caller-beta"),
-            ],
-        )
-        .await;
-        stop_gateway(shutdown, server).await;
-        let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
-        proxy.join().unwrap();
-
-        assert_eq!(response.status, 200);
-        assert_compaction_upstream(&upstream, &request_body, "compact-2026-09-04");
-        let public: Value = serde_json::from_slice(&response.body).unwrap();
-        assert_eq!(public["content"], json!([block]));
-        assert_eq!(public["stop_reason"], "compaction");
-        assert_public_compaction_usage(&public["usage"]);
-        assert_eq!(public["model"], UPSTREAM_MODEL);
-        assert_ne!(public["id"], "msg_private_compaction");
-        assert_eq!(
-            compaction_billing_summary(&database).await,
-            (1, 112, 7, 2, 2, 3)
-        );
-    }
+    assert_native_compaction_json(json!("runtime summary 已保留")).await;
 }
 
 #[tokio::test]
-async fn native_compaction_sse_preserves_signed_and_null_blocks_without_inflating_public_usage() {
-    for content in [json!("runtime summary 已保留"), Value::Null] {
-        let block = native_compaction_block(content);
-        let upstream_body = compaction_sse(&block);
-        let request = compaction_request(true);
-        let request_body = serde_json::to_vec(&request).unwrap();
-        let database = TestDatabase::new();
-        seed_database(
-            &database,
-            UPSTREAM_BASE_URL,
-            UPSTREAM_MODEL,
-            UPSTREAM_KEY,
-            None,
-        )
-        .await;
-        let (proxy_address, captured, proxy) = spawn_proxy(
-            "200 OK",
-            &upstream_body,
-            &[("Content-Type", "text/event-stream")],
-        );
-        let (address, shutdown, server) =
-            start_gateway(&database, &format!("http://{proxy_address}")).await;
+async fn native_compaction_json_preserves_null_state_and_bills_additional_iterations_once() {
+    assert_native_compaction_json(Value::Null).await;
+}
 
-        let response = send_request(
-            address,
-            "POST",
-            "/v1/messages",
-            &request_body,
-            &[
-                ("Content-Type", "application/json"),
-                ("x-api-key", CLIENT_KEY),
-                ("anthropic-beta", "caller-beta, caller-beta"),
-            ],
-        )
-        .await;
-        stop_gateway(shutdown, server).await;
-        let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
-        proxy.join().unwrap();
+async fn assert_native_compaction_json(content: Value) {
+    let block = native_compaction_block(content);
+    let upstream_usage = compaction_usage();
+    let upstream_body = serde_json::to_vec(&json!({
+        "id":"msg_private_compaction", "type":"message", "role":"assistant",
+        "model":"private-upstream-model", "content":[block.clone()],
+        "stop_reason":"compaction", "stop_sequence":null, "usage":upstream_usage
+    }))
+    .unwrap();
+    let request = compaction_request(false);
+    let request_body = serde_json::to_vec(&request).unwrap();
+    let database = TestDatabase::new();
+    seed_database(
+        &database,
+        UPSTREAM_BASE_URL,
+        UPSTREAM_MODEL,
+        UPSTREAM_KEY,
+        None,
+    )
+    .await;
+    let (proxy_address, captured, proxy) = spawn_proxy(
+        "200 OK",
+        &upstream_body,
+        &[("Content-Type", "application/json")],
+    );
+    let (address, shutdown, server) =
+        start_gateway(&database, &format!("http://{proxy_address}")).await;
 
-        assert_eq!(response.status, 200);
-        assert_compaction_upstream(&upstream, &request_body, "compact-2026-01-12");
-        assert!(
-            response
-                .headers
-                .get("content-type")
-                .unwrap()
-                .starts_with("text/event-stream")
-        );
-        let body = decode_sse_response_body(&response);
-        let mut decoder = AnthropicMessagesStreamDecoder::new();
-        let mut events = Vec::new();
-        for chunk in body.chunks(7) {
-            events.extend(decoder.push(chunk).unwrap());
-        }
-        decoder.finish().unwrap();
-        assert!(events.iter().any(|event| matches!(
-            event, CanonicalStreamEvent::AnthropicCompactionEnd { item, .. }
-            if item.as_value() == &block
-        )));
-        assert!(events.iter().any(|event| matches!(
-            event,
-            CanonicalStreamEvent::Finish {
-                reason: FinishReason::Compaction,
-                ..
-            }
-        )));
-        let wire_usage = events
-            .iter()
-            .find_map(|event| match event {
-                CanonicalStreamEvent::Usage(usage) => Some(usage),
-                _ => None,
-            })
-            .unwrap();
-        assert_eq!(wire_usage.input_tokens().get(), 100);
-        assert_eq!(wire_usage.output_tokens().get(), 4);
-        assert_eq!(decoder.billing_usage().unwrap().input_tokens().get(), 112);
-        assert_eq!(decoder.billing_usage().unwrap().output_tokens().get(), 7);
-        assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
+    let response = send_request(
+        address,
+        "POST",
+        "/v1/messages",
+        &request_body,
+        &[
+            ("Content-Type", "application/json"),
+            ("x-api-key", CLIENT_KEY),
+            ("anthropic-beta", "caller-beta, caller-beta"),
+        ],
+    )
+    .await;
+    stop_gateway(shutdown, server).await;
+    let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    proxy.join().unwrap();
 
-        let mut parser = af_protocol::openai_chat::SseParser::new();
-        let wire_events: Vec<Value> = parser
-            .push(&body)
+    assert_eq!(
+        response.status,
+        200,
+        "原生压缩 JSON 响应异常；错误码：{}",
+        sanitized_json_error_code(&response.body).unwrap_or_else(|| "未提供".to_owned())
+    );
+    assert_compaction_upstream(&upstream, &request_body, "compact-2026-09-04");
+    let public: Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(public["content"], json!([block]));
+    assert_eq!(public["stop_reason"], "compaction");
+    assert_public_compaction_usage(&public["usage"]);
+    assert_eq!(public["model"], UPSTREAM_MODEL);
+    assert_ne!(public["id"], "msg_private_compaction");
+    assert_eq!(
+        compaction_billing_summary(&database).await,
+        (1, 112, 7, 2, 2, 3)
+    );
+}
+
+#[tokio::test]
+async fn native_compaction_sse_preserves_signed_blocks_without_inflating_public_usage() {
+    assert_native_compaction_sse(json!("runtime summary 已保留")).await;
+}
+
+#[tokio::test]
+async fn native_compaction_sse_preserves_null_blocks_without_inflating_public_usage() {
+    assert_native_compaction_sse(Value::Null).await;
+}
+
+async fn assert_native_compaction_sse(content: Value) {
+    let block = native_compaction_block(content);
+    let upstream_body = compaction_sse(&block);
+    let request = compaction_request(true);
+    let request_body = serde_json::to_vec(&request).unwrap();
+    let database = TestDatabase::new();
+    seed_database(
+        &database,
+        UPSTREAM_BASE_URL,
+        UPSTREAM_MODEL,
+        UPSTREAM_KEY,
+        None,
+    )
+    .await;
+    let (proxy_address, captured, proxy) = spawn_proxy(
+        "200 OK",
+        &upstream_body,
+        &[("Content-Type", "text/event-stream")],
+    );
+    let (address, shutdown, server) =
+        start_gateway(&database, &format!("http://{proxy_address}")).await;
+
+    let response = send_request(
+        address,
+        "POST",
+        "/v1/messages",
+        &request_body,
+        &[
+            ("Content-Type", "application/json"),
+            ("x-api-key", CLIENT_KEY),
+            ("anthropic-beta", "caller-beta, caller-beta"),
+        ],
+    )
+    .await;
+    stop_gateway(shutdown, server).await;
+    let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    proxy.join().unwrap();
+
+    assert_eq!(
+        response.status,
+        200,
+        "原生压缩 SSE 响应异常；错误码：{}",
+        sanitized_json_error_code(&response.body).unwrap_or_else(|| "未提供".to_owned())
+    );
+    assert_compaction_upstream(&upstream, &request_body, "compact-2026-01-12");
+    assert!(
+        response
+            .headers
+            .get("content-type")
             .unwrap()
-            .into_iter()
-            .filter(|event| !event.is_comment())
-            .map(|event| serde_json::from_slice(event.data()).unwrap())
-            .collect();
-        parser.finish().unwrap();
-        let initial = wire_events
-            .iter()
-            .find(|event| event["type"] == "message_start")
-            .unwrap();
-        assert_eq!(initial["message"]["usage"]["input_tokens"], 120);
-        assert_eq!(initial["message"]["model"], UPSTREAM_MODEL);
-        assert_ne!(initial["message"]["id"], "msg_private_compaction_stream");
-        let final_delta = wire_events
-            .iter()
-            .find(|event| event["type"] == "message_delta")
-            .unwrap();
-        assert_public_compaction_usage(&final_delta["usage"]);
-        assert_eq!(
-            compaction_billing_summary(&database).await,
-            (1, 112, 7, 2, 2, 3)
-        );
+            .starts_with("text/event-stream")
+    );
+    let body = decode_sse_response_body(&response);
+    let mut decoder = AnthropicMessagesStreamDecoder::new();
+    let mut events = Vec::new();
+    for chunk in body.chunks(7) {
+        events.extend(decoder.push(chunk).unwrap());
     }
+    decoder.finish().unwrap();
+    assert!(events.iter().any(|event| matches!(
+        event, CanonicalStreamEvent::AnthropicCompactionEnd { item, .. }
+        if item.as_value() == &block
+    )));
+    assert!(events.iter().any(|event| matches!(
+        event,
+        CanonicalStreamEvent::Finish {
+            reason: FinishReason::Compaction,
+            ..
+        }
+    )));
+    let wire_usage = events
+        .iter()
+        .find_map(|event| match event {
+            CanonicalStreamEvent::Usage(usage) => Some(usage),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(wire_usage.input_tokens().get(), 100);
+    assert_eq!(wire_usage.output_tokens().get(), 4);
+    assert_eq!(decoder.billing_usage().unwrap().input_tokens().get(), 112);
+    assert_eq!(decoder.billing_usage().unwrap().output_tokens().get(), 7);
+    assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
+
+    let mut parser = af_protocol::openai_chat::SseParser::new();
+    let wire_events: Vec<Value> = parser
+        .push(&body)
+        .unwrap()
+        .into_iter()
+        .filter(|event| !event.is_comment())
+        .map(|event| serde_json::from_slice(event.data()).unwrap())
+        .collect();
+    parser.finish().unwrap();
+    let initial = wire_events
+        .iter()
+        .find(|event| event["type"] == "message_start")
+        .unwrap();
+    assert_eq!(initial["message"]["usage"]["input_tokens"], 120);
+    assert_eq!(initial["message"]["model"], UPSTREAM_MODEL);
+    assert_ne!(initial["message"]["id"], "msg_private_compaction_stream");
+    let final_delta = wire_events
+        .iter()
+        .find(|event| event["type"] == "message_delta")
+        .unwrap();
+    assert_public_compaction_usage(&final_delta["usage"]);
+    assert_eq!(
+        compaction_billing_summary(&database).await,
+        (1, 112, 7, 2, 2, 3)
+    );
 }
 
 fn native_compaction_block(content: Value) -> Value {

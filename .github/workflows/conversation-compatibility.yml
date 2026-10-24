@@ -80,6 +80,13 @@ jobs:
         with:
           shared-key: conversation
 
+      - name: Install runtime test tool
+        if: ${{ inputs.scope != 'protocol-relay' }}
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: cargo-nextest@0.9.140
+          fallback: none
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -109,7 +116,7 @@ jobs:
 
       - name: Test native compaction runtime and billing
         if: ${{ inputs.scope != 'protocol-relay' }}
-        run: cargo test --quiet -p af-server --test anthropic_runtime_chain --all-features --locked
+        run: cargo nextest run -p af-server --test anthropic_runtime_chain --all-features --locked --no-fail-fast
 
       - name: Test conversation scheduling
         if: ${{ inputs.scope != 'protocol-relay' }}
