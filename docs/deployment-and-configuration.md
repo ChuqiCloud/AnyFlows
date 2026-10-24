@@ -131,21 +131,13 @@ sudo systemctl reload caddy
 
 ## 6. 接入第一个模型
 
-1. 添加渠道，选择对应的上游类型并填写连接信息。
-2. 添加渠道 API Key 或账号凭据，确认可用模型。
-3. 配置模型、路由、价格和用户分组权限。
-4. 创建用户 API Key，通过站点 `/api` 页或客户端发起调用，并核对调用日志。
-
-登录后台的会话与调用模型的 API Key 是两种凭据。客户端调用模型应使用用户 API Key。
+按 [渠道管理](channels.md) 添加上游并配置模型、路由及分组权限，再创建 [用户 API Key](authentication-and-access.md#创建和使用-api-key) 发起调用。
 
 ## 常用操作
 
 ```bash
 sudo systemctl restart anyflows
-sudo systemctl stop anyflows
-sudo systemctl start anyflows
-sudo journalctl -u anyflows -f
-curl --fail http://127.0.0.1:8080/healthz
+sudo journalctl -u anyflows -n 100 --no-pager
 curl --fail http://127.0.0.1:8080/readyz
 ```
 

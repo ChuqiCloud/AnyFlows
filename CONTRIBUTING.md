@@ -36,7 +36,7 @@ corepack pnpm check
 
 Next 使用 `web-next` 目录。共享行为的改动需检查两套前端，并在根目录运行 `node tools/ci/check-frontend-parity.mjs`。
 
-文档改动检查链接、命令和实现是否一致。远程检查按改动范围选择，详见 [CI 维护](docs/ci-maintenance.md)。
+文档改动检查链接、命令和实现是否一致。远程 CI 按路径选择：`develop` PR 执行编译与契约检查，`main` PR 和推送执行相关组件的完整回归；数据库、缓存和部署检查按改动范围运行。手动运行 `ci.yml` 可选择全部组件，浏览器专项仅手动运行。触发条件见 [CI 配置](.github/workflows/ci.yml)。
 
 ## 接口与双前端
 
@@ -50,11 +50,28 @@ corepack pnpm api:generate
 
 Classic 与 Next 共用接口、权限和业务规则，视觉组件分别适配各自主题。新增交互应覆盖加载、空数据、失败和移动端状态。
 
+## 新增渠道
+
+渠道的 `type` 指定适配器，`protocol` 指定上游原生协议，`provider` 记录厂商品牌。OpenAI 兼容服务通常复用已有适配器；只有协议或认证语义不同时才增加适配器。
+
+1. 仅增加品牌时维护品牌目录。新增适配器需实现协议、认证和强类型配置，并接入 `af-adapter` 工厂。
+2. 在 [`channel_capability.rs`](crates/af-domain/src/channel_capability.rs) 声明已接入的协议、调度、探活、模型发现与凭据类型。`supports_credential_kind` 保留历史兼容范围，`creatable_credential_kinds` 定义新建选项。
+3. 常规渠道通过 `standard_adaptor_settings` 装配；固定入口、异步任务或额外参数使用专用配置。能力声明不替代认证校验。
+4. 导出两套前端能力目录，补充表单与协议回归，生成文件随源码提交：
+
+```bash
+cargo xtask channel-capabilities export
+cargo xtask channel-capabilities check
+node tools/ci/check-frontend-parity.mjs
+```
+
 ## Pull Request
 
 标题和描述说明问题与修改后的行为，必要时附复现步骤或截图。改动保持集中，测试覆盖实际风险，避免重复测试和无关格式改动。
 
 不要提交密钥、生产配置、编译目录或私有企业实现。扩展契约见 [仓库与扩展边界](docs/repository-boundary.md)。
+
+GitHub `main` 接收社区贡献，合并后自动创建 PR 回传 Gitea `develop`；Gitea 的公共改动通过导出 PR 同步到 GitHub。两端均由维护者审查合并，导出会阻止覆盖尚未回传的社区改动。`docs/public-core-source.json` 由同步工具维护，不手工修改。
 
 ## 版本标签
 

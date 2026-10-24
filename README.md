@@ -46,16 +46,7 @@ OpenAI 兼容客户端通常使用 `https://api.example.com/v1` 作为 Base URL�
 
 ## 文档
 
-| 内容 | 链接 |
-| --- | --- |
-| 下载、配置、初始化和域名访问 | [二进制部署](docs/deployment-and-configuration.md) |
-| 负载均衡、共享依赖和升级顺序 | [多节点部署](docs/multi-node-deployment.md) |
-| Docker Compose 源码部署 | [容器部署](docs/docker-compose.md) |
-| 环境变量、数据库和密钥 | [配置参考](docs/configuration.md) |
-| 备份、升级和回滚 | [升级维护](docs/migrations-and-release.md) |
-| 版本标签和发布阶段 | [版本标签规范](docs/release-tagging.md) |
-| 账号、API Key 和注册邀请 | [认证与访问](docs/authentication-and-access.md) |
-| 其余使用和开发文档 | [文档目录](docs/README.md) |
+配置和升级见 [配置参考](docs/configuration.md)、[升级与备份](docs/migrations-and-release.md)。账号、渠道及开发参考见 [文档目录](docs/README.md)。
 
 ## 参与开发
 
