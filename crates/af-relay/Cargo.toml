@@ -6,9 +6,9 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-af-adapter = { path = "../af-adapter", version = "0.3.0-beta.2" }
-af-domain = { path = "../af-domain", version = "0.3.0-beta.2" }
-af-protocol = { path = "../af-protocol", version = "0.3.0-beta.2" }
+af-adapter = { path = "../af-adapter", version = "0.3.0-beta.3" }
+af-domain = { path = "../af-domain", version = "0.3.0-beta.3" }
+af-protocol = { path = "../af-protocol", version = "0.3.0-beta.3" }
 futures-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
