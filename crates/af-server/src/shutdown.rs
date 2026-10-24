@@ -65,6 +65,13 @@ impl ShutdownController {
 /// 信号监听初始化失败时按 fail-closed 处理：记录静态分类后立即进入关闭流程，
 /// 不把底层系统错误写入日志。
 pub async fn system_shutdown_signal() {
+    tokio::select! {
+        _ = os_shutdown_signal() => {},
+        _ = af_launcher::child_shutdown_signal() => {},
+    }
+}
+
+async fn os_shutdown_signal() {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};

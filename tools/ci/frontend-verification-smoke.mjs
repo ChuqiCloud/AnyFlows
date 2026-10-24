@@ -34,6 +34,7 @@ try {
     import { AccountVerificationPage } from './src/features/account-verification/account-verification-page';
     import { VerificationSettingsPanel } from './src/features/account-verification/verification-settings-panel';
     import { ModelProviderCatalogPanel } from './src/features/model-management/model-provider-catalog-panel';
+    import { SoftwareUpdatePanel } from './src/features/site-settings/software-update-panel';
     import { AuthenticationSettingsPage } from './src/features/authentication-settings/authentication-settings-page';
     import { resolveProviderLogo, findProviderLogo } from './src/components/brand/model-logos';
     if (resolveProviderLogo('Jina', 'deepseek')?.name !== 'Jina') throw new Error('Configured logo must take priority');
@@ -43,7 +44,7 @@ try {
     createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         ${isNext ? '<HeroUIProvider>' : ''}<main style={{ padding: '16px', maxWidth: '1100px', margin: 'auto' }}>
-          {mode === 'rewards' ? <AuthenticationSettingsPage rewardsOnly /> : mode === 'settings' ? <VerificationSettingsPanel /> : mode === 'catalog' ? <ModelProviderCatalogPanel /> : <AccountVerificationPage admin={mode === 'admin'} />}
+          {mode === 'software' ? <SoftwareUpdatePanel /> : mode === 'rewards' ? <AuthenticationSettingsPage rewardsOnly /> : mode === 'settings' ? <VerificationSettingsPanel /> : mode === 'catalog' ? <ModelProviderCatalogPanel /> : <AccountVerificationPage admin={mode === 'admin'} />}
         </main>${isNext ? '</HeroUIProvider>' : ''}
       </QueryClientProvider>
     );
@@ -332,6 +333,51 @@ try {
       console.log(`ANYFLOWS_VERIFICATION_SCREENSHOT_${frontend}_${theme}_${name}_END`)
     }
   }
+  let software = { edition: 'community', version: '0.3.0', core_version: '0.3.0', commit: 'a'.repeat(40), build_time: '2026-10-24T00:00:00Z', target: 'x86_64-unknown-linux-gnu', deployment: 'binary', node_id: 'node-fixture', check_enabled: true, install_enabled: true, install_blocked_reason: null, restart_required: false, checked_at: null, latest: null, update_available: false }
+  let softwareChecks = 0
+  let softwareInstalls = 0
+  await page.route((url) => url.pathname.startsWith('/api/admin/software'), async (route) => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/check')) {
+      softwareChecks += 1
+      software = { ...software, checked_at: 1_792_800_000, update_available: true, latest: { version: '0.4.0', tag: 'v0.4.0', url: 'https://github.com/ChuqiCloud/AnyFlows/releases/tag/v0.4.0', notes: 'Update fixture <script>unsafe</script>', published_at: null, package_name: 'anyflows-v0.4.0-linux-amd64.tar.gz', package_url: 'https://github.com/ChuqiCloud/AnyFlows/releases/download/v0.4.0/anyflows-v0.4.0-linux-amd64.tar.gz' } }
+    } else if (path.endsWith('/install')) {
+      assert.deepEqual(route.request().postDataJSON(), { tag: 'v0.4.0', expected_node_id: 'node-fixture' })
+      softwareInstalls += 1
+      software = { ...software, restart_required: true, install_enabled: false, install_blocked_reason: 'restart_required' }
+    }
+    await route.fulfill({ json: software })
+  })
+  await page.goto(`${home}?mode=software`)
+  await page.getByText('node-fixture', { exact: true }).waitFor()
+  assert.equal(softwareChecks, 0, 'Opening version information must not contact release discovery')
+  await page.getByRole('button', { name: '检查更新', exact: true }).click()
+  const installUpdate = page.getByRole('button', { name: '下载并安装', exact: true })
+  await installUpdate.waitFor()
+  assert.ok(await installUpdate.isDisabled(), 'Install requires explicit backup acknowledgement')
+  await page.getByRole('checkbox').check()
+  await installUpdate.click()
+  await page.getByText('安装完成，重启后生效。旧程序保留在程序目录的 anyflows-backup-* 文件中。', { exact: true }).waitFor()
+  assert.equal(softwareInstalls, 1)
+  assert.equal(await installUpdate.count(), 0, 'Installed process cannot install again before restarting')
+  software = { ...software, deployment: 'docker', restart_required: false, install_blocked_reason: 'container' }
+  await page.reload()
+  await page.getByText('容器部署仅支持检查版本，请使用新的镜像标签重新部署。', { exact: true }).waitFor()
+  assert.equal(await installUpdate.count(), 0)
+  assert.equal(await page.getByRole('checkbox').count(), 0)
+  software = { ...software, edition: 'custom', check_enabled: false, install_blocked_reason: 'host_managed', latest: null }
+  await page.reload()
+  await page.getByText('当前部署暂不开放在线更新。', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('button', { name: '检查更新', exact: true }).count(), 0)
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 844 })
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${frontend} version panel overflowed at ${width}px`)
+  }
+  const softwareScreenshot = await page.screenshot({ fullPage: true, animations: 'disabled' })
+  console.log(`ANYFLOWS_SOFTWARE_SCREENSHOT_${frontend}_BEGIN`)
+  console.log(softwareScreenshot.toString('base64').match(/.{1,120}/g).join('\n'))
+  console.log(`ANYFLOWS_SOFTWARE_SCREENSHOT_${frontend}_END`)
+  console.log(`Software update browser checks passed for ${frontend}: explicit discovery, install acknowledgement, node binding, restart, container and managed-host policies.`)
   assert.deepEqual(errors, [])
   console.log(`Verification browser checks passed for ${frontend}: cursor pagination, deferred previews, multipart upload, approval, retained materials, eligibility and provider catalog.`)
 } catch (error) {

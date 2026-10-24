@@ -7,6 +7,7 @@ import { useAdminSiteSettings } from './site-settings-api'
 import { SiteSettingsWorkspace } from './site-settings-workspace'
 import { FrontendTemplatePanel } from './frontend-template-panel'
 import { SiteNavigationPanel } from './site-navigation-panel'
+import { SoftwareUpdatePanel } from './software-update-panel'
 
 /** 呈现管理员站点设置，并在固定记录不可用时保持失败关闭。 */
 export function SiteSettingsPage() {
@@ -35,6 +36,7 @@ export function SiteSettingsPage() {
         </Button>
       </header>
 
+      <SoftwareUpdatePanel />
       {settingsQuery.isPending ? (
         <div
           className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(17rem,0.65fr)]"

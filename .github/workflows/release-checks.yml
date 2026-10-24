@@ -8,6 +8,7 @@ on:
       - .github/workflows/publish-public-release.yml
       - .cnb/release.yml
       - tools/ci/*release*.sh
+      - tools/ci/*platform.py
       - scripts/systemd/**
       - Cargo.toml
   workflow_dispatch:
@@ -49,3 +50,6 @@ jobs:
 
       - name: Check tag formats and release archives
         run: bash tools/ci/test-release-scripts.sh
+
+      - name: Check native archive layouts and checksums
+        run: python3 tools/ci/test-package-platform.py

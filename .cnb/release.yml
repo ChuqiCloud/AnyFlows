@@ -46,7 +46,7 @@
     cargo clean --release --workspace
     export AF_BUILD_COMMIT="$(git rev-parse HEAD)"
     export AF_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    cargo build --release --locked --package af-server
+    cargo build --release --locked --package af-server --package af-launcher
 
 .release-package-stage: &release-package-stage
   name: 归档并校验摘要

@@ -255,9 +255,14 @@ fn load_file(path: PathBuf, required: bool) -> Result<AppConfig, ConfigError> {
 
 fn environment_provider() -> Env {
     Env::prefixed(ENV_PREFIX)
-        // CI 的 AF_TEST_* 等变量只控制测试门控，不应成为业务配置字段。
+        // Cargo 注入的构建身份和 CI 测试门控变量不是业务配置；仅忽略已知键。
         .ignore(&[
             "config_file",
+            "build_target",
+            "build_commit",
+            "build_time",
+            "build_deployment",
+            "launcher_target",
             "test_database_url",
             "require_live_database",
             "allow_destructive_migration_test",
@@ -1700,6 +1705,27 @@ mod tests {
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
             assert_eq!(config.database().url().expose(), "sqlite::memory:");
+        });
+    }
+
+    #[test]
+    fn cargo_build_identity_is_not_business_configuration() {
+        with_clean_env(|jail| {
+            for (key, value) in [
+                ("AF_BUILD_TARGET", "x86_64-unknown-linux-gnu"),
+                ("AF_BUILD_COMMIT", "a"),
+                ("AF_BUILD_TIME", "2026-10-24T00:00:00Z"),
+                ("AF_BUILD_DEPLOYMENT", "docker"),
+                ("AF_LAUNCHER_TARGET", "x86_64-unknown-linux-gnu"),
+            ] {
+                jail.set_env(key, value);
+            }
+            let path = temp_file("[database]\nurl = 'sqlite::memory:'\n");
+            let config = load_from(&path).unwrap();
+            assert_eq!(config.database().url().expose(), "sqlite::memory:");
+            jail.set_env("AF_BUILD_UNKNOWN", "must-not-be-ignored");
+            assert_eq!(load_from(&path).unwrap_err(), ConfigError::Invalid);
+            let _ = fs::remove_file(path);
         });
     }
 

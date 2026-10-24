@@ -5,6 +5,7 @@ tag="${1:-auto}"
 release_arch="${2:-}"
 binary_path="${3:-target/release/af-server}"
 output_directory="${4:-release}"
+launcher_path="${5:-target/release/anyflows-launcher}"
 workspace="${RELEASE_WORKSPACE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 fail() {
@@ -56,6 +57,8 @@ if [[ "$output_directory" != /* ]]; then
   output_directory="$workspace/$output_directory"
 fi
 [[ -x "$binary_path" ]] || fail "缺少可执行 release 二进制 $binary_path"
+if [[ "$launcher_path" != /* ]]; then launcher_path="$workspace/$launcher_path"; fi
+[[ -x "$launcher_path" ]] || fail "缺少可执行启动器 $launcher_path"
 [[ -x "$workspace/scripts/systemd/install.sh" ]] || fail "缺少 systemd 安装脚本"
 [[ -f "$workspace/scripts/systemd/anyflows.service" ]] || fail "缺少 systemd 服务单元"
 [[ -f "$workspace/anyflows.conf" ]] || fail "缺少 anyflows.conf"
@@ -67,6 +70,9 @@ trap 'rm -rf "$temporary_directory"' EXIT
 
 mkdir -p "$temporary_directory/$package_name" "$output_directory"
 install -m 0755 "$binary_path" "$temporary_directory/$package_name/anyflows"
+install -m 0755 "$launcher_path" "$temporary_directory/$package_name/anyflows-launcher"
+install -m 0755 "$workspace/scripts/start.sh" "$temporary_directory/$package_name/start.sh"
+install -m 0644 "$workspace/docs/online-updates.md" "$temporary_directory/$package_name/online-updates.md"
 install -m 0644 "$workspace/README.md" "$temporary_directory/$package_name/README.md"
 install -m 0644 "$workspace/.env.example" "$temporary_directory/$package_name/.env.example"
 install -m 0644 "$workspace/anyflows.conf" "$temporary_directory/$package_name/anyflows.conf"

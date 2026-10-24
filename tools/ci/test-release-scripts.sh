@@ -74,7 +74,7 @@ chmod 0755 "$fake_binary"
 
 RELEASE_SKIP_ARCH_CHECK=1 SOURCE_DATE_EPOCH=0 \
   bash "$workspace/tools/ci/package-release.sh" \
-  "$tag" amd64 "$fake_binary" "$temporary_directory/release"
+  "$tag" amd64 "$fake_binary" "$temporary_directory/release" "$fake_binary"
 
 printf '测试变更摘要。\n' >"$temporary_directory/release/CHANGELOG.md"
 bash "$workspace/tools/ci/finalize-release.sh" \
@@ -85,6 +85,8 @@ test -x "$workspace/scripts/systemd/install.sh"
 bash -n "$workspace/scripts/systemd/install.sh"
 test -s "$workspace/CHANGELOG.md"
 grep -q 'ProtectSystem=strict' "$workspace/scripts/systemd/anyflows.service"
+grep -q '^ExecStart=/usr/local/libexec/anyflows/anyflows-launcher ' "$workspace/scripts/systemd/anyflows.service"
+grep -q '^EnvironmentFile=/etc/anyflows/anyflows.env$' "$workspace/scripts/systemd/anyflows.service"
 grep -q "anyflows-${tag}-linux-amd64.tar.gz" \
   "$temporary_directory/release/RELEASE_NOTES.md"
 ! grep -q "anyflows-${tag}-linux-arm64.tar.gz" \
@@ -96,6 +98,8 @@ archive_listing="$temporary_directory/archive.list"
 tar -tzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
   >"$archive_listing"
 grep -q "/anyflows$" "$archive_listing"
+grep -q "/anyflows-launcher$" "$archive_listing"
+grep -q "/start.sh$" "$archive_listing"
 grep -q "/install.sh$" "$archive_listing"
 grep -q "/anyflows.service$" "$archive_listing"
 grep -q "/CHANGELOG.md$" "$archive_listing"
