@@ -7,8 +7,8 @@ publish.workspace = true
 
 [dependencies]
 aho-corasick.workspace = true
-af-db = { path = "../af-db", version = "0.3.0-beta.2" }
-af-domain = { path = "../af-domain", version = "0.3.0-beta.2" }
+af-db = { path = "../af-db", version = "0.3.0-beta.3" }
+af-domain = { path = "../af-domain", version = "0.3.0-beta.3" }
 getrandom.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
