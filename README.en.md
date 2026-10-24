@@ -15,6 +15,34 @@ AnyFlows is a self-hosted AI API gateway. It connects multiple model providers t
 
 This repository contains the standalone community edition.
 
+## Acknowledgments & Community Sponsors
+
+Thanks to the following partners for supporting AnyFlows.
+
+<!-- Brand logos belong to their respective owners. Source: https://acmecloud.cn/partners -->
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <a href="https://chuqiyun.com/">
+        <img src="docs/assets/sponsors/chuqicloud.png" alt="Chuqi Cloud (初七云)" height="48">
+      </a>
+      <p><strong><a href="https://chuqiyun.com/">Chuqi Cloud</a> · Cloud Computing Support</strong></p>
+      <p>Cloud computing services and infrastructure support for AnyFlows.</p>
+    </td>
+    <td align="center" width="50%">
+      <a href="https://www.mefrp.com/">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="docs/assets/sponsors/mefrp-dark.svg">
+          <source media="(prefers-color-scheme: light)" srcset="docs/assets/sponsors/mefrp-light.svg">
+          <img src="docs/assets/sponsors/mefrp-light.svg" alt="ME Frp (幻缘映射)" height="48">
+        </picture>
+      </a>
+      <p><strong><a href="https://www.mefrp.com/">ME Frp</a> · Community Sponsor</strong></p>
+      <p>A free tunneling service for remote access, multiplayer gaming, and development.</p>
+    </td>
+  </tr>
+</table>
+
 ## Installation
 
 Community binary packages currently support Linux amd64 and include both frontends. Rust and Node.js are not required at runtime. Download the archive and matching `.sha256` file from [Releases](https://github.com/ChuqiCloud/AnyFlows/releases). Beta releases are intended for testing.
