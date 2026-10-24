@@ -16,8 +16,8 @@ jobs:
         include:
           - { runner: ubuntu-24.04, target: x86_64-unknown-linux-gnu, binary: af-server, triplet: unused }
           - { runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, binary: af-server, triplet: unused }
-          - { runner: windows-2025, target: x86_64-pc-windows-msvc, binary: af-server.exe, triplet: x64-windows-static-md }
-          - { runner: windows-11-arm, target: aarch64-pc-windows-msvc, binary: af-server.exe, triplet: arm64-windows-static-md }
+          - { runner: windows-2025, target: x86_64-pc-windows-msvc, binary: af-server.exe, triplet: x64-windows-static }
+          - { runner: windows-11-arm, target: aarch64-pc-windows-msvc, binary: af-server.exe, triplet: arm64-windows-static }
           - { runner: macos-15-intel, target: x86_64-apple-darwin, binary: af-server, triplet: unused }
           - { runner: macos-15, target: aarch64-apple-darwin, binary: af-server, triplet: unused }
     runs-on: ${{ matrix.runner }}
@@ -55,8 +55,11 @@ jobs:
         run: |
           if [[ "$RUNNER_OS" == "macOS" ]]; then
             echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+            echo "OPENSSL_STATIC=1" >> "$GITHUB_ENV"
+            echo "MACOSX_DEPLOYMENT_TARGET=15.0" >> "$GITHUB_ENV"
           elif [[ "$RUNNER_OS" == "Windows" ]]; then
             vcpkg install openssl:${{ matrix.triplet }}
+            echo "RUSTFLAGS=-C target-feature=+crt-static" >> "$GITHUB_ENV"
             echo "VCPKGRS_TRIPLET=${{ matrix.triplet }}" >> "$GITHUB_ENV"
             echo "OPENSSL_STATIC=1" >> "$GITHUB_ENV"
           fi

@@ -74,7 +74,7 @@ OpenAI 兼容客户端通常使用 `https://api.example.com/v1` 作为 Base URL�
 
 ## 文档
 
-配置和升级见 [配置参考](docs/configuration.md)、[升级与备份](docs/migrations-and-release.md)。账号、渠道及开发参考见 [文档目录](docs/README.md)。
+配置和升级见 [配置参考](docs/configuration.md)、[升级与备份](docs/migrations-and-release.md)、[版本检测与手动在线升级](docs/online-updates.md)。账号、渠道及开发参考见 [文档目录](docs/README.md)。
 
 ## 参与开发
 
