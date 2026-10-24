@@ -10,6 +10,11 @@ on:
       - tools/ci/run-cache-redis-test.sh
       - tools/repository/**
       - tools/ci/test-public-core-export.sh
+      - tools/ci/verify-public-core-boundary.py
+      - docs/**
+      - '*.md'
+      - web/src/i18n/locales/*.json
+      - web-next/src/i18n/locales/*.json
   pull_request:
     branches: [main, develop]
     paths:
@@ -19,6 +24,11 @@ on:
       - tools/ci/run-cache-redis-test.sh
       - tools/repository/**
       - tools/ci/test-public-core-export.sh
+      - tools/ci/verify-public-core-boundary.py
+      - docs/**
+      - '*.md'
+      - web/src/i18n/locales/*.json
+      - web-next/src/i18n/locales/*.json
 
   workflow_dispatch:
 

@@ -39,7 +39,7 @@
     "positiveRequests": "Requests with cache usage",
     "upstreamRequests": "Upstream usage requests",
     "estimatedRequests": "Estimated usage requests",
-    "cacheHint": "Public usage ledger for the last 24 hours, refreshed every minute. Cache tokens include upstream-confirmed usage only. Missing reporting does not mean a cache miss; total input includes cache tokens. Redis storage, provider cache capacity, and extension-owned service-account ledgers are excluded.",
+    "cacheHint": "Public usage ledger for the last 24 hours, refreshed every minute. Cache tokens include upstream-confirmed usage only. Missing reporting does not mean a cache miss; total input includes cache tokens. Redis storage and provider cache capacity are excluded.",
     "states": {
       "starting": "Collecting",
       "healthy": "Healthy",
@@ -4415,14 +4415,14 @@
       "models": "Browse models"
     },
     "enterprise": {
-      "title": "Opening an organization account",
-      "body": "Organization access starts with a personal account and a reviewed request. The platform creates the organization only after approval.",
+      "title": "Individual and business verification",
+      "body": "Sign in to submit individual or business identity documents and review verification progress and results.",
       "steps": {
-        "account": "Create a personal account and sign in",
-        "apply": "Submit an organization access request",
-        "setup": "After approval, complete Owner onboarding"
+        "account": "Create an account and sign in",
+        "apply": "Submit identity details and documents",
+        "setup": "Review progress and results"
       },
-      "login": "Go to organization sign-in"
+      "login": "Go to sign-in"
     }
   },
   "invitations": {
@@ -7773,8 +7773,8 @@
     "title": "Account verification",
     "settingsTitle": "Verification settings",
     "adminTitle": "Identity verification reviews",
-    "description": "Verify your personal or business identity and review submitted documents and decisions. Approved business accounts can apply for an organization workspace.",
-    "adminDescription": "Review individual and business account identities. Workspace applications are handled separately in enterprise management.",
+    "description": "Submit individual or business identity documents and review verification progress and application records.",
+    "adminDescription": "Review individual and business identity documents and record decisions.",
     "individual": "Personal",
     "enterprise": "Business",
     "kind": "Verification type",
@@ -7799,7 +7799,7 @@
     "fileError": "Select at least one supported document and check file sizes and count.",
     "submit": "Submit verification",
     "history": "Verification history",
-    "workspaceHistory": "Workspace application history",
+    "workspaceHistory": "Application history",
     "status": {
       "1": "Pending review",
       "2": "In review",
@@ -7842,14 +7842,14 @@
     "supplement": "Request information",
     "reject": "Reject",
     "updated": "Updated",
-    "enterpriseGranted": "Business verification approved. You can now apply for a workspace.",
-    "applyWorkspace": "Apply for a workspace",
-    "enterWorkspace": "Open workspace",
-    "verifyFirst": "Verify your business first",
-    "verifyFirstHint": "Business verification confirms the account identity. Once approved, you can request a workspace with capabilities approved by a platform administrator.",
+    "enterpriseGranted": "Business identity verification approved.",
+    "applyWorkspace": "Continue",
+    "enterWorkspace": "Open console",
+    "verifyFirst": "Verify your business identity first",
+    "verifyFirstHint": "Business verification confirms the account holder. Submit the business details and supporting documents.",
     "openCenter": "Open account verification",
     "accounts": "Account reviews",
-    "organizations": "Workspace verification records",
+    "organizations": "Business verification records",
     "pdfHint": "If your browser cannot display the PDF inline, download it to view.",
     "legacyMissing": "This legacy record has no stored file content.",
     "legacyHistoryHint": "Submission and review versions are retained from this upgrade onward. Older history is shown only where records actually exist.",

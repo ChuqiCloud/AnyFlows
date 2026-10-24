@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that a public checkout does not contain enterprise source paths."""
+"""Check that a public checkout does not contain excluded source paths."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def main() -> int:
     parser.add_argument(
         "--manifest",
         type=Path,
-        default=Path("docs/public-core-extraction.json"),
+        default=Path("tools/repository/public-core-export.json"),
     )
     parser.add_argument(
         "--mode",
@@ -42,39 +42,33 @@ def main() -> int:
     except (OSError, json.JSONDecodeError) as error:
         print(f"boundary manifest cannot be read: {error}", file=sys.stderr)
         return 2
-    groups = manifest.get("enterpriseGroups")
-    if not isinstance(groups, list):
-        print("boundary manifest enterpriseGroups must be an array", file=sys.stderr)
+    if not isinstance(manifest, dict):
+        print("boundary manifest must be an object", file=sys.stderr)
         return 2
+    patterns = manifest.get("excludedPaths")
+    if not isinstance(patterns, list) or not all(
+        isinstance(pattern, str) and pattern for pattern in patterns
+    ):
+        print("boundary manifest excludedPaths must be an array of non-empty strings", file=sys.stderr)
+        return 2
+    matches = sorted({
+        path.relative_to(root).as_posix()
+        for pattern in patterns
+        for path in expand(root, pattern)
+    })
 
-    matches: dict[str, list[str]] = {}
-    for group in groups:
-        group_id = group.get("id")
-        paths = group.get("paths")
-        if not isinstance(group_id, str) or not isinstance(paths, list):
-            print("every enterprise group needs an id and paths", file=sys.stderr)
-            return 2
-        matched = {
-            path.relative_to(root).as_posix()
-            for pattern in paths
-            for path in expand(root, pattern)
-        }
-        matches[group_id] = sorted(matched)
-
-    total = sum(len(paths) for paths in matches.values())
     if args.mode == "inventory":
-        for group_id, paths in matches.items():
-            print(f"{group_id}: {len(paths)} matched paths")
-        print(f"enterprise boundary inventory: {total} matched paths")
+        for path in matches:
+            print(path)
+        print(f"source boundary inventory: {len(matches)} matched paths")
         return 0
 
-    if total:
-        print("public checkout contains enterprise paths:", file=sys.stderr)
-        for group_id, paths in matches.items():
-            for path in paths:
-                print(f"  {group_id}: {path}", file=sys.stderr)
+    if matches:
+        print("public checkout contains excluded paths:", file=sys.stderr)
+        for path in matches:
+            print(f"  {path}", file=sys.stderr)
         return 1
-    print("public core boundary: no enterprise paths found")
+    print("public core boundary: no excluded paths found")
     return 0
 
 
