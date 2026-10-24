@@ -23,7 +23,7 @@ pub(super) fn defaults(
             dotenvy::Error::Io(_) => "env_file_read",
             _ => "env_file_parse",
         })?;
-        if key.is_empty() || key.contains(['\0', '=']) || value.contains('\0') {
+        if key.is_empty() || key.contains('\0') || key.contains('=') || value.contains('\0') {
             return Err("env_file_parse");
         }
         let normalized = if cfg!(windows) {
