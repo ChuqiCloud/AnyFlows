@@ -14,7 +14,6 @@
 | [对话协议](conversation-compatibility.md) | 四类协议转换、历史回放和兼容范围 |
 | [运行状态](runtime-status.md) | 节点、依赖健康和用量统计 |
 | [前端开发](frontend-template-development.md) | 静态模板、构建扩展和接口约定 |
-| [扩展开发](repository-boundary.md) | 核心职责、扩展接口及服务账号 |
 | [版本规范](release-tagging.md) | 版本阶段、标签与社区发布 |
 
 开发环境、渠道适配和检查命令见 [贡献指南](../CONTRIBUTING.md)。

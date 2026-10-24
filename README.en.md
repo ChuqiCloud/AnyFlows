@@ -13,7 +13,7 @@ AnyFlows is a self-hosted AI API gateway. It connects multiple model providers t
 - Classic and Next administration frontends, with support for external static templates.
 - SQLite, PostgreSQL, and MySQL, with optional Redis for shared state.
 
-This repository contains the community core and can run independently. Private enterprise extensions are maintained separately.
+This repository contains the standalone community edition.
 
 ## Installation
 
@@ -53,7 +53,7 @@ The documentation is maintained primarily in Chinese:
 
 ## Contributing
 
-Open pull requests against `main`. See [CONTRIBUTING.md](CONTRIBUTING.md) for development tools and checks. Community contributors do not need private repository access.
+Open pull requests against `main`. See [CONTRIBUTING.md](CONTRIBUTING.md) for development tools and checks.
 
 ## License
 

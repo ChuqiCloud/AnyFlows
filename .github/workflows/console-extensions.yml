@@ -32,15 +32,12 @@ jobs:
       - name: Check out repository
         shell: bash
         env:
-          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL || github.server_url }}/${{ github.repository }}.git
           CHECKOUT_SHA: ${{ github.sha }}
           CHECKOUT_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           repository_url="$CHECKOUT_REPOSITORY_URL"
-          if [[ "$repository_url" == http://gitea_cps3:* ]]; then
-            repository_url="https://gitea.acmecloud.cn/${{ github.repository }}.git"
-          fi
           auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
           git init .
           git remote add origin "$repository_url"

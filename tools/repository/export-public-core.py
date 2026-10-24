@@ -395,7 +395,7 @@ def main() -> int:
     parser.add_argument(
         "--manifest",
         type=Path,
-        default=Path("docs/public-core-extraction.json"),
+        default=Path("tools/repository/public-core-export.json"),
     )
     parser.add_argument(
         "--allow-replace",

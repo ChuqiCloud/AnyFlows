@@ -21,9 +21,15 @@ jobs:
       CARGO_INCREMENTAL: '0'
       CARGO_PROFILE_DEV_DEBUG: '0'
     steps:
-      - name: Configure Gitea checkout
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
-        run: git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
+        shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
       - name: Check out source
         env:
           CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
