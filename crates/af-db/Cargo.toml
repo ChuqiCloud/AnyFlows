@@ -6,7 +6,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-af-domain = { path = "../af-domain", version = "0.3.0-beta.2" }
+af-domain = { path = "../af-domain", version = "0.3.0-beta.3" }
 argon2.workspace = true
 base64.workspace = true
 getrandom.workspace = true

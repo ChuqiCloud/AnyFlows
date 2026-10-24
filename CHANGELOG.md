@@ -1,3 +1,44 @@
+## 0.3.0-beta.3 - 2026-10-24
+
+本版本基于 `v0.3.0-beta.2`，增加渠道级路由绑定、凭据批量管理和构建版本查询，完善四类对话协议与 Agent 连续对话兼容，修复渠道竞速、流式等待及智能路由问题。
+
+### 新增
+
+- 智能路由支持绑定整个渠道或指定 Key。渠道绑定自动纳入可用凭据，保留原有指定 Key 绑定、优先级、权重和调度统计。([#53](https://github.com/ChuqiCloud/AnyFlows/pull/53))
+- 渠道 Key 调度支持按优先级和权重、同优先级轮询、固定顺序失败回退三种策略，Classic 与 Next 两套前端均可配置。([#53](https://github.com/ChuqiCloud/AnyFlows/pull/53))
+- 凭据管理支持逐行 Key、JSON、JSONL 和文件批量导入，以及批量删除、状态筛选、健康降权和冷却状态查看。([#53](https://github.com/ChuqiCloud/AnyFlows/pull/53))
+- 增加公开构建版本接口 `GET /api/version` 和 `/version` 别名，返回版本号、源码提交与 UTC 构建时间，便于核对实际部署版本。([#56](https://github.com/ChuqiCloud/AnyFlows/pull/56))
+
+### 优化
+
+- 统一 OpenAI Chat、OpenAI Responses、Anthropic Messages 与 Gemini GenerateContent 的请求转换和路由校验，完善四种入口与四种上游之间的 16 个转换方向，以及流式、非流式响应。([#53](https://github.com/ChuqiCloud/AnyFlows/pull/53)、[#58](https://github.com/ChuqiCloud/AnyFlows/pull/58))
+- 兼容常见 Agent 和 SDK 的可选空值、字符串数值、字段别名、旧式 functions、结构化工具结果和完整助手历史回放；同协议转发保留上游扩展字段。([#53](https://github.com/ChuqiCloud/AnyFlows/pull/53)、[#55](https://github.com/ChuqiCloud/AnyFlows/pull/55)、[#58](https://github.com/ChuqiCloud/AnyFlows/pull/58))
+- 渠道竞速以首个有效模型输出确定获胜请求，失败的 Key 立即补位；完善流式完成、失败和客户端取消时的健康反馈，避免误判 Key 状态。([#53](https://github.com/ChuqiCloud/AnyFlows/pull/53)、[#54](https://github.com/ChuqiCloud/AnyFlows/pull/54))
+- 流式请求在调度、重试和等待上游输出期间定期发送 SSE 保活，减少长时间等待被入口代理中断的问题。([#54](https://github.com/ChuqiCloud/AnyFlows/pull/54))
+
+### 修复
+
+- 修复编辑已有智能路由返回 500，以及不兼容的首个分组或智能规则阻断后续可用路由的问题。([#54](https://github.com/ChuqiCloud/AnyFlows/pull/54)、[#57](https://github.com/ChuqiCloud/AnyFlows/pull/57))
+- 修复 OpenAI Chat 完整和流式响应丢失 `logprobs` 明细，兼容工具调用可选索引、空值占位及新增的 `service_tier` 名称。([#51](https://github.com/ChuqiCloud/AnyFlows/pull/51))
+- 修复 Responses 明文推理摘要、工具调用 item 历史和结果续传被错误拒绝，以及可选加密输出偏好影响跨协议路由的问题。([#55](https://github.com/ChuqiCloud/AnyFlows/pull/55)、[#56](https://github.com/ChuqiCloud/AnyFlows/pull/56)、[#57](https://github.com/ChuqiCloud/AnyFlows/pull/57))
+- 修复 Anthropic 思考内容、签名和缓存提示在请求重建时丢失，以及 Gemini 缺少工具调用 ID 时无法关联后续结果的问题。([#55](https://github.com/ChuqiCloud/AnyFlows/pull/55))
+- 修复连续对话中结构化工具结果、推理签名和工具调用签名的预扣估算与回退计量，保留签名来源协议，避免错误地跨协议回放。([#57](https://github.com/ChuqiCloud/AnyFlows/pull/57))
+- 修复交错工具事件、Responses 工具参数完成事件和无输出终态事件的处理，避免工具续答丢失或流式结束后继续读取已释放的上游响应。([#53](https://github.com/ChuqiCloud/AnyFlows/pull/53)、[#58](https://github.com/ChuqiCloud/AnyFlows/pull/58))
+
+### 安全更新
+
+- Tokio 更新至 1.53.3，修复依赖安全公告涉及的问题。([#58](https://github.com/ChuqiCloud/AnyFlows/pull/58))
+- 更新两套前端的 Vite、Zod 4.x、DOMPurify、proxy-addr、Undici 和 source-map-js，修复首批依赖安全告警涉及的版本；保留工具链需要的 Zod 3.x。([#59](https://github.com/ChuqiCloud/AnyFlows/pull/59))
+
+### 升级与兼容
+
+- 新增渠道级路由绑定迁移。升级前备份数据库、配置和计费 WAL，首次启动时执行数据库迁移；回退数据库迁移前须先移除渠道级路由绑定。
+- Responses 沿用完整历史回放与 `store:false` 的无状态转发方式；已有服务器会话 ID 不能直接跨渠道续接。
+- 同协议转发保留供应商签名；跨协议转换保留可表达的文本、推理和工具关联，不伪造目标供应商签名或工具执行结果。
+- 本版本为社区版 Beta 预发布，用于测试和部署验收；企业扩展不包含在发布包中。
+
+完整变更：[v0.3.0-beta.2...v0.3.0-beta.3](https://github.com/ChuqiCloud/AnyFlows/compare/v0.3.0-beta.2...v0.3.0-beta.3)。
+
 ## 0.3.0-beta.2 - 2026-10-21
 
 本版本基于 `v0.3.0-beta.1`，增加代理池、NVIDIA NIM 和 OpenCode 接入，完善渠道执行策略与分时计费。发布包包含 Linux amd64 二进制、Classic 与 Next 两套内置前端、systemd 安装脚本和 SHA-256 校验文件。
