@@ -251,6 +251,7 @@ dependencies = [
 name = "af-launcher"
 version = "0.3.0-beta.3"
 dependencies = [
+ "dotenvy",
  "fs2",
  "semver",
  "serde",

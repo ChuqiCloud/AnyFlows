@@ -21,6 +21,8 @@ use tokio::{
 
 const MAX_BINARY_BYTES: u64 = 256 * 1024 * 1024;
 
+mod environment;
+
 #[derive(Clone, Serialize, Deserialize)]
 struct Selection {
     protocol: u32,
@@ -33,6 +35,8 @@ struct Settings {
     program: PathBuf,
     state: PathBuf,
     working_directory: PathBuf,
+    env_file: Option<PathBuf>,
+    environment: Vec<(String, String)>,
     args: Vec<OsString>,
     stop_timeout: Duration,
     ready_timeout: Duration,
@@ -92,7 +96,7 @@ async fn main() -> ExitCode {
     }
     if args.as_slice() == [OsString::from("--help")] {
         println!(
-            "anyflows-launcher [--program PATH] [--state-dir PATH] [--working-directory PATH] [--stop-timeout-secs N] [--ready-timeout-secs N] [-- SERVER_ARGS...]\n默认启动同目录 anyflows；工作目录及环境保持不变，状态默认保存到工作目录 .anyflows-launcher。停止启动器会优雅停止主程序。启动器自身需停止后手动维护。"
+            "anyflows-launcher [--program PATH] [--state-dir PATH] [--working-directory PATH] [--env-file PATH] [--stop-timeout-secs N] [--ready-timeout-secs N] [-- SERVER_ARGS...]\n默认启动同目录 anyflows；继承父进程环境，工作目录 .env 补充默认值；显式 env-file 相对启动目录解析。日志沿用标准输出和错误管道。状态默认保存到启动目录 .anyflows-launcher。停止启动器会优雅停止主程序。启动器自身需停止后手动维护。"
         );
         return ExitCode::SUCCESS;
     }
@@ -127,6 +131,8 @@ impl Settings {
             program: executable.with_file_name(binary_name()),
             state: cwd.join(".anyflows-launcher"),
             working_directory: cwd.clone(),
+            env_file: None,
+            environment: vec![],
             args: vec![],
             stop_timeout: Duration::from_secs(330),
             ready_timeout: Duration::from_secs(330),
@@ -146,6 +152,7 @@ impl Settings {
             match flag.to_str() {
                 Some("--program") => settings.program = absolute(&cwd, Path::new(&value)),
                 Some("--state-dir") => settings.state = absolute(&cwd, Path::new(&value)),
+                Some("--env-file") => settings.env_file = Some(absolute(&cwd, Path::new(&value))),
                 Some("--working-directory") => {
                     settings.working_directory = absolute(&cwd, Path::new(&value))
                 }
@@ -173,6 +180,8 @@ impl Settings {
 
 impl Supervisor {
     async fn new(mut settings: Settings) -> Result<Self, &'static str> {
+        settings.environment =
+            environment::defaults(&settings.working_directory, settings.env_file.as_deref())?;
         fs::create_dir_all(&settings.state).map_err(|_| "state_directory")?;
         settings.state = settings
             .state
@@ -295,6 +304,13 @@ impl Supervisor {
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .kill_on_drop(true);
+        for (key, value) in &self.settings.environment {
+            // Command inherits the parent environment, including non-Unicode values.
+            // Never mutate the launcher's environment or replace panel-provided values.
+            if env::var_os(key).is_none() {
+                command.env(key, value);
+            }
+        }
         command
             .env(CONTROL_ENV[0], self.endpoint.to_string())
             .env(CONTROL_ENV[1], &self.token)
@@ -428,13 +444,13 @@ impl Supervisor {
         }
         if self.shutdown_at.is_some_and(|at| Instant::now() >= at) {
             self.shutdown_at = None;
-            if let Some(update) = self.pending.as_ref() {
-                if let Err(code) = verify_file(&update.candidate, &update.digest, update.size) {
-                    self.error = Some(code.to_owned());
-                    self.phase = "idle".to_owned();
-                    self.pending = None;
-                    return Ok(());
-                }
+            if let Some(update) = self.pending.as_ref()
+                && let Err(code) = verify_file(&update.candidate, &update.digest, update.size)
+            {
+                self.error = Some(code.to_owned());
+                self.phase = "idle".to_owned();
+                self.pending = None;
+                return Ok(());
             }
             if let Some(running) = self.running.as_mut() {
                 send_shutdown(running, &self.token).await;

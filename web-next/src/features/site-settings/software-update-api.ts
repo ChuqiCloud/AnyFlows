@@ -8,7 +8,7 @@ const key = ['admin-software'] as const
 const security = [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }] as const
 
 export function useSoftwareStatus() {
-  return useQuery({ queryKey: key, staleTime: 60_000, retry: false, refetchOnWindowFocus: false,
+  return useQuery<SoftwareStatus>({ queryKey: key, staleTime: 60_000, retry: false, refetchOnWindowFocus: false,
     refetchInterval: (query) => {
       const status = query.state.data
       const pending = status?.launch_mode === 'launcher' && ['preparing', 'restarting', 'starting', 'backoff', 'waiting_previous_process'].includes(status.update_phase)

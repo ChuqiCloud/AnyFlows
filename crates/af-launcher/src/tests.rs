@@ -113,6 +113,8 @@ fn fixture_settings(root: &Path, program: PathBuf) -> Settings {
         program,
         state: root.join("state"),
         working_directory: root.to_owned(),
+        env_file: None,
+        environment: vec![],
         args: vec!["--preserved-argument".into()],
         stop_timeout: Duration::from_secs(3),
         ready_timeout: Duration::from_secs(3),

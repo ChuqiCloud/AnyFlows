@@ -44,6 +44,7 @@ sudo install -d -o root -g anyflows -m 0750 /etc/anyflows
 sudo install -d -o anyflows -g anyflows -m 0750 /var/lib/anyflows
 sudo install -d -o anyflows -g anyflows -m 0700 /var/lib/anyflows/billing-wal
 sudo install -o root -g root -m 0755 ./anyflows /usr/local/libexec/anyflows/anyflows
+sudo install -o root -g root -m 0755 ./anyflows-launcher /usr/local/libexec/anyflows/anyflows-launcher
 ```
 
 分别为会话签名和凭据加密生成密钥。运行两次以下命令，每次生成一个独立的 32 字节随机值：

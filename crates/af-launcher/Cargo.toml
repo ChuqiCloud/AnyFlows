@@ -10,6 +10,7 @@ name = "anyflows-launcher"
 path = "src/main.rs"
 
 [dependencies]
+dotenvy.workspace = true
 fs2.workspace = true
 semver.workspace = true
 serde.workspace = true

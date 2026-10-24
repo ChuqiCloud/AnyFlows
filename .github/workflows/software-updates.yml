@@ -68,7 +68,7 @@ jobs:
 
       - name: Check update crates
         run: cargo clippy -p af-launcher -p af-http -p af-server --all-targets --all-features --locked -- -D warnings
-      - name: Test version authorization and install safety
+      - name: Test launcher lifecycle, environment, version authorization and install safety
         run: |
           cargo test -p af-launcher --locked
           cargo test -p af-http --lib --locked software_updates::

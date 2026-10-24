@@ -23,7 +23,7 @@ fcntl.flock(runtime, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 def emit(event):
     with (ROOT / 'events.jsonl').open('a') as stream:
-        stream.write(json.dumps({'event': event, 'version': VERSION, 'pid': os.getpid(), 'cwd': os.getcwd(), 'args': sys.argv[1:]}) + '\n')
+        stream.write(json.dumps({'event': event, 'version': VERSION, 'pid': os.getpid(), 'cwd': os.getcwd(), 'args': sys.argv[1:], 'panel_value': os.environ.get('ANYFLOWS_TEST_PANEL_INJECTED_VALUE'), 'dotenv_value': os.environ.get('ANYFLOWS_TEST_DOTENV_DEFAULT_VALUE')}) + '\n')
 
 
 def call(action, pid=None):
@@ -35,6 +35,8 @@ def call(action, pid=None):
 
 
 emit('start')
+print('managed stdout', flush=True)
+print('managed stderr', file=sys.stderr, flush=True)
 if VERSION == '2.0.0' and (ROOT / 'fail-new').exists():
     emit('failed')
     raise SystemExit(7)
