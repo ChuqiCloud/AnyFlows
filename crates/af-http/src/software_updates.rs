@@ -3,12 +3,22 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use af_admin::SessionAuthenticator;
-use axum::{Json, Router, extract::State, middleware, response::{IntoResponse, Response}, routing::{get, post}};
+use axum::{
+    Json, Router,
+    extract::State,
+    middleware,
+    response::{IntoResponse, Response},
+    routing::{get, post},
+};
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{management_auth::{ManagementAuthenticationState, authenticate_management_session}, management_authorization::authorize_management_admin, management_session::no_store_json};
+use crate::{
+    management_auth::{ManagementAuthenticationState, authenticate_management_session},
+    management_authorization::authorize_management_admin,
+    management_session::no_store_json,
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct SoftwareRelease {
@@ -44,6 +54,7 @@ pub struct SoftwareStatus {
 #[serde(deny_unknown_fields)]
 pub struct InstallSoftwareUpdate {
     pub tag: String,
+    pub expected_node_id: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -69,37 +80,64 @@ impl IntoResponse for SoftwareUpdateError {
             Self::Conflict => (StatusCode::CONFLICT, "update_conflict"),
             Self::InstallFailed => (StatusCode::INTERNAL_SERVER_ERROR, "install_failed"),
         };
-        (status, no_store_json(SoftwareUpdateErrorBody { code: code.to_owned() })).into_response()
+        (
+            status,
+            no_store_json(SoftwareUpdateErrorBody {
+                code: code.to_owned(),
+            }),
+        )
+            .into_response()
     }
 }
 
-pub type SoftwareUpdateFuture<'a> = Pin<Box<dyn Future<Output = Result<SoftwareStatus, SoftwareUpdateError>> + Send + 'a>>;
+pub type SoftwareUpdateFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<SoftwareStatus, SoftwareUpdateError>> + Send + 'a>>;
 
 /// Hosts may supply their own identity and disable online access completely.
 pub trait SoftwareUpdateService: Send + Sync {
     fn status(&self) -> SoftwareUpdateFuture<'_>;
     fn check(&self) -> SoftwareUpdateFuture<'_>;
-    fn install(&self, tag: String) -> SoftwareUpdateFuture<'_>;
+    fn install(&self, tag: String, expected_node_id: String) -> SoftwareUpdateFuture<'_>;
 }
 
-pub fn build_software_update_router(service: Arc<dyn SoftwareUpdateService>, authenticator: Arc<dyn SessionAuthenticator>) -> Router {
+pub fn build_software_update_router(
+    service: Arc<dyn SoftwareUpdateService>,
+    authenticator: Arc<dyn SessionAuthenticator>,
+) -> Router {
     Router::new()
         .route("/api/admin/software", get(status))
         .route("/api/admin/software/check", post(check))
         .route("/api/admin/software/install", post(install))
         .route_layer(middleware::from_fn(authorize_management_admin))
-        .route_layer(middleware::from_fn_with_state(ManagementAuthenticationState::new(authenticator), authenticate_management_session))
+        .route_layer(middleware::from_fn_with_state(
+            ManagementAuthenticationState::new(authenticator),
+            authenticate_management_session,
+        ))
         .with_state(service)
 }
 
-async fn status(State(service): State<Arc<dyn SoftwareUpdateService>>) -> Result<Response, SoftwareUpdateError> {
+async fn status(
+    State(service): State<Arc<dyn SoftwareUpdateService>>,
+) -> Result<Response, SoftwareUpdateError> {
     Ok(no_store_json(service.status().await?))
 }
 
-async fn check(State(service): State<Arc<dyn SoftwareUpdateService>>) -> Result<Response, SoftwareUpdateError> {
+async fn check(
+    State(service): State<Arc<dyn SoftwareUpdateService>>,
+) -> Result<Response, SoftwareUpdateError> {
     Ok(no_store_json(service.check().await?))
 }
 
-async fn install(State(service): State<Arc<dyn SoftwareUpdateService>>, Json(request): Json<InstallSoftwareUpdate>) -> Result<Response, SoftwareUpdateError> {
-    Ok(no_store_json(service.install(request.tag).await?))
+async fn install(
+    State(service): State<Arc<dyn SoftwareUpdateService>>,
+    Json(request): Json<InstallSoftwareUpdate>,
+) -> Result<Response, SoftwareUpdateError> {
+    Ok(no_store_json(
+        service
+            .install(request.tag, request.expected_node_id)
+            .await?,
+    ))
 }
+
+#[cfg(test)]
+mod tests;

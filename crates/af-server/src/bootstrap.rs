@@ -2529,6 +2529,12 @@ impl Bootstrap<Supervised> {
             http_extensions =
                 http_extensions.with_service_account_models(Arc::clone(authenticator));
         }
+        let host_manages_software = http_extensions.descriptors().iter().any(|descriptor| {
+            descriptor
+                .capabilities
+                .iter()
+                .any(|capability| capability == "software.updates")
+        });
         let router = build_router(
             self.config.server(),
             self.stage.chat.clone(),
@@ -2613,16 +2619,18 @@ impl Bootstrap<Supervised> {
             Some(http_extensions),
             Some(payment_webhook_routes),
         );
-        let router = router
-            .merge(af_http::build_software_update_router(
-                self.stage.infrastructure.extensions.software_updates.clone().unwrap_or_else(|| {
-                    Arc::new(crate::software_updates::CommunitySoftwareUpdates::new(
-                        self.stage.upstream_clients.clone(),
-                        std::env::var("ANYFLOWS_ENABLE_BINARY_UPDATE").as_deref() == Ok("true"),
-                    ))
-                }),
+        let router = if host_manages_software {
+            router
+        } else {
+            router.merge(af_http::build_software_update_router(
+                Arc::new(crate::software_updates::CommunitySoftwareUpdates::new(
+                    self.stage.upstream_clients.clone(),
+                    std::env::var("ANYFLOWS_ENABLE_BINARY_UPDATE").as_deref() == Ok("true"),
+                )),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))
+        };
+        let router = router
             .merge(af_http::build_credential_health_router(
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
                 Arc::clone(&self.stage.infrastructure.admin_channel_reader),

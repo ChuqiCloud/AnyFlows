@@ -1,0 +1,56 @@
+import importlib.util
+from pathlib import Path
+import hashlib
+import json
+import tarfile
+import tempfile
+import unittest
+import zipfile
+
+spec = importlib.util.spec_from_file_location('package_platform', Path(__file__).with_name('package-platform.py'))
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+
+class PackagePlatformTests(unittest.TestCase):
+    def test_all_platforms_include_matching_binaries_and_verifiable_digests(self):
+        root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            binary = directory / 'fixture'
+            binary.write_bytes(b'native-binary-fixture')
+            for target in module.PLATFORMS:
+                with self.subTest(target=target):
+                    output = directory / target
+                    archive, raw = module.package(root, 'v1.2.3', target, binary, output, 0)
+                    self.assertEqual(raw.read_bytes(), binary.read_bytes())
+                    for path in [archive, raw]:
+                        digest, name = path.with_name(path.name + '.sha256').read_text().split()
+                        self.assertEqual(name, path.name)
+                        self.assertEqual(digest, hashlib.sha256(path.read_bytes()).hexdigest())
+                    if 'windows' in target:
+                        with zipfile.ZipFile(archive) as stream:
+                            names = stream.namelist()
+                            self.assertTrue(any(name.endswith('/anyflows.exe') for name in names))
+                            info = next(name for name in names if name.endswith('/build-info.json'))
+                            self.assertEqual(json.loads(stream.read(info))['target'], target)
+                    else:
+                        with tarfile.open(archive) as stream:
+                            names = stream.getnames()
+                            self.assertTrue(any(name.endswith('/anyflows') for name in names))
+                            info = next(name for name in names if name.endswith('/build-info.json'))
+                            self.assertEqual(json.load(stream.extractfile(info))['target'], target)
+                    self.assertEqual(any(name.endswith('/install.sh') for name in names), 'linux' in target)
+                    before = archive.read_bytes()
+                    module.package(root, 'v1.2.3', target, binary, output, 0)
+                    self.assertEqual(archive.read_bytes(), before)
+
+    def test_tag_and_target_cannot_inject_paths(self):
+        with self.assertRaises(ValueError):
+            module.package(Path('.'), '../escape', 'x86_64-unknown-linux-gnu', Path('missing'), Path('.'), 0)
+        with self.assertRaises(ValueError):
+            module.package(Path('.'), 'v1.2.3', 'unknown', Path('missing'), Path('.'), 0)
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -8,7 +8,7 @@ const blocked: Record<string, string> = {
   unsupported_target: '当前平台没有对应的安装包，请按部署文档手动升级。',
   restart_required: '程序已安装，请重启当前节点以运行新版本。',
   executable_unavailable: '无法定位当前程序，请手动升级。',
-  host_managed: '更新入口已预留，当前发行宿主暂不开放在线检测与安装。',
+  host_managed: '当前部署暂不开放在线更新。',
 }
 
 export function SoftwareUpdatePanel() {
@@ -46,7 +46,7 @@ export function SoftwareUpdatePanel() {
           <code className="overflow-auto rounded bg-muted px-2 py-2 text-xs">anyflows update install {status.latest.tag} --yes</code>
           {status.install_enabled && <>
             <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={confirmed} disabled={busy} onChange={(event) => setConfirmed(event.target.checked)} />我已备份数据库、配置与 WAL，了解只替换当前节点程序，安装后需要手动重启。</label>
-            <Button type="button" size="sm" isDisabled={!confirmed || busy} onClick={() => install.mutate(status.latest!.tag)}>{install.isPending ? '正在下载并校验，请勿关闭页面…' : '下载并安装'}</Button>
+            <Button type="button" size="sm" isDisabled={!confirmed || busy} onClick={() => install.mutate({ tag: status.latest!.tag, nodeId: status.node_id })}>{install.isPending ? '正在下载并校验，请勿关闭页面…' : '下载并安装'}</Button>
           </>}
         </>}
       </div>}

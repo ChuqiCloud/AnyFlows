@@ -1,5 +1,7 @@
+use crate::software_updates::{
+    InstallSoftwareUpdate, SoftwareRelease, SoftwareStatus, SoftwareUpdateErrorBody,
+};
 use utoipa::OpenApi;
-use crate::software_updates::{InstallSoftwareUpdate, SoftwareRelease, SoftwareStatus, SoftwareUpdateErrorBody};
 
 #[utoipa::path(get, path = "/api/admin/software", operation_id = "getAdminSoftware", tag = "版本与更新", summary = "读取当前节点的软件版本与更新能力", responses((status = 200, body = SoftwareStatus)), security(("bearerAuth" = [])))]
 fn status() {}
@@ -11,7 +13,17 @@ fn check() {}
 fn install() {}
 
 #[derive(OpenApi)]
-#[openapi(paths(status, check, install), components(schemas(SoftwareStatus, SoftwareRelease, InstallSoftwareUpdate, SoftwareUpdateErrorBody)))]
+#[openapi(
+    paths(status, check, install),
+    components(schemas(
+        SoftwareStatus,
+        SoftwareRelease,
+        InstallSoftwareUpdate,
+        SoftwareUpdateErrorBody
+    ))
+)]
 struct SoftwareUpdatesApi;
 
-pub(super) fn document() -> utoipa::openapi::OpenApi { SoftwareUpdatesApi::openapi() }
+pub(super) fn document() -> utoipa::openapi::OpenApi {
+    SoftwareUpdatesApi::openapi()
+}
