@@ -10,15 +10,11 @@ on:
         default: contracts
         options: [contracts, dependency-locks]
       web_updates:
-        description: Optional web direct dependencies (name@version, space separated)
+        description: Optional web dependency names to update, including transitive packages
         type: string
         default: ''
       web_next_updates:
-        description: Optional web-next direct dependencies (name@version, space separated)
-        type: string
-        default: ''
-      transitive_updates:
-        description: Optional transitive dependencies in both frontends (name@version, space separated)
+        description: Optional web-next dependency names to update, including transitive packages
         type: string
         default: ''
 
@@ -92,10 +88,8 @@ jobs:
         env:
           WEB_UPDATES: ${{ github.event.inputs.web_updates }}
           WEB_NEXT_UPDATES: ${{ github.event.inputs.web_next_updates }}
-          TRANSITIVE_UPDATES: ${{ github.event.inputs.transitive_updates }}
         run: |
           node --input-type=module <<'NODE'
-          import { readFileSync } from 'node:fs';
           import { spawnSync } from 'node:child_process';
 
           function pnpm(frontend, args) {
@@ -109,35 +103,22 @@ jobs:
           function targets(value) {
             const result = value.trim() ? value.trim().split(/\s+/) : [];
             for (const target of result) {
-              if (!/^((?:@[a-z0-9._-]+\/)?[a-z0-9._-]+)@(\d+\.\d+\.\d+)$/.test(target)) {
-                throw new Error(`Expected a dependency name and exact version: ${target}`);
+              if (!/^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/.test(target)) {
+                throw new Error(`Expected a dependency name without a version: ${target}`);
               }
             }
             return result;
           }
 
-          const transitive = targets(process.env.TRANSITIVE_UPDATES || '');
           for (const [frontend, updates] of [
             ['web', process.env.WEB_UPDATES || ''],
             ['web-next', process.env.WEB_NEXT_UPDATES || ''],
           ]) {
-            const direct = targets(updates);
-            const manifest = JSON.parse(readFileSync(`${frontend}/package.json`, 'utf8'));
-            for (const target of direct) {
-              const match = target.match(/^((?:@[a-z0-9._-]+\/)?[a-z0-9._-]+)@(\d+\.\d+\.\d+)$/);
-              if (!match || !(manifest.dependencies?.[match[1]] || manifest.devDependencies?.[match[1]])) {
-                throw new Error(`Expected a declared direct dependency and exact version: ${target}`);
-              }
-            }
-            if (direct.length) {
-              pnpm(frontend, ['up', '--depth=0', '--no-save',
-                '--lockfile-only', '--ignore-scripts', ...direct]);
-            }
-            if (transitive.length) {
+            const selected = targets(updates);
+            if (selected.length) {
               pnpm(frontend, ['up', '--depth=100', '--no-save',
-                '--lockfile-only', '--ignore-scripts', ...transitive]);
-            }
-            if (!direct.length && !transitive.length) {
+                '--lockfile-only', '--ignore-scripts', ...selected]);
+            } else {
               pnpm(frontend, ['install', '--no-frozen-lockfile', '--lockfile-only', '--ignore-scripts']);
             }
           }
