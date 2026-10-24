@@ -4,6 +4,9 @@ use std::process::ExitCode;
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    if let Some(code) = af_server::software_update_command().await {
+        return code;
+    }
     af_server::install_process_safety_hooks();
     let Err(error) = af_server::run().await else {
         return ExitCode::SUCCESS;

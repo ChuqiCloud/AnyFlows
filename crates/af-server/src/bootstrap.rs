@@ -2614,6 +2614,15 @@ impl Bootstrap<Supervised> {
             Some(payment_webhook_routes),
         );
         let router = router
+            .merge(af_http::build_software_update_router(
+                self.stage.infrastructure.extensions.software_updates.clone().unwrap_or_else(|| {
+                    Arc::new(crate::software_updates::CommunitySoftwareUpdates::new(
+                        self.stage.upstream_clients.clone(),
+                        std::env::var("ANYFLOWS_ENABLE_BINARY_UPDATE").as_deref() == Ok("true"),
+                    ))
+                }),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
             .merge(af_http::build_credential_health_router(
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
                 Arc::clone(&self.stage.infrastructure.admin_channel_reader),

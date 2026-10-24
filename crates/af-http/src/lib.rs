@@ -98,6 +98,8 @@ mod router;
 mod runtime_status;
 mod serve;
 mod site_settings;
+mod software_updates;
+pub use software_updates::{build_software_update_router, InstallSoftwareUpdate, SoftwareRelease, SoftwareStatus, SoftwareUpdateError, SoftwareUpdateErrorBody, SoftwareUpdateFuture, SoftwareUpdateService};
 mod speech_service;
 mod streaming;
 mod subscriptions;
