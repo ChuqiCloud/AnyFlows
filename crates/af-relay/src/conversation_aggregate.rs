@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, btree_map::Entry};
+use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
 
 use af_adapter::{MAX_UPSTREAM_RESPONSE_BODY_BYTES, UpstreamBody};
 use af_domain::{Operation, Role, UpstreamError};
@@ -52,6 +52,7 @@ pub(crate) async fn collect_conversation(
 pub(crate) struct Aggregate {
     choices: BTreeMap<u32, Choice>,
     usage: Option<Usage>,
+    anthropic_usage_metadata: Option<serde_json::Value>,
     logprobs_bytes: usize,
     done: bool,
 }
@@ -59,6 +60,7 @@ pub(crate) struct Aggregate {
 #[derive(Default)]
 struct Choice {
     content: BTreeMap<u32, ContentBlock>,
+    open_compactions: BTreeSet<u32>,
     tools: BTreeMap<u32, Tool>,
     order: Vec<Part>,
     finish: Option<(FinishReason, Option<String>)>,
@@ -157,6 +159,59 @@ impl Aggregate {
                             }
                         }
                         _ => return Err(UpstreamError::ProtocolError),
+                    }
+                }
+                Event::AnthropicCompactionStart {
+                    choice_index,
+                    content_index,
+                    item,
+                } => {
+                    let choice = self.choice(choice_index)?;
+                    if choice
+                        .content
+                        .insert(content_index, ContentBlock::AnthropicCompaction(item))
+                        .is_some()
+                    {
+                        return Err(UpstreamError::ProtocolError);
+                    }
+                    choice.order.push(Part::Content(content_index));
+                    choice.open_compactions.insert(content_index);
+                }
+                Event::AnthropicCompactionDelta {
+                    choice_index,
+                    content_index,
+                    ..
+                } => {
+                    // End carries the validated complete native block, including opaque fields.
+                    if !self
+                        .choice(choice_index)?
+                        .open_compactions
+                        .contains(&content_index)
+                    {
+                        return Err(UpstreamError::ProtocolError);
+                    }
+                }
+                Event::AnthropicCompactionEnd {
+                    choice_index,
+                    content_index,
+                    item,
+                } => {
+                    let choice = self.choice(choice_index)?;
+                    if !choice.open_compactions.remove(&content_index) {
+                        return Err(UpstreamError::ProtocolError);
+                    }
+                    let block = choice
+                        .content
+                        .get_mut(&content_index)
+                        .ok_or(UpstreamError::ProtocolError)?;
+                    if !matches!(block, ContentBlock::AnthropicCompaction(_)) {
+                        return Err(UpstreamError::ProtocolError);
+                    }
+                    *block = ContentBlock::AnthropicCompaction(item);
+                }
+                Event::AnthropicUsageMetadata { raw } => {
+                    if self.anthropic_usage_metadata.replace(raw).is_some() {
+                        return Err(UpstreamError::ProtocolError);
                     }
                 }
                 Event::LogprobsDelta {
@@ -266,6 +321,9 @@ impl Aggregate {
             .choices
             .into_iter()
             .map(|(index, mut choice)| {
+                if !choice.open_compactions.is_empty() {
+                    return Err(UpstreamError::ProtocolError);
+                }
                 let (reason, stop) = choice.finish.ok_or(UpstreamError::ProtocolError)?;
                 let mut content = Vec::with_capacity(choice.order.len());
                 for part in choice.order {
@@ -302,14 +360,19 @@ impl Aggregate {
                 )
             })
             .collect::<Result<Vec<_>, UpstreamError>>()?;
-        Ok(CanonicalResponse::new(
+        let response = CanonicalResponse::new(
             Operation::Chat,
             "aggregated".to_owned(),
             "aggregated".to_owned(),
             None,
             choices,
             self.usage,
-        ))
+        );
+        match self.anthropic_usage_metadata {
+            Some(raw) => af_protocol::anthropic::with_usage_metadata(response, raw)
+                .map_err(|_| UpstreamError::ProtocolError),
+            None => Ok(response),
+        }
     }
 }
 

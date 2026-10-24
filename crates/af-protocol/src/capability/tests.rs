@@ -9,9 +9,9 @@ use super::{
     supports_stream_capability, validate_request_capabilities, validate_stream_event_capabilities,
 };
 use crate::{
-    CanonicalRequest, CanonicalResponse, CanonicalStreamEvent, ContentBlock, FinishReason, Message,
-    ResponseChoice, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource, anthropic,
-    gemini, openai_chat, openai_responses,
+    AnthropicCompactionItem, CanonicalRequest, CanonicalResponse, CanonicalStreamEvent,
+    ContentBlock, FinishReason, Message, ResponseChoice, TokenCount, Usage, UsageDetails,
+    UsageSemantics, UsageSource, anthropic, gemini, openai_chat, openai_responses,
 };
 
 #[test]
@@ -109,6 +109,205 @@ fn matrix_exposes_protocol_specific_differences() {
         Protocol::OpenAiResponses,
         StreamCapability::Error
     ));
+}
+
+#[test]
+fn anthropic_compaction_capabilities_are_native_only() {
+    for protocol in Protocol::ALL {
+        assert_eq!(
+            supports_request_capability(*protocol, RequestCapability::AnthropicCompaction),
+            *protocol == Protocol::Anthropic
+        );
+        assert_eq!(
+            supports_response_capability(*protocol, ResponseCapability::AnthropicCompaction),
+            *protocol == Protocol::Anthropic
+        );
+        assert_eq!(
+            supports_stream_capability(*protocol, StreamCapability::AnthropicCompaction),
+            *protocol == Protocol::Anthropic
+        );
+        assert_eq!(
+            supports_stream_capability(*protocol, StreamCapability::AnthropicUsageMetadata),
+            *protocol == Protocol::Anthropic
+        );
+        assert_eq!(
+            supports_response_capability(
+                *protocol,
+                ResponseCapability::FinishReason(FinishReason::Compaction)
+            ),
+            *protocol == Protocol::Anthropic
+        );
+        assert_eq!(
+            supports_stream_capability(
+                *protocol,
+                StreamCapability::FinishReason(FinishReason::Compaction)
+            ),
+            *protocol == Protocol::Anthropic
+        );
+    }
+
+    let item = AnthropicCompactionItem::from_value(json!({
+        "type":"compaction",
+        "content":"readable summary",
+        "signature":"opaque signature"
+    }))
+    .unwrap();
+    let request = CanonicalRequest::new(
+        Operation::Chat,
+        "model".to_owned(),
+        vec![Message::new(
+            Role::Assistant,
+            vec![ContentBlock::AnthropicCompaction(item.clone())],
+        )],
+        true,
+    );
+    assert!(validate_request_capabilities(Protocol::Anthropic, &request).is_ok());
+    for protocol in [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Gemini,
+    ] {
+        let mut request = request.clone();
+        if protocol == Protocol::OpenAiResponses {
+            request.operation = Operation::Responses;
+        }
+        let error = validate_request_capabilities(protocol, &request)
+            .expect_err("Anthropic compaction content cannot be converted to another protocol");
+        assert_eq!(
+            error.capability(),
+            ProtocolCapability::Request(RequestCapability::AnthropicCompaction)
+        );
+    }
+
+    let response = CanonicalResponse::new(
+        Operation::Chat,
+        "response".to_owned(),
+        "model".to_owned(),
+        Some(1),
+        vec![ResponseChoice::new(
+            0,
+            Message::new(
+                Role::Assistant,
+                vec![ContentBlock::AnthropicCompaction(item.clone())],
+            ),
+            FinishReason::Compaction,
+        )],
+        None,
+    );
+    assert!(super::validate_response_capabilities(Protocol::Anthropic, &response).is_ok());
+    for protocol in [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Gemini,
+    ] {
+        let mut response = response.clone();
+        if protocol == Protocol::OpenAiResponses {
+            response.operation = Operation::Responses;
+        }
+        let error = super::validate_response_capabilities(protocol, &response)
+            .expect_err("Anthropic compaction response cannot be converted to another protocol");
+        assert_eq!(
+            error.capability(),
+            ProtocolCapability::Response(ResponseCapability::AnthropicCompaction)
+        );
+    }
+    let finish_only = CanonicalResponse::new(
+        Operation::Chat,
+        "response".to_owned(),
+        "model".to_owned(),
+        Some(1),
+        vec![ResponseChoice::new(
+            0,
+            Message::new(Role::Assistant, vec![ContentBlock::Text("done".to_owned())]),
+            FinishReason::Compaction,
+        )],
+        None,
+    );
+    assert!(super::validate_response_capabilities(Protocol::Anthropic, &finish_only).is_ok());
+    for protocol in [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Gemini,
+    ] {
+        let mut response = finish_only.clone();
+        if protocol == Protocol::OpenAiResponses {
+            response.operation = Operation::Responses;
+        }
+        let error = super::validate_response_capabilities(protocol, &response)
+            .expect_err("compaction finish reason is Anthropic-only");
+        assert_eq!(
+            error.capability(),
+            ProtocolCapability::Response(ResponseCapability::FinishReason(
+                FinishReason::Compaction
+            ))
+        );
+    }
+
+    for event in [
+        CanonicalStreamEvent::AnthropicCompactionStart {
+            choice_index: 0,
+            content_index: 0,
+            item: item.clone(),
+        },
+        CanonicalStreamEvent::AnthropicCompactionDelta {
+            choice_index: 0,
+            content_index: 0,
+            text: "summary".to_owned(),
+        },
+        CanonicalStreamEvent::AnthropicCompactionEnd {
+            choice_index: 0,
+            content_index: 0,
+            item,
+        },
+    ] {
+        assert!(validate_stream_event_capabilities(Protocol::Anthropic, &event).is_ok());
+        for protocol in [
+            Protocol::OpenAiChat,
+            Protocol::OpenAiResponses,
+            Protocol::Gemini,
+        ] {
+            let error = validate_stream_event_capabilities(protocol, &event)
+                .expect_err("Anthropic compaction stream cannot be converted to another protocol");
+            assert_eq!(
+                error.capability(),
+                ProtocolCapability::Stream(StreamCapability::AnthropicCompaction)
+            );
+        }
+    }
+    let metadata = CanonicalStreamEvent::AnthropicUsageMetadata {
+        raw: json!({"iterations": []}),
+    };
+    assert!(validate_stream_event_capabilities(Protocol::Anthropic, &metadata).is_ok());
+    for protocol in [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Gemini,
+    ] {
+        let error = validate_stream_event_capabilities(protocol, &metadata)
+            .expect_err("Anthropic usage metadata is protocol-specific");
+        assert_eq!(
+            error.capability(),
+            ProtocolCapability::Stream(StreamCapability::AnthropicUsageMetadata)
+        );
+    }
+    let finish = CanonicalStreamEvent::Finish {
+        choice_index: 0,
+        reason: FinishReason::Compaction,
+        stop_sequence: None,
+    };
+    assert!(validate_stream_event_capabilities(Protocol::Anthropic, &finish).is_ok());
+    for protocol in [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Gemini,
+    ] {
+        let error = validate_stream_event_capabilities(protocol, &finish)
+            .expect_err("compaction finish event is Anthropic-only");
+        assert_eq!(
+            error.capability(),
+            ProtocolCapability::Stream(StreamCapability::FinishReason(FinishReason::Compaction))
+        );
+    }
 }
 
 #[test]

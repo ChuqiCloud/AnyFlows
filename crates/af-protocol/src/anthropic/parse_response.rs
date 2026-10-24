@@ -245,6 +245,12 @@ fn convert_content_block(
     seen_call_ids: &mut HashSet<String>,
 ) -> Result<ContentBlock, ParseResponseError> {
     match block {
+        ResponseContentBlockWire::Compaction(value) => {
+            let item =
+                super::compaction::parse_item(value).map_err(map_request_validation_error)?;
+            state.add_block()?;
+            Ok(ContentBlock::AnthropicCompaction(item))
+        }
         ResponseContentBlockWire::Text(block) => {
             if block
                 .citations
@@ -310,6 +316,11 @@ struct ConvertedStopReason {
 
 fn convert_stop_reason(reason: StopReasonWire) -> Result<ConvertedStopReason, ParseResponseError> {
     let converted = match reason {
+        StopReasonWire::Compaction => ConvertedStopReason {
+            finish_reason: FinishReason::Compaction,
+            expects_stop_sequence: false,
+            is_refusal: false,
+        },
         StopReasonWire::EndTurn => ConvertedStopReason {
             finish_reason: FinishReason::Stop,
             expects_stop_sequence: false,
@@ -437,6 +448,10 @@ pub(super) fn convert_usage(
         .map_err(|_| ParseResponseError::InvalidValue)?;
 
     let mut raw = Map::new();
+    if let Some(iterations) = usage.iterations {
+        add_compaction_usage(converted, &iterations)?;
+        raw.insert("iterations".to_owned(), iterations);
+    }
     if let Some(inference_geo) = usage.inference_geo {
         if inference_geo.is_empty()
             || inference_geo.len() > MAX_INFERENCE_GEO_BYTES
@@ -454,6 +469,148 @@ pub(super) fn convert_usage(
         );
     }
     Ok((converted, raw))
+}
+
+/// 返回计费口径用量；仅额外累加未包含在顶层用量中的压缩迭代。
+/// 普通 `message` 迭代已计入顶层，不能再次相加。
+pub fn billing_usage(response: &CanonicalResponse) -> Result<Option<Usage>, ParseResponseError> {
+    let Some(usage) = response.usage else {
+        return Ok(None);
+    };
+    let iterations = response
+        .raw_passthrough()
+        .and_then(|raw| raw.fields_for_protocol(Protocol::Anthropic).ok())
+        .and_then(|raw| raw.get("usage"))
+        .and_then(|raw| raw.get("iterations"));
+    iterations.map_or(Ok(Some(usage)), |iterations| {
+        add_compaction_usage(usage, iterations).map(Some)
+    })
+}
+
+pub(super) fn add_compaction_usage(
+    mut usage: Usage,
+    iterations: &Value,
+) -> Result<Usage, ParseResponseError> {
+    let iterations = iterations
+        .as_array()
+        .ok_or(ParseResponseError::InvalidValue)?;
+    if iterations.len() > 1024 {
+        return Err(ParseResponseError::StructureLimitExceeded);
+    }
+    for iteration in iterations {
+        let object = iteration
+            .as_object()
+            .ok_or(ParseResponseError::InvalidValue)?;
+        let kind = object
+            .get("type")
+            .and_then(Value::as_str)
+            .ok_or(ParseResponseError::InvalidValue)?;
+        // Validate known count fields on every entry, including ones already counted above.
+        for key in [
+            "input_tokens",
+            "output_tokens",
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+        ] {
+            if object
+                .get(key)
+                .is_some_and(|v| v.as_i64().is_none_or(|v| v < 0))
+            {
+                return Err(ParseResponseError::InvalidValue);
+            }
+        }
+        if kind != "compaction" {
+            continue;
+        }
+        let input = required_iteration_token(object, "input_tokens")?;
+        let output = required_iteration_token(object, "output_tokens")?;
+        let cache_read = iteration_token(object, "cache_read_input_tokens")?;
+        let total_creation = iteration_token(object, "cache_creation_input_tokens")?;
+        let (cache_5m, cache_1h) =
+            if let Some(split) = object.get("cache_creation").filter(|v| !v.is_null()) {
+                let split = split.as_object().ok_or(ParseResponseError::InvalidValue)?;
+                let short = required_iteration_token(split, "ephemeral_5m_input_tokens")?;
+                let long = required_iteration_token(split, "ephemeral_1h_input_tokens")?;
+                if object.contains_key("cache_creation_input_tokens")
+                    && short.get().checked_add(long.get()) != Some(total_creation.get())
+                {
+                    return Err(ParseResponseError::InvalidValue);
+                }
+                (short, long)
+            } else if total_creation != TokenCount::ZERO {
+                return Err(ParseResponseError::UnsupportedFeature);
+            } else {
+                (TokenCount::ZERO, TokenCount::ZERO)
+            };
+        let details = usage.details();
+        usage = Usage::new(
+            sum_token(usage.input_tokens(), input)?,
+            sum_token(usage.output_tokens(), output)?,
+            UsageDetails::new(
+                sum_token(details.cache_read(), cache_read)?,
+                sum_token(details.cache_creation_5m(), cache_5m)?,
+                sum_token(details.cache_creation_1h(), cache_1h)?,
+                details.reasoning(),
+                details.audio_input(),
+                details.audio_output(),
+            ),
+            usage.source(),
+            usage.semantics(),
+        )
+        .map_err(|_| ParseResponseError::InvalidValue)?;
+        usage
+            .checked_total_tokens()
+            .map_err(|_| ParseResponseError::InvalidValue)?;
+    }
+    Ok(usage)
+}
+
+pub(super) fn validate_iterations(iterations: &Value) -> Result<(), ParseResponseError> {
+    let zero = Usage::new(
+        TokenCount::ZERO,
+        TokenCount::ZERO,
+        UsageDetails::new(
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+        ),
+        UsageSource::Upstream,
+        UsageSemantics::CacheSeparated,
+    )
+    .map_err(|_| ParseResponseError::InvalidValue)?;
+    add_compaction_usage(zero, iterations).map(|_| ())
+}
+
+fn required_iteration_token(
+    value: &Map<String, Value>,
+    key: &str,
+) -> Result<TokenCount, ParseResponseError> {
+    token_count(
+        value
+            .get(key)
+            .and_then(Value::as_i64)
+            .ok_or(ParseResponseError::InvalidValue)?,
+    )
+}
+
+fn iteration_token(
+    value: &Map<String, Value>,
+    key: &str,
+) -> Result<TokenCount, ParseResponseError> {
+    value.get(key).map_or(Ok(TokenCount::ZERO), |v| {
+        token_count(v.as_i64().ok_or(ParseResponseError::InvalidValue)?)
+    })
+}
+
+fn sum_token(left: TokenCount, right: TokenCount) -> Result<TokenCount, ParseResponseError> {
+    token_count(
+        left.get()
+            .checked_add(right.get())
+            .ok_or(ParseResponseError::InvalidValue)?,
+    )
 }
 
 fn convert_cache_creation(

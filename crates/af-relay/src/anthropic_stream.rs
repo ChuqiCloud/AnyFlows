@@ -123,7 +123,11 @@ impl AnthropicMessagesStream {
                     output.extend(self.encode_event(CanonicalStreamEvent::Usage(usage))?);
                 }
                 CanonicalStreamEvent::StreamEnd => {
-                    let usage = self.final_usage.ok_or(UpstreamError::ProtocolError)?;
+                    let usage = self
+                        .decoder
+                        .billing_usage()
+                        .or(self.final_usage)
+                        .ok_or(UpstreamError::ProtocolError)?;
                     output.extend(self.encode_event(CanonicalStreamEvent::StreamEnd)?);
                     self.begin_completion(Ok(usage));
                     completed = true;

@@ -3,7 +3,7 @@ use std::fmt;
 use af_domain::Protocol;
 use bytes::Bytes;
 
-use crate::{CanonicalRequest, Sampling, TokenCount};
+use crate::{AnthropicBetaError, CanonicalRequest, Sampling, TokenCount, normalize_anthropic_beta};
 
 /// Canonical 请求及其可选的已验证源协议正文。
 ///
@@ -23,6 +23,7 @@ pub struct CanonicalRequestEnvelope {
     normalized_protocol: Option<Protocol>,
     patch_reasoning: bool,
     normalization_dirty: bool,
+    anthropic_beta: Option<String>,
 }
 
 impl CanonicalRequestEnvelope {
@@ -40,6 +41,7 @@ impl CanonicalRequestEnvelope {
             normalized_protocol: None,
             patch_reasoning: false,
             normalization_dirty: false,
+            anthropic_beta: None,
         }
     }
 
@@ -61,6 +63,7 @@ impl CanonicalRequestEnvelope {
             normalized_protocol: None,
             patch_reasoning: false,
             normalization_dirty: false,
+            anthropic_beta: None,
         }
     }
 
@@ -109,6 +112,7 @@ impl CanonicalRequestEnvelope {
             normalized_protocol: None,
             patch_reasoning: false,
             normalization_dirty: false,
+            anthropic_beta: None,
         }
     }
 
@@ -116,6 +120,21 @@ impl CanonicalRequestEnvelope {
     #[must_use]
     pub const fn canonical(&self) -> &CanonicalRequest {
         &self.canonical
+    }
+
+    /// 附加唯一允许穿过协议入口的专用 Anthropic beta 列表。
+    pub fn with_anthropic_beta(mut self, value: Option<&str>) -> Result<Self, AnthropicBetaError> {
+        self.anthropic_beta = value
+            .map(normalize_anthropic_beta)
+            .transpose()?
+            .filter(|value| !value.is_empty());
+        Ok(self)
+    }
+
+    /// 返回已校验并去重的客户端 Anthropic beta 列表。
+    #[must_use]
+    pub fn anthropic_beta(&self) -> Option<&str> {
+        self.anthropic_beta.as_deref()
     }
 
     /// 为对话协议转换操作类型和流选项，保留消息、工具关联及客户端模型别名。
@@ -250,6 +269,7 @@ impl CanonicalRequestEnvelope {
             normalized_protocol: self.normalized_protocol,
             patch_reasoning: self.patch_reasoning,
             normalization_dirty: self.normalized_protocol.is_some(),
+            anthropic_beta: self.anthropic_beta,
         }
     }
 
@@ -287,6 +307,7 @@ impl CanonicalRequestEnvelope {
             source: Some(source),
             origin_protocol,
             requested_model,
+            anthropic_beta,
             ..
         } = self
         else {
@@ -298,6 +319,7 @@ impl CanonicalRequestEnvelope {
             body: source.body,
             origin_protocol,
             requested_model,
+            anthropic_beta,
         })
     }
 }
@@ -317,6 +339,7 @@ impl fmt::Debug for CanonicalRequestEnvelope {
             .field("origin_protocol", &self.origin_protocol)
             .field("has_requested_model_alias", &self.requested_model.is_some())
             .field("native_only", &self.native_only)
+            .field("has_anthropic_beta", &self.anthropic_beta.is_some())
             .field(
                 "source_body_bytes",
                 &self.source.as_ref().map(|source| source.body.len()),
@@ -349,9 +372,16 @@ pub struct SameProtocolRequest {
     canonical: CanonicalRequest,
     body: Bytes,
     requested_model: Option<String>,
+    anthropic_beta: Option<String>,
 }
 
 impl SameProtocolRequest {
+    /// 返回随原生正文保留的客户端 Anthropic beta 列表。
+    #[must_use]
+    pub fn anthropic_beta(&self) -> Option<&str> {
+        self.anthropic_beta.as_deref()
+    }
+
     /// 返回直通正文使用的协议。
     #[must_use]
     pub const fn protocol(&self) -> Protocol {
@@ -394,6 +424,7 @@ impl fmt::Debug for SameProtocolRequest {
             .field("canonical", &self.canonical)
             .field("body_bytes", &self.body.len())
             .field("has_requested_model_alias", &self.requested_model.is_some())
+            .field("has_anthropic_beta", &self.anthropic_beta.is_some())
             .finish()
     }
 }
@@ -405,6 +436,48 @@ mod tests {
     use super::*;
     use crate::{ContentBlock, openai_responses};
     use af_domain::Operation;
+
+    #[test]
+    fn anthropic_beta_metadata_survives_envelope_clones_and_canonical_rebuilds() {
+        let request = crate::anthropic::parse_request_envelope(Bytes::from_static(
+            br#"{"model":"claude-test","max_tokens":32,"messages":[{"role":"user","content":"hello"}]}"#,
+        ))
+        .unwrap()
+        .with_anthropic_beta(Some("client-beta,compact-2026-09-04,client-beta"))
+        .unwrap();
+        assert_eq!(
+            request.anthropic_beta(),
+            Some("client-beta,compact-2026-09-04")
+        );
+        assert_eq!(request.clone().anthropic_beta(), request.anthropic_beta());
+        let rebuilt = request
+            .clone()
+            .with_rebuilt_canonical(request.canonical().clone());
+        assert_eq!(rebuilt.anthropic_beta(), request.anthropic_beta());
+        assert_eq!(
+            rebuilt
+                .for_conversation_protocol(Protocol::Anthropic)
+                .unwrap()
+                .anthropic_beta(),
+            request.anthropic_beta()
+        );
+        match request.clone().into_same_protocol(Protocol::Anthropic) {
+            SameProtocolDecision::Passthrough(request) => {
+                assert_eq!(
+                    request.anthropic_beta(),
+                    Some("client-beta,compact-2026-09-04")
+                );
+            }
+            SameProtocolDecision::Rebuild(_) => panic!("valid native request should pass through"),
+        }
+        assert_eq!(
+            request
+                .clone()
+                .with_anthropic_beta(Some("bad beta"))
+                .unwrap_err(),
+            AnthropicBetaError::InvalidValue
+        );
+    }
 
     #[test]
     fn repeated_target_normalization_and_planning_are_idempotent() {

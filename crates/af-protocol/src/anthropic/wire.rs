@@ -25,6 +25,12 @@ where
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct MessagesRequestWire {
+    /// Anthropic 原生按需压缩控制；完整载荷绑定来源协议。
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) compaction: Field<Value>,
+    /// 原生上下文管理策略。
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) context_management: Field<Value>,
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) cache_control: Field<CacheControlWire>,
     /// 客户端请求的模型名。
@@ -151,6 +157,9 @@ pub(super) enum UserContentPartWire {
 #[derive(Deserialize)]
 #[serde(tag = "type")]
 pub(super) enum AssistantContentPartWire {
+    /// 厂商签名或密文压缩状态，保留全部字段。
+    #[serde(rename = "compaction")]
+    Compaction(Value),
     /// 文本内容块。
     #[serde(rename = "text")]
     Text(TextBlockWire),

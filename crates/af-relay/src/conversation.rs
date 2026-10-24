@@ -8,6 +8,10 @@ mod tests;
 #[path = "conversation_matrix_contract.rs"]
 mod matrix_contract;
 
+#[cfg(test)]
+#[path = "compaction_contract.rs"]
+mod compaction_contract;
+
 use af_adapter::{Bytes, Method, ResponseMode, StatusCode};
 use af_domain::{AfError, Operation, Protocol, UpstreamError};
 use af_protocol::{
@@ -39,6 +43,7 @@ pub async fn relay_conversation_with_report(
     response_protocol: Protocol,
     request_id: &str,
 ) -> (Result<ChatResponse, AfError>, RelayAttemptReport) {
+    let anthropic_beta = request.anthropic_beta().map(str::to_owned);
     let client_model = request.requested_model().to_owned();
     let include_usage = request.canonical().stream_options.include_usage();
     let (canonical, body) = match prepare_request(request, upstream_protocol) {
@@ -74,7 +79,9 @@ pub async fn relay_conversation_with_report(
         canonical.operation,
         Method::POST,
         Some(body),
-    ) {
+    )
+    .and_then(|request| request.with_anthropic_beta(anthropic_beta.as_deref()))
+    {
         Ok(request) => request.with_response_mode(mode),
         Err(_) => return (Err(AfError::Internal), RelayAttemptReport::default()),
     };
@@ -134,9 +141,19 @@ pub async fn relay_conversation_with_report(
                 .map_err(map_adaptor_error)?;
             parse_response(upstream_protocol, &body)?
         };
-        let usage = estimator
-            .resolve_response(&response)
-            .map_err(|_| UpstreamError::ProtocolError)?;
+        let usage = if upstream_protocol == Protocol::Anthropic {
+            anthropic::billing_usage(&response).map_err(|_| UpstreamError::ProtocolError)?
+        } else {
+            None
+        }
+        .map_or_else(
+            || {
+                estimator
+                    .resolve_response(&response)
+                    .map_err(|_| UpstreamError::ProtocolError)
+            },
+            Ok,
+        )?;
         crate::anthropic_chat_bridge::adapt_response(
             upstream_protocol,
             response_protocol,
@@ -205,7 +222,7 @@ pub(crate) fn parse_response(
 
 pub(crate) fn build_response(
     protocol: Protocol,
-    response: CanonicalResponse,
+    mut response: CanonicalResponse,
     usage: Usage,
     request_id: &str,
     model: &str,
@@ -218,14 +235,26 @@ pub(crate) fn build_response(
         Protocol::Gemini => (Operation::Chat, format!("response-{request_id}")),
         _ => return Err(UpstreamError::ProtocolError),
     };
-    let response = CanonicalResponse::new(
-        operation,
-        id,
-        model.to_owned(),
-        Some(response.created_at.unwrap_or(created_at)),
-        response.choices,
-        Some(crate::anthropic_chat_bridge::adapt_usage(protocol, usage)?),
-    );
+    // 同源 Anthropic 用量分为顶层 wire 快照和额外压缩迭代；公开响应保留前者。
+    // 跨协议适配已经清除来源 raw，此时使用完成内部结算后的归一用量。
+    let native_anthropic = protocol == Protocol::Anthropic
+        && response
+            .raw_passthrough()
+            .is_some_and(|raw| raw.fields_for_protocol(Protocol::Anthropic).is_ok());
+    response.operation = operation;
+    response.id = id;
+    response.model = model.to_owned();
+    response.created_at = Some(response.created_at.unwrap_or(created_at));
+    if !native_anthropic {
+        response = CanonicalResponse::new(
+            response.operation,
+            response.id,
+            response.model,
+            response.created_at,
+            response.choices,
+            Some(crate::anthropic_chat_bridge::adapt_usage(protocol, usage)?),
+        );
+    }
     let value = match protocol {
         Protocol::OpenAiChat => {
             openai_chat::build_response(&response).map_err(|_| UpstreamError::ProtocolError)?

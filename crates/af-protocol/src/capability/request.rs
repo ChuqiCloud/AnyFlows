@@ -46,6 +46,9 @@ pub enum RequestCapability {
     ThinkingSignatures,
     /// 提示缓存断点。
     CacheControl(CacheHint),
+    /// Anthropic Messages 原生压缩历史块。
+    AnthropicCompaction,
+    /// OpenAI Responses 原生不透明压缩状态。
     Compaction,
     /// 指定推理强度。
     ReasoningEffort(ReasoningEffort),
@@ -117,6 +120,7 @@ impl RequestCapability {
         Self::CacheControl(CacheHint::Ephemeral5Minutes),
         Self::CacheControl(CacheHint::Ephemeral1Hour),
         Self::Compaction,
+        Self::AnthropicCompaction,
         Self::ReasoningEffort(ReasoningEffort::None),
         Self::ReasoningEffort(ReasoningEffort::Minimal),
         Self::ReasoningEffort(ReasoningEffort::Low),
@@ -170,6 +174,7 @@ impl fmt::Display for RequestCapability {
                 formatter.write_str("content.cache_control.1h")
             }
             Self::Compaction => formatter.write_str("responses.compaction"),
+            Self::AnthropicCompaction => formatter.write_str("anthropic.compaction"),
             Self::ReasoningEffort(effort) => {
                 write!(
                     formatter,
@@ -292,6 +297,7 @@ pub(super) const ANTHROPIC: &[RequestCapability] = &[
     RequestCapability::ThinkingSignatures,
     RequestCapability::CacheControl(CacheHint::Ephemeral5Minutes),
     RequestCapability::CacheControl(CacheHint::Ephemeral1Hour),
+    RequestCapability::AnthropicCompaction,
     RequestCapability::ReasoningEffort(ReasoningEffort::None),
     RequestCapability::ReasoningEffort(ReasoningEffort::Low),
     RequestCapability::ReasoningEffort(ReasoningEffort::Medium),
@@ -464,6 +470,9 @@ fn validate_content(
                 require(protocol, RequestCapability::CacheControl(*hint))?;
             }
             ContentBlock::Compaction(_) => require(protocol, RequestCapability::Compaction)?,
+            ContentBlock::AnthropicCompaction(_) => {
+                require(protocol, RequestCapability::AnthropicCompaction)?;
+            }
         }
     }
     Ok(())

@@ -52,6 +52,8 @@ pub(super) enum AssistantRoleWire {
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum StopReasonWire {
+    /// 原生上下文压缩结束，等待客户端回放状态。
+    Compaction,
     /// 模型自然结束。
     EndTurn,
     /// 达到输出令牌上限。
@@ -122,6 +124,9 @@ impl RefusalCategoryWire {
 #[derive(Deserialize)]
 #[serde(tag = "type")]
 pub(super) enum ResponseContentBlockWire {
+    /// Anthropic 原生压缩块，包含未来扩展字段。
+    #[serde(rename = "compaction")]
+    Compaction(Value),
     /// 普通文本内容。
     #[serde(rename = "text")]
     Text(ResponseTextBlockWire),
@@ -187,6 +192,9 @@ pub(super) struct EmptyResponseWire {}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct UsageWire {
+    /// 保留逐迭代用量；压缩迭代不包含在顶层用量中。
+    #[serde(default)]
+    pub(super) iterations: Option<Value>,
     /// 不含缓存读写的输入令牌数。
     pub(super) input_tokens: i64,
     /// 缓存写入令牌总数。

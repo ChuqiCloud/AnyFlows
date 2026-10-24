@@ -90,6 +90,7 @@ jobs:
         run: |
           cargo test --quiet -p af-domain --lib --locked channel_capability::
           cargo test --quiet -p af-adapter --lib --locked factory::
+          cargo test --quiet -p af-adapter --test anthropic_compaction_headers --locked
 
       - name: Test protocol parsing and relay lifecycle
         if: ${{ !cancelled() }}
@@ -104,6 +105,11 @@ jobs:
         run: |
           cargo test --quiet -p af-http --lib --locked operations_tests::
           cargo test --quiet -p af-http --lib --locked gemini_generate_content::tests::
+          cargo test --quiet -p af-http --lib --locked anthropic_messages::tests::
+
+      - name: Test native compaction runtime and billing
+        if: ${{ inputs.scope != 'protocol-relay' }}
+        run: cargo test --quiet -p af-server --test anthropic_runtime_chain --all-features --locked
 
       - name: Test conversation scheduling
         if: ${{ inputs.scope != 'protocol-relay' }}

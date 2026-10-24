@@ -124,6 +124,8 @@ impl ToolConversationStream {
         &mut self,
         event: CanonicalStreamEvent,
     ) -> Result<Vec<CanonicalStreamEvent>, UpstreamError> {
+        // 让逐轮观测、续答预算和最终合计共用 Anthropic 协议解码器计算的计费用量。
+        let event = self.decoder.with_billing_usage(event);
         let step = self.session.push(event);
         self.record_usage()?;
         match step.map_err(|_| UpstreamError::ProtocolError)? {

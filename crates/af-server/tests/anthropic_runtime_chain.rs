@@ -10,7 +10,8 @@ use std::{
 use af_db::{DatabaseOptions, MigrationOptions, connect_and_migrate};
 use af_protocol::{
     CanonicalStreamEvent, ContentDelta, FinishReason, TokenCount, Usage, UsageDetails,
-    UsageSemantics, UsageSource, anthropic::AnthropicMessagesStreamEncoder,
+    UsageSemantics, UsageSource,
+    anthropic::{AnthropicMessagesStreamDecoder, AnthropicMessagesStreamEncoder},
 };
 use af_server::{Bootstrap, BootstrapError, ShutdownReport};
 use sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
@@ -211,6 +212,346 @@ async fn native_anthropic_runtime_streams_real_usage_and_public_identity() {
 
     stop_gateway(shutdown, server).await;
     proxy.join().unwrap();
+}
+
+#[tokio::test]
+async fn native_compaction_json_preserves_replay_state_and_bills_additional_iterations_once() {
+    for content in [json!("runtime summary 已保留"), Value::Null] {
+        let block = native_compaction_block(content);
+        let upstream_usage = compaction_usage();
+        let upstream_body = serde_json::to_vec(&json!({
+            "id":"msg_private_compaction", "type":"message", "role":"assistant",
+            "model":"private-upstream-model", "content":[block.clone()],
+            "stop_reason":"compaction", "stop_sequence":null, "usage":upstream_usage
+        }))
+        .unwrap();
+        let request = compaction_request(false);
+        let request_body = serde_json::to_vec(&request).unwrap();
+        let database = TestDatabase::new();
+        seed_database(
+            &database,
+            UPSTREAM_BASE_URL,
+            UPSTREAM_MODEL,
+            UPSTREAM_KEY,
+            None,
+        )
+        .await;
+        let (proxy_address, captured, proxy) = spawn_proxy(
+            "200 OK",
+            &upstream_body,
+            &[("Content-Type", "application/json")],
+        );
+        let (address, shutdown, server) =
+            start_gateway(&database, &format!("http://{proxy_address}")).await;
+
+        let response = send_request(
+            address,
+            "POST",
+            "/v1/messages",
+            &request_body,
+            &[
+                ("Content-Type", "application/json"),
+                ("x-api-key", CLIENT_KEY),
+                ("anthropic-beta", "caller-beta, caller-beta"),
+            ],
+        )
+        .await;
+        stop_gateway(shutdown, server).await;
+        let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+        proxy.join().unwrap();
+
+        assert_eq!(response.status, 200);
+        assert_compaction_upstream(&upstream, &request_body, "compact-2026-09-04");
+        let public: Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(public["content"], json!([block]));
+        assert_eq!(public["stop_reason"], "compaction");
+        assert_public_compaction_usage(&public["usage"]);
+        assert_eq!(public["model"], UPSTREAM_MODEL);
+        assert_ne!(public["id"], "msg_private_compaction");
+        assert_eq!(
+            compaction_billing_summary(&database).await,
+            (1, 112, 7, 2, 2, 3)
+        );
+    }
+}
+
+#[tokio::test]
+async fn native_compaction_sse_preserves_signed_and_null_blocks_without_inflating_public_usage() {
+    for content in [json!("runtime summary 已保留"), Value::Null] {
+        let block = native_compaction_block(content);
+        let upstream_body = compaction_sse(&block);
+        let request = compaction_request(true);
+        let request_body = serde_json::to_vec(&request).unwrap();
+        let database = TestDatabase::new();
+        seed_database(
+            &database,
+            UPSTREAM_BASE_URL,
+            UPSTREAM_MODEL,
+            UPSTREAM_KEY,
+            None,
+        )
+        .await;
+        let (proxy_address, captured, proxy) = spawn_proxy(
+            "200 OK",
+            &upstream_body,
+            &[("Content-Type", "text/event-stream")],
+        );
+        let (address, shutdown, server) =
+            start_gateway(&database, &format!("http://{proxy_address}")).await;
+
+        let response = send_request(
+            address,
+            "POST",
+            "/v1/messages",
+            &request_body,
+            &[
+                ("Content-Type", "application/json"),
+                ("x-api-key", CLIENT_KEY),
+                ("anthropic-beta", "caller-beta, caller-beta"),
+            ],
+        )
+        .await;
+        stop_gateway(shutdown, server).await;
+        let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+        proxy.join().unwrap();
+
+        assert_eq!(response.status, 200);
+        assert_compaction_upstream(&upstream, &request_body, "compact-2026-01-12");
+        assert!(
+            response
+                .headers
+                .get("content-type")
+                .unwrap()
+                .starts_with("text/event-stream")
+        );
+        let body = decode_sse_response_body(&response);
+        let mut decoder = AnthropicMessagesStreamDecoder::new();
+        let mut events = Vec::new();
+        for chunk in body.chunks(7) {
+            events.extend(decoder.push(chunk).unwrap());
+        }
+        decoder.finish().unwrap();
+        assert!(events.iter().any(|event| matches!(
+            event, CanonicalStreamEvent::AnthropicCompactionEnd { item, .. }
+            if item.as_value() == &block
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            CanonicalStreamEvent::Finish {
+                reason: FinishReason::Compaction,
+                ..
+            }
+        )));
+        let wire_usage = events
+            .iter()
+            .find_map(|event| match event {
+                CanonicalStreamEvent::Usage(usage) => Some(usage),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(wire_usage.input_tokens().get(), 100);
+        assert_eq!(wire_usage.output_tokens().get(), 4);
+        assert_eq!(decoder.billing_usage().unwrap().input_tokens().get(), 112);
+        assert_eq!(decoder.billing_usage().unwrap().output_tokens().get(), 7);
+        assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
+
+        let mut parser = af_protocol::openai_chat::SseParser::new();
+        let wire_events: Vec<Value> = parser
+            .push(&body)
+            .unwrap()
+            .into_iter()
+            .filter(|event| !event.is_comment())
+            .map(|event| serde_json::from_slice(event.data()).unwrap())
+            .collect();
+        parser.finish().unwrap();
+        let initial = wire_events
+            .iter()
+            .find(|event| event["type"] == "message_start")
+            .unwrap();
+        assert_eq!(initial["message"]["usage"]["input_tokens"], 120);
+        assert_eq!(initial["message"]["model"], UPSTREAM_MODEL);
+        assert_ne!(initial["message"]["id"], "msg_private_compaction_stream");
+        let final_delta = wire_events
+            .iter()
+            .find(|event| event["type"] == "message_delta")
+            .unwrap();
+        assert_public_compaction_usage(&final_delta["usage"]);
+        assert_eq!(
+            compaction_billing_summary(&database).await,
+            (1, 112, 7, 2, 2, 3)
+        );
+    }
+}
+
+fn native_compaction_block(content: Value) -> Value {
+    json!({
+        "type":"compaction", "content":content, "signature":"runtime-signed-summary",
+        "encrypted_content":"runtime-encrypted-state",
+        "tool_changes":[{"type":"tool_removal", "name":"previous_tool"}],
+        "future_extension":{"kept":true, "opaque":["v1", null]}
+    })
+}
+
+fn compaction_usage() -> Value {
+    json!({
+        "input_tokens":100, "output_tokens":4,
+        "cache_creation_input_tokens":0, "cache_read_input_tokens":0,
+        "service_tier":"standard", "iterations":[
+            {"type":"message", "input_tokens":100, "output_tokens":4},
+            {"type":"compaction", "input_tokens":12, "output_tokens":3,
+             "cache_creation_input_tokens":5, "cache_read_input_tokens":2,
+             "cache_creation":{"ephemeral_5m_input_tokens":2,"ephemeral_1h_input_tokens":3},
+             "future_usage":{"retained":true}}
+        ]
+    })
+}
+
+fn compaction_request(stream: bool) -> Value {
+    let mut request = json!({
+        "model":UPSTREAM_MODEL, "max_tokens":32, "stream":stream,
+        "messages":[
+            {"role":"assistant", "content":[native_compaction_block(json!("previous summary"))]},
+            {"role":"user", "content":"continue"}
+        ]
+    });
+    if stream {
+        request["context_management"] = json!({"edits":[{
+            "type":"compact_20260112", "pause_after_compaction":true,
+            "trigger":{"type":"input_tokens","value":20000},
+            "future_option":{"retained":true}
+        }]});
+    } else {
+        request["compaction"] = json!({"type":"summarize", "future_option":{"retained":true}});
+    }
+    request
+}
+
+fn assert_compaction_upstream(upstream: &support::CapturedRequest, request: &[u8], beta: &str) {
+    assert_eq!(upstream.body, request);
+    let head = upstream.head.to_ascii_lowercase();
+    assert!(head.starts_with("post http://upstream.example/proxy/v1/messages http/1.1"));
+    assert!(head.contains("x-api-key: configured-upstream-key"));
+    assert!(head.contains("anthropic-version: 2023-06-01"));
+    assert!(head.contains(&format!("{RUNTIME_HEADER_NAME}: {RUNTIME_HEADER_VALUE}")));
+    let betas: Vec<_> = head
+        .lines()
+        .filter_map(|line| line.strip_prefix("anthropic-beta:"))
+        .flat_map(|value| value.split(','))
+        .map(str::trim)
+        .collect();
+    assert_eq!(
+        betas
+            .iter()
+            .filter(|value| **value == "caller-beta")
+            .count(),
+        1
+    );
+    assert_eq!(betas.iter().filter(|value| **value == beta).count(), 1);
+    assert!(!head.contains(&CLIENT_KEY.to_ascii_lowercase()));
+}
+
+fn assert_public_compaction_usage(usage: &Value) {
+    assert_eq!(usage["input_tokens"], 100);
+    assert_eq!(usage["output_tokens"], 4);
+    assert_eq!(usage["cache_creation_input_tokens"], 0);
+    assert_eq!(usage["cache_read_input_tokens"], 0);
+    assert_eq!(usage["service_tier"], "standard");
+    assert_eq!(usage["iterations"], compaction_usage()["iterations"]);
+}
+
+fn compaction_sse(block: &Value) -> Vec<u8> {
+    let mut events = vec![json!({
+        "type":"message_start", "message":{
+            "id":"msg_private_compaction_stream", "type":"message", "role":"assistant",
+            "model":"private-upstream-model", "content":[], "stop_reason":null,
+            "usage":{"input_tokens":120, "output_tokens":0, "service_tier":"standard"}
+        }
+    })];
+    let mut initial_block = block.clone();
+    if !block["content"].is_null() {
+        initial_block.as_object_mut().unwrap().remove("content");
+        initial_block["signature"] = json!("");
+        initial_block["encrypted_content"] = json!("");
+    }
+    events.push(json!({"type":"content_block_start", "index":0, "content_block":initial_block}));
+    if !block["content"].is_null() {
+        events.push(json!({"type":"content_block_delta", "index":0, "delta":{
+            "type":"compaction_delta", "content":block["content"],
+            "encrypted_content":block["encrypted_content"]
+        }}));
+        events.push(json!({"type":"content_block_delta", "index":0, "delta":{
+            "type":"signature_delta", "signature":block["signature"]
+        }}));
+    }
+    events.extend([
+        json!({"type":"content_block_stop", "index":0}),
+        json!({"type":"message_delta", "delta":{"stop_reason":"compaction", "stop_sequence":null}, "usage":compaction_usage()}),
+        json!({"type":"message_stop"}),
+    ]);
+    events
+        .into_iter()
+        .flat_map(|event| {
+            format!(
+                "event: {}\ndata: {event}\n\n",
+                event["type"].as_str().unwrap()
+            )
+            .into_bytes()
+        })
+        .collect()
+}
+
+async fn compaction_billing_summary(database: &TestDatabase) -> (i64, i64, i64, i64, i64, i64) {
+    let connection = Database::connect(&database.url).await.unwrap();
+    let row = connection.query_one(Statement::from_sql_and_values(
+        DbBackend::Sqlite,
+        "SELECT COUNT(*) AS row_count, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(cache_read), 0) AS cache_read, COALESCE(SUM(cache_creation_5m), 0) AS cache_creation_5m, COALESCE(SUM(cache_creation_1h), 0) AS cache_creation_1h FROM usage_logs WHERE token_id = ?",
+        [support::TOKEN_ID.into()],
+    )).await.unwrap().unwrap();
+    let summary = (
+        row.try_get("", "row_count").unwrap(),
+        row.try_get("", "input_tokens").unwrap(),
+        row.try_get("", "output_tokens").unwrap(),
+        row.try_get("", "cache_read").unwrap(),
+        row.try_get("", "cache_creation_5m").unwrap(),
+        row.try_get("", "cache_creation_1h").unwrap(),
+    );
+    connection.close().await.unwrap();
+    summary
+}
+
+fn decode_sse_response_body(response: &support::RawResponse) -> Vec<u8> {
+    if !response
+        .headers
+        .get("transfer-encoding")
+        .is_some_and(|value| {
+            value
+                .split(',')
+                .any(|part| part.trim().eq_ignore_ascii_case("chunked"))
+        })
+    {
+        return response.body.clone();
+    }
+    let mut input = response.body.as_slice();
+    let mut decoded = Vec::new();
+    loop {
+        let line_end = input
+            .windows(2)
+            .position(|window| window == b"\r\n")
+            .unwrap();
+        let length = std::str::from_utf8(&input[..line_end])
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap();
+        let length = usize::from_str_radix(length.trim(), 16).unwrap();
+        input = &input[line_end + 2..];
+        if length == 0 {
+            return decoded;
+        }
+        decoded.extend_from_slice(&input[..length]);
+        assert_eq!(&input[length..length + 2], b"\r\n");
+        input = &input[length + 2..];
+    }
 }
 
 #[tokio::test]

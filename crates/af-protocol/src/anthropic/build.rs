@@ -342,6 +342,14 @@ fn merge_raw(
     }
     for (key, value) in fields {
         match key.as_str() {
+            "compaction" | "context_management" => {
+                super::compaction::validate_controls(
+                    fields.get("compaction"),
+                    fields.get("context_management"),
+                )
+                .map_err(map_request_validation_error)?;
+                root.insert(key.clone(), value.clone());
+            }
             "cache_control" => {
                 serde_json::from_value::<super::wire::CacheControlWire>(value.clone())
                     .map_err(|_| BuildRequestError::InvalidValue)?;
@@ -505,7 +513,8 @@ fn build_system_content(
             | ContentBlock::ToolUse { .. }
             | ContentBlock::ToolResult { .. }
             | ContentBlock::Thinking { .. }
-            | ContentBlock::Compaction(_) => {
+            | ContentBlock::Compaction(_)
+            | ContentBlock::AnthropicCompaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         }
@@ -535,7 +544,8 @@ fn build_user_parts(
             ContentBlock::Audio { .. }
             | ContentBlock::ToolUse { .. }
             | ContentBlock::Thinking { .. }
-            | ContentBlock::Compaction(_) => {
+            | ContentBlock::Compaction(_)
+            | ContentBlock::AnthropicCompaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         }
@@ -554,6 +564,10 @@ fn build_assistant_content(
     let mut parts = Vec::new();
     for block in blocks {
         match block {
+            ContentBlock::AnthropicCompaction(item) => {
+                state.add_block()?;
+                parts.push(item.as_value().clone());
+            }
             ContentBlock::Text(text) => parts.push(build_text_part(text, state)?),
             ContentBlock::Thinking { text, signature } => {
                 let signature = signature
@@ -673,7 +687,8 @@ fn build_tool_result_content(
             | ContentBlock::ToolUse { .. }
             | ContentBlock::ToolResult { .. }
             | ContentBlock::Thinking { .. }
-            | ContentBlock::Compaction(_) => {
+            | ContentBlock::Compaction(_)
+            | ContentBlock::AnthropicCompaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         }

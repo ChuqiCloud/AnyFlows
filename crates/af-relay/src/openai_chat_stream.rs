@@ -116,11 +116,21 @@ impl OpenAiChatStream {
         for event in events {
             match event {
                 CanonicalStreamEvent::Usage(usage) => {
+                    let billing_usage = self
+                        .source
+                        .as_ref()
+                        .and_then(ConversationSource::billing_usage)
+                        .unwrap_or(usage);
                     self.usage_estimator
-                        .observe(&CanonicalStreamEvent::Usage(usage));
+                        .observe(&CanonicalStreamEvent::Usage(billing_usage));
+                    let wire_usage = if self.encoder.preserves_anthropic_usage() {
+                        usage
+                    } else {
+                        billing_usage
+                    };
                     output.extend(
                         self.encoder
-                            .encode_event(CanonicalStreamEvent::Usage(usage))
+                            .encode_event(CanonicalStreamEvent::Usage(wire_usage))
                             .map_err(|_| UpstreamError::ProtocolError)?,
                     );
                 }
