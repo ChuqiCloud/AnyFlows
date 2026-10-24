@@ -3,6 +3,15 @@ name: Console extensions
 on:
   # 历史专项保留手动复测入口，日常检查由 CI 工作流承担。
   workflow_dispatch:
+    inputs:
+      scenario:
+        description: 浏览器检查范围
+        required: true
+        default: extensions
+        type: choice
+        options:
+          - extensions
+          - usage-logs
 
 permissions:
   contents: read
@@ -59,8 +68,11 @@ jobs:
           npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} lint
       - name: Build community frontend
         run: npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build
-      - name: Check client profile drawers in Chromium
+      - name: Check selected console scenario in Chromium
+        env:
+          SCENARIO: ${{ github.event.inputs.scenario || 'extensions' }}
         run: |
+          set -euo pipefail
           browser_tools="$RUNNER_TEMP/anyflows-playwright"
           npm install --prefix "$browser_tools" --no-save --ignore-scripts playwright@1.56.1
           # GitHub-hosted Ubuntu already includes Chromium runtime libraries; --with-deps
@@ -70,5 +82,16 @@ jobs:
           else
             "$browser_tools/node_modules/.bin/playwright" install --with-deps chromium
           fi
-          PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-client-profiles-smoke.mjs '${{ matrix.frontend }}'
-          PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-proxy-pools-smoke.mjs '${{ matrix.frontend }}'
+          case "$SCENARIO" in
+            extensions)
+              PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-client-profiles-smoke.mjs '${{ matrix.frontend }}'
+              PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-proxy-pools-smoke.mjs '${{ matrix.frontend }}'
+              ;;
+            usage-logs)
+              PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-usage-logs-smoke.mjs '${{ matrix.frontend }}'
+              ;;
+            *)
+              printf 'Unsupported console scenario: %s\n' "$SCENARIO" >&2
+              exit 1
+              ;;
+          esac

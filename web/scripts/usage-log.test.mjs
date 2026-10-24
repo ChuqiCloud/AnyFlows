@@ -8,7 +8,10 @@ import {
   usageLatencyTone,
 } from '../src/features/usage-logs/usage-log-format.ts'
 import {
+  filterFailedCallLogs,
   filterUsageLogs,
+  isAdminFailedCallLog,
+  isFailedCallLog,
   summarizeUsageLogs,
   usageLogProtocols,
 } from '../src/features/usage-logs/usage-log-model.ts'
@@ -76,6 +79,54 @@ test('当前页概览只聚合可见请求事实', () => {
   })
 })
 
+test('失败日志筛选保留错误全文、请求 ID 与可空请求主体', () => {
+  const message = `上游响应失败\n${'invalid_request:'.repeat(80)}\n错误末尾`
+  const failed = {
+    id: 9,
+    request_id: 'request-failed-with-details',
+    user_id: null,
+    username: null,
+    token_id: null,
+    group_id: null,
+    organization_id: null,
+    organization_team_id: null,
+    channel_id: null,
+    model: 'gpt-5.5',
+    protocol: 'open_ai_responses',
+    operation: 'responses',
+    duration_ms: 1_000,
+    error_kind: 'upstream_response',
+    error_code: 'upstream_bad_request',
+    error_message: message,
+    created_at: 3,
+  }
+  const original = structuredClone(failed)
+  assert.deepEqual(filterFailedCallLogs([failed], ' GPT ', 'open_ai_responses'), [failed])
+  assert.deepEqual(filterFailedCallLogs([failed], '', 'anthropic'), [])
+  assert.equal(filterFailedCallLogs([failed], '', 'all')[0].error_message, message)
+  assert.equal(isFailedCallLog(failed), true)
+  assert.equal(isAdminFailedCallLog(failed), true)
+  assert.equal(isFailedCallLog(logs[0]), false)
+  assert.deepEqual(failed, original, '筛选不得截断错误或修改缺失主体')
+})
+
+test('用户安全错误摘要可识别为失败记录但不识别为管理明细', () => {
+  const failed = {
+    id: 10,
+    request_id: 'request-user-failed',
+    model: 'deepseek-v4-flash',
+    protocol: 'anthropic',
+    operation: 'chat',
+    duration_ms: 0,
+    error_code: 'upstream_unavailable',
+    error_message: '模型服务暂时不可用',
+    created_at: 4,
+  }
+  assert.equal(isFailedCallLog(failed), true)
+  assert.equal(isAdminFailedCallLog(failed), false)
+  assert.deepEqual(filterFailedCallLogs([failed], 'deepseek', 'anthropic'), [failed])
+})
+
 test('耗时格式兼顾毫秒与秒级扫描', () => {
   assert.equal(formatUsageLatency(null, 'zh-CN'), '-')
   assert.equal(formatUsageLatency(850, 'zh-CN'), '850 ms')
@@ -105,5 +156,11 @@ test('中英文协议徽标覆盖生成客户端的全部闭合枚举', () => {
     }
     assert.equal(typeof messages.usageLogs.actions.openDetails, 'string')
     assert.equal(typeof messages.usageLogs.detailSections.billing, 'string')
+    for (const key of ['details', 'errorCode', 'errorMessage', 'errorKind', 'principal', 'unknownUser', 'organization', 'team']) {
+      assert.equal(typeof messages.usageLogs.failed[key], 'string', `usageLogs.failed.${key}`)
+    }
+    for (const key of ['copyValue', 'copiedValue', 'copyValueFailed']) {
+      assert.equal(typeof messages.usageLogs.actions[key], 'string', `usageLogs.actions.${key}`)
+    }
   }
 })

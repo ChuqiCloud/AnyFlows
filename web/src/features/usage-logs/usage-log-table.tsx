@@ -14,7 +14,8 @@ import {
   usageLatencyTone,
   type UsageLatencyKind,
 } from './usage-log-format'
-import { isAdminFailedCallLog, isAdminUsageLog, isFailedCallLog, type RequestLogRow, type UsageLogRow, usageLogTotalTokens } from './usage-log-model'
+import { FailedCallLogDetailsSheet } from './failed-call-log-details-sheet'
+import { isAdminFailedCallLog, isAdminUsageLog, isFailedCallLog, type FailedCallLogRow, type RequestLogRow, type UsageLogRow, usageLogTotalTokens } from './usage-log-model'
 
 type UsageLogTableProps = {
   logs: RequestLogRow[]
@@ -24,6 +25,7 @@ type UsageLogTableProps = {
   formatQuota: (value: number) => string
   onSelect: (log: UsageLogRow) => void
   onUserSelect?: (userId: number) => void
+  onTraceOpen?: (requestId: string) => void
 }
 
 function ProtocolBadge({ log }: { log: UsageLogRow }) {
@@ -76,11 +78,13 @@ function RequestIdCopy({ requestId, onClick }: { requestId: string; onClick: (ev
   )
 }
 
-function UsageLogItem({ log, showPrincipal, formatQuota, onSelect, onUserSelect }: {
+function UsageLogItem({ log, admin, showPrincipal, formatQuota, onSelect, onFailedSelect, onUserSelect }: {
   log: RequestLogRow
+  admin: boolean
   showPrincipal: boolean
   formatQuota: (value: number) => string
   onSelect: (log: UsageLogRow) => void
+  onFailedSelect: (log: FailedCallLogRow) => void
   onUserSelect?: (userId: number) => void
 }) {
   const { t, i18n } = useTranslation()
@@ -89,14 +93,39 @@ function UsageLogItem({ log, showPrincipal, formatQuota, onSelect, onUserSelect 
   const stop = (event: MouseEvent) => event.stopPropagation()
 
   if (isFailedCallLog(log)) {
-    const internal = isAdminFailedCallLog(log)
+    const internal = admin && showPrincipal && isAdminFailedCallLog(log) ? log : undefined
+    const userId = internal?.user_id
+    const userLabel = internal?.username || (userId != null ? `#${userId}` : t('usageLogs.failed.unknownUser'))
     return (
-      <article className="grid w-full gap-3 border-b border-[var(--hairline)] bg-destructive/[0.025] px-3 py-3 text-left last:border-b-0 lg:min-h-[4.5rem] lg:grid-cols-[7rem_minmax(11rem,1.4fr)_minmax(14rem,1fr)_8.25rem_2rem] lg:items-center lg:px-4 lg:py-2.5">
-        <div className="text-xs text-muted-foreground"><div className="tabular-nums text-foreground">{formatUsageDate(log.created_at, locale)}</div><div className="mt-1 inline-flex items-center gap-1 text-[0.6875rem] text-destructive"><CircleAlert className="size-3" aria-hidden="true" />{t('usageLogs.failed.status')}</div></div>
-        <div className="min-w-0"><div className="flex min-w-0 flex-wrap items-center gap-2"><span className="truncate text-sm font-semibold">{log.model}</span><Badge className="shrink-0 border-transparent bg-info/10 text-info">{t('usageLogs.protocol.' + log.protocol)}</Badge></div><div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] text-muted-foreground"><span>{t('usageLogs.operation.' + log.operation)}</span>{log.request_id ? <RequestIdCopy requestId={log.request_id} onClick={stop} /> : null}</div></div>
-        <div className="min-w-0 rounded-md bg-destructive/10 px-2.5 py-2"><div className="flex flex-wrap items-center gap-2"><Badge className="border-transparent bg-destructive/10 font-mono text-destructive">{log.error_code}</Badge>{internal && showPrincipal ? <span className="truncate font-mono text-[0.6875rem] text-muted-foreground">{log.error_kind}</span> : null}</div><p className="mt-1 break-words text-xs leading-5 text-foreground">{log.error_message}</p></div>
+      <article
+        className="group grid w-full cursor-pointer gap-3 border-b border-[var(--hairline)] bg-destructive/[0.025] px-3 py-3 text-left outline-none transition-colors last:border-b-0 hover:bg-destructive/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand lg:min-h-[4.5rem] lg:grid-cols-[7rem_minmax(11rem,1.4fr)_8.25rem_10rem_7.5rem_2rem] lg:items-center lg:px-4 lg:py-2.5"
+        onClick={() => onFailedSelect(log)}
+      >
+        <div className="text-xs text-muted-foreground">
+          <div className="tabular-nums text-foreground">{formatUsageDate(log.created_at, locale)}</div>
+          <div className="mt-1 inline-flex items-center gap-1 text-[0.6875rem] text-destructive"><CircleAlert className="size-3" aria-hidden="true" />{t('usageLogs.failed.status')}</div>
+        </div>
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <button type="button" className="truncate text-sm font-semibold outline-none hover:text-brand focus-visible:text-brand focus-visible:underline" onClick={(event) => { stop(event); onFailedSelect(log) }}>{log.model}</button>
+            <Badge className="shrink-0 border-transparent bg-info/10 text-info">{t(`usageLogs.protocol.${log.protocol}`)}</Badge>
+          </div>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] text-muted-foreground">
+            <span>{t(`usageLogs.operation.${log.operation}`)}</span>
+            {internal ? userId != null && onUserSelect ? (
+              <button type="button" className="inline-flex min-w-0 items-center gap-1 font-medium text-foreground outline-none hover:text-brand focus-visible:text-brand focus-visible:underline" onClick={(event) => { stop(event); onUserSelect(userId) }}><UserRound className="size-3 shrink-0" aria-hidden="true" /><span className="truncate">{userLabel}</span></button>
+            ) : (
+              <span className="inline-flex min-w-0 items-center gap-1 font-medium text-foreground"><UserRound className="size-3 shrink-0" aria-hidden="true" /><span className="truncate">{userLabel}</span></span>
+            ) : null}
+            {log.request_id ? <RequestIdCopy requestId={log.request_id} onClick={stop} /> : null}
+          </div>
+        </div>
         <div className="text-xs font-medium tabular-nums text-muted-foreground"><Clock3 className="mr-1 inline size-3" aria-hidden="true" />{formatUsageLatency(log.duration_ms, locale)}</div>
-        <div className="hidden lg:block"><Badge className="border-transparent bg-destructive/10 text-destructive">{t('usageLogs.failed.badge')}</Badge></div>
+        <div className="min-w-0 rounded-md bg-destructive/10 px-2.5 py-2 lg:col-span-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2"><Badge className="h-auto min-h-5 max-w-full border-transparent bg-destructive/10 py-0.5 font-mono text-destructive [overflow-wrap:anywhere]">{log.error_code}</Badge>{internal ? <span className="truncate font-mono text-[0.6875rem] text-muted-foreground">{internal.error_kind}</span> : null}</div>
+          <p className="mt-1 line-clamp-2 [overflow-wrap:anywhere] text-xs leading-5 text-foreground">{log.error_message}</p>
+        </div>
+        <Button type="button" size="icon-sm" variant="ghost" className="justify-self-end" aria-label={t('usageLogs.actions.openDetails', { model: log.model })} onClick={(event) => { stop(event); onFailedSelect(log) }}><ChevronRight className="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" /></Button>
       </article>
     )
   }
@@ -192,8 +221,18 @@ function UsageLogItem({ log, showPrincipal, formatQuota, onSelect, onUserSelect 
   )
 }
 
-export function UsageLogTable({ logs, admin, showPrincipal = admin, filtered, formatQuota, onSelect, onUserSelect }: UsageLogTableProps) {
+export function UsageLogTable({ logs, admin, showPrincipal = admin, filtered, formatQuota, onSelect, onUserSelect, onTraceOpen }: UsageLogTableProps) {
   const { t } = useTranslation()
+  const [selectedFailedLog, setSelectedFailedLog] = useState<FailedCallLogRow>()
+  const openTrace = (requestId: string) => {
+    setSelectedFailedLog(undefined)
+    if (onTraceOpen) onTraceOpen(requestId)
+    else window.location.hash = `#/console/debug-traces?request_id=${encodeURIComponent(requestId)}`
+  }
+  const openUser = onUserSelect ? (userId: number) => {
+    setSelectedFailedLog(undefined)
+    onUserSelect(userId)
+  } : undefined
   if (logs.length === 0) {
     return (
       <div className="grid min-h-64 place-items-center rounded-lg border border-[var(--hairline)] py-10 text-center">
@@ -207,16 +246,19 @@ export function UsageLogTable({ logs, admin, showPrincipal = admin, filtered, fo
   }
 
   return (
-    <section className="overflow-hidden rounded-lg border border-[var(--hairline)] bg-surface-1" aria-label={t('usageLogs.listLabel')}>
-      <div className="hidden grid-cols-[7rem_minmax(11rem,1.4fr)_8.25rem_10rem_7.5rem_2rem] gap-3 border-b border-[var(--hairline)] bg-surface-2/60 px-4 py-2 text-[0.6875rem] font-medium text-muted-foreground lg:grid">
-        <span>{t('usageLogs.columns.time')}</span>
-        <span>{t('usageLogs.columns.call')}</span>
-        <span>{t('usageLogs.columns.latency')}</span>
-        <span>{t('usageLogs.columns.tokens')}</span>
-        <span className="text-right">{t('usageLogs.columns.billing')}</span>
-        <span />
-      </div>
-      {logs.map((log) => <UsageLogItem key={(isFailedCallLog(log) ? 'failed-' : 'usage-') + log.id} log={log} showPrincipal={showPrincipal} formatQuota={formatQuota} onSelect={onSelect} onUserSelect={onUserSelect} />)}
-    </section>
+    <>
+      <section className="overflow-hidden rounded-lg border border-[var(--hairline)] bg-surface-1" aria-label={t('usageLogs.listLabel')}>
+        <div className="hidden grid-cols-[7rem_minmax(11rem,1.4fr)_8.25rem_10rem_7.5rem_2rem] gap-3 border-b border-[var(--hairline)] bg-surface-2/60 px-4 py-2 text-[0.6875rem] font-medium text-muted-foreground lg:grid">
+          <span>{t('usageLogs.columns.time')}</span>
+          <span>{t('usageLogs.columns.call')}</span>
+          <span>{t('usageLogs.columns.latency')}</span>
+          <span>{t('usageLogs.columns.tokens')}</span>
+          <span className="text-right">{t('usageLogs.columns.billing')}</span>
+          <span />
+        </div>
+        {logs.map((log) => <UsageLogItem key={(isFailedCallLog(log) ? 'failed-' : 'usage-') + log.id} log={log} admin={admin} showPrincipal={showPrincipal} formatQuota={formatQuota} onSelect={onSelect} onFailedSelect={setSelectedFailedLog} onUserSelect={openUser} />)}
+      </section>
+      <FailedCallLogDetailsSheet log={selectedFailedLog} admin={admin} showPrincipal={showPrincipal} onOpenChange={(open) => !open && setSelectedFailedLog(undefined)} onTraceOpen={openTrace} onUserSelect={openUser} />
+    </>
   )
 }
