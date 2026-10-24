@@ -114,12 +114,70 @@ async function closeDialog(page) {
 
 async function checkLayout(page, dialog, label) {
   await page.evaluate(() => document.fonts.ready)
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}: page overflows`)
   if (dialog) {
-    assert.ok(await dialog.evaluate(node => {
+    const geometry = await dialog.evaluate(async node => {
+      const started = performance.now()
+      const deadline = started + 5_000
+      let previous
+      let stableFrames = 0
+      let stable = false
+      let activeAnimations = []
+      while (performance.now() < deadline) {
+        await new Promise(resolve => requestAnimationFrame(resolve))
+        const rect = node.getBoundingClientRect()
+        const current = [rect.left, rect.right, rect.top, rect.bottom, node.clientWidth, node.scrollWidth]
+        activeAnimations = node.getAnimations({ subtree: true }).filter(animation => (
+          (animation.playState === 'running' || animation.pending)
+          && Number.isFinite(animation.effect?.getComputedTiming().endTime)
+        ))
+        stableFrames = previous && current.every((value, index) => Math.abs(value - previous[index]) < 0.1) ? stableFrames + 1 : 0
+        previous = current
+        if (stableFrames >= 4 && activeAnimations.length === 0) {
+          stable = true
+          break
+        }
+      }
       const rect = node.getBoundingClientRect()
-      return rect.left >= -1 && rect.right <= innerWidth + 1 && node.scrollWidth <= node.clientWidth + 1
-    }), `${label}: details overflow horizontally`)
+      const describe = element => {
+        const bounds = element.getBoundingClientRect()
+        return {
+          tag: element.tagName.toLowerCase(), role: element.getAttribute('role'),
+          className: String(element.className).slice(0, 180),
+          left: bounds.left, right: bounds.right, width: bounds.width,
+          clientWidth: element.clientWidth, scrollWidth: element.scrollWidth,
+          scrollHeight: element.scrollHeight,
+          overflowX: getComputedStyle(element).overflowX,
+          text: element.textContent?.trim().slice(0, 80),
+        }
+      }
+      const overflowingChildren = [...node.querySelectorAll('*')]
+        .filter(element => {
+          const bounds = element.getBoundingClientRect()
+          return bounds.width > 0 && bounds.height > 0 && (
+            bounds.left < rect.left - 1 || bounds.right > rect.right + 1
+            || element.scrollWidth > element.clientWidth + 1
+          )
+        })
+        .map(describe)
+        .sort((left, right) => (right.scrollWidth - right.clientWidth) - (left.scrollWidth - left.clientWidth) || right.width - left.width)
+        .slice(0, 6)
+      return {
+        stable, stableFrames, elapsedMs: Math.round(performance.now() - started),
+        viewport: { width: innerWidth, height: innerHeight, documentScrollWidth: document.documentElement.scrollWidth },
+        rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height },
+        clientWidth: node.clientWidth, scrollWidth: node.scrollWidth, scrollHeight: node.scrollHeight,
+        activeAnimations: activeAnimations.map(animation => ({ playState: animation.playState, currentTime: animation.currentTime, endTime: animation.effect?.getComputedTiming().endTime })),
+        overflowingChildren,
+      }
+    })
+    const diagnostic = `${label}: ${JSON.stringify(geometry)}`
+    assert.equal(geometry.stable, true, `Details did not reach a stable layout within 5 seconds. ${diagnostic}`)
+    assert.ok(geometry.rect.left >= -1 && geometry.rect.right <= geometry.viewport.width + 1, `Details extend outside the viewport. ${diagnostic}`)
+    assert.ok(geometry.scrollWidth <= geometry.clientWidth + 1, `Details content overflows horizontally. ${diagnostic}`)
+    assert.ok(geometry.viewport.documentScrollWidth <= geometry.viewport.width, `Page overflows. ${diagnostic}`)
+  } else {
+    const geometry = await page.evaluate(() => ({ viewportWidth: innerWidth, viewportHeight: innerHeight, scrollWidth: document.documentElement.scrollWidth }))
+    assert.ok(geometry.scrollWidth <= geometry.viewportWidth, `${label}: page overflows. ${JSON.stringify(geometry)}`)
   }
 }
 
