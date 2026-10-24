@@ -1,8 +1,9 @@
 import { Chip, Drawer, DrawerBody, DrawerContent, DrawerHeader } from '@heroui/react'
-import { Brain, Coins, Gauge, Route, UserRound, Zap, type LucideIcon } from 'lucide-react'
+import { Brain, Coins, Gauge, Route, UserRound, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
+import { DetailSection } from './usage-log-detail-section'
 import { formatUsageDateLong, formatUsageLatency, formatUsageNumber, usageLatencyTone, type UsageLatencyKind } from './usage-log-format'
 import { isAdminUsageLog, type UsageLogRow, usageLogCacheTokens, usageLogTotalTokens } from './usage-log-model'
 
@@ -14,36 +15,6 @@ type UsageLogDetailsSheetProps = {
   onOpenChange: (open: boolean) => void
   onTraceOpen: (requestId: string) => void
   onUserSelect?: (userId: number) => void
-}
-
-type DetailItem = {
-  label: string
-  value: string
-  mono?: boolean
-  wide?: boolean
-  action?: () => void
-  valueClassName?: string
-}
-
-function DetailSection({ title, icon: Icon, items }: { title: string; icon: LucideIcon; items: DetailItem[] }) {
-  return (
-    <section className="border-b border-[var(--hairline)] py-5 last:border-b-0">
-      <h3 className="flex items-center gap-2 text-xs font-semibold">
-        <Icon className="size-3.5 text-muted-foreground" aria-hidden="true" />
-        {title}
-      </h3>
-      <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-4">
-        {items.map((item) => (
-          <div key={item.label} className={cn('min-w-0', item.wide && 'col-span-2')}>
-            <dt className="text-[0.6875rem] text-muted-foreground">{item.label}</dt>
-            <dd className={cn('mt-1 break-words text-sm tabular-nums', item.mono && 'font-mono text-xs', item.valueClassName)} title={item.value}>
-              {item.action ? <button type="button" className="text-left font-medium text-brand outline-none hover:underline focus-visible:underline" onClick={item.action}>{item.value}</button> : item.value}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </section>
-  )
 }
 
 /** 详情抽屉集中展示核账事实，主表只保留高频比较字段。 */
@@ -100,6 +71,7 @@ export function UsageLogDetailsSheet({ log, admin, showPrincipal = admin, format
                     value: log.request_id ?? `#${log.id}`,
                     mono: true,
                     wide: true,
+                    copyable: Boolean(log.request_id),
                     action: admin && log.request_id ? () => onTraceOpen(log.request_id as string) : undefined,
                   },
                   { label: t('usageLogs.detailFields.responseMode'), value: log.is_stream === null ? t('usageLogs.values.legacy') : t(log.is_stream ? 'usageLogs.values.stream' : 'usageLogs.values.sync') },

@@ -2602,8 +2602,8 @@
   },
   "usageLogs": {
     "title": "调用日志",
-    "subtitle": "查看已结算的调用记录，包括响应耗时、Token 用量和实际扣费。",
-    "adminSubtitle": "全站的每一次调用都在这里，按请求核对响应速度、Token 消耗和实际扣费。",
+    "subtitle": "查看自己的模型调用、失败摘要、响应速度和实际计费。",
+    "adminSubtitle": "查看全站模型调用、请求用户、失败原因和实际计费。",
     "count": "本页 {{count}} 条记录",
     "filteredCount": "显示 {{visible}} / {{count}} 条",
     "page": "第 {{page}} 页",
@@ -2617,7 +2617,7 @@
       "tokens": "Token 消耗",
       "billing": "计费结果"
     },
-    "listLabel": "已结算调用列表",
+    "listLabel": "调用日志列表",
     "status": {
       "settled": "已结算",
       "settledOnly": "仅已结算",
@@ -2757,17 +2757,20 @@
       "copyRequestIdFailed": "复制失败，请在详情中手动选择请求 ID",
       "retry": "重试",
       "previous": "上一页",
-      "next": "下一页"
+      "next": "下一页",
+      "copyValue": "复制内容",
+      "copiedValue": "内容已复制",
+      "copyValueFailed": "复制失败，请手动选择并复制内容"
     },
     "empty": {
       "title": "还没有调用日志",
-      "body": "还没有调用记录。发出请求并完成计费后会显示在这里。",
+      "body": "模型请求的结算记录和失败摘要会显示在这里。",
       "filteredTitle": "本页没有匹配记录",
-      "filteredBody": "调整模型或协议筛选，或翻页查看其他已结算调用。"
+      "filteredBody": "调整模型或协议筛选，或翻页查看其他调用。"
     },
     "error": {
       "title": "无法读取调用日志",
-      "body": "暂时无法加载已结算调用，请稍后重试。"
+      "body": "服务器暂时未返回调用日志，请稍后重试。"
     },
     "userSheet": {
       "title": "用户资料",
@@ -2797,7 +2800,15 @@
         "internal": "内部信息",
         "request": "请求 ID",
         "channel": "渠道"
-      }
+      },
+      "details": "错误详情",
+      "errorCode": "错误码",
+      "errorMessage": "错误说明",
+      "errorKind": "内部分类",
+      "principal": "请求主体",
+      "unknownUser": "未记录用户",
+      "organization": "企业",
+      "team": "团队"
     }
   },
   "debugTraces": {

@@ -181,7 +181,7 @@ export function UsageLogPage({ admin }: UsageLogPageProps) {
         </div>
       ) : (
         <>
-          <UsageLogTable logs={requestLogs} admin={admin} filtered={hasFilters} formatQuota={formatQuota} onSelect={setSelectedLog} onUserSelect={openUser} />
+          <UsageLogTable logs={requestLogs} admin={admin} filtered={hasFilters} formatQuota={formatQuota} onSelect={setSelectedLog} onUserSelect={openUser} onTraceOpen={openTrace} />
 
           <DataTablePagination
             currentPage={pagination.currentPage}
