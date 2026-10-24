@@ -48,15 +48,14 @@ pub(super) fn validate_controls(
                     {
                         return Err(ParseRequestError::InvalidValue);
                     }
-                    if let Some(trigger) = edit.get("trigger").filter(|v| !v.is_null()) {
-                        if trigger.get("type").and_then(Value::as_str) != Some("input_tokens")
+                    if let Some(trigger) = edit.get("trigger").filter(|v| !v.is_null())
+                        && (trigger.get("type").and_then(Value::as_str) != Some("input_tokens")
                             || trigger
                                 .get("value")
                                 .and_then(Value::as_i64)
-                                .is_none_or(|v| v <= 0)
-                        {
-                            return Err(ParseRequestError::InvalidValue);
-                        }
+                                .is_none_or(|v| v <= 0))
+                    {
+                        return Err(ParseRequestError::InvalidValue);
                     }
                 }
             }

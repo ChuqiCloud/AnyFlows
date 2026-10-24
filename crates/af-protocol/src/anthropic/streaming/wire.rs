@@ -149,6 +149,8 @@ pub(super) struct MessageDeltaUsageWire {
     #[serde(default)]
     pub(super) output_tokens_details: Option<OutputTokensDetailsWire>,
     #[serde(default)]
+    pub(super) inference_geo: Option<String>,
+    #[serde(default)]
     pub(super) server_tool_use: Option<ServerToolUsageWire>,
     #[serde(default)]
     pub(super) service_tier: Option<ServiceTierWire>,

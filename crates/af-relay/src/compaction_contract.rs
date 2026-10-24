@@ -111,7 +111,7 @@ async fn full_and_collected_native_compaction_preserve_state_and_distinct_billin
                 1_700_000_000,
             )
             .unwrap();
-            assert_public_response(&body, &block(content));
+            assert_public_response(&body, &block(content.clone()));
         }
     }
 }

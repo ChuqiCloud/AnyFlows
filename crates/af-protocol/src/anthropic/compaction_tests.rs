@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 
 use super::{
     AnthropicMessagesStreamDecoder, AnthropicMessagesStreamEncoder, ParseRequestError,
-    billing_usage, build_request, build_response, parse_request, parse_response,
+    ParseStreamError, billing_usage, build_request, build_response, parse_request, parse_response,
 };
 use crate::{CanonicalStreamEvent as Event, ContentBlock, FinishReason};
 
@@ -31,6 +31,19 @@ fn frame(value: Value) -> Vec<u8> {
         value["type"].as_str().unwrap()
     )
     .into_bytes()
+}
+
+fn compaction_stream_with_usage(initial_usage: Value, final_usage: Value) -> Vec<u8> {
+    [
+        json!({"type":"message_start", "message":{"id":"msg_compaction", "type":"message", "role":"assistant", "content":[], "model":"claude-test", "stop_reason":null, "usage":initial_usage}}),
+        json!({"type":"content_block_start", "index":0, "content_block":native_block(json!("summary"))}),
+        json!({"type":"content_block_stop", "index":0}),
+        json!({"type":"message_delta", "delta":{"stop_reason":"compaction", "stop_sequence":null}, "usage":final_usage}),
+        json!({"type":"message_stop"}),
+    ]
+    .into_iter()
+    .flat_map(frame)
+    .collect()
 }
 
 #[test]
@@ -170,6 +183,90 @@ fn both_compaction_sse_forms_preserve_native_state_and_usage() {
             assert!(events.iter().any(|event| matches!(event, Event::AnthropicCompactionEnd{item,..} if item.as_value() == &block)));
             assert!(events.iter().any(|event| matches!(event, Event::AnthropicUsageMetadata{raw} if raw["iterations"] == iterations())));
             assert_eq!(replay.billing_usage(), decoder.billing_usage());
+        }
+    }
+}
+
+#[test]
+fn compaction_sse_replays_initial_and_final_geo_with_other_usage_metadata() {
+    for (initial_geo, final_geo, expected_geo) in [
+        (Some("us"), None, "us"),
+        (None, Some("eu"), "eu"),
+        (Some("us"), Some("eu"), "eu"),
+    ] {
+        let mut initial_usage = usage();
+        initial_usage["output_tokens"] = json!(0);
+        initial_usage["service_tier"] = json!("standard");
+        if let Some(geo) = initial_geo {
+            initial_usage["inference_geo"] = json!(geo);
+        }
+        let mut final_usage = usage();
+        final_usage["iterations"] = iterations();
+        if let Some(geo) = final_geo {
+            final_usage["inference_geo"] = json!(geo);
+        }
+        let stream = compaction_stream_with_usage(initial_usage, final_usage);
+        let mut decoder = AnthropicMessagesStreamDecoder::new();
+        let events = decoder.push(&stream).unwrap();
+        decoder.finish().unwrap();
+        let expected_metadata = json!({"inference_geo":expected_geo, "service_tier":"standard", "iterations":iterations()});
+        assert!(events.iter().any(|event| matches!(event, Event::AnthropicUsageMetadata {raw} if raw == &expected_metadata)));
+        assert_eq!(decoder.billing_usage().unwrap().input_tokens().get(), 112);
+        assert_eq!(decoder.billing_usage().unwrap().output_tokens().get(), 7);
+
+        let mut encoder = AnthropicMessagesStreamEncoder::new(
+            "msg_replay",
+            "claude-test",
+            decoder.initial_usage().unwrap(),
+        )
+        .unwrap();
+        let mut encoded = Vec::new();
+        for event in events {
+            encoded.extend(encoder.encode(event).unwrap());
+        }
+        let mut replay = AnthropicMessagesStreamDecoder::new();
+        let mut replay_events = Vec::new();
+        for chunk in encoded.chunks(11) {
+            replay_events.extend(replay.push(chunk).unwrap());
+        }
+        replay.finish().unwrap();
+        assert!(replay_events.iter().any(|event| matches!(event, Event::AnthropicUsageMetadata {raw} if raw == &expected_metadata)));
+        assert!(replay_events.iter().any(|event| matches!(event, Event::Usage(usage) if usage.input_tokens().get() == 100 && usage.output_tokens().get() == 4)));
+        assert_eq!(replay.billing_usage(), decoder.billing_usage());
+    }
+}
+
+#[test]
+fn compaction_sse_validates_initial_and_final_geo_with_the_same_byte_limit() {
+    for final_geo in [false, true] {
+        for (geo, accepted) in [
+            ("us".to_owned(), true),
+            ("x".repeat(64), true),
+            (format!("{}a", "中".repeat(21)), true),
+            (String::new(), false),
+            (" us".to_owned(), false),
+            ("us ".to_owned(), false),
+            ("u\ns".to_owned(), false),
+            ("x".repeat(65), false),
+            ("中".repeat(22), false),
+        ] {
+            let mut initial_usage = usage();
+            initial_usage["output_tokens"] = json!(0);
+            let mut final_usage = usage();
+            if final_geo {
+                final_usage["inference_geo"] = json!(geo);
+            } else {
+                initial_usage["inference_geo"] = json!(geo);
+            }
+            let mut decoder = AnthropicMessagesStreamDecoder::new();
+            let result = decoder.push(&compaction_stream_with_usage(initial_usage, final_usage));
+            if accepted {
+                let events = result.unwrap();
+                decoder.finish().unwrap();
+                assert!(events.iter().any(|event| matches!(event, Event::AnthropicUsageMetadata {raw} if raw["inference_geo"] == geo)));
+            } else {
+                assert!(matches!(result, Err(ParseStreamError::InvalidValue)));
+            }
         }
     }
 }

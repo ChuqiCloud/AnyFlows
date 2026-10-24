@@ -1,7 +1,7 @@
 use std::{collections::HashSet, fmt};
 
 use af_domain::{Role, UpstreamError, UpstreamServerStatus};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use super::{
     ParseStreamError,
@@ -597,24 +597,19 @@ impl AnthropicMessagesStreamDecoder {
         if (reason == FinishReason::ToolCalls) != self.has_tool_use {
             return Err(ParseStreamError::InvalidSequence);
         }
-        let iterations = usage.iterations.clone();
-        if let Some(tier) = usage.service_tier.as_ref() {
-            let metadata = self
-                .usage_metadata
-                .get_or_insert_with(|| serde_json::json!({}));
-            metadata["service_tier"] = Value::String(tier.as_str().to_owned());
-        }
-        let final_usage = merge_usage(
+        let (final_usage, final_metadata) = merge_usage(
             self.initial_usage
                 .ok_or(ParseStreamError::InvalidSequence)?,
             usage,
         )?;
 
-        if let Some(iterations) = iterations {
+        if !final_metadata.is_empty() {
             let metadata = self
                 .usage_metadata
-                .get_or_insert_with(|| serde_json::json!({}));
-            metadata["iterations"] = iterations;
+                .get_or_insert_with(|| Value::Object(Map::new()))
+                .as_object_mut()
+                .ok_or(ParseStreamError::InvalidSequence)?;
+            metadata.extend(final_metadata);
         }
         self.billing_usage = Some(
             match self
@@ -801,7 +796,10 @@ fn convert_stop(
     }
 }
 
-fn merge_usage(initial: Usage, delta: MessageDeltaUsageWire) -> Result<Usage, ParseStreamError> {
+fn merge_usage(
+    initial: Usage,
+    delta: MessageDeltaUsageWire,
+) -> Result<(Usage, Map<String, Value>), ParseStreamError> {
     let details = initial.details();
     let cache_creation = details
         .cache_creation_5m()
@@ -857,13 +855,11 @@ fn merge_usage(initial: Usage, delta: MessageDeltaUsageWire) -> Result<Usage, Pa
         output_tokens_details: Some(super::super::response_wire::OutputTokensDetailsWire {
             thinking_tokens: reasoning.get(),
         }),
-        inference_geo: None,
+        inference_geo: delta.inference_geo,
         server_tool_use: delta.server_tool_use,
         service_tier: delta.service_tier,
     };
-    convert_usage(wire)
-        .map(|(usage, _)| usage)
-        .map_err(map_response_error)
+    convert_usage(wire).map_err(map_response_error)
 }
 
 fn token_count(value: i64) -> Result<TokenCount, ParseStreamError> {

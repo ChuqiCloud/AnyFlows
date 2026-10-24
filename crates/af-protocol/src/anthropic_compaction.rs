@@ -12,6 +12,13 @@ pub struct AnthropicCompactionItem(Value);
 impl AnthropicCompactionItem {
     /// 校验原生压缩块并保留所有扩展字段。
     pub fn from_value(value: Value) -> Result<Self, AnthropicCompactionError> {
+        let object = value.as_object().ok_or(AnthropicCompactionError)?;
+        crate::bounded_json::validate_object(
+            object,
+            crate::anthropic::REQUEST_JSON_LIMITS,
+            crate::anthropic::MAX_BODY_BYTES,
+        )
+        .map_err(|_| AnthropicCompactionError)?;
         let valid = value.as_object().is_some_and(|block| {
             block.get("type").and_then(Value::as_str) == Some("compaction")
                 && block
@@ -71,3 +78,32 @@ impl fmt::Display for AnthropicCompactionError {
 }
 
 impl Error for AnthropicCompactionError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn native_blocks_preserve_absent_and_null_content_and_bound_extension_shape() {
+        for value in [
+            json!({"type":"compaction"}),
+            json!({"type":"compaction","content":null,"future":null}),
+        ] {
+            assert_eq!(
+                AnthropicCompactionItem::from_value(value.clone())
+                    .unwrap()
+                    .as_value(),
+                &value
+            );
+        }
+        let mut value = json!({"type":"compaction"});
+        let object = value.as_object_mut().unwrap();
+        for index in 0..1023 {
+            object.insert(format!("extension_{index}"), Value::Null);
+        }
+        assert!(AnthropicCompactionItem::from_value(value.clone()).is_ok());
+        value["one_too_many"] = Value::Null;
+        assert!(AnthropicCompactionItem::from_value(value).is_err());
+    }
+}

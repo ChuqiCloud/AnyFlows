@@ -48,7 +48,7 @@ mod tests;
 pub const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
 /// Anthropic Messages 接受的最大输出令牌数防御上限。
 pub const MAX_OUTPUT_TOKENS: i64 = 1_000_000;
-const REQUEST_JSON_LIMITS: JsonLimits = JsonLimits {
+pub(crate) const REQUEST_JSON_LIMITS: JsonLimits = JsonLimits {
     max_depth: 32,
     max_nodes: 100_000,
     max_object_entries: 1_024,

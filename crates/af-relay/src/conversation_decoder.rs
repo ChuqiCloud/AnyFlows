@@ -14,6 +14,14 @@ pub(crate) enum ConversationDecoder {
 }
 
 impl ConversationDecoder {
+    /// Responses 的终态快照已由原生解码器与完整 Item 生命周期交叉校验。
+    pub(crate) fn take_terminal_response(&mut self) -> Option<af_protocol::CanonicalResponse> {
+        match self {
+            Self::Responses(decoder) => decoder.take_terminal_response(),
+            _ => None,
+        }
+    }
+
     pub(crate) fn billing_usage(&self) -> Option<af_protocol::Usage> {
         match self {
             Self::Anthropic(decoder) => decoder.billing_usage(),
