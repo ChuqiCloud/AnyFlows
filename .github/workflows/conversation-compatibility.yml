@@ -108,7 +108,7 @@ jobs:
           exit "$status"
 
       - name: Test public operational endpoints
-        if: ${{ inputs.scope != 'protocol-relay' }}
+        if: ${{ !cancelled() && inputs.scope != 'protocol-relay' }}
         run: |
           cargo test --quiet -p af-http --lib --locked operations_tests::
           cargo test --quiet -p af-http --lib --locked gemini_generate_content::tests::
@@ -116,7 +116,7 @@ jobs:
           cargo test --quiet -p af-http --lib --locked streaming::tests::
 
       - name: Test native compaction runtime and billing
-        if: ${{ inputs.scope != 'protocol-relay' }}
+        if: ${{ !cancelled() && inputs.scope != 'protocol-relay' }}
         run: cargo nextest run -p af-server --test anthropic_runtime_chain --all-features --locked --no-fail-fast --test-threads 2
 
       - name: Test conversation scheduling

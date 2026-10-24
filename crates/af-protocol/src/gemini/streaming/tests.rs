@@ -264,10 +264,22 @@ fn decoder_ignores_only_comments_after_compatible_done() {
 #[test]
 fn decoder_rejects_data_and_repeated_done_after_terminal_comments() {
     let completed = sse(&response(
-        json!([{"index": 0, "finishReason": "STOP"}]),
-        None,
+        json!([{
+            "index": 0,
+            "content": {"role": "model", "parts": [{"text": "done"}]},
+            "finishReason": "STOP"
+        }]),
+        Some(json!({
+            "promptTokenCount": 2,
+            "candidatesTokenCount": 1,
+            "totalTokenCount": 3
+        })),
     ));
     let terminal = [completed.clone(), b"data: [DONE]\n\n".to_vec()].concat();
+    let mut reference = GeminiGenerateContentStreamDecoder::new();
+    let events = reference.push(&terminal).unwrap();
+    assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
+    assert!(reference.finish().unwrap().is_empty());
     let tails = [
         completed.clone(),
         [b": same-frame-comment\n".to_vec(), completed.clone()].concat(),
