@@ -1,20 +1,20 @@
 # 贡献指南
 
-欢迎提交问题、文档修正和功能改进。请从 `main` 创建工作分支，并向 `main` 提交 Pull Request。公共仓库可以独立开发，不需要私有企业仓库权限。
+问题反馈、文档修正和功能改进均通过公共仓库提交。开发分支从 `main` 创建，Pull Request 的目标分支为 `main`；无需私有仓库权限。
 
 ## 提交问题
 
-说明使用版本、部署方式、复现步骤和实际结果。日志保留 HTTP 状态码、请求 ID 和相关错误即可，提交前移除 API Key、会话、密码、认证材料和个人信息。
+说明版本、部署方式、复现步骤、预期行为和实际结果。日志保留 HTTP 状态码、请求 ID 和相关错误，移除 API Key、会话、密码、认证材料和个人信息。
 
-涉及页面问题时注明使用 Classic 还是 Next，以及浏览器和设备尺寸。
+页面问题还需注明前端主题（Classic 或 Next）、浏览器和视口尺寸。
 
 ## 开发环境
 
 - Rust 使用 [rust-toolchain.toml](rust-toolchain.toml) 固定的版本。
-- 前端使用 Node.js，版本参考 [CI 配置](.github/workflows/ci.yml)，pnpm 版本以各前端的 `package.json` 为准。
+- 前端使用 Node.js 和 Corepack，pnpm 版本以各前端的 `package.json` 为准。
 - SQLite 可用于本地开发，PostgreSQL、MySQL 和 Redis 按改动范围准备。
 
-完整构建会编译 Rust 和两套前端，先预留足够磁盘空间。运行前按 [配置参考](docs/configuration.md) 设置本地环境，不使用生产密钥。
+运行前按 [配置参考](docs/configuration.md) 设置开发环境，使用独立的数据库和密钥。完整构建包含 Rust 和两套前端。
 
 ## 按改动范围检查
 
@@ -22,40 +22,57 @@ Rust 改动通常需要：
 
 ```bash
 cargo fmt --all -- --check
-cargo check --workspace --all-features --locked
+cargo check --workspace --all-targets --all-features --locked
 cargo test --workspace --all-features --locked
 ```
 
-前端在相应目录安装锁定依赖并检查。修改两套前端共享行为时，两套都要检查：
+前端在对应目录使用 `package.json` 指定的 pnpm 版本安装锁定依赖并检查：
 
 ```bash
-corepack pnpm@10.33.0 --dir web install --frozen-lockfile
-corepack pnpm@10.33.0 --dir web check
-corepack pnpm@10.33.0 --dir web-next install --frozen-lockfile
-corepack pnpm@10.33.0 --dir web-next check
+cd web
+corepack pnpm install --frozen-lockfile
+corepack pnpm check
 ```
 
-只修改文档时，检查链接、命令与实际实现是否一致即可。CI 根据改动范围执行其余检查，涉及发布脚本、数据库或生成契约时还会有专门验证。
+Next 使用 `web-next` 目录。共享行为的改动需检查两套前端，并在根目录运行 `node tools/ci/check-frontend-parity.mjs`。
+
+文档改动检查链接、命令和实现是否一致。远程 CI 按路径选择：`develop` PR 执行编译与契约检查，`main` PR 和推送执行相关组件的完整回归；数据库、缓存和部署检查按改动范围运行。手动运行 `ci.yml` 可选择全部组件，浏览器专项仅手动运行。触发条件见 [CI 配置](.github/workflows/ci.yml)。
 
 ## 接口与双前端
 
-修改接口时，先更新 Rust 定义，再生成 OpenAPI 和两套前端的客户端；不要手工编辑生成文件：
+接口以 Rust 定义为源。修改后分别在 `web` 和 `web-next` 目录生成客户端：
 
 ```bash
-cargo xtask openapi export
-corepack pnpm@10.33.0 --dir web api:generate
-corepack pnpm@10.33.0 --dir web-next api:generate
-cargo xtask openapi check
+corepack pnpm api:generate
 ```
 
-Classic 与 Next 共用接口、权限和业务规则，视觉组件可分别适配各自风格。新增交互需要同时考虑加载、空数据、失败和移动端状态。
+该命令导出 OpenAPI 并生成当前前端的客户端。完成后，在根目录执行 `cargo xtask openapi check`。生成文件随接口改动提交，不手工编辑。
+
+Classic 与 Next 共用接口、权限和业务规则，视觉组件分别适配各自主题。新增交互应覆盖加载、空数据、失败和移动端状态。
+
+## 新增渠道
+
+渠道的 `type` 指定适配器，`protocol` 指定上游原生协议，`provider` 记录厂商品牌。OpenAI 兼容服务通常复用已有适配器；只有协议或认证语义不同时才增加适配器。
+
+1. 仅增加品牌时维护品牌目录。新增适配器需实现协议、认证和强类型配置，并接入 `af-adapter` 工厂。
+2. 在 [`channel_capability.rs`](crates/af-domain/src/channel_capability.rs) 声明已接入的协议、调度、探活、模型发现与凭据类型。`supports_credential_kind` 保留历史兼容范围，`creatable_credential_kinds` 定义新建选项。
+3. 常规渠道通过 `standard_adaptor_settings` 装配；固定入口、异步任务或额外参数使用专用配置。能力声明不替代认证校验。
+4. 导出两套前端能力目录，补充表单与协议回归，生成文件随源码提交：
+
+```bash
+cargo xtask channel-capabilities export
+cargo xtask channel-capabilities check
+node tools/ci/check-frontend-parity.mjs
+```
 
 ## Pull Request
 
-标题和描述直接说明问题及最终行为，必要时附复现步骤或页面截图。保持改动集中，新增测试覆盖实际风险，避免重复检查和无关格式改动。
+标题和描述说明问题与修改后的行为，必要时附复现步骤或截图。改动保持集中，测试覆盖实际风险，避免重复测试和无关格式改动。
 
 不要提交密钥、生产配置、编译目录或私有企业实现。扩展契约见 [仓库与扩展边界](docs/repository-boundary.md)。
 
+GitHub `main` 接收社区贡献，合并后自动创建 PR 回传 Gitea `develop`；Gitea 的公共改动通过导出 PR 同步到 GitHub。两端均由维护者审查合并，导出会阻止覆盖尚未回传的社区改动。`docs/public-core-source.json` 由同步工具维护，不手工修改。
+
 ## 版本标签
 
-版本标签使用 `v主版本.次版本.修订号`，预发布阶段使用 `-alpha.N`、`-beta.N` 或 `-rc.N`。版本发布前先完成发布分支合并和远程流水线检查，再由维护者创建不可变的附注标签。完整规则和三仓库对应关系见 [版本标签规范](docs/release-tagging.md)。
+版本标签使用 `v主版本.次版本.修订号`，预发布使用 `-alpha.N`、`-beta.N` 或 `-rc.N`。发布分支合并且远程检查通过后，由维护者创建不可变的附注标签。规则见 [版本标签规范](docs/release-tagging.md)。
