@@ -1,25 +1,27 @@
 # 服务账号模型授权
 
-`af-admin::ServiceAccountModelAuthenticator` 在一次存储快照中解析独立服务凭据及其当前模型授权。它接收 `ServiceAccountKeyDigest`，不接收个人用户 ID、个人 Token 或创建者身份。
+本文面向扩展开发者，服务账号默认不在社区版启用。身份及存储职责见 [服务账号身份接口](service-identity.md)。
+
+`af-admin::ServiceAccountModelAuthenticator` 通过同一存储快照校验服务凭据及当前模型授权。接口接收 `ServiceAccountKeyDigest`，不使用个人用户 ID、个人 Token 或创建者身份。
 
 ## 授权策略
 
-返回的 `ServiceAccountModelAuthentication` 包含服务身份、明确授予的路由分组、`ServiceModelPolicy` 以及正数 RPM 和并发上限。这些是授权事实，执行请求前必须在服务账号命名空间中落实限制。
+返回的 `ServiceAccountModelAuthentication` 包含服务身份、授予的路由分组、`ServiceModelPolicy`、RPM 和并发上限。RPM 和并发上限均须为正数，并在执行请求前按服务账号独立检查。
 
-模型策略使用精确、区分大小写的规范模型名。空白名单拒绝所有模型，下级策略求交只能收窄授权。构造时先限制条目数、单项名称长度和文本总量，再去重。
+模型白名单使用精确、区分大小写的规范模型名，空名单拒绝所有模型。下级策略通过求交收窄授权。构造策略时先检查条目数、单项名称长度和文本总量，再去重。
 
-宿主通过 `RuntimeExtensions::service_account_models` 注册此端口，并配置服务计费和用量存储。运行时以企业和服务账号组成 Redis 限流主体，凭据轮换不重置 RPM 或并发限制。准入存储缺失时拒绝服务请求。
+扩展通过 `RuntimeExtensions::service_account_models` 注册认证器，并配置服务计费和用量存储。Redis 限流按企业和服务账号计数，轮换凭据不会重置 RPM 或并发限制。缺少准入存储时拒绝请求。
 
 ## 支持的请求
 
-服务凭据可访问 `GET /v1/models`，以及同步 Chat Completions、Responses、Anthropic Messages、Gemini 生成接口，包含流式请求。只接受单个 Bearer 头，拒绝查询 Key 和厂商专用 Key 头。
+服务凭据可访问 `GET /v1/models`，以及同步 Chat Completions、Responses、Anthropic Messages 和 Gemini 生成接口，支持流式请求。凭据仅通过单个 `Authorization: Bearer` 请求头传递，不接受查询参数或厂商专用 Key 请求头。
 
-模型目录与请求使用明确的分组及规范模型白名单。推理后缀规范化后再检查白名单，不借用创建者分组或 Playground 回退规则。
+模型目录和推理请求使用服务账号获授的分组和模型白名单。模型推理后缀规范化后再检查授权，不继承创建者分组或 Playground 回退规则。
 
-音频、Embeddings、Images、Rerank、Compact 和异步 Video 当前仍限制为个人 Token。服务失败历史及未完成计费的持久恢复需发行版提供独立契约；不能把服务失败写到创建者或成员名下。
+音频、Embeddings、Images、Rerank、Compact 和异步 Video 仅接受个人 Token。服务请求结果由独立的 `ServiceAccountOutcomeSink` 存储，不能归入创建者或成员名下。未完成计费的进程重启恢复由发行版实现。
 
 ## 重试与归属
 
-预扣重试保留原预约、身份、金额和绝对到期时间。结算及取消绑定最初凭据，凭据轮换不改变这次请求的归属。用量投影到发行版存储，不写个人记录。
+预扣重试须保留原预约、身份、金额和绝对到期时间。结算和取消操作绑定请求最初使用的凭据，轮换凭据不改变已开始请求的归属。用量写入扩展存储。
 
-服务粘性会话使用企业、账号和凭据 ID，在独立哈希域生成；个人会话哈希格式保持不变。
+服务账号的粘性会话由企业、账号和凭据 ID 在独立哈希域生成，与个人会话隔离。

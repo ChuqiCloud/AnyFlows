@@ -1,20 +1,36 @@
-# 日常 CI 与历史专项
+# CI 维护
 
-历史功能 PR 的专项工作流改为仅手动触发，不再随后续 PR 或主分支推送重复运行。测试脚本和用例仍保留，需要复测时在 Actions 中选择对应工作流、指定分支后运行。
+日常检查由 [`ci.yml`](../.github/workflows/ci.yml) 按目标分支和改动路径选择。手动运行该工作流会选择全部组件。
 
-| 手动工作流 | 用途 |
+## 自动检查
+
+| 改动范围 | 检查内容 |
 | --- | --- |
-| `cache.yml` | 缓存契约与真实 Redis 专项 |
-| `console-extensions.yml` | 双前端客户端档案和代理池浏览器专项 |
-| `conversation-compatibility.yml` | 会话协议、OpenCode、调度及客户端档案专项 |
-| `database-extension.yml` | 数据库扩展迁移、支付与共享配额专项 |
-| `proxy-pools.yml` | 代理池导入、绑定、测活与后台任务专项 |
-| `frontend-generated-assets.yml` | 生成 OpenAPI、前端 SDK 与可审阅补丁 |
+| Rust | 格式、依赖审计与边界、渠道能力目录、OpenAPI；`develop` PR 执行工作区编译检查，`main` PR 和推送执行 Clippy、nextest、文档测试、MSRV 及 Linux amd64 发布包构建 |
+| 前端 | Classic 和 Next 分别执行 lint、构建，共同检查接口及共享逻辑一致性 |
+| 数据库 | SQLite、PostgreSQL、MySQL 迁移检查 |
+| Redis、ClickHouse | `main` PR 和推送按对应路径执行集成检查 |
+| Docker、systemd | `main` PR 和推送按部署文件路径执行检查 |
 
-日常检查统一由 `ci.yml` 按改动路径选择：目标为 `develop` 的 PR 执行 Rust 格式、依赖边界、OpenAPI 契约和工作区编译检查；涉及前端时，两套主题分别执行 lint、构建与公共契约一致性检查。文档或历史专项脚本的修改不会启动整套 Rust 构建。修改 `ci.yml` 本身只选择 Rust 和双前端基础检查。
+文档和专项测试脚本的改动不会单独触发整套 Rust 构建。修改 `ci.yml` 会选择 Rust 和双前端检查；数据库、部署等检查仍由各自路径规则决定。浏览器专项仅在手动运行时执行。
 
-`main` 的 PR 和合并后推送仍按改动路径执行完整 Rust 回归、数据库与 Redis 等集成检查，以及构建发布包。通用 CI 中历史画廊、实名认证和仪表盘浏览器专项仅在手动运行时执行。手动运行 `ci.yml` 会选择全部组件并执行完整检查。
+公共导出与同步检查、发布脚本检查有独立的路径规则。具体触发条件以各工作流的 `on` 和任务条件为准。
 
-公共导出、发布脚本等轻量检查仍按相关文件自动触发。公共导出检查覆盖任意来源分支的 PR，避免分支命名造成漏检。发布、公共同步和讨论同步继续沿用原有串行策略。
+## 手动专项
 
-保留已验证的基础设施修复：Rust 缓存复用、Redis 测试私有网络、与 Ubuntu 编译环境匹配的容器运行镜像，以及双前端手动专项中独立检出的固定版本 Node 安装 Action。
+在 Actions 中选择工作流和待检查分支后运行。下列工作流不随普通 PR 或分支推送触发：
+
+| 工作流 | 用途 |
+| --- | --- |
+| `cache.yml` | 缓存契约与真实 Redis |
+| `console-extensions.yml` | 双前端客户端档案、代理池浏览器检查 |
+| `conversation-compatibility.yml` | 会话协议、OpenCode、调度与客户端档案 |
+| `database-extension.yml` | 数据库扩展迁移、支付与共享配额 |
+| `proxy-pools.yml` | 代理池导入、绑定、测活与后台任务 |
+| `frontend-generated-assets.yml` | 生成 OpenAPI、前端 SDK 和补丁 |
+
+## 修改工作流
+
+新增检查时配置对应路径，避免仅修改文档时编译应用。扩充路径规则时同步检查 PR、分支推送和手动触发三种入口。
+
+Rust 任务复用构建缓存；容器集成测试使用匹配的编译与运行环境，Redis 测试使用独立网络。发布、公共导出和讨论同步按既有并发组串行执行，防止重复发布或同步冲突。

@@ -1,36 +1,68 @@
 # Docker Compose 部署
 
-此方式会在服务器上从源码构建镜像，适合已有 Docker 运维环境的用户。首次构建包含 Rust 和两套前端，需要下载依赖并占用较多时间、内存和磁盘。只想运行服务时，优先使用 [二进制包](deployment-and-configuration.md)。
+仓库提供从源码构建的 Compose 配置，包含 AnyFlows、PostgreSQL 和 Redis。直接运行服务可使用 [二进制包](deployment-and-configuration.md)。
 
 ## 安装
 
-准备 Linux、Git、OpenSSL、Docker Engine 和 Docker Compose 插件。仓库 Compose 使用 Linux host 网络，应用、PostgreSQL 和 Redis 分别占用本机回环端口 8080、5432、6379，先确认没有冲突。
+准备 Linux、Git、OpenSSL、Docker Engine 和 Docker Compose 插件。Compose 使用 Linux host 网络，应用、PostgreSQL 和 Redis 分别监听本机回环端口 8080、5432、6379；这些端口须未被其他服务占用。
+
+检出已发布版本，以下以 `v0.3.0-beta.3` 为例：
 
 ```bash
-git clone https://github.com/ChuqiCloud/AnyFlows.git
+git clone --branch v0.3.0-beta.3 --depth 1 https://github.com/ChuqiCloud/AnyFlows.git
 cd AnyFlows
-./scripts/deploy/up.sh
 ```
 
-首次运行会生成 `.env`，内含随机数据库密码和应用密钥，然后构建并启动服务。已有 `.env` 不会被覆盖。此处的 `anyflows:local` 是本机构建的镜像名称，不是可直接下载的公共镜像。
+生成数据库密码：
 
 ```bash
+openssl rand -hex 24
+```
+
+分别为会话签名和凭据加密运行一次以下命令，生成两个独立密钥：
+
+```bash
+openssl rand -base64 32 | tr '+/' '-_' | tr -d '='
+```
+
+创建 `.env`，写入下列配置，并将占位值替换为生成的密码和密钥：
+
+```bash
+umask 077
+touch .env
+chmod 600 .env
+vi .env
+```
+
+```dotenv
+POSTGRES_PASSWORD=replace-with-database-password
+AF_AUTH__SESSION_SIGNING_KEY=replace-with-session-signing-key
+AF_CREDENTIAL_ENCRYPTION__KEY_ID=primary
+AF_CREDENTIAL_ENCRYPTION__KEY=replace-with-credential-encryption-key
+AF_TELEMETRY__LEVEL=info
+```
+
+检查配置、构建镜像并启动：
+
+```bash
+docker compose --env-file .env config --quiet
+docker compose --env-file .env up -d --build
 docker compose --env-file .env ps
-docker compose --env-file .env logs -f app
+docker compose --env-file .env logs --tail 100 app
 curl --fail http://127.0.0.1:8080/readyz
 ```
 
-服务只监听 `127.0.0.1:8080`。按 [二进制教程中的初始化和域名步骤](deployment-and-configuration.md#4-创建管理员)，通过 SSH 隧道创建管理员，再配置同机反向代理和 HTTPS。
+镜像名 `anyflows:local` 指本机构建的镜像，不是公共镜像地址。服务只监听 `127.0.0.1:8080`；按 [管理员初始化和域名配置](deployment-and-configuration.md#4-创建管理员) 创建管理员，并配置同机反向代理和 HTTPS。
 
 ## 配置与数据
 
-`.env` 需要妥善备份，不要提交到 Git。修改环境变量后执行：
+备份 `.env`，保持权限为 `0600`，不要提交到 Git。修改环境变量后重新创建容器：
 
 ```bash
 docker compose --env-file .env up -d
 ```
 
-单独执行 `restart` 不会将新环境变量注入已有容器。Compose 的 `environment` 字段优先于 `env_file`；数据库地址等字段已在 Compose 中指定，需要结合 [配置参考](configuration.md) 一起修改。
+`restart` 不会更新已有容器的环境变量。Compose 的 `environment` 字段优先于 `env_file`；数据库地址等已在 Compose 中指定的字段需修改对应配置，参见 [配置参考](configuration.md)。
 
 PostgreSQL、Redis 和计费 WAL 分别保存在命名卷中。查看实际卷名：
 
@@ -48,7 +80,7 @@ docker compose --env-file .env config --volumes
 docker compose --env-file .env down
 ```
 
-请勿添加 `-v`；该选项会删除命名卷。升级前备份配置、数据库及 WAL，再获取目标版本源码并重新构建：
+`down -v` 会删除命名卷。升级前备份配置、数据库及 WAL，检出目标发布标签后重新构建：
 
 ```bash
 docker compose --env-file .env up -d --build
