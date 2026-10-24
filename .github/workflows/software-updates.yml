@@ -71,6 +71,7 @@ jobs:
       - name: Test launcher lifecycle, environment, version authorization and install safety
         run: |
           cargo test -p af-launcher --locked
+          cargo test -p af-config --lib --locked loader::tests::cargo_build_identity_is_not_business_configuration
           cargo test -p af-http --lib --locked software_updates::
           cargo test -p af-http --lib --locked operations_tests::
           cargo test -p af-server --lib --locked software_updates::
