@@ -14,12 +14,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { runner: ubuntu-24.04, target: x86_64-unknown-linux-gnu, binary: af-server, triplet: unused }
-          - { runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, binary: af-server, triplet: unused }
-          - { runner: windows-2025, target: x86_64-pc-windows-msvc, binary: af-server.exe, triplet: x64-windows-static }
-          - { runner: windows-11-arm, target: aarch64-pc-windows-msvc, binary: af-server.exe, triplet: arm64-windows-static }
-          - { runner: macos-15-intel, target: x86_64-apple-darwin, binary: af-server, triplet: unused }
-          - { runner: macos-15, target: aarch64-apple-darwin, binary: af-server, triplet: unused }
+          - { runner: ubuntu-24.04, target: x86_64-unknown-linux-gnu, binary: af-server, launcher: anyflows-launcher, triplet: unused }
+          - { runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, binary: af-server, launcher: anyflows-launcher, triplet: unused }
+          - { runner: windows-2025, target: x86_64-pc-windows-msvc, binary: af-server.exe, launcher: anyflows-launcher.exe, triplet: x64-windows-static }
+          - { runner: windows-11-arm, target: aarch64-pc-windows-msvc, binary: af-server.exe, launcher: anyflows-launcher.exe, triplet: arm64-windows-static }
+          - { runner: macos-15-intel, target: x86_64-apple-darwin, binary: af-server, launcher: anyflows-launcher, triplet: unused }
+          - { runner: macos-15, target: aarch64-apple-darwin, binary: af-server, launcher: anyflows-launcher, triplet: unused }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     defaults:
@@ -74,9 +74,9 @@ jobs:
         run: |
           export AF_BUILD_COMMIT="$(git rev-parse HEAD)"
           export AF_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          cargo build --release --locked --package af-server --target '${{ matrix.target }}'
+          cargo build --release --locked --package af-server --package af-launcher --target '${{ matrix.target }}'
       - name: Package and verify embedded identity
-        run: python tools/ci/package-platform.py "$GITHUB_REF_NAME" '${{ matrix.target }}' 'target/${{ matrix.target }}/release/${{ matrix.binary }}'
+        run: python tools/ci/package-platform.py "$GITHUB_REF_NAME" '${{ matrix.target }}' 'target/${{ matrix.target }}/release/${{ matrix.binary }}' 'target/${{ matrix.target }}/release/${{ matrix.launcher }}'
       - name: Retain native release files
         uses: actions/upload-artifact@v4
         with:

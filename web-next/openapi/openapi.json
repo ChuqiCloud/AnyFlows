@@ -33322,6 +33322,8 @@
           "target",
           "deployment",
           "node_id",
+          "launch_mode",
+          "update_phase",
           "check_enabled",
           "install_enabled",
           "restart_required",
@@ -33357,6 +33359,33 @@
           },
           "node_id": {
             "type": "string"
+          },
+          "launch_mode": {
+            "type": "string",
+            "description": "direct or launcher; no launcher is required for direct binary deployment."
+          },
+          "launcher_protocol": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "launcher_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "update_phase": {
+            "type": "string"
+          },
+          "launcher_error": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "check_enabled": {
             "type": "boolean"

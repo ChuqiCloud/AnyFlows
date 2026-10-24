@@ -165,3 +165,12 @@ fn staging_is_exclusive_preserves_backup_and_cleans_partial_downloads() {
     assert_eq!(fs::read_dir(&directory).unwrap().count(), 2);
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn both_binary_start_modes_enable_web_installation_by_default() {
+    assert!(web_updates_enabled(None));
+    assert!(web_updates_enabled(Some("true")));
+    assert!(!web_updates_enabled(Some("false")));
+    assert!(!web_updates_enabled(Some("FALSE")));
+    assert!(!web_updates_enabled(Some("0")));
+}

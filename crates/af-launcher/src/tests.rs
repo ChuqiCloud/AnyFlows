@@ -90,3 +90,158 @@ fn managed_programs_require_a_compatible_protocol_version_and_platform() {
     assert!(verify_identity(&metadata, Some("2.0.0"), None).is_err());
     assert!(verify_identity(&metadata, None, Some("aarch64-test")).is_err());
 }
+
+#[cfg(unix)]
+fn program_fixture(root: &Path, name: &str, version: &str, update: bool) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let source = include_str!("../tests/fixtures/program.py")
+        .replace("__VERSION__", &serde_json::to_string(version).unwrap())
+        .replace(
+            "__ROOT__",
+            &serde_json::to_string(root.to_str().unwrap()).unwrap(),
+        )
+        .replace("__UPDATE__", if update { "True" } else { "False" });
+    let program = root.join(name);
+    fs::write(&program, source).unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+    program
+}
+
+#[cfg(unix)]
+fn fixture_settings(root: &Path, program: PathBuf) -> Settings {
+    Settings {
+        program,
+        state: root.join("state"),
+        working_directory: root.to_owned(),
+        args: vec!["--preserved-argument".into()],
+        stop_timeout: Duration::from_secs(3),
+        ready_timeout: Duration::from_secs(3),
+        select_only: false,
+    }
+}
+
+#[cfg(unix)]
+fn events(root: &Path) -> Vec<serde_json::Value> {
+    fs::read_to_string(root.join("events.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect()
+}
+
+#[cfg(unix)]
+async fn wait_event(root: &Path, version: &str, event: &str, count: usize) {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            if events(root)
+                .iter()
+                .filter(|value| value["version"] == version && value["event"] == event)
+                .count()
+                >= count
+            {
+                break;
+            }
+            sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("managed fixture did not reach its expected lifecycle event");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn managed_update_drains_old_process_switches_version_and_survives_launcher_restart() {
+    let root = directory();
+    fs::write(root.join("preserved.txt"), "persistent data").unwrap();
+    program_fixture(&root, "new-program", "2.0.0", false);
+    let seed = program_fixture(&root, "seed", "1.0.0", true);
+    let mut supervisor = Supervisor::new(fixture_settings(&root, seed.clone()))
+        .await
+        .unwrap();
+    // Inject policy only into this unit-test coordinator. Shipped launchers always deny container updates.
+    supervisor.updates_allowed = true;
+    let (stop, stopped) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(supervisor.run_with_stop(async {
+        let _ = stopped.await;
+    }));
+    wait_event(&root, "2.0.0", "ready", 1).await;
+    stop.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let records = events(&root);
+    let old_stopped = records
+        .iter()
+        .position(|value| value["version"] == "1.0.0" && value["event"] == "shutdown")
+        .unwrap();
+    let new_started = records
+        .iter()
+        .position(|value| value["version"] == "2.0.0" && value["event"] == "start")
+        .unwrap();
+    assert!(old_stopped < new_started);
+    assert!(
+        records
+            .iter()
+            .all(|value| value["cwd"] == root.to_str().unwrap()
+                && value["args"] == serde_json::json!(["--preserved-argument"]))
+    );
+    let selected = load_selection(&root.join("state")).unwrap().unwrap();
+    assert_eq!(selected.version, "2.0.0");
+    assert!(selected.previous.is_some());
+    let supervisor = Supervisor::new(fixture_settings(&root, seed))
+        .await
+        .unwrap();
+    let (stop, stopped) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(supervisor.run_with_stop(async {
+        let _ = stopped.await;
+    }));
+    wait_event(&root, "2.0.0", "ready", 2).await;
+    stop.send(()).unwrap();
+    task.await.unwrap().unwrap();
+    assert_eq!(
+        events(&root)
+            .iter()
+            .filter(|value| value["version"] == "1.0.0" && value["event"] == "start")
+            .count(),
+        1
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn failed_new_program_never_silently_reverts_to_an_older_database_client() {
+    let root = directory();
+    fs::write(root.join("preserved.txt"), "persistent data").unwrap();
+    fs::write(root.join("fail-new"), b"fail after selection").unwrap();
+    program_fixture(&root, "new-program", "2.0.0", false);
+    let seed = program_fixture(&root, "seed", "1.0.0", true);
+    let mut supervisor = Supervisor::new(fixture_settings(&root, seed))
+        .await
+        .unwrap();
+    supervisor.updates_allowed = true;
+    let (stop, stopped) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(supervisor.run_with_stop(async {
+        let _ = stopped.await;
+    }));
+    wait_event(&root, "2.0.0", "failed", 1).await;
+    stop.send(()).unwrap();
+    task.await.unwrap().unwrap();
+    assert_eq!(
+        load_selection(&root.join("state"))
+            .unwrap()
+            .unwrap()
+            .version,
+        "2.0.0"
+    );
+    assert_eq!(
+        events(&root)
+            .iter()
+            .filter(|value| value["version"] == "1.0.0" && value["event"] == "start")
+            .count(),
+        1
+    );
+    fs::remove_dir_all(root).unwrap();
+}

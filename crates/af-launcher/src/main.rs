@@ -36,6 +36,7 @@ struct Settings {
     args: Vec<OsString>,
     stop_timeout: Duration,
     ready_timeout: Duration,
+    select_only: bool,
 }
 
 #[derive(Deserialize)]
@@ -61,6 +62,7 @@ struct Running {
 }
 
 struct Supervisor {
+    updates_allowed: bool,
     settings: Settings,
     selection: Selection,
     target: String,
@@ -84,7 +86,7 @@ async fn main() -> ExitCode {
     if args.as_slice() == [OsString::from("--version")] {
         println!(
             "{}",
-            serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"protocol":PROTOCOL})
+            serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"protocol":PROTOCOL,"target":env!("AF_LAUNCHER_TARGET")})
         );
         return ExitCode::SUCCESS;
     }
@@ -96,7 +98,16 @@ async fn main() -> ExitCode {
     }
     let result = async {
         let settings = Settings::parse(args)?;
-        Supervisor::new(settings).await?.run().await
+        let supervisor = Supervisor::new(settings).await?;
+        if supervisor.settings.select_only {
+            println!(
+                "{}",
+                serde_json::json!({"selected_version":supervisor.selection.version})
+            );
+            Ok(())
+        } else {
+            supervisor.run().await
+        }
     }
     .await;
     match result {
@@ -119,12 +130,17 @@ impl Settings {
             args: vec![],
             stop_timeout: Duration::from_secs(330),
             ready_timeout: Duration::from_secs(330),
+            select_only: false,
         };
         let mut args = args.into_iter();
         while let Some(flag) = args.next() {
             if flag == "--" {
                 settings.args.extend(args);
                 break;
+            }
+            if flag == "--select-program" {
+                settings.select_only = true;
+                continue;
             }
             let value = args.next().ok_or("argument_value")?;
             match flag.to_str() {
@@ -170,15 +186,40 @@ impl Supervisor {
         }
         let lock = lock_file(&settings.state.join("launcher.lock"))?;
         let selected = load_selection(&settings.state)?;
-        let selection = if let Some(selected) = selected {
-            selected
-        } else {
+        let active_identity = match &selected {
+            Some(selection) => {
+                Some(identity(&selected_program(&settings.state, &selection.active)?).await?)
+            }
+            None => None,
+        };
+        let seed = identity(&settings.program).await;
+        let use_seed = settings.select_only
+            || selected.is_none()
+            || seed
+                .as_ref()
+                .ok()
+                .zip(active_identity.as_ref())
+                .is_some_and(|(seed, active)| {
+                    semver::Version::parse(&seed.version)
+                        .ok()
+                        .zip(semver::Version::parse(&active.version).ok())
+                        .is_some_and(|(seed, active)| seed > active)
+                });
+        let selection = if use_seed {
+            let metadata = seed?;
+            verify_identity(
+                &metadata,
+                None,
+                active_identity
+                    .as_ref()
+                    .map(|identity| identity.target.as_str()),
+            )?;
+            let probe = lock_file(&settings.state.join("main.lock"))?;
+            drop(probe);
             let program = settings
                 .program
                 .canonicalize()
                 .map_err(|_| "program_missing")?;
-            let identity = identity(&program).await?;
-            verify_identity(&identity, None, None)?;
             let relative = format!(
                 "versions/bootstrap-{}/{}",
                 uuid::Uuid::new_v4(),
@@ -189,16 +230,18 @@ impl Supervisor {
                 .map_err(|_| "version_directory")?;
             fs::copy(&program, &destination).map_err(|_| "copy_program")?;
             File::open(&destination)
-                .and_then(|f| f.sync_all())
+                .and_then(|file| file.sync_all())
                 .map_err(|_| "sync_program")?;
             let selection = Selection {
                 protocol: PROTOCOL,
                 active: relative,
-                previous: None,
-                version: identity.version,
+                previous: selected.map(|selection| selection.active),
+                version: metadata.version,
             };
             save_selection(&settings.state, &selection)?;
             selection
+        } else {
+            selected.ok_or("state_missing")?
         };
         let metadata = identity(&selected_program(&settings.state, &selection.active)?).await?;
         verify_identity(&metadata, Some(&selection.version), None)?;
@@ -207,6 +250,7 @@ impl Supervisor {
             .map_err(|_| "control_bind")?;
         let endpoint = listener.local_addr().map_err(|_| "control_bind")?;
         Ok(Self {
+            updates_allowed: !af_launcher::in_container(),
             settings,
             selection,
             target: metadata.target,
@@ -268,8 +312,14 @@ impl Supervisor {
         Ok(())
     }
 
-    async fn run(mut self) -> Result<(), &'static str> {
-        let stop = shutdown_signal();
+    async fn run(self) -> Result<(), &'static str> {
+        self.run_with_stop(shutdown_signal()).await
+    }
+
+    async fn run_with_stop(
+        mut self,
+        stop: impl std::future::Future<Output = ()>,
+    ) -> Result<(), &'static str> {
         tokio::pin!(stop);
         loop {
             tokio::select! {
@@ -311,7 +361,7 @@ impl Supervisor {
                 sha256,
                 size,
             } => {
-                if af_launcher::in_container() {
+                if !self.updates_allowed {
                     return Reply::new(false, &self.phase, Some("container"));
                 }
                 if self.pending.is_some() || self.phase != "idle" {
@@ -378,6 +428,14 @@ impl Supervisor {
         }
         if self.shutdown_at.is_some_and(|at| Instant::now() >= at) {
             self.shutdown_at = None;
+            if let Some(update) = self.pending.as_ref() {
+                if let Err(code) = verify_file(&update.candidate, &update.digest, update.size) {
+                    self.error = Some(code.to_owned());
+                    self.phase = "idle".to_owned();
+                    self.pending = None;
+                    return Ok(());
+                }
+            }
             if let Some(running) = self.running.as_mut() {
                 send_shutdown(running, &self.token).await;
                 self.stop_deadline = Some(Instant::now() + self.settings.stop_timeout);

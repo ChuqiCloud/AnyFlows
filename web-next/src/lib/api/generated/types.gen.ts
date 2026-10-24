@@ -2159,6 +2159,11 @@ export type SoftwareStatus = {
     target: string;
     deployment: string;
     node_id: string;
+    launch_mode: string;
+    launcher_protocol?: number | null;
+    launcher_version?: string | null;
+    update_phase: string;
+    launcher_error?: string | null;
     check_enabled: boolean;
     install_enabled: boolean;
     install_blocked_reason?: string | null;

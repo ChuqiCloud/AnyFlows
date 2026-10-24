@@ -25,7 +25,7 @@ PLATFORMS = {
 }
 
 
-def package(root, tag, target, binary, output, epoch):
+def package(root, tag, target, binary, output, epoch, launcher):
     if not re.fullmatch(r'v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:alpha|beta|rc)\.[1-9]\d*)?', tag):
         raise ValueError('Invalid release tag')
     if target not in PLATFORMS:
@@ -35,7 +35,10 @@ def package(root, tag, target, binary, output, epoch):
     name = f'anyflows-{tag}-{platform}'
     executable = 'anyflows.exe' if windows else 'anyflows'
     output.mkdir(parents=True, exist_ok=True)
-    files = {executable: (binary.read_bytes(), 0o755)}
+    launcher_name = 'anyflows-launcher.exe' if windows else 'anyflows-launcher'
+    files = {executable: (binary.read_bytes(), 0o755), launcher_name: (launcher.read_bytes(), 0o755)}
+    start = 'start.cmd' if windows else 'start.sh'
+    files[start] = ((root / 'scripts' / start).read_bytes(), 0o755)
     for path in ['README.md', 'LICENSE', '.env.example', 'anyflows.conf', 'CHANGELOG.md', 'docs/online-updates.md']:
         files[Path(path).name] = ((root / path).read_bytes(), 0o644)
     if 'linux' in target:
@@ -73,14 +76,18 @@ def main():
     parser.add_argument('tag')
     parser.add_argument('target', choices=PLATFORMS)
     parser.add_argument('binary', type=Path)
+    parser.add_argument('launcher', type=Path)
     parser.add_argument('--output', type=Path, default=Path('release'))
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     metadata = json.loads(subprocess.check_output([str(args.binary.resolve()), '--version'], text=True))
     if metadata['target'] != args.target or 'v' + metadata['version'] != args.tag:
         raise ValueError('Binary target/version differs from release inputs')
+    launcher = json.loads(subprocess.check_output([str(args.launcher.resolve()), '--version'], text=True))
+    if launcher.get('target') != args.target or metadata.get('launcher_protocol') != launcher.get('protocol'):
+        raise ValueError('Launcher target/protocol differs from main program')
     epoch = int(subprocess.check_output(['git', '-C', str(root), 'show', '-s', '--format=%ct', 'HEAD'], text=True))
-    package(root, args.tag, args.target, args.binary, args.output, epoch)
+    package(root, args.tag, args.target, args.binary, args.output, epoch, args.launcher)
 
 
 if __name__ == '__main__':

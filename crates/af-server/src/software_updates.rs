@@ -44,6 +44,10 @@ struct Asset {
     size: u64,
 }
 
+pub(crate) fn web_updates_enabled(value: Option<&str>) -> bool {
+    value.is_none_or(|value| !value.eq_ignore_ascii_case("false") && value != "0")
+}
+
 pub(crate) struct CommunitySoftwareUpdates {
     clients: HttpClientProvider,
     state: Mutex<SoftwareStatus>,

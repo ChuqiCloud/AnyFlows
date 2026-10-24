@@ -2625,9 +2625,11 @@ impl Bootstrap<Supervised> {
             router.merge(af_http::build_software_update_router(
                 Arc::new(crate::software_updates::CommunitySoftwareUpdates::new(
                     self.stage.upstream_clients.clone(),
-                    std::env::var("ANYFLOWS_ENABLE_BINARY_UPDATE")
-                        .map(|value| !value.eq_ignore_ascii_case("false") && value != "0")
-                        .unwrap_or(true),
+                    crate::software_updates::web_updates_enabled(
+                        std::env::var("ANYFLOWS_ENABLE_BINARY_UPDATE")
+                            .ok()
+                            .as_deref(),
+                    ),
                 )),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))
