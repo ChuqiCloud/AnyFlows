@@ -3,6 +3,20 @@ name: Frontend generated assets
 on:
   # 历史专项保留手动复测入口，日常检查由 CI 工作流承担。
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Generated source to refresh
+        type: choice
+        default: contracts
+        options: [contracts, dependency-locks]
+      web_updates:
+        description: Optional web direct dependencies (name@version, space separated)
+        type: string
+        default: ''
+      web_next_updates:
+        description: Optional web-next direct dependencies (name@version, space separated)
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -36,16 +50,27 @@ jobs:
           git remote add origin "$CHECKOUT_REPOSITORY_URL"
           git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
           git checkout --detach FETCH_HEAD
+      - name: Validate generation operation
+        env:
+          OPERATION: ${{ github.event.inputs.operation || 'contracts' }}
+        run: |
+          case "$OPERATION" in
+            contracts|dependency-locks) ;;
+            *) echo 'Unsupported generation operation' >&2; exit 1 ;;
+          esac
       - name: Install Rust tooling
+        if: ${{ github.event.inputs.operation != 'dependency-locks' }}
         run: |
           bash tools/ci/install-rustup.sh
           export PATH="$HOME/.cargo/bin:$PATH"
           rustup component add rustfmt
       - name: Cache Rust build artifacts
+        if: ${{ github.event.inputs.operation != 'dependency-locks' }}
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           cache-on-failure: true
       - name: Generate contracts and dependency lock
+        if: ${{ github.event.inputs.operation != 'dependency-locks' }}
         run: |
           set -euo pipefail
           export PATH="$HOME/.cargo/bin:$PATH"
@@ -58,6 +83,43 @@ jobs:
           mkdir -p web-next/openapi
           cp web/openapi/openapi.json web-next/openapi/openapi.json
           cp -a web/src/lib/api/generated/. web-next/src/lib/api/generated/
+      - name: Generate frontend dependency locks
+        if: ${{ github.event.inputs.operation == 'dependency-locks' }}
+        env:
+          WEB_UPDATES: ${{ github.event.inputs.web_updates }}
+          WEB_NEXT_UPDATES: ${{ github.event.inputs.web_next_updates }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import { spawnSync } from 'node:child_process';
+
+          function pnpm(frontend, args) {
+            const result = spawnSync('corepack', ['pnpm@10.33.0', '--dir', frontend, ...args], {
+              stdio: 'inherit',
+            });
+            if (result.error) throw result.error;
+            if (result.status !== 0) throw new Error(`pnpm failed for ${frontend}`);
+          }
+
+          for (const [frontend, updates] of [
+            ['web', process.env.WEB_UPDATES || ''],
+            ['web-next', process.env.WEB_NEXT_UPDATES || ''],
+          ]) {
+            const targets = updates.trim() ? updates.trim().split(/\s+/) : [];
+            const manifest = JSON.parse(readFileSync(`${frontend}/package.json`, 'utf8'));
+            for (const target of targets) {
+              const match = target.match(/^((?:@[a-z0-9._-]+\/)?[a-z0-9._-]+)@(\d+\.\d+\.\d+)$/);
+              if (!match || !(manifest.dependencies?.[match[1]] || manifest.devDependencies?.[match[1]])) {
+                throw new Error(`Expected a declared direct dependency and exact version: ${target}`);
+              }
+            }
+            if (targets.length) {
+              pnpm(frontend, ['up', '--depth=0', '--no-save', '--no-frozen-lockfile',
+                '--lockfile-only', '--ignore-scripts', ...targets]);
+            }
+            pnpm(frontend, ['install', '--no-frozen-lockfile', '--lockfile-only', '--ignore-scripts']);
+          }
+          NODE
       - name: Export source patch for review
         if: ${{ always() }}
         run: |
