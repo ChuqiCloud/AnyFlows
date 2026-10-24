@@ -22,13 +22,15 @@ trap cleanup EXIT
 tar -xzf "$archive" -C "$temporary_directory"
 package="$(find "$temporary_directory" -mindepth 1 -maxdepth 1 -type d -print -quit)"
 test -x "$package/anyflows"
+test -x "$package/anyflows-launcher"
+test -x "$package/start.sh"
 grep -Fx "commit=$(git rev-parse HEAD)" "$package/VERSION"
 cd "$package"
 export AF_CONFIG_FILE="$package/anyflows.conf"
 export AF_SERVER__BIND='127.0.0.1:18080'
 export AF_AUTH__SESSION_SIGNING_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
 export AF_CREDENTIAL_ENCRYPTION__KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
-./anyflows > "$temporary_directory/server.log" 2>&1 &
+./start.sh > "$temporary_directory/server.log" 2>&1 &
 server_pid=$!
 ready=0
 for _ in $(seq 1 90); do

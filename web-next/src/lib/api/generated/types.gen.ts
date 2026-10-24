@@ -1689,6 +1689,10 @@ export type HttpExtensionDescriptor = {
     name: string;
     capabilities: Array<string>;
 };
+export type InstallSoftwareUpdate = {
+    tag: string;
+    expected_node_id: string;
+};
 export type IssuedAdminRedemptionBatch = {
     batch: AdminRedemptionBatch;
     codes: Array<string>;
@@ -2136,6 +2140,40 @@ export type SiteSidebarLink = {
     level?: number;
     style?: string;
     audience: string;
+};
+export type SoftwareRelease = {
+    version: string;
+    tag: string;
+    url: string;
+    notes: string;
+    published_at?: string | null;
+    package_name?: string | null;
+    package_url?: string | null;
+};
+export type SoftwareStatus = {
+    edition: string;
+    version: string;
+    core_version: string;
+    commit?: string | null;
+    build_time?: string | null;
+    target: string;
+    deployment: string;
+    node_id: string;
+    launch_mode: string;
+    launcher_protocol?: number | null;
+    launcher_version?: string | null;
+    update_phase: string;
+    launcher_error?: string | null;
+    check_enabled: boolean;
+    install_enabled: boolean;
+    install_blocked_reason?: string | null;
+    restart_required: boolean;
+    checked_at?: number | null;
+    latest?: null | SoftwareRelease;
+    update_available: boolean;
+};
+export type SoftwareUpdateErrorBody = {
+    code: string;
 };
 export type SubscriptionCatalogPlan = {
     plan_id: string;
@@ -7078,6 +7116,50 @@ export type GetAdminRuntimeStatusResponses = {
     200: RuntimeStatus;
 };
 export type GetAdminRuntimeStatusResponse = GetAdminRuntimeStatusResponses[keyof GetAdminRuntimeStatusResponses];
+export type GetAdminSoftwareData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/software';
+};
+export type GetAdminSoftwareResponses = {
+    200: SoftwareStatus;
+};
+export type GetAdminSoftwareResponse = GetAdminSoftwareResponses[keyof GetAdminSoftwareResponses];
+export type CheckAdminSoftwareUpdateData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/software/check';
+};
+export type CheckAdminSoftwareUpdateErrors = {
+    403: SoftwareUpdateErrorBody;
+    409: SoftwareUpdateErrorBody;
+    502: SoftwareUpdateErrorBody;
+};
+export type CheckAdminSoftwareUpdateError = CheckAdminSoftwareUpdateErrors[keyof CheckAdminSoftwareUpdateErrors];
+export type CheckAdminSoftwareUpdateResponses = {
+    200: SoftwareStatus;
+};
+export type CheckAdminSoftwareUpdateResponse = CheckAdminSoftwareUpdateResponses[keyof CheckAdminSoftwareUpdateResponses];
+export type InstallAdminSoftwareUpdateData = {
+    body: InstallSoftwareUpdate;
+    path?: never;
+    query?: never;
+    url: '/api/admin/software/install';
+};
+export type InstallAdminSoftwareUpdateErrors = {
+    403: SoftwareUpdateErrorBody;
+    409: SoftwareUpdateErrorBody;
+    422: SoftwareUpdateErrorBody;
+    500: SoftwareUpdateErrorBody;
+    502: SoftwareUpdateErrorBody;
+};
+export type InstallAdminSoftwareUpdateError = InstallAdminSoftwareUpdateErrors[keyof InstallAdminSoftwareUpdateErrors];
+export type InstallAdminSoftwareUpdateResponses = {
+    200: SoftwareStatus;
+};
+export type InstallAdminSoftwareUpdateResponse = InstallAdminSoftwareUpdateResponses[keyof InstallAdminSoftwareUpdateResponses];
 export type GetVersionData = {
     body?: never;
     path?: never;

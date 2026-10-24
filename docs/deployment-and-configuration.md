@@ -44,6 +44,7 @@ sudo install -d -o root -g anyflows -m 0750 /etc/anyflows
 sudo install -d -o anyflows -g anyflows -m 0750 /var/lib/anyflows
 sudo install -d -o anyflows -g anyflows -m 0700 /var/lib/anyflows/billing-wal
 sudo install -o root -g root -m 0755 ./anyflows /usr/local/libexec/anyflows/anyflows
+sudo install -o root -g root -m 0755 ./anyflows-launcher /usr/local/libexec/anyflows/anyflows-launcher
 ```
 
 分别为会话签名和凭据加密生成密钥。运行两次以下命令，每次生成一个独立的 32 字节随机值：
@@ -88,11 +89,15 @@ curl --fail http://127.0.0.1:8080/readyz
 | 内容 | 位置 |
 | --- | --- |
 | 程序 | `/usr/local/libexec/anyflows/anyflows` |
+| 启动器 | `/usr/local/libexec/anyflows/anyflows-launcher` |
+| 托管版本与更新状态 | `/var/lib/anyflows/launcher` |
 | 配置 | `/etc/anyflows/anyflows.env` |
 | SQLite 和运行数据 | `/var/lib/anyflows` |
 | 计费恢复日志（WAL） | `/var/lib/anyflows/billing-wal` |
 
 程序只接受回环监听。使用同机反向代理提供外部访问。
+
+默认服务由启动器托管，并继承 `EnvironmentFile` 中的配置。在线安装后由启动器自动重启当前节点，更新仅写入数据目录中的托管版本区域；程序目录保持只读。直接运行主程序的裸启动方式仍可使用，安装后需通过原服务管理器重启。详见 [版本检测与在线升级](online-updates.md)。
 
 ## 4. 创建管理员
 

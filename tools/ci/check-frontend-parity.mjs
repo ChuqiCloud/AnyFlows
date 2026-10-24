@@ -27,6 +27,7 @@ for (const path of [
   'src/features/usage-logs/usage-log-model.ts',
   'src/features/site-settings/frontend-template-model.ts',
   'src/features/site-settings/frontend-template-api.ts',
+  'src/features/site-settings/software-update-api.ts',
   'src/features/dashboard/dashboard-sla-api.ts',
   'src/features/dashboard/dashboard-sla-model.ts',
   'src/features/runtime-status/runtime-status-model.ts',

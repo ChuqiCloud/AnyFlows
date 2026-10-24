@@ -1,0 +1,81 @@
+name: Software update checks
+
+on:
+  # 手动复测更新安全边界与原生打包契约。
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: software-updates-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: '1'
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CACHE_ON_FAILURE: 'true'
+  RUSTFLAGS: '-C link-arg=-Wl,--no-keep-memory'
+
+jobs:
+  updates:
+    name: Software update safety and packaging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL || github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repository_url="$CHECKOUT_REPOSITORY_URL"
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$repository_url"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if bash tools/ci/install-rustup.sh; then
+              break
+            fi
+            if [[ "$attempt" == 3 ]]; then
+              exit 1
+            fi
+            sleep 3
+          done
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal --component rustfmt --component clippy
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: conversation
+          cache-on-failure: true
+
+      - name: Check update crates
+        run: cargo clippy -p af-launcher -p af-http -p af-server --all-targets --all-features --locked -- -D warnings
+      - name: Test launcher lifecycle, environment, version authorization and install safety
+        run: |
+          cargo test -p af-launcher --locked
+          cargo test -p af-config --lib --locked loader::tests::cargo_build_identity_is_not_business_configuration
+          cargo test -p af-http --lib --locked software_updates::
+          cargo test -p af-http --lib --locked operations_tests::
+          cargo test -p af-server --lib --locked software_updates::
+          python3 tools/ci/test-package-platform.py
+          bash tools/ci/test-release-scripts.sh
+          cargo run --locked -p af-server -- --version > /tmp/anyflows-version.json
+          python3 -c 'import json; d=json.load(open("/tmp/anyflows-version.json")); assert d["core_version"] and d["target"] and d["node_id"]'

@@ -12,7 +12,7 @@ mod channel_capabilities;
 
 use cargo_metadata::{DependencyKind, Metadata, MetadataCommand};
 
-const PRODUCT_CRATES: [&str; 16] = [
+const PRODUCT_CRATES: [&str; 17] = [
     "af-account",
     "af-adapter",
     "af-admin",
@@ -24,6 +24,7 @@ const PRODUCT_CRATES: [&str; 16] = [
     "af-domain",
     "af-http",
     "af-httpclient",
+    "af-launcher",
     "af-protocol",
     "af-relay",
     "af-scheduler",
@@ -435,7 +436,7 @@ fn allowed_restricted_external_dependency(dependency: &DeclaredDependency) -> bo
 
 fn allowed_internal_dependencies(name: &str) -> &'static [&'static str] {
     match name {
-        "af-domain" => &[],
+        "af-domain" | "af-launcher" => &[],
         "af-config" => &["af-domain"],
         "af-telemetry" => &["af-config"],
         "af-db" | "af-cache" | "af-httpclient" => &["af-config", "af-domain"],
