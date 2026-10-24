@@ -37,7 +37,7 @@ export function SoftwareUpdatePanel() {
       <p className="text-xs text-muted-foreground">检测、安装与重启均针对当前节点；多节点部署请逐台处理。安装前备份数据库、配置与计费 WAL，二进制回退不等于数据库降级。</p>
       {status.install_blocked_reason && <p role="status" className="text-xs text-muted-foreground">{blocked[status.install_blocked_reason] || '当前部署不支持在线安装。'}</p>}
       {status.restart_required && <p role="status" className="font-medium">安装完成，重启后生效。旧程序保留在程序目录的 anyflows-backup-* 文件中。</p>}
-      {status.checked_at !== null && <p className="text-xs text-muted-foreground">上次检查：{new Date(status.checked_at * 1000).toLocaleString()}（检查结果缓存一分钟）{!status.update_available && ' · 未发现更新版本'}</p>}
+      {typeof status.checked_at === 'number' && <p className="text-xs text-muted-foreground">上次检查：{new Date(status.checked_at * 1000).toLocaleString()}（检查结果缓存一分钟）{!status.update_available && ' · 未发现更新版本'}</p>}
       {status.latest && <div className="grid gap-3 rounded-lg border border-[var(--hairline)] p-3">
         <a href={status.latest.url} target="_blank" rel="noopener noreferrer" className="font-medium underline">{status.update_available ? '发现新版本' : '最新发行版本'}：{status.latest.version}</a>
         {status.latest.package_url ? <a href={status.latest.package_url} className="break-all text-xs underline">下载匹配安装包：{status.latest.package_name}</a> : <p className="text-xs text-muted-foreground">该版本没有当前平台的安装包，不会使用其他平台的文件。</p>}
