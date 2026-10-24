@@ -2625,7 +2625,9 @@ impl Bootstrap<Supervised> {
             router.merge(af_http::build_software_update_router(
                 Arc::new(crate::software_updates::CommunitySoftwareUpdates::new(
                     self.stage.upstream_clients.clone(),
-                    std::env::var("ANYFLOWS_ENABLE_BINARY_UPDATE").as_deref() == Ok("true"),
+                    std::env::var("ANYFLOWS_ENABLE_BINARY_UPDATE")
+                        .map(|value| !value.eq_ignore_ascii_case("false") && value != "0")
+                        .unwrap_or(true),
                 )),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))
@@ -2738,6 +2740,17 @@ impl Bootstrap<RouterReady> {
             readiness,
         } = stage;
         readiness.mark_ready();
+        if matches!(af_launcher::ManagedContext::from_env(), Ok(Some(_))) {
+            let ready = readiness.clone();
+            tokio::spawn(async move {
+                while !ready.is_draining() {
+                    if ready.check().await && af_launcher::notify_ready().await.is_ok() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            });
+        }
         Ok(Bootstrap {
             config,
             shutdown_timeout,

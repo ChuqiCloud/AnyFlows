@@ -35,6 +35,11 @@ impl SoftwareUpdateService for Disabled {
     fn status(&self) -> SoftwareUpdateFuture<'_> {
         Box::pin(async {
             Ok(SoftwareStatus {
+                launch_mode: "direct".to_owned(),
+                launcher_protocol: None,
+                launcher_version: None,
+                update_phase: "idle".to_owned(),
+                launcher_error: None,
                 edition: "custom".to_owned(),
                 version: "1.0.0".to_owned(),
                 core_version: "0.3.0".to_owned(),

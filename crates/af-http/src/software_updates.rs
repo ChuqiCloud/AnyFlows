@@ -41,6 +41,12 @@ pub struct SoftwareStatus {
     pub target: String,
     pub deployment: String,
     pub node_id: String,
+    /// direct or launcher; no launcher is required for direct binary deployment.
+    pub launch_mode: String,
+    pub launcher_protocol: Option<u32>,
+    pub launcher_version: Option<String>,
+    pub update_phase: String,
+    pub launcher_error: Option<String>,
     pub check_enabled: bool,
     pub install_enabled: bool,
     pub install_blocked_reason: Option<String>,

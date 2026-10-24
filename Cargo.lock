@@ -248,6 +248,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "af-launcher"
+version = "0.3.0-beta.3"
+dependencies = [
+ "fs2",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "af-protocol"
 version = "0.3.0-beta.3"
 dependencies = [
@@ -308,6 +321,7 @@ dependencies = [
  "af-domain",
  "af-http",
  "af-httpclient",
+ "af-launcher",
  "af-protocol",
  "af-relay",
  "af-scheduler",

@@ -48,17 +48,19 @@ pub(crate) struct CommunitySoftwareUpdates {
     clients: HttpClientProvider,
     state: Mutex<SoftwareStatus>,
     executable: PathBuf,
+    managed: Result<Option<af_launcher::ManagedContext>, af_launcher::ControlError>,
 }
 
 impl CommunitySoftwareUpdates {
     pub(crate) fn new(clients: HttpClientProvider, allow_install: bool) -> Self {
         let target = env!("AF_BUILD_TARGET");
-        let container = option_env!("AF_BUILD_DEPLOYMENT") == Some("docker")
-            || Path::new("/.dockerenv").exists()
-            || Path::new("/run/.containerenv").exists();
+        let container = af_launcher::in_container();
+        let managed = af_launcher::ManagedContext::from_env();
         let executable = env::current_exe().unwrap_or_default();
         let reason = if container {
             Some("container")
+        } else if managed.is_err() {
+            Some("launcher_unavailable")
         } else if platform_name(target).is_none() {
             Some("unsupported_target")
         } else if !allow_install {
@@ -71,6 +73,7 @@ impl CommunitySoftwareUpdates {
         Self {
             clients,
             executable,
+            managed: managed.clone(),
             state: Mutex::new(SoftwareStatus {
                 edition: "community".to_owned(),
                 version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -84,6 +87,16 @@ impl CommunitySoftwareUpdates {
                 target: target.to_owned(),
                 deployment: if container { "docker" } else { "binary" }.to_owned(),
                 node_id: format!("process-{}-{}", std::process::id(), uuid::Uuid::new_v4()),
+                launch_mode: if matches!(managed, Ok(Some(_))) {
+                    "launcher"
+                } else {
+                    "direct"
+                }
+                .to_owned(),
+                launcher_protocol: Some(af_launcher::PROTOCOL),
+                launcher_version: None,
+                update_phase: "idle".to_owned(),
+                launcher_error: None,
                 check_enabled: true,
                 install_enabled: reason.is_none(),
                 install_blocked_reason: reason.map(str::to_owned),
@@ -239,13 +252,40 @@ impl CommunitySoftwareUpdates {
                 .filter(|n| *n <= MAX_BINARY_BYTES && *n <= asset.size as usize)
                 .ok_or(Error::InvalidRelease)?;
             digest.update(&chunk);
-            staged
-                .file
-                .write_all(&chunk)
-                .map_err(|_| Error::InstallFailed)?;
+            staged.write_all(&chunk).map_err(|_| Error::InstallFailed)?;
         }
         if size != asset.size as usize || format!("{:x}", digest.finalize()) != expected {
             return Err(Error::InvalidRelease);
+        }
+        if let Ok(Some(context)) = &self.managed {
+            staged
+                .prepare(&self.executable)
+                .map_err(|_| Error::InstallFailed)?;
+            // Once handed to the supervisor, a lost acknowledgement must not delete its candidate.
+            staged.retain = true;
+            let reply = context
+                .call(af_launcher::Action::Install {
+                    candidate: staged
+                        .path
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .ok_or(Error::InstallFailed)?
+                        .to_owned(),
+                    tag: tag.to_owned(),
+                    sha256: expected,
+                    size: size as u64,
+                })
+                .await
+                .map_err(|_| Error::Unavailable)?;
+            if !reply.accepted {
+                staged.retain = false;
+                return Err(Error::Conflict);
+            }
+            state.launcher_version = Some(reply.launcher_version);
+            state.update_phase = "restarting".to_owned();
+            state.install_enabled = false;
+            state.install_blocked_reason = Some("managed_restart".to_owned());
+            return Ok(());
         }
         staged
             .commit(&self.executable)
@@ -259,7 +299,22 @@ impl CommunitySoftwareUpdates {
 
 impl SoftwareUpdateService for CommunitySoftwareUpdates {
     fn status(&self) -> SoftwareUpdateFuture<'_> {
-        Box::pin(async { Ok(self.state.lock().await.clone()) })
+        Box::pin(async {
+            let mut state = self.state.lock().await;
+            if let Ok(Some(context)) = &self.managed {
+                match context.call(af_launcher::Action::Status).await {
+                    Ok(reply) if reply.accepted => {
+                        state.launcher_version = Some(reply.launcher_version);
+                        state.update_phase = reply.phase;
+                        state.launcher_error = reply.error;
+                    }
+                    _ => {
+                        state.launcher_error = Some("launcher_unavailable".to_owned());
+                    }
+                }
+            }
+            Ok(state.clone())
+        })
     }
     fn check(&self) -> SoftwareUpdateFuture<'_> {
         Box::pin(async {
@@ -398,10 +453,11 @@ fn allowed_url(value: &str) -> bool {
 }
 
 struct StagedBinary {
-    file: fs::File,
+    file: Option<fs::File>,
     path: PathBuf,
     lock: PathBuf,
     _lock_file: fs::File,
+    retain: bool,
 }
 impl StagedBinary {
     fn new(executable: &Path) -> std::io::Result<Self> {
@@ -411,13 +467,18 @@ impl StagedBinary {
             .write(true)
             .create_new(true)
             .open(&lock)?;
-        let path = parent.join(format!(".anyflows-update-{}", uuid::Uuid::new_v4()));
+        let path = parent.join(format!(
+            ".anyflows-update-{}{}",
+            uuid::Uuid::new_v4(),
+            if cfg!(windows) { ".exe" } else { "" }
+        ));
         match OpenOptions::new().write(true).create_new(true).open(&path) {
             Ok(file) => Ok(Self {
-                file,
+                file: Some(file),
                 path,
                 lock,
                 _lock_file: lock_file,
+                retain: false,
             }),
             Err(error) => {
                 drop(lock_file);
@@ -427,9 +488,7 @@ impl StagedBinary {
         }
     }
     fn commit(&mut self, executable: &Path) -> std::io::Result<()> {
-        self.file
-            .set_permissions(fs::metadata(executable)?.permissions())?;
-        self.file.sync_all()?;
+        self.prepare(executable)?;
         let backup = executable.with_file_name(format!(
             "anyflows-backup-{}{}",
             uuid::Uuid::new_v4(),
@@ -457,10 +516,26 @@ impl StagedBinary {
         }
         Ok(())
     }
+    fn prepare(&mut self, executable: &Path) -> std::io::Result<()> {
+        if let Some(file) = self.file.take() {
+            file.set_permissions(fs::metadata(executable)?.permissions())?;
+            file.sync_all()?;
+        }
+        Ok(())
+    }
+    fn write_all(&mut self, bytes: &[u8]) -> std::io::Result<()> {
+        self.file
+            .as_mut()
+            .ok_or(std::io::ErrorKind::BrokenPipe)?
+            .write_all(bytes)
+    }
 }
 impl Drop for StagedBinary {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
+        self.file = None;
+        if !self.retain {
+            let _ = fs::remove_file(&self.path);
+        }
         let _ = fs::remove_file(&self.lock);
     }
 }

@@ -11,6 +11,7 @@ members = [
     "crates/af-domain",
     "crates/af-http",
     "crates/af-httpclient",
+    "crates/af-launcher",
     "crates/af-protocol",
     "crates/af-relay",
     "crates/af-scheduler",

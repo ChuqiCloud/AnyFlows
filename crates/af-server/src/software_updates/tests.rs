@@ -142,7 +142,7 @@ fn staging_is_exclusive_preserves_backup_and_cleans_partial_downloads() {
     {
         let mut staged = StagedBinary::new(&executable).unwrap();
         assert!(StagedBinary::new(&executable).is_err());
-        staged.file.write_all(b"new").unwrap();
+        staged.write_all(b"new").unwrap();
         staged.commit(&executable).unwrap();
     }
     assert_eq!(fs::read(&executable).unwrap(), b"new");
