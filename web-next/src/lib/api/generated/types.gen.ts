@@ -1691,6 +1691,7 @@ export type HttpExtensionDescriptor = {
 };
 export type InstallSoftwareUpdate = {
     tag: string;
+    expected_node_id: string;
 };
 export type IssuedAdminRedemptionBatch = {
     batch: AdminRedemptionBatch;

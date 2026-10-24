@@ -1,5 +1,25 @@
 use super::*;
 
+#[tokio::test]
+async fn node_mismatch_and_disabled_installs_fail_before_network_or_file_access() {
+    let clients = HttpClientProvider::new(af_httpclient::HttpClientConfig::default(), 4).unwrap();
+    let updates = CommunitySoftwareUpdates::new(clients, false);
+    assert!(matches!(
+        updates
+            .install("v999.0.0".to_owned(), "another-process".to_owned())
+            .await,
+        Err(Error::Conflict)
+    ));
+    let current = updates.status().await.unwrap();
+    assert!(!current.install_enabled);
+    assert!(matches!(
+        updates
+            .install("v999.0.0".to_owned(), current.node_id)
+            .await,
+        Err(Error::Disabled)
+    ));
+}
+
 fn release(tag: &str, prerelease: bool) -> Release {
     Release {
         tag_name: tag.to_owned(),

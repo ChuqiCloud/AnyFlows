@@ -441,10 +441,10 @@ impl StagedBinary {
             fs::File::open(&backup)?.sync_all()?;
             fs::rename(&self.path, executable)?;
             // Replacement has committed; a directory-sync failure must not report an uninstalled binary.
-            if let Some(parent) = executable.parent() {
-                if let Ok(directory) = fs::File::open(parent) {
-                    let _ = directory.sync_all();
-                }
+            if let Some(parent) = executable.parent()
+                && let Ok(directory) = fs::File::open(parent)
+            {
+                let _ = directory.sync_all();
             }
         }
         #[cfg(windows)]

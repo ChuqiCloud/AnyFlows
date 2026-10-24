@@ -1,14 +1,8 @@
 name: Software update checks
 
 on:
-  # 历史专项保留手动复测入口，日常检查由 CI 工作流承担。
+  # 手动复测更新安全边界与原生打包契约。
   workflow_dispatch:
-    inputs:
-      scope:
-        description: 'full or protocol-relay; full includes scheduling, billing and runtime checks'
-        required: false
-        default: full
-        type: string
 
 permissions:
   contents: read
@@ -27,7 +21,7 @@ env:
   RUSTFLAGS: '-C link-arg=-Wl,--no-keep-memory'
 
 jobs:
-  conversation:
+  updates:
     name: Software update safety and packaging
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -46,15 +40,6 @@ jobs:
           git remote add origin "$repository_url"
           git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
           git checkout --detach FETCH_HEAD
-
-      - name: Validate check scope
-        env:
-          CHECK_SCOPE: ${{ inputs.scope || 'full' }}
-        run: |
-          case "$CHECK_SCOPE" in
-            full|protocol-relay) ;;
-            *) echo 'Unsupported check scope' >&2; exit 1 ;;
-          esac
 
       - name: Install Rust toolchain
         shell: bash
@@ -79,6 +64,7 @@ jobs:
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: conversation
+          cache-on-failure: true
 
       - name: Check update crates
         run: cargo clippy -p af-http -p af-server --all-targets --all-features --locked -- -D warnings
@@ -89,3 +75,5 @@ jobs:
           cargo test -p af-server --lib --locked software_updates::
           python3 tools/ci/test-package-platform.py
           bash tools/ci/test-release-scripts.sh
+          cargo run --locked -p af-server -- --version > /tmp/anyflows-version.json
+          python3 -c 'import json; d=json.load(open("/tmp/anyflows-version.json")); assert d["core_version"] and d["target"] and d["node_id"]'

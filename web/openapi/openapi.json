@@ -30682,10 +30682,14 @@
       "InstallSoftwareUpdate": {
         "type": "object",
         "required": [
-          "tag"
+          "tag",
+          "expected_node_id"
         ],
         "properties": {
           "tag": {
+            "type": "string"
+          },
+          "expected_node_id": {
             "type": "string"
           }
         },
