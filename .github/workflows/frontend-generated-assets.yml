@@ -114,7 +114,7 @@ jobs:
               }
             }
             if (targets.length) {
-              pnpm(frontend, ['up', '--depth=0', '--no-save', '--no-frozen-lockfile',
+              pnpm(frontend, ['up', '--depth=0', '--no-save',
                 '--lockfile-only', '--ignore-scripts', ...targets]);
             }
             pnpm(frontend, ['install', '--no-frozen-lockfile', '--lockfile-only', '--ignore-scripts']);
