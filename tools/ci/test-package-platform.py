@@ -5,6 +5,7 @@ import json
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 spec = importlib.util.spec_from_file_location('package_platform', Path(__file__).with_name('package-platform.py'))
@@ -14,9 +15,13 @@ spec.loader.exec_module(module)
 
 class PackagePlatformTests(unittest.TestCase):
     def test_all_platforms_include_matching_binaries_and_verifiable_digests(self):
-        root = Path(__file__).resolve().parents[2]
-        with tempfile.TemporaryDirectory() as temporary:
+        with tempfile.TemporaryDirectory() as temporary, patch.object(module.subprocess, 'check_output', return_value='a' * 40):
             directory = Path(temporary)
+            root = directory / 'source'
+            for name in ['README.md', 'LICENSE', '.env.example', 'anyflows.conf', 'CHANGELOG.md', 'docs/online-updates.md', 'scripts/systemd/install.sh', 'scripts/systemd/anyflows.service']:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('Public release fixture: ' + name, encoding='utf-8')
             binary = directory / 'fixture'
             binary.write_bytes(b'native-binary-fixture')
             for target in module.PLATFORMS:
