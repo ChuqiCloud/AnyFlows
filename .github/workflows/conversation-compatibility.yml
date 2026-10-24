@@ -116,23 +116,23 @@ jobs:
 
       - name: Test native compaction runtime and billing
         if: ${{ inputs.scope != 'protocol-relay' }}
-        run: cargo nextest run -p af-server --test anthropic_runtime_chain --all-features --locked --no-fail-fast
+        run: cargo nextest run -p af-server --test anthropic_runtime_chain --all-features --locked --no-fail-fast --test-threads 2
 
       - name: Test conversation scheduling
-        if: ${{ inputs.scope != 'protocol-relay' }}
+        if: ${{ !cancelled() && inputs.scope != 'protocol-relay' }}
         run: |
           cargo test --quiet -p af-server --lib --all-features --locked scheduled_chat::
           cargo test --quiet -p af-server --lib --all-features --locked billing_chat::
           cargo test --quiet -p af-server --lib --all-features --locked debug_trace_runtime::
 
       - name: Test shared client session creation
-        if: ${{ inputs.scope != 'protocol-relay' }}
+        if: ${{ !cancelled() && inputs.scope != 'protocol-relay' }}
         run: |
           cargo test --quiet -p af-cache --lib --locked sticky::
           bash tools/ci/run-cache-redis-test.sh
 
       - name: Test client profile configuration and runtime snapshots
-        if: ${{ inputs.scope != 'protocol-relay' }}
+        if: ${{ !cancelled() && inputs.scope != 'protocol-relay' }}
         run: |
           cargo test --quiet -p af-domain --lib --locked enums_tests::
           cargo test --quiet -p af-account --lib --locked credential_

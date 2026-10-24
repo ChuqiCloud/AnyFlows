@@ -272,7 +272,7 @@ async fn assert_native_compaction_json(content: Value) {
         response.status,
         200,
         "原生压缩 JSON 响应异常；错误码：{}",
-        sanitized_json_error_code(&response.body).unwrap_or_else(|| "未提供".to_owned())
+        sanitized_response_error_code(&response)
     );
     assert_compaction_upstream(&upstream, &request_body, "compact-2026-09-04");
     let public: Value = serde_json::from_slice(&response.body).unwrap();
@@ -300,6 +300,7 @@ async fn native_compaction_sse_preserves_null_blocks_without_inflating_public_us
 async fn assert_native_compaction_sse(content: Value) {
     let block = native_compaction_block(content);
     let upstream_body = compaction_sse(&block);
+    assert_compaction_sse_fixture(&upstream_body, &block);
     let request = compaction_request(true);
     let request_body = serde_json::to_vec(&request).unwrap();
     let database = TestDatabase::new();
@@ -339,7 +340,7 @@ async fn assert_native_compaction_sse(content: Value) {
         response.status,
         200,
         "原生压缩 SSE 响应异常；错误码：{}",
-        sanitized_json_error_code(&response.body).unwrap_or_else(|| "未提供".to_owned())
+        sanitized_response_error_code(&response)
     );
     assert_compaction_upstream(&upstream, &request_body, "compact-2026-01-12");
     assert!(
@@ -349,7 +350,7 @@ async fn assert_native_compaction_sse(content: Value) {
             .unwrap()
             .starts_with("text/event-stream")
     );
-    let body = decode_sse_response_body(&response);
+    let body = decode_http_response_body(&response);
     let mut decoder = AnthropicMessagesStreamDecoder::new();
     let mut events = Vec::new();
     for chunk in body.chunks(7) {
@@ -405,6 +406,46 @@ async fn assert_native_compaction_sse(content: Value) {
         compaction_billing_summary(&database).await,
         (1, 112, 7, 2, 2, 3)
     );
+}
+
+fn assert_compaction_sse_fixture(body: &[u8], block: &Value) {
+    let mut decoder = AnthropicMessagesStreamDecoder::new();
+    let events = decoder
+        .push(body)
+        .expect("完整原生压缩 SSE fixture 必须能够解码");
+    decoder
+        .finish()
+        .expect("完整原生压缩 SSE fixture 必须包含逻辑终点");
+    assert!(events.iter().any(|event| matches!(
+        event, CanonicalStreamEvent::AnthropicCompactionEnd { item, .. }
+        if item.as_value() == block
+    )));
+    let mut encoder = AnthropicMessagesStreamEncoder::new(
+        "msg_fixture_replay",
+        UPSTREAM_MODEL,
+        decoder
+            .initial_usage()
+            .expect("原生压缩 SSE fixture 必须包含初始用量"),
+    )
+    .expect("原生压缩 SSE fixture 的初始用量必须能够编码");
+    let mut encoded = Vec::new();
+    for (index, event) in events.into_iter().enumerate() {
+        encoded.extend(encoder.encode(event).unwrap_or_else(|error| {
+            panic!("原生压缩 SSE fixture 第 {index} 个事件重编码失败：{error}")
+        }));
+    }
+    let mut replay = AnthropicMessagesStreamDecoder::new();
+    let replay_events = replay
+        .push(&encoded)
+        .expect("重编码后的原生压缩 SSE fixture 必须能够完整解码");
+    replay
+        .finish()
+        .expect("重编码后的原生压缩 SSE fixture 必须包含逻辑终点");
+    assert!(replay_events.iter().any(|event| matches!(
+        event, CanonicalStreamEvent::AnthropicCompactionEnd { item, .. }
+        if item.as_value() == block
+    )));
+    assert_eq!(replay.billing_usage(), decoder.billing_usage());
 }
 
 fn native_compaction_block(content: Value) -> Value {
@@ -543,7 +584,26 @@ async fn compaction_billing_summary(database: &TestDatabase) -> (i64, i64, i64, 
     summary
 }
 
-fn decode_sse_response_body(response: &support::RawResponse) -> Vec<u8> {
+fn sanitized_response_error_code(response: &support::RawResponse) -> String {
+    let body = decode_http_response_body(response);
+    if let Some(code) = sanitized_json_error_code(&body) {
+        return code;
+    }
+    if body.len() <= 64 * 1024
+        && let Ok(value) = serde_json::from_slice::<Value>(&body)
+        && let Some(kind) = value.pointer("/error/type").and_then(Value::as_str)
+        && !kind.is_empty()
+        && kind.len() <= 96
+        && kind
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    {
+        return kind.to_owned();
+    }
+    "未提供".to_owned()
+}
+
+fn decode_http_response_body(response: &support::RawResponse) -> Vec<u8> {
     if !response
         .headers
         .get("transfer-encoding")
@@ -824,7 +884,7 @@ async fn start_gateway_with_optional_proxy(
     fs::write(
         &config_path,
         format!(
-            "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'gateway-test-key'\nkey = '{credential_key}'\n[auth]\nlookup_timeout_secs = 1\nsession_signing_key = '{credential_key}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = {http_timeout_secs}\nrequest_timeout_secs = {http_timeout_secs}\n{proxy_config}",
+            "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'warn'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'gateway-test-key'\nkey = '{credential_key}'\n[auth]\nlookup_timeout_secs = 1\nsession_signing_key = '{credential_key}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = {http_timeout_secs}\nrequest_timeout_secs = {http_timeout_secs}\n{proxy_config}",
             database.url,
             database
                 .billing_wal_directory()
