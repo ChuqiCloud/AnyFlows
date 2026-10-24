@@ -109,7 +109,7 @@ async function openFailure(page, model, method = 'click') {
 
 async function closeDialog(page) {
   await page.keyboard.press('Escape')
-  await page.getByRole('dialog').waitFor({ state: 'hidden' })
+  await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0)
 }
 
 async function checkLayout(page, dialog, label) {
@@ -274,7 +274,7 @@ try {
   await page.waitForFunction(({ next, requestId }) => next
     ? `${location.pathname}${location.search}` === `/console/debug-traces?request_id=${encodeURIComponent(requestId)}`
     : location.hash === `#/console/debug-traces?request_id=${encodeURIComponent(requestId)}`, { next: isNext, requestId: failed.request_id })
-  await page.getByRole('dialog').waitFor({ state: 'hidden' })
+  await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0)
   dialog = await openFailure(page, failed.model, 'Space')
   await dialog.getByText(longError, { exact: true }).waitFor()
   await closeDialog(page)
