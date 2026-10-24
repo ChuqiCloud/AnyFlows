@@ -16,6 +16,34 @@ AnyFlows 是一个可自行部署的 AI API 网关。将不同厂商的模型接
 
 本仓库提供可独立部署的社区版。
 
+## 致谢与社区赞助
+
+感谢以下伙伴对 AnyFlows 的支持。
+
+<!-- Brand logos belong to their respective owners. Source: https://acmecloud.cn/partners -->
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <a href="https://chuqiyun.com/">
+        <img src="docs/assets/sponsors/chuqicloud.png" alt="初七云" height="48">
+      </a>
+      <p><strong><a href="https://chuqiyun.com/">初七云</a> · 云计算支持</strong></p>
+      <p>专注云计算服务，为 AnyFlows 提供云计算资源支持。</p>
+    </td>
+    <td align="center" width="50%">
+      <a href="https://www.mefrp.com/">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="docs/assets/sponsors/mefrp-dark.svg">
+          <source media="(prefers-color-scheme: light)" srcset="docs/assets/sponsors/mefrp-light.svg">
+          <img src="docs/assets/sponsors/mefrp-light.svg" alt="幻缘映射（ME Frp）" height="48">
+        </picture>
+      </a>
+      <p><strong><a href="https://www.mefrp.com/">幻缘映射（ME Frp）</a> · 社区赞助</strong></p>
+      <p>免费、公益的内网穿透服务，支持远程访问、游戏联机与开发调试。</p>
+    </td>
+  </tr>
+</table>
+
 ## 二进制部署
 
 Linux 服务器可使用发布包部署。包内包含二进制程序和两套前端，运行时不需要 Rust 或 Node.js。
