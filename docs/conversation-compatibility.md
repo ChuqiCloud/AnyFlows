@@ -31,11 +31,11 @@ Responses 上游请求使用 `store:false`，对话历史由客户端完整回�
 
 Responses 支持原生 `context_management` 压缩控制、`compaction_trigger` 扩展和不透明的 `compaction` item。同协议转发保留这些控制与状态。`compact_threshold` 可省略或设为 `null`，由上游决定阈值；显式整数按原值转发。独立的 `POST /v1/responses/compact` 使用专用压缩路径，需要上游支持该端点。
 
-Anthropic Messages 支持 `compaction` 按需压缩和 `context_management` 上下文编辑，适配器按请求补充压缩所需的 beta，并合并客户端已有的 beta。原生压缩块及其签名、扩展字段、流式摘要增量和压缩结束原因均按 Messages 协议保留，客户端应完整回传压缩块以继续对话。
+Anthropic Messages 支持 `compaction` 按需压缩和 `context_management` 上下文编辑，适配器按请求补充压缩所需的 beta，并合并客户端已有的 beta。原生压缩块及其摘要内容、签名、扩展字段、流式块生命周期和压缩结束原因均按 Messages 协议保留，客户端应完整回传压缩块以继续对话。
 
 原生压缩控制与状态仅适用于对应协议。跨协议请求携带 Responses 不透明压缩状态或 Anthropic 原生压缩块时会返回兼容性错误。需要跨协议继续对话时，客户端应明确使用普通文本摘要，并保留必要的用户约束、工具结果和后续消息。
 
-Anthropic 响应保留原生顶层 `usage` 和 `usage.iterations` 元数据。内部结算额外累计压缩迭代的用量，已包含于顶层用量的普通消息迭代不重复累计。
+Anthropic 原生同协议响应保留顶层 `usage` 和 `usage.iterations` 元数据。内部结算额外累计压缩迭代的用量，已包含于顶层用量的普通消息迭代不重复累计。网关工具续答合成的响应使用累计用量，不再携带已经计入的迭代元数据。
 
 ## 推理、工具与流式响应
 
@@ -43,7 +43,7 @@ Anthropic 响应保留原生顶层 `usage` 和 `usage.iterations` 元数据。�
 
 Messages 和 Responses 的跨协议流会将交错工具事件整理为完整的调用生命周期，保留参数片段和结束事件。Responses 的工具参数完成事件省略工具名时，沿用已确认的调用身份；显式冲突的名称或参数会返回协议错误。
 
-Chat 流式上游请求会补充 usage，以便统计和结算；下游是否返回 usage 仍遵循客户端选项。协议转换仅调整用量明细的表达方式，总输入和总输出量保持一致。上游未提供有效 usage 时使用估算用量。
+Chat 流式上游请求会补充 usage，以便统计和结算；下游是否返回 usage 仍遵循客户端选项。协议转换按目标格式表达归一后的计费用量；Anthropic 原生压缩的公开用量与内部累计计费遵循上述迭代规则。上游未提供有效 usage 时使用估算用量。
 
 ## 兼容边界与排查
 

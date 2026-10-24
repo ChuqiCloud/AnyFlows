@@ -332,6 +332,7 @@ async fn assert_native_compaction_sse(content: Value) {
         ],
     )
     .await;
+    // 完整响应的 EOF 必须等待结算完成；收到后立即关闭，以覆盖结束回调竞态。
     stop_gateway(shutdown, server).await;
     let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
     proxy.join().unwrap();

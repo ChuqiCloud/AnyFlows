@@ -91,7 +91,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Check affected crates
-        run: cargo clippy -p af-protocol -p af-relay -p af-server --all-targets --all-features --locked -- -D warnings
+        run: cargo clippy -p af-protocol -p af-adapter -p af-relay -p af-http -p af-server --all-targets --all-features --locked -- -D warnings
 
       - name: Test channel capability catalog and adapter assembly
         run: |
@@ -113,6 +113,7 @@ jobs:
           cargo test --quiet -p af-http --lib --locked operations_tests::
           cargo test --quiet -p af-http --lib --locked gemini_generate_content::tests::
           cargo test --quiet -p af-http --lib --locked anthropic_messages::tests::
+          cargo test --quiet -p af-http --lib --locked streaming::tests::
 
       - name: Test native compaction runtime and billing
         if: ${{ inputs.scope != 'protocol-relay' }}
