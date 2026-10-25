@@ -3497,15 +3497,26 @@
   },
   "about": {
     "companyName": "云上极致（深圳）互联网有限公司",
-    "description": "Project information, partners, and version details for this running AnyFlows node.",
-    "partnersTitle": "Partners & community sponsors",
-    "partnersDescription": "Thanks to these partners for supporting AnyFlows. Brand marks belong to their respective owners.",
+    "companySubtitle": "Infrastructure for every connection.",
+    "description": "Project information, partners, and release updates.",
+    "partnersTitle": "Partners behind AnyFlows",
+    "partnersDescription": "Community partners who support the development and operation of AnyFlows. Brand marks belong to their respective owners.",
     "sponsors": {
-      "chuqiCloud": "Cloud computing services and infrastructure support for AnyFlows.",
+      "chuqiCloud": "Provides cloud computing services and dependable infrastructure resources for AnyFlows, supporting the project's ongoing development, deployment, and operation.",
       "meFrp": "A free tunneling service for remote access, multiplayer gaming, and development."
     }
   },
   "softwareUpdate": {
+    "inlineUnavailable": "In-app updates are unavailable in this environment. See the release page for details.",
+    "currentVersion": "Current version",
+    "versionDetails": "Version details",
+    "viewRelease": "Release page",
+    "checkComplete": "Check complete. No newer release found.",
+    "checkAvailable": "Version {{version}} is available. See what changed below.",
+    "editions": {
+      "community": "Community",
+      "enterprise": "Enterprise"
+    },
     "title": "System version & updates",
     "check": "Check for updates",
     "checking": "Checking…",
@@ -3524,7 +3535,7 @@
       "buildTime": "Build time",
       "notProvided": "Not provided"
     },
-    "nodeScope": "Checks, installs, and restarts apply to this node only. Handle each node separately. Back up the database, configuration, and billing WAL before installing; rolling back a binary does not downgrade the database.",
+    "nodeScope": "Updates apply to this node only. Update each node separately. Rolling back a binary does not downgrade the database.",
     "blocked": {
       "container": "Container deployments can check versions only. Deploy again with a newer image tag.",
       "not_enabled": "Online installation is disabled by configuration. Enable it before installing.",
@@ -3541,20 +3552,17 @@
     "refreshPage": "Refresh page",
     "launcherError": "The launcher did not complete the update: {{error}}. Check the process logs; automatic rollback does not cover database migrations.",
     "restartRequired": "Installation is complete and takes effect after restart. The previous program is kept as anyflows-backup-* in the program directory.",
-    "checkedAt": "Last checked: {{time}} (results are cached for one minute)",
-    "noUpdate": "No newer release found.",
+    "checkedAt": "Last checked: {{time}}",
     "latestAvailable": "New version available",
     "latestRelease": "Latest release",
-    "downloadPackage": "Download matching package: {{name}}",
-    "noPackage": "This release has no package for the current platform. A package for another platform will not be used.",
-    "releaseNotes": "View release notes",
+    "releaseNotes": "What’s new",
     "noReleaseNotes": "No release notes provided.",
     "confirmLauncher": "I have backed up the database, configuration, and WAL. I understand this updates only the current node, may briefly interrupt service, and restarts through the launcher.",
     "confirmStandalone": "I have backed up the database, configuration, and WAL. I understand this replaces only the current node's program and requires a manual restart.",
-    "installing": "Downloading and verifying. Keep this page open…",
-    "install": "Download and install",
+    "installing": "Preparing update…",
+    "install": "Update now",
     "installError": "Installation did not complete. Check the version, program directory permissions, and network, then retry.",
-    "checkError": "Update check failed. Check the network or try again later; the GitHub API may be rate limited."
+    "checkError": "Unable to check for updates. Check your connection or try again later."
   },
   "siteSettings": {
     "title": "Site settings",

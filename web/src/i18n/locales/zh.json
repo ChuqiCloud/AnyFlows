@@ -3498,15 +3498,26 @@
   },
   "about": {
     "companyName": "云上极致（深圳）互联网有限公司",
-    "description": "AnyFlows 项目信息、合作伙伴以及当前运行节点的版本与更新状态。",
-    "partnersTitle": "合作伙伴与社区赞助",
-    "partnersDescription": "感谢以下伙伴对 AnyFlows 的支持。品牌标识归各自所有者所有。",
+    "companySubtitle": "Infrastructure for every connection.",
+    "description": "项目介绍、合作伙伴与当前版本信息。",
+    "partnersTitle": "共建 AnyFlows 的伙伴",
+    "partnersDescription": "社区伙伴为 AnyFlows 的开发与运行提供支持。品牌标识归各自所有者所有。",
     "sponsors": {
-      "chuqiCloud": "专注云计算服务，为 AnyFlows 提供云计算资源支持。",
+      "chuqiCloud": "专注云计算服务，为 AnyFlows 提供稳定的云计算资源与基础设施支持，协助项目持续开发、部署与运行。",
       "meFrp": "为远程访问、多人联机游戏和开发场景提供免费的内网穿透服务。"
     }
   },
   "softwareUpdate": {
+    "inlineUnavailable": "当前环境暂不支持页面内更新，请查看发行说明。",
+    "currentVersion": "当前版本",
+    "versionDetails": "版本详情",
+    "viewRelease": "发行说明",
+    "checkComplete": "检查完成，暂未发现新版本。",
+    "checkAvailable": "发现新版本 {{version}}，可查看下方更新内容。",
+    "editions": {
+      "community": "社区版",
+      "enterprise": "企业版"
+    },
     "title": "系统版本与更新",
     "check": "检查更新",
     "checking": "正在检查…",
@@ -3525,7 +3536,7 @@
       "buildTime": "构建时间",
       "notProvided": "未提供"
     },
-    "nodeScope": "检测、安装与重启均针对当前节点，多节点部署请逐台处理。安装前请备份数据库、配置与计费 WAL；回退程序不会降级数据库。",
+    "nodeScope": "仅更新当前节点，多节点部署请逐台处理。回退程序不会降级数据库。",
     "blocked": {
       "container": "容器部署仅支持检查版本，请使用新的镜像标签重新部署。",
       "not_enabled": "在线更新已通过配置关闭，需重新开启后安装。",
@@ -3542,20 +3553,17 @@
     "refreshPage": "刷新页面",
     "launcherError": "启动器报告未完成：{{error}}。请检查进程日志；程序不会跨数据库迁移自动回退。",
     "restartRequired": "安装完成，重启后生效。旧程序保留在程序目录的 anyflows-backup-* 文件中。",
-    "checkedAt": "上次检查：{{time}}（检查结果缓存一分钟）",
-    "noUpdate": "未发现更新版本。",
+    "checkedAt": "上次检查：{{time}}",
     "latestAvailable": "发现新版本",
     "latestRelease": "最新发行版本",
-    "downloadPackage": "下载匹配安装包：{{name}}",
-    "noPackage": "该版本没有当前平台的安装包，不会使用其他平台的文件。",
-    "releaseNotes": "查看更新内容",
+    "releaseNotes": "更新内容",
     "noReleaseNotes": "未提供更新说明。",
     "confirmLauncher": "我已备份数据库、配置与 WAL，了解只更新当前节点，安装期间可能短暂不可用并由启动器自动重启。",
     "confirmStandalone": "我已备份数据库、配置与 WAL，了解只替换当前节点程序，安装后需要手动重启。",
-    "installing": "正在下载并校验，请勿关闭页面…",
-    "install": "下载并安装",
+    "installing": "正在准备更新…",
+    "install": "立即更新",
     "installError": "安装未完成，请核对版本、程序目录权限及网络后重试。",
-    "checkError": "检测失败，请检查网络或稍后重试；GitHub API 可能暂时限流。"
+    "checkError": "检查更新失败，请检查网络或稍后重试。"
   },
   "siteSettings": {
     "title": "站点设置",
