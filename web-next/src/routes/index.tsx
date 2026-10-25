@@ -1,4 +1,5 @@
 import { AccountVerificationPage } from '@/features/account-verification/account-verification-page'
+import { AboutPage } from '@/features/about/about-page'
 import { AuthenticationSettingsPage } from '@/features/authentication-settings/authentication-settings-page'
 import { VerificationSettingsPanel } from '@/features/account-verification/verification-settings-panel'
 import type { ReactNode } from 'react'
@@ -103,6 +104,7 @@ const consoleRoutes: ConsoleRouteDefinition[] = [
     element: <SubscriptionManagementPage />,
   },
   { path: 'system-settings/site', element: <SiteSettingsPage /> },
+  { path: 'system-settings/about', element: <AboutPage /> },
   { path: 'system-settings/navigation', element: <SiteNavigationPage /> },
   { path: 'system-settings/payment', element: <PaymentSettingsPage /> },
   { path: 'users', element: <UserPage /> },

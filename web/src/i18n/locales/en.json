@@ -155,6 +155,7 @@
     "redemptionCodes": "Redemption codes",
     "refunds": "Refund approvals",
     "siteSettings": "Site settings",
+    "about": "About AnyFlows",
     "siteNavigation": "Navigation",
     "authenticationSettings": "Authentication",
     "announcements": "Announcements",
@@ -3493,6 +3494,67 @@
       "user": "User",
       "logout": "Sign out"
     }
+  },
+  "about": {
+    "companyName": "云上极致（深圳）互联网有限公司",
+    "description": "Project information, partners, and version details for this running AnyFlows node.",
+    "partnersTitle": "Partners & community sponsors",
+    "partnersDescription": "Thanks to these partners for supporting AnyFlows. Brand marks belong to their respective owners.",
+    "sponsors": {
+      "chuqiCloud": "Cloud computing services and infrastructure support for AnyFlows.",
+      "meFrp": "A free tunneling service for remote access, multiplayer gaming, and development."
+    }
+  },
+  "softwareUpdate": {
+    "title": "System version & updates",
+    "check": "Check for updates",
+    "checking": "Checking…",
+    "loading": "Loading version information…",
+    "loadError": "Unable to read version information.",
+    "retry": "Retry",
+    "fields": {
+      "edition": "Product version",
+      "core": "Core version",
+      "deployment": "Deployment",
+      "launchMode": "Launch mode",
+      "launcher": "Launcher managed (automatic restart)",
+      "standalone": "Direct launch (manual restart)",
+      "node": "Current node",
+      "commit": "Source commit",
+      "buildTime": "Build time",
+      "notProvided": "Not provided"
+    },
+    "nodeScope": "Checks, installs, and restarts apply to this node only. Handle each node separately. Back up the database, configuration, and billing WAL before installing; rolling back a binary does not downgrade the database.",
+    "blocked": {
+      "container": "Container deployments can check versions only. Deploy again with a newer image tag.",
+      "not_enabled": "Online installation is disabled by configuration. Enable it before installing.",
+      "unsupported_target": "No package is available for this platform. Upgrade manually using the deployment guide.",
+      "restart_required": "The package is installed. Restart this node to run the new version.",
+      "executable_unavailable": "The running program could not be located. Upgrade manually.",
+      "host_managed": "Online installation is unavailable for this deployment.",
+      "launcher_unavailable": "The launcher control channel is unavailable. Check the managed process.",
+      "managed_restart": "The launcher accepted the update and will restart this node when it completes.",
+      "default": "Online installation is unavailable for this deployment."
+    },
+    "managedBusy": "The launcher is updating and will restart this node when complete. The service may be briefly unavailable while requests drain.",
+    "completed": "The launcher updated the main program to {{version}}.",
+    "refreshPage": "Refresh page",
+    "launcherError": "The launcher did not complete the update: {{error}}. Check the process logs; automatic rollback does not cover database migrations.",
+    "restartRequired": "Installation is complete and takes effect after restart. The previous program is kept as anyflows-backup-* in the program directory.",
+    "checkedAt": "Last checked: {{time}} (results are cached for one minute)",
+    "noUpdate": "No newer release found.",
+    "latestAvailable": "New version available",
+    "latestRelease": "Latest release",
+    "downloadPackage": "Download matching package: {{name}}",
+    "noPackage": "This release has no package for the current platform. A package for another platform will not be used.",
+    "releaseNotes": "View release notes",
+    "noReleaseNotes": "No release notes provided.",
+    "confirmLauncher": "I have backed up the database, configuration, and WAL. I understand this updates only the current node, may briefly interrupt service, and restarts through the launcher.",
+    "confirmStandalone": "I have backed up the database, configuration, and WAL. I understand this replaces only the current node's program and requires a manual restart.",
+    "installing": "Downloading and verifying. Keep this page open…",
+    "install": "Download and install",
+    "installError": "Installation did not complete. Check the version, program directory permissions, and network, then retry.",
+    "checkError": "Update check failed. Check the network or try again later; the GitHub API may be rate limited."
   },
   "siteSettings": {
     "title": "Site settings",
