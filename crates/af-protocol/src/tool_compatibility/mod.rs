@@ -7,6 +7,7 @@ mod tests;
 use std::{collections::BTreeMap, error::Error, fmt};
 
 use af_domain::{Operation, Role};
+use serde_json::Value;
 
 use crate::{
     CanonicalRequestEnvelope, CanonicalStreamEvent as Event, ContentBlock, ContentDelta,
@@ -86,7 +87,7 @@ impl ToolCompatibilitySession {
         &self.request
     }
 
-    /// 保留已知的逐轮原始用量，供失败尝试记录使用；缺失值不替换为零。
+    /// 保留已知的逐轮计费用量，供失败尝试记录使用；缺失值不替换为零。
     #[must_use]
     pub const fn observed_usage(&self) -> &[Option<Usage>; 2] {
         &self.observed
@@ -124,6 +125,19 @@ impl ToolCompatibilitySession {
                     || previous.is_some_and(|old| old.output_tokens() > usage.output_tokens())
                 {
                     return Err(E::OutputBudgetExceeded);
+                }
+            }
+            // Preserve final-round same-protocol metadata, but discard hidden tool-round data.
+            // Delay forwarding until the round ends so metadata follows MessageStart.
+            Event::AnthropicUsageMetadata { mut raw } => {
+                self.round.require_open()?;
+                // The synthesized usage already includes compaction billing from every round.
+                // Replaying native iterations would cause another decoder to count it twice.
+                raw.as_object_mut()
+                    .ok_or(E::InvalidOutput)?
+                    .remove("iterations");
+                if self.round.usage_metadata.replace(raw).is_some() {
+                    return Err(E::InvalidOutput);
                 }
             }
             Event::Ping => output.push(Event::Ping),
@@ -374,6 +388,9 @@ impl ToolCompatibilitySession {
                 role: Role::Assistant,
             });
         }
+        if let Some(raw) = self.round.usage_metadata.take() {
+            events.push(Event::AnthropicUsageMetadata { raw });
+        }
         events.push(Event::Finish {
             choice_index: 0,
             reason,
@@ -447,6 +464,7 @@ struct Round {
     tools: BTreeMap<u32, Tool>,
     argument_bytes: usize,
     finish: Option<(FinishReason, Option<String>)>,
+    usage_metadata: Option<Value>,
 }
 
 impl Round {

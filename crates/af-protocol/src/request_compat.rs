@@ -581,6 +581,10 @@ fn normalize_content(value: &mut Value, protocol: Protocol, result: bool) -> Res
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_owned();
+            if protocol == Protocol::Anthropic && kind == "compaction" {
+                // Signed compaction state is opaque, including extension nulls.
+                continue;
+            }
             if matches!(kind.as_str(), "text" | "input_text" | "output_text") {
                 if protocol != Protocol::OpenAiResponses {
                     map.insert("type".to_owned(), json!("text"));

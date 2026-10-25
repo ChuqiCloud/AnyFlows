@@ -234,6 +234,8 @@ pub enum ContentBlock {
     CacheControl(CacheHint),
     /// OpenAI Responses 专用的不透明上下文压缩 Item。
     Compaction(ResponsesCompactionItem),
+    /// Anthropic Messages 原生压缩块，不能转作其他供应商状态。
+    AnthropicCompaction(crate::AnthropicCompactionItem),
 }
 
 impl fmt::Debug for ContentBlock {
@@ -258,6 +260,7 @@ impl fmt::Debug for ContentBlock {
             Self::Thinking { .. } => formatter.write_str("Thinking(<已脱敏>)"),
             Self::CacheControl(hint) => formatter.debug_tuple("CacheControl").field(hint).finish(),
             Self::Compaction(_) => formatter.write_str("Compaction(<已脱敏>)"),
+            Self::AnthropicCompaction(_) => formatter.write_str("AnthropicCompaction(<已脱敏>)"),
         }
     }
 }

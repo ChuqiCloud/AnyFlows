@@ -237,7 +237,8 @@ impl Stream for PendingResponseStream {
     }
 }
 
-/// 创建保持背压的 Axum Body；接收端释放会同步取消上游生产任务。
+/// 创建保持背压的 Axum Body；接收端释放会通知生产任务停止读取上游。
+/// 正常交付先确认所有数据已消费，再等待完成回调结束后返回 EOF。
 pub(crate) fn openai_chat_body<S>(
     source: S,
     policy: StreamDeliveryPolicy,
@@ -249,6 +250,7 @@ where
     let (sender, receiver) = mpsc::channel(STREAM_CHANNEL_CAPACITY);
     let (terminal_sender, terminal) = oneshot::channel();
     let (acknowledged, delivered) = oneshot::channel();
+    let (completion_sender, completion_done) = oneshot::channel();
     let task = async move {
         let mut source = Box::pin(source);
         let mut hard_deadline = Box::pin(sleep(policy.max_duration));
@@ -286,17 +288,32 @@ where
             };
         }
         log_outcome(outcome);
-        if let Some(completion) = completion {
-            completion.on_delivery(outcome).await;
+        let completion_result = AssertUnwindSafe(async move {
+            if let Some(completion) = completion {
+                completion.on_delivery(outcome).await;
+            }
+        })
+        .catch_unwind()
+        .await;
+        if completion_result.is_err() {
+            tracing::error!(
+                error_kind = "stream_completion_panic",
+                "SSE 交付完成回调发生 panic"
+            );
+            outcome = PumpOutcome::Internal;
         }
+        let _ = completion_sender.send(outcome);
     }
     .in_current_span();
-    // JoinHandle 丢弃后任务继续运行；生命周期由接收端关闭和硬期限共同约束。
+    // 上游读取和交付确认受关闭通知及硬期限约束；正常 EOF 还会等待回调结束。
+    // 接收端提前释放时，回调仍在后台收尾，不由此 Body 提供全局关停追踪。
     drop(tokio::spawn(task));
     Body::from_stream(ReceiverStream {
         receiver,
         terminal,
+        terminal_outcome: None,
         acknowledged: Some(acknowledged),
+        completion_done,
         terminated: false,
     })
 }
@@ -376,7 +393,9 @@ impl Error for StreamBodyError {}
 struct ReceiverStream {
     receiver: mpsc::Receiver<Bytes>,
     terminal: oneshot::Receiver<PumpOutcome>,
+    terminal_outcome: Option<PumpOutcome>,
     acknowledged: Option<oneshot::Sender<()>>,
+    completion_done: oneshot::Receiver<PumpOutcome>,
     terminated: bool,
 }
 
@@ -392,18 +411,31 @@ impl Stream for ReceiverStream {
             Poll::Pending => return Poll::Pending,
             Poll::Ready(None) => {}
         }
-        let outcome = match std::future::Future::poll(Pin::new(&mut self.terminal), context) {
-            Poll::Pending => return Poll::Pending,
-            Poll::Ready(result) => result.unwrap_or(PumpOutcome::Internal),
+        let mut outcome = match self.terminal_outcome {
+            Some(outcome) => outcome,
+            None => {
+                let outcome = match Pin::new(&mut self.terminal).poll(context) {
+                    Poll::Pending => return Poll::Pending,
+                    Poll::Ready(result) => result.unwrap_or(PumpOutcome::Internal),
+                };
+                self.terminal_outcome = Some(outcome);
+                outcome
+            }
         };
+        if outcome == PumpOutcome::Completed {
+            if let Some(sender) = self.acknowledged.take() {
+                let _ = sender.send(());
+            }
+            // ack 表示数据已排空；EOF 必须等依赖交付结果的计费等收尾完成。
+            // 若确认已超时，使用回调接收到的最终失败结果，不能伪装为成功 EOF。
+            outcome = match Pin::new(&mut self.completion_done).poll(context) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(result) => result.unwrap_or(PumpOutcome::Internal),
+            };
+        }
         self.terminated = true;
         match outcome {
-            PumpOutcome::Completed => {
-                if let Some(sender) = self.acknowledged.take() {
-                    let _ = sender.send(());
-                }
-                Poll::Ready(None)
-            }
+            PumpOutcome::Completed => Poll::Ready(None),
             PumpOutcome::UpstreamFailed => Poll::Ready(Some(Err(StreamBodyError::Upstream))),
             _ => Poll::Ready(Some(Err(StreamBodyError::Internal))),
         }
@@ -670,6 +702,118 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn completed_body_delivers_chunks_but_waits_for_callback_before_eof() {
+        let (started, callback_started) = oneshot::channel();
+        let (release, released) = oneshot::channel();
+        let body = openai_chat_body(
+            futures_util::stream::iter([Ok(Bytes::from_static(b"data: [DONE]\n\n"))]),
+            StreamDeliveryPolicy::default(),
+            Some(Box::new(GatedDelivery { started, released })),
+        );
+        let mut stream = body.into_data_stream();
+        let chunk = timeout(Duration::from_secs(1), stream.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(chunk.as_ref(), b"data: [DONE]\n\n");
+
+        let mut eof = Box::pin(stream.next());
+        assert!(futures_util::poll!(eof.as_mut()).is_pending());
+        let outcome = tokio::select! {
+            outcome = timeout(Duration::from_secs(1), callback_started) => outcome.unwrap().unwrap(),
+            _ = eof.as_mut() => panic!("EOF must wait for the gated completion callback"),
+        };
+        assert_eq!(outcome, PumpOutcome::Completed);
+        // 再次 poll 必须复用缓存终态，不能重复 poll 已消费的 terminal oneshot。
+        assert!(futures_util::poll!(eof.as_mut()).is_pending());
+        release.send(()).unwrap();
+        assert!(
+            timeout(Duration::from_secs(1), eof)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn completion_hook_panics_surface_body_error_without_hanging() {
+        for on_call in [true, false] {
+            let body = openai_chat_body(
+                futures_util::stream::iter([Ok(Bytes::from_static(b"data: [DONE]\n\n"))]),
+                StreamDeliveryPolicy::default(),
+                Some(Box::new(PanickingDelivery { on_call })),
+            );
+            let chunks = timeout(
+                Duration::from_secs(1),
+                body.into_data_stream().collect::<Vec<_>>(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(chunks.len(), 2);
+            assert_eq!(chunks[0].as_ref().unwrap().as_ref(), b"data: [DONE]\n\n");
+            assert!(chunks[1].is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_completion_notification_surfaces_internal_error_without_hanging() {
+        let (sender, receiver) = mpsc::channel(STREAM_CHANNEL_CAPACITY);
+        drop(sender);
+        let (terminal_sender, terminal) = oneshot::channel();
+        terminal_sender.send(PumpOutcome::Completed).unwrap();
+        let (acknowledged, _delivered) = oneshot::channel();
+        let (completion_sender, completion_done) = oneshot::channel();
+        drop(completion_sender);
+        let mut stream = ReceiverStream {
+            receiver,
+            terminal,
+            terminal_outcome: None,
+            acknowledged: Some(acknowledged),
+            completion_done,
+            terminated: false,
+        };
+
+        assert!(matches!(
+            timeout(Duration::from_secs(1), stream.next())
+                .await
+                .unwrap(),
+            Some(Err(StreamBodyError::Internal))
+        ));
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn expired_delivery_ack_does_not_become_successful_body_eof() {
+        let (sender, receiver) = oneshot::channel();
+        let policy =
+            StreamDeliveryPolicy::new(Duration::from_millis(20), Duration::from_secs(1)).unwrap();
+        let body = openai_chat_body(
+            futures_util::stream::iter([Ok(Bytes::from_static(b"data: [DONE]\n\n"))]),
+            policy,
+            Some(Box::new(RecordingDelivery(sender))),
+        );
+        // 保持 Body 存活但不消费，直到交付确认超时并结束回调。
+        assert_eq!(
+            timeout(Duration::from_secs(1), receiver)
+                .await
+                .unwrap()
+                .unwrap(),
+            PumpOutcome::WriteTimeout
+        );
+        let chunks = timeout(
+            Duration::from_secs(1),
+            body.into_data_stream().collect::<Vec<_>>(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].as_ref().unwrap().as_ref(), b"data: [DONE]\n\n");
+        assert!(chunks[1].is_err());
+    }
+
+    #[tokio::test]
     async fn incomplete_upstream_stream_surfaces_body_error_and_failure_outcome() {
         let (sender, receiver) = oneshot::channel();
         let body = openai_chat_body(
@@ -680,6 +824,31 @@ mod tests {
         let chunks = body.into_data_stream().collect::<Vec<_>>().await;
         assert!(chunks.iter().any(Result::is_err));
         assert_eq!(receiver.await.unwrap(), PumpOutcome::UpstreamFailed);
+    }
+
+    struct GatedDelivery {
+        started: oneshot::Sender<PumpOutcome>,
+        released: oneshot::Receiver<()>,
+    }
+
+    impl StreamDeliveryHook for GatedDelivery {
+        fn on_delivery(self: Box<Self>, outcome: PumpOutcome) -> GenerationCompletionFuture {
+            Box::pin(async move {
+                let _ = self.started.send(outcome);
+                let _ = self.released.await;
+            })
+        }
+    }
+
+    struct PanickingDelivery {
+        on_call: bool,
+    }
+
+    impl StreamDeliveryHook for PanickingDelivery {
+        fn on_delivery(self: Box<Self>, _outcome: PumpOutcome) -> GenerationCompletionFuture {
+            assert!(!self.on_call, "delivery hook creation panic");
+            Box::pin(async { panic!("delivery hook future panic") })
+        }
     }
 
     struct RecordingDelivery(oneshot::Sender<PumpOutcome>);

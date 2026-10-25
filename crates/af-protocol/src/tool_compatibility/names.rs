@@ -45,6 +45,14 @@ impl ToolNames {
         let mut historical_ids = BTreeSet::new();
         for message in &request.canonical().messages {
             visit(&message.content, 0, &mut |block| {
+                // 原生压缩状态可能绑定工具目录；注入工具或改名会破坏其完整性。
+                // Canonical 直接构造的请求同样必须守住这条边界。
+                if matches!(
+                    block,
+                    ContentBlock::Compaction(_) | ContentBlock::AnthropicCompaction(_)
+                ) {
+                    return Err(Error::UnsupportedRequest);
+                }
                 if let ContentBlock::ToolUse { id, name, .. } = block {
                     occupied.insert(name.clone());
                     historical_ids.insert(id.clone());

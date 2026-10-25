@@ -114,6 +114,9 @@ impl OpenAiResponsesStreamDecoder {
         output: &mut Vec<CanonicalStreamEvent>,
     ) -> Result<(), ParseStreamError> {
         if self.done {
+            if frame.is_comment() {
+                return Ok(());
+            }
             if !self.compatibility_done_seen && is_done_sentinel(&frame) {
                 self.compatibility_done_seen = true;
                 return Ok(());

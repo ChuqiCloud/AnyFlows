@@ -163,7 +163,7 @@ fn build_choice(
         ("message", Value::Object(message)),
         (
             "finish_reason",
-            Value::String(finish_reason_name(choice.finish_reason).to_owned()),
+            Value::String(finish_reason_name(choice.finish_reason)?.to_owned()),
         ),
     ]);
     if let Some(logprobs) = &choice.logprobs {
@@ -221,7 +221,8 @@ fn build_message_content(
             | ContentBlock::Audio { .. }
             | ContentBlock::ToolResult { .. }
             | ContentBlock::CacheControl(_)
-            | ContentBlock::Compaction(_) => {
+            | ContentBlock::Compaction(_)
+            | ContentBlock::AnthropicCompaction(_) => {
                 return Err(BuildResponseError::UnsupportedFeature);
             }
         }
@@ -261,13 +262,14 @@ fn build_tool_call(
     ]))
 }
 
-fn finish_reason_name(reason: FinishReason) -> &'static str {
-    match reason {
+fn finish_reason_name(reason: FinishReason) -> Result<&'static str, BuildResponseError> {
+    Ok(match reason {
         FinishReason::Stop => "stop",
         FinishReason::Length => "length",
         FinishReason::ToolCalls => "tool_calls",
         FinishReason::ContentFilter => "content_filter",
-    }
+        FinishReason::Compaction => return Err(BuildResponseError::UnsupportedFeature),
+    })
 }
 
 fn build_usage(usage: &Usage) -> Result<Value, BuildResponseError> {

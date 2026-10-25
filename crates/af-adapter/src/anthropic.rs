@@ -1,10 +1,18 @@
-use std::fmt;
+use std::{collections::HashSet, fmt};
 
 use af_domain::{ChannelType, Operation, Protocol};
 use af_httpclient::{HeaderMap, HeaderName, HeaderValue};
+use async_trait::async_trait;
 
 use crate::credential::{api_key_or_bearer_header, clear_authentication_headers};
-use crate::{Adaptor, AdaptorError, AdaptorResult, AdaptorTarget, Credential, RelayContext};
+use crate::{
+    Adaptor, AdaptorError, AdaptorResult, AdaptorTarget, Credential,
+    MAX_UPSTREAM_REQUEST_HEADER_VALUE_BYTES, RelayContext, UpstreamRequest,
+};
+
+const ON_DEMAND_COMPACTION_BETA: &str = "compact-2026-09-04";
+const THRESHOLD_COMPACTION_BETA: &str = "compact-2026-01-12";
+const ANTHROPIC_BETA_HEADER: &str = "anthropic-beta";
 
 /// Anthropic Messages 官方及标准兼容渠道适配器。
 ///
@@ -56,6 +64,7 @@ impl AnthropicAdaptor {
     }
 }
 
+#[async_trait]
 impl Adaptor for AnthropicAdaptor {
     fn channel_type(&self) -> ChannelType {
         ChannelType::Anthropic
@@ -115,6 +124,127 @@ impl Adaptor for AnthropicAdaptor {
         }
         Ok(())
     }
+
+    async fn finalize_request(
+        &self,
+        request: UpstreamRequest,
+        _credential: &Credential,
+        _context: &RelayContext,
+    ) -> AdaptorResult<UpstreamRequest> {
+        let (method, target, mut headers, body, response_mode, response_body_limit) =
+            request.into_parts();
+        let required_betas = compaction_betas(body.as_deref())?;
+        merge_anthropic_beta_headers(&mut headers, &required_betas)?;
+
+        // Beta negotiation only changes headers. Keep the exact request bytes, including
+        // whitespace and unknown extension fields, for upstream compatibility.
+        UpstreamRequest::new(method, target, headers, body)
+            .and_then(|request| request.with_response_body_limit(response_body_limit))
+            .map(|request| request.with_response_mode(response_mode))
+    }
+}
+
+fn compaction_betas(body: Option<&[u8]>) -> AdaptorResult<Vec<&'static str>> {
+    let Some(body) = body else {
+        return Ok(Vec::new());
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return Ok(Vec::new());
+    };
+    let Some(object) = value.as_object() else {
+        return Ok(Vec::new());
+    };
+
+    let has_on_demand_compaction = object
+        .get("compaction")
+        .is_some_and(|value| !value.is_null());
+    let context_management = object.get("context_management");
+    if has_on_demand_compaction && context_management.is_some_and(|value| !value.is_null()) {
+        return Err(AdaptorError::InvalidTaskRequest);
+    }
+
+    let mut required = Vec::new();
+    if has_on_demand_compaction {
+        required.push(ON_DEMAND_COMPACTION_BETA);
+    }
+    let has_threshold_compaction = context_management
+        .and_then(serde_json::Value::as_object)
+        .and_then(|value| value.get("edits"))
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|edits| {
+            edits.iter().any(|edit| {
+                edit.get("type").and_then(serde_json::Value::as_str) == Some("compact_20260112")
+            })
+        });
+    if has_threshold_compaction {
+        required.push(THRESHOLD_COMPACTION_BETA);
+    }
+    Ok(required)
+}
+
+fn merge_anthropic_beta_headers(
+    headers: &mut HeaderMap,
+    required_betas: &[&str],
+) -> AdaptorResult<()> {
+    let mut tokens = Vec::<Vec<u8>>::new();
+    let mut seen = HashSet::<Vec<u8>>::new();
+    for value in headers.get_all(ANTHROPIC_BETA_HEADER).iter() {
+        for token in value.as_bytes().split(|byte| *byte == b',') {
+            let token = trim_beta_whitespace(token);
+            if !token.is_empty() {
+                let token = token.to_vec();
+                if seen.insert(token.clone()) {
+                    tokens.push(token);
+                }
+            }
+        }
+    }
+    for beta in required_betas {
+        let token = beta.as_bytes().to_vec();
+        if seen.insert(token.clone()) {
+            tokens.push(token);
+        }
+    }
+
+    headers.remove(ANTHROPIC_BETA_HEADER);
+    if tokens.is_empty() {
+        return Ok(());
+    }
+
+    let value_len = tokens.iter().try_fold(tokens.len() - 1, |length, token| {
+        length.checked_add(token.len())
+    });
+    let Some(value_len) =
+        value_len.filter(|length| *length <= MAX_UPSTREAM_REQUEST_HEADER_VALUE_BYTES)
+    else {
+        return Err(AdaptorError::InvalidHeader);
+    };
+    let mut value = Vec::with_capacity(value_len);
+    for (index, token) in tokens.iter().enumerate() {
+        if index != 0 {
+            value.push(b',');
+        }
+        value.extend_from_slice(token);
+    }
+    let value = HeaderValue::from_bytes(&value).map_err(|_| AdaptorError::InvalidHeader)?;
+    headers.insert(HeaderName::from_static(ANTHROPIC_BETA_HEADER), value);
+    Ok(())
+}
+
+fn trim_beta_whitespace(mut token: &[u8]) -> &[u8] {
+    while token
+        .first()
+        .is_some_and(|byte| matches!(*byte, b' ' | b'\t'))
+    {
+        token = &token[1..];
+    }
+    while token
+        .last()
+        .is_some_and(|byte| matches!(*byte, b' ' | b'\t'))
+    {
+        token = &token[..token.len() - 1];
+    }
+    token
 }
 
 impl fmt::Debug for AnthropicAdaptor {

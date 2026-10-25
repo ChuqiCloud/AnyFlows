@@ -80,16 +80,24 @@ jobs:
         with:
           shared-key: conversation
 
+      - name: Install runtime test tool
+        if: ${{ inputs.scope != 'protocol-relay' }}
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: cargo-nextest@0.9.140
+          fallback: none
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
       - name: Check affected crates
-        run: cargo clippy -p af-protocol -p af-relay -p af-server --all-targets --all-features --locked -- -D warnings
+        run: cargo clippy -p af-protocol -p af-adapter -p af-relay -p af-http -p af-server --all-targets --all-features --locked -- -D warnings
 
       - name: Test channel capability catalog and adapter assembly
         run: |
           cargo test --quiet -p af-domain --lib --locked channel_capability::
           cargo test --quiet -p af-adapter --lib --locked factory::
+          cargo test --quiet -p af-adapter --test anthropic_compaction_headers --locked
 
       - name: Test protocol parsing and relay lifecycle
         if: ${{ !cancelled() }}
@@ -100,26 +108,32 @@ jobs:
           exit "$status"
 
       - name: Test public operational endpoints
-        if: ${{ inputs.scope != 'protocol-relay' }}
+        if: ${{ !cancelled() && inputs.scope != 'protocol-relay' }}
         run: |
           cargo test --quiet -p af-http --lib --locked operations_tests::
           cargo test --quiet -p af-http --lib --locked gemini_generate_content::tests::
+          cargo test --quiet -p af-http --lib --locked anthropic_messages::tests::
+          cargo test --quiet -p af-http --lib --locked streaming::tests::
+
+      - name: Test native compaction runtime and billing
+        if: ${{ !cancelled() && inputs.scope != 'protocol-relay' }}
+        run: cargo nextest run -p af-server --test anthropic_runtime_chain --all-features --locked --no-fail-fast --test-threads 2
 
       - name: Test conversation scheduling
-        if: ${{ inputs.scope != 'protocol-relay' }}
+        if: ${{ !cancelled() && inputs.scope != 'protocol-relay' }}
         run: |
           cargo test --quiet -p af-server --lib --all-features --locked scheduled_chat::
           cargo test --quiet -p af-server --lib --all-features --locked billing_chat::
           cargo test --quiet -p af-server --lib --all-features --locked debug_trace_runtime::
 
       - name: Test shared client session creation
-        if: ${{ inputs.scope != 'protocol-relay' }}
+        if: ${{ !cancelled() && inputs.scope != 'protocol-relay' }}
         run: |
           cargo test --quiet -p af-cache --lib --locked sticky::
           bash tools/ci/run-cache-redis-test.sh
 
       - name: Test client profile configuration and runtime snapshots
-        if: ${{ inputs.scope != 'protocol-relay' }}
+        if: ${{ !cancelled() && inputs.scope != 'protocol-relay' }}
         run: |
           cargo test --quiet -p af-domain --lib --locked enums_tests::
           cargo test --quiet -p af-account --lib --locked credential_

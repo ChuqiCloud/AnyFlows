@@ -274,6 +274,9 @@ fn normalize_blocks(
             ContentBlock::Compaction(_) if target != Protocol::OpenAiResponses => {
                 return Err(ConversationConversionError::ContinuationRequired);
             }
+            ContentBlock::AnthropicCompaction(_) if target != Protocol::Anthropic => {
+                return Err(ConversationConversionError::ContinuationRequired);
+            }
             _ => {}
         }
     }

@@ -28,7 +28,12 @@ pub enum StreamCapability {
     ReasoningSignatures,
     /// 工具调用生命周期。
     ToolCalls,
+    /// OpenAI Responses 原生压缩生命周期。
     Compaction,
+    /// Anthropic 原生压缩生命周期。
+    AnthropicCompaction,
+    /// Anthropic 原生用量扩展（如压缩迭代计量）。
+    AnthropicUsageMetadata,
     /// 工具调用思考签名。
     ToolCallSignatures,
     /// 候选结束原因。
@@ -71,11 +76,14 @@ impl StreamCapability {
         Self::ReasoningSignatures,
         Self::ToolCalls,
         Self::Compaction,
+        Self::AnthropicCompaction,
+        Self::AnthropicUsageMetadata,
         Self::ToolCallSignatures,
         Self::FinishReason(FinishReason::Stop),
         Self::FinishReason(FinishReason::Length),
         Self::FinishReason(FinishReason::ToolCalls),
         Self::FinishReason(FinishReason::ContentFilter),
+        Self::FinishReason(FinishReason::Compaction),
         Self::StopSequence,
         Self::PromptBlocked,
         Self::Usage,
@@ -105,6 +113,8 @@ impl fmt::Display for StreamCapability {
             Self::ReasoningSignatures => formatter.write_str("content.reasoning_signature"),
             Self::ToolCalls => formatter.write_str("tool_call.lifecycle"),
             Self::Compaction => formatter.write_str("responses.compaction"),
+            Self::AnthropicCompaction => formatter.write_str("anthropic.compaction"),
+            Self::AnthropicUsageMetadata => formatter.write_str("anthropic.usage_metadata"),
             Self::ToolCallSignatures => formatter.write_str("tool_call.signature"),
             Self::FinishReason(reason) => {
                 write!(formatter, "finish.{}", finish_reason_name(*reason))
@@ -182,10 +192,13 @@ pub(super) const ANTHROPIC: &[StreamCapability] = &[
     StreamCapability::ReasoningDelta,
     StreamCapability::ReasoningSignatures,
     StreamCapability::ToolCalls,
+    StreamCapability::AnthropicCompaction,
+    StreamCapability::AnthropicUsageMetadata,
     COMMON_FINISH[0],
     COMMON_FINISH[1],
     COMMON_FINISH[2],
     COMMON_FINISH[3],
+    StreamCapability::FinishReason(FinishReason::Compaction),
     StreamCapability::StopSequence,
     StreamCapability::Usage,
     StreamCapability::UsageCacheRead,
@@ -272,6 +285,15 @@ pub fn validate_stream_event_capabilities(
             validate_choice_index(protocol, *choice_index)?;
             require(protocol, StreamCapability::Compaction)
         }
+        CanonicalStreamEvent::AnthropicCompactionStart { choice_index, .. }
+        | CanonicalStreamEvent::AnthropicCompactionDelta { choice_index, .. }
+        | CanonicalStreamEvent::AnthropicCompactionEnd { choice_index, .. } => {
+            validate_choice_index(protocol, *choice_index)?;
+            require(protocol, StreamCapability::AnthropicCompaction)
+        }
+        CanonicalStreamEvent::AnthropicUsageMetadata { .. } => {
+            require(protocol, StreamCapability::AnthropicUsageMetadata)
+        }
         CanonicalStreamEvent::ToolCallSignature { choice_index, .. } => {
             validate_choice_index(protocol, *choice_index)?;
             require(protocol, StreamCapability::ToolCalls)?;
@@ -351,5 +373,6 @@ const fn finish_reason_name(reason: FinishReason) -> &'static str {
         FinishReason::Length => "length",
         FinishReason::ToolCalls => "tool_calls",
         FinishReason::ContentFilter => "content_filter",
+        FinishReason::Compaction => "compaction",
     }
 }

@@ -7,7 +7,7 @@ pub(super) enum Field<T> {
     /// 请求未提供该字段。
     #[default]
     Missing,
-    /// 请求提供了非空字段值。
+    /// 请求显式提供的字段值。
     Value(T),
 }
 
@@ -31,6 +31,17 @@ where
         Some(value) => Field::Value(value),
         None => Field::Missing,
     })
+}
+
+/// 保留可选字段的显式 null，与未提供字段分别回放。
+fn deserialize_present_nullable_field<'de, D, T>(
+    deserializer: D,
+) -> Result<Field<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Field::Value)
 }
 
 /// OpenAI Responses 入站请求。
@@ -91,7 +102,8 @@ pub(super) struct ResponsesRequestWire {
 pub(super) struct ContextManagementWire {
     #[serde(rename = "type")]
     pub(super) kind: ContextManagementTypeWire,
-    pub(super) compact_threshold: i64,
+    #[serde(default, deserialize_with = "deserialize_present_nullable_field")]
+    pub(super) compact_threshold: Field<Option<i64>>,
 }
 
 /// 自动压缩策略类型。

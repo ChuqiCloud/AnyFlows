@@ -46,7 +46,7 @@ pub fn build_response(response: &CanonicalResponse) -> Result<Value, BuildRespon
     };
     validate_choice(choice)?;
 
-    let (status, incomplete_details) = build_status(choice.finish_reason);
+    let (status, incomplete_details) = build_status(choice.finish_reason)?;
     let output = build_output(&response.id, choice, status)?;
     let usage = build_usage(response.usage.as_ref())?;
     let mut root = Map::from_iter([
@@ -88,8 +88,8 @@ fn validate_choice(choice: &ResponseChoice) -> Result<(), BuildResponseError> {
     Ok(())
 }
 
-fn build_status(reason: FinishReason) -> (ResponseStatusWire, Value) {
-    match reason {
+fn build_status(reason: FinishReason) -> Result<(ResponseStatusWire, Value), BuildResponseError> {
+    Ok(match reason {
         FinishReason::Stop | FinishReason::ToolCalls => {
             (ResponseStatusWire::Completed, Value::Null)
         }
@@ -101,7 +101,8 @@ fn build_status(reason: FinishReason) -> (ResponseStatusWire, Value) {
             ResponseStatusWire::Incomplete,
             object_value([("reason", Value::String("content_filter".to_owned()))]),
         ),
-    }
+        FinishReason::Compaction => return Err(BuildResponseError::UnsupportedFeature),
+    })
 }
 
 #[derive(Clone, Copy, Default, Eq, PartialEq)]
@@ -273,7 +274,8 @@ fn build_output(
             | ContentBlock::Audio { .. }
             | ContentBlock::ToolResult { .. }
             | ContentBlock::CacheControl(_)
-            | ContentBlock::Compaction(_) => {
+            | ContentBlock::Compaction(_)
+            | ContentBlock::AnthropicCompaction(_) => {
                 return Err(BuildResponseError::UnsupportedFeature);
             }
         }

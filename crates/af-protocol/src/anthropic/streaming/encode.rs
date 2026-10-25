@@ -44,6 +44,7 @@ pub struct AnthropicMessagesStreamEncoder {
     identity: EncodeIdentity,
     initial_usage: UsageParts,
     initial_usage_value: Value,
+    usage_metadata: Map<String, Value>,
     estimated_initial_usage: bool,
     active_block: Option<ActiveBlock>,
     seen_blocks: HashSet<BlockKey>,
@@ -52,6 +53,7 @@ pub struct AnthropicMessagesStreamEncoder {
     pending_finish: Option<PendingFinish>,
     started: bool,
     has_tool_use: bool,
+    has_compaction: bool,
     usage_seen: bool,
     done: bool,
     failed: bool,
@@ -73,6 +75,7 @@ impl AnthropicMessagesStreamEncoder {
             identity,
             initial_usage,
             initial_usage_value,
+            usage_metadata: Map::new(),
             estimated_initial_usage: false,
             active_block: None,
             seen_blocks: HashSet::new(),
@@ -81,6 +84,7 @@ impl AnthropicMessagesStreamEncoder {
             pending_finish: None,
             started: false,
             has_tool_use: false,
+            has_compaction: false,
             usage_seen: false,
             done: false,
             failed: false,
@@ -115,6 +119,46 @@ impl AnthropicMessagesStreamEncoder {
 
     fn encode_inner(&mut self, event: CanonicalStreamEvent) -> Result<Vec<u8>, EncodeStreamError> {
         match event {
+            CanonicalStreamEvent::AnthropicUsageMetadata { raw } => {
+                if !self.started || self.usage_seen {
+                    return Err(EncodeStreamError::InvalidSequence);
+                }
+                super::super::build_response::validate_raw_usage(&raw, &mut self.usage_metadata)
+                    .map_err(|_| EncodeStreamError::InvalidUsage)?;
+                Ok(Vec::new())
+            }
+            CanonicalStreamEvent::AnthropicCompactionStart {
+                choice_index,
+                content_index,
+                item,
+            } => self.encode_compaction_start(choice_index, content_index, item),
+            CanonicalStreamEvent::AnthropicCompactionDelta {
+                choice_index,
+                content_index,
+                text,
+            } => {
+                self.require_content_phase(choice_index)?;
+                let active = self
+                    .active_block
+                    .as_mut()
+                    .filter(|block| block.key == BlockKey::Compaction(content_index))
+                    .ok_or(EncodeStreamError::InvalidSequence)?;
+                let ActiveBlockKind::Compaction {
+                    content,
+                    text_bytes,
+                } = &mut active.kind
+                else {
+                    return Err(EncodeStreamError::InvalidSequence);
+                };
+                self.totals.add_text(&text, text_bytes)?;
+                content.get_or_insert_with(String::new).push_str(&text);
+                Ok(Vec::new())
+            }
+            CanonicalStreamEvent::AnthropicCompactionEnd {
+                choice_index,
+                content_index,
+                item,
+            } => self.encode_compaction_end(choice_index, content_index, item),
             CanonicalStreamEvent::MessageStart { choice_index, role } => {
                 self.encode_message_start(choice_index, role)
             }
@@ -413,12 +457,28 @@ impl AnthropicMessagesStreamEncoder {
             .as_ref()
             .ok_or(EncodeStreamError::InvalidSequence)?;
         let final_parts = usage_parts(&usage)?;
+        let compaction_finished = finish.stop_reason == "compaction";
         validate_final_usage(
             self.initial_usage,
             final_parts,
-            self.estimated_initial_usage,
+            self.estimated_initial_usage
+                || self.has_compaction
+                || compaction_finished
+                || self
+                    .usage_metadata
+                    .get("iterations")
+                    .and_then(Value::as_array)
+                    .is_some_and(|items| {
+                        items.iter().any(|item| {
+                            item.get("type").and_then(Value::as_str) == Some("compaction")
+                        })
+                    }),
         )?;
-        let usage = message_delta_usage(&usage)?;
+        let mut usage = message_delta_usage(&usage)?;
+        usage
+            .as_object_mut()
+            .ok_or(EncodeStreamError::InvalidUsage)?
+            .extend(self.usage_metadata.clone());
         let bytes = encode_sse(
             "message_delta",
             &EncodedMessageDelta {
@@ -489,6 +549,67 @@ impl AnthropicMessagesStreamEncoder {
         Ok(output_index)
     }
 
+    fn encode_compaction_start(
+        &mut self,
+        choice_index: u32,
+        content_index: u32,
+        item: crate::AnthropicCompactionItem,
+    ) -> Result<Vec<u8>, EncodeStreamError> {
+        self.require_content_phase(choice_index)?;
+        let mut output = Vec::new();
+        self.close_non_tool_block(&mut output)?;
+        let key = BlockKey::Compaction(content_index);
+        if !self.seen_blocks.insert(key) {
+            return Err(EncodeStreamError::InvalidSequence);
+        }
+        let output_index = self.allocate_output_index()?;
+        self.has_compaction = true;
+        let mut text_bytes = 0;
+        if let Some(content) = item.content() {
+            self.totals.add_text(content, &mut text_bytes)?;
+        }
+        self.active_block = Some(ActiveBlock {
+            key,
+            output_index,
+            kind: ActiveBlockKind::Compaction {
+                content: item.content().map(str::to_owned),
+                text_bytes,
+            },
+        });
+        Ok(output)
+    }
+
+    fn encode_compaction_end(
+        &mut self,
+        choice_index: u32,
+        content_index: u32,
+        item: crate::AnthropicCompactionItem,
+    ) -> Result<Vec<u8>, EncodeStreamError> {
+        self.require_content_phase(choice_index)?;
+        let active = self
+            .active_block
+            .take()
+            .filter(|block| block.key == BlockKey::Compaction(content_index))
+            .ok_or(EncodeStreamError::InvalidSequence)?;
+        let ActiveBlockKind::Compaction { .. } = active.kind else {
+            return Err(EncodeStreamError::InvalidSequence);
+        };
+        // Buffer the native block until complete so encrypted/signature deltas remain
+        // attached to their provider state in the supported complete-block SSE form.
+        let mut output = encode_sse(
+            "content_block_start",
+            &serde_json::json!({ "type": "content_block_start", "index": active.output_index, "content_block": item.as_value() }),
+        )?;
+        output.extend(encode_sse(
+            "content_block_stop",
+            &EncodedContentBlockStop {
+                kind: "content_block_stop",
+                index: active.output_index,
+            },
+        )?);
+        Ok(output)
+    }
+
     fn ensure_thinking_block(
         &mut self,
         content_index: u32,
@@ -529,11 +650,12 @@ impl AnthropicMessagesStreamEncoder {
     }
 
     fn close_non_tool_block(&mut self, output: &mut Vec<u8>) -> Result<(), EncodeStreamError> {
-        if self
-            .active_block
-            .as_ref()
-            .is_some_and(|block| matches!(&block.kind, ActiveBlockKind::Tool { .. }))
-        {
+        if self.active_block.as_ref().is_some_and(|block| {
+            matches!(
+                &block.kind,
+                ActiveBlockKind::Tool { .. } | ActiveBlockKind::Compaction { .. }
+            )
+        }) {
             return Err(EncodeStreamError::InvalidSequence);
         }
         let Some(active) = self.active_block.take() else {
@@ -602,6 +724,7 @@ impl EncodeIdentity {
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 enum BlockKey {
+    Compaction(u32),
     Text(u32),
     Thinking(u32),
     Tool(u32),
@@ -614,6 +737,10 @@ struct ActiveBlock {
 }
 
 enum ActiveBlockKind {
+    Compaction {
+        content: Option<String>,
+        text_bytes: usize,
+    },
     Text {
         text_bytes: usize,
     },
@@ -793,6 +920,7 @@ fn convert_finish(
         (FinishReason::Length, None) => Ok(("max_tokens", None)),
         (FinishReason::ToolCalls, None) => Ok(("tool_use", None)),
         (FinishReason::ContentFilter, None) => Ok(("refusal", None)),
+        (FinishReason::Compaction, None) => Ok(("compaction", None)),
         _ => Err(EncodeStreamError::InvalidSequence),
     }
 }
