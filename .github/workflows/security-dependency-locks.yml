@@ -49,6 +49,34 @@ jobs:
           corepack pnpm@10.33.0 --dir web install --lockfile-only --ignore-scripts --no-frozen-lockfile
           corepack pnpm@10.33.0 --dir web-next install --lockfile-only --ignore-scripts --no-frozen-lockfile
 
+      - name: Report remaining frontend advisories
+        run: |
+          set -euo pipefail
+          for frontend in web web-next; do
+            report="$RUNNER_TEMP/$frontend-audit.json"
+            status=0
+            corepack pnpm@10.33.0 --dir "$frontend" audit --json > "$report" || status=$?
+            node --input-type=module - "$frontend" "$report" "$status" <<'NODE'
+          import fs from 'node:fs';
+          const [frontend, path, status] = process.argv.slice(2);
+          const report = JSON.parse(fs.readFileSync(path, 'utf8'));
+          if (Number(status) > 1 || !report.metadata?.vulnerabilities || !report.advisories) {
+            throw new Error(`${frontend}: audit did not return a valid advisory report`);
+          }
+          console.log(JSON.stringify({ frontend, vulnerabilities: report.metadata.vulnerabilities }));
+          for (const advisory of Object.values(report.advisories)) {
+            console.log(JSON.stringify({
+              package: advisory.module_name,
+              severity: advisory.severity,
+              title: advisory.title,
+              url: advisory.url,
+              vulnerableVersions: advisory.vulnerable_versions,
+              paths: advisory.findings?.flatMap(finding => finding.paths ?? []),
+            }));
+          }
+          NODE
+          done
+
       - name: Install pinned Rust toolchain
         run: |
           set -euo pipefail
@@ -62,9 +90,9 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$HOME/.cargo/bin:$PATH"
-          cargo update --package hickory-resolver --precise 0.26.2
-          cargo update --package hickory-net --precise 0.26.2
-          cargo update --package hickory-proto --precise 0.26.2
+          cargo update --package hickory-resolver --precise 0.26.3
+          cargo update --package hickory-net --precise 0.26.3
+          cargo update --package hickory-proto --precise 0.26.3
 
       - name: Export lockfile patch for review
         if: ${{ always() }}
