@@ -55,7 +55,7 @@ fs2 = "0.4.3"
 futures-core = "0.3.32"
 futures-util = "0.3.32"
 getrandom = "0.4.3"
-hickory-resolver = { version = "0.26.1", default-features = false, features = ["tokio"] }
+hickory-resolver = { version = "0.26.3", default-features = false, features = ["tokio"] }
 hmac = "0.12.1"
 http = "1.3.1"
 include_dir = { version = "0.7.4", default-features = false }
