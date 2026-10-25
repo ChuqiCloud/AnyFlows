@@ -38,15 +38,29 @@ jobs:
           RELEASE_MASTER_REF: refs/remotes/origin/main
         run: bash tools/ci/verify-release-tag.sh "$GITHUB_REF_NAME" "$GITHUB_SHA"
       - name: Install Rust toolchain
+        if: runner.os != 'Linux'
         run: |
           bash tools/ci/install-rustup.sh
           export PATH="$HOME/.cargo/bin:$PATH"
           toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
           rustup toolchain install "$toolchain" --profile minimal --target '${{ matrix.target }}'
       - name: Cache Rust release artifacts
+        if: runner.os != 'Linux'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4
         with:
           key: public-release-${{ matrix.target }}
+      - name: Restore Bookworm release artifacts
+        id: bookworm-cache
+        if: runner.os == 'Linux'
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            target/bookworm
+            target/bookworm-cargo
+          key: public-release-bookworm-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/ci/build-linux-release.sh') }}-${{ github.sha }}
+          restore-keys: |
+            public-release-bookworm-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/ci/build-linux-release.sh') }}-
+            public-release-bookworm-${{ matrix.target }}-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -71,18 +85,34 @@ jobs:
           corepack pnpm@10.33.0 --dir web build
           corepack pnpm@10.33.0 --dir web-next build
       - name: Build native release binary
+        id: native-build
         run: |
           export AF_BUILD_COMMIT="$(git rev-parse HEAD)"
           export AF_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          cargo build --release --locked --package af-server --package af-launcher --target '${{ matrix.target }}'
+          if [[ "$RUNNER_OS" == 'Linux' ]]; then
+            bash tools/ci/build-linux-release.sh '${{ matrix.target }}'
+          else
+            cargo build --release --locked --package af-server --package af-launcher --target '${{ matrix.target }}'
+          fi
       - name: Package and verify embedded identity
-        run: python tools/ci/package-platform.py "$GITHUB_REF_NAME" '${{ matrix.target }}' 'target/${{ matrix.target }}/release/${{ matrix.binary }}' 'target/${{ matrix.target }}/release/${{ matrix.launcher }}'
+        run: |
+          binary_root=target
+          if [[ "$RUNNER_OS" == 'Linux' ]]; then binary_root=target/bookworm; fi
+          python tools/ci/package-platform.py "$GITHUB_REF_NAME" '${{ matrix.target }}' "$binary_root/${{ matrix.target }}/release/${{ matrix.binary }}" "$binary_root/${{ matrix.target }}/release/${{ matrix.launcher }}"
       - name: Retain native release files
         uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.target }}
           path: release/*
           if-no-files-found: error
+      - name: Save completed Bookworm compilation artifacts
+        if: ${{ always() && !cancelled() && runner.os == 'Linux' && steps.native-build.outputs.cache-ready == 'true' && steps.bookworm-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            target/bookworm
+            target/bookworm-cargo
+          key: ${{ steps.bookworm-cache.outputs.cache-primary-key }}
   publish:
     needs: build
     runs-on: ubuntu-24.04

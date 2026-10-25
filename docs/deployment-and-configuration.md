@@ -20,10 +20,10 @@ uname -m
 
 从 [Releases](https://github.com/ChuqiCloud/AnyFlows/releases) 下载二进制归档和同名 `.sha256` 文件，放在服务器的同一目录。Alpha、Beta 和 RC 为预发布版本。GitHub 自动生成的 Source code 压缩包不含可执行程序；源码部署见 [Docker Compose 部署](docker-compose.md)。
 
-以下以 `v0.3.0-beta.3` 的 amd64 包为例，使用其他版本时修改 `PACKAGE`：
+以下以 `v0.3.0-beta.4` 的 amd64 包为例，使用其他版本时修改 `PACKAGE`：
 
 ```bash
-PACKAGE='anyflows-v0.3.0-beta.3-linux-amd64'
+PACKAGE='anyflows-v0.3.0-beta.4-linux-amd64'
 sha256sum --check "$PACKAGE.tar.gz.sha256"
 tar -xzf "$PACKAGE.tar.gz"
 cd "$PACKAGE"

@@ -6,12 +6,12 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-af-account = { path = "../af-account", version = "0.3.0-beta.3" }
-af-config = { path = "../af-config", version = "0.3.0-beta.3" }
-af-billing = { path = "../af-billing", version = "0.3.0-beta.3" }
-af-db = { path = "../af-db", version = "0.3.0-beta.3" }
-af-domain = { path = "../af-domain", version = "0.3.0-beta.3" }
-af-httpclient = { path = "../af-httpclient", version = "0.3.0-beta.3" }
+af-account = { path = "../af-account", version = "0.3.0-beta.4" }
+af-config = { path = "../af-config", version = "0.3.0-beta.4" }
+af-billing = { path = "../af-billing", version = "0.3.0-beta.4" }
+af-db = { path = "../af-db", version = "0.3.0-beta.4" }
+af-domain = { path = "../af-domain", version = "0.3.0-beta.4" }
+af-httpclient = { path = "../af-httpclient", version = "0.3.0-beta.4" }
 base64.workspace = true
 async-trait.workspace = true
 futures-util.workspace = true
@@ -35,7 +35,7 @@ webauthn-rs.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
-af-config = { path = "../af-config", version = "0.3.0-beta.3" }
+af-config = { path = "../af-config", version = "0.3.0-beta.4" }
 
 [lints]
 workspace = true
