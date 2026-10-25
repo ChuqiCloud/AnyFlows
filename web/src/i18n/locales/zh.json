@@ -157,6 +157,7 @@
     "redemptionCodes": "兑换码管理",
     "refunds": "退款审批",
     "siteSettings": "站点设置",
+    "about": "关于 AnyFlows",
     "siteNavigation": "自定义导航",
     "authenticationSettings": "认证设置",
     "announcements": "公告管理",
@@ -3494,6 +3495,67 @@
       "user": "用户",
       "logout": "退出登录"
     }
+  },
+  "about": {
+    "companyName": "云上极致（深圳）互联网有限公司",
+    "description": "AnyFlows 项目信息、合作伙伴以及当前运行节点的版本与更新状态。",
+    "partnersTitle": "合作伙伴与社区赞助",
+    "partnersDescription": "感谢以下伙伴对 AnyFlows 的支持。品牌标识归各自所有者所有。",
+    "sponsors": {
+      "chuqiCloud": "专注云计算服务，为 AnyFlows 提供云计算资源支持。",
+      "meFrp": "为远程访问、多人联机游戏和开发场景提供免费的内网穿透服务。"
+    }
+  },
+  "softwareUpdate": {
+    "title": "系统版本与更新",
+    "check": "检查更新",
+    "checking": "正在检查…",
+    "loading": "正在读取版本信息…",
+    "loadError": "无法读取版本信息。",
+    "retry": "重试",
+    "fields": {
+      "edition": "产品版本",
+      "core": "内核版本",
+      "deployment": "部署平台",
+      "launchMode": "启动方式",
+      "launcher": "启动器托管（自动重启）",
+      "standalone": "裸启动（手动重启）",
+      "node": "当前节点",
+      "commit": "源码提交",
+      "buildTime": "构建时间",
+      "notProvided": "未提供"
+    },
+    "nodeScope": "检测、安装与重启均针对当前节点，多节点部署请逐台处理。安装前请备份数据库、配置与计费 WAL；回退程序不会降级数据库。",
+    "blocked": {
+      "container": "容器部署仅支持检查版本，请使用新的镜像标签重新部署。",
+      "not_enabled": "在线更新已通过配置关闭，需重新开启后安装。",
+      "unsupported_target": "当前平台没有对应的安装包，请按部署文档手动升级。",
+      "restart_required": "程序已安装，请重启当前节点以运行新版本。",
+      "executable_unavailable": "无法定位当前程序，请手动升级。",
+      "host_managed": "当前部署暂不开放在线更新。",
+      "launcher_unavailable": "启动器控制通道不可用，请检查托管进程。",
+      "managed_restart": "已交由启动器更新，完成后自动重新启动当前节点。",
+      "default": "当前部署不支持在线安装。"
+    },
+    "managedBusy": "启动器托管更新中，完成后将自动重启当前节点。等待请求排空期间可能短暂不可用，请稍候。",
+    "completed": "主程序已由启动器更新至 {{version}}。",
+    "refreshPage": "刷新页面",
+    "launcherError": "启动器报告未完成：{{error}}。请检查进程日志；程序不会跨数据库迁移自动回退。",
+    "restartRequired": "安装完成，重启后生效。旧程序保留在程序目录的 anyflows-backup-* 文件中。",
+    "checkedAt": "上次检查：{{time}}（检查结果缓存一分钟）",
+    "noUpdate": "未发现更新版本。",
+    "latestAvailable": "发现新版本",
+    "latestRelease": "最新发行版本",
+    "downloadPackage": "下载匹配安装包：{{name}}",
+    "noPackage": "该版本没有当前平台的安装包，不会使用其他平台的文件。",
+    "releaseNotes": "查看更新内容",
+    "noReleaseNotes": "未提供更新说明。",
+    "confirmLauncher": "我已备份数据库、配置与 WAL，了解只更新当前节点，安装期间可能短暂不可用并由启动器自动重启。",
+    "confirmStandalone": "我已备份数据库、配置与 WAL，了解只替换当前节点程序，安装后需要手动重启。",
+    "installing": "正在下载并校验，请勿关闭页面…",
+    "install": "下载并安装",
+    "installError": "安装未完成，请核对版本、程序目录权限及网络后重试。",
+    "checkError": "检测失败，请检查网络或稍后重试；GitHub API 可能暂时限流。"
   },
   "siteSettings": {
     "title": "站点设置",

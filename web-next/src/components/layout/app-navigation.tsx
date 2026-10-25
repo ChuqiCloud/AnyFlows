@@ -61,6 +61,7 @@ const navItems = {
   redemptionCodes: { key: 'redemptionCodes', icon: 'solar:ticket-linear', href: '/console/redemption-codes' },
   refunds: { key: 'refunds', icon: 'solar:check-circle-linear', href: '/console/refunds' },
   siteSettings: { key: 'siteSettings', icon: 'solar:monitor-linear', href: '/console/system-settings/site' },
+  about: { key: 'about', icon: 'solar:info-circle-linear', href: '/console/system-settings/about' },
   siteNavigation: { key: 'siteNavigation', icon: 'solar:menu-dots-linear', href: '/console/system-settings/navigation' },
   announcements: { key: 'announcements', icon: 'solar:notes-linear', href: '/console/system-settings/announcements' },
   authenticationSettings: { key: 'authenticationSettings', icon: 'solar:password-linear', href: '/console/system-settings/authentication' },

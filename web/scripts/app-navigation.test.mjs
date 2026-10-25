@@ -7,7 +7,7 @@ import { activeKeyByView, adminNavigationItems, adminNavigationSections, adminSy
 const expectedAdminItems = [
   'overview', 'models', 'playground', 'videoTasks', 'usage', 'apiKeys', 'wallet', 'subscriptions', 'invitations', 'accountVerification', 'profile',
   'subscriptionManagement', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings', 'modelSettings', 'modelProviders', 'groupSettings', 'channels', 'clientProfiles', 'credentials', 'credentialProxies', 'routes',
-  'users', 'accountVerificationReviews', 'invitationSettings', 'siteSettings', 'siteNavigation', 'authenticationSettings', 'announcements', 'emailSettings', 'networkSettings', 'accountVerificationSettings', 'keys', 'runtimeStatus', 'debugTraces',
+  'users', 'accountVerificationReviews', 'invitationSettings', 'siteSettings', 'about', 'siteNavigation', 'authenticationSettings', 'announcements', 'emailSettings', 'networkSettings', 'accountVerificationSettings', 'keys', 'runtimeStatus', 'debugTraces',
 ]
 
 test('管理员导航覆盖公共核心入口且没有重复项', () => {
