@@ -35,6 +35,7 @@ jobs:
     outputs:
       full: ${{ steps.paths.outputs.full }}
       frontend: ${{ steps.paths.outputs.frontend }}
+      frontend_about: ${{ steps.paths.outputs.frontend_about }}
       rust: ${{ steps.paths.outputs.rust }}
       database: ${{ steps.paths.outputs.database }}
       redis: ${{ steps.paths.outputs.redis }}
@@ -78,6 +79,7 @@ jobs:
           emit_all() {
             {
               echo "frontend=true"
+              echo "frontend_about=true"
               echo "rust=true"
               echo "database=true"
               echo "redis=true"
@@ -122,7 +124,8 @@ jobs:
           }
 
           {
-            echo "frontend=$(matches '^(web/|web-next/|tools/ci/check-frontend-parity.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend=$(matches '^(web/|web-next/|tools/ci/(check-frontend-parity|frontend-about-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend_about=$(matches '^((web|web-next)/src/features/(about/|site-settings/software-(update-(panel|api)|release-notes)\.tsx?$)|tools/ci/frontend-about-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "rust=$(matches '^(crates/|tools/xtask/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$|\.github/workflows/ci\.yml$)')"
             echo "database=$(matches '^(crates/af-db/|tools/ci/(run-db-migration-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
             echo "redis=$(matches '^(crates/af-cache/|tools/ci/(run-cache-redis-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
@@ -422,8 +425,8 @@ jobs:
       - name: Build frontend
         run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build
 
-      - name: Browser smoke test gallery and verification workflows
-        if: github.event_name == 'workflow_dispatch'
+      - name: Install browser runtime for frontend checks
+        if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend_about == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -436,9 +439,51 @@ jobs:
           else
             "$browser_tools/node_modules/.bin/playwright" install --with-deps chromium
           fi
+
+      - name: Browser smoke test about and software updates
+        if: ${{ needs.changes.outputs.frontend_about == 'true' }}
+        shell: bash
+        run: PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-about-smoke.mjs '${{ matrix.frontend }}'
+
+      - name: Browser smoke test gallery and verification workflows
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_tools="$RUNNER_TEMP/anyflows-playwright"
           PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-gallery-smoke.mjs '${{ matrix.frontend }}'
           PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-verification-smoke.mjs '${{ matrix.frontend }}'
           PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-dashboard-smoke.mjs '${{ matrix.frontend }}'
+
+      - name: Prepare Gitea screenshot uploader
+        if: ${{ always() && needs.changes.outputs.frontend_about == 'true' && github.server_url != 'https://github.com' }}
+        run: |
+          set -euo pipefail
+          action_path='.ci-actions/gitea-upload-artifact'
+          action_sha='62ac910c5d3dfa85c7cb2df15afe2e342b2407c2'
+          git init --quiet "$action_path"
+          git -C "$action_path" remote add origin https://gitea.com/actions/gitea-upload-artifact.git
+          git -C "$action_path" fetch --quiet --no-tags --depth=1 origin "$action_sha"
+          git -C "$action_path" checkout --quiet --detach FETCH_HEAD
+          test "$(git -C "$action_path" rev-parse HEAD)" = "$action_sha"
+
+      - name: Upload about screenshots on Gitea
+        if: ${{ always() && needs.changes.outputs.frontend_about == 'true' && github.server_url != 'https://github.com' }}
+        uses: ./.ci-actions/gitea-upload-artifact
+        with:
+          name: about-screenshots-${{ matrix.frontend }}
+          path: ${{ runner.temp }}/about-screenshots-${{ matrix.frontend }}/*.png
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload about screenshots on GitHub
+        if: ${{ always() && needs.changes.outputs.frontend_about == 'true' && github.server_url == 'https://github.com' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: about-screenshots-${{ matrix.frontend }}
+          path: ${{ runner.temp }}/about-screenshots-${{ matrix.frontend }}/*.png
+          retention-days: 7
+          if-no-files-found: ignore
 
   rust-quality:
     name: Rust quality gates
