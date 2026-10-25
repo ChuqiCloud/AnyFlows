@@ -10,12 +10,13 @@ use std::{
 };
 
 use af_adapter::{
-    Adaptor, AdaptorTarget, Bytes, ClientSimulationContext, ClientSimulationMiddleware, Credential,
-    HeaderMap, Method, Operation, RelayContext, ResponseMode, TransportDispatcher, UpstreamRequest,
-    UpstreamResponse, apply_client_simulation,
+    Adaptor, AdaptorError, AdaptorTarget, Bytes, ClientSimulationContext,
+    ClientSimulationMiddleware, Credential, HeaderMap, HeaderName, HeaderValue, Method, Operation,
+    RelayContext, ResponseMode, TransportDispatcher, UpstreamRequest, UpstreamResponse,
+    apply_client_simulation,
 };
 use af_domain::{
-    ChannelId, ClientSimulationProfile, ClientSimulationResult, MAX_MODEL_NAME_BYTES,
+    ChannelId, ClientSimulationProfile, ClientSimulationResult, MAX_MODEL_NAME_BYTES, Protocol,
     UpstreamError, UpstreamServerStatus,
 };
 use af_protocol::{StructuredErrorEvidence, extract_structured_error_evidence};
@@ -471,6 +472,7 @@ pub struct RelayRequest {
     body: Option<Bytes>,
     response_mode: ResponseMode,
     response_body_limit: usize,
+    anthropic_beta: Option<String>,
 }
 
 impl RelayRequest {
@@ -492,6 +494,7 @@ impl RelayRequest {
             body,
             response_mode: ResponseMode::default(),
             response_body_limit: af_adapter::MAX_UPSTREAM_RESPONSE_BODY_BYTES,
+            anthropic_beta: None,
         })
     }
 
@@ -508,6 +511,42 @@ impl RelayRequest {
         self.response_body_limit = max_bytes;
         self
     }
+
+    /// 附加唯一允许跨协议入口传递的客户端 Anthropic beta 列表。
+    pub fn with_anthropic_beta(mut self, value: Option<&str>) -> Result<Self, RelayError> {
+        self.anthropic_beta = value
+            .map(af_protocol::normalize_anthropic_beta)
+            .transpose()
+            .map_err(|_| RelayError::Request(AdaptorError::InvalidHeader))?
+            .filter(|value| !value.is_empty());
+        Ok(self)
+    }
+
+    fn apply_anthropic_beta(
+        &self,
+        protocol: Protocol,
+        headers: &mut HeaderMap,
+    ) -> Result<(), AdaptorError> {
+        if protocol != Protocol::Anthropic {
+            return Ok(());
+        }
+        let Some(client_beta) = self.anthropic_beta.as_deref() else {
+            return Ok(());
+        };
+        let mut values = headers
+            .get_all("anthropic-beta")
+            .iter()
+            .map(|value| value.to_str())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| AdaptorError::InvalidHeader)?;
+        values.push(client_beta);
+        let beta = af_protocol::normalize_anthropic_beta_values(values)
+            .map_err(|_| AdaptorError::InvalidHeader)?;
+        let value =
+            HeaderValue::from_bytes(beta.as_bytes()).map_err(|_| AdaptorError::InvalidHeader)?;
+        headers.insert(HeaderName::from_static("anthropic-beta"), value);
+        Ok(())
+    }
 }
 
 impl fmt::Debug for RelayRequest {
@@ -518,6 +557,7 @@ impl fmt::Debug for RelayRequest {
             .field("method", &self.method)
             .field("response_mode", &self.response_mode)
             .field("response_body_limit", &self.response_body_limit)
+            .field("has_anthropic_beta", &self.anthropic_beta.is_some())
             .field("body_bytes", &self.body.as_ref().map(Bytes::len))
             .field("model", &"<已脱敏>")
             .finish()
@@ -1046,6 +1086,13 @@ impl RelayStateMachine {
                 continue;
             }
             headers.extend(candidate.header_overrides.clone());
+            if let Err(error) =
+                request.apply_anthropic_beta(candidate.adaptor.default_protocol(), &mut headers)
+            {
+                last_error = Some(RelayError::Request(error));
+                index = self.next_channel_index(index);
+                continue;
+            }
 
             let target = match candidate.adaptor.build_url(
                 &candidate.context,
@@ -1536,7 +1583,138 @@ pub(crate) const fn is_credential_scoped(error: UpstreamError) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
+
+    struct CaptureHeadersAdaptor {
+        protocol: Protocol,
+        captured: Arc<Mutex<Vec<HeaderMap>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl Adaptor for CaptureHeadersAdaptor {
+        fn channel_type(&self) -> af_domain::ChannelType {
+            af_domain::ChannelType::Custom
+        }
+
+        fn default_protocol(&self) -> Protocol {
+            self.protocol
+        }
+
+        fn default_base_url(&self) -> &str {
+            "https://upstream.example"
+        }
+
+        fn supported_models(&self) -> Vec<String> {
+            Vec::new()
+        }
+
+        fn build_url(
+            &self,
+            _context: &RelayContext,
+            _target: AdaptorTarget<'_>,
+        ) -> af_adapter::AdaptorResult<String> {
+            Ok("https://upstream.example/v1/messages".to_owned())
+        }
+
+        fn setup_headers(
+            &self,
+            headers: &mut HeaderMap,
+            _credential: &Credential,
+            _context: &RelayContext,
+        ) -> af_adapter::AdaptorResult<()> {
+            headers.insert("x-api-key", HeaderValue::from_static("upstream-api-key"));
+            Ok(())
+        }
+
+        async fn finalize_request(
+            &self,
+            request: UpstreamRequest,
+            _credential: &Credential,
+            _context: &RelayContext,
+        ) -> af_adapter::AdaptorResult<UpstreamRequest> {
+            self.captured
+                .lock()
+                .unwrap()
+                .push(request.headers().clone());
+            // Capture the fully prepared request without starting a transport.
+            Err(AdaptorError::InvalidTaskRequest)
+        }
+    }
+
+    #[tokio::test]
+    async fn client_beta_survives_serial_and_racing_candidates_only_for_anthropic_targets() {
+        for protocol in [Protocol::Anthropic, Protocol::OpenAiChat] {
+            for race_width in [1, 2] {
+                let captured = Arc::new(Mutex::new(Vec::new()));
+                let client = af_adapter::HttpClientPool::default()
+                    .get(&af_adapter::HttpClientConfig::default())
+                    .unwrap();
+                let mut overrides = HeaderMap::new();
+                overrides.append(
+                    "anthropic-beta",
+                    HeaderValue::from_static("channel-beta,shared-beta"),
+                );
+                overrides.append(
+                    "anthropic-beta",
+                    HeaderValue::from_static("channel-other-beta"),
+                );
+                let candidates = (0..2)
+                    .map(|_| {
+                        RelayCandidate::new(
+                            Arc::new(CaptureHeadersAdaptor {
+                                protocol,
+                                captured: captured.clone(),
+                            }),
+                            RelayContext::new(client.clone()),
+                            Credential::api_key("upstream-api-key").unwrap(),
+                        )
+                        .with_channel_group(ChannelId::new(1).unwrap())
+                        .with_header_overrides(overrides.clone())
+                    })
+                    .collect();
+                let machine = RelayStateMachine::new(candidates)
+                    .unwrap()
+                    .with_execution_policy(RelayExecutionPolicy::new(
+                        race_width,
+                        0,
+                        Duration::ZERO,
+                    ));
+                let request = RelayRequest::new(
+                    "claude-test",
+                    Operation::Chat,
+                    Method::POST,
+                    Some(Bytes::from_static(b"{}")),
+                )
+                .unwrap()
+                .with_anthropic_beta(Some("client-beta,shared-beta"))
+                .unwrap();
+                assert!(!format!("{request:?}").contains("client-beta"));
+                assert!(machine.execute(request).await.is_err());
+                let captured = captured.lock().unwrap();
+                assert_eq!(captured.len(), if race_width == 1 { 1 } else { 2 });
+                for headers in captured.iter() {
+                    assert_eq!(headers["x-api-key"], "upstream-api-key");
+                    if protocol == Protocol::Anthropic {
+                        assert_eq!(
+                            headers["anthropic-beta"],
+                            "channel-beta,shared-beta,channel-other-beta,client-beta"
+                        );
+                        assert_eq!(headers.get_all("anthropic-beta").iter().count(), 1);
+                    } else {
+                        assert_eq!(headers.get_all("anthropic-beta").iter().count(), 2);
+                        assert!(!headers.get_all("anthropic-beta").iter().any(|value| {
+                            value
+                                .as_bytes()
+                                .windows(b"client-beta".len())
+                                .any(|part| part == b"client-beta")
+                        }));
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn opencode_failure_never_falls_through_to_another_channel() {

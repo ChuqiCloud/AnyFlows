@@ -869,6 +869,92 @@ fn accepts_optional_done_only_after_terminal_event() {
 }
 
 #[test]
+fn ignores_only_comments_after_terminal_without_consuming_optional_done() {
+    let terminal = join([
+        frame(
+            "response.created",
+            0,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.in_progress",
+            1,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.completed",
+            2,
+            json!({"response": response("completed", Vec::new(), None, None, None)}),
+        ),
+    ]);
+    let mut reference = OpenAiResponsesStreamDecoder::new();
+    let expected = reference.push(&terminal).unwrap();
+    reference.finish().unwrap();
+    assert_eq!(expected.last(), Some(&CanonicalStreamEvent::StreamEnd));
+
+    for include_done in [false, true] {
+        let mut tail = b": keep-alive\r\n\r\n: still-alive\n\n".to_vec();
+        if include_done {
+            tail.extend_from_slice(b"data: [DONE]\n\n: final-heartbeat\n\n");
+        }
+        let bytes = join([terminal.clone(), tail]);
+        for size in [bytes.len(), 1, 7] {
+            let mut decoder = OpenAiResponsesStreamDecoder::new();
+            let mut events = Vec::new();
+            for chunk in bytes.chunks(size) {
+                events.extend(decoder.push(chunk).unwrap());
+            }
+            decoder.finish().unwrap();
+            assert_eq!(events, expected);
+        }
+    }
+}
+
+#[test]
+fn rejects_data_and_repeated_done_after_terminal_comments() {
+    let terminal_response = response("completed", Vec::new(), None, None, None);
+    let terminal = join([
+        frame(
+            "response.created",
+            0,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.in_progress",
+            1,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.completed",
+            2,
+            json!({"response": terminal_response.clone()}),
+        ),
+    ]);
+    let extra = frame(
+        "response.completed",
+        3,
+        json!({"response": terminal_response}),
+    );
+    let tails = [
+        extra.clone(),
+        join([b": same-frame-comment\n".to_vec(), extra.clone()]),
+        join([b": keep-alive\n\n".to_vec(), extra]),
+        b": empty-data-is-not-a-comment\ndata:\n\n".to_vec(),
+        b"data: [DONE]\n\n: keep-alive\n\ndata: [DONE]\n\n".to_vec(),
+    ];
+    for tail in tails {
+        let bytes = join([terminal.clone(), tail]);
+        for size in [bytes.len(), 1, 7] {
+            let mut decoder = OpenAiResponsesStreamDecoder::new();
+            let error = bytes
+                .chunks(size)
+                .find_map(|chunk| decoder.push(chunk).err());
+            assert_eq!(error, Some(ParseStreamError::DataAfterDone));
+        }
+    }
+}
+
+#[test]
 fn ignores_rate_limit_metadata_and_missing_sequence_numbers() {
     let mut lifecycle = initial_response();
     lifecycle["frequency_penalty"] = json!(0);

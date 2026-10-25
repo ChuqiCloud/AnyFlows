@@ -534,6 +534,117 @@ fn another_hidden_tool_in_the_second_round_fails_and_keeps_first_round_usage() {
 }
 
 #[test]
+fn anthropic_usage_metadata_does_not_interrupt_the_two_tool_rounds() {
+    let mut session = session();
+    for event in [start(), call(0, "hidden-id", "read"), args(0, "{}"), end(0)] {
+        assert!(forward(&mut session, event).is_empty());
+    }
+    assert!(
+        forward(
+            &mut session,
+            Event::AnthropicUsageMetadata {
+                raw: json!({"service_tier":"priority"}),
+            },
+        )
+        .is_empty()
+    );
+    forward(&mut session, finish(FinishReason::ToolCalls));
+    forward(&mut session, Event::Usage(usage(20)));
+    assert!(matches!(
+        session.push(Event::StreamEnd).unwrap(),
+        ToolCompatibilityStep::Continue { .. }
+    ));
+    forward(&mut session, start());
+    forward(&mut session, text("answer"));
+    forward(
+        &mut session,
+        Event::AnthropicUsageMetadata {
+            raw: json!({"service_tier":"standard", "iterations":[{"type":"compaction", "input_tokens":10,"output_tokens":2}]}),
+        },
+    );
+    forward(&mut session, finish(FinishReason::Stop));
+    forward(&mut session, Event::Usage(usage(10)));
+    let ToolCompatibilityStep::Complete {
+        events,
+        usage: Some(total),
+    } = session.push(Event::StreamEnd).unwrap()
+    else {
+        panic!("expected completion")
+    };
+    assert_eq!(total.output_tokens().get(), 30);
+    assert!(
+        matches!(events.as_slice(), [Event::AnthropicUsageMetadata { raw }, Event::Finish { reason: FinishReason::Stop, .. }, Event::Usage(_), Event::StreamEnd] if raw == &json!({"service_tier":"standard"}))
+    );
+}
+
+#[test]
+fn native_anthropic_compaction_cannot_be_rewritten_or_lost_in_a_hidden_tool_round() {
+    for controls in [
+        json!({"compaction":{"type":"summarize"}}),
+        json!({"context_management":{"edits":[{"type":"compact_20260112"}]}}),
+    ] {
+        let mut body = json!({"model":"claude-test","max_tokens":128,"messages":[{"role":"user","content":"question"}]});
+        body.as_object_mut()
+            .unwrap()
+            .extend(controls.as_object().unwrap().clone());
+        let request = crate::anthropic::parse_request_envelope(Bytes::from(
+            serde_json::to_vec(&body).unwrap(),
+        ))
+        .unwrap();
+        assert_eq!(
+            ToolCompatibilitySession::prepare(request, vec![tool("read")]).unwrap_err(),
+            ToolCompatibilityError::UnsupportedRequest
+        );
+    }
+    let item = crate::AnthropicCompactionItem::from_value(json!({
+        "type":"compaction", "content":"summary", "signature":"signed-state",
+        "encrypted_content":"opaque-state", "tool_changes":[{"type":"tool_removal","name":"read"}]
+    }))
+    .unwrap();
+    let mut canonical = request().into_canonical();
+    canonical.messages.insert(
+        0,
+        Message::new(
+            Role::Assistant,
+            vec![ContentBlock::AnthropicCompaction(item.clone())],
+        ),
+    );
+    assert_eq!(
+        ToolCompatibilitySession::prepare(canonical.into(), vec![tool("read")]).unwrap_err(),
+        ToolCompatibilityError::UnsupportedRequest
+    );
+    for event in [
+        Event::AnthropicCompactionStart {
+            choice_index: 0,
+            content_index: 0,
+            item: item.clone(),
+        },
+        Event::AnthropicCompactionDelta {
+            choice_index: 0,
+            content_index: 0,
+            text: "summary".to_owned(),
+        },
+        Event::AnthropicCompactionEnd {
+            choice_index: 0,
+            content_index: 0,
+            item,
+        },
+    ] {
+        let mut session = session();
+        forward(&mut session, start());
+        forward(&mut session, call(0, "hidden", "read"));
+        assert_eq!(
+            session.push(event).unwrap_err(),
+            ToolCompatibilityError::InvalidOutput
+        );
+        assert_eq!(
+            session.push(Event::StreamEnd).unwrap_err(),
+            ToolCompatibilityError::Closed
+        );
+    }
+}
+
+#[test]
 fn incomplete_rounds_invalid_arguments_and_unknown_tools_do_not_continue() {
     for events in [
         vec![start(), call(0, "id", "read"), Event::StreamEnd],

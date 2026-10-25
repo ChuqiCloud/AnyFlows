@@ -2,7 +2,7 @@ use std::{fmt, time::Duration};
 
 use af_adapter::{Method, Operation, ResponseMode, StatusCode};
 use af_domain::{AfError, UpstreamError};
-use af_protocol::{CanonicalRequestEnvelope, CanonicalResponse, Usage, anthropic};
+use af_protocol::{CanonicalRequestEnvelope, CanonicalResponse, anthropic};
 
 use crate::anthropic_request::{PreparedAnthropicRequest, prepare_anthropic_request};
 use crate::attempt_gate::permit_completion_hook;
@@ -31,11 +31,13 @@ pub async fn relay_anthropic_with_report(
     request: impl Into<CanonicalRequestEnvelope>,
     request_id: &str,
 ) -> RelayAnthropicOutcome {
+    let request = request.into();
+    let anthropic_beta = request.anthropic_beta().map(str::to_owned);
     let PreparedAnthropicRequest {
         canonical,
         body: outbound_body,
         client_model,
-    } = match prepare_anthropic_request(request.into()) {
+    } = match prepare_anthropic_request(request) {
         Ok(prepared) => prepared,
         Err(error) => return RelayAnthropicOutcome::failed(error),
     };
@@ -50,6 +52,7 @@ pub async fn relay_anthropic_with_report(
         Method::POST,
         Some(outbound_body),
     )
+    .and_then(|request| request.with_anthropic_beta(anthropic_beta.as_deref()))
     .map(|request| request.with_response_mode(response_mode))
     {
         Ok(request) => request,
@@ -112,16 +115,12 @@ pub async fn relay_anthropic_with_report(
             return RelayAnthropicOutcome::new(Err(UpstreamError::ProtocolError.into()), report);
         }
     };
-    let Some(usage) = upstream_response.usage else {
+    let Ok(Some(usage)) = anthropic::billing_usage(&upstream_response) else {
         report.reject_success(UpstreamError::ProtocolError);
         return RelayAnthropicOutcome::new(Err(UpstreamError::ProtocolError.into()), report);
     };
-    let body = match build_public_full_response(
-        upstream_response,
-        usage,
-        public_response_id,
-        client_model,
-    ) {
+    let body = match build_public_full_response(upstream_response, public_response_id, client_model)
+    {
         Ok(body) => body,
         Err(()) => {
             report.reject_success(UpstreamError::ProtocolError);
@@ -185,21 +184,14 @@ fn map_relay_error(error: RelayError) -> AfError {
 }
 
 fn build_public_full_response(
-    upstream_response: CanonicalResponse,
-    usage: Usage,
+    mut upstream_response: CanonicalResponse,
     public_response_id: String,
     client_model: String,
 ) -> Result<af_adapter::Bytes, ()> {
-    // 对外响应只保留 Canonical 语义，清除上游 ID、模型和同源 raw。
-    let public_response = CanonicalResponse::new(
-        Operation::Chat,
-        public_response_id,
-        client_model,
-        upstream_response.created_at,
-        upstream_response.choices,
-        Some(usage),
-    );
-    let value = anthropic::build_response(&public_response).map_err(|_| ())?;
+    // 只重写公开身份；压缩块、签名及原始 iterations 属于客户端回放契约。
+    upstream_response.id = public_response_id;
+    upstream_response.model = client_model;
+    let value = anthropic::build_response(&upstream_response).map_err(|_| ())?;
     serde_json::to_vec(&value)
         .map(af_adapter::Bytes::from)
         .map_err(|_| ())
@@ -212,7 +204,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn full_response_rebuilds_public_identity_without_upstream_raw() {
+    fn full_response_rewrites_public_identity_and_preserves_native_state() {
         let upstream = json!({
             "id": "msg_private_upstream",
             "type": "message",
@@ -229,10 +221,8 @@ mod tests {
             }
         });
         let upstream = anthropic::parse_response(&serde_json::to_vec(&upstream).unwrap()).unwrap();
-        let usage = upstream.usage.unwrap();
         let body = build_public_full_response(
             upstream,
-            usage,
             "msg_public".to_owned(),
             "public-model".to_owned(),
         )

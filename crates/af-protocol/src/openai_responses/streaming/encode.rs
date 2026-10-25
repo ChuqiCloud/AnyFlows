@@ -117,6 +117,12 @@ impl OpenAiResponsesStreamEncoder {
             CanonicalStreamEvent::ToolCallSignature { .. } => {
                 Err(EncodeStreamError::UnsupportedEvent)
             }
+            CanonicalStreamEvent::AnthropicCompactionStart { .. }
+            | CanonicalStreamEvent::AnthropicCompactionDelta { .. }
+            | CanonicalStreamEvent::AnthropicCompactionEnd { .. }
+            | CanonicalStreamEvent::AnthropicUsageMetadata { .. } => {
+                Err(EncodeStreamError::UnsupportedEvent)
+            }
             CanonicalStreamEvent::ToolCallArgsDelta {
                 choice_index,
                 tool_index,

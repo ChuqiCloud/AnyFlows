@@ -14,6 +14,31 @@ pub(crate) enum ConversationDecoder {
 }
 
 impl ConversationDecoder {
+    /// Responses 的终态快照已由原生解码器与完整 Item 生命周期交叉校验。
+    pub(crate) fn take_terminal_response(&mut self) -> Option<af_protocol::CanonicalResponse> {
+        match self {
+            Self::Responses(decoder) => decoder.take_terminal_response(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn billing_usage(&self) -> Option<af_protocol::Usage> {
+        match self {
+            Self::Anthropic(decoder) => decoder.billing_usage(),
+            _ => None,
+        }
+    }
+
+    /// Anthropic 顶层 usage 不包括压缩迭代；用协议解码器算出的计费用量替代它。
+    pub(crate) fn with_billing_usage(&self, event: CanonicalStreamEvent) -> CanonicalStreamEvent {
+        match event {
+            CanonicalStreamEvent::Usage(usage) => {
+                CanonicalStreamEvent::Usage(self.billing_usage().unwrap_or(usage))
+            }
+            event => event,
+        }
+    }
+
     pub(crate) fn new(protocol: Protocol) -> Result<Self, UpstreamError> {
         match protocol {
             Protocol::OpenAiChat => Ok(Self::Chat(OpenAiChatStreamDecoder::new())),

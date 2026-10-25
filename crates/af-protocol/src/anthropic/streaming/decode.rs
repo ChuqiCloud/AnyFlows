@@ -1,7 +1,7 @@
 use std::{collections::HashSet, fmt};
 
 use af_domain::{Role, UpstreamError, UpstreamServerStatus};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use super::{
     ParseStreamError,
@@ -42,6 +42,8 @@ pub struct AnthropicMessagesStreamDecoder {
     parser: SseParser,
     initial_usage: Option<Usage>,
     initial_service_tier: Option<&'static str>,
+    billing_usage: Option<Usage>,
+    usage_metadata: Option<Value>,
     active_block: Option<ActiveBlock>,
     seen_tool_ids: HashSet<String>,
     totals: DecodeTotals,
@@ -66,6 +68,8 @@ impl AnthropicMessagesStreamDecoder {
             parser: SseParser::with_max_event_bytes(max_event_bytes)?,
             initial_usage: None,
             initial_service_tier: None,
+            billing_usage: None,
+            usage_metadata: None,
             active_block: None,
             seen_tool_ids: HashSet::new(),
             totals: DecodeTotals::default(),
@@ -108,6 +112,12 @@ impl AnthropicMessagesStreamDecoder {
         self.initial_usage
     }
 
+    /// 返回包含未计入顶层快照的压缩迭代的计费用量。
+    #[must_use]
+    pub const fn billing_usage(&self) -> Option<Usage> {
+        self.billing_usage
+    }
+
     fn push_inner(&mut self, chunk: &[u8]) -> Result<Vec<CanonicalStreamEvent>, ParseStreamError> {
         let frames = self.parser.push(chunk)?;
         let mut output = Vec::new();
@@ -130,12 +140,16 @@ impl AnthropicMessagesStreamDecoder {
         frame: SseEvent,
         output: &mut Vec<CanonicalStreamEvent>,
     ) -> Result<(), ParseStreamError> {
+        if frame.is_comment() {
+            // SSE 传输心跳可晚于逻辑终点；仍由 parser 验证 framing、UTF-8 和预算。
+            // 终态后忽略纯注释，避免在 Canonical 终止事件后追加 Ping。
+            if !self.done {
+                output.push(CanonicalStreamEvent::Ping);
+            }
+            return Ok(());
+        }
         if self.done {
             return Err(ParseStreamError::DataAfterDone);
-        }
-        if frame.is_comment() {
-            output.push(CanonicalStreamEvent::Ping);
-            return Ok(());
         }
 
         let value =
@@ -219,9 +233,9 @@ impl AnthropicMessagesStreamDecoder {
         validate_response_id(&id).map_err(map_response_error)?;
         validate_model(&model).map_err(map_request_error)?;
         let service_tier = usage.service_tier.as_ref().map(|tier| tier.as_str());
-        // service_tier 等字段已由 UsageWire 严格验证，但当前流式 Canonical 事件没有
-        // 对应的元数据载体；丢弃这些 raw 元数据，避免合法上游响应被误判为协议错误。
-        let (usage, _) = convert_usage(usage).map_err(map_response_error)?;
+        // 元数据绑定 Anthropic，仅在同协议编码时回放。
+        let (usage, raw) = convert_usage(usage).map_err(map_response_error)?;
+        self.usage_metadata = (!raw.is_empty()).then_some(Value::Object(raw));
 
         self.initial_usage = Some(usage);
         self.initial_service_tier = service_tier;
@@ -250,6 +264,20 @@ impl AnthropicMessagesStreamDecoder {
         self.totals.add_block()?;
 
         let kind = match content_block {
+            ContentBlockStartWire::Compaction(value) => {
+                let item =
+                    super::super::compaction::parse_item(value).map_err(map_request_error)?;
+                let mut text_bytes = 0;
+                if let Some(text) = item.content() {
+                    self.totals.add_text(text, &mut text_bytes)?;
+                }
+                output.push(CanonicalStreamEvent::AnthropicCompactionStart {
+                    choice_index: 0,
+                    content_index: index,
+                    item: item.clone(),
+                });
+                ActiveBlockKind::Compaction { item, text_bytes }
+            }
             ContentBlockStartWire::Text { text, citations } => {
                 if citations.is_some_and(|citations| !citations.is_empty()) {
                     return Err(ParseStreamError::UnsupportedFeature);
@@ -358,6 +386,69 @@ impl AnthropicMessagesStreamDecoder {
             .ok_or(ParseStreamError::InvalidSequence)?;
         match (&mut active.kind, delta) {
             (
+                ActiveBlockKind::Compaction { item, .. },
+                ContentBlockDeltaWire::Signature { signature },
+            ) => {
+                let mut value = item.as_value().clone();
+                let previous = value.get("signature").and_then(Value::as_str).unwrap_or("");
+                value["signature"] = Value::String(format!("{previous}{signature}"));
+                if serde_json::to_vec(&value)
+                    .map_err(|_| ParseStreamError::InvalidValue)?
+                    .len()
+                    > super::super::MAX_BODY_BYTES
+                {
+                    return Err(ParseStreamError::StructureLimitExceeded);
+                }
+                *item = crate::AnthropicCompactionItem::from_value(value)
+                    .map_err(|_| ParseStreamError::InvalidValue)?;
+            }
+            (
+                ActiveBlockKind::Compaction { item, text_bytes },
+                ContentBlockDeltaWire::Compaction(value),
+            ) => {
+                let object = value.as_object().ok_or(ParseStreamError::InvalidValue)?;
+                let mut updated = item.as_value().clone();
+                for (key, value) in object {
+                    if key == "type" {
+                        continue;
+                    }
+                    if key == "content" {
+                        if let Some(fragment) = value.as_str() {
+                            self.totals.add_text(fragment, text_bytes)?;
+                            let content = format!("{}{}", item.content().unwrap_or(""), fragment);
+                            updated["content"] = Value::String(content);
+                            output.push(CanonicalStreamEvent::AnthropicCompactionDelta {
+                                choice_index: 0,
+                                content_index: index,
+                                text: fragment.to_owned(),
+                            });
+                        } else if value.is_null() {
+                            updated["content"] = Value::Null;
+                        } else {
+                            return Err(ParseStreamError::InvalidValue);
+                        }
+                    } else if key == "encrypted_content" {
+                        if let Some(fragment) = value.as_str() {
+                            let previous = updated.get(key).and_then(Value::as_str).unwrap_or("");
+                            updated[key] = Value::String(format!("{previous}{fragment}"));
+                        } else if value.is_null() {
+                            updated["encrypted_content"] = Value::Null;
+                        } else {
+                            return Err(ParseStreamError::InvalidValue);
+                        }
+                    } else {
+                        updated[key] = value.clone();
+                    }
+                }
+                let bytes =
+                    serde_json::to_vec(&updated).map_err(|_| ParseStreamError::InvalidValue)?;
+                if bytes.len() > super::super::MAX_BODY_BYTES {
+                    return Err(ParseStreamError::StructureLimitExceeded);
+                }
+                *item = crate::AnthropicCompactionItem::from_value(updated)
+                    .map_err(|_| ParseStreamError::InvalidValue)?;
+            }
+            (
                 ActiveBlockKind::Text {
                     text_bytes,
                     emitted,
@@ -438,6 +529,13 @@ impl AnthropicMessagesStreamDecoder {
             .filter(|block| block.index == index)
             .ok_or(ParseStreamError::InvalidSequence)?;
         match active.kind {
+            ActiveBlockKind::Compaction { item, .. } => {
+                output.push(CanonicalStreamEvent::AnthropicCompactionEnd {
+                    choice_index: 0,
+                    content_index: index,
+                    item,
+                })
+            }
             ActiveBlockKind::Text { emitted, .. } => {
                 if !emitted {
                     output.push(CanonicalStreamEvent::ContentDelta {
@@ -503,11 +601,36 @@ impl AnthropicMessagesStreamDecoder {
         if (reason == FinishReason::ToolCalls) != self.has_tool_use {
             return Err(ParseStreamError::InvalidSequence);
         }
-        let final_usage = merge_usage(
+        let (final_usage, final_metadata) = merge_usage(
             self.initial_usage
                 .ok_or(ParseStreamError::InvalidSequence)?,
             usage,
         )?;
+
+        if !final_metadata.is_empty() {
+            let metadata = self
+                .usage_metadata
+                .get_or_insert_with(|| Value::Object(Map::new()))
+                .as_object_mut()
+                .ok_or(ParseStreamError::InvalidSequence)?;
+            metadata.extend(final_metadata);
+        }
+        self.billing_usage = Some(
+            match self
+                .usage_metadata
+                .as_ref()
+                .and_then(|value| value.get("iterations"))
+            {
+                Some(iterations) => {
+                    super::super::parse_response::add_compaction_usage(final_usage, iterations)
+                        .map_err(map_response_error)?
+                }
+                None => final_usage,
+            },
+        );
+        if let Some(raw) = &self.usage_metadata {
+            output.push(CanonicalStreamEvent::AnthropicUsageMetadata { raw: raw.clone() });
+        }
 
         self.message_delta_seen = true;
         output.push(CanonicalStreamEvent::Finish {
@@ -566,6 +689,10 @@ struct ActiveBlock {
 }
 
 enum ActiveBlockKind {
+    Compaction {
+        item: crate::AnthropicCompactionItem,
+        text_bytes: usize,
+    },
     Text {
         text_bytes: usize,
         emitted: bool,
@@ -657,6 +784,7 @@ fn convert_stop(
 
     match (reason, stop_sequence) {
         (StopReasonWire::EndTurn, None) => Ok((FinishReason::Stop, None)),
+        (StopReasonWire::Compaction, None) => Ok((FinishReason::Compaction, None)),
         (StopReasonWire::StopSequence, Some(sequence))
             if !sequence.is_empty() && sequence.len() <= MAX_STOP_BYTES =>
         {
@@ -672,7 +800,10 @@ fn convert_stop(
     }
 }
 
-fn merge_usage(initial: Usage, delta: MessageDeltaUsageWire) -> Result<Usage, ParseStreamError> {
+fn merge_usage(
+    initial: Usage,
+    delta: MessageDeltaUsageWire,
+) -> Result<(Usage, Map<String, Value>), ParseStreamError> {
     let details = initial.details();
     let cache_creation = details
         .cache_creation_5m()
@@ -715,6 +846,7 @@ fn merge_usage(initial: Usage, delta: MessageDeltaUsageWire) -> Result<Usage, Pa
         )
     });
     let wire = super::super::response_wire::UsageWire {
+        iterations: delta.iterations,
         input_tokens: delta.input_tokens.unwrap_or(initial.input_tokens().get()),
         cache_creation_input_tokens: Some(creation_total),
         cache_read_input_tokens: Some(
@@ -727,13 +859,11 @@ fn merge_usage(initial: Usage, delta: MessageDeltaUsageWire) -> Result<Usage, Pa
         output_tokens_details: Some(super::super::response_wire::OutputTokensDetailsWire {
             thinking_tokens: reasoning.get(),
         }),
-        inference_geo: None,
+        inference_geo: delta.inference_geo,
         server_tool_use: delta.server_tool_use,
         service_tier: delta.service_tier,
     };
-    convert_usage(wire)
-        .map(|(usage, _)| usage)
-        .map_err(map_response_error)
+    convert_usage(wire).map_err(map_response_error)
 }
 
 fn token_count(value: i64) -> Result<TokenCount, ParseStreamError> {
@@ -784,10 +914,11 @@ fn uses_known_unsupported_feature(value: &Value) -> bool {
                             | "tool_search_tool_result"
                             | "container_upload"
                     )
-                ) || block.get("caller").is_some_and(|caller| {
-                    !caller.is_null()
-                        && caller.get("type").and_then(Value::as_str) != Some("direct")
-                })
+                ) || block.get("type").and_then(Value::as_str) == Some("tool_use")
+                    && block.get("caller").is_some_and(|caller| {
+                        !caller.is_null()
+                            && caller.get("type").and_then(Value::as_str) != Some("direct")
+                    })
             }),
         Some("content_block_delta") => {
             event

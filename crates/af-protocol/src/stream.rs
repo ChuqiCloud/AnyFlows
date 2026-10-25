@@ -61,6 +61,8 @@ pub enum FinishReason {
     ToolCalls,
     /// 输出被内容安全策略拦截。
     ContentFilter,
+    /// Anthropic 按需或暂停压缩已结束，等待客户端回放压缩块。
+    Compaction,
 }
 
 impl FinishReason {
@@ -70,6 +72,7 @@ impl FinishReason {
         Self::Length,
         Self::ToolCalls,
         Self::ContentFilter,
+        Self::Compaction,
     ];
 }
 
@@ -165,6 +168,38 @@ pub enum CanonicalStreamEvent {
         output_index: u32,
         /// 不透明压缩 Item。
         item: ResponsesCompactionItem,
+    },
+    /// Anthropic 原生压缩块开始。
+    AnthropicCompactionStart {
+        /// 候选索引。
+        choice_index: u32,
+        /// 内容块索引。
+        content_index: u32,
+        /// 原生块，含签名及扩展字段。
+        item: crate::AnthropicCompactionItem,
+    },
+    /// Anthropic 原生压缩摘要的文本增量。
+    AnthropicCompactionDelta {
+        /// 候选索引。
+        choice_index: u32,
+        /// 内容块索引。
+        content_index: u32,
+        /// 摘要增量。
+        text: String,
+    },
+    /// Anthropic 原生压缩块完成。
+    AnthropicCompactionEnd {
+        /// 候选索引。
+        choice_index: u32,
+        /// 内容块索引。
+        content_index: u32,
+        /// 完整原生压缩块。
+        item: crate::AnthropicCompactionItem,
+    },
+    /// 已由 Anthropic 协议边界验证的原生用量元数据。
+    AnthropicUsageMetadata {
+        /// 绑定 Anthropic 的元数据对象（如 iterations）。
+        raw: Value,
     },
     /// 候选结果结束。
     Finish {
@@ -280,6 +315,29 @@ impl fmt::Debug for CanonicalStreamEvent {
                 .field("choice_index", choice_index)
                 .field("output_index", output_index)
                 .finish(),
+            Self::AnthropicCompactionStart {
+                choice_index,
+                content_index,
+                ..
+            }
+            | Self::AnthropicCompactionDelta {
+                choice_index,
+                content_index,
+                ..
+            }
+            | Self::AnthropicCompactionEnd {
+                choice_index,
+                content_index,
+                ..
+            } => formatter
+                .debug_struct("AnthropicCompaction")
+                .field("choice_index", choice_index)
+                .field("content_index", content_index)
+                .field("content", &Redacted)
+                .finish(),
+            Self::AnthropicUsageMetadata { .. } => {
+                formatter.write_str("AnthropicUsageMetadata(<已脱敏>)")
+            }
             Self::Finish {
                 choice_index,
                 reason,

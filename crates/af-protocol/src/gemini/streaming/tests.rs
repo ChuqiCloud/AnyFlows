@@ -218,6 +218,88 @@ fn decoder_accepts_compatible_done_marker() {
 }
 
 #[test]
+fn decoder_ignores_only_comments_after_compatible_done() {
+    let completed = sse(&response(
+        json!([{
+            "index": 0,
+            "content": {"role": "model", "parts": [{"text": "done"}]},
+            "finishReason": "STOP"
+        }]),
+        Some(json!({
+            "promptTokenCount": 2,
+            "candidatesTokenCount": 1,
+            "totalTokenCount": 3
+        })),
+    ));
+    let terminal = [completed.clone(), b"data: [DONE]\n\n".to_vec()].concat();
+    let mut reference = GeminiGenerateContentStreamDecoder::new();
+    let expected = reference.push(&terminal).unwrap();
+    assert!(reference.finish().unwrap().is_empty());
+    assert_eq!(expected.last(), Some(&CanonicalStreamEvent::StreamEnd));
+
+    let bytes = [terminal, b": keep-alive\r\n\r\n: still-alive\n\n".to_vec()].concat();
+    for size in [bytes.len(), 1, 7] {
+        let mut decoder = GeminiGenerateContentStreamDecoder::new();
+        let mut events = Vec::new();
+        for chunk in bytes.chunks(size) {
+            events.extend(decoder.push(chunk).unwrap());
+        }
+        assert!(decoder.finish().unwrap().is_empty());
+        assert_eq!(events, expected);
+    }
+
+    // 官方 EOF 终点前的注释仍是 Ping，不能因候选已完成就提前进入 done。
+    let mut decoder = GeminiGenerateContentStreamDecoder::new();
+    decoder.push(&completed).unwrap();
+    assert_eq!(
+        decoder.push(b": before-eof\n\n").unwrap(),
+        vec![CanonicalStreamEvent::Ping]
+    );
+    assert_eq!(
+        decoder.finish().unwrap().last(),
+        Some(&CanonicalStreamEvent::StreamEnd)
+    );
+}
+
+#[test]
+fn decoder_rejects_data_and_repeated_done_after_terminal_comments() {
+    let completed = sse(&response(
+        json!([{
+            "index": 0,
+            "content": {"role": "model", "parts": [{"text": "done"}]},
+            "finishReason": "STOP"
+        }]),
+        Some(json!({
+            "promptTokenCount": 2,
+            "candidatesTokenCount": 1,
+            "totalTokenCount": 3
+        })),
+    ));
+    let terminal = [completed.clone(), b"data: [DONE]\n\n".to_vec()].concat();
+    let mut reference = GeminiGenerateContentStreamDecoder::new();
+    let events = reference.push(&terminal).unwrap();
+    assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
+    assert!(reference.finish().unwrap().is_empty());
+    let tails = [
+        completed.clone(),
+        [b": same-frame-comment\n".to_vec(), completed.clone()].concat(),
+        [b": keep-alive\n\n".to_vec(), completed].concat(),
+        b": empty-data-is-not-a-comment\ndata:\n\n".to_vec(),
+        b": keep-alive\n\ndata: [DONE]\n\n".to_vec(),
+    ];
+    for tail in tails {
+        let bytes = [terminal.clone(), tail].concat();
+        for size in [bytes.len(), 1, 7] {
+            let mut decoder = GeminiGenerateContentStreamDecoder::new();
+            let error = bytes
+                .chunks(size)
+                .find_map(|chunk| decoder.push(chunk).err());
+            assert_eq!(error, Some(ParseStreamError::DataAfterDone));
+        }
+    }
+}
+
+#[test]
 fn decoder_preserves_prompt_block_as_zero_candidate_event() {
     let frame = json!({
         "responseId": RESPONSE_ID,

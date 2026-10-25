@@ -262,6 +262,7 @@ async fn execute(
         Method::POST,
         Some(body),
     )
+    .and_then(|request| request.with_anthropic_beta(plan.request().anthropic_beta()))
     .map_err(|_| AfError::Internal)?
     .with_response_mode(ResponseMode::Stream);
     let initial = tokio::time::timeout_at(

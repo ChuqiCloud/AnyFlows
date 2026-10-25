@@ -22,6 +22,7 @@ pub(crate) enum ChatStreamEncoder {
     Anthropic {
         encoder: Box<AnthropicMessagesStreamEncoder>,
         usage_estimator: OpenAiChatUsageEstimator,
+        wire_usage: Option<Usage>,
         bridge: Option<CrossProtocolStreamBridge>,
     },
     Gemini {
@@ -81,6 +82,7 @@ impl ChatStreamEncoder {
                 Ok(Self::Anthropic {
                     encoder: Box::new(encoder),
                     usage_estimator,
+                    wire_usage: None,
                     bridge: None,
                 })
             }
@@ -117,7 +119,12 @@ impl ChatStreamEncoder {
         self
     }
 
-    /// 编码一个非终点事件；Anthropic 始终忽略上游 usage，避免初始与最终口径漂移。
+    /// 同源 Anthropic 必须保留顶层用量，额外迭代只用于内部结算。
+    pub(crate) fn preserves_anthropic_usage(&self) -> bool {
+        matches!(self, Self::Anthropic { bridge: None, .. })
+    }
+
+    /// 编码一个非终点事件；Anthropic 用量延后到终点统一输出。
     pub(crate) fn encode_event(&mut self, event: CanonicalStreamEvent) -> Result<Vec<u8>, AfError> {
         if let Self::Anthropic {
             usage_estimator, ..
@@ -156,8 +163,13 @@ impl ChatStreamEncoder {
                 }
                 encoder.encode(event).map_err(|_| AfError::Internal)
             }
-            Self::Anthropic { encoder, .. } => {
-                if matches!(event, CanonicalStreamEvent::Usage(_)) {
+            Self::Anthropic {
+                encoder,
+                wire_usage,
+                ..
+            } => {
+                if let CanonicalStreamEvent::Usage(usage) = event {
+                    *wire_usage = Some(usage);
                     return Ok(Vec::new());
                 }
                 encoder.encode(event).map_err(|_| AfError::Internal)
@@ -217,12 +229,18 @@ impl ChatStreamEncoder {
                         .map_err(|_| AfError::Internal)?,
                 );
             }
-            Self::Anthropic { encoder, .. } => {
-                let usage = adapt_usage(
-                    Protocol::Anthropic,
-                    billing_usage.map_err(|_| AfError::Internal)?,
-                )
-                .map_err(|_| AfError::Internal)?;
+            Self::Anthropic {
+                encoder,
+                wire_usage,
+                bridge,
+                ..
+            } => {
+                let usage = match (bridge.is_none(), *wire_usage) {
+                    (true, Some(usage)) => usage,
+                    _ => billing_usage.map_err(|_| AfError::Internal)?,
+                };
+                let usage =
+                    adapt_usage(Protocol::Anthropic, usage).map_err(|_| AfError::Internal)?;
                 output.extend(
                     encoder
                         .encode(CanonicalStreamEvent::Usage(usage))
