@@ -2,13 +2,44 @@ name: Publish public release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '已有发行标签，例如 v0.3.0-beta.4'
+        required: true
+        type: string
 permissions:
   contents: write
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 concurrency:
-  group: public-release-${{ github.ref }}
+  group: public-release-refs/tags/${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 jobs:
+  prepare:
+    if: github.repository == 'ChuqiCloud/AnyFlows' && github.server_url == 'https://github.com'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      source-sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+      - name: Validate and pin release source
+        id: source
+        shell: bash
+        env:
+          RELEASE_MASTER_REF: refs/remotes/origin/main
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD)"
+          bash tools/ci/verify-release-tag.sh "$RELEASE_TAG" "$source_sha"
+          printf 'sha=%s\n' "$source_sha" >> "$GITHUB_OUTPUT"
   build:
+    needs: prepare
     if: github.repository == 'ChuqiCloud/AnyFlows' && github.server_url == 'https://github.com'
     strategy:
       fail-fast: false
@@ -32,15 +63,21 @@ jobs:
       - name: Check out tagged source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          ref: ${{ needs.prepare.outputs.source-sha }}
           fetch-depth: 0
       - name: Validate release tag
         env:
           RELEASE_MASTER_REF: refs/remotes/origin/main
-        run: bash tools/ci/verify-release-tag.sh "$GITHUB_REF_NAME" "$GITHUB_SHA"
+        run: bash tools/ci/verify-release-tag.sh "$RELEASE_TAG" "$(git rev-parse HEAD)"
       - name: Install Rust toolchain
         if: runner.os != 'Linux'
         run: |
-          bash tools/ci/install-rustup.sh
+          if [[ "$RUNNER_OS" == 'Windows' ]]; then
+            GITHUB_ENV= GITHUB_PATH= bash tools/ci/install-rustup.sh
+            cygpath -w "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          else
+            bash tools/ci/install-rustup.sh
+          fi
           export PATH="$HOME/.cargo/bin:$PATH"
           toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
           rustup toolchain install "$toolchain" --profile minimal --target '${{ matrix.target }}'
@@ -57,7 +94,7 @@ jobs:
           path: |
             target/bookworm
             target/bookworm-cargo
-          key: public-release-bookworm-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/ci/build-linux-release.sh') }}-${{ github.sha }}
+          key: public-release-bookworm-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/ci/build-linux-release.sh') }}-${{ needs.prepare.outputs.source-sha }}
           restore-keys: |
             public-release-bookworm-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/ci/build-linux-release.sh') }}-
             public-release-bookworm-${{ matrix.target }}-
@@ -72,7 +109,17 @@ jobs:
             echo "OPENSSL_STATIC=1" >> "$GITHUB_ENV"
             echo "MACOSX_DEPLOYMENT_TARGET=15.0" >> "$GITHUB_ENV"
           elif [[ "$RUNNER_OS" == "Windows" ]]; then
-            vcpkg install openssl:${{ matrix.triplet }}
+            if [[ '${{ matrix.target }}' == 'aarch64-pc-windows-msvc' ]]; then
+              clang --version
+            fi
+            vcpkg_root="$(cygpath -m "$(dirname "$(command -v vcpkg)")")"
+            vcpkg install --vcpkg-root "$vcpkg_root" openssl:${{ matrix.triplet }}
+            openssl_dir="$vcpkg_root/installed/${{ matrix.triplet }}"
+            test -f "$openssl_dir/include/openssl/ssl.h"
+            test -f "$openssl_dir/lib/libssl.lib"
+            test -f "$openssl_dir/lib/libcrypto.lib"
+            printf 'VCPKG_ROOT=%s\n' "$vcpkg_root" >> "$GITHUB_ENV"
+            printf 'OPENSSL_DIR=%s\n' "$openssl_dir" >> "$GITHUB_ENV"
             echo "RUSTFLAGS=-C target-feature=+crt-static" >> "$GITHUB_ENV"
             echo "VCPKGRS_TRIPLET=${{ matrix.triplet }}" >> "$GITHUB_ENV"
             echo "OPENSSL_STATIC=1" >> "$GITHUB_ENV"
@@ -98,7 +145,7 @@ jobs:
         run: |
           binary_root=target
           if [[ "$RUNNER_OS" == 'Linux' ]]; then binary_root=target/bookworm; fi
-          python tools/ci/package-platform.py "$GITHUB_REF_NAME" '${{ matrix.target }}' "$binary_root/${{ matrix.target }}/release/${{ matrix.binary }}" "$binary_root/${{ matrix.target }}/release/${{ matrix.launcher }}"
+          python tools/ci/package-platform.py "$RELEASE_TAG" '${{ matrix.target }}' "$binary_root/${{ matrix.target }}/release/${{ matrix.binary }}" "$binary_root/${{ matrix.target }}/release/${{ matrix.launcher }}"
       - name: Retain native release files
         uses: actions/upload-artifact@v4
         with:
@@ -114,11 +161,13 @@ jobs:
             target/bookworm-cargo
           key: ${{ steps.bookworm-cache.outputs.cache-primary-key }}
   publish:
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ needs.prepare.outputs.source-sha }}
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -130,20 +179,20 @@ jobs:
           test "$(find release -name '*.sha256' | wc -l)" -eq 12
           cat release/*.sha256 | sort -k2 > release/SHA256SUMS
           (cd release && sha256sum --check --strict SHA256SUMS)
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           awk -v header="## $version" '
             $0 == header || index($0, header " - ") == 1 { found = 1; print; next }
             found && /^## / { exit }
             found { print }
           ' CHANGELOG.md > release/CHANGELOG.md
           test -s release/CHANGELOG.md
-          { printf '# AnyFlows %s\n\nLinux、Windows、macOS 的 amd64 与 arm64 原生包，包含 Classic、Next 内置前端。\n\n' "$GITHUB_REF_NAME"; cat release/CHANGELOG.md; printf '\n## SHA-256\n\n```text\n'; cat release/SHA256SUMS; printf '```\n'; } > release/RELEASE_NOTES.md
+          { printf '# AnyFlows %s\n\nLinux、Windows、macOS 的 amd64 与 arm64 原生包，包含 Classic、Next 内置前端。\n\n' "$RELEASE_TAG"; cat release/CHANGELOG.md; printf '\n## SHA-256\n\n```text\n'; cat release/SHA256SUMS; printf '```\n'; } > release/RELEASE_NOTES.md
       - name: Publish complete GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag="$GITHUB_REF_NAME"
+          tag="$RELEASE_TAG"
           if gh release view "$tag" --json isDraft > release/existing-release.json 2>/dev/null; then
             jq -e '.isDraft == true' release/existing-release.json >/dev/null || { echo 'Version already published; create a new version.' >&2; exit 1; }
           else
