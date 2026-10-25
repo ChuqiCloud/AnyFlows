@@ -319,9 +319,15 @@ jobs:
         shell: bash
         run: |
           export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
-          version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
-          test -n "$version"
-          python3 tools/ci/package-platform.py "v$version" x86_64-unknown-linux-gnu target/bookworm/x86_64-unknown-linux-gnu/release/af-server target/bookworm/x86_64-unknown-linux-gnu/release/anyflows-launcher
+          if [[ "${{ github.server_url }}" == 'https://github.com' ]]; then
+            version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+            test -n "$version"
+            python3 tools/ci/package-platform.py "v$version" x86_64-unknown-linux-gnu target/bookworm/x86_64-unknown-linux-gnu/release/af-server target/bookworm/x86_64-unknown-linux-gnu/release/anyflows-launcher
+          else
+            bash tools/ci/package-release.sh auto amd64 \
+              target/bookworm/x86_64-unknown-linux-gnu/release/af-server release \
+              target/bookworm/x86_64-unknown-linux-gnu/release/anyflows-launcher
+          fi
           archive="$(find release -maxdepth 1 -type f -name 'anyflows-v*-linux-amd64.tar.gz' -print -quit)"
           test -n "$archive"
           test -s "$archive"
