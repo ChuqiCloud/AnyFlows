@@ -315,6 +315,27 @@ jobs:
           export AF_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           bash tools/ci/build-linux-release.sh x86_64-unknown-linux-gnu
 
+      - name: Verify release binary identities
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import subprocess
+          import tomllib
+
+          with Path('Cargo.toml').open('rb') as manifest:
+              version = tomllib.load(manifest)['workspace']['package']['version']
+          target = 'x86_64-unknown-linux-gnu'
+          directory = Path('target/bookworm') / target / 'release'
+          metadata = json.loads(subprocess.check_output([str((directory / 'af-server').resolve()), '--version'], text=True))
+          launcher = json.loads(subprocess.check_output([str((directory / 'anyflows-launcher').resolve()), '--version'], text=True))
+          if metadata['target'] != target or metadata['version'] != version:
+              raise ValueError('Binary target/version differs from release inputs')
+          if launcher['target'] != target or metadata['launcher_protocol'] != launcher['protocol']:
+              raise ValueError('Launcher target/protocol differs from main program')
+          PY
+
       - name: Package and verify release archive
         shell: bash
         run: |
