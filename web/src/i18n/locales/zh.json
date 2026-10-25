@@ -3498,11 +3498,12 @@
   },
   "about": {
     "companyName": "云上极致（深圳）互联网有限公司",
-    "description": "连接多种 AI 服务，统一管理每一次调用。",
-    "partnersTitle": "合作伙伴与社区赞助",
-    "partnersDescription": "感谢以下伙伴对 AnyFlows 的支持。品牌标识归各自所有者所有。",
+    "companySubtitle": "Infrastructure for every connection.",
+    "description": "项目介绍、合作伙伴与当前版本信息。",
+    "partnersTitle": "共建 AnyFlows 的伙伴",
+    "partnersDescription": "社区伙伴为 AnyFlows 的开发与运行提供支持。品牌标识归各自所有者所有。",
     "sponsors": {
-      "chuqiCloud": "专注云计算服务，为 AnyFlows 提供云计算资源支持。",
+      "chuqiCloud": "专注云计算服务，为 AnyFlows 提供稳定的云计算资源与基础设施支持，协助项目持续开发、部署与运行。",
       "meFrp": "为远程访问、多人联机游戏和开发场景提供免费的内网穿透服务。"
     }
   },

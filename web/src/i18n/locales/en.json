@@ -3497,11 +3497,12 @@
   },
   "about": {
     "companyName": "云上极致（深圳）互联网有限公司",
-    "description": "One place to connect and manage your AI services.",
-    "partnersTitle": "Partners & community sponsors",
-    "partnersDescription": "Thanks to these partners for supporting AnyFlows. Brand marks belong to their respective owners.",
+    "companySubtitle": "Infrastructure for every connection.",
+    "description": "Project information, partners, and release updates.",
+    "partnersTitle": "Partners behind AnyFlows",
+    "partnersDescription": "Community partners who support the development and operation of AnyFlows. Brand marks belong to their respective owners.",
     "sponsors": {
-      "chuqiCloud": "Cloud computing services and infrastructure support for AnyFlows.",
+      "chuqiCloud": "Provides cloud computing services and dependable infrastructure resources for AnyFlows, supporting the project's ongoing development, deployment, and operation.",
       "meFrp": "A free tunneling service for remote access, multiplayer gaming, and development."
     }
   },

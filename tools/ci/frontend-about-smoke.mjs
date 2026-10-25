@@ -182,7 +182,7 @@ try {
       await page.evaluate(() => document.fonts.ready)
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${frontend} ${theme} overflows at ${width}px`)
       assert.equal(await page.getByRole('heading', { name: '云上极致（深圳）互联网有限公司', exact: true }).evaluate(element => getComputedStyle(element).textAlign), 'center')
-      assert.equal(await page.getByRole('heading', { name: '合作伙伴与社区赞助', exact: true }).evaluate(element => getComputedStyle(element).textAlign), 'center')
+      assert.equal(await page.getByRole('heading', { name: '共建 AnyFlows 的伙伴', exact: true }).evaluate(element => getComputedStyle(element).textAlign), 'center')
       if (name === 'desktop' || name === 'mobile') {
         await page.screenshot({ path: resolve(screenshots, `${theme}-${name}.png`), fullPage: true, animations: 'disabled' })
       }

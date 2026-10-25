@@ -10,7 +10,7 @@ const partners = [
     href: 'https://chuqiyun.com/',
     logo: '/assets/sponsors/chuqicloud.png',
     descriptionKey: 'about.sponsors.chuqiCloud',
-    descriptionFallback: '专注云计算服务，为 AnyFlows 提供云计算资源支持。',
+    descriptionFallback: '专注云计算服务，为 AnyFlows 提供稳定的云计算资源与基础设施支持，协助项目持续开发、部署与运行。',
   },
   {
     name: '幻缘映射（ME Frp）',
@@ -33,7 +33,8 @@ export function AboutPage() {
           <p className="font-display text-4xl font-semibold tracking-[-0.055em] italic sm:text-5xl">AnyFlows</p>
         </div>
         <h2 className="mx-auto mt-7 max-w-2xl text-lg font-medium leading-relaxed tracking-wide text-balance sm:text-xl">{t('about.companyName')}</h2>
-        <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-pretty text-muted-foreground">{t('about.description')}</p>
+        <p className="mt-2 text-[0.6875rem] font-medium uppercase tracking-[0.24em] text-muted-foreground/80">{t('about.companySubtitle')}</p>
+        <p className="mx-auto mt-4 max-w-xl text-sm leading-7 text-pretty text-muted-foreground">{t('about.description')}</p>
       </header>
 
       <section aria-labelledby="about-partners-title" className="mx-auto grid w-full max-w-3xl gap-6">
