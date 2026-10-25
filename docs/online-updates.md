@@ -1,6 +1,6 @@
 # 版本检测与手动升级
 
-管理员可在「系统设置 → 站点设置 → 版本与更新」查看当前节点版本、构建信息、部署平台与匹配的发布包。检测直接读取 GitHub Releases，不经过第三方更新源。稳定版本只选择稳定发行，预发行版本可检测 alpha、beta、rc 和稳定发行；按 SemVer 比较版本，检查结果缓存一分钟。GitHub 限流或网络故障时可稍后重试。
+管理员可在「系统设置 → 关于 AnyFlows → 系统版本与更新」查看当前节点版本、构建信息、部署平台与匹配的发布包。检测直接读取 GitHub Releases，不经过第三方更新源。稳定版本只选择稳定发行，预发行版本可检测 alpha、beta、rc 和稳定发行；按 SemVer 比较版本，检查结果缓存一分钟。GitHub 限流或网络故障时可稍后重试。
 
 ## 二进制部署
 
@@ -33,6 +33,6 @@ Docker 仅提供版本检测和发布说明；后端和命令行同时禁止替�
 
 ## 发布包
 
-公开 tag 发布为 Linux glibc、Windows MSVC、macOS 分别构建 amd64 和 arm64 原生包，包含 Classic、Next 内置前端；Windows 使用 ZIP，其他平台使用 tar.gz，同时发布原始二进制及各自 SHA-256 文件。Linux glibc 构建运行环境为 Ubuntu 24.04，需要 glibc 2.39 或更新版本及 OpenSSL 3 运行库。macOS 包要求 macOS 15 或更新版本，并静态链接 OpenSSL；Windows 包静态链接 OpenSSL 与 MSVC C 运行库。
+公开 tag 发布为 Linux glibc、Windows MSVC、macOS 分别构建 amd64 和 arm64 原生包，包含 Classic、Next 内置前端；Windows 使用 ZIP，其他平台使用 tar.gz，同时发布原始二进制及各自 SHA-256 文件。Linux 包在 Debian 12（Bookworm）环境中构建，需要 glibc 2.36 或更新版本及 OpenSSL 3 运行库。macOS 包要求 macOS 15 或更新版本，并静态链接 OpenSSL；Windows 包静态链接 OpenSSL 与 MSVC C 运行库。
 
 自动识别区分操作系统、CPU 架构及 Linux libc，不会给 musl 构建选择 glibc 文件。未发布对应平台包时明确显示无匹配包，保留手动部署方式。
