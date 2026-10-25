@@ -1,0 +1,85 @@
+name: Security dependency locks
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['fix/dependabot-alerts']
+    paths:
+      - '.github/workflows/security-dependency-locks.yml'
+      - 'web/package.json'
+      - 'web-next/package.json'
+      - 'Cargo.toml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-dependency-locks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  resolve:
+    name: Export reviewable security lock patch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out selected revision
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL || github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$CHECKOUT_SHA"
+
+      - name: Install Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+
+      - name: Resolve frontend security overrides
+        run: |
+          set -euo pipefail
+          # Preserve existing resolutions where possible; package manifests define the security updates.
+          corepack pnpm@10.33.0 --dir web install --lockfile-only --ignore-scripts --no-frozen-lockfile
+          corepack pnpm@10.33.0 --dir web-next install --lockfile-only --ignore-scripts --no-frozen-lockfile
+
+      - name: Install pinned Rust toolchain
+        run: |
+          set -euo pipefail
+          bash tools/ci/install-rustup.sh
+          export PATH="$HOME/.cargo/bin:$PATH"
+          toolchain="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal
+
+      - name: Resolve DNS security update
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$PATH"
+          cargo update --package hickory-resolver --precise 0.26.2
+          cargo update --package hickory-net --precise 0.26.2
+          cargo update --package hickory-proto --precise 0.26.2
+
+      - name: Export lockfile patch for review
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          # This workflow exports source changes only; it never builds or pushes them.
+          git diff --check -- Cargo.lock web/pnpm-lock.yaml web-next/pnpm-lock.yaml
+          while IFS= read -r path; do
+            case "$path" in
+              Cargo.lock|web/pnpm-lock.yaml|web-next/pnpm-lock.yaml) ;;
+              *) echo "Unexpected source change: $path" >&2; exit 1 ;;
+            esac
+          done < <(git diff --name-only)
+          echo 'ANYFLOWS_SECURITY_LOCK_PATCH_BEGIN'
+          git diff --binary -- Cargo.lock web/pnpm-lock.yaml web-next/pnpm-lock.yaml | gzip -9 | base64 -w120
+          echo
+          echo 'ANYFLOWS_SECURITY_LOCK_PATCH_END'
+          git diff --stat -- Cargo.lock web/pnpm-lock.yaml web-next/pnpm-lock.yaml
