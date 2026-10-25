@@ -208,6 +208,10 @@ impl OpenAiChatUsageEstimator {
             | CanonicalStreamEvent::LogprobsDelta { .. }
             | CanonicalStreamEvent::CompactionStart { .. }
             | CanonicalStreamEvent::CompactionEnd { .. }
+            | CanonicalStreamEvent::AnthropicCompactionStart { .. }
+            | CanonicalStreamEvent::AnthropicCompactionDelta { .. }
+            | CanonicalStreamEvent::AnthropicCompactionEnd { .. }
+            | CanonicalStreamEvent::AnthropicUsageMetadata { .. }
             | CanonicalStreamEvent::Finish { .. }
             | CanonicalStreamEvent::PromptBlocked
             | CanonicalStreamEvent::Ping
@@ -409,10 +413,30 @@ fn add_input_block(
         }
         // Cache markers affect upstream prompt reuse, not model-visible content.
         ContentBlock::CacheControl(_) => Ok(()),
-        ContentBlock::Thinking { .. } | ContentBlock::Compaction(_) => {
-            Err(UsageResolutionError::UnsupportedContent)
+        ContentBlock::Compaction(item) if allow_encrypted_reasoning => {
+            add_native_compaction_input(total, item.as_value())
         }
+        ContentBlock::AnthropicCompaction(item) if allow_chat_reasoning => {
+            add_native_compaction_input(total, item.as_value())
+        }
+        ContentBlock::Thinking { .. }
+        | ContentBlock::Compaction(_)
+        | ContentBlock::AnthropicCompaction(_) => Err(UsageResolutionError::UnsupportedContent),
     }
+}
+
+fn add_native_compaction_input(
+    total: &mut i64,
+    value: &serde_json::Value,
+) -> Result<(), UsageResolutionError> {
+    // Native state is never converted into prompt text. Reserve conservatively
+    // by its serialized byte size, as for replayed provider signatures.
+    let bytes = serde_json::to_vec(value).map_err(|_| UsageResolutionError::EstimationFailed)?;
+    checked_add(total, OPAQUE_SIGNATURE_ITEM_OVERHEAD_TOKENS)?;
+    checked_add(
+        total,
+        i64::try_from(bytes.len()).map_err(|_| UsageResolutionError::Overflow)?,
+    )
 }
 
 fn estimate_usage(
@@ -560,7 +584,8 @@ impl OutputAccumulator {
                 | ContentBlock::Audio { .. }
                 | ContentBlock::ToolResult { .. }
                 | ContentBlock::CacheControl(_)
-                | ContentBlock::Compaction(_) => {
+                | ContentBlock::Compaction(_)
+                | ContentBlock::AnthropicCompaction(_) => {
                     self.fail(UsageResolutionError::UnsupportedContent);
                 }
             }

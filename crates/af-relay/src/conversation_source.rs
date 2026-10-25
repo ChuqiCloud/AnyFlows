@@ -19,6 +19,13 @@ pub(crate) enum ConversationSource {
 }
 
 impl ConversationSource {
+    pub(crate) fn billing_usage(&self) -> Option<af_protocol::Usage> {
+        match self {
+            Self::Wire { decoder, .. } => decoder.billing_usage(),
+            Self::Tools(_) => None,
+        }
+    }
+
     pub(crate) fn wire(body: UpstreamBody, decoder: ConversationDecoder) -> Self {
         Self::Wire {
             source: body.into(),

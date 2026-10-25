@@ -1,6 +1,8 @@
 //! 协议纯净的规范请求、响应与流式转换。
 
 pub mod anthropic;
+mod anthropic_beta;
+mod anthropic_compaction;
 mod audio;
 mod bounded_json;
 mod canonical;
@@ -36,6 +38,11 @@ mod usage;
 mod video_task;
 pub mod xai_video;
 
+pub use anthropic_beta::{
+    AnthropicBetaError, MAX_ANTHROPIC_BETA_BYTES, normalize_anthropic_beta,
+    normalize_anthropic_beta_values,
+};
+pub use anthropic_compaction::{AnthropicCompactionError, AnthropicCompactionItem};
 pub use audio::{
     AudioDuration, AudioDurationError, AudioFile, AudioFileError, AudioFileFormat,
     AudioInputTokenDetails, AudioLanguageCode, AudioLanguageCodeError, AudioLanguageHints,

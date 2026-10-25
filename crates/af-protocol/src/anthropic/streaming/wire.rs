@@ -72,6 +72,9 @@ pub(super) struct MessageStartWire {
 #[derive(Deserialize)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub(super) enum ContentBlockStartWire {
+    /// 原生压缩块起点，可能已包含完整签名状态。
+    #[serde(rename = "compaction")]
+    Compaction(Value),
     /// 文本块。
     #[serde(rename = "text")]
     Text {
@@ -97,6 +100,9 @@ pub(super) enum ContentBlockStartWire {
 #[derive(Deserialize)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub(super) enum ContentBlockDeltaWire {
+    /// 压缩摘要增量。
+    #[serde(rename = "compaction_delta")]
+    Compaction(Value),
     /// 文本增量。
     #[serde(rename = "text_delta")]
     Text { text: String },
@@ -128,6 +134,9 @@ pub(super) struct MessageDeltaWire {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct MessageDeltaUsageWire {
+    /// 最终逐迭代用量快照。
+    #[serde(default)]
+    pub(super) iterations: Option<Value>,
     #[serde(default)]
     pub(super) input_tokens: Option<i64>,
     #[serde(default)]
@@ -139,6 +148,8 @@ pub(super) struct MessageDeltaUsageWire {
     pub(super) output_tokens: i64,
     #[serde(default)]
     pub(super) output_tokens_details: Option<OutputTokensDetailsWire>,
+    #[serde(default)]
+    pub(super) inference_geo: Option<String>,
     #[serde(default)]
     pub(super) server_tool_use: Option<ServerToolUsageWire>,
     #[serde(default)]

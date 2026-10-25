@@ -16,6 +16,9 @@ pub(crate) fn adapt_response(
         return Ok(());
     }
     for choice in &mut response.choices {
+        if choice.finish_reason == af_protocol::FinishReason::Compaction {
+            return Err(UpstreamError::ProtocolError);
+        }
         if downstream != Protocol::Anthropic {
             choice.stop_sequence = None;
         }
@@ -48,7 +51,10 @@ pub(crate) fn adapt_response(
                         signature: None,
                     });
                 }
-                ContentBlock::CacheControl(_) | ContentBlock::Compaction(_) => {}
+                ContentBlock::CacheControl(_) => {}
+                ContentBlock::Compaction(_) | ContentBlock::AnthropicCompaction(_) => {
+                    return Err(UpstreamError::ProtocolError);
+                }
                 block => blocks.push(block),
             }
         }
@@ -322,7 +328,15 @@ impl CrossProtocolStreamBridge {
                 return Ok(Vec::new());
             }
             CanonicalStreamEvent::CompactionStart { .. }
-            | CanonicalStreamEvent::CompactionEnd { .. } => return Ok(Vec::new()),
+            | CanonicalStreamEvent::CompactionEnd { .. }
+            | CanonicalStreamEvent::AnthropicCompactionStart { .. }
+            | CanonicalStreamEvent::AnthropicCompactionDelta { .. }
+            | CanonicalStreamEvent::AnthropicCompactionEnd { .. } => {
+                return Err(AfError::from(UpstreamError::ProtocolError));
+            }
+            // Anthropic service_tier and iteration details are private stream metadata.
+            // The relay resolves billable iterations separately through the decoder.
+            CanonicalStreamEvent::AnthropicUsageMetadata { .. } => return Ok(Vec::new()),
             CanonicalStreamEvent::ContentDelta {
                 choice_index,
                 content_index,
@@ -349,6 +363,9 @@ impl CrossProtocolStreamBridge {
                 reason,
                 stop_sequence,
             } => {
+                if reason == af_protocol::FinishReason::Compaction {
+                    return Err(AfError::Internal);
+                }
                 self.active = None;
                 let finish = CanonicalStreamEvent::Finish {
                     choice_index,

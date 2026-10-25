@@ -197,6 +197,58 @@ fn round_trips_compaction_context_and_item() {
 }
 
 #[test]
+fn optional_compaction_threshold_preserves_missing_null_and_explicit_values() {
+    for control in [
+        json!({"type":"compaction"}),
+        json!({"type":"compaction","compact_threshold":null}),
+        json!({"type":"compaction","compact_threshold":1}),
+        json!({"type":"compaction","compact_threshold":1_000_000}),
+    ] {
+        for stream in [false, true] {
+            let wire = json!({
+                "model":"gpt-test", "input":"hello", "stream":stream, "store":false,
+                "context_management":[control.clone()]
+            });
+            let canonical = parsed_request(wire.clone());
+            let rebuilt = build_request(&canonical).unwrap();
+            assert_eq!(rebuilt["context_management"], wire["context_management"]);
+            assert_eq!(parsed_request(rebuilt), canonical);
+
+            let envelope = super::parse_request_envelope(bytes::Bytes::from(
+                serde_json::to_vec(&wire).unwrap(),
+            ))
+            .unwrap();
+            let native = envelope
+                .clone()
+                .plan_conversation(Protocol::OpenAiResponses)
+                .unwrap();
+            assert_eq!(
+                serde_json::from_slice::<Value>(native.body()).unwrap(),
+                wire
+            );
+            let routed = envelope
+                .clone()
+                .with_routed_parameters(
+                    "routed-model".to_owned(),
+                    envelope.canonical().sampling.clone(),
+                )
+                .plan_conversation(Protocol::OpenAiResponses)
+                .unwrap();
+            let routed: Value = serde_json::from_slice(routed.body()).unwrap();
+            assert_eq!(routed["model"], "routed-model");
+            assert_eq!(routed["context_management"], wire["context_management"]);
+            for target in [Protocol::OpenAiChat, Protocol::Anthropic, Protocol::Gemini] {
+                assert_eq!(
+                    crate::ConversationConversionPlan::prepare(envelope.clone(), target)
+                        .unwrap_err(),
+                    crate::ConversationConversionError::NativeContentRequired,
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn round_trips_messages_tools_sampling_continuation_and_raw_fields() {
     let request = parsed_request(json!({
         "model": "gpt-test",

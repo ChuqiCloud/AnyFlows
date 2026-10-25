@@ -51,6 +51,7 @@ fn finish_reason_exposes_the_complete_closed_set() {
             FinishReason::Length,
             FinishReason::ToolCalls,
             FinishReason::ContentFilter,
+            FinishReason::Compaction,
         ]
     );
 
@@ -60,6 +61,7 @@ fn finish_reason_exposes_the_complete_closed_set() {
             FinishReason::Length => "length",
             FinishReason::ToolCalls => "tool_calls",
             FinishReason::ContentFilter => "content_filter",
+            FinishReason::Compaction => "compaction",
         };
         assert!(!name.is_empty());
     }
@@ -77,6 +79,13 @@ fn sensitive_stream_payloads_are_redacted_from_debug() {
     let tool_id_canary = "stream-tool-id-secret-canary";
     let tool_name_canary = "stream-tool-name-secret-canary";
     let partial_json_canary = "stream-partial-json-secret-canary";
+    let compaction = crate::AnthropicCompactionItem::from_value(serde_json::json!({
+        "type":"compaction",
+        "content":text_canary,
+        "signature":signature_canary,
+        "encrypted_content":reasoning_canary
+    }))
+    .unwrap();
 
     let deltas = [
         ContentDelta::Text(text_canary.to_owned()),
@@ -126,6 +135,24 @@ fn sensitive_stream_payloads_are_redacted_from_debug() {
             choice_index: 7,
             tool_index: 8,
             partial_json: partial_json_canary.to_owned(),
+        },
+        CanonicalStreamEvent::AnthropicCompactionStart {
+            choice_index: 9,
+            content_index: 10,
+            item: compaction.clone(),
+        },
+        CanonicalStreamEvent::AnthropicCompactionDelta {
+            choice_index: 9,
+            content_index: 10,
+            text: text_canary.to_owned(),
+        },
+        CanonicalStreamEvent::AnthropicCompactionEnd {
+            choice_index: 9,
+            content_index: 10,
+            item: compaction,
+        },
+        CanonicalStreamEvent::AnthropicUsageMetadata {
+            raw: serde_json::json!({"iterations":[partial_json_canary]}),
         },
     ];
 
@@ -235,6 +262,10 @@ fn event_kind(event: &CanonicalStreamEvent) -> &'static str {
             output_index: _,
             item: _,
         } => "compaction_end",
+        CanonicalStreamEvent::AnthropicCompactionStart { .. } => "anthropic_compaction_start",
+        CanonicalStreamEvent::AnthropicCompactionDelta { .. } => "anthropic_compaction_delta",
+        CanonicalStreamEvent::AnthropicCompactionEnd { .. } => "anthropic_compaction_end",
+        CanonicalStreamEvent::AnthropicUsageMetadata { .. } => "anthropic_usage_metadata",
         CanonicalStreamEvent::Finish {
             choice_index: _,
             reason: _,

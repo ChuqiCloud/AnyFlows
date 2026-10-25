@@ -431,7 +431,8 @@ fn build_user_message(
             | ContentBlock::ToolResult { .. }
             | ContentBlock::Thinking { .. }
             | ContentBlock::CacheControl(_)
-            | ContentBlock::Compaction(_) => {
+            | ContentBlock::Compaction(_)
+            | ContentBlock::AnthropicCompaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         });
@@ -484,7 +485,8 @@ fn build_assistant_message(
             | ContentBlock::ToolResult { .. }
             | ContentBlock::Thinking { .. }
             | ContentBlock::CacheControl(_)
-            | ContentBlock::Compaction(_) => {
+            | ContentBlock::Compaction(_)
+            | ContentBlock::AnthropicCompaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         }

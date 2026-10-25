@@ -51,6 +51,8 @@ pub(super) fn convert_request(
     wire: MessagesRequestWire,
 ) -> Result<CanonicalRequest, ParseRequestError> {
     let MessagesRequestWire {
+        compaction,
+        context_management,
         cache_control,
         model,
         max_tokens,
@@ -73,6 +75,17 @@ pub(super) fn convert_request(
     let reasoning = convert_reasoning(thinking, output_config, max_tokens)?;
     let metadata = convert_metadata(metadata)?;
     let mut raw = Map::new();
+    let compaction = field_value(compaction);
+    let context_management = field_value(context_management);
+    super::compaction::validate_controls(compaction.as_ref(), context_management.as_ref())?;
+    for (key, value) in [
+        ("compaction", compaction),
+        ("context_management", context_management),
+    ] {
+        if let Some(value) = value {
+            raw.insert(key.to_owned(), value);
+        }
+    }
     let tools = field_value(tools).unwrap_or_default();
     let mut cache_breakpoints = 0;
     if let Field::Value(cache) = cache_control {
@@ -413,6 +426,11 @@ fn convert_assistant_message(
             content.reserve(parts.len() * 2);
             for part in parts {
                 match part {
+                    AssistantContentPartWire::Compaction(value) => {
+                        let item = super::compaction::parse_item(value)?;
+                        state.add_block()?;
+                        content.push(ContentBlock::AnthropicCompaction(item));
+                    }
                     AssistantContentPartWire::Text(block) => {
                         push_text_block(&mut content, block, state)?;
                     }

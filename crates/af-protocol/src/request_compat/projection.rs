@@ -90,6 +90,8 @@ pub(super) fn project_request(
             "metadata",
             "stream",
             "cache_control",
+            "compaction",
+            "context_management",
         ],
         Protocol::Gemini => &[
             "contents",
@@ -357,6 +359,11 @@ fn project_content(
                 .unwrap_or("")
                 .to_owned();
             *part = json!({"type":"text","text":text});
+            continue;
+        }
+        if protocol == Protocol::Anthropic && kind == "compaction" {
+            // Keep vendor-signed fields and explicit nulls intact for the
+            // native compaction decoder; the block remains native-only.
             continue;
         }
         let keys: Option<&[&str]> = match (protocol, kind.as_str()) {
@@ -644,8 +651,14 @@ pub(super) fn has_opaque_semantics(protocol: Protocol, body: &Value) -> bool {
     };
     let native_fields: &[&str] = match protocol {
         Protocol::OpenAiChat => &["audio", "modalities", "web_search_options"],
-        Protocol::OpenAiResponses => &["prompt"],
-        Protocol::Anthropic => &["container", "context_management", "mcp_servers", "prompt"],
+        Protocol::OpenAiResponses => &["prompt", "context_management"],
+        Protocol::Anthropic => &[
+            "compaction",
+            "container",
+            "context_management",
+            "mcp_servers",
+            "prompt",
+        ],
         Protocol::Gemini => &["cachedContent"],
         _ => return true,
     };

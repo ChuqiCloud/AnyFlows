@@ -126,16 +126,18 @@ fn convert_context_management(
         kind: ContextManagementTypeWire::Compaction,
         compact_threshold,
     } = values.into_iter().next().expect("长度已校验");
-    if !(1..=MAX_COMPACTION_THRESHOLD).contains(&compact_threshold) {
-        return Err(ParseRequestError::InvalidValue);
+    let mut object = Map::from_iter([("type".to_owned(), Value::String("compaction".to_owned()))]);
+    if let Field::Value(threshold) = compact_threshold {
+        let value = match threshold {
+            Some(threshold) if (1..=MAX_COMPACTION_THRESHOLD).contains(&threshold) => {
+                Value::Number(threshold.into())
+            }
+            Some(_) => return Err(ParseRequestError::InvalidValue),
+            None => Value::Null,
+        };
+        object.insert("compact_threshold".to_owned(), value);
     }
-    Ok(Value::Array(vec![Value::Object(Map::from_iter([
-        ("type".to_owned(), Value::String("compaction".to_owned())),
-        (
-            "compact_threshold".to_owned(),
-            Value::Number(compact_threshold.into()),
-        ),
-    ]))]))
+    Ok(Value::Array(vec![Value::Object(object)]))
 }
 
 pub(super) fn validate_model(model: &str) -> Result<(), ParseRequestError> {
@@ -494,12 +496,14 @@ fn validate_context_management(value: &Value) -> Result<(), ParseRequestError> {
     {
         return Err(ParseRequestError::InvalidValue);
     }
-    let threshold = object
+    if let Some(value) = object
         .get("compact_threshold")
-        .and_then(Value::as_i64)
-        .ok_or(ParseRequestError::InvalidValue)?;
-    if !(1..=MAX_COMPACTION_THRESHOLD).contains(&threshold) {
-        return Err(ParseRequestError::InvalidValue);
+        .filter(|value| !value.is_null())
+    {
+        let threshold = value.as_i64().ok_or(ParseRequestError::InvalidValue)?;
+        if !(1..=MAX_COMPACTION_THRESHOLD).contains(&threshold) {
+            return Err(ParseRequestError::InvalidValue);
+        }
     }
     Ok(())
 }

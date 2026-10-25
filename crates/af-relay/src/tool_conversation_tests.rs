@@ -148,6 +148,82 @@ fn plan(stream: bool, protocol: Protocol) -> ToolConversationPlan {
     .unwrap()
 }
 
+#[tokio::test]
+async fn anthropic_compaction_iteration_usage_is_billed_once_before_tool_continuation() {
+    let frames = [
+        json!({"type":"message_start", "message":{"id":"msg_tool_compact", "type":"message", "role":"assistant", "model":"claude-test", "content":[], "stop_reason":null, "stop_sequence":null, "usage":{"input_tokens":100,"output_tokens":0}}}),
+        json!({"type":"content_block_start", "index":0, "content_block":{"type":"tool_use", "id":"call_read", "name":"read", "input":{"path":"private-file"}}}),
+        json!({"type":"content_block_stop", "index":0}),
+        json!({"type":"message_delta", "delta":{"stop_reason":"tool_use","stop_sequence":null}, "usage":{"input_tokens":100,"output_tokens":4,"service_tier":"standard", "iterations":[{"type":"message","input_tokens":100,"output_tokens":4},{"type":"compaction","input_tokens":12,"output_tokens":3}]}}),
+        json!({"type":"message_stop"}),
+    ];
+    let mut bytes = Vec::new();
+    for frame in frames {
+        let kind = frame["type"].as_str().unwrap();
+        bytes.extend_from_slice(format!("event: {kind}\ndata: {frame}\n\n").as_bytes());
+    }
+    let mut decoder = ConversationDecoder::new(Protocol::Anthropic).unwrap();
+    decoder.push(&bytes).unwrap();
+    decoder.finish().unwrap();
+    let billed = decoder.billing_usage().unwrap();
+    assert_eq!(billed.input_tokens().get(), 112);
+    assert_eq!(billed.output_tokens().get(), 7);
+
+    for stream in [false, true] {
+        let server = MockServer::start().await;
+        let round = Arc::new(AtomicUsize::new(0));
+        let first_round = bytes.clone();
+        Mock::given(method("POST"))
+            .respond_with(move |_request: &Request| {
+                let bytes = if round.fetch_add(1, Ordering::SeqCst) == 0 {
+                    first_round.clone()
+                } else {
+                    sse(Protocol::Anthropic, false, false)
+                };
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_bytes(bytes)
+            })
+            .expect(2)
+            .mount(&server)
+            .await;
+        let machine = RelayStateMachine::new(vec![candidate(
+            &server,
+            Protocol::Anthropic,
+            Arc::new(Permits::default()),
+            Credential::public(),
+        )])
+        .unwrap();
+        let (response, report) = relay_tool_conversation(
+            &machine,
+            plan(stream, Protocol::Anthropic),
+            Protocol::OpenAiChat,
+            "compaction-tool-billing",
+        )
+        .await;
+        let total = match response.unwrap() {
+            ChatResponse::Full { usage, .. } => usage.unwrap(),
+            ChatResponse::Stream { mut body, usage } => {
+                while let Some(chunk) =
+                    std::future::poll_fn(|cx| Pin::new(&mut body).poll_next(cx)).await
+                {
+                    chunk.unwrap();
+                }
+                usage.resolve().await.unwrap()
+            }
+        };
+        assert_eq!(total.input_tokens().get(), 152);
+        assert_eq!(total.output_tokens().get(), 12);
+        let snapshot = report.snapshot();
+        assert_eq!(snapshot.observed_usage[0], Some(billed));
+        assert_eq!(snapshot.sent_rounds, 2);
+        assert_eq!(snapshot.state, ToolConversationState::Completed);
+        let sent = server.received_requests().await.unwrap();
+        let continuation: Value = serde_json::from_slice(&sent[1].body).unwrap();
+        assert_eq!(continuation["max_tokens"], 121);
+    }
+}
+
 #[test]
 fn injected_tool_round_keeps_default_auto_and_real_continuation_history() {
     for protocol in [
@@ -471,6 +547,44 @@ async fn frozen_client_profile_overrides_adapter_identity_on_both_rounds() {
                 }
             );
         }
+    }
+}
+
+#[tokio::test]
+async fn frozen_anthropic_beta_is_preserved_on_both_tool_rounds() {
+    let server = fixture(Protocol::Anthropic, false).await;
+    let gate = Arc::new(Permits::default());
+    let mut overrides = HeaderMap::new();
+    overrides.insert(
+        "anthropic-beta",
+        af_adapter::HeaderValue::from_static("channel-beta,shared-beta"),
+    );
+    let machine = RelayStateMachine::new(vec![
+        candidate(&server, Protocol::Anthropic, gate, Credential::public())
+            .with_header_overrides(overrides),
+    ])
+    .unwrap();
+    let plan = ToolConversationPlan::prepare(
+        request(false)
+            .with_anthropic_beta(Some("compact-2026-09-04,shared-beta"))
+            .unwrap(),
+        Protocol::Anthropic,
+        tools(),
+        TokenCount::new(4096).unwrap(),
+        Duration::from_secs(3),
+    )
+    .unwrap();
+    let (result, report) =
+        relay_tool_conversation(&machine, plan, Protocol::Anthropic, "beta-headers").await;
+    assert!(result.is_ok());
+    assert_eq!(report.snapshot().state, ToolConversationState::Completed);
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 2);
+    for request in requests {
+        assert_eq!(
+            request.headers["anthropic-beta"],
+            "channel-beta,shared-beta,compact-2026-09-04"
+        );
     }
 }
 

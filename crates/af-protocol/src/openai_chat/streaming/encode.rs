@@ -186,7 +186,11 @@ impl OpenAiChatStreamEncoder {
                 })
             }
             CanonicalStreamEvent::CompactionStart { .. }
-            | CanonicalStreamEvent::CompactionEnd { .. } => {
+            | CanonicalStreamEvent::CompactionEnd { .. }
+            | CanonicalStreamEvent::AnthropicCompactionStart { .. }
+            | CanonicalStreamEvent::AnthropicCompactionDelta { .. }
+            | CanonicalStreamEvent::AnthropicCompactionEnd { .. }
+            | CanonicalStreamEvent::AnthropicUsageMetadata { .. } => {
                 Err(EncodeStreamError::UnsupportedEvent)
             }
             CanonicalStreamEvent::ToolCallStart {
@@ -316,7 +320,7 @@ impl OpenAiChatStreamEncoder {
                     &self.identity,
                     choice_index,
                     EncodedDelta::default(),
-                    Some(finish_reason(reason)),
+                    Some(finish_reason(reason)?),
                     self.include_usage_null,
                 )?;
                 state.finished = true;
@@ -557,13 +561,14 @@ fn encode_usage(usage: &Usage) -> Result<EncodedUsage, EncodeStreamError> {
     })
 }
 
-const fn finish_reason(reason: FinishReason) -> &'static str {
-    match reason {
+const fn finish_reason(reason: FinishReason) -> Result<&'static str, EncodeStreamError> {
+    Ok(match reason {
         FinishReason::Stop => "stop",
         FinishReason::Length => "length",
         FinishReason::ToolCalls => "tool_calls",
         FinishReason::ContentFilter => "content_filter",
-    }
+        FinishReason::Compaction => return Err(EncodeStreamError::UnsupportedEvent),
+    })
 }
 
 fn map_argument_error(error: BoundedJsonError) -> EncodeStreamError {

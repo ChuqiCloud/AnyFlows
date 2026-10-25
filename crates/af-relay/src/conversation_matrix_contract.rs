@@ -10,8 +10,8 @@ use af_adapter::Bytes;
 use af_domain::{Protocol, Role};
 use af_protocol::{
     CanonicalRequestEnvelope, CanonicalStreamEvent as Event, ContentBlock, ContentDelta,
-    FinishReason, TokenCount, Usage, UsageSemantics, UsageSource, anthropic, gemini, openai_chat,
-    openai_responses,
+    ConversationConversionError, ConversationConversionPlan, FinishReason, TokenCount, Usage,
+    UsageSemantics, UsageSource, anthropic, gemini, openai_chat, openai_responses,
 };
 use serde_json::{Value, json};
 
@@ -20,6 +20,7 @@ use crate::{chat_stream_encoder::ChatStreamEncoder, conversation_decoder::Conver
 
 const MODEL: &str = "matrix-model";
 const CREATED: i64 = 1_700_000_000;
+const COMPACTED_SUMMARY: &str = "matrix-compacted-summary\n已确认：保留用户约束、工具结果与待办事项。\nNext: continue from the summary.";
 const PROTOCOLS: [Protocol; 4] = [
     Protocol::OpenAiChat,
     Protocol::OpenAiResponses,
@@ -36,10 +37,11 @@ enum Scenario {
     ToolLoop,
     ParallelReordered,
     ReasoningHistory,
+    CompactedHistory,
     RecoverableParameters,
 }
 
-const SCENARIOS: [Scenario; 8] = [
+const SCENARIOS: [Scenario; 9] = [
     Scenario::Text,
     Scenario::MultiBlock,
     Scenario::SdkDefaults,
@@ -47,12 +49,13 @@ const SCENARIOS: [Scenario; 8] = [
     Scenario::ToolLoop,
     Scenario::ParallelReordered,
     Scenario::ReasoningHistory,
+    Scenario::CompactedHistory,
     Scenario::RecoverableParameters,
 ];
 
-/// 4 ingress x 4 upstream x 8 wire histories x JSON/SSE = 256 contracts.
+/// 4 ingress x 4 upstream x 9 wire histories x JSON/SSE = 288 contracts.
 #[test]
-fn all_256_wire_routes_preserve_replay_tools_and_terminal_usage() {
+fn all_288_wire_routes_preserve_replay_tools_and_terminal_usage() {
     let mut completed = 0;
     let mut failures = Vec::new();
     for source in PROTOCOLS {
@@ -140,12 +143,190 @@ fn all_256_wire_routes_preserve_replay_tools_and_terminal_usage() {
             }
         }
     }
-    assert_eq!(completed, 256);
+    assert_eq!(completed, 288);
     assert!(
         failures.is_empty(),
         "Failed wire contracts: {}",
         failures.join(", ")
     );
+}
+
+#[test]
+fn responses_compaction_controls_and_opaque_state_require_the_native_protocol() {
+    for stream in [false, true] {
+        for (controls, opaque) in [(true, false), (false, true), (true, true)] {
+            let mut wire = request_fixture(Protocol::OpenAiResponses, Scenario::Text, stream);
+            wire["store"] = json!(false);
+            if controls {
+                wire["context_management"] =
+                    json!([{"type":"compaction","compact_threshold":20000}]);
+            }
+            if opaque {
+                wire["input"].as_array_mut().unwrap().insert(
+                    0,
+                    json!({"type":"compaction","id":"cmp_matrix","encrypted_content":"opaque-matrix-compaction"}),
+                );
+            }
+            let inbound = parse_wire(Protocol::OpenAiResponses, wire.clone(), stream);
+            let expected_error = if controls {
+                ConversationConversionError::NativeContentRequired
+            } else {
+                ConversationConversionError::ContinuationRequired
+            };
+            for target in PROTOCOLS {
+                let label = format!(
+                    "Responses->{target:?}/controls={controls}/opaque={opaque}/stream={stream}"
+                );
+                let result = ConversationConversionPlan::prepare(inbound.clone(), target);
+                if target == Protocol::OpenAiResponses {
+                    let plan = result.unwrap_or_else(|error| panic!("{label}: {error:?}"));
+                    let native: Value = serde_json::from_slice(plan.body()).unwrap();
+                    assert_eq!(native, wire, "{label}: native compaction changed");
+                    let (_, body) = prepare_request(inbound.clone(), target).unwrap();
+                    assert_eq!(body, *plan.body(), "{label}: relay changed native state");
+                    let replay = parse_wire(target, native, stream);
+                    assert_eq!(
+                        replay.plan_conversation(target).unwrap().body(),
+                        plan.body(),
+                        "{label}: native state could not be replayed"
+                    );
+                } else {
+                    assert_eq!(
+                        result.unwrap_err(),
+                        expected_error,
+                        "{label}: compaction semantics must not be discarded"
+                    );
+                    assert!(
+                        prepare_request(inbound.clone(), target).is_err(),
+                        "{label}: relay accepted incompatible compaction"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn responses_v2_compaction_trigger_is_native_only_and_reaches_the_relay_body_unchanged() {
+    for stream in [false, true] {
+        let mut wire = request_fixture(Protocol::OpenAiResponses, Scenario::Text, stream);
+        wire["store"] = json!(false);
+        wire["input"].as_array_mut().unwrap().push(json!({
+            "type":"compaction_trigger",
+            "vendor_extension":{"preserve":true}
+        }));
+        let inbound = parse_wire(Protocol::OpenAiResponses, wire.clone(), stream);
+        let native = inbound
+            .clone()
+            .plan_conversation(Protocol::OpenAiResponses)
+            .expect("native Responses V2 compaction trigger is accepted");
+        assert_eq!(
+            serde_json::from_slice::<Value>(native.body()).unwrap(),
+            wire,
+            "same-protocol routing preserves the trigger item verbatim"
+        );
+        let (_, relay_body) = prepare_request(inbound.clone(), Protocol::OpenAiResponses).unwrap();
+        assert_eq!(relay_body, *native.body());
+        for target in [Protocol::OpenAiChat, Protocol::Anthropic, Protocol::Gemini] {
+            assert!(
+                inbound.clone().plan_conversation(target).is_none(),
+                "Responses compaction trigger must not degrade into {target:?}"
+            );
+            assert!(
+                prepare_request(inbound.clone(), target).is_err(),
+                "relay must reject the native-only trigger for {target:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn anthropic_compaction_controls_and_signed_history_remain_native_and_replayable() {
+    let controls = [
+        None,
+        Some((
+            "compaction",
+            json!({"type":"summarize","instructions":"preserve constraints","future_option":true}),
+        )),
+        Some((
+            "context_management",
+            json!({"edits":[{"type":"compact_20260112","trigger":{"type":"input_tokens","value":20000},"pause_after_compaction":true,"instructions":null}],"future_option":true}),
+        )),
+        Some((
+            "context_management",
+            json!({"edits":[{"type":"clear_thinking_20251015","keep":{"type":"thinking_turns","value":1}},{"type":"clear_tool_uses_20250919","trigger":{"type":"input_tokens","value":20000},"keep":{"type":"tool_uses","value":2}}]}),
+        )),
+    ];
+    for stream in [false, true] {
+        for control in &controls {
+            for summary in [None, Some(Value::Null), Some(json!(COMPACTED_SUMMARY))] {
+                let block = summary.map(|summary| {
+                    json!({
+                        "type":"compaction",
+                        "content":summary,
+                        "signature":"opaque-matrix-signature",
+                        "encrypted_content":"opaque-matrix-state",
+                        "tool_changes":[{"type":"tool_removal","name":"retired_tool"}],
+                        "cache_control":null,
+                        "annotations":null,
+                        "logprobs":null,
+                        "future_extension":{"preserve":true}
+                    })
+                });
+                if control.is_none() && block.is_none() {
+                    continue;
+                }
+                let mut wire = request_fixture(Protocol::Anthropic, Scenario::Text, stream);
+                if let Some(block) = &block {
+                    wire["messages"].as_array_mut().unwrap().extend([
+                        json!({"role":"assistant","content":[block.clone()]}),
+                        json!({"role":"user","content":"matrix-summary-next"}),
+                    ]);
+                }
+                if let Some((key, value)) = control {
+                    wire[*key] = value.clone();
+                }
+                let inbound = parse_wire(Protocol::Anthropic, wire.clone(), stream);
+                if let Some(block) = &block {
+                    assert!(inbound.canonical().messages.iter().any(|message| {
+                        message.content.iter().any(|content| {
+                            matches!(content, ContentBlock::AnthropicCompaction(item) if item.as_value() == block)
+                        })
+                    }), "signed compaction state must survive ingress validation");
+                }
+                for target in PROTOCOLS {
+                    let label = format!(
+                        "Anthropic->{target:?}/control={control:?}/history={}/stream={stream}",
+                        block.is_some()
+                    );
+                    let result = ConversationConversionPlan::prepare(inbound.clone(), target);
+                    if target == Protocol::Anthropic {
+                        let plan = result.unwrap_or_else(|error| panic!("{label}: {error:?}"));
+                        let native: Value = serde_json::from_slice(plan.body()).unwrap();
+                        assert_eq!(native, wire, "{label}: native compaction changed");
+                        let (_, body) = prepare_request(inbound.clone(), target).unwrap();
+                        assert_eq!(body, *plan.body(), "{label}: relay changed native state");
+                        let replay = parse_wire(target, native, stream);
+                        assert_eq!(
+                            replay.plan_conversation(target).unwrap().body(),
+                            plan.body(),
+                            "{label}: native compaction could not be replayed"
+                        );
+                    } else {
+                        assert_eq!(
+                            result.unwrap_err(),
+                            ConversationConversionError::NativeContentRequired,
+                            "{label}: signed compaction must not become plain text"
+                        );
+                        assert!(
+                            prepare_request(inbound.clone(), target).is_err(),
+                            "{label}: relay accepted native-only compaction"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn parse_wire(protocol: Protocol, value: Value, streaming: bool) -> CanonicalRequestEnvelope {
@@ -223,6 +404,7 @@ fn request_fixture(protocol: Protocol, scenario: Scenario, stream: bool) -> Valu
         Scenario::ToolLoop => append_tools(protocol, &mut wire, 1),
         Scenario::ParallelReordered => append_tools(protocol, &mut wire, 2),
         Scenario::ReasoningHistory => append_history(protocol, &mut wire, true),
+        Scenario::CompactedHistory => append_compacted_history(protocol, &mut wire),
         Scenario::RecoverableParameters => {
             wire["unknown_client_extension"] = json!({"value":"matrix-extension"});
             wire["temperature"] = Value::Null;
@@ -251,6 +433,37 @@ fn request_fixture(protocol: Protocol, scenario: Scenario, stream: bool) -> Valu
         Scenario::Text | Scenario::MultiBlock => {}
     }
     wire
+}
+
+fn append_compacted_history(protocol: Protocol, wire: &mut Value) {
+    // A readable summary is ordinary conversation content; it does not claim
+    // to translate a provider's encrypted continuation or compaction controls.
+    let (key, summary, next) = match protocol {
+        Protocol::OpenAiChat => (
+            "messages",
+            json!({"role":"assistant","content":COMPACTED_SUMMARY}),
+            json!({"role":"user","content":"matrix-summary-next"}),
+        ),
+        Protocol::OpenAiResponses => (
+            "input",
+            json!({"type":"message","role":"assistant","content":[{"type":"output_text","text":COMPACTED_SUMMARY}]}),
+            json!({"role":"user","content":"matrix-summary-next"}),
+        ),
+        Protocol::Anthropic => (
+            "messages",
+            json!({"role":"assistant","content":[{"type":"text","text":COMPACTED_SUMMARY}]}),
+            json!({"role":"user","content":"matrix-summary-next"}),
+        ),
+        Protocol::Gemini => (
+            "contents",
+            json!({"role":"model","parts":[{"text":COMPACTED_SUMMARY}]}),
+            json!({"role":"user","parts":[{"text":"matrix-summary-next"}]}),
+        ),
+        _ => unreachable!(),
+    };
+    let items = wire[key].as_array_mut().unwrap();
+    items.push(summary);
+    items.push(next);
 }
 
 fn append_history(protocol: Protocol, wire: &mut Value, reasoning: bool) {
@@ -373,6 +586,21 @@ fn assert_request_semantics(request: &CanonicalRequestEnvelope, scenario: Scenar
         assert!(
             text.contains("matrix-reasoning"),
             "{label}: reasoning history lost"
+        );
+    }
+    if matches!(scenario, Scenario::CompactedHistory) {
+        assert!(
+            request.canonical().messages.iter().any(|message| {
+                message.role == Role::Assistant
+                    && message.content.iter().any(
+                        |block| matches!(block, ContentBlock::Text(value) if value == COMPACTED_SUMMARY),
+                    )
+            }),
+            "{label}: readable summary or its assistant role changed"
+        );
+        assert!(
+            text.contains("matrix-summary-next"),
+            "{label}: prompt after compaction lost"
         );
     }
     if matches!(scenario, Scenario::ToolLoop | Scenario::ParallelReordered) {

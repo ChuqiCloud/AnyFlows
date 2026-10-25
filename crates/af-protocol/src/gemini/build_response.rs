@@ -182,6 +182,7 @@ fn build_finish_reason(
         FinishReason::Stop | FinishReason::Length | FinishReason::ToolCalls => {
             Err(BuildResponseError::InvalidValue)
         }
+        FinishReason::Compaction => Err(BuildResponseError::UnsupportedFeature),
     }
 }
 
@@ -235,7 +236,8 @@ fn build_content_block(
         } => build_tool_use_part(id, name, input, signature.as_deref(), state, seen_call_ids),
         ContentBlock::ToolResult { .. }
         | ContentBlock::CacheControl(_)
-        | ContentBlock::Compaction(_) => Err(BuildResponseError::UnsupportedFeature),
+        | ContentBlock::Compaction(_)
+        | ContentBlock::AnthropicCompaction(_) => Err(BuildResponseError::UnsupportedFeature),
     }
 }
 

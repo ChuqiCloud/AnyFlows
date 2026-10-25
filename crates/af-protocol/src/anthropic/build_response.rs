@@ -80,6 +80,30 @@ pub fn build_response(response: &CanonicalResponse) -> Result<Value, BuildRespon
     Ok(Value::Object(root))
 }
 
+/// 将已经完成流式采集的同源用量元数据合回响应。
+pub fn with_usage_metadata(
+    response: CanonicalResponse,
+    raw: Value,
+) -> Result<CanonicalResponse, BuildResponseError> {
+    let mut usage = Map::new();
+    validate_raw_usage(&raw, &mut usage)?;
+    let mut fields = match response.raw_passthrough() {
+        Some(raw) => raw
+            .fields_for_protocol(Protocol::Anthropic)
+            .map_err(|_| BuildResponseError::RawProtocolMismatch)?
+            .clone(),
+        None => Map::new(),
+    };
+    let existing = fields
+        .entry("usage".to_owned())
+        .or_insert_with(|| Value::Object(Map::new()));
+    existing
+        .as_object_mut()
+        .ok_or(BuildResponseError::InvalidValue)?
+        .extend(usage);
+    Ok(response.with_validated_raw_passthrough(Some((Protocol::Anthropic, fields))))
+}
+
 fn validate_choice(choice: &ResponseChoice) -> Result<(), BuildResponseError> {
     if choice.index != 0 || choice.message.role != Role::Assistant {
         return Err(BuildResponseError::InvalidValue);
@@ -165,6 +189,10 @@ fn build_content(choice: &ResponseChoice) -> Result<Vec<Value>, BuildResponseErr
     let mut output = Vec::with_capacity(choice.message.content.len());
     for block in &choice.message.content {
         output.push(match block {
+            ContentBlock::AnthropicCompaction(item) => {
+                state.add_block()?;
+                item.as_value().clone()
+            }
             ContentBlock::Text(text) => {
                 state.add_text(text)?;
                 object_value([
@@ -258,6 +286,7 @@ fn build_stop(
         (FinishReason::Length, None) => Ok(("max_tokens", None)),
         (FinishReason::ToolCalls, None) => Ok(("tool_use", None)),
         (FinishReason::ContentFilter, None) => Ok(("refusal", None)),
+        (FinishReason::Compaction, None) => Ok(("compaction", None)),
         _ => Err(BuildResponseError::InvalidValue),
     }
 }
@@ -380,13 +409,15 @@ fn validate_stop_details(value: &Value) -> Result<(), BuildResponseError> {
     Ok(())
 }
 
-fn validate_raw_usage(
+pub(super) fn validate_raw_usage(
     value: &Value,
     output: &mut Map<String, Value>,
 ) -> Result<(), BuildResponseError> {
     let usage = value.as_object().ok_or(BuildResponseError::InvalidValue)?;
     for (key, value) in usage {
         match key.as_str() {
+            "iterations" => super::parse_response::validate_iterations(value)
+                .map_err(map_response_validation_error)?,
             "inference_geo" => {
                 let value = value.as_str().ok_or(BuildResponseError::InvalidValue)?;
                 if value.is_empty()

@@ -281,6 +281,11 @@ fn rejects_invalid_compaction_context() {
     for context in [
         json!([]),
         json!([{"type": "compaction", "compact_threshold": 0}]),
+        json!([{"type": "compaction", "compact_threshold": -1}]),
+        json!([{"type": "compaction", "compact_threshold": 1_000_001}]),
+        json!([{"type": "compaction", "compact_threshold": 1.5}]),
+        json!([{"type": "compaction", "compact_threshold": "20000"}]),
+        json!([{"type": "compaction", "compact_threshold": true}]),
         json!([{"type": "compaction", "compact_threshold": 20000}, {"type": "compaction", "compact_threshold": 30000}]),
         json!([{"type": "unknown", "compact_threshold": 20000}]),
     ] {

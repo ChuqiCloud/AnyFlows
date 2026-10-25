@@ -13,6 +13,7 @@ use crate::{
 
 mod build;
 mod build_response;
+mod compaction;
 mod convert;
 mod error;
 mod parse_response;
@@ -22,10 +23,10 @@ mod upstream_error;
 mod wire;
 
 pub use build::{BuildRequestError, build_request};
-pub use build_response::{BuildResponseError, build_response};
+pub use build_response::{BuildResponseError, build_response, with_usage_metadata};
 pub use convert::{MAX_STOP_BYTES, MAX_STOP_SEQUENCES};
 pub use error::encode_error;
-pub use parse_response::{ParseResponseError, parse_response};
+pub use parse_response::{ParseResponseError, billing_usage, parse_response};
 pub use streaming::{
     AnthropicMessagesStreamDecoder, AnthropicMessagesStreamEncoder, DEFAULT_MAX_SSE_EVENT_BYTES,
     EncodeStreamError, MAX_SSE_EVENT_BYTES, ParseStreamError, SseParseError,
@@ -34,6 +35,8 @@ pub use upstream_error::{AnthropicUpstreamErrorKind, classify_error_response};
 
 #[cfg(test)]
 mod build_tests;
+#[cfg(test)]
+mod compaction_tests;
 #[cfg(test)]
 mod error_tests;
 #[cfg(test)]
@@ -45,7 +48,7 @@ mod tests;
 pub const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
 /// Anthropic Messages 接受的最大输出令牌数防御上限。
 pub const MAX_OUTPUT_TOKENS: i64 = 1_000_000;
-const REQUEST_JSON_LIMITS: JsonLimits = JsonLimits {
+pub(crate) const REQUEST_JSON_LIMITS: JsonLimits = JsonLimits {
     max_depth: 32,
     max_nodes: 100_000,
     max_object_entries: 1_024,
@@ -112,7 +115,6 @@ fn uses_known_unsupported_feature(value: &Value) -> bool {
     };
     if [
         "container",
-        "context_management",
         "inference_geo",
         "max_tokens_to_sample",
         "mcp_servers",
@@ -165,6 +167,9 @@ fn content_block_is_unsupported(block: &Value) -> bool {
     let Some(block) = block.as_object() else {
         return false;
     };
+    if block.get("type").and_then(Value::as_str) == Some("compaction") {
+        return false;
+    }
     if block.contains_key("citations") || block.contains_key("caller") {
         return true;
     }
