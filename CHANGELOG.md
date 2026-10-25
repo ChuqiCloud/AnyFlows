@@ -1,3 +1,42 @@
+## 0.3.0-beta.4 - 2026-10-25
+
+本版本基于 `v0.3.0-beta.3`，增加启动器托管、在线更新、Anthropic 原生上下文压缩和关于页面，完善四种协议的摘要回放、失败调用日志与部署说明。发布包增加 Linux、Windows、macOS 的 amd64 与 arm64 原生包，包含 Classic、Next 两套内置前端、启动器和 SHA-256 校验文件。
+
+### 新增
+
+- 发布包默认包含独立启动器，负责拉起主程序、传递停止信号和更新后自动重启；支持服务管理器或宝塔等面板启动，并保留直接运行主程序的方式。([#65](https://github.com/ChuqiCloud/AnyFlows/pull/65))
+- 增加当前节点的版本检测与在线安装，按操作系统、架构和 libc 匹配发行包，校验版本、文件大小与 SHA-256 后替换主程序。二进制部署默认启用在线安装，可通过配置关闭。([#65](https://github.com/ChuqiCloud/AnyFlows/pull/65))
+- 增加 Anthropic Messages 原生压缩与上下文编辑支持，保留压缩块、摘要、签名、扩展字段和流式事件，合并传递客户端与渠道的 beta 参数。([#66](https://github.com/ChuqiCloud/AnyFlows/pull/66))
+- 增加独立的“关于 AnyFlows”页面，展示公司信息、合作伙伴、当前系统版本与更新入口，站点设置不再放置更新面板。([#67](https://github.com/ChuqiCloud/AnyFlows/pull/67))
+
+### 优化
+
+- 完善 OpenAI Chat、OpenAI Responses、Anthropic Messages 与 Gemini GenerateContent 之间的普通文本摘要回放，覆盖四种入口到四种上游的 16 个方向；补齐 Responses 原生压缩参数与状态转发。([#66](https://github.com/ChuqiCloud/AnyFlows/pull/66))
+- 启动器继承服务管理器或面板注入的环境变量和日志管道，支持工作目录 `.env` 与显式环境文件；同名外部环境变量优先。([#65](https://github.com/ChuqiCloud/AnyFlows/pull/65))
+- 失败调用日志增加详情抽屉，支持查看完整错误、请求人及关联调试追踪，改善长错误内容的展示。([#62](https://github.com/ChuqiCloud/AnyFlows/pull/62))
+- 整理二进制安装、Docker Compose、多节点部署、配置和升级文档，补充合作伙伴与社区赞助信息。([#61](https://github.com/ChuqiCloud/AnyFlows/pull/61)、[#63](https://github.com/ChuqiCloud/AnyFlows/pull/63)、[#64](https://github.com/ChuqiCloud/AnyFlows/pull/64))
+
+### 修复
+
+- 修复仅返回原生压缩状态时被误判为无有效输出而返回 503，以及流式结束后的纯 SSE 注释心跳触发协议错误的问题。([#66](https://github.com/ChuqiCloud/AnyFlows/pull/66))
+- 修复流式响应返回 EOF 时计费回调尚未完成的竞态，避免紧接着停机导致用量记录丢失；压缩迭代计入内部结算，普通消息迭代不重复累计。([#66](https://github.com/ChuqiCloud/AnyFlows/pull/66))
+- 修复构建环境中的 Cargo 变量干扰运行配置，以及环境文件变量名的跨平台兼容问题。([#65](https://github.com/ChuqiCloud/AnyFlows/pull/65))
+- Linux 发行构建固定使用 Debian Bookworm，避免构建节点升级导致发布包要求更高版本的 glibc。
+
+### 安全更新
+
+- JWT 签名与验签改用 AWS-LC 后端，修复原加密依赖的安全审计问题。([#63](https://github.com/ChuqiCloud/AnyFlows/pull/63))
+
+### 升级与兼容
+
+- 升级前备份数据库、配置和计费 WAL。在线安装只更新当前节点，多节点部署应逐台处理；程序回退不会降级数据库。
+- 启动器托管模式在更新后自动重启主程序；裸启动模式安装完成后需通过原有服务管理器重启。启动器本身需停止服务后手动更新，容器部署通过更换镜像标签升级。
+- Responses 不透明压缩状态和 Anthropic 原生压缩块仅适用于对应协议，且上游需支持相应能力。跨协议继续对话时，由客户端明确使用普通文本摘要。
+- Linux glibc 包要求 glibc 2.36 或更新版本及 OpenSSL 3；macOS 包要求 macOS 15 或更新版本。未提供对应平台安装包时，请按部署文档手动升级。
+- 本版本为社区版 Beta 预发布，用于测试和部署验收。
+
+完整变更：[v0.3.0-beta.3...v0.3.0-beta.4](https://github.com/ChuqiCloud/AnyFlows/compare/v0.3.0-beta.3...v0.3.0-beta.4)。
+
 ## 0.3.0-beta.3 - 2026-10-24
 
 本版本基于 `v0.3.0-beta.2`，增加渠道级路由绑定、凭据批量管理和构建版本查询，完善四类对话协议与 Agent 连续对话兼容，修复渠道竞速、流式等待及智能路由问题。

@@ -20,7 +20,7 @@
 3. 在 `main` 对应提交创建附注标签，核对仓库地址、版本号和标签指向后，仅推送该标签。
 4. 确认 `Publish public release` 工作流成功，发布说明与变更记录一致，归档和 SHA-256 附件齐全。
 
-发布工作流构建 Linux amd64 二进制及 Classic、Next 两套内置前端。Alpha、Beta 和 RC 标记为 Pre-release，正式版设为 Latest。合并 PR 不会自动创建标签或 Release。
+发布工作流构建 Linux、Windows、macOS 的 amd64 与 arm64 原生包，包含主程序、启动器和 Classic、Next 两套内置前端，并发布原始主程序及 SHA-256 校验文件。Linux 发行构建固定使用 Debian Bookworm，要求 glibc 2.36 或更新版本及 OpenSSL 3。Alpha、Beta 和 RC 标记为 Pre-release，正式版设为 Latest。合并 PR 不会自动创建标签或 Release。
 
 标签和已发布产物不可覆盖；修复使用新的版本号。
 
