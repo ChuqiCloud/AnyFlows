@@ -1,4 +1,5 @@
 import { ClientProfilePage } from '@/features/client-profiles/client-profile-page'
+import { AboutPage } from '@/features/about/about-page'
 import { AccountVerificationPage } from '@/features/account-verification/account-verification-page'
 import { VerificationSettingsPanel } from '@/features/account-verification/verification-settings-panel'
 import { useCallback, useEffect, useState } from 'react'
@@ -146,6 +147,8 @@ function ManagementEntry({
       ? 'credentialProxies.title'
     : view === 'site-settings'
       ? 'siteSettings.title'
+    : view === 'about'
+      ? 'nav.about'
     : view === 'site-navigation'
       ? 'nav.siteNavigation'
       : view === 'authentication-settings'
@@ -221,6 +224,8 @@ function ManagementEntry({
       ? <CredentialProxyPage />
     : view === 'site-settings'
       ? <SiteSettingsPage />
+    : view === 'about'
+      ? <AboutPage />
     : view === 'site-navigation'
       ? <SiteNavigationPage />
       : view === 'authentication-settings'

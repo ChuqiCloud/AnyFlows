@@ -18,6 +18,7 @@ export type NavKey =
   | 'redemptionCodes'
   | 'refunds'
   | 'siteSettings'
+  | 'about'
   | 'siteNavigation'
   | 'authenticationSettings'
   | 'emailSettings'
@@ -88,6 +89,7 @@ export const systemSectionItems = [
   'credentialProxies',
   'routes',
   'siteSettings',
+  'about',
   'siteNavigation',
   'authenticationSettings',
   'announcements',
