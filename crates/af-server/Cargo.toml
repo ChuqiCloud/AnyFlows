@@ -6,22 +6,22 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-af-account = { path = "../af-account", version = "0.3.0-beta.3" }
-af-admin = { path = "../af-admin", version = "0.3.0-beta.3" }
-af-analytics = { path = "../af-analytics", version = "0.3.0-beta.3" }
-af-adapter = { path = "../af-adapter", version = "0.3.0-beta.3" }
-af-billing = { path = "../af-billing", version = "0.3.0-beta.3" }
-af-cache = { path = "../af-cache", version = "0.3.0-beta.3" }
-af-config = { path = "../af-config", version = "0.3.0-beta.3" }
-af-db = { path = "../af-db", version = "0.3.0-beta.3" }
-af-domain = { path = "../af-domain", version = "0.3.0-beta.3" }
-af-http = { path = "../af-http", version = "0.3.0-beta.3" }
-af-httpclient = { path = "../af-httpclient", version = "0.3.0-beta.3" }
-af-launcher = { path = "../af-launcher", version = "0.3.0-beta.3" }
-af-protocol = { path = "../af-protocol", version = "0.3.0-beta.3" }
-af-relay = { path = "../af-relay", version = "0.3.0-beta.3" }
-af-scheduler = { path = "../af-scheduler", version = "0.3.0-beta.3" }
-af-telemetry = { path = "../af-telemetry", version = "0.3.0-beta.3" }
+af-account = { path = "../af-account", version = "0.3.0-beta.4" }
+af-admin = { path = "../af-admin", version = "0.3.0-beta.4" }
+af-analytics = { path = "../af-analytics", version = "0.3.0-beta.4" }
+af-adapter = { path = "../af-adapter", version = "0.3.0-beta.4" }
+af-billing = { path = "../af-billing", version = "0.3.0-beta.4" }
+af-cache = { path = "../af-cache", version = "0.3.0-beta.4" }
+af-config = { path = "../af-config", version = "0.3.0-beta.4" }
+af-db = { path = "../af-db", version = "0.3.0-beta.4" }
+af-domain = { path = "../af-domain", version = "0.3.0-beta.4" }
+af-http = { path = "../af-http", version = "0.3.0-beta.4" }
+af-httpclient = { path = "../af-httpclient", version = "0.3.0-beta.4" }
+af-launcher = { path = "../af-launcher", version = "0.3.0-beta.4" }
+af-protocol = { path = "../af-protocol", version = "0.3.0-beta.4" }
+af-relay = { path = "../af-relay", version = "0.3.0-beta.4" }
+af-scheduler = { path = "../af-scheduler", version = "0.3.0-beta.4" }
+af-telemetry = { path = "../af-telemetry", version = "0.3.0-beta.4" }
 futures-util.workspace = true
 getrandom.workspace = true
 include_dir.workspace = true

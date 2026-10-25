@@ -41,6 +41,7 @@ jobs:
       clickhouse: ${{ steps.paths.outputs.clickhouse }}
       deployment: ${{ steps.paths.outputs.deployment }}
       systemd: ${{ steps.paths.outputs.systemd }}
+      release: ${{ steps.paths.outputs.release }}
     steps:
       - name: Configure checkout endpoint
         if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
@@ -83,6 +84,7 @@ jobs:
               echo "clickhouse=true"
               echo "deployment=true"
               echo "systemd=true"
+              echo "release=true"
             } >> "$GITHUB_OUTPUT"
           }
 
@@ -127,6 +129,7 @@ jobs:
             echo "clickhouse=$(matches '^(crates/af-server/src/admin_dashboard_storage/clickhouse\.rs$|crates/af-server/tests/admin_dashboard_chain\.rs$|tools/ci/run-clickhouse-integration-test\.sh$)')"
             echo "deployment=$(matches '^(Dockerfile$|docker-compose\.ya?ml$|\.dockerignore$|scripts/deploy/)')"
             echo "systemd=$(matches '^(scripts/systemd/|tools/ci/(package-release|finalize-release|test-release-scripts|verify-release-tag)\.sh$|\.cnb/release\.yml$)')"
+            echo "release=$(matches '^(Cargo\.(toml|lock)$|rust-toolchain\.toml$|\.github/workflows/(ci|publish-public-release|release-checks)\.yml$|tools/ci/(build-linux-release|package-release|finalize-release|test-release-scripts|verify-release-tag)\.sh$|tools/ci/.*platform\.py$)')"
           } >> "$GITHUB_OUTPUT"
 
   deployment:
@@ -239,9 +242,9 @@ jobs:
   release-package:
     name: Linux amd64 release package
     needs: changes
-    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.rust == 'true' }}
+    if: ${{ needs.changes.outputs.release == 'true' || (needs.changes.outputs.full == 'true' && needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - name: Configure checkout endpoint
         if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
@@ -267,22 +270,31 @@ jobs:
           git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
           git checkout --detach FETCH_HEAD
 
-      - name: Ensure Rust toolchain manager
-        shell: bash
-        run: bash tools/ci/install-rustup.sh
-
-      - name: Install pinned Rust toolchain
-        shell: bash
-        run: |
-          toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
-          test -n "$toolchain"
-          rustup toolchain install "$toolchain" --profile minimal
-          rustc --version --verbose
-
-      - name: Cache release build artifacts
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Restore Bookworm release artifacts on Gitea
+        id: bookworm-cache-gitea
+        if: github.server_url != 'https://github.com'
+        uses: actions/cache/restore@f4b3439a656ba812b8cb417d2d49f9c810103092 # v3.4.0
         with:
-          key: release
+          path: |
+            target/bookworm
+            target/bookworm-cargo
+          key: ci-release-bookworm-x86_64-unknown-linux-gnu-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/ci/build-linux-release.sh') }}-${{ github.sha }}
+          restore-keys: |
+            ci-release-bookworm-x86_64-unknown-linux-gnu-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/ci/build-linux-release.sh') }}-
+            ci-release-bookworm-x86_64-unknown-linux-gnu-
+
+      - name: Restore Bookworm release artifacts on GitHub
+        id: bookworm-cache-github
+        if: github.server_url == 'https://github.com'
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            target/bookworm
+            target/bookworm-cargo
+          key: ci-release-bookworm-x86_64-unknown-linux-gnu-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/ci/build-linux-release.sh') }}-${{ github.sha }}
+          restore-keys: |
+            ci-release-bookworm-x86_64-unknown-linux-gnu-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/ci/build-linux-release.sh') }}-
+            ci-release-bookworm-x86_64-unknown-linux-gnu-
 
       - name: Install frontend dependencies
         shell: bash
@@ -296,21 +308,69 @@ jobs:
           corepack pnpm@10.33.0 --dir web build
           corepack pnpm@10.33.0 --dir web-next build
 
-      - name: Build release binary
+      - name: Build and verify Bookworm release binaries
+        id: bookworm-build
         run: |
           export AF_BUILD_COMMIT="$(git rev-parse HEAD)"
           export AF_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          cargo build --release --locked --package af-server --package af-launcher
+          bash tools/ci/build-linux-release.sh x86_64-unknown-linux-gnu
+
+      - name: Verify release binary identities
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import subprocess
+          import tomllib
+
+          with Path('Cargo.toml').open('rb') as manifest:
+              version = tomllib.load(manifest)['workspace']['package']['version']
+          target = 'x86_64-unknown-linux-gnu'
+          directory = Path('target/bookworm') / target / 'release'
+          metadata = json.loads(subprocess.check_output([str((directory / 'af-server').resolve()), '--version'], text=True))
+          launcher = json.loads(subprocess.check_output([str((directory / 'anyflows-launcher').resolve()), '--version'], text=True))
+          if metadata['target'] != target or metadata['version'] != version:
+              raise ValueError('Binary target/version differs from release inputs')
+          if launcher['target'] != target or metadata['launcher_protocol'] != launcher['protocol']:
+              raise ValueError('Launcher target/protocol differs from main program')
+          PY
 
       - name: Package and verify release archive
         shell: bash
         run: |
           export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
-          bash tools/ci/package-release.sh auto amd64
+          if [[ "${{ github.server_url }}" == 'https://github.com' ]]; then
+            version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+            test -n "$version"
+            python3 tools/ci/package-platform.py "v$version" x86_64-unknown-linux-gnu target/bookworm/x86_64-unknown-linux-gnu/release/af-server target/bookworm/x86_64-unknown-linux-gnu/release/anyflows-launcher
+          else
+            bash tools/ci/package-release.sh auto amd64 \
+              target/bookworm/x86_64-unknown-linux-gnu/release/af-server release \
+              target/bookworm/x86_64-unknown-linux-gnu/release/anyflows-launcher
+          fi
           archive="$(find release -maxdepth 1 -type f -name 'anyflows-v*-linux-amd64.tar.gz' -print -quit)"
           test -n "$archive"
           test -s "$archive"
           test -s "$archive.sha256"
+
+      - name: Save completed Bookworm compilation artifacts on Gitea
+        if: ${{ always() && !cancelled() && github.server_url != 'https://github.com' && steps.bookworm-build.outputs.cache-ready == 'true' && steps.bookworm-cache-gitea.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@f4b3439a656ba812b8cb417d2d49f9c810103092 # v3.4.0
+        with:
+          path: |
+            target/bookworm
+            target/bookworm-cargo
+          key: ${{ steps.bookworm-cache-gitea.outputs.cache-primary-key }}
+
+      - name: Save completed Bookworm compilation artifacts on GitHub
+        if: ${{ always() && !cancelled() && github.server_url == 'https://github.com' && steps.bookworm-build.outputs.cache-ready == 'true' && steps.bookworm-cache-github.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            target/bookworm
+            target/bookworm-cargo
+          key: ${{ steps.bookworm-cache-github.outputs.cache-primary-key }}
 
   frontend-quality:
     name: Frontend quality gates (${{ matrix.frontend }})

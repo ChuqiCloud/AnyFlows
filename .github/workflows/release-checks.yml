@@ -44,6 +44,7 @@ jobs:
         shell: bash
         run: |
           bash -n tools/ci/verify-release-tag.sh
+          bash -n tools/ci/build-linux-release.sh
           bash -n tools/ci/package-release.sh
           bash -n tools/ci/finalize-release.sh
           bash -n tools/ci/test-release-scripts.sh

@@ -14,7 +14,7 @@ dependencies = [
 
 [[package]]
 name = "af-account"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "af-cache",
  "af-config",
@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "af-adapter"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "af-domain",
  "af-httpclient",
@@ -66,7 +66,7 @@ dependencies = [
 
 [[package]]
 name = "af-admin"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "af-account",
  "af-billing",
@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "af-analytics"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "af-domain",
  "futures-util",
@@ -109,7 +109,7 @@ dependencies = [
 
 [[package]]
 name = "af-billing"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "af-db",
  "af-domain",
@@ -132,7 +132,7 @@ dependencies = [
 
 [[package]]
 name = "af-cache"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "af-domain",
  "async-trait",
@@ -146,7 +146,7 @@ dependencies = [
 
 [[package]]
 name = "af-config"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "af-domain",
  "async-trait",
@@ -161,7 +161,7 @@ dependencies = [
 
 [[package]]
 name = "af-db"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "af-domain",
  "argon2",
@@ -184,7 +184,7 @@ dependencies = [
 
 [[package]]
 name = "af-domain"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "getrandom 0.4.3",
  "regex",
@@ -197,7 +197,7 @@ dependencies = [
 
 [[package]]
 name = "af-http"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "af-admin",
  "af-analytics",
@@ -232,7 +232,7 @@ dependencies = [
 
 [[package]]
 name = "af-httpclient"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "bytes",
  "futures-core",
@@ -249,7 +249,7 @@ dependencies = [
 
 [[package]]
 name = "af-launcher"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "dotenvy",
  "fs2",
@@ -263,7 +263,7 @@ dependencies = [
 
 [[package]]
 name = "af-protocol"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "af-domain",
  "base64 0.22.1",
@@ -276,7 +276,7 @@ dependencies = [
 
 [[package]]
 name = "af-relay"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "af-adapter",
  "af-domain",
@@ -295,7 +295,7 @@ dependencies = [
 
 [[package]]
 name = "af-scheduler"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "af-db",
  "af-domain",
@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "af-server"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "af-account",
  "af-adapter",
@@ -355,7 +355,7 @@ dependencies = [
 
 [[package]]
 name = "af-telemetry"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "af-config",
  "metrics",
@@ -5875,7 +5875,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "af-domain",
  "af-http",
