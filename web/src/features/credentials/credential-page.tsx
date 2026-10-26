@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Download, KeyRound, Plus, RefreshCw } from 'lucide-react'
+import { Boxes, Download, KeyRound, Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -82,6 +82,7 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
         <div className="flex items-center gap-2">
           <Button type="button" size="sm" variant="secondary" disabled={channelsQuery.isFetching || credentialsQuery.isFetching} onClick={refreshAll}><RefreshCw className={channelsQuery.isFetching || credentialsQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />{t('credentials.actions.refresh')}</Button>
           <Button type="button" size="sm" disabled={!selectedChannel} onClick={() => setEditor('create')}><Plus aria-hidden="true" />{t('credentials.actions.add')}</Button>
+          <Button type="button" size="sm" variant="secondary" disabled={!selectedChannel} onClick={() => { if (selectedChannel) window.location.hash = `#/console/channels/models?channel=${selectedChannel.id}` }}><Boxes aria-hidden="true" />{t('credentials.actions.models')}</Button>
           {canImportCodex ? <Button type="button" size="sm" variant="secondary" disabled={exporting} onClick={() => void exportFiles()}><Download aria-hidden="true" />{t(exporting ? 'credentials.fileTransfer.exporting' : 'credentials.fileTransfer.export')}</Button> : null}
         </div>
       </header>

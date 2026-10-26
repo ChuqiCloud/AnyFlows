@@ -616,6 +616,7 @@
       "showApiKey": "Show upstream API key",
       "hideApiKey": "Hide upstream API key",
       "credentials": "Manage credentials",
+      "models": "Manage models",
       "refreshCredentials": "Refresh credentials",
       "removeModel": "Remove model {{model}}",
       "removeGroup": "Remove group {{group}}",
@@ -1038,6 +1039,58 @@
       "description": "“{{name}}” and its candidate configuration will be permanently deleted. This cannot be undone."
     }
   },
+  "channelModels": {
+    "title": "Channel models",
+    "summary": {
+      "models_one": "{{count}} connected model",
+      "models_other": "{{count}} connected models",
+      "groups_one": "{{count}} routing group",
+      "groups_other": "{{count}} routing groups",
+      "mapping_one": "{{count}} mapping",
+      "mapping_other": "{{count}} mappings"
+    },
+    "sections": {
+      "connected": "Connected models",
+      "connectedHint": "This page controls which models this channel may serve. Maintain model metadata, capabilities, and prices in the model catalog.",
+      "mapping": "Model mapping",
+      "mappingHint": "The left side is the public model name and the right side is the upstream model name. Same-name models need no mapping.",
+      "groups": "Routing groups",
+      "groupsHint": "Models and groups must be configured together before this channel can enter routing.",
+      "discovery": "Discover upstream models",
+      "discoveryHint": "Uses the current channel credentials to read the upstream list. This is a preview and never overwrites existing configuration."
+    },
+    "actions": {
+      "back": "Back to channels",
+      "credentials": "Manage credentials",
+      "refresh": "Refresh",
+      "discover": "Get upstream models",
+      "discovering": "Loading…",
+      "addSelected": "Add selected ({{count}})",
+      "close": "Close preview",
+      "save": "Save model configuration",
+      "saving": "Saving…",
+      "cancel": "Back",
+      "models": "Manage models"
+    },
+    "discovery": {
+      "candidates": "Models available to add ({{count}})",
+      "empty": "The upstream did not return any new models.",
+      "unsupported": "Automatic discovery is not supported for this protocol. You can still add models manually.",
+      "upstream": "Upstream model"
+    },
+    "mapping": { "empty": "No model mappings configured." },
+    "feedback": { "saved": "Channel model configuration saved." },
+    "validation": {
+      "routing": "Models and routing groups must both be empty or both be configured.",
+      "limit": "The model or group limit was exceeded. Remove some entries and try again.",
+      "configuration": "Model names and mappings must be unique, non-empty, and within the allowed length."
+    },
+    "errors": {
+      "load": "Channel model configuration could not be loaded.",
+      "save": "Channel model configuration could not be saved.",
+      "discovery": "Upstream model discovery failed. Check the credential and channel connectivity."
+    }
+  },
   "credentials": {
     "health": {
       "degraded": "Reduced health weight",
@@ -1310,6 +1363,7 @@
       "refresh": "Refresh",
       "retry": "Try again",
       "add": "Add credential",
+      "models": "Manage models",
       "create": "Create credential",
       "save": "Save changes",
       "edit": "Edit credential",
