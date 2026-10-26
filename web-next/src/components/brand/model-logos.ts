@@ -40,6 +40,7 @@ import Nvidia from '@lobehub/icons/es/Nvidia/components/Mono'
 import SambaNova from '@lobehub/icons/es/SambaNova/components/Mono'
 import SiliconCloud from '@lobehub/icons/es/SiliconCloud/components/Mono'
 import Tencent from '@lobehub/icons/es/Tencent/components/Mono'
+import XiaomiMiMo from '@lobehub/icons/es/XiaomiMiMo/components/Mono'
 
 import { findProvider, normalizeProvider } from './provider-catalog'
 
@@ -61,6 +62,7 @@ export const modelLogos: readonly { name: string; Icon: LogoComponent }[] = [
   { name: 'Kimi', Icon: Kimi as LogoComponent },
   { name: 'Zhipu', Icon: Zhipu as LogoComponent },
   { name: 'MiniMax', Icon: Minimax as LogoComponent },
+  { name: 'XiaomiMiMo', Icon: XiaomiMiMo as LogoComponent },
   { name: 'Doubao', Icon: Doubao as LogoComponent },
   { name: 'Hunyuan', Icon: Hunyuan as LogoComponent },
   { name: 'Wenxin', Icon: Wenxin as LogoComponent },
@@ -134,6 +136,8 @@ export function findModelLogo(model: string) {
                           ? 'Hunyuan'
                           : value.includes('minimax')
                             ? 'MiniMax'
+                            : value.includes('xiaomi') || /(^|[^a-z0-9])mimo(?:[^a-z0-9]|$)/.test(value)
+                                ? 'XiaomiMiMo'
                             : value.includes('wenxin') || value.includes('ernie')
                               ? 'Wenxin'
                               : value.includes('baichuan')
