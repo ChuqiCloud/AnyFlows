@@ -21,6 +21,7 @@ import { BillingSettingsPage } from '@/features/billing-settings/billing-setting
 import { AnnouncementPage } from '@/features/announcements/announcement-page'
 import { ApiExplorerPage } from '@/features/api-explorer/api-explorer-page'
 import { ChannelPage } from '@/features/channels/channel-page'
+import { ChannelModelPage } from '@/features/channels/channel-model-page'
 import { CredentialPage } from '@/features/credentials/credential-page'
 import { CredentialProxyPage } from '@/features/credential-proxies/credential-proxy-page'
 import { DashboardPage } from '@/features/dashboard/dashboard-page'
@@ -137,6 +138,8 @@ function ManagementEntry({
   const extensionRoute = extensionPath ? findConsoleExtensionRoute(extensionPath) : undefined
   const titleKey = extensionRoute?.titleKey ?? (view === 'channels'
     ? 'channels.title'
+    : view === 'channel-models'
+      ? 'channels.models.title'
     : view === 'client-profiles'
       ? 'clientProfiles.title'
     : view === 'announcements'
@@ -214,6 +217,8 @@ function ManagementEntry({
     ? <ConsoleExtensionPage path={extensionPath ?? ''} />
     : view === 'channels'
     ? <ChannelPage />
+    : view === 'channel-models'
+      ? <ChannelModelPage channelId={credentialChannelId} />
     : view === 'client-profiles'
       ? <ClientProfilePage />
     : view === 'announcements'

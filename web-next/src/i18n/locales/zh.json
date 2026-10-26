@@ -616,6 +616,7 @@
       "showApiKey": "显示上游 API Key",
       "hideApiKey": "隐藏上游 API Key",
       "credentials": "管理凭据",
+      "models": "管理模型",
       "refreshCredentials": "刷新凭据",
       "removeModel": "移除模型 {{model}}",
       "removeGroup": "移除分组 {{group}}",
@@ -1038,6 +1039,58 @@
       "description": "将永久删除“{{name}}”及其候选配置，此操作无法撤销。"
     }
   },
+  "channelModels": {
+    "title": "渠道模型",
+    "summary": {
+      "models_one": "{{count}} 个已接入模型",
+      "models_other": "{{count}} 个已接入模型",
+      "groups_one": "{{count}} 个路由分组",
+      "groups_other": "{{count}} 个路由分组",
+      "mapping_one": "{{count}} 条映射",
+      "mapping_other": "{{count}} 条映射"
+    },
+    "sections": {
+      "connected": "已接入模型",
+      "connectedHint": "这里只维护本渠道允许调用的模型。模型资料、能力和价格请在模型目录维护。",
+      "mapping": "模型映射",
+      "mappingHint": "左侧是对外模型名，右侧是上游实际模型名。没有映射时使用同名模型。",
+      "groups": "路由分组",
+      "groupsHint": "模型和分组需要成对配置，保存后才会进入渠道路由。",
+      "discovery": "从上游获取",
+      "discoveryHint": "使用当前渠道凭据读取上游模型列表，只会预览，不会覆盖已有配置。"
+    },
+    "actions": {
+      "back": "返回渠道",
+      "credentials": "管理凭据",
+      "refresh": "刷新",
+      "discover": "获取上游模型",
+      "discovering": "正在获取…",
+      "addSelected": "加入所选（{{count}}）",
+      "close": "关闭预览",
+      "save": "保存模型配置",
+      "saving": "保存中…",
+      "cancel": "返回",
+      "models": "管理模型"
+    },
+    "discovery": {
+      "candidates": "可加入模型（{{count}}）",
+      "empty": "上游没有返回新的模型。",
+      "unsupported": "当前渠道协议不支持自动获取模型，可手动添加。",
+      "upstream": "上游模型"
+    },
+    "mapping": { "empty": "暂未配置模型映射。" },
+    "feedback": { "saved": "渠道模型配置已保存。" },
+    "validation": {
+      "routing": "模型和路由分组必须同时为空或同时配置。",
+      "limit": "模型或分组数量超过限制，请减少后重试。",
+      "configuration": "模型名称和映射必须唯一、非空，且不能超过长度限制。"
+    },
+    "errors": {
+      "load": "无法读取渠道模型配置。",
+      "save": "渠道模型配置保存失败，请稍后重试。",
+      "discovery": "上游模型获取失败，请先检查凭据和渠道连通性。"
+    }
+  },
   "credentials": {
     "health": {
       "degraded": "健康降权",
@@ -1310,6 +1363,7 @@
       "refresh": "刷新",
       "retry": "重试",
       "add": "添加凭据",
+      "models": "管理模型",
       "create": "创建凭据",
       "save": "保存修改",
       "edit": "编辑凭据",
