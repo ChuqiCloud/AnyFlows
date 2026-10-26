@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Download, KeyRound, Plus, RefreshCw } from 'lucide-react'
+import { Boxes, Download, KeyRound, Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button, Skeleton } from '@heroui/react'
@@ -81,6 +81,7 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
         <div><h2 className="text-lg font-semibold">{t('credentials.title')}</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{t('credentials.subtitle')}</p></div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Button type="button" size="sm" variant="bordered" isDisabled={channelsQuery.isFetching || credentialsQuery.isFetching} onClick={refreshAll}><RefreshCw className={`size-3.5 ${channelsQuery.isFetching || credentialsQuery.isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />{t('credentials.actions.refresh')}</Button>
+          <Button type="button" size="sm" variant="bordered" isDisabled={!selectedChannel} onClick={() => selectedChannel && navigateTo(`/console/channel-models?channel=${selectedChannel.id}`)}><Boxes className="size-3.5" aria-hidden="true" />{t('credentials.actions.models')}</Button>
           <Button type="button" color="primary" size="sm" isDisabled={!selectedChannel} onClick={() => setEditor('create')}><Plus className="size-3.5" aria-hidden="true" />{t('credentials.actions.add')}</Button>
           {canImportCodex ? <Button type="button" size="sm" variant="flat" isDisabled={exporting} onClick={() => void exportFiles()}><Download className="size-3.5" aria-hidden="true" />{t(exporting ? 'credentials.fileTransfer.exporting' : 'credentials.fileTransfer.export')}</Button> : null}
         </div>

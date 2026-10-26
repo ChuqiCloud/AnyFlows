@@ -48,6 +48,10 @@ export function ChannelPage() {
     navigateTo(`/console/credentials?channel=${channel.id}`)
   }
 
+  const openModels = (channel: AdminChannel) => {
+    navigateTo(`/console/channel-models?channel=${channel.id}`)
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -80,7 +84,7 @@ export function ChannelPage() {
           <Button type="button" size="sm" variant="bordered" className="mt-3" onClick={() => channelsQuery.refetch()}>{t('channels.actions.retry')}</Button>
         </div>
       ) : (
-        <ChannelTable channels={channels} probeResults={probeResults} probingId={probingId} onCredentials={openCredentials} onProfile={setProfileChannel} onEdit={setEditor} onProbe={probe} />
+        <ChannelTable channels={channels} probeResults={probeResults} probingId={probingId} onCredentials={openCredentials} onModels={openModels} onProfile={setProfileChannel} onEdit={setEditor} onProbe={probe} />
       )}
 
       {channelsQuery.isFetchNextPageError ? <p role="alert" className="text-xs text-destructive">{t('channels.error.body')}</p> : null}
