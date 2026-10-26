@@ -22,7 +22,7 @@ test('KaTeX renders inline and display math through the playground Markdown pipe
 })
 
 test('KaTeX reports malformed expressions without aborting the Markdown render', () => {
-  const html = renderMarkdown('$\\unknowncommand{2}$')
+  const html = renderMarkdown('$\\frac{1}{2$')
   assert.match(html, /katex-error/)
 })
 
