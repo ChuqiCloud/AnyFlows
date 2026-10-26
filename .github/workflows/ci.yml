@@ -416,6 +416,9 @@ jobs:
           corepack enable
           corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} install --frozen-lockfile
 
+      - name: Audit frontend dependencies
+        run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} audit --audit-level=low
+
       - name: Check shared frontend parity
         run: node tools/ci/check-frontend-parity.mjs
 
