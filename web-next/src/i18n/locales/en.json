@@ -64,7 +64,9 @@
     "allTags": "All categories",
     "count": "{{count}} APIs",
     "loadMore": "Load more",
-    "actions": { "retry": "Retry" },
+    "actions": {
+      "retry": "Retry"
+    },
     "loading": "Loading API catalog…",
     "empty": "No matching APIs",
     "required": "Required",
@@ -115,6 +117,7 @@
       "personal": "Personal"
     },
     "sections": {
+      "billing": "Billing",
       "personal": "Personal account",
       "organization": "Organization",
       "enterprise": "Enterprise management",
@@ -7726,9 +7729,13 @@
     "nav": {
       "label": "Main navigation",
       "models": "Models",
-      "console": "Open console"
+      "console": "Open console",
+      "api": "API reference"
     },
     "hero": {
+      "headline": "One gateway for",
+      "headlineAccent": "AI models and developer tools",
+      "siteDescription": "Use one base URL and access key, configure channel routing, and inspect model prices, usage, and request records.",
       "eyebrow": "LLM API aggregation gateway",
       "heading": "Make every call flow smoothly",
       "subtitle": "Unified access, intelligent routing, precise billing. Collapse scattered model channels into a single observable flow.",
@@ -7741,20 +7748,71 @@
     },
     "providers": "Providers already supported",
     "journey": {
-      "healthy": { "label": "Healthy route", "route": "OpenAI · preferred channel" },
-      "failover": { "label": "Failover", "route": "AnyFlows · fallback channel" },
-      "streaming": { "label": "Streaming", "route": "Gemini · streaming path" }
+      "healthy": {
+        "label": "Healthy route",
+        "route": "OpenAI · preferred channel"
+      },
+      "failover": {
+        "label": "Failover",
+        "route": "AnyFlows · fallback channel"
+      },
+      "streaming": {
+        "label": "Streaming",
+        "route": "Gemini · streaming path"
+      }
     },
     "home": {
-      "heroChecks": { "compatible": "OpenAI compatible", "health": "Channel health checks", "logs": "Request level logs" },
-      "preview": {
-        "eyebrow": "REQUEST FLOW", "statusHealthy": "HEALTHY", "statusRecovering": "RECOVERING", "entry": "Single entry point", "title": "Every request finds its path",
-        "healthy": "Preferred channel responding", "failover": "Fallback channel 2 / 3", "streaming": "Streaming response ready",
-        "stats": { "latency": "Time to first token", "availability": "Availability", "channels": "Candidate channels", "channelUnit": "" }
+      "heroChecks": {
+        "compatible": "OpenAI compatible",
+        "health": "Channel health checks",
+        "logs": "Request level logs"
       },
-      "journey": { "heading": "From request in to response out", "weight": "Weight", "health": "Health", "failover": "Automatic failover" },
-      "status": { "eyebrow": "LIVE STATUS DEMO", "heading": "Make failover easy to see", "description": "Choose a scenario and see how the same request stays clear through healthy routing, failover, and streaming.", "tablist": "Request scenarios", "ok": "200 OK", "route": "Route result", "stable": "stable" },
-      "cta": { "heading": "One endpoint for every model channel" }
+      "preview": {
+        "eyebrow": "REQUEST FLOW",
+        "statusHealthy": "HEALTHY",
+        "statusRecovering": "RECOVERING",
+        "entry": "Single entry point",
+        "title": "Every request finds its path",
+        "healthy": "Preferred channel responding",
+        "failover": "Fallback channel 2 / 3",
+        "streaming": "Streaming response ready",
+        "stats": {
+          "latency": "Time to first token",
+          "availability": "Availability",
+          "channels": "Candidate channels",
+          "channelUnit": ""
+        }
+      },
+      "journey": {
+        "heading": "From request in to response out",
+        "weight": "Weight",
+        "health": "Health",
+        "failover": "Automatic failover"
+      },
+      "status": {
+        "eyebrow": "LIVE STATUS DEMO",
+        "heading": "Make failover easy to see",
+        "description": "Choose a scenario and see how the same request stays clear through healthy routing, failover, and streaming.",
+        "tablist": "Request scenarios",
+        "ok": "200 OK",
+        "route": "Route result",
+        "stable": "stable"
+      },
+      "cta": {
+        "heading": "One endpoint for every model channel"
+      },
+      "terminal": {
+        "prompt": "zsh — quick setup & call",
+        "commentEnv": "# Point to the unified gateway & API key",
+        "commentCall": "# Call mainstream models without SDK changes",
+        "copied": "Copied",
+        "copy": "Copy snippet"
+      },
+      "ecosystem": {
+        "models": "Mainstream models",
+        "tools": "Coding tools & agents",
+        "platforms": "Cross-platform"
+      }
     },
     "feature": {
       "eyebrow": "Core capabilities",
@@ -7864,6 +7922,168 @@
     },
     "footer": {
       "copyright": "AnyFlows · Open-source LLM gateway"
+    },
+    "pageUi": {
+      "badges": {
+        "billing": "Usage billing",
+        "health": "Health probes",
+        "observability": "Request traces",
+        "streaming": "SSE streaming",
+        "pool": "Credential proxies"
+      },
+      "protocolTitle": "One interface, multiple protocols",
+      "protocolDescription": "Connect clients that support OpenAI or Anthropic APIs.",
+      "routingTitle": "Configure channel routing",
+      "routingDescription": "Use health probes, weights, and configured retry strategies.",
+      "billingTitle": "Prices and usage records",
+      "billingDescription": "Inspect catalog prices and request-level usage and charges.",
+      "protocolLabel": "Protocol",
+      "routingLabel": "Smart routing",
+      "billingLabel": "Audit trail",
+      "openAiKey": "OpenAI key",
+      "anthropicKey": "Anthropic key",
+      "groupMultipliers": "Group multipliers",
+      "credentialPool": "Credential pool routing",
+      "crossProviderFallback": "Cross-provider fallback",
+      "routingPolicies": "Routing policies",
+      "retryStrategies": "Configured retry strategies",
+      "featuresTitle": "Build with AnyFlows",
+      "weightedRouting": "Weighted routing",
+      "healthProbes": "Health probes",
+      "configuredFallback": "Configured fallback",
+      "ctaTitle": "Ready to connect your AI tools?",
+      "ctaDescription": "Connect models and developer tools through one endpoint. Choose the models, keys, and routing policies configured for this site.",
+      "clientExamples": "✓ Client configuration examples",
+      "sdkCompatibility": "✓ Compatible SDKs and agents",
+      "routingRetries": "✓ Routing and retry policies",
+      "exampleLabel": "Request scenario",
+      "requestTrace": "Request trace",
+      "requestTraceValue": "Recorded per request",
+      "ctaBadge": "Start building now"
+    },
+    "transparency": {
+      "eyebrow": "TRANSPARENCY & OBSERVABILITY",
+      "heading": "Routing, request traces, and usage",
+      "description": "Inspect permitted channel status and request records in the console. These cards describe the gateway's operations and billing features.",
+      "statusEyebrow": "Channel monitoring",
+      "statusBadge": "In the console",
+      "statusTitle": "Channel health and probes",
+      "statusDescription": "Administrators can inspect probe results and configure credential strategies, retry conditions, and routing candidates.",
+      "statusFootnote": "Refer to actual probe results",
+      "statusPolicy": "Uses configured policies",
+      "billingEyebrow": "Usage and billing",
+      "billingTitle": "Request records and billing",
+      "billingDescription": "Request records preserve the billing rate used for each call, so later configuration changes do not rewrite previous charges.",
+      "fieldDescription": "Field description",
+      "billingAccess": "Subject to account permissions",
+      "billingRecord": "Request-level records",
+      "protocolEyebrow": "Protocol adapters",
+      "protocolTitle": "Canonical IR protocol adapters",
+      "protocolDescription": "A common intermediate representation adapts supported protocols. Reasoning and tool support depend on the interface and model catalog.",
+      "client": "Client",
+      "clientExamples": "OpenAI / Anthropic compatible clients",
+      "canonical": "Canonical intermediate representation",
+      "upstream": "Upstream",
+      "providerTargets": "Configured model channels",
+      "protocolReasoning": "Reasoning streams",
+      "protocolStreaming": "Streaming protocol adapters",
+      "probesName": "Channel probes",
+      "probesDetail": "Inspect probe results and failure reasons",
+      "credentialsName": "Credential routing",
+      "credentialsDetail": "Select available credentials by policy",
+      "retryName": "Retry policies",
+      "retryDetail": "Switch candidates using routing rules",
+      "tracesName": "Request traces",
+      "tracesDetail": "Link requests and upstream attempts",
+      "requestIdDescription": "Locate a request",
+      "modelDescription": "Record the requested model",
+      "usageDescription": "Read upstream usage",
+      "costDescription": "Inspect billed charges"
+    },
+    "catalog": {
+      "eyebrow": "MODELS & PRICING",
+      "heading": "Models and current pricing",
+      "viewAll": "View all models",
+      "context": "Context",
+      "billing": "Billing",
+      "modelId": "Model ID",
+      "copy": "Copy model {{model}}",
+      "empty": "No models are currently listed.",
+      "note": "A preview of the model catalog. See the catalog for current prices and availability.",
+      "example": "Configuration example"
+    },
+    "testimonials": {
+      "eyebrow": "USE CASES",
+      "heading": "From developer tools to application services",
+      "subheading": "Choose an integration that fits your workflow and manage model calls in one console.",
+      "items": [
+        {
+          "quote": "Configure compatible OpenAI or Anthropic tools with this site's endpoint and an access key.",
+          "author": "Developer tools",
+          "role": "IDE & CLI",
+          "avatar": "01"
+        },
+        {
+          "quote": "Use an SDK to call models and select the capabilities listed in the model catalog.",
+          "author": "AI applications",
+          "role": "API & SDK",
+          "avatar": "02"
+        },
+        {
+          "quote": "Configure channel credentials, model routing, and inspect permitted usage and request records.",
+          "author": "Operations",
+          "role": "ROUTING & USAGE",
+          "avatar": "03"
+        }
+      ]
+    },
+    "terminalUi": {
+      "configure": "1. Set the shared Base URL and API key",
+      "unifiedCall": "2. Call supported models through one endpoint",
+      "claudeEnv": "Set the Anthropic environment variables for Claude Code",
+      "claudeStart": "Start Claude Code and select a model supported by your channel",
+      "claudeReady": "Example connection configuration for Claude Code.",
+      "cursorSettings": "Cursor Settings > Models > OpenAI API Key",
+      "cursorEnable": "1. Enable:",
+      "cursorBaseUrl": "2. Base URL:",
+      "cursorApiKey": "3. API Key:",
+      "cursorModel": "4. Add {{model}} to the Model List",
+      "cursorModelHint": "Enter the model ID in the Model List:",
+      "officialSdk": "Connect using the official OpenAI SDK",
+      "vercelSdk": "Connect using the Vercel AI SDK",
+      "protocols": "OpenAI / Anthropic compatible",
+      "retry": "Configurable failure retries",
+      "streaming": "Streaming SSE responses",
+      "example": "API connection configuration example"
+    },
+    "quickStart": {
+      "eyebrow": "Quick start",
+      "title": "Set up your first API call",
+      "description": "Choose a model, create an API key, and configure your client to make your first call.",
+      "apiDocs": "View the full API specification",
+      "step": "STEP {{number}}",
+      "models": {
+        "title": "Choose a model and route",
+        "description": "Browse the model catalog for available models, protocols, context limits, and pricing.",
+        "catalog": "Model catalog",
+        "details": "Model details",
+        "pricing": "Your current group pricing applies",
+        "browse": "Browse models"
+      },
+      "key": {
+        "title": "Create an API key",
+        "description": "Create an API key in the console and configure its model group, quota, and IP allowlist as needed.",
+        "ready": "Example API key configuration",
+        "billing": "Access by key permissions · Usage-based billing"
+      },
+      "client": {
+        "title": "Choose your client",
+        "description": "Use a compatible client or SDK in your IDE, command line, or backend service."
+      },
+      "endpoint": {
+        "title": "Configure your endpoint and call",
+        "description": "Set this site's Base URL and your API key, then select a model and protocol supported by the catalog."
+      }
     }
   },
   "theme": {
@@ -7903,7 +8123,10 @@
     "enterprise": "Business",
     "kind": "Verification type",
     "provider": "Verification method",
-    "providers": { "manual": "Manual review", "alipay": "Alipay verification" },
+    "providers": {
+      "manual": "Manual review",
+      "alipay": "Alipay verification"
+    },
     "noProvider": "No verification method is currently available. Contact an administrator.",
     "alipayHint": "After submitting, scan with your own Alipay account before the code expires. On mobile, this page will try to open Alipay.",
     "alipayCallbackHint": "The verification result updates automatically after Alipay authorization.",
@@ -7915,8 +8138,31 @@
     "documentType": "Document type",
     "documentNumber": "Document number",
     "documentNumberHint": "Only a masked number is stored. Chinese resident IDs are checksum validated.",
-    "documentTypes": { "national_id": "National ID", "passport": "Passport", "residence_permit": "Residence permit", "foreign_passport": "Foreign passport", "hkm_macao_pass": "Mainland travel permit for Hong Kong or Macao residents", "taiwan_pass": "Mainland travel permit for Taiwan residents", "business_registration": "Business registration", "other": "Other document" },
-    "countries": { "CN": "Mainland China", "HK": "Hong Kong", "MO": "Macao", "TW": "Taiwan", "US": "United States", "CA": "Canada", "GB": "United Kingdom", "JP": "Japan", "KR": "South Korea", "SG": "Singapore", "AU": "Australia", "DE": "Germany", "FR": "France" },
+    "documentTypes": {
+      "national_id": "National ID",
+      "passport": "Passport",
+      "residence_permit": "Residence permit",
+      "foreign_passport": "Foreign passport",
+      "hkm_macao_pass": "Mainland travel permit for Hong Kong or Macao residents",
+      "taiwan_pass": "Mainland travel permit for Taiwan residents",
+      "business_registration": "Business registration",
+      "other": "Other document"
+    },
+    "countries": {
+      "CN": "Mainland China",
+      "HK": "Hong Kong",
+      "MO": "Macao",
+      "TW": "Taiwan",
+      "US": "United States",
+      "CA": "Canada",
+      "GB": "United Kingdom",
+      "JP": "Japan",
+      "KR": "South Korea",
+      "SG": "Singapore",
+      "AU": "Australia",
+      "DE": "Germany",
+      "FR": "France"
+    },
     "summary": "Verification details",
     "materials": "Supporting documents",
     "fileHint": "PNG, JPEG, WebP or PDF. Up to 5 files, 10 MB per file and 25 MB total.",

@@ -36,6 +36,7 @@ jobs:
       full: ${{ steps.paths.outputs.full }}
       frontend: ${{ steps.paths.outputs.frontend }}
       frontend_about: ${{ steps.paths.outputs.frontend_about }}
+      frontend_navigation: ${{ steps.paths.outputs.frontend_navigation }}
       rust: ${{ steps.paths.outputs.rust }}
       database: ${{ steps.paths.outputs.database }}
       redis: ${{ steps.paths.outputs.redis }}
@@ -80,6 +81,7 @@ jobs:
             {
               echo "frontend=true"
               echo "frontend_about=true"
+              echo "frontend_navigation=true"
               echo "rust=true"
               echo "database=true"
               echo "redis=true"
@@ -124,8 +126,9 @@ jobs:
           }
 
           {
-            echo "frontend=$(matches '^(web/|web-next/|tools/ci/(check-frontend-parity|frontend-about-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend=$(matches '^(web/|web-next/|tools/ci/(check-frontend-parity|frontend-about-smoke|frontend-navigation-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_about=$(matches '^((web|web-next)/src/features/(about/|site-settings/software-(update-(panel|api)|release-notes)\.tsx?$)|tools/ci/frontend-about-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-navigation-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "rust=$(matches '^(crates/|tools/xtask/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$|\.github/workflows/ci\.yml$)')"
             echo "database=$(matches '^(crates/af-db/|tools/ci/(run-db-migration-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
             echo "redis=$(matches '^(crates/af-cache/|tools/ci/(run-cache-redis-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
@@ -429,7 +432,7 @@ jobs:
         run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build
 
       - name: Install browser runtime for frontend checks
-        if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend_about == 'true' }}
+        if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend_about == 'true' || (matrix.frontend == 'web-next' && needs.changes.outputs.frontend_navigation == 'true') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -448,6 +451,11 @@ jobs:
         shell: bash
         run: PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-about-smoke.mjs '${{ matrix.frontend }}'
 
+      - name: Browser smoke test landing and console navigation
+        if: ${{ matrix.frontend == 'web-next' && needs.changes.outputs.frontend_navigation == 'true' }}
+        shell: bash
+        run: PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-navigation-smoke.mjs
+
       - name: Browser smoke test gallery and verification workflows
         if: github.event_name == 'workflow_dispatch'
         shell: bash
@@ -459,7 +467,7 @@ jobs:
           PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-dashboard-smoke.mjs '${{ matrix.frontend }}'
 
       - name: Prepare Gitea screenshot uploader
-        if: ${{ always() && needs.changes.outputs.frontend_about == 'true' && github.server_url != 'https://github.com' }}
+        if: ${{ always() && (needs.changes.outputs.frontend_about == 'true' || (matrix.frontend == 'web-next' && needs.changes.outputs.frontend_navigation == 'true')) && github.server_url != 'https://github.com' }}
         run: |
           set -euo pipefail
           action_path='.ci-actions/gitea-upload-artifact'
@@ -485,6 +493,24 @@ jobs:
         with:
           name: about-screenshots-${{ matrix.frontend }}
           path: ${{ runner.temp }}/about-screenshots-${{ matrix.frontend }}/*.png
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload navigation screenshots on Gitea
+        if: ${{ always() && matrix.frontend == 'web-next' && needs.changes.outputs.frontend_navigation == 'true' && github.server_url != 'https://github.com' }}
+        uses: ./.ci-actions/gitea-upload-artifact
+        with:
+          name: navigation-screenshots-web-next
+          path: ${{ runner.temp }}/navigation-screenshots-web-next/*.png
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload navigation screenshots on GitHub
+        if: ${{ always() && matrix.frontend == 'web-next' && needs.changes.outputs.frontend_navigation == 'true' && github.server_url == 'https://github.com' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: navigation-screenshots-web-next
+          path: ${{ runner.temp }}/navigation-screenshots-web-next/*.png
           retention-days: 7
           if-no-files-found: ignore
 

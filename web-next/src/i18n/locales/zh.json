@@ -64,7 +64,9 @@
     "allTags": "全部分类",
     "count": "共 {{count}} 个接口",
     "loadMore": "加载更多",
-    "actions": { "retry": "重试" },
+    "actions": {
+      "retry": "重试"
+    },
     "loading": "加载接口目录…",
     "empty": "没有匹配的接口",
     "required": "必填",
@@ -115,6 +117,7 @@
       "personal": "个人空间"
     },
     "sections": {
+      "billing": "计费设置",
       "personal": "个人账户",
       "organization": "企业空间",
       "enterprise": "企业管理",
@@ -7724,9 +7727,13 @@
     "nav": {
       "label": "主导航",
       "models": "模型",
-      "console": "进入控制台"
+      "console": "进入控制台",
+      "api": "API 接口"
     },
     "hero": {
+      "headline": "一个网关，连接",
+      "headlineAccent": "AI 模型与开发工具",
+      "siteDescription": "统一 Base URL 与访问密钥，按配置调度渠道，在控制台查看模型价格、用量和请求明细。",
       "eyebrow": "大模型 API 聚合网关",
       "heading": "让每一次调用都更顺畅",
       "subtitle": "一个接口接入所有模型渠道。自动选路、按请求计费，每一次调用都查得到。",
@@ -7739,20 +7746,71 @@
     },
     "providers": "已接入的模型厂商",
     "journey": {
-      "healthy": { "label": "健康路由", "route": "OpenAI · 优先渠道" },
-      "failover": { "label": "故障切换", "route": "AnyFlows · 候选渠道" },
-      "streaming": { "label": "流式响应", "route": "Gemini · 流式通道" }
+      "healthy": {
+        "label": "健康路由",
+        "route": "OpenAI · 优先渠道"
+      },
+      "failover": {
+        "label": "故障切换",
+        "route": "AnyFlows · 候选渠道"
+      },
+      "streaming": {
+        "label": "流式响应",
+        "route": "Gemini · 流式通道"
+      }
     },
     "home": {
-      "heroChecks": { "compatible": "OpenAI 兼容接口", "health": "渠道健康检查", "logs": "请求级调用记录" },
-      "preview": {
-        "eyebrow": "REQUEST FLOW", "statusHealthy": "HEALTHY", "statusRecovering": "RECOVERING", "entry": "统一入口", "title": "一条请求，自动找到路径",
-        "healthy": "优先渠道响应中", "failover": "候选渠道 2 / 3", "streaming": "流式响应已建立",
-        "stats": { "latency": "首字延迟", "availability": "可用性", "channels": "候选渠道", "channelUnit": "条" }
+      "heroChecks": {
+        "compatible": "OpenAI 兼容接口",
+        "health": "渠道健康检查",
+        "logs": "请求级调用记录"
       },
-      "journey": { "heading": "从请求进入，到结果返回", "weight": "权重", "health": "健康度", "failover": "自动降级" },
-      "status": { "eyebrow": "实时状态示意", "heading": "把异常切换变成可见的过程", "description": "选择一个场景，看同一条请求如何在健康、故障切换和流式响应之间保持清晰。", "tablist": "请求场景", "ok": "200 OK", "route": "路由结果", "stable": "稳定" },
-      "cta": { "heading": "一个端点，连接所有模型渠道" }
+      "preview": {
+        "eyebrow": "请求流转",
+        "statusHealthy": "可用",
+        "statusRecovering": "切换中",
+        "entry": "统一入口",
+        "title": "一条请求，自动找到路径",
+        "healthy": "优先渠道响应中",
+        "failover": "候选渠道 2 / 3",
+        "streaming": "流式响应已建立",
+        "stats": {
+          "latency": "首字延迟",
+          "availability": "可用性",
+          "channels": "候选渠道",
+          "channelUnit": "条"
+        }
+      },
+      "journey": {
+        "heading": "从请求进入，到结果返回",
+        "weight": "权重",
+        "health": "健康度",
+        "failover": "自动降级"
+      },
+      "status": {
+        "eyebrow": "实时状态示意",
+        "heading": "把异常切换变成可见的过程",
+        "description": "选择一个场景，看同一条请求如何在健康、故障切换和流式响应之间保持清晰。",
+        "tablist": "请求场景",
+        "ok": "200 OK",
+        "route": "路由结果",
+        "stable": "稳定"
+      },
+      "cta": {
+        "heading": "一个端点，连接所有模型渠道"
+      },
+      "terminal": {
+        "prompt": "zsh — 快速配置与调用",
+        "commentEnv": "# 指向统一网关与 API Key",
+        "commentCall": "# 无需改动代码，直连任意主流模型",
+        "copied": "已复制",
+        "copy": "复制命令"
+      },
+      "ecosystem": {
+        "models": "主流模型",
+        "tools": "开发工具与 Agent",
+        "platforms": "全平台兼容"
+      }
     },
     "feature": {
       "eyebrow": "核心能力",
@@ -7862,6 +7920,168 @@
     },
     "footer": {
       "copyright": "AnyFlows · 开源大模型聚合网关"
+    },
+    "pageUi": {
+      "badges": {
+        "billing": "透明核算",
+        "health": "探活熔断",
+        "observability": "全链路追踪",
+        "streaming": "SSE 流式",
+        "pool": "独立代理"
+      },
+      "protocolTitle": "统一接口与协议",
+      "protocolDescription": "支持 OpenAI 与 Anthropic 兼容客户端接入。",
+      "routingTitle": "多线路智能调度",
+      "routingDescription": "按健康探测、权重与重试策略选择渠道。",
+      "billingTitle": "价格与用量明细",
+      "billingDescription": "公开透明计价，请求级冻结核销，每一笔都能查。",
+      "protocolLabel": "协议适配",
+      "routingLabel": "智能路由",
+      "billingLabel": "调用审计",
+      "openAiKey": "OpenAI 密钥",
+      "anthropicKey": "Anthropic 密钥",
+      "groupMultipliers": "分组倍率",
+      "credentialPool": "账号池调度",
+      "crossProviderFallback": "跨站容灾",
+      "routingPolicies": "智能择优",
+      "retryStrategies": "按策略重试与切换",
+      "featuresTitle": "为什么选择 AnyFlows",
+      "weightedRouting": "权重分发",
+      "healthProbes": "健康探测",
+      "configuredFallback": "按配置切换候选",
+      "ctaTitle": "准备好让 AI 开发更稳定了吗？",
+      "ctaDescription": "通过一个入口连接模型与开发工具。按站点配置选择模型、访问密钥与路由策略。",
+      "clientExamples": "✓ 客户端接入示例",
+      "sdkCompatibility": "✓ 兼容的 SDK 与 Agent",
+      "routingRetries": "✓ 按策略调度与故障重试",
+      "exampleLabel": "请求场景",
+      "requestTrace": "请求追踪",
+      "requestTraceValue": "按请求记录",
+      "ctaBadge": "立即开始接入"
+    },
+    "transparency": {
+      "eyebrow": "状态与用量",
+      "heading": "路由状态、请求追踪与用量明细",
+      "description": "在控制台中查看有权限访问的渠道状态和请求明细。以下展示网关提供的运维与计费能力。",
+      "statusEyebrow": "服务状态监控",
+      "statusBadge": "控制台查看",
+      "statusTitle": "渠道状态与心跳探活",
+      "statusDescription": "管理员可以查看渠道探活结果，并按业务需要配置凭据策略、重试条件和候选路由。",
+      "statusFootnote": "状态以实际探活为准",
+      "statusPolicy": "按已配置的策略执行",
+      "billingEyebrow": "调用审计与扣费",
+      "billingTitle": "请求级明细与实时计费核销",
+      "billingDescription": "每笔请求记录保留当时的计费费率，后续配置变更不改写已有账单。",
+      "fieldDescription": "字段说明",
+      "billingAccess": "按账号权限查看",
+      "billingRecord": "请求级记录",
+      "protocolEyebrow": "协议适配",
+      "protocolTitle": "Canonical IR 协议互转引擎",
+      "protocolDescription": "内部通过统一中间表示 (IR) 适配已支持的协议。模型能力、推理和工具调用支持以实际接口与模型目录为准。",
+      "client": "客户端",
+      "clientExamples": "OpenAI / Anthropic 兼容客户端",
+      "canonical": "统一中间表示（IR）",
+      "upstream": "上游",
+      "providerTargets": "已配置的模型渠道",
+      "protocolReasoning": "支持 Thinking 思考流",
+      "protocolStreaming": "双向原生流式",
+      "probesName": "渠道探活",
+      "probesDetail": "查看探活结果与失败原因",
+      "credentialsName": "凭据调度",
+      "credentialsDetail": "按配置选择可用凭据",
+      "retryName": "故障重试",
+      "retryDetail": "按路由规则切换候选",
+      "tracesName": "请求追踪",
+      "tracesDetail": "关联请求与上游尝试",
+      "requestIdDescription": "定位一次请求",
+      "modelDescription": "记录请求模型",
+      "usageDescription": "读取上游用量",
+      "costDescription": "查看核销费用"
+    },
+    "catalog": {
+      "eyebrow": "模型与价格",
+      "heading": "模型目录与当前价格",
+      "viewAll": "查看全部模型",
+      "context": "上下文",
+      "billing": "计费方式",
+      "modelId": "模型标识",
+      "copy": "复制模型 {{model}}",
+      "empty": "当前暂无公开模型。",
+      "note": "展示目录中的部分模型；价格与可用范围以模型广场的当前数据为准。",
+      "example": "配置示例"
+    },
+    "testimonials": {
+      "eyebrow": "使用场景",
+      "heading": "从开发工具到业务服务",
+      "subheading": "根据工作方式选择接入入口，在同一控制台管理模型调用。",
+      "items": [
+        {
+          "quote": "为兼容 OpenAI 或 Anthropic 的开发工具配置当前站点地址和访问密钥。",
+          "author": "开发工具接入",
+          "role": "IDE & CLI",
+          "avatar": "01"
+        },
+        {
+          "quote": "通过 SDK 发起模型请求，并按任务需要选择目录中已支持的模型与能力。",
+          "author": "AI 应用开发",
+          "role": "API & SDK",
+          "avatar": "02"
+        },
+        {
+          "quote": "为渠道设置凭据、模型范围和路由规则，在控制台查看用量与请求记录。",
+          "author": "服务运行与管理",
+          "role": "路由与用量",
+          "avatar": "03"
+        }
+      ]
+    },
+    "terminalUi": {
+      "configure": "1. 设置统一 Base URL 与 API Key",
+      "unifiedCall": "2. 通过统一接口调用支持的模型",
+      "claudeEnv": "设置 Claude Code 使用的 Anthropic 环境变量",
+      "claudeStart": "启动 Claude Code，选择渠道支持的模型",
+      "claudeReady": "Claude Code 连接配置示例。",
+      "cursorSettings": "Cursor 设置 > Models > OpenAI API Key",
+      "cursorEnable": "1. 开启开关：",
+      "cursorBaseUrl": "2. Base URL：",
+      "cursorApiKey": "3. API Key：",
+      "cursorModel": "4. 在 Model List 中添加 {{model}}",
+      "cursorModelHint": "在 Model List 中填入模型 ID：",
+      "officialSdk": "使用官方 OpenAI SDK 接入",
+      "vercelSdk": "使用 Vercel AI SDK 接入",
+      "protocols": "兼容 OpenAI / Anthropic",
+      "retry": "可配置故障重试策略",
+      "streaming": "支持流式 SSE 响应",
+      "example": "API 连接配置示例"
+    },
+    "quickStart": {
+      "eyebrow": "快速开始",
+      "title": "配置并完成首次调用",
+      "description": "从模型目录、访问密钥到客户端配置，按步骤完成首次调用。",
+      "apiDocs": "查看完整 API 规范",
+      "step": "步骤 {{number}}",
+      "models": {
+        "title": "选择模型与线路策略",
+        "description": "在模型广场根据任务需求查看当前可用模型、协议、上下文和价格。",
+        "catalog": "模型目录",
+        "details": "模型资料",
+        "pricing": "按当前分组价格调用",
+        "browse": "查看模型广场"
+      },
+      "key": {
+        "title": "创建访问密钥 (API Key)",
+        "description": "在控制台创建 API Key，按需配置模型分组、额度与 IP 白名单。",
+        "ready": "API Key 配置示例",
+        "billing": "按密钥权限访问 · 按实际用量计费"
+      },
+      "client": {
+        "title": "选择使用场景与客户端",
+        "description": "在 IDE、命令行或后端服务中使用兼容的客户端与 SDK。"
+      },
+      "endpoint": {
+        "title": "配置端点，发起调用",
+        "description": "配置当前站点的 Base URL 和访问密钥，在客户端中选择目录内支持的模型与协议。"
+      }
     }
   },
   "theme": {
@@ -7901,7 +8121,10 @@
     "enterprise": "企业认证",
     "kind": "认证类型",
     "provider": "认证方式",
-    "providers": { "manual": "人工审核", "alipay": "支付宝实名认证" },
+    "providers": {
+      "manual": "人工审核",
+      "alipay": "支付宝实名认证"
+    },
     "noProvider": "当前没有可用的认证方式，请联系管理员。",
     "alipayHint": "提交后请在有效期内使用本人支付宝扫码认证；手机访问会尝试打开支付宝。",
     "alipayCallbackHint": "完成支付宝授权后，认证结果会自动更新。",
@@ -7913,8 +8136,31 @@
     "documentType": "证件类型",
     "documentNumber": "证件号码",
     "documentNumberHint": "仅保存脱敏号码；中国居民身份证会校验校验位。",
-    "documentTypes": { "national_id": "身份证", "passport": "护照", "residence_permit": "居留证", "foreign_passport": "外国护照", "hkm_macao_pass": "港澳居民来往内地通行证", "taiwan_pass": "台湾居民来往大陆通行证", "business_registration": "企业登记号", "other": "其他证件" },
-    "countries": { "CN": "中国大陆", "HK": "中国香港", "MO": "中国澳门", "TW": "中国台湾", "US": "美国", "CA": "加拿大", "GB": "英国", "JP": "日本", "KR": "韩国", "SG": "新加坡", "AU": "澳大利亚", "DE": "德国", "FR": "法国" },
+    "documentTypes": {
+      "national_id": "身份证",
+      "passport": "护照",
+      "residence_permit": "居留证",
+      "foreign_passport": "外国护照",
+      "hkm_macao_pass": "港澳居民来往内地通行证",
+      "taiwan_pass": "台湾居民来往大陆通行证",
+      "business_registration": "企业登记号",
+      "other": "其他证件"
+    },
+    "countries": {
+      "CN": "中国大陆",
+      "HK": "中国香港",
+      "MO": "中国澳门",
+      "TW": "中国台湾",
+      "US": "美国",
+      "CA": "加拿大",
+      "GB": "英国",
+      "JP": "日本",
+      "KR": "韩国",
+      "SG": "新加坡",
+      "AU": "澳大利亚",
+      "DE": "德国",
+      "FR": "法国"
+    },
     "summary": "认证说明",
     "materials": "认证材料",
     "fileHint": "支持 PNG、JPEG、WebP 和 PDF；最多 5 份，每份不超过 10 MB，总计不超过 25 MB。",

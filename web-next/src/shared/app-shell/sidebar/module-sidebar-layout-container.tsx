@@ -12,6 +12,10 @@ export type ModuleSidebarLayoutContainerProps = {
   title: string;
   items: SidebarNode[];
   defaultSelectedKey: string;
+  /** 默认展开的分组 key，不传时展开全部。 */
+  defaultExpandedKeys?: string[];
+  /** 独立详情页可以沿用对应列表的选中位置。 */
+  selectionPath?: string;
   /** 标题右侧的动作槽，通常放工作空间切换器。 */
   headerAction?: React.ReactNode;
   containerClassName?: string;
@@ -24,6 +28,8 @@ export const ModuleSidebarLayoutContainer = ({
   title,
   items,
   defaultSelectedKey,
+  defaultExpandedKeys,
+  selectionPath,
   headerAction,
   containerClassName = "h-full border-r border-divider w-60 flex flex-col bg-content1",
   sectionClasses,
@@ -31,7 +37,7 @@ export const ModuleSidebarLayoutContainer = ({
 }: ModuleSidebarLayoutContainerProps) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const pathname = location.pathname;
+  const pathname = selectionPath ?? location.pathname;
 
   const selectedKey = useMemo(() => {
     const matchedKey = findSidebarKeyByPath(items, pathname);
@@ -79,6 +85,7 @@ export const ModuleSidebarLayoutContainer = ({
       <ScrollShadow className="flex-1 py-4 px-3">
         <SidebarContainer
           defaultSelectedKey={selectedKey}
+          defaultExpandedKeys={defaultExpandedKeys}
           items={items}
           sectionClasses={sectionClasses}
           onItemAction={handleItemAction}
