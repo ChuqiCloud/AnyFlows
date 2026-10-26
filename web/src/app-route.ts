@@ -10,6 +10,7 @@ export type AppView =
   | 'authentication-settings'
   | 'billing-settings'
   | 'channels'
+  | 'channel-models'
   | 'client-profiles'
   | 'credentials'
   | 'credential-proxies'
@@ -105,6 +106,9 @@ export function routeFromHash(hash: string): AppRoute {
   }
   if (hash === '#/console/credentials' || hash.startsWith('#/console/credentials?')) {
     return { view: 'credentials', channelId: positiveIntegerQuery(hash, 'channel') }
+  }
+  if (hash === '#/console/channels/models' || hash.startsWith('#/console/channels/models?')) {
+    return { view: 'channel-models', channelId: positiveIntegerQuery(hash, 'channel') }
   }
   if (hash === '#/console/client-profiles' || hash.startsWith('#/console/client-profiles?')) return { view: 'client-profiles' }
   if (hash.startsWith('#/console/channels')) return { view: 'channels' }

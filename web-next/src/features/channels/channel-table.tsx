@@ -1,6 +1,6 @@
 import { ProviderLabel } from '@/components/brand/provider-picker'
 import { Button, Chip } from '@heroui/react'
-import { Activity, Fingerprint, KeyRound, Network, Pencil, Timer } from 'lucide-react'
+import { Activity, Boxes, Fingerprint, KeyRound, Network, Pencil, Timer } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AiActivity } from '@/components/ai/ai-activity'
@@ -18,6 +18,7 @@ type ChannelTableProps = {
   probingId?: number
   onProfile: (channel: AdminChannel) => void
   onCredentials: (channel: AdminChannel) => void
+  onModels: (channel: AdminChannel) => void
   onEdit: (channel: AdminChannel) => void
   onProbe: (channelId: number) => void
 }
@@ -114,11 +115,12 @@ function ScheduleBadges({ channel }: { channel: AdminChannel }) {
   )
 }
 
-function RowActions({ channel, probing, onProfile, onCredentials, onEdit, onProbe }: {
+function RowActions({ channel, probing, onProfile, onCredentials, onModels, onEdit, onProbe }: {
   channel: AdminChannel
   probing: boolean
   onProfile: (channel: AdminChannel) => void
   onCredentials: (channel: AdminChannel) => void
+  onModels: (channel: AdminChannel) => void
   onEdit: (channel: AdminChannel) => void
   onProbe: (channelId: number) => void
 }) {
@@ -138,6 +140,11 @@ function RowActions({ channel, probing, onProfile, onCredentials, onEdit, onProb
           <KeyRound className="size-3.5" aria-hidden="true" />
         </Button>
       </SiteTooltip>
+      <SiteTooltip content={t('channels.actions.models')}>
+        <Button isIconOnly aria-label={t('channels.actions.models')} className="size-10 md:size-8" size="sm" type="button" variant="light" onClick={() => onModels(channel)}>
+          <Boxes className="size-3.5" aria-hidden="true" />
+        </Button>
+      </SiteTooltip>
       <SiteTooltip content={t('channels.actions.edit')}>
         <Button isIconOnly aria-label={t('channels.actions.edit')} className="size-10 md:size-8" size="sm" type="button" variant="light" onClick={() => onEdit(channel)}>
           <Pencil className="size-3.5" aria-hidden="true" />
@@ -147,7 +154,7 @@ function RowActions({ channel, probing, onProfile, onCredentials, onEdit, onProb
   )
 }
 
-export function ChannelTable({ channels, probeResults, probingId, onProfile, onCredentials, onEdit, onProbe }: ChannelTableProps) {
+export function ChannelTable({ channels, probeResults, probingId, onProfile, onCredentials, onModels, onEdit, onProbe }: ChannelTableProps) {
   const { t } = useTranslation()
   if (channels.length === 0) {
     return (
@@ -175,7 +182,7 @@ export function ChannelTable({ channels, probeResults, probingId, onProfile, onC
                 <td className="px-3 py-2.5"><RoutingBadges channel={channel} /></td>
                 <td className="px-3 py-2.5"><ScheduleBadges channel={channel} /></td>
                 <td className="px-3 py-2.5 text-[0.6875rem]"><ProbeState probing={probingId === channel.id} value={probeResults[channel.id]} /></td>
-                <td className="px-2 py-2.5"><RowActions channel={channel} probing={probingId === channel.id} onProfile={onProfile} onCredentials={onCredentials} onEdit={onEdit} onProbe={onProbe} /></td>
+                <td className="px-2 py-2.5"><RowActions channel={channel} probing={probingId === channel.id} onProfile={onProfile} onCredentials={onCredentials} onModels={onModels} onEdit={onEdit} onProbe={onProbe} /></td>
               </tr>
             ))}
           </tbody>
@@ -185,7 +192,7 @@ export function ChannelTable({ channels, probeResults, probingId, onProfile, onC
       <div className="grid gap-2 md:hidden">
         {channels.map((channel) => (
           <article key={channel.id} className="min-w-0 rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
-            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-sm font-semibold">{channel.name}</h2><StatusBadge status={channel.status} /><ProtocolBadge protocol={channel.protocol} />{channel.tag ? <Chip className="max-w-32 truncate" size="sm" variant="flat">{channel.tag}</Chip> : null}</div><p className="mt-1 truncate text-[0.6875rem] text-muted-foreground">#{channel.id} · {channel.base_url ?? t('channels.values.defaultUrl')}</p><div className="mt-1 text-xs text-muted-foreground"><ProviderLabel provider={channel.provider ?? channel.type} /></div></div><RowActions channel={channel} probing={probingId === channel.id} onProfile={onProfile} onCredentials={onCredentials} onEdit={onEdit} onProbe={onProbe} /></div>
+            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-sm font-semibold">{channel.name}</h2><StatusBadge status={channel.status} /><ProtocolBadge protocol={channel.protocol} />{channel.tag ? <Chip className="max-w-32 truncate" size="sm" variant="flat">{channel.tag}</Chip> : null}</div><p className="mt-1 truncate text-[0.6875rem] text-muted-foreground">#{channel.id} · {channel.base_url ?? t('channels.values.defaultUrl')}</p><div className="mt-1 text-xs text-muted-foreground"><ProviderLabel provider={channel.provider ?? channel.type} /></div></div><RowActions channel={channel} probing={probingId === channel.id} onProfile={onProfile} onCredentials={onCredentials} onModels={onModels} onEdit={onEdit} onProbe={onProbe} /></div>
             <div className="mt-3 grid gap-2 border-t border-[var(--hairline)] pt-3"><RoutingBadges channel={channel} /><ScheduleBadges channel={channel} /></div>
             <div className="mt-3 text-xs"><ProbeState probing={probingId === channel.id} value={probeResults[channel.id]} /></div>
           </article>

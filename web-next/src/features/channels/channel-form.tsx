@@ -28,9 +28,7 @@ import {
   type ResponsesCompactMode,
   type ChannelType,
 } from './channel-form-model'
-import { ChannelGroupSelector } from './channel-group-selector'
 import { ChannelKeyValueEditor } from './channel-key-value-editor'
-import { ChannelModelEditor } from './channel-model-editor'
 import { ChannelParameterEditor } from './channel-parameter-editor'
 import { ChannelHeaderOverrideField } from './channel-sensitive-fields'
 
@@ -485,16 +483,6 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
           </ChannelFormField>
         </section>
 
-        <section className="grid gap-3" aria-labelledby="channel-routing-fields">
-          <h3 id="channel-routing-fields" className="text-xs font-semibold">{t('channels.form.routing')}</h3>
-          <ChannelFormField id="channel-models" label={t('channels.fields.models')} error={form.formState.errors.models?.message} hint={t('channels.form.modelsHint')}>
-            <Controller control={form.control} name="models" render={({ field }) => <ChannelModelEditor id="channel-models" value={field.value} invalid={!!form.formState.errors.models} onChange={field.onChange} />} />
-          </ChannelFormField>
-          <ChannelFormField id="channel-groups" label={t('channels.fields.groupIds')} error={form.formState.errors.groupIds?.message} hint={t('channels.form.groupsHint')}>
-            <Controller control={form.control} name="groupIds" render={({ field }) => <ChannelGroupSelector id="channel-groups" value={field.value} invalid={!!form.formState.errors.groupIds} onChange={field.onChange} />} />
-          </ChannelFormField>
-        </section>
-
         <section className="grid gap-3" aria-labelledby="channel-relay-fields">
           <ChannelFormField id="channel-credential-strategy" label={t('channels.fields.credentialStrategy', { defaultValue: '渠道 Key 调度策略' })}>
             <select id="channel-credential-strategy" className="h-9 w-full rounded-md border border-[var(--hairline)] bg-transparent px-3 text-sm" {...form.register('credentialStrategy')}>
@@ -519,11 +507,6 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
 
         <section className="grid gap-4" aria-labelledby="channel-override-fields">
           <h3 id="channel-override-fields" className="text-xs font-semibold">{t('channels.form.overrides')}</h3>
-          <ChannelFormField id="channel-mapping" htmlFor={false} label={t('channels.fields.modelMapping')} error={form.formState.errors.modelMapping?.message} hint={t('channels.form.mappingHint')}>
-            <Controller control={form.control} name="modelMapping" render={({ field }) => (
-              <ChannelKeyValueEditor rows={field.value} keyLabel={t('channels.mapping.source')} valueLabel={t('channels.mapping.target')} addLabel={t('channels.mapping.add')} removeLabel={t('channels.mapping.remove')} emptyText={t('channels.mapping.empty')} createRow={() => createKeyValueRow('mapping')} onChange={field.onChange} />
-            )} />
-          </ChannelFormField>
           {protocol !== 'openai_embeddings' && protocol !== 'openai_images' && protocol !== 'openai_audio' && protocol !== 'openai_speech' && protocol !== 'jina_rerank' && protocol !== 'cohere_rerank' && protocol !== 'xai_video' ? (
             <ChannelFormField id="channel-params" htmlFor={false} label={t('channels.fields.paramOverride')} error={form.formState.errors.paramOverride?.message} hint={t('channels.form.parametersHint')}>
               <Controller control={form.control} name="paramOverride" render={({ field }) => <ChannelParameterEditor protocol={protocol} rows={field.value} onChange={field.onChange} />} />
