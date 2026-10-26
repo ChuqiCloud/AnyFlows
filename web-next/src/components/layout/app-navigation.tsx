@@ -6,8 +6,9 @@ import { groupExtensionNavigation } from '@/extensions/model'
 import {
   adminWorkspaceItems,
   type NavKey,
-  type NavigationSectionKey,
-  systemSectionItems,
+  type SystemNavigationGroupKey,
+  systemNavigationGroups,
+  systemPinnedItems,
   userWorkspaceItems,
 } from '@/components/layout/app-navigation-model'
 import type { SidebarNode } from '@/shared/app-shell'
@@ -143,32 +144,28 @@ export function useAppNavigationItems(role: 'admin' | 'user'): SidebarNode[] {
   const customLinks = siteQuery.data?.navigation.sidebar_links
 
   return useMemo(() => {
-    const sections: Array<{ key: NavigationSectionKey; items: readonly NavKey[] }> = [
-      { key: 'workspace', items: role === 'admin' ? adminWorkspaceItems : userWorkspaceItems },
-    ]
+    const sectionNodes = [groupNode('workspace', t('nav.sections.workspace'), [
+      ...(role === 'admin' ? adminWorkspaceItems : userWorkspaceItems).map((key) => navNode(key, t)),
+      ...customNavigationTree(customLinks ?? [], i18n.resolvedLanguage?.startsWith('en') ?? false, role),
+    ])]
+
     if (role === 'admin') {
-      sections.push({ key: 'system', items: systemSectionItems })
+      sectionNodes.push(groupNode('system', t('nav.sections.system'), [
+        ...systemPinnedItems.map((key) => navNode(key, t)),
+        ...(Object.keys(systemNavigationGroups) as SystemNavigationGroupKey[]).map((key) => groupNode(
+          key,
+          t(`nav.sections.${key}`),
+          systemNavigationGroups[key].map((itemKey) => navNode(itemKey, t)),
+        )),
+      ]))
     }
 
-    return sections
-      .filter((section) => section.items.length > 0)
-      .map((section) => groupNode(
-        section.key,
-        t(`nav.sections.${section.key}`),
-        [
-          ...section.items.map((itemKey) => navNode(itemKey, t)),
-          ...(section.key === 'workspace' ? customNavigationTree(
-            customLinks ?? [],
-            i18n.resolvedLanguage?.startsWith('en') ?? false,
-            role,
-          ) : []),
-        ],
-      )).concat(groupExtensionNavigation(extensionRoutes).map((group) => groupNode(
-        `extension:${group.id}`, group.titleKey ? t(group.titleKey) : '',
-        group.routes.map((route): SidebarNode => ({
-          key: `extension:${route.path}`, title: t(route.titleKey), href: route.path,
-          icon: ({ building: 'solar:buildings-2-linear', package: 'solar:box-linear', clipboard: 'solar:clipboard-check-linear', shield: 'solar:shield-check-linear', settings: 'solar:settings-linear' })[route.navigation?.icon ?? 'building'],
-        })),
-      )))
+    return sectionNodes.concat(groupExtensionNavigation(extensionRoutes).map((group) => groupNode(
+      `extension:${group.id}`, group.titleKey ? t(group.titleKey) : '',
+      group.routes.map((route): SidebarNode => ({
+        key: `extension:${route.path}`, title: t(route.titleKey), href: route.path,
+        icon: ({ building: 'solar:buildings-2-linear', package: 'solar:box-linear', clipboard: 'solar:clipboard-check-linear', shield: 'solar:shield-check-linear', settings: 'solar:settings-linear' })[route.navigation?.icon ?? 'building'],
+      })),
+    )))
   }, [customLinks, extensionRoutes, i18n.resolvedLanguage, role, t])
 }
