@@ -860,19 +860,19 @@
 
 /* 新前端公开首页：用主题语义色做出彩色信息层次，动画只使用合成友好的属性。 */
 .next-landing-hero {
-  min-height: min(720px, calc(100dvh - 3.5rem));
   background: var(--background);
 }
 
 .next-landing-grid {
-  background-image: linear-gradient(to right, color-mix(in srgb, var(--hairline) 40%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--hairline) 40%, transparent) 1px, transparent 1px);
+  background-image: linear-gradient(to right, color-mix(in srgb, var(--hairline) 42%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--hairline) 42%, transparent) 1px, transparent 1px);
   background-size: 56px 56px;
-  mask-image: radial-gradient(ellipse 68% 74% at 50% 40%, black, transparent 92%);
-  opacity: 0.38;
+  mask-image: radial-gradient(ellipse 72% 76% at 50% 35%, black, transparent 92%);
+  opacity: 0.4;
 }
 
 .next-landing-hero-light {
-  background: linear-gradient(115deg, color-mix(in srgb, var(--brand) 10%, transparent), transparent 44%),
+  background: radial-gradient(ellipse 56% 48% at 50% 18%, color-mix(in srgb, var(--brand) 14%, transparent), transparent 72%),
+    linear-gradient(115deg, color-mix(in srgb, var(--brand) 8%, transparent), transparent 44%),
     linear-gradient(290deg, color-mix(in srgb, var(--success) 6%, transparent), transparent 42%);
 }
 
@@ -881,7 +881,7 @@
 }
 
 .next-landing-rise-delay {
-  animation-delay: 90ms;
+  animation-delay: 110ms;
 }
 
 @keyframes next-landing-rise {
@@ -889,25 +889,20 @@
   to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 
-.next-landing-preview {
-  transform: translate3d(0, 0, 0);
-  transition: transform 360ms var(--ease-ai-out);
+.next-landing-terminal {
+  background: linear-gradient(160deg, color-mix(in srgb, var(--brand) 7%, var(--surface-1)), var(--surface-1) 52%, color-mix(in srgb, var(--info) 5%, var(--surface-1)));
+  box-shadow: 0 0 0 1px var(--hairline), var(--shadow-lg);
+  transition: transform 360ms var(--ease-ai-out), box-shadow 360ms var(--ease-ai-out);
 }
 
-.next-landing-preview:hover {
-  transform: translate3d(0, -3px, 0);
+.next-landing-terminal:hover {
+  transform: translate3d(0, -2px, 0);
 }
 
 .next-landing-flow {
-  min-height: 12rem;
   background: linear-gradient(155deg, color-mix(in srgb, var(--brand) 9%, var(--surface-sunken)), var(--surface-sunken) 65%, color-mix(in srgb, var(--success) 8%, var(--surface-sunken)));
-  box-shadow: inset 0 0 0 1px var(--hairline), var(--shadow-md);
+  box-shadow: inset 0 0 0 1px var(--hairline);
 }
-
-.next-landing-stats > div { min-width: 0; border-left: 2px solid var(--hairline); padding: 0.25rem 0.5rem; }
-.next-landing-stats > div:first-child { border-color: var(--brand); }
-.next-landing-stats > div:nth-child(2) { border-color: var(--success); }
-.next-landing-stats > div:nth-child(3) { border-color: var(--warning); }
 
 .next-landing-flow-motion {
   will-change: offset-distance, opacity;
@@ -922,7 +917,7 @@
   box-shadow: var(--shadow-sm);
   color: var(--muted-foreground);
   white-space: nowrap;
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   transition: border-color 260ms ease, color 260ms ease, transform 260ms var(--ease-ai-out);
 }
@@ -930,22 +925,23 @@
 .next-landing-node-entry {
   flex-direction: column;
   justify-content: center;
-  width: 3.25rem;
-  height: 3.25rem;
-  border-radius: 1rem;
+  width: 3.35rem;
+  height: 3.35rem;
+  border-radius: 0.9rem;
+  border-color: color-mix(in srgb, var(--brand) 38%, var(--hairline));
   color: var(--brand);
 }
 
 .next-landing-node-upstream {
-  min-width: 5.3rem;
-  justify-content: center;
-  padding: 0.55rem 0.65rem;
+  min-width: 6.4rem;
+  justify-content: flex-start;
+  padding: 0.5rem 0.7rem;
   border-radius: 0.75rem;
 }
 
 .next-landing-node-active {
-  border-color: color-mix(in srgb, var(--brand) 42%, var(--hairline));
-  color: var(--brand);
+  border-color: color-mix(in srgb, var(--brand) 48%, var(--hairline));
+  color: var(--foreground);
   transform: translate3d(-3px, 0, 0);
 }
 
@@ -957,9 +953,9 @@
   gap: 1.5rem;
   overflow: hidden;
   border: 1px solid var(--hairline);
-  border-radius: 0.5rem;
-  padding: 1.25rem;
-  background: linear-gradient(145deg, color-mix(in srgb, var(--card-accent) 12%, var(--surface-1)), var(--surface-1) 72%);
+  border-radius: 0.875rem;
+  padding: 1.35rem;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--card-accent, var(--brand)) 10%, var(--surface-1)), var(--surface-1) 72%);
   transition: transform 300ms var(--ease-ai-out), border-color 300ms ease, box-shadow 300ms ease;
 }
 
@@ -973,7 +969,7 @@
     linear-gradient(to bottom, color-mix(in srgb, var(--hairline) 36%, transparent) 1px, transparent 1px);
   background-size: 28px 28px;
   mask-image: linear-gradient(130deg, transparent 40%, black);
-  opacity: 0.45;
+  opacity: 0.42;
 }
 
 .next-landing-card-content { position: relative; z-index: 1; }
@@ -989,11 +985,12 @@
 .next-landing-card-health { --card-accent: var(--success); }
 .next-landing-card-observability { --card-accent: var(--info); }
 .next-landing-card-streaming { --card-accent: var(--brand); }
+.next-landing-card-pool { --card-accent: var(--success); }
 
 .next-landing-card-icon {
   display: grid;
-  width: 2.15rem;
-  height: 2.15rem;
+  width: 2.25rem;
+  height: 2.25rem;
   place-items: center;
   border-radius: 0.7rem;
   background: color-mix(in srgb, var(--card-accent, var(--brand)) 14%, var(--surface-1));
@@ -1007,7 +1004,8 @@
 
 .next-landing-route-card {
   --card-accent: var(--brand);
-  background: linear-gradient(140deg, color-mix(in srgb, var(--brand) 13%, var(--surface-1)), var(--surface-1) 62%, color-mix(in srgb, var(--success) 8%, var(--surface-1)));
+  border-radius: 0.875rem;
+  background: linear-gradient(140deg, color-mix(in srgb, var(--brand) 12%, var(--surface-1)), var(--surface-1) 62%, color-mix(in srgb, var(--success) 7%, var(--surface-1)));
   transition: transform 300ms var(--ease-ai-out), border-color 300ms ease, box-shadow 300ms ease;
 }
 
@@ -1017,7 +1015,7 @@
   display: flex;
   align-items: end;
   gap: 0.35rem;
-  height: 3.25rem;
+  height: 3rem;
   color: var(--card-accent);
 }
 
@@ -1077,27 +1075,26 @@
 .next-landing-route-tracks span:nth-child(2) { height: 2px; background: linear-gradient(to right, var(--brand), var(--success)); box-shadow: 0 0 9px color-mix(in srgb, var(--brand) 28%, transparent); }
 .next-landing-route-destinations span { width: 1.35rem; height: 1.35rem; border-radius: 50%; }
 .next-landing-route-destinations span:nth-child(2) { border-color: var(--success); background: color-mix(in srgb, var(--success) 16%, var(--surface-1)); }
-.next-landing-route-card > div:last-child span { border-left: 2px solid var(--brand); padding-left: 0.55rem; }
-
-.next-landing-demo {
-  transition: transform 360ms var(--ease-ai-out), box-shadow 360ms var(--ease-ai-out);
-}
-
-.next-landing-demo:hover {
-  transform: translate3d(0, -3px, 0);
-  box-shadow: var(--shadow-lg);
-}
-
 .next-landing-cta {
   isolation: isolate;
-  background: linear-gradient(110deg, color-mix(in srgb, var(--brand) 8%, var(--background)), var(--background) 58%, color-mix(in srgb, var(--success) 7%, var(--background)));
+  background: linear-gradient(125deg, color-mix(in srgb, var(--brand) 10%, var(--surface-1)), var(--surface-1) 55%, color-mix(in srgb, var(--success) 8%, var(--surface-1)));
+}
+
+@keyframes border-beam {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+.animate-border-beam {
+  animation: border-beam 14s linear infinite;
 }
 
 @media (max-width: 640px) {
-  .next-landing-hero { min-height: auto; }
-  .next-landing-preview { transform: none; }
-  .next-landing-preview:hover { transform: translate3d(0, -2px, 0); }
-  .next-landing-flow { margin-top: 0.75rem; }
+  .next-landing-terminal:hover { transform: none; }
 }
 
 :root[data-motion='reduced'] .next-landing-rise {
@@ -1109,7 +1106,8 @@
   transform: none;
 }
 
-:root[data-motion='reduced'] .next-landing-flow-motion {
+:root[data-motion='reduced'] .next-landing-flow-motion,
+:root[data-motion='reduced'] .animate-border-beam {
   display: none;
 }
 
@@ -1123,7 +1121,8 @@
     transform: none;
   }
 
-  :root:not([data-motion='full']) .next-landing-flow-motion {
+  :root:not([data-motion='full']) .next-landing-flow-motion,
+  :root:not([data-motion='full']) .animate-border-beam {
     display: none;
   }
 }
