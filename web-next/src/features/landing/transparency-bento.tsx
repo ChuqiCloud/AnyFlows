@@ -138,24 +138,24 @@ export function TransparencyBento() {
 
             <div className="mt-6 rounded-xl border border-[var(--hairline)] bg-surface-sunken p-4 space-y-3 text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-muted-foreground font-mono text-[0.6875rem]">CLIENT</span>
+                <span className="text-muted-foreground font-mono text-[0.6875rem]">{t('landing.transparency.client')}</span>
                 <span className="rounded bg-surface-2 px-2 py-0.5 text-foreground font-mono text-[0.6875rem]">
-                  OpenAI / Claude Code
+                  {t('landing.transparency.clientExamples')}
                 </span>
               </div>
               <div className="flex items-center justify-center">
                 <div className="h-4 w-px bg-primary/40" />
               </div>
               <div className="rounded-lg border border-primary/30 bg-primary/10 p-2 text-center font-mono text-xs font-semibold text-primary">
-                Canonical Intermediate Representation
+                {t('landing.transparency.canonical')}
               </div>
               <div className="flex items-center justify-center">
                 <div className="h-4 w-px bg-primary/40" />
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-muted-foreground font-mono text-[0.6875rem]">UPSTREAM</span>
+                <span className="text-muted-foreground font-mono text-[0.6875rem]">{t('landing.transparency.upstream')}</span>
                 <span className="rounded bg-surface-2 px-2 py-0.5 text-foreground font-mono text-[0.6875rem]">
-                  Any Target Model Provider
+                  {t('landing.transparency.providerTargets')}
                 </span>
               </div>
             </div>

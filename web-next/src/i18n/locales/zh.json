@@ -7727,7 +7727,8 @@
     "nav": {
       "label": "主导航",
       "models": "模型",
-      "console": "进入控制台"
+      "console": "进入控制台",
+      "api": "API 接口"
     },
     "hero": {
       "headline": "一个网关，连接",
@@ -7765,9 +7766,9 @@
         "logs": "请求级调用记录"
       },
       "preview": {
-        "eyebrow": "REQUEST FLOW",
-        "statusHealthy": "HEALTHY",
-        "statusRecovering": "RECOVERING",
+        "eyebrow": "请求流转",
+        "statusHealthy": "可用",
+        "statusRecovering": "切换中",
         "entry": "统一入口",
         "title": "一条请求，自动找到路径",
         "healthy": "优先渠道响应中",
@@ -7934,6 +7935,11 @@
       "routingDescription": "按健康探测、权重与重试策略选择渠道。",
       "billingTitle": "价格与用量明细",
       "billingDescription": "公开透明计价，请求级冻结核销，每一笔都能查。",
+      "protocolLabel": "协议适配",
+      "routingLabel": "智能路由",
+      "billingLabel": "调用审计",
+      "openAiKey": "OpenAI 密钥",
+      "anthropicKey": "Anthropic 密钥",
       "groupMultipliers": "分组倍率",
       "credentialPool": "账号池调度",
       "crossProviderFallback": "跨站容灾",
@@ -7948,10 +7954,13 @@
       "clientExamples": "✓ 客户端接入示例",
       "sdkCompatibility": "✓ 兼容的 SDK 与 Agent",
       "routingRetries": "✓ 按策略调度与故障重试",
-      "exampleLabel": "请求场景"
+      "exampleLabel": "请求场景",
+      "requestTrace": "请求追踪",
+      "requestTraceValue": "按请求记录",
+      "ctaBadge": "立即开始接入"
     },
     "transparency": {
-      "eyebrow": "TRANSPARENCY & OBSERVABILITY · 状态与用量",
+      "eyebrow": "状态与用量",
       "heading": "路由状态、请求追踪与用量明细",
       "description": "在控制台中查看有权限访问的渠道状态和请求明细。以下展示网关提供的运维与计费能力。",
       "statusEyebrow": "服务状态监控",
@@ -7969,6 +7978,11 @@
       "protocolEyebrow": "协议适配",
       "protocolTitle": "Canonical IR 协议互转引擎",
       "protocolDescription": "内部通过统一中间表示 (IR) 适配已支持的协议。模型能力、推理和工具调用支持以实际接口与模型目录为准。",
+      "client": "客户端",
+      "clientExamples": "OpenAI / Anthropic 兼容客户端",
+      "canonical": "统一中间表示（IR）",
+      "upstream": "上游",
+      "providerTargets": "已配置的模型渠道",
       "protocolReasoning": "支持 Thinking 思考流",
       "protocolStreaming": "双向原生流式",
       "probesName": "渠道探活",
@@ -7985,7 +7999,7 @@
       "costDescription": "查看核销费用"
     },
     "catalog": {
-      "eyebrow": "MODELS & PRICING · 模型与价格",
+      "eyebrow": "模型与价格",
       "heading": "模型目录与当前价格",
       "viewAll": "查看全部模型",
       "context": "上下文",
@@ -8016,7 +8030,7 @@
         {
           "quote": "为渠道设置凭据、模型范围和路由规则，在控制台查看用量与请求记录。",
           "author": "服务运行与管理",
-          "role": "ROUTING & USAGE",
+          "role": "路由与用量",
           "avatar": "03"
         }
       ]

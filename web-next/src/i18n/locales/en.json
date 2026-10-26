@@ -7729,7 +7729,8 @@
     "nav": {
       "label": "Main navigation",
       "models": "Models",
-      "console": "Open console"
+      "console": "Open console",
+      "api": "API reference"
     },
     "hero": {
       "headline": "One gateway for",
@@ -7936,6 +7937,11 @@
       "routingDescription": "Use health probes, weights, and configured retry strategies.",
       "billingTitle": "Prices and usage records",
       "billingDescription": "Inspect catalog prices and request-level usage and charges.",
+      "protocolLabel": "Protocol",
+      "routingLabel": "Smart routing",
+      "billingLabel": "Audit trail",
+      "openAiKey": "OpenAI key",
+      "anthropicKey": "Anthropic key",
       "groupMultipliers": "Group multipliers",
       "credentialPool": "Credential pool routing",
       "crossProviderFallback": "Cross-provider fallback",
@@ -7950,7 +7956,10 @@
       "clientExamples": "✓ Client configuration examples",
       "sdkCompatibility": "✓ Compatible SDKs and agents",
       "routingRetries": "✓ Routing and retry policies",
-      "exampleLabel": "Request scenario"
+      "exampleLabel": "Request scenario",
+      "requestTrace": "Request trace",
+      "requestTraceValue": "Recorded per request",
+      "ctaBadge": "Start building now"
     },
     "transparency": {
       "eyebrow": "TRANSPARENCY & OBSERVABILITY",
@@ -7971,6 +7980,11 @@
       "protocolEyebrow": "Protocol adapters",
       "protocolTitle": "Canonical IR protocol adapters",
       "protocolDescription": "A common intermediate representation adapts supported protocols. Reasoning and tool support depend on the interface and model catalog.",
+      "client": "Client",
+      "clientExamples": "OpenAI / Anthropic compatible clients",
+      "canonical": "Canonical intermediate representation",
+      "upstream": "Upstream",
+      "providerTargets": "Configured model channels",
       "protocolReasoning": "Reasoning streams",
       "protocolStreaming": "Streaming protocol adapters",
       "probesName": "Channel probes",

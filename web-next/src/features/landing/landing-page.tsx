@@ -240,7 +240,7 @@ export function LandingPage() {
             <div className="next-landing-rise flex flex-col justify-center">
               <div className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3.5 py-1 text-xs font-mono font-medium text-primary shadow-xs tracking-wider uppercase">
                 <Sparkles className="size-3.5 text-primary" aria-hidden="true" />
-                <span>AI GATEWAY & RUNTIME INFRASTRUCTURE</span>
+                <span>{t('landing.hero.eyebrow')}</span>
               </div>
 
               <h1 className="mt-5 max-w-2xl text-[2.75rem] font-semibold leading-[1.06] tracking-[-0.04em] sm:mt-6 sm:text-6xl lg:text-6.5xl text-foreground">
@@ -284,7 +284,7 @@ export function LandingPage() {
                   startContent={<Braces className="size-4 text-muted-foreground" aria-hidden="true" />}
                   className="text-muted-foreground hover:text-foreground rounded-full"
                 >
-                  API
+                  {t('landing.nav.api')}
                 </Button>
               </div>
 
@@ -308,7 +308,7 @@ export function LandingPage() {
               <div className="mt-9 grid grid-cols-1 sm:grid-cols-3 border-t border-[var(--hairline)] pt-5 gap-4">
                 <div className="sm:pr-4">
                   <div className="font-mono text-[0.6875rem] font-semibold text-primary tracking-wider">
-                    01 / PROTOCOL
+                    01 / {t('landing.pageUi.protocolLabel')}
                   </div>
                   <div className="mt-1 text-xs font-semibold text-foreground">{t('landing.pageUi.protocolTitle')}</div>
                   <div className="mt-1 text-[0.6875rem] leading-normal text-muted-foreground">
@@ -317,7 +317,7 @@ export function LandingPage() {
                 </div>
                 <div className="sm:px-4 sm:border-l border-[var(--hairline)]">
                   <div className="font-mono text-[0.6875rem] font-semibold text-success tracking-wider">
-                    02 / SMART ROUTE
+                    02 / {t('landing.pageUi.routingLabel')}
                   </div>
                   <div className="mt-1 text-xs font-semibold text-foreground">{t('landing.pageUi.routingTitle')}</div>
                   <div className="mt-1 text-[0.6875rem] leading-normal text-muted-foreground">
@@ -326,7 +326,7 @@ export function LandingPage() {
                 </div>
                 <div className="sm:pl-4 sm:border-l border-[var(--hairline)]">
                   <div className="font-mono text-[0.6875rem] font-semibold text-info tracking-wider">
-                    03 / AUDIT
+                    03 / {t('landing.pageUi.billingLabel')}
                   </div>
                   <div className="mt-1 text-xs font-semibold text-foreground">{t('landing.pageUi.billingTitle')}</div>
                   <div className="mt-1 text-[0.6875rem] leading-normal text-muted-foreground">
@@ -384,10 +384,10 @@ export function LandingPage() {
               </p>
               <div className="mt-5 flex flex-wrap gap-1.5 pt-4 border-t border-[var(--hairline)]">
                 <span className="rounded bg-surface-2 px-2 py-0.5 text-[0.6875rem] text-muted-foreground font-mono">
-                  OpenAI Key
+                  {t('landing.pageUi.openAiKey')}
                 </span>
                 <span className="rounded bg-surface-2 px-2 py-0.5 text-[0.6875rem] text-muted-foreground font-mono">
-                  Anthropic Key
+                  {t('landing.pageUi.anthropicKey')}
                 </span>
                 <span className="rounded bg-surface-2 px-2 py-0.5 text-[0.6875rem] text-muted-foreground font-mono">
                   {t('landing.pageUi.groupMultipliers')}
@@ -623,9 +623,9 @@ export function LandingPage() {
                     </p>
                   </div>
                   <div className="rounded-xl bg-warning/10 p-3 border border-warning/20">
-                    <p className="text-xs text-muted-foreground">{t('landing.console.tokens')}</p>
+                    <p className="text-xs text-muted-foreground">{t('landing.pageUi.requestTrace')}</p>
                     <p className="mt-1 text-sm font-semibold text-warning font-mono">
-                      1,248 in / 386 out
+                      {t('landing.pageUi.requestTraceValue')}
                     </p>
                   </div>
                 </div>
@@ -652,7 +652,7 @@ export function LandingPage() {
               <div className="relative z-10 max-w-2xl">
                 <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-xs font-mono font-medium text-primary uppercase tracking-wider">
                   <Sparkles className="size-3.5" />
-                  <span>START BUILDING NOW</span>
+                  <span>{t('landing.pageUi.ctaBadge')}</span>
                 </div>
 
                 <h2 className="mt-4 text-3xl font-bold tracking-tight text-foreground sm:text-4xl lg:text-5xl">
@@ -690,7 +690,7 @@ export function LandingPage() {
                     variant="light"
                     className="text-muted-foreground hover:text-foreground rounded-full"
                   >
-                    API Explorer
+                    {t('landing.nav.api')}
                   </Button>
                 </div>
 
