@@ -21,6 +21,7 @@ export const providerCatalog: readonly ProviderOption[] = [
   { id: 'kimi', name: 'Kimi', logo: 'Kimi' },
   { id: 'zhipu', name: 'Zhipu AI', logo: 'Zhipu', aliases: ['zhipuai', 'zai', '智谱'] },
   { id: 'minimax', name: 'MiniMax', logo: 'MiniMax' },
+  { id: 'xiaomi-mimo', name: 'Xiaomi MiMo', logo: 'XiaomiMiMo', aliases: ['xiaomi', 'xiaomimimo', 'mimo', '小米', '小米MiMo'] },
   { id: 'bytedance', name: 'ByteDance', logo: 'ByteDance' },
   { id: 'doubao', name: 'Doubao', logo: 'Doubao', aliases: ['豆包'] },
   { id: 'tencent', name: 'Tencent', logo: 'Tencent' },
