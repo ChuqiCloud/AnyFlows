@@ -40,8 +40,9 @@ export function ConsoleLayout() {
     [openLogin],
   )
 
+  // 普通用户访问管理员页时回到工作台概览：那里有用量与余额，比直接塞进模型列表更有上下文。
   const handleUserHomeRequired = useCallback(() => {
-    navigate('/console/models', { replace: true })
+    navigate('/console', { replace: true })
   }, [navigate])
 
   const handlePasswordChanged = useCallback(() => {

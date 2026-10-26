@@ -81,6 +81,64 @@ export const findSidebarSectionKeyByPath = (
   return items[0]?.key ?? null;
 };
 
+/** 当前路由所在分组（含各级父组）的 key：侧栏默认只展开这些分组，其余保持收起。 */
+export const findSidebarParentKeysByPath = (
+  items: SidebarNode[],
+  path: string,
+): string[] => {
+  const key = findSidebarKeyByPath(items, path)
+
+  if (!key) {
+    return []
+  }
+
+  const walk = (nodes: SidebarNode[], trail: string[]): string[] | null => {
+    for (const node of nodes) {
+      const chain = [...trail, node.key]
+
+      if (node.key === key) {
+        return chain.slice(0, -1)
+      }
+
+      const nested = walk(getSidebarNodeChildren(node), chain)
+
+      if (nested) {
+        return nested
+      }
+    }
+
+    return null
+  }
+
+  return walk(items, []) ?? []
+};
+
+/**
+ * 板块首个可导航页面的路径：板块首个子项本身可能是分组，需要一直下探到叶子条目。
+ * HeroUI 的分组条目没有 href，只看直接子项会让板块切换器点了没反应。
+ */
+export const findSidebarFirstHref = (items: SidebarNode[], key: string): string | null => {
+  const node = items.find((item) => item.key === key)
+
+  if (!node) {
+    return null
+  }
+
+  if (isNavigableHref(node.href)) {
+    return node.href
+  }
+
+  for (const child of getSidebarNodeChildren(node)) {
+    const href = findSidebarFirstHref([child], child.key)
+
+    if (href) {
+      return href
+    }
+  }
+
+  return null
+};
+
 export const findSidebarHrefByKey = (
   items: SidebarNode[],
   key: string,

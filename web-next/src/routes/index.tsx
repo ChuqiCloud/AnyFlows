@@ -55,7 +55,7 @@ function RegistrationRoute() {
   return (
     <RegistrationPage
       inviteCode={params.get('invite') ?? undefined}
-      onAuthenticated={() => navigate('/console/models', { replace: true })}
+      onAuthenticated={() => navigate('/console', { replace: true })}
     />
   )
 }

@@ -9,7 +9,7 @@ import { NavigationSectionSwitcher } from '@/components/layout/navigation-sectio
 import { AnnouncementStrip } from '@/features/announcements/announcement-strip'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import type { SessionUser } from '@/lib/api/generated/types.gen'
-import { findSidebarSectionKeyByPath, ModuleShell, ModuleSidebarLayoutContainer } from '@/shared/app-shell'
+import { findSidebarFirstHref, findSidebarParentKeysByPath, findSidebarSectionKeyByPath, ModuleShell, ModuleSidebarLayoutContainer } from '@/shared/app-shell'
 import { Navbar } from '@/shared/nav'
 
 /** 站点名取不到时的兜底品牌名。 */
@@ -50,9 +50,11 @@ export function AppShell({ children, currentUser, onLogout }: AppShellProps) {
    * 侧栏内容完全由路由派生，不额外存状态：选板块直接进那个板块的首个页面，
    * 侧栏与正文不会出现“看着是 A 板块、内容却是 B 页面”的错位。
    */
-  const activeSectionKey = findSidebarSectionKeyByPath(items, pathname)
+  const navigationPath = pathname === '/console/channel-models' ? '/console/channels' : pathname
+  const activeSectionKey = findSidebarSectionKeyByPath(items, navigationPath)
+  const expandedKeys = findSidebarParentKeysByPath(items, navigationPath)
   const openSection = (key: string) => {
-    const href = items.find((item) => item.key === key)?.children?.[0]?.href
+    const href = findSidebarFirstHref(items, key)
 
     if (href) {
       navigate(href)
@@ -64,6 +66,8 @@ export function AppShell({ children, currentUser, onLogout }: AppShellProps) {
     <ModuleSidebarLayoutContainer
       containerClassName={mobile ? 'flex h-full w-full flex-col bg-background' : SIDEBAR_CONTAINER_CLASS}
       defaultSelectedKey="overview"
+      defaultExpandedKeys={expandedKeys}
+      selectionPath={navigationPath}
       headerAction={(
         <div className="flex items-center gap-1">
           <NavigationSectionSwitcher

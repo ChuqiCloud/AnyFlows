@@ -43,6 +43,7 @@ export type NavigationSectionKey = 'workspace' | 'system'
 
 /** 工作台：模型、试验场、视频任务与账户自服务，两类角色都能看到。 */
 export const userWorkspaceItems = [
+  'overview',
   'models',
   'playground',
   'videoTasks',
@@ -100,3 +101,15 @@ export const systemSectionItems = [
   'runtimeStatus',
   'debugTraces',
 ] as const satisfies readonly NavKey[]
+
+/** 系统入口按用途折叠，路由命中时自动展开所在分组。 */
+export type SystemNavigationGroupKey = 'gateway' | 'operations' | 'billing' | 'platform'
+
+export const systemPinnedItems = ['keys', 'runtimeStatus', 'debugTraces'] as const satisfies readonly NavKey[]
+
+export const systemNavigationGroups = {
+  gateway: ['channels', 'clientProfiles', 'credentials', 'credentialProxies', 'routes', 'modelSettings', 'modelProviders', 'groupSettings'],
+  operations: ['users', 'accountVerificationReviews', 'invitationSettings', 'subscriptionManagement', 'redemptionCodes', 'refunds'],
+  billing: ['paymentSettings', 'billingSettings'],
+  platform: ['siteSettings', 'about', 'siteNavigation', 'authenticationSettings', 'announcements', 'emailSettings', 'networkSettings', 'accountVerificationSettings'],
+} as const satisfies Record<SystemNavigationGroupKey, readonly NavKey[]>

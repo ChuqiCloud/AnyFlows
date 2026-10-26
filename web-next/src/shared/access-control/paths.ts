@@ -21,6 +21,9 @@ function consoleSegment(pathname: string) {
 
 /** 控制台默认要求管理员，只有用户工作台相关的少量页面向普通用户开放。 */
 export function requiresAdmin(pathname: string) {
+  // 概览会按会话角色渲染；只开放这两个精确路径，空路径段仍按管理页面处理。
+  if (pathname === "/console" || pathname === "/console/") return false;
+
   const segment = consoleSegment(pathname);
 
   if (segment === undefined) return false;

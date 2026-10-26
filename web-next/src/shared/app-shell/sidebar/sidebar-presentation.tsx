@@ -45,6 +45,7 @@ export const SidebarPresentation = React.forwardRef<
       classNames,
       className,
       selected,
+      defaultExpandedKeys,
       onSelectionChange,
       ...props
     },
@@ -121,7 +122,11 @@ export const SidebarPresentation = React.forwardRef<
               </SiteTooltip>
             ) : null}
             {!isCompact && children.length > 0 ? (
-              <Accordion className={"p-0"}>
+              <Accordion
+                key={`${item.key}:${defaultExpandedKeys?.join(",") ?? "all"}`}
+                className={"p-0"}
+                defaultExpandedKeys={defaultExpandedKeys === undefined ? "all" : defaultExpandedKeys.filter((key) => key === item.key)}
+              >
                 <AccordionItem
                   key={item.key}
                   aria-label={item.title}
@@ -141,7 +146,7 @@ export const SidebarPresentation = React.forwardRef<
                         </span>
                       </div>
                     ) : (
-                      (item.startContent ?? null)
+                      (item.startContent ?? <span className="flex h-10 items-center px-2 text-small font-medium text-default-600">{item.title}</span>)
                     )
                   }
                 >
@@ -185,6 +190,7 @@ export const SidebarPresentation = React.forwardRef<
       },
       [
         isCompact,
+        defaultExpandedKeys,
         hideEndContent,
         iconClassName,
         items,
