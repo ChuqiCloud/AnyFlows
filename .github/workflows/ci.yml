@@ -416,6 +416,9 @@ jobs:
           corepack enable
           corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} install --frozen-lockfile
 
+      - name: Audit frontend dependencies
+        run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} audit --audit-level=low
+
       - name: Check shared frontend parity
         run: node tools/ci/check-frontend-parity.mjs
 
@@ -593,6 +596,13 @@ jobs:
       - name: Check development workspace
         if: needs.changes.outputs.full != 'true'
         run: cargo check --workspace --all-targets --all-features --locked
+
+      - name: Run focused Passkey compatibility tests
+        if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
+        run: |
+          cargo test --locked -p af-admin --lib passkey
+          cargo test --locked -p af-db --lib passkey
+          cargo test --locked -p af-server --lib passkey_origin
 
       - name: Run Clippy
         if: needs.changes.outputs.full == 'true'
