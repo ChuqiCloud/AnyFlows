@@ -13,11 +13,14 @@ import { Link as RouterLink } from 'react-router-dom'
 
 import { copyText } from '@/lib/clipboard'
 
+import { useLandingBaseUrl } from './use-landing-models'
+
 export function QuickStartSteps() {
   const [copiedKey, setCopiedKey] = useState(false)
+  const baseUrl = useLandingBaseUrl()
 
   const handleCopySampleKey = async () => {
-    const success = await copyText('export OPENAI_BASE_URL="https://api.anyflows.com/v1"\nexport OPENAI_API_KEY="sk-anyflows-..."')
+    const success = await copyText(`export OPENAI_BASE_URL="${baseUrl}/v1"\nexport OPENAI_API_KEY="sk-anyflows-..."`)
     if (success) {
       setCopiedKey(true)
       setTimeout(() => setCopiedKey(false), 2000)

@@ -6,6 +6,8 @@ import { BorderBeam } from '@/components/brand/border-beam'
 import { copyText } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 
+import { useLandingBaseUrl } from './use-landing-models'
+
 type TerminalTabKey = 'curl' | 'claude' | 'cursor' | 'python' | 'node'
 
 interface TabConfig {
@@ -20,12 +22,14 @@ export function HeroTerminal() {
   const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState<TerminalTabKey>('curl')
   const [copied, setCopied] = useState(false)
+  const baseUrl = useLandingBaseUrl()
+  const openAiBaseUrl = `${baseUrl}/v1`
 
   const tabs: TabConfig[] = [
     {
       key: 'curl',
       label: 'cURL',
-      snippet: `export OPENAI_BASE_URL="https://api.anyflows.com/v1"
+      snippet: `export OPENAI_BASE_URL="${openAiBaseUrl}"
 export OPENAI_API_KEY="sk-anyflows-..."
 
 curl $OPENAI_BASE_URL/chat/completions \\
@@ -43,7 +47,7 @@ curl $OPENAI_BASE_URL/chat/completions \\
             <span className="text-primary font-medium">export </span>
             <span className="text-foreground">OPENAI_BASE_URL</span>
             <span className="text-muted-foreground">=</span>
-            <span className="text-success">"https://api.anyflows.com/v1"</span>
+            <span className="text-success">"${openAiBaseUrl}"</span>
           </div>
           <div>
             <span className="text-primary font-medium">export </span>
@@ -94,7 +98,7 @@ curl $OPENAI_BASE_URL/chat/completions \\
       key: 'claude',
       label: 'Claude Code',
       badge: 'CLI',
-      snippet: `export ANTHROPIC_BASE_URL="https://api.anyflows.com"
+      snippet: `export ANTHROPIC_BASE_URL="${baseUrl}"
 export ANTHROPIC_API_KEY="sk-anyflows-..."
 
 # 立即启动官方 Claude Code，无缝调度 Opus 与 Sonnet
@@ -106,7 +110,7 @@ claude`,
             <span className="text-primary font-medium">export </span>
             <span className="text-foreground">ANTHROPIC_BASE_URL</span>
             <span className="text-muted-foreground">=</span>
-            <span className="text-success">"https://api.anyflows.com"</span>
+            <span className="text-success">"${baseUrl}"</span>
           </div>
           <div>
             <span className="text-primary font-medium">export </span>
@@ -130,7 +134,7 @@ claude`,
       badge: 'IDE',
       snippet: `# Cursor Settings > Models:
 # 1. 开启 [Override OpenAI Base URL]
-# 2. Base URL 填入: https://api.anyflows.com/v1
+# 2. Base URL 填入: ${openAiBaseUrl}
 # 3. API Key 填入: sk-anyflows-...
 # 4. 在 Model List 中添加 claude-opus-5-5 或 gpt-6.1-sol`,
       rendered: (
@@ -142,7 +146,7 @@ claude`,
           </div>
           <div>
             <span className="text-info font-medium">2. Base URL: </span>
-            <span className="text-success font-semibold">https://api.anyflows.com/v1</span>
+            <span className="text-success font-semibold">${openAiBaseUrl}</span>
           </div>
           <div>
             <span className="text-info font-medium">3. API Key:  </span>
@@ -163,7 +167,7 @@ claude`,
       snippet: `from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://api.anyflows.com/v1",
+    base_url="${openAiBaseUrl}",
     api_key="sk-anyflows-...",
 )
 
@@ -191,7 +195,7 @@ for chunk in response:
           <div className="pl-4">
             <span className="text-foreground">base_url</span>
             <span className="text-muted-foreground">=</span>
-            <span className="text-success">"https://api.anyflows.com/v1"</span>
+            <span className="text-success">"${openAiBaseUrl}"</span>
             <span className="text-muted-foreground">,</span>
           </div>
           <div className="pl-4">
@@ -234,7 +238,7 @@ for chunk in response:
 import { streamText } from 'ai'
 
 const anyflows = createOpenAI({
-  baseURL: 'https://api.anyflows.com/v1',
+  baseURL: '${openAiBaseUrl}',
   apiKey: process.env.ANYFLOWS_API_KEY,
 })
 
@@ -260,7 +264,7 @@ const { textStream } = streamText({
           <div className="pl-4">
             <span className="text-foreground">baseURL</span>
             <span className="text-muted-foreground">: </span>
-            <span className="text-success">'https://api.anyflows.com/v1'</span>
+            <span className="text-success">'${openAiBaseUrl}'</span>
             <span className="text-muted-foreground">,</span>
           </div>
           <div className="pl-4">
