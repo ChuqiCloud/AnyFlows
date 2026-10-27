@@ -2,8 +2,8 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 use super::*;
 use crate::{
-    CanonicalImageGenerationResponseError, ImageBackground, ImageOutputFormat, ImageQuality,
-    MAX_IMAGE_PROMPT_CHARS,
+    CanonicalImageGenerationResponseError, ImageBackground, ImageDimensions, ImageOutputFormat,
+    ImageQuality, ImageResponseFormat, ImageStyle, MAX_IMAGE_PROMPT_CHARS,
 };
 
 fn png_base64(canary: &[u8]) -> String {
@@ -55,7 +55,8 @@ fn parses_full_request_and_rebuilds_only_explicit_fields() {
             "output_format":"webp",
             "quality":"high",
             "size":"2048x2048",
-            "stream":false
+            "stream":false,
+            "user":"sdk-user-id"
         }"#,
     )
     .unwrap();
@@ -69,6 +70,34 @@ fn parses_full_request_and_rebuilds_only_explicit_fields() {
     assert_eq!(rebuilt["output_format"], "webp");
     assert_eq!(rebuilt["output_compression"], 75);
     assert!(rebuilt.get("stream").is_none());
+    assert!(rebuilt.get("user").is_none());
+    assert_eq!(
+        parse_request(&serde_json::to_vec(&rebuilt).unwrap()).unwrap(),
+        request
+    );
+}
+
+#[test]
+fn parses_dalle_generation_options_without_model_name_prechecks() {
+    let request = parse_request(
+        br#"{"model":"mixed-channel-alias","prompt":"draw","n":2,"size":"256x256","quality":"standard","response_format":"url","style":"natural"}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        request.options().size(),
+        Some(ImageSize::Exact(ImageDimensions::new(256, 256).unwrap()))
+    );
+    assert_eq!(request.options().quality(), Some(ImageQuality::Standard));
+    assert_eq!(
+        request.options().response_format(),
+        Some(ImageResponseFormat::Url)
+    );
+    assert_eq!(request.options().style(), Some(ImageStyle::Natural));
+
+    let rebuilt = build_request(&request).unwrap();
+    assert_eq!(rebuilt["quality"], "standard");
+    assert_eq!(rebuilt["response_format"], "url");
+    assert_eq!(rebuilt["style"], "natural");
     assert_eq!(
         parse_request(&serde_json::to_vec(&rebuilt).unwrap()).unwrap(),
         request
@@ -80,9 +109,8 @@ fn rejects_unsupported_fields_invalid_ranges_and_parameter_conflicts() {
     for body in [
         br#"{"model":"m","prompt":"x","stream":true}"#.as_slice(),
         br#"{"model":"m","prompt":"x","partial_images":1}"#.as_slice(),
-        br#"{"model":"m","prompt":"x","response_format":"b64_json"}"#.as_slice(),
-        br#"{"model":"m","prompt":"x","style":"vivid"}"#.as_slice(),
-        br#"{"model":"m","prompt":"x","user":"user-1"}"#.as_slice(),
+        br#"{"model":"m","prompt":"x","response_format":"base64"}"#.as_slice(),
+        br#"{"model":"m","prompt":"x","style":"dramatic"}"#.as_slice(),
         br#"{"model":"m","prompt":"x","unknown":true}"#.as_slice(),
         br#"{"model":"m","prompt":"x","n":0}"#.as_slice(),
         br#"{"model":"m","prompt":"x","n":11}"#.as_slice(),
@@ -134,7 +162,7 @@ fn parses_valid_base64_response_usage_and_round_trips() {
 
     assert_eq!(response.operation(), af_domain::Operation::Image);
     assert_eq!(response.images().len(), 1);
-    assert_eq!(response.output_format(), ImageOutputFormat::Png);
+    assert_eq!(response.output_format(), Some(ImageOutputFormat::Png));
     assert_eq!(response.background(), Some(ImageBackground::Opaque));
     assert_eq!(response.quality(), Some(ImageQuality::High));
     assert_eq!(response.usage().unwrap().input_tokens().get(), 2);
@@ -164,16 +192,70 @@ fn preserves_missing_usage_instead_of_inventing_zero() {
 }
 
 #[test]
-fn response_rejects_url_revised_prompt_invalid_base64_and_format_mismatch() {
+fn response_rejects_invalid_base64_and_format_mismatch() {
     for body in [
-        serde_json::json!({"created":1,"data":[{"url":"https://example.com/image.png"}]}),
-        serde_json::json!({"created":1,"data":[{"b64_json":png_base64(b"x"),"revised_prompt":"secret"}]}),
         serde_json::json!({"created":1,"data":[{"b64_json":"not-base64"}]}),
         serde_json::json!({"created":1,"data":[{"b64_json":STANDARD.encode(b"not-image")}]}),
         serde_json::json!({"created":1,"data":[{"b64_json":png_base64(b"x")}],"output_format":"jpeg"}),
     ] {
         assert!(parse_response(&serde_json::to_vec(&body).unwrap()).is_err());
     }
+}
+
+#[test]
+fn parses_and_rebuilds_dalle_url_and_revised_prompt_responses() {
+    let body = serde_json::json!({
+        "created": 1_723_000_000,
+        "data": [{
+            "url": "https://images.example/result.png?signature=private",
+            "revised_prompt": "A revised private prompt"
+        }],
+        "provider_extension": {"version": "v2"}
+    });
+    let response = parse_response(&serde_json::to_vec(&body).unwrap()).unwrap();
+    assert_eq!(response.output_format(), None);
+    assert_eq!(
+        response.images()[0].url(),
+        Some("https://images.example/result.png?signature=private")
+    );
+    assert_eq!(
+        response.images()[0].revised_prompt(),
+        Some("A revised private prompt")
+    );
+    let debug = format!("{response:?}");
+    assert!(!debug.contains("signature=private"));
+    assert!(!debug.contains("A revised private prompt"));
+
+    let request =
+        parse_request(br#"{"model":"dall-e-3","prompt":"draw","response_format":"url"}"#).unwrap();
+    response.validate_for_request(&request).unwrap();
+    let rebuilt = build_response(&response).unwrap();
+    assert_eq!(rebuilt["data"][0]["url"], body["data"][0]["url"]);
+    assert_eq!(
+        rebuilt["data"][0]["revised_prompt"],
+        body["data"][0]["revised_prompt"]
+    );
+    assert_eq!(
+        parse_response(&serde_json::to_vec(&rebuilt).unwrap()).unwrap(),
+        response
+    );
+}
+
+#[test]
+fn accepts_output_usage_details_with_image_tokens_only() {
+    let body = serde_json::json!({
+        "created": 1,
+        "data": [{"b64_json": png_base64(b"image")}],
+        "usage": {
+            "input_tokens": 1,
+            "input_tokens_details": {"image_tokens": 0, "text_tokens": 1},
+            "output_tokens": 5,
+            "total_tokens": 6,
+            "output_tokens_details": {"image_tokens": 5}
+        }
+    });
+    let response = parse_response(&serde_json::to_vec(&body).unwrap()).unwrap();
+    assert_eq!(response.usage().unwrap().output_tokens().get(), 5);
 }
 
 #[test]
@@ -279,7 +361,7 @@ fn request_link_validation_checks_count_metadata_and_input_usage() {
 }
 
 #[test]
-fn response_rejects_duplicate_and_unknown_fields() {
+fn response_rejects_duplicate_keys_and_ignores_additive_fields() {
     assert_eq!(
         parse_response(
             format!(
@@ -294,8 +376,5 @@ fn response_rejects_duplicate_and_unknown_fields() {
         "created":1,
         "data":[{"b64_json":png_base64(b"x"),"secret":"leak"}]
     });
-    assert_eq!(
-        parse_response(&serde_json::to_vec(&unknown).unwrap()),
-        Err(ParseImageGenerationResponseError::InvalidValue)
-    );
+    assert!(parse_response(&serde_json::to_vec(&unknown).unwrap()).is_ok());
 }

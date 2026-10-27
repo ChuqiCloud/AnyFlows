@@ -92,6 +92,7 @@ impl RequestCapability {
         Self::Operation(Operation::ResponsesCompact),
         Self::Operation(Operation::Embedding),
         Self::Operation(Operation::Image),
+        Self::Operation(Operation::ImageEdit),
         Self::Operation(Operation::Audio),
         Self::Operation(Operation::Rerank),
         Self::Operation(Operation::Video),
@@ -205,6 +206,8 @@ impl fmt::Display for RequestCapability {
 
 pub(super) const OPENAI_CHAT: &[RequestCapability] = &[
     RequestCapability::Operation(Operation::Chat),
+    RequestCapability::Operation(Operation::Image),
+    RequestCapability::Operation(Operation::ImageEdit),
     RequestCapability::MessageRole(Role::System),
     RequestCapability::MessageRole(Role::Developer),
     RequestCapability::MessageRole(Role::User),
@@ -238,6 +241,13 @@ pub(super) const OPENAI_CHAT: &[RequestCapability] = &[
     RequestCapability::StreamUsage,
     RequestCapability::UserMetadata,
     RequestCapability::SameProtocolRaw,
+];
+
+pub(super) const OPENAI_IMAGES: &[RequestCapability] = &[
+    RequestCapability::Operation(Operation::Image),
+    RequestCapability::Operation(Operation::ImageEdit),
+    RequestCapability::Text,
+    RequestCapability::ImageBase64,
 ];
 
 pub(super) const OPENAI_RESPONSES: &[RequestCapability] = &[

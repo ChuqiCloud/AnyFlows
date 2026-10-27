@@ -1,7 +1,6 @@
 //! OpenAI Images 非流式生成协议转换。
 //!
-//! 首切片只处理 GPT Image 的 JSON 生成入口和 Base64 完整响应。编辑、变体、URL
-//! 响应、partial image 流式事件、生产调度与计费由后续独立切片接入。
+//! 处理 OpenAI Images JSON 生成与 multipart 编辑入口，以及 Base64 完整响应。
 
 use std::{error::Error, fmt};
 
@@ -16,16 +15,27 @@ use crate::{
     CanonicalImageGenerationRequest, CanonicalImageGenerationRequestError,
     CanonicalImageGenerationResponse, GeneratedImage, ImageBackground, ImageCompression,
     ImageCount, ImageGenerationOptions, ImageGenerationUsage, ImageModeration, ImageOutputFormat,
-    ImageQuality, ImageSize, ImageTokenBreakdown, MAX_GENERATED_IMAGE_BYTES,
-    MAX_IMAGE_GENERATION_COUNT, MAX_TOTAL_GENERATED_IMAGE_BYTES, TokenCount,
+    ImageQuality, ImageResponseFormat, ImageSize, ImageStyle, ImageTokenBreakdown,
+    MAX_GENERATED_IMAGE_BYTES, MAX_IMAGE_GENERATION_COUNT, MAX_TOTAL_GENERATED_IMAGE_BYTES,
+    TokenCount,
 };
 
+mod edit_form;
 mod wire;
+
+pub use edit_form::{
+    BuildImageEditRequestError, MAX_IMAGE_EDIT_CONTENT_TYPE_BYTES, MAX_IMAGE_EDIT_FIELD_NAME_BYTES,
+    MAX_IMAGE_EDIT_FILE_NAME_BYTES, MAX_IMAGE_EDIT_FORM_PARTS, MAX_IMAGE_EDIT_FORM_TEXT_BYTES,
+    OpenAiImageEditFilePart, OpenAiImageEditForm, OpenAiImageEditFormError,
+    OpenAiImageEditFormPart, OpenAiImageEditTextPart, ParseImageEditRequestError,
+    build_edit_multipart, parse_edit_request,
+};
 
 use wire::{
     Field, ImageBackgroundWire, ImageDataWire, ImageGenerationRequestWire,
     ImageGenerationResponseWire, ImageGenerationUsageWire, ImageModerationWire,
-    ImageOutputFormatWire, ImageQualityWire, ImageResponseBackgroundWire, ImageResponseQualityWire,
+    ImageOutputFormatWire, ImageOutputTokenDetailsWire, ImageQualityWire,
+    ImageResponseBackgroundWire, ImageResponseFormatWire, ImageResponseQualityWire, ImageStyleWire,
     ImageTokenDetailsWire,
 };
 
@@ -56,8 +66,9 @@ const RESPONSE_JSON_LIMITS: JsonLimits = JsonLimits {
 
 /// 解析 OpenAI `POST /v1/images/generations` 非流式请求。
 ///
-/// 该函数拒绝重复键、未知字段、显式空值、DALL·E 私有参数和流式特性；提示词、模型名
-/// 与所有用户可控乘数在进入 Canonical 前完成预算校验。
+/// 该函数拒绝重复键、未知字段、显式空值和流式特性；终端用户标识接受后忽略。
+/// 提示词、模型名与
+/// 所有用户可控乘数在进入 Canonical 前完成预算校验。
 pub fn parse_request(
     body: &[u8],
 ) -> Result<CanonicalImageGenerationRequest, ParseImageGenerationRequestError> {
@@ -125,6 +136,15 @@ pub fn build_request(
             Value::Number(compression.get().into()),
         );
     }
+    if let Some(response_format) = options.response_format() {
+        root.insert(
+            "response_format".to_owned(),
+            Value::String(response_format.as_str().to_owned()),
+        );
+    }
+    if let Some(style) = options.style() {
+        root.insert("style".to_owned(), Value::String(style.as_str().to_owned()));
+    }
 
     let value = Value::Object(root);
     revalidate_request(&value)?;
@@ -133,8 +153,8 @@ pub fn build_request(
 
 /// 解析已完整读取的 OpenAI Images 非流式响应。
 ///
-/// Base64 会立即解码并校验文件签名和内存预算；URL、改写提示词、混合格式及不闭合的
-/// token 用量均在生成 Canonical 前拒绝。
+/// Base64 会立即解码并校验文件签名和内存预算；URL 仅校验地址形态并透传，不会由网关
+/// 下载；混合载体和不闭合的 token 用量会在生成 Canonical 前拒绝。
 pub fn parse_response(
     body: &[u8],
 ) -> Result<CanonicalImageGenerationResponse, ParseImageGenerationResponseError> {
@@ -150,7 +170,7 @@ pub fn parse_response(
 
 /// 将 Canonical 图片生成响应构造成 OpenAI wire JSON。
 ///
-/// 图片字节统一编码为标准 Base64，绝不生成临时 URL；输出重新经过响应解析器校验。
+/// 保留上游选用的 URL 或 Base64 载体；输出重新经过响应解析器校验。
 pub fn build_response(
     response: &CanonicalImageGenerationResponse,
 ) -> Result<Value, BuildImageGenerationResponseError> {
@@ -158,10 +178,20 @@ pub fn build_response(
         .images()
         .iter()
         .map(|image| {
-            Value::Object(Map::from_iter([(
-                "b64_json".to_owned(),
-                Value::String(STANDARD.encode(image.bytes())),
-            )]))
+            let mut item = Map::new();
+            if let Some(url) = image.url() {
+                item.insert("url".to_owned(), Value::String(url.to_owned()));
+            }
+            if let Some(bytes) = image.bytes() {
+                item.insert("b64_json".to_owned(), Value::String(STANDARD.encode(bytes)));
+            }
+            if let Some(revised_prompt) = image.revised_prompt() {
+                item.insert(
+                    "revised_prompt".to_owned(),
+                    Value::String(revised_prompt.to_owned()),
+                );
+            }
+            Value::Object(item)
         })
         .collect::<Vec<_>>();
     let mut root = Map::from_iter([
@@ -170,11 +200,13 @@ pub fn build_response(
             Value::Number(response.created().into()),
         ),
         ("data".to_owned(), Value::Array(data)),
-        (
-            "output_format".to_owned(),
-            Value::String(response.output_format().as_str().to_owned()),
-        ),
     ]);
+    if let Some(format) = response.output_format() {
+        root.insert(
+            "output_format".to_owned(),
+            Value::String(format.as_str().to_owned()),
+        );
+    }
     if let Some(background) = response.background() {
         root.insert(
             "background".to_owned(),
@@ -202,14 +234,10 @@ pub fn build_response(
 fn convert_request(
     wire: ImageGenerationRequestWire,
 ) -> Result<CanonicalImageGenerationRequest, ParseImageGenerationRequestError> {
-    if matches!(wire.stream, Field::Value(true))
-        || !matches!(wire.partial_images, Field::Missing)
-        || !matches!(wire.response_format, Field::Missing)
-        || !matches!(wire.style, Field::Missing)
-        || !matches!(wire.user, Field::Missing)
-    {
+    if matches!(wire.stream, Field::Value(true)) || !matches!(wire.partial_images, Field::Missing) {
         return Err(ParseImageGenerationRequestError::UnsupportedFeature);
     }
+    let _ignored_user = wire.user;
 
     let count = match wire.n {
         Field::Missing => None,
@@ -246,6 +274,16 @@ fn convert_request(
                 .map_err(|_| ParseImageGenerationRequestError::InvalidValue)?,
         ),
     };
+    let response_format = match wire.response_format {
+        Field::Missing => None,
+        Field::Value(ImageResponseFormatWire::Url) => Some(ImageResponseFormat::Url),
+        Field::Value(ImageResponseFormatWire::B64Json) => Some(ImageResponseFormat::B64Json),
+    };
+    let style = match wire.style {
+        Field::Missing => None,
+        Field::Value(ImageStyleWire::Vivid) => Some(ImageStyle::Vivid),
+        Field::Value(ImageStyleWire::Natural) => Some(ImageStyle::Natural),
+    };
     let options = ImageGenerationOptions::new(
         count,
         size,
@@ -255,7 +293,9 @@ fn convert_request(
         output_format,
         compression,
     )
-    .map_err(map_request_error)?;
+    .map_err(map_request_error)?
+    .with_response_format(response_format)
+    .with_style(style);
     CanonicalImageGenerationRequest::new(wire.model, wire.prompt, options)
         .map_err(map_request_error)
 }
@@ -270,7 +310,7 @@ fn convert_response(
     for item in wire.data {
         let image = convert_image(item)?;
         decoded_bytes = decoded_bytes
-            .checked_add(image.bytes().len())
+            .checked_add(image.byte_length())
             .ok_or(ParseImageGenerationResponseError::StructureLimitExceeded)?;
         if decoded_bytes > MAX_TOTAL_GENERATED_IMAGE_BYTES {
             return Err(ParseImageGenerationResponseError::StructureLimitExceeded);
@@ -280,7 +320,9 @@ fn convert_response(
 
     if let Field::Value(format) = wire.output_format {
         let format = map_output_format(format);
-        if images.iter().any(|image| image.format() != format) {
+        if images.iter().any(|image| {
+            image.format().is_some_and(|actual| actual != format) || image.format().is_none()
+        }) {
             return Err(ParseImageGenerationResponseError::InvalidValue);
         }
     }
@@ -296,6 +338,8 @@ fn convert_response(
         Field::Value(ImageResponseQualityWire::Low) => Some(ImageQuality::Low),
         Field::Value(ImageResponseQualityWire::Medium) => Some(ImageQuality::Medium),
         Field::Value(ImageResponseQualityWire::High) => Some(ImageQuality::High),
+        Field::Value(ImageResponseQualityWire::Standard) => Some(ImageQuality::Standard),
+        Field::Value(ImageResponseQualityWire::Hd) => Some(ImageQuality::Hd),
     };
     let size = match wire.size {
         Field::Missing => None,
@@ -316,20 +360,27 @@ fn convert_response(
 }
 
 fn convert_image(item: ImageDataWire) -> Result<GeneratedImage, ParseImageGenerationResponseError> {
-    if !matches!(item.url, Field::Missing) || !matches!(item.revised_prompt, Field::Missing) {
-        return Err(ParseImageGenerationResponseError::UnsupportedFeature);
-    }
-    let Field::Value(encoded) = item.b64_json else {
-        return Err(ParseImageGenerationResponseError::InvalidValue);
+    let revised_prompt = match item.revised_prompt {
+        Field::Missing => None,
+        Field::Value(prompt) if prompt.len() <= crate::MAX_IMAGE_PROMPT_BYTES => Some(prompt),
+        Field::Value(_) => return Err(ParseImageGenerationResponseError::StructureLimitExceeded),
     };
-    if encoded.is_empty() || encoded.len() > MAX_ENCODED_IMAGE_BYTES {
-        return Err(ParseImageGenerationResponseError::StructureLimitExceeded);
+    match (item.url, item.b64_json) {
+        (Field::Value(url), Field::Missing) => GeneratedImage::from_url(url, revised_prompt)
+            .map_err(|_| ParseImageGenerationResponseError::InvalidValue),
+        (Field::Missing, Field::Value(encoded)) => {
+            if encoded.is_empty() || encoded.len() > MAX_ENCODED_IMAGE_BYTES {
+                return Err(ParseImageGenerationResponseError::StructureLimitExceeded);
+            }
+            let bytes = STANDARD
+                .decode(&encoded)
+                .or_else(|_| STANDARD_NO_PAD.decode(&encoded))
+                .map_err(|_| ParseImageGenerationResponseError::InvalidValue)?;
+            GeneratedImage::from_bytes(bytes, revised_prompt)
+                .map_err(|_| ParseImageGenerationResponseError::InvalidValue)
+        }
+        _ => Err(ParseImageGenerationResponseError::InvalidValue),
     }
-    let bytes = STANDARD
-        .decode(&encoded)
-        .or_else(|_| STANDARD_NO_PAD.decode(&encoded))
-        .map_err(|_| ParseImageGenerationResponseError::InvalidValue)?;
-    GeneratedImage::new(bytes).map_err(|_| ParseImageGenerationResponseError::InvalidValue)
 }
 
 fn convert_usage(
@@ -341,7 +392,7 @@ fn convert_usage(
     let input_details = convert_token_details(usage.input_tokens_details)?;
     let output_details = match usage.output_tokens_details {
         Field::Missing => None,
-        Field::Value(details) => Some(convert_token_details(details)?),
+        Field::Value(details) => Some(convert_output_token_details(details)?),
     };
     let canonical =
         ImageGenerationUsage::new(input_tokens, input_details, output_tokens, output_details)
@@ -354,6 +405,19 @@ fn convert_usage(
         return Err(ParseImageGenerationResponseError::InvalidValue);
     }
     Ok(canonical)
+}
+
+fn convert_output_token_details(
+    details: ImageOutputTokenDetailsWire,
+) -> Result<ImageTokenBreakdown, ParseImageGenerationResponseError> {
+    let text_tokens = match details.text_tokens {
+        Field::Missing => TokenCount::ZERO,
+        Field::Value(value) => parse_token_count(value)?,
+    };
+    Ok(ImageTokenBreakdown::new(
+        text_tokens,
+        parse_token_count(details.image_tokens)?,
+    ))
 }
 
 fn convert_token_details(
@@ -439,6 +503,8 @@ fn map_quality(value: ImageQualityWire) -> ImageQuality {
         ImageQualityWire::Low => ImageQuality::Low,
         ImageQualityWire::Medium => ImageQuality::Medium,
         ImageQualityWire::High => ImageQuality::High,
+        ImageQualityWire::Standard => ImageQuality::Standard,
+        ImageQualityWire::Hd => ImageQuality::Hd,
     }
 }
 
@@ -581,6 +647,9 @@ impl fmt::Display for BuildImageGenerationResponseError {
 }
 
 impl Error for BuildImageGenerationResponseError {}
+
+#[cfg(test)]
+mod edit_tests;
 
 #[cfg(test)]
 mod tests;

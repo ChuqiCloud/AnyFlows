@@ -2,8 +2,8 @@ use std::{error::Error, fmt};
 
 /// 单次请求允许生成的最大图片张数。
 pub const MAX_IMAGE_GENERATION_COUNT: usize = 10;
-/// 自定义分辨率允许的最小总像素数。
-pub const MIN_IMAGE_PIXELS: u32 = 655_360;
+/// 通用 Images 接口允许的最小总像素数，包含 DALL-E 2 的 256x256 输出。
+pub const MIN_IMAGE_PIXELS: u32 = 65_536;
 /// 自定义分辨率允许的最大总像素数。
 pub const MAX_IMAGE_PIXELS: u32 = 8_294_400;
 /// 自定义分辨率允许的最大单边像素数。
@@ -127,7 +127,7 @@ impl ImageModeration {
     }
 }
 
-/// GPT Image 输出质量。
+/// GPT Image 与 DALL-E 输出质量。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ImageQuality {
     /// 由模型自动选择。
@@ -138,6 +138,10 @@ pub enum ImageQuality {
     Medium,
     /// 高质量。
     High,
+    /// DALL-E 标准质量。
+    Standard,
+    /// DALL-E 高清质量。
+    Hd,
 }
 
 impl ImageQuality {
@@ -149,6 +153,48 @@ impl ImageQuality {
             Self::Low => "low",
             Self::Medium => "medium",
             Self::High => "high",
+            Self::Standard => "standard",
+            Self::Hd => "hd",
+        }
+    }
+}
+
+/// OpenAI Images 响应中的图片载体。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ImageResponseFormat {
+    /// 返回临时下载 URL。
+    Url,
+    /// 返回 Base64 编码图片。
+    B64Json,
+}
+
+impl ImageResponseFormat {
+    /// 返回 OpenAI wire 使用的稳定字符串。
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Url => "url",
+            Self::B64Json => "b64_json",
+        }
+    }
+}
+
+/// DALL-E 3 图像风格。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ImageStyle {
+    /// 强烈、鲜艳的构图风格。
+    Vivid,
+    /// 更接近自然的构图风格。
+    Natural,
+}
+
+impl ImageStyle {
+    /// 返回 OpenAI wire 使用的稳定字符串。
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Vivid => "vivid",
+            Self::Natural => "natural",
         }
     }
 }
@@ -184,7 +230,7 @@ pub struct ImageDimensions {
 }
 
 impl ImageDimensions {
-    /// 构造满足 GPT Image 通用边界的宽高。
+    /// 构造满足 Images 通用尺寸边界的宽高。
     pub fn new(width: u32, height: u32) -> Result<Self, ImageDimensionsError> {
         let width = u16::try_from(width).map_err(|_| ImageDimensionsError::OutOfRange)?;
         let height = u16::try_from(height).map_err(|_| ImageDimensionsError::OutOfRange)?;
@@ -277,7 +323,7 @@ impl fmt::Display for ImageDimensionsError {
 
 impl Error for ImageDimensionsError {}
 
-/// GPT Image 请求尺寸。
+/// Images 请求尺寸。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ImageSize {
     /// 由模型自动选择。
@@ -316,6 +362,8 @@ pub struct ImageGenerationOptions {
     moderation: Option<ImageModeration>,
     output_format: Option<ImageOutputFormat>,
     compression: Option<ImageCompression>,
+    response_format: Option<ImageResponseFormat>,
+    style: Option<ImageStyle>,
 }
 
 impl ImageGenerationOptions {
@@ -351,7 +399,26 @@ impl ImageGenerationOptions {
             moderation,
             output_format,
             compression,
+            response_format: None,
+            style: None,
         })
+    }
+
+    /// 设置 DALL-E 响应载体。
+    #[must_use]
+    pub const fn with_response_format(
+        mut self,
+        response_format: Option<ImageResponseFormat>,
+    ) -> Self {
+        self.response_format = response_format;
+        self
+    }
+
+    /// 设置 DALL-E 3 图像风格。
+    #[must_use]
+    pub const fn with_style(mut self, style: Option<ImageStyle>) -> Self {
+        self.style = style;
+        self
     }
 
     /// 返回客户端显式提供的图片张数。
@@ -413,6 +480,18 @@ impl ImageGenerationOptions {
     pub const fn compression(self) -> Option<ImageCompression> {
         self.compression
     }
+
+    /// 返回客户端显式提供的响应载体。
+    #[must_use]
+    pub const fn response_format(self) -> Option<ImageResponseFormat> {
+        self.response_format
+    }
+
+    /// 返回客户端显式提供的 DALL-E 3 风格。
+    #[must_use]
+    pub const fn style(self) -> Option<ImageStyle> {
+        self.style
+    }
 }
 
 #[cfg(test)]
@@ -420,7 +499,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dimensions_enforce_official_bounds() {
+    fn dimensions_allow_dalle_sizes_and_bound_custom_sizes() {
         assert_eq!(
             ImageDimensions::new(1024, 1024).unwrap().to_string(),
             "1024x1024"
@@ -429,6 +508,24 @@ mod tests {
         assert!(ImageDimensions::new(1536, 1024).is_ok());
         assert!(ImageDimensions::new(1024, 1000).is_err());
         assert!(ImageDimensions::new(3840, 1024).is_err());
-        assert!(ImageDimensions::new(512, 512).is_err());
+        assert_eq!(
+            ImageDimensions::new(256, 256).unwrap().to_string(),
+            "256x256"
+        );
+        assert_eq!(
+            ImageDimensions::new(512, 512).unwrap().to_string(),
+            "512x512"
+        );
+        assert!(ImageDimensions::new(240, 256).is_err());
+    }
+
+    #[test]
+    fn dalle_quality_and_response_options_keep_wire_values() {
+        assert_eq!(ImageQuality::Standard.as_str(), "standard");
+        assert_eq!(ImageQuality::Hd.as_str(), "hd");
+        assert_eq!(ImageResponseFormat::Url.as_str(), "url");
+        assert_eq!(ImageResponseFormat::B64Json.as_str(), "b64_json");
+        assert_eq!(ImageStyle::Vivid.as_str(), "vivid");
+        assert_eq!(ImageStyle::Natural.as_str(), "natural");
     }
 }

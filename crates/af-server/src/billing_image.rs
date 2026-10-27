@@ -5,10 +5,10 @@ use af_billing::{
     RefundSignalPort, RequestPricingSnapshotSource, UsageRecordPort,
 };
 use af_domain::{AfError, ConcurrencyLimit, GatewayPrincipal, GroupId};
-use af_http::{ImageService, ImageServiceFuture};
+use af_http::{ImageRequest, ImageService, ImageServiceFuture};
 use af_protocol::{
-    CanonicalImageGenerationRequest, ImageQuality, ImageSize, MAX_IMAGE_PIXELS, TokenCount, Usage,
-    UsageDetails, UsageSemantics, UsageSource,
+    CanonicalImageEditRequest, CanonicalImageGenerationRequest, ImageQuality, ImageSize,
+    MAX_IMAGE_PIXELS, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
 };
 use af_relay::ImageResponse;
 
@@ -46,7 +46,7 @@ pub trait ImageRoutePlanner: Send + Sync {
         &'a self,
         principal: &'a GatewayPrincipal,
         user_concurrency: Option<ConcurrencyLimit>,
-        request: CanonicalImageGenerationRequest,
+        request: ImageRequest,
         request_id: &'a str,
     ) -> ImageRoutePlanFuture<'a>;
 }
@@ -99,13 +99,13 @@ impl BillingImageService {
         &self,
         principal: &GatewayPrincipal,
         user_concurrency: Option<ConcurrencyLimit>,
-        request: CanonicalImageGenerationRequest,
+        request: ImageRequest,
         request_id: &str,
     ) -> Result<ImageResponse, AfError> {
         let outcome = crate::RequestOutcomeContext::for_principal(
             request_id,
             af_domain::Protocol::OpenAiImages,
-            af_domain::Operation::Image,
+            request.operation(),
             request.model(),
             *principal,
         );
@@ -122,10 +122,13 @@ impl BillingImageService {
         &self,
         principal: &GatewayPrincipal,
         user_concurrency: Option<ConcurrencyLimit>,
-        request: CanonicalImageGenerationRequest,
+        request: ImageRequest,
         request_id: &str,
     ) -> Result<crate::RoutedExecution<ImageResponse>, AfError> {
-        let upper_bound = image_usage_upper_bound(&request)?;
+        let upper_bound = match &request {
+            ImageRequest::Generation(request) => image_usage_upper_bound(request)?,
+            ImageRequest::Edit(request) => image_edit_usage_upper_bound(request)?,
+        };
         let model = request.model().to_owned();
         let planned = self
             .inner
@@ -179,7 +182,27 @@ impl ImageService for BillingImageService {
         request: CanonicalImageGenerationRequest,
         request_id: &'a str,
     ) -> ImageServiceFuture<'a> {
-        Box::pin(self.call(principal, user_concurrency, request, request_id))
+        Box::pin(self.call(
+            principal,
+            user_concurrency,
+            ImageRequest::Generation(request),
+            request_id,
+        ))
+    }
+
+    fn edit<'a>(
+        &'a self,
+        principal: &'a GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
+        request: CanonicalImageEditRequest,
+        request_id: &'a str,
+    ) -> ImageServiceFuture<'a> {
+        Box::pin(self.call(
+            principal,
+            user_concurrency,
+            ImageRequest::Edit(request),
+            request_id,
+        ))
     }
 }
 
@@ -228,8 +251,10 @@ fn image_usage_upper_bound(request: &CanonicalImageGenerationRequest) -> Result<
     };
     let pixels_per_token = match options.quality() {
         Some(ImageQuality::Low) => LOW_QUALITY_PIXELS_PER_TOKEN,
-        Some(ImageQuality::Medium) => MEDIUM_QUALITY_PIXELS_PER_TOKEN,
-        Some(ImageQuality::High | ImageQuality::Auto) | None => HIGH_QUALITY_PIXELS_PER_TOKEN,
+        Some(ImageQuality::Medium | ImageQuality::Standard) => MEDIUM_QUALITY_PIXELS_PER_TOKEN,
+        Some(ImageQuality::High | ImageQuality::Hd | ImageQuality::Auto) | None => {
+            HIGH_QUALITY_PIXELS_PER_TOKEN
+        }
     };
     let output_per_image = pixels.div_ceil(pixels_per_token);
     let output_tokens = output_per_image
@@ -237,6 +262,27 @@ fn image_usage_upper_bound(request: &CanonicalImageGenerationRequest) -> Result<
         .and_then(|value| i64::try_from(value).ok())
         .ok_or(AfError::Internal)?;
     usage(input_tokens, output_tokens, UsageSource::Estimated)
+}
+
+fn image_edit_usage_upper_bound(request: &CanonicalImageEditRequest) -> Result<Usage, AfError> {
+    let image_tokens = request.total_image_pixels().div_ceil(128);
+    let input_tokens = image_tokens
+        .checked_add(u64::try_from(request.prompt_bytes()).map_err(|_| AfError::Internal)?)
+        .and_then(|value| i64::try_from(value).ok())
+        .ok_or(AfError::Internal)?;
+    let output_bound = image_usage_upper_bound(
+        &CanonicalImageGenerationRequest::new(
+            request.model().to_owned(),
+            request.prompt().to_owned(),
+            request.options(),
+        )
+        .map_err(|_| AfError::Internal)?,
+    )?;
+    usage(
+        input_tokens,
+        output_bound.output_tokens().get(),
+        UsageSource::Estimated,
+    )
 }
 
 fn usage_within_upper_bound(actual: &Usage, upper_bound: &Usage) -> Result<bool, AfError> {
@@ -405,7 +451,7 @@ mod tests {
             &'a self,
             _principal: &'a GatewayPrincipal,
             _user_concurrency: Option<ConcurrencyLimit>,
-            _request: CanonicalImageGenerationRequest,
+            _request: ImageRequest,
             _request_id: &'a str,
         ) -> ImageRoutePlanFuture<'a> {
             let target_group_id = self.target_group_id;

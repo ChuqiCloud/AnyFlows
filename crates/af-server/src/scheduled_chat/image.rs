@@ -1,10 +1,14 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use af_adapter::{RelayContext, get_adaptor};
-use af_domain::{AfError, ConcurrencyLimit, CredentialId, GatewayPrincipal, GroupId, Protocol};
+use af_domain::{
+    AfError, ChannelType, ConcurrencyLimit, CredentialId, GatewayPrincipal, GroupId, Protocol,
+};
+use af_http::ImageRequest;
 use af_protocol::{CanonicalImageGenerationRequest, openai_images};
 use af_relay::{
-    RelayCandidate, RelayCandidateRequest, RelayStateMachine, relay_openai_images_with_report,
+    RelayCandidate, RelayCandidateRequest, RelayStateMachine, relay_openai_image_edit_with_report,
+    relay_openai_images_with_report,
 };
 use af_scheduler::{IndexedRoutePlan, RouteWaitKind};
 
@@ -21,9 +25,15 @@ use crate::{
     health_runtime::{RuntimeHealthState, persist_scheduler_health_feedback},
 };
 
+const IMAGE_UPSTREAM_PROTOCOLS: &[Protocol] = &[Protocol::OpenAiChat, Protocol::OpenAiImages];
+
+fn supports_image_protocol(channel_type: ChannelType, protocol: Protocol) -> bool {
+    channel_type == ChannelType::OpenAi && IMAGE_UPSTREAM_PROTOCOLS.contains(&protocol)
+}
+
 use super::{
     PreparedConcurrencyPlan, ScheduledChatService, adaptor_settings, header_overrides,
-    map_scheduler_error, target_matches_protocol,
+    map_scheduler_error,
 };
 
 impl ImageRoutePlanner for ScheduledChatService {
@@ -31,7 +41,7 @@ impl ImageRoutePlanner for ScheduledChatService {
         &'a self,
         principal: &'a GatewayPrincipal,
         user_concurrency: Option<ConcurrencyLimit>,
-        request: CanonicalImageGenerationRequest,
+        request: ImageRequest,
         request_id: &'a str,
     ) -> ImageRoutePlanFuture<'a> {
         Box::pin(async move {
@@ -55,15 +65,22 @@ impl ImageRoutePlanner for ScheduledChatService {
                     .map_err(map_scheduler_error)?
                     .ok_or_else(|| AfError::from(af_domain::UpstreamError::ModelUnsupported))?
             };
-            let protocol = Protocol::OpenAiImages;
             let credential_health = self
-                .load_credential_health(&route, protocol, request.model())
+                .load_credential_health_for_protocols(
+                    &route,
+                    IMAGE_UPSTREAM_PROTOCOLS,
+                    request.model(),
+                )
                 .await?;
             let user_permit = self
                 .acquire_user_permit(*principal, user_concurrency)
                 .await?;
             let account_loads = self
-                .load_account_concurrency(&route, protocol, request.model())
+                .load_account_concurrency_for_protocols(
+                    &route,
+                    IMAGE_UPSTREAM_PROTOCOLS,
+                    request.model(),
+                )
                 .await?;
             let plan = self
                 .build_image_plan(
@@ -86,7 +103,7 @@ impl ScheduledChatService {
     async fn build_image_plan(
         &self,
         route: IndexedRoutePlan,
-        request: CanonicalImageGenerationRequest,
+        request: ImageRequest,
         request_id: &str,
         concurrency: PreparedConcurrencyPlan<'_>,
     ) -> Result<ScheduledImageExecution, AfError> {
@@ -109,7 +126,10 @@ impl ScheduledChatService {
         'channels: for candidate in route.candidates() {
             let target = candidate.runtime_target();
             let wait_plan = candidate.wait_plan();
-            if !target_matches_protocol(target, Protocol::OpenAiImages) {
+            let protocol = target.protocol();
+            if !supports_image_protocol(target.channel_type(), protocol)
+                || !target.channel_type().supports_runtime(protocol)
+            {
                 continue;
             }
             let upstream_model = target.mapped_model(&model).unwrap_or(&model).to_owned();
@@ -120,7 +140,7 @@ impl ScheduledChatService {
                 adaptor_settings(target, upstream_model)?,
             )
             .map_err(|_| AfError::Internal)?;
-            if adaptor.default_protocol() != Protocol::OpenAiImages {
+            if adaptor.default_protocol() != protocol {
                 return Err(AfError::Internal);
             }
             let headers = header_overrides(target)?;
@@ -228,7 +248,7 @@ struct ScheduledImageExecution {
     auto_ban_targets: Vec<ChannelAutoBanAttemptTarget>,
     credential_states: af_db::CredentialStateRepository,
     scheduler: af_scheduler::IndexedWeightedScheduler,
-    request: CanonicalImageGenerationRequest,
+    request: ImageRequest,
     user_permit: Option<RuntimeConcurrencyPermit>,
     health: Option<Arc<dyn crate::health_runtime::SchedulerHealthStore>>,
     channel_states: Option<af_db::ChannelStateRepository>,
@@ -253,9 +273,18 @@ impl PlannedImageExecution for ScheduledImageExecution {
             channel_states,
         } = *self;
         Box::pin(async move {
-            let (result, report) = relay_openai_images_with_report(&machine, request)
-                .await
-                .into_parts();
+            let (result, report) = match request {
+                ImageRequest::Generation(request) => {
+                    relay_openai_images_with_report(&machine, request)
+                        .await
+                        .into_parts()
+                }
+                ImageRequest::Edit(request) => {
+                    relay_openai_image_edit_with_report(&machine, request)
+                        .await
+                        .into_parts()
+                }
+            };
             let successful_channel_id = report
                 .successful_candidate_index()
                 .and_then(|index| attempt_targets.get(index))
@@ -289,7 +318,7 @@ impl PlannedImageExecution for ScheduledImageExecution {
 
 fn image_candidate_request(
     target: &af_db::SchedulerRuntimeTargetRecord,
-    request: &CanonicalImageGenerationRequest,
+    request: &ImageRequest,
     requested_model: &str,
     upstream_model: &str,
 ) -> Result<Option<RelayCandidateRequest>, AfError> {
@@ -299,19 +328,36 @@ fn image_candidate_request(
     if upstream_model == requested_model {
         return Ok(None);
     }
-    let mapped = CanonicalImageGenerationRequest::new(
-        upstream_model.to_owned(),
-        request.prompt().to_owned(),
-        request.options(),
-    )
-    .map_err(|_| AfError::Internal)?;
-    let value = openai_images::build_request(&mapped).map_err(|_| AfError::Internal)?;
-    let body = serde_json::to_vec(&value)
-        .map(af_adapter::Bytes::from)
-        .map_err(|_| AfError::Internal)?;
-    RelayCandidateRequest::new(upstream_model.to_owned(), Some(body))
-        .map(Some)
-        .map_err(|_| AfError::Internal)
+    match request {
+        ImageRequest::Generation(request) => {
+            let mapped = CanonicalImageGenerationRequest::new(
+                upstream_model.to_owned(),
+                request.prompt().to_owned(),
+                request.options(),
+            )
+            .map_err(|_| AfError::Internal)?;
+            let value = openai_images::build_request(&mapped).map_err(|_| AfError::Internal)?;
+            let body = serde_json::to_vec(&value)
+                .map(af_adapter::Bytes::from)
+                .map_err(|_| AfError::Internal)?;
+            RelayCandidateRequest::new(upstream_model.to_owned(), Some(body))
+                .map(Some)
+                .map_err(|_| AfError::Internal)
+        }
+        ImageRequest::Edit(request) => {
+            let mapped = request
+                .with_model(upstream_model.to_owned())
+                .map_err(|_| AfError::Internal)?;
+            let boundary = af_adapter::OpenAiAdaptor::IMAGE_EDIT_MULTIPART_BOUNDARY;
+            RelayCandidateRequest::with_body_factory(upstream_model.to_owned(), move || {
+                openai_images::build_edit_multipart(&mapped, boundary).map_err(|_| {
+                    af_relay::RelayError::Request(af_adapter::AdaptorError::InvalidTaskRequest)
+                })
+            })
+            .map(Some)
+            .map_err(|_| AfError::Internal)
+        }
+    }
 }
 
 fn ordered_credentials<'a>(
@@ -341,5 +387,35 @@ fn ordered_credentials<'a>(
             health,
         ),
         _ => order_credentials(request_id, target.channel_id(), target.credentials()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::supports_image_protocol;
+    use af_domain::{ChannelType, Protocol};
+
+    #[test]
+    fn only_openai_channels_accept_images_over_openai_chat_or_images_protocols() {
+        assert!(supports_image_protocol(
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat
+        ));
+        assert!(supports_image_protocol(
+            ChannelType::OpenAi,
+            Protocol::OpenAiImages
+        ));
+        assert!(!supports_image_protocol(
+            ChannelType::OpenCode,
+            Protocol::OpenAiChat
+        ));
+        assert!(!supports_image_protocol(
+            ChannelType::Nvidia,
+            Protocol::OpenAiChat
+        ));
+        assert!(!supports_image_protocol(
+            ChannelType::OpenAi,
+            Protocol::OpenAiResponses
+        ));
     }
 }

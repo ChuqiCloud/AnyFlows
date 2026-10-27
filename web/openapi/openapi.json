@@ -33754,6 +33754,7 @@
           "responses_compact",
           "embedding",
           "image",
+          "image_edit",
           "audio",
           "rerank",
           "video",

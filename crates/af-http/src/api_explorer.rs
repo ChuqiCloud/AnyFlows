@@ -395,6 +395,13 @@ fn gateway_operations() -> Vec<ProjectedOperation> {
             "生成图片",
         ),
         (
+            "createImageEdit",
+            "POST",
+            "/v1/images/edits",
+            "OpenAI Images",
+            "编辑图片",
+        ),
+        (
             "createTranscription",
             "POST",
             "/v1/audio/transcriptions",
@@ -424,20 +431,55 @@ fn gateway_operations() -> Vec<ProjectedOperation> {
         ),
     ]
     .into_iter()
-    .map(
-        |(operation_id, method, path, tag, summary)| ProjectedOperation {
+    .map(|(operation_id, method, path, tag, summary)| {
+        let request_content = if operation_id == "createImageEdit" {
+            serde_json::json!({
+                "multipart/form-data": {"schema": {
+                    "type": "object",
+                    "required": ["model", "prompt", "image"],
+                    "properties": {
+                        "model": {"type": "string"},
+                        "prompt": {"type": "string"},
+                        "image": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 16,
+                            "items": {"type": "string", "format": "binary"}
+                        },
+                        "mask": {"type": "string", "format": "binary"},
+                        "n": {"type": "integer", "minimum": 1, "maximum": 10},
+                        "size": {"type": "string"},
+                        "quality": {"type": "string", "enum": ["auto", "low", "medium", "high", "standard", "hd"]},
+                        "background": {"type": "string"},
+                        "moderation": {"type": "string"},
+                        "output_format": {"type": "string"},
+                        "output_compression": {"type": "integer", "minimum": 0, "maximum": 100},
+                        "response_format": {"type": "string", "enum": ["url", "b64_json"]},
+                        "style": {"type": "string", "enum": ["vivid", "natural"]},
+                        "input_fidelity": {"type": "string", "enum": ["low", "high"]},
+                        "user": {"type": "string", "description": "兼容 SDK 参数；网关接受后忽略，不保存或转发。"},
+                        "stream": {"type": "boolean", "enum": [false]}
+                    }
+                }}
+            })
+        } else {
+            serde_json::json!({"application/json": {"schema": {"type": "object"}}})
+        };
+        ProjectedOperation {
             metadata: ApiExplorerOperation {
                 operation_id: operation_id.to_owned(),
                 method: method.to_owned(),
                 path: path.to_owned(),
                 tag: tag.to_owned(),
                 summary: summary.to_owned(),
-                description: Some(
-                    "兼容模型网关入口，使用 API Key 鉴权。请求正文按对应协议传入 JSON。".to_owned(),
-                ),
+                description: Some(if operation_id == "createImageEdit" {
+                    "兼容模型网关入口，使用 API Key 鉴权。请求正文使用 multipart/form-data，包含 model、prompt 和 image 文件。多图使用重复 image[] 字段。".to_owned()
+                } else {
+                    "兼容模型网关入口，使用 API Key 鉴权。请求正文按对应协议传入 JSON。".to_owned()
+                }),
                 auth_mode: ApiExplorerAuthMode::ApiKey,
                 access_scope: ApiExplorerAccessScope::Gateway,
-                debuggable: true,
+                debuggable: operation_id != "createImageEdit",
             },
             openapi: serde_json::json!({
                 "operationId": operation_id,
@@ -456,7 +498,7 @@ fn gateway_operations() -> Vec<ProjectedOperation> {
                 },
                 "requestBody": {
                     "required": true,
-                    "content": {"application/json": {"schema": {"type": "object"}}}
+                    "content": request_content
                 },
                 "responses": {
                     "200": {"description": "网关响应"},
@@ -466,8 +508,8 @@ fn gateway_operations() -> Vec<ProjectedOperation> {
                     "500": {"description": "网关处理失败"}
                 }
             }),
-        },
-    )
+        }
+    })
     .collect()
 }
 
