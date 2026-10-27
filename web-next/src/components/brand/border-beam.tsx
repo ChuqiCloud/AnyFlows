@@ -1,3 +1,5 @@
+import { useId } from 'react'
+
 import { cn } from '@/lib/utils'
 
 type BorderBeamProps = {
@@ -21,6 +23,7 @@ export function BorderBeam({
   borderWidth = 1.5,
 }: BorderBeamProps) {
   const gap = 100 - beamSize
+  const gradientId = `border-beam-${useId().replace(/:/g, '')}` // 同一页面多处光束各自独立的渐变
 
   return (
     <div
@@ -36,7 +39,7 @@ export function BorderBeam({
         fill="none"
       >
         <defs>
-          <linearGradient id="border-beam-line" x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.1" />
             <stop offset="50%" stopColor="var(--primary)" stopOpacity="0.95" />
             <stop offset="85%" stopColor="var(--brand)" stopOpacity="0.8" />
@@ -50,7 +53,7 @@ export function BorderBeam({
           height={`calc(100% - ${borderWidth}px)`}
           rx={radius}
           pathLength={100}
-          stroke="url(#border-beam-line)"
+          stroke={`url(#${gradientId})`}
           strokeWidth={borderWidth}
           strokeDasharray={`${beamSize} ${gap}`}
           className="animate-border-beam"
