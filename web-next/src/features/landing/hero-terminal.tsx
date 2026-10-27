@@ -47,7 +47,7 @@ curl $OPENAI_BASE_URL/chat/completions \\
             <span className="text-primary font-medium">export </span>
             <span className="text-foreground">OPENAI_BASE_URL</span>
             <span className="text-muted-foreground">=</span>
-            <span className="text-success">"${openAiBaseUrl}"</span>
+            <span className="text-success">"{openAiBaseUrl}"</span>
           </div>
           <div>
             <span className="text-primary font-medium">export </span>
@@ -110,7 +110,7 @@ claude`,
             <span className="text-primary font-medium">export </span>
             <span className="text-foreground">ANTHROPIC_BASE_URL</span>
             <span className="text-muted-foreground">=</span>
-            <span className="text-success">"${baseUrl}"</span>
+            <span className="text-success">"{baseUrl}"</span>
           </div>
           <div>
             <span className="text-primary font-medium">export </span>
@@ -146,7 +146,7 @@ claude`,
           </div>
           <div>
             <span className="text-info font-medium">2. Base URL: </span>
-            <span className="text-success font-semibold">${openAiBaseUrl}</span>
+            <span className="text-success font-semibold">{openAiBaseUrl}</span>
           </div>
           <div>
             <span className="text-info font-medium">3. API Key:  </span>
@@ -195,7 +195,7 @@ for chunk in response:
           <div className="pl-4">
             <span className="text-foreground">base_url</span>
             <span className="text-muted-foreground">=</span>
-            <span className="text-success">"${openAiBaseUrl}"</span>
+            <span className="text-success">"{openAiBaseUrl}"</span>
             <span className="text-muted-foreground">,</span>
           </div>
           <div className="pl-4">
@@ -264,7 +264,7 @@ const { textStream } = streamText({
           <div className="pl-4">
             <span className="text-foreground">baseURL</span>
             <span className="text-muted-foreground">: </span>
-            <span className="text-success">'${openAiBaseUrl}'</span>
+            <span className="text-success">'{openAiBaseUrl}'</span>
             <span className="text-muted-foreground">,</span>
           </div>
           <div className="pl-4">
