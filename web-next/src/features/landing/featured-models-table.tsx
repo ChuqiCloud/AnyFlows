@@ -1,8 +1,8 @@
 import Anthropic from '@lobehub/icons/es/Anthropic/components/Mono'
 import DeepSeek from '@lobehub/icons/es/DeepSeek/components/Mono'
 import Gemini from '@lobehub/icons/es/Gemini/components/Mono'
+import Grok from '@lobehub/icons/es/Grok/components/Mono'
 import OpenAI from '@lobehub/icons/es/OpenAI/components/Mono'
-import Qwen from '@lobehub/icons/es/Qwen/components/Mono'
 import { ArrowRight, Check, Copy, ExternalLink, Sparkles } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { useState } from 'react'
@@ -62,10 +62,10 @@ const featuredModels: FeaturedModel[] = [
     Icon: Anthropic,
   },
   {
-    id: 'deepseek-reasoner',
-    name: 'DeepSeek R1',
+    id: 'deepseek-flash',
+    name: 'DeepSeek Flash',
     provider: 'DeepSeek',
-    context: '64K',
+    context: '128K',
     group: '深度推理',
     groupType: 'reasoning',
     inputPrice: '¥0.38',
@@ -74,8 +74,8 @@ const featuredModels: FeaturedModel[] = [
     Icon: DeepSeek,
   },
   {
-    id: 'gemini-2.0-flash',
-    name: 'Gemini 2.0 Flash',
+    id: 'gemini-3.8-flash',
+    name: 'Gemini 3.8 Flash',
     provider: 'Google',
     context: '1M',
     group: '极速低延时',
@@ -86,16 +86,16 @@ const featuredModels: FeaturedModel[] = [
     Icon: Gemini,
   },
   {
-    id: 'qwen-2.5-72b-instruct',
-    name: 'Qwen 2.5 72B',
-    provider: 'Alibaba Cloud',
-    context: '128K',
+    id: 'grok-4.7',
+    name: 'Grok 4.7',
+    provider: 'xAI',
+    context: '256K',
     group: '成本优先',
     groupType: 'eco',
     inputPrice: '¥0.25',
     outputPrice: '¥0.75',
     latency: '68ms',
-    Icon: Qwen,
+    Icon: Grok,
   },
 ]
 

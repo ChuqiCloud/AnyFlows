@@ -152,7 +152,7 @@ claude`,
           <div className="flex flex-wrap gap-1.5 pt-1">
             <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-primary font-mono">claude-opus-5-5</span>
             <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-success font-mono">gpt-6-1-sol</span>
-            <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-info font-mono">deepseek-reasoner</span>
+            <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-info font-mono">deepseek-flash</span>
           </div>
         </>
       ),
