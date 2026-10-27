@@ -2227,7 +2227,7 @@ export type SubscriptionPaymentResponse = {
     redirect_url: string | null;
 };
 export type SubscriptionPlanStatus = 'active' | 'disabled';
-export type UsageLogOperation = 'chat' | 'responses' | 'responses_compact' | 'embedding' | 'image' | 'audio' | 'rerank' | 'video' | 'count_tokens';
+export type UsageLogOperation = 'chat' | 'responses' | 'responses_compact' | 'embedding' | 'image' | 'image_edit' | 'audio' | 'rerank' | 'video' | 'count_tokens';
 export type UsageLogProtocol = 'open_ai_chat' | 'open_ai_responses' | 'open_ai_embeddings' | 'open_ai_images' | 'open_ai_audio' | 'open_ai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
 export type UsageLogReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'extra_high' | 'max';
 export type UserEmailBindingConfirmRequest = {

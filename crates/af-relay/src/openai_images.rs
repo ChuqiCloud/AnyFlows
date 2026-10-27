@@ -3,8 +3,8 @@ use std::fmt;
 use af_adapter::{Bytes, Method, Operation, StatusCode};
 use af_domain::{AfError, UpstreamError};
 use af_protocol::{
-    CanonicalImageGenerationRequest, ImageGenerationUsage, TokenCount, Usage, UsageDetails,
-    UsageSemantics, UsageSource, openai_images,
+    CanonicalImageEditRequest, CanonicalImageGenerationRequest, ImageGenerationUsage, TokenCount,
+    Usage, UsageDetails, UsageSemantics, UsageSource, openai_images,
 };
 
 use crate::error::{classify_upstream_status, map_adaptor_error, parse_retry_after};
@@ -108,6 +108,90 @@ pub async fn relay_openai_images_with_report(
         Err(_) => return protocol_failure(report),
     };
     if upstream.validate_for_request(&request).is_err() {
+        return protocol_failure(report);
+    }
+    let usage = match upstream.usage().map(normalize_usage).transpose() {
+        Ok(usage) => usage,
+        Err(()) => return protocol_failure(report),
+    };
+    let body = match encode_response(&upstream) {
+        Ok(body) => body,
+        Err(()) => return protocol_failure(report),
+    };
+    RelayOpenAiImagesOutcome::new(Ok(ImageResponse::new(body, usage)), report)
+}
+
+/// 使用固定候选状态机执行原生 OpenAI Images multipart 编辑。
+pub async fn relay_openai_image_edit(
+    machine: &RelayStateMachine,
+    request: CanonicalImageEditRequest,
+) -> Result<ImageResponse, AfError> {
+    relay_openai_image_edit_with_report(machine, request)
+        .await
+        .into_result()
+}
+
+/// 执行 multipart 图片编辑转发并保留脱敏候选尝试报告。
+pub async fn relay_openai_image_edit_with_report(
+    machine: &RelayStateMachine,
+    request: CanonicalImageEditRequest,
+) -> RelayOpenAiImagesOutcome {
+    let outbound_body = match openai_images::build_edit_multipart(
+        &request,
+        af_adapter::OpenAiAdaptor::IMAGE_EDIT_MULTIPART_BOUNDARY,
+    ) {
+        Ok(body) => body,
+        Err(_) => return RelayOpenAiImagesOutcome::failed(AfError::Internal),
+    };
+    let relay_request = match RelayRequest::new(
+        request.model().to_owned(),
+        Operation::ImageEdit,
+        Method::POST,
+        Some(outbound_body),
+    ) {
+        Ok(request) => request.with_response_body_limit(openai_images::MAX_RESPONSE_BODY_BYTES),
+        Err(error) => return RelayOpenAiImagesOutcome::failed(map_relay_error(error)),
+    };
+    let (response, mut report, _permit) = match machine.execute_with_report(relay_request).await {
+        Ok(response) => response.into_parts_with_permit(),
+        Err(error) => {
+            let (error, report) = error.into_parts();
+            return RelayOpenAiImagesOutcome::new(Err(map_relay_error(error)), report);
+        }
+    };
+    let status = response.status();
+    if status != StatusCode::OK {
+        let retry_after = parse_retry_after(response.headers());
+        let body = match response.into_body().into_bytes().await {
+            Ok(body) => body,
+            Err(error) => {
+                let error = map_adaptor_error(error);
+                report.reject_success(error);
+                return RelayOpenAiImagesOutcome::new(Err(error.into()), report);
+            }
+        };
+        let error = classify_upstream_status(status, retry_after, &body);
+        report.reject_success(error);
+        return RelayOpenAiImagesOutcome::new(Err(error.into()), report);
+    }
+
+    let body = match response
+        .into_body()
+        .into_bytes_with_limit(openai_images::MAX_RESPONSE_BODY_BYTES)
+        .await
+    {
+        Ok(body) => body,
+        Err(error) => {
+            let error = map_adaptor_error(error);
+            report.reject_success(error);
+            return RelayOpenAiImagesOutcome::new(Err(error.into()), report);
+        }
+    };
+    let upstream = match openai_images::parse_response(&body) {
+        Ok(response) => response,
+        Err(_) => return protocol_failure(report),
+    };
+    if upstream.validate_for_edit_request(&request).is_err() {
         return protocol_failure(report);
     }
     let usage = match upstream.usage().map(normalize_usage).transpose() {

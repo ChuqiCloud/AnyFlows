@@ -2640,6 +2640,7 @@
       "responses_compact": "Context compaction",
       "embedding": "Embedding",
       "image": "Image",
+      "image_edit": "Image edit",
       "audio": "Audio",
       "rerank": "Rerank",
       "video": "Video",

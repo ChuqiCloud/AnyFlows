@@ -194,6 +194,7 @@ impl fmt::Debug for RelayCandidate {
 pub struct RelayCandidateRequest {
     model: String,
     body: Option<Bytes>,
+    body_factory: Option<Arc<dyn Fn() -> Result<Bytes, RelayError> + Send + Sync>>,
 }
 
 impl RelayCandidateRequest {
@@ -203,15 +204,44 @@ impl RelayCandidateRequest {
         if !is_valid_model(&model) {
             return Err(RelayError::InvalidModel);
         }
-        Ok(Self { model, body })
+        Ok(Self {
+            model,
+            body,
+            body_factory: None,
+        })
+    }
+
+    /// 创建候选级延迟正文；内容仅在该候选实际执行时构造。
+    pub fn with_body_factory<F>(
+        model: impl Into<String>,
+        body_factory: F,
+    ) -> Result<Self, RelayError>
+    where
+        F: Fn() -> Result<Bytes, RelayError> + Send + Sync + 'static,
+    {
+        let model = model.into();
+        if !is_valid_model(&model) {
+            return Err(RelayError::InvalidModel);
+        }
+        Ok(Self {
+            model,
+            body: None,
+            body_factory: Some(Arc::new(body_factory)),
+        })
     }
 
     fn model(&self) -> &str {
         &self.model
     }
 
-    fn body(&self) -> Option<Bytes> {
-        self.body.clone()
+    fn body(&self) -> Result<Option<Bytes>, RelayError> {
+        if let Some(body) = &self.body {
+            return Ok(Some(body.clone()));
+        }
+        self.body_factory
+            .as_ref()
+            .map(|factory| factory())
+            .transpose()
     }
 
     #[cfg(test)]
@@ -226,6 +256,7 @@ impl fmt::Debug for RelayCandidateRequest {
             .debug_struct("RelayCandidateRequest")
             .field("model", &"<已脱敏>")
             .field("body_bytes", &self.body.as_ref().map(Bytes::len))
+            .field("has_body_factory", &self.body_factory.is_some())
             .finish()
     }
 }
@@ -1059,6 +1090,8 @@ impl RelayStateMachine {
                 .request
                 .as_ref()
                 .map_or(request.model.as_str(), RelayCandidateRequest::model);
+            let target =
+                AdaptorTarget::new(candidate_model, request.operation, request.response_mode);
             let supported_models = candidate.adaptor.supported_models();
             if !supported_models.is_empty()
                 && !supported_models
@@ -1076,10 +1109,11 @@ impl RelayStateMachine {
             }
 
             let mut headers = HeaderMap::new();
-            if let Err(error) = candidate.adaptor.setup_headers(
+            if let Err(error) = candidate.adaptor.setup_headers_for_target(
                 &mut headers,
                 &candidate.credential,
                 &candidate.context,
+                target,
             ) {
                 last_error = Some(RelayError::Adaptor(error));
                 index = self.next_channel_index(index);
@@ -1094,10 +1128,7 @@ impl RelayStateMachine {
                 continue;
             }
 
-            let target = match candidate.adaptor.build_url(
-                &candidate.context,
-                AdaptorTarget::new(candidate_model, request.operation, request.response_mode),
-            ) {
+            let target = match candidate.adaptor.build_url(&candidate.context, target) {
                 Ok(target) => target,
                 Err(error) => {
                     last_error = Some(RelayError::Adaptor(error));
@@ -1105,28 +1136,34 @@ impl RelayStateMachine {
                     continue;
                 }
             };
-            let upstream_request = match UpstreamRequest::new(
-                request.method.clone(),
-                target,
-                headers,
-                candidate
-                    .request
-                    .as_ref()
-                    .map_or_else(|| request.body.clone(), RelayCandidateRequest::body),
-            )
-            .and_then(|upstream_request| {
-                upstream_request.with_response_body_limit(request.response_body_limit)
-            })
-            .map(|upstream_request| upstream_request.with_response_mode(request.response_mode))
-            {
-                Ok(request) => request,
-                Err(error) => {
-                    return Err(RelayExecutionError::new(
-                        RelayError::Request(error),
-                        failures,
-                    ));
+            let outbound_body = if let Some(candidate_request) = &candidate.request {
+                match candidate_request.body() {
+                    Ok(body) => body,
+                    Err(error) => {
+                        last_error = Some(error);
+                        index = self.next_channel_index(index);
+                        continue;
+                    }
                 }
+            } else {
+                request.body.clone()
             };
+            let upstream_request =
+                match UpstreamRequest::new(request.method.clone(), target, headers, outbound_body)
+                    .and_then(|upstream_request| {
+                        upstream_request.with_response_body_limit(request.response_body_limit)
+                    })
+                    .map(|upstream_request| {
+                        upstream_request.with_response_mode(request.response_mode)
+                    }) {
+                    Ok(request) => request,
+                    Err(error) => {
+                        return Err(RelayExecutionError::new(
+                            RelayError::Request(error),
+                            failures,
+                        ));
+                    }
+                };
             let upstream_request = match candidate.client_simulation.as_ref() {
                 Some(middleware) => match apply_client_simulation(
                     middleware.as_ref(),
@@ -1586,6 +1623,24 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
+
+    #[test]
+    fn candidate_body_factory_runs_only_when_body_is_requested() {
+        let calls = Arc::new(Mutex::new(0));
+        let factory_calls = Arc::clone(&calls);
+        let request = RelayCandidateRequest::with_body_factory("mapped-model", move || {
+            *factory_calls.lock().unwrap() += 1;
+            Ok(Bytes::from_static(b"mapped body"))
+        })
+        .unwrap();
+
+        assert_eq!(*calls.lock().unwrap(), 0);
+        assert_eq!(
+            request.body().unwrap(),
+            Some(Bytes::from_static(b"mapped body"))
+        );
+        assert_eq!(*calls.lock().unwrap(), 1);
+    }
 
     struct CaptureHeadersAdaptor {
         protocol: Protocol,

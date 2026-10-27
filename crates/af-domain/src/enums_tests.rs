@@ -53,6 +53,7 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
             (Operation::ResponsesCompact, "responses_compact"),
             (Operation::Embedding, "embedding"),
             (Operation::Image, "image"),
+            (Operation::ImageEdit, "image_edit"),
             (Operation::Audio, "audio"),
             (Operation::Rerank, "rerank"),
             (Operation::Video, "video"),

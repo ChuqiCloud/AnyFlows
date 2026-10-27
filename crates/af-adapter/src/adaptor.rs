@@ -92,6 +92,17 @@ pub trait Adaptor: Send + Sync {
         context: &RelayContext,
     ) -> AdaptorResult<()>;
 
+    /// 根据已映射模型和操作设置请求头；默认保持适配器原有行为。
+    fn setup_headers_for_target(
+        &self,
+        headers: &mut HeaderMap,
+        credential: &Credential,
+        context: &RelayContext,
+        _target: AdaptorTarget<'_>,
+    ) -> AdaptorResult<()> {
+        self.setup_headers(headers, credential, context)
+    }
+
     /// 在 URL、正文和覆盖 Header 全部确定后最终化请求。
     ///
     /// 普通 Bearer/API Key 适配器保持原请求不变；SigV4 签名或 Service Account

@@ -105,6 +105,7 @@ use crate::oauth_connections::{AdminOAuthConnectionService, build_admin_oauth_co
 use crate::oauth_login::build_oauth_login_router;
 use crate::openai_audio::openai_audio_transcription;
 use crate::openai_embeddings::openai_embeddings;
+use crate::openai_images::openai_image_edit;
 use crate::openai_images::openai_images;
 use crate::openai_responses::openai_responses;
 use crate::openai_responses_compact::openai_responses_compact;
@@ -365,6 +366,11 @@ pub fn build_router(
             "/v1/images/generations",
             // Images 共用 OpenAI 错误 wire，但使用独立的大响应非流式业务端口。
             post(openai_images).route_layer(openai_authentication.clone()),
+        )
+        .route(
+            "/v1/images/edits",
+            // 编辑请求使用独立 multipart 解析与同一图片计费/选路端口。
+            post(openai_image_edit).route_layer(openai_authentication.clone()),
         )
         .route(
             "/v1/rerank",

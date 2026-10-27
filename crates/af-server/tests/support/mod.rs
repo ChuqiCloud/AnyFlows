@@ -92,6 +92,34 @@ pub async fn seed_runtime_channel(connection: &DatabaseConnection, group_id: i64
     .await;
 }
 
+/// 按显式地址、模型映射和凭据写入标准 OpenAI Chat-compatible 测试渠道。
+pub async fn seed_openai_chat_runtime_channel_with(
+    connection: &DatabaseConnection,
+    group_id: i64,
+    base_url: &str,
+    public_model: &str,
+    upstream_model: &str,
+    api_key: &str,
+    timeout_secs: Option<i32>,
+) {
+    seed_openai_runtime_channel_with(
+        connection,
+        group_id,
+        OpenAiRuntimeChannel {
+            channel_id: CHANNEL_ID,
+            credential_id: CREDENTIAL_ID,
+            name: "runtime-openai-chat",
+            protocol: "openai_chat",
+            base_url,
+            public_model,
+            upstream_model,
+            api_key,
+            timeout_secs,
+        },
+    )
+    .await;
+}
+
 /// 按显式地址、模型映射和凭据写入 OpenAI Responses 测试渠道。
 pub async fn seed_openai_responses_runtime_channel_with(
     connection: &DatabaseConnection,
