@@ -23,10 +23,10 @@ use af_protocol::{
     AudioSpeechVoiceName, AudioTranscriptionOptions, CanonicalAudioSpeechRequest,
     CanonicalAudioTranscriptionRequest, CanonicalEmbeddingRequest, CanonicalImageGenerationRequest,
     CanonicalRequest, CanonicalRerankRequest, CanonicalResponsesCompactionRequest, ContentBlock,
-    EmbeddingInput, ImageDimensions, ImageGenerationOptions, ImageOutputFormat, ImageQuality,
-    ImageSize, Message, RerankDocument, ResponsesCompactionInput, Sampling, TokenCount, ToolChoice,
-    anthropic, cohere_rerank_v2, gemini, openai_audio, openai_audio_speech, openai_chat,
-    openai_embeddings, openai_images, openai_responses, openai_responses_compact, rerank_v1,
+    EmbeddingInput, ImageDimensions, ImageGenerationOptions, ImageSize, Message, RerankDocument,
+    ResponsesCompactionInput, Sampling, TokenCount, ToolChoice, anthropic, cohere_rerank_v2,
+    gemini, openai_audio, openai_audio_speech, openai_chat, openai_embeddings, openai_images,
+    openai_responses, openai_responses_compact, rerank_v1,
 };
 use af_relay::{encode_openai_audio_request, encode_openai_speech_request};
 use af_scheduler::{ChannelProbe, ChannelProbeStatus};
@@ -546,7 +546,7 @@ fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
         return Ok(Bytes::from(value.to_string()));
     }
     if protocol == Protocol::OpenAiImages {
-        // 图片探活使用官方最低质量和单张 1024 方图，降低真实探测产生的上游费用。
+        // 使用不含模型专属参数的单张方图，让 DALL-E 和 GPT Image 都能探活。
         let value = openai_images::build_request(&probe_image_request(model)?)
             .map_err(|_| ProbeFailure::RequestBuild)?;
         return Ok(Bytes::from(value.to_string()));
@@ -765,16 +765,8 @@ fn probe_image_request(model: &str) -> Result<CanonicalImageGenerationRequest, P
     let dimensions = ImageDimensions::new(1_024, 1_024)
         .map(ImageSize::Exact)
         .map_err(|_| ProbeFailure::RequestBuild)?;
-    let options = ImageGenerationOptions::new(
-        None,
-        Some(dimensions),
-        Some(ImageQuality::Low),
-        None,
-        None,
-        Some(ImageOutputFormat::Png),
-        None,
-    )
-    .map_err(|_| ProbeFailure::RequestBuild)?;
+    let options = ImageGenerationOptions::new(None, Some(dimensions), None, None, None, None, None)
+        .map_err(|_| ProbeFailure::RequestBuild)?;
     CanonicalImageGenerationRequest::new(model.to_owned(), "ping".to_owned(), options)
         .map_err(|_| ProbeFailure::RequestBuild)
 }

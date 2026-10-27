@@ -188,6 +188,8 @@ string_enum! {
         Embedding => "embedding",
         /// 图像生成或处理。
         Image => "image",
+        /// OpenAI Images 图像编辑。
+        ImageEdit => "image_edit",
         /// 语音合成或转录。
         Audio => "audio",
         /// 结果重排序。

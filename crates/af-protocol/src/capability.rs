@@ -65,8 +65,8 @@ const OPENAI_EMBEDDINGS_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilitie
 };
 const OPENAI_IMAGES_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilities {
     protocol: Protocol::OpenAiImages,
-    request: &[],
-    response: &[],
+    request: request::OPENAI_IMAGES,
+    response: response::OPENAI_IMAGES,
     stream: &[],
 };
 const OPENAI_AUDIO_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilities {

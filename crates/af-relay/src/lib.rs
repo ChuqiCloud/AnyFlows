@@ -85,7 +85,8 @@ pub use openai_embeddings::{
     relay_openai_embeddings_with_report,
 };
 pub use openai_images::{
-    ImageResponse, RelayOpenAiImagesOutcome, relay_openai_images, relay_openai_images_with_report,
+    ImageResponse, RelayOpenAiImagesOutcome, relay_openai_image_edit,
+    relay_openai_image_edit_with_report, relay_openai_images, relay_openai_images_with_report,
 };
 pub use openai_responses::{
     RelayOpenAiResponsesOutcome, relay_openai_responses, relay_openai_responses_with_report,

@@ -671,6 +671,7 @@ const fn operation_database_value(operation: Operation) -> i16 {
         Operation::Rerank => 7,
         Operation::Video => 8,
         Operation::CountTokens => 9,
+        Operation::ImageEdit => 10,
     }
 }
 

@@ -201,6 +201,7 @@ pub enum UsageLogOperation {
     ResponsesCompact,
     Embedding,
     Image,
+    ImageEdit,
     Audio,
     Rerank,
     Video,
@@ -219,6 +220,7 @@ impl UsageLogOperation {
             7 => Ok(Self::Rerank),
             8 => Ok(Self::Video),
             9 => Ok(Self::CountTokens),
+            10 => Ok(Self::ImageEdit),
             _ => Err(AdminUsageLogReadError::Internal),
         }
     }
@@ -861,6 +863,7 @@ fn operation_from_domain(value: Operation) -> Result<UsageLogOperation, AdminUsa
         Operation::ResponsesCompact => Ok(UsageLogOperation::ResponsesCompact),
         Operation::Embedding => Ok(UsageLogOperation::Embedding),
         Operation::Image => Ok(UsageLogOperation::Image),
+        Operation::ImageEdit => Ok(UsageLogOperation::ImageEdit),
         Operation::Audio => Ok(UsageLogOperation::Audio),
         Operation::Rerank => Ok(UsageLogOperation::Rerank),
         Operation::Video => Ok(UsageLogOperation::Video),

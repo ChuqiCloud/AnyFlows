@@ -333,7 +333,7 @@ try {
       console.log(`ANYFLOWS_VERIFICATION_SCREENSHOT_${frontend}_${theme}_${name}_END`)
     }
   }
-  let software = { edition: 'community', version: '0.3.0', core_version: '0.3.0', commit: 'a'.repeat(40), build_time: '2026-10-24T00:00:00Z', target: 'x86_64-unknown-linux-gnu', deployment: 'binary', node_id: 'node-fixture', check_enabled: true, install_enabled: true, install_blocked_reason: null, restart_required: false, checked_at: null, latest: null, update_available: false }
+  let software = { edition: 'community', version: '0.3.0', core_version: '0.3.0', commit: 'a'.repeat(40), build_time: '2026-10-24T00:00:00Z', target: 'x86_64-unknown-linux-gnu', deployment: 'binary', node_id: 'node-fixture', launch_mode: 'direct', launcher_protocol: 1, launcher_version: null, update_phase: 'idle', launcher_error: null, check_enabled: true, install_enabled: true, install_blocked_reason: null, restart_required: false, checked_at: null, latest: null, update_available: false }
   let softwareChecks = 0
   let softwareInstalls = 0
   await page.route((url) => url.pathname.startsWith('/api/admin/software'), async (route) => {
@@ -349,11 +349,16 @@ try {
     await route.fulfill({ json: software })
   })
   await page.goto(`${home}?mode=software`)
-  await page.getByText('node-fixture', { exact: true }).waitFor()
+  const versionDetails = page.locator('details').filter({ has: page.getByText('node-fixture', { exact: true }) })
+  await versionDetails.locator('summary').waitFor()
+  assert.equal(await versionDetails.getByText('node-fixture', { exact: true }).isVisible(), false, 'Version details start collapsed')
+  await versionDetails.locator('summary').click()
+  await versionDetails.getByText('node-fixture', { exact: true }).waitFor()
   assert.equal(softwareChecks, 0, 'Opening version information must not contact release discovery')
   await page.getByRole('button', { name: '检查更新', exact: true }).click()
-  const installUpdate = page.getByRole('button', { name: '下载并安装', exact: true })
+  const installUpdate = page.getByRole('button', { name: '立即更新', exact: true })
   await installUpdate.waitFor()
+  assert.equal(softwareChecks, 1)
   assert.ok(await installUpdate.isDisabled(), 'Install requires explicit backup acknowledgement')
   await page.getByRole('checkbox').check()
   await installUpdate.click()
@@ -365,7 +370,7 @@ try {
   await page.getByText('容器部署仅支持检查版本，请使用新的镜像标签重新部署。', { exact: true }).waitFor()
   assert.equal(await installUpdate.count(), 0)
   assert.equal(await page.getByRole('checkbox').count(), 0)
-  software = { ...software, edition: 'custom', check_enabled: false, install_blocked_reason: 'host_managed', latest: null }
+  software = { ...software, edition: 'custom', deployment: 'binary', check_enabled: false, install_blocked_reason: 'host_managed' }
   await page.reload()
   await page.getByText('当前部署暂不开放在线更新。', { exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: '检查更新', exact: true }).count(), 0)

@@ -47,6 +47,27 @@ fn capability_declarations_are_closed_and_unique() {
 #[test]
 fn matrix_exposes_protocol_specific_differences() {
     assert!(supports_request_capability(
+        Protocol::OpenAiImages,
+        RequestCapability::Operation(Operation::ImageEdit)
+    ));
+    assert!(supports_request_capability(
+        Protocol::OpenAiChat,
+        RequestCapability::Operation(Operation::ImageEdit)
+    ));
+    assert!(supports_response_capability(
+        Protocol::OpenAiChat,
+        ResponseCapability::Operation(Operation::Image)
+    ));
+    assert!(supports_response_capability(
+        Protocol::OpenAiImages,
+        ResponseCapability::Operation(Operation::ImageEdit)
+    ));
+    assert!(!supports_request_capability(
+        Protocol::Gemini,
+        RequestCapability::Operation(Operation::ImageEdit)
+    ));
+
+    assert!(supports_request_capability(
         Protocol::OpenAiChat,
         RequestCapability::MessageRole(Role::Developer)
     ));

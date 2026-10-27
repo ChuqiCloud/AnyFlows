@@ -2642,6 +2642,7 @@
       "responses_compact": "上下文压缩",
       "embedding": "向量",
       "image": "图像",
+      "image_edit": "图像编辑",
       "audio": "音频",
       "rerank": "重排序",
       "video": "视频",
