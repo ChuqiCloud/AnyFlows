@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 import { Link as RouterLink } from 'react-router-dom'
 
 import { BorderBeam } from '@/components/brand/border-beam'
+import { LogoField } from '@/components/brand/logo-field'
 import { RibbonBeam } from '@/components/brand/ribbon-beam'
 import { PublicSiteHeader } from '@/components/layout/public-site-header'
 import { SiteFooter } from '@/components/layout/site-footer'
@@ -30,7 +31,6 @@ import { DeveloperTestimonials } from '@/features/landing/developer-testimonials
 import { FaqAccordion } from '@/features/landing/faq-accordion'
 import { FeaturedModelsTable } from '@/features/landing/featured-models-table'
 import { HeroTerminal } from '@/features/landing/hero-terminal'
-import { HeroTicker } from '@/features/landing/hero-ticker'
 import { QuickStartSteps } from '@/features/landing/quick-start-steps'
 import { TransparencyBento } from '@/features/landing/transparency-bento'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
@@ -220,13 +220,18 @@ export function LandingPage() {
 
       <main>
         {/* ===================== HERO SECTION ===================== */}
-        <section className="relative isolate overflow-hidden pt-8 pb-12 sm:pt-14 sm:pb-20 lg:pt-18 lg:pb-24">
-          {/* Ambient Lighting & Ribbon Beam */}
-          <RibbonBeam className="opacity-70 dark:opacity-90" />
-          <div className="next-landing-grid pointer-events-none absolute inset-0 -z-20 opacity-50 dark:opacity-30" aria-hidden="true" />
-          <div className="next-landing-hero-light pointer-events-none absolute inset-0 -z-10" aria-hidden="true" />
+        {/* lg：首屏占满视口，避免下一区块顶部露出 */}
+        <div className="lg:flex lg:min-h-[calc(100dvh-3.5rem)] lg:flex-col">
+          <section className="relative isolate flex flex-1 flex-col justify-center overflow-hidden pt-8 pb-12 sm:pt-14 sm:pb-20 lg:py-0">
+            {/* 模型标识星座：常态不可见，指针/静默扫光所到之处才显影 */}
+            <LogoField className="opacity-80 dark:opacity-100" />
 
-          <div className="mx-auto grid min-w-0 w-full max-w-[1280px] items-center gap-10 px-4 sm:gap-14 sm:px-6 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] lg:gap-14 lg:px-8">
+            {/* Ambient Lighting & Ribbon Beam */}
+            <RibbonBeam className="opacity-70 dark:opacity-90" />
+            <div className="next-landing-grid pointer-events-none absolute inset-0 -z-20 opacity-50 dark:opacity-30" aria-hidden="true" />
+            <div className="next-landing-hero-light pointer-events-none absolute inset-0 -z-10" aria-hidden="true" />
+
+            <div className="mx-auto grid min-w-0 w-full max-w-[1280px] items-center gap-10 px-4 sm:gap-14 sm:px-6 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] lg:gap-14 lg:px-8">
             {/* Left Column: Headline, Description, CTAs & 3 Pillars */}
             <div className="next-landing-rise flex min-w-0 flex-col justify-center">
               <div className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3.5 py-1 text-xs font-mono font-medium text-primary shadow-xs tracking-wider uppercase">
@@ -332,10 +337,9 @@ export function LandingPage() {
               <HeroTerminal />
             </div>
           </div>
-        </section>
+          </section>
 
-        {/* ===================== HERO STATUS TICKER ===================== */}
-        <HeroTicker />
+        </div>
 
         {/* ===================== FEATURED MODELS & LIVE PRICING MATRIX ===================== */}
         <FeaturedModelsTable />
