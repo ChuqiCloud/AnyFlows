@@ -11,7 +11,7 @@ export function TransparencyBento() {
   const recentLogs = [
     { time: '13:08:42', model: 'claude-opus-5-5', tokens: '1,248 / 386', latency: '82ms', cost: '¥0.0058', status: '200' },
     { time: '13:08:15', model: 'deepseek-flash', tokens: '2,410 / 1,024', latency: '92ms', cost: '¥0.0024', status: '200' },
-    { time: '13:07:50', model: 'gpt-6-1-sol', tokens: '890 / 240', latency: '74ms', cost: '¥0.0032', status: '200' },
+    { time: '13:07:50', model: 'gpt-6.1-sol', tokens: '890 / 240', latency: '74ms', cost: '¥0.0032', status: '200' },
     { time: '13:07:11', model: 'gemini-3.8-flash', tokens: '3,100 / 512', latency: '58ms', cost: '¥0.0003', status: '200' },
   ]
 

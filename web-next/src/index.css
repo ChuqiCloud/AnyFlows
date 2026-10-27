@@ -983,7 +983,7 @@
 .next-landing-card-health { --card-accent: var(--success); }
 .next-landing-card-observability { --card-accent: var(--info); }
 .next-landing-card-streaming { --card-accent: var(--brand); }
-.next-landing-card-pool { --card-accent: var(--success); }
+.next-landing-card-enterprise { --card-accent: var(--success); }
 
 .next-landing-card-icon {
   display: grid;

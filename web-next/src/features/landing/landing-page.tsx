@@ -3,10 +3,10 @@ import {
   Activity,
   ArrowRight,
   Boxes,
+  Building2,
   Braces,
   Check,
   CircleDollarSign,
-  Cpu,
   GitBranch,
   GitMerge,
   HeartPulse,
@@ -14,7 +14,6 @@ import {
   Layers3,
   Network,
   Route,
-  Server,
   ShieldCheck,
   Sparkles,
   Zap,
@@ -40,7 +39,7 @@ import { getManagementSessionToken } from '@/lib/api/session-token'
 import { cn } from '@/lib/utils'
 
 type JourneyMode = 'healthy' | 'failover' | 'streaming'
-type JourneyTone = 'billing' | 'health' | 'observability' | 'streaming' | 'pool'
+type JourneyTone = 'billing' | 'health' | 'observability' | 'streaming' | 'enterprise'
 
 const journeyModes: Array<{
   key: JourneyMode
@@ -174,7 +173,7 @@ function JourneyCard({
             <span />
             <span />
           </>
-        ) : tone === 'pool' ? (
+        ) : tone === 'enterprise' ? (
           <div className="flex w-full items-center justify-around">
             <span className="size-2 rounded-full bg-current animate-ping" />
             <span className="size-2 rounded-full bg-current" />
@@ -394,32 +393,32 @@ export function LandingPage() {
               </div>
             </div>
 
-            {/* Mode 2: Sub2API (RelaxyCode specialty) */}
+            {/* Mode 2: Enterprise */}
             <div className="relative rounded-2xl border border-primary/30 bg-gradient-to-b from-primary/8 via-surface-1 to-surface-1 p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-primary/60 hover:shadow-md">
               <div className="size-10 rounded-xl bg-brand/20 text-brand flex items-center justify-center">
-                <Cpu className="size-5" />
+                <Building2 className="size-5" />
               </div>
               <span className="mt-4 inline-block text-xs font-semibold text-brand font-mono tracking-wider">
-                {t('landing.modes.sub2api.label')}
+                {t('landing.modes.enterprise.label')}
               </span>
               <h3 className="mt-1 text-lg font-semibold text-foreground">
-                {t('landing.modes.sub2api.title')}
+                {t('landing.modes.enterprise.title')}
               </h3>
               <p className="mt-2.5 text-sm leading-6 text-muted-foreground">
-                {t('landing.modes.sub2api.body')}
+                {t('landing.modes.enterprise.body')}
               </p>
               <div className="mt-5 flex flex-wrap gap-1.5 pt-4 border-t border-[var(--hairline)]">
                 <span className="rounded bg-brand/15 px-2 py-0.5 text-[0.6875rem] text-brand font-medium">
-                  Claude Code
+                  {t('landing.modes.memberTags.members')}
                 </span>
                 <span className="rounded bg-brand/15 px-2 py-0.5 text-[0.6875rem] text-brand font-medium">
-                  Codex
+                  {t('landing.modes.memberTags.budget')}
                 </span>
                 <span className="rounded bg-brand/15 px-2 py-0.5 text-[0.6875rem] text-brand font-medium">
-                  Gemini CLI
+                  {t('landing.modes.memberTags.approval')}
                 </span>
                 <span className="rounded bg-surface-2 px-2 py-0.5 text-[0.6875rem] text-muted-foreground">
-                  账号池调度
+                  {t('landing.modes.memberTags.wallet')}
                 </span>
               </div>
             </div>
@@ -534,14 +533,14 @@ export function LandingPage() {
                 {t('landing.feature.streaming.body')}
               </JourneyCard>
 
-              {/* Card 6: Account Pools & Proxies */}
+              {/* Card 6: Enterprise workspace */}
               <JourneyCard
-                icon={Server}
-                tone="pool"
-                badge="独立代理"
-                title={t('landing.feature.pool.title')}
+                icon={Network}
+                tone="enterprise"
+                badge="团队协作"
+                title={t('landing.feature.enterprise.title')}
               >
-                {t('landing.feature.pool.body')}
+                {t('landing.feature.enterprise.body')}
               </JourneyCard>
             </div>
           </div>

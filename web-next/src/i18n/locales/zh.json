@@ -7832,9 +7832,9 @@
         "title": "流式转发",
         "body": "流式响应原样透传，每个请求的首字延迟和速度都能看到。"
       },
-      "pool": {
-        "title": "账号池",
-        "body": "多个账号统一管理，每个账号可以配独立代理，支持通过子账号逐步启用。"
+      "enterprise": {
+        "title": "企业管理",
+        "body": "按组织划分成员与部门，统一预算、审批和钱包，团队用量与成本一目了然。"
       },
       "observability": {
         "title": "请求追踪",
@@ -7850,15 +7850,21 @@
         "title": "官方与兼容 Key",
         "body": "接入官方或兼容接口，统一协议格式，按分组计费后分发给下游。"
       },
-      "sub2api": {
-        "label": "订阅转 API",
-        "title": "订阅额度池化",
-        "body": "将 Claude Code、Codex、Gemini CLI 的订阅额度统一调度，以标准 API 对外提供。"
-      },
       "metapi": {
         "label": "多站聚合",
         "title": "网关之上的网关",
         "body": "将已有的多个中转站作为上游接入，对外提供统一入口，自动完成故障转移和择优路由。"
+      },
+      "enterprise": {
+        "label": "企业协作",
+        "title": "团队按组织统一管理",
+        "body": "按组织划分成员与部门，统一预算、审批和企业钱包，每个人的调用都纳入同一套额度与审计。"
+      },
+      "memberTags": {
+        "members": "成员与部门",
+        "budget": "团队预算",
+        "approval": "审批流",
+        "wallet": "企业钱包"
       }
     },
     "protocol": {
@@ -7941,7 +7947,6 @@
       "openAiKey": "OpenAI 密钥",
       "anthropicKey": "Anthropic 密钥",
       "groupMultipliers": "分组倍率",
-      "credentialPool": "账号池调度",
       "crossProviderFallback": "跨站容灾",
       "routingPolicies": "智能择优",
       "retryStrategies": "按策略重试与切换",

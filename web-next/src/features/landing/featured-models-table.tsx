@@ -38,7 +38,7 @@ const featuredModels: FeaturedModel[] = [
     Icon: Anthropic,
   },
   {
-    id: 'gpt-6-1-sol',
+    id: 'gpt-6.1-sol',
     name: 'GPT-6.1 Sol',
     provider: 'OpenAI',
     context: '400K',

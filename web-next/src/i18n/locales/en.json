@@ -7834,9 +7834,9 @@
         "title": "Streaming",
         "body": "End-to-end SSE passthrough with per-request TTFT and throughput visibility."
       },
-      "pool": {
-        "title": "Account pool",
-        "body": "Typed credential management, one proxy per account, shadow accounts for rollout."
+      "enterprise": {
+        "title": "Enterprise modules",
+        "body": "Members and departments per organization, with shared budgets, approvals and wallet so team usage and cost stay visible."
       },
       "observability": {
         "title": "Observability",
@@ -7852,15 +7852,21 @@
         "title": "Official & compatible keys",
         "body": "Aggregate official or compatible endpoints, then normalize protocols, meter by group, and resell."
       },
-      "sub2api": {
-        "label": "Subscription to API",
-        "title": "Pooled subscription quota",
-        "body": "Turn Claude Code, Codex, and Gemini CLI OAuth quota into a standard API through an account pool."
-      },
       "metapi": {
         "label": "Meta aggregation",
         "title": "A gateway above gateways",
         "body": "Treat existing relays as upstreams and collapse them into one entry with failover and best-route selection."
+      },
+      "enterprise": {
+        "label": "Enterprise",
+        "title": "Teams managed by organization",
+        "body": "Organize members and departments, share budgets, approvals and the corporate wallet, and keep every call inside one quota and audit trail."
+      },
+      "memberTags": {
+        "members": "Members & teams",
+        "budget": "Team budgets",
+        "approval": "Approvals",
+        "wallet": "Corporate wallet"
       }
     },
     "protocol": {
@@ -7943,7 +7949,6 @@
       "openAiKey": "OpenAI key",
       "anthropicKey": "Anthropic key",
       "groupMultipliers": "Group multipliers",
-      "credentialPool": "Credential pool routing",
       "crossProviderFallback": "Cross-provider fallback",
       "routingPolicies": "Routing policies",
       "retryStrategies": "Configured retry strategies",

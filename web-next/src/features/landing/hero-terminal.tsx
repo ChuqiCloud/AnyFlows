@@ -132,7 +132,7 @@ claude`,
 # 1. 开启 [Override OpenAI Base URL]
 # 2. Base URL 填入: https://api.anyflows.com/v1
 # 3. API Key 填入: sk-anyflows-...
-# 4. 在 Model List 中添加 claude-opus-5-5 或 gpt-6-1-sol`,
+# 4. 在 Model List 中添加 claude-opus-5-5 或 gpt-6.1-sol`,
       rendered: (
         <>
           <div className="text-muted-foreground/75"># Cursor 设置 &gt; Models &gt; OpenAI API Key</div>
@@ -151,7 +151,7 @@ claude`,
           <div className="mt-3 text-muted-foreground/75"># 在 Model List 中直接填入模型名称：</div>
           <div className="flex flex-wrap gap-1.5 pt-1">
             <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-primary font-mono">claude-opus-5-5</span>
-            <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-success font-mono">gpt-6-1-sol</span>
+            <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-success font-mono">gpt-6.1-sol</span>
             <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-info font-mono">deepseek-flash</span>
           </div>
         </>
