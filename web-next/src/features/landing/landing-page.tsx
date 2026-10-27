@@ -14,7 +14,6 @@ import {
   Layers3,
   Network,
   Route,
-  ShieldCheck,
   Sparkles,
   Zap,
 } from 'lucide-react'
@@ -39,7 +38,7 @@ import { getManagementSessionToken } from '@/lib/api/session-token'
 import { cn } from '@/lib/utils'
 
 type JourneyMode = 'healthy' | 'failover' | 'streaming'
-type JourneyTone = 'billing' | 'health' | 'observability' | 'streaming' | 'enterprise'
+type JourneyTone = 'billing' | 'health' | 'streaming' | 'enterprise'
 
 const journeyModes: Array<{
   key: JourneyMode
@@ -167,12 +166,6 @@ function JourneyCard({
           <svg viewBox="0 0 160 42" preserveAspectRatio="none">
             <path d="M0 25 H34 L44 25 L53 10 L62 35 L73 18 L80 25 H160" />
           </svg>
-        ) : tone === 'observability' ? (
-          <>
-            <span />
-            <span />
-            <span />
-          </>
         ) : tone === 'enterprise' ? (
           <div className="flex w-full items-center justify-around">
             <span className="size-2 rounded-full bg-current animate-ping" />
@@ -460,7 +453,7 @@ export function LandingPage() {
                 {t('landing.feature.eyebrow')}
               </p>
               <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl text-foreground">
-                为什么选择 AnyFlows
+                {t('landing.pageUi.featuresTitle')}
               </h2>
               <p className="mt-2.5 text-base leading-7 text-muted-foreground">
                 {t('landing.feature.subheading')}
@@ -511,16 +504,6 @@ export function LandingPage() {
                 title={t('landing.feature.health.title')}
               >
                 {t('landing.feature.health.body')}
-              </JourneyCard>
-
-              {/* Card 4: Observability & Traces */}
-              <JourneyCard
-                icon={ShieldCheck}
-                tone="observability"
-                badge="全链路追踪"
-                title={t('landing.feature.observability.title')}
-              >
-                {t('landing.feature.observability.body')}
               </JourneyCard>
 
               {/* Card 5: High-speed Streaming */}
