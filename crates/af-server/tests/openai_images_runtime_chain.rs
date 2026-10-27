@@ -12,7 +12,7 @@ use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statemen
 use serde_json::{Value, json};
 use support::{
     CLIENT_KEY, GROUP_ID, IO_TIMEOUT, RUNTIME_HEADER_NAME, RUNTIME_HEADER_VALUE, UPSTREAM_BASE_URL,
-    UPSTREAM_KEY, UPSTREAM_MODEL, credential_encryption_key,
+    UPSTREAM_KEY, UPSTREAM_MODEL, credential_encryption_key, seed_openai_chat_runtime_channel_with,
     seed_openai_images_runtime_channel_with, send_request, spawn_proxy,
 };
 use tokio::{sync::oneshot, time::timeout};
@@ -140,6 +140,118 @@ async fn native_images_maps_model_rebuilds_response_and_records_upstream_usage()
     assert!(!String::from_utf8_lossy(&response.body).contains(PRIVATE_UPSTREAM_MODEL));
 
     assert_eq!(usage_summary(&database).await, (1, 1, 272));
+}
+
+#[tokio::test]
+async fn native_image_edits_rebuild_multipart_use_edits_endpoint_and_precharge_input_image() {
+    let database = TestDatabase::new();
+    let connection = seed_base_database(&database).await;
+    seed_openai_chat_runtime_channel_with(
+        &connection,
+        GROUP_ID,
+        UPSTREAM_BASE_URL,
+        UPSTREAM_MODEL,
+        PRIVATE_UPSTREAM_MODEL,
+        UPSTREAM_KEY,
+        None,
+    )
+    .await;
+    connection.close().await.unwrap();
+
+    let upstream_body = br#"{"created":1700000000,"data":[{"b64_json":"iVBORw0KGgo="}],"output_format":"png","quality":"low","size":"1024x1024"}"#;
+    let (proxy_address, captured, proxy) = spawn_proxy(
+        "200 OK",
+        upstream_body,
+        &[("Content-Type", "application/json")],
+    );
+    let proxy_url = format!("http://{proxy_address}");
+    let (address, shutdown, server) = start_gateway(&database, Some(&proxy_url)).await;
+
+    let boundary = "client-image-edit-boundary";
+    let mut image = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR".to_vec();
+    image.extend_from_slice(&1_024_u32.to_be_bytes());
+    image.extend_from_slice(&1_024_u32.to_be_bytes());
+    let mut request_body = Vec::new();
+    for (name, value) in [
+        ("model", "test-model"),
+        ("prompt", "edit"),
+        ("size", "1024x1024"),
+        ("quality", "low"),
+    ] {
+        request_body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+            )
+            .as_bytes(),
+        );
+    }
+    request_body.extend_from_slice(format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"client-name.png\"\r\nContent-Type: image/png\r\n\r\n"
+    ).as_bytes());
+    request_body.extend_from_slice(&image);
+    request_body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let response = send_request(
+        address,
+        "POST",
+        "/v1/images/edits",
+        &request_body,
+        &[
+            (
+                "Content-Type",
+                &format!("multipart/form-data; boundary={boundary}"),
+            ),
+            ("Authorization", &format!("Bearer {CLIENT_KEY}")),
+        ],
+    )
+    .await;
+    stop_gateway(shutdown, server).await;
+    let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    proxy.join().unwrap();
+
+    let head = upstream.head.to_ascii_lowercase();
+    assert!(head.starts_with("post http://upstream.example/proxy/v1/images/edits http/1.1"));
+    assert!(head.contains(&format!(
+        "content-type: multipart/form-data; boundary={}",
+        af_adapter::OpenAiAdaptor::IMAGE_EDIT_MULTIPART_BOUNDARY
+    )));
+    assert!(head.contains("authorization: bearer configured-upstream-key"));
+    assert!(!head.contains(&CLIENT_KEY.to_ascii_lowercase()));
+    assert!(
+        upstream
+            .body
+            .windows(b"filename=\"image-0.png\"".len())
+            .any(|value| value == b"filename=\"image-0.png\"")
+    );
+    assert!(
+        upstream
+            .body
+            .windows(PRIVATE_UPSTREAM_MODEL.len())
+            .any(|value| value == PRIVATE_UPSTREAM_MODEL.as_bytes())
+    );
+    assert!(
+        upstream
+            .body
+            .windows(UPSTREAM_MODEL.len())
+            .all(|value| value != UPSTREAM_MODEL.as_bytes())
+    );
+    assert!(
+        !upstream
+            .body
+            .windows(b"client-name.png".len())
+            .any(|value| value == b"client-name.png")
+    );
+    assert!(
+        upstream
+            .body
+            .windows(b"configured-upstream-key".len())
+            .all(|value| value != b"configured-upstream-key")
+    );
+
+    assert_eq!(response.status, 200);
+    let body: Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(body["data"][0]["b64_json"], "iVBORw0KGgo=");
+    assert_eq!(usage_summary(&database).await, (1, 8_196, 512));
 }
 
 #[tokio::test]

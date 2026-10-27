@@ -21,6 +21,16 @@ where
         .ok_or_else(|| D::Error::custom("字段不得为 null"))
 }
 
+pub(super) fn deserialize_optional_field<'de, D, T>(deserializer: D) -> Result<Field<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?
+        .map(Field::Value)
+        .unwrap_or(Field::Missing))
+}
+
 /// OpenAI Images 非流式生成请求。
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -50,19 +60,19 @@ pub(super) struct ImageGenerationRequestWire {
     /// 可选输出质量。
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) quality: Field<ImageQualityWire>,
-    /// DALL·E 响应载体；GPT Image 首切片拒绝。
+    /// 可选响应载体；不同模型支持面由上游决定。
     #[serde(default, deserialize_with = "deserialize_field")]
-    pub(super) response_format: Field<Value>,
+    pub(super) response_format: Field<ImageResponseFormatWire>,
     /// 可选输出尺寸。
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) size: Field<String>,
     /// 非流式首切片只接受缺失或 `false`。
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) stream: Field<bool>,
-    /// DALL·E 风格参数；首切片拒绝。
+    /// DALL·E 3 风格参数。
     #[serde(default, deserialize_with = "deserialize_field")]
-    pub(super) style: Field<Value>,
-    /// 上游终端用户标识；首切片拒绝转发。
+    pub(super) style: Field<ImageStyleWire>,
+    /// OpenAI SDK 可能携带的终端用户标识；网关接受但不存储或转发。
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) user: Field<Value>,
 }
@@ -101,46 +111,60 @@ pub(super) enum ImageQualityWire {
     Low,
     Medium,
     High,
+    Standard,
+    Hd,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum ImageResponseFormatWire {
+    Url,
+    B64Json,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(super) enum ImageStyleWire {
+    Vivid,
+    Natural,
 }
 
 /// OpenAI Images 非流式生成响应。
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(super) struct ImageGenerationResponseWire {
     /// Unix 秒级创建时间。
     pub(super) created: i64,
     /// 上游回显的实际背景。
-    #[serde(default, deserialize_with = "deserialize_field")]
+    #[serde(default, deserialize_with = "deserialize_optional_field")]
     pub(super) background: Field<ImageResponseBackgroundWire>,
     /// Base64 图片集合。
     pub(super) data: Vec<ImageDataWire>,
     /// 上游回显的输出格式。
-    #[serde(default, deserialize_with = "deserialize_field")]
+    #[serde(default, deserialize_with = "deserialize_optional_field")]
     pub(super) output_format: Field<ImageOutputFormatWire>,
     /// 上游回显的实际质量。
-    #[serde(default, deserialize_with = "deserialize_field")]
+    #[serde(default, deserialize_with = "deserialize_optional_field")]
     pub(super) quality: Field<ImageResponseQualityWire>,
     /// 上游回显的实际尺寸。
-    #[serde(default, deserialize_with = "deserialize_field")]
+    #[serde(default, deserialize_with = "deserialize_optional_field")]
     pub(super) size: Field<String>,
     /// 上游明确提供的图片 token 用量。
-    #[serde(default, deserialize_with = "deserialize_field")]
+    #[serde(default, deserialize_with = "deserialize_optional_field")]
     pub(super) usage: Field<ImageGenerationUsageWire>,
 }
 
 /// 一张 OpenAI Images 响应图片。
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(super) struct ImageDataWire {
     /// GPT Image 返回的 Base64 图片。
-    #[serde(default, deserialize_with = "deserialize_field")]
+    #[serde(default, deserialize_with = "deserialize_optional_field")]
     pub(super) b64_json: Field<String>,
-    /// DALL·E 临时 URL；首切片拒绝。
-    #[serde(default, deserialize_with = "deserialize_field")]
-    pub(super) url: Field<Value>,
-    /// DALL·E 改写提示词；首切片拒绝。
-    #[serde(default, deserialize_with = "deserialize_field")]
-    pub(super) revised_prompt: Field<Value>,
+    /// DALL·E 临时 URL。
+    #[serde(default, deserialize_with = "deserialize_optional_field")]
+    pub(super) url: Field<String>,
+    /// DALL·E 改写后的提示词。
+    #[serde(default, deserialize_with = "deserialize_optional_field")]
+    pub(super) revised_prompt: Field<String>,
 }
 
 /// Images 响应只允许回显确定背景，不接受 `auto`。
@@ -158,18 +182,19 @@ pub(super) enum ImageResponseQualityWire {
     Low,
     Medium,
     High,
+    Standard,
+    Hd,
 }
 
 /// OpenAI Images token 用量。
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(super) struct ImageGenerationUsageWire {
     pub(super) input_tokens: i64,
     pub(super) input_tokens_details: ImageTokenDetailsWire,
     pub(super) output_tokens: i64,
     pub(super) total_tokens: i64,
-    #[serde(default, deserialize_with = "deserialize_field")]
-    pub(super) output_tokens_details: Field<ImageTokenDetailsWire>,
+    #[serde(default, deserialize_with = "deserialize_optional_field")]
+    pub(super) output_tokens_details: Field<ImageOutputTokenDetailsWire>,
 }
 
 /// OpenAI Images 文本与图片 token 明细。
@@ -178,4 +203,12 @@ pub(super) struct ImageGenerationUsageWire {
 pub(super) struct ImageTokenDetailsWire {
     pub(super) image_tokens: i64,
     pub(super) text_tokens: i64,
+}
+
+/// 输出 token 明细通常只提供 image_tokens；允许兼容端点省略 text_tokens。
+#[derive(Deserialize)]
+pub(super) struct ImageOutputTokenDetailsWire {
+    pub(super) image_tokens: i64,
+    #[serde(default, deserialize_with = "deserialize_optional_field")]
+    pub(super) text_tokens: Field<i64>,
 }

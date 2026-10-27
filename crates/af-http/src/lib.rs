@@ -143,7 +143,7 @@ pub use http_extensions::{
     HttpExtension, HttpExtensionDescriptor, HttpExtensionRoutes, HttpExtensions,
     build_extension_catalog_router,
 };
-pub use image_service::{ImageService, ImageServiceFuture};
+pub use image_service::{ImageRequest, ImageService, ImageServiceFuture};
 pub use middleware::REQUEST_ID_HEADER_NAME;
 pub use oauth_connections::{
     AdminOAuthAuthorizationStart, AdminOAuthBeginFuture, AdminOAuthCompleteFuture,

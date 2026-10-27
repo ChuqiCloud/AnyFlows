@@ -796,6 +796,23 @@ impl ScheduledChatService {
             .map_err(|_| AfError::Internal)
     }
 
+    async fn load_account_concurrency_for_protocols(
+        &self,
+        route: &IndexedRoutePlan,
+        upstream_protocols: &[Protocol],
+        model: &str,
+    ) -> Result<Option<BTreeMap<i64, CredentialLoad>>, AfError> {
+        let Some(concurrency) = &self.concurrency else {
+            return Ok(None);
+        };
+        let accounts = collect_route_accounts_for_protocols(route, upstream_protocols, model)?;
+        concurrency
+            .account_loads(&accounts)
+            .await
+            .map(Some)
+            .map_err(|_| AfError::Internal)
+    }
+
     async fn load_channel_health(
         &self,
         group_id: GroupId,
@@ -830,6 +847,23 @@ impl ScheduledChatService {
             return Ok(None);
         };
         let credential_ids = collect_route_credentials(route, upstream_protocol, model)?;
+        load_credential_health(store, &credential_ids)
+            .await
+            .map(Some)
+            .map_err(|_| AfError::Internal)
+    }
+
+    async fn load_credential_health_for_protocols(
+        &self,
+        route: &IndexedRoutePlan,
+        upstream_protocols: &[Protocol],
+        model: &str,
+    ) -> Result<Option<BTreeMap<i64, RuntimeHealthState>>, AfError> {
+        let Some(store) = &self.health else {
+            return Ok(None);
+        };
+        let credential_ids =
+            collect_route_credentials_for_protocols(route, upstream_protocols, model)?;
         load_credential_health(store, &credential_ids)
             .await
             .map(Some)
@@ -1560,12 +1594,23 @@ fn collect_route_accounts(
     upstream_protocol: Protocol,
     model: &str,
 ) -> Result<Vec<(CredentialId, Option<ConcurrencyLimit>)>, AfError> {
+    collect_route_accounts_for_protocols(route, &[upstream_protocol], model)
+}
+
+fn collect_route_accounts_for_protocols(
+    route: &IndexedRoutePlan,
+    upstream_protocols: &[Protocol],
+    model: &str,
+) -> Result<Vec<(CredentialId, Option<ConcurrencyLimit>)>, AfError> {
     let mut accounts = Vec::with_capacity(RelayStateMachine::MAX_CANDIDATES);
     let mut unique = BTreeSet::new();
     let quota_dimension = CredentialQuotaDimension::for_canonical_model(model);
     'channels: for candidate in route.candidates() {
         let target = candidate.runtime_target();
-        if !target_matches_protocol(target, upstream_protocol) {
+        if !upstream_protocols
+            .iter()
+            .any(|protocol| target_matches_protocol(target, *protocol))
+        {
             continue;
         }
         for credential in target.credentials() {
@@ -1636,12 +1681,23 @@ fn collect_route_credentials(
     upstream_protocol: Protocol,
     model: &str,
 ) -> Result<Vec<(CredentialId, CredentialId)>, AfError> {
+    collect_route_credentials_for_protocols(route, &[upstream_protocol], model)
+}
+
+fn collect_route_credentials_for_protocols(
+    route: &IndexedRoutePlan,
+    upstream_protocols: &[Protocol],
+    model: &str,
+) -> Result<Vec<(CredentialId, CredentialId)>, AfError> {
     let mut credential_ids = Vec::with_capacity(RelayStateMachine::MAX_CANDIDATES);
     let mut unique = BTreeSet::new();
     let quota_dimension = CredentialQuotaDimension::for_canonical_model(model);
     'channels: for candidate in route.candidates() {
         let target = candidate.runtime_target();
-        if !target_matches_protocol(target, upstream_protocol) {
+        if !upstream_protocols
+            .iter()
+            .any(|protocol| target_matches_protocol(target, *protocol))
+        {
             continue;
         }
         for credential in target.credentials() {

@@ -74,6 +74,7 @@ impl ResponseCapability {
         Self::Operation(Operation::ResponsesCompact),
         Self::Operation(Operation::Embedding),
         Self::Operation(Operation::Image),
+        Self::Operation(Operation::ImageEdit),
         Self::Operation(Operation::Audio),
         Self::Operation(Operation::Rerank),
         Self::Operation(Operation::Video),
@@ -168,10 +169,14 @@ const COMMON_FINISH: &[ResponseCapability] = &[
 
 pub(super) const OPENAI_CHAT: &[ResponseCapability] = &[
     ResponseCapability::Operation(Operation::Chat),
+    ResponseCapability::Operation(Operation::Image),
+    ResponseCapability::Operation(Operation::ImageEdit),
     ResponseCapability::MultipleChoices,
     ResponseCapability::ArbitraryChoiceIndex,
     ResponseCapability::Logprobs,
     ResponseCapability::Text,
+    ResponseCapability::ImageUrl,
+    ResponseCapability::ImageBase64,
     ResponseCapability::Thinking,
     ResponseCapability::ToolCalls,
     COMMON_FINISH[0],
@@ -184,6 +189,14 @@ pub(super) const OPENAI_CHAT: &[ResponseCapability] = &[
     ResponseCapability::UsageAudioInput,
     ResponseCapability::UsageAudioOutput,
     ResponseCapability::SameProtocolRaw,
+];
+
+pub(super) const OPENAI_IMAGES: &[ResponseCapability] = &[
+    ResponseCapability::Operation(Operation::Image),
+    ResponseCapability::Operation(Operation::ImageEdit),
+    ResponseCapability::ImageUrl,
+    ResponseCapability::ImageBase64,
+    ResponseCapability::Usage,
 ];
 
 pub(super) const OPENAI_RESPONSES: &[ResponseCapability] = &[

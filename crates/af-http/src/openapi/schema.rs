@@ -586,6 +586,7 @@ pub(crate) enum UsageLogOperationSchema {
     ResponsesCompact,
     Embedding,
     Image,
+    ImageEdit,
     Audio,
     Rerank,
     Video,
