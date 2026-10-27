@@ -32,7 +32,7 @@ curl $OPENAI_BASE_URL/chat/completions \\
   -H "Authorization: Bearer $OPENAI_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "deepseek-reasoner",
+    "model": "claude-opus-5-5",
     "stream": true,
     "messages": [{"role": "user", "content": "Hello AnyFlows"}]
   }'`,
@@ -71,7 +71,7 @@ curl $OPENAI_BASE_URL/chat/completions \\
           <div className="pl-8">
             <span className="text-info">"model"</span>
             <span className="text-muted-foreground">: </span>
-            <span className="text-success">"deepseek-reasoner"</span>
+            <span className="text-success">"claude-opus-5-5"</span>
             <span className="text-muted-foreground">,</span>
           </div>
           <div className="pl-8">
@@ -132,7 +132,7 @@ claude`,
 # 1. 开启 [Override OpenAI Base URL]
 # 2. Base URL 填入: https://api.anyflows.com/v1
 # 3. API Key 填入: sk-anyflows-...
-# 4. 在 Model List 中添加 claude-3-7-sonnet 或 gpt-4o`,
+# 4. 在 Model List 中添加 claude-opus-5-5 或 gpt-6-1-sol`,
       rendered: (
         <>
           <div className="text-muted-foreground/75"># Cursor 设置 &gt; Models &gt; OpenAI API Key</div>
@@ -150,8 +150,8 @@ claude`,
           </div>
           <div className="mt-3 text-muted-foreground/75"># 在 Model List 中直接填入模型名称：</div>
           <div className="flex flex-wrap gap-1.5 pt-1">
-            <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-primary font-mono">claude-3-7-sonnet</span>
-            <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-success font-mono">gpt-4o</span>
+            <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-primary font-mono">claude-opus-5-5</span>
+            <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-success font-mono">gpt-6-1-sol</span>
             <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-info font-mono">deepseek-reasoner</span>
           </div>
         </>
@@ -168,7 +168,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="claude-3-7-sonnet-latest",
+    model="claude-opus-5-5",
     messages=[{"role": "user", "content": "Explain quantum computing"}],
     stream=True,
 )
@@ -210,7 +210,7 @@ for chunk in response:
           <div className="pl-4">
             <span className="text-foreground">model</span>
             <span className="text-muted-foreground">=</span>
-            <span className="text-success">"claude-3-7-sonnet-latest"</span>
+            <span className="text-success">"claude-opus-5-5"</span>
             <span className="text-muted-foreground">,</span>
           </div>
           <div className="pl-4">

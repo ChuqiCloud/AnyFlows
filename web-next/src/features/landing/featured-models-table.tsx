@@ -26,28 +26,40 @@ interface FeaturedModel {
 
 const featuredModels: FeaturedModel[] = [
   {
-    id: 'claude-3-7-sonnet-20250219',
-    name: 'Claude 3.7 Sonnet',
+    id: 'claude-opus-5-5',
+    name: 'Claude Opus 5.5',
+    provider: 'Anthropic',
+    context: '200K',
+    group: '旗舰推理',
+    groupType: 'ultra',
+    inputPrice: '¥18.00',
+    outputPrice: '¥90.00',
+    latency: '86ms',
+    Icon: Anthropic,
+  },
+  {
+    id: 'gpt-6-1-sol',
+    name: 'GPT-6.1 Sol',
+    provider: 'OpenAI',
+    context: '400K',
+    group: '旗舰通用',
+    groupType: 'ultra',
+    inputPrice: '¥12.00',
+    outputPrice: '¥60.00',
+    latency: '71ms',
+    Icon: OpenAI,
+  },
+  {
+    id: 'claude-sonnet-5-5',
+    name: 'Claude Sonnet 5.5',
     provider: 'Anthropic',
     context: '200K',
     group: '主力极速',
     groupType: 'primary',
-    inputPrice: '¥2.10',
-    outputPrice: '¥8.40',
-    latency: '82ms',
+    inputPrice: '¥3.60',
+    outputPrice: '¥18.00',
+    latency: '64ms',
     Icon: Anthropic,
-  },
-  {
-    id: 'gpt-4o',
-    name: 'OpenAI GPT-4o',
-    provider: 'OpenAI',
-    context: '128K',
-    group: '官方直连',
-    groupType: 'ultra',
-    inputPrice: '¥1.75',
-    outputPrice: '¥7.00',
-    latency: '74ms',
-    Icon: OpenAI,
   },
   {
     id: 'deepseek-reasoner',
@@ -111,7 +123,7 @@ export function FeaturedModelsTable() {
             常用模型与透明价格矩阵
           </h2>
           <p className="mt-2.5 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-            价格单位为人民币 / 百万 Token。按请求实时冻结与精准核销，每一笔消费与流式扣费清晰透明。
+            价格单位为人民币 / 百万 Token，为示例折算价。最新模型与实时价格请以模型广场为准。
           </p>
         </div>
 
