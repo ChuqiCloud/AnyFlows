@@ -1,0 +1,16 @@
+diff --git a/index.js b/index.js
+index 77968aed5d456cccc294f60912ef381fa1e52a7b..087c6f0e3d7b5dd8f63afcf6c30dc6928e0fb0f4 100644
+--- a/index.js
++++ b/index.js
+@@ -46,9 +46,8 @@ function propertyIsOnObject(object, property) {
+ 
+ // Protects from prototype poisoning and unexpected merging up the prototype chain.
+ function propertyIsUnsafe(target, key) {
+-	return propertyIsOnObject(target, key) // Properties are safe to merge if they don't exist in the target yet,
+-		&& !(Object.hasOwnProperty.call(target, key) // unsafe if they exist up the prototype chain,
+-			&& Object.propertyIsEnumerable.call(target, key)) // and also unsafe if they're nonenumerable.
++	// Reject prototype keys outright, no matter they come from the target or the source.
++	return key === '__proto__' || key === 'constructor' || key === 'prototype'
+ }
+ 
+ function mergeObject(target, source, options) {
