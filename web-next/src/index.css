@@ -775,9 +775,7 @@
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    /* A nonzero duration starts transitions on normally static overlay coordinates. */
     transition-duration: 0s !important;
-    transition-delay: 0s !important;
   }
 
   /*
@@ -1075,6 +1073,7 @@
 .next-landing-route-tracks span:nth-child(2) { height: 2px; background: linear-gradient(to right, var(--brand), var(--success)); box-shadow: 0 0 9px color-mix(in srgb, var(--brand) 28%, transparent); }
 .next-landing-route-destinations span { width: 1.35rem; height: 1.35rem; border-radius: 50%; }
 .next-landing-route-destinations span:nth-child(2) { border-color: var(--success); background: color-mix(in srgb, var(--success) 16%, var(--surface-1)); }
+
 .next-landing-cta {
   isolation: isolate;
   background: linear-gradient(125deg, color-mix(in srgb, var(--brand) 10%, var(--surface-1)), var(--surface-1) 55%, color-mix(in srgb, var(--success) 8%, var(--surface-1)));
@@ -1125,4 +1124,79 @@
   :root:not([data-motion='full']) .animate-border-beam {
     display: none;
   }
+}
+
+/*
+ * 控制台顶栏与侧栏的移动端适配，逐条对照母模板 acmeidc-ea 的实现。
+ *
+ * 三条能力分别解决三个真实故障：
+ * 1. touch-controls：粗指针设备下把可点击目标扩到 44×44，否则侧栏条目和顶栏按钮
+ *    在手机上经常点不中；账号头像这类视觉上必须保持小尺寸的用 compact 按钮 +
+ *    ::after 补足命中区，只放大热区不改外观。
+ * 2. navbar-end / navbar-tools：HeroUI 的 NavbarContent 默认 flex-grow 占满整行且
+ *    会换行，工具一多就会把账号头像挤出可视区。这里改成靠右单行 + 横向滚动，
+ *    保证头像始终留在右边缘内侧。
+ * 3. navbar-bar / navbar-account：轨迹条本身允许收缩（min-w-0），账号菜单固定不缩。
+ *
+ * 侧栏只保留桌面端：母模板的 aside 用 hidden md:flex，移动端改由 Navbar 的
+ * NavbarMenu 展开全量导航，避免窄屏下侧栏挤掉正文。
+ */
+@media (pointer: coarse) {
+  .touch-controls button:not(.navbar-compact-button) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .navbar-compact-button {
+    overflow: visible;
+  }
+
+  /* 视尺寸 44×44 但外观仍是 32×32 圆钮：只补热区，不动视觉。 */
+  .navbar-compact-button::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 100%;
+    height: 100%;
+    min-width: 44px;
+    min-height: 44px;
+    transform: translate(-50%, -50%);
+  }
+
+  .navbar-avatar {
+    padding-inline: 6px;
+  }
+}
+
+.navbar-bar {
+  min-width: 0;
+}
+
+.navbar-end {
+  flex-grow: 1 !important;
+  flex-basis: 0 !important;
+  flex-shrink: 1;
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+}
+
+.navbar-tools {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.navbar-tools::-webkit-scrollbar {
+  display: none;
+}
+
+.navbar-account {
+  flex: 0 0 auto;
 }

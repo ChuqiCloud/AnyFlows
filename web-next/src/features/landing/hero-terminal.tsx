@@ -1,11 +1,10 @@
 import { Check, Copy, Terminal as TerminalIcon } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { BorderBeam } from '@/components/brand/border-beam'
 import { copyText } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
-import { useLandingBaseUrl, useLandingModels } from './use-landing-models'
 
 type TerminalTabKey = 'curl' | 'claude' | 'cursor' | 'python' | 'node'
 
@@ -14,15 +13,11 @@ interface TabConfig {
   label: string
   badge?: string
   snippet: string
-  rendered: ReactNode
+  rendered: React.ReactNode
 }
 
 export function HeroTerminal() {
   const { t } = useTranslation()
-  const baseUrl = useLandingBaseUrl()
-  const { models } = useLandingModels()
-  const sampleModel = models.find((model) => model.output_modalities.includes('text'))?.model ?? 'YOUR_MODEL_ID'
-  const openAiBaseUrl = `${baseUrl}/v1`
   const [activeTab, setActiveTab] = useState<TerminalTabKey>('curl')
   const [copied, setCopied] = useState(false)
 
@@ -30,25 +25,25 @@ export function HeroTerminal() {
     {
       key: 'curl',
       label: 'cURL',
-      snippet: `export OPENAI_BASE_URL="${openAiBaseUrl}"
+      snippet: `export OPENAI_BASE_URL="https://api.anyflows.com/v1"
 export OPENAI_API_KEY="sk-anyflows-..."
 
 curl $OPENAI_BASE_URL/chat/completions \\
   -H "Authorization: Bearer $OPENAI_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": ${JSON.stringify(sampleModel)},
+    "model": "deepseek-reasoner",
     "stream": true,
     "messages": [{"role": "user", "content": "Hello AnyFlows"}]
   }'`,
       rendered: (
         <>
-          <div className="text-muted-foreground/75"># {t('landing.terminalUi.configure')}</div>
+          <div className="text-muted-foreground/75"># 1. 设置统一 Base URL 与 API Key</div>
           <div>
             <span className="text-primary font-medium">export </span>
             <span className="text-foreground">OPENAI_BASE_URL</span>
             <span className="text-muted-foreground">=</span>
-            <span className="text-success">"{openAiBaseUrl}"</span>
+            <span className="text-success">"https://api.anyflows.com/v1"</span>
           </div>
           <div>
             <span className="text-primary font-medium">export </span>
@@ -56,7 +51,7 @@ curl $OPENAI_BASE_URL/chat/completions \\
             <span className="text-muted-foreground">=</span>
             <span className="text-success">"sk-anyflows-..."</span>
           </div>
-          <div className="mt-3 text-muted-foreground/75"># {t('landing.terminalUi.unifiedCall')}</div>
+          <div className="mt-3 text-muted-foreground/75"># 2. 统一接口调用 Claude、GPT、DeepSeek</div>
           <div>
             <span className="text-primary font-medium">curl </span>
             <span className="text-muted-foreground">$OPENAI_BASE_URL/chat/completions \</span>
@@ -76,7 +71,7 @@ curl $OPENAI_BASE_URL/chat/completions \\
           <div className="pl-8">
             <span className="text-info">"model"</span>
             <span className="text-muted-foreground">: </span>
-            <span className="text-success">{JSON.stringify(sampleModel)}</span>
+            <span className="text-success">"deepseek-reasoner"</span>
             <span className="text-muted-foreground">,</span>
           </div>
           <div className="pl-8">
@@ -99,19 +94,19 @@ curl $OPENAI_BASE_URL/chat/completions \\
       key: 'claude',
       label: 'Claude Code',
       badge: 'CLI',
-      snippet: `export ANTHROPIC_BASE_URL="${baseUrl}"
+      snippet: `export ANTHROPIC_BASE_URL="https://api.anyflows.com"
 export ANTHROPIC_API_KEY="sk-anyflows-..."
 
-# ${t('landing.terminalUi.claudeStart')}
+# 立即启动官方 Claude Code，无缝调度 Opus 与 Sonnet
 claude`,
       rendered: (
         <>
-          <div className="text-muted-foreground/75"># {t('landing.terminalUi.claudeEnv')}</div>
+          <div className="text-muted-foreground/75"># 导出 Anthropic 环境变量，原生驱动 Claude Code CLI</div>
           <div>
             <span className="text-primary font-medium">export </span>
             <span className="text-foreground">ANTHROPIC_BASE_URL</span>
             <span className="text-muted-foreground">=</span>
-            <span className="text-success">"{baseUrl}"</span>
+            <span className="text-success">"https://api.anyflows.com"</span>
           </div>
           <div>
             <span className="text-primary font-medium">export </span>
@@ -119,12 +114,12 @@ claude`,
             <span className="text-muted-foreground">=</span>
             <span className="text-success">"sk-anyflows-..."</span>
           </div>
-          <div className="mt-4 text-muted-foreground/75"># {t('landing.terminalUi.claudeStart')}</div>
+          <div className="mt-4 text-muted-foreground/75"># 启动 Claude Code CLI，直接使用 3.7 Sonnet / Opus 矩阵</div>
           <div>
             <span className="text-primary font-semibold">$ claude</span>
           </div>
           <div className="mt-2 text-xs text-muted-foreground/75">
-            &gt; {t('landing.terminalUi.claudeReady')}
+            &gt; Claude Code is ready. Connected to AnyFlows Relay (latency: 82ms).
           </div>
         </>
       ),
@@ -133,29 +128,31 @@ claude`,
       key: 'cursor',
       label: 'Cursor',
       badge: 'IDE',
-      snippet: `# ${t('landing.terminalUi.cursorSettings')}
-# ${t('landing.terminalUi.cursorEnable')} [Override OpenAI Base URL]
-# ${t('landing.terminalUi.cursorBaseUrl')} ${openAiBaseUrl}
-# ${t('landing.terminalUi.cursorApiKey')} sk-anyflows-...
-# ${t('landing.terminalUi.cursorModel', { model: sampleModel })}`,
+      snippet: `# Cursor Settings > Models:
+# 1. 开启 [Override OpenAI Base URL]
+# 2. Base URL 填入: https://api.anyflows.com/v1
+# 3. API Key 填入: sk-anyflows-...
+# 4. 在 Model List 中添加 claude-3-7-sonnet 或 gpt-4o`,
       rendered: (
         <>
-          <div className="text-muted-foreground/75"># {t('landing.terminalUi.cursorSettings')}</div>
+          <div className="text-muted-foreground/75"># Cursor 设置 &gt; Models &gt; OpenAI API Key</div>
           <div className="mt-1">
-            <span className="text-info font-medium">{t('landing.terminalUi.cursorEnable')} </span>
+            <span className="text-info font-medium">1. 开启开关: </span>
             <span className="text-foreground">Override OpenAI Base URL</span>
           </div>
           <div>
-            <span className="text-info font-medium">{t('landing.terminalUi.cursorBaseUrl')} </span>
-            <span className="text-success font-semibold">{openAiBaseUrl}</span>
+            <span className="text-info font-medium">2. Base URL: </span>
+            <span className="text-success font-semibold">https://api.anyflows.com/v1</span>
           </div>
           <div>
-            <span className="text-info font-medium">{t('landing.terminalUi.cursorApiKey')} </span>
+            <span className="text-info font-medium">3. API Key:  </span>
             <span className="text-success">sk-anyflows-****************</span>
           </div>
-          <div className="mt-3 text-muted-foreground/75"># {t('landing.terminalUi.cursorModelHint')}</div>
+          <div className="mt-3 text-muted-foreground/75"># 在 Model List 中直接填入模型名称：</div>
           <div className="flex flex-wrap gap-1.5 pt-1">
-            <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-primary font-mono">{sampleModel}</span>
+            <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-primary font-mono">claude-3-7-sonnet</span>
+            <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-success font-mono">gpt-4o</span>
+            <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-info font-mono">deepseek-reasoner</span>
           </div>
         </>
       ),
@@ -166,12 +163,12 @@ claude`,
       snippet: `from openai import OpenAI
 
 client = OpenAI(
-    base_url="${openAiBaseUrl}",
+    base_url="https://api.anyflows.com/v1",
     api_key="sk-anyflows-...",
 )
 
 response = client.chat.completions.create(
-    model=${JSON.stringify(sampleModel)},
+    model="claude-3-7-sonnet-latest",
     messages=[{"role": "user", "content": "Explain quantum computing"}],
     stream=True,
 )
@@ -194,7 +191,7 @@ for chunk in response:
           <div className="pl-4">
             <span className="text-foreground">base_url</span>
             <span className="text-muted-foreground">=</span>
-            <span className="text-success">"{openAiBaseUrl}"</span>
+            <span className="text-success">"https://api.anyflows.com/v1"</span>
             <span className="text-muted-foreground">,</span>
           </div>
           <div className="pl-4">
@@ -204,7 +201,7 @@ for chunk in response:
             <span className="text-muted-foreground">,</span>
           </div>
           <div><span className="text-foreground">)</span></div>
-          <div className="mt-2 text-muted-foreground/75"># {t('landing.terminalUi.officialSdk')}</div>
+          <div className="mt-2 text-muted-foreground/75"># 兼容官方 SDK，零代码改动接入</div>
           <div>
             <span className="text-foreground">response </span>
             <span className="text-muted-foreground">= </span>
@@ -213,7 +210,7 @@ for chunk in response:
           <div className="pl-4">
             <span className="text-foreground">model</span>
             <span className="text-muted-foreground">=</span>
-            <span className="text-success">{JSON.stringify(sampleModel)}</span>
+            <span className="text-success">"claude-3-7-sonnet-latest"</span>
             <span className="text-muted-foreground">,</span>
           </div>
           <div className="pl-4">
@@ -237,12 +234,12 @@ for chunk in response:
 import { streamText } from 'ai'
 
 const anyflows = createOpenAI({
-  baseURL: '${openAiBaseUrl}',
+  baseURL: 'https://api.anyflows.com/v1',
   apiKey: process.env.ANYFLOWS_API_KEY,
 })
 
 const { textStream } = streamText({
-  model: anyflows.chat(${JSON.stringify(sampleModel)}),
+  model: anyflows('deepseek-chat'),
   prompt: 'Write a high-performance web app',
 })`,
       rendered: (
@@ -263,7 +260,7 @@ const { textStream } = streamText({
           <div className="pl-4">
             <span className="text-foreground">baseURL</span>
             <span className="text-muted-foreground">: </span>
-            <span className="text-success">'{openAiBaseUrl}'</span>
+            <span className="text-success">'https://api.anyflows.com/v1'</span>
             <span className="text-muted-foreground">,</span>
           </div>
           <div className="pl-4">
@@ -273,7 +270,7 @@ const { textStream } = streamText({
             <span className="text-muted-foreground">,</span>
           </div>
           <div><span className="text-foreground">{`})`}</span></div>
-          <div className="mt-2 text-muted-foreground/75"># {t('landing.terminalUi.vercelSdk')}</div>
+          <div className="mt-2 text-muted-foreground/75"># 原生接入 Vercel AI SDK / LangChain</div>
           <div>
             <span className="text-primary font-medium">const </span>
             <span className="text-foreground">{`{ textStream } `}</span>
@@ -284,8 +281,8 @@ const { textStream } = streamText({
           <div className="pl-4">
             <span className="text-foreground">model</span>
             <span className="text-muted-foreground">: </span>
-            <span className="text-foreground">anyflows.chat(</span>
-            <span className="text-success">{JSON.stringify(sampleModel)}</span>
+            <span className="text-foreground">anyflows(</span>
+            <span className="text-success">'deepseek-chat'</span>
             <span className="text-foreground">),</span>
           </div>
           <div className="pl-4">
@@ -337,14 +334,14 @@ const { textStream } = streamText({
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2.5 py-0.5 text-[0.6875rem] font-medium text-success">
               <span className="size-1.5 rounded-full bg-success animate-pulse" />
-              <span>{t('landing.catalog.example')}</span>
+              <span>Online · 82ms</span>
             </span>
           </div>
         </div>
 
         {/* Subbar with Language/Client Tabs */}
-        <div className="flex items-center justify-between border-b border-[var(--hairline)] bg-surface-1/60 px-3 py-1.5 overflow-x-auto scrollbar-none">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center justify-between gap-2 border-b border-[var(--hairline)] bg-surface-1/60 px-3 py-1.5 overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-1 shrink-0">
             {tabs.map((tab) => (
               <button
                 key={tab.key}
@@ -400,17 +397,17 @@ const { textStream } = streamText({
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] bg-surface-1/70 px-4 py-2.5 text-[0.6875rem] text-muted-foreground">
           <div className="flex flex-wrap items-center gap-3">
             <span className="inline-flex items-center gap-1 text-foreground/80">
-              <span className="text-primary font-bold">✓</span> {t('landing.terminalUi.protocols')}
+              <span className="text-primary font-bold">✓</span> OpenAI / Anthropic 兼容
             </span>
             <span className="inline-flex items-center gap-1 text-foreground/80">
-              <span className="text-success font-bold">✓</span> {t('landing.terminalUi.retry')}
+              <span className="text-success font-bold">✓</span> 毫秒级自动降级
             </span>
             <span className="inline-flex items-center gap-1 text-foreground/80">
-              <span className="text-info font-bold">✓</span> {t('landing.terminalUi.streaming')}
+              <span className="text-info font-bold">✓</span> 流式 SSE 透传
             </span>
           </div>
           <span className="hidden sm:inline font-mono text-[0.625rem] text-muted-foreground/60">
-            {t('landing.terminalUi.example')}
+            HTTP/2 · TLS 1.3
           </span>
         </div>
       </div>

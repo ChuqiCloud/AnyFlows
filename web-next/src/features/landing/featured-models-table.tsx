@@ -1,19 +1,93 @@
+import Anthropic from '@lobehub/icons/es/Anthropic/components/Mono'
+import DeepSeek from '@lobehub/icons/es/DeepSeek/components/Mono'
+import Gemini from '@lobehub/icons/es/Gemini/components/Mono'
+import OpenAI from '@lobehub/icons/es/OpenAI/components/Mono'
+import Qwen from '@lobehub/icons/es/Qwen/components/Mono'
 import { ArrowRight, Check, Copy, ExternalLink, Sparkles } from 'lucide-react'
+import type { ComponentType } from 'react'
 import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { Link as RouterLink } from 'react-router-dom'
 
-import { ModelCatalogIdentity } from '@/features/models/model-catalog-identity'
-import { formatContextWindow } from '@/features/models/model-context-window'
-import { ModelPriceValue } from '@/features/models/model-price-value'
 import { copyText } from '@/lib/clipboard'
-import { useLandingModels } from './use-landing-models'
+import { cn } from '@/lib/utils'
+
+interface FeaturedModel {
+  id: string
+  name: string
+  provider: string
+  context: string
+  group: string
+  groupType: 'primary' | 'ultra' | 'reasoning' | 'eco'
+  inputPrice: string
+  outputPrice: string
+  latency: string
+  Icon: ComponentType<{ className?: string }>
+}
+
+const featuredModels: FeaturedModel[] = [
+  {
+    id: 'claude-3-7-sonnet-20250219',
+    name: 'Claude 3.7 Sonnet',
+    provider: 'Anthropic',
+    context: '200K',
+    group: '主力极速',
+    groupType: 'primary',
+    inputPrice: '¥2.10',
+    outputPrice: '¥8.40',
+    latency: '82ms',
+    Icon: Anthropic,
+  },
+  {
+    id: 'gpt-4o',
+    name: 'OpenAI GPT-4o',
+    provider: 'OpenAI',
+    context: '128K',
+    group: '官方直连',
+    groupType: 'ultra',
+    inputPrice: '¥1.75',
+    outputPrice: '¥7.00',
+    latency: '74ms',
+    Icon: OpenAI,
+  },
+  {
+    id: 'deepseek-reasoner',
+    name: 'DeepSeek R1',
+    provider: 'DeepSeek',
+    context: '64K',
+    group: '深度推理',
+    groupType: 'reasoning',
+    inputPrice: '¥0.38',
+    outputPrice: '¥1.52',
+    latency: '92ms',
+    Icon: DeepSeek,
+  },
+  {
+    id: 'gemini-2.0-flash',
+    name: 'Gemini 2.0 Flash',
+    provider: 'Google',
+    context: '1M',
+    group: '极速低延时',
+    groupType: 'primary',
+    inputPrice: '¥0.07',
+    outputPrice: '¥0.28',
+    latency: '58ms',
+    Icon: Gemini,
+  },
+  {
+    id: 'qwen-2.5-72b-instruct',
+    name: 'Qwen 2.5 72B',
+    provider: 'Alibaba Cloud',
+    context: '128K',
+    group: '成本优先',
+    groupType: 'eco',
+    inputPrice: '¥0.25',
+    outputPrice: '¥0.75',
+    latency: '68ms',
+    Icon: Qwen,
+  },
+]
 
 export function FeaturedModelsTable() {
-  const { t } = useTranslation()
-  const { query, models } = useLandingModels()
-  const featuredModels = models.slice(0, 5)
-  const pricingScope = query.data?.pages[0]?.pricing_scope
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
   const handleCopy = async (id: string) => {
@@ -31,13 +105,13 @@ export function FeaturedModelsTable() {
         <div>
           <div className="inline-flex items-center gap-1.5 font-mono text-xs font-semibold uppercase tracking-[0.2em] text-primary">
             <Sparkles className="size-3.5" />
-            <span>{t('landing.catalog.eyebrow')}</span>
+            <span>MODELS & PRICING · 模型与价格</span>
           </div>
           <h2 className="mt-3 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            {t('landing.catalog.heading')}
+            常用模型与透明价格矩阵
           </h2>
           <p className="mt-2.5 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-            {t(pricingScope ? `models.scope.${pricingScope}.subtitle` : 'models.subtitle')}
+            价格单位为人民币 / 百万 Token。按请求实时冻结与精准核销，每一笔消费与流式扣费清晰透明。
           </p>
         </div>
 
@@ -45,7 +119,7 @@ export function FeaturedModelsTable() {
           to="/models"
           className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:text-primary/80 transition-colors shrink-0 group"
         >
-          <span>{t('landing.catalog.viewAll')}</span>
+          <span>查看全部模型广场</span>
           <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
         </RouterLink>
       </div>
@@ -55,48 +129,97 @@ export function FeaturedModelsTable() {
         <table className="w-full min-w-[760px] text-left border-collapse">
           <thead>
             <tr className="border-b border-[var(--hairline)] bg-surface-sunken/60 text-[0.6875rem] font-mono uppercase tracking-[0.12em] text-muted-foreground">
-              <th className="py-3.5 px-6 font-semibold">{t('models.title')}</th>
-              <th className="py-3.5 px-5 font-semibold">{t('landing.catalog.context')}</th>
-              <th className="py-3.5 px-5 font-semibold">{t('models.columns.input')}</th>
-              <th className="py-3.5 px-5 font-semibold">{t('models.columns.output')}</th>
-              <th className="py-3.5 px-5 font-semibold">{t('landing.catalog.billing')}</th>
-              <th className="py-3.5 px-6 font-semibold text-right">{t('landing.catalog.modelId')}</th>
+              <th className="py-3.5 px-6 font-semibold">模型与架构</th>
+              <th className="py-3.5 px-5 font-semibold">推荐线路分组</th>
+              <th className="py-3.5 px-5 font-semibold">输入价格 (1M)</th>
+              <th className="py-3.5 px-5 font-semibold">输出价格 (1M)</th>
+              <th className="py-3.5 px-5 font-semibold">首字延迟</th>
+              <th className="py-3.5 px-6 font-semibold text-right">模型标识</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--hairline)] text-sm">
             {featuredModels.map((item) => {
-              const isCopied = copiedId === item.model
+              const Icon = item.Icon
+              const isCopied = copiedId === item.id
 
               return (
                 <tr
-                  key={item.model}
+                  key={item.id}
                   className="transition-colors hover:bg-surface-2/60 group"
                 >
-                  <td className="py-4 px-6"><ModelCatalogIdentity item={item} /></td>
-                  <td className="py-4 px-5 font-mono text-xs text-muted-foreground">
-                    {item.context_window == null ? t('models.values.contextUnknownShort') : formatContextWindow(item.context_window)}
+                  {/* Model Name & Provider */}
+                  <td className="py-4 px-6">
+                    <div className="flex items-center gap-3">
+                      <div className="size-8 rounded-lg bg-surface-2 border border-[var(--hairline)] flex items-center justify-center shrink-0">
+                        <Icon className="size-4.5 text-foreground" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-foreground group-hover:text-primary transition-colors">
+                            {item.name}
+                          </span>
+                          <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[0.625rem] font-mono text-muted-foreground border border-[var(--hairline)]">
+                            {item.context}
+                          </span>
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {item.provider}
+                        </span>
+                      </div>
+                    </div>
                   </td>
-                  <td className="py-4 px-5">{item.billing_mode === 'free' ? t('models.billing.free') : <ModelPriceValue label={t('models.columns.input')} value={item.prices?.input} />}</td>
-                  <td className="py-4 px-5">{item.billing_mode === 'free' ? t('models.billing.free') : <ModelPriceValue label={t('models.columns.output')} value={item.prices?.output} />}</td>
-                  <td className="py-4 px-5"><span className="rounded-full border border-primary/25 bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">{t(`models.billing.${item.billing_mode}`)}</span></td>
+
+                  {/* Group Tag */}
+                  <td className="py-4 px-5">
+                    <span
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border',
+                        item.groupType === 'primary' && 'bg-primary/10 border-primary/25 text-primary',
+                        item.groupType === 'ultra' && 'bg-success/10 border-success/25 text-success',
+                        item.groupType === 'reasoning' && 'bg-amber-500/10 border-amber-500/25 text-amber-500 dark:text-amber-400',
+                        item.groupType === 'eco' && 'bg-info/10 border-info/25 text-info',
+                      )}
+                    >
+                      <span className="size-1 rounded-full bg-current" />
+                      {item.group}
+                    </span>
+                  </td>
+
+                  {/* Input Price */}
+                  <td className="py-4 px-5 font-mono text-xs font-medium text-foreground">
+                    {item.inputPrice}
+                  </td>
+
+                  {/* Output Price */}
+                  <td className="py-4 px-5 font-mono text-xs font-medium text-foreground">
+                    {item.outputPrice}
+                  </td>
+
+                  {/* Latency */}
+                  <td className="py-4 px-5 font-mono text-xs text-success">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="size-1.5 rounded-full bg-success animate-pulse" />
+                      {item.latency}
+                    </span>
+                  </td>
 
                   {/* Copy Action */}
                   <td className="py-4 px-6 text-right">
                     <button
                       type="button"
-                      onClick={() => handleCopy(item.model)}
+                      onClick={() => handleCopy(item.id)}
                       className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--hairline)] bg-surface-2/80 px-2.5 py-1 text-xs font-mono text-muted-foreground transition-all hover:border-primary/40 hover:bg-surface-2 hover:text-foreground active:scale-95 cursor-pointer"
-                      aria-label={t('landing.catalog.copy', { model: item.model })}
+                      title="点击复制模型 ID"
                     >
                       {isCopied ? (
                         <>
                           <Check className="size-3 text-success" />
-                          <span className="text-success font-medium">{t('landing.home.terminal.copied')}</span>
+                          <span className="text-success font-medium">已复制</span>
                         </>
                       ) : (
                         <>
                           <Copy className="size-3" />
-                          <span>{item.model}</span>
+                          <span>{item.id}</span>
                         </>
                       )}
                     </button>
@@ -104,19 +227,15 @@ export function FeaturedModelsTable() {
                 </tr>
               )
             })}
-            {models.length === 0 ? <tr><td colSpan={6} className="px-6 py-10 text-center text-sm text-muted-foreground" role={query.isError ? 'alert' : 'status'}>
-              {t(query.isPending ? 'models.loading' : query.isError ? 'models.error.body' : 'landing.catalog.empty')}
-              {query.isError ? <button type="button" className="ml-2 text-primary underline" onClick={() => void query.refetch()}>{t('models.actions.retry')}</button> : null}
-            </td></tr> : null}
           </tbody>
         </table>
       </div>
 
       {/* Micro-notes */}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground px-1">
-        <span>{t('landing.catalog.note')}</span>
+        <span>* 线路均提供心跳探活与 99.98% SLA 保障，单请求异常时自动秒级降级。</span>
         <RouterLink to="/models" className="hover:text-foreground inline-flex items-center gap-1 font-medium">
-          {t('landing.catalog.viewAll')} <ExternalLink className="size-3" />
+          查看倍率与完整 80+ 款模型 <ExternalLink className="size-3" />
         </RouterLink>
       </div>
     </section>

@@ -36,7 +36,7 @@ import { HeroTicker } from '@/features/landing/hero-ticker'
 import { QuickStartSteps } from '@/features/landing/quick-start-steps'
 import { TransparencyBento } from '@/features/landing/transparency-bento'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
-import { useLandingModels } from './use-landing-models'
+import { getManagementSessionToken } from '@/lib/api/session-token'
 import { cn } from '@/lib/utils'
 
 type JourneyMode = 'healthy' | 'failover' | 'streaming'
@@ -196,8 +196,7 @@ export function LandingPage() {
   const site = siteQuery.data
   const siteName = site?.site_name ?? t('brand.name')
   const authentication = site?.authentication
-  const { authenticated: hasSession, models } = useLandingModels()
-  const sampleModel = models.find((model) => model.output_modalities.includes('text'))?.model ?? 'YOUR_MODEL_ID'
+  const hasSession = Boolean(getManagementSessionToken())
   const registrationAvailable = Boolean(
     authentication?.password_login_enabled && authentication.registration_enabled,
   )
@@ -235,23 +234,23 @@ export function LandingPage() {
           <div className="next-landing-grid pointer-events-none absolute inset-0 -z-20 opacity-50 dark:opacity-30" aria-hidden="true" />
           <div className="next-landing-hero-light pointer-events-none absolute inset-0 -z-10" aria-hidden="true" />
 
-          <div className="mx-auto grid w-full max-w-[1280px] items-center gap-10 px-4 sm:gap-14 sm:px-6 lg:grid-cols-[1.08fr_0.92fr] lg:gap-14 lg:px-8">
+          <div className="mx-auto grid min-w-0 w-full max-w-[1280px] items-center gap-10 px-4 sm:gap-14 sm:px-6 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] lg:gap-14 lg:px-8">
             {/* Left Column: Headline, Description, CTAs & 3 Pillars */}
-            <div className="next-landing-rise flex flex-col justify-center">
+            <div className="next-landing-rise flex min-w-0 flex-col justify-center">
               <div className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3.5 py-1 text-xs font-mono font-medium text-primary shadow-xs tracking-wider uppercase">
                 <Sparkles className="size-3.5 text-primary" aria-hidden="true" />
-                <span>{t('landing.hero.eyebrow')}</span>
+                <span>AI GATEWAY & RUNTIME INFRASTRUCTURE</span>
               </div>
 
-              <h1 className="mt-5 max-w-2xl text-[2.75rem] font-semibold leading-[1.06] tracking-[-0.04em] sm:mt-6 sm:text-6xl lg:text-6.5xl text-foreground">
-                {site?.brand.tagline || t('landing.hero.headline')}
+              <h1 className="mt-5 max-w-2xl text-3xl font-semibold leading-[1.1] tracking-[-0.03em] break-words sm:mt-6 sm:text-6xl sm:leading-[1.06] sm:tracking-[-0.04em] lg:text-6.5xl text-foreground">
+                一个网关，连接
                 <span className="block mt-1 bg-gradient-to-r from-primary via-brand to-info bg-clip-text text-transparent">
-                  {t('landing.hero.headlineAccent')}
+                  全球领先 AI 模型
                 </span>
               </h1>
 
               <p className="mt-5 max-w-xl text-base leading-7 text-muted-foreground sm:mt-6 sm:text-lg sm:leading-8">
-                {site?.brand.description || t('landing.hero.siteDescription')}
+                统一 Base URL 与 API Key，多线路毫秒级智能调度。公开模型价格与请求级明细，几分钟即可直连 Claude Code、Cursor 与生产级业务系统。
               </p>
 
               {/* Action Buttons */}
@@ -284,7 +283,7 @@ export function LandingPage() {
                   startContent={<Braces className="size-4 text-muted-foreground" aria-hidden="true" />}
                   className="text-muted-foreground hover:text-foreground rounded-full"
                 >
-                  {t('landing.nav.api')}
+                  API
                 </Button>
               </div>
 
@@ -308,36 +307,36 @@ export function LandingPage() {
               <div className="mt-9 grid grid-cols-1 sm:grid-cols-3 border-t border-[var(--hairline)] pt-5 gap-4">
                 <div className="sm:pr-4">
                   <div className="font-mono text-[0.6875rem] font-semibold text-primary tracking-wider">
-                    01 / {t('landing.pageUi.protocolLabel')}
+                    01 / PROTOCOL
                   </div>
-                  <div className="mt-1 text-xs font-semibold text-foreground">{t('landing.pageUi.protocolTitle')}</div>
+                  <div className="mt-1 text-xs font-semibold text-foreground">统一接口与协议</div>
                   <div className="mt-1 text-[0.6875rem] leading-normal text-muted-foreground">
-                    {t('landing.pageUi.protocolDescription')}
+                    兼容 OpenAI 与 Anthropic，零代码重构无缝接入。
                   </div>
                 </div>
                 <div className="sm:px-4 sm:border-l border-[var(--hairline)]">
                   <div className="font-mono text-[0.6875rem] font-semibold text-success tracking-wider">
-                    02 / {t('landing.pageUi.routingLabel')}
+                    02 / SMART ROUTE
                   </div>
-                  <div className="mt-1 text-xs font-semibold text-foreground">{t('landing.pageUi.routingTitle')}</div>
+                  <div className="mt-1 text-xs font-semibold text-foreground">多线路智能调度</div>
                   <div className="mt-1 text-[0.6875rem] leading-normal text-muted-foreground">
-                    {t('landing.pageUi.routingDescription')}
+                    心跳探活与权重配比，上游异常秒级自动降级。
                   </div>
                 </div>
                 <div className="sm:pl-4 sm:border-l border-[var(--hairline)]">
                   <div className="font-mono text-[0.6875rem] font-semibold text-info tracking-wider">
-                    03 / {t('landing.pageUi.billingLabel')}
+                    03 / AUDIT
                   </div>
-                  <div className="mt-1 text-xs font-semibold text-foreground">{t('landing.pageUi.billingTitle')}</div>
+                  <div className="mt-1 text-xs font-semibold text-foreground">价格与用量明细</div>
                   <div className="mt-1 text-[0.6875rem] leading-normal text-muted-foreground">
-                    {t('landing.pageUi.billingDescription')}
+                    公开透明计价，请求级冻结核销，每一笔都能查。
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Right Column: Hero Terminal Sandbox */}
-            <div className="next-landing-rise next-landing-rise-delay">
+            <div className="next-landing-rise next-landing-rise-delay min-w-0">
               <HeroTerminal />
             </div>
           </div>
@@ -384,13 +383,13 @@ export function LandingPage() {
               </p>
               <div className="mt-5 flex flex-wrap gap-1.5 pt-4 border-t border-[var(--hairline)]">
                 <span className="rounded bg-surface-2 px-2 py-0.5 text-[0.6875rem] text-muted-foreground font-mono">
-                  {t('landing.pageUi.openAiKey')}
+                  OpenAI Key
                 </span>
                 <span className="rounded bg-surface-2 px-2 py-0.5 text-[0.6875rem] text-muted-foreground font-mono">
-                  {t('landing.pageUi.anthropicKey')}
+                  Anthropic Key
                 </span>
                 <span className="rounded bg-surface-2 px-2 py-0.5 text-[0.6875rem] text-muted-foreground font-mono">
-                  {t('landing.pageUi.groupMultipliers')}
+                  分组倍率
                 </span>
               </div>
             </div>
@@ -420,7 +419,7 @@ export function LandingPage() {
                   Gemini CLI
                 </span>
                 <span className="rounded bg-surface-2 px-2 py-0.5 text-[0.6875rem] text-muted-foreground">
-                  {t('landing.pageUi.credentialPool')}
+                  账号池调度
                 </span>
               </div>
             </div>
@@ -441,13 +440,13 @@ export function LandingPage() {
               </p>
               <div className="mt-5 flex flex-wrap gap-1.5 pt-4 border-t border-[var(--hairline)]">
                 <span className="rounded bg-surface-2 px-2 py-0.5 text-[0.6875rem] text-muted-foreground font-mono">
-                  {t('landing.pageUi.crossProviderFallback')}
+                  跨站容灾
                 </span>
                 <span className="rounded bg-surface-2 px-2 py-0.5 text-[0.6875rem] text-muted-foreground font-mono">
-                  {t('landing.pageUi.routingPolicies')}
+                  智能择优
                 </span>
                 <span className="rounded bg-surface-2 px-2 py-0.5 text-[0.6875rem] text-muted-foreground font-mono">
-                  {t('landing.pageUi.retryStrategies')}
+                  零丢包无感降级
                 </span>
               </div>
             </div>
@@ -462,7 +461,7 @@ export function LandingPage() {
                 {t('landing.feature.eyebrow')}
               </p>
               <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl text-foreground">
-                {t('landing.pageUi.featuresTitle')}
+                为什么选择 AnyFlows
               </h2>
               <p className="mt-2.5 text-base leading-7 text-muted-foreground">
                 {t('landing.feature.subheading')}
@@ -489,9 +488,9 @@ export function LandingPage() {
                   <div className="next-landing-route-destinations"><span /><span /><span /></div>
                 </div>
                 <div className="relative z-10 mt-6 flex flex-wrap gap-2 text-xs text-muted-foreground font-medium">
-                  <span className="rounded-full bg-surface-2 px-2.5 py-1">{t('landing.pageUi.weightedRouting')}</span>
-                  <span className="rounded-full bg-surface-2 px-2.5 py-1">{t('landing.pageUi.healthProbes')}</span>
-                  <span className="rounded-full bg-surface-2 px-2.5 py-1">{t('landing.pageUi.configuredFallback')}</span>
+                  <span className="rounded-full bg-surface-2 px-2.5 py-1">⚡️ 权重分发</span>
+                  <span className="rounded-full bg-surface-2 px-2.5 py-1">🛡 心跳探活</span>
+                  <span className="rounded-full bg-surface-2 px-2.5 py-1">🔄 自动秒级降级</span>
                 </div>
               </article>
 
@@ -499,7 +498,7 @@ export function LandingPage() {
               <JourneyCard
                 icon={CircleDollarSign}
                 tone="billing"
-                badge={t('landing.pageUi.badges.billing')}
+                badge="透明核算"
                 title={t('landing.feature.billing.title')}
               >
                 {t('landing.feature.billing.body')}
@@ -509,7 +508,7 @@ export function LandingPage() {
               <JourneyCard
                 icon={HeartPulse}
                 tone="health"
-                badge={t('landing.pageUi.badges.health')}
+                badge="探活熔断"
                 title={t('landing.feature.health.title')}
               >
                 {t('landing.feature.health.body')}
@@ -519,7 +518,7 @@ export function LandingPage() {
               <JourneyCard
                 icon={ShieldCheck}
                 tone="observability"
-                badge={t('landing.pageUi.badges.observability')}
+                badge="全链路追踪"
                 title={t('landing.feature.observability.title')}
               >
                 {t('landing.feature.observability.body')}
@@ -529,7 +528,7 @@ export function LandingPage() {
               <JourneyCard
                 icon={Layers3}
                 tone="streaming"
-                badge={t('landing.pageUi.badges.streaming')}
+                badge="极速 SSE"
                 title={t('landing.feature.streaming.title')}
               >
                 {t('landing.feature.streaming.body')}
@@ -539,7 +538,7 @@ export function LandingPage() {
               <JourneyCard
                 icon={Server}
                 tone="pool"
-                badge={t('landing.pageUi.badges.pool')}
+                badge="独立代理"
                 title={t('landing.feature.pool.title')}
               >
                 {t('landing.feature.pool.body')}
@@ -550,7 +549,7 @@ export function LandingPage() {
 
         {/* ===================== LIVE REQUEST JOURNEY & DEMO ===================== */}
         <section className="border-t border-[var(--hairline)] bg-background">
-          <div className="mx-auto grid w-full max-w-[1240px] gap-10 px-4 py-20 sm:px-6 sm:py-24 lg:grid-cols-[0.95fr_1.05fr] lg:items-center lg:px-8">
+          <div className="mx-auto grid w-full max-w-[1240px] gap-10 px-4 py-20 sm:px-6 sm:py-24 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:items-center lg:px-8">
             <div>
               <p className="font-mono text-xs font-semibold tracking-[0.2em] text-primary uppercase">
                 {t('landing.home.status.eyebrow')}
@@ -596,14 +595,14 @@ export function LandingPage() {
                 </div>
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-success/15 px-2.5 py-0.5 text-xs font-semibold text-success font-mono">
                   <span className="size-1.5 rounded-full bg-success animate-pulse" />
-                  {t('landing.catalog.example')}
+                  {t('landing.home.status.ok')}
                 </span>
               </div>
 
               <div className="mt-4 grid gap-4 sm:grid-cols-[1fr_0.8fr]">
                 <div className="rounded-xl bg-surface-sunken p-4 font-mono text-xs leading-6 text-muted-foreground border border-[var(--hairline)]">
                   <span className="text-primary">{`{`}</span><br />
-                  &nbsp;&nbsp;<span className="text-info">"model"</span>: <span className="text-success">{JSON.stringify(sampleModel)}</span>,<br />
+                  &nbsp;&nbsp;<span className="text-info">"model"</span>: <span className="text-success">"claude-3-7-sonnet"</span>,<br />
                   &nbsp;&nbsp;<span className="text-info">"stream"</span>: <span className="text-warning">true</span>,<br />
                   &nbsp;&nbsp;<span className="text-info">"max_tokens"</span>: <span className="text-warning">4096</span><br />
                   <span className="text-primary">{`}`}</span>
@@ -617,15 +616,15 @@ export function LandingPage() {
                     </p>
                   </div>
                   <div className="rounded-xl bg-success/10 p-3 border border-success/20">
-                    <p className="text-xs text-muted-foreground">{t('landing.pageUi.exampleLabel')}</p>
+                    <p className="text-xs text-muted-foreground">{t('landing.console.latency')}</p>
                     <p className="mt-1 text-sm font-semibold text-success font-mono">
-                      {t('landing.catalog.example')}
+                      82ms · {t('landing.home.status.stable')}
                     </p>
                   </div>
                   <div className="rounded-xl bg-warning/10 p-3 border border-warning/20">
-                    <p className="text-xs text-muted-foreground">{t('landing.pageUi.requestTrace')}</p>
+                    <p className="text-xs text-muted-foreground">{t('landing.console.tokens')}</p>
                     <p className="mt-1 text-sm font-semibold text-warning font-mono">
-                      {t('landing.pageUi.requestTraceValue')}
+                      1,248 in / 386 out
                     </p>
                   </div>
                 </div>
@@ -652,15 +651,15 @@ export function LandingPage() {
               <div className="relative z-10 max-w-2xl">
                 <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-xs font-mono font-medium text-primary uppercase tracking-wider">
                   <Sparkles className="size-3.5" />
-                  <span>{t('landing.pageUi.ctaBadge')}</span>
+                  <span>START BUILDING NOW</span>
                 </div>
 
                 <h2 className="mt-4 text-3xl font-bold tracking-tight text-foreground sm:text-4xl lg:text-5xl">
-                  {t('landing.pageUi.ctaTitle')}
+                  准备好让 AI 开发更稳定了吗？
                 </h2>
 
                 <p className="mt-4 text-base leading-7 text-muted-foreground sm:text-lg">
-                  {t('landing.pageUi.ctaDescription')}
+                  一个入口，稳定连接全球顶级大模型与开发者工具。无需繁琐配置，几分钟即可开启高效调用与毫秒级容灾。
                 </p>
 
                 <div className="mt-8 flex flex-wrap gap-3">
@@ -690,14 +689,14 @@ export function LandingPage() {
                     variant="light"
                     className="text-muted-foreground hover:text-foreground rounded-full"
                   >
-                    {t('landing.nav.api')}
+                    API Explorer
                   </Button>
                 </div>
 
                 <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
-                  <span>{t('landing.pageUi.clientExamples')}</span>
-                  <span>{t('landing.pageUi.sdkCompatibility')}</span>
-                  <span>{t('landing.pageUi.routingRetries')}</span>
+                  <span>✓ 5 分钟极速接入</span>
+                  <span>✓ 零改动兼容官方 SDK 与 Agent</span>
+                  <span>✓ 7×24 小时高可用路由保障</span>
                 </div>
               </div>
             </div>

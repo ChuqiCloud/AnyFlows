@@ -1,5 +1,3 @@
-import { useId } from 'react'
-
 import { cn } from '@/lib/utils'
 
 type BorderBeamProps = {
@@ -22,7 +20,6 @@ export function BorderBeam({
   radius = 16,
   borderWidth = 1.5,
 }: BorderBeamProps) {
-  const gradientId = useId()
   const gap = 100 - beamSize
 
   return (
@@ -39,7 +36,7 @@ export function BorderBeam({
         fill="none"
       >
         <defs>
-          <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient id="border-beam-line" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.1" />
             <stop offset="50%" stopColor="var(--primary)" stopOpacity="0.95" />
             <stop offset="85%" stopColor="var(--brand)" stopOpacity="0.8" />
@@ -53,7 +50,7 @@ export function BorderBeam({
           height={`calc(100% - ${borderWidth}px)`}
           rx={radius}
           pathLength={100}
-          stroke={`url(#${gradientId})`}
+          stroke="url(#border-beam-line)"
           strokeWidth={borderWidth}
           strokeDasharray={`${beamSize} ${gap}`}
           className="animate-border-beam"
