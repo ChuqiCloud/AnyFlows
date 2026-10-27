@@ -14,10 +14,10 @@ use crate::bounded_json::{self, BoundedJsonError, JsonLimits};
 use crate::{
     CanonicalImageGenerationRequest, CanonicalImageGenerationRequestError,
     CanonicalImageGenerationResponse, GeneratedImage, ImageBackground, ImageCompression,
-    ImageCount, ImageGenerationOptions, ImageGenerationUsage, ImageInputFidelity, ImageModeration,
-    ImageOutputFormat, ImageQuality, ImageResponseFormat, ImageSize, ImageStyle,
-    ImageTokenBreakdown, MAX_GENERATED_IMAGE_BYTES, MAX_IMAGE_GENERATION_COUNT,
-    MAX_TOTAL_GENERATED_IMAGE_BYTES, TokenCount,
+    ImageCount, ImageGenerationOptions, ImageGenerationUsage, ImageModeration, ImageOutputFormat,
+    ImageQuality, ImageResponseFormat, ImageSize, ImageStyle, ImageTokenBreakdown,
+    MAX_GENERATED_IMAGE_BYTES, MAX_IMAGE_GENERATION_COUNT, MAX_TOTAL_GENERATED_IMAGE_BYTES,
+    TokenCount,
 };
 
 mod edit_form;

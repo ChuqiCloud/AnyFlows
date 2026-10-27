@@ -391,7 +391,7 @@ impl EditFields {
     ) -> Result<(), ParseImageEditRequestError> {
         let (name, file_name, content_type, bytes) = part.into_parts();
         if let Some(index) = image_array_index(&name)? {
-            if self.images.len() > 0 || self.indexed_images.len() >= MAX_IMAGE_EDIT_FILES {
+            if !self.images.is_empty() || self.indexed_images.len() >= MAX_IMAGE_EDIT_FILES {
                 return Err(ParseImageEditRequestError::InvalidValue);
             }
             let image = parse_image_file(file_name, content_type, bytes)?;

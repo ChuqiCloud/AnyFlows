@@ -2,8 +2,8 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 use super::*;
 use crate::{
-    CanonicalImageGenerationResponseError, ImageBackground, ImageOutputFormat, ImageQuality,
-    ImageResponseFormat, ImageStyle, MAX_IMAGE_PROMPT_CHARS,
+    CanonicalImageGenerationResponseError, ImageBackground, ImageDimensions, ImageOutputFormat,
+    ImageQuality, ImageResponseFormat, ImageStyle, MAX_IMAGE_PROMPT_CHARS,
 };
 
 fn png_base64(canary: &[u8]) -> String {

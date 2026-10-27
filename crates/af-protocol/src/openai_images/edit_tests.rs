@@ -1,6 +1,7 @@
 use bytes::Bytes;
 
 use super::*;
+use crate::{ImageInputFidelity, MAX_IMAGE_EDIT_MASK_BYTES};
 
 fn png(width: u32, height: u32, marker: &[u8]) -> Bytes {
     let mut bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR".to_vec();

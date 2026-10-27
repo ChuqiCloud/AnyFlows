@@ -280,7 +280,7 @@ fn image_edit_usage_upper_bound(request: &CanonicalImageEditRequest) -> Result<U
     )?;
     usage(
         input_tokens,
-        output_bound.output_tokens(),
+        output_bound.output_tokens().get(),
         UsageSource::Estimated,
     )
 }

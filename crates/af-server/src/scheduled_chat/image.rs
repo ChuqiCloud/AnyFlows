@@ -241,36 +241,6 @@ impl ScheduledChatService {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::supports_image_protocol;
-    use af_domain::{ChannelType, Protocol};
-
-    #[test]
-    fn only_openai_channels_accept_images_over_openai_chat_or_images_protocols() {
-        assert!(supports_image_protocol(
-            ChannelType::OpenAi,
-            Protocol::OpenAiChat
-        ));
-        assert!(supports_image_protocol(
-            ChannelType::OpenAi,
-            Protocol::OpenAiImages
-        ));
-        assert!(!supports_image_protocol(
-            ChannelType::OpenCode,
-            Protocol::OpenAiChat
-        ));
-        assert!(!supports_image_protocol(
-            ChannelType::Nvidia,
-            Protocol::OpenAiChat
-        ));
-        assert!(!supports_image_protocol(
-            ChannelType::OpenAi,
-            Protocol::OpenAiResponses
-        ));
-    }
-}
-
 struct ScheduledImageExecution {
     target_group_id: GroupId,
     machine: RelayStateMachine,
@@ -417,5 +387,35 @@ fn ordered_credentials<'a>(
             health,
         ),
         _ => order_credentials(request_id, target.channel_id(), target.credentials()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::supports_image_protocol;
+    use af_domain::{ChannelType, Protocol};
+
+    #[test]
+    fn only_openai_channels_accept_images_over_openai_chat_or_images_protocols() {
+        assert!(supports_image_protocol(
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat
+        ));
+        assert!(supports_image_protocol(
+            ChannelType::OpenAi,
+            Protocol::OpenAiImages
+        ));
+        assert!(!supports_image_protocol(
+            ChannelType::OpenCode,
+            Protocol::OpenAiChat
+        ));
+        assert!(!supports_image_protocol(
+            ChannelType::Nvidia,
+            Protocol::OpenAiChat
+        ));
+        assert!(!supports_image_protocol(
+            ChannelType::OpenAi,
+            Protocol::OpenAiResponses
+        ));
     }
 }
