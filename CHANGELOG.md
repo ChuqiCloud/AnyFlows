@@ -1,3 +1,31 @@
+## 0.3.0-beta.5 - 2026-10-29
+
+本版本基于 `v0.3.0-beta.4`，增加 OpenAI Images 生图与修图能力和独立的生图广场工作台，默认采用 web-next 新主题，并完善公开首页与控制台导航。
+
+### 新增
+
+- 增加 OpenAI Images 文生图与图片编辑接口，支持模型、尺寸、质量、数量、原图和蒙版等参数。
+- 增加生图广场工作台，支持文生图、图片编辑、模型筛选、结果查看、下载和继续编辑。([#78](https://github.com/ChuqiCloud/AnyFlows/pull/78))
+
+### 改进
+
+- 新安装实例默认使用 web-next 主题；已有实例保留当前前端选择。([#78](https://github.com/ChuqiCloud/AnyFlows/pull/78))
+- 完善公开首页在移动端的布局，并将 web-next 的首页和控制台导航按分组结构统一。([#76](https://github.com/ChuqiCloud/AnyFlows/pull/76))
+
+### 修复
+
+- 修复已存在用户的数据库在启动时读取首次安装状态失败的问题，避免启动过程被错误的安装状态查询中断。
+- 修复 deepmerge 原型污染风险，覆盖 CommonJS 与 UMD 发行入口。
+
+### 升级与兼容
+
+- 新安装会在完成初始化前写入 web-next 默认主题；已完成初始化的实例不会被改写。
+- OpenAI Images 功能需要配置可用的图片模型和对应渠道权限。
+
+本版本为社区版 Beta 预发布。
+
+完整变更：[v0.3.0-beta.4...v0.3.0-beta.5](https://github.com/ChuqiCloud/AnyFlows/compare/v0.3.0-beta.4...v0.3.0-beta.5)。
+
 ## 0.3.0-beta.4 - 2026-10-25
 
 本版本基于 `v0.3.0-beta.3`，增加启动器托管、在线更新、Anthropic 原生上下文压缩和关于页面，完善四种协议的摘要回放、失败调用日志与部署说明。发布包增加 Linux、Windows、macOS 的 amd64 与 arm64 原生包，包含 Classic、Next 两套内置前端、启动器和 SHA-256 校验文件。
