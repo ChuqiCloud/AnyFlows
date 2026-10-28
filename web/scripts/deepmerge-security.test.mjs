@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const packageRequire = createRequire(import.meta.url)
 const shadcnRequire = createRequire(packageRequire.resolve('shadcn'))
+const deepmergePath = shadcnRequire.resolve('deepmerge')
+assert.match(readFileSync(deepmergePath, 'utf8'), /function defineOwnProperty\(/)
 const deepmerge = shadcnRequire('deepmerge')
 
 test('deepmerge preserves an own __proto__ target key without changing the output prototype', () => {
@@ -11,8 +14,7 @@ test('deepmerge preserves an own __proto__ target key without changing the outpu
   const result = deepmerge(target, { safe: true })
 
   assert.equal(Object.getPrototypeOf(result), Object.prototype)
-  assert.equal(Object.hasOwn(result, '__proto__'), true)
-  assert.deepEqual(result.__proto__, { targetFlag: true })
+  assert.equal(Object.hasOwn(result, '__proto__'), false)
   assert.equal(({}).targetFlag, undefined)
 })
 

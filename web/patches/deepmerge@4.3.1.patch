@@ -1,11 +1,16 @@
 diff --git a/index.js b/index.js
-index 77968aed5d456cccc294f60912ef381fa1e52a7b..4ade92ae10272ed692b5b6f5f75ba14e338200fe 100644
+index 77968aed5d456cccc294f60912ef381fa1e52a7b..9f53bdbfd99b4e6daa5ad2fcd52a6cbb9cebb0e8 100644
 --- a/index.js
 +++ b/index.js
-@@ -51,11 +51,20 @@ function propertyIsUnsafe(target, key) {
- 			&& Object.propertyIsEnumerable.call(target, key)) // and also unsafe if they're nonenumerable.
- }
- 
+@@ -49,3 +49,12 @@ function propertyIsUnsafe(target, key) {
+-	return propertyIsOnObject(target, key) // Properties are safe to merge if they don't exist in the target yet,
+-		&& !(Object.hasOwnProperty.call(target, key) // unsafe if they exist up the prototype chain,
+-			&& Object.propertyIsEnumerable.call(target, key)) // and also unsafe if they're nonenumerable.
++	return key === '__proto__' || (propertyIsOnObject(target, key)
++		&& !(Object.hasOwnProperty.call(target, key)
++			&& Object.propertyIsEnumerable.call(target, key)))
++}
++
 +function defineOwnProperty(target, key, value) {
 +	Object.defineProperty(target, key, {
 +		value: value,
@@ -13,26 +18,15 @@ index 77968aed5d456cccc294f60912ef381fa1e52a7b..4ade92ae10272ed692b5b6f5f75ba14e
 +		configurable: true,
 +		writable: true
 +	})
-+}
-+
- function mergeObject(target, source, options) {
- 	var destination = {}
- 	if (options.isMergeableObject(target)) {
- 		getKeys(target).forEach(function(key) {
+@@ -58 +67,4 @@ function mergeObject(target, source, options) {
 -			destination[key] = cloneUnlessOtherwiseSpecified(target[key], options)
++			if (key === '__proto__') {
++				return
++			}
 +			defineOwnProperty(destination, key, cloneUnlessOtherwiseSpecified(target[key], options))
- 		})
- 	}
- 	getKeys(source).forEach(function(key) {
-@@ -64,9 +73,9 @@ function mergeObject(target, source, options) {
- 		}
- 
- 		if (propertyIsOnObject(target, key) && options.isMergeableObject(source[key])) {
+@@ -67 +79 @@ function mergeObject(target, source, options) {
 -			destination[key] = getMergeFunction(key, options)(target[key], source[key], options)
 +			defineOwnProperty(destination, key, getMergeFunction(key, options)(target[key], source[key], options))
- 		} else {
+@@ -69 +81 @@ function mergeObject(target, source, options) {
 -			destination[key] = cloneUnlessOtherwiseSpecified(source[key], options)
 +			defineOwnProperty(destination, key, cloneUnlessOtherwiseSpecified(source[key], options))
- 		}
- 	})
- 	return destination
