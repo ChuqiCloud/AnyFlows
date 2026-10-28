@@ -5,7 +5,7 @@ import test from 'node:test'
 import { activeKeyByView, adminNavigationItems, adminNavigationSections, adminSystemItems, adminWorkspaceItems, userNavigationGroups, userNavigationItems } from '../src/components/layout/app-navigation-model.ts'
 
 const expectedAdminItems = [
-  'overview', 'models', 'playground', 'videoTasks', 'usage', 'apiKeys', 'wallet', 'subscriptions', 'invitations', 'accountVerification', 'profile',
+  'overview', 'models', 'playground', 'imagePlaza', 'videoTasks', 'usage', 'apiKeys', 'wallet', 'subscriptions', 'invitations', 'accountVerification', 'profile',
   'subscriptionManagement', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings', 'modelSettings', 'modelProviders', 'groupSettings', 'channels', 'clientProfiles', 'credentials', 'credentialProxies', 'routes',
   'users', 'accountVerificationReviews', 'invitationSettings', 'siteSettings', 'about', 'siteNavigation', 'authenticationSettings', 'announcements', 'emailSettings', 'networkSettings', 'accountVerificationSettings', 'keys', 'runtimeStatus', 'debugTraces',
 ]
@@ -16,7 +16,7 @@ test('管理员导航覆盖公共核心入口且没有重复项', () => {
 })
 
 test('管理员工作台和任务域保持规划顺序', () => {
-  assert.deepEqual(adminWorkspaceItems, ['overview', 'models', 'playground', 'videoTasks', 'usage', 'apiKeys', 'wallet', 'subscriptions', 'invitations', 'accountVerification', 'profile'])
+  assert.deepEqual(adminWorkspaceItems, ['overview', 'models', 'playground', 'imagePlaza', 'videoTasks', 'usage', 'apiKeys', 'wallet', 'subscriptions', 'invitations', 'accountVerification', 'profile'])
   assert.deepEqual(adminNavigationSections.map((section) => section.key), ['operations', 'gateway', 'platform'])
   assert.deepEqual(adminSystemItems, ['runtimeStatus', 'debugTraces'])
 })
@@ -29,7 +29,7 @@ test('调用日志是角色感知的共享入口', () => {
 
 test('普通用户导航集中到公共工作台', () => {
   assert.deepEqual(userNavigationGroups.map((group) => group.key), ['workspace'])
-  assert.deepEqual(userNavigationItems, ['models', 'playground', 'videoTasks', 'usage', 'apiKeys', 'wallet', 'subscriptions', 'invitations', 'accountVerification', 'profile'])
+  assert.deepEqual(userNavigationItems, ['models', 'playground', 'imagePlaza', 'videoTasks', 'usage', 'apiKeys', 'wallet', 'subscriptions', 'invitations', 'accountVerification', 'profile'])
 })
 
 test('每个管理员入口都有路由反向映射', () => {
