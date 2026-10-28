@@ -7816,7 +7816,7 @@
     "feature": {
       "eyebrow": "核心能力",
       "heading": "麻烦事交给网关",
-      "subheading": "AnyFlows 统一处理上游协议差异、故障和计价规则，应用只需对接一个接口地址。",
+      "subheading": "从路由、计价到可观测，网关把上游差异处理干净，你的应用只对接一个稳定入口。",
       "routing": {
         "title": "智能路由",
         "body": "根据权重、优先级和实时健康状态选择渠道，故障时自动切换至其他可用渠道。"
@@ -7833,9 +7833,9 @@
         "title": "流式转发",
         "body": "流式响应原样透传，每个请求的首字延迟和速度都能看到。"
       },
-      "pool": {
-        "title": "账号池",
-        "body": "多个账号统一管理，每个账号可以配独立代理，支持通过子账号逐步启用。"
+      "enterprise": {
+        "title": "企业管理",
+        "body": "按组织划分成员与部门，统一预算、审批和钱包，团队用量与成本一目了然。"
       },
       "observability": {
         "title": "请求追踪",
@@ -7851,15 +7851,21 @@
         "title": "官方与兼容 Key",
         "body": "接入官方或兼容接口，统一协议格式，按分组计费后分发给下游。"
       },
-      "sub2api": {
-        "label": "订阅转 API",
-        "title": "订阅额度池化",
-        "body": "将 Claude Code、Codex、Gemini CLI 的订阅额度统一调度，以标准 API 对外提供。"
-      },
       "metapi": {
         "label": "多站聚合",
         "title": "网关之上的网关",
         "body": "将已有的多个中转站作为上游接入，对外提供统一入口，自动完成故障转移和择优路由。"
+      },
+      "enterprise": {
+        "label": "企业协作",
+        "title": "团队按组织统一管理",
+        "body": "按组织划分成员与部门，统一预算、审批和企业钱包，每个人的调用都纳入同一套额度与审计。"
+      },
+      "memberTags": {
+        "members": "成员与部门",
+        "budget": "团队预算",
+        "approval": "审批流",
+        "wallet": "企业钱包"
       }
     },
     "protocol": {
@@ -7894,8 +7900,8 @@
       "subheading": "了解部署要求、协议支持、路由和计费方式。",
       "items": {
         "whatIsAnyFlows": {
-          "question": "AnyFlows 是什么？",
-          "answer": "AnyFlows 是一个可以自己部署的大模型 API 网关。把各家供应商和中转渠道接进来，对外只留一个入口，每次调用都有记录。"
+          "question": "这个平台是什么？",
+          "answer": "这是一个统一的大模型 API 入口：各家供应商和中转渠道都由平台接入，你只需要一个 Base URL 和一把 Key，每次调用都有记录可查。"
         },
         "whichProtocols": {
           "question": "支持哪些协议和模型能力？",
@@ -7910,12 +7916,12 @@
           "answer": "每个请求会先冻结额度，再单独结算，支持按 Token、按次和免费。价格在请求发出时锁定，中途改配置不会影响这笔费用。"
         },
         "canSelfHost": {
-          "question": "可以部署在自己的服务器上吗？",
-          "answer": "可以。AnyFlows 以单个二进制文件部署，内嵌前端。数据库、缓存和上游按部署环境配置。生产环境应启用 HTTPS，使用强密钥并按最小权限原则授权。"
+          "question": "可以自己部署吗？",
+          "answer": "可以。平台以单个二进制文件部署，内嵌前端；数据库、缓存和上游渠道按环境配置。生产环境请启用 HTTPS，使用强密钥并按最小权限授权。"
         },
         "whereToStart": {
           "question": "第一次使用应该从哪里开始？",
-          "answer": "先在模型广场查看模型和价格。注册并登录后，创建 API Key，在应用中配置 AnyFlows 接口地址即可调用。上游渠道由管理员配置；公开注册关闭时，需通过邀请注册。"
+          "answer": "先在模型广场查看可用模型和价格。注册并登录后创建 API Key，在应用中填入平台接口地址即可调用。上游渠道由管理员配置；公开注册关闭时，需要通过邀请注册。"
         }
       }
     },
@@ -7942,11 +7948,10 @@
       "openAiKey": "OpenAI 密钥",
       "anthropicKey": "Anthropic 密钥",
       "groupMultipliers": "分组倍率",
-      "credentialPool": "账号池调度",
       "crossProviderFallback": "跨站容灾",
       "routingPolicies": "智能择优",
       "retryStrategies": "按策略重试与切换",
-      "featuresTitle": "为什么选择 AnyFlows",
+      "featuresTitle": "为什么选择这里",
       "weightedRouting": "权重分发",
       "healthProbes": "健康探测",
       "configuredFallback": "按配置切换候选",
