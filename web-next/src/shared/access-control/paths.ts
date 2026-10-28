@@ -7,6 +7,7 @@ const USER_ACCESSIBLE_SEGMENTS = new Set([
   "models",
   "playground",
   "video-tasks",
+  "image-plaza",
   "usage-logs",
   "profile",
   "account-verification",

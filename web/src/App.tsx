@@ -38,6 +38,7 @@ import { NetworkSettingsPage } from '@/features/network-settings/network-setting
 import { PaymentSettingsPage } from '@/features/payment-settings/payment-settings-page'
 import { PublicModelPage } from '@/features/models/public-model-page'
 import { PlaygroundPage } from '@/features/playground/playground-page'
+import { ImagePlazaPage } from '@/features/image-plaza/image-plaza-page'
 import { PublicPlaygroundSharePage } from '@/features/playground/public-playground-share-page'
 import { ProfilePage } from '@/features/profile/profile-page'
 import { RegistrationPage } from '@/features/registration/registration-page'
@@ -198,6 +199,8 @@ function ManagementEntry({
                 ? 'models.title'
                 : view === 'playground'
                   ? 'playground.title'
+                  : view === 'image-plaza'
+                    ? 'imagePlaza.title'
                   : view === 'video-tasks'
                     ? 'videoTasks.title'
                   : view === 'account-verification'
@@ -277,6 +280,8 @@ function ManagementEntry({
                 ? <ModelPage authenticated admin={admin} />
                 : view === 'playground'
                   ? <PlaygroundPage />
+                  : view === 'image-plaza'
+                    ? <ImagePlazaPage />
                   : view === 'video-tasks'
                     ? <VideoTaskPage />
                   : view === 'account-verification'
@@ -299,6 +304,7 @@ function ManagementEntry({
     && view !== 'invitations'
     && view !== 'models'
     && view !== 'playground'
+    && view !== 'image-plaza'
     && view !== 'video-tasks'
     && view !== 'usage-logs'
     && view !== 'account-verification'

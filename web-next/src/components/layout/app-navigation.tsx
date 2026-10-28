@@ -48,6 +48,7 @@ const navItems = {
   models: { key: 'models', icon: 'solar:planet-2-linear', href: '/console/models' },
   playground: { key: 'playground', icon: 'solar:chat-round-dots-linear', href: '/console/playground' },
   videoTasks: { key: 'videoTasks', icon: 'solar:video-frame-linear', href: '/console/video-tasks' },
+  imagePlaza: { key: 'imagePlaza', icon: 'solar:gallery-wide-linear', href: '/console/image-plaza' },
   apiKeys: { key: 'apiKeys', icon: 'solar:key-linear', href: '/console/api-keys' },
   accountVerification: { key: 'accountVerification', icon: 'solar:verified-check-linear', href: '/console/account-verification' },
   accountVerificationReviews: { key: 'accountVerificationReviews', icon: 'solar:clipboard-check-linear', href: '/console/account-verification-reviews' },

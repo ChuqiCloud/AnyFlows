@@ -3,6 +3,7 @@ export type NavKey =
   | 'models'
   | 'playground'
   | 'videoTasks'
+  | 'imagePlaza'
   | 'apiKeys'
   | 'announcements'
   | 'wallet'
@@ -47,6 +48,7 @@ export const userWorkspaceItems = [
   'models',
   'playground',
   'videoTasks',
+  'imagePlaza',
   'usage',
   'apiKeys',
   'wallet',
@@ -62,6 +64,7 @@ export const adminWorkspaceItems = [
   'models',
   'playground',
   'videoTasks',
+  'imagePlaza',
   'usage',
   'apiKeys',
   'wallet',

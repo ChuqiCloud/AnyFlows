@@ -27,6 +27,7 @@ export type AppView =
   | 'oauth-callback'
   | 'payment-settings'
   | 'playground'
+  | 'image-plaza'
   | 'profile'
   | 'public-models'
   | 'register'
@@ -138,6 +139,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/wallet')) return { view: 'wallet' }
   if (hash.startsWith('#/console/models')) return { view: 'models' }
   if (hash.startsWith('#/console/playground')) return { view: 'playground' }
+  if (hash.startsWith('#/console/image-plaza')) return { view: 'image-plaza' }
   if (hash.startsWith('#/console/video-tasks')) return { view: 'video-tasks' }
   if (hash.startsWith('#/console/invitations')) return { view: 'invitations' }
   if (hash.startsWith('#/console/profile')) {
