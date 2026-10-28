@@ -16,8 +16,11 @@ export type ImagePlazaResult = {
 }
 
 export class ImagePlazaRequestError extends Error {
-  constructor(readonly kind: 'session_missing' | 'request_failed' | 'network_error' | 'invalid_response') {
+  readonly kind: 'session_missing' | 'request_failed' | 'network_error' | 'invalid_response'
+
+  constructor(kind: 'session_missing' | 'request_failed' | 'network_error' | 'invalid_response') {
     super(kind)
+    this.kind = kind
     this.name = 'ImagePlazaRequestError'
   }
 }

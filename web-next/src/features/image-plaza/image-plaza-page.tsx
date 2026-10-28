@@ -438,7 +438,7 @@ type SettingsPanelProps = {
   fileErrorKey: string
   errorKey: string
   catalogQuery: ImageCatalogQuery
-  instance: 'desktop' | 'mobile'
+  instance?: 'desktop' | 'mobile'
   onModel: (value: string) => void
   onPrompt: (value: string) => void
   onSize: (value: string) => void
@@ -453,7 +453,7 @@ type SettingsPanelProps = {
 
 function SettingsPanel(props: SettingsPanelProps) {
   const { t } = useTranslation()
-  const { instance } = props
+  const instance = props.instance ?? 'desktop'
   const canShowError = ['modelRequired', 'promptRequired'].includes(props.errorKey)
   const modelId = `image-plaza-model-${instance}`
   const promptId = `image-plaza-prompt-${instance}`
