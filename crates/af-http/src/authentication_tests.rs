@@ -238,6 +238,14 @@ fn playground_router(authenticator: Arc<FakePlaygroundAuthenticator>) -> Router 
     Router::new()
         .route(
             "/api/playground/v1/chat/completions",
+            post(playground_handler).route_layer(playground_authentication.clone()),
+        )
+        .route(
+            "/api/playground/v1/images/generations",
+            post(playground_handler).route_layer(playground_authentication.clone()),
+        )
+        .route(
+            "/api/playground/v1/images/edits",
             post(playground_handler).route_layer(playground_authentication),
         )
         .layer(session_authentication)
@@ -369,34 +377,46 @@ async fn valid_key_is_hashed_once_and_verified_principal_reaches_handler() {
 #[tokio::test]
 async fn playground_requires_session_and_authenticates_by_session_user() {
     let authenticator = Arc::new(FakePlaygroundAuthenticator::new());
-    let missing_session = playground_router(Arc::clone(&authenticator))
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/api/playground/v1/chat/completions")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(missing_session.status(), StatusCode::UNAUTHORIZED);
+    for path in [
+        "/api/playground/v1/chat/completions",
+        "/api/playground/v1/images/generations",
+        "/api/playground/v1/images/edits",
+    ] {
+        let missing_session = playground_router(Arc::clone(&authenticator))
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(path)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing_session.status(), StatusCode::UNAUTHORIZED, "{path}");
+    }
     assert!(authenticator.user_ids().is_empty());
 
-    let valid_session = playground_router(Arc::clone(&authenticator))
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/api/playground/v1/chat/completions")
-                .header(AUTHORIZATION, "Bearer valid-session")
-                .header("x-api-key", "sdk-placeholder")
-                .header("x-goog-api-key", "sdk-placeholder")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(valid_session.status(), StatusCode::NO_CONTENT);
-    assert_eq!(authenticator.user_ids(), vec![UserId::new(22).unwrap()]);
+    for path in [
+        "/api/playground/v1/chat/completions",
+        "/api/playground/v1/images/generations",
+        "/api/playground/v1/images/edits",
+    ] {
+        let valid_session = playground_router(Arc::clone(&authenticator))
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(path)
+                    .header(AUTHORIZATION, "Bearer valid-session")
+                    .header("x-api-key", "sdk-placeholder")
+                    .header("x-goog-api-key", "sdk-placeholder")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(valid_session.status(), StatusCode::NO_CONTENT, "{path}");
+    }
+    assert_eq!(authenticator.user_ids(), vec![UserId::new(22).unwrap(); 3]);
     assert_eq!(authenticator.api_key_calls(), 0);
 }
 

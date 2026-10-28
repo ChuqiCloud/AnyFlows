@@ -181,7 +181,8 @@
     "accountVerificationReviews": "账号认证审核",
     "invitationSettings": "注册与邀请奖励",
     "accountVerificationSettings": "实名认证配置",
-    "clientProfiles": "客户端档案"
+    "clientProfiles": "客户端档案",
+    "imagePlaza": "图片广场"
   },
   "shell": {
     "notificationsUnread": "{{count}} 未读通知",
@@ -7775,7 +7776,10 @@
     "enterprise": "企业认证",
     "kind": "认证类型",
     "provider": "认证方式",
-    "providers": { "manual": "人工审核", "alipay": "支付宝实名认证" },
+    "providers": {
+      "manual": "人工审核",
+      "alipay": "支付宝实名认证"
+    },
     "noProvider": "当前没有可用的认证方式，请联系管理员。",
     "alipayHint": "提交后请在有效期内使用本人支付宝扫码认证；手机访问会尝试打开支付宝。",
     "alipayCallbackHint": "完成支付宝授权后，认证结果会自动更新。",
@@ -7787,8 +7791,31 @@
     "documentType": "证件类型",
     "documentNumber": "证件号码",
     "documentNumberHint": "仅保存脱敏号码；中国居民身份证会校验校验位。",
-    "documentTypes": { "national_id": "身份证", "passport": "护照", "residence_permit": "居留证", "foreign_passport": "外国护照", "hkm_macao_pass": "港澳居民来往内地通行证", "taiwan_pass": "台湾居民来往大陆通行证", "business_registration": "企业登记号", "other": "其他证件" },
-    "countries": { "CN": "中国大陆", "HK": "中国香港", "MO": "中国澳门", "TW": "中国台湾", "US": "美国", "CA": "加拿大", "GB": "英国", "JP": "日本", "KR": "韩国", "SG": "新加坡", "AU": "澳大利亚", "DE": "德国", "FR": "法国" },
+    "documentTypes": {
+      "national_id": "身份证",
+      "passport": "护照",
+      "residence_permit": "居留证",
+      "foreign_passport": "外国护照",
+      "hkm_macao_pass": "港澳居民来往内地通行证",
+      "taiwan_pass": "台湾居民来往大陆通行证",
+      "business_registration": "企业登记号",
+      "other": "其他证件"
+    },
+    "countries": {
+      "CN": "中国大陆",
+      "HK": "中国香港",
+      "MO": "中国澳门",
+      "TW": "中国台湾",
+      "US": "美国",
+      "CA": "加拿大",
+      "GB": "英国",
+      "JP": "日本",
+      "KR": "韩国",
+      "SG": "新加坡",
+      "AU": "澳大利亚",
+      "DE": "德国",
+      "FR": "法国"
+    },
     "summary": "认证说明",
     "materials": "认证材料",
     "fileHint": "支持 PNG、JPEG、WebP 和 PDF；最多 5 份，每份不超过 10 MB，总计不超过 25 MB。",
@@ -8086,5 +8113,48 @@
     "poolCleanupHint": "被凭据、渠道或全局绑定的池及正在运行的池会保留。删除池后，节点仍保留在专属代理目录。",
     "nodeCleanupHint": "仍被凭据或其他代理池使用的节点会保留。待检测节点不会视为检测失败；订阅下次更新可能重新导入已清理节点。",
     "cleanupStale": "列表、选择或版本已变化，请重新预览后再确认删除。"
+  },
+  "imagePlaza": {
+    "eyebrow": "IMAGE STUDIO",
+    "title": "图片广场",
+    "subtitle": "使用当前分组可用模型生成和编辑图片。",
+    "controlsTitle": "图片工作台",
+    "controlsDescription": "选择模式、模型和输出参数。",
+    "modes": {
+      "generate": "文生图",
+      "edit": "图片编辑"
+    },
+    "model": "模型",
+    "loadingModels": "正在加载图片模型…",
+    "noModels": "暂无图片模型",
+    "prompt": "提示词",
+    "promptPlaceholder": "描述你想生成的图片…",
+    "editPlaceholder": "描述你希望如何编辑这张图片…",
+    "sourceImage": "原图",
+    "chooseImage": "选择图片",
+    "clearImage": "移除图片",
+    "maskImage": "蒙版（可选）",
+    "maskHint": "仅支持 PNG；透明区域表示需要编辑的部分。",
+    "size": "尺寸",
+    "quality": "质量",
+    "count": "数量",
+    "responseFormat": "响应格式",
+    "generate": "生成图片",
+    "edit": "编辑图片",
+    "generating": "生成中…",
+    "gallery": "结果画廊",
+    "galleryHint": "选择结果查看详情或继续编辑。",
+    "empty": "生成的图片会显示在这里。",
+    "details": "图片详情",
+    "revisedPrompt": "修订提示词",
+    "download": "下载",
+    "continueEditing": "继续编辑",
+    "selectResult": "选择图片查看详情。",
+    "openDetails": "打开详情",
+    "refreshModels": "刷新模型",
+    "errors": {
+      "request": "图片请求失败。",
+      "loadImage": "无法加载这张图片进行编辑。"
+    }
   }
 }

@@ -2,6 +2,7 @@ export type NavKey =
   | 'overview'
   | 'models'
   | 'playground'
+  | 'imagePlaza'
   | 'videoTasks'
   | 'apiKeys'
   | 'announcements'
@@ -41,10 +42,10 @@ export type NavKey =
 export type AdminSectionKey = 'operations' | 'gateway' | 'platform'
 
 export const userNavigationGroups = [
-  { key: 'workspace', items: ['models', 'playground', 'videoTasks', 'usage', 'apiKeys', 'wallet', 'subscriptions', 'invitations', 'accountVerification', 'profile'] },
+  { key: 'workspace', items: ['models', 'playground', 'imagePlaza', 'videoTasks', 'usage', 'apiKeys', 'wallet', 'subscriptions', 'invitations', 'accountVerification', 'profile'] },
 ] as const satisfies ReadonlyArray<{ key: 'workspace'; items: readonly NavKey[] }>
 
-export const adminWorkspaceItems = ['overview', 'models', 'playground', 'videoTasks', 'usage', 'apiKeys', 'wallet', 'subscriptions', 'invitations', 'accountVerification', 'profile'] as const satisfies readonly NavKey[]
+export const adminWorkspaceItems = ['overview', 'models', 'playground', 'imagePlaza', 'videoTasks', 'usage', 'apiKeys', 'wallet', 'subscriptions', 'invitations', 'accountVerification', 'profile'] as const satisfies readonly NavKey[]
 
 export const adminNavigationSections = [
   { key: 'operations', items: ['subscriptionManagement', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings'] },
@@ -66,6 +67,7 @@ export const activeKeyByView: Readonly<Record<string, NavKey>> = {
   overview: 'overview',
   models: 'models',
   playground: 'playground',
+  'image-plaza': 'imagePlaza',
   'video-tasks': 'videoTasks',
   'api-keys': 'apiKeys',
   'account-verification': 'accountVerification',
