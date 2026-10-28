@@ -24,7 +24,7 @@ overrides:
 
 patchedDependencies:
   deepmerge@4.3.1:
-    hash: 41412b12ed45ef662415969d633aaafee68439e6a64835bb65d26e1e7ea4bf95
+    hash: 458ff1ca5cc60a5b5aa2d463302ea15c347c127f640bfba30122660be70fb5bd
     path: patches/deepmerge@4.3.1.patch
 
 importers:
@@ -7404,7 +7404,7 @@ snapshots:
       '@heroui/shared-utils': 2.1.12
       color: 4.2.3
       color2k: 2.0.4
-      deepmerge: 4.3.1(patch_hash=41412b12ed45ef662415969d633aaafee68439e6a64835bb65d26e1e7ea4bf95)
+      deepmerge: 4.3.1(patch_hash=458ff1ca5cc60a5b5aa2d463302ea15c347c127f640bfba30122660be70fb5bd)
       tailwind-merge: 3.4.0
       tailwind-variants: 3.2.2(tailwind-merge@3.4.0)(tailwindcss@4.3.3)
       tailwindcss: 4.3.3
@@ -9850,7 +9850,7 @@ snapshots:
       '@dotenvx/dotenvx': 1.75.1
       cn: 0.2.6
       code-block-writer: 13.0.3
-      deepmerge: 4.3.1(patch_hash=41412b12ed45ef662415969d633aaafee68439e6a64835bb65d26e1e7ea4bf95)
+      deepmerge: 4.3.1(patch_hash=458ff1ca5cc60a5b5aa2d463302ea15c347c127f640bfba30122660be70fb5bd)
       execa: 9.6.1
       fast-glob: 3.3.3
       fs-extra: 11.4.0
@@ -10541,7 +10541,7 @@ snapshots:
     optionalDependencies:
       babel-plugin-macros: 3.1.0
 
-  deepmerge@4.3.1(patch_hash=41412b12ed45ef662415969d633aaafee68439e6a64835bb65d26e1e7ea4bf95): {}
+  deepmerge@4.3.1(patch_hash=458ff1ca5cc60a5b5aa2d463302ea15c347c127f640bfba30122660be70fb5bd): {}
 
   default-browser-id@5.0.1: {}
 
@@ -12873,7 +12873,7 @@ snapshots:
       cn: 0.2.6
       commander: 14.0.3
       dedent: 1.7.2(babel-plugin-macros@3.1.0)
-      deepmerge: 4.3.1(patch_hash=41412b12ed45ef662415969d633aaafee68439e6a64835bb65d26e1e7ea4bf95)
+      deepmerge: 4.3.1(patch_hash=458ff1ca5cc60a5b5aa2d463302ea15c347c127f640bfba30122660be70fb5bd)
       diff: 8.0.4
       execa: 9.6.1
       fast-glob: 3.3.3
