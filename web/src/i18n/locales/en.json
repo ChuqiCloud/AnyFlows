@@ -179,7 +179,8 @@
     "accountVerificationReviews": "Identity reviews",
     "invitationSettings": "Registration and referral rewards",
     "accountVerificationSettings": "Verification settings",
-    "clientProfiles": "Client profiles"
+    "clientProfiles": "Client profiles",
+    "imagePlaza": "Image plaza"
   },
   "shell": {
     "search": "Search",
@@ -7775,7 +7776,10 @@
     "enterprise": "Business",
     "kind": "Verification type",
     "provider": "Verification method",
-    "providers": { "manual": "Manual review", "alipay": "Alipay verification" },
+    "providers": {
+      "manual": "Manual review",
+      "alipay": "Alipay verification"
+    },
     "noProvider": "No verification method is currently available. Contact an administrator.",
     "alipayHint": "After submitting, scan with your own Alipay account before the code expires. On mobile, this page will try to open Alipay.",
     "alipayCallbackHint": "The verification result updates automatically after Alipay authorization.",
@@ -7787,8 +7791,31 @@
     "documentType": "Document type",
     "documentNumber": "Document number",
     "documentNumberHint": "Only a masked number is stored. Chinese resident IDs are checksum validated.",
-    "documentTypes": { "national_id": "National ID", "passport": "Passport", "residence_permit": "Residence permit", "foreign_passport": "Foreign passport", "hkm_macao_pass": "Mainland travel permit for Hong Kong or Macao residents", "taiwan_pass": "Mainland travel permit for Taiwan residents", "business_registration": "Business registration", "other": "Other document" },
-    "countries": { "CN": "Mainland China", "HK": "Hong Kong", "MO": "Macao", "TW": "Taiwan", "US": "United States", "CA": "Canada", "GB": "United Kingdom", "JP": "Japan", "KR": "South Korea", "SG": "Singapore", "AU": "Australia", "DE": "Germany", "FR": "France" },
+    "documentTypes": {
+      "national_id": "National ID",
+      "passport": "Passport",
+      "residence_permit": "Residence permit",
+      "foreign_passport": "Foreign passport",
+      "hkm_macao_pass": "Mainland travel permit for Hong Kong or Macao residents",
+      "taiwan_pass": "Mainland travel permit for Taiwan residents",
+      "business_registration": "Business registration",
+      "other": "Other document"
+    },
+    "countries": {
+      "CN": "Mainland China",
+      "HK": "Hong Kong",
+      "MO": "Macao",
+      "TW": "Taiwan",
+      "US": "United States",
+      "CA": "Canada",
+      "GB": "United Kingdom",
+      "JP": "Japan",
+      "KR": "South Korea",
+      "SG": "Singapore",
+      "AU": "Australia",
+      "DE": "Germany",
+      "FR": "France"
+    },
     "summary": "Verification details",
     "materials": "Supporting documents",
     "fileHint": "PNG, JPEG, WebP or PDF. Up to 5 files, 10 MB per file and 25 MB total.",
@@ -8086,5 +8113,48 @@
     "poolCleanupHint": "Pools bound to credentials, channels, or global routing and pools with running tasks are protected. Pool deletion keeps the nodes in the dedicated proxy directory.",
     "nodeCleanupHint": "Nodes used by credentials or other pools are protected. Unchecked nodes are not failures. The next subscription update may import deleted nodes again.",
     "cleanupStale": "The list, selection, or version changed. Preview again before confirming deletion."
+  },
+  "imagePlaza": {
+    "eyebrow": "IMAGE STUDIO",
+    "title": "Image plaza",
+    "subtitle": "Generate and refine images with the models available to your group.",
+    "controlsTitle": "Image workspace",
+    "controlsDescription": "Choose a mode, model, and output options.",
+    "modes": {
+      "generate": "Text to image",
+      "edit": "Image edit"
+    },
+    "model": "Model",
+    "loadingModels": "Loading image models…",
+    "noModels": "No image models",
+    "prompt": "Prompt",
+    "promptPlaceholder": "Describe the image you want to create…",
+    "editPlaceholder": "Describe how to transform this image…",
+    "sourceImage": "Source image",
+    "chooseImage": "Choose an image",
+    "clearImage": "Remove image",
+    "maskImage": "Mask (optional)",
+    "maskHint": "PNG only; transparent areas are edited.",
+    "size": "Size",
+    "quality": "Quality",
+    "count": "Images",
+    "responseFormat": "Response",
+    "generate": "Generate images",
+    "edit": "Edit image",
+    "generating": "Generating…",
+    "gallery": "Gallery",
+    "galleryHint": "Select a result to inspect details or continue editing.",
+    "empty": "Your generated images will appear here.",
+    "details": "Image details",
+    "revisedPrompt": "Revised prompt",
+    "download": "Download",
+    "continueEditing": "Continue editing",
+    "selectResult": "Select an image to view details.",
+    "openDetails": "Open details",
+    "refreshModels": "Refresh models",
+    "errors": {
+      "request": "The image request failed.",
+      "loadImage": "Could not load this image for editing."
+    }
   }
 }

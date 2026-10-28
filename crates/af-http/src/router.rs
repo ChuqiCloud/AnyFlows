@@ -430,7 +430,15 @@ pub fn build_router(
     let playground_routes = Router::new()
         .route(
             "/api/playground/v1/chat/completions",
-            post(chat_completions).route_layer(playground_openai_authentication),
+            post(chat_completions).route_layer(playground_openai_authentication.clone()),
+        )
+        .route(
+            "/api/playground/v1/images/generations",
+            post(openai_images).route_layer(playground_openai_authentication.clone()),
+        )
+        .route(
+            "/api/playground/v1/images/edits",
+            post(openai_image_edit).route_layer(playground_openai_authentication),
         )
         .route(
             "/api/playground/v1/responses",
