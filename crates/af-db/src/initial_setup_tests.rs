@@ -122,6 +122,9 @@ async fn any_historical_user_permanently_closes_setup() -> Result<(), Box<dyn Er
         )
         .exec(pool.connection())
         .await?;
+    options::Entity::delete_by_id("system.initial_setup.completed")
+        .exec(pool.connection())
+        .await?;
 
     assert_eq!(repository.status().await?, InitialSetupStatus::Complete);
     assert_eq!(
