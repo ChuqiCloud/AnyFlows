@@ -1,0 +1,5 @@
+# deepmerge 4.3.1 is patched locally because no upstream fixed release exists.
+# Remove this exception when the upstream advisory is resolved.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-gcqx-w48m-w2h4

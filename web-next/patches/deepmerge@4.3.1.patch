@@ -1,16 +1,38 @@
 diff --git a/index.js b/index.js
-index 77968aed5d456cccc294f60912ef381fa1e52a7b..087c6f0e3d7b5dd8f63afcf6c30dc6928e0fb0f4 100644
+index 77968aed5d456cccc294f60912ef381fa1e52a7b..4ade92ae10272ed692b5b6f5f75ba14e338200fe 100644
 --- a/index.js
 +++ b/index.js
-@@ -46,9 +46,8 @@ function propertyIsOnObject(object, property) {
- 
- // Protects from prototype poisoning and unexpected merging up the prototype chain.
- function propertyIsUnsafe(target, key) {
--	return propertyIsOnObject(target, key) // Properties are safe to merge if they don't exist in the target yet,
--		&& !(Object.hasOwnProperty.call(target, key) // unsafe if they exist up the prototype chain,
--			&& Object.propertyIsEnumerable.call(target, key)) // and also unsafe if they're nonenumerable.
-+	// Reject prototype keys outright, no matter they come from the target or the source.
-+	return key === '__proto__' || key === 'constructor' || key === 'prototype'
+@@ -51,11 +51,20 @@ function propertyIsUnsafe(target, key) {
+ 			&& Object.propertyIsEnumerable.call(target, key)) // and also unsafe if they're nonenumerable.
  }
  
++function defineOwnProperty(target, key, value) {
++	Object.defineProperty(target, key, {
++		value: value,
++		enumerable: true,
++		configurable: true,
++		writable: true
++	})
++}
++
  function mergeObject(target, source, options) {
+ 	var destination = {}
+ 	if (options.isMergeableObject(target)) {
+ 		getKeys(target).forEach(function(key) {
+-			destination[key] = cloneUnlessOtherwiseSpecified(target[key], options)
++			defineOwnProperty(destination, key, cloneUnlessOtherwiseSpecified(target[key], options))
+ 		})
+ 	}
+ 	getKeys(source).forEach(function(key) {
+@@ -64,9 +73,9 @@ function mergeObject(target, source, options) {
+ 		}
+ 
+ 		if (propertyIsOnObject(target, key) && options.isMergeableObject(source[key])) {
+-			destination[key] = getMergeFunction(key, options)(target[key], source[key], options)
++			defineOwnProperty(destination, key, getMergeFunction(key, options)(target[key], source[key], options))
+ 		} else {
+-			destination[key] = cloneUnlessOtherwiseSpecified(source[key], options)
++			defineOwnProperty(destination, key, cloneUnlessOtherwiseSpecified(source[key], options))
+ 		}
+ 	})
+ 	return destination
