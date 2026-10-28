@@ -27,15 +27,13 @@ const port = 4174
 const origin = `http://127.0.0.1:${port}`
 const errors = []
 const requests = []
-const publicPrice = '1.23004567890123456789'
-const groupPrice = '0.51002345678901234567'
 const model = {
   model: 'ci-catalog-chat', display_name: 'CI Catalog Chat', provider: 'xiaomi-mimo',
   description: null, icon_url: null, tags: [], context_window: 131072,
   input_modalities: ['text'], output_modalities: ['text'], supports_reasoning: false,
   supports_tool_calls: true, supports_responses_compact: false, lifecycle: 'active',
   runtime_status: 'available', billing_mode: 'per_token',
-  prices: { input: publicPrice, output: '9.87654321', cache_read: '0', cache_creation_5m: '0', cache_creation_1h: '0' },
+  prices: { input: '1.23004567890123456789', output: '9.87654321', cache_read: '0', cache_creation_5m: '0', cache_creation_1h: '0' },
   ratios: { group_micros: '1000000', group_model_micros: '1000000', peak_micros: '1000000' },
   price_version: 1, available_protocols: ['openai_chat'],
 }
@@ -121,7 +119,7 @@ try {
           await route.fulfill({ status: 503, contentType: 'application/json', body: '{"code":"catalog_unavailable"}' })
           return
         }
-        data = { pricing_scope: role === 'public' ? 'public_base' : 'group', next_cursor: null, models: modelMode === 'empty' ? [] : [{ ...model, prices: { ...model.prices, input: role === 'public' ? publicPrice : groupPrice } }] }
+        data = { pricing_scope: role === 'public' ? 'public_base' : 'group', next_cursor: null, models: modelMode === 'empty' ? [] : [model] }
         break
       case '/api/model-providers': data = { pricing_scope: role === 'public' ? 'public_base' : 'group', providers: [{ name: model.provider, model_count: 1 }] }; break
       case '/api/model-provider-catalog':
@@ -157,20 +155,18 @@ try {
     if (await trigger.getAttribute('aria-expanded') !== 'true') await trigger.click()
   }
 
-  // Landing must use the catalog's exact decimal strings and deployment URL.
+  // The landing page is a static marketing page: it must render its featured-model table
+  // and the deployment URL without touching the model catalog API.
+  const featuredModel = 'Claude Opus 5.5'
   await open()
-  await page.getByRole('heading', { name: label('landing.catalog.heading'), exact: true }).waitFor()
-  await page.getByRole('table').getByText('CI Catalog Chat', { exact: true }).waitFor()
-  await page.getByText(`$${publicPrice}`, { exact: true }).waitFor()
+  await page.getByRole('table').getByText(featuredModel, { exact: true }).waitFor()
   await page.getByText('"https://gateway.example.test/v1"', { exact: true }).waitFor()
-  assert.equal(await page.getByText(`$${groupPrice}`, { exact: true }).count(), 0)
   const gradientIds = await page.locator('rect.animate-border-beam').evaluateAll(elements => elements.map(element => element.getAttribute('stroke')))
   assert.equal(new Set(gradientIds).size, gradientIds.length, 'SVG gradients have unique IDs')
   await page.getByRole('button', { name: label('language.toggle'), exact: true }).filter({ visible: true }).click()
-  await page.getByRole('heading', { name: label('landing.catalog.heading', 'en'), exact: true }).waitFor()
+  await page.getByRole('table').getByText(featuredModel, { exact: true }).waitFor()
   assert.equal(await page.locator('html').getAttribute('lang'), 'en')
   await page.getByRole('button', { name: label('language.toggle', 'en'), exact: true }).filter({ visible: true }).click()
-  await page.getByRole('heading', { name: label('landing.catalog.heading'), exact: true }).waitFor()
   for (const theme of ['dark', 'light']) {
     await page.evaluate(mode => {
       document.documentElement.classList.remove('dark', 'light')
@@ -183,19 +179,7 @@ try {
     }
   }
   await page.setViewportSize({ width: 1280, height: 960 })
-  modelMode = 'empty'
-  await open()
-  await page.getByRole('status').filter({ hasText: label('landing.catalog.empty') }).waitFor()
-  assert.equal(await page.getByRole('table').getByText('CI Catalog Chat', { exact: true }).count(), 0)
-  modelMode = 'error'
-  await open()
-  await page.getByRole('alert').filter({ hasText: label('models.error.body') }).waitFor()
-  modelMode = 'ready'
-  await page.getByRole('button', { name: label('models.actions.retry'), exact: true }).click()
-  await page.getByRole('table').getByText('CI Catalog Chat', { exact: true }).waitFor()
-  await open('/', 'user')
-  await page.getByText(`$${groupPrice}`, { exact: true }).waitFor()
-  assert.equal(await page.getByText(`$${publicPrice}`, { exact: true }).count(), 0, 'Signed-in pricing does not reuse public prices')
+  assert.ok(!requests.some(request => request.role === 'public' && request.path.startsWith('/api/models')), 'Landing never fetches the model catalog')
 
   // The ordinary-user overview must render and administrator URLs must return to it.
   await open('/console', 'user')

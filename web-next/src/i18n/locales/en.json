@@ -7818,7 +7818,7 @@
     "feature": {
       "eyebrow": "Core capabilities",
       "heading": "Complexity stays inside the gateway",
-      "subheading": "AnyFlows absorbs upstream differences, failures and pricing rules, so your application only ever talks to one stable interface.",
+      "subheading": "From routing and pricing to observability, the gateway absorbs upstream differences so your application only talks to one stable entry.",
       "routing": {
         "title": "Routing",
         "body": "Selects channels by weight, priority and live health, with automatic failover and retry."
@@ -7835,9 +7835,9 @@
         "title": "Streaming",
         "body": "End-to-end SSE passthrough with per-request TTFT and throughput visibility."
       },
-      "pool": {
-        "title": "Account pool",
-        "body": "Typed credential management, one proxy per account, shadow accounts for rollout."
+      "enterprise": {
+        "title": "Enterprise modules",
+        "body": "Members and departments per organization, with shared budgets, approvals and wallet so team usage and cost stay visible."
       },
       "observability": {
         "title": "Observability",
@@ -7853,15 +7853,21 @@
         "title": "Official & compatible keys",
         "body": "Aggregate official or compatible endpoints, then normalize protocols, meter by group, and resell."
       },
-      "sub2api": {
-        "label": "Subscription to API",
-        "title": "Pooled subscription quota",
-        "body": "Turn Claude Code, Codex, and Gemini CLI OAuth quota into a standard API through an account pool."
-      },
       "metapi": {
         "label": "Meta aggregation",
         "title": "A gateway above gateways",
         "body": "Treat existing relays as upstreams and collapse them into one entry with failover and best-route selection."
+      },
+      "enterprise": {
+        "label": "Enterprise",
+        "title": "Teams managed by organization",
+        "body": "Organize members and departments, share budgets, approvals and the corporate wallet, and keep every call inside one quota and audit trail."
+      },
+      "memberTags": {
+        "members": "Members & teams",
+        "budget": "Team budgets",
+        "approval": "Approvals",
+        "wallet": "Corporate wallet"
       }
     },
     "protocol": {
@@ -7896,8 +7902,8 @@
       "subheading": "Understand the deployment, protocol, routing, and billing boundaries before choosing an entry point.",
       "items": {
         "whatIsAnyFlows": {
-          "question": "What is AnyFlows?",
-          "answer": "AnyFlows is a self-hostable large-model API aggregation gateway that turns different providers and relay channels into one observable entry point."
+          "question": "What is this platform?",
+          "answer": "It is one entry point for large-model APIs: providers and relay channels are wired up for you, so you only need a base URL and a key, with every call traceable."
         },
         "whichProtocols": {
           "question": "Which protocols and model capabilities are supported?",
@@ -7912,12 +7918,12 @@
           "answer": "Billing is reserved and settled at request scope, with per-token, per-call, and free modes. Multipliers and prices are fixed in a request snapshot so configuration changes cannot shift an in-flight ledger entry."
         },
         "canSelfHost": {
-          "question": "Can I deploy it on my own server?",
-          "answer": "Yes. AnyFlows ships as a single binary with the frontend embedded; the database, cache, and upstreams are configured for the deployment environment. Production deployments should still use HTTPS, strong secrets, and least-privilege access."
+          "question": "Can it be self-hosted?",
+          "answer": "Yes. It ships as a single binary with the frontend embedded; database, cache and upstream channels follow your environment. Use HTTPS, strong keys and least-privilege credentials in production."
         },
         "whereToStart": {
           "question": "Where should I start?",
-          "answer": "Browse models and pricing, then register and sign in. Create an API key and configure your application to use the AnyFlows endpoint. Administrators configure upstream channels. If public registration is disabled, an invitation is required."
+          "answer": "Check available models and prices in the catalog first. Sign up, create an API key and point your application at the platform endpoint. Admins manage upstream channels; when open registration is off, you need an invite."
         }
       }
     },
@@ -7944,11 +7950,10 @@
       "openAiKey": "OpenAI key",
       "anthropicKey": "Anthropic key",
       "groupMultipliers": "Group multipliers",
-      "credentialPool": "Credential pool routing",
       "crossProviderFallback": "Cross-provider fallback",
       "routingPolicies": "Routing policies",
       "retryStrategies": "Configured retry strategies",
-      "featuresTitle": "Build with AnyFlows",
+      "featuresTitle": "Why choose this platform",
       "weightedRouting": "Weighted routing",
       "healthProbes": "Health probes",
       "configuredFallback": "Configured fallback",

@@ -1,0 +1,98 @@
+diff --git a/dist/cjs.js b/dist/cjs.js
+index 7c36cbdd06cc22c92d590be3f87a08a91ca06b40..9c426dfbf78b30c00337afacef905cddaeeacfa8 100644
+--- a/dist/cjs.js
++++ b/dist/cjs.js
+@@ -71,16 +71,28 @@ function propertyIsOnObject(object, property) {
+ 
+ // Protects from prototype poisoning and unexpected merging up the prototype chain.
+ function propertyIsUnsafe(target, key) {
+-	return propertyIsOnObject(target, key) // Properties are safe to merge if they don't exist in the target yet,
+-		&& !(Object.hasOwnProperty.call(target, key) // unsafe if they exist up the prototype chain,
+-			&& Object.propertyIsEnumerable.call(target, key)) // and also unsafe if they're nonenumerable.
++	return key === '__proto__' || (propertyIsOnObject(target, key)
++		&& !(Object.hasOwnProperty.call(target, key)
++			&& Object.propertyIsEnumerable.call(target, key)))
++}
++
++function defineOwnProperty(target, key, value) {
++	Object.defineProperty(target, key, {
++		value: value,
++		enumerable: true,
++		configurable: true,
++		writable: true
++	});
+ }
+ 
+ function mergeObject(target, source, options) {
+ 	var destination = {};
+ 	if (options.isMergeableObject(target)) {
+ 		getKeys(target).forEach(function(key) {
+-			destination[key] = cloneUnlessOtherwiseSpecified(target[key], options);
++			if (key === '__proto__') {
++				return
++			}
++			defineOwnProperty(destination, key, cloneUnlessOtherwiseSpecified(target[key], options));
+ 		});
+ 	}
+ 	getKeys(source).forEach(function(key) {
+@@ -89,9 +101,9 @@ function mergeObject(target, source, options) {
+ 		}
+ 
+ 		if (propertyIsOnObject(target, key) && options.isMergeableObject(source[key])) {
+-			destination[key] = getMergeFunction(key, options)(target[key], source[key], options);
++			defineOwnProperty(destination, key, getMergeFunction(key, options)(target[key], source[key], options));
+ 		} else {
+-			destination[key] = cloneUnlessOtherwiseSpecified(source[key], options);
++			defineOwnProperty(destination, key, cloneUnlessOtherwiseSpecified(source[key], options));
+ 		}
+ 	});
+ 	return destination
+diff --git a/dist/umd.js b/dist/umd.js
+index 4071e7c56ec8e5273fe166f6e723ac460fab8b72..f94f9fe90a0e0ab2770ad6e55857755f2ae7cf34 100644
+--- a/dist/umd.js
++++ b/dist/umd.js
+@@ -75,16 +75,28 @@
+ 
+ 	// Protects from prototype poisoning and unexpected merging up the prototype chain.
+ 	function propertyIsUnsafe(target, key) {
+-		return propertyIsOnObject(target, key) // Properties are safe to merge if they don't exist in the target yet,
+-			&& !(Object.hasOwnProperty.call(target, key) // unsafe if they exist up the prototype chain,
+-				&& Object.propertyIsEnumerable.call(target, key)) // and also unsafe if they're nonenumerable.
++		return key === '__proto__' || (propertyIsOnObject(target, key)
++			&& !(Object.hasOwnProperty.call(target, key)
++				&& Object.propertyIsEnumerable.call(target, key)))
++	}
++
++	function defineOwnProperty(target, key, value) {
++		Object.defineProperty(target, key, {
++			value: value,
++			enumerable: true,
++			configurable: true,
++			writable: true
++		});
+ 	}
+ 
+ 	function mergeObject(target, source, options) {
+ 		var destination = {};
+ 		if (options.isMergeableObject(target)) {
+ 			getKeys(target).forEach(function(key) {
+-				destination[key] = cloneUnlessOtherwiseSpecified(target[key], options);
++				if (key === '__proto__') {
++					return
++				}
++				defineOwnProperty(destination, key, cloneUnlessOtherwiseSpecified(target[key], options));
+ 			});
+ 		}
+ 		getKeys(source).forEach(function(key) {
+@@ -93,9 +105,9 @@
+ 			}
+ 
+ 			if (propertyIsOnObject(target, key) && options.isMergeableObject(source[key])) {
+-				destination[key] = getMergeFunction(key, options)(target[key], source[key], options);
++				defineOwnProperty(destination, key, getMergeFunction(key, options)(target[key], source[key], options));
+ 			} else {
+-				destination[key] = cloneUnlessOtherwiseSpecified(source[key], options);
++				defineOwnProperty(destination, key, cloneUnlessOtherwiseSpecified(source[key], options));
+ 			}
+ 		});
+ 		return destination

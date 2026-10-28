@@ -22,8 +22,8 @@ export function BorderBeam({
   radius = 16,
   borderWidth = 1.5,
 }: BorderBeamProps) {
-  const gradientId = useId()
   const gap = 100 - beamSize
+  const gradientId = `border-beam-${useId().replace(/:/g, '')}` // 同一页面多处光束各自独立的渐变
 
   return (
     <div

@@ -1,4 +1,4 @@
-import { MessageSquareQuote, Code2 } from 'lucide-react'
+import { MessageSquareQuote, Star, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 interface TestimonialItem {
@@ -37,11 +37,22 @@ export function DeveloperTestimonials() {
               key={`${item.author}-${index}`}
               className="group relative flex flex-col justify-between rounded-xl border border-[var(--hairline)] bg-surface-1 p-5 shadow-xs transition-all duration-300 hover:-translate-y-1 hover:border-primary/30 hover:shadow-md"
             >
-              <div className="flex items-center gap-2 text-primary"><Code2 className="size-4" aria-hidden="true" /><span className="font-mono text-xs">{item.role}</span></div>
+              {/* Star Rating & Verified */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1 text-amber-500">
+                  {Array.from({ length: 5 }, (_, i) => (
+                    <Star key={i} className="size-3.5 fill-current" />
+                  ))}
+                </div>
+                <span className="inline-flex items-center gap-1 text-[0.6875rem] text-muted-foreground/80 font-mono">
+                  <ShieldCheck className="size-3 text-success" />
+                  Verified User
+                </span>
+              </div>
 
               {/* Quote */}
               <p className="mt-4 text-sm leading-relaxed text-foreground/90 font-normal">
-                {item.quote}
+                "{item.quote}"
               </p>
 
               {/* Author Footer */}
