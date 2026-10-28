@@ -75,13 +75,14 @@ use af_db::{
     DatabaseMigrationExtension, DatabaseOptions, DatabaseOptionsError, DatabasePool,
     DebugTraceRepository, DebugTraceRepositoryConfigError, DebugTraceRepositoryError,
     DebugTraceSnapshotCipherError, EmailSettingsRepository, EmailSettingsRepositoryConfigError,
-    InitialSetupRepository, InitialSetupRepositoryConfigError, MigrationOptions,
-    ModelPriceRepository, ModelProviderCatalogRepository, ModelProviderCatalogRepositoryError,
-    ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
-    NetworkSettingsRepositoryConfigError, OAuthLoginRepository, OAuthLoginRepositoryError,
-    PasskeyRepository, PasswordResetRepository, PasswordResetRepositoryConfigError,
-    PaymentSecretUpdate, PaymentSettingsRepository, PaymentSettingsRepositoryConfigError,
-    PaymentSettingsRepositoryError, PaymentSettingsWriteRecord, PlaygroundConversationRepository,
+    InitialSetupRepository, InitialSetupRepositoryConfigError, InitialSetupRepositoryError,
+    InitialSetupStatus, MigrationOptions, ModelPriceRepository, ModelProviderCatalogRepository,
+    ModelProviderCatalogRepositoryError, ModelSyncRepository, NetworkSettingsMode,
+    NetworkSettingsRecord, NetworkSettingsRepository, NetworkSettingsRepositoryConfigError,
+    OAuthLoginRepository, OAuthLoginRepositoryError, PasskeyRepository, PasswordResetRepository,
+    PasswordResetRepositoryConfigError, PaymentSecretUpdate, PaymentSettingsRepository,
+    PaymentSettingsRepositoryConfigError, PaymentSettingsRepositoryError,
+    PaymentSettingsWriteRecord, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
     RedemptionRepositoryConfigError, RefundRepository, RefundRepositoryConfigError,
@@ -166,6 +167,7 @@ const BILLING_QUEUE_RETRY_DELAY: Duration = Duration::from_millis(100);
 const CHANNEL_PROBE_HARD_TIMEOUT_PADDING: Duration = Duration::from_secs(10);
 /// OAuth 一次性授权会话的固定清理周期；会话自身 TTL 仍由配置约束。
 const OAUTH_SESSION_CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
+const NEW_INSTALL_FRONTEND_TEMPLATE_ID: &str = "embedded-next";
 
 /// 已加载并校验静态配置。
 pub struct Configured;
@@ -183,6 +185,7 @@ pub struct TelemetryReady {
 pub struct DatabaseReady {
     _telemetry: TelemetryReady,
     database: DatabasePool,
+    initial_setup_repository: InitialSetupRepository,
     passkey_public_base_url: Option<String>,
     frontend_template_id: Option<String>,
 }
@@ -421,6 +424,9 @@ pub enum BootstrapError {
     /// 首次安装仓储的启动参数无效。
     #[error("首次安装仓储启动参数无效")]
     InitialSetupRepository(#[source] InitialSetupRepositoryConfigError),
+    /// 启动期读取首次安装状态失败。
+    #[error("读取首次安装状态失败")]
+    InitialSetupStatus(#[source] InitialSetupRepositoryError),
     /// 注册策略与限流仓储的启动参数无效。
     #[error("注册策略仓储启动参数无效")]
     RegistrationRepository(#[source] RegistrationRepositoryConfigError),
@@ -448,6 +454,9 @@ pub enum BootstrapError {
     /// 启动期读取站点公开地址失败。
     #[error("读取站点公开地址失败")]
     SiteSettingsRead(#[source] SiteSettingsRepositoryError),
+    /// 启动期设置新数据库默认前端失败。
+    #[error("设置新数据库默认前端失败")]
+    SiteSettingsWrite(#[source] SiteSettingsRepositoryError),
     /// Passkey 登录的限流派生密钥缺失或无效。
     #[error("Passkey 登录服务启动配置无效")]
     PasskeyAuthenticationService(#[source] PasskeyAuthenticationServiceConfigError),
@@ -753,6 +762,9 @@ impl Bootstrap<Configured> {
 
 impl Bootstrap<TelemetryReady> {
     /// 创建数据库连接池并在开始监听前执行 pending migrations。
+    ///
+    /// 仅在没有用户且没有首次安装完成标记时，为未指定模板的新数据库设置 web-next 默认值；
+    /// 已安装数据库的模板选择保持原值。
     pub async fn connect_database(self) -> Result<Bootstrap<DatabaseReady>, BootstrapError> {
         let database_options = database_options(&self.config)?;
         let migration_options = migration_options(&self.config)?;
@@ -763,11 +775,18 @@ impl Bootstrap<TelemetryReady> {
         )
         .await
         .map_err(BootstrapError::Database)?;
+        let initial_setup_repository = InitialSetupRepository::new(
+            database.clone(),
+            Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::InitialSetupRepository)?;
         let site_settings_repository = SiteSettingsRepository::new(
             database.clone(),
             Duration::from_secs(self.config.auth().lookup_timeout_secs()),
         )
         .map_err(BootstrapError::SiteSettingsRepository)?;
+        set_new_install_frontend_default(&initial_setup_repository, &site_settings_repository)
+            .await?;
         let site_settings = site_settings_repository
             .settings()
             .await
@@ -791,11 +810,39 @@ impl Bootstrap<TelemetryReady> {
             stage: DatabaseReady {
                 _telemetry: stage,
                 database,
+                initial_setup_repository,
                 passkey_public_base_url,
                 frontend_template_id,
             },
         })
     }
+}
+
+async fn set_new_install_frontend_default(
+    initial_setup_repository: &InitialSetupRepository,
+    site_settings_repository: &SiteSettingsRepository,
+) -> Result<(), BootstrapError> {
+    if initial_setup_repository
+        .status()
+        .await
+        .map_err(BootstrapError::InitialSetupStatus)?
+        != InitialSetupStatus::Required
+    {
+        return Ok(());
+    }
+
+    let site_settings = site_settings_repository
+        .settings()
+        .await
+        .map_err(BootstrapError::SiteSettingsRead)?;
+    // None means Classic; preserve it once the database has passed first setup.
+    if site_settings.frontend_template_id().is_none() {
+        site_settings_repository
+            .set_frontend_template_id(Some(NEW_INSTALL_FRONTEND_TEMPLATE_ID.to_owned()))
+            .await
+            .map_err(BootstrapError::SiteSettingsWrite)?;
+    }
+    Ok(())
 }
 
 impl Bootstrap<DatabaseReady> {
@@ -837,11 +884,7 @@ impl Bootstrap<DatabaseReady> {
             auth.session_ttl_secs(),
         )
         .map_err(BootstrapError::SessionAuthentication)?;
-        let initial_setup_repository = InitialSetupRepository::new(
-            self.stage.database.clone(),
-            Duration::from_secs(auth.lookup_timeout_secs()),
-        )
-        .map_err(BootstrapError::InitialSetupRepository)?;
+        let initial_setup_repository = self.stage.initial_setup_repository.clone();
         let registration_repository = RegistrationRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -3191,7 +3234,10 @@ mod tests {
         UsageRecordQueue, UsageRecordSink, UsageRecordSinkFuture, UserBillingDelta,
     };
     use af_config::CREDENTIAL_ENCRYPTION_KEY_BYTES;
-    use af_db::connect_and_migrate;
+    use af_db::{
+        DatabaseOptions, InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
+        MigrationOptions, SiteSettingsRepository, connect_and_migrate,
+    };
     use af_domain::{BillingReservationId, GatewayPrincipal, GroupId, QuotaDelta, TokenId, UserId};
     use af_http::{ReadinessFuture, ReadinessProbe};
     use af_protocol::{TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource};
@@ -3367,6 +3413,100 @@ mod tests {
         assert!(readiness.is_draining());
         readiness.mark_ready();
         assert!(readiness.is_draining());
+    }
+
+    #[tokio::test]
+    async fn first_setup_defaults_an_empty_database_to_next_frontend() {
+        let database = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let setup_repository =
+            InitialSetupRepository::new(database.clone(), Duration::from_secs(5)).unwrap();
+        let site_settings_repository =
+            SiteSettingsRepository::new(database.clone(), Duration::from_secs(5)).unwrap();
+
+        set_new_install_frontend_default(&setup_repository, &site_settings_repository)
+            .await
+            .unwrap();
+        assert_eq!(
+            setup_repository.status().await.unwrap(),
+            InitialSetupStatus::Required
+        );
+        assert_eq!(
+            site_settings_repository
+                .settings()
+                .await
+                .unwrap()
+                .frontend_template_id(),
+            Some(NEW_INSTALL_FRONTEND_TEMPLATE_ID)
+        );
+        assert!(matches!(
+            setup_repository
+                .initialize(InitialSetupRecord::new(
+                    "owner".to_owned(),
+                    "a secure setup password".to_owned(),
+                ))
+                .await
+                .unwrap(),
+            InitialSetupOutcome::Initialized { .. }
+        ));
+        assert_eq!(
+            site_settings_repository
+                .settings()
+                .await
+                .unwrap()
+                .frontend_template_id(),
+            Some(NEW_INSTALL_FRONTEND_TEMPLATE_ID)
+        );
+        database.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn installed_classic_frontend_is_preserved_on_startup() {
+        let database = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let setup_repository =
+            InitialSetupRepository::new(database.clone(), Duration::from_secs(5)).unwrap();
+        let site_settings_repository =
+            SiteSettingsRepository::new(database.clone(), Duration::from_secs(5)).unwrap();
+
+        set_new_install_frontend_default(&setup_repository, &site_settings_repository)
+            .await
+            .unwrap();
+        setup_repository
+            .initialize(InitialSetupRecord::new(
+                "owner".to_owned(),
+                "a secure setup password".to_owned(),
+            ))
+            .await
+            .unwrap();
+        site_settings_repository
+            .set_frontend_template_id(None)
+            .await
+            .unwrap();
+        set_new_install_frontend_default(&setup_repository, &site_settings_repository)
+            .await
+            .unwrap();
+        assert_eq!(
+            setup_repository.status().await.unwrap(),
+            InitialSetupStatus::Complete
+        );
+        assert_eq!(
+            site_settings_repository
+                .settings()
+                .await
+                .unwrap()
+                .frontend_template_id(),
+            None
+        );
+        database.close().await.unwrap();
     }
 
     #[tokio::test]
