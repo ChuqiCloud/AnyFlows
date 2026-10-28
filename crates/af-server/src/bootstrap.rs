@@ -3242,7 +3242,6 @@ mod tests {
     use af_http::{ReadinessFuture, ReadinessProbe};
     use af_protocol::{TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource};
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-    use sea_orm::{ConnectionTrait, DbBackend, Statement};
     use tokio::sync::{Notify, oneshot};
 
     use super::*;
@@ -3492,15 +3491,6 @@ mod tests {
             .set_frontend_template_id(None)
             .await
             .unwrap();
-        database
-            .connection()
-            .execute(Statement::from_string(
-                DbBackend::Sqlite,
-                "DELETE FROM options WHERE key = 'system.initial_setup.completed'".to_owned(),
-            ))
-            .await
-            .unwrap();
-
         set_new_install_frontend_default(&setup_repository, &site_settings_repository)
             .await
             .unwrap();
