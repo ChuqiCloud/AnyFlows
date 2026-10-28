@@ -3,12 +3,16 @@ import { useEffect, useRef } from 'react'
 import { modelLogos } from '@/components/brand/model-logos'
 import { cn } from '@/lib/utils'
 
+/** 光斑的直径，强度按平方缩放时基准不会随光斑大小变化 */
+const SPOT_DIAMETER = 260
+
 /**
  * 探照遮罩：中心实、边缘透，让顶层只在光斑处显影。
  * 抽成常量是因为 maskImage / WebkitMaskImage 必须逐字一致，否则两端行为会分叉。
+ * 末端的兜底圆用于「出场/收场」：光斑从一点涨开时边缘正好落在起始半径上，淡入淡出全程看不见硬边。
  */
 const SPOT_MASK =
-  'radial-gradient(circle var(--spot-r) at var(--spot-x) var(--spot-y), #000 0%, rgb(0 0 0 / 0.55) 42%, transparent 74%)'
+  'radial-gradient(circle var(--spot-r) at var(--spot-x) var(--spot-y), #000 0%, rgb(0 0 0 / 0.55) 42%, transparent 74%), radial-gradient(circle 4px at var(--spot-x) var(--spot-y), #000 100%, transparent 100%)'
 
 type LogoFieldProps = {
   className?: string
@@ -44,6 +48,13 @@ const AMBIENT_HALF_LIFE = 130
 /** 半衰期 → 本帧插值系数。dt 越大推进越多，故与帧率解耦。 */
 const easeFactor = (halfLife: number, dt: number) => 1 - Math.pow(2, -dt / halfLife)
 
+/** 半径比强度和位置收得更快，出场时不会先暗下去再慢慢缩 */
+const RADIUS_HALF_LIFE = 90
+
+/** 光斑实际不透明度：按面积补足强度，光斑越小反而越亮，显影总亮度基本恒定 */
+const spotAlpha = (alpha: number, intensity: number, r: number) =>
+  Math.min(1, alpha * intensity * Math.pow(SPOT_DIAMETER / Math.max(r, 1), 2)).toFixed(3)
+
 /**
  * 静默扫光：一轮从左到右的时长（ms）。26s 意味着光斑横穿一屏要将近半分钟，
  * 慢到不会争夺注意力——用户察觉到的是"背景在轻微呼吸"而非"有东西在动"。
@@ -69,10 +80,13 @@ const IDLE_DELAY = 2600
  *  - 指针经过时紧随指针，只留一点阻尼让运动收尾柔和，而非明显的拖尾；
  *  - 指针静止或离开后，交还给一轮极慢的自左向右巡游，只求若隐若现。
  *
+ * 进出场靠「光斑面积 × 强度」而不是单纯叠透明度：面积渐胀、强度补足，
+ * 总亮度大致恒定，所以显影是像光晕慢慢铺开，而不是整体忽明忽暗。
+ *
  * 位置与强度写进 CSS 变量并由单个 rAF 循环逐帧更新，而非 React state——
  * 否则每帧都会重渲染整棵 logo 子树。
  */
-export function LogoField({ className, repeat = 3, radius = 130 }: LogoFieldProps) {
+export function LogoField({ className, repeat = 3, radius = 160 }: LogoFieldProps) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -100,8 +114,11 @@ export function LogoField({ className, repeat = 3, radius = 130 }: LogoFieldProp
     let currentY = 0
     let targetAlpha = 0
     let currentAlpha = 0
-    let targetRadius = radius * SWEEP_RADIUS_SCALE
-    let currentRadius = targetRadius
+    // 探照强度与光斑面积分开演进，二者相乘才是实际观感（见文件头注释）
+    let targetIntensity = 0
+    let currentIntensity = 0
+    let targetRadius = 0
+    let currentRadius = 0
     let seeded = false
     let lastMoveAt = 0
     let lastFrameAt = 0
@@ -113,14 +130,17 @@ export function LogoField({ className, repeat = 3, radius = 130 }: LogoFieldProp
       targetX = event.clientX - rect.left
       targetY = event.clientY - rect.top
       targetAlpha = 1
+      targetIntensity = 1
       targetRadius = radius
       lastMoveAt = performance.now()
 
-      // 首次拿到指针位置时直接落位，否则光斑会从左上角飞过来
+      // 首次拿到指针位置时直接落位；若此前静默扫光正亮着，就地接管、保持当前亮度，避免先暗一下
       if (!seeded) {
         seeded = true
         currentX = targetX
         currentY = targetY
+        currentAlpha = Math.max(currentAlpha, SWEEP_ALPHA)
+        currentIntensity = Math.max(currentIntensity, SWEEP_ALPHA)
       }
     }
 
@@ -153,14 +173,18 @@ export function LogoField({ className, repeat = 3, radius = 130 }: LogoFieldProp
 
         if (cycle > SWEEP_DUTY) {
           targetAlpha = 0
+          targetIntensity = 0
+          targetRadius = 0
           currentAlpha += (targetAlpha - currentAlpha) * easeFactor(AMBIENT_HALF_LIFE, dt)
-          el.style.setProperty('--spot-alpha', currentAlpha.toFixed(3))
+          currentIntensity += (targetIntensity - currentIntensity) * easeFactor(AMBIENT_HALF_LIFE, dt)
+          currentRadius += (targetRadius - currentRadius) * easeFactor(RADIUS_HALF_LIFE, dt)
 
           // 趁全暗把光斑挪回起跑线，下一轮才不会从上一轮的终点横穿回来
           currentX = -rect.width * 0.12
           currentY = rect.height * 0.42
           el.style.setProperty('--spot-x', `${currentX.toFixed(1)}px`)
           el.style.setProperty('--spot-y', `${currentY.toFixed(1)}px`)
+          el.style.setProperty('--spot-alpha', spotAlpha(currentAlpha, currentIntensity, currentRadius))
 
           return
         }
@@ -176,25 +200,27 @@ export function LogoField({ className, repeat = 3, radius = 130 }: LogoFieldProp
           两端淡出，避免光斑在板边缘突然亮起或掐断。
           回卷本身已由上面的全暗间歇兜住，这里只负责进出场的柔和。
         */
-        targetAlpha = SWEEP_ALPHA * Math.min(1, Math.min(phase, 1 - phase) / 0.22)
+        targetIntensity = SWEEP_ALPHA * Math.min(1, Math.min(phase, 1 - phase) / 0.22)
         seeded = true
       }
 
       /*
         位置的阻尼分两档：跟指针时要贴手，巡游时要飘。
-        强度与半径始终走慢档——它们的变化本就该是渐进的，跟快慢无关。
+        强度走慢档、半径走得比强度更快一点，半径滞后会让收场时先暗后缩，显得拖沓。
       */
       const moveEase = easeFactor(pointerActive ? POINTER_HALF_LIFE : AMBIENT_HALF_LIFE, dt)
       const ambientEase = easeFactor(AMBIENT_HALF_LIFE, dt)
+      const radiusEase = easeFactor(RADIUS_HALF_LIFE, dt)
 
       currentX += (targetX - currentX) * moveEase
       currentY += (targetY - currentY) * moveEase
       currentAlpha += (targetAlpha - currentAlpha) * ambientEase
-      currentRadius += (targetRadius - currentRadius) * ambientEase
+      currentIntensity += (targetIntensity - currentIntensity) * ambientEase
+      currentRadius += (targetRadius - currentRadius) * radiusEase
 
       el.style.setProperty('--spot-x', `${currentX.toFixed(1)}px`)
       el.style.setProperty('--spot-y', `${currentY.toFixed(1)}px`)
-      el.style.setProperty('--spot-alpha', currentAlpha.toFixed(3))
+      el.style.setProperty('--spot-alpha', spotAlpha(currentAlpha, currentIntensity, currentRadius))
       el.style.setProperty('--spot-r', `${currentRadius.toFixed(1)}px`)
     }
 
