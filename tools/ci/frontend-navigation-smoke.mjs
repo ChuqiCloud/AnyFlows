@@ -131,7 +131,7 @@ try {
       case '/api/account/usage-logs': data = { logs: [], failed_logs: [], next_cursor: null, failed_next_cursor: null }; break
       case '/api/admin/tokens': data = { tokens: [], next_cursor: null }; break
       case '/api/admin/software':
-        data = { edition: 'community', version: '0.3.0-beta.4', core_version: '0.3.0-beta.4', target: 'x86_64-unknown-linux-gnu', deployment: 'binary', node_id: 'ci-navigation', launch_mode: 'launcher', launcher_protocol: 1, launcher_version: '0.3.0-beta.4', update_phase: 'idle', check_enabled: true, install_enabled: true, restart_required: false, update_available: false }
+        data = { edition: 'community', version: '0.3.0-beta.5', core_version: '0.3.0-beta.5', target: 'x86_64-unknown-linux-gnu', deployment: 'binary', node_id: 'ci-navigation', launch_mode: 'launcher', launcher_protocol: 1, launcher_version: '0.3.0-beta.5', update_phase: 'idle', check_enabled: true, install_enabled: true, restart_required: false, update_available: false }
         break
       default:
         errors.push(`Unexpected API: ${path} (${role})`)
