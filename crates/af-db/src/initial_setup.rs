@@ -264,10 +264,11 @@ where
         .select_only()
         .column(users::Column::Id)
         .limit(1)
+        .into_tuple::<i64>()
         .one(connection)
         .with_subscriber(NoSubscriber::default())
         .await
-        .map(|model| model.is_some())
+        .map(|user_id| user_id.is_some())
         .map_err(|_| record_internal_error(InitialSetupRepositoryError::Query))
 }
 
