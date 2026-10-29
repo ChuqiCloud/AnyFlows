@@ -457,17 +457,16 @@ impl ImageHistoryService for LocalImageHistoryService {
             let id = Uuid::new_v4().simple().to_string();
             let image_path = self.image_path(owner_id.get(), &id, image_format.as_str(), false);
             self.write_file(&image_path, &image_bytes).await?;
-            if let Some((thumbnail_format, thumbnail)) = &upload.thumbnail {
-                if let Err(error) = self
+            if let Some((thumbnail_format, thumbnail)) = &upload.thumbnail
+                && let Err(error) = self
                     .write_file(
                         &self.image_path(owner_id.get(), &id, thumbnail_format.as_str(), true),
                         thumbnail,
                     )
                     .await
-                {
-                    self.remove_files(owner_id.get(), &id).await;
-                    return Err(error);
-                }
+            {
+                self.remove_files(owner_id.get(), &id).await;
+                return Err(error);
             }
             let write = ImageHistoryWrite {
                 id: id.clone(),
