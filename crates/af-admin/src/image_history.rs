@@ -1,7 +1,8 @@
 use std::{fmt, future::Future, path::PathBuf, pin::Pin};
 
 use af_db::{
-    ImageHistoryRecord, ImageHistoryRepository, ImageHistoryRepositoryError, ImageHistoryWrite,
+    ImageHistoryRecord, ImageHistoryRecordParts, ImageHistoryRepository,
+    ImageHistoryRepositoryError, ImageHistoryWrite,
 };
 use af_httpclient::{HeaderMap, Method, PooledClient};
 use thiserror::Error;
@@ -134,35 +135,36 @@ pub struct ImageHistoryEntry {
     created_at: i64,
 }
 
+/// 图片历史应用记录中可移交给接口层的命名字段。
+pub struct ImageHistoryEntryParts {
+    pub id: String,
+    pub model: String,
+    pub prompt: String,
+    pub revised_prompt: Option<String>,
+    pub request_id: Option<String>,
+    pub format: String,
+    pub byte_size: u64,
+    pub thumbnail_format: Option<String>,
+    pub thumbnail_byte_size: Option<u64>,
+    pub created_at: i64,
+}
+
 impl ImageHistoryEntry {
     /// 消费记录并返回接口响应所需字段。
     #[must_use]
-    pub fn into_parts(
-        self,
-    ) -> (
-        String,
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-        String,
-        u64,
-        Option<String>,
-        Option<u64>,
-        i64,
-    ) {
-        (
-            self.id,
-            self.model,
-            self.prompt,
-            self.revised_prompt,
-            self.request_id,
-            self.format,
-            self.byte_size,
-            self.thumbnail_format,
-            self.thumbnail_byte_size,
-            self.created_at,
-        )
+    pub fn into_parts(self) -> ImageHistoryEntryParts {
+        ImageHistoryEntryParts {
+            id: self.id,
+            model: self.model,
+            prompt: self.prompt,
+            revised_prompt: self.revised_prompt,
+            request_id: self.request_id,
+            format: self.format,
+            byte_size: self.byte_size,
+            thumbnail_format: self.thumbnail_format,
+            thumbnail_byte_size: self.thumbnail_byte_size,
+            created_at: self.created_at,
+        }
     }
 }
 
@@ -410,8 +412,14 @@ impl LocalImageHistoryService {
             .await
             .map_err(map_repository_error)?
             .ok_or(ImageHistoryError::NotFound)?;
-        let (id, _, _, _, _, format, byte_size, thumbnail_format, thumbnail_size, _) =
-            record.into_parts();
+        let ImageHistoryRecordParts {
+            id,
+            format,
+            byte_size,
+            thumbnail_format,
+            thumbnail_byte_size: thumbnail_size,
+            ..
+        } = record.into_parts();
         let (format, expected_size, use_thumbnail) = if thumbnail && thumbnail_size.is_some() {
             (
                 thumbnail_format.unwrap_or(format),
@@ -449,32 +457,31 @@ impl ImageHistoryService for LocalImageHistoryService {
             let id = Uuid::new_v4().simple().to_string();
             let image_path = self.image_path(owner_id.get(), &id, image_format.as_str(), false);
             self.write_file(&image_path, &image_bytes).await?;
-            if let Some((thumbnail_format, thumbnail)) = &upload.thumbnail {
-                if let Err(error) = self
+            if let Some((thumbnail_format, thumbnail)) = &upload.thumbnail
+                && let Err(error) = self
                     .write_file(
                         &self.image_path(owner_id.get(), &id, thumbnail_format.as_str(), true),
                         thumbnail,
                     )
                     .await
-                {
-                    self.remove_files(owner_id.get(), &id).await;
-                    return Err(error);
-                }
+            {
+                self.remove_files(owner_id.get(), &id).await;
+                return Err(error);
             }
-            let write = ImageHistoryWrite::new(
-                id.clone(),
-                upload.model,
-                upload.prompt,
-                upload.revised_prompt,
-                upload.request_id,
-                image_format.as_str().to_owned(),
-                image_bytes.len() as u64,
-                upload
+            let write = ImageHistoryWrite {
+                id: id.clone(),
+                model: upload.model,
+                prompt: upload.prompt,
+                revised_prompt: upload.revised_prompt,
+                request_id: upload.request_id,
+                format: image_format.as_str().to_owned(),
+                byte_size: image_bytes.len() as u64,
+                thumbnail_format: upload
                     .thumbnail
                     .as_ref()
                     .map(|(format, _)| format.as_str().to_owned()),
-                thumbnail_size,
-            );
+                thumbnail_byte_size: thumbnail_size,
+            };
             let (record, evicted_ids) = match self
                 .repository
                 .create(
@@ -569,7 +576,7 @@ pub enum ImageHistoryServiceConfigError {
 }
 
 fn entry_from_record(record: ImageHistoryRecord) -> ImageHistoryEntry {
-    let (
+    let ImageHistoryRecordParts {
         id,
         model,
         prompt,
@@ -580,7 +587,7 @@ fn entry_from_record(record: ImageHistoryRecord) -> ImageHistoryEntry {
         thumbnail_format,
         thumbnail_byte_size,
         created_at,
-    ) = record.into_parts();
+    } = record.into_parts();
     ImageHistoryEntry {
         id,
         model,

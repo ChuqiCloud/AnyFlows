@@ -176,8 +176,8 @@ pub use group_write::{
     GroupPricingRuntimeRefresher, RuntimeRefreshingAdminGroupWriter,
 };
 pub use image_history::{
-    ImageHistoryContent, ImageHistoryEntry, ImageHistoryError, ImageHistoryFuture,
-    ImageHistoryService, ImageHistoryServiceConfigError, ImageHistoryUpload,
+    ImageHistoryContent, ImageHistoryEntry, ImageHistoryEntryParts, ImageHistoryError,
+    ImageHistoryFuture, ImageHistoryService, ImageHistoryServiceConfigError, ImageHistoryUpload,
     LocalImageHistoryService, MAX_IMAGE_HISTORY_BYTES_PER_USER, MAX_IMAGE_HISTORY_IMAGE_BYTES,
     MAX_IMAGE_HISTORY_PER_USER, MAX_IMAGE_HISTORY_THUMBNAIL_BYTES,
 };

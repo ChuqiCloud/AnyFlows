@@ -27,42 +27,15 @@ type Error = ImageHistoryRepositoryError;
 
 /// 一张图片的待持久化元数据。图像文件本身由 af-admin 写入媒体目录。
 pub struct ImageHistoryWrite {
-    id: String,
-    model: String,
-    prompt: String,
-    revised_prompt: Option<String>,
-    request_id: Option<String>,
-    format: String,
-    byte_size: u64,
-    thumbnail_format: Option<String>,
-    thumbnail_byte_size: Option<u64>,
-}
-
-impl ImageHistoryWrite {
-    #[must_use]
-    pub fn new(
-        id: String,
-        model: String,
-        prompt: String,
-        revised_prompt: Option<String>,
-        request_id: Option<String>,
-        format: String,
-        byte_size: u64,
-        thumbnail_format: Option<String>,
-        thumbnail_byte_size: Option<u64>,
-    ) -> Self {
-        Self {
-            id,
-            model,
-            prompt,
-            revised_prompt,
-            request_id,
-            format,
-            byte_size,
-            thumbnail_format,
-            thumbnail_byte_size,
-        }
-    }
+    pub id: String,
+    pub model: String,
+    pub prompt: String,
+    pub revised_prompt: Option<String>,
+    pub request_id: Option<String>,
+    pub format: String,
+    pub byte_size: u64,
+    pub thumbnail_format: Option<String>,
+    pub thumbnail_byte_size: Option<u64>,
 }
 
 impl fmt::Debug for ImageHistoryWrite {
@@ -93,35 +66,36 @@ pub struct ImageHistoryRecord {
     created_at: i64,
 }
 
+/// 图片历史记录中可移交给应用层的命名字段。
+pub struct ImageHistoryRecordParts {
+    pub id: String,
+    pub model: String,
+    pub prompt: String,
+    pub revised_prompt: Option<String>,
+    pub request_id: Option<String>,
+    pub format: String,
+    pub byte_size: u64,
+    pub thumbnail_format: Option<String>,
+    pub thumbnail_byte_size: Option<u64>,
+    pub created_at: i64,
+}
+
 impl ImageHistoryRecord {
     /// 消费记录并返回面向调用方的字段。
     #[must_use]
-    pub fn into_parts(
-        self,
-    ) -> (
-        String,
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-        String,
-        u64,
-        Option<String>,
-        Option<u64>,
-        i64,
-    ) {
-        (
-            self.id,
-            self.model,
-            self.prompt,
-            self.revised_prompt,
-            self.request_id,
-            self.format,
-            self.byte_size,
-            self.thumbnail_format,
-            self.thumbnail_byte_size,
-            self.created_at,
-        )
+    pub fn into_parts(self) -> ImageHistoryRecordParts {
+        ImageHistoryRecordParts {
+            id: self.id,
+            model: self.model,
+            prompt: self.prompt,
+            revised_prompt: self.revised_prompt,
+            request_id: self.request_id,
+            format: self.format,
+            byte_size: self.byte_size,
+            thumbnail_format: self.thumbnail_format,
+            thumbnail_byte_size: self.thumbnail_byte_size,
+            created_at: self.created_at,
+        }
     }
 
     #[must_use]
