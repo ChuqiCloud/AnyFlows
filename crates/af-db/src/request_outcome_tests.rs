@@ -26,6 +26,7 @@ async fn failed_call_pages_enforce_user_and_organization_scope() -> Result<(), B
         provider: Set("test".to_owned()),
         tags: Set(serde_json::json!([])),
         supports_text_input: Set(true),
+        supports_text_output: Set(true),
         visibility: Set(1),
         lifecycle: Set(2),
         ..Default::default()
@@ -38,6 +39,7 @@ async fn failed_call_pages_enforce_user_and_organization_scope() -> Result<(), B
         provider: Set("test".to_owned()),
         tags: Set(serde_json::json!([])),
         supports_text_input: Set(true),
+        supports_text_output: Set(true),
         visibility: Set(1),
         lifecycle: Set(4),
         ..Default::default()
