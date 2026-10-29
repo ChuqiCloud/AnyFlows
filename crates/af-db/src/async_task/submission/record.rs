@@ -135,6 +135,10 @@ pub(super) fn claim_record(
         TokenId::new(model.token_id).map_err(|_| AsyncTaskRepositoryError::Invariant)?,
         UserId::new(model.user_id).map_err(|_| AsyncTaskRepositoryError::Invariant)?,
         GroupId::new(model.group_id).map_err(|_| AsyncTaskRepositoryError::Invariant)?,
+    )
+    .with_billing_source_group_id(
+        GroupId::new(model.billing_source_group_id.unwrap_or(model.group_id))
+            .map_err(|_| AsyncTaskRepositoryError::Invariant)?,
     );
     let protocol =
         Protocol::from_str(&model.protocol).map_err(|_| AsyncTaskRepositoryError::Invariant)?;

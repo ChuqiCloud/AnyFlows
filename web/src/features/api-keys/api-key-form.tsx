@@ -13,8 +13,12 @@ import {
   buildApiKeyFormSchema,
   defaultApiKeyValues,
   toApiKeyRequest,
+  toCreateApiKeyRequest,
   type ApiKeyFormValues,
 } from './api-key-form-model'
+import { useUserTokenGroups } from './api-key-group-api'
+import { isSelectableTokenGroup } from './api-key-group-model'
+import { ApiKeyGroupSelector } from './api-key-group-selector'
 import { ApiKeyIpEditor } from './api-key-ip-editor'
 import { ApiKeyModelSelector } from './api-key-model-selector'
 
@@ -27,6 +31,7 @@ type ApiKeyFormProps = {
 
 export function ApiKeyForm({ token, onCancel, onIssued, onSaved }: ApiKeyFormProps) {
   const { t } = useTranslation()
+  const groupsQuery = useUserTokenGroups(!token)
   const createMutation = useCreateApiKey()
   const updateMutation = useUpdateApiKey()
   const form = useForm<ApiKeyFormValues>({
@@ -41,21 +46,32 @@ export function ApiKeyForm({ token, onCancel, onIssued, onSaved }: ApiKeyFormPro
 
   useEffect(() => form.reset(defaultApiKeyValues(token)), [form, token])
 
+  const groupId = form.watch('groupId')
   const unlimitedQuota = form.watch('unlimitedQuota')
+  const groupSelectionReady = !!token || (groupsQuery.isSuccess && !groupsQuery.isFetching && isSelectableTokenGroup(groupId, groupsQuery.data))
   const pending = createMutation.isPending || updateMutation.isPending
   const submitError = createMutation.error ?? updateMutation.error
   const limitReached = hasManagementErrorCode(submitError, 'token_limit_reached')
+  const groupUnavailable = hasManagementErrorCode(submitError, 'group_unavailable')
   const onSubmit = form.handleSubmit(async (values) => {
+    if (!token && (!groupsQuery.isSuccess || groupsQuery.isFetching || !isSelectableTokenGroup(values.groupId, groupsQuery.data))) {
+      form.setError('groupId', { message: t('apiKeys.group.invalid') })
+      return
+    }
     try {
       if (token) {
         await updateMutation.mutateAsync({ id: token.id, body: toApiKeyRequest(values) })
         onSaved()
       } else {
-        const issued = await createMutation.mutateAsync(toApiKeyRequest(values))
+        const issued = await createMutation.mutateAsync(toCreateApiKeyRequest(values, groupsQuery.data ?? []))
         createMutation.reset()
         onIssued(issued)
       }
-    } catch {
+    } catch (error) {
+      if (!token && hasManagementErrorCode(error, 'group_unavailable')) {
+        form.setError('groupId', { message: t('apiKeys.group.unavailable') })
+        void groupsQuery.refetch()
+      }
       // 保留表单输入；一次性密钥只有成功结果会交给临时展示面板。
     }
   })
@@ -68,6 +84,16 @@ export function ApiKeyForm({ token, onCancel, onIssued, onSaved }: ApiKeyFormPro
           <ApiKeyField id="api-key-name" label={t('apiKeys.fields.name')} error={form.formState.errors.name?.message}>
             <Input id="api-key-name" autoFocus aria-invalid={!!form.formState.errors.name} {...form.register('name')} />
           </ApiKeyField>
+          <ApiKeyGroupSelector
+            token={token}
+            groups={groupsQuery.data}
+            value={groupId}
+            loading={groupsQuery.isFetching}
+            failed={groupsQuery.isError}
+            error={form.formState.errors.groupId?.message ?? (!token && groupsQuery.isSuccess && !isSelectableTokenGroup(groupId, groupsQuery.data) ? t('apiKeys.group.invalid') : undefined)}
+            onChange={(value) => { form.setValue('groupId', value); form.clearErrors('groupId') }}
+            onRetry={() => void groupsQuery.refetch()}
+          />
           <div className="grid gap-3 sm:grid-cols-2">
             <Controller
               control={form.control}
@@ -118,7 +144,7 @@ export function ApiKeyForm({ token, onCancel, onIssued, onSaved }: ApiKeyFormPro
           </ApiKeyField>
         </section>
 
-        {submitError ? (
+        {submitError && !groupUnavailable ? (
           <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
             {t(limitReached ? 'apiKeys.form.limitError' : 'apiKeys.form.submitError')}
           </p>
@@ -127,7 +153,7 @@ export function ApiKeyForm({ token, onCancel, onIssued, onSaved }: ApiKeyFormPro
 
       <div className="flex justify-end gap-2 border-t border-[var(--hairline)] p-4">
         <Button type="button" variant="secondary" disabled={pending} onClick={onCancel}>{t('apiKeys.actions.cancel')}</Button>
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending || !groupSelectionReady}>
           {pending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : null}
           {t(token ? 'apiKeys.actions.save' : 'apiKeys.actions.create')}
         </Button>

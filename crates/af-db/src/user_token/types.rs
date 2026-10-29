@@ -1,6 +1,6 @@
 use std::fmt;
 
-use af_domain::{TokenId, UserId};
+use af_domain::{GroupId, TokenId, UserId};
 use thiserror::Error;
 
 use crate::AdminTokenRecord;
@@ -13,25 +13,51 @@ pub const MAX_USER_TOKEN_PAGE_SIZE: usize = 100;
 /// 普通用户可读取的非敏感 API Key 快照。
 pub struct UserTokenRecord {
     inner: AdminTokenRecord,
+    effective_group_id: GroupId,
+    group_display_name: String,
 }
 
 impl UserTokenRecord {
     pub(super) fn from_admin_record(
         record: AdminTokenRecord,
         expected_owner: UserId,
+        effective_group_id: GroupId,
+        group_display_name: String,
     ) -> Result<Self, UserTokenRepositoryError> {
         if record.user_id() != expected_owner {
             return Err(super::record_internal_error(
                 UserTokenRepositoryError::Invariant,
             ));
         }
-        Ok(Self { inner: record })
+        Ok(Self {
+            inner: record,
+            effective_group_id,
+            group_display_name,
+        })
     }
 
     /// 返回 Key 主键。
     #[must_use]
     pub const fn token_id(&self) -> TokenId {
         self.inner.token_id()
+    }
+
+    /// 返回固定分组；空值表示跟随用户默认分组。
+    #[must_use]
+    pub const fn group_id(&self) -> Option<GroupId> {
+        self.inner.group_id()
+    }
+
+    /// 返回当前解析的实际分组。
+    #[must_use]
+    pub const fn effective_group_id(&self) -> GroupId {
+        self.effective_group_id
+    }
+
+    /// 返回实际分组的展示名称，不暴露已软删除分组名称。
+    #[must_use]
+    pub fn group_display_name(&self) -> &str {
+        &self.group_display_name
     }
 
     /// 返回不可用于鉴权的展示前缀。
@@ -141,6 +167,7 @@ pub struct UserTokenCreateRecord {
     pub(super) key_hash: String,
     pub(super) key_prefix: String,
     pub(super) fields: UserTokenWriteRecord,
+    pub(super) group_id: Option<GroupId>,
 }
 
 impl UserTokenCreateRecord {
@@ -157,7 +184,15 @@ impl UserTokenCreateRecord {
             key_hash,
             key_prefix,
             fields,
+            group_id: None,
         }
+    }
+
+    /// 为新 Key 指定固定分组；空值保留跟随默认分组的行为。
+    #[must_use]
+    pub fn with_group_id(mut self, group_id: Option<GroupId>) -> Self {
+        self.group_id = group_id;
+        self
     }
 }
 
@@ -246,6 +281,9 @@ pub enum UserTokenRepositoryError {
     /// 当前用户的未软删除 Key 已达上限。
     #[error("用户 API Key 数量已达上限")]
     LimitReached,
+    /// 指定分组不可用或未向当前用户开放。
+    #[error("用户 API Key 分组不可用")]
+    GroupUnavailable,
     /// 获取连接、事务或执行 SQL 失败。
     #[error("用户 API Key 数据库操作失败")]
     Query,

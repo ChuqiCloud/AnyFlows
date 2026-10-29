@@ -307,7 +307,7 @@ impl AsyncTaskRecord {
     pub(super) fn matches_create(&self, write: &AsyncTaskCreate) -> bool {
         self.task_id == write.task_id
             && self.request_id == write.request_id
-            && self.principal == write.principal
+            && same_task_identity(self.principal, write.principal)
             && self.protocol == write.protocol
             && self.requested_model == write.requested_model
             && self.upstream_model == write.upstream_model
@@ -317,6 +317,15 @@ impl AsyncTaskRecord {
             && self.upstream_task_id == write.upstream_task_id
         // 状态和服务端接收时间是可变事实，不参与客户端幂等载荷比较。
     }
+}
+
+/// 任务授权与绑定只比较身份；价格来源由提交 claim 和冻结计划独立保存。
+pub(super) fn same_task_identity(left: GatewayPrincipal, right: GatewayPrincipal) -> bool {
+    left.token_id() == right.token_id()
+        && left.user_id() == right.user_id()
+        && left.group_id() == right.group_id()
+        && left.organization_principal() == right.organization_principal()
+        && left.is_playground() == right.is_playground()
 }
 
 impl fmt::Debug for AsyncTaskRecord {

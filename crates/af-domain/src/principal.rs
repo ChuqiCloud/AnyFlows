@@ -208,6 +208,7 @@ pub struct GatewayPrincipal {
     token_id: TokenId,
     user_id: UserId,
     group_id: GroupId,
+    billing_source_group_id: GroupId,
     organization: Option<OrganizationGatewayPrincipal>,
     playground: bool,
 }
@@ -292,6 +293,7 @@ impl GatewayPrincipal {
             token_id,
             user_id,
             group_id,
+            billing_source_group_id: group_id,
             organization: None,
             playground: false,
         }
@@ -304,6 +306,7 @@ impl GatewayPrincipal {
             token_id,
             user_id,
             group_id,
+            billing_source_group_id: group_id,
             organization: None,
             playground: true,
         }
@@ -321,6 +324,7 @@ impl GatewayPrincipal {
             token_id,
             user_id,
             group_id,
+            billing_source_group_id: group_id,
             organization: Some(organization),
             playground: false,
         }
@@ -342,6 +346,19 @@ impl GatewayPrincipal {
     #[must_use]
     pub const fn group_id(self) -> GroupId {
         self.group_id
+    }
+
+    /// 固定鉴权时读取的用户默认组，用于来源组到目标组的附加倍率。
+    #[must_use]
+    pub const fn with_billing_source_group_id(mut self, group_id: GroupId) -> Self {
+        self.billing_source_group_id = group_id;
+        self
+    }
+
+    /// 返回计费来源组；路由仍使用 [`Self::group_id`]。
+    #[must_use]
+    pub const fn billing_source_group_id(self) -> GroupId {
+        self.billing_source_group_id
     }
 
     /// 返回企业 API Key 的已验证组织主体；个人 Key 返回空。

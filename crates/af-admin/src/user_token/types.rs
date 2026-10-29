@@ -1,7 +1,7 @@
 use std::fmt;
 
 use af_db::{MAX_USER_TOKEN_PAGE_SIZE, UserTokenRecord, UserTokenWriteRecord};
-use af_domain::{PLAYGROUND_TOKEN_NAME, TokenId};
+use af_domain::{GroupId, PLAYGROUND_TOKEN_NAME, TokenId};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -47,6 +47,9 @@ impl UserTokenStatus {
 /// 普通用户可见的非敏感 Key 快照。
 pub struct UserToken {
     token_id: TokenId,
+    group_id: Option<GroupId>,
+    effective_group_id: GroupId,
+    group_display_name: String,
     key_prefix: String,
     name: String,
     status: UserTokenStatus,
@@ -66,6 +69,9 @@ impl UserToken {
     #[must_use]
     pub fn from_parts(
         token_id: TokenId,
+        group_id: Option<GroupId>,
+        effective_group_id: GroupId,
+        group_display_name: String,
         key_prefix: String,
         name: String,
         status: UserTokenStatus,
@@ -80,6 +86,9 @@ impl UserToken {
     ) -> Self {
         Self {
             token_id,
+            group_id,
+            effective_group_id,
+            group_display_name,
             key_prefix,
             name,
             status,
@@ -97,6 +106,9 @@ impl UserToken {
     pub(super) fn from_record(record: UserTokenRecord) -> Result<Self, UserTokenError> {
         Ok(Self {
             token_id: record.token_id(),
+            group_id: record.group_id(),
+            effective_group_id: record.effective_group_id(),
+            group_display_name: record.group_display_name().to_owned(),
             key_prefix: record.key_prefix().to_owned(),
             name: record.name().to_owned(),
             status: UserTokenStatus::from_database(record.status())?,
@@ -115,6 +127,24 @@ impl UserToken {
     #[must_use]
     pub const fn token_id(&self) -> TokenId {
         self.token_id
+    }
+
+    /// 返回固定分组；空值表示跟随用户默认分组。
+    #[must_use]
+    pub const fn group_id(&self) -> Option<GroupId> {
+        self.group_id
+    }
+
+    /// 返回当前解析的实际分组。
+    #[must_use]
+    pub const fn effective_group_id(&self) -> GroupId {
+        self.effective_group_id
+    }
+
+    /// 返回当前实际分组的展示名称。
+    #[must_use]
+    pub fn group_display_name(&self) -> &str {
+        &self.group_display_name
     }
 
     /// 返回不可鉴权的展示前缀。
@@ -259,6 +289,7 @@ impl UserTokenPage {
 
 /// 普通用户创建或更新 Key 的命令。
 pub struct UserTokenWriteCommand {
+    group_id: Option<GroupId>,
     name: String,
     status: UserTokenStatus,
     remain_quota: i64,
@@ -291,6 +322,7 @@ impl UserTokenWriteCommand {
         validate_model_limits(model_limits.as_deref()).map_err(|_| UserTokenError::InvalidInput)?;
         validate_ip_allowlist(allow_ips.as_deref()).map_err(|_| UserTokenError::InvalidInput)?;
         Ok(Self {
+            group_id: None,
             name,
             status,
             remain_quota,
@@ -299,6 +331,19 @@ impl UserTokenWriteCommand {
             model_limits,
             allow_ips,
         })
+    }
+
+    /// 指定创建时的固定分组；普通更新不接受固定分组。
+    #[must_use]
+    pub fn with_group_id(mut self, group_id: Option<GroupId>) -> Self {
+        self.group_id = group_id;
+        self
+    }
+
+    /// 返回本次创建请求的可选固定分组。
+    #[must_use]
+    pub const fn group_id(&self) -> Option<GroupId> {
+        self.group_id
     }
 
     pub(super) fn into_record(self) -> UserTokenWriteRecord {
@@ -364,6 +409,9 @@ pub enum UserTokenError {
     /// 当前用户的未软删除 Key 已达上限。
     #[error("用户 API Key 数量已达上限")]
     LimitReached,
+    /// 指定分组不可用或未向当前用户开放。
+    #[error("用户 API Key 分组不可用")]
+    GroupUnavailable,
     /// Key 不存在、已经软删除或不属于当前用户。
     #[error("用户 API Key 不存在")]
     NotFound,

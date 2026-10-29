@@ -52,13 +52,20 @@ function QuotaValue({ token }: { token: UserToken }) {
 function PolicyValue({ token }: { token: UserToken }) {
   const { t } = useTranslation()
   return (
-    <div className="flex flex-wrap gap-1">
-      <Badge className="bg-surface-2 text-muted-foreground">
-        {token.model_limits ? t('apiKeys.values.models', { count: token.model_limits.length }) : t('apiKeys.values.allModels')}
-      </Badge>
-      <Badge className="bg-surface-2 text-muted-foreground">
-        {token.allow_ips ? t('apiKeys.values.ips', { count: token.allow_ips.length }) : t('apiKeys.values.allIps')}
-      </Badge>
+    <div className="grid gap-1">
+      <span className="truncate text-xs" title={token.group_display_name}>
+        {token.group_id === null
+          ? t('apiKeys.group.following', { name: token.group_display_name })
+          : t('apiKeys.group.bound', { name: token.group_display_name })}
+      </span>
+      <div className="flex flex-wrap gap-1">
+        <Badge className="bg-surface-2 text-muted-foreground">
+          {token.model_limits ? t('apiKeys.values.models', { count: token.model_limits.length }) : t('apiKeys.values.allModels')}
+        </Badge>
+        <Badge className="bg-surface-2 text-muted-foreground">
+          {token.allow_ips ? t('apiKeys.values.ips', { count: token.allow_ips.length }) : t('apiKeys.values.allIps')}
+        </Badge>
+      </div>
     </div>
   )
 }

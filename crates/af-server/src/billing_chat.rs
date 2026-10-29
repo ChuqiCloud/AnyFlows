@@ -284,7 +284,7 @@ impl BillingChatService {
         )
         .map_err(|_| AfError::Internal)?;
         let upper_bound = planned.usage_upper_bound().map_err(map_upper_bound_error)?;
-        let source_group_id = subject.group_id();
+        let source_group_id = subject.billing_source_group_id();
         let target_group_id = planned.target_group_id();
         let pricing_model = planned.pricing_model().to_owned();
         let snapshot = self
@@ -1498,25 +1498,42 @@ mod tests {
             Arc::new(UsageStub::default()),
         );
 
-        service
-            .chat_completions(
-                &principal(),
-                None,
-                request(),
-                Protocol::OpenAiChat,
-                "request-target-group",
-                diagnostic(),
+        for authentication in [
+            principal(),
+            GatewayPrincipal::new(
+                principal().token_id(),
+                principal().user_id(),
+                GroupId::new(4).unwrap(),
             )
-            .await
-            .unwrap();
+            .with_billing_source_group_id(GroupId::new(3).unwrap()),
+        ] {
+            service
+                .chat_completions(
+                    &authentication,
+                    None,
+                    request(),
+                    Protocol::OpenAiChat,
+                    "request-target-group",
+                    diagnostic(),
+                )
+                .await
+                .unwrap();
+        }
 
         assert_eq!(
             pricing.calls.lock().unwrap().as_slice(),
-            &[(
-                "gpt-routed".to_owned(),
-                GroupId::new(3).unwrap(),
-                GroupId::new(4).unwrap(),
-            )]
+            &[
+                (
+                    "gpt-routed".to_owned(),
+                    GroupId::new(3).unwrap(),
+                    GroupId::new(4).unwrap()
+                ),
+                (
+                    "gpt-routed".to_owned(),
+                    GroupId::new(3).unwrap(),
+                    GroupId::new(4).unwrap()
+                ),
+            ]
         );
     }
 

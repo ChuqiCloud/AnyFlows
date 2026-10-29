@@ -8,7 +8,8 @@ use std::{
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
-    ConnectionTrait, DbErr, EntityTrait, IntoActiveModel, JsonValue, TransactionTrait,
+    ColumnTrait, ConnectionTrait, DbErr, EntityTrait, IntoActiveModel, JsonValue, QueryFilter,
+    TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, Query, SimpleExpr},
 };
@@ -141,6 +142,19 @@ async fn lookup_digest_never_enters_trace_output() -> Result<(), Box<dyn Error>>
 async fn valid_lookup_uses_token_override_and_user_default_group() -> Result<(), Box<dyn Error>> {
     let fixture = fixture(Duration::from_secs(1)).await?;
 
+    let TokenAuthLookupOutcome::Authenticated { principal, .. } = fixture
+        .repository
+        .lookup(&fixture.lookup, test_client_ip())
+        .await?
+    else {
+        panic!("有效固定分组 Key 必须通过鉴权");
+    };
+    assert_eq!(principal.group_id().get(), fixture.token_group_id);
+    assert_eq!(
+        principal.billing_source_group_id().get(),
+        fixture.default_group_id
+    );
+
     assert_authenticated_group(
         fixture
             .repository
@@ -183,6 +197,34 @@ async fn valid_lookup_uses_token_override_and_user_default_group() -> Result<(),
         fixture.token_id,
         fixture.user_id,
         fixture.default_group_id,
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn changing_default_group_preserves_fixed_route_and_updates_billing_source()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture(Duration::from_secs(1)).await?;
+    users::Entity::update_many()
+        .col_expr(
+            users::Column::DefaultGroupId,
+            Expr::value(fixture.token_group_id),
+        )
+        .filter(users::Column::Id.eq(fixture.user_id))
+        .exec(fixture.pool.connection())
+        .await?;
+    let TokenAuthLookupOutcome::Authenticated { principal, .. } = fixture
+        .repository
+        .lookup(&fixture.lookup, test_client_ip())
+        .await?
+    else {
+        panic!("默认组变化不应撤销固定分组 Key");
+    };
+    assert_eq!(principal.group_id().get(), fixture.token_group_id);
+    assert_eq!(
+        principal.billing_source_group_id().get(),
+        fixture.token_group_id
     );
     fixture.pool.close().await?;
     Ok(())

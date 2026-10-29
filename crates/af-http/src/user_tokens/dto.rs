@@ -1,5 +1,5 @@
 use af_admin::{IssuedUserToken, UserToken, UserTokenPage, UserTokenWriteCommand};
-use af_domain::TokenId;
+use af_domain::{GroupId, TokenId};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -10,6 +10,10 @@ use crate::management_error::ManagementError;
 #[serde(deny_unknown_fields)]
 #[schema(as = UserTokenWriteRequest)]
 pub(crate) struct UserTokenWriteRequest {
+    /// 仅创建时可选固定分组；POST 省略或 null 跟随用户默认分组。
+    /// PUT 省略或 null 保留原分组，非 null 不允许修改。
+    #[schema(minimum = 1)]
+    group_id: Option<i64>,
     #[schema(min_length = 1, max_length = 128)]
     name: String,
     #[schema(value_type = crate::openapi::schema::UserTokenStatusSchema)]
@@ -34,6 +38,11 @@ pub(crate) struct UserTokenWriteRequest {
 
 impl UserTokenWriteRequest {
     pub(super) fn into_command(self) -> Result<UserTokenWriteCommand, ManagementError> {
+        let group_id = self
+            .group_id
+            .map(GroupId::new)
+            .transpose()
+            .map_err(|_| ManagementError::InvalidRequest)?;
         UserTokenWriteCommand::new(
             self.name,
             self.status,
@@ -43,7 +52,15 @@ impl UserTokenWriteRequest {
             self.model_limits,
             self.allow_ips,
         )
+        .map(|command| command.with_group_id(group_id))
         .map_err(|_| ManagementError::InvalidRequest)
+    }
+
+    pub(super) fn into_update_command(self) -> Result<UserTokenWriteCommand, ManagementError> {
+        if self.group_id.is_some() {
+            return Err(ManagementError::InvalidRequest);
+        }
+        self.into_command()
     }
 }
 
@@ -54,6 +71,13 @@ impl UserTokenWriteRequest {
 pub(crate) struct UserTokenResponse {
     #[schema(minimum = 1)]
     id: i64,
+    /// 固定分组；null 表示跟随用户默认分组。
+    #[schema(minimum = 1, required = true)]
+    group_id: Option<i64>,
+    /// 当前解析的实际分组。
+    #[schema(minimum = 1)]
+    effective_group_id: i64,
+    group_display_name: String,
     /// 不可用于鉴权的 18 字符展示前缀。
     #[schema(
         min_length = 18,
@@ -92,6 +116,9 @@ impl UserTokenResponse {
     pub(crate) fn from_application(token: &UserToken) -> Self {
         Self {
             id: token.token_id().get(),
+            group_id: token.group_id().map(GroupId::get),
+            effective_group_id: token.effective_group_id().get(),
+            group_display_name: token.group_display_name().to_owned(),
             key_prefix: token.key_prefix().to_owned(),
             name: token.name().to_owned(),
             status: token.status(),

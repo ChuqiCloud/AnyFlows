@@ -19,6 +19,8 @@ pub struct Model {
     pub user_id: i64,
     pub token_id: i64,
     pub group_id: i64,
+    /// 签发请求时固化的来源分组；历史 NULL 沿用 group_id。
+    pub billing_source_group_id: Option<i64>,
     #[sea_orm(column_type = "Char(Some(32))")]
     pub idempotency_key: SensitiveString,
     #[sea_orm(column_type = "String(StringLen::N(64))")]
@@ -148,6 +150,10 @@ impl ActiveModelBehavior for ActiveModel {
             ]
             .into_iter()
             .any(|value| value.is_none_or(|value| value <= 0))
+            || self
+                .billing_source_group_id
+                .try_as_ref()
+                .is_some_and(|value| value.is_some_and(|value| value <= 0))
             || self.state.try_as_ref().copied() != Some(1)
             || self.version.try_as_ref().copied() != Some(1)
             || self.attempt_key.try_as_ref().is_some_and(Option::is_some)
