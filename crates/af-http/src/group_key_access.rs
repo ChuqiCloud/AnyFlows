@@ -114,11 +114,12 @@ pub fn build_group_key_access_router(
     authenticator: Arc<dyn SessionAuthenticator>,
     config: &af_config::ServerConfig,
 ) -> Router {
-    crate::router::build_router_with_routes(
+    crate::router::build_router_with_routes_and_frontend(
         authenticated_routes(service, authenticator),
         Router::new(),
         config,
         32 * 1024,
+        None,
     )
 }
 

@@ -1523,8 +1523,16 @@ mod tests {
         assert_eq!(
             pricing.calls.lock().unwrap().as_slice(),
             &[
-                ("gpt-routed".to_owned(), GroupId::new(3).unwrap(), GroupId::new(4).unwrap()),
-                ("gpt-routed".to_owned(), GroupId::new(3).unwrap(), GroupId::new(4).unwrap()),
+                (
+                    "gpt-routed".to_owned(),
+                    GroupId::new(3).unwrap(),
+                    GroupId::new(4).unwrap()
+                ),
+                (
+                    "gpt-routed".to_owned(),
+                    GroupId::new(3).unwrap(),
+                    GroupId::new(4).unwrap()
+                ),
             ]
         );
     }

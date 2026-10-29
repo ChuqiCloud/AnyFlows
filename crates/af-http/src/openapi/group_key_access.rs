@@ -75,7 +75,11 @@ fn update_admin_group_key_policy() {}
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(list_user_token_groups, get_admin_group_key_policy, update_admin_group_key_policy),
+    paths(
+        list_user_token_groups,
+        get_admin_group_key_policy,
+        update_admin_group_key_policy
+    ),
     components(schemas(
         GroupKeySelectionMode,
         AdminGroupKeyPolicyResponse,
