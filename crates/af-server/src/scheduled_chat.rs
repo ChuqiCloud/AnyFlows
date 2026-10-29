@@ -38,7 +38,7 @@ use af_adapter::{
 };
 use af_config::RelaySettings;
 use af_db::{
-    AdminGroupLookupOutcome, AdminGroupRepository, ChannelStateRepository,
+    AdminGroupLookupOutcome, AdminGroupRepository, AdminModelRepository, ChannelStateRepository,
     CredentialStateRepository, SmartRouteRuntimeRepository,
 };
 use af_domain::{
@@ -151,6 +151,7 @@ pub(crate) struct ScheduledChatService {
     channel_states: Option<ChannelStateRepository>,
     debug_trace: Option<DebugTraceRuntime>,
     groups: Option<AdminGroupRepository>,
+    model_call_admission: Option<AdminModelRepository>,
     smart_routes: Option<Arc<dyn SmartRouteResolver>>,
     smart_route_feedback: Option<SmartRouteRuntimeRepository>,
     utc_date_clock: Arc<UtcDateClock>,
@@ -183,6 +184,7 @@ impl ScheduledChatService {
             channel_states: None,
             debug_trace: None,
             groups: None,
+            model_call_admission: None,
             smart_routes: None,
             smart_route_feedback: None,
             utc_date_clock: Arc::new(crate::utc_time::current_utc_date),
@@ -260,6 +262,23 @@ impl ScheduledChatService {
     pub(crate) fn with_group_repository(mut self, repository: AdminGroupRepository) -> Self {
         self.groups = Some(repository);
         self
+    }
+
+    /// 注入模型目录仓储，以区分无效目录模型和合法模型的无路由状态。
+    pub(crate) fn with_model_call_admission(mut self, repository: AdminModelRepository) -> Self {
+        self.model_call_admission = Some(repository);
+        self
+    }
+
+    pub(super) async fn missing_model_route_error(&self, model: &str) -> AfError {
+        let Some(repository) = &self.model_call_admission else {
+            return af_domain::UpstreamError::ModelUnsupported.into();
+        };
+        match repository.is_model_in_call_catalog(model).await {
+            Ok(true) => af_domain::UpstreamError::ModelUnsupported.into(),
+            Ok(false) => AfError::ModelUnavailable,
+            Err(_) => AfError::Internal,
+        }
     }
 
     /// 注入管理员智能路由运行时仓储；普通 API Key 不消费该额外规则源。
@@ -602,7 +621,7 @@ impl ScheduledChatService {
             return Err(if health_filtered {
                 af_domain::UpstreamError::overloaded().into()
             } else {
-                af_domain::UpstreamError::ModelUnsupported.into()
+                self.missing_model_route_error(&routed_model).await
             });
         }
         let machine = RelayStateMachine::new(relay_candidates)
@@ -1130,13 +1149,15 @@ impl ScheduledChatService {
                 }
             }
         }
-        Err(if unhealthy_route_seen {
-            af_domain::UpstreamError::overloaded().into()
+        if unhealthy_route_seen {
+            Err(af_domain::UpstreamError::overloaded().into())
         } else if incompatible_route_seen {
-            AfError::InvalidRequest
+            Err(AfError::InvalidRequest)
         } else {
-            af_domain::UpstreamError::ModelUnsupported.into()
-        })
+            Err(self
+                .missing_model_route_error(&request.canonical().model)
+                .await)
+        }
     }
 }
 
@@ -2048,6 +2069,124 @@ mod tests {
             .unwrap();
 
         assert_eq!(plan.target_group_id(), GroupId::new(7).unwrap());
+    }
+
+    #[tokio::test]
+    async fn missing_routes_distinguish_call_catalog_models_for_every_subject() {
+        use af_db::{
+            AdminModelCreateRecord, AdminModelLifecycleRecord, AdminModelModalitiesRecord,
+            AdminModelVisibilityRecord, AdminModelWriteRecord,
+        };
+        use af_domain::{
+            OrganizationId, OrganizationServiceAccountId, OrganizationServiceAccountKey,
+            OrganizationServiceAccountLocator, OrganizationServiceAccountRuntimeIdentity,
+        };
+
+        let pool = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let catalog = AdminModelRepository::new(pool.clone(), Duration::from_secs(2)).unwrap();
+        for (model, lifecycle) in [
+            ("active-model", AdminModelLifecycleRecord::Active),
+            ("deprecated-model", AdminModelLifecycleRecord::Deprecated),
+            ("hidden-active-model", AdminModelLifecycleRecord::Active),
+            ("draft-model", AdminModelLifecycleRecord::Draft),
+            ("retired-model", AdminModelLifecycleRecord::Retired),
+            ("deleted-model", AdminModelLifecycleRecord::Active),
+        ] {
+            let record = catalog
+                .create(AdminModelCreateRecord::new(
+                    model.to_owned(),
+                    AdminModelWriteRecord::new(
+                        model.to_owned(),
+                        "provider".to_owned(),
+                        None,
+                        None,
+                        Vec::new(),
+                        None,
+                        AdminModelModalitiesRecord::new(true, false, false, false),
+                        AdminModelModalitiesRecord::new(true, false, false, false),
+                        false,
+                        false,
+                        if model == "hidden-active-model" {
+                            AdminModelVisibilityRecord::Hidden
+                        } else {
+                            AdminModelVisibilityRecord::Public
+                        },
+                        lifecycle,
+                    ),
+                ))
+                .await
+                .unwrap();
+            if model == "deleted-model" {
+                catalog.delete(record.model_id()).await.unwrap();
+            }
+        }
+        let groups = AdminGroupRepository::new(pool.clone(), Duration::from_secs(2)).unwrap();
+        let group = groups
+            .create(group_record("model-call-admission", None))
+            .await
+            .unwrap();
+        let group_id = group.group_id();
+        let service = service(Vec::new())
+            .await
+            .with_group_repository(groups)
+            .with_model_call_admission(catalog);
+        let user = principal(group_id.get());
+        let playground = GatewayPrincipal::playground(user.token_id(), user.user_id(), group_id);
+        let identity = OrganizationServiceAccountRuntimeIdentity::new(
+            OrganizationServiceAccountLocator::new(
+                OrganizationId::new(11).unwrap(),
+                OrganizationServiceAccountId::new(12).unwrap(),
+            ),
+            OrganizationServiceAccountKey::new([13; 16]).unwrap(),
+            OrganizationServiceAccountKey::new([14; 16]).unwrap(),
+        );
+        for subject in [
+            ModelSubject::User(user),
+            ModelSubject::User(playground),
+            ModelSubject::ServiceAccount {
+                identity,
+                group_id,
+                concurrency: ConcurrencyLimit::new(1).unwrap(),
+            },
+        ] {
+            for (model, callable) in [
+                ("active-model", true),
+                ("deprecated-model", true),
+                ("hidden-active-model", true),
+                ("draft-model", false),
+                ("retired-model", false),
+                ("deleted-model", false),
+                ("unknown-model", false),
+                ("ACTIVE-MODEL", false),
+            ] {
+                let error = service
+                    .prepare_route_selection(
+                        subject,
+                        &request_for_model(model),
+                        Protocol::OpenAiChat,
+                        "request-model-call-admission",
+                        None,
+                    )
+                    .await
+                    .err()
+                    .unwrap();
+                assert_eq!(
+                    error,
+                    if callable {
+                        AfError::Upstream(UpstreamError::ModelUnsupported)
+                    } else {
+                        AfError::ModelUnavailable
+                    },
+                    "unexpected missing route classification for {model}",
+                );
+            }
+        }
+        pool.close().await.unwrap();
     }
 
     #[tokio::test]

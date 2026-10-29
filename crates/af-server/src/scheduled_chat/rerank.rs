@@ -42,21 +42,29 @@ impl RerankRoutePlanner for ScheduledChatService {
                 let (channel_ids, channel_health) = self
                     .load_channel_health(principal.group_id(), request.model())
                     .await?;
-                self.scheduler
+                let route = self
+                    .scheduler
                     .route_plan_with_health(principal.group_id(), request.model(), &channel_health)
-                    .map_err(map_scheduler_error)?
-                    .ok_or_else(|| {
-                        AfError::from(if channel_ids.is_empty() {
-                            af_domain::UpstreamError::ModelUnsupported
+                    .map_err(map_scheduler_error)?;
+                match route {
+                    Some(route) => route,
+                    None => {
+                        return Err(if channel_ids.is_empty() {
+                            self.missing_model_route_error(request.model()).await
                         } else {
-                            af_domain::UpstreamError::overloaded()
-                        })
-                    })?
+                            AfError::from(af_domain::UpstreamError::overloaded())
+                        });
+                    }
+                }
             } else {
-                self.scheduler
+                let route = self
+                    .scheduler
                     .route_plan(principal.group_id(), request.model())
-                    .map_err(map_scheduler_error)?
-                    .ok_or_else(|| AfError::from(af_domain::UpstreamError::ModelUnsupported))?
+                    .map_err(map_scheduler_error)?;
+                match route {
+                    Some(route) => route,
+                    None => return Err(self.missing_model_route_error(request.model()).await),
+                }
             };
             let (jina_health, cohere_health) = tokio::join!(
                 self.load_credential_health(&route, Protocol::JinaRerank, request.model()),
@@ -209,7 +217,7 @@ impl ScheduledChatService {
             return Err(if health_filtered {
                 af_domain::UpstreamError::overloaded().into()
             } else {
-                af_domain::UpstreamError::ModelUnsupported.into()
+                self.missing_model_route_error(&model).await
             });
         }
         let machine = RelayStateMachine::new(relay_candidates)

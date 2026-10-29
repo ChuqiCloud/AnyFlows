@@ -752,6 +752,16 @@ async fn seed_dashboard(database_url: &str) {
             ],
         )).await.unwrap();
     }
+    connection.execute(Statement::from_sql_and_values(
+        DbBackend::Sqlite,
+        "INSERT INTO models (model, display_name, provider, tags, supports_text_input, supports_text_output, visibility, lifecycle, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+        [
+            "gpt-test".into(), "GPT Test".into(), "test".into(), "[]".into(),
+            true.into(), true.into(), 1_i16.into(), 2_i16.into(),
+            TimeDateTimeWithTimeZone::from_unix_timestamp(usage_time - 60).unwrap().into(),
+            TimeDateTimeWithTimeZone::from_unix_timestamp(usage_time - 60).unwrap().into(),
+        ],
+    )).await.unwrap();
     for (id, outcome, error_kind) in [
         (7_512_i64, 1_i16, None),
         (7_513, 2, Some("upstream_network")),

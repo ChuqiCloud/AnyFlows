@@ -250,6 +250,9 @@ pub enum AfError {
     /// 请求模型未被当前下游令牌策略允许。
     #[error("下游令牌不允许请求的模型")]
     ModelNotAllowed,
+    /// 请求的模型不存在，或已退出可调用目录。
+    #[error("请求模型不存在或不可用")]
+    ModelUnavailable,
     /// 当前认证用户范围内不存在指定异步任务。
     #[error("异步任务不存在")]
     TaskNotFound,
