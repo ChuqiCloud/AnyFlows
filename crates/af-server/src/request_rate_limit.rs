@@ -535,23 +535,25 @@ mod tests {
     async fn service_model_group_policy_intersects_grants_without_expanding_them()
     -> Result<(), Box<dyn std::error::Error>> {
         use af_admin::ServiceAccountModelAuthenticator as _;
-        use sea_orm::{ConnectionTrait, DbBackend, Statement};
-
         let pool = af_db::connect_and_migrate(
             &af_db::DatabaseOptions::new("sqlite::memory:")?,
             af_db::MigrationOptions::default(),
         )
         .await?;
-        pool.connection()
-            .execute(Statement::from_sql_and_values(
-                DbBackend::Sqlite,
-                "INSERT INTO groups (id, name, display_name, flags) VALUES (?, ?, ?, ?)",
-                [
-                    5_i64.into(),
-                    "service-group".into(),
-                    "Service group".into(),
-                    "{}".into(),
-                ],
+        let group = af_db::AdminGroupRepository::new(pool.clone(), Duration::from_secs(2))?;
+        let created = group
+            .create(af_db::AdminGroupWriteRecord::new(
+                "service-group".into(),
+                "Service group".into(),
+                1_000_000,
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                serde_json::json!({}),
             ))
             .await?;
         let repository =
@@ -569,6 +571,7 @@ mod tests {
         let original = FixedServiceAuthenticator
             .authenticate_models(&digest)
             .await?;
+        assert_eq!(created.group_id(), original.group_id());
         // 无分组策略时完整保留服务凭据自己的模型权限和准入参数。
         assert_eq!(runtime.authenticate_models(&digest).await?, original);
 
