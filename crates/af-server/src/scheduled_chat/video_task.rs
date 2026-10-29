@@ -398,22 +398,24 @@ impl ScheduledChatService {
     ) -> Result<IndexedRoutePlan, AfError> {
         if self.health.is_some() {
             let (channel_ids, channel_health) = self.load_channel_health(group_id, model).await?;
-            return self
+            let route = self
                 .scheduler
                 .route_plan_with_health(group_id, model, &channel_health)
-                .map_err(map_scheduler_error)?
-                .ok_or_else(|| {
-                    AfError::from(if channel_ids.is_empty() {
-                        af_domain::UpstreamError::ModelUnsupported
-                    } else {
-                        af_domain::UpstreamError::overloaded()
-                    })
-                });
+                .map_err(map_scheduler_error)?;
+            return match route {
+                Some(route) => Ok(route),
+                None if channel_ids.is_empty() => Err(self.missing_model_route_error(model).await),
+                None => Err(af_domain::UpstreamError::overloaded().into()),
+            };
         }
-        self.scheduler
+        let route = self
+            .scheduler
             .route_plan(group_id, model)
-            .map_err(map_scheduler_error)?
-            .ok_or_else(|| af_domain::UpstreamError::ModelUnsupported.into())
+            .map_err(map_scheduler_error)?;
+        match route {
+            Some(route) => Ok(route),
+            None => Err(self.missing_model_route_error(model).await),
+        }
     }
 
     /// 只在当前路由仍命中冻结目标分组时提交视频任务。
@@ -582,11 +584,12 @@ impl ScheduledChatService {
             }
         }
         if candidates.is_empty() {
-            return Err(AfError::from(if health_filtered {
-                af_domain::UpstreamError::overloaded()
+            return Err(if health_filtered {
+                AfError::from(af_domain::UpstreamError::overloaded())
             } else {
-                af_domain::UpstreamError::ModelUnsupported
-            })
+                self.missing_model_route_error(request.model().as_str())
+                    .await
+            }
             .into());
         }
 

@@ -163,7 +163,9 @@ mod invitation;
 mod invitation_tests;
 mod invite_rebate;
 mod migration;
+mod model_call_admission;
 mod model_catalog_metadata;
+mod model_observability;
 mod model_price;
 mod model_price_admin;
 #[cfg(test)]
@@ -468,7 +470,7 @@ pub use migration::{
     MigrationOptions, MigratorExtension, PUBLIC_MIGRATION_TABLE_NAME, run_pending_migrations,
     run_pending_migrations_with,
 };
-pub use model_catalog_metadata::ModelCatalogMetadataPageRecord;
+pub use model_catalog_metadata::{ModelCatalogAudience, ModelCatalogMetadataPageRecord};
 pub use model_price::{
     MAX_MODEL_PRICE_ENTRIES, MAX_MODEL_PRICE_EXPRESSION_BYTES, ModelPriceBillingMode,
     ModelPriceRecord, ModelPriceRepository, ModelPriceRepositoryError,

@@ -4,8 +4,8 @@ use af_domain::{
     ChannelId, GroupId, Operation, OrganizationId, OrganizationTeamId, Protocol, TokenId, UserId,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DbErr, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
-    SqlErr, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, Condition, DbErr, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect, Set, SqlErr, TransactionTrait,
 };
 use thiserror::Error;
 use tokio::time::timeout;
@@ -752,6 +752,16 @@ impl RequestOutcomeRepository {
     > {
         let mut query = request_outcome_logs::Entity::find()
             .filter(request_outcome_logs::Column::Outcome.eq(FAILED_OUTCOME))
+            // Preserve real routed failures even after metadata is retired or
+            // deleted. Only pre-routing rejections require a current model.
+            .filter(
+                Condition::any()
+                    .add(request_outcome_logs::Column::ChannelId.is_not_null())
+                    .add(crate::model_observability::current_callable_model_predicate((
+                        request_outcome_logs::Entity,
+                        request_outcome_logs::Column::Model,
+                    ))),
+            )
             .order_by_desc(request_outcome_logs::Column::Id)
             .find_also_related(users::Entity)
             .limit((limit + 1) as u64);

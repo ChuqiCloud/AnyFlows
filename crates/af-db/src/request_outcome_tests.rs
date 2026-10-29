@@ -1,6 +1,6 @@
 use std::{error::Error, time::Duration};
 
-use af_domain::{GroupId, Operation, OrganizationId, Protocol, TokenId, UserId};
+use af_domain::{ChannelId, GroupId, Operation, OrganizationId, Protocol, TokenId, UserId};
 use sea_orm::{ActiveModelTrait, ConnectionTrait, EntityTrait, PaginatorTrait, Set, Statement};
 
 use super::{
@@ -8,7 +8,10 @@ use super::{
     RequestOutcomeRepository, RequestOutcomeRepositoryError, RequestOutcomeSubject,
     RequestOutcomeWrite, RequestOutcomeWriteOutcome,
 };
-use crate::entity::{analytics_export_outbox_events, groups, request_outcome_logs, users};
+use crate::entity::{
+    HeaderOverrides, SensitiveJson, analytics_export_outbox_events, channels, groups, models,
+    request_outcome_logs, users,
+};
 
 #[tokio::test]
 async fn failed_call_pages_enforce_user_and_organization_scope() -> Result<(), Box<dyn Error>> {
@@ -16,6 +19,32 @@ async fn failed_call_pages_enforce_user_and_organization_scope() -> Result<(), B
         &DatabaseOptions::new("sqlite::memory:")?,
         MigrationOptions::default(),
     )
+    .await?;
+    models::ActiveModel {
+        model: Set("test-model".to_owned()),
+        display_name: Set("Test model".to_owned()),
+        provider: Set("test".to_owned()),
+        tags: Set(serde_json::json!([])),
+        supports_text_input: Set(true),
+        supports_text_output: Set(true),
+        visibility: Set(1),
+        lifecycle: Set(2),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    models::ActiveModel {
+        model: Set("disabled-model".to_owned()),
+        display_name: Set("Disabled model".to_owned()),
+        provider: Set("test".to_owned()),
+        tags: Set(serde_json::json!([])),
+        supports_text_input: Set(true),
+        supports_text_output: Set(true),
+        visibility: Set(1),
+        lifecycle: Set(4),
+        ..Default::default()
+    }
+    .insert(pool.connection())
     .await?;
     let group = groups::ActiveModel {
         name: Set("failed-call-tests".to_owned()),
@@ -95,21 +124,57 @@ async fn failed_call_pages_enforce_user_and_organization_scope() -> Result<(), B
         )?)
         .await?;
 
+    for (request_id, model) in [
+        ("unknown-model-failure", "unknown-model"),
+        ("disabled-model-failure", "disabled-model"),
+    ] {
+        repository
+            .record(&RequestOutcomeWrite::failed(
+                request_id,
+                Protocol::OpenAiChat,
+                Operation::Chat,
+                model,
+                RequestFailureKind::UpstreamModel,
+                None,
+                Duration::from_millis(9),
+            )?)
+            .await?;
+    }
+    repository
+        .record(&RequestOutcomeWrite::failed_for_subject(
+            "denied-model-failure",
+            Protocol::OpenAiChat,
+            Operation::Chat,
+            "test-model",
+            RequestOutcomeSubject::new(
+                owner,
+                TokenId::new(owner.get())?,
+                GroupId::new(group.id)?,
+                None,
+                None,
+            ),
+            RequestFailureKind::ModelNotAllowed,
+            None,
+            Duration::from_millis(9),
+        )?)
+        .await?;
+
     let (logs, cursor) = repository
         .list_failed_for_user(owner, None, 2)
         .await?
         .into_parts();
     assert_eq!(logs.len(), 2);
-    assert_eq!(logs[0].request_id(), "other-organization");
-    assert_eq!(logs[1].request_id(), "own-second");
+    assert_eq!(logs[0].request_id(), "denied-model-failure");
+    assert_eq!(logs[1].request_id(), "other-organization");
     assert_eq!(cursor, Some(logs[1].id()));
     let (logs, cursor) = repository
         .list_failed_for_user(owner, cursor, 2)
         .await?
         .into_parts();
-    assert_eq!(logs.len(), 1);
-    assert_eq!(logs[0].request_id(), "own-first");
-    assert_eq!(logs[0].username(), Some("failure-owner"));
+    assert_eq!(logs.len(), 2);
+    assert_eq!(logs[0].request_id(), "own-second");
+    assert_eq!(logs[1].request_id(), "own-first");
+    assert_eq!(logs[1].username(), Some("failure-owner"));
     assert_eq!(cursor, None);
 
     let (logs, _) = repository
@@ -129,13 +194,77 @@ async fn failed_call_pages_enforce_user_and_organization_scope() -> Result<(), B
     assert!(logs.iter().all(|log| log.user_id() == Some(owner)));
 
     let (logs, _) = repository.list_failed(None, 10).await?.into_parts();
-    assert_eq!(logs.len(), 5);
-    assert_eq!(logs[0].request_id(), "legacy-failure");
-    assert_eq!(logs[0].user_id(), None);
+    assert_eq!(logs.len(), 6);
+    assert_eq!(logs[0].request_id(), "denied-model-failure");
+    assert_eq!(logs[1].request_id(), "legacy-failure");
+    assert_eq!(logs[1].user_id(), None);
     assert_eq!(
-        logs[0].public_error_code(),
+        logs[1].public_error_code(),
         RequestFailureKind::UpstreamServer.public_error_code()
     );
+    assert!(
+        logs.iter()
+            .any(|log| log.request_id() == "denied-model-failure")
+    );
+    assert!(logs.iter().all(|log| {
+        !matches!(
+            log.request_id(),
+            "unknown-model-failure" | "disabled-model-failure"
+        )
+    }));
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_call_pages_preserve_real_upstream_failures_without_catalog_metadata()
+-> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let channel = channels::ActiveModel {
+        name: Set("historical-failure".to_owned()),
+        r#type: Set("openai".to_owned()),
+        protocol: Set("openai_chat".to_owned()),
+        status: Set(1),
+        weight: Set(1),
+        priority: Set(0),
+        auto_ban: Set(false),
+        model_mapping: Set(serde_json::json!({})),
+        param_override: Set(serde_json::json!({})),
+        header_override: Set(HeaderOverrides::validate(serde_json::json!({}))?),
+        used_quota: Set(0),
+        settings: Set(SensitiveJson::from(serde_json::json!({}))),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    let repository = RequestOutcomeRepository::new(pool.clone());
+    for (request_id, channel_id) in [
+        ("unknown-before-routing", None),
+        (
+            "historical-upstream-failure",
+            Some(ChannelId::new(channel.id)?),
+        ),
+    ] {
+        repository
+            .record(&RequestOutcomeWrite::failed(
+                request_id,
+                Protocol::OpenAiChat,
+                Operation::Chat,
+                "not-in-product-catalog",
+                RequestFailureKind::UpstreamModel,
+                channel_id,
+                Duration::from_millis(9),
+            )?)
+            .await?;
+    }
+    let (logs, cursor) = repository.list_failed(None, 10).await?.into_parts();
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs[0].request_id(), "historical-upstream-failure");
+    assert_eq!(cursor, None);
     pool.close().await?;
     Ok(())
 }

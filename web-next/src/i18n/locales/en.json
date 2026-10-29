@@ -2170,7 +2170,7 @@
       "tagsHint": "Press Enter to add. Comma-separated and line-separated pasted lists are supported.",
       "contextHint": "Leave empty when there is no verified value. The service never guesses from the model name.",
       "capabilitiesHint": "Select at least one modality in each direction and record only verified capabilities.",
-      "visibilityHint": "Controls which audience may see this product in a future composed model catalog.",
+      "visibilityHint": "Choose whether the public, signed-in, or admin catalog can show this model.",
       "lifecycleHint": "Draft, active, deprecated, and retired are explicit operational stages.",
       "conflict": "This Canonical model identifier already exists. Edit the existing record or choose another identifier.",
       "submitError": "The model could not be saved. Check the fields and try again."
@@ -2217,7 +2217,7 @@
     "visibility": {
       "public": "Public",
       "authenticated": "Signed-in users",
-      "hidden": "Management only"
+      "hidden": "Admin only"
     },
     "lifecycle": {
       "draft": "Draft",
@@ -2267,7 +2267,7 @@
         "displayNameFor": "Display name for {{model}}",
         "shared": "Shared batch fields",
         "sharedHint": "Provider and capabilities apply to the entire batch. Nothing is inferred from model names.",
-        "boundary": "Models are always created as management-only drafts. Pricing, public visibility, and channel mappings are not changed. Any conflict fails the whole batch.",
+        "boundary": "Models are always created as admin-only drafts. Pricing, public visibility, and channel mappings are not changed. Any conflict fails the whole batch.",
         "submit": "Confirm import",
         "importing": "Importing",
         "success_one": "Created {{count}} hidden model draft. Continue its review in the model catalog.",
@@ -3295,7 +3295,7 @@
       "filteredTitle": "No matching models",
       "filteredBody": "Adjust the search term or filters.",
       "admin": {
-        "visibility": "The guest catalog requires public visibility. Signed-in catalogs also accept authenticated visibility.",
+        "visibility": "The guest catalog accepts public models. Regular signed-in catalogs also accept authenticated models; admin catalogs additionally accept admin-only models.",
         "lifecycle": "Lifecycle must be active or deprecated. Hidden drafts are never published automatically.",
         "pricing": "A valid price is required. Signed-in catalogs also require a callable channel for the current group.",
         "action": "Open model management"

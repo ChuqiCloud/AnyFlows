@@ -230,6 +230,9 @@ fn classify_error(error: AfError) -> MappedError {
         AfError::ModelNotAllowed => {
             MappedError::new(PublicErrorCode::ModelNotFound, "token_model_not_allowed")
         }
+        AfError::ModelUnavailable => {
+            MappedError::new(PublicErrorCode::ModelNotFound, "model_not_found")
+        }
         AfError::TaskNotFound => MappedError::new(PublicErrorCode::TaskNotFound, "task_not_found"),
         AfError::IdempotencyConflict => {
             MappedError::new(PublicErrorCode::IdempotencyConflict, "idempotency_conflict")

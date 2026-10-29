@@ -9,6 +9,7 @@ use super::{
     AdminModelLookupOutcome, AdminModelModalitiesRecord, AdminModelMutationOutcome,
     AdminModelRepository, AdminModelRepositoryConfigError, AdminModelRepositoryError,
     AdminModelVisibilityRecord, AdminModelWriteRecord, DatabaseOptions, MigrationOptions,
+    ModelCatalogAudience,
 };
 use crate::entity::{SensitiveDecimal, SensitiveString, model_prices};
 
@@ -136,6 +137,94 @@ async fn list_uses_stable_cursor_and_conflicts_fail_closed() -> Result<(), Box<d
         fixture.repository.get(ModelId::new(99_999)?).await?,
         AdminModelLookupOutcome::NotFound
     ));
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn model_catalog_visibility_is_scoped_by_authenticated_audience() -> Result<(), Box<dyn Error>>
+{
+    let fixture = fixture().await?;
+    for (model, visibility, lifecycle) in [
+        (
+            "public-active",
+            AdminModelVisibilityRecord::Public,
+            AdminModelLifecycleRecord::Active,
+        ),
+        (
+            "authenticated-active",
+            AdminModelVisibilityRecord::Authenticated,
+            AdminModelLifecycleRecord::Active,
+        ),
+        (
+            "hidden-active",
+            AdminModelVisibilityRecord::Hidden,
+            AdminModelLifecycleRecord::Active,
+        ),
+        (
+            "hidden-deprecated",
+            AdminModelVisibilityRecord::Hidden,
+            AdminModelLifecycleRecord::Deprecated,
+        ),
+        (
+            "hidden-draft",
+            AdminModelVisibilityRecord::Hidden,
+            AdminModelLifecycleRecord::Draft,
+        ),
+        (
+            "hidden-retired",
+            AdminModelVisibilityRecord::Hidden,
+            AdminModelLifecycleRecord::Retired,
+        ),
+        (
+            "hidden-deleted",
+            AdminModelVisibilityRecord::Hidden,
+            AdminModelLifecycleRecord::Active,
+        ),
+    ] {
+        let created = fixture
+            .repository
+            .create(AdminModelCreateRecord::new(
+                model.to_owned(),
+                write_record(model, visibility, lifecycle),
+            ))
+            .await?;
+        if model == "hidden-deleted" {
+            fixture.repository.delete(created.model_id()).await?;
+        }
+    }
+
+    for (audience, expected) in [
+        (ModelCatalogAudience::Public, vec!["public-active"]),
+        (
+            ModelCatalogAudience::Authenticated,
+            vec!["authenticated-active", "public-active"],
+        ),
+        (
+            ModelCatalogAudience::Admin,
+            vec![
+                "authenticated-active",
+                "hidden-active",
+                "hidden-deprecated",
+                "public-active",
+            ],
+        ),
+    ] {
+        let page = fixture
+            .repository
+            .list_catalog_metadata(audience, None, 100)
+            .await?;
+        let (records, cursor) = page.into_parts();
+        assert_eq!(
+            records
+                .iter()
+                .map(|record| record.model())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(cursor, None);
+    }
 
     fixture.pool.close().await?;
     Ok(())
