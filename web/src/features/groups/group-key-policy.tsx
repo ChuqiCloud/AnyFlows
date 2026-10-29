@@ -80,7 +80,7 @@ function GroupKeyPolicyForm({ policy }: { policy: GroupKeyPolicy }) {
         </label>
         <p className="text-xs leading-5 text-muted-foreground">{t('groups.keyPolicy.revokeHint')}</p>
         {mutation.isError ? <p role="alert" className="text-xs text-destructive">{t('groups.keyPolicy.saveError')}</p> : null}
-        {mutation.isSuccess ? <p role="status" className="text-xs text-success">{t('groups.keyPolicy.saved')} {mutation.data.disabled_key_count > 0 ? `${t('groups.keyPolicy.disabledCount', { count: mutation.data.disabled_key_count })} ${t('groups.keyPolicy.disabledUserCount', { count: mutation.data.disabled_user_count })}` : ''}</p> : null}
+        {mutation.isSuccess ? <p role="status" className="text-xs text-success">{t('groups.keyPolicy.saved')} {t('groups.keyPolicy.disabledCount', { count: mutation.data.disabled_key_count })} {t('groups.keyPolicy.disabledUserCount', { count: mutation.data.disabled_user_count })}</p> : null}
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-[var(--hairline)] p-4">
         <p className="text-xs text-muted-foreground">{t('groups.keyPolicy.independentSave')}</p>
