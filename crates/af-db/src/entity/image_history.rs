@@ -44,3 +44,5 @@ impl Related<super::users::Entity> for Entity {
         Relation::Owner.def()
     }
 }
+
+impl ActiveModelBehavior for ActiveModel {}
