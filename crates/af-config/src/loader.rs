@@ -14,8 +14,8 @@ use serde::Serialize;
 use crate::{
     AlipayVerificationSettings, AppConfig, BillingSettings, ChannelProbeSettings, ConfigError,
     DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS, DEFAULT_AUTH_SESSION_TTL_SECS,
-    DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS, ServerConfig, SubscriptionSettings,
-    TelemetrySettings,
+    DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS, ImageStorageSettings, ServerConfig,
+    SubscriptionSettings, TelemetrySettings,
 };
 
 /// 默认配置文件名；文件不存在时兼容读取旧版 `anyflows.toml`。
@@ -34,6 +34,7 @@ struct ConfigDefaults {
     telemetry: TelemetrySettings,
     database: DatabaseDefaults,
     billing: BillingSettings,
+    image_storage: ImageStorageSettings,
     subscription: SubscriptionSettings,
     payment: PaymentDefaults,
     account_verification: AccountVerificationDefaults,
@@ -319,6 +320,8 @@ fn known_field(path: &str) -> Option<&'static str> {
         "billing.usage_record_queue_capacity" => "billing.usage_record_queue_capacity",
         "billing.usage_record_worker_count" => "billing.usage_record_worker_count",
         "billing.wal_directory" => "billing.wal_directory",
+        "image_storage" => "image_storage",
+        "image_storage.directory" => "image_storage.directory",
         "subscription" => "subscription",
         "subscription.enabled" => "subscription.enabled",
         "subscription.batch_size" => "subscription.batch_size",
@@ -484,6 +487,7 @@ mod tests {
                 config.billing().wal_directory(),
                 Path::new("data/billing-wal")
             );
+            assert_eq!(config.image_storage().directory(), Path::new("data/images"));
             assert!(config.subscription().enabled());
             assert_eq!(config.subscription().batch_size(), 64);
             assert_eq!(config.subscription().interval_secs(), 60);
@@ -1118,7 +1122,7 @@ mod tests {
     fn toml_values_override_defaults() {
         with_clean_env(|_| {
             let path = temp_file(
-                "[server]\nbind = '127.0.0.2:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\nhealth_check_timeout_secs = 3\n[billing]\nbatch_enabled = true\nflush_interval_secs = 11\nflush_timeout_secs = 17\nwal_directory = 'private-billing-wal'\n[subscription]\nenabled = false\nbatch_size = 48\ninterval_secs = 75\nmax_batches_per_run = 12\n[payment]\nstripe_secret_key = 'sk-test-secret'\nstripe_publishable_key = 'pk_test_public'\nstripe_webhook_secret = 'whsec-test-secret'\nstripe_signature_tolerance_secs = 42\n[auth]\nallow_query_api_key = true\nlookup_timeout_secs = 7\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\nproxy_url = 'socks5://127.0.0.1:10808'\n",
+                "[server]\nbind = '127.0.0.2:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\nhealth_check_timeout_secs = 3\n[billing]\nbatch_enabled = true\nflush_interval_secs = 11\nflush_timeout_secs = 17\nwal_directory = 'private-billing-wal'\n[image_storage]\ndirectory = '/srv/anyflows/image-canary'\n[subscription]\nenabled = false\nbatch_size = 48\ninterval_secs = 75\nmax_batches_per_run = 12\n[payment]\nstripe_secret_key = 'sk-test-secret'\nstripe_publishable_key = 'pk_test_public'\nstripe_webhook_secret = 'whsec-test-secret'\nstripe_signature_tolerance_secs = 42\n[auth]\nallow_query_api_key = true\nlookup_timeout_secs = 7\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\nproxy_url = 'socks5://127.0.0.1:10808'\n",
             );
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
@@ -1140,6 +1144,11 @@ mod tests {
                 Path::new("private-billing-wal")
             );
             assert!(!format!("{:?}", config.billing()).contains("private-billing-wal"));
+            assert_eq!(
+                config.image_storage().directory(),
+                Path::new("/srv/anyflows/image-canary")
+            );
+            assert!(!format!("{:?}", config.image_storage()).contains("image-canary"));
             assert!(!config.subscription().enabled());
             assert_eq!(config.subscription().batch_size(), 48);
             assert_eq!(config.subscription().interval_secs(), 75);
@@ -1341,6 +1350,10 @@ mod tests {
                 config.billing().wal_directory(),
                 Path::new("environment-billing-wal")
             );
+            assert_eq!(
+                config.image_storage().directory(),
+                Path::new("environment-image-store")
+            );
             assert!(!config.subscription().enabled());
             assert_eq!(config.subscription().batch_size(), 32);
             assert_eq!(config.subscription().interval_secs(), 90);
@@ -1429,6 +1442,7 @@ mod tests {
                 .env("AF_BILLING__FLUSH_INTERVAL_SECS", "19")
                 .env("AF_BILLING__FLUSH_TIMEOUT_SECS", "23")
                 .env("AF_BILLING__WAL_DIRECTORY", "environment-billing-wal")
+                .env("AF_IMAGE_STORAGE__DIRECTORY", "environment-image-store")
                 .env("AF_SUBSCRIPTION__ENABLED", "false")
                 .env("AF_SUBSCRIPTION__BATCH_SIZE", "32")
                 .env("AF_SUBSCRIPTION__INTERVAL_SECS", "90")
@@ -2077,9 +2091,33 @@ mod tests {
                     field: "billing.wal_directory"
                 }
             );
+            let path =
+                temp_file("[database]\nurl = 'sqlite::memory:'\n[image_storage]\ndirectory = ''\n");
+            let error = load_from(&path).unwrap_err();
+            let _ = fs::remove_file(path);
+            assert_eq!(
+                error,
+                ConfigError::EmptyValue {
+                    field: "image_storage.directory"
+                }
+            );
             let canary = "billing-path-secret-canary";
             let path = temp_file(&format!(
                 "[database]\nurl = 'sqlite::memory:'\n[billing]\nwal_directory = '{canary}'\nflush_timeout_secs = 'invalid'\n"
+            ));
+            let error = load_from(&path).unwrap_err();
+            let rendered = format!("{error:?}\n{error}");
+            let _ = fs::remove_file(path);
+            assert_eq!(
+                error,
+                ConfigError::InvalidField {
+                    field: "billing.flush_timeout_secs"
+                }
+            );
+            assert!(!rendered.contains(canary));
+            let canary = "image-storage-path-secret-canary";
+            let path = temp_file(&format!(
+                "[database]\nurl = 'sqlite::memory:'\n[image_storage]\ndirectory = '{canary}'\n[billing]\nflush_timeout_secs = 'invalid'\n"
             ));
             let error = load_from(&path).unwrap_err();
             let rendered = format!("{error:?}\n{error}");

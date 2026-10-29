@@ -43,6 +43,7 @@ sudo install -d -o root -g root -m 0755 /usr/local/libexec/anyflows
 sudo install -d -o root -g anyflows -m 0750 /etc/anyflows
 sudo install -d -o anyflows -g anyflows -m 0750 /var/lib/anyflows
 sudo install -d -o anyflows -g anyflows -m 0700 /var/lib/anyflows/billing-wal
+sudo install -d -o anyflows -g anyflows -m 0700 /var/lib/anyflows/images
 sudo install -o root -g root -m 0755 ./anyflows /usr/local/libexec/anyflows/anyflows
 sudo install -o root -g root -m 0755 ./anyflows-launcher /usr/local/libexec/anyflows/anyflows-launcher
 ```
@@ -71,6 +72,7 @@ AF_AUTH__SESSION_SIGNING_KEY=replace-with-session-signing-key
 AF_CREDENTIAL_ENCRYPTION__KEY_ID=primary
 AF_CREDENTIAL_ENCRYPTION__KEY=replace-with-credential-encryption-key
 AF_BILLING__WAL_DIRECTORY=/var/lib/anyflows/billing-wal
+AF_IMAGE_STORAGE__DIRECTORY=/var/lib/anyflows/images
 AF_TELEMETRY__LEVEL=info
 ```
 
@@ -94,6 +96,7 @@ curl --fail http://127.0.0.1:8080/readyz
 | 配置 | `/etc/anyflows/anyflows.env` |
 | SQLite 和运行数据 | `/var/lib/anyflows` |
 | 计费恢复日志（WAL） | `/var/lib/anyflows/billing-wal` |
+| 生图文件 | `/var/lib/anyflows/images` |
 
 程序只接受回环监听。使用同机反向代理提供外部访问。
 

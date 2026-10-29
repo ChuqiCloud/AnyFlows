@@ -3330,10 +3330,11 @@
     },
     "models": { "loading": "正在加载图片模型", "empty": "没有可用的图片模型", "error": "模型目录暂不可用", "count": "{{count}} 个图片模型", "loadMore": "加载更多" },
     "quality": { "standard": "标准", "hd": "高清" },
-    "gallery": { "title": "当前会话", "sessionCount": "{{count}} 张图片", "emptyTitle": "开始创作", "emptyBody": "选择模型并输入描述后即可生成。结果只保留在当前会话中。", "select": "选择图片：{{prompt}}" },
-    "detail": { "title": "所选图片", "empty": "选择图片后查看提示词和操作。" },
-    "actions": { "generate": "生成图片", "edit": "应用编辑", "submitting": "正在生成图片", "download": "下载", "copyPrompt": "复制提示词", "copied": "已复制", "continueEdit": "继续编辑", "settings": "图片参数", "close": "关闭参数面板", "removeFile": "移除文件", "retry": "重试", "refreshModels": "刷新模型" },
-    "status": { "generated": "图片已加入当前会话。", "downloaded": "已开始下载。", "downloadFailed": "无法下载这张图片。", "copyFailed": "无法复制提示词。" },
+    "gallery": { "title": "历史记录", "historyCount": "{{count}} 张图片", "emptyTitle": "开始创作", "emptyBody": "生成的图片会保存在账号历史中，可随时查看并继续编辑。", "select": "选择图片：{{prompt}}" },
+    "history": { "confirmClear": "清空当前账号保存的全部生图历史？", "confirmDelete": "删除这张生图历史？" },
+    "detail": { "title": "所选图片", "empty": "选择图片后查看提示词和操作。", "requestId": "请求 ID：{{id}}" },
+    "actions": { "generate": "生成图片", "edit": "应用编辑", "submitting": "正在生成图片", "download": "下载", "copyPrompt": "复制提示词", "copied": "已复制", "continueEdit": "继续编辑", "deleteImage": "删除这张图片", "clearHistory": "清空生图历史", "settings": "图片参数", "close": "关闭参数面板", "removeFile": "移除文件", "retry": "重试", "refreshModels": "刷新模型" },
+    "status": { "generated": "图片已加入历史记录。", "savingHistory": "图片已生成，正在保存历史。", "historySaveFailed": "图片已生成，但未能保存到历史记录。", "historyLoadFailed": "无法加载生图历史。", "imageDeleted": "图片历史已删除。", "imageDeleteFailed": "无法删除这张图片。", "downloaded": "已开始下载。", "downloadFailed": "无法下载这张图片。", "copyFailed": "无法复制提示词。", "historyCleared": "生图历史已清空。", "historyClearFailed": "无法清空生图历史。" },
     "errors": { "session_missing": "当前会话不可用，请重新登录后再提交请求。", "request_failed": "图片请求失败，请检查设置后重试。", "network_error": "无法连接图片服务。", "invalid_response": "图片服务返回的数据无法读取。", "continueFailed": "无法为编辑加载此图片。请先下载，再将其选为原图。", "modelRequired": "请选择生图模型。", "promptRequired": "请输入提示词。", "originalRequired": "请先选择原图。", "invalidImage": "请选择支持的图片文件。", "maskPngOnly": "蒙版必须是 PNG 图片。" }
   },
   "playground": {

@@ -38,6 +38,7 @@ mod email_settings_tests;
 mod gateway_model_auth;
 mod group_read;
 mod group_write;
+mod image_history;
 mod initial_setup;
 mod invitation;
 mod model_catalog;
@@ -173,6 +174,12 @@ pub use group_write::{
     AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError, AdminGroupWriter,
     DatabaseAdminGroupWriter, GroupPricingRuntimeRefreshError, GroupPricingRuntimeRefreshFuture,
     GroupPricingRuntimeRefresher, RuntimeRefreshingAdminGroupWriter,
+};
+pub use image_history::{
+    ImageHistoryContent, ImageHistoryEntry, ImageHistoryEntryParts, ImageHistoryError,
+    ImageHistoryFuture, ImageHistoryService, ImageHistoryServiceConfigError, ImageHistoryUpload,
+    LocalImageHistoryService, MAX_IMAGE_HISTORY_BYTES_PER_USER, MAX_IMAGE_HISTORY_IMAGE_BYTES,
+    MAX_IMAGE_HISTORY_PER_USER, MAX_IMAGE_HISTORY_THUMBNAIL_BYTES,
 };
 pub use initial_setup::{
     DatabaseInitialSetup, InitialSetup, InitialSetupCommand, InitialSetupError, InitialSetupFuture,

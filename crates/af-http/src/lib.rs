@@ -87,6 +87,7 @@ pub use verification_settings::build_verification_settings_router;
 mod payment_webhook;
 mod platform_audit;
 mod playground_conversations;
+mod playground_image_history;
 mod playground_shares;
 mod redemption;
 mod refund_webhook;
@@ -221,6 +222,8 @@ mod payment_settings_tests;
 mod payment_webhook_tests;
 #[cfg(test)]
 mod playground_conversations_tests;
+#[cfg(test)]
+mod playground_image_history_tests;
 #[cfg(test)]
 mod playground_shares_tests;
 #[cfg(test)]

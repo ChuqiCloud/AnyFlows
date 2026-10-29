@@ -503,6 +503,38 @@ impl Default for BillingSettings {
     }
 }
 
+/// 生图结果文件存储的启动期设置。
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ImageStorageSettings {
+    directory: PathBuf,
+}
+
+impl ImageStorageSettings {
+    /// 返回生图结果存储目录；相对路径以进程工作目录为基准。
+    #[must_use]
+    pub fn directory(&self) -> &Path {
+        &self.directory
+    }
+}
+
+impl Default for ImageStorageSettings {
+    fn default() -> Self {
+        Self {
+            directory: PathBuf::from("data/images"),
+        }
+    }
+}
+
+impl fmt::Debug for ImageStorageSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ImageStorageSettings")
+            .field("directory", &"<已配置>")
+            .finish()
+    }
+}
+
 /// 订阅窗口推进与到期迁移的启动期周期任务设置。
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default, deny_unknown_fields)]
@@ -1366,6 +1398,8 @@ pub struct AppConfig {
     #[serde(default)]
     billing: BillingSettings,
     #[serde(default)]
+    image_storage: ImageStorageSettings,
+    #[serde(default)]
     subscription: SubscriptionSettings,
     #[serde(default)]
     payment: PaymentSettings,
@@ -1418,6 +1452,12 @@ impl AppConfig {
     #[must_use]
     pub const fn billing(&self) -> &BillingSettings {
         &self.billing
+    }
+
+    /// 返回生图结果文件存储配置。
+    #[must_use]
+    pub const fn image_storage(&self) -> &ImageStorageSettings {
+        &self.image_storage
     }
 
     /// 返回订阅生命周期周期任务设置。
@@ -1632,6 +1672,11 @@ impl AppConfig {
         if self.billing.wal_directory.as_os_str().is_empty() {
             return Err(ConfigError::EmptyValue {
                 field: "billing.wal_directory",
+            });
+        }
+        if self.image_storage.directory.as_os_str().is_empty() {
+            return Err(ConfigError::EmptyValue {
+                field: "image_storage.directory",
             });
         }
         if self.subscription.batch_size == 0 {

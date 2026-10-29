@@ -1,10 +1,11 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{future::Future, pin::Pin, sync::Arc, time::Instant};
 
 use af_billing::{
     BillingPrechargePort, BillingRequestLifecycle, BillingRequestPlan, BillingSettlementPort,
+    BillingUsageContext, BillingUsageDimensions, BillingUsageObservation, BillingUsageTiming,
     RefundSignalPort, RequestPricingSnapshotSource, UsageRecordPort,
 };
-use af_domain::{AfError, ConcurrencyLimit, GatewayPrincipal, GroupId};
+use af_domain::{AfError, ConcurrencyLimit, GatewayPrincipal, GroupId, Protocol};
 use af_http::{ImageRequest, ImageService, ImageServiceFuture};
 use af_protocol::{
     CanonicalImageEditRequest, CanonicalImageGenerationRequest, ImageQuality, ImageSize,
@@ -13,7 +14,7 @@ use af_protocol::{
 use af_relay::ImageResponse;
 
 use crate::billing_chat::{
-    complete_with_retries, map_lifecycle_error, map_snapshot_error, new_reservation_id,
+    complete_with_observation_retries, map_lifecycle_error, map_snapshot_error, new_reservation_id,
     precharge_with_retries,
 };
 
@@ -130,6 +131,17 @@ impl BillingImageService {
             ImageRequest::Edit(request) => image_edit_usage_upper_bound(request)?,
         };
         let model = request.model().to_owned();
+        let observation_context = BillingUsageContext::new(
+            request_id,
+            &model,
+            Protocol::OpenAiImages,
+            request.operation(),
+            false,
+            None,
+            None,
+        )
+        .map_err(|_| AfError::Internal)?;
+        let started_at = Instant::now();
         let planned = self
             .inner
             .plan(principal, user_concurrency, request, request_id)
@@ -164,13 +176,35 @@ impl BillingImageService {
             // 上游缺失 usage 时保留公开响应事实，但不能把已经产生的图片成本退款。
             None => upper_bound,
         };
-        let _ = complete_with_retries(&mut lifecycle, settlement_usage)
-            .await
-            .map_err(map_lifecycle_error)?;
+        let observation = image_call_observation(observation_context, started_at.elapsed());
+        let _ = complete_with_observation_retries(
+            &mut lifecycle,
+            settlement_usage,
+            BillingUsageDimensions::empty(),
+            observation,
+        )
+        .await
+        .map_err(map_lifecycle_error)?;
         Ok(crate::RoutedExecution::new(
             ImageResponse::new(body, upstream_usage),
             channel_id,
         ))
+    }
+}
+
+fn image_call_observation(
+    context: BillingUsageContext,
+    duration: std::time::Duration,
+) -> BillingUsageObservation {
+    match BillingUsageTiming::new(None, duration) {
+        Ok(timing) => BillingUsageObservation::new(context, timing),
+        Err(_) => {
+            tracing::error!(
+                error_kind = "billing_usage_timing_overflow",
+                "Images 调用耗时无法安全持久化，本次计费继续完成"
+            );
+            BillingUsageObservation::default()
+        }
     }
 }
 
@@ -325,7 +359,7 @@ mod tests {
         ModelPriceCache, ModelPriceSource, ModelPriceSourceFuture, ModelPriceSourceRecord,
         PricingRatio, RefundSignalOutcome, SettlementRequest, TokenPrices, UsageRecordOutcome,
     };
-    use af_domain::{BillingReservationId, Quota, TokenId, UserId};
+    use af_domain::{BillingReservationId, Operation, Protocol, Quota, TokenId, UserId};
     use af_protocol::openai_images;
     use rust_decimal::Decimal;
 
@@ -379,6 +413,14 @@ mod tests {
         let records = fixture.usage.records.lock().unwrap();
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].usage().output_tokens().get(), 272);
+        let observation = records[0].observation();
+        let context = observation.context().unwrap();
+        assert_eq!(context.request_id(), "image-request-success");
+        assert_eq!(context.model(), "image-test");
+        assert_eq!(context.protocol(), Protocol::OpenAiImages);
+        assert_eq!(context.operation(), Operation::Image);
+        assert!(!context.stream());
+        assert!(observation.timing().is_some());
         assert!(fixture.refund.calls.lock().unwrap().is_empty());
     }
 

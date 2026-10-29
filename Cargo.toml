@@ -145,6 +145,7 @@ thiserror = "2.0.18"
 tiktoken-rs = { version = "0.12.0", default-features = false }
 time = { version = "0.3.55", default-features = false, features = ["std", "parsing"] }
 tokio = { version = "1.53.3", features = [
+    "fs",
     "macros",
     "net",
     "io-util",

@@ -1,6 +1,6 @@
 # 多节点部署
 
-多个应用节点通过负载均衡分担请求，共享数据库和 Redis。各节点使用相同版本及密钥，分别保留本地计费恢复日志。
+多个应用节点通过负载均衡分担请求，共享数据库和 Redis。各节点使用相同版本及密钥，分别保留本地计费恢复日志；生图文件目录则必须指向所有节点都可读写的同一共享目录。
 
 ## 部署结构
 
@@ -27,6 +27,7 @@ AnyFlows 只接受回环监听。每个应用节点配置同机代理，负载�
 - 使用同一个 Redis 实例和逻辑数据库，共享限流、并发控制、账号调度状态和 OAuth 刷新租约。不同环境使用独立 Redis 实例或逻辑库；请求限流 namespace 仅隔离限流键。
 - 每个节点使用同一版本程序、相同的会话签名密钥、凭据加密密钥与标识、请求限流 namespace，以及一致的对外站点地址。
 - 每个节点使用独立持久数据目录和 WAL 目录。故障节点的磁盘及 WAL 需保留，用于恢复尚未完成的计费记录。
+- 所有节点的 `AF_IMAGE_STORAGE__DIRECTORY` 必须挂载到同一个共享文件系统目录，并对各节点服务账号开放读写权限。图片元数据保存在共享数据库，若文件仍位于单节点本地磁盘，请求切换到其他节点时无法读取对应图片。
 - 使用外部前端模板时，将相同版本的模板文件分发到所有节点，并分别重新扫描。
 
 数据库和 Redis 仅允许应用节点访问，账号按需授权；两者的备份与高可用单独配置。
@@ -46,6 +47,7 @@ AF_CREDENTIAL_ENCRYPTION__KEY_ID=primary
 AF_CREDENTIAL_ENCRYPTION__KEY=所有节点相同的32字节Base64URL密钥
 AF_REDIS__REQUEST_RATE_LIMIT_NAMESPACE=anyflows.gateway.rpm.v1
 AF_BILLING__WAL_DIRECTORY=/var/lib/anyflows/billing-wal
+AF_IMAGE_STORAGE__DIRECTORY=/mnt/anyflows/images
 ```
 
 MySQL 连接格式为 `mysql://用户:密码@主机:3306/数据库`。连接 URL 中密码的特殊字符需进行 URL 编码。
@@ -64,6 +66,8 @@ curl --fail http://127.0.0.1:8080/readyz
 在其他服务器安装相同版本，启动前通过受限配置文件或密钥管理系统写入相同的数据库、Redis 连接信息和密钥。
 
 各节点可使用相同的 WAL 路径名称，如 `/var/lib/anyflows/billing-wal`，但目录必须由各实例独占。逐个启动并检查 `/readyz`，确认无迁移、解密或 Redis 错误后加入负载均衡。
+
+`/mnt/anyflows/images` 应在每个节点挂载为同一共享目录，并由所有节点的 AnyFlows 服务账号读写。不能使用彼此独立的本地目录；否则通过一个节点生成的图片可能无法由另一个节点预览或下载。
 
 ## 4. 配置代理和负载均衡
 
