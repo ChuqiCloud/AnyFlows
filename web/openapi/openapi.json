@@ -11520,6 +11520,243 @@
         ]
       }
     },
+    "/api/playground/image-history": {
+      "get": {
+        "tags": [
+          "生图广场"
+        ],
+        "summary": "列出当前用户的图片历史",
+        "operationId": "listPlaygroundImageHistory",
+        "responses": {
+          "200": {
+            "description": "当前用户最近的图片历史",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaygroundImageHistoryListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录状态无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "生图广场"
+        ],
+        "summary": "保存一张图片到当前用户的历史",
+        "operationId": "savePlaygroundImageHistory",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaygroundImageHistoryUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "已保存的图片历史",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaygroundImageHistoryItem"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "图片或元数据无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录状态无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "图片历史空间不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "生图广场"
+        ],
+        "summary": "清空当前用户的图片历史",
+        "operationId": "clearPlaygroundImageHistory",
+        "responses": {
+          "204": {
+            "description": "已清空"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/playground/image-history/{image_id}/image": {
+      "get": {
+        "tags": [
+          "生图广场"
+        ],
+        "summary": "读取当前用户历史中的图片",
+        "operationId": "readPlaygroundHistoryImage",
+        "parameters": [
+          {
+            "name": "image_id",
+            "in": "path",
+            "description": "图片历史标识",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PNG、JPEG 或 WebP 图片字节"
+          },
+          "404": {
+            "description": "图片不存在或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/playground/image-history/{image_id}/thumbnail": {
+      "get": {
+        "tags": [
+          "生图广场"
+        ],
+        "summary": "读取当前用户历史图片的缩略图",
+        "operationId": "readPlaygroundHistoryImageThumbnail",
+        "parameters": [
+          {
+            "name": "image_id",
+            "in": "path",
+            "description": "图片历史标识",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PNG、JPEG 或 WebP 缩略图字节"
+          },
+          "404": {
+            "description": "图片不存在或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/playground/image-history/{image_id}": {
+      "delete": {
+        "tags": [
+          "生图广场"
+        ],
+        "summary": "删除当前用户的一张图片历史",
+        "operationId": "deletePlaygroundImageHistory",
+        "parameters": [
+          {
+            "name": "image_id",
+            "in": "path",
+            "description": "图片历史标识",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "已删除"
+          },
+          "404": {
+            "description": "图片不存在或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/tokens": {
       "get": {
         "tags": [
@@ -30882,6 +31119,9 @@
               "playground_conversation_not_found",
               "playground_conversation_limit_reached",
               "playground_conversation_conflict",
+              "image_history_not_found",
+              "image_history_limit_reached",
+              "image_history_unavailable",
               "user_conflict",
               "organization_not_found",
               "organization_credit_invalid_request",
@@ -31807,6 +32047,129 @@
           }
         },
         "additionalProperties": false
+      },
+      "PlaygroundImageHistoryItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "model",
+          "prompt",
+          "format",
+          "byte_size",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "revised_prompt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "format": {
+            "type": "string"
+          },
+          "byte_size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "thumbnail_format": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thumbnail_byte_size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlaygroundImageHistoryListResponse": {
+        "type": "object",
+        "required": [
+          "images"
+        ],
+        "properties": {
+          "images": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlaygroundImageHistoryItem"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlaygroundImageHistoryUploadRequest": {
+        "type": "object",
+        "required": [
+          "model",
+          "prompt"
+        ],
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "revised_prompt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "binary"
+          },
+          "image_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thumbnail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "binary"
+          }
+        }
       },
       "PlaygroundShareCreateRequest": {
         "type": "object",
@@ -35929,6 +36292,9 @@
     },
     {
       "name": "Playground 历史"
+    },
+    {
+      "name": "生图广场"
     },
     {
       "name": "我的 API Key"
