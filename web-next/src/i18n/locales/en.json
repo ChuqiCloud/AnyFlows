@@ -1420,6 +1420,7 @@
       "loading": "Loading available groups",
       "loadError": "Available groups could not be loaded. Retry before creating a key.",
       "invalid": "Choose a group you are currently allowed to use.",
+      "unavailable": "The selected group is no longer available. Choose an available group.",
       "createHint": "Following the default tracks changes to your account group. Choosing a specific group fixes the binding when the key is issued.",
       "immutable": "The group binding is set when issued and cannot be edited. Create a new key to use another group.",
       "pricingHint": "The base group multiplier is shown. User-group overrides, model multipliers, and scheduled multipliers may also affect the actual cost."

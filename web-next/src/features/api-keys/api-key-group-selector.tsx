@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button, Select, SelectItem } from '@heroui/react'
@@ -7,6 +8,7 @@ import { formatGroupBaseRatio, type SelectableTokenGroup } from './api-key-group
 
 type ApiKeyGroupSelectorProps = {
   token?: UserToken
+  portalContainer?: HTMLElement | null
   groups?: SelectableTokenGroup[]
   value: string
   loading: boolean
@@ -18,6 +20,7 @@ type ApiKeyGroupSelectorProps = {
 
 export function ApiKeyGroupSelector(props: ApiKeyGroupSelectorProps) {
   const { t } = useTranslation()
+  const labelId = useId()
   const defaultGroup = props.groups?.find((group) => group.is_default)
   const groupLabel = (group: SelectableTokenGroup) => t('apiKeys.group.option', {
     name: group.display_name,
@@ -36,8 +39,11 @@ export function ApiKeyGroupSelector(props: ApiKeyGroupSelectorProps) {
         </>
       ) : (
         <>
+          <span id={labelId} className="sr-only">{t('apiKeys.group.label')}</span>
           <Select
             aria-label={t('apiKeys.group.label')}
+            aria-labelledby={labelId}
+            popoverProps={props.portalContainer ? { portalContainer: props.portalContainer } : undefined}
             id="api-key-group"
             isDisabled={props.loading || props.failed || !props.groups}
             isInvalid={!!props.error}

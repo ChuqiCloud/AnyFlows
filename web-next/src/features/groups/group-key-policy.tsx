@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button, Select, SelectItem } from '@heroui/react'
@@ -10,7 +10,7 @@ import {
 } from './group-key-policy-api'
 import { GroupKeyPolicyUsers } from './group-key-policy-users'
 
-export function GroupKeyPolicyEditor({ groupId }: { groupId: number }) {
+export function GroupKeyPolicyEditor({ groupId, portalContainer }: { groupId: number; portalContainer?: HTMLElement | null }) {
   const { t } = useTranslation()
   const policyQuery = useAdminGroupKeyPolicy(groupId)
   if (policyQuery.isPending) return <p role="status" className="p-4 text-sm text-muted-foreground">{t('groups.keyPolicy.loading')}</p>
@@ -22,12 +22,13 @@ export function GroupKeyPolicyEditor({ groupId }: { groupId: number }) {
       </div>
     )
   }
-  return <GroupKeyPolicyForm key={groupId} policy={policyQuery.data} />
+  return <GroupKeyPolicyForm key={groupId} policy={policyQuery.data} portalContainer={portalContainer} />
 }
 
-function GroupKeyPolicyForm({ policy }: { policy: GroupKeyPolicy }) {
+function GroupKeyPolicyForm({ policy, portalContainer }: { policy: GroupKeyPolicy; portalContainer?: HTMLElement | null }) {
   const { t } = useTranslation()
   const mutation = useUpdateAdminGroupKeyPolicy(policy.group_id)
+  const labelId = useId()
   const [mode, setMode] = useState<GroupKeySelectionMode>(policy.selection_mode)
   const [selectedIds, setSelectedIds] = useState(policy.allowed_user_ids)
   useEffect(() => {
@@ -48,9 +49,11 @@ function GroupKeyPolicyForm({ policy }: { policy: GroupKeyPolicy }) {
           <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('groups.keyPolicy.description')}</p>
         </div>
         <div className="grid gap-1.5">
-          <label className="text-xs font-medium" htmlFor="group-key-policy-mode">{t('groups.keyPolicy.modeLabel')}</label>
+          <label id={labelId} className="text-xs font-medium" htmlFor="group-key-policy-mode">{t('groups.keyPolicy.modeLabel')}</label>
           <Select
             aria-label={t('groups.keyPolicy.modeLabel')}
+            aria-labelledby={labelId}
+            popoverProps={portalContainer ? { portalContainer } : undefined}
             id="group-key-policy-mode"
             isDisabled={mutation.isPending}
             items={modes.map((item) => ({ key: item, label: t(`groups.keyPolicy.modes.${item}`) }))}

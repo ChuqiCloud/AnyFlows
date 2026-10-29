@@ -17,6 +17,7 @@ export function GroupEditorSheet({ group, groups, open, onOpenChange }: GroupEdi
   const { t } = useTranslation()
   const mode = group ? 'update' : 'create'
   const [panel, setPanel] = useState<'details' | 'key-policy'>('details')
+  const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null)
   useEffect(() => setPanel('details'), [group?.id, open])
 
   return (
@@ -31,7 +32,7 @@ export function GroupEditorSheet({ group, groups, open, onOpenChange }: GroupEdi
     >
       <DrawerContent>
         {() => (
-          <>
+          <div ref={setPortalContainer} className="relative flex h-full min-h-0 flex-col">
             <DrawerHeader className="flex flex-col gap-0.5 border-b border-[var(--hairline)] p-4 pr-12">
               <h2 className="text-base font-medium text-foreground">{t(group ? 'groups.editor.editTitle' : 'groups.editor.createTitle')}</h2>
               <p className="text-sm text-muted-foreground" id="group-editor-description">{t(group ? 'groups.editor.editDescription' : 'groups.editor.createDescription')}</p>
@@ -49,11 +50,11 @@ export function GroupEditorSheet({ group, groups, open, onOpenChange }: GroupEdi
               </div>
               {group ? (
                 <div className={panel === 'key-policy' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
-                  <GroupKeyPolicyEditor key={group.id} groupId={group.id} />
+                  <GroupKeyPolicyEditor key={group.id} groupId={group.id} portalContainer={portalContainer} />
                 </div>
               ) : null}
             </DrawerBody>
-          </>
+          </div>
         )}
       </DrawerContent>
     </Drawer>

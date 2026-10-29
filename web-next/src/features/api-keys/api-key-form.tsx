@@ -23,12 +23,13 @@ import { ApiKeyModelSelector } from './api-key-model-selector'
 
 type ApiKeyFormProps = {
   token?: UserToken
+  portalContainer?: HTMLElement | null
   onCancel: () => void
   onIssued: (issued: IssuedUserToken) => void
   onSaved: () => void
 }
 
-export function ApiKeyForm({ token, onCancel, onIssued, onSaved }: ApiKeyFormProps) {
+export function ApiKeyForm({ token, portalContainer, onCancel, onIssued, onSaved }: ApiKeyFormProps) {
   const { t } = useTranslation()
   const groupsQuery = useUserTokenGroups(!token)
   const createMutation = useCreateApiKey()
@@ -51,6 +52,7 @@ export function ApiKeyForm({ token, onCancel, onIssued, onSaved }: ApiKeyFormPro
   const pending = createMutation.isPending || updateMutation.isPending
   const submitError = createMutation.error ?? updateMutation.error
   const limitReached = hasManagementErrorCode(submitError, 'token_limit_reached')
+  const groupUnavailable = hasManagementErrorCode(submitError, 'group_unavailable')
   const onSubmit = form.handleSubmit(async (values) => {
     if (!token && (!groupsQuery.isSuccess || groupsQuery.isFetching || !isSelectableTokenGroup(values.groupId, groupsQuery.data))) {
       form.setError('groupId', { message: t('apiKeys.group.invalid') })
@@ -65,7 +67,11 @@ export function ApiKeyForm({ token, onCancel, onIssued, onSaved }: ApiKeyFormPro
         createMutation.reset()
         onIssued(issued)
       }
-    } catch {
+    } catch (error) {
+      if (!token && hasManagementErrorCode(error, 'group_unavailable')) {
+        form.setError('groupId', { message: t('apiKeys.group.unavailable') })
+        void groupsQuery.refetch()
+      }
       // 保留表单输入；一次性密钥只有成功结果会交给临时展示面板。
     }
   })
@@ -80,6 +86,7 @@ export function ApiKeyForm({ token, onCancel, onIssued, onSaved }: ApiKeyFormPro
           </ApiKeyField>
           <ApiKeyGroupSelector
             token={token}
+            portalContainer={portalContainer}
             groups={groupsQuery.data}
             value={groupId}
             loading={groupsQuery.isFetching}
@@ -138,7 +145,7 @@ export function ApiKeyForm({ token, onCancel, onIssued, onSaved }: ApiKeyFormPro
           </ApiKeyField>
         </section>
 
-        {submitError ? (
+        {submitError && !groupUnavailable ? (
           <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
             {t(limitReached ? 'apiKeys.form.limitError' : 'apiKeys.form.submitError')}
           </p>
