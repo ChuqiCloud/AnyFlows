@@ -640,7 +640,10 @@ export type AdminGroupKeyPolicy = {
     selection_mode: GroupKeySelectionMode;
     allowed_user_ids: Array<number>;
 };
-export type AdminGroupKeyPolicyUpdateResult = AdminGroupKeyPolicy & {
+export type AdminGroupKeyPolicyUpdateResult = {
+    group_id: number;
+    selection_mode: GroupKeySelectionMode;
+    allowed_user_ids: Array<number>;
     disabled_key_count: number;
     disabled_user_count: number;
 };
@@ -652,6 +655,13 @@ export type AdminGroupKeyPolicyWriteRequest = {
 export type AdminGroupListResponse = {
     groups: Array<AdminGroup>;
     next_cursor: number | null;
+};
+export type AdminGroupModelPolicy = {
+    group_id: number;
+    allowed_models: Array<string> | null;
+};
+export type AdminGroupModelPolicyWriteRequest = {
+    allowed_models: Array<string> | null;
 };
 export type AdminGroupPeakWindow = {
     weekdays: Array<number>;
@@ -5042,6 +5052,45 @@ export type UpdateAdminGroupKeyPolicyResponses = {
     200: AdminGroupKeyPolicyUpdateResult;
 };
 export type UpdateAdminGroupKeyPolicyResponse = UpdateAdminGroupKeyPolicyResponses[keyof UpdateAdminGroupKeyPolicyResponses];
+export type GetAdminGroupModelPolicyData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/groups/{id}/model-policy';
+};
+export type GetAdminGroupModelPolicyErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminGroupModelPolicyError = GetAdminGroupModelPolicyErrors[keyof GetAdminGroupModelPolicyErrors];
+export type GetAdminGroupModelPolicyResponses = {
+    200: AdminGroupModelPolicy;
+};
+export type GetAdminGroupModelPolicyResponse = GetAdminGroupModelPolicyResponses[keyof GetAdminGroupModelPolicyResponses];
+export type UpdateAdminGroupModelPolicyData = {
+    body: AdminGroupModelPolicyWriteRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/groups/{id}/model-policy';
+};
+export type UpdateAdminGroupModelPolicyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminGroupModelPolicyError = UpdateAdminGroupModelPolicyErrors[keyof UpdateAdminGroupModelPolicyErrors];
+export type UpdateAdminGroupModelPolicyResponses = {
+    200: AdminGroupModelPolicy;
+};
+export type UpdateAdminGroupModelPolicyResponse = UpdateAdminGroupModelPolicyResponses[keyof UpdateAdminGroupModelPolicyResponses];
 export type ListAdminRoutesData = {
     body?: never;
     path?: never;
