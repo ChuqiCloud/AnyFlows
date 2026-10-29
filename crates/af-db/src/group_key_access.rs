@@ -472,7 +472,7 @@ fn revocation_candidate_query(
         }
         GroupKeySelectionMode::AllUsers => {}
         GroupKeySelectionMode::SelectedUsers => {
-            previously_eligible_users.and_where(
+            previously_eligible_users.cond_where(
                 Condition::any()
                     .add(Expr::col(users::Column::DefaultGroupId).eq(group_id.get()))
                     .add(

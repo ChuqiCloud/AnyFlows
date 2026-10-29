@@ -1,27 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiClient } from '@/lib/api'
-import { jsonBodySerializer } from '@/lib/api/generated/client'
+import { getAdminGroupModelPolicy, updateAdminGroupModelPolicy } from '@/lib/api/generated/sdk.gen'
+import type { AdminGroupModelPolicy, AdminGroupModelPolicyWriteRequest } from '@/lib/api/generated/types.gen'
 
-export type GroupModelPolicy = {
-  group_id: number
-  allowed_models: string[] | null
-}
-
-export type GroupModelPolicyWriteRequest = {
-  allowed_models: string[] | null
-}
+export type GroupModelPolicy = AdminGroupModelPolicy
+export type GroupModelPolicyWriteRequest = AdminGroupModelPolicyWriteRequest
 
 const groupModelPolicyQueryKey = ['admin-group-model-policy'] as const
-const managementSessionSecurity = [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }] as const
 
 async function readPolicy(groupId: number, signal?: AbortSignal): Promise<GroupModelPolicy> {
-  const response = await apiClient.get({
-    security: managementSessionSecurity,
-    url: `/api/admin/groups/${groupId}/model-policy`,
+  const { data } = await getAdminGroupModelPolicy({
+    client: apiClient,
+    path: { id: groupId },
     signal,
-  }) as unknown as { data: GroupModelPolicy }
-  return response.data
+  })
+  return data
 }
 
 export function useAdminGroupModelPolicy(groupId: number) {
@@ -36,13 +30,12 @@ export function useUpdateAdminGroupModelPolicy(groupId: number) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (body: GroupModelPolicyWriteRequest) => {
-      const response = await apiClient.put({
-        security: managementSessionSecurity,
-        url: `/api/admin/groups/${groupId}/model-policy`,
+      const { data } = await updateAdminGroupModelPolicy({
+        client: apiClient,
+        path: { id: groupId },
         body,
-        bodySerializer: jsonBodySerializer.bodySerializer,
-      }) as unknown as { data: GroupModelPolicy }
-      return response.data
+      })
+      return data
     },
     onSuccess: (policy) => {
       queryClient.setQueryData([...groupModelPolicyQueryKey, groupId], policy)
