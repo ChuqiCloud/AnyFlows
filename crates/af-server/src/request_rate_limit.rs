@@ -497,13 +497,15 @@ mod tests {
         TrustedClientIp::new("192.0.2.1".parse().unwrap())
     }
 
-    struct FixedServiceAuthenticator;
+    struct FixedServiceAuthenticator {
+        group_id: GroupId,
+    }
     impl af_admin::ServiceAccountModelAuthenticator for FixedServiceAuthenticator {
         fn authenticate_models<'a>(
             &'a self,
             _: &'a af_admin::ServiceAccountKeyDigest,
         ) -> af_admin::ServiceAccountModelAuthenticationFuture<'a> {
-            Box::pin(async {
+            Box::pin(async move {
                 use af_domain::{
                     OrganizationId, OrganizationServiceAccountId, OrganizationServiceAccountKey,
                     OrganizationServiceAccountLocator, OrganizationServiceAccountRuntimeIdentity,
@@ -522,7 +524,7 @@ mod tests {
                         None,
                         None,
                     ),
-                    GroupId::new(5).unwrap(),
+                    self.group_id,
                     ServiceModelPolicy::new(vec!["gpt-5".into(), "service-only".into()]).unwrap(),
                     af_domain::ConcurrencyLimit::new(2).unwrap(),
                     NonZeroU32::new(30).unwrap(),
@@ -558,8 +560,11 @@ mod tests {
             .await?;
         let repository =
             af_db::GroupModelPolicyRepository::new(pool.clone(), Duration::from_secs(2))?;
+        let authenticator = Arc::new(FixedServiceAuthenticator {
+            group_id: created.group_id(),
+        });
         let runtime = RuntimeServiceModelAuthenticator::new(
-            Arc::new(FixedServiceAuthenticator),
+            authenticator.clone(),
             Some(Arc::new(AdmittingStore::default())),
         )
         .with_group_model_policy(repository.clone());
@@ -568,9 +573,7 @@ mod tests {
         let digest = presented.digest();
         drop(presented);
 
-        let original = FixedServiceAuthenticator
-            .authenticate_models(&digest)
-            .await?;
+        let original = authenticator.authenticate_models(&digest).await?;
         assert_eq!(created.group_id(), original.group_id());
         // 无分组策略时完整保留服务凭据自己的模型权限和准入参数。
         assert_eq!(runtime.authenticate_models(&digest).await?, original);
@@ -614,14 +617,16 @@ mod tests {
                 .unwrap();
         let digest = presented.digest();
         drop(presented);
-        let missing =
-            RuntimeServiceModelAuthenticator::new(Arc::new(FixedServiceAuthenticator), None);
+        let authenticator = Arc::new(FixedServiceAuthenticator {
+            group_id: GroupId::new(5).unwrap(),
+        });
+        let missing = RuntimeServiceModelAuthenticator::new(authenticator.clone(), None);
         assert_eq!(
             missing.authenticate_models(&digest).await.unwrap_err(),
             af_admin::ServiceAccountModelAuthenticationError::Unavailable
         );
         let failed = RuntimeServiceModelAuthenticator::new(
-            Arc::new(FixedServiceAuthenticator),
+            authenticator.clone(),
             Some(Arc::new(FailingStore)),
         );
         assert_eq!(
@@ -629,10 +634,7 @@ mod tests {
             af_admin::ServiceAccountModelAuthenticationError::Unavailable
         );
         let store = Arc::new(AdmittingStore::default());
-        let admitted = RuntimeServiceModelAuthenticator::new(
-            Arc::new(FixedServiceAuthenticator),
-            Some(store.clone()),
-        );
+        let admitted = RuntimeServiceModelAuthenticator::new(authenticator, Some(store.clone()));
         let auth = admitted.authenticate_models(&digest).await.unwrap();
         let batches = store.batches.lock().unwrap();
         assert_eq!(batches[0].len(), 1);
