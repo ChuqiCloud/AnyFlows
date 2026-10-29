@@ -118,6 +118,7 @@ mod m20261019_000153_create_proxy_pools;
 mod m20261019_000154_add_proxy_pool_refresh_attempt;
 mod m20261021_000155_add_group_peak_windows;
 mod m20261021_000156_channel_route_bindings;
+mod m20261029_000157_create_image_history;
 mod schema;
 
 #[cfg(test)]
@@ -507,6 +508,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261019_000154_add_proxy_pool_refresh_attempt::Migration),
             Box::new(m20261021_000155_add_group_peak_windows::Migration),
             Box::new(m20261021_000156_channel_route_bindings::Migration),
+            Box::new(m20261029_000157_create_image_history::Migration),
         ]
     }
 }

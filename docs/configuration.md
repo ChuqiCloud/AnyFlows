@@ -32,11 +32,14 @@
 | `AF_CREDENTIAL_ENCRYPTION__KEY_ID` | 渠道凭据加密密钥标识 |
 | `AF_CREDENTIAL_ENCRYPTION__KEY` | 渠道凭据加密密钥 |
 | `AF_BILLING__WAL_DIRECTORY` | 当前实例独占的计费恢复日志目录 |
+| `AF_IMAGE_STORAGE__DIRECTORY` | 生图文件存储目录，默认 `data/images` |
 | `AF_TELEMETRY__LEVEL` | 运行日志级别，通常使用 `info` |
 | `AF_HTTP_CLIENT__PROXY_URL` | 访问上游时使用的 HTTP(S)、SOCKS5 或 SOCKS5H 代理 |
 | `AF_SERVER__SHUTDOWN_TIMEOUT_SECS` | 停止时等待在途请求结束的时间，默认 30 秒，范围 1–300 秒 |
 
 程序不从系统代理环境变量推断上游代理，请显式配置 `AF_HTTP_CLIENT__PROXY_URL`。
+
+生图目录可使用相对或绝对路径；相对路径以进程工作目录为基准。部署时建议显式配置绝对路径，并确保服务账号有读写权限。多节点部署必须让所有节点使用指向同一共享可写目录的配置，详见[多节点部署](multi-node-deployment.md)。
 
 ## 密钥与备份
 

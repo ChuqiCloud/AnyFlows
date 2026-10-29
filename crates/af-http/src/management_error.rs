@@ -334,6 +334,12 @@ pub(crate) enum ManagementError {
     PlaygroundConversationLimitReached,
     /// 私有会话 revision 已被其他请求推进。
     PlaygroundConversationConflict,
+    /// 图片历史标识未知或不属于当前用户。
+    ImageHistoryNotFound,
+    /// 当前用户的图片历史空间已经达到上限。
+    ImageHistoryLimitReached,
+    /// 图片历史存储或受控下载服务暂时不可用。
+    ImageHistoryUnavailable,
     /// 管理认证依赖发生内部故障。
     Internal,
 }
@@ -1540,6 +1546,27 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "playground_conversation_conflict",
                     message: "Playground conversation conflict",
+                },
+            ),
+            Self::ImageHistoryNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "image_history_not_found",
+                    message: "Image history not found",
+                },
+            ),
+            Self::ImageHistoryLimitReached => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "image_history_limit_reached",
+                    message: "Image history limit reached",
+                },
+            ),
+            Self::ImageHistoryUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "image_history_unavailable",
+                    message: "Image history unavailable",
                 },
             ),
             Self::Internal => (

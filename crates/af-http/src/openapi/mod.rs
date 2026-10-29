@@ -30,6 +30,7 @@ mod payment_settings;
 mod payment_webhook;
 mod platform_audit;
 mod playground_conversations;
+mod playground_image_history;
 mod playground_shares;
 mod proxy_pools;
 mod redemptions;
@@ -121,6 +122,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(model_prices::document());
     document.merge(playground_shares::document());
     document.merge(playground_conversations::document());
+    document.merge(playground_image_history::document());
     document.merge(user_tokens::document());
     document.merge(tokens::document());
     document.merge(usage_logs::document());
@@ -181,6 +183,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("模型管理"),
         Tag::new("Playground 分享"),
         Tag::new("Playground 历史"),
+        Tag::new("生图广场"),
         Tag::new("我的 API Key"),
         Tag::new("令牌管理"),
         Tag::new("用量日志"),
@@ -337,6 +340,12 @@ mod tests {
             "publishAdminAnnouncement",
             "revokeAdminAnnouncement",
             "compactResponse",
+            "clearPlaygroundImageHistory",
+            "deletePlaygroundImageHistory",
+            "listPlaygroundImageHistory",
+            "readPlaygroundHistoryImage",
+            "readPlaygroundHistoryImageThumbnail",
+            "savePlaygroundImageHistory",
             "rerank",
             "synthesizeSpeech",
             "submitVideoTask",
@@ -688,7 +697,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 595);
+        assert_eq!(schemas.len(), 598);
         assert!(schemas.contains_key("AdminProxyCleanupRequest"));
         assert!(schemas.contains_key("AdminProxyCleanupResult"));
         assert!(schemas.contains_key("ServiceLevelPoint"));
@@ -1198,6 +1207,9 @@ mod tests {
         assert!(schemas.contains_key("PlaygroundConversationSaveRequest"));
         assert!(schemas.contains_key("PlaygroundConversationListResponse"));
         assert!(schemas.contains_key("PlaygroundConversationResponse"));
+        assert!(schemas.contains_key("PlaygroundImageHistoryItem"));
+        assert!(schemas.contains_key("PlaygroundImageHistoryListResponse"));
+        assert!(schemas.contains_key("PlaygroundImageHistoryUploadRequest"));
         assert!(schemas.contains_key("UserTokenWriteRequest"));
         assert!(schemas.contains_key("IssuedUserToken"));
         assert!(
