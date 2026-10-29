@@ -9045,6 +9045,275 @@
         ]
       }
     },
+    "/api/token-groups": {
+      "get": {
+        "tags": [
+          "我的 API Key"
+        ],
+        "summary": "读取当前用户创建 Key 时可选的分组",
+        "description": "包含用户默认组及策略允许的分组。倍率是目标组基础倍率，实际费用还受来源组附加倍率、模型价格与高峰倍率影响。列表不是授权凭证，签发 Key 时服务端会再次校验。",
+        "operationId": "listUserTokenGroups",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "description": "上一页末尾的分组 ID",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页数量，默认 50",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前用户可选的分组",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserTokenGroupListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话或用户状态无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/groups/{id}/key-policy": {
+      "get": {
+        "tags": [
+          "分组管理"
+        ],
+        "summary": "读取分组的用户 Key 自助选择策略",
+        "operationId": "getAdminGroupKeyPolicy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "分组 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "分组自助策略与指定用户授权",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminGroupKeyPolicy"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "分组 ID 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "分组不存在或已删除",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "分组管理"
+        ],
+        "summary": "设置分组的用户 Key 自助选择策略",
+        "description": "整体替换策略及指定用户授权。用户默认组始终可用，策略变更不改写已有 Key 的分组。只有 selected_users 模式接受非空授权列表。",
+        "operationId": "updateAdminGroupKeyPolicy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "分组 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminGroupKeyPolicyWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "策略与授权已保存",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminGroupKeyPolicy"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "策略、用户授权或分组 ID 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "分组不存在或已删除",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/routes": {
       "get": {
         "tags": [
@@ -11842,6 +12111,7 @@
           "我的 API Key"
         ],
         "summary": "签发我的 API Key",
+        "description": "group_id 省略或为 null 时跟随用户默认组；指定 ID 时固定绑定该路由及计费组，并在事务中复验可选权限。",
         "operationId": "createUserToken",
         "requestBody": {
           "content": {
@@ -11876,6 +12146,16 @@
           },
           "401": {
             "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "目标分组已失效或当前用户无权选择",
             "content": {
               "application/json": {
                 "schema": {
@@ -11995,6 +12275,7 @@
           "我的 API Key"
         ],
         "summary": "更新我的 API Key",
+        "description": "仅更新用户可控字段。group_id 省略或 null 均保留已有分组，非 null 值被拒绝；需要更换路由及计费分组时创建新 Key。",
         "operationId": "updateUserToken",
         "parameters": [
           {
@@ -24713,6 +24994,53 @@
         },
         "additionalProperties": false
       },
+      "AdminGroupKeyPolicy": {
+        "type": "object",
+        "required": [
+          "group_id",
+          "selection_mode",
+          "allowed_user_ids"
+        ],
+        "properties": {
+          "group_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "selection_mode": {
+            "$ref": "#/components/schemas/GroupKeySelectionMode"
+          },
+          "allowed_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "maxItems": 1000
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminGroupKeyPolicyWriteRequest": {
+        "type": "object",
+        "required": [
+          "selection_mode"
+        ],
+        "properties": {
+          "selection_mode": {
+            "$ref": "#/components/schemas/GroupKeySelectionMode"
+          },
+          "allowed_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "maxItems": 1000
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminGroupListResponse": {
         "type": "object",
         "required": [
@@ -30890,6 +31218,15 @@
         },
         "additionalProperties": false
       },
+      "GroupKeySelectionMode": {
+        "type": "string",
+        "description": "个人 Key 允许选择分组的范围。",
+        "enum": [
+          "default_only",
+          "all_users",
+          "selected_users"
+        ]
+      },
       "HttpExtensionDescriptor": {
         "type": "object",
         "description": "Metadata exposed by an extension to the distribution and frontend shells.",
@@ -31097,6 +31434,7 @@
               "group_not_found",
               "token_not_found",
               "token_limit_reached",
+              "group_unavailable",
               "token_outcome_unknown",
               "channel_not_found",
               "credential_not_found",
@@ -35033,6 +35371,9 @@
         "description": "普通用户可读取的非敏感 API Key。",
         "required": [
           "id",
+          "group_id",
+          "effective_group_id",
+          "group_display_name",
           "key_prefix",
           "name",
           "status",
@@ -35050,6 +35391,24 @@
             "type": "integer",
             "format": "int64",
             "minimum": 1
+          },
+          "group_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "固定分组；null 表示跟随用户默认分组。",
+            "minimum": 1
+          },
+          "effective_group_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "当前解析的实际分组。",
+            "minimum": 1
+          },
+          "group_display_name": {
+            "type": "string"
           },
           "key_prefix": {
             "type": "string",
@@ -35128,6 +35487,62 @@
         },
         "additionalProperties": false
       },
+      "UserTokenGroup": {
+        "type": "object",
+        "required": [
+          "id",
+          "display_name",
+          "ratio_micros",
+          "is_default"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "ratio_micros": {
+            "type": "integer",
+            "format": "int64",
+            "description": "基础倍率，1000000 表示 1.0；分时倍率按实际请求时间另行计算。",
+            "minimum": 0
+          },
+          "is_default": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserTokenGroupListResponse": {
+        "type": "object",
+        "required": [
+          "groups",
+          "next_cursor"
+        ],
+        "properties": {
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserTokenGroup"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "UserTokenListResponse": {
         "type": "object",
         "description": "当前用户的一页 API Key。",
@@ -35180,6 +35595,15 @@
           "allow_ips"
         ],
         "properties": {
+          "group_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "仅创建时可选固定分组；POST 省略或 null 跟随用户默认分组。\nPUT 省略或 null 保留原分组，非 null 不允许修改。",
+            "minimum": 1
+          },
           "name": {
             "type": "string",
             "maxLength": 128,

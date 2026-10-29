@@ -15,6 +15,7 @@ mod email_settings;
 mod extensions;
 mod frontend_templates;
 mod gateway_models;
+mod group_key_access;
 mod groups;
 mod invitations;
 mod model_metadata;
@@ -114,6 +115,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(users::document());
     document.merge(wallet::document());
     document.merge(groups::document());
+    document.merge(group_key_access::document());
     document.merge(routes::document());
     document.merge(models::document());
     document.merge(gateway_models::document());

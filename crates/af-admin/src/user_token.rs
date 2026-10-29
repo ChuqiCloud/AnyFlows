@@ -116,13 +116,15 @@ impl UserTokenService for DatabaseUserTokenService {
         command: UserTokenWriteCommand,
     ) -> UserTokenCreateFuture<'_> {
         Box::pin(async move {
+            let group_id = command.group_id();
             let issued = IssuedApiKey::generate().map_err(|_| UserTokenError::Internal)?;
             let record = UserTokenCreateRecord::new(
                 principal.user_id(),
                 issued.digest().as_str().to_owned(),
                 issued.display_prefix().as_str().to_owned(),
                 command.into_record(),
-            );
+            )
+            .with_group_id(group_id);
             let token = self
                 .repository
                 .create(record)
@@ -140,6 +142,9 @@ impl UserTokenService for DatabaseUserTokenService {
         command: UserTokenWriteCommand,
     ) -> UserTokenUpdateFuture<'_> {
         Box::pin(async move {
+            if command.group_id().is_some() {
+                return Err(UserTokenError::InvalidInput);
+            }
             match self
                 .repository
                 .update(principal.user_id(), token_id, command.into_record())
@@ -178,6 +183,7 @@ fn map_repository_error(error: UserTokenRepositoryError) -> UserTokenError {
         UserTokenRepositoryError::InvalidInput => UserTokenError::InvalidInput,
         UserTokenRepositoryError::OwnerUnavailable => UserTokenError::InvalidSession,
         UserTokenRepositoryError::LimitReached => UserTokenError::LimitReached,
+        UserTokenRepositoryError::GroupUnavailable => UserTokenError::GroupUnavailable,
         UserTokenRepositoryError::Query
         | UserTokenRepositoryError::Timeout
         | UserTokenRepositoryError::Invariant => UserTokenError::Internal,

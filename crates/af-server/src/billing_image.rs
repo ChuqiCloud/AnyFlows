@@ -150,7 +150,7 @@ impl BillingImageService {
             .pricing_source
             .capture_for_request_at(
                 &model,
-                principal.group_id(),
+                principal.billing_source_group_id(),
                 planned.target_group_id(),
                 principal
                     .organization_principal()

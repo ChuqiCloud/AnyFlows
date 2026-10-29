@@ -6,6 +6,7 @@ use af_domain::{
     UpstreamTaskId, UserId,
 };
 
+use crate::async_task::types::same_task_identity;
 use crate::async_task::{AsyncTaskCreate, AsyncTaskInputError, AsyncTaskRecord};
 
 const MAX_ATTEMPT_TIMEOUT_MILLIS: u64 = 900_000;
@@ -454,7 +455,7 @@ impl AsyncTaskSubmissionRecord {
         self.state == AsyncTaskSubmissionState::Accepted
             && task.task_id() == self.task_id
             && task.request_id() == self.request_id
-            && task.principal() == self.principal
+            && same_task_identity(task.principal(), self.principal)
             && task.protocol() == self.protocol
             && task.requested_model() == self.requested_model
             && self
@@ -469,7 +470,8 @@ impl AsyncTaskSubmissionRecord {
 
     pub(super) fn matches_claim(&self, write: &AsyncTaskSubmissionClaim) -> bool {
         self.request_id == write.request_id
-            && self.principal == write.principal
+            // 重放沿用首次提交固化的计费来源，不随当前用户默认组重新计价。
+            && same_task_identity(self.principal, write.principal)
             && self.protocol == write.protocol
             && self.requested_model == write.requested_model
             && self.request_fingerprint == write.request_fingerprint

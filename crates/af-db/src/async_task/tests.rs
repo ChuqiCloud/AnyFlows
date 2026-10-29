@@ -7,7 +7,9 @@ use af_domain::{
     UpstreamTaskId, UserId,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use sea_orm::{ActiveModelTrait, Set, entity::prelude::Json};
+use sea_orm::{
+    ActiveModelTrait, ConnectionTrait, DbBackend, Set, Statement, entity::prelude::Json,
+};
 
 use crate::{
     DatabaseOptions, MigrationOptions,
@@ -452,7 +454,12 @@ async fn public_debug_output_hides_models_and_upstream_task_identifiers()
 #[tokio::test]
 async fn submission_claim_serializes_attempts_and_recovers_accepted_binding()
 -> Result<(), Box<dyn Error>> {
-    let fixture = fixture().await?;
+    let mut fixture = fixture().await?;
+    let billing_source_group_id = fixture.second.principal.group_id();
+    fixture.first.principal = fixture
+        .first
+        .principal
+        .with_billing_source_group_id(billing_source_group_id);
     let first = fixture
         .submissions
         .claim(submission_claim(&fixture, 0xb1, 0xc1, 0xd1)?)
@@ -461,15 +468,35 @@ async fn submission_claim_serializes_attempts_and_recovers_accepted_binding()
         panic!("首次提交必须创建 claim")
     };
     assert_eq!(first.state(), AsyncTaskSubmissionState::Claimed);
+    assert_eq!(
+        first.principal().billing_source_group_id(),
+        billing_source_group_id
+    );
 
     let replay = fixture
         .submissions
-        .claim(submission_claim(&fixture, 0xb2, 0xc1, 0xd1)?)
+        .claim(AsyncTaskSubmissionClaim::new(
+            task_id(0xb2),
+            request_id(0xc1),
+            fixture
+                .first
+                .principal
+                .with_billing_source_group_id(fixture.first.principal.group_id()),
+            Protocol::XaiVideo,
+            "gpt-video".to_owned(),
+            AsyncTaskRequestFingerprint::new([0xd1; 32]),
+            None,
+            CREATED_AT,
+        )?)
         .await?;
     let AsyncTaskSubmissionClaimOutcome::Existing(replay) = replay else {
         panic!("相同幂等请求必须复用原 claim")
     };
     assert_eq!(replay.task_id(), first.task_id());
+    assert_eq!(
+        replay.principal().billing_source_group_id(),
+        billing_source_group_id
+    );
     assert!(matches!(
         fixture
             .submissions
@@ -570,6 +597,17 @@ async fn submission_claim_serializes_attempts_and_recovers_accepted_binding()
     };
     assert!(accepted.matches_task(&task));
     assert_eq!(
+        accepted.principal().billing_source_group_id(),
+        billing_source_group_id
+    );
+    assert!(matches!(
+        fixture
+            .repository
+            .create(accepted.task_create()?.expect("已接受绑定必须可重读"))
+            .await?,
+        AsyncTaskCreateOutcome::Existing(_)
+    ));
+    assert_eq!(
         fixture
             .repository
             .find_by_request(task.principal().user_id(), accepted.request_id())
@@ -583,6 +621,58 @@ async fn submission_claim_serializes_attempts_and_recovers_accepted_binding()
         assert!(!debug.contains(secret));
     }
 
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn legacy_submission_claim_uses_original_group_as_billing_source()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let outcome = fixture
+        .submissions
+        .claim(submission_claim(&fixture, 0xa1, 0xa2, 0xa3)?)
+        .await?;
+    let AsyncTaskSubmissionClaimOutcome::Created(claim) = outcome else {
+        panic!("首次提交必须创建 claim");
+    };
+    fixture.pool.connection().execute(Statement::from_sql_and_values(
+        DbBackend::Sqlite,
+        "UPDATE async_task_submission_claims SET billing_source_group_id = NULL WHERE user_id = ?",
+        [fixture.first.principal.user_id().get().into()],
+    )).await?;
+    let restored = fixture
+        .submissions
+        .find_by_request(claim.principal().user_id(), claim.request_id())
+        .await?
+        .expect("历史 claim 必须可读");
+    assert_eq!(
+        restored.principal().billing_source_group_id(),
+        restored.principal().group_id()
+    );
+    let replay = fixture
+        .submissions
+        .claim(AsyncTaskSubmissionClaim::new(
+            task_id(0xa4),
+            request_id(0xa2),
+            fixture
+                .first
+                .principal
+                .with_billing_source_group_id(fixture.second.principal.group_id()),
+            Protocol::XaiVideo,
+            "gpt-video".to_owned(),
+            AsyncTaskRequestFingerprint::new([0xa3; 32]),
+            None,
+            CREATED_AT,
+        )?)
+        .await?;
+    let AsyncTaskSubmissionClaimOutcome::Existing(replayed) = replay else {
+        panic!("来源默认组变化后仍须复用历史 claim");
+    };
+    assert_eq!(
+        replayed.principal().billing_source_group_id(),
+        restored.principal().group_id()
+    );
     fixture.pool.close().await?;
     Ok(())
 }

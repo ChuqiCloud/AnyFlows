@@ -231,6 +231,7 @@ async fn claim_in_transaction(
         user_id: Set(write.principal.user_id().get()),
         token_id: Set(write.principal.token_id().get()),
         group_id: Set(write.principal.group_id().get()),
+        billing_source_group_id: Set(Some(write.principal.billing_source_group_id().get())),
         idempotency_key: Set(SensitiveString::from(write.request_id.persistence_key())),
         protocol: Set(write.protocol.as_str().to_owned()),
         requested_model: Set(SensitiveString::from(write.requested_model.clone())),
