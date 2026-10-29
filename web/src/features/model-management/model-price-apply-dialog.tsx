@@ -68,6 +68,12 @@ export function ModelPriceApplyDialog(props: ModelPriceApplyDialogProps) {
                   </>
                 )}
               </div>
+              <p className="mt-3 text-[0.6875rem] text-muted-foreground">
+                {t('modelManagement.prices.peak.title')}{': '}
+                {staged.draft.peakRules.length > 0
+                  ? t('groups.values.ruleCount', { count: staged.draft.peakRules.length })
+                  : t('modelManagement.prices.peak.inherit')}
+              </p>
             </section>
           ))}
         </div>

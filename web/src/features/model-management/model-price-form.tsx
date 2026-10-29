@@ -3,12 +3,14 @@ import { providerDisplayName } from '@/components/brand/provider-catalog'
 import { useEffect, useRef, useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowDownToLine, CircleDollarSign, Gift, Info, Sparkles, TriangleAlert } from 'lucide-react'
-import { useForm } from 'react-hook-form'
+import { useFieldArray, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import type {
   AdminModel,
   AdminModelPrice,
@@ -17,6 +19,8 @@ import type {
 import { ModelManagementField } from './model-management-field'
 import type { ModelPriceSource } from './model-price-api'
 import { ModelPriceExpressionEditor } from './model-price-expression-editor'
+import { MAX_MODEL_PEAK_RULES, newModelPeakRule } from './model-price-peak-model'
+import { utcOptions } from '@/features/groups/group-peak-model'
 import {
   applyModelPriceEvidence,
   applyAllModelPriceEvidence,
@@ -56,6 +60,12 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
     expression: t('modelManagement.prices.validation.expression'),
     expressionTooLong: t('modelManagement.prices.validation.expressionTooLong'),
     expressionValues: t('modelManagement.prices.validation.expressionValues'),
+    ratio: t('modelManagement.prices.validation.ratio'),
+    peakWindow: t('modelManagement.prices.validation.peakWindow'),
+    weekdays: t('modelManagement.prices.validation.weekdays'),
+    timezone: t('modelManagement.prices.validation.timezone'),
+    rules: t('modelManagement.prices.validation.rules'),
+    overlap: t('modelManagement.prices.validation.overlap'),
   })
   const initialDraft = props.staged?.draft ?? defaultModelPriceDraft(props.price)
   const perTokenDraft = useRef<ModelPriceDraft>(
@@ -64,7 +74,7 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
       : { ...initialDraft, billingMode: 'per_token', expression: '' },
   )
   const expressionDraft = useRef<ModelPriceDraft>(
-    initialDraft.billingMode === 'expression' ? initialDraft : expressionModelPriceDraft(),
+    initialDraft.billingMode === 'expression' ? initialDraft : expressionModelPriceDraft('', initialDraft.peakRules),
   )
   const form = useForm<ModelPriceDraft>({
     defaultValues: initialDraft,
@@ -88,22 +98,22 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
     if (nextMode === 'free') {
       if (current.billingMode === 'per_token') perTokenDraft.current = current
       if (current.billingMode === 'expression') expressionDraft.current = current
-      form.reset(freeModelPriceDraft())
+      form.reset(freeModelPriceDraft(current.peakRules))
       return
     }
     if (nextMode === 'expression') {
       if (current.billingMode === 'per_token') perTokenDraft.current = current
-      form.reset({ ...expressionDraft.current, billingMode: 'expression' })
+      form.reset({ ...expressionDraft.current, billingMode: 'expression', peakRules: current.peakRules })
       return
     }
     if (current.billingMode === 'expression') expressionDraft.current = current
-    form.reset({ ...perTokenDraft.current, billingMode: 'per_token', expression: '' })
+    form.reset({ ...perTokenDraft.current, billingMode: 'per_token', expression: '', peakRules: current.peakRules })
   }
   const useEvidence = (field: ModelPriceEvidenceField) => {
     if (!props.candidate) return
     const current = form.getValues()
     const base = current.billingMode === 'free'
-      ? { ...perTokenDraft.current, billingMode: 'per_token' as const }
+      ? { ...perTokenDraft.current, billingMode: 'per_token' as const, peakRules: current.peakRules }
       : current
     const next = applyModelPriceEvidence(base, props.candidate, field)
     perTokenDraft.current = next
@@ -113,7 +123,7 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
     if (!props.candidate) return
     const current = form.getValues()
     const base = current.billingMode === 'free'
-      ? { ...perTokenDraft.current, billingMode: 'per_token' as const }
+      ? { ...perTokenDraft.current, billingMode: 'per_token' as const, peakRules: current.peakRules }
       : current
     const next = applyAllModelPriceEvidence(base, props.candidate)
     perTokenDraft.current = next
@@ -123,6 +133,9 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
     }
   }
   const expression = form.watch('expression')
+  const peakRules = form.watch('peakRules')
+  const peakFields = useFieldArray({ control: form.control, name: 'peakRules' })
+  const peakEnabled = peakRules.length > 0
   const versionChanged = props.price !== undefined && expectedVersion !== props.price.version
   const submit = form.handleSubmit((draft) => props.onStage(draft, expectedVersion, contextWindow))
 
@@ -231,6 +244,57 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
             />
           </>
         )}
+        <section className="grid gap-3 border-t border-[var(--hairline)] pt-5" aria-labelledby="model-price-scheduled-pricing">
+          <div>
+            <h3 id="model-price-scheduled-pricing" className="text-xs font-semibold">{t('modelManagement.prices.peak.title')}</h3>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('modelManagement.prices.peak.description')}</p>
+          </div>
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--hairline)] px-3 py-2.5">
+            <div className="min-w-0">
+              <p className="text-xs font-medium">{t('modelManagement.prices.peak.enabled')}</p>
+              <p className="mt-0.5 text-[0.6875rem] leading-4 text-muted-foreground">{t('modelManagement.prices.peak.inherit')}</p>
+            </div>
+            <Switch aria-label={t('modelManagement.prices.peak.enabled')} checked={peakEnabled} onCheckedChange={(enabled) => {
+              if (enabled && peakFields.fields.length === 0) peakFields.append(newModelPeakRule())
+              if (!enabled) peakFields.replace([])
+            }} />
+          </div>
+          {peakEnabled ? (
+            <div className="grid gap-3 rounded-lg border border-[var(--hairline)] bg-surface-2/35 p-3">
+              {peakFields.fields.map((field, index) => {
+                const rule = peakRules[index]
+                return <div key={field.id} className="grid gap-3 border-b border-[var(--hairline)] pb-3 last:border-b-0 last:pb-0">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <ModelManagementField id={`model-price-peak-ratio-${index}`} label={t('modelManagement.prices.peak.ratio')} error={form.formState.errors.peakRules?.[index]?.ratio?.message}>
+                      <Input id={`model-price-peak-ratio-${index}`} inputMode="decimal" aria-invalid={!!form.formState.errors.peakRules?.[index]?.ratio} {...form.register(`peakRules.${index}.ratio`)} />
+                    </ModelManagementField>
+                    <ModelManagementField id={`model-price-peak-zone-${index}`} label={t('modelManagement.prices.peak.timezone')} error={form.formState.errors.peakRules?.[index]?.utcOffset?.message}>
+                      <Select id={`model-price-peak-zone-${index}`} {...form.register(`peakRules.${index}.utcOffset`)}>
+                        {utcOptions(rule?.utcOffset ?? '480').map((zone) => <option key={zone.key} value={zone.key}>{zone.label}</option>)}
+                      </Select>
+                    </ModelManagementField>
+                    <ModelManagementField id={`model-price-peak-start-${index}`} label={t('modelManagement.prices.peak.start')} error={form.formState.errors.peakRules?.[index]?.start?.message}>
+                      <Input id={`model-price-peak-start-${index}`} aria-invalid={!!form.formState.errors.peakRules?.[index]?.start} step={1} type="time" {...form.register(`peakRules.${index}.start`)} />
+                    </ModelManagementField>
+                    <ModelManagementField id={`model-price-peak-end-${index}`} label={t('modelManagement.prices.peak.end')} error={form.formState.errors.peakRules?.[index]?.end?.message}>
+                      <Input id={`model-price-peak-end-${index}`} aria-invalid={!!form.formState.errors.peakRules?.[index]?.end} placeholder="20:00 / 24:00" {...form.register(`peakRules.${index}.end`)} />
+                    </ModelManagementField>
+                  </div>
+                  <fieldset className="grid gap-2 text-xs">
+                    <legend className="font-medium">{t('modelManagement.prices.peak.weekdays')}</legend>
+                    <div className="flex flex-wrap gap-3">
+                      {[1, 2, 3, 4, 5, 6, 7].map((day) => <label key={day} className="flex items-center gap-1"><input type="checkbox" checked={rule?.weekdays.includes(day) ?? false} onChange={(event) => form.setValue(`peakRules.${index}.weekdays`, event.target.checked ? [...(rule?.weekdays ?? []), day].sort() : (rule?.weekdays ?? []).filter((value) => value !== day), { shouldValidate: true })} />{t(`groups.weekdays.${day}`)}</label>)}
+                    </div>
+                    {form.formState.errors.peakRules?.[index]?.weekdays?.message ? <p role="alert" className="text-destructive">{form.formState.errors.peakRules?.[index]?.weekdays?.message}</p> : null}
+                  </fieldset>
+                  <Button type="button" variant="ghost" onClick={() => peakFields.remove(index)}>{t('modelManagement.prices.peak.remove')}</Button>
+                </div>
+              })}
+              <Button type="button" variant="outline" disabled={peakFields.fields.length >= MAX_MODEL_PEAK_RULES} onClick={() => peakFields.append(newModelPeakRule())}>{t('modelManagement.prices.peak.add')}</Button>
+              {form.formState.errors.peakRules?.root?.message ? <p role="alert" className="text-xs text-destructive">{form.formState.errors.peakRules.root.message}</p> : null}
+            </div>
+          ) : null}
+        </section>
       </div>
 
       <div className="flex justify-end gap-2 border-t border-[var(--hairline)] p-4">

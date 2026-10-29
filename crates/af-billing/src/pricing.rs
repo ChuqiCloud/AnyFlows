@@ -261,6 +261,15 @@ impl PricingRatios {
         self.applied_peak
     }
 
+    /// 仅替换当前生效的高峰倍率，保留分组基础倍率与分组模型倍率。
+    pub const fn with_applied_peak(self, applied_peak: PricingRatio) -> Self {
+        Self {
+            group: self.group,
+            group_model: self.group_model,
+            applied_peak,
+        }
+    }
+
     pub(crate) const fn micros(self) -> [i64; 3] {
         [
             self.group.micros(),

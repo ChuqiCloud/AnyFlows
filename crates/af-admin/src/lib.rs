@@ -37,11 +37,18 @@ mod email_settings;
 mod email_settings_tests;
 mod gateway_model_auth;
 mod group_key_access;
+mod group_model_policy;
 mod group_read;
+pub use af_db::GroupModelPolicyRecord;
 pub use group_key_access::{
     DatabaseGroupKeyAccessService, GroupKeyAccessService, GroupKeyPolicy, GroupKeyPolicyCommand,
-    GroupKeyPolicyError, GroupKeyPolicyFuture, GroupKeySelectionMode, UserTokenGroup,
-    UserTokenGroupListFuture, UserTokenGroupListQuery, UserTokenGroupPage,
+    GroupKeyPolicyError, GroupKeyPolicyFuture, GroupKeyPolicyUpdate, GroupKeyPolicyUpdateFuture,
+    GroupKeySelectionMode, UserTokenGroup, UserTokenGroupListFuture, UserTokenGroupListQuery,
+    UserTokenGroupPage,
+};
+pub use group_model_policy::{
+    DatabaseGroupModelPolicyService, GroupModelPolicyError, GroupModelPolicyFuture,
+    GroupModelPolicyService,
 };
 mod group_write;
 mod image_history;

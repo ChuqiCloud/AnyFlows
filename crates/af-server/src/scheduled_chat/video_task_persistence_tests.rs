@@ -9,9 +9,9 @@ use std::{
 };
 
 use af_billing::{
-    DatabaseUsageRecordSink, GroupPricingCache, TaskBillingReleaseSink, TaskBillingReservePort,
-    TaskBillingSettlementError, TaskBillingSettlementFuture, TaskBillingSettlementPort,
-    TaskBillingSettlementRequest, UsageRecordSink,
+    DatabaseUsageRecordSink, GroupPricingCache, ModelPriceCache, TaskBillingReleaseSink,
+    TaskBillingReservePort, TaskBillingSettlementError, TaskBillingSettlementFuture,
+    TaskBillingSettlementPort, TaskBillingSettlementRequest, UsageRecordSink,
 };
 use af_db::{
     AsyncTaskBillingRepository, AsyncTaskRepository, AsyncTaskSubmissionRepository,
@@ -34,6 +34,99 @@ use super::*;
 
 const REQUESTED_MODEL: &str = "video-public";
 const UPSTREAM_MODEL: &str = "grok-imagine-video-1.5";
+
+#[tokio::test]
+async fn video_model_time_slot_is_frozen_before_submission_and_survives_replay()
+-> Result<(), Box<dyn Error>> {
+    let mut fixture = fixture().await?;
+    let windows = |ratio| {
+        serde_json::json!([{
+            "weekdays": [1, 2, 3, 4, 5, 6, 7], "start_second": 0, "end_second": 86400,
+            "ratio_micros": ratio, "models": [], "utc_offset_minutes": 0,
+        }])
+        .to_string()
+    };
+    fixture
+        .database
+        .seed()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE groups SET peak_windows = ? WHERE id = ?",
+            [
+                windows(2_000_000).into(),
+                fixture.principal.group_id().get().into(),
+            ],
+        ))
+        .await?;
+    fixture.database.seed().execute(Statement::from_sql_and_values(
+        DbBackend::Sqlite,
+        "INSERT INTO model_prices (model, billing_mode, input_price, output_price, cache_read_price, cache_creation_5m_price, cache_creation_1h_price, peak_windows, version) VALUES (?, 1, 0, 0, 0, 0, 0, ?, 1)",
+        [REQUESTED_MODEL.into(), windows(500_000).into()],
+    )).await?;
+    fixture.group_pricing =
+        GroupPricingCache::load_from_database(fixture.database.pool().clone()).await?;
+    fixture.model_prices =
+        ModelPriceCache::load_from_database(fixture.database.pool().clone()).await?;
+    let runtime = Arc::new(MockRuntime::new(vec![Ok(successful_submission(&fixture))]));
+    let request_id = async_request_id(0x73);
+    let task = fixture
+        .coordinator(runtime.clone())
+        .submit(
+            async_task_id(0x73),
+            request_id,
+            fixture.principal,
+            request(),
+            "video-model-peak",
+        )
+        .await?;
+    let first = fixture
+        .billings
+        .find(fixture.principal.user_id(), task.task_id())
+        .await?
+        .expect("视频首次提交必须冻结模型时段倍率");
+    assert_eq!(first.ratios(), [1_000_000, 1_000_000, 500_000]);
+
+    fixture
+        .database
+        .seed()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE model_prices SET peak_windows = ?, version = version + 1 WHERE model = ?",
+            [windows(1_500_000).into(), REQUESTED_MODEL.into()],
+        ))
+        .await?;
+    fixture.model_prices =
+        ModelPriceCache::load_from_database(fixture.database.pool().clone()).await?;
+    let restarted = fixture.coordinator(runtime.clone());
+    let claim = fixture
+        .submissions
+        .find_by_request(fixture.principal.user_id(), request_id)
+        .await?
+        .expect("视频重放必须恢复首次提交 claim");
+    let current =
+        restarted.capture_pricing(&claim, fixture.principal.group_id(), request().resolution())?;
+    assert_eq!(current.ratios().applied_peak().micros(), 1_500_000);
+    let replay = restarted
+        .submit(
+            async_task_id(0x74),
+            request_id,
+            fixture.principal,
+            request(),
+            "video-model-peak-replay",
+        )
+        .await?;
+    let frozen = fixture
+        .billings
+        .find(fixture.principal.user_id(), replay.task_id())
+        .await?
+        .expect("视频重放必须复用首次计费计划");
+    assert_eq!(replay.task_id(), task.task_id());
+    assert_eq!(frozen.ratios(), first.ratios());
+    assert_eq!(frozen.upper_bound(), first.upper_bound());
+    assert_eq!(runtime.submission_count(), 1);
+    fixture.database.close().await;
+    Ok(())
+}
 
 #[tokio::test]
 async fn video_pricing_preserves_user_source_and_fixed_routing_group_on_replay()
@@ -557,6 +650,7 @@ struct Fixture {
     submissions: AsyncTaskSubmissionRepository,
     billings: AsyncTaskBillingRepository,
     group_pricing: GroupPricingCache,
+    model_prices: ModelPriceCache,
     quota: Arc<QuotaRepository>,
     reserve: Arc<dyn TaskBillingReservePort>,
     settlement: Arc<dyn TaskBillingSettlementPort>,
@@ -586,6 +680,7 @@ impl Fixture {
             self.submissions.clone(),
             self.billings.clone(),
             self.group_pricing.clone(),
+            self.model_prices.clone(),
             PersistentVideoTaskBillingPorts::new(
                 Arc::clone(&self.reserve),
                 settlement,
@@ -647,7 +742,8 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
             Duration::from_secs(5),
         )?,
         billings: AsyncTaskBillingRepository::new(pool.clone(), Duration::from_secs(5))?,
-        group_pricing: GroupPricingCache::load_from_database(pool).await?,
+        group_pricing: GroupPricingCache::load_from_database(pool.clone()).await?,
+        model_prices: ModelPriceCache::load_from_database(pool).await?,
         quota: quota.clone(),
         reserve,
         settlement,

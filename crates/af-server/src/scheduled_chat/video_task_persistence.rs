@@ -7,10 +7,10 @@ use std::{
 };
 
 use af_billing::{
-    BillingUsageDimensions, BillingUsageRecord, GroupPricingCache, PricingRatio, PricingRatios,
-    TaskBillingPlan, TaskBillingReleaseSink, TaskBillingReservePort, TaskBillingSettlementPort,
-    TaskBillingSettlementRequest, UsageRecordSink, XAI_VIDEO_PRICE_CARD_VERSION,
-    XaiVideoPricingSnapshot,
+    BillingUsageDimensions, BillingUsageRecord, GroupPricingCache, ModelPriceCache, PricingRatio,
+    PricingRatios, TaskBillingPlan, TaskBillingReleaseSink, TaskBillingReservePort,
+    TaskBillingSettlementPort, TaskBillingSettlementRequest, UsageRecordSink,
+    XAI_VIDEO_PRICE_CARD_VERSION, XaiVideoPricingSnapshot,
 };
 use af_db::{
     AsyncTaskBillingAccept, AsyncTaskBillingClear, AsyncTaskBillingMark,
@@ -229,6 +229,7 @@ pub(crate) struct PersistentVideoTaskCoordinator {
     submissions: AsyncTaskSubmissionRepository,
     billings: AsyncTaskBillingRepository,
     group_pricing: GroupPricingCache,
+    model_prices: ModelPriceCache,
     billing_ports: PersistentVideoTaskBillingPorts,
 }
 
@@ -240,6 +241,7 @@ impl PersistentVideoTaskCoordinator {
         submissions: AsyncTaskSubmissionRepository,
         billings: AsyncTaskBillingRepository,
         group_pricing: GroupPricingCache,
+        model_prices: ModelPriceCache,
         billing_ports: PersistentVideoTaskBillingPorts,
     ) -> Self {
         Self::with_runtime(
@@ -248,6 +250,7 @@ impl PersistentVideoTaskCoordinator {
             submissions,
             billings,
             group_pricing,
+            model_prices,
             billing_ports,
         )
     }
@@ -258,6 +261,7 @@ impl PersistentVideoTaskCoordinator {
         submissions: AsyncTaskSubmissionRepository,
         billings: AsyncTaskBillingRepository,
         group_pricing: GroupPricingCache,
+        model_prices: ModelPriceCache,
         billing_ports: PersistentVideoTaskBillingPorts,
     ) -> Self {
         Self {
@@ -266,6 +270,7 @@ impl PersistentVideoTaskCoordinator {
             submissions,
             billings,
             group_pricing,
+            model_prices,
             billing_ports,
         }
     }
@@ -550,23 +555,36 @@ impl PersistentVideoTaskCoordinator {
         target_group_id: GroupId,
         requested_resolution: Option<VideoResolution>,
     ) -> Result<XaiVideoPricingSnapshot, PersistentVideoTaskError> {
-        if self.group_pricing.is_stale() {
+        if self.group_pricing.is_stale() || self.model_prices.is_stale() {
             return Err(PersistentVideoTaskError::Billing);
         }
-        let snapshot = self
+        let group_snapshot = self
             .group_pricing
             .snapshot()
             .map_err(|_| PersistentVideoTaskError::Billing)?;
-        let ratios = snapshot
+        let model_snapshot = self
+            .model_prices
+            .snapshot()
+            .map_err(|_| PersistentVideoTaskError::Billing)?;
+        let time =
+            crate::utc_time::current_pricing_time().ok_or(PersistentVideoTaskError::Invariant)?;
+        let mut ratios = group_snapshot
             .ratios_for_model_at(
                 claim.principal().billing_source_group_id(),
                 target_group_id,
                 claim.requested_model(),
-                crate::utc_time::current_pricing_time()
-                    .ok_or(PersistentVideoTaskError::Invariant)?,
+                time,
             )
             .map_err(|_| PersistentVideoTaskError::Billing)?;
-        if self.group_pricing.is_stale() {
+        if let Some(micros) = model_snapshot
+            .get(claim.requested_model())
+            .and_then(|price| price.peak_ratio_at(time))
+        {
+            ratios = ratios.with_applied_peak(
+                PricingRatio::new(micros).map_err(|_| PersistentVideoTaskError::Billing)?,
+            );
+        }
+        if self.group_pricing.is_stale() || self.model_prices.is_stale() {
             return Err(PersistentVideoTaskError::Billing);
         }
         Ok(XaiVideoPricingSnapshot::new(requested_resolution, ratios))

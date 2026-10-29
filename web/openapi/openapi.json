@@ -9220,7 +9220,7 @@
           "分组管理"
         ],
         "summary": "设置分组的用户 Key 自助选择策略",
-        "description": "整体替换策略及指定用户授权。用户默认组始终可用，策略变更不改写已有 Key 的分组。只有 selected_users 模式接受非空授权列表。",
+        "description": "整体替换策略及指定用户授权。用户默认组始终可用，策略变更不改写已有 Key 的分组。只有 selected_users 模式接受非空授权列表。可选 disable_keys_losing_access=true 会在同一事务中停用因新策略失去授权的现有 Key，并返回停用 Key 数量和受影响用户数；缺省为 false。",
         "operationId": "updateAdminGroupKeyPolicy",
         "parameters": [
           {
@@ -9247,17 +9247,194 @@
         },
         "responses": {
           "200": {
-            "description": "策略与授权已保存",
+            "description": "策略与授权已保存，并返回本次停用的既有 Key 数",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AdminGroupKeyPolicy"
+                  "$ref": "#/components/schemas/AdminGroupKeyPolicyUpdateResult"
                 }
               }
             }
           },
           "400": {
             "description": "策略、用户授权或分组 ID 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "分组不存在或已删除",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/groups/{id}/model-policy": {
+      "get": {
+        "tags": [
+          "分组管理"
+        ],
+        "summary": "读取分组可调用模型白名单",
+        "operationId": "getAdminGroupModelPolicy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "分组 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "分组当前模型限制；空值表示不限制",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminGroupModelPolicy"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "分组不存在或已删除",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "分组管理"
+        ],
+        "summary": "整体替换分组可调用模型白名单",
+        "description": "白名单与 Key 自身白名单取交集。将 allowed_models 设为 null 清除限制；非空数组按 Canonical 模型名区分大小写精确匹配。",
+        "operationId": "updateAdminGroupModelPolicy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "分组 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminGroupModelPolicyWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "模型白名单已保存",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminGroupModelPolicy"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "模型白名单或分组 ID 无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -25021,6 +25198,47 @@
         },
         "additionalProperties": false
       },
+      "AdminGroupKeyPolicyUpdateResult": {
+        "type": "object",
+        "required": [
+          "group_id",
+          "selection_mode",
+          "allowed_user_ids",
+          "disabled_key_count",
+          "disabled_user_count"
+        ],
+        "properties": {
+          "group_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "selection_mode": {
+            "$ref": "#/components/schemas/GroupKeySelectionMode"
+          },
+          "allowed_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "maxItems": 1000
+          },
+          "disabled_key_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "本次策略保存事务停用的既有 Key 数量。",
+            "minimum": 0
+          },
+          "disabled_user_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "至少一个既有 Key 被停用的用户数。",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminGroupKeyPolicyWriteRequest": {
         "type": "object",
         "required": [
@@ -25037,6 +25255,10 @@
               "format": "int64"
             },
             "maxItems": 1000
+          },
+          "disable_keys_losing_access": {
+            "type": "boolean",
+            "description": "是否同步停用因新策略而失去该分组授权的现有 Key。"
           }
         },
         "additionalProperties": false
@@ -25062,6 +25284,54 @@
             ],
             "format": "int64",
             "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminGroupModelPolicy": {
+        "type": "object",
+        "required": [
+          "group_id",
+          "allowed_models"
+        ],
+        "properties": {
+          "group_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "allowed_models": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "NULL 表示不限制；非空数组表示仅允许精确匹配列出的模型。",
+            "maxItems": 512,
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminGroupModelPolicyWriteRequest": {
+        "type": "object",
+        "required": [
+          "allowed_models"
+        ],
+        "properties": {
+          "allowed_models": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "NULL 清除限制；非空数组设置白名单。",
+            "maxItems": 512,
+            "minItems": 1
           }
         },
         "additionalProperties": false
@@ -25704,6 +25974,7 @@
           "billing_mode",
           "prices",
           "billing_expression",
+          "peak_windows",
           "version"
         ],
         "properties": {
@@ -25724,6 +25995,17 @@
               "null"
             ],
             "maxLength": 8192
+          },
+          "peak_windows": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AdminGroupPeakWindow"
+            },
+            "description": "模型级周计划；空值表示沿用分组时段倍率。",
+            "maxItems": 32
           },
           "version": {
             "type": "integer",
@@ -26255,6 +26537,17 @@
               "null"
             ],
             "maxLength": 8192
+          },
+          "peak_windows": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AdminGroupPeakWindow"
+            },
+            "description": "缺省或 null 保留现有计划，空数组清除计划，非空数组替换计划。",
+            "maxItems": 32
           }
         },
         "additionalProperties": false

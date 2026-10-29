@@ -145,9 +145,9 @@ export function ApiKeyForm({ token, portalContainer, onCancel, onIssued, onSaved
           </ApiKeyField>
         </section>
 
-        {submitError && !groupUnavailable ? (
+        {submitError && (!groupUnavailable || !!token) ? (
           <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
-            {t(limitReached ? 'apiKeys.form.limitError' : 'apiKeys.form.submitError')}
+            {t(groupUnavailable ? 'apiKeys.group.unavailable' : limitReached ? 'apiKeys.form.limitError' : 'apiKeys.form.submitError')}
           </p>
         ) : null}
       </div>

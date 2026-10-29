@@ -189,6 +189,9 @@ pub enum RequestPricingSnapshotError {
     /// 当前计费时间无效。
     #[error("请求计费时间无效")]
     InvalidCurrentTime,
+    /// 已校验的模型级倍率在构造计费快照时违反非负边界。
+    #[error("模型级时段倍率无效")]
+    InvalidModelPeakRatio,
     /// 表达式定义无法构造请求级执行快照。
     #[error("请求模型的表达式定价不可用")]
     ExpressionPricingUnavailable,
@@ -264,9 +267,14 @@ impl RequestPricingSnapshotSource for CachedRequestPricingSnapshotSource {
         let model_price = model_snapshot
             .get(model)
             .ok_or(RequestPricingSnapshotError::ModelNotFound)?;
-        let ratios = group_snapshot
+        let mut ratios = group_snapshot
             .ratios_for_model_at(source_group_id, target_group_id, model, time)
             .map_err(map_lookup_error)?;
+        if let Some(micros) = model_price.peak_ratio_at(time) {
+            let peak = PricingRatio::new(micros)
+                .map_err(|_| RequestPricingSnapshotError::InvalidModelPeakRatio)?;
+            ratios = ratios.with_applied_peak(peak);
+        }
         let model_mode = model_price.mode();
         // Expression 与固定五价同属需预扣和结算的按量请求，但保留独立目录模式供展示边界判断。
         let billing_mode = match model_mode {

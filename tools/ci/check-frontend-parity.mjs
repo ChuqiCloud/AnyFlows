@@ -19,6 +19,8 @@ for (const path of [
   'src/features/api-keys/api-key-group-model.ts',
   'src/features/api-keys/api-key-form-model.ts',
   'src/features/groups/group-key-policy-api.ts',
+  'src/features/groups/group-model-policy-api.ts',
+  'src/features/model-management/model-price-peak-model.ts',
   'src/features/channels/channel-form-model.ts',
   'src/features/channels/channel-capabilities.ts',
   'src/features/channels/channel-capabilities.gen.ts',

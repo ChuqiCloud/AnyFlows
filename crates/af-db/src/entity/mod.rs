@@ -51,6 +51,7 @@ pub(crate) mod debug_trace_snapshots;
 pub(crate) mod debug_traces;
 pub(crate) mod email_settings;
 pub(crate) mod group_key_policies;
+pub(crate) mod group_model_policies;
 pub(crate) mod group_model_ratios;
 pub(crate) mod groups;
 pub(crate) mod image_history;
