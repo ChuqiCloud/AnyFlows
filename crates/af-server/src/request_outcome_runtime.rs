@@ -382,15 +382,16 @@ mod tests {
     async fn unavailable_models_skip_personal_playground_and_service_outcomes()
     -> Result<(), Box<dyn std::error::Error>> {
         use af_db::{
-            DatabaseOptions, MigrationOptions, connect_and_migrate,
-            entity::{groups, request_outcome_logs, users},
+            AdminGroupRepository, AdminGroupWriteRecord, AdminModelCreateRecord,
+            AdminModelLifecycleRecord, AdminModelModalitiesRecord, AdminModelRepository,
+            AdminModelVisibilityRecord, AdminModelWriteRecord, AdminUserCreateRecord,
+            AdminUserRepository, DatabaseOptions, MigrationOptions, connect_and_migrate,
         };
         use af_domain::{
-            GroupId, OrganizationId, OrganizationServiceAccountId, OrganizationServiceAccountKey,
+            OrganizationId, OrganizationServiceAccountId, OrganizationServiceAccountKey,
             OrganizationServiceAccountLocator, OrganizationServiceAccountRuntimeIdentity, TokenId,
-            UserId,
         };
-        use sea_orm::{ActiveModelTrait, EntityTrait, QueryOrder, Set};
+        use std::time::Duration;
 
         #[derive(Default)]
         struct Outcomes(std::sync::Mutex<Vec<ServiceAccountRequestOutcome>>);
@@ -412,28 +413,56 @@ mod tests {
             MigrationOptions::default(),
         )
         .await?;
-        let group = groups::ActiveModel {
-            name: Set("outcome-call-admission".to_owned()),
-            display_name: Set("Outcome call admission".to_owned()),
-            flags: Set(serde_json::json!({})),
-            ..Default::default()
-        }
-        .insert(pool.connection())
-        .await?;
-        let user = users::ActiveModel {
-            username: Set("outcome-call-admission".to_owned()),
-            role: Set(1),
-            status: Set(1),
-            default_group_id: Set(group.id),
-            quota: Set(10_000),
-            aff_code: Set("outcome-call-admission".to_owned()),
-            settings: Set(serde_json::json!({})),
-            ..Default::default()
-        }
-        .insert(pool.connection())
-        .await?;
-        let group_id = GroupId::new(group.id)?;
-        let user_id = UserId::new(user.id)?;
+        let timeout = Duration::from_secs(2);
+        let group = AdminGroupRepository::new(pool.clone(), timeout)?
+            .create(AdminGroupWriteRecord::new(
+                "outcome-call-admission".to_owned(),
+                "Outcome call admission".to_owned(),
+                1_000_000,
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                serde_json::json!({}),
+            ))
+            .await?;
+        let group_id = group.group_id();
+        let user = AdminUserRepository::new(pool.clone(), timeout)?
+            .create(AdminUserCreateRecord::new(
+                "outcome-call-admission".to_owned(),
+                None,
+                None,
+                1,
+                1,
+                group_id,
+                10_000,
+                None,
+                None,
+            ))
+            .await?;
+        let user_id = user.user_id();
+        AdminModelRepository::new(pool.clone(), timeout)?
+            .create(AdminModelCreateRecord::new(
+                "test-model".to_owned(),
+                AdminModelWriteRecord::new(
+                    "Test model".to_owned(),
+                    "test".to_owned(),
+                    None,
+                    None,
+                    Vec::new(),
+                    None,
+                    AdminModelModalitiesRecord::new(true, false, false, false),
+                    AdminModelModalitiesRecord::new(true, false, false, false),
+                    false,
+                    false,
+                    AdminModelVisibilityRecord::Public,
+                    AdminModelLifecycleRecord::Active,
+                ),
+            ))
+            .await?;
         let token_id = TokenId::new(1)?;
         let service_outcomes = Arc::new(Outcomes::default());
         let runtime = RequestOutcomeRuntime::new(RequestOutcomeRepository::new(pool.clone()))
@@ -473,8 +502,8 @@ mod tests {
                 OrganizationId::new(11)?,
                 OrganizationServiceAccountId::new(12)?,
             ),
-            OrganizationServiceAccountKey::new([13; 16])?,
-            OrganizationServiceAccountKey::new([14; 16])?,
+            OrganizationServiceAccountKey::new([13; 16]).unwrap(),
+            OrganizationServiceAccountKey::new([14; 16]).unwrap(),
         );
         for (name, error) in &failures {
             RequestOutcomeContext::for_service_account(
@@ -489,23 +518,21 @@ mod tests {
             .await;
         }
 
-        let personal_rows = request_outcome_logs::Entity::find()
-            .order_by_asc(request_outcome_logs::Column::Id)
-            .all(pool.connection())
-            .await?;
+        let (personal_rows, cursor) = runtime.repository.list_failed(None, 10).await?.into_parts();
+        assert_eq!(cursor, None);
         assert_eq!(personal_rows.len(), 4);
         for scope in ["personal", "playground"] {
             for (name, expected_kind) in [
-                ("policy-denied", "model_not_allowed"),
-                ("upstream-model", "upstream_model"),
+                ("policy-denied", RequestFailureKind::ModelNotAllowed),
+                ("upstream-model", RequestFailureKind::UpstreamModel),
             ] {
                 let request_id = format!("{scope}-{name}");
                 let row = personal_rows
                     .iter()
-                    .find(|row| row.request_id == request_id)
+                    .find(|row| row.request_id() == request_id)
                     .unwrap();
-                assert_eq!(row.error_kind.as_deref(), Some(expected_kind));
-                assert_eq!(row.user_id, Some(user_id.get()));
+                assert_eq!(row.failure_kind(), expected_kind);
+                assert_eq!(row.user_id(), Some(user_id));
             }
         }
         {
