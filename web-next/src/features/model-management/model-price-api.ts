@@ -71,6 +71,7 @@ export function useApplyAdminModelPrices() {
         queryClient.invalidateQueries({ queryKey: adminModelPriceQueryKey }),
         queryClient.invalidateQueries({ queryKey: ['admin-model-metadata'] }),
         queryClient.invalidateQueries({ queryKey: ['model-catalog'] }),
+        queryClient.invalidateQueries({ queryKey: ['model-catalog-providers'] }),
       ])
     },
   })

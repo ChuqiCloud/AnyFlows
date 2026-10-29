@@ -845,7 +845,7 @@ mod tests {
     };
 
     use af_account::{CredentialDecryptor, SystemSecretCipher, credential_plaintext_aad};
-    use af_billing::{DatabaseUsageRecordSink, GroupPricingCache};
+    use af_billing::{DatabaseUsageRecordSink, GroupPricingCache, ModelPriceCache};
     use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
     use af_db::{
         AsyncTaskBillingRepository, AsyncTaskRepository, AsyncTaskSubmissionRepository,
@@ -921,6 +921,9 @@ mod tests {
         let group_pricing = GroupPricingCache::load_from_database(database.pool().clone())
             .await
             .unwrap();
+        let model_prices = ModelPriceCache::load_from_database(database.pool().clone())
+            .await
+            .unwrap();
         let quota = Arc::new(QuotaRepository::new(database.pool().clone()));
         let usage = Arc::new(DatabaseUsageRecordSink::new(UsageLogRepository::new(
             database.pool().clone(),
@@ -939,6 +942,7 @@ mod tests {
                 submissions.clone(),
                 billings,
                 group_pricing,
+                model_prices,
                 billing_ports,
             );
         let request_id = AsyncTaskRequestId::new([0x61; 16]).unwrap();

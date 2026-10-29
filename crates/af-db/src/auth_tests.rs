@@ -513,6 +513,90 @@ async fn model_policy_null_is_unrestricted_and_allowlist_matches_exactly()
 }
 
 #[tokio::test]
+async fn group_model_policy_roundtrips_and_intersects_effective_key_group()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture(Duration::from_secs(2)).await?;
+    let repository =
+        crate::GroupModelPolicyRepository::new(fixture.pool.clone(), Duration::from_secs(2))?;
+    let group_id = af_domain::GroupId::new(fixture.token_group_id)?;
+    assert!(repository.get(group_id).await?.allowed_models.is_none());
+    repository
+        .replace(group_id, Some(vec!["shared".into(), "group-only".into()]))
+        .await?;
+    assert_eq!(
+        repository.get(group_id).await?.allowed_models,
+        Some(vec!["shared".into(), "group-only".into()])
+    );
+    set_token_column(
+        &fixture,
+        tokens::Column::ModelLimits,
+        Expr::value(serde_json::json!(["shared", "key-only"])),
+    )
+    .await?;
+    let policy = authenticated_model_policy(
+        fixture
+            .repository
+            .lookup(&fixture.lookup, test_client_ip())
+            .await?,
+    );
+    assert!(policy.allows("shared"));
+    assert!(!policy.allows("group-only"));
+    assert!(!policy.allows("key-only"));
+    assert_eq!(
+        repository
+            .replace(group_id, Some(Vec::new()))
+            .await
+            .unwrap_err(),
+        crate::GroupModelPolicyRepositoryError::InvalidInput
+    );
+    assert!(
+        repository
+            .policy_for_group(group_id)
+            .await?
+            .allows("group-only")
+    );
+
+    repository
+        .replace(group_id, Some(vec!["unrelated".into()]))
+        .await?;
+    let policy = authenticated_model_policy(
+        fixture
+            .repository
+            .lookup(&fixture.lookup, test_client_ip())
+            .await?,
+    );
+    for model in ["shared", "group-only", "key-only", "unrelated"] {
+        assert!(!policy.allows(model));
+    }
+
+    repository.replace(group_id, None).await?;
+    assert!(repository.get(group_id).await?.allowed_models.is_none());
+    let policy = authenticated_model_policy(
+        fixture
+            .repository
+            .lookup(&fixture.lookup, test_client_ip())
+            .await?,
+    );
+    assert!(policy.allows("key-only"));
+    assert!(!policy.allows("group-only"));
+
+    let default_group = af_domain::GroupId::new(fixture.default_group_id)?;
+    repository
+        .replace(default_group, Some(vec!["playground-only".into()]))
+        .await?;
+    let policy = authenticated_model_policy(
+        fixture
+            .repository
+            .lookup_playground(af_domain::UserId::new(fixture.user_id)?)
+            .await?,
+    );
+    assert!(policy.allows("playground-only"));
+    assert!(!policy.allows("key-only"));
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn malformed_or_unbounded_model_allowlists_are_internal() -> Result<(), Box<dyn Error>> {
     let fixture = fixture(Duration::from_secs(1)).await?;
     let invalid_values = vec![

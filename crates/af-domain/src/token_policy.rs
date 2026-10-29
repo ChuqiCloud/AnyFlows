@@ -73,6 +73,28 @@ impl TokenModelPolicy {
                 .is_ok()
         })
     }
+
+    /// Intersects two independent restrictions. An unrestricted side leaves the
+    /// other unchanged; an empty intersection intentionally denies every model.
+    #[must_use]
+    pub fn intersect(&self, other: &Self) -> Self {
+        match (&self.allowed_models, &other.allowed_models) {
+            (None, None) => Self::unrestricted(),
+            (Some(models), None) | (None, Some(models)) => Self {
+                allowed_models: Some(Arc::clone(models)),
+            },
+            (Some(left), Some(right)) => {
+                let models = left
+                    .iter()
+                    .filter(|model| right.binary_search(model).is_ok())
+                    .cloned()
+                    .collect::<Vec<_>>();
+                Self {
+                    allowed_models: Some(models.into()),
+                }
+            }
+        }
+    }
 }
 
 impl fmt::Debug for TokenModelPolicy {

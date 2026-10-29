@@ -145,11 +145,12 @@ mod error;
 mod group_key_access;
 #[cfg(test)]
 mod group_key_access_tests;
+mod group_model_policy;
 mod group_pricing;
 pub use group_key_access::{
-    GroupKeyAccessError, GroupKeyAccessRepository, GroupKeyPolicyRecord, GroupKeySelectionMode,
-    MAX_GROUP_KEY_ALLOWED_USERS, MAX_USER_TOKEN_GROUP_PAGE_SIZE, UserTokenGroupPageRecord,
-    UserTokenGroupRecord,
+    GroupKeyAccessError, GroupKeyAccessRepository, GroupKeyPolicyRecord,
+    GroupKeyPolicyUpdateRecord, GroupKeySelectionMode, MAX_GROUP_KEY_ALLOWED_USERS,
+    MAX_USER_TOKEN_GROUP_PAGE_SIZE, UserTokenGroupPageRecord, UserTokenGroupRecord,
 };
 #[cfg(test)]
 mod group_pricing_tests;
@@ -440,6 +441,9 @@ pub use email_settings::{
     EmailTlsMode,
 };
 pub use error::{DatabaseError, DatabaseOptionsError};
+pub use group_model_policy::{
+    GroupModelPolicyRecord, GroupModelPolicyRepository, GroupModelPolicyRepositoryError,
+};
 pub use group_pricing::{
     GroupModelRatioRecord, GroupPeakPricingRecord, GroupPricingCatalog, GroupPricingRecord,
     GroupPricingRepository, GroupPricingRepositoryError, MAX_GROUP_MODEL_RATIO_ENTRIES,

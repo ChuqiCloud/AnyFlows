@@ -20,6 +20,7 @@ const REQUEST_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
 pub(crate) struct RuntimeServiceModelAuthenticator {
     inner: Arc<dyn af_admin::ServiceAccountModelAuthenticator>,
     store: Option<Arc<dyn RequestRateLimitStore>>,
+    group_model_policy: Option<af_db::GroupModelPolicyRepository>,
 }
 
 impl RuntimeServiceModelAuthenticator {
@@ -27,7 +28,20 @@ impl RuntimeServiceModelAuthenticator {
         inner: Arc<dyn af_admin::ServiceAccountModelAuthenticator>,
         store: Option<Arc<dyn RequestRateLimitStore>>,
     ) -> Self {
-        Self { inner, store }
+        Self {
+            inner,
+            store,
+            group_model_policy: None,
+        }
+    }
+
+    /// 对服务凭据应用所属路由分组的模型白名单。
+    pub(crate) fn with_group_model_policy(
+        mut self,
+        repository: af_db::GroupModelPolicyRepository,
+    ) -> Self {
+        self.group_model_policy = Some(repository);
+        self
     }
 }
 
@@ -38,7 +52,30 @@ impl af_admin::ServiceAccountModelAuthenticator for RuntimeServiceModelAuthentic
     ) -> af_admin::ServiceAccountModelAuthenticationFuture<'a> {
         Box::pin(async move {
             use af_admin::ServiceAccountModelAuthenticationError as Error;
-            let authentication = self.inner.authenticate_models(digest).await?;
+            let mut authentication = self.inner.authenticate_models(digest).await?;
+            if let Some(repository) = &self.group_model_policy {
+                let group_policy = repository
+                    .policy_for_group(authentication.group_id())
+                    .await
+                    .map_err(|_| Error::Unavailable)?;
+                let policy = af_domain::ServiceModelPolicy::new(
+                    authentication
+                        .model_policy()
+                        .models()
+                        .iter()
+                        .filter(|model| group_policy.allows(model))
+                        .cloned()
+                        .collect(),
+                )
+                .map_err(|_| Error::Unavailable)?;
+                authentication = af_admin::ServiceAccountModelAuthentication::new(
+                    authentication.authentication(),
+                    authentication.group_id(),
+                    policy,
+                    authentication.concurrency(),
+                    authentication.rpm_limit(),
+                );
+            }
             let rule = RequestRateLimitRule::new(
                 RequestRateLimitSubject::ServiceAccount(
                     authentication.authentication().identity().locator(),
@@ -460,13 +497,15 @@ mod tests {
         TrustedClientIp::new("192.0.2.1".parse().unwrap())
     }
 
-    struct FixedServiceAuthenticator;
+    struct FixedServiceAuthenticator {
+        group_id: GroupId,
+    }
     impl af_admin::ServiceAccountModelAuthenticator for FixedServiceAuthenticator {
         fn authenticate_models<'a>(
             &'a self,
             _: &'a af_admin::ServiceAccountKeyDigest,
         ) -> af_admin::ServiceAccountModelAuthenticationFuture<'a> {
-            Box::pin(async {
+            Box::pin(async move {
                 use af_domain::{
                     OrganizationId, OrganizationServiceAccountId, OrganizationServiceAccountKey,
                     OrganizationServiceAccountLocator, OrganizationServiceAccountRuntimeIdentity,
@@ -485,13 +524,89 @@ mod tests {
                         None,
                         None,
                     ),
-                    GroupId::new(5).unwrap(),
-                    ServiceModelPolicy::new(vec!["gpt-5".into()]).unwrap(),
+                    self.group_id,
+                    ServiceModelPolicy::new(vec!["gpt-5".into(), "service-only".into()]).unwrap(),
                     af_domain::ConcurrencyLimit::new(2).unwrap(),
                     NonZeroU32::new(30).unwrap(),
                 ))
             })
         }
+    }
+
+    #[tokio::test]
+    async fn service_model_group_policy_intersects_grants_without_expanding_them()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use af_admin::ServiceAccountModelAuthenticator as _;
+        let pool = af_db::connect_and_migrate(
+            &af_db::DatabaseOptions::new("sqlite::memory:")?,
+            af_db::MigrationOptions::default(),
+        )
+        .await?;
+        let group = af_db::AdminGroupRepository::new(pool.clone(), Duration::from_secs(2))?;
+        let created = group
+            .create(af_db::AdminGroupWriteRecord::new(
+                "service-group".into(),
+                "Service group".into(),
+                1_000_000,
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                serde_json::json!({}),
+            ))
+            .await?;
+        let repository =
+            af_db::GroupModelPolicyRepository::new(pool.clone(), Duration::from_secs(2))?;
+        let authenticator = Arc::new(FixedServiceAuthenticator {
+            group_id: created.group_id(),
+        });
+        let runtime = RuntimeServiceModelAuthenticator::new(
+            authenticator.clone(),
+            Some(Arc::new(AdmittingStore::default())),
+        )
+        .with_group_model_policy(repository.clone());
+        let presented =
+            af_admin::PresentedServiceAccountKey::parse(&format!("sa_{}", "ab".repeat(32)))?;
+        let digest = presented.digest();
+        drop(presented);
+
+        let original = authenticator.authenticate_models(&digest).await?;
+        assert_eq!(created.group_id(), original.group_id());
+        // 无分组策略时完整保留服务凭据自己的模型权限和准入参数。
+        assert_eq!(runtime.authenticate_models(&digest).await?, original);
+
+        repository
+            .replace(
+                original.group_id(),
+                Some(vec!["gpt-5".into(), "group-only".into()]),
+            )
+            .await?;
+        let restricted = runtime.authenticate_models(&digest).await?;
+        assert_eq!(restricted.model_policy().models(), &["gpt-5"]);
+        assert!(!restricted.model_policy().allows("service-only"));
+        assert!(!restricted.model_policy().allows("group-only"));
+        assert_eq!(restricted.authentication(), original.authentication());
+        assert_eq!(restricted.group_id(), original.group_id());
+        assert_eq!(restricted.concurrency(), original.concurrency());
+        assert_eq!(restricted.rpm_limit(), original.rpm_limit());
+
+        repository
+            .replace(original.group_id(), Some(vec!["group-only".into()]))
+            .await?;
+        let disjoint = runtime.authenticate_models(&digest).await?;
+        // ServiceModelPolicy 的空集合表示拒绝全部模型，不能降级成不限模型。
+        assert!(disjoint.model_policy().models().is_empty());
+        for model in ["gpt-5", "service-only", "group-only"] {
+            assert!(!disjoint.model_policy().allows(model));
+        }
+
+        repository.replace(original.group_id(), None).await?;
+        assert_eq!(runtime.authenticate_models(&digest).await?, original);
+        pool.close().await?;
+        Ok(())
     }
 
     #[tokio::test]
@@ -502,14 +617,16 @@ mod tests {
                 .unwrap();
         let digest = presented.digest();
         drop(presented);
-        let missing =
-            RuntimeServiceModelAuthenticator::new(Arc::new(FixedServiceAuthenticator), None);
+        let authenticator = Arc::new(FixedServiceAuthenticator {
+            group_id: GroupId::new(5).unwrap(),
+        });
+        let missing = RuntimeServiceModelAuthenticator::new(authenticator.clone(), None);
         assert_eq!(
             missing.authenticate_models(&digest).await.unwrap_err(),
             af_admin::ServiceAccountModelAuthenticationError::Unavailable
         );
         let failed = RuntimeServiceModelAuthenticator::new(
-            Arc::new(FixedServiceAuthenticator),
+            authenticator.clone(),
             Some(Arc::new(FailingStore)),
         );
         assert_eq!(
@@ -517,10 +634,7 @@ mod tests {
             af_admin::ServiceAccountModelAuthenticationError::Unavailable
         );
         let store = Arc::new(AdmittingStore::default());
-        let admitted = RuntimeServiceModelAuthenticator::new(
-            Arc::new(FixedServiceAuthenticator),
-            Some(store.clone()),
-        );
+        let admitted = RuntimeServiceModelAuthenticator::new(authenticator, Some(store.clone()));
         let auth = admitted.authenticate_models(&digest).await.unwrap();
         let batches = store.batches.lock().unwrap();
         assert_eq!(batches[0].len(), 1);

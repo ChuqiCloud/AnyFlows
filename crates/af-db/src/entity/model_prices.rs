@@ -26,6 +26,9 @@ pub struct Model {
     pub cache_creation_1h_price: SensitiveDecimal,
     #[sea_orm(column_type = "Text", nullable)]
     pub billing_expression: Option<SensitiveString>,
+    /// 可选模型级周计划；命中时覆盖分组高峰倍率。
+    #[sea_orm(column_type = "JsonBinary", nullable)]
+    pub peak_windows: Option<Json>,
     pub version: i64,
     pub created_at: TimeDateTimeWithTimeZone,
     pub updated_at: TimeDateTimeWithTimeZone,

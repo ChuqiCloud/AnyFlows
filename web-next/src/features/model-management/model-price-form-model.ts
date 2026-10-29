@@ -6,6 +6,16 @@ import type {
   AdminModelPriceSourceCandidate,
   AdminModelPriceWriteItem,
 } from '@/lib/api/generated/types.gen'
+import { ratioToMicros } from '../groups/group-form-model.ts'
+import { timeSecond } from '../groups/group-peak-model.ts'
+
+import {
+  MAX_MODEL_PEAK_RULES,
+  modelPeakRuleWindows,
+  modelPeakRules,
+  modelPeakRulesOverlap,
+  type ModelPeakRuleForm,
+} from './model-price-peak-model.ts'
 
 export type ModelPriceDraft = {
   billingMode: AdminModelPriceBillingMode
@@ -15,6 +25,7 @@ export type ModelPriceDraft = {
   cacheCreation5m: string
   cacheCreation1h: string
   expression: string
+  peakRules: ModelPeakRuleForm[]
 }
 
 export type StagedModelPriceDraft = {
@@ -29,6 +40,12 @@ export type ModelPriceValidationMessages = {
   expression: string
   expressionTooLong: string
   expressionValues: string
+  ratio: string
+  peakWindow: string
+  weekdays: string
+  timezone: string
+  rules: string
+  overlap: string
 }
 
 export type ModelPriceEvidenceField =
@@ -53,7 +70,38 @@ export function buildModelPriceDraftSchema(messages: ModelPriceValidationMessage
     cacheCreation5m: decimal,
     cacheCreation1h: decimal,
     expression: z.string().max(8192, messages.expression),
+    peakRules: z.array(z.object({
+      weekdays: z.array(z.number()),
+      start: z.string(),
+      end: z.string(),
+      ratio: z.string(),
+      utcOffset: z.string(),
+    })),
   }).superRefine((value, context) => {
+    if (value.peakRules.length > MAX_MODEL_PEAK_RULES) {
+      context.addIssue({ code: 'custom', message: messages.rules, path: ['peakRules', 'root'] })
+    }
+    value.peakRules.forEach((rule, index) => {
+      const issue = (field: keyof ModelPeakRuleForm, message: string) =>
+        context.addIssue({ code: 'custom', message, path: ['peakRules', index, field] })
+      const start = timeSecond(rule.start)
+      const end = timeSecond(rule.end, true)
+      if (ratioToMicros(rule.ratio) === undefined) issue('ratio', messages.ratio)
+      if (start === undefined) issue('start', messages.peakWindow)
+      if (end === undefined || start === end) issue('end', messages.peakWindow)
+      if (rule.weekdays.length === 0 || rule.weekdays.length > 7
+        || new Set(rule.weekdays).size !== rule.weekdays.length
+        || rule.weekdays.some((day) => !Number.isInteger(day) || day < 1 || day > 7)) {
+        issue('weekdays', messages.weekdays)
+      }
+      if (!/^-?(0|[1-9][0-9]*)$/.test(rule.utcOffset)
+        || Number(rule.utcOffset) < -720 || Number(rule.utcOffset) > 840) {
+        issue('utcOffset', messages.timezone)
+      }
+      if (value.peakRules.slice(0, index).some((previous) => modelPeakRulesOverlap(previous, rule))) {
+        issue('end', messages.overlap)
+      }
+    })
     if (value.billingMode === 'expression') {
       if (value.expression.trim().length === 0) {
         context.addIssue({ code: 'custom', message: messages.expression, path: ['expression'] })
@@ -89,10 +137,11 @@ export function defaultModelPriceDraft(price?: AdminModelPrice): ModelPriceDraft
     cacheCreation5m: price?.prices.cache_creation_5m ?? '',
     cacheCreation1h: price?.prices.cache_creation_1h ?? '',
     expression: price?.billing_expression ?? '',
+    peakRules: modelPeakRules(price?.peak_windows),
   }
 }
 
-export function freeModelPriceDraft(): ModelPriceDraft {
+export function freeModelPriceDraft(peakRules: ModelPeakRuleForm[] = []): ModelPriceDraft {
   return {
     billingMode: 'free',
     input: '0',
@@ -101,11 +150,12 @@ export function freeModelPriceDraft(): ModelPriceDraft {
     cacheCreation5m: '0',
     cacheCreation1h: '0',
     expression: '',
+    peakRules,
   }
 }
 
 /** 表达式模式固定使用零价列，避免旧的五价语义参与动态结算。 */
-export function expressionModelPriceDraft(expression = ''): ModelPriceDraft {
+export function expressionModelPriceDraft(expression = '', peakRules: ModelPeakRuleForm[] = []): ModelPriceDraft {
   return {
     billingMode: 'expression',
     input: '0',
@@ -114,13 +164,17 @@ export function expressionModelPriceDraft(expression = ''): ModelPriceDraft {
     cacheCreation5m: '0',
     cacheCreation1h: '0',
     expression,
+    peakRules,
   }
 }
 
 /** 仅用于控制选择状态，显示文案由表单使用本地化校验器提供。 */
 export function modelPriceDraftIsComplete(draft?: ModelPriceDraft) {
   if (!draft) return false
-  return buildModelPriceDraftSchema({ decimal: 'decimal', free: 'free', expression: 'expression', expressionTooLong: 'expression too long', expressionValues: 'expression values' }).safeParse(draft).success
+  return buildModelPriceDraftSchema({
+    decimal: 'decimal', free: 'free', expression: 'expression', expressionTooLong: 'expression too long', expressionValues: 'expression values',
+    ratio: 'ratio', peakWindow: 'window', weekdays: 'weekdays', timezone: 'timezone', rules: 'rules', overlap: 'overlap',
+  }).safeParse(draft).success
 }
 
 export function toModelPriceWriteItem(
@@ -141,6 +195,7 @@ export function toModelPriceWriteItem(
       cache_creation_1h: draft.cacheCreation1h,
     },
     billing_expression: draft.billingMode === 'expression' ? draft.expression.trim() : null,
+    peak_windows: modelPeakRuleWindows(draft.peakRules),
   }
 }
 

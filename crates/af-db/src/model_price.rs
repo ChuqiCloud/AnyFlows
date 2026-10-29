@@ -1,6 +1,6 @@
 use std::{fmt, time::Duration};
 
-use af_domain::MAX_MODEL_NAME_BYTES;
+use af_domain::{GroupPeakWindow, MAX_GROUP_PEAK_WINDOWS, MAX_MODEL_NAME_BYTES, ModelPeakSchedule};
 use rust_decimal::Decimal;
 use sea_orm::{EntityTrait, QueryOrder, QuerySelect};
 use thiserror::Error;
@@ -52,6 +52,7 @@ pub struct ModelPriceRecord {
     billing_mode: ModelPriceBillingMode,
     prices: [Decimal; 5],
     billing_expression: Option<String>,
+    peak_schedule: Option<ModelPeakSchedule>,
     version: u64,
 }
 
@@ -80,6 +81,12 @@ impl ModelPriceRecord {
         self.billing_expression.as_deref()
     }
 
+    /// 返回该模型可选周计划；模型计划命中时覆盖分组高峰倍率。
+    #[must_use]
+    pub fn peak_schedule(&self) -> Option<&ModelPeakSchedule> {
+        self.peak_schedule.as_ref()
+    }
+
     /// 返回管理员每次修改必须递增的正版本。
     #[must_use]
     pub const fn version(&self) -> u64 {
@@ -102,6 +109,18 @@ impl ModelPriceRecord {
             .billing_expression
             .as_ref()
             .map(|expression| expression.as_str());
+        let peak_schedule = model
+            .peak_windows
+            .as_ref()
+            .map(|value| {
+                let windows = serde_json::from_value::<Vec<GroupPeakWindow>>(value.clone())
+                    .map_err(|_| ModelPriceRepositoryError::Invariant)?;
+                if windows.len() > MAX_GROUP_PEAK_WINDOWS {
+                    return Err(ModelPriceRepositoryError::Invariant);
+                }
+                ModelPeakSchedule::new(windows).map_err(|_| ModelPriceRepositoryError::Invariant)
+            })
+            .transpose()?;
         let version = u64::try_from(model.version)
             .ok()
             .filter(|version| *version > 0)
@@ -119,6 +138,7 @@ impl ModelPriceRecord {
             billing_mode,
             prices,
             billing_expression: billing_expression.map(str::to_owned),
+            peak_schedule,
             version,
         })
     }

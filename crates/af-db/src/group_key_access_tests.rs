@@ -7,8 +7,9 @@ use sea_orm::{
 };
 
 use crate::{
-    DatabaseOptions, DatabasePool, MigrationOptions,
-    entity::{groups, users},
+    DatabaseOptions, DatabasePool, MigrationOptions, UserTokenMutationOutcome, UserTokenRepository,
+    UserTokenRepositoryError, UserTokenWriteRecord,
+    entity::{groups, tokens, users},
     group_key_access::{
         GroupKeyAccessError, GroupKeyAccessRepository, GroupKeySelectionMode,
         user_can_select_key_group,
@@ -144,6 +145,278 @@ async fn grants_replace_atomically_and_user_lists_follow_current_policy()
     repository
         .update_policy(group, GroupKeySelectionMode::DefaultOnly, vec![])
         .await?;
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn revoking_group_access_disables_only_active_keys_that_lose_access()
+-> Result<(), Box<dyn Error>> {
+    let (pool, repository) = fixture().await?;
+    let group = GroupId::new(20)?;
+    let first = UserId::new(51)?;
+    let second = UserId::new(52)?;
+    let default_user = UserId::new(53)?;
+    for (id, default_group_id) in [(53_i64, group.get()), (54_i64, 10_i64)] {
+        pool.connection()
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                "INSERT INTO users (id, username, status, default_group_id, aff_code, settings) VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    id.into(),
+                    format!("key-user-{id}").into(),
+                    1_i16.into(),
+                    default_group_id.into(),
+                    format!("key-user-{id}").into(),
+                    "{}".into(),
+                ],
+            ))
+            .await?;
+    }
+
+    // 策略从全部用户收窄时，应按已存在的 Key 逐一处理。
+    repository
+        .update_policy(group, GroupKeySelectionMode::AllUsers, vec![])
+        .await?;
+    let deleted_at = sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc();
+    insert_test_token(&pool, 501, first.get(), group.get(), 1, None).await?;
+    insert_test_token(&pool, 502, first.get(), group.get(), 1, None).await?;
+    insert_test_token(&pool, 503, second.get(), group.get(), 1, None).await?;
+    insert_test_token(&pool, 504, default_user.get(), group.get(), 1, None).await?;
+    insert_test_token(&pool, 505, first.get(), group.get(), 2, None).await?;
+    insert_test_token(&pool, 506, first.get(), group.get(), 1, Some(deleted_at)).await?;
+    insert_test_token(&pool, 507, first.get(), GroupId::new(30)?.get(), 1, None).await?;
+    // 组织 Key 的所有者同样失去个人选组权，但组织令牌不能被个人授权策略停用或计数。
+    insert_test_token(&pool, 510, 54, group.get(), 1, None).await?;
+    tokens::Entity::update_many()
+        .filter(tokens::Column::Id.eq(510_i64))
+        .col_expr(tokens::Column::OrganizationId, Expr::value(Some(900_i64)))
+        .exec(pool.connection())
+        .await?;
+
+    let skipped = repository
+        .update_policy_with_key_revocation(
+            group,
+            GroupKeySelectionMode::SelectedUsers,
+            vec![second],
+            false,
+        )
+        .await?;
+    assert_eq!(skipped.disabled_key_count, 0);
+    assert_eq!(skipped.disabled_user_count, 0);
+    assert_eq!(token_status(&pool, 501).await?, 1);
+    assert_eq!(token_status(&pool, 502).await?, 1);
+    let user_tokens = UserTokenRepository::new(pool.clone(), Duration::from_secs(5))?;
+    assert!(matches!(
+        user_tokens
+            .update(
+                first,
+                af_domain::TokenId::new(501)?,
+                UserTokenWriteRecord::new("still-active".to_owned(), 1, 0, false, None, None, None),
+            )
+            .await?,
+        UserTokenMutationOutcome::Mutated(_)
+    ));
+    repository
+        .update_policy(group, GroupKeySelectionMode::AllUsers, vec![])
+        .await?;
+
+    let update = repository
+        .update_policy_with_key_revocation(
+            group,
+            GroupKeySelectionMode::SelectedUsers,
+            vec![second],
+            true,
+        )
+        .await?;
+    assert_eq!(update.disabled_key_count, 2);
+    assert_eq!(update.disabled_user_count, 1);
+    assert_eq!(update.policy.allowed_user_ids, [second]);
+    assert!(matches!(
+        user_tokens
+            .update(
+                first,
+                af_domain::TokenId::new(501)?,
+                UserTokenWriteRecord::new("reactivation".to_owned(), 1, 0, false, None, None, None),
+            )
+            .await,
+        Err(UserTokenRepositoryError::GroupUnavailable)
+    ));
+    for (id, expected_status) in [
+        (501, 2),
+        (502, 2),
+        (503, 1),
+        (504, 1),
+        (505, 2),
+        (506, 1),
+        (507, 1),
+        (510, 1),
+    ] {
+        assert_eq!(
+            token_status(&pool, id).await?,
+            expected_status,
+            "token {id}"
+        );
+    }
+
+    // 已授权用户失去自选权，但默认分组用户的 Key 继续有效。
+    let update = repository
+        .update_policy_with_key_revocation(group, GroupKeySelectionMode::DefaultOnly, vec![], true)
+        .await?;
+    assert_eq!(update.disabled_key_count, 1);
+    assert_eq!(update.disabled_user_count, 1);
+    assert_eq!(token_status(&pool, 503).await?, 2);
+    assert_eq!(token_status(&pool, 504).await?, 1);
+    assert_eq!(token_status(&pool, 510).await?, 1);
+
+    // 默认组策略下原本无权使用该组的 Key 不属于“失去授权”。
+    insert_test_token(&pool, 508, second.get(), group.get(), 1, None).await?;
+    let update = repository
+        .update_policy_with_key_revocation(
+            group,
+            GroupKeySelectionMode::SelectedUsers,
+            vec![second],
+            true,
+        )
+        .await?;
+    assert_eq!(update.disabled_key_count, 0);
+    assert_eq!(update.disabled_user_count, 0);
+    assert_eq!(token_status(&pool, 508).await?, 1);
+
+    // 扩大到全部用户时不应停用 Key。
+    insert_test_token(&pool, 509, first.get(), group.get(), 1, None).await?;
+    let update = repository
+        .update_policy_with_key_revocation(group, GroupKeySelectionMode::AllUsers, vec![], true)
+        .await?;
+    assert_eq!(update.disabled_key_count, 0);
+    assert_eq!(update.disabled_user_count, 0);
+    assert_eq!(token_status(&pool, 509).await?, 1);
+
+    // Key 停用失败时，策略与授权必须随同事务回滚。
+    pool.connection()
+        .execute(Statement::from_string(
+            DbBackend::Sqlite,
+            "CREATE TRIGGER reject_key_revocation BEFORE UPDATE ON tokens WHEN OLD.id = 509 AND NEW.status = 2 BEGIN SELECT RAISE(ABORT, 'test key revocation rejected'); END".to_owned(),
+        ))
+        .await?;
+    assert_eq!(
+        repository
+            .update_policy_with_key_revocation(
+                group,
+                GroupKeySelectionMode::SelectedUsers,
+                vec![second],
+                true,
+            )
+            .await
+            .unwrap_err(),
+        GroupKeyAccessError::Internal
+    );
+    assert_eq!(token_status(&pool, 509).await?, 1);
+    let policy = repository.get_policy(group).await?;
+    assert_eq!(policy.selection_mode, GroupKeySelectionMode::AllUsers);
+    assert!(policy.allowed_user_ids.is_empty());
+
+    pool.close().await?;
+    Ok(())
+}
+
+async fn insert_test_token(
+    pool: &DatabasePool,
+    id: i64,
+    user_id: i64,
+    group_id: i64,
+    status: i16,
+    deleted_at: Option<sea_orm::entity::prelude::TimeDateTimeWithTimeZone>,
+) -> Result<(), sea_orm::DbErr> {
+    pool.connection()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO tokens (id, user_id, key_hash, key_prefix, name, status, group_id, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                id.into(),
+                user_id.into(),
+                format!("{id:064x}").into(),
+                format!("sk-af-{id:012}").into(),
+                format!("test-token-{id}").into(),
+                status.into(),
+                group_id.into(),
+                deleted_at.into(),
+            ],
+        ))
+        .await?;
+    Ok(())
+}
+
+async fn token_status(pool: &DatabasePool, id: i64) -> Result<i16, sea_orm::DbErr> {
+    tokens::Entity::find_by_id(id)
+        .one(pool.connection())
+        .await?
+        .map(|token| token.status)
+        .ok_or_else(|| sea_orm::DbErr::Custom(format!("token {id} not found")))
+}
+
+#[tokio::test]
+async fn revocation_counts_users_once_across_locked_key_update_batches()
+-> Result<(), Box<dyn Error>> {
+    let (pool, repository) = fixture().await?;
+    let group = GroupId::new(20)?;
+    repository
+        .update_policy(group, GroupKeySelectionMode::AllUsers, vec![])
+        .await?;
+    for id in 1_000_i64..1_403 {
+        let owner = if id < 1_401 { 51 } else { 52 };
+        insert_test_token(&pool, id, owner, group.get(), 1, None).await?;
+    }
+    let update = repository
+        .update_policy_with_key_revocation(group, GroupKeySelectionMode::DefaultOnly, vec![], true)
+        .await?;
+    assert_eq!(update.disabled_key_count, 403);
+    assert_eq!(update.disabled_user_count, 2);
+    for id in 1_000_i64..1_403 {
+        assert_eq!(token_status(&pool, id).await?, 2);
+    }
+    let repeated = repository
+        .update_policy_with_key_revocation(group, GroupKeySelectionMode::DefaultOnly, vec![], true)
+        .await?;
+    assert_eq!(repeated.disabled_key_count, 0);
+    assert_eq!(repeated.disabled_user_count, 0);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn revocation_rolls_back_if_a_locked_key_is_not_updated() -> Result<(), Box<dyn Error>> {
+    let (pool, repository) = fixture().await?;
+    let group = GroupId::new(20)?;
+    repository
+        .update_policy(group, GroupKeySelectionMode::AllUsers, vec![])
+        .await?;
+    insert_test_token(&pool, 601, 51, group.get(), 1, None).await?;
+    insert_test_token(&pool, 602, 52, group.get(), 1, None).await?;
+    pool.connection()
+        .execute(Statement::from_string(
+            DbBackend::Sqlite,
+            "CREATE TRIGGER skip_key_revocation BEFORE UPDATE ON tokens WHEN OLD.id = 602 AND NEW.status = 2 BEGIN SELECT RAISE(IGNORE); END".to_owned(),
+        ))
+        .await?;
+    assert_eq!(
+        repository
+            .update_policy_with_key_revocation(
+                group,
+                GroupKeySelectionMode::DefaultOnly,
+                vec![],
+                true
+            )
+            .await
+            .unwrap_err(),
+        GroupKeyAccessError::Internal
+    );
+    assert_eq!(token_status(&pool, 601).await?, 1);
+    assert_eq!(token_status(&pool, 602).await?, 1);
+    assert_eq!(
+        repository.get_policy(group).await?.selection_mode,
+        GroupKeySelectionMode::AllUsers
+    );
     pool.close().await?;
     Ok(())
 }
