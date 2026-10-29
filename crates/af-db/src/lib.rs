@@ -69,9 +69,10 @@ mod external_account;
 pub use external_account::provision_external_account_in_transaction;
 mod image_history;
 pub use image_history::{
-    ImageHistoryRecord, ImageHistoryRepository, ImageHistoryRepositoryConfigError,
-    ImageHistoryRepositoryError, ImageHistoryWrite, MAX_IMAGE_HISTORY_ENTRIES_PER_PAGE,
-    MAX_IMAGE_HISTORY_IMAGE_BYTES, MAX_IMAGE_HISTORY_THUMBNAIL_BYTES,
+    ImageHistoryRecord, ImageHistoryRecordParts, ImageHistoryRepository,
+    ImageHistoryRepositoryConfigError, ImageHistoryRepositoryError, ImageHistoryWrite,
+    MAX_IMAGE_HISTORY_ENTRIES_PER_PAGE, MAX_IMAGE_HISTORY_IMAGE_BYTES,
+    MAX_IMAGE_HISTORY_THUMBNAIL_BYTES,
 };
 mod analytics_export;
 #[cfg(test)]

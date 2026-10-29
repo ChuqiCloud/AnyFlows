@@ -1,4 +1,4 @@
-use af_admin::ImageHistoryEntry;
+use af_admin::{ImageHistoryEntry, ImageHistoryEntryParts};
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -20,7 +20,7 @@ pub(crate) struct ImageHistoryItemDto {
 
 impl ImageHistoryItemDto {
     pub(super) fn from_application(entry: ImageHistoryEntry) -> Self {
-        let (
+        let ImageHistoryEntryParts {
             id,
             model,
             prompt,
@@ -31,7 +31,7 @@ impl ImageHistoryItemDto {
             thumbnail_format,
             thumbnail_byte_size,
             created_at,
-        ) = entry.into_parts();
+        } = entry.into_parts();
         Self {
             id,
             model,
