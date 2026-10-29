@@ -27,7 +27,7 @@ use crate::{
 
 mod dto;
 
-use dto::{ImageHistoryItemDto, ImageHistoryListResponse};
+pub(crate) use dto::{ImageHistoryItemDto, ImageHistoryListResponse};
 
 const IMAGE_HISTORY_REQUEST_LIMIT: usize =
     MAX_IMAGE_HISTORY_IMAGE_BYTES + MAX_IMAGE_HISTORY_THUMBNAIL_BYTES + 256 * 1024;
