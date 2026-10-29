@@ -168,13 +168,22 @@ def export_archive(source: Path, destination: Path, commit: str) -> None:
                 with target.open("wb") as output:
                     shutil.copyfileobj(source_file, output)
                 target.chmod(member.mode & 0o777)
+        # The tar reader stops at the end marker before Git necessarily finishes
+        # writing its record padding. Drain it before closing the read end so a
+        # successful producer cannot fail with a broken pipe.
+        while process.stdout.read(64 * 1024):
+            pass
     finally:
-        if process.stdout:
-            process.stdout.close()
-    stderr = process.stderr.read().decode("utf-8", errors="replace") if process.stderr else ""
-    return_code = process.wait()
+        process.stdout.close()
+        try:
+            stderr = process.stderr.read().decode("utf-8", errors="replace") if process.stderr else ""
+        finally:
+            if process.stderr:
+                process.stderr.close()
+            return_code = process.wait()
     if return_code:
-        raise ExportError(f"git archive failed: {stderr.strip()}")
+        detail = stderr.strip() or "no stderr output"
+        raise ExportError(f"git archive failed (return code {return_code}): {detail}")
 
 
 def write_metadata(destination: Path, relative_path: str, repository: str, commit: str) -> None:
