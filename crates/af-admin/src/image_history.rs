@@ -68,7 +68,10 @@ impl ImageHistoryUpload {
             validate_text(request_id, 128, true)?;
         }
         let image = match (image, image_url) {
-            (Some(bytes), None) => ImageHistoryImageSource::Bytes(validate_image(bytes)?),
+            (Some(bytes), None) => {
+                let (format, bytes) = validate_image(bytes)?;
+                ImageHistoryImageSource::Bytes(format, bytes)
+            }
             (None, Some(url)) => ImageHistoryImageSource::Url(validate_image_url(url)?),
             _ => return Err(ImageHistoryError::InvalidInput),
         };
