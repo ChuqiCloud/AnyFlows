@@ -336,7 +336,7 @@ async fn insert_test_token(
                 id.into(),
                 user_id.into(),
                 format!("{id:064x}").into(),
-                format!("key-{id}").into(),
+                format!("sk-af-{id:012}").into(),
                 format!("test-token-{id}").into(),
                 status.into(),
                 group_id.into(),

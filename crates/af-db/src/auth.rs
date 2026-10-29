@@ -1091,14 +1091,27 @@ mod tests {
             assert_eq!(statement.sql.matches(length_expression).count(), 2);
             let model_length_expression = length_expression.replace("allow_ips", "model_limits");
             assert_eq!(statement.sql.matches(&model_length_expression).count(), 2);
+            let group_model_length_expression = length_expression
+                .replace("tokens", "group_model_policies")
+                .replace("allow_ips", "allowed_models");
+            assert_eq!(
+                statement
+                    .sql
+                    .matches(&group_model_length_expression)
+                    .count(),
+                2,
+                "group model allowlists need both the bounded projection and oversized guard: {rendered}"
+            );
             assert!(rendered.contains("<= 4352"), "{rendered}");
             assert!(rendered.contains("> 4352"), "{rendered}");
-            assert!(rendered.contains("<= 69632"), "{rendered}");
-            assert!(rendered.contains("> 69632"), "{rendered}");
-            assert_eq!(rendered.matches("ELSE NULL END)").count(), 2);
-            assert_eq!(rendered.matches("ELSE FALSE END)").count(), 2);
+            // Token and group model allowlists share the same serialized byte bound.
+            assert_eq!(rendered.matches("<= 69632").count(), 2, "{rendered}");
+            assert_eq!(rendered.matches("> 69632").count(), 2, "{rendered}");
+            assert_eq!(rendered.matches("ELSE NULL END)").count(), 3);
+            assert_eq!(rendered.matches("ELSE FALSE END)").count(), 3);
             assert!(statement.sql.contains("token_model_limits_oversized"));
             assert!(statement.sql.contains("token_allow_ips_oversized"));
+            assert!(statement.sql.contains("group_model_limits_oversized"));
         }
     }
 }
