@@ -640,9 +640,14 @@ export type AdminGroupKeyPolicy = {
     selection_mode: GroupKeySelectionMode;
     allowed_user_ids: Array<number>;
 };
+export type AdminGroupKeyPolicyUpdateResult = AdminGroupKeyPolicy & {
+    disabled_key_count: number;
+    disabled_user_count: number;
+};
 export type AdminGroupKeyPolicyWriteRequest = {
     selection_mode: GroupKeySelectionMode;
     allowed_user_ids?: Array<number>;
+    disable_keys_losing_access?: boolean;
 };
 export type AdminGroupListResponse = {
     groups: Array<AdminGroup>;
@@ -755,6 +760,7 @@ export type AdminModelPrice = {
     billing_mode: AdminModelPriceBillingMode;
     prices: AdminModelPriceValues;
     billing_expression: string | null;
+    peak_windows: Array<AdminGroupPeakWindow> | null;
     version: number;
 };
 export type AdminModelPriceBatchRequest = {
@@ -843,6 +849,7 @@ export type AdminModelPriceWriteItem = {
     billing_mode: AdminModelPriceBillingMode;
     prices: AdminModelPriceValues;
     billing_expression?: string | null;
+    peak_windows?: Array<AdminGroupPeakWindow> | null;
 };
 export type AdminModelSyncApplyItemRequest = {
     item_id: number;
@@ -5032,7 +5039,7 @@ export type UpdateAdminGroupKeyPolicyErrors = {
 };
 export type UpdateAdminGroupKeyPolicyError = UpdateAdminGroupKeyPolicyErrors[keyof UpdateAdminGroupKeyPolicyErrors];
 export type UpdateAdminGroupKeyPolicyResponses = {
-    200: AdminGroupKeyPolicy;
+    200: AdminGroupKeyPolicyUpdateResult;
 };
 export type UpdateAdminGroupKeyPolicyResponse = UpdateAdminGroupKeyPolicyResponses[keyof UpdateAdminGroupKeyPolicyResponses];
 export type ListAdminRoutesData = {

@@ -215,6 +215,38 @@ impl GroupPeakSchedule {
     }
 }
 
+/// 已校验的模型级周计划；模型级规则按模型价格记录归属，不允许再声明模型列表。
+///
+/// 命中时由请求定价层覆盖分组当前高峰倍率；未命中时仍采用分组周计划。
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ModelPeakSchedule(Vec<GroupPeakWindow>);
+
+impl ModelPeakSchedule {
+    /// 校验模型级计划。每条规则只能作用于所属模型，且相同时间不得重叠。
+    pub fn new(windows: Vec<GroupPeakWindow>) -> Result<Self, GroupPeakScheduleError> {
+        if windows.iter().any(|window| !window.models().is_empty()) {
+            return Err(GroupPeakScheduleError::InvalidWindow);
+        }
+        GroupPeakSchedule::new(windows.clone())?;
+        Ok(Self(windows))
+    }
+
+    /// 返回可持久化和配置展示的周计划规则。
+    #[must_use]
+    pub fn windows(&self) -> &[GroupPeakWindow] {
+        &self.0
+    }
+
+    /// 返回该模型在捕获时刻的倍率覆盖；未命中时不覆盖分组计划。
+    #[must_use]
+    pub fn ratio_at(&self, time: PricingWeekTime) -> Option<i64> {
+        self.0
+            .iter()
+            .find(|window| window.contains_time(time))
+            .map(GroupPeakWindow::ratio_micros)
+    }
+}
+
 /// 周计划公开校验错误。
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum GroupPeakScheduleError {
@@ -275,6 +307,33 @@ mod tests {
         assert_eq!(schedule.ratio_for("deepseek-chat", at(1, 20)), None);
         assert_eq!(schedule.ratio_for("deepseek-chat", at(2, 8)), None);
         assert_eq!(schedule.ratio_for("other-model", at(1, 8)), None);
+    }
+
+    #[test]
+    fn model_schedule_is_optional_non_overlapping_and_scoped_by_its_own_model() {
+        assert_eq!(ModelPeakSchedule::default().ratio_at(at(1, 8)), None);
+        let schedule = ModelPeakSchedule::new(vec![window(
+            vec![1],
+            8 * 3_600,
+            20 * 3_600,
+            500_000,
+            &[],
+            0,
+        )])
+        .unwrap();
+        assert_eq!(schedule.ratio_at(at(1, 8)), Some(500_000));
+        assert_eq!(schedule.ratio_at(at(1, 20)), None);
+        assert_eq!(
+            ModelPeakSchedule::new(vec![window(vec![1], 0, 3_600, 1, &["other-model"], 0)]),
+            Err(GroupPeakScheduleError::InvalidWindow),
+        );
+        assert_eq!(
+            ModelPeakSchedule::new(vec![
+                window(vec![7], 23 * 3_600, 3_600, 1, &[], 0),
+                window(vec![1], 8 * 3_600, 10 * 3_600, 1, &[], 480),
+            ]),
+            Err(GroupPeakScheduleError::OverlappingWindows),
+        );
     }
 
     #[test]

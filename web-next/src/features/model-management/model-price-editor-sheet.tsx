@@ -1,4 +1,5 @@
 import { Drawer, DrawerBody, DrawerContent, DrawerHeader } from '@heroui/react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type {
@@ -27,6 +28,7 @@ type ModelPriceEditorSheetProps = {
 /** 使用独立 Drawer 承载固定价格与表达式编辑，关闭时由工作区保留已形成的草稿。 */
 export function ModelPriceEditorSheet(props: ModelPriceEditorSheetProps) {
   const { t } = useTranslation()
+  const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null)
   const target = props.target
   return (
     <Drawer
@@ -40,7 +42,7 @@ export function ModelPriceEditorSheet(props: ModelPriceEditorSheetProps) {
     >
       <DrawerContent>
         {() => (
-          <>
+          <div ref={setPortalContainer} className="relative flex h-full min-h-0 flex-col">
             <DrawerHeader className="flex flex-col gap-0.5 border-b border-[var(--hairline)] p-4 pr-12">
               <h2 className="text-base font-medium text-foreground">{t('modelManagement.prices.editor.title')}</h2>
               <p className="text-sm text-muted-foreground" id="model-price-editor-description">
@@ -56,6 +58,7 @@ export function ModelPriceEditorSheet(props: ModelPriceEditorSheetProps) {
                   candidate={target.candidate}
                   model={target.model}
                   price={target.price}
+                  portalContainer={portalContainer}
                   source={target.source}
                   staged={target.staged}
                   onCancel={() => props.onOpenChange(false)}
@@ -63,7 +66,7 @@ export function ModelPriceEditorSheet(props: ModelPriceEditorSheetProps) {
                 />
               ) : null}
             </DrawerBody>
-          </>
+          </div>
         )}
       </DrawerContent>
     </Drawer>

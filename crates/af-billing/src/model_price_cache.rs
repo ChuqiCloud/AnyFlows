@@ -14,6 +14,7 @@ use af_db::{
     ModelPriceRepositoryError,
 };
 use af_domain::MAX_MODEL_NAME_BYTES;
+use af_domain::{ModelPeakSchedule, PricingWeekTime};
 use thiserror::Error;
 
 use crate::{
@@ -55,6 +56,7 @@ pub enum ModelPriceSourceError {
 pub struct ModelPriceSourceRecord {
     model: String,
     price: ModelPrice,
+    peak_schedule: Option<ModelPeakSchedule>,
 }
 
 impl ModelPriceSourceRecord {
@@ -81,7 +83,9 @@ impl ModelPriceSourceRecord {
                     BillingMode::PerCall => return Err(ModelPriceCacheError::InvalidRecord),
                 },
                 version,
+                peak_schedule: None,
             },
+            peak_schedule: None,
         })
     }
 
@@ -99,8 +103,17 @@ impl ModelPriceSourceRecord {
             price: ModelPrice {
                 definition: ModelPriceDefinition::Expression(definition),
                 version,
+                peak_schedule: None,
             },
+            peak_schedule: None,
         })
+    }
+
+    /// 为该模型设置已校验的定时倍率覆盖。
+    #[must_use]
+    pub fn with_peak_schedule(mut self, schedule: Option<ModelPeakSchedule>) -> Self {
+        self.peak_schedule = schedule;
+        self
     }
 }
 
@@ -115,6 +128,7 @@ impl fmt::Debug for ModelPriceSourceRecord {
 pub struct ModelPrice {
     definition: ModelPriceDefinition,
     version: u64,
+    peak_schedule: Option<ModelPeakSchedule>,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -160,6 +174,14 @@ impl ModelPrice {
     #[must_use]
     pub const fn version(&self) -> u64 {
         self.version
+    }
+
+    /// 返回该模型在时刻匹配的覆盖倍率；无匹配时应沿用分组时段倍率。
+    #[must_use]
+    pub fn peak_ratio_at(&self, time: PricingWeekTime) -> Option<i64> {
+        self.peak_schedule
+            .as_ref()
+            .and_then(|schedule| schedule.ratio_at(time))
     }
 
     /// 把固定单价与本次请求倍率组合成解析器；Expression 尚未接线时返回空。
@@ -421,6 +443,7 @@ impl ModelPriceSource for DatabaseModelPriceSource {
                             prices,
                             record.version(),
                         )
+                        .map(|source| source.with_peak_schedule(record.peak_schedule().cloned()))
                         .map_err(|_| ModelPriceSourceError::Invariant)
                     }
                     ModelPriceBillingMode::Expression => {
@@ -434,6 +457,7 @@ impl ModelPriceSource for DatabaseModelPriceSource {
                             definition,
                             record.version(),
                         )
+                        .map(|source| source.with_peak_schedule(record.peak_schedule().cloned()))
                         .map_err(|_| ModelPriceSourceError::Invariant)
                     }
                 })
@@ -451,7 +475,9 @@ fn build_snapshot(
     }
     let mut entries = BTreeMap::new();
     for record in records {
-        if entries.insert(record.model, record.price).is_some() {
+        let mut price = record.price;
+        price.peak_schedule = record.peak_schedule;
+        if entries.insert(record.model, price).is_some() {
             return Err(ModelPriceCacheError::DuplicateModel);
         }
     }

@@ -20,6 +20,11 @@ impl RuntimeModelCatalogReader {
             .snapshot()
             .map_err(|_| ModelCatalogReadError::Internal)?;
         let group_id = authentication.group_id();
+        let group_model_policy = self
+            .group_model_policy
+            .policy_for_group(group_id)
+            .await
+            .map_err(super::map_group_model_policy_error)?;
         let mut cursor = None;
         let mut models = Vec::new();
         // OpenAI 客户端期望完整列表；内部逐页扫描仍保留目录容量上限。
@@ -32,6 +37,7 @@ impl RuntimeModelCatalogReader {
             let (records, next_cursor) = page.into_parts();
             for record in records {
                 if !authentication.allows_model(record.model())
+                    || !group_model_policy.allows(record.model())
                     || prices.get(record.model()).is_none()
                     || runtime
                         .candidates(group_id, record.model())

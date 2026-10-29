@@ -236,6 +236,8 @@ pub struct AuthenticationReady {
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
     group_key_access_service: Arc<dyn af_admin::GroupKeyAccessService>,
+    group_model_policy_repository: af_db::GroupModelPolicyRepository,
+    group_model_policy_service: Arc<dyn af_admin::GroupModelPolicyService>,
     admin_route_reader: Arc<dyn AdminRouteReader>,
     admin_route_writer: Arc<dyn AdminRouteWriter>,
     admin_model_reader: Arc<dyn AdminModelReader>,
@@ -543,6 +545,9 @@ pub enum BootstrapError {
     /// 个人 Key 自选分组仓储的启动参数无效。
     #[error("个人 Key 自选分组仓储启动参数无效")]
     GroupKeyAccessRepository(#[source] af_db::GroupKeyAccessError),
+    /// 分组模型策略仓储启动参数无效。
+    #[error("分组模型策略仓储启动参数无效")]
+    GroupModelPolicyRepository(#[source] af_db::GroupModelPolicyRepositoryError),
     /// 管理员智能路由仓储的启动参数无效。
     #[error("管理员智能路由仓储启动参数无效")]
     AdminRouteRepository(#[source] AdminRouteRepositoryConfigError),
@@ -882,6 +887,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::GroupKeyAccessRepository)?;
+        let group_model_policy_repository = af_db::GroupModelPolicyRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::GroupModelPolicyRepository)?;
         let repository = TokenAuthRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -1314,6 +1324,10 @@ impl Bootstrap<DatabaseReady> {
                 group_key_access_service: Arc::new(af_admin::DatabaseGroupKeyAccessService::new(
                     group_key_access_repository,
                 )),
+                group_model_policy_repository: group_model_policy_repository.clone(),
+                group_model_policy_service: Arc::new(
+                    af_admin::DatabaseGroupModelPolicyService::new(group_model_policy_repository),
+                ),
                 admin_route_reader: Arc::new(DatabaseAdminRouteReader::new(
                     admin_route_repository.clone(),
                 )),
@@ -1797,9 +1811,13 @@ impl Bootstrap<RelayReady> {
         let model_catalog_reader: Arc<dyn ModelCatalogReader> =
             Arc::new(RuntimeModelCatalogReader::new(
                 channel_index.clone(),
-                model_prices,
+                model_prices.clone(),
                 pricing_source.clone(),
                 model_catalog_metadata,
+                self.stage
+                    .infrastructure
+                    .group_model_policy_repository
+                    .clone(),
             ));
         let quota_repository =
             QuotaRepository::new(self.stage.infrastructure.infrastructure.database.clone());
@@ -1897,6 +1915,7 @@ impl Bootstrap<RelayReady> {
                 AsyncTaskBillingRepository::new(task_database, task_operation_timeout)
                     .expect("认证查询超时已校验为正数，异步任务计费仓储必须可装配"),
                 group_pricing,
+                model_prices.clone(),
                 crate::scheduled_chat::PersistentVideoTaskBillingPorts::new(
                     task_reserve_port,
                     task_settlement_port,
@@ -2009,7 +2028,8 @@ impl Bootstrap<RelayReady> {
                 crate::request_rate_limit::RuntimeServiceModelAuthenticator::new(
                     authenticator,
                     request_rate_limit_store.clone(),
-                ),
+                )
+                .with_group_model_policy(infrastructure.group_model_policy_repository.clone()),
             ));
         }
         infrastructure.authenticator = Arc::new(RuntimeTokenAuthenticator::new(
@@ -2727,6 +2747,12 @@ impl Bootstrap<Supervised> {
         let router = router
             .merge(af_http::build_group_key_access_router(
                 Arc::clone(&self.stage.infrastructure.group_key_access_service),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+                Arc::clone(&self.stage.infrastructure.platform_audit_service),
+                self.config.server(),
+            ))
+            .merge(af_http::build_group_model_policy_router(
+                Arc::clone(&self.stage.infrastructure.group_model_policy_service),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
                 self.config.server(),
             ))

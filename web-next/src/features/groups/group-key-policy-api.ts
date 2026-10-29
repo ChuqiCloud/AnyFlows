@@ -11,6 +11,7 @@ export type GroupKeyPolicy = {
   allowed_user_ids: number[]
 }
 export type GroupKeyPolicyWriteRequest = Omit<GroupKeyPolicy, 'group_id'>
+export type GroupKeyPolicyUpdateResult = GroupKeyPolicy & { disabled_key_count: number; disabled_user_count: number }
 
 const groupKeyPolicyQueryKey = ['admin-group-key-policy'] as const
 
@@ -28,7 +29,7 @@ export function useAdminGroupKeyPolicy(groupId: number) {
 export function useUpdateAdminGroupKeyPolicy(groupId: number) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (body: GroupKeyPolicyWriteRequest) => {
+    mutationFn: async (body: GroupKeyPolicyWriteRequest & { disable_keys_losing_access?: boolean }): Promise<GroupKeyPolicyUpdateResult> => {
       const { data } = await updateAdminGroupKeyPolicy({ client: apiClient, path: { id: groupId }, body })
       return data
     },

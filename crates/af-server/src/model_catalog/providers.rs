@@ -75,6 +75,11 @@ impl RuntimeModelCatalogReader {
             .channel_index
             .snapshot()
             .map_err(|_| ModelCatalogReadError::Internal)?;
+        let model_policy = self
+            .group_model_policy
+            .policy_for_group(authentication.group_id())
+            .await
+            .map_err(super::map_group_model_policy_error)?;
         let mut counts = BTreeMap::new();
         let mut cursor = None;
         let mut scan_complete = false;
@@ -86,6 +91,9 @@ impl RuntimeModelCatalogReader {
                 .map_err(|_| ModelCatalogReadError::Internal)?;
             let (records, next_cursor) = page.into_parts();
             for record in records {
+                if !model_policy.allows(record.model()) {
+                    continue;
+                }
                 let protocols =
                     available_protocols(&runtime, authentication.group_id(), record.model())?;
                 if protocols.is_empty() {

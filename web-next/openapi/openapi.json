@@ -25704,6 +25704,7 @@
           "billing_mode",
           "prices",
           "billing_expression",
+          "peak_windows",
           "version"
         ],
         "properties": {
@@ -25724,6 +25725,17 @@
               "null"
             ],
             "maxLength": 8192
+          },
+          "peak_windows": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AdminGroupPeakWindow"
+            },
+            "description": "模型级周计划；空值表示沿用分组时段倍率。",
+            "maxItems": 32
           },
           "version": {
             "type": "integer",
@@ -26255,6 +26267,17 @@
               "null"
             ],
             "maxLength": 8192
+          },
+          "peak_windows": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AdminGroupPeakWindow"
+            },
+            "description": "缺省或 null 保留现有计划，空数组清除计划，非空数组替换计划。",
+            "maxItems": 32
           }
         },
         "additionalProperties": false

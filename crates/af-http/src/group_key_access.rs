@@ -2,9 +2,11 @@ use std::sync::Arc;
 
 use af_admin::{
     GroupKeyAccessService, GroupKeyPolicy, GroupKeyPolicyCommand, GroupKeyPolicyError,
+    GroupKeyPolicyUpdate, PlatformAuditEntry, PlatformAuditOutcome, PlatformAuditService,
     SessionAuthentication, SessionAuthenticator, UserTokenGroupListQuery, UserTokenGroupPage,
 };
-use af_domain::UserId;
+use af_domain::{PlatformPermission, UserId};
+use af_telemetry::RequestId;
 use axum::{
     Json, Router,
     extract::{Extension, Path, RawQuery, State, rejection::JsonRejection},
@@ -13,6 +15,7 @@ use axum::{
     routing::get,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use utoipa::ToSchema;
 
 use crate::{
@@ -69,6 +72,9 @@ pub(crate) struct AdminGroupKeyPolicyWriteRequest {
     #[serde(default)]
     #[schema(max_items = 1000)]
     allowed_user_ids: Vec<i64>,
+    /// 是否同步停用因新策略而失去该分组授权的现有 Key。
+    #[serde(default)]
+    disable_keys_losing_access: bool,
 }
 
 impl AdminGroupKeyPolicyWriteRequest {
@@ -81,8 +87,30 @@ impl AdminGroupKeyPolicyWriteRequest {
             .into_iter()
             .map(|id| UserId::new(id).map_err(|_| ManagementError::InvalidRequest))
             .collect::<Result<Vec<_>, _>>()?;
-        GroupKeyPolicyCommand::new(self.selection_mode.into(), ids).map_err(map_error)
+        GroupKeyPolicyCommand::with_revocation(
+            self.selection_mode.into(),
+            ids,
+            self.disable_keys_losing_access,
+        )
+        .map_err(map_error)
     }
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminGroupKeyPolicyUpdateResult)]
+pub(crate) struct AdminGroupKeyPolicyUpdateResponse {
+    #[schema(minimum = 1)]
+    group_id: i64,
+    selection_mode: GroupKeySelectionMode,
+    #[schema(max_items = 1000)]
+    allowed_user_ids: Vec<i64>,
+    /// 本次策略保存事务停用的既有 Key 数量。
+    #[schema(minimum = 0)]
+    disabled_key_count: u64,
+    /// 至少一个既有 Key 被停用的用户数。
+    #[schema(minimum = 0)]
+    disabled_user_count: u64,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -112,10 +140,11 @@ pub(crate) struct UserTokenGroupListResponse {
 pub fn build_group_key_access_router(
     service: Arc<dyn GroupKeyAccessService>,
     authenticator: Arc<dyn SessionAuthenticator>,
+    audit_service: Arc<dyn PlatformAuditService>,
     config: &af_config::ServerConfig,
 ) -> Router {
     crate::router::build_router_with_routes_and_frontend(
-        authenticated_routes(service, authenticator),
+        authenticated_routes(service, authenticator, Some(audit_service)),
         Router::new(),
         config,
         32 * 1024,
@@ -126,6 +155,7 @@ pub fn build_group_key_access_router(
 fn authenticated_routes(
     service: Arc<dyn GroupKeyAccessService>,
     authenticator: Arc<dyn SessionAuthenticator>,
+    audit_service: Option<Arc<dyn PlatformAuditService>>,
 ) -> Router {
     let admin = Router::new()
         .route(
@@ -140,34 +170,50 @@ fn authenticated_routes(
             ManagementAuthenticationState::new(authenticator),
             authenticate_management_session,
         ))
-        .with_state(service)
+        .with_state(GroupKeyAccessHttpState {
+            service,
+            audit_service,
+        })
+}
+
+#[derive(Clone)]
+pub(crate) struct GroupKeyAccessHttpState {
+    service: Arc<dyn GroupKeyAccessService>,
+    audit_service: Option<Arc<dyn PlatformAuditService>>,
 }
 
 /// 管理员读取未删除分组的自选策略。
 pub(crate) async fn get_admin_group_key_policy(
-    State(service): State<Arc<dyn GroupKeyAccessService>>,
+    State(state): State<GroupKeyAccessHttpState>,
     Path(group_id): Path<String>,
     Extension(authentication): Extension<SessionAuthentication>,
 ) -> Result<Response, ManagementError> {
-    let policy = service
+    let result = state
+        .service
         .get_policy(
             authentication.principal(),
             crate::management_groups::parse_group_id(&group_id)?,
         )
         .await
         .map_err(map_error)?;
-    Ok(no_store_json(AdminGroupKeyPolicyResponse::from(policy)))
+    Ok(no_store_json(AdminGroupKeyPolicyResponse::from(result)))
 }
 
 /// 管理员原子替换个人 Key 自选策略与用户授权。
 pub(crate) async fn update_admin_group_key_policy(
-    State(service): State<Arc<dyn GroupKeyAccessService>>,
+    State(state): State<GroupKeyAccessHttpState>,
     Path(group_id): Path<String>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
     request: Result<Json<AdminGroupKeyPolicyWriteRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
-    let policy = service
+    let disable_keys_losing_access = request.disable_keys_losing_access;
+    if disable_keys_losing_access && state.audit_service.is_none() {
+        return Err(ManagementError::Internal);
+    }
+    let result = state
+        .service
         .update_policy(
             authentication.principal(),
             crate::management_groups::parse_group_id(&group_id)?,
@@ -175,16 +221,74 @@ pub(crate) async fn update_admin_group_key_policy(
         )
         .await
         .map_err(map_error)?;
-    Ok(no_store_json(AdminGroupKeyPolicyResponse::from(policy)))
+    if disable_keys_losing_access {
+        record_group_key_revocation_audit(
+            state
+                .audit_service
+                .as_ref()
+                .ok_or(ManagementError::Internal)?,
+            authentication.principal(),
+            &request_id,
+            result.policy.group_id.get(),
+            result.policy.selection_mode,
+            result.disabled_key_count,
+            result.disabled_user_count,
+        )
+        .await?;
+    }
+    Ok(no_store_json(AdminGroupKeyPolicyUpdateResponse::from(
+        result,
+    )))
+}
+
+async fn record_group_key_revocation_audit(
+    service: &Arc<dyn PlatformAuditService>,
+    principal: af_admin::SessionPrincipal,
+    request_id: &RequestId,
+    group_id: i64,
+    selection_mode: af_admin::GroupKeySelectionMode,
+    disabled_key_count: u64,
+    disabled_user_count: u64,
+) -> Result<(), ManagementError> {
+    let selection_mode = match selection_mode {
+        af_admin::GroupKeySelectionMode::DefaultOnly => "default_only",
+        af_admin::GroupKeySelectionMode::AllUsers => "all_users",
+        af_admin::GroupKeySelectionMode::SelectedUsers => "selected_users",
+    };
+    let entry = PlatformAuditEntry::new(
+        principal,
+        PlatformPermission::GroupKeyPoliciesManage,
+        "/api/admin/groups/{id}/key-policy",
+        "group.key_policy.update_and_disable_keys",
+        "group_key_policy",
+        Some(group_id.to_string()),
+        PlatformAuditOutcome::Succeeded,
+        None,
+        None,
+        Some(json!({
+            "group_id": group_id,
+            "selection_mode": selection_mode,
+            "disable_keys_losing_access": true,
+            "disabled_key_count": disabled_key_count,
+            "disabled_user_count": disabled_user_count,
+        })),
+        request_id.as_str(),
+    )
+    .map_err(|_| ManagementError::Internal)?;
+    service
+        .record(entry)
+        .await
+        .map_err(|_| ManagementError::Internal)
 }
 
 /// 返回当前登录用户可选分组的最小公开字段。
 pub(crate) async fn list_user_token_groups(
-    State(service): State<Arc<dyn GroupKeyAccessService>>,
+    State(state): State<GroupKeyAccessHttpState>,
     RawQuery(raw_query): RawQuery,
     Extension(authentication): Extension<SessionAuthentication>,
 ) -> Result<Response, ManagementError> {
-    let page = service
+    let page = state
+        .service
         .list_user_groups(
             authentication.principal(),
             parse_list_query(raw_query.as_deref())?,
@@ -204,6 +308,23 @@ impl From<GroupKeyPolicy> for AdminGroupKeyPolicyResponse {
                 .into_iter()
                 .map(UserId::get)
                 .collect(),
+        }
+    }
+}
+
+impl From<GroupKeyPolicyUpdate> for AdminGroupKeyPolicyUpdateResponse {
+    fn from(result: GroupKeyPolicyUpdate) -> Self {
+        Self {
+            group_id: result.policy.group_id.get(),
+            selection_mode: result.policy.selection_mode.into(),
+            allowed_user_ids: result
+                .policy
+                .allowed_user_ids
+                .into_iter()
+                .map(UserId::get)
+                .collect(),
+            disabled_key_count: result.disabled_key_count,
+            disabled_user_count: result.disabled_user_count,
         }
     }
 }
@@ -278,9 +399,9 @@ fn map_error(error: GroupKeyPolicyError) -> ManagementError {
 mod tests {
     use super::*;
     use af_admin::{
-        GroupKeyPolicyFuture, LoginCredentials, SessionAuthenticationError,
-        SessionAuthenticationFuture, SessionLoginFuture, SessionPrincipal, SessionRole,
-        UserTokenGroup, UserTokenGroupListFuture,
+        GroupKeyPolicyFuture, GroupKeyPolicyUpdateFuture, LoginCredentials,
+        SessionAuthenticationError, SessionAuthenticationFuture, SessionLoginFuture,
+        SessionPrincipal, SessionRole, UserTokenGroup, UserTokenGroupListFuture,
     };
     use af_domain::GroupId;
     use axum::body::{Body, to_bytes};
@@ -337,7 +458,7 @@ mod tests {
             _: SessionPrincipal,
             _: GroupId,
             _: GroupKeyPolicyCommand,
-        ) -> GroupKeyPolicyFuture<'a> {
+        ) -> GroupKeyPolicyUpdateFuture<'a> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             Box::pin(async { Err(GroupKeyPolicyError::Internal) })
         }
@@ -366,7 +487,7 @@ mod tests {
         let service = Arc::new(Service {
             calls: AtomicUsize::new(0),
         });
-        let app = authenticated_routes(service.clone(), Arc::new(Authenticator));
+        let app = authenticated_routes(service.clone(), Arc::new(Authenticator), None);
         for path in ["/api/token-groups", "/api/admin/groups/10/key-policy"] {
             let response = app
                 .clone()
@@ -398,7 +519,7 @@ mod tests {
         let service = Arc::new(Service {
             calls: AtomicUsize::new(0),
         });
-        let app = authenticated_routes(service, Arc::new(Authenticator));
+        let app = authenticated_routes(service, Arc::new(Authenticator), None);
         let response = app
             .oneshot(
                 Request::builder()
