@@ -153,7 +153,10 @@
       "system": "System administration",
       "operations": "Users & commerce",
       "gateway": "Models & gateway",
-      "platform": "Platform settings"
+      "platform": "Platform settings",
+      "site": "Site settings",
+      "commerce": "Commerce",
+      "users": "User management"
     },
     "console": "Console",
     "theme": "Theme",
@@ -1132,6 +1135,7 @@
     },
     "batch": {
       "importTitle": "Batch import",
+      "importHint": "Paste one key per line or choose .json / .jsonl / .txt files to import into the selected channel.",
       "kind": "Credential type",
       "input": "One Key per line or JSON",
       "placeholder": "Enter one Key per line, a JSON array, or an object with keys / credentials.",
@@ -1952,6 +1956,11 @@
       "loading": "Loading group access",
       "loadError": "Group access could not be loaded. Please retry.",
       "saveError": "Group access could not be saved. Check your selection and retry.",
+      "errorForbiddenTitle": "Not allowed to change key group access",
+      "errorForbiddenHint": "The API returned 403: only administrator accounts can change a group key policy. If your account should be an admin, the session role is likely not admin — sign in again with that admin account.",
+      "errorInvalidTitle": "Invalid key group policy",
+      "errorInvalidHint": "The API returned 422: check that the allowed user list has at most 1000 unique, valid user IDs.",
+      "errorRetryHint": "The API rejected the request or is temporarily unavailable. Reload the group and try again.",
       "revokeHint": "By default, this policy affects only newly created personal keys. Select the option above to disable existing personal keys that lose access because of this policy change. Default-group users' keys and organization keys are unaffected.",
       "disableExistingTitle": "Also disable existing personal keys that lose access",
       "disableExistingDescription": "Saving will disable active personal keys that lose access because of this group policy change in the same database transaction. Default-group users' keys and organization keys are unaffected. New requests will be rejected; requests already admitted may finish.",
@@ -2779,7 +2788,16 @@
       "call": "Model request",
       "latency": "Response speed",
       "tokens": "Token usage",
-      "billing": "Billing result"
+      "billing": "Billing result",
+      "request": "Request",
+      "channel": "Channel",
+      "user": "User",
+      "token": "Token",
+      "model": "Model",
+      "stream": "Mode",
+      "cost": "Cost",
+      "timing": "Timing",
+      "details": "Details"
     },
     "listLabel": "Request logs",
     "status": {
@@ -2792,7 +2810,11 @@
       "requests": "Settled requests",
       "tokens": "Total tokens",
       "averageFirstToken": "Average first token",
-      "quota": "Total quota"
+      "quota": "Total quota",
+      "usage": "Quota",
+      "rpm": "RPM",
+      "tpm": "TPM",
+      "range": "Time range"
     },
     "filters": {
       "label": "Filter this page",
@@ -2801,7 +2823,19 @@
       "protocol": "Protocol",
       "allProtocols": "All protocols",
       "mode": "Response mode",
-      "allModes": "All modes"
+      "allModes": "All modes",
+      "anyTime": "Any time",
+      "group": "Group",
+      "start": "Start",
+      "end": "End",
+      "pickRange": "Pick a time range",
+      "tokenName": "Token",
+      "username": "Username",
+      "channelId": "Channel ID",
+      "requestId": "Request ID",
+      "upstreamRequestId": "Upstream request ID",
+      "more": "More filters",
+      "less": "Fewer filters"
     },
     "protocol": {
       "open_ai_chat": "Chat",
@@ -2925,7 +2959,10 @@
       "next": "Next",
       "copyValue": "Copy value",
       "copiedValue": "Value copied",
-      "copyValueFailed": "Copy failed. Select and copy the value manually."
+      "copyValueFailed": "Copy failed. Select and copy the value manually.",
+      "search": "Search",
+      "hideSummary": "Hide overview",
+      "showSummary": "Show overview"
     },
     "empty": {
       "title": "No request logs yet",
@@ -7664,9 +7701,15 @@
           "rejected": "The verification code is invalid or expired.",
           "conflict": "That email is already linked to another account.",
           "generic": "The email could not be linked. Try again shortly."
-        }
+        },
+        "bind": "Link email",
+        "bindTitle": "Link email",
+        "change": "Change email",
+        "changeTitle": "Change email",
+        "sameHint": "This is already your current email."
       },
-      "saved": "Profile saved."
+      "saved": "Profile saved.",
+      "editUsername": "Edit username"
     },
     "password": {
       "title": "Change password",
@@ -7769,6 +7812,9 @@
       "thresholdInvalid": "The personal threshold must be a positive safe integer.",
       "effectiveThreshold": "Current effective threshold",
       "quotaUnit": "quota",
+      "groupEmail": "Email notifications",
+      "groupAlert": "Alert settings",
+      "groupSystem": "System status",
       "securityTitle": "Security notifications",
       "securityDescription": "Password, session, and account security notices are always enabled.",
       "alwaysOn": "Always on",
@@ -7848,7 +7894,8 @@
       "retry": "Try again",
       "saveProfile": "Save profile",
       "changePassword": "Change password",
-      "saveNotifications": "Save preferences"
+      "saveNotifications": "Save preferences",
+      "cancel": "Cancel"
     },
     "errors": {
       "loadTitle": "Profile is temporarily unavailable",
@@ -8382,7 +8429,63 @@
       "qrError": "Could not load the QR code. Please retry.",
       "completed": "Identity verified",
       "completedHint": "Your verification result has been saved. No further scan is needed."
-    }
+    },
+    "kindPickerTitle": "Choose a verification type",
+    "kindPickerHint": "Pick either personal or business verification. The platform reviews every submission.",
+    "privacyPolicy": "Privacy policy",
+    "notVerifiedTitle": "Not verified yet",
+    "notVerifiedHint": "Complete identity verification to unlock all features.",
+    "kindFeatures": {
+      "security": "Identity data encrypted",
+      "privilege": "Unlock all platform features",
+      "support": "Dedicated priority support"
+    },
+    "kindBenefits": {
+      "fast": "Faster review",
+      "safe": "Safer verification",
+      "support": "Human support",
+      "discount": "Exclusive discounts",
+      "invoice": "Invoices supported",
+      "enterpriseDiscount": "Enterprise discounts"
+    },
+    "kindTips": {
+      "individual": "Best for individual developers and freelancers.",
+      "enterprise": "Best for businesses and teams; verified businesses can request a workspace."
+    },
+    "kindDetails": {
+      "individual": "Personal",
+      "enterprise": "Business"
+    },
+    "kindSelected": "Selected",
+    "kindStart": "Start verification",
+    "personalCertification": "Personal verification",
+    "enterpriseCertification": "Business verification",
+    "kindHints": {
+      "individual": "Best for individual developers and freelancers.",
+      "enterprise": "Best for businesses and teams; verified businesses can request a workspace."
+    },
+    "steps": [
+      "Enter details",
+      "Submit",
+      "Under review"
+    ],
+    "providerHints": {
+      "manual": "Platform staff review your documents manually.",
+      "alipay": "Verify your identity by scanning with your own Alipay account."
+    },
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "nextPage": "Next page",
+    "pagination": "Verification history pagination",
+    "perPage": "Per page",
+    "totalItems": "{{total}} total",
+    "progress": "Review progress",
+    "infoTitle": "Application",
+    "infoKind": "Verification type",
+    "infoCaseId": "Application ID",
+    "supplementAction": "Add materials",
+    "stepsLabel": "Verification steps"
   },
   "enterpriseEntitlement": {
     "title": "Organization entitlements",
@@ -8515,6 +8618,13 @@
       "claude_utc_date_v1": "Claude Code UTC date",
       "codex_v1": "Codex v1",
       "open_code_v1": "OpenCode v1"
+    },
+    "columns": {
+      "profile": "Client profile",
+      "service": "Service",
+      "revision": "Revision",
+      "status": "Status",
+      "actions": "Actions"
     }
   },
   "proxyPools": {
@@ -8525,6 +8635,9 @@
     "global": "Global",
     "binding": "Proxy pool",
     "inherit": "Inherit default route",
+    "groupRouting": "Channel assignment",
+    "groupRoutingHint": "Choose which pool each channel uses; channels without one fall back to the global pool.",
+    "groupPools": "Pools",
     "channelError": "Could not load channels. Refresh to retry.",
     "loading": "Loading proxy pools…",
     "loadError": "Could not load proxy pools. Refresh to retry.",

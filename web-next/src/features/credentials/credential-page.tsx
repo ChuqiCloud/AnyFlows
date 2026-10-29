@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Boxes, Download, KeyRound, Plus, RefreshCw } from 'lucide-react'
+import { Boxes, Download, FileUp, KeyRound, Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Skeleton } from '@heroui/react'
+import { Button, Modal, ModalBody, ModalContent, ModalHeader, Skeleton } from '@heroui/react'
 import type { AdminCredential } from '@/lib/api/generated/types.gen'
 import { navigateTo } from '@/lib/router-navigation'
 import { useAdminChannel, useAdminChannels } from '@/features/channels/channel-api'
@@ -10,6 +10,7 @@ import { exportAdminCredentialFiles, useAdminChannelCredentials, type AdminCrede
 import { CredentialChannelToolbar } from './credential-channel-toolbar'
 import { CredentialEditorSheet } from './credential-editor-sheet'
 import { CredentialImport } from './credential-import'
+import { credentialKindsForChannel } from './credential-model'
 import { CredentialList } from './credential-list'
 import { CredentialSummary } from './credential-summary'
 
@@ -33,6 +34,7 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
   const [editor, setEditor] = useState<EditorState>()
   const [exporting, setExporting] = useState(false)
   const [importResult, setImportResult] = useState<AdminCredentialImportResult>()
+  const [importOpen, setImportOpen] = useState(false)
   const [fileError, setFileError] = useState<string>()
 
   const selectChannel = useCallback((channelId: number) => {
@@ -73,6 +75,8 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
 
   const channelPending = channelsQuery.isPending || (selectedId !== undefined && !listedChannel && detailQuery.isPending)
   const channelError = channelsQuery.isError || (selectedId !== undefined && !listedChannel && detailQuery.isError && channels.length === 0)
+  const importKinds = selectedChannel ? credentialKindsForChannel(selectedChannel.type, selectedChannel.provider) : []
+  const canImportCredentials = importKinds.includes('api_key') || importKinds.includes('oauth')
   const canImportCodex = selectedChannel?.type === 'openai'
 
   return (
@@ -83,6 +87,7 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
           <Button type="button" size="sm" variant="bordered" isDisabled={channelsQuery.isFetching || credentialsQuery.isFetching} onClick={refreshAll}><RefreshCw className={`size-3.5 ${channelsQuery.isFetching || credentialsQuery.isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />{t('credentials.actions.refresh')}</Button>
           <Button type="button" size="sm" variant="bordered" isDisabled={!selectedChannel} onClick={() => selectedChannel && navigateTo(`/console/channel-models?channel=${selectedChannel.id}`)}><Boxes className="size-3.5" aria-hidden="true" />{t('credentials.actions.models')}</Button>
           <Button type="button" color="primary" size="sm" isDisabled={!selectedChannel} onClick={() => setEditor('create')}><Plus className="size-3.5" aria-hidden="true" />{t('credentials.actions.add')}</Button>
+          {canImportCredentials ? <Button type="button" size="sm" variant="flat" onClick={() => setImportOpen(true)}><FileUp className="size-3.5" aria-hidden="true" />{t('credentials.batch.importTitle')}</Button> : null}
           {canImportCodex ? <Button type="button" size="sm" variant="flat" isDisabled={exporting} onClick={() => void exportFiles()}><Download className="size-3.5" aria-hidden="true" />{t(exporting ? 'credentials.fileTransfer.exporting' : 'credentials.fileTransfer.export')}</Button> : null}
         </div>
       </header>
@@ -102,10 +107,12 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
       ) : selectedChannel ? (
         <>
           <CredentialChannelToolbar channels={visibleChannels} selected={selectedChannel} loadingMore={channelsQuery.isFetchingNextPage} hasNextPage={Boolean(channelsQuery.hasNextPage)} onSelect={selectChannel} onLoadMore={() => { void channelsQuery.fetchNextPage() }} />
-          <CredentialImport key={selectedChannel.id} channel={selectedChannel} onImported={async (result) => { setImportResult(result); await refetchCredentials() }} />
           <CredentialSummary credentials={credentials} />
           <CredentialList key={selectedChannel.id} channel={selectedChannel} credentials={credentials} loading={credentialsQuery.isPending} loadError={credentialsQuery.isError && !credentialsQuery.data} refreshing={credentialsQuery.isFetching} refreshError={credentialsQuery.isRefetchError} loadingMore={credentialsQuery.isFetchingNextPage} hasNextPage={Boolean(credentialsQuery.hasNextPage)} active onRefresh={refreshCredentials} onLoadMore={loadMoreCredentials} onEdit={setEditor} />
           <CredentialEditorSheet key={`${selectedChannel.id}:${editor === 'create' ? 'create' : editor?.id ?? 'closed'}`} open={editor !== undefined} channel={selectedChannel} credential={editor === 'create' ? undefined : editor} credentials={credentials} onOpenChange={(open) => { if (!open) setEditor(undefined) }} />
+          <Modal isOpen={importOpen} onOpenChange={setImportOpen} placement="center" size="md">
+            <ModalContent>{(onClose) => <><ModalHeader className="flex flex-col gap-1"><span>{t('credentials.batch.importTitle')}</span><span className="text-sm font-normal text-muted-foreground">{t('credentials.batch.importHint', { defaultValue: '粘贴 Key 或选择文件，导入到当前渠道。' })}</span></ModalHeader><ModalBody>{selectedChannel ? <CredentialImport key={`${selectedChannel.id}-modal`} channel={selectedChannel} onImported={async (result) => { setImportResult(result); setImportOpen(false); onClose(); await refetchCredentials() }} /> : null}</ModalBody></>}</ModalContent>
+          </Modal>
         </>
       ) : null}
     </div>

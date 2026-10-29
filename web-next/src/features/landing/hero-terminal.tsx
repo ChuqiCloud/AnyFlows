@@ -336,7 +336,7 @@ const { textStream } = streamText({
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2.5 py-0.5 text-[0.6875rem] font-medium text-success">
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-success/30 bg-success/10 px-2.5 py-0.5 text-[0.6875rem] font-medium text-success">
               <span className="size-1.5 rounded-full bg-success animate-pulse" />
               <span>Online · 82ms</span>
             </span>
@@ -400,13 +400,13 @@ const { textStream } = streamText({
         {/* Bottom Feature Micro-Chips */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] bg-surface-1/70 px-4 py-2.5 text-[0.6875rem] text-muted-foreground">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="inline-flex items-center gap-1 text-foreground/80">
+            <span className="inline-flex items-center gap-1 whitespace-nowrap text-foreground/80">
               <span className="text-primary font-bold">✓</span> OpenAI / Anthropic 兼容
             </span>
-            <span className="inline-flex items-center gap-1 text-foreground/80">
+            <span className="inline-flex items-center gap-1 whitespace-nowrap text-foreground/80">
               <span className="text-success font-bold">✓</span> 毫秒级自动降级
             </span>
-            <span className="inline-flex items-center gap-1 text-foreground/80">
+            <span className="inline-flex items-center gap-1 whitespace-nowrap text-foreground/80">
               <span className="text-info font-bold">✓</span> 流式 SSE 透传
             </span>
           </div>

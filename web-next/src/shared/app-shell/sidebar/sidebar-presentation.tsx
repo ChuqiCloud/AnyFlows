@@ -93,7 +93,8 @@ export const SidebarPresentation = React.forwardRef<
             key={item.key}
             classNames={{
               base: cn(
-                { "h-auto p-0": !isCompact && children.length > 0 },
+                // 可折叠分组只是容器：HeroUI 选项默认的 hover 底色会铺满整块，压回透明，底色交给子项。
+                { "h-auto p-0 data-[hover=true]:!bg-transparent data-[selectable=true]:focus:!bg-transparent": !isCompact && children.length > 0 },
                 { "inline-block w-11": isCompact && children.length > 0 },
               ),
             }}
@@ -126,14 +127,19 @@ export const SidebarPresentation = React.forwardRef<
                 key={`${item.key}:${defaultExpandedKeys?.join(",") ?? "all"}`}
                 className={"p-0"}
                 defaultExpandedKeys={defaultExpandedKeys === undefined ? "all" : defaultExpandedKeys.filter((key) => key === item.key)}
+                // HeroUI Accordion 默认带 px-2 / 选中时还会被外层业务 CSS 加上侧栏主题色背景，
+                // 侧栏场景下分组只承担"折叠展开"职责，整个块的底色交给外层卡片。
+                isCompact
+                variant="light"
               >
                 <AccordionItem
                   key={item.key}
                   aria-label={item.title}
                   classNames={{
+                    base: "!bg-transparent !shadow-none",
                     heading: "pr-3",
-                    trigger: "p-0",
-                    content: "py-0 pl-4",
+                    trigger: "p-0 !bg-transparent data-[hover=true]:!bg-transparent",
+                    content: "py-0 pl-4 !bg-transparent",
                   }}
                   title={
                     item.icon ? (

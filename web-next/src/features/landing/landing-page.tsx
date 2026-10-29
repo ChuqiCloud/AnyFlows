@@ -124,7 +124,7 @@ function RequestFlow({ mode }: { mode: JourneyMode }) {
           ))}
         </div>
 
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-[var(--hairline)] bg-[var(--surface-1)] px-3 py-1.5 text-[0.6875rem] text-muted-foreground shadow-[var(--shadow-sm)]">
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-[var(--hairline)] bg-[var(--surface-1)] px-3 py-1.5 text-[0.6875rem] text-muted-foreground shadow-[var(--shadow-sm)]">
           {t(`landing.home.preview.${mode}`)}
         </div>
       </div>
@@ -153,7 +153,7 @@ function JourneyCard({
             <Icon className="size-4" aria-hidden="true" />
           </div>
           {badge && (
-            <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[0.625rem] font-medium text-muted-foreground">
+            <span className="shrink-0 whitespace-nowrap rounded-full bg-surface-2 px-2 py-0.5 text-[0.625rem] font-medium text-muted-foreground">
               {badge}
             </span>
           )}
@@ -286,15 +286,15 @@ export function LandingPage() {
 
               {/* Trust Badges */}
               <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2.5 text-xs text-muted-foreground sm:mt-7">
-                <span className="inline-flex items-center gap-1.5 font-medium text-foreground/85">
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium text-foreground/85">
                   <Check className="size-3.5 text-success font-bold" aria-hidden="true" />
                   {t('landing.home.heroChecks.compatible')}
                 </span>
-                <span className="inline-flex items-center gap-1.5 font-medium text-foreground/85">
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium text-foreground/85">
                   <Check className="size-3.5 text-success font-bold" aria-hidden="true" />
                   {t('landing.home.heroChecks.health')}
                 </span>
-                <span className="inline-flex items-center gap-1.5 font-medium text-foreground/85">
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium text-foreground/85">
                   <Check className="size-3.5 text-success font-bold" aria-hidden="true" />
                   {t('landing.home.heroChecks.logs')}
                 </span>

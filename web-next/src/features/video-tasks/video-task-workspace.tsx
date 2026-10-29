@@ -60,7 +60,7 @@ export function VideoTaskWorkspace(props: VideoTaskWorkspaceProps) {
         })}
       </header>
 
-      <div className="grid min-h-0 min-w-0 flex-1 gap-2.5 lg:grid-cols-[20rem_minmax(0,1fr)]">
+      <div className="grid min-h-0 min-w-0 flex-1 gap-2.5 lg:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[20rem_16rem_minmax(0,1fr)]">
         <aside className="self-start overflow-hidden rounded-xl border border-dashed border-[var(--hairline)] bg-surface-1/82 backdrop-blur-xl lg:sticky lg:top-3">
           <VideoTaskRequestPanel
             key={workspace.idempotencyKey}
@@ -76,18 +76,19 @@ export function VideoTaskWorkspace(props: VideoTaskWorkspaceProps) {
             onRefreshModels={() => void catalogQuery.refetch()}
             onSubmit={submit}
           />
-          <div className="border-t border-[var(--hairline)]">
-            <VideoTaskHistoryPanel
-              activeTaskId={workspace.taskId}
-              error={history.error}
-              hasMore={Boolean(history.nextCursor)}
-              items={history.items}
-              phase={history.phase}
-              onLoadMore={history.loadMore}
-              onOpen={(taskId) => void workspace.openTask(taskId)}
-              onRefresh={history.refresh}
-            />
-          </div>
+        </aside>
+
+        <aside className="self-start overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1/82 backdrop-blur-xl lg:sticky lg:top-3">
+          <VideoTaskHistoryPanel
+            activeTaskId={workspace.taskId}
+            error={history.error}
+            hasMore={Boolean(history.nextCursor)}
+            items={history.items}
+            phase={history.phase}
+            onLoadMore={history.loadMore}
+            onOpen={(taskId) => void workspace.openTask(taskId)}
+            onRefresh={history.refresh}
+          />
         </aside>
 
         <VideoTaskResultPanel

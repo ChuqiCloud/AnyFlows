@@ -1,7 +1,8 @@
 import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Select, SelectItem } from '@heroui/react'
+import { Alert, Button, Select, SelectItem } from '@heroui/react'
+import { ApiError } from '@/lib/api'
 import ConfirmModal from '@/shared/components/confirm-modal'
 import {
   useAdminGroupKeyPolicy,
@@ -40,6 +41,8 @@ function GroupKeyPolicyForm({ policy, portalContainer }: { policy: GroupKeyPolic
     setDisableKeys(false)
   }, [policy])
   const modes = ['default_only', 'all_users', 'selected_users'] as const
+  // 保存失败时按服务端拒绝原因给出具体提示，而不是只写“保存失败”。
+  const failure = describePolicyError(mutation.error, t)
 
   return (
     <>
@@ -84,7 +87,7 @@ function GroupKeyPolicyForm({ policy, portalContainer }: { policy: GroupKeyPolic
           <span><strong>{t('groups.keyPolicy.disableExistingTitle')}</strong><br />{t('groups.keyPolicy.disableExistingDescription')}</span>
         </label>
         <p className="text-xs leading-5 text-muted-foreground">{t('groups.keyPolicy.revokeHint')}</p>
-        {mutation.isError ? <p role="alert" className="text-xs text-destructive">{t('groups.keyPolicy.saveError')}</p> : null}
+        {failure ? <Alert color="danger" description={failure.hint} title={failure.title} /> : null}
         {mutation.isSuccess ? <p role="status" className="text-xs text-success">{t('groups.keyPolicy.saved')} {t('groups.keyPolicy.disabledCount', { count: mutation.data.disabled_key_count })} {t('groups.keyPolicy.disabledUserCount', { count: mutation.data.disabled_user_count })}</p> : null}
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-[var(--hairline)] p-4">
@@ -107,4 +110,13 @@ function GroupKeyPolicyForm({ policy, portalContainer }: { policy: GroupKeyPolic
       />
     </>
   )
+}
+
+/** 把分组授权接口的 403/422 翻译成管理员能直接行动的说明。 */
+function describePolicyError(error: unknown, t: (key: string) => string) {
+  if (!error) return undefined
+  const status = error instanceof ApiError ? error.status : undefined
+  if (status === 403) return { title: t('groups.keyPolicy.errorForbiddenTitle'), hint: t('groups.keyPolicy.errorForbiddenHint') }
+  if (status === 422) return { title: t('groups.keyPolicy.errorInvalidTitle'), hint: t('groups.keyPolicy.errorInvalidHint') }
+  return { title: t('groups.keyPolicy.saveError'), hint: t('groups.keyPolicy.errorRetryHint') }
 }

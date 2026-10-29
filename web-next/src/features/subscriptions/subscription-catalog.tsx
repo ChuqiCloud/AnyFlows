@@ -391,7 +391,7 @@ function CatalogPlanRow({
             </div>
           ) : payment?.client_secret && stripe ? (
             <Elements stripe={stripe} options={{ clientSecret: payment.client_secret, appearance: stripeTopupAppearance('light'), locale: locale === 'zh-CN' ? 'zh' : 'en' }}>
-              <WalletStripePaymentForm amountLabel={amountLabel} returnUrl={`${window.location.origin}/console/subscriptions`} onConfirmed={paymentConfirmed} />
+              <WalletStripePaymentForm amountLabel={amountLabel} returnUrl={`${window.location.origin}/console/wallet`} onConfirmed={paymentConfirmed} />
             </Elements>
           ) : redirectUrl && method?.qr_enabled && method.provider === 'epay' && method.payment_method !== 'card' ? (
             <EpayQrPayment url={redirectUrl} paymentMethod={method.payment_method} refreshing={orderQuery.isFetching} onRefresh={() => void refreshOrder()} />

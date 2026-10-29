@@ -17,6 +17,7 @@ import type { UserWalletEntry, UserWalletSummary } from '@/lib/api/generated/typ
 import { cn } from '@/lib/utils'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { RefundReconciliationList } from '@/features/refunds/refund-reconciliation-list'
+import { MySubscriptionsSection } from '@/features/subscriptions/my-subscriptions-page'
 import { useUserWalletEntries, useUserWalletSummary } from './wallet-api'
 import { WalletRedemptionPanel } from './wallet-redemption-panel'
 import { WalletTopupPanel } from './wallet-topup-panel'
@@ -88,6 +89,8 @@ export function WalletPage() {
       </section>
 
       <WalletTopupPanel />
+
+      <MySubscriptionsSection />
 
       <Card className="overflow-hidden border border-[var(--hairline)]" shadow="none">
         <CardHeader className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--hairline)] bg-surface-1/45 p-5">

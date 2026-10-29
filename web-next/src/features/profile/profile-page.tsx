@@ -1,10 +1,8 @@
-import { Button, Card, CardBody, CardHeader, Chip, Divider, Input, Select, SelectItem, Skeleton, Switch } from '@heroui/react'
+import { Button, Card, CardBody, CardHeader, Chip, Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Select, SelectItem, Skeleton, Switch } from '@heroui/react'
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BellRing,
-  CalendarClock,
   Check,
-  CircleDollarSign,
   Copy,
   Fingerprint,
   KeyRound,
@@ -154,113 +152,85 @@ function ErrorPanel({ onRetry }: { onRetry: () => void }) {
   )
 }
 
-function ProfileCard({ profile }: { profile: UserProfileResponse }) {
+/*
+ * 主卡片：一行横排展示头像、用户名（右侧铅笔图标改用户名）、角色与邮箱，右侧放"修改密码""修改邮箱"两个入口。
+ * 三处修改都在弹窗里完成，卡面只保留当前信息。
+ */
+function ProfileCard({ profile, roleLabel, onPasswordChanged }: { profile: UserProfileResponse; roleLabel?: string; onPasswordChanged: () => void }) {
   const { t } = useTranslation()
-  const updateMutation = useUpdateUserProfile()
-  const sendEmailMutation = useSendUserEmailBindingVerification()
-  const confirmEmailMutation = useConfirmUserEmailBinding()
-  const [username, setUsername] = useState(profile.username)
-  const [email, setEmail] = useState(profile.email ?? '')
-  const [verificationCode, setVerificationCode] = useState('')
-  const [nextSendAt, setNextSendAt] = useState(0)
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
-
-  useEffect(() => setUsername(profile.username), [profile.username])
-  useEffect(() => setEmail(profile.email ?? ''), [profile.email])
-  useEffect(() => {
-    if (nextSendAt <= now) return undefined
-    const timer = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000)
-    return () => window.clearInterval(timer)
-  }, [nextSendAt, now])
-
-  const usernameValid = isValidProfileUsername(username)
-  const changed = username !== profile.username
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!usernameValid || !changed) return
-    try {
-      await updateMutation.mutateAsync({ username })
-    } catch {
-      // 错误留在当前卡片，输入内容保留以便修正后重试。
-    }
-  }
-
-  const error = errorCode(updateMutation.error)
-  const emailError = errorCode(confirmEmailMutation.error ?? sendEmailMutation.error)
-  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)
-  const cooldownSeconds = Math.max(0, nextSendAt - now)
-  const sendEmail = async () => {
-    if (!emailValid || cooldownSeconds > 0 || sendEmailMutation.isPending) return
-    try {
-      const response = await sendEmailMutation.mutateAsync({ email })
-      setNextSendAt(response.next_send_at)
-      setNow(Math.floor(Date.now() / 1000))
-    } catch {
-      // 错误在邮箱绑定区域展示。
-    }
-  }
-  const confirmEmail = async () => {
-    if (!emailValid || !/^\d{6}$/u.test(verificationCode) || confirmEmailMutation.isPending) return
-    try {
-      await confirmEmailMutation.mutateAsync({ email, verification_code: verificationCode })
-      setVerificationCode('')
-      setNextSendAt(0)
-    } catch {
-      // 错误在邮箱绑定区域展示。
-    }
-  }
+  const [usernameOpen, setUsernameOpen] = useState(false)
+  const [emailOpen, setEmailOpen] = useState(false)
+  const [passwordOpen, setPasswordOpen] = useState(false)
+  const initial = (profile.username || profile.email || '?').trim().charAt(0).toUpperCase() || '?'
   return (
-    <Card shadow="none" className="overflow-hidden border border-[var(--hairline)]">
-      <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45 p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex gap-3">
-            <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-info/10 text-info"><UserRound className="size-4" aria-hidden="true" /></div>
-            <div><h3 className="text-base font-semibold">{t('profile.profile.title')}</h3><p className="mt-1 text-sm leading-5 text-muted-foreground">{t('profile.profile.subtitle')}</p></div>
+    <>
+      <section className="flex flex-col gap-4 py-2 sm:flex-row sm:items-center sm:justify-between" aria-label={t('profile.sections.account')}>
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="grid size-16 shrink-0 place-items-center rounded-2xl bg-brand/10 text-xl font-semibold text-brand" aria-hidden="true">{initial}</div>
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <h2 className="truncate text-2xl font-semibold tracking-tight">{profile.username}</h2>
+              <Button isIconOnly aria-label={t('profile.profile.editUsername')} className="shrink-0" size="sm" variant="light" onClick={() => setUsernameOpen(true)}><Pencil className="size-3.5" aria-hidden="true" /></Button>
+              {roleLabel ? <Chip className={profile.role === 'admin' ? 'shrink-0 border-info/25 bg-info/10 text-info' : 'shrink-0 bg-surface-2 text-muted-foreground'} size="sm">{roleLabel}</Chip> : null}
+            </div>
+            <p className="mt-1 flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground"><Mail className="size-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{profile.email ?? t('profile.profile.emailEmpty')}</span></p>
           </div>
-          <Chip className={profile.role === 'admin' ? 'border-info/25 bg-info/10 text-info' : 'bg-surface-2 text-muted-foreground'}>
-            {t(`auth.account.${profile.role}`)}
-          </Chip>
         </div>
-      </CardHeader>
-      <CardBody className="p-5">
-        <form className="grid gap-4" onSubmit={submit} noValidate>
-          <div className="grid gap-2">
-            <label className="text-xs font-medium leading-none text-foreground" htmlFor="profile-username">{t('profile.profile.username')}</label>
-            <Input id="profile-username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" isInvalid={username.length > 0 && !usernameValid} />
-            <p className="text-[0.6875rem] leading-4 text-muted-foreground">{t('profile.profile.usernameHint')}</p>
-          </div>
-          <div className="grid gap-2">
-            <label className="text-xs font-medium leading-none text-foreground" htmlFor="profile-email">{t('profile.profile.email')}</label>
-            <div className="relative">
-              <Mail className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-              <Input classNames={{ input: 'pl-9' }} id="profile-email" type="email" placeholder={t('profile.profile.emailEmpty')} size="sm" value={email} onChange={(event) => { setEmail(event.target.value); confirmEmailMutation.reset(); sendEmailMutation.reset() }} />
-            </div>
-            <p className="text-[0.6875rem] leading-4 text-muted-foreground">{t('profile.profile.emailHint')}</p>
-            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <Input id="profile-email-code" inputMode="numeric" maxLength={6} placeholder={t('profile.profile.emailBinding.codePlaceholder')} size="sm" value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.replace(/\D/gu, '').slice(0, 6))} />
-              <Button type="button" size="sm" variant="bordered" isDisabled={!emailValid || cooldownSeconds > 0 || sendEmailMutation.isPending} onPress={() => void sendEmail()}>
-                {sendEmailMutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{cooldownSeconds > 0 ? t('profile.profile.emailBinding.resendIn', { seconds: cooldownSeconds }) : t('profile.profile.emailBinding.sendCode')}
-              </Button>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[0.6875rem] leading-4 text-muted-foreground">{t('profile.profile.emailBinding.hint')}</p>
-              <Button type="button" size="sm" color="primary" isDisabled={!emailValid || !/^\d{6}$/u.test(verificationCode) || confirmEmailMutation.isPending} onPress={() => void confirmEmail()}>
-                {confirmEmailMutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{t('profile.profile.emailBinding.confirm')}
-              </Button>
-            </div>
-            {confirmEmailMutation.isSuccess ? <p role="status" className="text-xs text-success">{t('profile.profile.emailBinding.success')}</p> : null}
-            {emailError ? <p role="alert" className="text-xs text-destructive">{t(`profile.profile.emailBinding.errors.${emailError === 'email_not_configured' ? 'notConfigured' : emailError === 'email_delivery_failed' ? 'deliveryFailed' : emailError === 'registration_rate_limited' ? 'rateLimited' : emailError === 'registration_rejected' ? 'rejected' : emailError === 'user_conflict' ? 'conflict' : 'generic'}`)}</p> : null}
-          </div>
-          {updateMutation.isSuccess ? <p role="status" className="flex items-center gap-1.5 text-xs text-success"><Check className="size-3.5" aria-hidden="true" />{t('profile.profile.saved')}</p> : null}
-          {updateMutation.isError ? <p role="alert" className="text-xs text-destructive">{t(error === 'user_conflict' ? 'profile.errors.conflict' : 'profile.errors.save')}</p> : null}
-          <div className="flex justify-end"><Button type="submit" size="sm" color="primary" isDisabled={!changed || !usernameValid || updateMutation.isPending}>{updateMutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{t('profile.actions.saveProfile')}</Button></div>
-        </form>
-      </CardBody>
-    </Card>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button className="gap-1.5" size="sm" variant="bordered" startContent={<KeyRound className="size-3.5" aria-hidden="true" />} onClick={() => setPasswordOpen(true)}>{t('profile.actions.changePassword')}</Button>
+          <Button className="gap-1.5" size="sm" startContent={<Mail className="size-3.5" aria-hidden="true" />} onClick={() => setEmailOpen(true)}>{profile.email ? t('profile.profile.emailBinding.change') : t('profile.profile.emailBinding.bind')}</Button>
+        </div>
+        <Modal isOpen={usernameOpen} onOpenChange={setUsernameOpen} placement="center" size="md">
+          <ModalContent>{(onClose) => <UsernameModalBody current={profile.username} onClose={onClose} />}</ModalContent>
+        </Modal>
+        <Modal isOpen={emailOpen} onOpenChange={setEmailOpen} placement="center" size="md">
+          <ModalContent>{(onClose) => <EmailBindingBody currentEmail={profile.email} onBound={onClose} onClose={onClose} />}</ModalContent>
+        </Modal>
+        <Modal isOpen={passwordOpen} onOpenChange={setPasswordOpen} placement="center" size="md">
+          <ModalContent>{(onClose) => <PasswordModalBody onClose={onClose} onPasswordChanged={onPasswordChanged} />}</ModalContent>
+        </Modal>
+      </section>
+    </>
   )
 }
 
-function PasswordCard({ onPasswordChanged }: ProfilePageProps) {
+/** 用户名弹窗：保存成功后由 updateMutation 写回资料缓存，卡面随之更新。 */
+function UsernameModalBody({ current, onClose }: { current: string; onClose: () => void }) {
+  const { t } = useTranslation()
+  const mutation = useUpdateUserProfile()
+  const [username, setUsername] = useState(current)
+  const valid = isValidProfileUsername(username)
+  const changed = username !== current
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!valid || !changed || mutation.isPending) return
+    try {
+      await mutation.mutateAsync({ username })
+      onClose()
+    } catch {
+      // 错误留在弹窗内，输入内容保留以便修正后重试。
+    }
+  }
+  const code = errorCode(mutation.error)
+  return (
+    <>
+      <ModalHeader className="flex flex-col gap-1"><span>{t('profile.profile.editUsername')}</span><span className="text-sm font-normal text-muted-foreground">{t('profile.profile.usernameHint')}</span></ModalHeader>
+      <ModalBody>
+        <form id="profile-username-form" className="grid gap-2" onSubmit={submit} noValidate>
+          <label className="text-xs font-medium leading-none text-foreground" htmlFor="profile-username">{t('profile.profile.username')}</label>
+          <Input autoComplete="username" id="profile-username" isInvalid={username.length > 0 && !valid} value={username} onChange={(event) => setUsername(event.target.value)} />
+          {mutation.isError ? <p role="alert" className="text-xs text-destructive">{t(code === 'user_conflict' ? 'profile.errors.conflict' : 'profile.errors.save')}</p> : null}
+        </form>
+      </ModalBody>
+      <ModalFooter>
+        <Button size="sm" variant="light" isDisabled={mutation.isPending} onClick={onClose}>{t('profile.actions.cancel')}</Button>
+        <Button size="sm" color="primary" form="profile-username-form" isDisabled={!changed || !valid || mutation.isPending} type="submit">{mutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{t('profile.actions.saveProfile')}</Button>
+      </ModalFooter>
+    </>
+  )
+}
+
+function PasswordModalBody({ onClose, onPasswordChanged }: { onClose: () => void; onPasswordChanged: () => void }) {
   const { t } = useTranslation()
   const mutation = useChangeUserPassword()
   const [currentPassword, setCurrentPassword] = useState('')
@@ -270,42 +240,108 @@ function PasswordCard({ onPasswordChanged }: ProfilePageProps) {
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!valid) return
+    if (!valid || mutation.isPending) return
     try {
       await mutation.mutateAsync({ current_password: currentPassword, new_password: newPassword })
-      setCurrentPassword('')
-      setNewPassword('')
-      setConfirmation('')
       onPasswordChanged()
+      onClose()
     } catch {
-      // 服务端返回的稳定错误码在卡片内呈现，密码输入不写入持久化缓存。
+      // 服务端返回的稳定错误码在弹窗内呈现，密码输入不写入持久化缓存。
     }
   }
 
   const code = errorCode(mutation.error)
   return (
-    <Card shadow="none" className="overflow-hidden border border-[var(--hairline)]">
-      <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45 p-5">
-        <div className="flex gap-3">
-          <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-warning/10 text-warning"><KeyRound className="size-4" aria-hidden="true" /></div>
-          <div><h3 className="text-base font-semibold">{t('profile.password.title')}</h3><p className="mt-1 text-sm leading-5 text-muted-foreground">{t('profile.password.subtitle')}</p></div>
-        </div>
-      </CardHeader>
-      <CardBody className="p-5">
-        <form className="grid gap-4" onSubmit={submit} noValidate>
+    <>
+      <ModalHeader className="flex flex-col gap-1"><span>{t('profile.password.title')}</span><span className="text-sm font-normal text-muted-foreground">{t('profile.password.subtitle')}</span></ModalHeader>
+      <ModalBody>
+        <form id="profile-password-form" className="grid gap-4" onSubmit={submit} noValidate>
           <div className="grid gap-2"><label className="text-xs font-medium leading-none text-foreground" htmlFor="profile-current-password">{t('profile.password.current')}</label><Input autoComplete="current-password" id="profile-current-password" size="sm" type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></div>
           <div className="grid gap-2"><label className="text-xs font-medium leading-none text-foreground" htmlFor="profile-new-password">{t('profile.password.next')}</label><Input autoComplete="new-password" id="profile-new-password" isInvalid={newPassword.length > 0 && !isValidProfilePassword(newPassword)} size="sm" type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /><p className="text-[0.6875rem] leading-4 text-muted-foreground">{t('profile.password.hint')}</p></div>
           <div className="grid gap-2"><label className="text-xs font-medium leading-none text-foreground" htmlFor="profile-confirm-password">{t('profile.password.confirm')}</label><Input autoComplete="new-password" id="profile-confirm-password" isInvalid={confirmation.length > 0 && confirmation !== newPassword} size="sm" type="password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></div>
           {mutation.isError ? <p role="alert" className="text-xs text-destructive">{t(code === 'password_change_rejected' ? 'profile.errors.currentPassword' : 'profile.errors.password')}</p> : null}
           <div className="flex items-start gap-2 rounded-xl border border-warning/20 bg-warning/6 p-3 text-[0.6875rem] leading-4 text-muted-foreground"><ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden="true" /><span>{t('profile.password.revokesSessions')}</span></div>
-          <div className="flex justify-end"><Button type="submit" size="sm" color="primary" isDisabled={!valid || mutation.isPending}>{mutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{t('profile.actions.changePassword')}</Button></div>
         </form>
-      </CardBody>
-    </Card>
+      </ModalBody>
+      <ModalFooter>
+        <Button size="sm" variant="light" isDisabled={mutation.isPending} onClick={onClose}>{t('profile.actions.cancel')}</Button>
+        <Button size="sm" color="primary" form="profile-password-form" isDisabled={!valid || mutation.isPending} type="submit">{mutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{t('profile.actions.changePassword')}</Button>
+      </ModalFooter>
+    </>
   )
 }
 
 type TwoFactorCopyTarget = 'secret' | 'uri' | 'backup'
+
+function EmailBindingBody({ currentEmail, onClose, onBound }: { currentEmail?: string | null; onClose: () => void; onBound: () => void }) {
+  const { t } = useTranslation()
+  const sendEmailMutation = useSendUserEmailBindingVerification()
+  const confirmEmailMutation = useConfirmUserEmailBinding()
+  const [email, setEmail] = useState(currentEmail ?? '')
+  const [verificationCode, setVerificationCode] = useState('')
+  const [nextSendAt, setNextSendAt] = useState(0)
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
+  useEffect(() => {
+    if (nextSendAt <= now) return undefined
+    const timer = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000)
+    return () => window.clearInterval(timer)
+  }, [nextSendAt, now])
+
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)
+  const cooldownSeconds = Math.max(0, nextSendAt - now)
+  const sendEmail = async () => {
+    if (!emailValid || cooldownSeconds > 0 || sendEmailMutation.isPending) return
+    try {
+      const response = await sendEmailMutation.mutateAsync({ email })
+      setNextSendAt(response.next_send_at)
+      setNow(Math.floor(Date.now() / 1000))
+    } catch {
+      // 错误在弹窗内展示。
+    }
+  }
+  const confirmEmail = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!emailValid || !/^\d{6}$/u.test(verificationCode) || confirmEmailMutation.isPending) return
+    try {
+      await confirmEmailMutation.mutateAsync({ email, verification_code: verificationCode })
+      onBound()
+      onClose()
+    } catch {
+      // 错误在弹窗内展示。
+    }
+  }
+  const emailError = errorCode(confirmEmailMutation.error ?? sendEmailMutation.error)
+  return (
+    <>
+      <ModalHeader className="flex flex-col gap-1"><span>{currentEmail ? t('profile.profile.emailBinding.changeTitle') : t('profile.profile.emailBinding.bindTitle')}</span><span className="text-sm font-normal text-muted-foreground">{t('profile.profile.emailHint')}</span></ModalHeader>
+      <ModalBody>
+        <form id="profile-email-form" className="grid gap-4" onSubmit={(event) => void confirmEmail(event)} noValidate>
+          <div className="grid gap-2">
+            <label className="text-xs font-medium leading-none text-foreground" htmlFor="profile-email">{t('profile.profile.email')}</label>
+            <Input id="profile-email" type="email" autoComplete="email" placeholder={t('profile.profile.emailEmpty')} size="sm" value={email} onChange={(event) => { setEmail(event.target.value); confirmEmailMutation.reset(); sendEmailMutation.reset() }} />
+          </div>
+          <div className="grid gap-2">
+            <span className="text-xs font-medium leading-none text-foreground">{t('profile.profile.emailBinding.codePlaceholder')}</span>
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <Input id="profile-email-code" aria-label={t('profile.profile.emailBinding.codePlaceholder')} inputMode="numeric" maxLength={6} placeholder={t('profile.profile.emailBinding.codePlaceholder')} size="sm" value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.replace(/\D/gu, '').slice(0, 6))} />
+              <Button type="button" size="sm" variant="bordered" isDisabled={!emailValid || email === currentEmail || cooldownSeconds > 0 || sendEmailMutation.isPending} onPress={() => void sendEmail()}>
+                {sendEmailMutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{cooldownSeconds > 0 ? t('profile.profile.emailBinding.resendIn', { seconds: cooldownSeconds }) : t('profile.profile.emailBinding.sendCode')}
+              </Button>
+            </div>
+            <p className="text-[0.6875rem] leading-4 text-muted-foreground">{email === currentEmail ? t('profile.profile.emailBinding.sameHint') : t('profile.profile.emailBinding.hint')}</p>
+          </div>
+          {emailError ? <p role="alert" className="text-xs text-destructive">{t(`profile.profile.emailBinding.errors.${emailError === 'email_not_configured' ? 'notConfigured' : emailError === 'email_delivery_failed' ? 'deliveryFailed' : emailError === 'registration_rate_limited' ? 'rateLimited' : emailError === 'registration_rejected' ? 'rejected' : emailError === 'user_conflict' ? 'conflict' : 'generic'}`)}</p> : null}
+        </form>
+      </ModalBody>
+      <ModalFooter>
+        <Button size="sm" variant="light" isDisabled={confirmEmailMutation.isPending} onClick={onClose}>{t('profile.actions.cancel')}</Button>
+        <Button size="sm" color="primary" form="profile-email-form" type="submit" isDisabled={!emailValid || email === currentEmail || !/^\d{6}$/u.test(verificationCode) || confirmEmailMutation.isPending}>
+          {confirmEmailMutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{t('profile.profile.emailBinding.confirm')}
+        </Button>
+      </ModalFooter>
+    </>
+  )
+}
 
 function TwoFactorCard() {
   const { t } = useTranslation()
@@ -319,6 +355,12 @@ function TwoFactorCard() {
 
   const enabled = statusQuery.data?.enabled === true
   const mutation = enabled ? disableMutation : enableMutation
+  // 头部状态徽标的语义色：已启用用主色，未启用用中性色，避免用成功色暗示“必须开启”。
+  const statusChip = statusQuery.isPending
+    ? <Skeleton className="h-6 w-16 rounded-full" />
+    : statusQuery.isError
+      ? null
+      : <Chip className={`shrink-0 ${enabled ? 'bg-primary/10 text-primary' : 'bg-default-100 text-default-500'}`} size="sm">{t(enabled ? 'profile.twoFactor.enabled' : 'profile.twoFactor.disabled')}</Chip>
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!currentPassword || mutation.isPending) return
@@ -344,14 +386,10 @@ function TwoFactorCard() {
 
   return (
     <Card shadow="none" className="overflow-hidden border border-[var(--hairline)]">
-      <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45 p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex gap-3">
-            <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-success/10 text-success"><ShieldCheck className="size-4" aria-hidden="true" /></div>
-            <div><h3 className="text-base font-semibold">{t('profile.twoFactor.title')}</h3><p className="mt-1 text-sm leading-5 text-muted-foreground">{t('profile.twoFactor.subtitle')}</p></div>
-          </div>
-          {statusQuery.data ? <Chip className={enabled ? 'bg-success/10 text-success' : 'bg-surface-2 text-muted-foreground'}>{t(enabled ? 'profile.twoFactor.enabled' : 'profile.twoFactor.disabled')}</Chip> : null}
-        </div>
+      <CardHeader className="gap-3 p-5">
+        <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-default-100"><ShieldCheck className="size-4 text-muted-foreground" aria-hidden="true" /></div>
+        <div className="min-w-0 flex-1"><h3 className="text-base font-semibold">{t('profile.twoFactor.title')}</h3><p className="mt-1 text-sm leading-5 text-muted-foreground">{t('profile.twoFactor.subtitle')}</p></div>
+        {statusChip}
       </CardHeader>
       <CardBody className="p-5">
         {statusQuery.isPending ? (
@@ -557,14 +595,10 @@ function PasskeyCard({ onPasswordChanged }: ProfilePageProps) {
 
   return (
     <Card shadow="none" className="overflow-hidden border border-[var(--hairline)]">
-      <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45 p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex gap-3">
-            <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand/10 text-brand"><Fingerprint className="size-4" aria-hidden="true" /></div>
-            <div><h3 className="text-base font-semibold">{t('profile.passkeys.title')}</h3><p className="mt-1 text-sm leading-5 text-muted-foreground">{t('profile.passkeys.subtitle')}</p></div>
-          </div>
-          {passkeysQuery.data ? <Chip className="bg-info/10 text-info">{t('profile.passkeys.count', { count: items.length })}</Chip> : null}
-        </div>
+      <CardHeader className="gap-3 p-5">
+        <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-default-100"><Fingerprint className="size-4 text-muted-foreground" aria-hidden="true" /></div>
+        <div className="min-w-0 flex-1"><h3 className="text-base font-semibold">{t('profile.passkeys.title')}</h3><p className="mt-1 text-sm leading-5 text-muted-foreground">{t('profile.passkeys.subtitle')}</p></div>
+        {passkeysQuery.data ? <Chip className="shrink-0 bg-default-100 text-foreground tabular-nums" size="sm">{t('profile.passkeys.count', { count: items.length })}</Chip> : null}
       </CardHeader>
       <CardBody className="grid gap-5 p-5">
         <form className="grid gap-3 rounded-xl border border-info/20 bg-info/6 p-4" onSubmit={submitRegistration} noValidate>
@@ -577,8 +611,8 @@ function PasskeyCard({ onPasswordChanged }: ProfilePageProps) {
               <label className="text-xs font-medium leading-none text-foreground" htmlFor="profile-passkey-name">{t('profile.passkeys.displayName')}</label>
               <Input id="profile-passkey-name" maxLength={128} placeholder={t('profile.passkeys.displayNamePlaceholder')} size="sm" value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
             </div>
-            <Button type="submit" size="sm" color="primary" isDisabled={registrationPending}>
-              {registrationPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Fingerprint aria-hidden="true" />}
+            <Button className="gap-1.5" type="submit" size="sm" color="primary" isDisabled={registrationPending}>
+              {registrationPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Fingerprint className="size-3.5" aria-hidden="true" />}
               {registrationPending ? t('profile.passkeys.registering') : t('profile.passkeys.register')}
             </Button>
           </div>
@@ -631,7 +665,7 @@ function PasskeyCard({ onPasswordChanged }: ProfilePageProps) {
                         {revoked ? <Chip className="bg-destructive/10 text-destructive">{t('profile.passkeys.revoked')}</Chip> : null}
                         {!revoked && editingId !== item.id ? <>
                           <Button isIconOnly type="button" size="sm" variant="light" title={t('profile.passkeys.rename')} aria-label={t('profile.passkeys.rename')} onClick={() => beginRename(item)}><Pencil className="size-4" aria-hidden="true" /></Button>
-                          <Button type="button" size="sm" variant="bordered" onClick={() => beginRevoke(item.id)}><Trash2 className="size-4" aria-hidden="true" />{t('profile.passkeys.revoke')}</Button>
+                          <Button className="gap-1.5" type="button" size="sm" variant="bordered" onClick={() => beginRevoke(item.id)}><Trash2 className="size-3.5" aria-hidden="true" />{t('profile.passkeys.revoke')}</Button>
                         </> : null}
                       </div>
                     </div>
@@ -646,7 +680,7 @@ function PasskeyCard({ onPasswordChanged }: ProfilePageProps) {
                           <div className="grid gap-2"><label className="text-xs font-medium leading-none text-foreground" htmlFor={`profile-passkey-code-${item.id}`}>{t('profile.passkeys.twoFactorCode')}</label><Input autoComplete="one-time-code" id={`profile-passkey-code-${item.id}`} inputMode="numeric" placeholder={twoFactorQuery.data?.enabled ? t('profile.passkeys.twoFactorRequiredPlaceholder') : t('profile.passkeys.twoFactorOptionalPlaceholder')} size="sm" value={revokeCode} onChange={(event) => setRevokeCode(event.target.value)} /><p className="text-[0.6875rem] leading-4 text-muted-foreground">{t(twoFactorQuery.data?.enabled ? 'profile.passkeys.twoFactorRequiredHint' : 'profile.passkeys.twoFactorOptionalHint')}</p></div>
                         </div>
                         {revokeErrorKey ? <p role="alert" className="text-xs text-destructive">{t(revokeErrorKey)}</p> : null}
-                        <div className="flex flex-wrap justify-end gap-2"><Button type="button" size="sm" variant="light" onClick={cancelRevoke}>{t('profile.passkeys.cancel')}</Button><Button type="submit" size="sm" color="danger" variant="flat" isDisabled={!revokePassword || revokeMutation.isPending}>{revokeMutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Trash2 className="size-4" aria-hidden="true" />}{revokeMutation.isPending ? t('profile.passkeys.revoking') : t('profile.passkeys.confirmRevoke')}</Button></div>
+                        <div className="flex flex-wrap justify-end gap-2"><Button type="button" size="sm" variant="light" onClick={cancelRevoke}>{t('profile.passkeys.cancel')}</Button><Button className="gap-1.5" type="submit" size="sm" color="danger" variant="flat" isDisabled={!revokePassword || revokeMutation.isPending}>{revokeMutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Trash2 className="size-3.5" aria-hidden="true" />}{revokeMutation.isPending ? t('profile.passkeys.revoking') : t('profile.passkeys.confirmRevoke')}</Button></div>
                       </form>
                     ) : null}
                   </div>
@@ -706,31 +740,41 @@ function NotificationsCard({ profile }: { profile: UserProfileResponse }) {
     }
   }
 
+  // 预警是系统侧的开关，不随个人偏好保存：按系统当前实际生效与否展示。
+  const balanceAlertEnabled = profile.notifications.effective_balance_alert_threshold !== null
+    && profile.notifications.effective_balance_alert_threshold !== undefined
+  const subscriptionAlertEnabled = profile.notifications.subscription_remaining_percent > 0
+  const thresholdInherited = thresholdMode === 'inherit'
+  const thresholdLabel = thresholdInherited ? t('profile.notifications.thresholdInherit') : t('profile.notifications.thresholdCustom')
+  const effectiveThreshold = thresholdMode === 'custom' && thresholdValid
+    ? parsedThreshold
+    : profile.notifications.effective_balance_alert_threshold
+
   return (
-    <Card shadow="none" className="overflow-hidden border border-[var(--hairline)]">
-      <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45 p-5">
-        <div className="flex gap-3"><div className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand/10 text-brand"><BellRing className="size-4" aria-hidden="true" /></div><div><h3 className="text-base font-semibold">{t('profile.notifications.title')}</h3><p className="mt-1 text-sm leading-5 text-muted-foreground">{t('profile.notifications.subtitle')}</p></div></div>
+    <Card shadow="none" className="border border-[var(--hairline)]">
+      <CardHeader className="gap-3 p-5">
+        <div className="min-w-0 flex-1"><h3 className="text-base font-semibold">{t('profile.notifications.title')}</h3><p className="mt-1 text-sm leading-5 text-muted-foreground">{t('profile.notifications.subtitle')}</p></div>
       </CardHeader>
-      <CardBody className="p-5">
-        <div className="divide-y divide-[var(--hairline)]">
-          <PreferenceRow id="profile-product-updates" title={t('profile.notifications.productTitle')} description={t('profile.notifications.productDescription')} checked={productUpdates} onCheckedChange={setProductUpdates} />
-          <PreferenceRow id="profile-usage-alerts" title={t('profile.notifications.usageTitle')} description={t('profile.notifications.usageDescription')} checked={usageAlerts} onCheckedChange={setUsageAlerts} />
-          <div className="py-4">
+      <CardBody className="grid gap-5 p-5 lg:grid-cols-3">
+        <section className="grid content-start gap-2">
+          <p className="text-xs font-medium text-muted-foreground">{t('profile.notifications.groupEmail')}</p>
+          <div className="divide-y divide-[var(--hairline)] rounded-xl border border-[var(--hairline)] px-4">
+            <PreferenceRow id="profile-product-updates" title={t('profile.notifications.productTitle')} description={t('profile.notifications.productDescription')} checked={productUpdates} onCheckedChange={setProductUpdates} />
+            <PreferenceRow id="profile-usage-alerts" title={t('profile.notifications.usageTitle')} description={t('profile.notifications.usageDescription')} checked={usageAlerts} onCheckedChange={setUsageAlerts} />
+          </div>
+        </section>
+
+        <section className="grid content-start gap-2">
+          <p className="text-xs font-medium text-muted-foreground">{t('profile.notifications.groupAlert')}</p>
+          <div className="grid gap-4 rounded-xl border border-[var(--hairline)] p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex min-w-0 gap-3">
-                <CircleDollarSign className="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />
-                <div>
-                  <p className="text-sm font-medium">{t('profile.notifications.balanceAlertTitle')}</p>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('profile.notifications.balanceAlertDescription')}</p>
-                </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium">{t('profile.notifications.balanceAlertTitle')}</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('profile.notifications.balanceAlertDescription')}</p>
               </div>
-              <Chip className={profile.notifications.balance_alert_enabled ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}>
-                {t(profile.notifications.balance_alert_enabled
-                  ? 'profile.notifications.balanceAlertActive'
-                  : 'profile.notifications.balanceAlertPaused')}
-              </Chip>
+              {alertChip(balanceAlertEnabled, t(balanceAlertEnabled ? 'profile.notifications.balanceAlertActive' : 'profile.notifications.balanceAlertPaused'))}
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="grid items-end gap-3 sm:grid-cols-2">
               <div className="grid gap-2">
                 <label className="text-xs font-medium leading-none text-foreground" htmlFor="profile-balance-alert-mode">{t('profile.notifications.thresholdMode')}</label>
                 <Select
@@ -746,57 +790,41 @@ function NotificationsCard({ profile }: { profile: UserProfileResponse }) {
               </div>
               <div className="grid gap-2">
                 <label className="text-xs font-medium leading-none text-foreground" htmlFor="profile-balance-alert-threshold">{t('profile.notifications.thresholdValue')}</label>
-                <div className="relative">
-                  <Input
-                    className="tabular-nums"
-                    id="profile-balance-alert-threshold"
-                    isDisabled={thresholdMode === 'inherit'}
-                    isInvalid={!thresholdValid}
-                    min={1}
-                    size="sm"
-                    step={1}
-                    type="number"
-                    value={thresholdInput}
-                    onChange={(event) => setThresholdInput(event.target.value)}
-                  />
-                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 pr-12 text-xs text-muted-foreground">
-                    {t('profile.notifications.quotaUnit')}
-                  </span>
-                </div>
+                <Input
+                  className="tabular-nums"
+                  id="profile-balance-alert-threshold"
+                  isDisabled={thresholdInherited}
+                  isInvalid={!thresholdValid}
+                  endContent={<span className="text-xs text-muted-foreground">{t('profile.notifications.quotaUnit')}</span>}
+                  min={1}
+                  size="sm"
+                  step={1}
+                  type="number"
+                  value={thresholdInput}
+                  onChange={(event) => setThresholdInput(event.target.value)}
+                />
                 {!thresholdValid ? <p className="text-xs text-destructive">{t('profile.notifications.thresholdInvalid')}</p> : null}
               </div>
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span>{t('profile.notifications.effectiveThreshold')}</span>
-              <Chip className="bg-info/10 font-mono text-info">
-                {thresholdMode === 'custom' && thresholdValid
-                  ? parsedThreshold
-                  : profile.notifications.effective_balance_alert_threshold}
-              </Chip>
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-default-100 px-3 py-2 text-xs">
+              <span className="text-muted-foreground">{t('profile.notifications.effectiveThreshold')}</span>
+              <span className="flex items-center gap-2">
+                <span className="text-muted-foreground">{thresholdLabel}</span>
+                <span className="font-semibold tabular-nums">{effectiveThreshold}</span>
+              </span>
             </div>
           </div>
-          <div className="flex flex-wrap items-start justify-between gap-3 py-4">
-            <div className="flex min-w-0 gap-3">
-              <CalendarClock className="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />
-              <div>
-                <p className="text-sm font-medium">{t('profile.notifications.subscriptionAlertTitle')}</p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  {t('profile.notifications.subscriptionAlertDescription', {
-                    percent: profile.notifications.subscription_remaining_percent,
-                  })}
-                </p>
-              </div>
-            </div>
-            <Chip className={profile.notifications.subscription_alert_enabled ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}>
-              {t(profile.notifications.subscription_alert_enabled
-                ? 'profile.notifications.subscriptionAlertActive'
-                : 'profile.notifications.subscriptionAlertPaused')}
-            </Chip>
+        </section>
+
+        <section className="grid content-start gap-2">
+          <p className="text-xs font-medium text-muted-foreground">{t('profile.notifications.groupSystem')}</p>
+          <div className="divide-y divide-[var(--hairline)] rounded-xl border border-[var(--hairline)] px-4">
+            <InfoRow title={t('profile.notifications.subscriptionAlertTitle')} description={t('profile.notifications.subscriptionAlertDescription', { percent: profile.notifications.subscription_remaining_percent })} action={alertChip(subscriptionAlertEnabled, t(subscriptionAlertEnabled ? 'profile.notifications.subscriptionAlertActive' : 'profile.notifications.subscriptionAlertPaused'))} />
+            <InfoRow title={t('profile.notifications.securityTitle')} description={t('profile.notifications.securityDescription')} action={<Chip className="shrink-0 bg-success/10 text-success" size="sm">{t('profile.notifications.alwaysOn')}</Chip>} />
           </div>
-          <div className="flex items-start gap-3 py-4"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" /><div className="min-w-0"><p className="text-sm font-medium">{t('profile.notifications.securityTitle')}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{t('profile.notifications.securityDescription')}</p></div><Chip className="ml-auto shrink-0 bg-success/10 text-success">{t('profile.notifications.alwaysOn')}</Chip></div>
-        </div>
-        <Divider className="my-4" />
-        <div className="flex flex-wrap items-center justify-between gap-3"><div className="text-xs text-muted-foreground">{mutation.isSuccess ? <span className="flex items-center gap-1.5 text-success"><Check className="size-3.5" aria-hidden="true" />{t('profile.notifications.saved')}</span> : mutation.isError ? <span className="text-destructive">{t('profile.errors.notifications')}</span> : t('profile.notifications.footer')}</div><Button type="button" size="sm" color="primary" isDisabled={!changed || !thresholdValid || mutation.isPending} onClick={() => void submit()}>{mutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{t('profile.actions.saveNotifications')}</Button></div>
+        </section>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--hairline)] pt-4 lg:col-span-3"><div className="text-xs text-muted-foreground">{mutation.isSuccess ? <span className="flex items-center gap-1.5 text-success"><Check className="size-3.5" aria-hidden="true" />{t('profile.notifications.saved')}</span> : mutation.isError ? <span className="text-destructive">{t('profile.errors.notifications')}</span> : t('profile.notifications.footer')}</div><Button type="button" size="sm" color="primary" isDisabled={!changed || !thresholdValid || mutation.isPending} onClick={() => void submit()}>{mutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{t('profile.actions.saveNotifications')}</Button></div>
       </CardBody>
     </Card>
   )
@@ -825,13 +853,13 @@ function NotificationHistoryCard() {
 
   return (
     <Card shadow="none" className="overflow-hidden border border-[var(--hairline)]">
-      <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45 p-5">
-        <div className="flex gap-3">
-          <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-info/10 text-info"><BellRing className="size-4" aria-hidden="true" /></div>
+      <CardHeader className="gap-3 p-5">
+        <div className="flex min-w-0 flex-1 gap-3">
+          <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-default-100"><BellRing className="size-4 text-muted-foreground" aria-hidden="true" /></div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-base font-semibold">{t('profile.notificationHistory.title')}</h3>
-              {unreadCount !== undefined ? <Chip className={unreadCount > 0 ? 'bg-warning/10 text-warning' : 'bg-muted text-muted-foreground'}>{t('profile.notificationHistory.unreadCount', { count: unreadCount })}</Chip> : null}
+              {unreadCount !== undefined ? <Chip className={unreadCount > 0 ? 'bg-primary/10 text-primary tabular-nums' : 'bg-default-100 text-default-500 tabular-nums'} size="sm">{t('profile.notificationHistory.unreadCount', { count: unreadCount })}</Chip> : null}
             </div>
             <p className="mt-1 text-sm leading-5 text-muted-foreground">{t('profile.notificationHistory.subtitle')}</p>
           </div>
@@ -881,8 +909,18 @@ function NotificationHistoryRow({ entry, formatTime, onMarkRead, pending }: { en
 
 function PreferenceRow({ id, title, description, checked, onCheckedChange }: { id: string; title: string; description: string; checked: boolean; onCheckedChange: (checked: boolean) => void }) {
   return (
-    <div className="flex items-start gap-3 py-4 first:pt-0 last:pb-0"><div className="min-w-0 flex-1"><label className="text-sm font-medium" htmlFor={id}>{title}</label><p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p></div><Switch aria-label={title} id={id} isSelected={checked} size="sm" onValueChange={onCheckedChange} /></div>
+    <div className="flex items-start gap-3 py-3"><div className="min-w-0 flex-1"><label className="text-sm font-medium" htmlFor={id}>{title}</label><p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p></div><Switch aria-label={title} id={id} isSelected={checked} size="sm" onValueChange={onCheckedChange} /></div>
   )
+}
+
+/** 只读信息行：系统侧状态，带描述与右侧状态徽标。 */
+function InfoRow({ title, description, action }: { title: string; description: string; action: ReactNode }) {
+  return <div className="flex flex-wrap items-start justify-between gap-3 py-3"><div className="min-w-0"><p className="text-sm font-medium">{title}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p></div>{action}</div>
+}
+
+/** 预警开关状态：启用用成功色，暂停用中性色——暂停不是告警，不该染成警告色。 */
+function alertChip(enabled: boolean, label: string) {
+  return <Chip className={`shrink-0 ${enabled ? 'bg-success/10 text-success' : 'bg-default-100 text-default-500'}`} size="sm">{label}</Chip>
 }
 
 /** 组合当前用户的资料、密码和通知偏好设置，并保持敏感输入只存在于内存。 */
@@ -905,18 +943,16 @@ export function ProfilePage({ section, onPasswordChanged }: ProfilePageProps) {
   }, [profile, profileQuery.isPending, section])
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div><div className="mb-1 flex items-center gap-2 text-[0.6875rem] uppercase tracking-[0.18em] text-brand"><UserRound className="size-3.5" aria-hidden="true" />{roleLabel ?? t('profile.eyebrow')}</div><h2 className="text-lg font-semibold">{t('profile.title')}</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{t('profile.subtitle')}</p></div>
+        <div><div className="mb-1 flex items-center gap-2 text-xs text-brand"><UserRound className="size-3.5" aria-hidden="true" />{roleLabel ?? t('profile.eyebrow')}</div><h2 className="text-lg font-semibold">{t('profile.title')}</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{t('profile.subtitle')}</p></div>
         <Button type="button" size="sm" variant="bordered" isDisabled={profileQuery.isFetching} onClick={() => void profileQuery.refetch()}><RefreshCw className={profileQuery.isFetching ? 'size-4 animate-spin' : 'size-4'} aria-hidden="true" />{t('profile.actions.refresh')}</Button>
       </header>
       {profileQuery.isPending ? <ProfileLoading /> : profileQuery.isError || !profile ? <ErrorPanel onRetry={() => void profileQuery.refetch()} /> : (
         <div className="flex flex-col gap-8">
-          <ProfileSection title={t('profile.sections.account')}>
-            <div className="grid gap-4 xl:grid-cols-2"><ProfileCard profile={profile} /><PasswordCard onPasswordChanged={onPasswordChanged} /></div>
-          </ProfileSection>
+          <ProfileCard profile={profile} roleLabel={roleLabel} onPasswordChanged={onPasswordChanged} />
           <ProfileSection title={t('profile.sections.security')}>
-            <div className="grid gap-4"><TwoFactorCard /><PasskeyCard onPasswordChanged={onPasswordChanged} /></div>
+            <div className="grid gap-4 xl:grid-cols-2"><TwoFactorCard /><PasskeyCard onPasswordChanged={onPasswordChanged} /></div>
           </ProfileSection>
           <ProfileSection title={t('profile.sections.notifications')}>
             <div ref={notificationsRef} id="profile-notifications" tabIndex={-1} className="grid gap-4 scroll-mt-16 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
@@ -933,8 +969,9 @@ export function ProfilePage({ section, onPasswordChanged }: ProfilePageProps) {
 function ProfileSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-3">
-      <h3 className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{title}</h3>
+      <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
       {children}
     </section>
   )
 }
+
