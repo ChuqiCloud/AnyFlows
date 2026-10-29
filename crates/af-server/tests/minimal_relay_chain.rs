@@ -39,32 +39,34 @@ use af_admin::{
     AdminUserReadError, AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture,
     AdminUserWriteError, AdminUserWriter, AnnouncementFuture, AnnouncementListFuture,
     AnnouncementService, AnnouncementServiceError, AnnouncementWriteCommand, ApiKeyDigest,
-    InitialSetup, InitialSetupCommand, InitialSetupError, InitialSetupFuture,
-    InitialSetupStatusFuture, LoginCredentials, ModelCatalogQuery, ModelCatalogReadError,
-    ModelCatalogReader, PasswordResetConfirmCommand, PasswordResetConfirmFuture,
-    PasswordResetError, PasswordResetRequestCommand, PasswordResetRequestFuture,
-    PasswordResetService, PlaygroundConversationDeleteFuture, PlaygroundConversationError,
-    PlaygroundConversationListFuture, PlaygroundConversationReadFuture,
-    PlaygroundConversationSaveCommand, PlaygroundConversationSaveFuture,
-    PlaygroundConversationService, PlaygroundShareCreateCommand, PlaygroundShareCreateFuture,
-    PlaygroundShareError, PlaygroundShareReadFuture, PlaygroundShareRevokeFuture,
-    PlaygroundShareService, PublicSiteSettingsFuture, RedemptionCreateFuture,
-    RedemptionDisableFuture, RedemptionListFuture, RedemptionRedeemFuture, RedemptionService,
-    RedemptionServiceError, RegistrationCommand, RegistrationEmailVerificationCommand,
-    RegistrationEmailVerificationFuture, RegistrationError, RegistrationFuture,
-    RegistrationPolicyCommand, RegistrationPolicyFuture, RegistrationPolicyUpdateFuture,
-    RegistrationService, RegistrationStatusFuture, SessionAuthenticationError,
-    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
-    SiteSettingsCommand, SiteSettingsError, SiteSettingsService, SubscriptionService,
-    SubscriptionServiceError, TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator,
-    UserInvitationError, UserInvitationReadFuture, UserInvitationService, UserNotificationError,
-    UserNotificationListFuture, UserNotificationPreferencesCommand, UserNotificationService,
-    UserNotificationUpdateFuture, UserPasswordChangeCommand, UserPasswordChangeFuture,
-    UserProfileError, UserProfileReadFuture, UserProfileService, UserProfileUpdateCommand,
-    UserProfileUpdateFuture, UserTokenCreateFuture, UserTokenDeleteFuture, UserTokenError,
-    UserTokenGetFuture, UserTokenListFuture, UserTokenListQuery, UserTokenService,
-    UserTokenUpdateFuture, UserTokenWriteCommand, UserWalletError, UserWalletListFuture,
-    UserWalletListQuery, UserWalletService, UserWalletSummaryFuture,
+    ImageHistoryContent, ImageHistoryEntry, ImageHistoryError, ImageHistoryFuture,
+    ImageHistoryService, ImageHistoryUpload, InitialSetup, InitialSetupCommand, InitialSetupError,
+    InitialSetupFuture, InitialSetupStatusFuture, LoginCredentials, ModelCatalogQuery,
+    ModelCatalogReadError, ModelCatalogReader, PasswordResetConfirmCommand,
+    PasswordResetConfirmFuture, PasswordResetError, PasswordResetRequestCommand,
+    PasswordResetRequestFuture, PasswordResetService, PlaygroundConversationDeleteFuture,
+    PlaygroundConversationError, PlaygroundConversationListFuture,
+    PlaygroundConversationReadFuture, PlaygroundConversationSaveCommand,
+    PlaygroundConversationSaveFuture, PlaygroundConversationService, PlaygroundShareCreateCommand,
+    PlaygroundShareCreateFuture, PlaygroundShareError, PlaygroundShareReadFuture,
+    PlaygroundShareRevokeFuture, PlaygroundShareService, PublicSiteSettingsFuture,
+    RedemptionCreateFuture, RedemptionDisableFuture, RedemptionListFuture, RedemptionRedeemFuture,
+    RedemptionService, RedemptionServiceError, RegistrationCommand,
+    RegistrationEmailVerificationCommand, RegistrationEmailVerificationFuture, RegistrationError,
+    RegistrationFuture, RegistrationPolicyCommand, RegistrationPolicyFuture,
+    RegistrationPolicyUpdateFuture, RegistrationService, RegistrationStatusFuture,
+    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
+    SessionLoginFuture, SessionPrincipal, SiteSettingsCommand, SiteSettingsError,
+    SiteSettingsService, SubscriptionService, SubscriptionServiceError, TokenAuthentication,
+    TokenAuthenticationFuture, TokenAuthenticator, UserInvitationError, UserInvitationReadFuture,
+    UserInvitationService, UserNotificationError, UserNotificationListFuture,
+    UserNotificationPreferencesCommand, UserNotificationService, UserNotificationUpdateFuture,
+    UserPasswordChangeCommand, UserPasswordChangeFuture, UserProfileError, UserProfileReadFuture,
+    UserProfileService, UserProfileUpdateCommand, UserProfileUpdateFuture, UserTokenCreateFuture,
+    UserTokenDeleteFuture, UserTokenError, UserTokenGetFuture, UserTokenListFuture,
+    UserTokenListQuery, UserTokenService, UserTokenUpdateFuture, UserTokenWriteCommand,
+    UserWalletError, UserWalletListFuture, UserWalletListQuery, UserWalletService,
+    UserWalletSummaryFuture,
 };
 use af_analytics::{
     AdminDashboardAccess, AdminDashboardReadError, AdminDashboardReadFuture, AdminDashboardReader,
@@ -191,6 +193,7 @@ struct RejectSessions;
 struct RejectModelCatalog;
 struct RejectPlaygroundShares;
 struct RejectPlaygroundConversations;
+struct RejectImageHistory;
 struct RejectUserTokens;
 struct RejectInitialSetup;
 struct RejectRegistration;
@@ -634,6 +637,41 @@ impl PlaygroundConversationService for RejectPlaygroundConversations {
         _conversation_id: String,
     ) -> PlaygroundConversationDeleteFuture<'_> {
         Box::pin(async { Err(PlaygroundConversationError::Internal) })
+    }
+}
+
+impl ImageHistoryService for RejectImageHistory {
+    fn save(
+        &self,
+        _principal: SessionPrincipal,
+        _upload: ImageHistoryUpload,
+    ) -> ImageHistoryFuture<'_, ImageHistoryEntry> {
+        Box::pin(async { Err(ImageHistoryError::Internal) })
+    }
+
+    fn list(&self, _principal: SessionPrincipal) -> ImageHistoryFuture<'_, Vec<ImageHistoryEntry>> {
+        Box::pin(async { Err(ImageHistoryError::Internal) })
+    }
+
+    fn read(
+        &self,
+        _principal: SessionPrincipal,
+        _image_id: String,
+        _thumbnail: bool,
+    ) -> ImageHistoryFuture<'_, ImageHistoryContent> {
+        Box::pin(async { Err(ImageHistoryError::Internal) })
+    }
+
+    fn delete(
+        &self,
+        _principal: SessionPrincipal,
+        _image_id: String,
+    ) -> ImageHistoryFuture<'_, ()> {
+        Box::pin(async { Err(ImageHistoryError::Internal) })
+    }
+
+    fn clear(&self, _principal: SessionPrincipal) -> ImageHistoryFuture<'_, ()> {
+        Box::pin(async { Err(ImageHistoryError::Internal) })
     }
 }
 
@@ -2021,6 +2059,7 @@ async fn start_server(
         Arc::new(RejectModelCatalog),
         Arc::new(RejectPlaygroundShares),
         Arc::new(RejectPlaygroundConversations),
+        Arc::new(RejectImageHistory),
         Arc::new(RejectUserTokens),
         Arc::new(RejectInitialSetup),
         Arc::new(RejectRegistration),

@@ -7,11 +7,11 @@ use af_admin::{
     AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsService,
     AdminPaymentSettingsService, AdminRouteReader, AdminRouteWriter, AdminTokenReader,
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
-    InitialSetup, ModelCatalogReader, OAuthLoginService, PasskeyAuthenticationService,
-    PasswordResetService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
-    RegistrationService, SessionAuthenticator, SiteSettingsService, SubscriptionService,
-    TokenAuthenticator, UserInvitationService, UserNotificationService, UserTopupService,
-    UserWalletService,
+    ImageHistoryService, InitialSetup, ModelCatalogReader, OAuthLoginService,
+    PasskeyAuthenticationService, PasswordResetService, PlaygroundConversationService,
+    PlaygroundShareService, RedemptionService, RegistrationService, SessionAuthenticator,
+    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
+    UserNotificationService, UserTopupService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -116,6 +116,7 @@ use crate::password_reset::build_password_reset_router;
 use crate::payment_settings::build_payment_settings_router;
 use crate::platform_audit::build_platform_audit_router;
 use crate::playground_conversations::build_playground_conversation_router;
+use crate::playground_image_history::build_playground_image_history_router;
 use crate::playground_shares::build_playground_share_router;
 use crate::redemption::build_redemption_router;
 use crate::registration::build_registration_router;
@@ -182,6 +183,7 @@ pub fn build_router(
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
     playground_share_service: Arc<dyn PlaygroundShareService>,
     playground_conversation_service: Arc<dyn PlaygroundConversationService>,
+    image_history_service: Arc<dyn ImageHistoryService>,
     user_token_service: Arc<dyn af_admin::UserTokenService>,
     initial_setup: Arc<dyn InitialSetup>,
     registration_service: Arc<dyn RegistrationService>,
@@ -553,6 +555,10 @@ pub fn build_router(
     );
     let playground_conversation_routes = build_playground_conversation_router(
         playground_conversation_service,
+        Arc::clone(&http_state.session_authenticator),
+    );
+    let playground_image_history_routes = build_playground_image_history_router(
+        image_history_service,
         Arc::clone(&http_state.session_authenticator),
     );
     let user_token_routes = build_user_token_router(
@@ -955,6 +961,7 @@ pub fn build_router(
         .with_state(http_state.clone())
         .merge(playground_share_routes)
         .merge(playground_conversation_routes)
+        .merge(playground_image_history_routes)
         .merge(user_token_routes)
         .merge(registration_routes)
         .merge(passkey_authentication_routes)

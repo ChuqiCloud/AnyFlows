@@ -108,6 +108,15 @@ impl GeneratedImage {
         }
     }
 
+    /// 消费图片并取回签名校验后的字节与格式。
+    #[must_use]
+    pub fn into_bytes_and_format(self) -> Option<(ImageOutputFormat, Vec<u8>)> {
+        match self.source {
+            GeneratedImageSource::Bytes { format, bytes, .. } => Some((format, bytes)),
+            GeneratedImageSource::Url { .. } => None,
+        }
+    }
+
     /// 返回 OpenAI Images 临时图片 URL。
     #[must_use]
     pub fn url(&self) -> Option<&str> {

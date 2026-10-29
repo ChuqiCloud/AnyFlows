@@ -52,6 +52,7 @@ pub(crate) mod debug_traces;
 pub(crate) mod email_settings;
 pub(crate) mod group_model_ratios;
 pub(crate) mod groups;
+pub(crate) mod image_history;
 pub(crate) mod invite_rebate_events;
 pub(crate) mod model_prices;
 pub(crate) mod model_provider_catalog;
@@ -105,10 +106,10 @@ mod sensitive;
 
 pub(crate) use sensitive::{
     AuthChallengeHash, BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey,
-    ChannelBaseUrl, EncryptedJson, HeaderOverrides, MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES,
-    MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES, PasswordHash, PlaygroundConversationKey,
-    SensitiveDecimal, SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist,
-    TokenModelAllowlist, WalletLedgerKey,
+    ChannelBaseUrl, EncryptedJson, HeaderOverrides, ImageHistoryKey,
+    MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES,
+    PasswordHash, PlaygroundConversationKey, SensitiveDecimal, SensitiveJson, SensitiveString,
+    TokenHash, TokenIpAllowlist, TokenModelAllowlist, WalletLedgerKey,
 };
 
 macro_rules! impl_updated_at_behavior {
