@@ -9,7 +9,7 @@ use af_db::{
     MAX_MODEL_PRICE_PAGE_SIZE, MAX_MODEL_PRICE_WRITE_BATCH, ModelPriceBillingMode,
     ModelPriceRecord, ModelPriceRepository, ModelPriceWriteError, ModelPriceWriteRecord,
 };
-use af_domain::{MAX_MODEL_NAME_BYTES, ModelId};
+use af_domain::{MAX_MODEL_NAME_BYTES, ModelId, ModelPeakSchedule};
 use rust_decimal::Decimal;
 use thiserror::Error;
 
@@ -80,6 +80,7 @@ pub struct AdminModelPrice {
     billing_mode: AdminModelPriceBillingMode,
     prices: [Decimal; 5],
     billing_expression: Option<String>,
+    peak_schedule: Option<ModelPeakSchedule>,
     version: u64,
 }
 
@@ -90,6 +91,7 @@ impl AdminModelPrice {
             billing_mode: record.billing_mode().into(),
             prices: record.prices(),
             billing_expression: record.billing_expression().map(str::to_owned),
+            peak_schedule: record.peak_schedule().cloned(),
             version: record.version(),
         }
     }
@@ -113,6 +115,11 @@ impl AdminModelPrice {
     #[must_use]
     pub fn billing_expression(&self) -> Option<&str> {
         self.billing_expression.as_deref()
+    }
+
+    #[must_use]
+    pub fn peak_schedule(&self) -> Option<&ModelPeakSchedule> {
+        self.peak_schedule.as_ref()
     }
 
     #[must_use]
@@ -248,6 +255,27 @@ impl AdminModelPriceWriteCommand {
         prices: [Decimal; 5],
         billing_expression: Option<String>,
     ) -> Result<Self, AdminModelPriceError> {
+        Self::new_with_schedule_patch(
+            model,
+            expected_version,
+            context_window,
+            billing_mode,
+            prices,
+            billing_expression,
+            None,
+        )
+    }
+
+    /// 构造可选模型级分时倍率覆盖的写入命令。
+    pub fn new_with_schedule_patch(
+        model: String,
+        expected_version: Option<u64>,
+        context_window: Option<i64>,
+        billing_mode: AdminModelPriceBillingMode,
+        prices: [Decimal; 5],
+        billing_expression: Option<String>,
+        peak_schedule: Option<Option<ModelPeakSchedule>>,
+    ) -> Result<Self, AdminModelPriceError> {
         if billing_mode == AdminModelPriceBillingMode::Expression {
             let source = billing_expression
                 .as_deref()
@@ -258,13 +286,14 @@ impl AdminModelPriceWriteCommand {
         } else if billing_expression.is_some() {
             return Err(AdminModelPriceError::InvalidInput);
         }
-        let record = ModelPriceWriteRecord::new_with_metadata(
+        let record = ModelPriceWriteRecord::new_with_schedule_patch(
             model,
             expected_version,
             context_window,
             billing_mode.into(),
             prices,
             billing_expression,
+            peak_schedule,
         )
         .map_err(map_write_error)?;
         Ok(Self { record })

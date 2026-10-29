@@ -5,6 +5,7 @@ use af_admin::{
     AdminModelPricePage, AdminModelPriceUsageSemantics, AdminModelPriceWriteCommand,
     ModelPriceSourceCandidate, ModelPriceSourceKind, ModelPriceSourcePreview,
 };
+use af_domain::{GroupPeakWindow, ModelPeakSchedule};
 use axum::{
     Json,
     extract::{Extension, RawQuery, State, rejection::JsonRejection},
@@ -108,6 +109,9 @@ pub(crate) struct AdminModelPriceResponse {
     prices: AdminModelPriceValues,
     #[schema(max_length = 8192, required = true)]
     billing_expression: Option<String>,
+    /// 模型级周计划；空值表示沿用分组时段倍率。
+    #[schema(required = true, max_items = 32)]
+    peak_windows: Option<Vec<crate::management_group_writes::AdminGroupPeakWindow>>,
     #[schema(minimum = 1)]
     version: u64,
 }
@@ -198,6 +202,10 @@ pub(crate) struct AdminModelPriceWriteItemRequest {
     prices: AdminModelPriceValues,
     #[schema(max_length = 8192)]
     billing_expression: Option<String>,
+    /// 缺省或 null 保留现有计划，空数组清除计划，非空数组替换计划。
+    #[serde(default)]
+    #[schema(max_items = 32)]
+    peak_windows: Option<Vec<crate::management_group_writes::AdminGroupPeakWindow>>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -422,6 +430,13 @@ impl AdminModelPriceResponse {
             billing_mode: price.billing_mode().into(),
             prices: AdminModelPriceValues::from_prices(price.prices()),
             billing_expression: price.billing_expression().map(str::to_owned),
+            peak_windows: price.peak_schedule().map(|schedule| {
+                schedule
+                    .windows()
+                    .iter()
+                    .map(crate::management_group_writes::AdminGroupPeakWindow::from_window)
+                    .collect()
+            }),
             version: price.version(),
         }
     }
@@ -484,13 +499,29 @@ impl AdminModelPriceSourceCandidateResponse {
 
 impl AdminModelPriceWriteItemRequest {
     fn into_command(self) -> Result<AdminModelPriceWriteCommand, ManagementError> {
-        AdminModelPriceWriteCommand::new_with_metadata(
+        let peak_schedule = self
+            .peak_windows
+            .map(|windows| {
+                if windows.is_empty() {
+                    return Ok(None);
+                }
+                let windows = windows
+                    .into_iter()
+                    .map(crate::management_group_writes::AdminGroupPeakWindow::into_model_window)
+                    .collect::<Result<Vec<GroupPeakWindow>, _>>()?;
+                ModelPeakSchedule::new(windows)
+                    .map(Some)
+                    .map_err(|_| ManagementError::InvalidRequest)
+            })
+            .transpose()?;
+        AdminModelPriceWriteCommand::new_with_schedule_patch(
             self.model,
             self.expected_version,
             self.context_window,
             self.billing_mode.into(),
             self.prices.into_prices()?,
             self.billing_expression,
+            peak_schedule,
         )
         .map_err(map_price_error)
     }
@@ -691,6 +722,48 @@ mod tests {
             "limit=0",
         ] {
             assert!(parse_list_query(Some(query)).is_err(), "{query}");
+        }
+    }
+
+    #[test]
+    fn model_schedule_requests_accept_optional_rules_and_reject_model_scopes_or_overlaps() {
+        let body = serde_json::json!({
+            "model": "scheduled-model", "expected_version": null, "context_window": null,
+            "billing_mode": "free", "prices": {
+                "input": "0", "output": "0", "cache_read": "0",
+                "cache_creation_5m": "0", "cache_creation_1h": "0",
+            },
+        });
+        let rule = serde_json::json!({
+            "weekdays": [1], "start_second": 82800, "end_second": 7200,
+            "ratio_micros": 500000, "models": [], "utc_offset_minutes": 480,
+        });
+        for patch in [
+            None,
+            Some(serde_json::Value::Null),
+            Some(serde_json::json!([])),
+            Some(serde_json::json!([rule.clone()])),
+        ] {
+            let mut value = body.clone();
+            if let Some(patch) = patch {
+                value["peak_windows"] = patch;
+            }
+            let request: AdminModelPriceWriteItemRequest = serde_json::from_value(value).unwrap();
+            assert!(request.into_command().is_ok());
+        }
+        let mut scoped_rule = rule.clone();
+        scoped_rule["models"] = serde_json::json!(["other-model"]);
+        for rules in [
+            serde_json::json!([scoped_rule]),
+            serde_json::json!([rule.clone(), rule]),
+        ] {
+            let mut value = body.clone();
+            value["peak_windows"] = rules;
+            let request: AdminModelPriceWriteItemRequest = serde_json::from_value(value).unwrap();
+            assert!(matches!(
+                request.into_command(),
+                Err(ManagementError::InvalidRequest)
+            ));
         }
     }
 

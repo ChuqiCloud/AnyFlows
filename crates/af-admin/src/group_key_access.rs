@@ -19,6 +19,7 @@ pub use af_db::{
 pub struct GroupKeyPolicyCommand {
     selection_mode: GroupKeySelectionMode,
     allowed_user_ids: Vec<UserId>,
+    disable_keys_losing_access: bool,
 }
 
 impl GroupKeyPolicyCommand {
@@ -26,6 +27,15 @@ impl GroupKeyPolicyCommand {
     pub fn new(
         selection_mode: GroupKeySelectionMode,
         allowed_user_ids: Vec<UserId>,
+    ) -> Result<Self, GroupKeyPolicyError> {
+        Self::with_revocation(selection_mode, allowed_user_ids, false)
+    }
+
+    /// 创建策略替换命令，并可选择同事务停用失去授权的现有 Key。
+    pub fn with_revocation(
+        selection_mode: GroupKeySelectionMode,
+        allowed_user_ids: Vec<UserId>,
+        disable_keys_losing_access: bool,
     ) -> Result<Self, GroupKeyPolicyError> {
         if allowed_user_ids.len() > MAX_GROUP_KEY_ALLOWED_USERS
             || (selection_mode != GroupKeySelectionMode::SelectedUsers
@@ -40,6 +50,7 @@ impl GroupKeyPolicyCommand {
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .collect(),
+            disable_keys_losing_access,
         })
     }
 }
@@ -93,9 +104,23 @@ pub enum GroupKeyPolicyError {
 /// 策略查询和替换的对象安全 Future。
 pub type GroupKeyPolicyFuture<'a> =
     Pin<Box<dyn Future<Output = Result<GroupKeyPolicy, GroupKeyPolicyError>> + Send + 'a>>;
+/// 策略写入结果，包括本次停用的现有 Key 数量。
+pub type GroupKeyPolicyUpdateFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<GroupKeyPolicyUpdate, GroupKeyPolicyError>> + Send + 'a>>;
 /// 用户可选分组列表的对象安全 Future。
 pub type UserTokenGroupListFuture<'a> =
     Pin<Box<dyn Future<Output = Result<UserTokenGroupPage, GroupKeyPolicyError>> + Send + 'a>>;
+
+/// 管理策略更新结果。
+#[derive(Debug)]
+pub struct GroupKeyPolicyUpdate {
+    /// 保存后的策略。
+    pub policy: GroupKeyPolicy,
+    /// 已停用的现有 Key 数。
+    pub disabled_key_count: u64,
+    /// 至少一个现有 Key 被停用的用户数。
+    pub disabled_user_count: u64,
+}
 
 /// 个人 Key 的分组选择策略应用端口。
 pub trait GroupKeyAccessService: Send + Sync {
@@ -111,7 +136,7 @@ pub trait GroupKeyAccessService: Send + Sync {
         principal: SessionPrincipal,
         group_id: GroupId,
         command: GroupKeyPolicyCommand,
-    ) -> GroupKeyPolicyFuture<'a>;
+    ) -> GroupKeyPolicyUpdateFuture<'a>;
     /// 当前登录用户读取可选分组。
     fn list_user_groups<'a>(
         &'a self,
@@ -153,13 +178,24 @@ impl GroupKeyAccessService for DatabaseGroupKeyAccessService {
         principal: SessionPrincipal,
         group_id: GroupId,
         command: GroupKeyPolicyCommand,
-    ) -> GroupKeyPolicyFuture<'a> {
+    ) -> GroupKeyPolicyUpdateFuture<'a> {
         Box::pin(async move {
             require_admin(principal)?;
-            self.repository
-                .update_policy(group_id, command.selection_mode, command.allowed_user_ids)
+            let result = self
+                .repository
+                .update_policy_with_key_revocation(
+                    group_id,
+                    command.selection_mode,
+                    command.allowed_user_ids,
+                    command.disable_keys_losing_access,
+                )
                 .await
-                .map_err(map_error)
+                .map_err(map_error)?;
+            Ok(GroupKeyPolicyUpdate {
+                policy: result.policy,
+                disabled_key_count: result.disabled_key_count,
+                disabled_user_count: result.disabled_user_count,
+            })
         })
     }
 

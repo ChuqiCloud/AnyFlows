@@ -1,7 +1,9 @@
-use af_domain::{PLAYGROUND_TOKEN_NAME, TokenId, UserId};
+use af_domain::{GroupId, PLAYGROUND_TOKEN_NAME, TokenId, UserId};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter,
-    Set, TransactionTrait, entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
+    QueryFilter, QuerySelect, Set, TransactionTrait,
+    entity::prelude::TimeDateTimeWithTimeZone,
+    sea_query::{Expr, LockType},
 };
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
@@ -118,13 +120,64 @@ pub(super) async fn update(
 ) -> Result<UserTokenMutationOutcome, UserTokenRepositoryError> {
     let fields = validate_fields(record)?;
     let transaction = begin_transaction(repository).await?;
-    if lock_non_deleted_owner(&transaction, owner_user_id)
+    let Some(owner) = lock_non_deleted_owner(&transaction, owner_user_id)
         .await
         .map_err(map_owner_guard_error)?
-        .is_none_or(|owner| owner.status() != 1)
-    {
+    else {
         rollback(transaction).await?;
         return Err(UserTokenRepositoryError::OwnerUnavailable);
+    };
+    if owner.status() != 1 {
+        rollback(transaction).await?;
+        return Err(UserTokenRepositoryError::OwnerUnavailable);
+    }
+    if fields.status == 1 {
+        let query = tokens::Entity::find_by_id(token_id.get())
+            .filter(tokens::Column::UserId.eq(owner_user_id.get()))
+            .filter(tokens::Column::OrganizationId.is_null())
+            .filter(tokens::Column::Name.ne(PLAYGROUND_TOKEN_NAME))
+            .filter(tokens::Column::DeletedAt.is_null());
+        let Some(token) = query
+            .clone()
+            .one(&transaction)
+            .await
+            .map_err(|_| record_internal_error(UserTokenRepositoryError::Query))?
+        else {
+            rollback(transaction).await?;
+            return Ok(UserTokenMutationOutcome::NotFound);
+        };
+        let group_id = token
+            .group_id
+            .map(GroupId::new)
+            .transpose()
+            .map_err(|_| record_internal_error(UserTokenRepositoryError::Invariant))?
+            .unwrap_or(owner.default_group_id());
+        // 与授权撤销共享 group 行锁，避免同时保存时重新启用刚被停用的 Key。
+        let allowed = user_can_select_key_group(
+            &transaction,
+            owner_user_id,
+            owner.default_group_id(),
+            group_id,
+        )
+        .await
+        .map_err(|_| record_internal_error(UserTokenRepositoryError::Query))?;
+        let query = if transaction.get_database_backend() == DbBackend::Sqlite {
+            query
+        } else {
+            query.lock(LockType::Update)
+        };
+        let Some(token) = query
+            .one(&transaction)
+            .await
+            .map_err(|_| record_internal_error(UserTokenRepositoryError::Query))?
+        else {
+            rollback(transaction).await?;
+            return Ok(UserTokenMutationOutcome::NotFound);
+        };
+        if token.status != 1 && !allowed {
+            rollback(transaction).await?;
+            return Err(UserTokenRepositoryError::GroupUnavailable);
+        }
     }
     // 只更新普通用户可控列，管理员绑定的分组、重试和窗口字段保持原值。
     let result = tokens::Entity::update_many()

@@ -13,7 +13,7 @@ use af_billing::{
 };
 use af_db::{
     AdminModelLifecycleRecord, AdminModelModalitiesRecord, AdminModelRecord, AdminModelRepository,
-    MAX_ADMIN_MODEL_PAGE_SIZE,
+    GroupModelPolicyRepository, GroupModelPolicyRepositoryError, MAX_ADMIN_MODEL_PAGE_SIZE,
 };
 use af_domain::{GroupId, PricingWeekTime, Protocol};
 use af_scheduler::{ChannelIndexSnapshot, InMemoryChannelIndex};
@@ -30,6 +30,7 @@ pub(crate) struct RuntimeModelCatalogReader {
     model_prices: ModelPriceCache,
     pricing_source: Arc<dyn RequestPricingSnapshotSource>,
     model_metadata: AdminModelRepository,
+    group_model_policy: GroupModelPolicyRepository,
     clock: CatalogClock,
 }
 
@@ -40,12 +41,14 @@ impl RuntimeModelCatalogReader {
         model_prices: ModelPriceCache,
         pricing_source: Arc<dyn RequestPricingSnapshotSource>,
         model_metadata: AdminModelRepository,
+        group_model_policy: GroupModelPolicyRepository,
     ) -> Self {
         Self {
             channel_index,
             model_prices,
             pricing_source,
             model_metadata,
+            group_model_policy,
             clock: Arc::new(crate::utc_time::current_pricing_time),
         }
     }
@@ -300,6 +303,11 @@ impl RuntimeModelCatalogReader {
             .channel_index
             .snapshot()
             .map_err(|_| ModelCatalogReadError::Internal)?;
+        let model_policy = self
+            .group_model_policy
+            .policy_for_group(authentication.group_id())
+            .await
+            .map_err(map_group_model_policy_error)?;
         let mut cursor = query.after().map(str::to_owned);
         let mut items = Vec::with_capacity(query.limit());
         let mut has_more = false;
@@ -312,6 +320,9 @@ impl RuntimeModelCatalogReader {
                 .map_err(|_| ModelCatalogReadError::Internal)?;
             let (records, next_cursor) = page.into_parts();
             for record in records {
+                if !model_policy.allows(record.model()) {
+                    continue;
+                }
                 if !Self::metadata_matches_search(&record, query.search())
                     || !Self::metadata_matches_filters(&record, query)
                 {
@@ -440,6 +451,14 @@ fn metadata_from_record(
         record.supports_tool_calls(),
         lifecycle,
     )
+}
+
+fn map_group_model_policy_error(error: GroupModelPolicyRepositoryError) -> ModelCatalogReadError {
+    match error {
+        GroupModelPolicyRepositoryError::InvalidInput
+        | GroupModelPolicyRepositoryError::NotFound
+        | GroupModelPolicyRepositoryError::Internal => ModelCatalogReadError::Internal,
+    }
 }
 
 const fn modalities(value: AdminModelModalitiesRecord) -> AdminModelModalities {
@@ -595,6 +614,8 @@ mod tests {
         )
         .await
         .unwrap();
+        let group_model_policy =
+            GroupModelPolicyRepository::new(pool.clone(), Duration::from_secs(2)).unwrap();
         let model_metadata = AdminModelRepository::new(pool, Duration::from_secs(2)).unwrap();
         for (model, display_name, provider) in [
             ("free-test", "Community Free", "community"),
@@ -614,6 +635,7 @@ mod tests {
             model_prices.clone(),
             Arc::new(RejectPricingSource),
             model_metadata,
+            group_model_policy,
         );
         (reader, model_prices)
     }

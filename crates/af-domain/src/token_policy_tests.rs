@@ -28,6 +28,24 @@ fn restricted_policy_uses_case_sensitive_exact_matching() {
 }
 
 #[test]
+fn independent_model_restrictions_only_narrow_access() {
+    let group = TokenModelPolicy::try_from_allowlist(vec!["a".into(), "b".into()]).unwrap();
+    let key = TokenModelPolicy::try_from_allowlist(vec!["b".into(), "c".into()]).unwrap();
+    let combined = group.intersect(&key);
+    assert!(!combined.allows("a"));
+    assert!(combined.allows("b"));
+    assert!(!combined.allows("c"));
+    assert_eq!(TokenModelPolicy::unrestricted().intersect(&key), key);
+    assert_eq!(group.intersect(&TokenModelPolicy::unrestricted()), group);
+
+    let disjoint =
+        group.intersect(&TokenModelPolicy::try_from_allowlist(vec!["c".into()]).unwrap());
+    for model in ["a", "b", "c", "other"] {
+        assert!(!disjoint.allows(model));
+    }
+}
+
+#[test]
 fn restricted_policy_accepts_exact_name_and_total_byte_boundaries() {
     let boundary_model = "x".repeat(MAX_MODEL_NAME_BYTES);
     let policy = TokenModelPolicy::try_from_allowlist(vec![

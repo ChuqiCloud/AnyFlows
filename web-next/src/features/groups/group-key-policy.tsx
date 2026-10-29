@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button, Select, SelectItem } from '@heroui/react'
+import ConfirmModal from '@/shared/components/confirm-modal'
 import {
   useAdminGroupKeyPolicy,
   useUpdateAdminGroupKeyPolicy,
@@ -31,17 +32,25 @@ function GroupKeyPolicyForm({ policy, portalContainer }: { policy: GroupKeyPolic
   const labelId = useId()
   const [mode, setMode] = useState<GroupKeySelectionMode>(policy.selection_mode)
   const [selectedIds, setSelectedIds] = useState(policy.allowed_user_ids)
+  const [disableKeys, setDisableKeys] = useState(false)
+  const [confirmRevocation, setConfirmRevocation] = useState(false)
   useEffect(() => {
     setMode(policy.selection_mode)
     setSelectedIds(policy.allowed_user_ids)
+    setDisableKeys(false)
   }, [policy])
   const modes = ['default_only', 'all_users', 'selected_users'] as const
 
   return (
+    <>
     <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => {
       event.preventDefault()
       if (mutation.isPending) return
-      mutation.mutate({ selection_mode: mode, allowed_user_ids: mode === 'selected_users' ? selectedIds : [] })
+      if (disableKeys) {
+        setConfirmRevocation(true)
+        return
+      }
+      mutation.mutate({ selection_mode: mode, allowed_user_ids: mode === 'selected_users' ? selectedIds : [], disable_keys_losing_access: false })
     }}>
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5">
         <div>
@@ -70,14 +79,32 @@ function GroupKeyPolicyForm({ policy, portalContainer }: { policy: GroupKeyPolic
         </div>
         <p className="rounded-lg bg-surface-2 px-3 py-2 text-xs leading-5 text-muted-foreground">{t('groups.keyPolicy.defaultAccess')}</p>
         {mode === 'selected_users' ? <GroupKeyPolicyUsers selectedIds={selectedIds} disabled={mutation.isPending} onChange={(ids) => { setSelectedIds(ids); mutation.reset() }} /> : null}
+        <label className="flex items-start gap-2 rounded-lg border border-danger/25 bg-danger/5 px-3 py-2 text-xs leading-5">
+          <input type="checkbox" className="mt-0.5 size-4 accent-danger" checked={disableKeys} disabled={mutation.isPending} onChange={(event) => { setDisableKeys(event.target.checked); mutation.reset() }} />
+          <span><strong>{t('groups.keyPolicy.disableExistingTitle')}</strong><br />{t('groups.keyPolicy.disableExistingDescription')}</span>
+        </label>
         <p className="text-xs leading-5 text-muted-foreground">{t('groups.keyPolicy.revokeHint')}</p>
         {mutation.isError ? <p role="alert" className="text-xs text-destructive">{t('groups.keyPolicy.saveError')}</p> : null}
-        {mutation.isSuccess ? <p role="status" className="text-xs text-success">{t('groups.keyPolicy.saved')}</p> : null}
+        {mutation.isSuccess ? <p role="status" className="text-xs text-success">{t('groups.keyPolicy.saved')} {t('groups.keyPolicy.disabledCount', { count: mutation.data.disabled_key_count })} {t('groups.keyPolicy.disabledUserCount', { count: mutation.data.disabled_user_count })}</p> : null}
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-[var(--hairline)] p-4">
         <p className="text-xs text-muted-foreground">{t('groups.keyPolicy.independentSave')}</p>
         <Button type="submit" color="primary" isDisabled={mutation.isPending}>{t(mutation.isPending ? 'groups.keyPolicy.saving' : 'groups.keyPolicy.save')}</Button>
       </div>
     </form>
+      <ConfirmModal
+        isOpen={confirmRevocation}
+        title={t('groups.keyPolicy.confirmDisableTitle')}
+        message={t('groups.keyPolicy.confirmDisableDescription')}
+        confirmText={t('groups.keyPolicy.confirmDisableAction')}
+        cancelText={t('groups.actions.cancel')}
+        isLoading={mutation.isPending}
+        onCancel={() => setConfirmRevocation(false)}
+        onConfirm={() => {
+          setConfirmRevocation(false)
+          mutation.mutate({ selection_mode: mode, allowed_user_ids: mode === 'selected_users' ? selectedIds : [], disable_keys_losing_access: true })
+        }}
+      />
+    </>
   )
 }

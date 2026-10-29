@@ -14,7 +14,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool,
-    entity::{group_key_policies, groups, user_group_grants, users},
+    entity::{group_key_policies, groups, tokens, user_group_grants, users},
 };
 
 /// 一次策略写入允许指定的最大用户数。
@@ -63,6 +63,17 @@ pub struct GroupKeyPolicyRecord {
     pub selection_mode: GroupKeySelectionMode,
     /// 升序且不重复的用户授权。
     pub allowed_user_ids: Vec<UserId>,
+}
+
+/// 策略替换结果，包括因授权撤销而停用的现有 Key 数量。
+#[derive(Debug)]
+pub struct GroupKeyPolicyUpdateRecord {
+    /// 已持久化策略。
+    pub policy: GroupKeyPolicyRecord,
+    /// 本次事务停用的活跃 Key 数。
+    pub disabled_key_count: u64,
+    /// 至少一个现有 Key 被停用的用户数。
+    pub disabled_user_count: u64,
 }
 
 /// 用户端可公开的最小分组信息。
@@ -152,6 +163,19 @@ impl GroupKeyAccessRepository {
         selection_mode: GroupKeySelectionMode,
         allowed_user_ids: Vec<UserId>,
     ) -> Result<GroupKeyPolicyRecord, GroupKeyAccessError> {
+        self.update_policy_with_key_revocation(group_id, selection_mode, allowed_user_ids, false)
+            .await
+            .map(|result| result.policy)
+    }
+
+    /// 原子替换策略；可在同一事务中停用不再获准使用该组的现有 Key。
+    pub async fn update_policy_with_key_revocation(
+        &self,
+        group_id: GroupId,
+        selection_mode: GroupKeySelectionMode,
+        allowed_user_ids: Vec<UserId>,
+        disable_keys_losing_access: bool,
+    ) -> Result<GroupKeyPolicyUpdateRecord, GroupKeyAccessError> {
         if allowed_user_ids.len() > MAX_GROUP_KEY_ALLOWED_USERS
             || (selection_mode != GroupKeySelectionMode::SelectedUsers
                 && !allowed_user_ids.is_empty())
@@ -194,12 +218,16 @@ impl GroupKeyAccessRepository {
                     return Err(GroupKeyAccessError::InvalidInput);
                 }
             }
+            // Key 创建与此更新共用 group 行锁：提交后创建操作重验新授权。
             if !lock_active_group(&transaction, group_id)
                 .await
                 .map_err(internal)?
             {
                 return Err(GroupKeyAccessError::NotFound);
             }
+            let previous_policy = read_policy(&transaction, group_id)
+                .await
+                .map_err(internal)?;
             group_key_policies::Entity::insert(group_key_policies::ActiveModel {
                 group_id: Set(group_id.get()),
                 selection_mode: Set(selection_mode.as_str().to_owned()),
@@ -227,11 +255,26 @@ impl GroupKeyAccessRepository {
                 .await
                 .map_err(internal)?;
             }
+            let (disabled_key_count, disabled_user_count) = if disable_keys_losing_access {
+                disable_keys_without_access(
+                    &transaction,
+                    group_id,
+                    &previous_policy,
+                    selection_mode,
+                )
+                .await?
+            } else {
+                (0, 0)
+            };
             transaction.commit().await.map_err(internal)?;
-            Ok(GroupKeyPolicyRecord {
-                group_id,
-                selection_mode,
-                allowed_user_ids,
+            Ok(GroupKeyPolicyUpdateRecord {
+                policy: GroupKeyPolicyRecord {
+                    group_id,
+                    selection_mode,
+                    allowed_user_ids,
+                },
+                disabled_key_count,
+                disabled_user_count,
             })
         })
         .await
@@ -359,6 +402,116 @@ impl GroupKeyAccessRepository {
     }
 }
 
+async fn disable_keys_without_access<C: ConnectionTrait>(
+    connection: &C,
+    group_id: GroupId,
+    previous_policy: &GroupKeyPolicyRecord,
+    selection_mode: GroupKeySelectionMode,
+) -> Result<(u64, u64), GroupKeyAccessError> {
+    // 全部用户仍有访问权，因此无需写令牌。
+    if selection_mode == GroupKeySelectionMode::AllUsers {
+        return Ok((0, 0));
+    }
+    // PG/MySQL 锁住候选行后再计数，避免并发停用或删除造成两个返回数量不一致。
+    // SQLite 调用方已通过分组恒等写入取得数据库写锁。
+    let candidates = revocation_candidate_query(
+        connection.get_database_backend(),
+        group_id,
+        previous_policy,
+        selection_mode,
+    )
+    .into_tuple::<(i64, i64)>()
+    .all(connection)
+    .await
+    .map_err(internal)?;
+    let affected_user_count = candidates
+        .iter()
+        .map(|(_, user_id)| *user_id)
+        .collect::<BTreeSet<_>>()
+        .len() as u64;
+    let now = sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc();
+    // 为 SQLite 绑定参数预算保留余量；所有批次仍属于同一授权变更事务。
+    for chunk in candidates.chunks(400) {
+        let result = tokens::Entity::update_many()
+            .filter(tokens::Column::Id.is_in(chunk.iter().map(|(token_id, _)| *token_id)))
+            .filter(tokens::Column::GroupId.eq(group_id.get()))
+            .filter(tokens::Column::OrganizationId.is_null())
+            .filter(tokens::Column::Status.eq(1_i16))
+            .filter(tokens::Column::DeletedAt.is_null())
+            .col_expr(tokens::Column::Status, Expr::value(2_i16))
+            .col_expr(tokens::Column::UpdatedAt, Expr::value(now))
+            .exec(connection)
+            .await
+            .map_err(internal)?;
+        if result.rows_affected != chunk.len() as u64 {
+            return Err(GroupKeyAccessError::Internal);
+        }
+    }
+    Ok((candidates.len() as u64, affected_user_count))
+}
+
+fn revocation_candidate_query(
+    backend: DbBackend,
+    group_id: GroupId,
+    previous_policy: &GroupKeyPolicyRecord,
+    selection_mode: GroupKeySelectionMode,
+) -> sea_orm::Select<tokens::Entity> {
+    let default_group_users = Query::select()
+        .column(users::Column::Id)
+        .from(users::Entity)
+        .and_where(Expr::col(users::Column::DefaultGroupId).eq(group_id.get()))
+        .to_owned();
+    let mut previously_eligible_users = Query::select()
+        .column(users::Column::Id)
+        .from(users::Entity)
+        .to_owned();
+    match previous_policy.selection_mode {
+        GroupKeySelectionMode::DefaultOnly => {
+            previously_eligible_users
+                .and_where(Expr::col(users::Column::DefaultGroupId).eq(group_id.get()));
+        }
+        GroupKeySelectionMode::AllUsers => {}
+        GroupKeySelectionMode::SelectedUsers => {
+            previously_eligible_users.cond_where(
+                Condition::any()
+                    .add(Expr::col(users::Column::DefaultGroupId).eq(group_id.get()))
+                    .add(
+                        users::Column::Id.is_in(
+                            previous_policy
+                                .allowed_user_ids
+                                .iter()
+                                .map(|user_id| user_id.get())
+                                .collect::<Vec<_>>(),
+                        ),
+                    ),
+            );
+        }
+    }
+    let mut query = tokens::Entity::find()
+        .select_only()
+        .columns([tokens::Column::Id, tokens::Column::UserId])
+        .filter(tokens::Column::GroupId.eq(group_id.get()))
+        .filter(tokens::Column::OrganizationId.is_null())
+        .filter(tokens::Column::Status.eq(1_i16))
+        .filter(tokens::Column::DeletedAt.is_null())
+        .filter(Expr::col(tokens::Column::UserId).in_subquery(previously_eligible_users))
+        .filter(Expr::col(tokens::Column::UserId).not_in_subquery(default_group_users));
+    if selection_mode == GroupKeySelectionMode::SelectedUsers {
+        let explicitly_allowed_users = Query::select()
+            .column(user_group_grants::Column::UserId)
+            .from(user_group_grants::Entity)
+            .and_where(Expr::col(user_group_grants::Column::GroupId).eq(group_id.get()))
+            .to_owned();
+        query = query
+            .filter(Expr::col(tokens::Column::UserId).not_in_subquery(explicitly_allowed_users));
+    }
+    query = query.order_by_asc(tokens::Column::Id);
+    if backend != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    query
+}
+
 /// 必须在调用方事务中使用；先锁目标分组，再读取当前策略与授权。
 pub(crate) async fn user_can_select_key_group<C: ConnectionTrait>(
     connection: &C,
@@ -460,4 +613,36 @@ async fn read_policy<C: ConnectionTrait>(
 
 fn internal(_: DbErr) -> GroupKeyAccessError {
     GroupKeyAccessError::Internal
+}
+
+#[cfg(test)]
+mod tests {
+    use sea_orm::QueryTrait;
+
+    use super::*;
+
+    #[test]
+    fn revocation_selects_ordered_token_rows_with_database_appropriate_locks() {
+        let group_id = GroupId::new(20).unwrap();
+        let previous_policy = GroupKeyPolicyRecord {
+            group_id,
+            selection_mode: GroupKeySelectionMode::AllUsers,
+            allowed_user_ids: vec![],
+        };
+        for backend in [DbBackend::Postgres, DbBackend::MySql, DbBackend::Sqlite] {
+            for mode in [
+                GroupKeySelectionMode::DefaultOnly,
+                GroupKeySelectionMode::SelectedUsers,
+            ] {
+                let sql = revocation_candidate_query(backend, group_id, &previous_policy, mode)
+                    .build(backend)
+                    .sql
+                    .replace(['"', '`'], "");
+                assert!(sql.starts_with("SELECT tokens.id, tokens.user_id FROM tokens"));
+                assert!(sql.contains("tokens.organization_id IS NULL"));
+                assert!(sql.contains("ORDER BY tokens.id ASC"));
+                assert_eq!(sql.contains("FOR UPDATE"), backend != DbBackend::Sqlite);
+            }
+        }
+    }
 }

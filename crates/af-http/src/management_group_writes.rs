@@ -217,6 +217,13 @@ impl AdminGroupPeakWindow {
         )
         .map_err(|_| ManagementError::InvalidRequest)
     }
+
+    pub(crate) fn into_model_window(self) -> Result<GroupPeakWindow, ManagementError> {
+        if !self.models.is_empty() {
+            return Err(ManagementError::InvalidRequest);
+        }
+        self.into_window()
+    }
 }
 
 fn parse_peak_schedule(

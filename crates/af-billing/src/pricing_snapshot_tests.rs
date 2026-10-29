@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use af_domain::{GroupId, GroupPeakSchedule, GroupPeakWindow, PricingWeekTime, Quota};
+use af_domain::{
+    GroupId, GroupPeakSchedule, GroupPeakWindow, ModelPeakSchedule, PricingWeekTime, Quota,
+};
 use af_protocol::{TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource};
 use rust_decimal::Decimal;
 
@@ -186,6 +188,111 @@ async fn weekly_pricing_freezes_discount_for_settlement_and_supports_zero() {
         zero.resolver().resolve(&context).unwrap().quota(),
         Quota::new(0).unwrap()
     );
+}
+
+#[tokio::test]
+async fn model_time_slot_overrides_group_peak_and_inherits_outside_its_window() {
+    struct ScheduledModels;
+    impl ModelPriceSource for ScheduledModels {
+        fn load<'a>(&'a self) -> ModelPriceSourceFuture<'a> {
+            Box::pin(async {
+                let schedule = ModelPeakSchedule::new(vec![
+                    GroupPeakWindow::new(vec![1], 0, 3_600, 500_000, Vec::new(), 0).unwrap(),
+                    GroupPeakWindow::new(vec![2], 0, 86_400, 0, Vec::new(), 0).unwrap(),
+                    GroupPeakWindow::new(vec![3], 0, 86_400, 1_000_000, Vec::new(), 0).unwrap(),
+                ])
+                .unwrap();
+                let records = ModelSource.load().await?;
+                let mut scheduled = records
+                    .into_iter()
+                    .map(|record| record.with_peak_schedule(Some(schedule.clone())))
+                    .collect::<Vec<_>>();
+                scheduled.push(
+                    ModelPriceSourceRecord::new(
+                        "empty-schedule-model".to_owned(),
+                        BillingMode::PerToken,
+                        TokenPrices::new(
+                            Decimal::ONE,
+                            Decimal::ZERO,
+                            Decimal::ZERO,
+                            Decimal::ZERO,
+                            Decimal::ZERO,
+                        )
+                        .unwrap(),
+                        13,
+                    )
+                    .unwrap()
+                    .with_peak_schedule(Some(ModelPeakSchedule::default())),
+                );
+                Ok(scheduled)
+            })
+        }
+    }
+    struct PeakGroups;
+    impl GroupPricingSource for PeakGroups {
+        fn load<'a>(&'a self) -> GroupPricingSourceFuture<'a> {
+            Box::pin(async {
+                let source = GroupId::new(1).unwrap();
+                let target = GroupId::new(2).unwrap();
+                let schedule = GroupPeakSchedule::new(vec![
+                    GroupPeakWindow::new((1..=7).collect(), 0, 86_400, 2_000_000, Vec::new(), 0)
+                        .unwrap(),
+                ])
+                .unwrap();
+                Ok(GroupPricingSourceCatalog::new(
+                    vec![
+                        GroupPricingSourceRecord::new(source, PricingRatio::ONE, None),
+                        GroupPricingSourceRecord::new(
+                            target,
+                            PricingRatio::new(1_200_000).unwrap(),
+                            None,
+                        )
+                        .with_peak_schedule(Some(schedule)),
+                    ],
+                    vec![GroupModelRatioSourceRecord::new(
+                        source,
+                        target,
+                        PricingRatio::new(750_000).unwrap(),
+                    )],
+                ))
+            })
+        }
+    }
+    let source = CachedRequestPricingSnapshotSource::new(
+        ModelPriceCache::load(Arc::new(ScheduledModels))
+            .await
+            .unwrap(),
+        GroupPricingCache::load(Arc::new(PeakGroups)).await.unwrap(),
+    );
+    for model in ["snapshot-model", "expression-model"] {
+        for (day, second, expected_peak) in [
+            (1, 0, 500_000),
+            (1, 3_600, 2_000_000),
+            (2, 0, 0),
+            (3, 0, 1_000_000),
+        ] {
+            let snapshot = source
+                .capture_at(
+                    model,
+                    GroupId::new(1).unwrap(),
+                    GroupId::new(2).unwrap(),
+                    PricingWeekTime::new(day, second).unwrap(),
+                )
+                .unwrap();
+            assert_eq!(snapshot.ratios().group().micros(), 1_200_000);
+            assert_eq!(snapshot.ratios().group_model().micros(), 750_000);
+            assert_eq!(snapshot.ratios().applied_peak().micros(), expected_peak);
+        }
+    }
+    let inherited = source
+        .capture_at(
+            "empty-schedule-model",
+            GroupId::new(1).unwrap(),
+            GroupId::new(2).unwrap(),
+            PricingWeekTime::new(1, 0).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(inherited.ratios().applied_peak().micros(), 2_000_000);
 }
 
 #[tokio::test]

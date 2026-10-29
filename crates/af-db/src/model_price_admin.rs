@@ -16,6 +16,7 @@ use crate::{
     entity::{SensitiveDecimal, SensitiveString, model_prices, models},
     model_price::{is_valid_model_name, is_valid_model_price_decimal},
 };
+use af_domain::{GroupPeakWindow, ModelPeakSchedule};
 
 /// 单页管理价格目录允许返回的最大记录数。
 pub const MAX_MODEL_PRICE_PAGE_SIZE: usize = 100;
@@ -54,6 +55,8 @@ pub struct ModelPriceWriteRecord {
     billing_mode: ModelPriceBillingMode,
     prices: [Decimal; 5],
     billing_expression: Option<String>,
+    /// None 保留现有计划；Some(None) 清除计划；Some(Some(_)) 替换计划。
+    peak_schedule: Option<Option<ModelPeakSchedule>>,
 }
 
 impl ModelPriceWriteRecord {
@@ -94,6 +97,27 @@ impl ModelPriceWriteRecord {
         prices: [Decimal; 5],
         billing_expression: Option<String>,
     ) -> Result<Self, ModelPriceWriteError> {
+        Self::new_with_schedule_patch(
+            model,
+            expected_version,
+            context_window,
+            billing_mode,
+            prices,
+            billing_expression,
+            None,
+        )
+    }
+
+    /// 写入价格时可原子保留、清除或替换模型级分时计划。
+    pub fn new_with_schedule_patch(
+        model: String,
+        expected_version: Option<u64>,
+        context_window: Option<i64>,
+        billing_mode: ModelPriceBillingMode,
+        prices: [Decimal; 5],
+        billing_expression: Option<String>,
+        peak_schedule: Option<Option<ModelPeakSchedule>>,
+    ) -> Result<Self, ModelPriceWriteError> {
         if !is_valid_model_name(&model)
             || expected_version == Some(0)
             || context_window
@@ -106,6 +130,12 @@ impl ModelPriceWriteRecord {
                 prices,
                 billing_expression.as_deref(),
             )
+            || peak_schedule
+                .as_ref()
+                .and_then(Option::as_ref)
+                .is_some_and(|schedule| {
+                    schedule.windows().len() > af_domain::MAX_GROUP_PEAK_WINDOWS
+                })
         {
             return Err(ModelPriceWriteError::InvalidInput);
         }
@@ -116,6 +146,7 @@ impl ModelPriceWriteRecord {
             billing_mode,
             prices,
             billing_expression,
+            peak_schedule,
         })
     }
 
@@ -149,6 +180,14 @@ impl ModelPriceWriteRecord {
     #[must_use]
     pub fn billing_expression(&self) -> Option<&str> {
         self.billing_expression.as_deref()
+    }
+
+    /// 返回模型级周计划写操作；None 表示不修改已有配置。
+    #[must_use]
+    pub fn peak_schedule(&self) -> Option<Option<&ModelPeakSchedule>> {
+        self.peak_schedule
+            .as_ref()
+            .map(|schedule| schedule.as_ref())
     }
 }
 
@@ -392,6 +431,26 @@ fn apply_fields(
     active.cache_creation_1h_price = Set(SensitiveDecimal::from(cache_creation_1h));
     // 表达式正文与计费模式保持同一事务更新，切回固定单价时显式清除旧正文。
     active.billing_expression = Set(write.billing_expression.clone().map(SensitiveString::from));
+    if let Some(schedule) = &write.peak_schedule {
+        active.peak_windows = Set(schedule.as_ref().map(|schedule| {
+            serde_json::Value::Array(
+                schedule
+                    .windows()
+                    .iter()
+                    .map(|window: &GroupPeakWindow| {
+                        serde_json::json!({
+                            "weekdays": window.weekdays(),
+                            "start_second": window.start_second(),
+                            "end_second": window.end_second(),
+                            "ratio_micros": window.ratio_micros(),
+                            "models": [],
+                            "utc_offset_minutes": window.utc_offset_minutes(),
+                        })
+                    })
+                    .collect(),
+            )
+        }));
+    }
     active.version = Set(version);
 }
 

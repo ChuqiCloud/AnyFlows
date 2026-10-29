@@ -591,6 +591,10 @@ impl TokenModelAllowlist {
     pub(crate) fn into_raw(self) -> Json {
         self.raw
     }
+
+    pub(crate) fn as_raw(&self) -> &Json {
+        &self.raw
+    }
 }
 
 impl fmt::Debug for TokenModelAllowlist {
