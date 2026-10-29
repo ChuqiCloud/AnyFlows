@@ -35,7 +35,7 @@ pub enum AdminModelVisibilityRecord {
     Public,
     /// 仅登录用户可见。
     Authenticated,
-    /// 仅管理员管理界面可见。
+    /// 仅管理员可见；业务目录仍要求有效生命周期、价格与渠道。
     Hidden,
 }
 

@@ -60,6 +60,13 @@ fn error_cases() -> Vec<ErrorCase> {
             message: "The requested model was not found or is unavailable.",
         },
         ErrorCase {
+            error: AfError::ModelUnavailable,
+            status: StatusCode::NOT_FOUND,
+            code: PublicErrorCode::ModelNotFound,
+            kind: "invalid_request_error",
+            message: "The requested model was not found or is unavailable.",
+        },
+        ErrorCase {
             error: AfError::TaskNotFound,
             status: StatusCode::NOT_FOUND,
             code: PublicErrorCode::TaskNotFound,

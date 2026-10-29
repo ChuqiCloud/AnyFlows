@@ -14,6 +14,7 @@ use crate::{
     AdminDashboardRepositoryError, DatabasePool,
     admin_dashboard::{get_count, get_sum, query_all, query_one},
     entity::{channels, request_outcome_logs as outcomes},
+    model_observability::current_callable_model_predicate,
 };
 
 #[derive(Clone, Debug)]
@@ -187,6 +188,13 @@ fn source_query(
     let mut query = Query::select();
     query
         .from(outcomes::Entity)
+        // Outcome facts retain rejected client input for auditing. Service health
+        // only describes current callable catalog models, including those with
+        // no available channel; routing failures must remain visible.
+        .and_where(current_callable_model_predicate((
+            outcomes::Entity,
+            outcomes::Column::Model,
+        )))
         .and_where(
             Expr::col((outcomes::Entity, outcomes::Column::CreatedAt)).gte(timestamp(start)?),
         )

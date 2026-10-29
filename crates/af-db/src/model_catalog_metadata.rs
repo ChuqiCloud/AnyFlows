@@ -9,6 +9,14 @@ use crate::{
     entity::models,
 };
 
+/// 由可信鉴权结果确定的目录访问主体；API Key 不具有管理员会话权限。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ModelCatalogAudience {
+    Public,
+    Authenticated,
+    Admin,
+}
+
 /// 一页按 Canonical 标识稳定排序的公开目录元数据候选。
 pub struct ModelCatalogMetadataPageRecord {
     models: Vec<AdminModelRecord>,
@@ -37,7 +45,7 @@ impl AdminModelRepository {
     /// 按访问主体筛选活动或弃用元数据，供运行时目录继续组合价格与可用性。
     pub async fn list_catalog_metadata(
         &self,
-        authenticated: bool,
+        audience: ModelCatalogAudience,
         after: Option<&str>,
         limit: usize,
     ) -> Result<ModelCatalogMetadataPageRecord, AdminModelRepositoryError> {
@@ -47,13 +55,19 @@ impl AdminModelRepository {
             return Err(record_internal_error(AdminModelRepositoryError::Invariant));
         }
         let operation = async {
-            let visible = if authenticated {
-                vec![
+            let visible = match audience {
+                ModelCatalogAudience::Public => {
+                    vec![AdminModelVisibilityRecord::Public.database_value()]
+                }
+                ModelCatalogAudience::Authenticated => vec![
                     AdminModelVisibilityRecord::Public.database_value(),
                     AdminModelVisibilityRecord::Authenticated.database_value(),
-                ]
-            } else {
-                vec![AdminModelVisibilityRecord::Public.database_value()]
+                ],
+                ModelCatalogAudience::Admin => vec![
+                    AdminModelVisibilityRecord::Public.database_value(),
+                    AdminModelVisibilityRecord::Authenticated.database_value(),
+                    AdminModelVisibilityRecord::Hidden.database_value(),
+                ],
             };
             let mut query = models::Entity::find()
                 .filter(models::Column::DeletedAt.is_null())
