@@ -74,7 +74,6 @@ dependencies = [
  "af-db",
  "af-domain",
  "af-httpclient",
- "af-protocol",
  "async-trait",
  "base64 0.22.1",
  "futures-util",

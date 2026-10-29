@@ -4,7 +4,6 @@ use af_db::{
     ImageHistoryRecord, ImageHistoryRepository, ImageHistoryRepositoryError, ImageHistoryWrite,
 };
 use af_httpclient::{HeaderMap, Method, PooledClient};
-use af_protocol::{GeneratedImage, ImageOutputFormat};
 use thiserror::Error;
 use tokio::{io::AsyncWriteExt, sync::Mutex};
 use uuid::Uuid;
@@ -19,6 +18,23 @@ pub const MAX_IMAGE_HISTORY_BYTES_PER_USER: u64 = 100 * 1024 * 1024;
 pub const MAX_IMAGE_HISTORY_THUMBNAIL_BYTES: usize = 512 * 1024;
 /// 单张历史原图的最大字节数。
 pub const MAX_IMAGE_HISTORY_IMAGE_BYTES: usize = 50 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ImageOutputFormat {
+    Png,
+    Jpeg,
+    Webp,
+}
+
+impl ImageOutputFormat {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::Jpeg => "jpeg",
+            Self::Webp => "webp",
+        }
+    }
+}
 
 /// 上传到私有图片历史的已校验字段。
 pub struct ImageHistoryUpload {
@@ -611,10 +627,23 @@ fn validate_image(bytes: Vec<u8>) -> Result<(ImageOutputFormat, Vec<u8>), ImageH
     if bytes.is_empty() || bytes.len() > MAX_IMAGE_HISTORY_IMAGE_BYTES {
         return Err(ImageHistoryError::InvalidInput);
     }
-    GeneratedImage::new(bytes)
-        .map_err(|_| ImageHistoryError::InvalidInput)?
-        .into_bytes_and_format()
-        .ok_or(ImageHistoryError::InvalidInput)
+    let format = detect_image_format(&bytes).ok_or(ImageHistoryError::InvalidInput)?;
+    Ok((format, bytes))
+}
+
+fn detect_image_format(bytes: &[u8]) -> Option<ImageOutputFormat> {
+    const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    if bytes.starts_with(PNG_SIGNATURE) {
+        return Some(ImageOutputFormat::Png);
+    }
+    if bytes.len() >= 4 && bytes.starts_with(&[0xff, 0xd8, 0xff]) && bytes.ends_with(&[0xff, 0xd9])
+    {
+        return Some(ImageOutputFormat::Jpeg);
+    }
+    if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        return Some(ImageOutputFormat::Webp);
+    }
+    None
 }
 
 fn validate_image_url(value: String) -> Result<String, ImageHistoryError> {

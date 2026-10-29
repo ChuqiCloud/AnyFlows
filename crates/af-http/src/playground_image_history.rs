@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use af_admin::{
-    ImageHistoryEntry, ImageHistoryError, ImageHistoryService, ImageHistoryUpload,
-    MAX_IMAGE_HISTORY_IMAGE_BYTES, MAX_IMAGE_HISTORY_THUMBNAIL_BYTES, SessionAuthentication,
-    SessionAuthenticator,
+    ImageHistoryError, ImageHistoryService, ImageHistoryUpload, MAX_IMAGE_HISTORY_IMAGE_BYTES,
+    MAX_IMAGE_HISTORY_THUMBNAIL_BYTES, SessionAuthentication, SessionAuthenticator,
 };
 use axum::{
-    Json, Router,
+    Router,
     body::Body,
     extract::{DefaultBodyLimit, Extension, Multipart, Path, State, multipart::MultipartRejection},
     middleware,

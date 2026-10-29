@@ -76,7 +76,6 @@ impl MigrationTrait for Migration {
                     .on_delete(ForeignKeyAction::Cascade),
             )
             .check(image_id_format_check(manager.get_database_backend()))
-            .check(Expr::col(ImageHistory::OwnerUserId).gt(0_i64))
             .check(Expr::col(ImageHistory::Model).ne(""))
             .check(Expr::col(ImageHistory::Prompt).ne(""))
             .check(Expr::col(ImageHistory::Format).is_in(["png", "jpeg", "webp"]))
