@@ -1,11 +1,15 @@
-use af_domain::{PLAYGROUND_TOKEN_NAME, TokenId, UserId};
+use af_domain::{GroupId, PLAYGROUND_TOKEN_NAME, TokenId, UserId};
 use sea_orm::{
     ConnectionTrait, QueryResult,
-    sea_query::{Expr, Order, SelectStatement},
+    entity::prelude::TimeDateTimeWithTimeZone,
+    sea_query::{Alias, Expr, Order, SelectStatement},
 };
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
-use crate::{admin_token::base_query, entity::tokens};
+use crate::{
+    admin_token,
+    entity::{groups, tokens},
+};
 
 use super::{
     UserTokenLookupOutcome, UserTokenPageRecord, UserTokenRecord, UserTokenRepository,
@@ -89,9 +93,37 @@ pub(super) fn record_from_row(
     row: &QueryResult,
     owner_user_id: UserId,
 ) -> Result<UserTokenRecord, UserTokenRepositoryError> {
-    let record = crate::AdminTokenRecord::try_from_query_result(row)
+    let record = crate::AdminTokenRecord::try_from_user_query_result(row)
         .map_err(|_| record_internal_error(UserTokenRepositoryError::Invariant))?;
-    UserTokenRecord::from_admin_record(record, owner_user_id)
+    let effective_group_id = row
+        .try_get::<i64>("", "effective_group_id")
+        .map_err(|_| record_internal_error(UserTokenRepositoryError::Invariant))?;
+    let effective_group_id = GroupId::new(effective_group_id)
+        .map_err(|_| record_internal_error(UserTokenRepositoryError::Invariant))?;
+    let deleted_at = row
+        .try_get::<Option<TimeDateTimeWithTimeZone>>("", "effective_group_deleted_at")
+        .map_err(|_| record_internal_error(UserTokenRepositoryError::Invariant))?;
+    let group_display_name = if deleted_at.is_some() {
+        format!("不可用分组 #{}", effective_group_id.get())
+    } else {
+        row.try_get::<String>("", "group_display_name")
+            .map_err(|_| record_internal_error(UserTokenRepositoryError::Invariant))?
+    };
+    UserTokenRecord::from_admin_record(
+        record,
+        owner_user_id,
+        effective_group_id,
+        group_display_name,
+    )
+}
+
+fn base_query(database_backend: sea_orm::DbBackend) -> SelectStatement {
+    admin_token::base_query(database_backend)
+        .expr_as(
+            Expr::col((groups::Entity, groups::Column::DisplayName)),
+            Alias::new("group_display_name"),
+        )
+        .to_owned()
 }
 
 async fn query_all(

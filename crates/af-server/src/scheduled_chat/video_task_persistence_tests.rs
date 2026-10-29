@@ -36,6 +36,79 @@ const REQUESTED_MODEL: &str = "video-public";
 const UPSTREAM_MODEL: &str = "grok-imagine-video-1.5";
 
 #[tokio::test]
+async fn video_pricing_preserves_user_source_and_fixed_routing_group_on_replay()
+-> Result<(), Box<dyn Error>> {
+    let mut fixture = fixture().await?;
+    let source_group_id = insert(
+        fixture.database.seed(),
+        "INSERT INTO groups (name, display_name, flags) VALUES ('video-source', '视频用户来源组', '{}')",
+    ).await?;
+    fixture
+        .database
+        .seed()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE users SET default_group_id = ? WHERE id = ?",
+            [
+                source_group_id.into(),
+                fixture.principal.user_id().get().into(),
+            ],
+        ))
+        .await?;
+    fixture.database.seed().execute(Statement::from_sql_and_values(
+        DbBackend::Sqlite,
+        "INSERT INTO group_model_ratios (source_group_id, target_group_id, ratio_micros) VALUES (?, ?, ?)",
+        [source_group_id.into(), fixture.principal.group_id().get().into(), 1_500_000_i64.into()],
+    )).await?;
+    fixture.principal = fixture
+        .principal
+        .with_billing_source_group_id(GroupId::new(source_group_id)?);
+    fixture.group_pricing =
+        GroupPricingCache::load_from_database(fixture.database.pool().clone()).await?;
+    let runtime = Arc::new(MockRuntime::new(vec![Ok(successful_submission(&fixture))]));
+    let coordinator = fixture.coordinator(runtime.clone());
+    let request_id = async_request_id(0x71);
+    let task = coordinator
+        .submit(
+            async_task_id(0x71),
+            request_id,
+            fixture.principal,
+            request(),
+            "video-source",
+        )
+        .await?;
+    let billing = fixture
+        .billings
+        .find(fixture.principal.user_id(), task.task_id())
+        .await?
+        .expect("视频任务必须有冻结计费快照");
+    assert_eq!(billing.ratios(), [1_000_000, 1_500_000, 1_000_000]);
+    let claim = fixture
+        .submissions
+        .find_by_request(fixture.principal.user_id(), request_id)
+        .await?
+        .expect("视频任务必须保留提交来源");
+    assert_eq!(
+        claim.principal().billing_source_group_id().get(),
+        source_group_id
+    );
+    assert_eq!(claim.principal().group_id(), fixture.principal.group_id());
+    let replay = coordinator
+        .submit(
+            async_task_id(0x72),
+            request_id,
+            fixture.principal,
+            request(),
+            "video-source-replay",
+        )
+        .await?;
+    assert_eq!(replay.task_id(), task.task_id());
+    assert_eq!(runtime.submission_count(), 1);
+    fixture.database.close().await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn definite_failure_releases_claim_and_success_replay_does_not_resubmit()
 -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;

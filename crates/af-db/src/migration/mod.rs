@@ -119,6 +119,8 @@ mod m20261019_000154_add_proxy_pool_refresh_attempt;
 mod m20261021_000155_add_group_peak_windows;
 mod m20261021_000156_channel_route_bindings;
 mod m20261029_000157_create_image_history;
+mod m20261029_000158_create_group_key_access;
+mod m20261029_000159_add_async_task_billing_source_group;
 mod schema;
 
 #[cfg(test)]
@@ -509,6 +511,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20261021_000155_add_group_peak_windows::Migration),
             Box::new(m20261021_000156_channel_route_bindings::Migration),
             Box::new(m20261029_000157_create_image_history::Migration),
+            Box::new(m20261029_000158_create_group_key_access::Migration),
+            Box::new(m20261029_000159_add_async_task_billing_source_group::Migration),
         ]
     }
 }

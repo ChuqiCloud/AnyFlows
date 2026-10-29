@@ -122,7 +122,7 @@ pub(crate) async fn update_token(
         .update(
             authentication.principal(),
             token_id,
-            request.into_command()?,
+            request.into_update_command()?,
         )
         .await
         .map_err(map_user_token_error)?;
@@ -231,6 +231,7 @@ fn map_user_token_error(error: UserTokenError) -> ManagementError {
         UserTokenError::InvalidInput => ManagementError::InvalidRequest,
         UserTokenError::InvalidSession => ManagementError::InvalidSession,
         UserTokenError::LimitReached => ManagementError::TokenLimitReached,
+        UserTokenError::GroupUnavailable => ManagementError::GroupUnavailable,
         UserTokenError::NotFound => ManagementError::TokenNotFound,
         UserTokenError::Internal => ManagementError::Internal,
     }
