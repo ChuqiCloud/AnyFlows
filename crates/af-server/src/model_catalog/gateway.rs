@@ -1,5 +1,5 @@
 use af_admin::{GatewayModel, GatewayModelAuthentication, ModelCatalogReadError};
-use af_db::MAX_ADMIN_MODEL_PAGE_SIZE;
+use af_db::{MAX_ADMIN_MODEL_PAGE_SIZE, ModelCatalogAudience};
 
 use super::{MAX_METADATA_SCAN_PAGES, RuntimeModelCatalogReader};
 
@@ -31,7 +31,11 @@ impl RuntimeModelCatalogReader {
         for _ in 0..MAX_METADATA_SCAN_PAGES {
             let page = self
                 .model_metadata
-                .list_catalog_metadata(true, cursor.as_deref(), MAX_ADMIN_MODEL_PAGE_SIZE)
+                .list_catalog_metadata(
+                    ModelCatalogAudience::Authenticated,
+                    cursor.as_deref(),
+                    MAX_ADMIN_MODEL_PAGE_SIZE,
+                )
                 .await
                 .map_err(|_| ModelCatalogReadError::Internal)?;
             let (records, next_cursor) = page.into_parts();

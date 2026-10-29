@@ -5,7 +5,7 @@ use af_admin::{
     ModelCatalogLifecycle, ModelCatalogListFuture, ModelCatalogMetadata, ModelCatalogModality,
     ModelCatalogPage, ModelCatalogPricingScope, ModelCatalogQuery, ModelCatalogRatios,
     ModelCatalogReadError, ModelCatalogReader, ModelCatalogRuntimeStatus, ModelCatalogTokenPrices,
-    SessionAuthentication,
+    SessionAuthentication, SessionRole,
 };
 use af_billing::{
     BillingMode, ModelPrice, ModelPriceCache, PricingRatio, PricingRatios, RatioPricingResolver,
@@ -14,6 +14,7 @@ use af_billing::{
 use af_db::{
     AdminModelLifecycleRecord, AdminModelModalitiesRecord, AdminModelRecord, AdminModelRepository,
     GroupModelPolicyRepository, GroupModelPolicyRepositoryError, MAX_ADMIN_MODEL_PAGE_SIZE,
+    ModelCatalogAudience,
 };
 use af_domain::{GroupId, PricingWeekTime, Protocol};
 use af_scheduler::{ChannelIndexSnapshot, InMemoryChannelIndex};
@@ -241,7 +242,11 @@ impl RuntimeModelCatalogReader {
         for _ in 0..MAX_METADATA_SCAN_PAGES {
             let page = self
                 .model_metadata
-                .list_catalog_metadata(false, cursor.as_deref(), MAX_ADMIN_MODEL_PAGE_SIZE)
+                .list_catalog_metadata(
+                    ModelCatalogAudience::Public,
+                    cursor.as_deref(),
+                    MAX_ADMIN_MODEL_PAGE_SIZE,
+                )
                 .await
                 .map_err(|_| ModelCatalogReadError::Internal)?;
             let (records, next_cursor) = page.into_parts();
@@ -315,7 +320,11 @@ impl RuntimeModelCatalogReader {
         for _ in 0..MAX_METADATA_SCAN_PAGES {
             let page = self
                 .model_metadata
-                .list_catalog_metadata(true, cursor.as_deref(), MAX_ADMIN_MODEL_PAGE_SIZE)
+                .list_catalog_metadata(
+                    session_catalog_audience(authentication),
+                    cursor.as_deref(),
+                    MAX_ADMIN_MODEL_PAGE_SIZE,
+                )
                 .await
                 .map_err(|_| ModelCatalogReadError::Internal)?;
             let (records, next_cursor) = page.into_parts();
@@ -427,6 +436,13 @@ impl ModelCatalogReader for RuntimeModelCatalogReader {
     }
 }
 
+fn session_catalog_audience(authentication: SessionAuthentication) -> ModelCatalogAudience {
+    match authentication.principal().role() {
+        SessionRole::Admin => ModelCatalogAudience::Admin,
+        SessionRole::User => ModelCatalogAudience::Authenticated,
+    }
+}
+
 fn metadata_from_record(
     record: AdminModelRecord,
 ) -> Result<ModelCatalogMetadata, ModelCatalogReadError> {
@@ -523,6 +539,7 @@ impl fmt::Debug for RuntimeModelCatalogReader {
 
 #[cfg(test)]
 mod tests {
+    use af_admin::SessionPrincipal;
     use af_billing::{
         ModelPriceSource, ModelPriceSourceFuture, ModelPriceSourceRecord, RequestPricingSnapshot,
         RequestPricingSnapshotError, TokenPrices,
@@ -531,6 +548,7 @@ mod tests {
         AdminModelCreateRecord, AdminModelLifecycleRecord, AdminModelModalitiesRecord,
         AdminModelVisibilityRecord, AdminModelWriteRecord, DatabaseOptions, MigrationOptions,
     };
+    use af_domain::UserId;
     use af_scheduler::{ChannelIndexSource, ChannelIndexSourceFuture};
     use rust_decimal::Decimal;
     use std::time::Duration;
@@ -815,6 +833,26 @@ mod tests {
             reader.list(None, &ModelCatalogQuery::default()).await,
             Err(ModelCatalogReadError::Internal)
         ));
+    }
+
+    #[test]
+    fn session_catalog_audience_uses_the_authenticated_session_role() {
+        let user = SessionAuthentication::new(
+            SessionPrincipal::new(UserId::new(1).unwrap(), SessionRole::User),
+            GroupId::new(1).unwrap(),
+            1,
+        );
+        let admin = SessionAuthentication::new(
+            SessionPrincipal::new(UserId::new(2).unwrap(), SessionRole::Admin),
+            GroupId::new(1).unwrap(),
+            1,
+        );
+
+        assert_eq!(
+            session_catalog_audience(user),
+            ModelCatalogAudience::Authenticated
+        );
+        assert_eq!(session_catalog_audience(admin), ModelCatalogAudience::Admin);
     }
 
     fn catalog_model(model: &str, display_name: &str, provider: &str) -> AdminModelCreateRecord {

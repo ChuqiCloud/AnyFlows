@@ -6,7 +6,9 @@ use super::{
     AdminDashboardRepository, AdminDashboardRepositoryConfigError, AdminDashboardRepositoryError,
     DatabaseOptions, MigrationOptions,
 };
-use crate::entity::{HeaderOverrides, SensitiveJson, channels, request_outcome_logs, usage_logs};
+use crate::entity::{
+    HeaderOverrides, SensitiveJson, channels, models, request_outcome_logs, usage_logs,
+};
 
 #[tokio::test]
 async fn snapshot_uses_half_open_window_and_excludes_deleted_channels() -> Result<(), Box<dyn Error>>
@@ -210,6 +212,92 @@ async fn snapshot_uses_half_open_window_and_excludes_deleted_channels() -> Resul
 }
 
 #[tokio::test]
+async fn service_levels_exclude_models_outside_the_current_callable_catalog()
+-> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let start = TimeDateTimeWithTimeZone::from_unix_timestamp(1_000)?;
+    for (model, lifecycle, deleted) in [
+        ("valid-no-channel", 2, false),
+        ("valid-real-failure", 3, false),
+        ("draft-model", 1, false),
+        ("retired-model", 4, false),
+        ("deleted-model", 2, true),
+    ] {
+        seed_sla_model(pool.connection(), model, lifecycle, deleted, start).await?;
+    }
+    for (id, model, outcome, error_kind) in [
+        (1, "valid-no-channel", 2, Some("model_not_allowed")),
+        (2, "valid-real-failure", 2, Some("upstream_network")),
+        (3, "unregistered-model", 2, Some("invalid_request")),
+        (4, "draft-model", 2, Some("invalid_request")),
+        (5, "retired-model", 2, Some("invalid_request")),
+        (6, "deleted-model", 2, Some("invalid_request")),
+    ] {
+        request_outcome_logs::ActiveModel {
+            id: Set(id),
+            request_id: Set(format!("callable-sla-{id}")),
+            protocol: Set("openai_chat".to_owned()),
+            operation: Set("chat".to_owned()),
+            model: Set(model.to_owned()),
+            outcome: Set(outcome),
+            error_kind: Set(error_kind.map(str::to_owned)),
+            channel_id: Set(None),
+            duration_ms: Set(100),
+            created_at: Set(start),
+            ..Default::default()
+        }
+        .insert(pool.connection())
+        .await?;
+    }
+    let repository = AdminDashboardRepository::new(pool.clone(), Duration::from_secs(2))?;
+    let report = repository
+        .service_levels(
+            1_000,
+            87_400,
+            crate::DashboardServiceLevelQuery {
+                channels: false,
+                search: String::new(),
+                page: 1,
+                page_size: 20,
+                failures_first: false,
+            },
+        )
+        .await?;
+
+    assert_eq!(report.total, 2);
+    assert_eq!(report.items.len(), 2);
+    let no_channel = report
+        .items
+        .iter()
+        .find(|row| row.name == "valid-no-channel")
+        .unwrap();
+    assert_eq!(no_channel.request_count, 1);
+    assert_eq!(no_channel.failed_request_count, 1);
+    let real_failure = report
+        .items
+        .iter()
+        .find(|row| row.name == "valid-real-failure")
+        .unwrap();
+    assert_eq!(real_failure.request_count, 1);
+    assert_eq!(real_failure.failed_request_count, 1);
+    assert!(report.items.iter().all(|row| {
+        ![
+            "unregistered-model",
+            "draft-model",
+            "retired-model",
+            "deleted-model",
+        ]
+        .contains(&row.name.as_str())
+    }));
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn service_levels_cover_full_outcomes_and_paginate_independently()
 -> Result<(), Box<dyn Error>> {
     let pool = crate::connect_and_migrate(
@@ -218,6 +306,8 @@ async fn service_levels_cover_full_outcomes_and_paginate_independently()
     )
     .await?;
     let start = TimeDateTimeWithTimeZone::from_unix_timestamp(1_000)?;
+    seed_sla_model(pool.connection(), "gpt-test", 2, false, start).await?;
+    seed_sla_model(pool.connection(), "unknown-only", 2, false, start).await?;
     for id in [1, 2] {
         channels::ActiveModel {
             id: Set(id),
@@ -296,6 +386,7 @@ async fn service_levels_cover_full_outcomes_and_paginate_independently()
         .await?;
     }
     for id in 10..35 {
+        seed_sla_model(pool.connection(), &format!("model-{id}"), 2, false, start).await?;
         request_outcome_logs::ActiveModel {
             id: Set(id),
             request_id: Set(format!("sla-{id}")),
@@ -517,6 +608,32 @@ async fn seed_principals(connection: &sea_orm::DatabaseConnection) -> Result<(),
         used_requests: Set(0),
         created_at: Set(now),
         updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(connection)
+    .await?;
+    Ok(())
+}
+
+async fn seed_sla_model(
+    connection: &sea_orm::DatabaseConnection,
+    model: &str,
+    lifecycle: i16,
+    deleted: bool,
+    created_at: TimeDateTimeWithTimeZone,
+) -> Result<(), sea_orm::DbErr> {
+    models::ActiveModel {
+        model: Set(model.to_owned()),
+        display_name: Set(model.to_owned()),
+        provider: Set("test".to_owned()),
+        tags: Set(JsonValue::Array(Vec::new())),
+        supports_text_input: Set(true),
+        supports_text_output: Set(true),
+        visibility: Set(1),
+        lifecycle: Set(lifecycle),
+        created_at: Set(created_at),
+        updated_at: Set(created_at),
+        deleted_at: Set(deleted.then_some(created_at)),
         ..Default::default()
     }
     .insert(connection)

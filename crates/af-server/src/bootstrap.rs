@@ -1762,6 +1762,7 @@ impl Bootstrap<RelayReady> {
             )
             .map_err(BootstrapError::AdminGroupRepository)?,
         )
+        .with_model_call_admission(model_catalog_metadata.clone())
         .with_smart_route_repository(
             SmartRouteRuntimeRepository::new(
                 self.stage.infrastructure.infrastructure.database.clone(),
