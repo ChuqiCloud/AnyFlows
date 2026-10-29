@@ -635,6 +635,15 @@ export type AdminGroup = {
         [key: string]: unknown;
     };
 };
+export type AdminGroupKeyPolicy = {
+    group_id: number;
+    selection_mode: GroupKeySelectionMode;
+    allowed_user_ids: Array<number>;
+};
+export type AdminGroupKeyPolicyWriteRequest = {
+    selection_mode: GroupKeySelectionMode;
+    allowed_user_ids?: Array<number>;
+};
 export type AdminGroupListResponse = {
     groups: Array<AdminGroup>;
     next_cursor: number | null;
@@ -1684,6 +1693,7 @@ export type FrontendTemplateSummary = {
     valid: boolean;
     error?: string | null;
 };
+export type GroupKeySelectionMode = 'default_only' | 'all_users' | 'selected_users';
 export type HttpExtensionDescriptor = {
     id: string;
     name: string;
@@ -1717,7 +1727,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'turnstile_rejected' | 'turnstile_unavailable' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'site_settings_conflict' | 'announcement_invalid_request' | 'announcement_not_found' | 'announcement_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'custom_oauth2_provider_not_found' | 'custom_oauth2_provider_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'image_history_not_found' | 'image_history_limit_reached' | 'image_history_unavailable' | 'user_conflict' | 'organization_not_found' | 'organization_credit_invalid_request' | 'organization_credit_not_found' | 'organization_credit_interval_conflict' | 'organization_credit_conflict' | 'organization_credit_transition_invalid' | 'organization_approval_not_found' | 'organization_approval_conflict' | 'organization_approval_expired' | 'organization_contract_price_not_found' | 'organization_contract_price_interval_conflict' | 'organization_contract_price_conflict' | 'organization_contract_price_transition_invalid' | 'organization_plan_not_found' | 'organization_plan_conflict' | 'organization_sso_provider_not_found' | 'organization_sso_provider_conflict' | 'organization_sso_provider_transition_invalid' | 'organization_sso_identity_binding_rejected' | 'organization_sso_identity_binding_conflict' | 'organization_sso_recovery_rejected' | 'organization_sso_recovery_conflict' | 'organization_sso_recovery_unavailable' | 'organization_sso_domain_not_found' | 'organization_sso_domain_conflict' | 'organization_sso_domain_transition_invalid' | 'organization_sso_domain_verification_failed' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'refund_not_found' | 'refund_conflict' | 'refund_unavailable' | 'refund_auto_submit_failed' | 'refund_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'turnstile_rejected' | 'turnstile_unavailable' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'site_settings_conflict' | 'announcement_invalid_request' | 'announcement_not_found' | 'announcement_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'group_unavailable' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'custom_oauth2_provider_not_found' | 'custom_oauth2_provider_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'image_history_not_found' | 'image_history_limit_reached' | 'image_history_unavailable' | 'user_conflict' | 'organization_not_found' | 'organization_credit_invalid_request' | 'organization_credit_not_found' | 'organization_credit_interval_conflict' | 'organization_credit_conflict' | 'organization_credit_transition_invalid' | 'organization_approval_not_found' | 'organization_approval_conflict' | 'organization_approval_expired' | 'organization_contract_price_not_found' | 'organization_contract_price_interval_conflict' | 'organization_contract_price_conflict' | 'organization_contract_price_transition_invalid' | 'organization_plan_not_found' | 'organization_plan_conflict' | 'organization_sso_provider_not_found' | 'organization_sso_provider_conflict' | 'organization_sso_provider_transition_invalid' | 'organization_sso_identity_binding_rejected' | 'organization_sso_identity_binding_conflict' | 'organization_sso_recovery_rejected' | 'organization_sso_recovery_conflict' | 'organization_sso_recovery_unavailable' | 'organization_sso_domain_not_found' | 'organization_sso_domain_conflict' | 'organization_sso_domain_transition_invalid' | 'organization_sso_domain_verification_failed' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'refund_not_found' | 'refund_conflict' | 'refund_unavailable' | 'refund_auto_submit_failed' | 'refund_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -2414,6 +2424,9 @@ export type UserSubscriptionListResponse = {
 export type UserSubscriptionStatus = 'active' | 'suspended' | 'canceled' | 'expired';
 export type UserToken = {
     id: number;
+    group_id: number | null;
+    effective_group_id: number;
+    group_display_name: string;
     key_prefix: string;
     name: string;
     status: UserTokenStatus;
@@ -2426,6 +2439,16 @@ export type UserToken = {
     created_at: number;
     updated_at: number;
 };
+export type UserTokenGroup = {
+    id: number;
+    display_name: string;
+    ratio_micros: number;
+    is_default: boolean;
+};
+export type UserTokenGroupListResponse = {
+    groups: Array<UserTokenGroup>;
+    next_cursor: number | null;
+};
 export type UserTokenListResponse = {
     tokens: Array<UserToken>;
     next_cursor: number | null;
@@ -2433,6 +2456,7 @@ export type UserTokenListResponse = {
 };
 export type UserTokenStatus = 'enabled' | 'disabled';
 export type UserTokenWriteRequest = {
+    group_id?: number | null;
     name: string;
     status: UserTokenStatus;
     remain_quota: number;
@@ -4952,6 +4976,65 @@ export type UpdateAdminGroupResponses = {
     200: AdminGroup;
 };
 export type UpdateAdminGroupResponse = UpdateAdminGroupResponses[keyof UpdateAdminGroupResponses];
+export type ListUserTokenGroupsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/token-groups';
+};
+export type ListUserTokenGroupsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListUserTokenGroupsError = ListUserTokenGroupsErrors[keyof ListUserTokenGroupsErrors];
+export type ListUserTokenGroupsResponses = {
+    200: UserTokenGroupListResponse;
+};
+export type ListUserTokenGroupsResponse = ListUserTokenGroupsResponses[keyof ListUserTokenGroupsResponses];
+export type GetAdminGroupKeyPolicyData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/groups/{id}/key-policy';
+};
+export type GetAdminGroupKeyPolicyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminGroupKeyPolicyError = GetAdminGroupKeyPolicyErrors[keyof GetAdminGroupKeyPolicyErrors];
+export type GetAdminGroupKeyPolicyResponses = {
+    200: AdminGroupKeyPolicy;
+};
+export type GetAdminGroupKeyPolicyResponse = GetAdminGroupKeyPolicyResponses[keyof GetAdminGroupKeyPolicyResponses];
+export type UpdateAdminGroupKeyPolicyData = {
+    body: AdminGroupKeyPolicyWriteRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/groups/{id}/key-policy';
+};
+export type UpdateAdminGroupKeyPolicyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminGroupKeyPolicyError = UpdateAdminGroupKeyPolicyErrors[keyof UpdateAdminGroupKeyPolicyErrors];
+export type UpdateAdminGroupKeyPolicyResponses = {
+    200: AdminGroupKeyPolicy;
+};
+export type UpdateAdminGroupKeyPolicyResponse = UpdateAdminGroupKeyPolicyResponses[keyof UpdateAdminGroupKeyPolicyResponses];
 export type ListAdminRoutesData = {
     body?: never;
     path?: never;
@@ -5618,6 +5701,7 @@ export type CreateUserTokenData = {
 export type CreateUserTokenErrors = {
     400: ManagementError;
     401: ManagementError;
+    403: ManagementError;
     409: ManagementError;
     500: ManagementError;
 };
