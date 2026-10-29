@@ -318,14 +318,10 @@ fn convert_response(
         images.push(image);
     }
 
-    if let Field::Value(format) = wire.output_format {
-        let format = map_output_format(format);
-        if images.iter().any(|image| {
-            image.format().is_some_and(|actual| actual != format) || image.format().is_none()
-        }) {
-            return Err(ParseImageGenerationResponseError::InvalidValue);
-        }
-    }
+    let output_format = match wire.output_format {
+        Field::Missing => None,
+        Field::Value(format) => Some(map_output_format(format)),
+    };
     let background = match wire.background {
         Field::Missing => None,
         Field::Value(ImageResponseBackgroundWire::Opaque) => Some(ImageBackground::Opaque),
@@ -355,8 +351,16 @@ fn convert_response(
         Field::Value(usage) => Some(convert_usage(usage)?),
     };
 
-    CanonicalImageGenerationResponse::new(created, images, background, quality, size, usage)
-        .map_err(|_| ParseImageGenerationResponseError::InvalidValue)
+    CanonicalImageGenerationResponse::new_with_output_format(
+        created,
+        images,
+        output_format,
+        background,
+        quality,
+        size,
+        usage,
+    )
+    .map_err(|_| ParseImageGenerationResponseError::InvalidValue)
 }
 
 fn convert_image(item: ImageDataWire) -> Result<GeneratedImage, ParseImageGenerationResponseError> {

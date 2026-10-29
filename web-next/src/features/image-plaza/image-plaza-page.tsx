@@ -21,18 +21,25 @@ import {
   RefreshCw,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { EMPTY_MODEL_CATALOG_FILTERS, useModelCatalog, type ModelCatalogFilters } from '@/features/models/model-api'
 import type { ModelCatalogItem } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
 import {
+  clearImageHistory,
+  deleteImageHistory,
   editImage,
   generateImages,
   ImagePlazaRequestError,
+  loadImageHistory,
+  loadImageHistoryImage,
+  saveImageHistory,
+  type ImagePlazaHistoryRecord,
   type ImagePlazaResult,
   type ImagePlazaSettings,
 } from './image-plaza-client'
@@ -42,6 +49,9 @@ type PlazaImage = ImagePlazaResult & {
   model: string
   prompt: string
   createdAt: number
+  historyId?: string
+  historyLoaded?: boolean
+  format?: ImagePlazaHistoryRecord['format']
 }
 type ImageCatalogQuery = ReturnType<typeof useModelCatalog>
 
@@ -71,6 +81,7 @@ export function ImagePlazaPage() {
   const [results, setResults] = useState<PlazaImage[]>([])
   const [selectedId, setSelectedId] = useState<string>()
   const [busy, setBusy] = useState(false)
+  const [historySaving, setHistorySaving] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [errorKey, setErrorKey] = useState('')
   const [fileErrorKey, setFileErrorKey] = useState('')
@@ -78,7 +89,49 @@ export function ImagePlazaPage() {
   const [noticeKey, setNoticeKey] = useState('')
   const [sourcePreview, setSourcePreview] = useState('')
   const [maskPreview, setMaskPreview] = useState('')
+  const resultsRef = useRef<PlazaImage[]>([])
+  const previousResultsRef = useRef<PlazaImage[]>([])
   const selectedImage = results.find((item) => item.id === selectedId) ?? results[0]
+
+  useEffect(() => {
+    resultsRef.current = results
+    const currentUrls = new Set(results.map((image) => image.src))
+    for (const image of previousResultsRef.current) {
+      if (image.blob && image.src.startsWith('blob:') && !currentUrls.has(image.src)) {
+        URL.revokeObjectURL(image.src)
+      }
+    }
+    previousResultsRef.current = results
+  }, [results])
+
+  useEffect(() => () => {
+    for (const image of resultsRef.current) {
+      if (image.blob && image.src.startsWith('blob:')) URL.revokeObjectURL(image.src)
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void loadImageHistory().then((history) => {
+      if (cancelled) return
+      const restored = history.map(historyImage)
+      setResults((current) => {
+        const ids = new Set(current.map((image) => image.historyId ?? image.id))
+        return [...current, ...restored.filter((image) => !ids.has(image.id))]
+          .sort((left, right) => right.createdAt - left.createdAt)
+          .slice(0, 30)
+      })
+    }).catch(() => {
+      if (!cancelled) setNoticeKey('historyLoadFailed')
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (!noticeKey) return
+    const timeout = window.setTimeout(() => setNoticeKey(''), 2500)
+    return () => window.clearTimeout(timeout)
+  }, [noticeKey])
 
   useEffect(() => {
     if (models.length && (!model || !models.some((item) => item.model === model))) {
@@ -142,13 +195,37 @@ export function ImagePlazaPage() {
       const nextResults = generated.map((item): PlazaImage => ({
         ...item,
         model,
-        prompt: item.revisedPrompt || requestSettings.prompt,
+        prompt: requestSettings.prompt,
         createdAt,
       }))
-      setResults((current) => [...nextResults, ...current])
+      setResults((current) => [...nextResults, ...current].slice(0, 30))
       setSelectedId(nextResults[0]?.id)
-      setNoticeKey('generated')
+      setNoticeKey('savingHistory')
+      setHistorySaving(true)
       setSettingsOpen(false)
+      void Promise.allSettled(nextResults.map(async (image) => ({
+        localId: image.id,
+        history: await saveImageHistory(image, image.model, image.prompt),
+      }))).then((saved) => {
+        const savedByLocalId = new Map<string, ImagePlazaHistoryRecord>()
+        let failed = false
+        for (const result of saved) {
+          if (result.status === 'fulfilled') savedByLocalId.set(result.value.localId, result.value.history)
+          else failed = true
+        }
+        setResults((current) => current.map((image) => {
+          const history = savedByLocalId.get(image.id)
+          return history ? {
+            ...image,
+            historyId: history.id,
+            historyLoaded: true,
+            requestId: history.request_id ?? image.requestId,
+            format: history.format,
+          } : image
+        }))
+        setHistorySaving(false)
+        setNoticeKey(failed ? 'historySaveFailed' : 'generated')
+      })
     } catch (error) {
       setErrorKey(error instanceof ImagePlazaRequestError ? error.kind : 'request_failed')
     } finally {
@@ -159,9 +236,14 @@ export function ImagePlazaPage() {
   const continueEditing = async (image: PlazaImage) => {
     setErrorKey('')
     try {
-      const response = await fetch(image.src, { cache: 'no-store' })
-      if (!response.ok) throw new Error('image_unavailable')
-      const blob = await response.blob()
+      let blob = image.blob
+      if (!blob && image.historyId) {
+        blob = await loadImageHistoryImage(image.historyId, false)
+      } else if (!blob) {
+        const response = await fetch(image.src)
+        if (!response.ok) throw new Error('image_unavailable')
+        blob = await response.blob()
+      }
       const type = blob.type.startsWith('image/') ? blob.type : 'image/png'
       setOriginalImage(new File([blob], `image-${image.id.slice(0, 8)}.png`, { type }))
       setMaskImage(undefined)
@@ -188,21 +270,51 @@ export function ImagePlazaPage() {
 
   const downloadImage = async () => {
     if (!selectedImage) return
+    const extension = imageFileExtension(selectedImage.blob?.type ?? imageFormatMime(selectedImage.format))
+    const fileName = `anyflows-image-${selectedImage.id.slice(0, 8)}.${extension}`
+    if (selectedImage.blob) {
+      triggerDownload(selectedImage.src, fileName)
+      setNoticeKey('downloaded')
+      return
+    }
     try {
-      const response = await fetch(selectedImage.src, { cache: 'no-store' })
-      if (!response.ok) throw new Error('image_unavailable')
-      const blob = await response.blob()
+      const blob = selectedImage.historyId
+        ? await loadImageHistoryImage(selectedImage.historyId, false)
+        : await (async () => {
+          const response = await fetch(selectedImage.src)
+          if (!response.ok) throw new Error('image_unavailable')
+          return response.blob()
+        })()
       const url = URL.createObjectURL(blob)
-      triggerDownload(url, `anyflows-image-${selectedImage.id.slice(0, 8)}.png`)
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+      triggerDownload(url, `anyflows-image-${selectedImage.id.slice(0, 8)}.${imageFileExtension(blob.type)}`)
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
       setNoticeKey('downloaded')
     } catch {
-      if (selectedImage.src.startsWith('data:image/')) {
-        triggerDownload(selectedImage.src, `anyflows-image-${selectedImage.id.slice(0, 8)}.png`)
-        setNoticeKey('downloaded')
-      } else {
-        setNoticeKey('downloadFailed')
-      }
+      setNoticeKey('downloadFailed')
+    }
+  }
+
+  const clearHistory = async () => {
+    if (!results.length || !window.confirm(t('imagePlaza.history.confirmClear'))) return
+    try {
+      await clearImageHistory()
+      setResults([])
+      setSelectedId(undefined)
+      setNoticeKey('historyCleared')
+    } catch {
+      setNoticeKey('historyClearFailed')
+    }
+  }
+
+  const deleteSelectedHistory = async () => {
+    if (!selectedImage?.historyId || !window.confirm(t('imagePlaza.history.confirmDelete'))) return
+    try {
+      await deleteImageHistory(selectedImage.historyId)
+      setResults((current) => current.filter((image) => image.id !== selectedImage.id))
+      setSelectedId(undefined)
+      setNoticeKey('imageDeleted')
+    } catch {
+      setNoticeKey('imageDeleteFailed')
     }
   }
 
@@ -255,7 +367,7 @@ export function ImagePlazaPage() {
   const detailPanel = selectedImage ? (
     <div className="grid gap-4">
       <div className="overflow-hidden rounded-md border border-[var(--hairline)] bg-surface-2/50">
-        <img src={selectedImage.src} alt={selectedImage.prompt} className="aspect-square w-full object-contain" />
+        <HistoryImage image={selectedImage} thumbnail={false} alt={selectedImage.prompt} className="aspect-square w-full object-contain" />
       </div>
       <div className="grid gap-2">
         <div className="flex items-center justify-between gap-2 text-xs">
@@ -266,6 +378,7 @@ export function ImagePlazaPage() {
         </div>
         <p className="max-h-28 overflow-y-auto whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">{selectedImage.prompt}</p>
       </div>
+      {selectedImage.requestId ? <code className="text-[0.6875rem] text-muted-foreground">{t('imagePlaza.detail.requestId', { id: selectedImage.requestId })}</code> : null}
       <div className="flex flex-wrap gap-2 border-t border-[var(--hairline)] pt-3">
         <Button size="sm" variant="bordered" className="rounded-md" onPress={() => void downloadImage()}>
           <Download className="size-3.5" aria-hidden="true" />{t('imagePlaza.actions.download')}
@@ -277,8 +390,12 @@ export function ImagePlazaPage() {
         <Button size="sm" color="primary" variant="flat" className="rounded-md" onPress={() => void continueEditing(selectedImage)}>
           <Pencil className="size-3.5" aria-hidden="true" />{t('imagePlaza.actions.continueEdit')}
         </Button>
+        {selectedImage.historyId ? (
+          <Button isIconOnly size="sm" variant="light" aria-label={t('imagePlaza.actions.deleteImage')} title={t('imagePlaza.actions.deleteImage')} onPress={() => void deleteSelectedHistory()}>
+            <Trash2 className="size-3.5" aria-hidden="true" />
+          </Button>
+        ) : null}
       </div>
-      {noticeKey ? <p role="status" className="text-xs text-muted-foreground">{t(`imagePlaza.status.${noticeKey}`)}</p> : null}
     </div>
   ) : (
     <div className="grid min-h-48 place-items-center rounded-md border border-dashed border-[var(--hairline)] p-5 text-center text-xs leading-5 text-muted-foreground">
@@ -323,13 +440,29 @@ export function ImagePlazaPage() {
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold">{t('imagePlaza.gallery.title')}</h2>
-              <p className="mt-1 text-xs text-muted-foreground">{t('imagePlaza.gallery.sessionCount', { count: results.length })}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t('imagePlaza.gallery.historyCount', { count: results.length })}</p>
+              {noticeKey && !historySaving ? <p role="status" className="mt-1 text-xs text-muted-foreground">{t(`imagePlaza.status.${noticeKey}`)}</p> : null}
             </div>
-            {busy ? (
-              <span role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
-                <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />{t('imagePlaza.actions.submitting')}
-              </span>
-            ) : null}
+            <div className="flex items-center gap-2">
+              {busy || historySaving ? (
+                <span role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />{t(busy ? 'imagePlaza.actions.submitting' : 'imagePlaza.status.savingHistory')}
+                </span>
+              ) : null}
+              {results.length ? (
+                <Button
+                  isIconOnly
+                  aria-label={t('imagePlaza.actions.clearHistory')}
+                  title={t('imagePlaza.actions.clearHistory')}
+                  size="sm"
+                  variant="light"
+                  isDisabled={busy || historySaving}
+                  onPress={() => void clearHistory()}
+                >
+                  <Trash2 className="size-4" aria-hidden="true" />
+                </Button>
+              ) : null}
+            </div>
           </div>
 
           {results.length ? (
@@ -351,7 +484,7 @@ export function ImagePlazaPage() {
                     )}
                     onClick={() => setSelectedId(image.id)}
                   >
-                    <img src={image.src} alt="" loading="lazy" className="size-full object-cover transition-transform duration-200 group-hover:scale-[1.02] motion-reduce:transition-none" />
+                    <HistoryImage image={image} thumbnail alt="" className="size-full object-cover transition-transform duration-200 group-hover:scale-[1.02] motion-reduce:transition-none" />
                   </motion.button>
                 ))}
               </AnimatePresence>
@@ -635,4 +768,83 @@ function triggerDownload(url: string, fileName: string) {
   document.body.append(anchor)
   anchor.click()
   anchor.remove()
+}
+
+function historyImage(entry: ImagePlazaHistoryRecord): PlazaImage {
+  return {
+    id: entry.id,
+    src: '',
+    model: entry.model,
+    prompt: entry.prompt,
+    revisedPrompt: entry.revised_prompt ?? undefined,
+    requestId: entry.request_id ?? undefined,
+    createdAt: entry.created_at * 1000,
+    historyId: entry.id,
+    historyLoaded: true,
+    format: entry.format,
+  }
+}
+
+type HistoryImageProps = {
+  image: PlazaImage
+  thumbnail?: boolean
+  alt: string
+  className: string
+}
+
+function HistoryImage({ image, thumbnail = false, alt, className }: HistoryImageProps) {
+  const imageRef = useRef<HTMLImageElement>(null)
+  const [source, setSource] = useState(image.historyLoaded ? '' : image.src)
+
+  useEffect(() => {
+    if (!image.historyLoaded || !image.historyId || image.blob) {
+      setSource(image.src)
+      return
+    }
+
+    const element = imageRef.current
+    if (!element) return
+    let active = true
+    let objectUrl = ''
+    let observer: IntersectionObserver | undefined
+    const load = () => {
+      void loadImageHistoryImage(image.historyId!, thumbnail).then((blob) => {
+        if (!active) return
+        objectUrl = URL.createObjectURL(blob)
+        setSource(objectUrl)
+      }).catch(() => undefined)
+    }
+    if ('IntersectionObserver' in window) {
+      observer = new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          observer?.disconnect()
+          load()
+        }
+      })
+      observer.observe(element)
+    } else {
+      load()
+    }
+    return () => {
+      active = false
+      observer?.disconnect()
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [image.historyId, image.historyLoaded, image.src, thumbnail])
+
+  return <img ref={imageRef} src={source || undefined} alt={alt} loading="lazy" referrerPolicy="no-referrer" className={className} />
+}
+
+function imageFormatMime(format?: ImagePlazaHistoryRecord['format']) {
+  if (format === 'jpeg') return 'image/jpeg'
+  if (format === 'webp') return 'image/webp'
+  return 'image/png'
+}
+
+function imageFileExtension(mimeType?: string) {
+  switch (mimeType) {
+    case 'image/jpeg': return 'jpg'
+    case 'image/webp': return 'webp'
+    default: return 'png'
+  }
 }

@@ -206,6 +206,7 @@ fn response_rejects_invalid_base64_and_format_mismatch() {
 fn parses_and_rebuilds_dalle_url_and_revised_prompt_responses() {
     let body = serde_json::json!({
         "created": 1_723_000_000,
+        "output_format": "png",
         "data": [{
             "url": "https://images.example/result.png?signature=private",
             "revised_prompt": "A revised private prompt"
@@ -213,7 +214,7 @@ fn parses_and_rebuilds_dalle_url_and_revised_prompt_responses() {
         "provider_extension": {"version": "v2"}
     });
     let response = parse_response(&serde_json::to_vec(&body).unwrap()).unwrap();
-    assert_eq!(response.output_format(), None);
+    assert_eq!(response.output_format(), Some(ImageOutputFormat::Png));
     assert_eq!(
         response.images()[0].url(),
         Some("https://images.example/result.png?signature=private")
@@ -226,10 +227,13 @@ fn parses_and_rebuilds_dalle_url_and_revised_prompt_responses() {
     assert!(!debug.contains("signature=private"));
     assert!(!debug.contains("A revised private prompt"));
 
-    let request =
-        parse_request(br#"{"model":"dall-e-3","prompt":"draw","response_format":"url"}"#).unwrap();
+    let request = parse_request(
+        br#"{"model":"dall-e-3","prompt":"draw","response_format":"url","output_format":"png"}"#,
+    )
+    .unwrap();
     response.validate_for_request(&request).unwrap();
     let rebuilt = build_response(&response).unwrap();
+    assert_eq!(rebuilt["output_format"], "png");
     assert_eq!(rebuilt["data"][0]["url"], body["data"][0]["url"]);
     assert_eq!(
         rebuilt["data"][0]["revised_prompt"],
@@ -239,6 +243,22 @@ fn parses_and_rebuilds_dalle_url_and_revised_prompt_responses() {
         parse_response(&serde_json::to_vec(&rebuilt).unwrap()).unwrap(),
         response
     );
+}
+
+#[test]
+fn accepts_url_response_without_verifiable_output_format() {
+    let body = serde_json::json!({
+        "created": 1_723_000_000,
+        "data": [{"url": "https://images.example/result"}]
+    });
+    let response = parse_response(&serde_json::to_vec(&body).unwrap()).unwrap();
+    let request = parse_request(
+        br#"{"model":"dall-e-3","prompt":"draw","response_format":"url","output_format":"png"}"#,
+    )
+    .unwrap();
+
+    assert_eq!(response.output_format(), None);
+    response.validate_for_request(&request).unwrap();
 }
 
 #[test]

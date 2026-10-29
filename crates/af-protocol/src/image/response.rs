@@ -15,6 +15,7 @@ use super::{
 pub struct CanonicalImageGenerationResponse {
     created: u64,
     images: Vec<GeneratedImage>,
+    output_format: Option<ImageOutputFormat>,
     background: Option<ImageBackground>,
     quality: Option<ImageQuality>,
     size: Option<ImageDimensions>,
@@ -26,6 +27,18 @@ impl CanonicalImageGenerationResponse {
     pub fn new(
         created: u64,
         images: Vec<GeneratedImage>,
+        background: Option<ImageBackground>,
+        quality: Option<ImageQuality>,
+        size: Option<ImageDimensions>,
+        usage: Option<ImageGenerationUsage>,
+    ) -> Result<Self, CanonicalImageGenerationResponseError> {
+        Self::new_with_output_format(created, images, None, background, quality, size, usage)
+    }
+
+    pub(crate) fn new_with_output_format(
+        created: u64,
+        images: Vec<GeneratedImage>,
+        output_format: Option<ImageOutputFormat>,
         background: Option<ImageBackground>,
         quality: Option<ImageQuality>,
         size: Option<ImageDimensions>,
@@ -54,10 +67,14 @@ impl CanonicalImageGenerationResponse {
                 return Err(CanonicalImageGenerationResponseError::ImageBudgetExceeded);
             }
         }
+        if output_format.is_some_and(|declared| format.is_some_and(|actual| declared != actual)) {
+            return Err(CanonicalImageGenerationResponseError::InvalidMetadata);
+        }
 
         Ok(Self {
             created,
             images,
+            output_format: output_format.or(format),
             background,
             quality,
             size,
@@ -86,7 +103,7 @@ impl CanonicalImageGenerationResponse {
     /// 返回图片集合的统一文件格式。
     #[must_use]
     pub fn output_format(&self) -> Option<ImageOutputFormat> {
-        self.images.iter().find_map(GeneratedImage::format)
+        self.output_format
     }
 
     /// 返回上游显式回显的背景策略。
@@ -130,7 +147,7 @@ impl CanonicalImageGenerationResponse {
         }
         if options
             .output_format()
-            .is_some_and(|format| self.output_format() != Some(format))
+            .is_some_and(|format| self.output_format().is_some_and(|actual| actual != format))
         {
             return Err(CanonicalImageGenerationResponseError::OutputFormatMismatch);
         }
@@ -179,7 +196,7 @@ impl CanonicalImageGenerationResponse {
         }
         if options
             .output_format()
-            .is_some_and(|format| self.output_format() != Some(format))
+            .is_some_and(|format| self.output_format().is_some_and(|actual| actual != format))
         {
             return Err(CanonicalImageGenerationResponseError::OutputFormatMismatch);
         }

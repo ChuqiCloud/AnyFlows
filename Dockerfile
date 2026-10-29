@@ -4,8 +4,10 @@ FROM node:24-bookworm-slim AS frontend
 WORKDIR /workspace
 RUN corepack enable
 COPY web/package.json web/pnpm-lock.yaml ./web/
+COPY web/patches ./web/patches
 RUN corepack pnpm@10.33.0 --dir web install --frozen-lockfile
 COPY web-next/package.json web-next/pnpm-lock.yaml ./web-next/
+COPY web-next/patches ./web-next/patches
 RUN corepack pnpm@10.33.0 --dir web-next install --frozen-lockfile
 COPY web-next ./web-next
 RUN corepack pnpm@10.33.0 --dir web-next build

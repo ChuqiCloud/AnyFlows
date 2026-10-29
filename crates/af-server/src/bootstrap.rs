@@ -29,7 +29,8 @@ use af_admin::{
     DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
     DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
     DatabaseUserTokenService, DatabaseUserWalletService, EmailBindingService, EmailDelivery,
-    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    ImageHistoryService, ImageHistoryServiceConfigError, InitialSetup, LocalImageHistoryService,
+    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
     OAuthLoginService, PasskeyAuthenticationService, PasskeyAuthenticationServiceConfigError,
     PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
     PlaygroundShareService, RedemptionService, RegistrationService, RegistrationServiceConfigError,
@@ -75,8 +76,9 @@ use af_db::{
     DatabaseMigrationExtension, DatabaseOptions, DatabaseOptionsError, DatabasePool,
     DebugTraceRepository, DebugTraceRepositoryConfigError, DebugTraceRepositoryError,
     DebugTraceSnapshotCipherError, EmailSettingsRepository, EmailSettingsRepositoryConfigError,
-    InitialSetupRepository, InitialSetupRepositoryConfigError, InitialSetupRepositoryError,
-    InitialSetupStatus, MigrationOptions, ModelPriceRepository, ModelProviderCatalogRepository,
+    ImageHistoryRepository, ImageHistoryRepositoryConfigError, InitialSetupRepository,
+    InitialSetupRepositoryConfigError, InitialSetupRepositoryError, InitialSetupStatus,
+    MigrationOptions, ModelPriceRepository, ModelProviderCatalogRepository,
     ModelProviderCatalogRepositoryError, ModelSyncRepository, NetworkSettingsMode,
     NetworkSettingsRecord, NetworkSettingsRepository, NetworkSettingsRepositoryConfigError,
     OAuthLoginRepository, OAuthLoginRepositoryError, PasskeyRepository, PasswordResetRepository,
@@ -224,6 +226,8 @@ pub struct AuthenticationReady {
     balance_alert_task: BalanceAlertTask,
     playground_share_service: Arc<dyn PlaygroundShareService>,
     playground_conversation_service: Arc<dyn PlaygroundConversationService>,
+    image_history_repository: ImageHistoryRepository,
+    image_history_service: Option<Arc<dyn ImageHistoryService>>,
     user_token_service: Arc<dyn UserTokenService>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
@@ -502,6 +506,12 @@ pub enum BootstrapError {
     /// Playground 私有会话仓储的启动参数无效。
     #[error("Playground 会话历史仓储启动参数无效")]
     PlaygroundConversationRepository(#[source] PlaygroundConversationRepositoryConfigError),
+    /// 图片历史元数据仓储的启动参数无效。
+    #[error("图片历史仓储启动参数无效")]
+    ImageHistoryRepository(#[source] ImageHistoryRepositoryConfigError),
+    /// 图片历史文件服务无法安全装配。
+    #[error("图片历史文件服务启动参数无效")]
+    ImageHistoryService(#[source] ImageHistoryServiceConfigError),
     /// 普通用户 API Key 仓储的启动参数无效。
     #[error("用户 API Key 仓储启动参数无效")]
     UserTokenRepository(#[source] UserTokenRepositoryConfigError),
@@ -972,6 +982,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::PlaygroundConversationRepository)?;
+        let image_history_repository = ImageHistoryRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::ImageHistoryRepository)?;
         let user_token_repository = UserTokenRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -1260,6 +1275,8 @@ impl Bootstrap<DatabaseReady> {
                 playground_conversation_service: Arc::new(
                     DatabasePlaygroundConversationService::new(playground_conversation_repository),
                 ),
+                image_history_repository,
+                image_history_service: None,
                 user_token_service: Arc::new(DatabaseUserTokenService::new(user_token_repository)),
                 admin_channel_reader: Arc::new(DatabaseAdminChannelReader::new(
                     admin_channel_repository.clone(),
@@ -1329,6 +1346,17 @@ impl Bootstrap<AuthenticationReady> {
         let (startup_config, max_cached_clients) = build_http_client_parts(&config)?;
         let upstream_clients = HttpClientProvider::new(startup_config.clone(), max_cached_clients)
             .map_err(BootstrapError::HttpClient)?;
+        let image_http_client = upstream_clients
+            .get(Some(Duration::from_secs(60)))
+            .map_err(BootstrapError::HttpClient)?;
+        authentication.image_history_service = Some(Arc::new(
+            LocalImageHistoryService::new(
+                authentication.image_history_repository.clone(),
+                config.image_storage().directory().to_path_buf(),
+                image_http_client,
+            )
+            .map_err(BootstrapError::ImageHistoryService)?,
+        ));
         if let Some(pools) = authentication.admin_credential_proxy_service.proxy_pools() {
             pools.configure_clients(upstream_clients.clone());
         }
@@ -2594,6 +2622,13 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.model_catalog_reader),
             Arc::clone(&self.stage.infrastructure.playground_share_service),
             Arc::clone(&self.stage.infrastructure.playground_conversation_service),
+            Arc::clone(
+                self.stage
+                    .infrastructure
+                    .image_history_service
+                    .as_ref()
+                    .expect("图片历史服务已在 init_relay 阶段装配"),
+            ),
             Arc::clone(&self.stage.infrastructure.user_token_service),
             Arc::clone(&self.stage.infrastructure.initial_setup),
             Arc::clone(&self.stage.infrastructure.registration_service),
