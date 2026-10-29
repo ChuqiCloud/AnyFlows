@@ -50,13 +50,20 @@ function QuotaValue({ token }: { token: UserToken }) {
 function PolicyValue({ token }: { token: UserToken }) {
   const { t } = useTranslation()
   return (
-    <div className="flex min-w-0 gap-1 overflow-hidden">
-      <Chip className="min-w-0 bg-surface-2 text-muted-foreground [&>span]:flex [&>span]:min-w-0" size="sm" variant="flat">
-        <span className="min-w-0 flex-1 truncate">{token.model_limits ? t('apiKeys.values.models', { count: token.model_limits.length }) : t('apiKeys.values.allModels')}</span>
-      </Chip>
-      <Chip className="min-w-0 bg-surface-2 text-muted-foreground [&>span]:flex [&>span]:min-w-0" size="sm" variant="flat">
-        <span className="min-w-0 flex-1 truncate">{token.allow_ips ? t('apiKeys.values.ips', { count: token.allow_ips.length }) : t('apiKeys.values.allIps')}</span>
-      </Chip>
+    <div className="grid min-w-0 gap-1">
+      <span className="truncate text-xs" title={token.group_display_name}>
+        {token.group_id === null
+          ? t('apiKeys.group.following', { name: token.group_display_name })
+          : t('apiKeys.group.bound', { name: token.group_display_name })}
+      </span>
+      <div className="flex min-w-0 gap-1 overflow-hidden">
+        <Chip className="min-w-0 bg-surface-2 text-muted-foreground [&>span]:flex [&>span]:min-w-0" size="sm" variant="flat">
+          <span className="min-w-0 flex-1 truncate">{token.model_limits ? t('apiKeys.values.models', { count: token.model_limits.length }) : t('apiKeys.values.allModels')}</span>
+        </Chip>
+        <Chip className="min-w-0 bg-surface-2 text-muted-foreground [&>span]:flex [&>span]:min-w-0" size="sm" variant="flat">
+          <span className="min-w-0 flex-1 truncate">{token.allow_ips ? t('apiKeys.values.ips', { count: token.allow_ips.length }) : t('apiKeys.values.allIps')}</span>
+        </Chip>
+      </div>
     </div>
   )
 }

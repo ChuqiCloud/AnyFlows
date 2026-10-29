@@ -235,6 +235,7 @@ pub struct AuthenticationReady {
     admin_dashboard_channel_storage: Arc<dyn AdminDashboardChannelStorage>,
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
+    group_key_access_service: Arc<dyn af_admin::GroupKeyAccessService>,
     admin_route_reader: Arc<dyn AdminRouteReader>,
     admin_route_writer: Arc<dyn AdminRouteWriter>,
     admin_model_reader: Arc<dyn AdminModelReader>,
@@ -539,6 +540,9 @@ pub enum BootstrapError {
     /// 管理员分组仓储的启动参数无效。
     #[error("管理员分组仓储启动参数无效")]
     AdminGroupRepository(#[source] AdminGroupRepositoryConfigError),
+    /// 个人 Key 自选分组仓储的启动参数无效。
+    #[error("个人 Key 自选分组仓储启动参数无效")]
+    GroupKeyAccessRepository(#[source] af_db::GroupKeyAccessError),
     /// 管理员智能路由仓储的启动参数无效。
     #[error("管理员智能路由仓储启动参数无效")]
     AdminRouteRepository(#[source] AdminRouteRepositoryConfigError),
@@ -873,6 +877,11 @@ impl Bootstrap<DatabaseReady> {
         F: FnOnce(RuntimeExtensionContext<'_>) -> Result<RuntimeExtensions, BootstrapError>,
     {
         let auth = self.config.auth();
+        let group_key_access_repository = af_db::GroupKeyAccessRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::GroupKeyAccessRepository)?;
         let repository = TokenAuthRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -1302,6 +1311,9 @@ impl Bootstrap<DatabaseReady> {
                     admin_group_repository.clone(),
                 )),
                 admin_group_writer: Arc::new(DatabaseAdminGroupWriter::new(admin_group_repository)),
+                group_key_access_service: Arc::new(af_admin::DatabaseGroupKeyAccessService::new(
+                    group_key_access_repository,
+                )),
                 admin_route_reader: Arc::new(DatabaseAdminRouteReader::new(
                     admin_route_repository.clone(),
                 )),
@@ -2713,6 +2725,11 @@ impl Bootstrap<Supervised> {
             ))
         };
         let router = router
+            .merge(af_http::build_group_key_access_router(
+                Arc::clone(&self.stage.infrastructure.group_key_access_service),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+                self.config.server(),
+            ))
             .merge(af_http::build_credential_health_router(
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
                 Arc::clone(&self.stage.infrastructure.admin_channel_reader),

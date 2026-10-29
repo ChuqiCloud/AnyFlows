@@ -527,6 +527,10 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
             Alias::new("user_rpm_limit"),
         )
         .expr_as(
+            Expr::col((users::Entity, users::Column::DefaultGroupId)),
+            Alias::new("billing_source_group_id"),
+        )
+        .expr_as(
             Expr::col((groups::Entity, groups::Column::Id)),
             Alias::new("group_id"),
         )
@@ -596,6 +600,7 @@ struct TokenAuthRow {
     user_deleted_at: Option<TimeDateTimeWithTimeZone>,
     user_concurrency: Option<i32>,
     user_rpm_limit: Option<i32>,
+    billing_source_group_id: Option<i64>,
     group_id: Option<i64>,
     group_deleted_at: Option<TimeDateTimeWithTimeZone>,
     group_rpm_limit: Option<i32>,
@@ -623,6 +628,7 @@ impl TokenAuthRow {
             user_deleted_at: result.try_get("", "user_deleted_at")?,
             user_concurrency: result.try_get("", "user_concurrency")?,
             user_rpm_limit: result.try_get("", "user_rpm_limit")?,
+            billing_source_group_id: result.try_get("", "billing_source_group_id")?,
             group_id: result.try_get("", "group_id")?,
             group_deleted_at: result.try_get("", "group_deleted_at")?,
             group_rpm_limit: result.try_get("", "group_rpm_limit")?,
@@ -661,6 +667,10 @@ impl TokenAuthRow {
             .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
         let group_id = GroupId::new(group_id)
             .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+        let billing_source_group_id = self
+            .billing_source_group_id
+            .and_then(|value| GroupId::new(value).ok())
+            .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant))?;
         let organization_context = self.organization_context(token_id, user_id)?;
         let model_policy = self.token_model_limits.map_or_else(
             TokenModelPolicy::unrestricted,
@@ -707,7 +717,7 @@ impl TokenAuthRow {
             None => GatewayPrincipal::new(token_id, user_id, group_id),
         };
         Ok(TokenAuthLookupOutcome::Authenticated {
-            principal,
+            principal: principal.with_billing_source_group_id(billing_source_group_id),
             model_policy,
             user_concurrency,
             user_rpm_limit,
@@ -876,6 +886,7 @@ mod tests {
             user_deleted_at: None,
             user_concurrency: None,
             user_rpm_limit: None,
+            billing_source_group_id: Some(3),
             group_id: Some(3),
             group_deleted_at: None,
             group_rpm_limit: None,

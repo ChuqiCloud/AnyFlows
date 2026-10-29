@@ -1,12 +1,13 @@
-use af_domain::{GroupId, PLAYGROUND_TOKEN_NAME, TokenId, UserId};
+use af_domain::{PLAYGROUND_TOKEN_NAME, TokenId, UserId};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter,
-    QuerySelect, Set, TransactionTrait, entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
+    Set, TransactionTrait, entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
 };
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    entity::{TokenHash, TokenIpAllowlist, TokenModelAllowlist, groups, tokens},
+    entity::{TokenHash, TokenIpAllowlist, TokenModelAllowlist, tokens},
+    group_key_access::user_can_select_key_group,
     token_owner_guard::{TokenOwnerGuardError, lock_non_deleted_owner, non_deleted_token_count},
 };
 
@@ -49,9 +50,23 @@ pub(super) async fn create(
         return Err(UserTokenRepositoryError::OwnerUnavailable);
     }
     let default_group_id = owner.default_group_id();
-    if !active_group_exists(&transaction, default_group_id).await? {
+    let effective_group_id = record.group_id.unwrap_or(default_group_id);
+    if !user_can_select_key_group(
+        &transaction,
+        record.owner_user_id,
+        default_group_id,
+        effective_group_id,
+    )
+    .with_subscriber(NoSubscriber::default())
+    .await
+    .map_err(|_| record_internal_error(UserTokenRepositoryError::Query))?
+    {
         rollback(transaction).await?;
-        return Err(record_internal_error(UserTokenRepositoryError::Invariant));
+        return Err(if record.group_id.is_some() {
+            UserTokenRepositoryError::GroupUnavailable
+        } else {
+            record_internal_error(UserTokenRepositoryError::Invariant)
+        });
     }
     if non_deleted_token_count(&transaction, record.owner_user_id)
         .await
@@ -69,7 +84,7 @@ pub(super) async fn create(
         key_prefix: Set(record.key_prefix),
         name: Set(fields.name),
         status: Set(fields.status),
-        group_id: Set(None),
+        group_id: Set(record.group_id.map(|group_id| group_id.get())),
         organization_id: Set(None),
         organization_membership_id: Set(None),
         organization_team_id: Set(None),
@@ -236,22 +251,6 @@ fn validate_fields(
         model_limits,
         allow_ips,
     })
-}
-
-async fn active_group_exists(
-    transaction: &DatabaseTransaction,
-    group_id: GroupId,
-) -> Result<bool, UserTokenRepositoryError> {
-    groups::Entity::find()
-        .select_only()
-        .column(groups::Column::Id)
-        .filter(groups::Column::Id.eq(group_id.get()))
-        .filter(groups::Column::DeletedAt.is_null())
-        .into_tuple::<i64>()
-        .one(transaction)
-        .await
-        .map(|row| row.is_some())
-        .map_err(|_| record_internal_error(UserTokenRepositoryError::Query))
 }
 
 async fn fetch_snapshot(

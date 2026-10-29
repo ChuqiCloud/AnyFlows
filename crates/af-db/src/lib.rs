@@ -142,7 +142,15 @@ mod email_settings;
 mod email_settings_tests;
 mod entity;
 mod error;
+mod group_key_access;
+#[cfg(test)]
+mod group_key_access_tests;
 mod group_pricing;
+pub use group_key_access::{
+    GroupKeyAccessError, GroupKeyAccessRepository, GroupKeyPolicyRecord, GroupKeySelectionMode,
+    MAX_GROUP_KEY_ALLOWED_USERS, MAX_USER_TOKEN_GROUP_PAGE_SIZE, UserTokenGroupPageRecord,
+    UserTokenGroupRecord,
+};
 #[cfg(test)]
 mod group_pricing_tests;
 mod identity_secret;

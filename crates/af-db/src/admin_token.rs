@@ -383,7 +383,16 @@ impl AdminTokenRecord {
     ) -> Result<Self, AdminTokenRepositoryError> {
         let row = AdminTokenRow::try_from_query_result(result)
             .map_err(|_| record_internal_error(AdminTokenRepositoryError::Invariant))?;
-        row.validate()
+        row.validate(true)
+    }
+
+    /// 用户仍可查看和删除指向已软删除分组的 Key，其他持久化约束保持一致。
+    pub(crate) fn try_from_user_query_result(
+        result: &QueryResult,
+    ) -> Result<Self, AdminTokenRepositoryError> {
+        let row = AdminTokenRow::try_from_query_result(result)
+            .map_err(|_| record_internal_error(AdminTokenRepositoryError::Invariant))?;
+        row.validate(false)
     }
 }
 
@@ -460,7 +469,10 @@ impl AdminTokenRow {
         })
     }
 
-    fn validate(self) -> Result<AdminTokenRecord, AdminTokenRepositoryError> {
+    fn validate(
+        self,
+        require_active_group: bool,
+    ) -> Result<AdminTokenRecord, AdminTokenRepositoryError> {
         let Some(user_id) = self.user_id else {
             return Err(record_internal_error(AdminTokenRepositoryError::Invariant));
         };
@@ -473,7 +485,7 @@ impl AdminTokenRow {
         if self.model_limits_oversized
             || self.allow_ips_oversized
             || self.user_deleted_at.is_some()
-            || self.effective_group_deleted_at.is_some()
+            || (require_active_group && self.effective_group_deleted_at.is_some())
             || !matches!(user_status, 1 | 2)
             || !valid_key_prefix(&self.key_prefix)
             || !valid_text(&self.name, 128)

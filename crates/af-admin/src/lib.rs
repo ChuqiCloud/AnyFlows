@@ -36,7 +36,13 @@ mod email_settings;
 #[cfg(test)]
 mod email_settings_tests;
 mod gateway_model_auth;
+mod group_key_access;
 mod group_read;
+pub use group_key_access::{
+    DatabaseGroupKeyAccessService, GroupKeyAccessService, GroupKeyPolicy, GroupKeyPolicyCommand,
+    GroupKeyPolicyError, GroupKeyPolicyFuture, GroupKeySelectionMode, UserTokenGroup,
+    UserTokenGroupListFuture, UserTokenGroupListQuery, UserTokenGroupPage,
+};
 mod group_write;
 mod image_history;
 mod initial_setup;

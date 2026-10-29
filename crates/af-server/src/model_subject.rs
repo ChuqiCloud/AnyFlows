@@ -22,6 +22,13 @@ impl ModelSubject {
         }
     }
 
+    pub(crate) const fn billing_source_group_id(self) -> GroupId {
+        match self {
+            Self::User(value) => value.billing_source_group_id(),
+            Self::ServiceAccount { group_id, .. } => group_id,
+        }
+    }
+
     pub(crate) const fn organization_id(self) -> Option<OrganizationId> {
         match self {
             Self::User(value) => match value.organization_principal() {

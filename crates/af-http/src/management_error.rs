@@ -280,6 +280,8 @@ pub(crate) enum ManagementError {
     TokenNotFound,
     /// 当前用户的未软删除 API Key 已达到容量上限。
     TokenLimitReached,
+    /// 指定分组不可用或未向当前用户开放。
+    GroupUnavailable,
     /// 企业 API Key 写操作提交结果未知，调用方必须查询确认。
     TokenOutcomeUnknown,
     /// 渠道不存在或已经被软删除。
@@ -1357,6 +1359,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "token_outcome_unknown",
                     message: "Token write outcome unknown",
+                },
+            ),
+            Self::GroupUnavailable => (
+                StatusCode::FORBIDDEN,
+                ManagementErrorBody {
+                    code: "group_unavailable",
+                    message: "Group unavailable",
                 },
             ),
             Self::ChannelNotFound => (
