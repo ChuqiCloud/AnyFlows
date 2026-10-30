@@ -10,6 +10,7 @@ readonly TEST_USER="anyflows"
 readonly TEST_PASSWORD="anyflows_ci"
 readonly TEST_DATABASE="anyflows_migration_test_ci"
 readonly SMOKE_TEST_NAME="migration::tests::migration_runner_smoke"
+readonly instance_id="${BASHPID}-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
 
 container_name=""
 network_name=""
@@ -72,7 +73,7 @@ run_smoke_test() {
 
     if [[ -n "${network_name}" ]]; then
         test_binary="$(ci_build_test_binary af-db lib)"
-        runner_name="anyflows-db-test-${BASHPID}"
+        runner_name="anyflows-db-test-${instance_id}"
         ci_run_test_binary "${network_name}" "${runner_name}" "${test_binary}" \
             "AF_TEST_DATABASE_URL=${database_url}" \
             "AF_REQUIRE_LIVE_DATABASE=1" \
@@ -95,8 +96,8 @@ if [[ -z "${database_url}" ]]; then
             database_url="sqlite::memory:"
             ;;
         postgres)
-            network_name="anyflows-postgres-network-${BASHPID}"
-            container_name="anyflows-postgres-${BASHPID}"
+            network_name="anyflows-postgres-network-${instance_id}"
+            container_name="anyflows-postgres-${instance_id}"
             docker network create "${network_name}" >/dev/null
             docker run --detach --name "${container_name}" --network "${network_name}" \
                 --network-alias postgres \
@@ -108,8 +109,8 @@ if [[ -z "${database_url}" ]]; then
             database_url="postgres://${TEST_USER}:${TEST_PASSWORD}@postgres:5432/${TEST_DATABASE}"
             ;;
         mysql)
-            network_name="anyflows-mysql-network-${BASHPID}"
-            container_name="anyflows-mysql-${BASHPID}"
+            network_name="anyflows-mysql-network-${instance_id}"
+            container_name="anyflows-mysql-${instance_id}"
             docker network create "${network_name}" >/dev/null
             docker run --detach --name "${container_name}" --network "${network_name}" \
                 --network-alias mysql \

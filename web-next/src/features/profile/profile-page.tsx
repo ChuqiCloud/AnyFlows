@@ -25,7 +25,6 @@ import type {
   UserPasskeyResponse,
   UserNotification,
   UserProfileResponse,
-  UserTwoFactorEnrollmentResponse,
 } from '@/lib/api/generated/types.gen'
 import { isValidProfilePassword, isValidProfileUsername } from './profile-form-model'
 import {
@@ -272,6 +271,33 @@ function PasswordModalBody({ onClose, onPasswordChanged }: { onClose: () => void
 }
 
 type TwoFactorCopyTarget = 'secret' | 'uri' | 'backup'
+type TwoFactorMaterials =
+  | { kind: 'setup'; secret: string; uri: string; expiresAt: number }
+  | { kind: 'backup'; codes: string[] }
+
+function EnrollmentQr({ value, title }: { value: string; title: string }) {
+  const { t } = useTranslation()
+  const [Qr, setQr] = useState<typeof import('@rc-component/qrcode').QRCodeSVG>()
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  useEffect(() => {
+    let cancelled = false
+    void import('@rc-component/qrcode')
+      .then((module) => { if (!cancelled) setQr(() => module.QRCodeSVG) })
+      .catch(() => { if (!cancelled) setFailed(true) })
+    return () => { cancelled = true }
+  }, [attempt])
+  return (
+    <div className="flex min-h-48 w-48 items-center justify-center rounded-lg bg-white p-3">
+      {Qr ? <Qr value={value} size={168} title={title} /> : failed ? (
+        <div className="grid gap-3 text-center text-xs text-black">
+          <p role="alert">{t('profile.twoFactor.qrError')}</p>
+          <Button type="button" size="sm" variant="bordered" onClick={() => { setFailed(false); setAttempt((value) => value + 1) }}>{t('profile.actions.retry')}</Button>
+        </div>
+      ) : <span role="status" className="text-xs text-black">{t('profile.twoFactor.qrLoading')}</span>}
+    </div>
+  )
+}
 
 function EmailBindingBody({ currentEmail, onClose, onBound }: { currentEmail?: string | null; onClose: () => void; onBound: () => void }) {
   const { t } = useTranslation()
@@ -349,47 +375,120 @@ function TwoFactorCard() {
   const enableMutation = useEnableUserTwoFactor()
   const disableMutation = useDisableUserTwoFactor()
   const [currentPassword, setCurrentPassword] = useState('')
-  const [enrollment, setEnrollment] = useState<UserTwoFactorEnrollmentResponse>()
+  const [totpCode, setTotpCode] = useState('')
+  const [materials, setMaterials] = useState<TwoFactorMaterials>()
   const [copied, setCopied] = useState<TwoFactorCopyTarget>()
   const [copyFailed, setCopyFailed] = useState<TwoFactorCopyTarget>()
+  const [formError, setFormError] = useState<string>()
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
+  const mounted = useRef(true)
+  const resetEnable = enableMutation.reset
+  const resetDisable = disableMutation.reset
 
-  const enabled = statusQuery.data?.enabled === true
-  const mutation = enabled ? disableMutation : enableMutation
-  // 头部状态徽标的语义色：已启用用主色，未启用用中性色，避免用成功色暗示“必须开启”。
-  const statusChip = statusQuery.isPending
-    ? <Skeleton className="h-6 w-16 rounded-full" />
-    : statusQuery.isError
-      ? null
-      : <Chip className={`shrink-0 ${enabled ? 'bg-primary/10 text-primary' : 'bg-default-100 text-default-500'}`} size="sm">{t(enabled ? 'profile.twoFactor.enabled' : 'profile.twoFactor.disabled')}</Chip>
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      resetEnable()
+      resetDisable()
+    }
+  }, [resetEnable, resetDisable])
+
+  const status = statusQuery.data
+  const enabled = status?.enabled === true
+  const pendingExpiresAt = status?.pending_expires_at ?? null
+  const expired = !enabled && status?.state === 'pending' && pendingExpiresAt !== null && pendingExpiresAt <= now
+  const pending = !enabled && status?.state === 'pending' && !expired
+  const working = enableMutation.isPending || disableMutation.isPending
+  const setupMaterials = pending && materials?.kind === 'setup' && materials.expiresAt === pendingExpiresAt ? materials : undefined
+  const backupMaterials = enabled && materials?.kind === 'backup' ? materials : undefined
+
+  useEffect(() => {
+    if (enabled || pendingExpiresAt === null) return undefined
+    const timer = window.setInterval(() => {
+      const timestamp = Math.floor(Date.now() / 1000)
+      setNow(timestamp)
+      if (timestamp >= pendingExpiresAt) {
+        setMaterials((value) => value?.kind === 'setup' ? undefined : value)
+        setCurrentPassword('')
+        setTotpCode('')
+        window.clearInterval(timer)
+      }
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [enabled, pendingExpiresAt])
+
+  const showError = (error: unknown) => {
+    const code = errorCode(error)
+    setFormError(code === 'password_change_rejected' ? 'profile.errors.currentPassword'
+      : code === 'two_factor_already_enabled' ? 'profile.twoFactor.alreadyEnabled'
+        : code === 'two_factor_enrollment_invalid' ? 'profile.twoFactor.enrollmentInvalid'
+          : 'profile.twoFactor.mutationError')
+    if (code === 'two_factor_enrollment_invalid' || code === 'two_factor_already_enabled') void statusQuery.refetch()
+  }
+
+  const enroll = async (confirm: boolean) => {
+    if (!currentPassword || working || (confirm && !/^\d{6}$/u.test(totpCode))) return
+    setFormError(undefined)
+    try {
+      const response = await enableMutation.mutateAsync({
+        current_password: currentPassword,
+        ...(confirm ? { totp_code: totpCode } : {}),
+      })
+      if (!mounted.current) return
+      setCurrentPassword('')
+      setTotpCode('')
+      setCopied(undefined)
+      setCopyFailed(undefined)
+      setNow(Math.floor(Date.now() / 1000))
+      setMaterials(response.enabled
+        ? { kind: 'backup', codes: [...response.backup_codes] }
+        : response.pending_expires_at !== null
+          ? { kind: 'setup', secret: response.secret, uri: response.otpauth_uri, expiresAt: response.pending_expires_at }
+          : undefined)
+    } catch (error) {
+      if (mounted.current) showError(error)
+    } finally {
+      resetEnable()
+    }
+  }
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!currentPassword || mutation.isPending) return
+    if (!currentPassword || working) return
+    if (!enabled) {
+      await enroll(pending)
+      return
+    }
+    setFormError(undefined)
     try {
-      if (enabled) {
-        await disableMutation.mutateAsync({ current_password: currentPassword })
-        setEnrollment(undefined)
-      } else {
-        const response = await enableMutation.mutateAsync({ current_password: currentPassword })
-        setEnrollment(response)
-      }
+      await disableMutation.mutateAsync({ current_password: currentPassword })
+      if (!mounted.current) return
+      setMaterials(undefined)
       setCurrentPassword('')
-    } catch {
-      // 保留密码输入以便用户修正后重试，但不把密码写入持久化缓存。
+      setTotpCode('')
+    } catch (error) {
+      if (mounted.current) showError(error)
+    } finally {
+      resetDisable()
     }
   }
 
   const copy = async (target: TwoFactorCopyTarget, value: string) => {
     const success = await copyText(value)
+    if (!mounted.current) return
     setCopied(success ? target : undefined)
     setCopyFailed(success ? undefined : target)
   }
+  const hintKey = enabled ? 'enabledHint' : expired ? 'expiredHint' : pending ? setupMaterials ? 'pendingHint' : 'resumeHint' : 'enableHint'
+  const statusKey = enabled ? 'enabled' : expired ? 'expired' : pending ? 'pending' : 'disabled'
 
   return (
-    <Card shadow="none" className="overflow-hidden border border-[var(--hairline)]">
+    <Card role="region" aria-label={t('profile.twoFactor.title')} shadow="none" className="overflow-hidden border border-[var(--hairline)]">
       <CardHeader className="gap-3 p-5">
         <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-default-100"><ShieldCheck className="size-4 text-muted-foreground" aria-hidden="true" /></div>
         <div className="min-w-0 flex-1"><h3 className="text-base font-semibold">{t('profile.twoFactor.title')}</h3><p className="mt-1 text-sm leading-5 text-muted-foreground">{t('profile.twoFactor.subtitle')}</p></div>
-        {statusChip}
+        {statusQuery.isPending ? <Skeleton className="h-6 w-16 rounded-full" /> : status ? <Chip className={`shrink-0 ${enabled ? 'bg-primary/10 text-primary' : 'bg-default-100 text-default-500'}`} size="sm">{t(`profile.twoFactor.${statusKey}`)}</Chip> : null}
       </CardHeader>
       <CardBody className="p-5">
         {statusQuery.isPending ? (
@@ -401,22 +500,39 @@ function TwoFactorCard() {
           </div>
         ) : (
           <div className="grid gap-5">
-            {enabled && enrollment ? <EnrollmentMaterials enrollment={enrollment} copied={copied} copyFailed={copyFailed} onCopy={copy} /> : null}
-            <div className="flex items-start gap-2 rounded-xl border border-info/20 bg-info/6 p-3 text-xs leading-5 text-muted-foreground">
-              {enabled ? <ShieldOff className="mt-0.5 size-3.5 shrink-0 text-info" aria-hidden="true" /> : <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-info" aria-hidden="true" />}
-              <span>{t(enabled ? 'profile.twoFactor.disableHint' : 'profile.twoFactor.enableHint')}</span>
-            </div>
-            <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" onSubmit={submit} noValidate>
-              <div className="grid gap-2">
-                <label className="text-xs font-medium leading-none text-foreground" htmlFor="profile-two-factor-password">{t('profile.twoFactor.currentPassword')}</label>
-                <Input autoComplete="current-password" id="profile-two-factor-password" isInvalid={mutation.isError ? true : undefined} size="sm" type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
+            <div className="rounded-xl bg-default-100 p-3 text-xs leading-5 text-muted-foreground">{t(`profile.twoFactor.${hintKey}`)}</div>
+            {setupMaterials ? <EnrollmentMaterials materials={setupMaterials} copied={copied} copyFailed={copyFailed} onCopy={copy} onDismiss={() => setMaterials(undefined)} /> : null}
+            {backupMaterials ? <EnrollmentMaterials materials={backupMaterials} copied={copied} copyFailed={copyFailed} onCopy={copy} onDismiss={() => setMaterials(undefined)} /> : null}
+            {enabled ? (
+              <div className="grid gap-1 text-xs text-muted-foreground">
+                <p>{t('profile.twoFactor.boundAt', { value: formatPasskeyTimestamp(status?.bound_at ?? null) ?? t('profile.twoFactor.notRecorded') })}</p>
+                <p>{t('profile.twoFactor.lastVerifiedAt', { value: formatPasskeyTimestamp(status?.last_verified_at ?? null) ?? t('profile.twoFactor.notRecorded') })}</p>
               </div>
-              <Button type="submit" size="sm" color="primary" isDisabled={!currentPassword || mutation.isPending} variant={enabled ? 'bordered' : 'solid'}>
-                {mutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}
-                {mutation.isPending ? t('profile.twoFactor.working') : t(enabled ? 'profile.twoFactor.disable' : 'profile.twoFactor.enable')}
-              </Button>
+            ) : status?.pending_created_at != null ? (
+              <div className="grid gap-1 text-xs text-muted-foreground">
+                <p>{t('profile.twoFactor.pendingAt', { value: formatPasskeyTimestamp(status.pending_created_at) })}</p>
+                {pendingExpiresAt !== null ? <p>{t('profile.twoFactor.expiresAt', { value: formatPasskeyTimestamp(pendingExpiresAt) })}</p> : null}
+              </div>
+            ) : null}
+            <form className="grid gap-3" onSubmit={(event) => void submit(event)} noValidate>
+              {pending ? <div className="grid gap-2"><label className="text-xs font-medium leading-none text-foreground" htmlFor="profile-two-factor-code">{t('profile.twoFactor.confirmCode')}</label><Input id="profile-two-factor-code" autoComplete="one-time-code" inputMode="numeric" maxLength={6} size="sm" value={totpCode} onChange={(event) => { setTotpCode(event.target.value.replace(/\D/gu, '').slice(0, 6)); setFormError(undefined) }} /></div> : null}
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                <div className="grid gap-2">
+                  <label className="text-xs font-medium leading-none text-foreground" htmlFor="profile-two-factor-password">{t('profile.twoFactor.currentPassword')}</label>
+                  <Input autoComplete="current-password" id="profile-two-factor-password" isInvalid={formError === 'profile.errors.currentPassword'} size="sm" type="password" value={currentPassword} onChange={(event) => { setCurrentPassword(event.target.value); setFormError(undefined) }} />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {pending ? <Button type="button" size="sm" variant="bordered" isDisabled={!currentPassword || working} onClick={() => void enroll(false)}><RefreshCw className="size-4" aria-hidden="true" />{t('profile.twoFactor.regenerate')}</Button> : null}
+                  <Button type="submit" size="sm" color="primary" isDisabled={!currentPassword || working || (pending && !/^\d{6}$/u.test(totpCode))} variant={enabled ? 'bordered' : 'solid'}>
+                    {working ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}
+                    {t(working ? 'profile.twoFactor.working' : enabled ? 'profile.twoFactor.disable' : pending ? 'profile.twoFactor.confirm' : expired ? 'profile.twoFactor.regenerate' : 'profile.twoFactor.enable')}
+                  </Button>
+                </div>
+              </div>
+              {pending ? <p className="text-[0.6875rem] leading-4 text-muted-foreground">{t('profile.twoFactor.confirmPasswordHint')}</p> : null}
+              {enabled ? <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><ShieldOff className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />{t('profile.twoFactor.disableHint')}</p> : null}
+              {formError ? <p role="alert" className="text-xs text-destructive">{t(formError)}</p> : null}
             </form>
-            {mutation.isError ? <p role="alert" className="text-xs text-destructive">{t(errorCode(mutation.error) === 'password_change_rejected' ? 'profile.errors.currentPassword' : errorCode(mutation.error) === 'two_factor_already_enabled' ? 'profile.twoFactor.alreadyEnabled' : 'profile.twoFactor.mutationError')}</p> : null}
           </div>
         )}
       </CardBody>
@@ -424,21 +540,33 @@ function TwoFactorCard() {
   )
 }
 
-function EnrollmentMaterials({ enrollment, copied, copyFailed, onCopy }: { enrollment: UserTwoFactorEnrollmentResponse; copied?: TwoFactorCopyTarget; copyFailed?: TwoFactorCopyTarget; onCopy: (target: TwoFactorCopyTarget, value: string) => Promise<void> }) {
+function EnrollmentMaterials({ materials, copied, copyFailed, onCopy, onDismiss }: { materials: TwoFactorMaterials; copied?: TwoFactorCopyTarget; copyFailed?: TwoFactorCopyTarget; onCopy: (target: TwoFactorCopyTarget, value: string) => Promise<void>; onDismiss: () => void }) {
   const { t } = useTranslation()
+  if (materials.kind === 'backup') {
+    return (
+      <div className="grid gap-4 rounded-xl border border-warning/25 bg-warning/6 p-4">
+        <div>
+          <p role="status" className="text-sm font-semibold">{t('profile.twoFactor.completed')}</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('profile.twoFactor.backupHint')}</p>
+        </div>
+        <div className="grid gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-3"><span className="text-xs font-medium leading-none text-foreground">{t('profile.twoFactor.backupCodes')}</span><Button type="button" size="sm" variant="bordered" onClick={() => void onCopy('backup', materials.codes.join('\n'))}>{copied === 'backup' ? <Check className="size-4" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}{t(copied === 'backup' ? 'profile.twoFactor.copied' : 'profile.twoFactor.copyBackup')}</Button></div>
+          <div className="grid grid-cols-2 gap-2 rounded-lg border border-[var(--hairline)] bg-background/60 p-3 font-mono text-xs tabular-nums sm:grid-cols-5">{materials.codes.map((code) => <code key={code}>{code}</code>)}</div>
+          {copyFailed === 'backup' ? <p role="alert" className="text-xs text-destructive">{t('profile.twoFactor.copyFailed')}</p> : null}
+        </div>
+        <div className="flex justify-end"><Button type="button" size="sm" variant="bordered" onClick={onDismiss}>{t('profile.twoFactor.savedBackup')}</Button></div>
+      </div>
+    )
+  }
   return (
-    <div className="grid gap-4 rounded-xl border border-warning/25 bg-warning/6 p-4">
+    <div className="grid gap-4 rounded-xl border border-[var(--hairline)] bg-surface-1/45 p-4">
       <div>
-        <p className="text-sm font-semibold text-warning">{t('profile.twoFactor.materialsTitle')}</p>
+        <p className="text-sm font-semibold">{t('profile.twoFactor.materialsTitle')}</p>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('profile.twoFactor.materialsHint')}</p>
       </div>
-      <CopyField label={t('profile.twoFactor.secret')} value={enrollment.secret} target="secret" copied={copied === 'secret'} copyFailed={copyFailed === 'secret'} onCopy={onCopy} />
-      <CopyField label={t('profile.twoFactor.uri')} value={enrollment.otpauth_uri} target="uri" copied={copied === 'uri'} copyFailed={copyFailed === 'uri'} onCopy={onCopy} />
-      <div className="grid gap-2">
-        <div className="flex items-center justify-between gap-3"><label className="text-xs font-medium leading-none text-foreground">{t('profile.twoFactor.backupCodes')}</label><Button type="button" size="sm" variant="bordered" onClick={() => void onCopy('backup', enrollment.backup_codes.join('\n'))}>{copied === 'backup' ? <Check className="size-4" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}{t(copied === 'backup' ? 'profile.twoFactor.copied' : 'profile.twoFactor.copyBackup')}</Button></div>
-        <div className="grid grid-cols-2 gap-2 rounded-lg border border-[var(--hairline)] bg-background/60 p-3 font-mono text-xs tabular-nums sm:grid-cols-5">{enrollment.backup_codes.map((code) => <code key={code}>{code}</code>)}</div>
-        {copyFailed === 'backup' ? <p role="alert" className="text-xs text-destructive">{t('profile.twoFactor.copyFailed')}</p> : null}
-      </div>
+      <EnrollmentQr value={materials.uri} title={t('profile.twoFactor.qrCode')} />
+      <CopyField label={t('profile.twoFactor.secret')} value={materials.secret} target="secret" copied={copied === 'secret'} copyFailed={copyFailed === 'secret'} onCopy={onCopy} />
+      <CopyField label={t('profile.twoFactor.uri')} value={materials.uri} target="uri" copied={copied === 'uri'} copyFailed={copyFailed === 'uri'} onCopy={onCopy} />
     </div>
   )
 }

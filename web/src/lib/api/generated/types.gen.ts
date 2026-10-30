@@ -2524,15 +2524,26 @@ export type UserTopupPaymentSession = {
 };
 export type UserTwoFactorEnrollmentResponse = {
     enabled: boolean;
+    state: string;
+    pending_created_at: number | null;
+    pending_expires_at: number | null;
+    bound_at: number | null;
+    last_verified_at: number | null;
     secret: string;
     otpauth_uri: string;
     backup_codes: Array<string>;
 };
 export type UserTwoFactorPasswordRequest = {
     current_password: string;
+    totp_code?: string | null;
 };
 export type UserTwoFactorStatusResponse = {
     enabled: boolean;
+    state: string;
+    pending_created_at: number | null;
+    pending_expires_at: number | null;
+    bound_at: number | null;
+    last_verified_at: number | null;
 };
 export type UserUsageLog = {
     id: number;
