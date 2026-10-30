@@ -411,6 +411,17 @@ impl PasskeyRepository {
             .await
     }
 
+    /// 管理员撤销目标用户凭证，并立即递增用户会话版本。
+    pub async fn admin_revoke(
+        &self,
+        user_id: UserId,
+        passkey_id: i64,
+        now: crate::DatabaseTimestamp,
+    ) -> Result<PasskeyAdminRevokeOutcome, PasskeyRepositoryError> {
+        self.run(self.admin_revoke_inner(user_id, passkey_id, now))
+            .await
+    }
+
     async fn run<T>(
         &self,
         operation: impl std::future::Future<Output = Result<T, PasskeyRepositoryError>>,
@@ -1011,6 +1022,49 @@ impl PasskeyRepository {
         Ok(PasskeyRevokeOutcome::Revoked)
     }
 
+    async fn admin_revoke_inner(
+        &self,
+        user_id: UserId,
+        passkey_id: i64,
+        now: crate::DatabaseTimestamp,
+    ) -> Result<PasskeyAdminRevokeOutcome, PasskeyRepositoryError> {
+        if passkey_id <= 0 {
+            return Err(record_internal_error(PasskeyRepositoryError::Invariant));
+        }
+        let transaction = self.begin_transaction().await?;
+        let Some(user) = lock_user_any(&transaction, user_id).await? else {
+            rollback_transaction(transaction).await?;
+            return Ok(PasskeyAdminRevokeOutcome::NotFound);
+        };
+        let Some(passkey) = lock_passkey(&transaction, user_id, passkey_id).await? else {
+            rollback_transaction(transaction).await?;
+            return Ok(PasskeyAdminRevokeOutcome::NotFound);
+        };
+        if passkey.revoked_at.is_some() {
+            rollback_transaction(transaction).await?;
+            return Ok(PasskeyAdminRevokeOutcome::AlreadyRevoked);
+        }
+        let mut passkey = passkey.into_active_model();
+        passkey.revoked_at = Set(Some(now));
+        passkey
+            .update(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_write_error)?;
+        let next_version = user
+            .session_version
+            .checked_add(1)
+            .ok_or_else(|| record_internal_error(PasskeyRepositoryError::Invariant))?;
+        let mut user = user.into_active_model();
+        user.session_version = Set(next_version);
+        user.update(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_write_error)?;
+        commit_transaction(transaction).await?;
+        Ok(PasskeyAdminRevokeOutcome::Revoked)
+    }
+
     async fn begin_transaction(&self) -> Result<DatabaseTransaction, PasskeyRepositoryError> {
         self.pool
             .connection()
@@ -1039,6 +1093,17 @@ pub enum PasskeyRevokeOutcome {
     NotFound,
     /// 当前密码错误或账户没有密码。
     PasswordRejected,
+    /// 凭证已经处于终态。
+    AlreadyRevoked,
+}
+
+/// 管理员撤销凭证结果。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PasskeyAdminRevokeOutcome {
+    /// 已撤销并使旧会话失效。
+    Revoked,
+    /// 用户或凭证不存在。
+    NotFound,
     /// 凭证已经处于终态。
     AlreadyRevoked,
 }
@@ -1085,7 +1150,8 @@ async fn lock_user_any(
     transaction: &DatabaseTransaction,
     user_id: UserId,
 ) -> Result<Option<users::Model>, PasskeyRepositoryError> {
-    let mut query = users::Entity::find_by_id(user_id.get());
+    let mut query =
+        users::Entity::find_by_id(user_id.get()).filter(users::Column::DeletedAt.is_null());
     if transaction.get_database_backend() != DbBackend::Sqlite {
         query = query.lock(LockType::Update);
     }

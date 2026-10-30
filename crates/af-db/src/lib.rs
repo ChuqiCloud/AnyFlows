@@ -524,9 +524,9 @@ pub use oauth_login::{
 };
 pub use options::{DatabaseDialect, DatabaseOptions, PoolOptions};
 pub use passkey::{
-    PasskeyAuthenticationChallenge, PasskeyAuthenticationOutcome, PasskeyAuthenticationTarget,
-    PasskeyRecord, PasskeyRegistrationChallenge, PasskeyRepository, PasskeyRepositoryError,
-    PasskeyRevokeOutcome, PasskeySecurityFactors,
+    PasskeyAdminRevokeOutcome, PasskeyAuthenticationChallenge, PasskeyAuthenticationOutcome,
+    PasskeyAuthenticationTarget, PasskeyRecord, PasskeyRegistrationChallenge, PasskeyRepository,
+    PasskeyRepositoryError, PasskeyRevokeOutcome, PasskeySecurityFactors,
 };
 pub use password_reset::{
     PasswordResetOutcome, PasswordResetRepository, PasswordResetRepositoryConfigError,

@@ -100,6 +100,7 @@ mod usage_log_read;
 mod user_notifications;
 mod user_profile;
 mod user_read;
+mod user_security;
 mod user_token;
 mod user_topup;
 mod user_wallet;
@@ -430,6 +431,10 @@ pub use user_read::{
     AdminUser, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserPage,
     AdminUserReadError, AdminUserReader, AdminUserStatus, DEFAULT_ADMIN_USER_PAGE_SIZE,
     DatabaseAdminUserReader,
+};
+pub use user_security::{
+    AdminUserSecurityError, AdminUserSecurityReadFuture, AdminUserSecurityService,
+    AdminUserSecuritySnapshot, AdminUserSecurityWriteFuture, DatabaseAdminUserSecurityService,
 };
 pub use user_token::{
     DEFAULT_USER_TOKEN_PAGE_SIZE, DatabaseUserTokenService, IssuedUserToken,

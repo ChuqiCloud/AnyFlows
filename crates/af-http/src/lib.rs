@@ -65,6 +65,7 @@ mod management_setup;
 mod management_token_writes;
 mod management_tokens;
 mod management_usage_logs;
+mod management_user_security;
 mod management_users;
 mod management_wallet;
 mod middleware;

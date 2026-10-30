@@ -1,13 +1,13 @@
 import { useEffect } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Button, Input, Select, SelectItem } from '@heroui/react'
-import { LoaderCircle, RefreshCw } from 'lucide-react'
+import { Fingerprint, LoaderCircle, RefreshCw, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
 import { useAdminGroupCatalog } from '@/features/groups/group-api'
 import type { AdminGroup, AdminUser } from '@/lib/api/generated/types.gen'
-import { isUserConflict, useCreateAdminUser, useUpdateAdminUser } from './user-api'
+import { isUserConflict, useAdminUserSecurity, useCreateAdminUser, useResetAdminUserTwoFactor, useRevokeAdminUserPasskey, useUpdateAdminUser } from './user-api'
 import { UserFormField } from './user-form-field'
 import {
   buildUserFormSchema,
@@ -200,6 +200,8 @@ export function UserForm({ mode, user, onCancel, onSaved }: UserFormProps) {
           </div>
         </section>
 
+        {mode === 'update' && user ? <AdminSecuritySection userId={user.id} /> : null}
+
         {submitError ? <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{t(isUserConflict(submitError) ? 'users.form.conflict' : 'users.form.submitError')}</p> : null}
       </div>
 
@@ -211,5 +213,61 @@ export function UserForm({ mode, user, onCancel, onSaved }: UserFormProps) {
         </Button>
       </div>
     </form>
+  )
+}
+
+function AdminSecuritySection({ userId }: { userId: number }) {
+  const { t, i18n } = useTranslation()
+  const securityQuery = useAdminUserSecurity(userId)
+  const resetTwoFactorMutation = useResetAdminUserTwoFactor(userId)
+  const revokePasskeyMutation = useRevokeAdminUserPasskey(userId)
+  const formatTime = (value: number | null | undefined) => value == null
+    ? t('users.security.notRecorded')
+    : new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value * 1000))
+
+  const resetTwoFactor = async () => {
+    if (!window.confirm(t('users.security.resetTwoFactorConfirm'))) return
+    try {
+      await resetTwoFactorMutation.mutateAsync()
+    } catch {
+      // 错误状态在区域内展示，保留当前编辑内容。
+    }
+  }
+
+  const revokePasskey = async (passkeyId: number) => {
+    if (!window.confirm(t('users.security.revokePasskeyConfirm'))) return
+    try {
+      await revokePasskeyMutation.mutateAsync(passkeyId)
+    } catch {
+      // 错误状态在区域内展示，保留当前编辑内容。
+    }
+  }
+
+  return (
+    <section className="grid gap-3" aria-labelledby="user-security-fields">
+      <h3 id="user-security-fields" className="text-xs font-semibold">{t('users.form.security')}</h3>
+      {securityQuery.isPending ? <p role="status" className="text-xs text-muted-foreground">{t('users.security.loading')}</p> : securityQuery.isError ? (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg bg-danger/8 px-3 py-2 text-xs text-danger">
+          <span>{t('users.security.loadError')}</span>
+          <Button type="button" size="sm" variant="light" onPress={() => void securityQuery.refetch()}><RefreshCw className="size-3.5" aria-hidden="true" />{t('users.actions.retry')}</Button>
+        </div>
+      ) : securityQuery.data ? (
+        <div className="grid gap-4 rounded-lg border border-[var(--hairline)] p-3">
+          <div className="grid gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm font-medium"><ShieldCheck className="size-4 text-default-500" aria-hidden="true" />{t('users.security.twoFactor')}</div>
+              <span className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-medium ${securityQuery.data.two_factor.enabled ? 'bg-success/10 text-success' : 'bg-default-100 text-default-500'}`}>{t(`users.security.states.${securityQuery.data.two_factor.state}`)}</span>
+            </div>
+            {securityQuery.data.two_factor.enabled ? <div className="grid gap-1 text-xs text-default-500"><p>{t('users.security.boundAt', { value: formatTime(securityQuery.data.two_factor.bound_at) })}</p><p>{t('users.security.lastVerifiedAt', { value: formatTime(securityQuery.data.two_factor.last_verified_at) })}</p></div> : securityQuery.data.two_factor.state === 'pending' ? <div className="grid gap-1 text-xs text-default-500"><p>{t('users.security.pendingAt', { value: formatTime(securityQuery.data.two_factor.pending_created_at) })}</p><p>{t('users.security.expiresAt', { value: formatTime(securityQuery.data.two_factor.pending_expires_at) })}</p></div> : null}
+            {securityQuery.data.two_factor.state !== 'disabled' ? <Button type="button" size="sm" variant="flat" className="w-fit" isDisabled={resetTwoFactorMutation.isPending} onPress={() => void resetTwoFactor()}>{resetTwoFactorMutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <ShieldOff className="size-4" aria-hidden="true" />}{t('users.security.resetTwoFactor')}</Button> : null}
+          </div>
+          <div className="grid gap-2 border-t border-[var(--hairline)] pt-3">
+            <div className="flex items-center gap-2 text-sm font-medium"><Fingerprint className="size-4 text-default-500" aria-hidden="true" />{t('users.security.passkeys')}<span className="text-xs font-normal text-default-500">{t('users.security.passkeyCount', { count: securityQuery.data.passkeys.length })}</span></div>
+            {securityQuery.data.passkeys.length === 0 ? <p className="text-xs text-default-500">{t('users.security.noPasskeys')}</p> : <div className="grid gap-2">{securityQuery.data.passkeys.map((passkey) => <div key={passkey.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-default-100/60 px-2.5 py-2"><div className="min-w-0"><p className="truncate text-xs font-medium">{passkey.display_name}</p><p className="text-[0.6875rem] text-default-500">{t('users.security.passkeyCreatedAt', { value: formatTime(passkey.created_at) })}{passkey.last_used_at != null ? ` · ${t('users.security.passkeyLastUsedAt', { value: formatTime(passkey.last_used_at) })}` : ''}</p></div>{passkey.revoked_at == null ? <Button type="button" size="sm" variant="light" className="text-danger" isDisabled={revokePasskeyMutation.isPending} onPress={() => void revokePasskey(passkey.id)}><Trash2 className="size-4" aria-hidden="true" />{t('users.security.revokePasskey')}</Button> : <span className="text-[0.6875rem] text-default-500">{t('users.security.revoked')}</span>}</div>)}</div>}
+          </div>
+          {resetTwoFactorMutation.isError || revokePasskeyMutation.isError ? <p role="alert" className="text-xs text-danger">{t('users.security.actionError')}</p> : null}
+        </div>
+      ) : null}
+    </section>
   )
 }
