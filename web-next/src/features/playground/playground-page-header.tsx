@@ -1,5 +1,5 @@
 import { Button, Chip, Drawer, DrawerBody, DrawerContent, DrawerHeader } from '@heroui/react'
-import { Eraser, MessagesSquare, PanelRightOpen, Settings2 } from 'lucide-react'
+import { Eraser, MessagesSquare, Settings2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -15,9 +15,7 @@ type PlaygroundPageHeaderProps = {
   modelCount: number
   shareControl: ReactNode
   status: PlaygroundDisplayStatus
-  desktopSettingsOpen: boolean
   onClear: () => void
-  onDesktopSettingsToggle: () => void
 }
 
 export function PlaygroundPageHeader(props: PlaygroundPageHeaderProps) {
@@ -93,19 +91,6 @@ export function PlaygroundPageHeader(props: PlaygroundPageHeaderProps) {
             )}
           </DrawerContent>
         </Drawer>
-        <Button
-          isIconOnly
-          aria-label={t(props.desktopSettingsOpen ? 'playground.settings.collapse' : 'playground.settings.expand')}
-          aria-pressed={props.desktopSettingsOpen}
-          className="hidden lg:inline-flex"
-          size="sm"
-          title={t(props.desktopSettingsOpen ? 'playground.settings.collapse' : 'playground.settings.expand')}
-          type="button"
-          variant={props.desktopSettingsOpen ? 'bordered' : 'light'}
-          onClick={props.onDesktopSettingsToggle}
-        >
-          <PanelRightOpen className="size-3.5" aria-hidden="true" />
-        </Button>
         <Button
           isIconOnly
           aria-label={t('playground.actions.clearConversation')}

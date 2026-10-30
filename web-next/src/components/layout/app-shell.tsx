@@ -88,22 +88,19 @@ export function AppShell({ children, currentUser, onLogout }: AppShellProps) {
 
   return (
     <>
+      {/* 内容区铺满可用宽度，内边距留在滚动容器上，滚动时留白不跟着跳。 */}
       <ModuleShell
-        /*
-         * 内容区限宽 960px 居中，与旧站一致：
-         * 控制台页面是按窄栏排版设计的，不设限宽时表格和表单会被拉到整个视口宽。
-         * 内边距留在滚动容器上，限宽只作用于正文，这样滚动时留白不会跟着跳。
-         */
         contentClassName="min-w-0 flex-1 overflow-auto px-4 py-4 md:px-5"
         navbar={<Navbar currentUser={currentUser} onLogout={onLogout} onOpenNavigation={() => setNavigationOpen(true)} />}
-        sidebarClassName="hidden shrink-0 sm:block"
+        sidebarClassName="hidden shrink-0 md:block"
         sidebar={sidebar()}
       >
         <AnnouncementStrip />
-        <div className="mx-auto w-full max-w-[960px]">{children}</div>
+        <div className="w-full">{children}</div>
       </ModuleShell>
+      {/* 手机端沿用 acmeidc 的抽屉导航：整屏高度、底部留出安全区，抽屉宽度不超过视口。 */}
       <Drawer hideCloseButton isOpen={navigationOpen} placement="left" size="xs" onClose={() => setNavigationOpen(false)}>
-        <DrawerContent className="max-w-[calc(100vw-2rem)]" aria-label={t('nav.label')}>
+        <DrawerContent className="h-dvh max-w-[min(20rem,calc(100vw-2rem))] pb-[env(safe-area-inset-bottom)]" aria-label={t('nav.label')}>
           {sidebar(true)}
         </DrawerContent>
       </Drawer>

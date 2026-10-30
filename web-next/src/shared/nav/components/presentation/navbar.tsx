@@ -96,10 +96,10 @@ export const Navbar = ({ currentUser, onLogout, onOpenNavigation }: NavbarProps)
       >
         <NavbarContent className="gap-2 grow-0" justify="start">
           {onOpenNavigation ? (
-            <Button isIconOnly className="sm:hidden" size="sm" variant="light" aria-label={t("shell.expand")} onPress={onOpenNavigation}>
+            <Button isIconOnly className="md:hidden" size="sm" variant="light" aria-label={t("shell.expand")} onPress={onOpenNavigation}>
               <Menu className="size-5" aria-hidden="true" />
             </Button>
-          ) : <NavbarMenuToggle className="sm:hidden" />}
+          ) : <NavbarMenuToggle className="md:hidden" />}
 
           <NavbarBrand className="gap-2 grow-0">
             <RouterLink className="flex items-center gap-2" to={brandConfig.href}>

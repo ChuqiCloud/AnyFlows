@@ -127,26 +127,26 @@ function RowActions({ channel, probing, onProfile, onCredentials, onModels, onEd
   const { t } = useTranslation()
   const probeSupported = supportsProbe(channel.type, channel.protocol)
   return (
-    <div className="flex flex-wrap items-center justify-end gap-1">
-      <Button isIconOnly type="button" size="sm" variant="light" className="size-10 md:size-8" aria-label={t('clientProfiles.channelSettings')} title={t('clientProfiles.channelSettings')} onClick={() => onProfile(channel)}><Fingerprint className="size-3.5" aria-hidden="true" /></Button>
+    <div className="flex flex-nowrap items-center justify-end gap-0.5">
+      <Button isIconOnly type="button" size="sm" variant="light" className="size-10 shrink-0 md:size-8" aria-label={t('clientProfiles.channelSettings')} title={t('clientProfiles.channelSettings')} onClick={() => onProfile(channel)}><Fingerprint className="size-3.5" aria-hidden="true" /></Button>
 
       <SiteTooltip content={t('channels.actions.probe')}>
-        <Button isIconOnly aria-label={t('channels.actions.probe')} className="size-10 md:size-8" isDisabled={probing || !probeSupported} size="sm" type="button" variant="light" onClick={() => onProbe(channel.id)}>
+        <Button isIconOnly aria-label={t('channels.actions.probe')} className="size-10 shrink-0 md:size-8" isDisabled={probing || !probeSupported} size="sm" type="button" variant="light" onClick={() => onProbe(channel.id)}>
           <Activity className="size-3.5" aria-hidden="true" />
         </Button>
       </SiteTooltip>
       <SiteTooltip content={t('channels.actions.credentials')}>
-        <Button isIconOnly aria-label={t('channels.actions.credentials')} className="size-10 md:size-8" size="sm" type="button" variant="light" onClick={() => onCredentials(channel)}>
+        <Button isIconOnly aria-label={t('channels.actions.credentials')} className="size-10 shrink-0 md:size-8" size="sm" type="button" variant="light" onClick={() => onCredentials(channel)}>
           <KeyRound className="size-3.5" aria-hidden="true" />
         </Button>
       </SiteTooltip>
       <SiteTooltip content={t('channels.actions.models')}>
-        <Button isIconOnly aria-label={t('channels.actions.models')} className="size-10 md:size-8" size="sm" type="button" variant="light" onClick={() => onModels(channel)}>
+        <Button isIconOnly aria-label={t('channels.actions.models')} className="size-10 shrink-0 md:size-8" size="sm" type="button" variant="light" onClick={() => onModels(channel)}>
           <Boxes className="size-3.5" aria-hidden="true" />
         </Button>
       </SiteTooltip>
       <SiteTooltip content={t('channels.actions.edit')}>
-        <Button isIconOnly aria-label={t('channels.actions.edit')} className="size-10 md:size-8" size="sm" type="button" variant="light" onClick={() => onEdit(channel)}>
+        <Button isIconOnly aria-label={t('channels.actions.edit')} className="size-10 shrink-0 md:size-8" size="sm" type="button" variant="light" onClick={() => onEdit(channel)}>
           <Pencil className="size-3.5" aria-hidden="true" />
         </Button>
       </SiteTooltip>
@@ -173,7 +173,7 @@ export function ChannelTable({ channels, probeResults, probingId, onProfile, onC
       <div className="hidden overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1 md:block">
         <table className="w-full table-fixed text-left text-xs">
           <thead className="bg-surface-2/60 text-muted-foreground">
-            <tr><th className="w-[31%] px-3 py-2 font-medium">{t('channels.columns.channel')}</th><th className="w-[21%] px-3 py-2 font-medium">{t('channels.columns.routing')}</th><th className="w-[16%] px-3 py-2 font-medium">{t('channels.columns.schedule')}</th><th className="w-[20%] px-3 py-2 font-medium">{t('channels.columns.health')}</th><th className="w-[12%] px-3 py-2"><span className="sr-only">{t('channels.columns.actions')}</span></th></tr>
+            <tr><th className="w-[28%] px-3 py-2 font-medium">{t('channels.columns.channel')}</th><th className="w-[21%] px-3 py-2 font-medium">{t('channels.columns.routing')}</th><th className="w-[16%] px-3 py-2 font-medium">{t('channels.columns.schedule')}</th><th className="w-[20%] px-3 py-2 font-medium">{t('channels.columns.health')}</th><th className="w-[15%] px-3 py-2"><span className="sr-only">{t('channels.columns.actions')}</span></th></tr>
           </thead>
           <tbody className="divide-y divide-[var(--hairline)]">
             {channels.map((channel) => (
