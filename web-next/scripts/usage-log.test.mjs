@@ -156,7 +156,8 @@ test('首字与总耗时按独立边界返回语义色', () => {
   assert.equal(usageLatencyTone(10_000, 'first-token'), 'destructive')
   assert.equal(usageLatencyTone(5_000, 'duration'), 'success')
   assert.equal(usageLatencyTone(15_000, 'duration'), 'warning')
-  assert.equal(usageLatencyTone(15_001, 'duration'), 'destructive')
+  assert.equal(usageLatencyTone(15_001, 'duration'), 'warning')
+  assert.equal(usageLatencyTone(30_000, 'duration'), 'destructive')
 })
 
 test('请求 ID 紧凑展示不改变可复制原值', () => {
