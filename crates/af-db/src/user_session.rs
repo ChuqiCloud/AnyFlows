@@ -7,7 +7,8 @@ use argon2::{
 };
 use base64::Engine as _;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter, QueryResult,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, IntoActiveModel,
+    QueryFilter, QueryResult, Set, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Alias, Expr, Query, SelectStatement},
 };
@@ -16,7 +17,10 @@ use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use zeroize::Zeroizing;
 
-use crate::{DatabasePool, entity::users};
+use crate::{
+    DatabasePool,
+    entity::{user_two_factor_enrollments, users},
+};
 use crate::{EncryptedCredentialEnvelope, entity::EncryptedJson};
 
 const DUMMY_PASSWORD_HASH: &str =
@@ -150,6 +154,99 @@ impl UserSessionRepository {
             self.lookup_timeout,
             self.consume_totp_backup_code_inner(user_id, expected, replacement),
         )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(record_internal_error(UserSessionRepositoryError::Timeout)),
+        }
+    }
+
+    /// 在当前用户、活动密文与会话版本一致时原子记录二次验证登录。
+    ///
+    /// 备份码的新密文与时间在同一事务写入，不能先消费再回退到旧配置。
+    pub async fn complete_two_factor_login(
+        &self,
+        user_id: UserId,
+        expected: EncryptedCredentialEnvelope,
+        expected_session_version: i64,
+        replacement: Option<EncryptedCredentialEnvelope>,
+        verified_at: TimeDateTimeWithTimeZone,
+    ) -> Result<bool, UserSessionRepositoryError> {
+        match timeout(self.lookup_timeout, async {
+            let transaction = self
+                .pool
+                .connection()
+                .begin()
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| record_internal_error(UserSessionRepositoryError::Query))?;
+            let Some(user) = crate::user_profile::lock_user(&transaction, user_id)
+                .await
+                .map_err(|_| record_internal_error(UserSessionRepositoryError::Query))?
+            else {
+                transaction
+                    .commit()
+                    .await
+                    .map_err(|_| record_internal_error(UserSessionRepositoryError::Query))?;
+                return Ok(false);
+            };
+            if user.session_version != expected_session_version
+                || user.totp_secret.as_ref() != Some(&encrypted_json(expected)?)
+            {
+                transaction
+                    .commit()
+                    .await
+                    .map_err(|_| record_internal_error(UserSessionRepositoryError::Query))?;
+                return Ok(false);
+            }
+            if let Some(replacement) = replacement {
+                let mut active = user.into_active_model();
+                active.totp_secret = Set(Some(encrypted_json(replacement)?));
+                active
+                    .update(&transaction)
+                    .with_subscriber(NoSubscriber::default())
+                    .await
+                    .map_err(|_| record_internal_error(UserSessionRepositoryError::Query))?;
+            }
+            if let Some(record) = user_two_factor_enrollments::Entity::find_by_id(user_id.get())
+                .one(&transaction)
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| record_internal_error(UserSessionRepositoryError::Query))?
+            {
+                let timestamp = record
+                    .last_verified_at
+                    .map_or(verified_at, |previous| previous.max(verified_at));
+                let mut active = record.into_active_model();
+                active.last_verified_at = Set(Some(timestamp));
+                active
+                    .update(&transaction)
+                    .with_subscriber(NoSubscriber::default())
+                    .await
+                    .map_err(|_| record_internal_error(UserSessionRepositoryError::Query))?;
+            } else {
+                // 旧配置没有可靠的绑定时间，只补记本次成功登录。
+                user_two_factor_enrollments::ActiveModel {
+                    user_id: Set(user_id.get()),
+                    pending_configuration: Set(None),
+                    pending_created_at: Set(None),
+                    pending_expires_at: Set(None),
+                    bound_at: Set(None),
+                    last_verified_at: Set(Some(verified_at)),
+                    pending_session_version: Set(None),
+                    pending_attempts: Set(0),
+                }
+                .insert(&transaction)
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| record_internal_error(UserSessionRepositoryError::Query))?;
+            }
+            transaction
+                .commit()
+                .await
+                .map_err(|_| record_internal_error(UserSessionRepositoryError::Query))?;
+            Ok(true)
+        })
         .await
         {
             Ok(result) => result,

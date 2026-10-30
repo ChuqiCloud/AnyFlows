@@ -1,0 +1,102 @@
+name: Account security checks
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: Checks to run
+        type: choice
+        default: all
+        options: [all, backend, frontend]
+      frontend:
+        description: Frontend to check
+        type: choice
+        default: all
+        options: [all, web, web-next]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: account-security-${{ github.ref }}-${{ inputs.component || 'all' }}
+  cancel-in-progress: true
+
+env:
+  CARGO_BUILD_JOBS: '1'
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CACHE_ON_FAILURE: 'true'
+
+jobs:
+  security:
+    if: ${{ inputs.component != 'frontend' }}
+    name: TOTP enrollment and login regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL || github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+      - name: Install Rust toolchain
+        run: |
+          bash tools/ci/install-rustup.sh
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup component add clippy
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4
+        with:
+          cache-on-failure: true
+      - name: Check account security crates
+        run: cargo clippy -p af-admin -p af-db -p af-http --all-targets --locked -- -D warnings
+      - name: Verify TOTP setup and login behavior
+        run: cargo test -p af-admin -p af-db -p af-http --lib --locked two_factor
+
+  frontend:
+    if: ${{ inputs.component != 'backend' }}
+    name: TOTP enrollment browser regression (${{ matrix.frontend }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        frontend: ${{ fromJSON(inputs.frontend == 'web' && '["web"]' || inputs.frontend == 'web-next' && '["web-next"]' || '["web","web-next"]') }}
+    steps:
+      - name: Check out source
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL || github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+      - name: Install frontend dependencies
+        run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} install --frozen-lockfile
+      - name: Install browser runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_tools="$RUNNER_TEMP/anyflows-playwright"
+          npm install --prefix "$browser_tools" --no-save --ignore-scripts playwright@1.56.1
+          if [[ "${{ github.server_url }}" == "https://github.com" ]]; then
+            "$browser_tools/node_modules/.bin/playwright" install chromium
+          else
+            "$browser_tools/node_modules/.bin/playwright" install --with-deps chromium
+          fi
+      - name: Verify TOTP enrollment in the browser
+        run: PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-two-factor-smoke.mjs '${{ matrix.frontend }}'

@@ -422,8 +422,9 @@ pub use user_profile::{
     UserPasskeyRevokeFuture, UserPasswordChangeCommand, UserPasswordChangeFuture, UserProfile,
     UserProfileError, UserProfileReadFuture, UserProfileService, UserProfileUpdateCommand,
     UserProfileUpdateFuture, UserSecurityStepUpCommand, UserSecurityStepUpFuture,
-    UserTwoFactorDisableCommand, UserTwoFactorDisableFuture, UserTwoFactorEnableCommand,
-    UserTwoFactorEnableFuture, UserTwoFactorReadFuture, UserTwoFactorStatus,
+    UserTwoFactorConfirmCommand, UserTwoFactorConfirmFuture, UserTwoFactorDisableCommand,
+    UserTwoFactorDisableFuture, UserTwoFactorEnableCommand, UserTwoFactorEnableFuture,
+    UserTwoFactorReadFuture, UserTwoFactorStatus,
 };
 pub use user_read::{
     AdminUser, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserPage,

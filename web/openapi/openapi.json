@@ -4608,7 +4608,7 @@
         "tags": [
           "个人资料与安全"
         ],
-        "summary": "启用当前用户 TOTP 二次验证",
+        "summary": "准备或确认当前用户 TOTP 绑定",
         "operationId": "enableUserTwoFactor",
         "requestBody": {
           "content": {
@@ -4622,7 +4622,7 @@
         },
         "responses": {
           "200": {
-            "description": "TOTP 入网材料，仅返回一次",
+            "description": "待绑定二维码材料或绑定成功后的一次性备用码",
             "content": {
               "application/json": {
                 "schema": {
@@ -36203,6 +36203,11 @@
         "type": "object",
         "required": [
           "enabled",
+          "state",
+          "pending_created_at",
+          "pending_expires_at",
+          "bound_at",
+          "last_verified_at",
           "secret",
           "otpauth_uri",
           "backup_codes"
@@ -36210,6 +36215,41 @@
         "properties": {
           "enabled": {
             "type": "boolean"
+          },
+          "state": {
+            "type": "string"
+          },
+          "pending_created_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "pending_expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "bound_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "last_verified_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
           },
           "secret": {
             "type": "string",
@@ -36225,7 +36265,7 @@
               "type": "string"
             },
             "maxItems": 10,
-            "minItems": 1
+            "minItems": 0
           }
         },
         "additionalProperties": false
@@ -36242,6 +36282,15 @@
             "writeOnly": true,
             "maxLength": 4096,
             "minLength": 1
+          },
+          "totp_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "writeOnly": true,
+            "maxLength": 128,
+            "minLength": 6
           }
         },
         "additionalProperties": false
@@ -36249,11 +36298,51 @@
       "UserTwoFactorStatusResponse": {
         "type": "object",
         "required": [
-          "enabled"
+          "enabled",
+          "state",
+          "pending_created_at",
+          "pending_expires_at",
+          "bound_at",
+          "last_verified_at"
         ],
         "properties": {
           "enabled": {
             "type": "boolean"
+          },
+          "state": {
+            "type": "string"
+          },
+          "pending_created_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "pending_expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "bound_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "last_verified_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
           }
         },
         "additionalProperties": false

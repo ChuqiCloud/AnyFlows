@@ -854,20 +854,6 @@ jobs:
     env:
       # 数据库冒烟会链接 af-db 测试二进制，受限 runner 通过按需重读符号表控制链接峰值内存。
       RUSTFLAGS: "-C link-arg=-Wl,--no-keep-memory"
-    services:
-      postgres:
-        image: postgres:17.10-bookworm@sha256:67870dc097790edf2bd6726658db995dcc830f799d41bb2b78ef07c9a2d5f010
-        ports:
-          - 15432:5432
-        env:
-          POSTGRES_USER: anyflows
-          POSTGRES_PASSWORD: anyflows_ci
-          POSTGRES_DB: anyflows_migration_test_ci
-        options: >-
-          --health-cmd "pg_isready -U anyflows -d anyflows_migration_test_ci"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 30
     steps:
       - name: Configure checkout endpoint
         if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
@@ -915,18 +901,8 @@ jobs:
         with:
           shared-key: database-smoke
 
-      - name: Run PostgreSQL migration smoke test on Gitea
-        if: ${{ github.server_url != 'https://github.com' }}
+      - name: Run PostgreSQL migration smoke test
         env:
-          AF_TEST_DATABASE_URL: postgres://anyflows:anyflows_ci@postgres:5432/anyflows_migration_test_ci
-          AF_REQUIRE_LIVE_DATABASE: "1"
-          AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
-        run: bash tools/ci/run-db-migration-test.sh postgres
-
-      - name: Run PostgreSQL migration smoke test on GitHub
-        if: ${{ github.server_url == 'https://github.com' }}
-        env:
-          AF_TEST_DATABASE_URL: postgres://anyflows:anyflows_ci@127.0.0.1:15432/anyflows_migration_test_ci
           AF_REQUIRE_LIVE_DATABASE: "1"
           AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
         run: bash tools/ci/run-db-migration-test.sh postgres

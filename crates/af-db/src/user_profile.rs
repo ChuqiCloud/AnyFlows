@@ -5,6 +5,7 @@ use base64::Engine as _;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
     EntityTrait, IntoActiveModel, QueryFilter, QuerySelect, Set, SqlErr, TransactionTrait,
+    entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, LockType},
 };
 use thiserror::Error;
@@ -14,12 +15,14 @@ use zeroize::Zeroizing;
 
 use crate::{
     DatabasePool, EncryptedCredentialEnvelope,
-    entity::users,
+    entity::{user_two_factor_enrollments, users},
     identity_secret::{IdentitySecretError, hash_password},
 };
 
 /// 普通用户资料允许使用的用户名最大字节数。
 pub const MAX_USER_PROFILE_USERNAME_BYTES: usize = 64;
+
+const MAX_TWO_FACTOR_ENROLLMENT_ATTEMPTS: i32 = 10;
 
 /// 个人资料中可返回的通知偏好。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -164,7 +167,7 @@ pub enum UserPasswordChangeOutcome {
 /// 用户 TOTP 配置写入结果；配置密文只在仓储边界内出现。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UserTwoFactorMutationOutcome {
-    /// 已写入并递增会话版本。
+    /// 已写入待绑定配置，不改变当前会话。
     Updated,
     /// 用户不存在、被禁用或已软删除。
     NotFound,
@@ -174,6 +177,16 @@ pub enum UserTwoFactorMutationOutcome {
     AlreadyEnabled,
     /// 启用状态不存在。
     NotEnabled,
+}
+
+/// 用户 TOTP 状态及其绑定时间快照。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UserTwoFactorStateRecord {
+    pub enabled: bool,
+    pub pending_created_at: Option<TimeDateTimeWithTimeZone>,
+    pub pending_expires_at: Option<TimeDateTimeWithTimeZone>,
+    pub bound_at: Option<TimeDateTimeWithTimeZone>,
+    pub last_verified_at: Option<TimeDateTimeWithTimeZone>,
 }
 
 /// 用户资料仓储配置错误。
@@ -318,10 +331,165 @@ impl UserProfileRepository {
         user_id: UserId,
         current_password: &[u8],
         encrypted_secret: EncryptedCredentialEnvelope,
+        pending_created_at: TimeDateTimeWithTimeZone,
+        pending_expires_at: TimeDateTimeWithTimeZone,
     ) -> Result<UserTwoFactorMutationOutcome, UserProfileRepositoryError> {
         match timeout(
             self.operation_timeout,
-            self.enable_two_factor_inner(user_id, current_password, encrypted_secret),
+            self.enable_two_factor_inner(
+                user_id,
+                current_password,
+                encrypted_secret,
+                pending_created_at,
+                pending_expires_at,
+            ),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(record_internal_error(UserProfileRepositoryError::Timeout)),
+        }
+    }
+
+    /// 读取当前账户的 TOTP、待绑定和绑定时间状态。
+    pub async fn two_factor_state(
+        &self,
+        user_id: UserId,
+    ) -> Result<Option<UserTwoFactorStateRecord>, UserProfileRepositoryError> {
+        match timeout(self.operation_timeout, async {
+            let Some(user) = users::Entity::find_by_id(user_id.get())
+                .filter(users::Column::Status.eq(1_i16))
+                .filter(users::Column::DeletedAt.is_null())
+                .one(self.pool.connection())
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| record_internal_error(UserProfileRepositoryError::Query))?
+            else {
+                return Ok(None);
+            };
+            let enrollment = user_two_factor_enrollments::Entity::find_by_id(user_id.get())
+                .one(self.pool.connection())
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| record_internal_error(UserProfileRepositoryError::Query))?;
+            Ok(Some(UserTwoFactorStateRecord {
+                enabled: user.totp_secret.is_some(),
+                pending_created_at: enrollment
+                    .as_ref()
+                    .filter(|record| {
+                        record.pending_session_version == Some(user.session_version)
+                            && record.pending_attempts < MAX_TWO_FACTOR_ENROLLMENT_ATTEMPTS
+                    })
+                    .and_then(|record| record.pending_created_at),
+                pending_expires_at: enrollment
+                    .as_ref()
+                    .filter(|record| {
+                        record.pending_session_version == Some(user.session_version)
+                            && record.pending_attempts < MAX_TWO_FACTOR_ENROLLMENT_ATTEMPTS
+                    })
+                    .and_then(|record| record.pending_expires_at),
+                bound_at: enrollment.as_ref().and_then(|record| record.bound_at),
+                last_verified_at: enrollment.and_then(|record| record.last_verified_at),
+            }))
+        })
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(record_internal_error(UserProfileRepositoryError::Timeout)),
+        }
+    }
+
+    /// 校验当前密码、会话版本与有效期后原子占用一次绑定验证尝试。
+    pub async fn pending_two_factor(
+        &self,
+        user_id: UserId,
+        current_password: &[u8],
+        now: TimeDateTimeWithTimeZone,
+    ) -> Result<
+        Option<(
+            EncryptedCredentialEnvelope,
+            TimeDateTimeWithTimeZone,
+            TimeDateTimeWithTimeZone,
+        )>,
+        UserProfileRepositoryError,
+    > {
+        match timeout(self.operation_timeout, async {
+            let transaction = self.begin_transaction().await?;
+            let Some(user) = lock_user(&transaction, user_id).await? else {
+                commit_transaction(transaction).await?;
+                return Ok(None);
+            };
+            if user.totp_secret.is_some()
+                || !user
+                    .password_hash
+                    .as_ref()
+                    .is_some_and(|hash| hash.verify(current_password))
+            {
+                commit_transaction(transaction).await?;
+                return Ok(None);
+            }
+            let Some(record) = user_two_factor_enrollments::Entity::find_by_id(user_id.get())
+                .one(&transaction)
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| record_internal_error(UserProfileRepositoryError::Query))?
+            else {
+                commit_transaction(transaction).await?;
+                return Ok(None);
+            };
+            let (Some(pending), Some(created_at), Some(expires_at)) = (
+                record.pending_configuration.clone(),
+                record.pending_created_at,
+                record.pending_expires_at,
+            ) else {
+                commit_transaction(transaction).await?;
+                return Ok(None);
+            };
+            if expires_at <= now
+                || created_at > now
+                || record.pending_session_version != Some(user.session_version)
+                || !(0..MAX_TWO_FACTOR_ENROLLMENT_ATTEMPTS).contains(&record.pending_attempts)
+            {
+                commit_transaction(transaction).await?;
+                return Ok(None);
+            }
+            let envelope = envelope_from_encrypted_json(pending)?;
+            let attempts = record.pending_attempts + 1;
+            let mut active = record.into_active_model();
+            active.pending_attempts = Set(attempts);
+            active
+                .update(&transaction)
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(map_write_error)?;
+            commit_transaction(transaction).await?;
+            Ok(Some((envelope, created_at, expires_at)))
+        })
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(record_internal_error(UserProfileRepositoryError::Timeout)),
+        }
+    }
+
+    /// 原子确认待绑定配置并写入活动 TOTP；不递增会话版本。
+    pub async fn confirm_two_factor(
+        &self,
+        user_id: UserId,
+        current_password: &[u8],
+        expected_pending: EncryptedCredentialEnvelope,
+        encrypted_secret: EncryptedCredentialEnvelope,
+        bound_at: TimeDateTimeWithTimeZone,
+    ) -> Result<UserTwoFactorMutationOutcome, UserProfileRepositoryError> {
+        match timeout(
+            self.operation_timeout,
+            self.confirm_two_factor_inner(
+                user_id,
+                current_password,
+                expected_pending,
+                encrypted_secret,
+                bound_at,
+            ),
         )
         .await
         {
@@ -546,7 +714,12 @@ impl UserProfileRepository {
         user_id: UserId,
         current_password: &[u8],
         encrypted_secret: EncryptedCredentialEnvelope,
+        pending_created_at: TimeDateTimeWithTimeZone,
+        pending_expires_at: TimeDateTimeWithTimeZone,
     ) -> Result<UserTwoFactorMutationOutcome, UserProfileRepositoryError> {
+        if pending_created_at >= pending_expires_at {
+            return Err(record_internal_error(UserProfileRepositoryError::Invariant));
+        }
         let transaction = self.begin_transaction().await?;
         let Some(existing) = lock_user(&transaction, user_id).await? else {
             commit_transaction(transaction).await?;
@@ -564,14 +737,116 @@ impl UserProfileRepository {
             commit_transaction(transaction).await?;
             return Ok(UserTwoFactorMutationOutcome::AlreadyEnabled);
         }
-        let next_session_version = existing
-            .session_version
-            .checked_add(1)
-            .ok_or_else(|| record_internal_error(UserProfileRepositoryError::Invariant))?;
+        let encrypted_secret = Some(encrypted_json(encrypted_secret)?);
+        if let Some(existing_enrollment) =
+            user_two_factor_enrollments::Entity::find_by_id(user_id.get())
+                .one(&transaction)
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| record_internal_error(UserProfileRepositoryError::Query))?
+        {
+            let mut pending = existing_enrollment.into_active_model();
+            pending.pending_configuration = Set(encrypted_secret);
+            pending.pending_created_at = Set(Some(pending_created_at));
+            pending.pending_expires_at = Set(Some(pending_expires_at));
+            pending.bound_at = Set(None);
+            pending.last_verified_at = Set(None);
+            pending.pending_session_version = Set(Some(existing.session_version));
+            pending.pending_attempts = Set(0);
+            pending
+                .update(&transaction)
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(map_write_error)?;
+        } else {
+            let pending = user_two_factor_enrollments::ActiveModel {
+                user_id: Set(user_id.get()),
+                pending_configuration: Set(encrypted_secret),
+                pending_created_at: Set(Some(pending_created_at)),
+                pending_expires_at: Set(Some(pending_expires_at)),
+                bound_at: Set(None),
+                last_verified_at: Set(None),
+                pending_session_version: Set(Some(existing.session_version)),
+                pending_attempts: Set(0),
+            };
+            pending
+                .insert(&transaction)
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(map_write_error)?;
+        }
+        commit_transaction(transaction).await?;
+        Ok(UserTwoFactorMutationOutcome::Updated)
+    }
+
+    async fn confirm_two_factor_inner(
+        &self,
+        user_id: UserId,
+        current_password: &[u8],
+        expected_pending: EncryptedCredentialEnvelope,
+        encrypted_secret: EncryptedCredentialEnvelope,
+        bound_at: TimeDateTimeWithTimeZone,
+    ) -> Result<UserTwoFactorMutationOutcome, UserProfileRepositoryError> {
+        let transaction = self.begin_transaction().await?;
+        let Some(existing) = lock_user(&transaction, user_id).await? else {
+            commit_transaction(transaction).await?;
+            return Ok(UserTwoFactorMutationOutcome::NotFound);
+        };
+        if !existing
+            .password_hash
+            .as_ref()
+            .is_some_and(|hash| hash.verify(current_password))
+        {
+            commit_transaction(transaction).await?;
+            return Ok(UserTwoFactorMutationOutcome::Rejected);
+        }
+        if existing.totp_secret.is_some() {
+            commit_transaction(transaction).await?;
+            return Ok(UserTwoFactorMutationOutcome::AlreadyEnabled);
+        }
+        let Some(pending) = user_two_factor_enrollments::Entity::find_by_id(user_id.get())
+            .one(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(UserProfileRepositoryError::Query))?
+        else {
+            commit_transaction(transaction).await?;
+            return Ok(UserTwoFactorMutationOutcome::NotEnabled);
+        };
+        let Some(pending_json) = pending.pending_configuration.clone() else {
+            commit_transaction(transaction).await?;
+            return Ok(UserTwoFactorMutationOutcome::NotEnabled);
+        };
+        let stored_pending = envelope_from_encrypted_json(pending_json)?;
+        if stored_pending != expected_pending
+            || pending.pending_session_version != Some(existing.session_version)
+            || !(1..=MAX_TWO_FACTOR_ENROLLMENT_ATTEMPTS).contains(&pending.pending_attempts)
+            || pending
+                .pending_created_at
+                .is_none_or(|created_at| created_at > bound_at)
+            || pending
+                .pending_expires_at
+                .is_none_or(|expires_at| expires_at <= bound_at)
+        {
+            commit_transaction(transaction).await?;
+            return Ok(UserTwoFactorMutationOutcome::Rejected);
+        }
         let mut active = existing.into_active_model();
         active.totp_secret = Set(Some(encrypted_json(encrypted_secret)?));
-        active.session_version = Set(next_session_version);
         active
+            .update(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_write_error)?;
+        let mut enrollment = pending.into_active_model();
+        enrollment.pending_configuration = Set(None);
+        enrollment.pending_created_at = Set(None);
+        enrollment.pending_expires_at = Set(None);
+        enrollment.bound_at = Set(Some(bound_at));
+        enrollment.last_verified_at = Set(None);
+        enrollment.pending_session_version = Set(None);
+        enrollment.pending_attempts = Set(0);
+        enrollment
             .update(&transaction)
             .with_subscriber(NoSubscriber::default())
             .await
@@ -614,6 +889,11 @@ impl UserProfileRepository {
             .with_subscriber(NoSubscriber::default())
             .await
             .map_err(map_write_error)?;
+        user_two_factor_enrollments::Entity::delete_by_id(user_id.get())
+            .exec(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(UserProfileRepositoryError::Query))?;
         commit_transaction(transaction).await?;
         Ok(UserTwoFactorMutationOutcome::Updated)
     }
@@ -637,7 +917,7 @@ impl fmt::Debug for UserProfileRepository {
     }
 }
 
-async fn lock_user(
+pub(crate) async fn lock_user(
     transaction: &DatabaseTransaction,
     user_id: UserId,
 ) -> Result<Option<users::Model>, UserProfileRepositoryError> {
@@ -761,6 +1041,16 @@ fn encrypted_json(
     .map_err(|_| record_internal_error(UserProfileRepositoryError::Invariant))
 }
 
+fn envelope_from_encrypted_json(
+    encrypted: crate::entity::EncryptedJson,
+) -> Result<EncryptedCredentialEnvelope, UserProfileRepositoryError> {
+    let (key_id, nonce, ciphertext) = encrypted
+        .envelope_parts()
+        .map_err(|_| record_internal_error(UserProfileRepositoryError::Invariant))?;
+    EncryptedCredentialEnvelope::new(key_id, nonce, ciphertext)
+        .map_err(|_| record_internal_error(UserProfileRepositoryError::Invariant))
+}
+
 fn record_internal_error(error: UserProfileRepositoryError) -> UserProfileRepositoryError {
     let error_kind = match error {
         UserProfileRepositoryError::Query => "user_profile_query",
@@ -882,6 +1172,200 @@ mod tests {
             sessions.login("owner", b"new secure password").await?,
             UserSessionLookupOutcome::Authenticated { user_id: actual, .. } if actual == user_id
         ));
+        pool.close().await?;
+        Ok(())
+    }
+
+    fn enrollment_envelope(seed: u8) -> EncryptedCredentialEnvelope {
+        EncryptedCredentialEnvelope::new("two-factor-test", [seed; 24], vec![seed; 32]).unwrap()
+    }
+
+    #[tokio::test]
+    async fn two_factor_enrollment_rejects_expiry_exhaustion_stale_configuration_and_password_change()
+    -> Result<(), Box<dyn Error>> {
+        let (pool, user_id) = fixture().await?;
+        let repository = UserProfileRepository::new(pool.clone(), Duration::from_secs(5))?;
+        let now = TimeDateTimeWithTimeZone::now_utc();
+        let pending = enrollment_envelope(1);
+        let active = enrollment_envelope(2);
+        repository
+            .enable_two_factor(
+                user_id,
+                b"old secure password",
+                pending.clone(),
+                now,
+                now + time::Duration::minutes(10),
+            )
+            .await?;
+        assert!(
+            repository
+                .pending_two_factor(
+                    user_id,
+                    b"old secure password",
+                    now + time::Duration::minutes(10)
+                )
+                .await?
+                .is_none()
+        );
+        assert_eq!(
+            repository
+                .confirm_two_factor(
+                    user_id,
+                    b"old secure password",
+                    pending.clone(),
+                    active.clone(),
+                    now + time::Duration::minutes(10)
+                )
+                .await?,
+            UserTwoFactorMutationOutcome::Rejected
+        );
+        assert!(!repository.two_factor_state(user_id).await?.unwrap().enabled);
+        for _ in 0..MAX_TWO_FACTOR_ENROLLMENT_ATTEMPTS {
+            assert!(
+                repository
+                    .pending_two_factor(user_id, b"old secure password", now)
+                    .await?
+                    .is_some()
+            );
+        }
+        assert!(
+            repository
+                .pending_two_factor(user_id, b"old secure password", now)
+                .await?
+                .is_none()
+        );
+        assert!(
+            repository
+                .two_factor_state(user_id)
+                .await?
+                .unwrap()
+                .pending_created_at
+                .is_none()
+        );
+        let replacement = enrollment_envelope(3);
+        repository
+            .enable_two_factor(
+                user_id,
+                b"old secure password",
+                replacement.clone(),
+                now,
+                now + time::Duration::minutes(10),
+            )
+            .await?;
+        repository
+            .pending_two_factor(user_id, b"old secure password", now)
+            .await?
+            .unwrap();
+        assert_eq!(
+            repository
+                .confirm_two_factor(
+                    user_id,
+                    b"old secure password",
+                    pending,
+                    active.clone(),
+                    now
+                )
+                .await?,
+            UserTwoFactorMutationOutcome::Rejected
+        );
+        repository
+            .change_password(
+                user_id,
+                b"old secure password",
+                Zeroizing::new("new secure password".to_owned()),
+            )
+            .await?;
+        assert!(
+            repository
+                .pending_two_factor(user_id, b"new secure password", now)
+                .await?
+                .is_none()
+        );
+        assert_eq!(
+            repository
+                .confirm_two_factor(user_id, b"new secure password", replacement, active, now)
+                .await?,
+            UserTwoFactorMutationOutcome::Rejected
+        );
+        assert!(!repository.two_factor_state(user_id).await?.unwrap().enabled);
+        pool.close().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn two_factor_login_metadata_preserves_unknown_legacy_binding_time_and_checks_snapshot()
+    -> Result<(), Box<dyn Error>> {
+        let (pool, user_id) = fixture().await?;
+        let repository = UserProfileRepository::new(pool.clone(), Duration::from_secs(5))?;
+        let sessions = UserSessionRepository::new(pool.clone(), Duration::from_secs(5))?;
+        let expected = enrollment_envelope(4);
+        let replacement = enrollment_envelope(5);
+        let mut legacy = users::Entity::find_by_id(user_id.get())
+            .one(pool.connection())
+            .await?
+            .unwrap()
+            .into_active_model();
+        legacy.totp_secret = Set(Some(encrypted_json(expected.clone())?));
+        legacy.update(pool.connection()).await?;
+        let now = TimeDateTimeWithTimeZone::now_utc();
+        assert!(
+            !sessions
+                .complete_two_factor_login(user_id, expected.clone(), 2, None, now)
+                .await?
+        );
+        assert!(
+            repository
+                .two_factor_state(user_id)
+                .await?
+                .unwrap()
+                .last_verified_at
+                .is_none()
+        );
+        assert!(
+            sessions
+                .complete_two_factor_login(
+                    user_id,
+                    expected.clone(),
+                    1,
+                    Some(replacement.clone()),
+                    now,
+                )
+                .await?
+        );
+        assert!(
+            !sessions
+                .complete_two_factor_login(
+                    user_id,
+                    expected,
+                    1,
+                    None,
+                    now + time::Duration::seconds(1),
+                )
+                .await?
+        );
+        let state = repository.two_factor_state(user_id).await?.unwrap();
+        assert!(state.enabled);
+        assert!(state.bound_at.is_none());
+        assert_eq!(state.last_verified_at, Some(now));
+        assert!(
+            sessions
+                .complete_two_factor_login(
+                    user_id,
+                    replacement,
+                    1,
+                    None,
+                    now - time::Duration::seconds(1),
+                )
+                .await?
+        );
+        assert_eq!(
+            repository
+                .two_factor_state(user_id)
+                .await?
+                .unwrap()
+                .last_verified_at,
+            Some(now)
+        );
         pool.close().await?;
         Ok(())
     }

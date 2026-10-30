@@ -362,28 +362,38 @@ impl SessionAuthenticator for DatabaseSessionAuthenticator {
                         let code = credentials
                             .totp_code()
                             .ok_or(SessionAuthenticationError::TwoFactorRequired)?;
-                        match crate::two_factor::verify_login_code(
+                        let verified_at = time::OffsetDateTime::now_utc();
+                        let timestamp = u64::try_from(verified_at.unix_timestamp())
+                            .map_err(|_| SessionAuthenticationError::Internal)?;
+                        let replacement = match crate::two_factor::verify_login_code(
                             cipher,
                             user_id,
                             &totp_secret,
                             code,
-                            current_timestamp().ok_or(SessionAuthenticationError::Internal)?,
+                            timestamp,
                         ) {
-                            Ok(crate::two_factor::LoginFactorResult::Totp) => {}
+                            Ok(crate::two_factor::LoginFactorResult::Totp) => None,
                             Ok(crate::two_factor::LoginFactorResult::Backup { replacement }) => {
-                                if !self
-                                    .repository
-                                    .consume_totp_backup_code(user_id, totp_secret, replacement)
-                                    .await
-                                    .map_err(map_repository_error)?
-                                {
-                                    return Err(SessionAuthenticationError::TwoFactorInvalid);
-                                }
+                                Some(replacement)
                             }
                             Err(crate::two_factor::TwoFactorError::InvalidCode) => {
                                 return Err(SessionAuthenticationError::TwoFactorInvalid);
                             }
                             Err(_) => return Err(SessionAuthenticationError::Internal),
+                        };
+                        if !self
+                            .repository
+                            .complete_two_factor_login(
+                                user_id,
+                                totp_secret,
+                                session_version,
+                                replacement,
+                                verified_at,
+                            )
+                            .await
+                            .map_err(map_repository_error)?
+                        {
+                            return Err(SessionAuthenticationError::TwoFactorInvalid);
                         }
                     }
                     let principal =

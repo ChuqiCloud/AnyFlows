@@ -669,6 +669,7 @@ pub use user_profile::{
     MAX_USER_PROFILE_USERNAME_BYTES, UserNotificationPreferencesRecord, UserPasswordChangeOutcome,
     UserProfileLookupOutcome, UserProfileMutationOutcome, UserProfileRecord, UserProfileRepository,
     UserProfileRepositoryConfigError, UserProfileRepositoryError, UserTwoFactorMutationOutcome,
+    UserTwoFactorStateRecord,
 };
 pub use user_session::{
     UserSessionLookupByIdOutcome, UserSessionLookupOutcome, UserSessionRepository,

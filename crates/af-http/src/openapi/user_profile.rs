@@ -126,10 +126,10 @@ fn get_user_two_factor() {}
     path = "/api/account/two-factor",
     operation_id = "enableUserTwoFactor",
     tag = "个人资料与安全",
-    summary = "启用当前用户 TOTP 二次验证",
+    summary = "准备或确认当前用户 TOTP 绑定",
     request_body = UserTwoFactorPasswordRequest,
     responses(
-        (status = 200, description = "TOTP 入网材料，仅返回一次", body = UserTwoFactorEnrollmentResponse),
+        (status = 200, description = "待绑定二维码材料或绑定成功后的一次性备用码", body = UserTwoFactorEnrollmentResponse),
         (status = 400, description = "请求正文无效", body = ManagementErrorBody),
         (status = 401, description = "会话无效", body = ManagementErrorBody),
         (status = 409, description = "当前密码错误或已经启用", body = ManagementErrorBody),
