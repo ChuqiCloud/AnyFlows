@@ -34,7 +34,6 @@ export function AboutPage() {
         </div>
         <h2 className="mx-auto mt-7 max-w-2xl text-lg font-medium leading-relaxed tracking-wide text-balance sm:text-xl">{t('about.companyName')}</h2>
         <p className="mt-2 text-[0.6875rem] font-medium uppercase tracking-[0.24em] text-muted-foreground/80">{t('about.companySubtitle')}</p>
-        <p className="mx-auto mt-4 max-w-xl text-sm leading-7 text-pretty text-muted-foreground">{t('about.description')}</p>
       </header>
 
       <section aria-labelledby="about-partners-title" className="mx-auto grid w-full max-w-3xl gap-6">

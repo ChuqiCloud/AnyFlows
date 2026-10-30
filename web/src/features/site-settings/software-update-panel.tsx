@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowUpRight, Check, ChevronDown, CircleAlert, RefreshCw, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -23,6 +23,7 @@ export function SoftwareUpdatePanel() {
   const install = useSoftwareUpdate('install')
   const [confirmed, setConfirmed] = useState(false)
   const [requestedTag, setRequestedTag] = useState<string>()
+  const [releaseNotesOpen, setReleaseNotesOpen] = useState(false)
   const status = query.data
   const release = status?.latest
   const managedBusy = status?.launch_mode === 'launcher' && ['preparing', 'restarting', 'starting', 'backoff', 'waiting_previous_process'].includes(status.update_phase)
@@ -30,6 +31,10 @@ export function SoftwareUpdatePanel() {
   const busy = check.isPending || install.isPending || managedBusy
   const hasChecked = check.isSuccess || typeof status?.checked_at === 'number'
   const canInstall = status?.deployment === 'binary' && Boolean(release?.package_name) && status.install_enabled
+
+  useEffect(() => {
+    if (check.isSuccess && status?.update_available && release?.notes.trim()) setReleaseNotesOpen(true)
+  }, [check.isSuccess, release?.notes, status?.update_available])
 
   return (
     <section aria-labelledby="software-update-title" className="min-w-0 overflow-hidden rounded-3xl border border-[var(--hairline)] bg-surface-1 shadow-sm">
@@ -40,6 +45,7 @@ export function SoftwareUpdatePanel() {
             <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => {
               setConfirmed(false)
               setRequestedTag(undefined)
+              setReleaseNotesOpen(false)
               install.reset()
               check.mutate(undefined)
             }}>
@@ -135,10 +141,15 @@ export function SoftwareUpdatePanel() {
               {t('softwareUpdate.viewRelease')}<ArrowUpRight aria-hidden="true" className="size-3.5" />
             </a>
           </div>
-          <div className="min-w-0 px-5 py-6 sm:px-8">
-            <p className="mb-5 text-xs font-semibold text-muted-foreground">{t('softwareUpdate.releaseNotes')}</p>
-            {release.notes.trim() ? <SoftwareReleaseNotes content={release.notes} /> : <p className="text-sm text-muted-foreground">{t('softwareUpdate.noReleaseNotes')}</p>}
-          </div>
+          <details className="group min-w-0 border-t border-[var(--hairline)] px-5 py-5 sm:px-8" open={releaseNotesOpen} onToggle={(event) => setReleaseNotesOpen(event.currentTarget.open)}>
+            <summary className="flex w-fit cursor-pointer list-none items-center gap-2 rounded-sm text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+              {t('softwareUpdate.releaseNotes')}
+              <ChevronDown aria-hidden="true" className="size-3.5 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-4 min-w-0">
+              {release.notes.trim() ? <SoftwareReleaseNotes content={release.notes} /> : <p className="text-sm text-muted-foreground">{t('softwareUpdate.noReleaseNotes')}</p>}
+            </div>
+          </details>
 
           {status.update_available && !status.restart_required && !managedBusy && (
             <div className="space-y-4 border-t border-[var(--hairline)] bg-surface-2/20 px-5 py-5 text-sm leading-6 sm:px-8">
