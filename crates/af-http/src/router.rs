@@ -705,7 +705,7 @@ pub fn build_router(
                 .put(update_admin_user)
                 .delete(delete_admin_user)
                 .route_layer(middleware::from_fn(authorize_management_admin))
-                .route_layer(user_item_authentication),
+                .route_layer(user_item_authentication.clone()),
         )
         .route(
             "/api/admin/users/{id}/security",
