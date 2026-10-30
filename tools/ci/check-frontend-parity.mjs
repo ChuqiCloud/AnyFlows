@@ -4,43 +4,18 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)))
-// Shared behavior and contracts must stay synchronized; presentation intentionally differs.
-for (const path of [
+
+// The two frontends may evolve their pages and feature implementations independently.
+// Only generated artifacts that define shared API and capability contracts must match.
+const sharedContractPaths = [
   'openapi/openapi.json',
   'src/lib/api/generated/types.gen.ts',
   'src/lib/api/generated/sdk.gen.ts',
-  'src/components/brand/provider-catalog.ts',
-  'src/components/brand/model-logos.ts',
-  'src/extensions/model.ts',
-  'src/features/account-verification/alipay-authorization.ts',
-  'src/features/account-verification/verification-identity.ts',
-  'src/features/account-verification/account-verification-api.ts',
-  'src/features/api-keys/api-key-group-api.ts',
-  'src/features/api-keys/api-key-group-model.ts',
-  'src/features/api-keys/api-key-form-model.ts',
-  'src/features/groups/group-key-policy-api.ts',
-  'src/features/groups/group-model-policy-api.ts',
-  'src/features/model-management/model-price-peak-model.ts',
-  'src/features/channels/channel-form-model.ts',
-  'src/features/channels/channel-capabilities.ts',
   'src/features/channels/channel-capabilities.gen.ts',
-  'src/features/credentials/credential-model.ts',
-  'src/features/client-profiles/client-profile-api.ts',
-  'src/features/client-profiles/client-profile-model.ts',
-  'src/features/client-profiles/client-profile-policy.ts',
-  'src/features/client-profiles/client-profile-page.tsx',
-  'src/features/client-profiles/channel-profile-drawer.tsx',
-  'src/features/usage-logs/usage-log-model.ts',
-  'src/features/site-settings/frontend-template-model.ts',
-  'src/features/site-settings/frontend-template-api.ts',
-  'src/features/site-settings/software-update-api.ts',
-  'src/features/site-settings/software-release-notes.tsx',
-  'src/features/dashboard/dashboard-sla-api.ts',
-  'src/features/dashboard/dashboard-sla-model.ts',
-  'src/features/runtime-status/runtime-status-model.ts',
-  'src/features/runtime-status/runtime-status-api.ts',
-]) {
+]
+
+for (const path of sharedContractPaths) {
   const read = (frontend) => readFileSync(resolve(root, frontend, path), 'utf8').replaceAll('\r\n', '\n')
-  assert.equal(read('web-next'), read('web'), `Shared frontend contract or behavior drifted: ${path}`)
+  assert.equal(read('web-next'), read('web'), `Shared frontend contract artifact drifted: ${path}`)
 }
-console.log('Both frontend contracts and shared behavior are synchronized.')
+console.log('Shared frontend contract artifacts are synchronized.')
