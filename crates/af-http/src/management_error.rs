@@ -17,6 +17,8 @@ pub(crate) enum ManagementError {
     TwoFactorRequired,
     /// TOTP 或备份码校验失败。
     TwoFactorInvalid,
+    /// 当前登录会话中的 TOTP 绑定验证码无效或已经过期。
+    TwoFactorEnrollmentInvalid,
     /// 用户名密码登录已被运营设置关闭。
     LoginDisabled,
     /// Turnstile token 无效、过期或缺失。
@@ -393,6 +395,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "two_factor_invalid",
                     message: "Invalid two-factor authentication code",
+                },
+            ),
+            Self::TwoFactorEnrollmentInvalid => (
+                StatusCode::BAD_REQUEST,
+                ManagementErrorBody {
+                    code: "two_factor_enrollment_invalid",
+                    message: "Invalid or expired authenticator setup code",
                 },
             ),
             Self::LoginDisabled => (
