@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ArrowUpRight, Check, ChevronDown, CircleAlert, RefreshCw, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@heroui/react'
+import { Button, Checkbox } from '@heroui/react'
 import { useSoftwareStatus, useSoftwareUpdate } from './software-update-api'
 import { SoftwareReleaseNotes } from './software-release-notes'
 
@@ -147,10 +147,9 @@ export function SoftwareUpdatePanel() {
               )}
               {canInstall && (
                 <>
-                  <label className="flex cursor-pointer items-start gap-3 text-xs leading-6 text-muted-foreground">
-                    <input type="checkbox" className="mt-1 size-4 shrink-0 accent-primary" checked={confirmed} disabled={busy} onChange={(event) => setConfirmed(event.target.checked)} />
+                  <Checkbox className="text-xs text-muted-foreground" isDisabled={busy} isSelected={confirmed} size="sm" onValueChange={setConfirmed}>
                     {t(status.launch_mode === 'launcher' ? 'softwareUpdate.confirmLauncher' : 'softwareUpdate.confirmStandalone')}
-                  </label>
+                  </Checkbox>
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="max-w-lg text-xs text-muted-foreground">{t('softwareUpdate.nodeScope')}</p>
                     <Button type="button" size="sm" isDisabled={!confirmed || busy} onClick={() => {

@@ -485,11 +485,23 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
 
         <section className="grid gap-3" aria-labelledby="channel-relay-fields">
           <ChannelFormField id="channel-credential-strategy" label={t('channels.fields.credentialStrategy', { defaultValue: '渠道 Key 调度策略' })}>
-            <select id="channel-credential-strategy" className="h-9 w-full rounded-md border border-[var(--hairline)] bg-transparent px-3 text-sm" {...form.register('credentialStrategy')}>
-              <option value="weighted">{t('channels.form.keyWeighted', { defaultValue: '按优先级和权重' })}</option>
-              <option value="round_robin">{t('channels.form.keyRoundRobin', { defaultValue: '同优先级轮询' })}</option>
-              <option value="priority">{t('channels.form.keyPriority', { defaultValue: '固定顺序，失败回退' })}</option>
-            </select>
+            <Controller control={form.control} name="credentialStrategy" render={({ field }) => (
+              <Select
+                aria-label={t('channels.fields.credentialStrategy', { defaultValue: '渠道 Key 调度策略' })}
+                id="channel-credential-strategy"
+                isDisabled={pending}
+                items={[
+                  { key: 'weighted', label: t('channels.form.keyWeighted', { defaultValue: '按优先级和权重' }) },
+                  { key: 'round_robin', label: t('channels.form.keyRoundRobin', { defaultValue: '同优先级轮询' }) },
+                  { key: 'priority', label: t('channels.form.keyPriority', { defaultValue: '固定顺序，失败回退' }) },
+                ]}
+                selectedKeys={[field.value]}
+                size="sm"
+                onSelectionChange={(keys) => field.onChange(String(Array.from(keys)[0] ?? 'weighted'))}
+              >
+                {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
+              </Select>
+            )} />
           </ChannelFormField>
           <h3 id="channel-relay-fields" className="text-xs font-semibold">{t('channels.form.relayExecution')}</h3>
           <div className="grid gap-3 sm:grid-cols-3">

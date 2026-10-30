@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Skeleton } from '@heroui/react'
+import { Button, Checkbox, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Select, SelectItem, Skeleton } from '@heroui/react'
 import { KeyRound, LoaderCircle, RefreshCw, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -108,13 +108,26 @@ export function CredentialList(props: CredentialListProps) {
 
 
         <div className="flex flex-wrap items-center gap-3 py-3 text-xs">
-          <label className="flex items-center gap-2"><input type="checkbox" disabled={!bulkReady || visible.length === 0} checked={visible.length > 0 && visible.every((item) => selected.includes(item.id))} onChange={(event) => setSelected(event.target.checked ? visible.map((item) => item.id) : [])} />{t('credentials.batch.selectFiltered', { defaultValue: '全选筛选结果' })}</label>
-          <select aria-label={t('credentials.batch.status', { defaultValue: '按状态筛选' })} value={filter} onChange={(event) => { setFilter(event.target.value); setSelected([]) }} className="rounded-md border border-[var(--hairline)] bg-transparent p-2">
-            <option value="all">{t('credentials.batch.all', { defaultValue: '全部状态' })}</option>
-            <option value="degraded" disabled={!healthQuery.data}>{t('credentials.health.degraded')}</option>
-            <option value="healthCooling" disabled={!healthQuery.data}>{t('credentials.health.cooling')}</option>
-            {['available', 'pending', 'authorizationPending', 'autoDisabled', 'cooling', 'disabled', 'paused'].map((value) => <option key={value} value={value}>{t(`credentials.runtime.${value}`)}</option>)}
-          </select>
+          <Checkbox isSelected={visible.length > 0 && visible.every((item) => selected.includes(item.id))} isDisabled={!bulkReady || visible.length === 0} size="sm" onChange={(checked) => setSelected(checked ? visible.map((item) => item.id) : [])}>{t('credentials.batch.selectFiltered', { defaultValue: '全选筛选结果' })}</Checkbox>
+          <Select
+            aria-label={t('credentials.batch.status', { defaultValue: '按状态筛选' })}
+            className="w-40"
+            isDisabled={!healthQuery.data}
+            items={[
+              { key: 'all', label: t('credentials.batch.all', { defaultValue: '全部状态' }) },
+              { key: 'degraded', label: t('credentials.health.degraded') },
+              { key: 'healthCooling', label: t('credentials.health.cooling') },
+              ...['available', 'pending', 'authorizationPending', 'autoDisabled', 'cooling', 'disabled', 'paused'].map((value) => ({ key: value, label: t(`credentials.runtime.${value}`) })),
+            ]}
+            selectedKeys={[filter]}
+            size="sm"
+            onSelectionChange={(keys) => {
+              setFilter(String(Array.from(keys)[0] ?? 'all'))
+              setSelected([])
+            }}
+          >
+            {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
+          </Select>
           <Button type="button" size="sm" variant="bordered" isDisabled={!bulkReady || !selectedItems.length || selectedItems.length > 2048} onClick={() => { setBatchError(false); setBatch(selectedItems) }}><Trash2 className="size-4" aria-hidden="true" />{t('credentials.batch.deleteSelected', { defaultValue: '删除所选（{{count}}）', count: selectedItems.length })}</Button>
           {deleteCatalogQuery.isFetching ? <LoaderCircle className="size-4 animate-spin" aria-label={t('credentials.list.loading')} /> : null}
           {deleteCatalogQuery.isError ? <span role="alert" className="text-destructive">{t('credentials.delete.catalogError')}</span> : null}

@@ -1,17 +1,16 @@
-import { Button, Chip } from '@heroui/react'
-import { BellRing, CalendarRange, RefreshCw } from 'lucide-react'
+import { Chip } from '@heroui/react'
+import { BellRing, CalendarRange } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useUserProfile } from '@/features/profile/profile-api'
-import { cn } from '@/lib/utils'
 import { isSubscriptionAlertDue } from './subscription-alert-policy'
 import { SubscriptionCatalog } from './subscription-catalog'
 import { SubscriptionList } from './subscription-list'
 import { useCurrentUserSubscriptions } from './subscription-api'
 
-/** 展示当前登录用户自己的订阅与 UTC 周期窗口。 */
-export function MySubscriptionsPage() {
+/** 钱包页内嵌的订阅分区：只保留订阅列表与套餐目录，标题/刷新由钱包页统一负责。 */
+export function MySubscriptionsSection() {
   const { i18n, t } = useTranslation()
   const query = useCurrentUserSubscriptions()
   const profileQuery = useUserProfile()
@@ -41,28 +40,16 @@ export function MySubscriptionsPage() {
   }), [locale])
 
   return (
-    <div className="flex flex-col gap-4">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="mb-1 flex items-center gap-2 text-[0.6875rem] text-brand">
-            <CalendarRange className="size-3.5" aria-hidden="true" />
-            {t('subscriptions.eyebrow')}
-          </div>
-          <h2 className="text-lg font-semibold">{t('subscriptions.title')}</h2>
-          <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
-            {t('subscriptions.subtitle')}
-          </p>
+    <section className="flex flex-col gap-4" aria-labelledby="wallet-subscriptions">
+      <header className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 text-[0.6875rem] text-brand">
+          <CalendarRange className="size-3.5" aria-hidden="true" />
+          {t('subscriptions.eyebrow')}
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="bordered"
-          isDisabled={query.isFetching || profileQuery.isFetching}
-          onClick={() => void Promise.all([query.refetch(), profileQuery.refetch()])}
-        >
-          <RefreshCw className={cn('size-3.5', (query.isFetching || profileQuery.isFetching) && 'animate-spin')} aria-hidden="true" />
-          {t('subscriptions.actions.refresh')}
-        </Button>
+        <h3 id="wallet-subscriptions" className="text-base font-semibold">{t('subscriptions.title')}</h3>
+        <p className="max-w-2xl text-xs leading-5 text-muted-foreground">
+          {t('subscriptions.subtitle')}
+        </p>
       </header>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--hairline)] py-2 text-xs text-muted-foreground">
@@ -93,14 +80,16 @@ export function MySubscriptionsPage() {
         </Chip>
       </div>
 
-      <SubscriptionList
-        subscriptions={subscriptions}
-        query={query}
-        scope="current"
-        alertPolicy={{ enabled: alertPolicyEnabled, thresholdPercent: alertThresholdPercent }}
-      />
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SubscriptionList
+          subscriptions={subscriptions}
+          query={query}
+          scope="current"
+          alertPolicy={{ enabled: alertPolicyEnabled, thresholdPercent: alertThresholdPercent }}
+        />
 
-      <SubscriptionCatalog activePlanIds={activePlanIds} subscriptionsFetching={query.isFetching} />
-    </div>
+        <SubscriptionCatalog activePlanIds={activePlanIds} subscriptionsFetching={query.isFetching} />
+      </div>
+    </section>
   )
 }

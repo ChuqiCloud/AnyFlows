@@ -185,7 +185,7 @@ export function FeaturedModelsTable() {
                   <td className="py-4 px-5">
                     <span
                       className={cn(
-                        'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border',
+                        'inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium border',
                         item.groupType === 'primary' && 'bg-primary/10 border-primary/25 text-primary',
                         item.groupType === 'ultra' && 'bg-success/10 border-success/25 text-success',
                         item.groupType === 'reasoning' && 'bg-amber-500/10 border-amber-500/25 text-amber-500 dark:text-amber-400',
@@ -220,7 +220,7 @@ export function FeaturedModelsTable() {
                     <button
                       type="button"
                       onClick={() => handleCopy(item.id)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--hairline)] bg-surface-2/80 px-2.5 py-1 text-xs font-mono text-muted-foreground transition-all hover:border-primary/40 hover:bg-surface-2 hover:text-foreground active:scale-95 cursor-pointer"
+                      className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--hairline)] bg-surface-2/80 px-2.5 py-1 text-xs font-mono text-muted-foreground transition-all hover:border-primary/40 hover:bg-surface-2 hover:text-foreground active:scale-95 cursor-pointer"
                       title="点击复制模型 ID"
                     >
                       {isCopied ? (

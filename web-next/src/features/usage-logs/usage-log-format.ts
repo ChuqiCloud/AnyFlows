@@ -14,14 +14,29 @@ export function formatUsageLatency(value: number | null, locale: string) {
 export type UsageLatencyKind = 'first-token' | 'duration'
 export type UsageLatencyTone = 'neutral' | 'success' | 'warning' | 'destructive'
 
-/** 首字与总耗时使用独立阈值，颜色只辅助数字本身，不替代可读标签。 */
-export function usageLatencyTone(value: number | null, kind: UsageLatencyKind): UsageLatencyTone {
+/** 首字只看自身延迟：<5s 绿、5~10s 黄、>10s 红。 */
+export function firstTokenTone(value: number | null): UsageLatencyTone {
   if (value === null) return 'neutral'
-  const warningThreshold = kind === 'first-token' ? 1_000 : 5_000
-  const destructiveThreshold = kind === 'first-token' ? 5_000 : 15_000
-  if (value <= warningThreshold) return 'success'
-  if (value <= destructiveThreshold) return 'warning'
-  return 'destructive'
+  if (value < 5_000) return 'success'
+  return value < 10_000 ? 'warning' : 'destructive'
+}
+
+/** 耗时按吞吐量判断，输出不足 100 token 时退回纯耗时阈值。 */
+export function durationTone(duration: number | null, outputTokens: number): UsageLatencyTone {
+  if (duration === null) return 'neutral'
+  const seconds = duration / 1_000
+  if (outputTokens < 100 || seconds <= 0) {
+    if (seconds < 10) return 'success'
+    return seconds < 30 ? 'warning' : 'destructive'
+  }
+  const throughput = outputTokens / seconds
+  if (throughput >= 30) return 'success'
+  return throughput >= 15 ? 'warning' : 'destructive'
+}
+
+/** 兼容旧调用：不带输出量时 duration 等价于只看耗时。 */
+export function usageLatencyTone(value: number | null, kind: UsageLatencyKind, outputTokens = 0): UsageLatencyTone {
+  return kind === 'first-token' ? firstTokenTone(value) : durationTone(value, outputTokens)
 }
 
 export function formatCompactRequestId(value: string) {

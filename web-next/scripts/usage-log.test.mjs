@@ -63,11 +63,24 @@ const logs = [
   },
 ]
 
+const filters = (overrides = {}) => ({
+  model: '',
+  protocol: 'all',
+  mode: 'all',
+  username: '',
+  token: '',
+  channel: '',
+  group: '',
+  requestId: '',
+  upstreamRequestId: '',
+  ...overrides,
+})
+
 test('日志筛选使用 OpenAPI 实际协议枚举并区分响应模式', () => {
   assert.equal(usageLogProtocols.includes('open_ai_responses'), true)
   assert.equal(usageLogProtocols.includes('openai_responses'), false)
-  assert.deepEqual(filterUsageLogs(logs, 'GPT', 'open_ai_responses', 'stream').map((log) => log.id), [1])
-  assert.deepEqual(filterUsageLogs(logs, '', 'all', 'sync').map((log) => log.id), [2])
+  assert.deepEqual(filterUsageLogs(logs, filters({ model: 'GPT', protocol: 'open_ai_responses', mode: 'stream' })).map((log) => log.id), [1])
+  assert.deepEqual(filterUsageLogs(logs, filters({ mode: 'sync' })).map((log) => log.id), [2])
 })
 
 test('当前页概览只聚合可见请求事实', () => {
@@ -76,6 +89,8 @@ test('当前页概览只聚合可见请求事实', () => {
     tokenCount: 4_200,
     quota: 2_100,
     averageFirstTokenMs: 1_500,
+    rpm: 0,
+    tpm: 70,
   })
 })
 
@@ -136,11 +151,13 @@ test('耗时格式兼顾毫秒与秒级扫描', () => {
 test('首字与总耗时按独立边界返回语义色', () => {
   assert.equal(usageLatencyTone(null, 'first-token'), 'neutral')
   assert.equal(usageLatencyTone(1_000, 'first-token'), 'success')
-  assert.equal(usageLatencyTone(1_001, 'first-token'), 'warning')
-  assert.equal(usageLatencyTone(5_001, 'first-token'), 'destructive')
+  assert.equal(usageLatencyTone(1_001, 'first-token'), 'success')
+  assert.equal(usageLatencyTone(5_001, 'first-token'), 'warning')
+  assert.equal(usageLatencyTone(10_000, 'first-token'), 'destructive')
   assert.equal(usageLatencyTone(5_000, 'duration'), 'success')
   assert.equal(usageLatencyTone(15_000, 'duration'), 'warning')
-  assert.equal(usageLatencyTone(15_001, 'duration'), 'destructive')
+  assert.equal(usageLatencyTone(15_001, 'duration'), 'warning')
+  assert.equal(usageLatencyTone(30_000, 'duration'), 'destructive')
 })
 
 test('请求 ID 紧凑展示不改变可复制原值', () => {

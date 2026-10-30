@@ -1,14 +1,9 @@
 import { defineNavigation } from "@/shared/navigation";
 
-// 模型广场在既有导航模型里属于工作台分组，平台 section 词表尚无对应项，故不声明 section。
+// 模型广场不再出现在工作台侧栏：用户从 Playground/视频生成内嵌的模型选择器进入。
+// 这里仅保留站点顶部与产品入口的外部链接。
 export const modelsNavNodes = defineNavigation(
   [
-    {
-      key: "models",
-      title: "nav.models",
-      href: "/console/models",
-      order: 6,
-    },
     {
       key: "top:models",
       title: "nav.models",

@@ -153,7 +153,10 @@
       "system": "系统管理",
       "operations": "用户与商业化",
       "gateway": "模型与网关",
-      "platform": "平台配置"
+      "platform": "平台配置",
+      "site": "站点设置",
+      "commerce": "商业化",
+      "users": "用户管理"
     },
     "console": "控制台",
     "theme": "主题",
@@ -1132,6 +1135,7 @@
     },
     "batch": {
       "importTitle": "批量导入",
+      "importHint": "粘贴每行一个 Key，或选择 .json / .jsonl / .txt 文件，导入到当前渠道。",
       "kind": "凭据类型",
       "input": "逐行 Key 或 JSON",
       "placeholder": "每行一个 Key，或粘贴 JSON 数组、keys / credentials 对象。",
@@ -1952,6 +1956,11 @@
       "loading": "正在读取选组权限",
       "loadError": "无法读取选组权限，请重试。",
       "saveError": "选组权限保存失败，请检查后重试。",
+      "errorForbiddenTitle": "没有修改选组权限的权限",
+      "errorForbiddenHint": "接口返回 403：只有管理员账号可以修改分组选组策略。如果你的账号看起来是管理员，通常是登录会话的角色不是 admin，重新登录该管理员账号再试。",
+      "errorInvalidTitle": "选组权限参数不合法",
+      "errorInvalidHint": "接口返回 422：请检查允许用户列表是否超过 1000 个、是否有重复或无效的用户 ID。",
+      "errorRetryHint": "接口按当前设置拒绝或暂时不可用，请刷新分组后重试。",
       "revokeHint": "默认只影响之后创建的个人 Key；勾选后仅同步停用因本次策略变更失去授权的现有个人 Key。默认组用户的 Key 和组织 Key 不受影响。",
       "disableExistingTitle": "同时停用失去授权的现有个人 Key",
       "disableExistingDescription": "保存时将在同一事务中停用因本次分组策略变更失去授权的活跃个人 Key。默认组用户的 Key 和组织 Key 不受影响。停用后会拒绝新请求；已通过准入的请求可能完成。",
@@ -2779,7 +2788,16 @@
       "call": "模型调用",
       "latency": "响应速度",
       "tokens": "Token 消耗",
-      "billing": "计费结果"
+      "billing": "计费结果",
+      "request": "请求",
+      "channel": "渠道",
+      "user": "用户",
+      "token": "令牌",
+      "model": "模型",
+      "stream": "模式",
+      "cost": "费用",
+      "timing": "耗时",
+      "details": "详情"
     },
     "listLabel": "调用日志列表",
     "status": {
@@ -2792,7 +2810,11 @@
       "requests": "已结算请求",
       "tokens": "总 Token",
       "averageFirstToken": "平均首字",
-      "quota": "累计额度"
+      "quota": "累计额度",
+      "usage": "额度",
+      "rpm": "RPM",
+      "tpm": "TPM",
+      "range": "时间范围"
     },
     "filters": {
       "label": "筛选当前页",
@@ -2801,7 +2823,19 @@
       "protocol": "入口协议",
       "allProtocols": "全部协议",
       "mode": "响应模式",
-      "allModes": "全部模式"
+      "allModes": "全部模式",
+      "anyTime": "不限时间",
+      "group": "分组",
+      "start": "开始",
+      "end": "结束",
+      "pickRange": "选择时间范围",
+      "tokenName": "令牌",
+      "username": "用户名",
+      "channelId": "渠道 ID",
+      "requestId": "请求 ID",
+      "upstreamRequestId": "上游请求 ID",
+      "more": "更多条件",
+      "less": "收起条件"
     },
     "protocol": {
       "open_ai_chat": "Chat",
@@ -2925,7 +2959,10 @@
       "next": "下一页",
       "copyValue": "复制内容",
       "copiedValue": "内容已复制",
-      "copyValueFailed": "复制失败，请手动选择并复制内容"
+      "copyValueFailed": "复制失败，请手动选择并复制内容",
+      "search": "搜索",
+      "hideSummary": "隐藏概览",
+      "showSummary": "显示概览"
     },
     "empty": {
       "title": "还没有调用日志",
@@ -7662,9 +7699,15 @@
           "rejected": "验证码无效或已过期。",
           "conflict": "该邮箱已被其他用户使用。",
           "generic": "邮箱绑定失败，请稍后重试。"
-        }
+        },
+        "bind": "绑定邮箱",
+        "bindTitle": "绑定邮箱",
+        "change": "更换邮箱",
+        "changeTitle": "更换邮箱",
+        "sameHint": "与新邮箱相同时无需更换。"
       },
-      "saved": "个人资料已保存。"
+      "saved": "个人资料已保存。",
+      "editUsername": "修改用户名"
     },
     "password": {
       "title": "修改密码",
@@ -7767,6 +7810,9 @@
       "thresholdInvalid": "个人阈值必须是大于 0 的安全整数。",
       "effectiveThreshold": "当前有效阈值",
       "quotaUnit": "额度",
+      "groupEmail": "邮件通知",
+      "groupAlert": "预警设置",
+      "groupSystem": "系统状态",
       "securityTitle": "安全通知",
       "securityDescription": "密码、会话和账户安全通知始终开启。",
       "alwaysOn": "始终开启",
@@ -7846,7 +7892,8 @@
       "retry": "重试",
       "saveProfile": "保存资料",
       "changePassword": "修改密码",
-      "saveNotifications": "保存通知偏好"
+      "saveNotifications": "保存通知偏好",
+      "cancel": "取消"
     },
     "errors": {
       "loadTitle": "个人资料暂时无法加载",
@@ -8380,7 +8427,63 @@
       "qrError": "二维码加载失败，请重试。",
       "completed": "实名认证已通过",
       "completedHint": "认证结果已保存，无需再次扫码。"
-    }
+    },
+    "kindPickerTitle": "选择认证类型",
+    "kindPickerHint": "个人与企业认证任选其一，提交后由平台审核。",
+    "privacyPolicy": "隐私政策",
+    "notVerifiedTitle": "尚未完成认证",
+    "notVerifiedHint": "完成实名认证后即可使用全部功能。",
+    "kindFeatures": {
+      "security": "身份信息安全加密",
+      "privilege": "解锁平台全部功能",
+      "support": "专人优先处理"
+    },
+    "kindBenefits": {
+      "fast": "审核更快",
+      "safe": "认证更安全",
+      "support": "人工客服支持",
+      "discount": "享受专属折扣",
+      "invoice": "支持开具发票",
+      "enterpriseDiscount": "企业专属折扣"
+    },
+    "kindTips": {
+      "individual": "适合个人开发者与自由职业者。",
+      "enterprise": "适合企业与团队，认证后可申请企业工作空间。"
+    },
+    "kindDetails": {
+      "individual": "个人",
+      "enterprise": "企业"
+    },
+    "kindSelected": "已选择",
+    "kindStart": "开始认证",
+    "personalCertification": "个人认证",
+    "enterpriseCertification": "企业认证",
+    "kindHints": {
+      "individual": "适合个人开发者与自由职业者。",
+      "enterprise": "适合企业与团队，认证后可申请企业工作空间。"
+    },
+    "steps": [
+      "填写资料",
+      "提交认证",
+      "等待审核"
+    ],
+    "providerHints": {
+      "manual": "由平台人工核验证件材料。",
+      "alipay": "使用本人支付宝扫码完成实名核验。"
+    },
+    "back": "返回",
+    "next": "下一步",
+    "previous": "上一步",
+    "nextPage": "下一页",
+    "pagination": "认证记录分页",
+    "perPage": "每页",
+    "totalItems": "共 {{total}} 条",
+    "progress": "审核进度",
+    "infoTitle": "申请信息",
+    "infoKind": "认证类型",
+    "infoCaseId": "申请编号",
+    "supplementAction": "补充材料",
+    "stepsLabel": "认证步骤"
   },
   "enterpriseEntitlement": {
     "title": "企业授权管理",
@@ -8513,6 +8616,13 @@
       "claude_utc_date_v1": "Claude Code UTC 日期",
       "codex_v1": "Codex v1",
       "open_code_v1": "OpenCode v1"
+    },
+    "columns": {
+      "profile": "客户端档案",
+      "service": "服务",
+      "revision": "版本",
+      "status": "状态",
+      "actions": "操作"
     }
   },
   "proxyPools": {
@@ -8523,6 +8633,9 @@
     "global": "全局",
     "binding": "使用代理池",
     "inherit": "继承默认出口",
+    "groupRouting": "渠道分配",
+    "groupRoutingHint": "决定每个渠道使用哪个代理池；未指定渠道时使用全局池。",
+    "groupPools": "代理池列表",
     "channelError": "渠道目录加载失败，请刷新后重试。",
     "loading": "正在加载代理池…",
     "loadError": "代理池加载失败，请刷新后重试。",
