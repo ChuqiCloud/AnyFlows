@@ -157,7 +157,12 @@ try {
   releaseCheck()
   pendingCheck = undefined
   await page.getByText('发现新版本 0.3.1，可查看下方更新内容。', { exact: true }).waitFor()
-  await page.getByRole('heading', { name: '更新亮点', exact: true }).waitFor()
+  const releaseNotes = page.locator('details').filter({ hasText: '更新内容' }).first()
+  await releaseNotes.getByRole('heading', { name: '更新亮点', exact: true }).waitFor()
+  await releaseNotes.locator('summary').click()
+  assert.equal(await releaseNotes.getByRole('heading', { name: '更新亮点', exact: true }).isVisible(), false, 'Release notes can be collapsed')
+  await releaseNotes.locator('summary').click()
+  await releaseNotes.getByRole('heading', { name: '更新亮点', exact: true }).waitFor()
   assert.equal(await page.getByRole('table').count(), 1, 'GFM tables render as tables')
   assert.ok(await page.locator('blockquote').isVisible(), 'Quotes render as quotes')
   assert.ok(await page.locator('pre code').isVisible(), 'Fenced code renders as a code block')
