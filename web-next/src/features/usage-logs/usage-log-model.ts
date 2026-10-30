@@ -101,7 +101,6 @@ export function matchesUsageLogFilters(log: RequestLogRow, filters: UsageLogFilt
     && matchesId(principal && 'channel_id' in principal ? principal.channel_id : undefined, filters.channel)
     && matches(principal?.username, filters.username)
     && matches(requestId, filters.requestId)
-    && matches(requestId, filters.upstreamRequestId)
 }
 
 export function filterFailedCallLogs(
