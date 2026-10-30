@@ -26,7 +26,14 @@ let page
 let serverOutput = ''
 
 try {
-  await writeFile(config, `import { mergeConfig } from 'vite'; import base from './vite.config'; export default mergeConfig(base, { optimizeDeps: { entries: ['.two-factor-smoke.html'] } });`)
+  await writeFile(config, `
+    import { defineConfig, mergeConfig } from 'vite';
+    import base from './vite.config';
+    export default defineConfig(async (env) => {
+      const resolved = await (typeof base === 'function' ? base(env) : base);
+      return mergeConfig(resolved, { optimizeDeps: { entries: ['.two-factor-smoke.html'] } });
+    });
+  `)
   await writeFile(html, '<!doctype html><html lang="zh" class="dark"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TOTP CI</title><div id="root"></div><script type="module" src="/.two-factor-smoke.tsx"></script></html>')
   await writeFile(entry, `
     import React from 'react';

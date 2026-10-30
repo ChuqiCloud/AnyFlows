@@ -8,6 +8,11 @@ on:
         type: choice
         default: all
         options: [all, backend, frontend]
+      frontend:
+        description: Frontend to check
+        type: choice
+        default: all
+        options: [all, web, web-next]
 
 permissions:
   contents: read
@@ -65,7 +70,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        frontend: [web, web-next]
+        frontend: ${{ fromJSON(inputs.frontend == 'web' && '["web"]' || inputs.frontend == 'web-next' && '["web-next"]' || '["web","web-next"]') }}
     steps:
       - name: Check out source
         shell: bash
