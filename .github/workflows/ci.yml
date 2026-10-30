@@ -916,21 +916,6 @@ jobs:
     env:
       # 数据库冒烟会链接 af-db 测试二进制，受限 runner 通过按需重读符号表控制链接峰值内存。
       RUSTFLAGS: "-C link-arg=-Wl,--no-keep-memory"
-    services:
-      mysql:
-        image: mysql:8.4.10@sha256:6ec1dc148edc412cce3ae27dd5b78dcd4e026976648424b3d31d9a8c6204db4e
-        ports:
-          - 13306:3306
-        env:
-          MYSQL_USER: anyflows
-          MYSQL_PASSWORD: anyflows_ci
-          MYSQL_ROOT_PASSWORD: root_ci
-          MYSQL_DATABASE: anyflows_migration_test_ci
-        options: >-
-          --health-cmd "mysql --protocol=tcp -h 127.0.0.1 -u root -proot_ci -e 'SET GLOBAL log_bin_trust_function_creators = 1; SELECT 1'"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 30
     steps:
       - name: Configure checkout endpoint
         if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
@@ -972,18 +957,8 @@ jobs:
         with:
           shared-key: database-smoke
 
-      - name: Run MySQL migration smoke test on Gitea
-        if: ${{ github.server_url != 'https://github.com' }}
+      - name: Run MySQL migration smoke test
         env:
-          AF_TEST_DATABASE_URL: mysql://anyflows:anyflows_ci@mysql:3306/anyflows_migration_test_ci?timezone=%2B08:00
-          AF_REQUIRE_LIVE_DATABASE: "1"
-          AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
-        run: bash tools/ci/run-db-migration-test.sh mysql
-
-      - name: Run MySQL migration smoke test on GitHub
-        if: ${{ github.server_url == 'https://github.com' }}
-        env:
-          AF_TEST_DATABASE_URL: mysql://anyflows:anyflows_ci@127.0.0.1:13306/anyflows_migration_test_ci?timezone=%2B08:00
           AF_REQUIRE_LIVE_DATABASE: "1"
           AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
         run: bash tools/ci/run-db-migration-test.sh mysql
