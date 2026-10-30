@@ -148,7 +148,8 @@ try {
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), description)
   }
   const visibleNav = () => page.locator(`nav[aria-label="${label('nav.label')}"]:visible`)
-  const item = key => visibleNav().getByRole('option', { name: label(`nav.${key}`), exact: true })
+  // A section and its first leaf can intentionally share a translated title (for example, users).
+  const item = key => visibleNav().getByRole('option', { name: label(`nav.${key}`), exact: true }).last()
   const expand = async key => {
     const trigger = visibleNav().getByRole('button', { name: label(`nav.sections.${key}`), exact: true })
     await trigger.waitFor()
