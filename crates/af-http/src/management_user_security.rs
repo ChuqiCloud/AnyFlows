@@ -1,7 +1,4 @@
-use af_admin::{
-    AdminUserSecurityError, AdminUserSecurityService, AdminUserSecuritySnapshot,
-    SessionAuthentication,
-};
+use af_admin::{AdminUserSecurityError, AdminUserSecuritySnapshot, SessionAuthentication};
 use af_domain::UserId;
 use axum::{
     Json,

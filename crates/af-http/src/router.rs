@@ -21,7 +21,7 @@ use axum::{
     Router,
     extract::DefaultBodyLimit,
     middleware,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use http::{
     HeaderName, HeaderValue, Method,
