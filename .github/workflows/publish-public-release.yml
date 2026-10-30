@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: '已有发行标签，例如 v0.3.0-beta.5'
+        description: '已有发行标签，例如 v0.3.0-beta.6'
         required: true
         type: string
 permissions:

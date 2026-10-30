@@ -6,10 +6,10 @@
 
 准备 Linux、Git、OpenSSL、Docker Engine 和 Docker Compose 插件。Compose 使用 Linux host 网络，应用、PostgreSQL 和 Redis 分别监听本机回环端口 8080、5432、6379；这些端口须未被其他服务占用。
 
-检出已发布版本，以下以 `v0.3.0-beta.5` 为例：
+检出已发布版本，以下以 `v0.3.0-beta.6` 为例：
 
 ```bash
-git clone --branch v0.3.0-beta.5 --depth 1 https://github.com/ChuqiCloud/AnyFlows.git
+git clone --branch v0.3.0-beta.6 --depth 1 https://github.com/ChuqiCloud/AnyFlows.git
 cd AnyFlows
 ```
 
