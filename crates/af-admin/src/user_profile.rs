@@ -926,11 +926,11 @@ impl UserProfileService for DatabaseUserProfileService {
             Ok(UserTwoFactorStatus::new(
                 state.enabled,
                 (!expired)
-                    .then(|| state.pending_created_at)
+                    .then_some(state.pending_created_at)
                     .flatten()
                     .and_then(unix_timestamp),
                 (!expired)
-                    .then(|| state.pending_expires_at)
+                    .then_some(state.pending_expires_at)
                     .flatten()
                     .and_then(unix_timestamp),
                 state.bound_at.and_then(unix_timestamp),
