@@ -634,3 +634,118 @@ fn no_store_empty(status: StatusCode) -> Response {
         .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use af_admin::{SessionPrincipal, SessionRole, UserTwoFactorStatus};
+    use af_domain::{GroupId, UserId};
+    use axum::body::to_bytes;
+    use serde_json::{Value, json};
+
+    struct EnrollmentService;
+
+    impl UserProfileService for EnrollmentService {
+        fn get<'a>(&'a self, _: SessionPrincipal) -> af_admin::UserProfileReadFuture<'a> {
+            Box::pin(async { Err(UserProfileError::Internal) })
+        }
+
+        fn update_profile<'a>(
+            &'a self,
+            _: SessionPrincipal,
+            _: UserProfileUpdateCommand,
+        ) -> af_admin::UserProfileUpdateFuture<'a> {
+            Box::pin(async { Err(UserProfileError::Internal) })
+        }
+
+        fn change_password<'a>(
+            &'a self,
+            _: SessionPrincipal,
+            _: UserPasswordChangeCommand,
+        ) -> af_admin::UserPasswordChangeFuture<'a> {
+            Box::pin(async { Err(UserProfileError::Internal) })
+        }
+
+        fn update_notifications<'a>(
+            &'a self,
+            _: SessionPrincipal,
+            _: UserNotificationPreferencesCommand,
+        ) -> af_admin::UserNotificationUpdateFuture<'a> {
+            Box::pin(async { Err(UserProfileError::Internal) })
+        }
+
+        fn get_two_factor<'a>(
+            &'a self,
+            _: SessionPrincipal,
+        ) -> af_admin::UserTwoFactorReadFuture<'a> {
+            Box::pin(async {
+                Ok(UserTwoFactorStatus::new(
+                    false,
+                    Some(1_793_334_000),
+                    Some(1_793_334_600),
+                    None,
+                    None,
+                ))
+            })
+        }
+
+        fn confirm_two_factor<'a>(
+            &'a self,
+            _: SessionPrincipal,
+            _: UserTwoFactorConfirmCommand,
+        ) -> af_admin::UserTwoFactorConfirmFuture<'a> {
+            Box::pin(async { Err(UserProfileError::TwoFactorInvalid) })
+        }
+    }
+
+    fn authentication() -> SessionAuthentication {
+        SessionAuthentication::new(
+            SessionPrincipal::new(UserId::new(1).unwrap(), SessionRole::User),
+            GroupId::new(1).unwrap(),
+            1_793_337_600,
+        )
+    }
+
+    #[tokio::test]
+    async fn two_factor_enrollment_failure_does_not_invalidate_the_session() {
+        let response = enable_two_factor(
+            State(UserProfileHttpState::new(Arc::new(EnrollmentService))),
+            Extension(authentication()),
+            Ok(Json(UserTwoFactorPasswordRequest {
+                current_password: "current password".to_owned(),
+                totp_code: Some("000000".to_owned()),
+            })),
+        )
+        .await
+        .unwrap_err()
+        .into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
+        let body = to_bytes(response.into_body(), 4096).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["code"], "two_factor_enrollment_invalid");
+    }
+
+    #[tokio::test]
+    async fn two_factor_status_only_exposes_state_and_timestamps() {
+        let response = get_two_factor(
+            State(UserProfileHttpState::new(Arc::new(EnrollmentService))),
+            Extension(authentication()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
+        let body = to_bytes(response.into_body(), 4096).await.unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap(),
+            json!({
+                "enabled": false,
+                "state": "pending",
+                "pending_created_at": 1_793_334_000_u64,
+                "pending_expires_at": 1_793_334_600_u64,
+                "bound_at": null,
+                "last_verified_at": null,
+            })
+        );
+    }
+}
