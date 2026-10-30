@@ -16,13 +16,17 @@ const directory = resolve(root, frontend)
 const port = frontend === 'web' ? 4173 : 4174
 const html = resolve(directory, '.two-factor-smoke.html')
 const entry = resolve(directory, '.two-factor-smoke.tsx')
+const config = resolve(directory, '.two-factor-smoke.config.ts')
 const errors = []
 const unexpected = []
+const pendingRequests = new Set()
 let server
 let browser
+let page
 let serverOutput = ''
 
 try {
+  await writeFile(config, `import { mergeConfig } from 'vite'; import base from './vite.config'; export default mergeConfig(base, { optimizeDeps: { entries: ['.two-factor-smoke.html'] } });`)
   await writeFile(html, '<!doctype html><html lang="zh" class="dark"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TOTP CI</title><div id="root"></div><script type="module" src="/.two-factor-smoke.tsx"></script></html>')
   await writeFile(entry, `
     import React from 'react';
@@ -51,7 +55,7 @@ try {
     window.__hideProfile = () => render(false);
     render();
   `)
-  server = spawn(process.execPath, [resolve(directory, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: directory, stdio: ['ignore', 'pipe', 'pipe'] })
+  server = spawn(process.execPath, [resolve(directory, 'node_modules/vite/bin/vite.js'), '--config', config, '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: directory, stdio: ['ignore', 'pipe', 'pipe'] })
   server.stdout.on('data', (chunk) => { serverOutput = (serverOutput + chunk).slice(-8_000) })
   server.stderr.on('data', (chunk) => { serverOutput = (serverOutput + chunk).slice(-8_000) })
   let ready = false
@@ -60,11 +64,17 @@ try {
     await delay(1_000)
   }
   assert.ok(ready, serverOutput)
+  const warmup = await fetch(`http://127.0.0.1:${port}/.two-factor-smoke.tsx`, { signal: AbortSignal.timeout(180_000) })
+  assert.ok(warmup.ok, await warmup.text())
+  console.log(`TOTP profile fixture ready for ${frontend}.`)
   browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
-  const page = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'zh-CN', reducedMotion: 'reduce' })
+  page = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'zh-CN', reducedMotion: 'reduce' })
   page.setDefaultTimeout(30_000)
-  page.setDefaultNavigationTimeout(90_000)
+  page.setDefaultNavigationTimeout(120_000)
   page.on('pageerror', (error) => errors.push(error.message))
+  page.on('request', request => pendingRequests.add(request))
+  page.on('requestfinished', request => pendingRequests.delete(request))
+  page.on('requestfailed', request => pendingRequests.delete(request))
   await page.addInitScript(() => {
     localStorage.setItem('anyflows.locale', 'zh')
     sessionStorage.setItem('anyflows.management.access-token', 'totp-fixture-session')
@@ -191,10 +201,11 @@ try {
   console.log(`TOTP browser checks passed for ${frontend}: staged binding, recovery, expiry, session continuity, timestamps, responsive layout, and sensitive cache cleanup.`)
 } catch (error) {
   console.error(serverOutput)
-  console.error(JSON.stringify({ browserErrors: errors, unexpectedRequests: unexpected }))
+  const documentState = page ? await page.evaluate(() => ({ readyState: document.readyState, text: document.body?.innerText.slice(0, 2000) })).catch(() => null) : null
+  console.error(JSON.stringify({ browserErrors: errors, unexpectedRequests: unexpected, pendingRequests: [...pendingRequests].map(request => new URL(request.url()).pathname), documentState }))
   throw error
 } finally {
   if (browser) await browser.close()
   if (server) server.kill('SIGTERM')
-  await Promise.allSettled([unlink(html), unlink(entry)])
+  await Promise.allSettled([unlink(html), unlink(entry), unlink(config)])
 }
