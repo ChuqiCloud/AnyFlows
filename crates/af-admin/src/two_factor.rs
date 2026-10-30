@@ -82,19 +82,10 @@ pub(crate) fn prepare_enrollment(
     let mut secret_bytes = [0_u8; TOTP_SECRET_BYTES];
     fill(&mut secret_bytes).map_err(|_| TwoFactorError::Entropy)?;
     let secret = base32_encode(&secret_bytes);
-    let mut backup_codes = Vec::with_capacity(BACKUP_CODE_COUNT);
-    let mut backup_code_hashes = Vec::with_capacity(BACKUP_CODE_COUNT);
-    for _ in 0..BACKUP_CODE_COUNT {
-        let mut bytes = [0_u8; BACKUP_CODE_BYTES];
-        fill(&mut bytes).map_err(|_| TwoFactorError::Entropy)?;
-        let code = base32_encode(&bytes);
-        backup_code_hashes.push(hash_backup_code(&code));
-        backup_codes.push(code);
-    }
     let configuration = StoredConfiguration {
         version: CONFIG_VERSION,
         secret: secret.clone(),
-        backup_code_hashes,
+        backup_code_hashes: Vec::new(),
     };
     let envelope = encrypt_configuration(cipher, user_id, &configuration)?;
     let otpauth_uri = format!(
@@ -105,6 +96,51 @@ pub(crate) fn prepare_enrollment(
         envelope,
         TwoFactorEnrollment {
             secret,
+            otpauth_uri,
+            backup_codes: Vec::new(),
+        },
+    ))
+}
+
+/// 校验待绑定的认证器验证码，并生成不再包含明文备用码的活动配置。
+pub(crate) fn confirm_enrollment(
+    cipher: &SystemSecretCipher,
+    user_id: UserId,
+    pending_envelope: &EncryptedCredentialEnvelope,
+    code: &str,
+    now_unix_seconds: u64,
+) -> Result<(EncryptedCredentialEnvelope, TwoFactorEnrollment), TwoFactorError> {
+    let pending = decrypt_configuration(cipher, user_id, pending_envelope)?;
+    if !is_totp_code(code) || !verify_totp(&pending.secret, code, now_unix_seconds) {
+        return Err(TwoFactorError::InvalidCode);
+    }
+    if !pending.backup_code_hashes.is_empty() {
+        return Err(TwoFactorError::InvalidConfiguration);
+    }
+    let mut backup_codes = Vec::with_capacity(BACKUP_CODE_COUNT);
+    let mut backup_code_hashes = Vec::with_capacity(BACKUP_CODE_COUNT);
+    for _ in 0..BACKUP_CODE_COUNT {
+        let mut bytes = [0_u8; BACKUP_CODE_BYTES];
+        fill(&mut bytes).map_err(|_| TwoFactorError::Entropy)?;
+        let code = base32_encode(&bytes);
+        backup_code_hashes.push(hash_backup_code(&code));
+        backup_codes.push(code);
+    }
+    let active = StoredConfiguration {
+        version: pending.version,
+        secret: pending.secret.clone(),
+        backup_code_hashes,
+    };
+    let active_envelope = encrypt_configuration(cipher, user_id, &active)?;
+    let otpauth_uri = format!(
+        "otpauth://totp/AnyFlows:user-{}?secret={}&issuer=AnyFlows&digits=6&period=30",
+        user_id.get(),
+        pending.secret
+    );
+    Ok((
+        active_envelope,
+        TwoFactorEnrollment {
+            secret: active.secret,
             otpauth_uri,
             backup_codes,
         },
@@ -305,6 +341,234 @@ struct StoredConfiguration {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::{error::Error, time::Duration};
+
+    use crate::{
+        DatabaseSessionAuthenticator, LoginCredentials, SessionAuthenticationError,
+        SessionAuthenticator,
+    };
+    use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
+    use af_db::{
+        DatabaseOptions, InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
+        MigrationOptions, UserProfileRepository, UserSessionRepository,
+        UserTwoFactorMutationOutcome,
+    };
+
+    fn cipher() -> SystemSecretCipher {
+        let settings: CredentialEncryptionSettings = serde_json::from_value(serde_json::json!({
+            "key_id": "totp-test-key",
+            "key": URL_SAFE_NO_PAD.encode([0x42; CREDENTIAL_ENCRYPTION_KEY_BYTES])
+        }))
+        .unwrap();
+        SystemSecretCipher::new(&settings).unwrap()
+    }
+
+    #[test]
+    fn enrollment_only_issues_backup_codes_after_totp_verification() {
+        let cipher = cipher();
+        let user_id = UserId::new(7).unwrap();
+        let (pending, materials) = prepare_enrollment(&cipher, user_id).unwrap();
+        assert!(materials.backup_codes().is_empty());
+        let pending_plaintext = cipher
+            .decrypt(SystemSecretKind::TotpSecret(user_id), &pending)
+            .unwrap();
+        assert!(!pending_plaintext.expose_secret().contains("backup_codes"));
+        let configuration = decrypt_configuration(&cipher, user_id, &pending).unwrap();
+        assert!(configuration.backup_code_hashes.is_empty());
+        assert!(matches!(
+            confirm_enrollment(&cipher, user_id, &pending, "invalid", 1_111_111_111),
+            Err(TwoFactorError::InvalidCode)
+        ));
+        let code = format_totp(
+            &base32_decode(materials.secret()).unwrap(),
+            1_111_111_111 / 30,
+        );
+        let (active, confirmed) =
+            confirm_enrollment(&cipher, user_id, &pending, &code, 1_111_111_111).unwrap();
+        assert_eq!(confirmed.backup_codes().len(), 10);
+        let stored = cipher
+            .decrypt(SystemSecretKind::TotpSecret(user_id), &active)
+            .unwrap();
+        assert!(!stored.expose_secret().contains("backup_codes"));
+        for backup in confirmed.backup_codes() {
+            assert!(!stored.expose_secret().contains(backup));
+        }
+        let LoginFactorResult::Backup { replacement } = verify_login_code(
+            &cipher,
+            user_id,
+            &active,
+            &confirmed.backup_codes()[0],
+            1_111_111_111,
+        )
+        .unwrap() else {
+            panic!("Backup code must be accepted once")
+        };
+        assert!(matches!(
+            verify_login_code(
+                &cipher,
+                user_id,
+                &replacement,
+                &confirmed.backup_codes()[0],
+                1_111_111_111,
+            ),
+            Err(TwoFactorError::InvalidCode)
+        ));
+    }
+
+    #[tokio::test]
+    async fn confirmed_enrollment_keeps_session_and_requires_factor_on_next_login()
+    -> Result<(), Box<dyn Error>> {
+        let pool = af_db::connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:")?,
+            MigrationOptions::default(),
+        )
+        .await?;
+        let InitialSetupOutcome::Initialized { user_id } =
+            InitialSetupRepository::new(pool.clone(), Duration::from_secs(5))?
+                .initialize(InitialSetupRecord::new(
+                    "owner".to_owned(),
+                    "secure password".to_owned(),
+                ))
+                .await?
+        else {
+            panic!("Fixture must initialize")
+        };
+        let cipher = cipher();
+        let signing_key = URL_SAFE_NO_PAD.encode([0x24; 32]);
+        let authenticator = DatabaseSessionAuthenticator::new(
+            UserSessionRepository::new(pool.clone(), Duration::from_secs(5))?,
+            Some(&signing_key),
+            3_600,
+        )?
+        .with_two_factor_cipher(cipher.clone());
+        let profiles = UserProfileRepository::new(pool.clone(), Duration::from_secs(5))?;
+        let credentials = LoginCredentials::new("owner".to_owned(), "secure password".to_owned());
+        let original = authenticator.login(&credentials).await?;
+        let now = time::OffsetDateTime::now_utc();
+        let (pending, materials) = prepare_enrollment(&cipher, user_id)?;
+        assert!(materials.backup_codes().is_empty());
+        assert_eq!(
+            profiles
+                .enable_two_factor(
+                    user_id,
+                    b"secure password",
+                    pending.clone(),
+                    now,
+                    now + time::Duration::minutes(10),
+                )
+                .await?,
+            UserTwoFactorMutationOutcome::Updated
+        );
+        assert!(!profiles.two_factor_state(user_id).await?.unwrap().enabled);
+        authenticator.login(&credentials).await?;
+        assert!(
+            profiles
+                .pending_two_factor(user_id, b"wrong password", now)
+                .await?
+                .is_none()
+        );
+        let (reserved, _, _) = profiles
+            .pending_two_factor(user_id, b"secure password", now)
+            .await?
+            .unwrap();
+        let code = format_totp(
+            &base32_decode(materials.secret())?,
+            now.unix_timestamp() as u64 / 30,
+        );
+        let (active, confirmed) = confirm_enrollment(
+            &cipher,
+            user_id,
+            &reserved,
+            &code,
+            now.unix_timestamp() as u64,
+        )?;
+        assert_eq!(
+            profiles
+                .confirm_two_factor(
+                    user_id,
+                    b"wrong password",
+                    reserved.clone(),
+                    active.clone(),
+                    now,
+                )
+                .await?,
+            UserTwoFactorMutationOutcome::Rejected
+        );
+        assert_eq!(
+            profiles
+                .confirm_two_factor(user_id, b"secure password", reserved, active, now,)
+                .await?,
+            UserTwoFactorMutationOutcome::Updated
+        );
+        authenticator
+            .authenticate(original.token().as_str())
+            .await?;
+        let state = profiles.two_factor_state(user_id).await?.unwrap();
+        assert!(state.enabled);
+        assert_eq!(state.bound_at, Some(now));
+        assert!(state.last_verified_at.is_none());
+        assert!(matches!(
+            authenticator.login(&credentials).await,
+            Err(SessionAuthenticationError::TwoFactorRequired)
+        ));
+        let invalid = LoginCredentials::new("owner".to_owned(), "secure password".to_owned())
+            .with_totp_code(Some("invalid".to_owned()));
+        assert!(matches!(
+            authenticator.login(&invalid).await,
+            Err(SessionAuthenticationError::TwoFactorInvalid)
+        ));
+        assert!(
+            profiles
+                .two_factor_state(user_id)
+                .await?
+                .unwrap()
+                .last_verified_at
+                .is_none()
+        );
+        let with_totp = LoginCredentials::new("owner".to_owned(), "secure password".to_owned())
+            .with_totp_code(Some(code));
+        authenticator.login(&with_totp).await?;
+        let verified = profiles
+            .two_factor_state(user_id)
+            .await?
+            .unwrap()
+            .last_verified_at
+            .unwrap();
+        assert!(verified >= now);
+        let backup = LoginCredentials::new("owner".to_owned(), "secure password".to_owned())
+            .with_totp_code(Some(confirmed.backup_codes()[0].clone()));
+        authenticator.login(&backup).await?;
+        assert!(
+            profiles
+                .two_factor_state(user_id)
+                .await?
+                .unwrap()
+                .last_verified_at
+                .unwrap()
+                >= verified
+        );
+        assert!(matches!(
+            authenticator.login(&backup).await,
+            Err(SessionAuthenticationError::TwoFactorInvalid)
+        ));
+        authenticator
+            .authenticate(original.token().as_str())
+            .await?;
+        profiles
+            .disable_two_factor(user_id, b"secure password")
+            .await?;
+        assert!(matches!(
+            authenticator.authenticate(original.token().as_str()).await,
+            Err(SessionAuthenticationError::InvalidSession)
+        ));
+        let state = profiles.two_factor_state(user_id).await?.unwrap();
+        assert!(!state.enabled);
+        assert!(state.bound_at.is_none());
+        assert!(state.last_verified_at.is_none());
+        pool.close().await?;
+        Ok(())
+    }
 
     #[test]
     fn totp_matches_rfc6238_vectors_and_allows_one_step_skew() {

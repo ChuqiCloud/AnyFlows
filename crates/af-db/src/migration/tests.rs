@@ -173,6 +173,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     check_key_group_access_schema(&pool).await?;
     check_async_billing_source_upgrade(&pool).await?;
     check_model_group_controls_upgrade(&pool).await?;
+    check_two_factor_enrollment_schema(&pool).await?;
     pool.close().await?;
     Ok(())
 }
@@ -633,5 +634,69 @@ async fn check_key_group_access_schema(pool: &crate::DatabasePool) -> Result<(),
         .ok_or("key group grant count must be readable")?;
     assert_eq!(row.try_get::<i64>("", "grant_count")?, 0);
     transaction.rollback().await?;
+    Ok(())
+}
+
+async fn check_two_factor_enrollment_schema(
+    pool: &crate::DatabasePool,
+) -> Result<(), Box<dyn Error>> {
+    use crate::entity::{EncryptedJson, user_two_factor_enrollments as enrollment};
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use sea_orm::{
+        ActiveModelTrait, EntityTrait, IntoActiveModel, Set,
+        entity::prelude::TimeDateTimeWithTimeZone,
+    };
+
+    // 历史账户不能在升级时获得推测的绑定时间或最近验证时间。
+    let user_id = 9_900_159_i64;
+    assert!(
+        enrollment::Entity::find_by_id(user_id)
+            .one(pool.connection())
+            .await?
+            .is_none()
+    );
+    let now = TimeDateTimeWithTimeZone::from_unix_timestamp(1_793_334_000)?;
+    let configuration = EncryptedJson::from_envelope(serde_json::json!({
+        "version": 1,
+        "algorithm": "xchacha20poly1305",
+        "key_id": "migration-totp-test",
+        "nonce": URL_SAFE_NO_PAD.encode([1_u8; 24]),
+        "ciphertext": URL_SAFE_NO_PAD.encode([2_u8; 32]),
+    }))?;
+    // user_id 使用账户 ID，三种数据库都不能将其当成新自增 ID。
+    let pending = enrollment::ActiveModel {
+        user_id: Set(user_id),
+        pending_configuration: Set(Some(configuration)),
+        pending_created_at: Set(Some(now)),
+        pending_expires_at: Set(Some(now + time::Duration::minutes(10))),
+        bound_at: Set(None),
+        last_verified_at: Set(None),
+        pending_session_version: Set(Some(1)),
+        pending_attempts: Set(0),
+    }
+    .insert(pool.connection())
+    .await?;
+    assert_eq!(pending.user_id, user_id);
+    assert_eq!(pending.pending_attempts, 0);
+    assert!(pending.bound_at.is_none());
+    assert!(pending.last_verified_at.is_none());
+    let mut confirmed = pending.into_active_model();
+    confirmed.pending_configuration = Set(None);
+    confirmed.pending_created_at = Set(None);
+    confirmed.pending_expires_at = Set(None);
+    confirmed.pending_session_version = Set(None);
+    confirmed.bound_at = Set(Some(now));
+    confirmed.last_verified_at = Set(Some(now + time::Duration::seconds(1)));
+    confirmed.update(pool.connection()).await?;
+    let row = enrollment::Entity::find_by_id(user_id)
+        .one(pool.connection())
+        .await?
+        .unwrap();
+    assert_eq!(row.bound_at, Some(now));
+    assert_eq!(row.last_verified_at, Some(now + time::Duration::seconds(1)));
+    assert!(row.pending_configuration.is_none());
+    enrollment::Entity::delete_by_id(user_id)
+        .exec(pool.connection())
+        .await?;
     Ok(())
 }

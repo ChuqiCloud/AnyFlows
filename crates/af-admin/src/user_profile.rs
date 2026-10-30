@@ -12,6 +12,7 @@ use af_domain::{Quota, UserId};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
+use time::OffsetDateTime;
 use webauthn_rs::prelude::{
     Credential, CredentialID, PasskeyRegistration, RegisterPublicKeyCredential, Uuid, Webauthn,
 };
@@ -309,19 +310,60 @@ impl fmt::Debug for UserPasswordChangeCommand {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct UserTwoFactorStatus {
     enabled: bool,
+    pending_created_at: Option<u64>,
+    pending_expires_at: Option<u64>,
+    bound_at: Option<u64>,
+    last_verified_at: Option<u64>,
 }
 
 impl UserTwoFactorStatus {
     /// 组合二次验证状态快照。
     #[must_use]
-    pub const fn new(enabled: bool) -> Self {
-        Self { enabled }
+    pub const fn new(
+        enabled: bool,
+        pending_created_at: Option<u64>,
+        pending_expires_at: Option<u64>,
+        bound_at: Option<u64>,
+        last_verified_at: Option<u64>,
+    ) -> Self {
+        Self {
+            enabled,
+            pending_created_at,
+            pending_expires_at,
+            bound_at,
+            last_verified_at,
+        }
     }
 
     /// 当前账户是否已启用 TOTP。
     #[must_use]
     pub const fn enabled(self) -> bool {
         self.enabled
+    }
+
+    #[must_use]
+    pub const fn pending(self) -> bool {
+        !self.enabled && self.pending_created_at.is_some()
+    }
+
+    #[must_use]
+    pub const fn pending_created_at(self) -> Option<u64> {
+        self.pending_created_at
+    }
+
+    #[must_use]
+    pub const fn pending_expires_at(self) -> Option<u64> {
+        self.pending_expires_at
+    }
+
+    #[must_use]
+    pub const fn bound_at(self) -> Option<u64> {
+        self.bound_at
+    }
+
+    #[must_use]
+    pub const fn last_verified_at(self) -> Option<u64> {
+        self.last_verified_at
     }
 }
 
@@ -352,6 +394,35 @@ impl UserTwoFactorEnableCommand {
 impl fmt::Debug for UserTwoFactorEnableCommand {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("UserTwoFactorEnableCommand(<redacted>)")
+    }
+}
+
+/// 完成 TOTP 绑定所需的认证器当前验证码。
+pub struct UserTwoFactorConfirmCommand {
+    current_password: Zeroizing<String>,
+    code: Zeroizing<String>,
+}
+
+impl UserTwoFactorConfirmCommand {
+    pub fn new(current_password: String, code: String) -> Result<Self, UserProfileError> {
+        let password = UserTwoFactorEnableCommand::new(current_password)?.into_password();
+        if code.is_empty() || code.len() > 128 || code.chars().any(char::is_control) {
+            return Err(UserProfileError::InvalidInput);
+        }
+        Ok(Self {
+            current_password: password,
+            code: Zeroizing::new(code),
+        })
+    }
+
+    fn into_parts(self) -> (Zeroizing<String>, Zeroizing<String>) {
+        (self.current_password, self.code)
+    }
+}
+
+impl fmt::Debug for UserTwoFactorConfirmCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("UserTwoFactorConfirmCommand(<redacted>)")
     }
 }
 
@@ -472,8 +543,15 @@ pub type UserTwoFactorReadFuture<'a> =
     Pin<Box<dyn Future<Output = Result<UserTwoFactorStatus, UserProfileError>> + Send + 'a>>;
 
 /// 启用二次验证并返回一次性入网材料的对象安全 Future。
-pub type UserTwoFactorEnableFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<TwoFactorEnrollment, UserProfileError>> + Send + 'a>>;
+pub type UserTwoFactorEnableFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<(UserTwoFactorStatus, TwoFactorEnrollment), UserProfileError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+pub type UserTwoFactorConfirmFuture<'a> = UserTwoFactorEnableFuture<'a>;
 
 /// 停用二次验证的对象安全 Future。
 pub type UserTwoFactorDisableFuture<'a> =
@@ -552,12 +630,21 @@ pub trait UserProfileService: Send + Sync {
         Box::pin(async { Err(UserProfileError::Internal) })
     }
 
-    /// 校验当前密码并启用 TOTP；默认实现保持旧测试适配器失败关闭。
+    /// 校验当前密码并准备 TOTP 绑定；返回本次操作状态与二维码材料。
     fn enable_two_factor<'a>(
         &'a self,
         _principal: SessionPrincipal,
         _command: UserTwoFactorEnableCommand,
     ) -> UserTwoFactorEnableFuture<'a> {
+        Box::pin(async { Err(UserProfileError::Internal) })
+    }
+
+    /// 校验认证器当前验证码并完成 TOTP 绑定。
+    fn confirm_two_factor<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: UserTwoFactorConfirmCommand,
+    ) -> UserTwoFactorConfirmFuture<'a> {
         Box::pin(async { Err(UserProfileError::Internal) })
     }
 
@@ -826,12 +913,29 @@ impl UserProfileService for DatabaseUserProfileService {
 
     fn get_two_factor<'a>(&'a self, principal: SessionPrincipal) -> UserTwoFactorReadFuture<'a> {
         Box::pin(async move {
-            self.repository
-                .two_factor_enabled(principal.user_id())
+            let state = self
+                .repository
+                .two_factor_state(principal.user_id())
                 .await
                 .map_err(map_repository_error)?
-                .map(UserTwoFactorStatus::new)
-                .ok_or(UserProfileError::InvalidSession)
+                .ok_or(UserProfileError::InvalidSession)?;
+            let now = OffsetDateTime::now_utc();
+            let expired = state
+                .pending_expires_at
+                .is_some_and(|expires_at| expires_at <= now);
+            Ok(UserTwoFactorStatus::new(
+                state.enabled,
+                (!expired)
+                    .then_some(state.pending_created_at)
+                    .flatten()
+                    .and_then(unix_timestamp),
+                (!expired)
+                    .then_some(state.pending_expires_at)
+                    .flatten()
+                    .and_then(unix_timestamp),
+                state.bound_at.and_then(unix_timestamp),
+                state.last_verified_at.and_then(unix_timestamp),
+            ))
         })
     }
 
@@ -849,13 +953,30 @@ impl UserProfileService for DatabaseUserProfileService {
                 two_factor::prepare_enrollment(cipher, principal.user_id())
                     .map_err(|_| UserProfileError::Internal)?;
             let current_password = command.into_password();
+            let pending_created_at = OffsetDateTime::now_utc();
+            let pending_expires_at = pending_created_at + time::Duration::minutes(10);
             match self
                 .repository
-                .enable_two_factor(principal.user_id(), current_password.as_bytes(), encrypted)
+                .enable_two_factor(
+                    principal.user_id(),
+                    current_password.as_bytes(),
+                    encrypted,
+                    pending_created_at,
+                    pending_expires_at,
+                )
                 .await
                 .map_err(map_repository_error)?
             {
-                UserTwoFactorMutationOutcome::Updated => Ok(enrollment),
+                UserTwoFactorMutationOutcome::Updated => Ok((
+                    UserTwoFactorStatus::new(
+                        false,
+                        unix_timestamp(pending_created_at),
+                        unix_timestamp(pending_expires_at),
+                        None,
+                        None,
+                    ),
+                    enrollment,
+                )),
                 UserTwoFactorMutationOutcome::NotFound => Err(UserProfileError::InvalidSession),
                 UserTwoFactorMutationOutcome::Rejected => {
                     Err(UserProfileError::CurrentPasswordInvalid)
@@ -864,6 +985,62 @@ impl UserProfileService for DatabaseUserProfileService {
                     Err(UserProfileError::TwoFactorAlreadyEnabled)
                 }
                 UserTwoFactorMutationOutcome::NotEnabled => Err(UserProfileError::Internal),
+            }
+        })
+    }
+
+    fn confirm_two_factor<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: UserTwoFactorConfirmCommand,
+    ) -> UserTwoFactorConfirmFuture<'a> {
+        Box::pin(async move {
+            let cipher = self
+                .system_secret_cipher
+                .as_ref()
+                .ok_or(UserProfileError::Internal)?;
+            let now = OffsetDateTime::now_utc();
+            let (current_password, code) = command.into_parts();
+            let Some((pending, _created_at, _expires_at)) = self
+                .repository
+                .pending_two_factor(principal.user_id(), current_password.as_bytes(), now)
+                .await
+                .map_err(map_repository_error)?
+            else {
+                return Err(UserProfileError::TwoFactorInvalid);
+            };
+            let (active, enrollment) = two_factor::confirm_enrollment(
+                cipher,
+                principal.user_id(),
+                &pending,
+                code.as_str(),
+                now.unix_timestamp().max(0) as u64,
+            )
+            .map_err(|_| UserProfileError::TwoFactorInvalid)?;
+            match self
+                .repository
+                .confirm_two_factor(
+                    principal.user_id(),
+                    current_password.as_bytes(),
+                    pending,
+                    active,
+                    now,
+                )
+                .await
+                .map_err(map_repository_error)?
+            {
+                UserTwoFactorMutationOutcome::Updated => Ok((
+                    UserTwoFactorStatus::new(true, None, None, unix_timestamp(now), None),
+                    enrollment,
+                )),
+                UserTwoFactorMutationOutcome::NotFound => Err(UserProfileError::InvalidSession),
+                UserTwoFactorMutationOutcome::AlreadyEnabled => {
+                    Err(UserProfileError::TwoFactorAlreadyEnabled)
+                }
+                UserTwoFactorMutationOutcome::Rejected
+                | UserTwoFactorMutationOutcome::NotEnabled => {
+                    Err(UserProfileError::TwoFactorInvalid)
+                }
             }
         })
     }
@@ -1280,6 +1457,10 @@ fn map_repository_error(error: UserProfileRepositoryError) -> UserProfileError {
         | UserProfileRepositoryError::Invariant
         | UserProfileRepositoryError::Entropy => UserProfileError::Internal,
     }
+}
+
+fn unix_timestamp(value: OffsetDateTime) -> Option<u64> {
+    u64::try_from(value.unix_timestamp()).ok()
 }
 
 fn valid_username(value: &str) -> bool {

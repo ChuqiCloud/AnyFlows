@@ -102,6 +102,7 @@ pub(crate) mod user_notification_events;
 pub(crate) mod user_notification_receipts;
 pub(crate) mod user_oauth_identities;
 pub(crate) mod user_subscriptions;
+pub(crate) mod user_two_factor_enrollments;
 pub(crate) mod users;
 pub(crate) mod wallet_ledger_entries;
 
