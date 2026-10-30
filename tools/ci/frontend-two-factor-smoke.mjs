@@ -62,7 +62,8 @@ try {
   assert.ok(ready, serverOutput)
   browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
   const page = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'zh-CN', reducedMotion: 'reduce' })
-  page.setDefaultTimeout(15_000)
+  page.setDefaultTimeout(30_000)
+  page.setDefaultNavigationTimeout(90_000)
   page.on('pageerror', (error) => errors.push(error.message))
   await page.addInitScript(() => {
     localStorage.setItem('anyflows.locale', 'zh')

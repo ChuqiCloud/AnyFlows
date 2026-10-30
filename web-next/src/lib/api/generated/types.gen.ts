@@ -2524,7 +2524,7 @@ export type UserTopupPaymentSession = {
 };
 export type UserTwoFactorEnrollmentResponse = {
     enabled: boolean;
-    state: 'disabled' | 'pending' | 'enabled';
+    state: string;
     pending_created_at: number | null;
     pending_expires_at: number | null;
     bound_at: number | null;
@@ -2539,7 +2539,7 @@ export type UserTwoFactorPasswordRequest = {
 };
 export type UserTwoFactorStatusResponse = {
     enabled: boolean;
-    state: 'disabled' | 'pending' | 'enabled';
+    state: string;
     pending_created_at: number | null;
     pending_expires_at: number | null;
     bound_at: number | null;

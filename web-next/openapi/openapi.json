@@ -4608,7 +4608,7 @@
         "tags": [
           "个人资料与安全"
         ],
-        "summary": "启用当前用户 TOTP 二次验证",
+        "summary": "准备或确认当前用户 TOTP 绑定",
         "operationId": "enableUserTwoFactor",
         "requestBody": {
           "content": {
@@ -4622,7 +4622,7 @@
         },
         "responses": {
           "200": {
-            "description": "TOTP 入网材料，仅返回一次",
+            "description": "待绑定二维码材料或绑定成功后的一次性备用码",
             "content": {
               "application/json": {
                 "schema": {
@@ -36207,6 +36207,7 @@
           "pending_created_at",
           "pending_expires_at",
           "bound_at",
+          "last_verified_at",
           "secret",
           "otpauth_uri",
           "backup_codes"
@@ -36216,12 +36217,7 @@
             "type": "boolean"
           },
           "state": {
-            "type": "string",
-            "enum": [
-              "disabled",
-              "pending",
-              "enabled"
-            ]
+            "type": "string"
           },
           "pending_created_at": {
             "type": [
@@ -36240,6 +36236,14 @@
             "minimum": 0
           },
           "bound_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "last_verified_at": {
             "type": [
               "integer",
               "null"
@@ -36285,7 +36289,8 @@
               "null"
             ],
             "writeOnly": true,
-            "maxLength": 128
+            "maxLength": 128,
+            "minLength": 6
           }
         },
         "additionalProperties": false
@@ -36297,19 +36302,15 @@
           "state",
           "pending_created_at",
           "pending_expires_at",
-          "bound_at"
+          "bound_at",
+          "last_verified_at"
         ],
         "properties": {
           "enabled": {
             "type": "boolean"
           },
           "state": {
-            "type": "string",
-            "enum": [
-              "disabled",
-              "pending",
-              "enabled"
-            ]
+            "type": "string"
           },
           "pending_created_at": {
             "type": [
@@ -36328,6 +36329,14 @@
             "minimum": 0
           },
           "bound_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "last_verified_at": {
             "type": [
               "integer",
               "null"

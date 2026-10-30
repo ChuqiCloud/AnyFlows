@@ -2,12 +2,18 @@ name: Account security checks
 
 on:
   workflow_dispatch:
+    inputs:
+      component:
+        description: Checks to run
+        type: choice
+        default: all
+        options: [all, backend, frontend]
 
 permissions:
   contents: read
 
 concurrency:
-  group: account-security-${{ github.ref }}
+  group: account-security-${{ github.ref }}-${{ inputs.component || 'all' }}
   cancel-in-progress: true
 
 env:
@@ -19,6 +25,7 @@ env:
 
 jobs:
   security:
+    if: ${{ inputs.component != 'frontend' }}
     name: TOTP enrollment and login regression
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -51,6 +58,7 @@ jobs:
         run: cargo test -p af-admin -p af-db -p af-http --lib --locked two_factor
 
   frontend:
+    if: ${{ inputs.component != 'backend' }}
     name: TOTP enrollment browser regression (${{ matrix.frontend }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20

@@ -98,11 +98,11 @@ pub(crate) mod topup_orders;
 pub(crate) mod topup_payment_events;
 pub(crate) mod usage_logs;
 pub(crate) mod user_group_grants;
-pub(crate) mod user_two_factor_enrollments;
 pub(crate) mod user_notification_events;
 pub(crate) mod user_notification_receipts;
 pub(crate) mod user_oauth_identities;
 pub(crate) mod user_subscriptions;
+pub(crate) mod user_two_factor_enrollments;
 pub(crate) mod users;
 pub(crate) mod wallet_ledger_entries;
 
