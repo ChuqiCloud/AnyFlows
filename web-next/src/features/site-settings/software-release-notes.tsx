@@ -1,6 +1,8 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+import { Checkbox } from '@heroui/react'
+
 type MarkdownNode = {
   type: string
   depth?: number
@@ -54,7 +56,7 @@ export function SoftwareReleaseNotes({ content }: { content: string }) {
           h6: ({ children }) => <h6 className="mb-2 mt-4 text-sm font-medium text-foreground first:mt-0">{children}</h6>,
           hr: () => <hr className="my-6 border-[var(--hairline)]" />,
           img: ({ alt }) => alt ? <span className="text-muted-foreground">{alt}</span> : null,
-          input: ({ checked }) => <input type="checkbox" checked={checked} disabled className="mr-2 size-3.5 align-middle accent-primary" />,
+          input: ({ checked }) => <Checkbox className="mr-2 align-middle" isDisabled isSelected={Boolean(checked)} size="sm" />,
           li: ({ children, className }) => <li className={`my-1 pl-1 marker:text-muted-foreground ${className?.includes('task-list-item') ? 'list-none' : ''}`}>{children}</li>,
           ol: ({ children, start }) => <ol start={start} className="my-3 list-decimal space-y-1 pl-5">{children}</ol>,
           p: ({ children }) => <p className="my-3 first:mt-0 last:mb-0">{children}</p>,

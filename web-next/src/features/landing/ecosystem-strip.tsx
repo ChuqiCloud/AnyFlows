@@ -72,11 +72,11 @@ export function EcosystemStrip() {
             return (
               <div
                 key={`${item.name}-${index}`}
-                className="inline-flex items-center gap-2.5 rounded-full border border-[var(--hairline)] bg-surface-1 px-3.5 py-1.5 text-xs text-muted-foreground shadow-xs transition-colors duration-200 hover:border-primary/40 hover:bg-surface-2 hover:text-foreground shrink-0 cursor-default"
+                className="inline-flex items-center gap-2.5 whitespace-nowrap rounded-full border border-[var(--hairline)] bg-surface-1 px-3.5 py-1.5 text-xs text-muted-foreground shadow-xs transition-colors duration-200 hover:border-primary/40 hover:bg-surface-2 hover:text-foreground shrink-0 cursor-default"
               >
                 <Icon className="size-4 shrink-0 text-foreground/80" />
                 <span className="font-medium text-foreground/90">{item.name}</span>
-                <span className="rounded-full bg-surface-2 px-1.5 py-0.2 text-[0.625rem] text-muted-foreground/80">
+                <span className="whitespace-nowrap rounded-full bg-surface-2 px-1.5 py-0.2 text-[0.625rem] text-muted-foreground/80">
                   {item.badge}
                 </span>
               </div>

@@ -8,7 +8,7 @@ export const emailSettingsNavNodes = defineNavigation(
       href: "/console/system-settings/email",
       order: 55,
       section: "platform",
-      sectionTitle: "nav.sections.platform",
+      sectionTitle: "nav.sections.site",
     },
   ],
   { group: "module", module: "emailSettings" },

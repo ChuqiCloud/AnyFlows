@@ -1,6 +1,6 @@
 import { createContext, useContext, useId, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button as HeroButton, Input, Textarea as TextArea, Select, SelectItem, Switch, Drawer, DrawerContent, DrawerHeader } from '@heroui/react'
+import { Button as HeroButton, Input, Textarea as TextArea, Select, SelectItem, Skeleton, Switch, Drawer, DrawerContent, DrawerHeader } from '@heroui/react'
 import type { ComponentProps } from 'react'
 import { ProxyCheck, ProxySelection, ProxyCleanupControls } from './proxy-cleanup-controls'
 import { useAdminRouteChannelCatalog } from '@/features/routes/route-api'
@@ -23,26 +23,39 @@ export function ProxyPoolPanel() {
   const run = (kind: 'refresh' | 'check' | 'delete', id: number) => {
     action.mutate({ kind, id }, { onSuccess: () => setDeleting(undefined) })
   }
-  return <section className="grid gap-4 rounded-xl border border-[var(--hairline)] p-4" aria-label={t('proxyPools.title')}>
+  return <section className="grid gap-5 rounded-xl border border-[var(--hairline)] bg-surface-1 p-5" aria-label={t('proxyPools.title')}>
     <header className="flex flex-wrap items-start justify-between gap-3">
-      <div><h3 className="font-semibold">{t('proxyPools.title')}</h3><p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">{t('proxyPools.description')}</p></div>
+      <div className="min-w-0"><h3 className="text-sm font-semibold">{t('proxyPools.title')}</h3><p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">{t('proxyPools.description')}</p></div>
       <Button onClick={() => { setNotice(''); setEditing('new') }}>{t('proxyPools.create')}</Button>
     </header>
-    <div className="grid gap-3 rounded-lg bg-surface-2/50 p-3 sm:grid-cols-2">
-      <Field label={t('proxyPools.scope')}><Choice label={t('proxyPools.scope')} value={scope} onChange={setScope} options={[{value:'0', label:t('proxyPools.global')}, ...(channels.data ?? []).map(channel => ({value:String(channel.id), label:`${channel.name} (#${channel.id})`}))]} disabled={channels.isPending || action.isPending} /></Field>
-      <Field label={t('proxyPools.binding')}><Choice label={t('proxyPools.binding')} value={bound ? String(bound.id) : ''} onChange={value => action.mutate({kind:'bind',channelId:Number(scope),poolId:value ? Number(value) : null})} options={[{value:'',label:t('proxyPools.inherit')},...pools.map(pool => ({value:String(pool.id),label:pool.name}))]} disabled={query.isPending || query.isError || action.isPending} /></Field>
-    </div>
-    <ProxySelection ids={pools.map(pool => pool.id)} selected={selected.filter(id => pools.some(pool => pool.id === id))} onChange={setSelected} />
-    <ProxyCleanupControls target="pools" selected={selected.filter(id => pools.some(pool => pool.id === id))} disabled={query.isPending || query.isError} onDeleted={() => setSelected([])} />
-    {channels.isError ? <p role="alert" className="text-xs text-destructive">{t('proxyPools.channelError')}</p> : null}
-    {query.isPending ? <p className="text-sm text-muted-foreground">{t('proxyPools.loading')}</p> : query.isError ? <p role="alert" className="text-sm text-destructive">{t('proxyPools.loadError')}</p> : pools.length === 0 ? <p className="py-4 text-sm text-muted-foreground">{t('proxyPools.empty')}</p> : pools.map(pool => <article key={pool.id} className="grid gap-3 border-t border-[var(--hairline)] pt-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><ProxyCheck checked={selected.includes(pool.id)} onChange={checked => setSelected(ids => checked ? [...new Set([...ids,pool.id])].slice(0,256) : ids.filter(id => id !== pool.id))} label={t('proxyPools.selectPool',{id:pool.id})} /><h4 className="mt-2 text-sm font-semibold">{pool.name} <span className="font-normal text-muted-foreground">#{pool.id}</span></h4><p className="mt-1 text-xs text-muted-foreground">{t(`proxyPools.status.${pool.status}`, { defaultValue: pool.status })} · {t('proxyPools.count',{healthy:pool.nodes.filter(node => node.healthy).length,total:pool.nodes.length})} · {pool.subscribed ? pool.source_host ?? t('proxyPools.subscription') : t('proxyPools.manual')}</p><p className="mt-1 text-xs text-muted-foreground">{t('proxyPools.lastCheck')}: {pool.last_check_at ? new Date(pool.last_check_at * 1000).toLocaleString() : '—'}</p><p className="mt-1 text-xs text-muted-foreground">{t('proxyPools.every', {value: pool.interval_secs % 3600 === 0 ? pool.interval_secs / 3600 : pool.interval_secs % 60 === 0 ? pool.interval_secs / 60 : pool.interval_secs, unit:t(pool.interval_secs % 3600 === 0 ? 'proxyPools.hours' : pool.interval_secs % 60 === 0 ? 'proxyPools.minutes' : 'proxyPools.seconds')})}</p>{pool.subscribed ? <><p className="mt-1 text-xs text-muted-foreground">{t('proxyPools.lastRefresh')}: {pool.last_refresh_at ? new Date(pool.last_refresh_at * 1000).toLocaleString() : '—'}</p><p className="mt-1 text-xs text-muted-foreground">{t('proxyPools.lastAttempt')}: {pool.last_refresh_attempt_at ? new Date(pool.last_refresh_attempt_at * 1000).toLocaleString() : '—'}</p><p className="mt-1 text-xs text-muted-foreground">{t('proxyPools.nextRefresh')}: {pool.last_refresh_attempt_at ? new Date((pool.last_refresh_attempt_at + pool.interval_secs) * 1000).toLocaleString() : t('proxyPools.soon')}</p></> : null}</div>
-        <div className="flex flex-wrap gap-2"><Button disabled={pool.busy || action.isPending} onClick={() => run('check',pool.id)}>{t('proxyPools.check')}</Button>{pool.subscribed ? <Button disabled={pool.busy || action.isPending} onClick={() => run('refresh',pool.id)}>{t('proxyPools.refresh')}</Button> : null}<Button disabled={action.isPending} onClick={() => setEditing(pool)}>{t('proxyPools.edit')}</Button><Button disabled={action.isPending} onClick={() => setDeleting(pool.id)}>{t('proxyPools.delete')}</Button></div>
+    <div className="grid gap-2">
+      <div><h4 className="text-xs font-medium">{t('proxyPools.groupRouting')}</h4><p className="mt-0.5 text-[0.6875rem] leading-4 text-muted-foreground">{t('proxyPools.groupRoutingHint')}</p></div>
+      <div className="grid gap-3 rounded-lg bg-surface-2/50 p-3 sm:grid-cols-2">
+        <Field label={t('proxyPools.scope')}><Choice label={t('proxyPools.scope')} value={scope} onChange={setScope} options={[{value:'0', label:t('proxyPools.global')}, ...(channels.data ?? []).map(channel => ({value:String(channel.id), label:`${channel.name} (#${channel.id})`}))]} disabled={channels.isPending || action.isPending} /></Field>
+        <Field label={t('proxyPools.binding')}><Choice label={t('proxyPools.binding')} value={bound ? String(bound.id) : ''} onChange={value => action.mutate({kind:'bind',channelId:Number(scope),poolId:value ? Number(value) : null})} options={[{value:'',label:t('proxyPools.inherit')},...pools.map(pool => ({value:String(pool.id),label:pool.name}))]} disabled={query.isPending || query.isError || action.isPending} /></Field>
       </div>
-      {deleting === pool.id ? <div role="alert" className="flex flex-wrap items-center gap-3 text-xs"><span>{t('proxyPools.deleteConfirm')}</span><Button disabled={action.isPending} onClick={() => run('delete',pool.id)}>{t('proxyPools.confirm')}</Button><Button onClick={() => setDeleting(undefined)}>{t('proxyPools.cancel')}</Button></div> : null}
-      <PoolNodes pool={pool} />
-    </article>)}
+    </div>
+    <div className="grid gap-3 border-t border-[var(--hairline)] pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h4 className="text-xs font-medium">{t('proxyPools.groupPools')}</h4>
+        <div className="flex flex-wrap items-center gap-3">
+          <ProxySelection ids={pools.map(pool => pool.id)} selected={selected.filter(id => pools.some(pool => pool.id === id))} onChange={setSelected} />
+          <ProxyCleanupControls target="pools" selected={selected.filter(id => pools.some(pool => pool.id === id))} disabled={query.isPending || query.isError} onDeleted={() => setSelected([])} />
+        </div>
+      </div>
+      {channels.isError ? <p role="alert" className="text-xs text-destructive">{t('proxyPools.channelError')}</p> : null}
+      {query.isPending ? <div className="grid gap-2" aria-label={t('proxyPools.loading')}>{[0, 1].map(item => <Skeleton key={item} className="h-24 rounded-lg" />)}</div>
+        : query.isError ? <p role="alert" className="text-sm text-destructive">{t('proxyPools.loadError')}</p>
+          : pools.length === 0 ? <p className="rounded-lg border border-dashed border-[var(--hairline)] py-6 text-center text-xs text-muted-foreground">{t('proxyPools.empty')}</p>
+            : <div className="divide-y divide-[var(--hairline)] rounded-lg border border-[var(--hairline)]">{pools.map(pool => <article key={pool.id} className="grid gap-3 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div><ProxyCheck checked={selected.includes(pool.id)} onChange={checked => setSelected(ids => checked ? [...new Set([...ids,pool.id])].slice(0,256) : ids.filter(id => id !== pool.id))} label={t('proxyPools.selectPool',{id:pool.id})} /><h4 className="mt-2 text-sm font-semibold">{pool.name} <span className="font-normal text-muted-foreground">#{pool.id}</span></h4><p className="mt-1 text-xs text-muted-foreground">{t(`proxyPools.status.${pool.status}`, { defaultValue: pool.status })} · {t('proxyPools.count',{healthy:pool.nodes.filter(node => node.healthy).length,total:pool.nodes.length})} · {pool.subscribed ? pool.source_host ?? t('proxyPools.subscription') : t('proxyPools.manual')}</p><p className="mt-1 text-xs text-muted-foreground">{t('proxyPools.lastCheck')}: {pool.last_check_at ? new Date(pool.last_check_at * 1000).toLocaleString() : '—'}</p><p className="mt-1 text-xs text-muted-foreground">{t('proxyPools.every', {value: pool.interval_secs % 3600 === 0 ? pool.interval_secs / 3600 : pool.interval_secs % 60 === 0 ? pool.interval_secs / 60 : pool.interval_secs, unit:t(pool.interval_secs % 3600 === 0 ? 'proxyPools.hours' : pool.interval_secs % 60 === 0 ? 'proxyPools.minutes' : 'proxyPools.seconds')})}</p>{pool.subscribed ? <><p className="mt-1 text-xs text-muted-foreground">{t('proxyPools.lastRefresh')}: {pool.last_refresh_at ? new Date(pool.last_refresh_at * 1000).toLocaleString() : '—'}</p><p className="mt-1 text-xs text-muted-foreground">{t('proxyPools.lastAttempt')}: {pool.last_refresh_attempt_at ? new Date(pool.last_refresh_attempt_at * 1000).toLocaleString() : '—'}</p><p className="mt-1 text-xs text-muted-foreground">{t('proxyPools.nextRefresh')}: {pool.last_refresh_attempt_at ? new Date((pool.last_refresh_attempt_at + pool.interval_secs) * 1000).toLocaleString() : t('proxyPools.soon')}</p></> : null}</div>
+                <div className="flex flex-wrap gap-2"><Button disabled={pool.busy || action.isPending} onClick={() => run('check',pool.id)}>{t('proxyPools.check')}</Button>{pool.subscribed ? <Button disabled={pool.busy || action.isPending} onClick={() => run('refresh',pool.id)}>{t('proxyPools.refresh')}</Button> : null}<Button disabled={action.isPending} onClick={() => setEditing(pool)}>{t('proxyPools.edit')}</Button><Button disabled={action.isPending} onClick={() => setDeleting(pool.id)}>{t('proxyPools.delete')}</Button></div>
+              </div>
+              {deleting === pool.id ? <div role="alert" className="flex flex-wrap items-center gap-3 text-xs"><span>{t('proxyPools.deleteConfirm')}</span><Button disabled={action.isPending} onClick={() => run('delete',pool.id)}>{t('proxyPools.confirm')}</Button><Button onClick={() => setDeleting(undefined)}>{t('proxyPools.cancel')}</Button></div> : null}
+              <PoolNodes pool={pool} />
+            </article>)}</div>}
+    </div>
     {notice ? <p role="status" className="text-xs text-muted-foreground">{notice}</p> : null}
     {action.isError ? <p role="alert" className="text-xs text-destructive">{t('proxyPools.actionError')}</p> : null}
     {editing !== undefined ? <PoolEditor key={editing === 'new' ? 'new' : `${editing.id}-${editing.revision}`} pool={editing === 'new' ? undefined : editing} onClose={() => setEditing(undefined)} onSaved={(skipped,duplicates) => { setNotice(t('proxyPools.importResult',{skipped,duplicates})); setEditing(undefined) }} /> : null}
@@ -108,6 +121,7 @@ function Button({disabled,...props}:Omit<ComponentProps<typeof HeroButton>,'isDi
 function Choice({value,onChange,options,disabled,label}:{value:string;onChange:(value:string)=>void;options:{value:string;label:string}[];disabled?:boolean;label?:string}) {
   const portal = useContext(PoolPortalContext)
   const labelId = useId()
-  return <div className="min-w-0"><span id={labelId} className="sr-only">{label ?? 'Select'}</span><Select aria-label={label ?? 'Select'} aria-labelledby={labelId} size="sm" isDisabled={disabled} selectedKeys={new Set([value || 'none'])} popoverProps={portal ? {portalContainer:portal} : undefined} onChange={event => onChange(event.target.value === 'none' ? '' : event.target.value)}>{options.map(option => <SelectItem key={option.value || 'none'}>{option.label}</SelectItem>)}</Select></div>
+  // HeroUI Select 只认 onSelectionChange，传 onChange 时选中值不会回写，触发器只能显示被截断的首项。
+  return <div className="min-w-0"><span id={labelId} className="sr-only">{label ?? 'Select'}</span><Select aria-label={label ?? 'Select'} aria-labelledby={labelId} size="sm" isDisabled={disabled} placeholder={label} selectedKeys={new Set([value || 'none'])} popoverProps={{ className: 'min-w-44', ...(portal ? { portalContainer: portal } : {}) }} onSelectionChange={keys => { const key = Array.from(keys)[0]; if (typeof key === 'string') onChange(key === 'none' ? '' : key) }}>{options.map(option => <SelectItem key={option.value || 'none'}>{option.label}</SelectItem>)}</Select></div>
 }
 function Toggle({checked,onChange,label}:{checked:boolean;onChange:(value:boolean)=>void;label:string}) {return <Switch size="sm" isSelected={checked} onValueChange={onChange}>{label}</Switch>}

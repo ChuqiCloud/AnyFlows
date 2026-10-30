@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { Gauge, GitFork, KeyRound, Link2, LoaderCircle, Pencil, Power, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Chip } from '@heroui/react'
+import { Button, Checkbox, Chip } from '@heroui/react'
 import type { AdminCredential } from '@/lib/api/generated/types.gen'
 import type { CredentialHealthSnapshot } from './credential-api'
 import { cn } from '@/lib/utils'
@@ -94,7 +94,7 @@ export function CredentialItem({ selected, onSelect, health, channelType, creden
         <div className="grid size-9 place-items-center rounded-lg bg-surface-2 text-muted-foreground"><Icon className="size-4" aria-hidden="true" /></div>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
-            {onSelect ? <input type="checkbox" aria-label={t('credentials.batch.selectOne', { defaultValue: '选择凭据 #{{id}}', id: credential.id })} checked={Boolean(selected)} onChange={onSelect} /> : null}
+            {onSelect ? <Checkbox aria-label={t('credentials.batch.selectOne', { defaultValue: '选择凭据 #{{id}}', id: credential.id })} isSelected={Boolean(selected)} size="sm" onValueChange={() => onSelect()} /> : null}
             <h3 className="text-xs font-semibold">#{credential.id}</h3>
             {shadow ? <Chip className="gap-1 bg-info/10 text-info" size="sm" variant="flat"><GitFork className="size-3" aria-hidden="true" />{t('credentials.spark.badge')}</Chip> : null}
             <Chip size="sm" variant="flat">{t(`credentials.kind.${credential.kind}`, { defaultValue: credential.kind })}</Chip>
@@ -125,11 +125,11 @@ export function CredentialItem({ selected, onSelect, health, channelType, creden
           </p>
         </div>
         <div className="col-start-2 flex items-center justify-end gap-1 sm:col-start-3">
-          {canQueryUsage ? <IconAction label={t('credentials.usage.action')} aria-expanded={usageOpen} disabled={usageLoading} onClick={toggleUsage}>{usageLoading ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Gauge aria-hidden="true" />}</IconAction> : null}
-          {isOAuth ? <IconAction label={t(credential.oauth_token_pending ? 'credentials.actions.connect' : credential.oauth_provider ? 'credentials.actions.reauthorize' : 'credentials.actions.connect')} aria-expanded={oauthOpen} onClick={() => setOAuthOpen((current) => !current)}><Link2 aria-hidden="true" /></IconAction> : null}
-          <IconAction label={t(credential.status === 'enabled' ? 'credentials.actions.disable' : 'credentials.actions.enable')} disabled={pending || oauthOpen || !canToggle} onClick={() => onToggle(credential)}>{pending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Power aria-hidden="true" />}</IconAction>
-          <IconAction label={t('credentials.actions.edit')} disabled={pending || oauthOpen || !writableKind} onClick={() => onEdit(credential)}><Pencil aria-hidden="true" /></IconAction>
-          <IconAction label={t('credentials.actions.delete')} className="hover:text-destructive" disabled={oauthOpen} onClick={() => onDelete(credential)}><Trash2 aria-hidden="true" /></IconAction>
+          {canQueryUsage ? <IconAction label={t('credentials.usage.action')} aria-expanded={usageOpen} disabled={usageLoading} onClick={toggleUsage}>{usageLoading ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : <Gauge className="size-3.5" aria-hidden="true" />}</IconAction> : null}
+          {isOAuth ? <IconAction label={t(credential.oauth_token_pending ? 'credentials.actions.connect' : credential.oauth_provider ? 'credentials.actions.reauthorize' : 'credentials.actions.connect')} aria-expanded={oauthOpen} onClick={() => setOAuthOpen((current) => !current)}><Link2 className="size-3.5" aria-hidden="true" /></IconAction> : null}
+          <IconAction label={t(credential.status === 'enabled' ? 'credentials.actions.disable' : 'credentials.actions.enable')} disabled={pending || oauthOpen || !canToggle} onClick={() => onToggle(credential)}>{pending ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : <Power className="size-3.5" aria-hidden="true" />}</IconAction>
+          <IconAction label={t('credentials.actions.edit')} disabled={pending || oauthOpen || !writableKind} onClick={() => onEdit(credential)}><Pencil className="size-3.5" aria-hidden="true" /></IconAction>
+          <IconAction label={t('credentials.actions.delete')} className="hover:text-destructive" disabled={oauthOpen} onClick={() => onDelete(credential)}><Trash2 className="size-3.5" aria-hidden="true" /></IconAction>
         </div>
       </div>
       {usageOpen ? <div className="mt-2 border-t border-border pt-2 text-xs text-muted-foreground" role="status">

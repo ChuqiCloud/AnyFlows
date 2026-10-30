@@ -8,7 +8,7 @@ export const authenticationSettingsNavNodes = defineNavigation(
       href: "/console/system-settings/authentication",
       order: 60,
       section: "platform",
-      sectionTitle: "nav.sections.platform",
+      sectionTitle: "nav.sections.site",
     },
   ],
   { group: "module", module: "authenticationSettings" },

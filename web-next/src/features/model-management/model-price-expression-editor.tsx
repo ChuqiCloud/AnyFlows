@@ -90,7 +90,7 @@ export function ModelPriceExpressionEditor(props: ExpressionEditorProps) {
             value={props.value}
             onChange={(event) => props.onChange(event.target.value)}
             minRows={7}
-            /* HeroUI 把 Textarea 的 spellCheck 收窄成字面量联合，用字符串字面量以符合类型。 */
+            // HeroUI 把 Textarea 的 spellCheck 收窄成字面量联合，用字符串字面量以符合类型。
             spellCheck="false"
             classNames={{ input: 'font-mono text-xs leading-5' }}
             isInvalid={props.error !== undefined}

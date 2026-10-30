@@ -87,7 +87,6 @@ export function UserOverviewPage() {
             <span className="px-2 text-xs font-medium text-muted-foreground">{t('dashboard.user.quickActions')}</span>
             <QuickAction icon={KeyRound} href="/console/api-keys" label={t('dashboard.user.actions.createKey')} />
             <QuickAction icon={FlaskConical} href="/console/playground" label={t('dashboard.user.actions.playground')} />
-            <QuickAction icon={LayoutGrid} href="/console/models" label={t('dashboard.user.actions.models')} />
             <QuickAction icon={WalletCards} href="/console/wallet" label={t('dashboard.user.actions.topup')} />
           </CardBody>
         </Card>

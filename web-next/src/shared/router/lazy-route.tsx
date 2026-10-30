@@ -29,6 +29,22 @@ export const lazyRoute = <
   return withRouteSuspense(<LazyComponent />, fallback);
 };
 
+/** 需要从 route 外部传入 props 时使用：模块按需加载，外层用 createElement 挂载。 */
+export const lazyComponent = <
+  TModule extends RouteModule,
+  TExportName extends keyof TModule,
+>(
+  loader: () => Promise<TModule>,
+  exportName: TExportName,
+) =>
+  lazy(async () => {
+    const module = await loader();
+
+    return {
+      default: module[exportName] as ComponentType<any>,
+    };
+  });
+
 export const lazyModuleRoute = <
   TModule extends RouteModule,
   TExportName extends keyof TModule,

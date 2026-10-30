@@ -1,10 +1,6 @@
-import { Button } from '@heroui/react'
-import { PanelRightClose } from 'lucide-react'
 import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
 
 import { VideoTaskWorkspace } from '@/features/video-tasks/video-task-workspace'
-import { cn } from '@/lib/utils'
 import { PlaygroundComparisonPanel } from './playground-comparison-panel'
 import { PlaygroundModelPicker } from './playground-model-picker'
 import { PlaygroundModeSwitcher, type PlaygroundMode } from './playground-mode-switcher'
@@ -19,7 +15,6 @@ import { usePlaygroundConfiguration } from './use-playground-configuration'
 import { usePlaygroundHistory } from './use-playground-history'
 
 export function PlaygroundPage() {
-  const { t } = useTranslation()
   const [mode, setMode] = useState<PlaygroundMode>('chat')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const configuration = usePlaygroundConfiguration()
@@ -155,58 +150,24 @@ export function PlaygroundPage() {
           />
         )}
         status={status}
-        desktopSettingsOpen={settingsOpen}
-        onDesktopSettingsToggle={() => setSettingsOpen((open) => !open)}
         onClear={clearConversation}
       />
-      <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <div
-          className={cn(
-            'min-h-0 min-w-0 flex-1 transition-[padding] duration-[250ms] ease-[var(--ease-ai-out)]',
-            settingsOpen && 'lg:pr-[18.125rem]',
-          )}
-        >
-          <PlaygroundComparisonPanel
-            canSend={canSend}
-            draft={comparison.draft}
-            modelPicker={renderModelPicker(true)}
-            sessions={comparison.sessions}
-            status={status}
-            streaming={comparison.streaming}
-            onDraftChange={comparison.setDraft}
-            onRetry={comparison.retry}
-            onSend={comparison.send}
-            onStopAll={comparison.stopAll}
-            onStopModel={comparison.stopModel}
-          />
-        </div>
-        <aside
-          aria-hidden={!settingsOpen}
-          {...(!settingsOpen ? { inert: true } : {})}
-          className={cn(
-            'playground-settings-panel absolute inset-y-0 right-0 z-10 hidden w-[17.5rem] overflow-y-auto border-l border-[var(--hairline)] bg-surface-1/96 backdrop-blur-xl lg:block',
-            !settingsOpen && 'pointer-events-none',
-          )}
-          data-open={settingsOpen}
-        >
-          <div className="sticky top-0 z-10 flex h-11 items-center justify-between border-b border-[var(--hairline)] bg-surface-1/92 px-3 backdrop-blur-xl">
-            <span className="text-xs font-semibold">{t('playground.settings.title')}</span>
-            <Button
-              isIconOnly
-              aria-label={t('playground.settings.collapse')}
-              className="size-6 min-w-6"
-              size="sm"
-              title={t('playground.settings.collapse')}
-              type="button"
-              variant="light"
-              onClick={() => setSettingsOpen(false)}
-            >
-              <PanelRightClose className="size-3" aria-hidden="true" />
-            </Button>
-          </div>
-          {renderSettings('playground-desktop')}
-        </aside>
-      </div>
+      <PlaygroundComparisonPanel
+        canSend={canSend}
+        draft={comparison.draft}
+        modelPicker={renderModelPicker(true)}
+        sessions={comparison.sessions}
+        settings={renderSettings('playground-desktop')}
+        settingsOpen={settingsOpen}
+        status={status}
+        streaming={comparison.streaming}
+        onDraftChange={comparison.setDraft}
+        onRetry={comparison.retry}
+        onSend={comparison.send}
+        onSettingsToggle={() => setSettingsOpen((open) => !open)}
+        onStopAll={comparison.stopAll}
+        onStopModel={comparison.stopModel}
+      />
     </div>
   )
 }

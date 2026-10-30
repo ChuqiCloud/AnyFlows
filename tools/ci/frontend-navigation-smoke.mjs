@@ -148,7 +148,8 @@ try {
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), description)
   }
   const visibleNav = () => page.locator(`nav[aria-label="${label('nav.label')}"]:visible`)
-  const item = key => visibleNav().getByRole('option', { name: label(`nav.${key}`), exact: true })
+  // A section and its first leaf can intentionally share a translated title (for example, users).
+  const item = key => visibleNav().getByRole('option', { name: label(`nav.${key}`), exact: true }).last()
   const expand = async key => {
     const trigger = visibleNav().getByRole('button', { name: label(`nav.sections.${key}`), exact: true })
     await trigger.waitFor()
@@ -203,9 +204,9 @@ try {
   await page.getByRole('heading', { name: '模型厂商目录', exact: true }).waitFor()
   assert.equal(new URL(page.url()).pathname, '/console/system-settings/model-providers')
   assert.equal(await item('modelProviders').getAttribute('aria-selected'), 'true')
-  await expand('operations')
+  await expand('users')
   for (const key of ['users', 'accountVerificationReviews', 'invitationSettings']) assert.ok(await item(key).isVisible(), `Missing ${key}`)
-  await expand('platform')
+  await expand('site')
   assert.ok(await item('about').isVisible())
   await item('about').click()
   await page.getByRole('heading', { name: label('about.companyName'), exact: true }).waitFor()
