@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "AnyFlows 管理 API",
-    "version": "0.3.0-beta.5"
+    "version": "0.3.0-beta.6"
   },
   "paths": {
     "/api/auth/login": {

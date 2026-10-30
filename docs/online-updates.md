@@ -14,7 +14,7 @@
 
 ```sh
 anyflows update check
-anyflows update install v0.3.0-beta.5 --yes
+anyflows update install v0.3.0-beta.6 --yes
 ```
 
 将示例标签替换为检测到的版本；不支持降级、跳过校验或指定任意下载地址。命令自动识别编译目标，下载对应原始二进制和同名 `.sha256`，核对文件名、大小与 SHA-256 后替换程序。程序目录保留 `anyflows-backup-*` 旧二进制，配置、数据库和 WAL 不会被覆盖。裸启动安装完成后由管理员启动或重启服务。升级前应核对目标版本对操作系统和数据库的要求。
