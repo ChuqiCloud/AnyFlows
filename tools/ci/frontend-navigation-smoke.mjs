@@ -84,7 +84,7 @@ try {
   browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
   page = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'zh-CN', reducedMotion: 'reduce' })
   page.setDefaultTimeout(20000)
-  page.on('pageerror', error => errors.push(error.message))
+  page.on('pageerror', error => errors.push(error.stack || error.message))
   await page.addInitScript(() => {
     const params = new URLSearchParams(window.location.search)
     const role = params.get('role') || 'public'
@@ -283,12 +283,13 @@ try {
   for (let attempt = 0; attempt < 100 && !releasePlaygroundRequest; attempt += 1) await delay(50)
   assert.ok(releasePlaygroundRequest, 'Sending reaches the session-authenticated Playground endpoint')
   await stop.click()
-  releasePlaygroundRequest()
-  releasePlaygroundRequest = undefined
   await stop.waitFor({ state: 'hidden' })
   assert.ok(await textarea.isEnabled(), 'Stopping restores the composer')
   assert.equal(await textarea.inputValue(), '')
   await checkComposerLayout('Playground after stopping')
+  releasePlaygroundRequest()
+  releasePlaygroundRequest = undefined
+  await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 0)))
   await clearConversation.click()
   await page.setViewportSize({ width: 1280, height: 960 })
 
