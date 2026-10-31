@@ -18,12 +18,14 @@ export async function resolvePlaygroundStreamResult(input: {
   textReceived: boolean
   usage: PromiseLike<PlaygroundResolvedStreamResult['usage']>
 }): Promise<PlaygroundResolvedStreamResult> {
-  if (input.streamError && !input.textReceived) throw input.streamError
-
-  const [usageResult, finishReasonResult] = await Promise.allSettled([
+  // 先消费元数据拒绝，避免首段正文前停止或失败时留下未处理的 Promise。
+  const metadataResults = Promise.allSettled([
     input.usage,
     input.finishReason,
   ])
+  if (input.streamError && !input.textReceived) throw input.streamError
+
+  const [usageResult, finishReasonResult] = await metadataResults
   const metadataInterrupted = usageResult.status === 'rejected'
     || finishReasonResult.status === 'rejected'
   if (metadataInterrupted && !input.textReceived) {
