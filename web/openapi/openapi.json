@@ -30240,28 +30240,32 @@
               "integer",
               "null"
             ],
-            "format": "int64"
+            "format": "int64",
+            "minimum": 0
           },
           "pending_expires_at": {
             "type": [
               "integer",
               "null"
             ],
-            "format": "int64"
+            "format": "int64",
+            "minimum": 0
           },
           "bound_at": {
             "type": [
               "integer",
               "null"
             ],
-            "format": "int64"
+            "format": "int64",
+            "minimum": 0
           },
           "last_verified_at": {
             "type": [
               "integer",
               "null"
             ],
-            "format": "int64"
+            "format": "int64",
+            "minimum": 0
           }
         },
         "additionalProperties": false
