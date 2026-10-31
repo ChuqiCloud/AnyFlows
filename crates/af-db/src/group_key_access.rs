@@ -645,8 +645,7 @@ fn revocation_candidate_query(
                         .column(group_group_grants::Column::SourceGroupId)
                         .from(group_group_grants::Entity)
                         .and_where(
-                            Expr::col(group_group_grants::Column::TargetGroupId)
-                                .eq(group_id.get()),
+                            Expr::col(group_group_grants::Column::TargetGroupId).eq(group_id.get()),
                         )
                         .to_owned(),
                 ),

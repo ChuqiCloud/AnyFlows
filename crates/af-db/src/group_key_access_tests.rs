@@ -197,9 +197,7 @@ async fn selected_groups_authorizes_matching_defaults_and_revokes_only_lost_pers
             .collect::<Vec<_>>(),
         [GroupId::new(10)?]
     );
-    let allowed = repository
-        .list_user_groups(matching_user, None, 50)
-        .await?;
+    let allowed = repository.list_user_groups(matching_user, None, 50).await?;
     assert_eq!(
         allowed
             .groups

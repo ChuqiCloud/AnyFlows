@@ -321,10 +321,8 @@ async fn delete_clears_safe_runtime_relationships_atomically() -> Result<(), Box
             .filter(
                 group_model_ratio_overrides::Column::SourceGroupId
                     .eq(target.group_id().get())
-                    .or(
-                        group_model_ratio_overrides::Column::TargetGroupId
-                            .eq(target.group_id().get()),
-                    ),
+                    .or(group_model_ratio_overrides::Column::TargetGroupId
+                        .eq(target.group_id().get()),),
             )
             .count(fixture.pool.connection())
             .await?,
