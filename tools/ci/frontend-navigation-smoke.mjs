@@ -49,6 +49,7 @@ let server
 let browser
 let page
 let serverOutput = ''
+let releasePlaygroundRequest
 
 try {
   await mkdir(screenshots, { recursive: true })
@@ -83,7 +84,7 @@ try {
   browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
   page = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'zh-CN', reducedMotion: 'reduce' })
   page.setDefaultTimeout(20000)
-  page.on('pageerror', error => errors.push(error.message))
+  page.on('pageerror', error => errors.push(error.stack || error.message))
   await page.addInitScript(() => {
     const params = new URLSearchParams(window.location.search)
     const role = params.get('role') || 'public'
@@ -103,6 +104,14 @@ try {
     const token = request.headers().authorization || ''
     const role = token.includes('ci-admin') ? 'admin' : token.includes('ci-user') ? 'user' : 'public'
     requests.push({ path, role })
+    if (path === '/api/playground/v1/chat/completions' && request.method() === 'POST' && role === 'user') {
+      assert.equal(request.postDataJSON().model, model.model)
+      // Hold the response until the real composer has entered its sending state.
+      // Clicking Stop must abort the browser request without calling any upstream.
+      await new Promise(resolve => { releasePlaygroundRequest = resolve })
+      await route.abort('aborted').catch(() => {})
+      return
+    }
     if (request.method() !== 'GET' || (role !== 'admin' && path.startsWith('/api/admin/'))) {
       errors.push(`Unauthorized or unexpected request: ${request.method()} ${path} (${role})`)
       await route.fulfill({ status: 403, contentType: 'application/json', body: '{"code":"forbidden"}' })
@@ -193,6 +202,97 @@ try {
   assert.ok(requests.some(request => request.role === 'user' && request.path === '/api/account/wallet'))
   assert.ok(!requests.some(request => request.role === 'user' && request.path.startsWith('/api/admin/')), 'User overview never calls management APIs')
 
+  // Render the real Playground through App so missing component CSS cannot pass
+  // as it could in an isolated fixture with its own layout rules.
+  await open('/console/playground', 'user')
+  const composer = page.locator('.prompt-composer')
+  const textarea = page.getByRole('textbox', { name: label('playground.composer.label'), exact: true })
+  const send = composer.getByRole('button', { name: label('playground.actions.send'), exact: true })
+  const clearConversation = page.getByRole('button', { name: label('playground.actions.clearConversation'), exact: true })
+  await composer.waitFor()
+  await composer.getByRole('button', { name: model.model }).waitFor()
+  const checkComposerLayout = async description => {
+    // Allow resize observers and responsive components to commit before measuring.
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    await noOverflow(description)
+    const layout = await composer.evaluate(element => {
+      const rect = node => {
+        const { x, y, width, height, right, bottom } = node.getBoundingClientRect()
+        return { x, y, width, height, right, bottom }
+      }
+      const toolbar = element.querySelector('.prompt-composer__toolbar')
+      const field = element.querySelector('textarea')
+      const buttons = [...toolbar.querySelectorAll('button')]
+        .filter(button => button.getClientRects().length > 0)
+        .map(rect)
+      return {
+        shell: rect(element), field: rect(field), toolbar: rect(toolbar), buttons,
+        overflow: element.scrollWidth > element.clientWidth + 1,
+        viewport: { width: innerWidth, height: innerHeight },
+      }
+    })
+    assert.ok(!layout.overflow, `${description}: composer content overflows`)
+    assert.ok(layout.field.width >= layout.shell.width - 48, `${description}: textarea is not full width`)
+    assert.ok(layout.field.bottom <= layout.toolbar.y + 1, `${description}: textarea overlaps toolbar`)
+    assert.ok(layout.shell.x >= -1 && layout.shell.right <= layout.viewport.width + 1, `${description}: composer exceeds viewport width`)
+    assert.ok(layout.shell.y >= -1 && layout.shell.bottom <= layout.viewport.height + 1, `${description}: composer is below the viewport`)
+    assert.ok(layout.buttons.length >= 2, `${description}: model picker and action must remain visible`)
+    for (const [index, button] of layout.buttons.entries()) {
+      assert.ok(button.x >= layout.shell.x - 1 && button.right <= layout.shell.right + 1 && button.bottom <= layout.shell.bottom + 1, `${description}: toolbar button exceeds composer bounds`)
+      for (const other of layout.buttons.slice(index + 1)) {
+        const overlaps = button.x < other.right - 1 && button.right > other.x + 1 && button.y < other.bottom - 1 && button.bottom > other.y + 1
+        assert.ok(!overlaps, `${description}: toolbar buttons overlap`)
+      }
+    }
+  }
+  for (const theme of ['dark', 'light']) {
+    await page.evaluate(mode => {
+      document.documentElement.classList.remove('dark', 'light')
+      document.documentElement.classList.add(mode)
+    }, theme)
+    for (const width of [1280, 390, 320]) {
+      await page.setViewportSize({ width, height: width === 1280 ? 720 : 844 })
+      const description = `Playground ${theme} at ${width}px`
+      await checkComposerLayout(description)
+      const initialHeight = await textarea.evaluate(element => element.getBoundingClientRect().height)
+      await textarea.fill(Array.from({ length: 40 }, (_, index) => `CI line ${index + 1}: long composer content`).join('\n'))
+      const longInput = await textarea.evaluate(element => ({
+        height: element.getBoundingClientRect().height,
+        maxHeight: Number.parseFloat(getComputedStyle(element).maxHeight),
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        overflowY: getComputedStyle(element).overflowY,
+      }))
+      assert.ok(Number.isFinite(longInput.maxHeight) && longInput.height <= longInput.maxHeight + 2, `${description}: long input has no height limit`)
+      assert.ok(longInput.scrollHeight > longInput.clientHeight && ['auto', 'scroll'].includes(longInput.overflowY), `${description}: long input cannot scroll internally`)
+      await checkComposerLayout(`${description} with long input`)
+      await page.screenshot({ path: resolve(screenshots, `playground-${theme}-${width}.png`), fullPage: true, animations: 'disabled' })
+      await clearConversation.click()
+      assert.equal(await textarea.inputValue(), '')
+      assert.ok(await textarea.evaluate(element => element.getBoundingClientRect().height) <= initialHeight + 2, `${description}: clearing does not restore textarea height`)
+      assert.ok(await send.isDisabled(), `${description}: empty composer can send`)
+    }
+  }
+  await textarea.fill('CI pending response')
+  await send.click()
+  const stop = composer.getByRole('button', { name: label('playground.actions.stopAll'), exact: true })
+  await stop.waitFor()
+  await page.waitForFunction(() => document.querySelector('.prompt-composer textarea')?.disabled === true)
+  await checkComposerLayout('Playground while sending')
+  // Wait for the intercepted request as well as the optimistic streaming UI.
+  for (let attempt = 0; attempt < 100 && !releasePlaygroundRequest; attempt += 1) await delay(50)
+  assert.ok(releasePlaygroundRequest, 'Sending reaches the session-authenticated Playground endpoint')
+  await stop.click()
+  await stop.waitFor({ state: 'hidden' })
+  assert.ok(await textarea.isEnabled(), 'Stopping restores the composer')
+  assert.equal(await textarea.inputValue(), '')
+  await checkComposerLayout('Playground after stopping')
+  releasePlaygroundRequest()
+  releasePlaygroundRequest = undefined
+  await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 0)))
+  await clearConversation.click()
+  await page.setViewportSize({ width: 1280, height: 960 })
+
   // Deep links select the system section; all existing administrator groups remain reachable.
   await open('/console/tokens', 'admin')
   await page.getByRole('heading', { name: label('tokens.title'), exact: true }).waitFor()
@@ -230,13 +330,14 @@ try {
   await visibleNav().waitFor({ state: 'hidden' })
   await page.screenshot({ path: resolve(screenshots, 'admin-system-mobile.png'), fullPage: true, animations: 'disabled' })
   assert.deepEqual(errors, [])
-  console.log('Navigation browser checks passed for web-next: catalog pricing and recovery, language, user overview, administrator groups, and mobile drawer.')
+  console.log('Navigation browser checks passed for web-next: landing, language, user overview, Playground composer layout and cancellation, administrator groups, and mobile drawer.')
 } catch (error) {
   if (page) await page.screenshot({ path: resolve(screenshots, 'failure.png'), fullPage: true, animations: 'disabled' }).catch(() => {})
   console.error(serverOutput)
   console.error(JSON.stringify({ browserErrors: errors, requests }))
   throw error
 } finally {
+  releasePlaygroundRequest?.()
   if (browser) await browser.close()
   if (server) server.kill('SIGTERM')
   await Promise.allSettled([unlink(html), unlink(entry)])

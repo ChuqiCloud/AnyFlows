@@ -6,6 +6,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react'
@@ -16,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { PlaygroundSessionColumn } from './playground-session-column'
 import type { PlaygroundDisplayStatus } from './playground-status'
 import type { PlaygroundSession } from './playground-types'
+import './playground-composer.css'
 
 type PlaygroundComparisonPanelProps = {
   canSend: boolean
@@ -48,6 +50,13 @@ export function PlaygroundComparisonPanel(props: PlaygroundComparisonPanelProps)
   const [activeModel, setActiveModel] = useState(props.sessions[0]?.model ?? '')
   const composerRef = useRef<HTMLTextAreaElement>(null)
 
+  useLayoutEffect(() => {
+    const composer = composerRef.current
+    if (!composer) return
+    composer.style.height = 'auto'
+    composer.style.height = `${composer.scrollHeight}px`
+  }, [props.draft])
+
   useEffect(() => {
     if (!props.sessions.some((session) => session.model === activeModel)) {
       setActiveModel(props.sessions[0]?.model ?? '')
@@ -64,7 +73,6 @@ export function PlaygroundComparisonPanel(props: PlaygroundComparisonPanelProps)
     void props.onSend().finally(() => composerRef.current?.focus())
   }
 
-  // HeroUI Textarea 的 onKeyDown 按 input 元素签名（内部渲染 textarea，但类型统一为 HTMLInputElement）。
   const composerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
@@ -80,7 +88,7 @@ export function PlaygroundComparisonPanel(props: PlaygroundComparisonPanelProps)
   } as CSSProperties
 
   return (
-    <section className="relative grid h-full min-h-[36rem] min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-2.5">
+    <section className="relative grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)_auto] gap-2.5">
       {/* 上部分：消息流容器 */}
       <div className="relative min-h-0 overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1">
         {columnCount === 0 ? (
@@ -178,7 +186,7 @@ export function PlaygroundComparisonPanel(props: PlaygroundComparisonPanelProps)
         </aside>
       </div>
 
-      {/* 下部分：独立的输入框（v3 PromptInput 范式），宽度与上方消息区一致。 */}
+      {/* 输入区与消息区保持同宽，工具栏在窄屏时自动换行。 */}
       <form className="w-full" onSubmit={submit}>
         <div className="prompt-composer">
           <div className="prompt-composer__shell">
@@ -192,19 +200,14 @@ export function PlaygroundComparisonPanel(props: PlaygroundComparisonPanelProps)
                 placeholder={t('playground.composer.placeholder')}
                 rows={3}
                 value={props.draft}
-                onChange={(event) => {
-                  props.onDraftChange(event.target.value)
-                  // 自动撑高：先收回再按 scrollHeight 重设，超过 max-height 时 overflow-y 接管滚动。
-                  event.target.style.height = 'auto'
-                  event.target.style.height = `${event.target.scrollHeight}px`
-                }}
+                onChange={(event) => props.onDraftChange(event.target.value)}
                 onKeyDown={composerKeyDown}
               />
             </div>
 
             <div className="prompt-composer__toolbar">
               <div className="prompt-composer__toolbar-start">
-                <div className="min-w-0 max-w-[min(100%,18rem)] sm:max-w-[22rem]">
+                <div className="min-w-0 max-w-[min(100%,18rem)] flex-1 sm:max-w-[22rem]">
                   {props.modelPicker}
                 </div>
                 <div className="prompt-composer__status" aria-live="polite">
