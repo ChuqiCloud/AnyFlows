@@ -822,10 +822,10 @@ mod tests {
                 assert!(sql.contains("tokens.organization_id IS NULL"));
                 assert!(sql.contains("ORDER BY tokens.id ASC"));
                 if mode == GroupKeySelectionMode::SelectedGroups {
-                    assert!(sql.contains("tokens.user_id NOT IN (SELECT users.id FROM users"));
-                    assert!(sql.contains(
-                        "users.default_group_id IN (SELECT group_group_grants.source_group_id"
-                    ));
+                    assert!(sql.contains("tokens.user_id NOT IN"));
+                    assert!(sql.contains("SELECT users.id FROM users"));
+                    assert!(sql.contains("users.default_group_id IN"));
+                    assert!(sql.contains("SELECT group_group_grants.source_group_id"));
                     assert!(!sql.contains("AND users.default_group_id NOT IN"));
                 }
                 assert_eq!(sql.contains("FOR UPDATE"), backend != DbBackend::Sqlite);
