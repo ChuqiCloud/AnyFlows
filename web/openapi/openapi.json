@@ -25615,6 +25615,7 @@
             "items": {
               "$ref": "#/components/schemas/AdminGroupModelRatioOverride"
             },
+            "description": "来源分组到当前目标分组的模型倍率覆盖。",
             "maxItems": 1024
           }
         },
@@ -25639,10 +25640,14 @@
             "minItems": 1
           },
           "ratio_overrides": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/AdminGroupModelRatioOverride"
             },
+            "description": "提供时整体替换当前目标分组的模型倍率覆盖；省略时保留已有覆盖。",
             "maxItems": 1024
           }
         },
@@ -25663,8 +25668,8 @@
           },
           "model": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 256
+            "maxLength": 256,
+            "minLength": 1
           },
           "ratio_micros": {
             "type": "integer",

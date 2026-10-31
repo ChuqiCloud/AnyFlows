@@ -666,7 +666,7 @@ export type AdminGroupModelPolicy = {
 };
 export type AdminGroupModelPolicyWriteRequest = {
     allowed_models: Array<string> | null;
-    ratio_overrides?: Array<AdminGroupModelRatioOverride>;
+    ratio_overrides?: Array<AdminGroupModelRatioOverride> | null;
 };
 export type AdminGroupModelRatioOverride = {
     source_group_id: number;
