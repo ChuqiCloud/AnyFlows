@@ -149,8 +149,9 @@ mod group_model_policy;
 mod group_pricing;
 pub use group_key_access::{
     GroupKeyAccessError, GroupKeyAccessRepository, GroupKeyPolicyRecord,
-    GroupKeyPolicyUpdateRecord, GroupKeySelectionMode, MAX_GROUP_KEY_ALLOWED_USERS,
-    MAX_USER_TOKEN_GROUP_PAGE_SIZE, UserTokenGroupPageRecord, UserTokenGroupRecord,
+    GroupKeyPolicyUpdateRecord, GroupKeySelectionMode, MAX_GROUP_KEY_ALLOWED_GROUPS,
+    MAX_GROUP_KEY_ALLOWED_USERS, MAX_USER_TOKEN_GROUP_PAGE_SIZE, UserTokenGroupPageRecord,
+    UserTokenGroupRecord,
 };
 #[cfg(test)]
 mod group_pricing_tests;
@@ -445,11 +446,12 @@ pub use email_settings::{
 pub use error::{DatabaseError, DatabaseOptionsError};
 pub use group_model_policy::{
     GroupModelPolicyRecord, GroupModelPolicyRepository, GroupModelPolicyRepositoryError,
+    GroupModelRatioOverridePolicyRecord, MAX_GROUP_MODEL_RATIO_OVERRIDES,
 };
 pub use group_pricing::{
-    GroupModelRatioRecord, GroupPeakPricingRecord, GroupPricingCatalog, GroupPricingRecord,
-    GroupPricingRepository, GroupPricingRepositoryError, MAX_GROUP_MODEL_RATIO_ENTRIES,
-    MAX_GROUP_PRICING_ENTRIES,
+    GroupModelRatioOverrideRecord, GroupModelRatioRecord, GroupPeakPricingRecord,
+    GroupPricingCatalog, GroupPricingRecord, GroupPricingRepository, GroupPricingRepositoryError,
+    MAX_GROUP_MODEL_RATIO_ENTRIES, MAX_GROUP_PRICING_ENTRIES,
 };
 pub use initial_setup::{
     InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,

@@ -5,7 +5,7 @@ use af_admin::{
     GroupKeyPolicyUpdate, PlatformAuditEntry, PlatformAuditOutcome, PlatformAuditService,
     SessionAuthentication, SessionAuthenticator, UserTokenGroupListQuery, UserTokenGroupPage,
 };
-use af_domain::{PlatformPermission, UserId};
+use af_domain::{GroupId, PlatformPermission, UserId};
 use af_telemetry::RequestId;
 use axum::{
     Json, Router,
@@ -32,6 +32,7 @@ pub(crate) enum GroupKeySelectionMode {
     DefaultOnly,
     AllUsers,
     SelectedUsers,
+    SelectedGroups,
 }
 
 impl From<GroupKeySelectionMode> for af_admin::GroupKeySelectionMode {
@@ -40,6 +41,7 @@ impl From<GroupKeySelectionMode> for af_admin::GroupKeySelectionMode {
             GroupKeySelectionMode::DefaultOnly => Self::DefaultOnly,
             GroupKeySelectionMode::AllUsers => Self::AllUsers,
             GroupKeySelectionMode::SelectedUsers => Self::SelectedUsers,
+            GroupKeySelectionMode::SelectedGroups => Self::SelectedGroups,
         }
     }
 }
@@ -50,6 +52,7 @@ impl From<af_admin::GroupKeySelectionMode> for GroupKeySelectionMode {
             af_admin::GroupKeySelectionMode::DefaultOnly => Self::DefaultOnly,
             af_admin::GroupKeySelectionMode::AllUsers => Self::AllUsers,
             af_admin::GroupKeySelectionMode::SelectedUsers => Self::SelectedUsers,
+            af_admin::GroupKeySelectionMode::SelectedGroups => Self::SelectedGroups,
         }
     }
 }
@@ -63,6 +66,8 @@ pub(crate) struct AdminGroupKeyPolicyResponse {
     selection_mode: GroupKeySelectionMode,
     #[schema(max_items = 1000)]
     allowed_user_ids: Vec<i64>,
+    #[schema(max_items = 1000)]
+    allowed_group_ids: Vec<i64>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -72,6 +77,9 @@ pub(crate) struct AdminGroupKeyPolicyWriteRequest {
     #[serde(default)]
     #[schema(max_items = 1000)]
     allowed_user_ids: Vec<i64>,
+    #[serde(default)]
+    #[schema(max_items = 1000)]
+    allowed_group_ids: Vec<i64>,
     /// 是否同步停用因新策略而失去该分组授权的现有 Key。
     #[serde(default)]
     disable_keys_losing_access: bool,
@@ -79,7 +87,7 @@ pub(crate) struct AdminGroupKeyPolicyWriteRequest {
 
 impl AdminGroupKeyPolicyWriteRequest {
     fn into_command(self) -> Result<GroupKeyPolicyCommand, ManagementError> {
-        if self.allowed_user_ids.len() > 1_000 {
+        if self.allowed_user_ids.len() > 1_000 || self.allowed_group_ids.len() > 1_000 {
             return Err(ManagementError::InvalidRequest);
         }
         let ids = self
@@ -87,9 +95,15 @@ impl AdminGroupKeyPolicyWriteRequest {
             .into_iter()
             .map(|id| UserId::new(id).map_err(|_| ManagementError::InvalidRequest))
             .collect::<Result<Vec<_>, _>>()?;
-        GroupKeyPolicyCommand::with_revocation(
+        let group_ids = self
+            .allowed_group_ids
+            .into_iter()
+            .map(|id| GroupId::new(id).map_err(|_| ManagementError::InvalidRequest))
+            .collect::<Result<Vec<_>, _>>()?;
+        GroupKeyPolicyCommand::with_groups_and_revocation(
             self.selection_mode.into(),
             ids,
+            group_ids,
             self.disable_keys_losing_access,
         )
         .map_err(map_error)
@@ -105,6 +119,8 @@ pub(crate) struct AdminGroupKeyPolicyUpdateResponse {
     selection_mode: GroupKeySelectionMode,
     #[schema(max_items = 1000)]
     allowed_user_ids: Vec<i64>,
+    #[schema(max_items = 1000)]
+    allowed_group_ids: Vec<i64>,
     /// 本次策略保存事务停用的既有 Key 数量。
     #[schema(minimum = 0)]
     disabled_key_count: u64,
@@ -254,6 +270,7 @@ async fn record_group_key_revocation_audit(
         af_admin::GroupKeySelectionMode::DefaultOnly => "default_only",
         af_admin::GroupKeySelectionMode::AllUsers => "all_users",
         af_admin::GroupKeySelectionMode::SelectedUsers => "selected_users",
+        af_admin::GroupKeySelectionMode::SelectedGroups => "selected_groups",
     };
     let entry = PlatformAuditEntry::new(
         principal,
@@ -308,6 +325,11 @@ impl From<GroupKeyPolicy> for AdminGroupKeyPolicyResponse {
                 .into_iter()
                 .map(UserId::get)
                 .collect(),
+            allowed_group_ids: policy
+                .allowed_group_ids
+                .into_iter()
+                .map(GroupId::get)
+                .collect(),
         }
     }
 }
@@ -322,6 +344,12 @@ impl From<GroupKeyPolicyUpdate> for AdminGroupKeyPolicyUpdateResponse {
                 .allowed_user_ids
                 .into_iter()
                 .map(UserId::get)
+                .collect(),
+            allowed_group_ids: result
+                .policy
+                .allowed_group_ids
+                .into_iter()
+                .map(GroupId::get)
                 .collect(),
             disabled_key_count: result.disabled_key_count,
             disabled_user_count: result.disabled_user_count,
@@ -450,6 +478,7 @@ mod tests {
                     group_id,
                     selection_mode: af_admin::GroupKeySelectionMode::DefaultOnly,
                     allowed_user_ids: vec![],
+                    allowed_group_ids: vec![],
                 })
             })
         }

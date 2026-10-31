@@ -10,6 +10,7 @@ import {
   type GroupKeySelectionMode,
 } from './group-key-policy-api'
 import { GroupKeyPolicyGroups } from './group-key-policy-groups'
+import { GroupKeyPolicyUsers } from './group-key-policy-users'
 
 export function GroupKeyPolicyEditor({ groupId, portalContainer }: { groupId: number; portalContainer?: HTMLElement | null }) {
   const { t } = useTranslation()
@@ -31,15 +32,17 @@ function GroupKeyPolicyForm({ policy, portalContainer }: { policy: GroupKeyPolic
   const mutation = useUpdateAdminGroupKeyPolicy(policy.group_id)
   const labelId = useId()
   const [mode, setMode] = useState<GroupKeySelectionMode>(policy.selection_mode)
-  const [selectedIds, setSelectedIds] = useState(policy.allowed_group_ids)
+  const [selectedUserIds, setSelectedUserIds] = useState(policy.allowed_user_ids)
+  const [selectedGroupIds, setSelectedGroupIds] = useState(policy.allowed_group_ids)
   const [disableKeys, setDisableKeys] = useState(false)
   const [confirmRevocation, setConfirmRevocation] = useState(false)
   useEffect(() => {
     setMode(policy.selection_mode)
-    setSelectedIds(policy.allowed_group_ids)
+    setSelectedUserIds(policy.allowed_user_ids)
+    setSelectedGroupIds(policy.allowed_group_ids)
     setDisableKeys(false)
   }, [policy])
-  const modes = ['default_only', 'all_users', 'selected_groups'] as const
+  const modes = ['default_only', 'all_users', 'selected_users', 'selected_groups'] as const
 
   return (
     <>
@@ -50,7 +53,7 @@ function GroupKeyPolicyForm({ policy, portalContainer }: { policy: GroupKeyPolic
         setConfirmRevocation(true)
         return
       }
-      mutation.mutate({ selection_mode: mode, allowed_group_ids: mode === 'selected_groups' ? selectedIds : [], disable_keys_losing_access: false })
+      mutation.mutate({ selection_mode: mode, allowed_user_ids: mode === 'selected_users' ? selectedUserIds : [], allowed_group_ids: mode === 'selected_groups' ? selectedGroupIds : [], disable_keys_losing_access: false })
     }}>
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5">
         <div>
@@ -78,7 +81,8 @@ function GroupKeyPolicyForm({ policy, portalContainer }: { policy: GroupKeyPolic
           </Select>
         </div>
         <p className="rounded-lg bg-surface-2 px-3 py-2 text-xs leading-5 text-muted-foreground">{t('groups.keyPolicy.defaultAccess')}</p>
-        {mode === 'selected_groups' ? <GroupKeyPolicyGroups selectedIds={selectedIds} disabled={mutation.isPending} onChange={(ids) => { setSelectedIds(ids); mutation.reset() }} /> : null}
+        {mode === 'selected_users' ? <GroupKeyPolicyUsers selectedIds={selectedUserIds} disabled={mutation.isPending} onChange={(ids) => { setSelectedUserIds(ids); mutation.reset() }} /> : null}
+        {mode === 'selected_groups' ? <GroupKeyPolicyGroups selectedIds={selectedGroupIds} disabled={mutation.isPending} onChange={(ids) => { setSelectedGroupIds(ids); mutation.reset() }} /> : null}
         <label className="flex items-start gap-2 rounded-lg border border-danger/25 bg-danger/5 px-3 py-2 text-xs leading-5">
           <input type="checkbox" className="mt-0.5 size-4 accent-danger" checked={disableKeys} disabled={mutation.isPending} onChange={(event) => { setDisableKeys(event.target.checked); mutation.reset() }} />
           <span><strong>{t('groups.keyPolicy.disableExistingTitle')}</strong><br />{t('groups.keyPolicy.disableExistingDescription')}</span>
@@ -102,7 +106,7 @@ function GroupKeyPolicyForm({ policy, portalContainer }: { policy: GroupKeyPolic
         onCancel={() => setConfirmRevocation(false)}
         onConfirm={() => {
           setConfirmRevocation(false)
-          mutation.mutate({ selection_mode: mode, allowed_group_ids: mode === 'selected_groups' ? selectedIds : [], disable_keys_losing_access: true })
+          mutation.mutate({ selection_mode: mode, allowed_user_ids: mode === 'selected_users' ? selectedUserIds : [], allowed_group_ids: mode === 'selected_groups' ? selectedGroupIds : [], disable_keys_losing_access: true })
         }}
       />
     </>

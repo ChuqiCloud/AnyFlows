@@ -1961,7 +1961,21 @@
       "saveError": "Model access could not be saved. Check your list and retry.",
       "invalidName": "Model names cannot contain surrounding whitespace or control characters, and each name is limited to 256 bytes.",
       "tooMany": "Select no more than 512 models.",
-      "tooMuchText": "The combined model names cannot exceed 32 KiB."
+      "tooMuchText": "The combined model names cannot exceed 32 KiB.",
+      "ratioTitle": "Source group ratio overrides",
+      "ratioDescription": "Override this group's multiplier by source group and model. Leave the model empty to cover every model from that source group.",
+      "ratioSource": "Source group",
+      "ratioModel": "Model",
+      "ratioModelAll": "Empty means all models",
+      "ratioValue": "Multiplier",
+      "ratioAdd": "Add ratio rule",
+      "ratioRemove": "Remove ratio rule",
+      "ratioEmpty": "No override is configured. The global group ratio will be used.",
+      "ratioInvalid": "Enter a valid source group, model name, and non-negative multiplier.",
+      "ratioDuplicate": "The same model can only be configured once per source group.",
+      "ratioTooMany": "Too many ratio rules.",
+      "ratioGroupHint": "Group #{{id}}",
+      "ratioGroupError": "The group catalog could not be loaded, so new ratio rules cannot be added. Existing rules can still be saved."
     },
     "keyPolicy": {
       "detailsTab": "Group settings",

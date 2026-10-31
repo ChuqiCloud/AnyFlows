@@ -1856,7 +1856,21 @@
       "saveError": "模型访问范围保存失败，请检查后重试。",
       "invalidName": "模型名不能含首尾空白或控制字符，且每个名称最多 256 字节。",
       "tooMany": "最多可选择 512 个模型。",
-      "tooMuchText": "模型名称总长度不能超过 32 KiB。"
+      "tooMuchText": "模型名称总长度不能超过 32 KiB。",
+      "ratioTitle": "来源分组倍率覆盖",
+      "ratioDescription": "按来源分组和模型覆盖当前分组的倍率；留空模型名表示该来源分组的全部模型。",
+      "ratioSource": "来源分组",
+      "ratioModel": "模型",
+      "ratioModelAll": "留空表示全部模型",
+      "ratioValue": "倍率",
+      "ratioAdd": "添加倍率规则",
+      "ratioRemove": "移除倍率规则",
+      "ratioEmpty": "尚未设置倍率覆盖，将沿用全局分组倍率。",
+      "ratioInvalid": "请填写有效的来源分组、模型名和非负倍率。",
+      "ratioDuplicate": "同一来源分组不能重复设置同一个模型。",
+      "ratioTooMany": "倍率规则数量过多。",
+      "ratioGroupHint": "分组 #{{id}}",
+      "ratioGroupError": "分组目录读取失败，无法添加新的倍率规则；已有规则仍可保存。"
     },
     "keyPolicy": {
       "detailsTab": "基础配置",

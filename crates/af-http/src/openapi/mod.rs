@@ -704,9 +704,10 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 601);
+        assert_eq!(schemas.len(), 602);
         assert!(schemas.contains_key("AdminProxyCleanupRequest"));
         assert!(schemas.contains_key("AdminProxyCleanupResult"));
+        assert!(schemas.contains_key("AdminGroupModelRatioOverride"));
         assert!(schemas.contains_key("ServiceLevelPoint"));
         assert!(schemas.contains_key("ServiceLevelRow"));
         assert!(schemas.contains_key("ServiceLevelReport"));

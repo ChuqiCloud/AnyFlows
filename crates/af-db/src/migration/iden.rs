@@ -1088,6 +1088,28 @@ pub(in crate::migration) mod group_model_ratios {
     }
 }
 
+pub(in crate::migration) mod group_model_ratio_overrides {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "group_model_ratio_overrides")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        SourceGroupId,
+        TargetGroupId,
+        Model,
+        RatioMicros,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod usage_logs {
     use super::DeriveIden;
 
