@@ -186,31 +186,34 @@ async fn selected_groups_authorizes_matching_defaults_and_revokes_only_lost_pers
         )
         .await?;
     assert_eq!(policy.allowed_group_ids, [source]);
-    let denied = repository.list_user_groups(UserId::new(51)?, None, 50).await?;
+    let denied = repository
+        .list_user_groups(UserId::new(51)?, None, 50)
+        .await?;
     assert_eq!(
-        denied.groups.iter().map(|group| group.group_id).collect::<Vec<_>>(),
+        denied
+            .groups
+            .iter()
+            .map(|group| group.group_id)
+            .collect::<Vec<_>>(),
         [GroupId::new(10)?]
     );
-    let allowed = repository.list_user_groups(matching_user, None, 50).await?;
+    let allowed = repository
+        .list_user_groups(matching_user, None, 50)
+        .await?;
     assert_eq!(
-        allowed.groups.iter().map(|group| group.group_id).collect::<Vec<_>>(),
+        allowed
+            .groups
+            .iter()
+            .map(|group| group.group_id)
+            .collect::<Vec<_>>(),
         [target, source]
     );
     let transaction = pool.connection().begin().await?;
-    assert!(!user_can_select_key_group(
-        &transaction,
-        UserId::new(51)?,
-        GroupId::new(10)?,
-        target,
-    )
-    .await?);
-    assert!(user_can_select_key_group(
-        &transaction,
-        matching_user,
-        source,
-        target,
-    )
-    .await?);
+    assert!(
+        !user_can_select_key_group(&transaction, UserId::new(51)?, GroupId::new(10)?, target,)
+            .await?
+    );
+    assert!(user_can_select_key_group(&transaction, matching_user, source, target,).await?);
     transaction.rollback().await?;
 
     repository

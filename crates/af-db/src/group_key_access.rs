@@ -639,20 +639,21 @@ fn revocation_candidate_query(
         let explicitly_allowed_users = Query::select()
             .column(users::Column::Id)
             .from(users::Entity)
-            .and_where(Expr::col(users::Column::DefaultGroupId).in_subquery(
-                Query::select()
-                    .column(group_group_grants::Column::SourceGroupId)
-                    .from(group_group_grants::Entity)
-                    .and_where(
-                        Expr::col(group_group_grants::Column::TargetGroupId)
-                            .eq(group_id.get()),
-                    )
-                    .to_owned(),
-            ))
+            .and_where(
+                Expr::col(users::Column::DefaultGroupId).in_subquery(
+                    Query::select()
+                        .column(group_group_grants::Column::SourceGroupId)
+                        .from(group_group_grants::Entity)
+                        .and_where(
+                            Expr::col(group_group_grants::Column::TargetGroupId)
+                                .eq(group_id.get()),
+                        )
+                        .to_owned(),
+                ),
+            )
             .to_owned();
-        query = query.filter(
-            Expr::col(tokens::Column::UserId).not_in_subquery(explicitly_allowed_users),
-        );
+        query = query
+            .filter(Expr::col(tokens::Column::UserId).not_in_subquery(explicitly_allowed_users));
     }
     query = query.order_by_asc(tokens::Column::Id);
     if backend != DbBackend::Sqlite {
@@ -823,7 +824,9 @@ mod tests {
                 assert!(sql.contains("ORDER BY tokens.id ASC"));
                 if mode == GroupKeySelectionMode::SelectedGroups {
                     assert!(sql.contains("tokens.user_id NOT IN (SELECT users.id FROM users"));
-                    assert!(sql.contains("users.default_group_id IN (SELECT group_group_grants.source_group_id"));
+                    assert!(sql.contains(
+                        "users.default_group_id IN (SELECT group_group_grants.source_group_id"
+                    ));
                     assert!(!sql.contains("AND users.default_group_id NOT IN"));
                 }
                 assert_eq!(sql.contains("FOR UPDATE"), backend != DbBackend::Sqlite);

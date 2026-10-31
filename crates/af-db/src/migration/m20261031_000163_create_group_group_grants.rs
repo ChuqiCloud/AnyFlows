@@ -163,7 +163,9 @@ WHERE tc.CONSTRAINT_SCHEMA = DATABASE()
                 .await?;
         }
         DbBackend::Sqlite => {
-            connection.execute_unprepared("PRAGMA foreign_keys = OFF").await?;
+            connection
+                .execute_unprepared("PRAGMA foreign_keys = OFF")
+                .await?;
             let result = async {
                 let statements = [
                     format!("CREATE TABLE group_key_policies_new (group_id INTEGER NOT NULL PRIMARY KEY, selection_mode VARCHAR(32) NOT NULL CHECK (selection_mode IN ({})), FOREIGN KEY (group_id) REFERENCES groups(id) ON UPDATE CASCADE ON DELETE CASCADE)", selection_values),

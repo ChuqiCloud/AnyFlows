@@ -1,6 +1,6 @@
 use sea_orm_migration::prelude::*;
 
-use super::schema::table;
+use super::schema::{table, timestamp};
 
 #[derive(DeriveMigrationName)]
 pub(super) struct Migration;

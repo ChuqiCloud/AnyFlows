@@ -12,8 +12,8 @@ use super::{
     MigrationOptions,
 };
 use crate::entity::{
-    abilities, channel_groups, group_group_grants, group_model_ratio_overrides,
-    group_model_ratios, groups, scheduler_outbox_events,
+    abilities, channel_groups, group_group_grants, group_model_ratio_overrides, group_model_ratios,
+    groups, scheduler_outbox_events,
 };
 
 #[tokio::test]
@@ -321,7 +321,10 @@ async fn delete_clears_safe_runtime_relationships_atomically() -> Result<(), Box
             .filter(
                 group_model_ratio_overrides::Column::SourceGroupId
                     .eq(target.group_id().get())
-                    .or(group_model_ratio_overrides::Column::TargetGroupId.eq(target.group_id().get())),
+                    .or(
+                        group_model_ratio_overrides::Column::TargetGroupId
+                            .eq(target.group_id().get()),
+                    ),
             )
             .count(fixture.pool.connection())
             .await?,
