@@ -14,7 +14,10 @@ use crate::{
     AdminGroupRecord, AdminGroupRepository, AdminGroupRepositoryError,
     ability_write::{AbilityWriteError, delete_group_abilities},
     admin_group::record_internal_error,
-    entity::{channel_groups, group_model_ratios, groups, tokens, users},
+    entity::{
+        channel_groups, group_group_grants, group_model_ratio_overrides, group_model_ratios,
+        groups, tokens, users,
+    },
 };
 
 /// 已由应用层校验的高峰倍率窗口。
@@ -472,6 +475,26 @@ async fn clear_safe_references(
             Condition::any()
                 .add(group_model_ratios::Column::SourceGroupId.eq(group_id.get()))
                 .add(group_model_ratios::Column::TargetGroupId.eq(group_id.get())),
+        )
+        .exec(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_write_db_error)?;
+    group_model_ratio_overrides::Entity::delete_many()
+        .filter(
+            Condition::any()
+                .add(group_model_ratio_overrides::Column::SourceGroupId.eq(group_id.get()))
+                .add(group_model_ratio_overrides::Column::TargetGroupId.eq(group_id.get())),
+        )
+        .exec(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_write_db_error)?;
+    group_group_grants::Entity::delete_many()
+        .filter(
+            Condition::any()
+                .add(group_group_grants::Column::SourceGroupId.eq(group_id.get()))
+                .add(group_group_grants::Column::TargetGroupId.eq(group_id.get())),
         )
         .exec(transaction)
         .with_subscriber(NoSubscriber::default())

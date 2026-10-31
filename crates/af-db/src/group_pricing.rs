@@ -8,7 +8,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool,
-    entity::{group_model_ratios, groups},
+    entity::{group_model_ratio_overrides, group_model_ratios, groups},
 };
 
 const DEFAULT_LOAD_TIMEOUT: Duration = Duration::from_secs(5);
@@ -197,11 +197,81 @@ impl fmt::Debug for GroupModelRatioRecord {
     }
 }
 
+/// 已校验的来源分组、目标分组和公开模型覆盖倍率；`*` 表示所有模型。
+#[derive(Clone, Eq, PartialEq)]
+pub struct GroupModelRatioOverrideRecord {
+    source_group_id: GroupId,
+    target_group_id: GroupId,
+    model: String,
+    ratio_micros: i64,
+}
+
+impl GroupModelRatioOverrideRecord {
+    /// 返回用户原始所属分组。
+    #[must_use]
+    pub const fn source_group_id(&self) -> GroupId {
+        self.source_group_id
+    }
+
+    /// 返回请求最终实际使用的计费分组。
+    #[must_use]
+    pub const fn target_group_id(&self) -> GroupId {
+        self.target_group_id
+    }
+
+    /// 返回公开模型名称或全模型通配符 `*`。
+    #[must_use]
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
+    /// 返回模型覆盖倍率的百万分比整数值。
+    #[must_use]
+    pub const fn ratio_micros(&self) -> i64 {
+        self.ratio_micros
+    }
+
+    fn try_from_model(
+        model: group_model_ratio_overrides::Model,
+        active_groups: &BTreeSet<GroupId>,
+    ) -> Result<Self, GroupPricingRepositoryError> {
+        let source_group_id = GroupId::new(model.source_group_id)
+            .map_err(|_| GroupPricingRepositoryError::Invariant)?;
+        let target_group_id = GroupId::new(model.target_group_id)
+            .map_err(|_| GroupPricingRepositoryError::Invariant)?;
+        if model.ratio_micros < 0
+            || !active_groups.contains(&source_group_id)
+            || !active_groups.contains(&target_group_id)
+            || !crate::model_price::is_valid_model_ratio_override_name(&model.model)
+        {
+            return Err(GroupPricingRepositoryError::Invariant);
+        }
+        Ok(Self {
+            source_group_id,
+            target_group_id,
+            model: model.model,
+            ratio_micros: model.ratio_micros,
+        })
+    }
+}
+
+impl fmt::Debug for GroupModelRatioOverrideRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GroupModelRatioOverrideRecord")
+            .field("source_group_id", &self.source_group_id)
+            .field("target_group_id", &self.target_group_id)
+            .field("model", &"<redacted>")
+            .finish_non_exhaustive()
+    }
+}
+
 /// 一次完整读取后得到的有效分组与附加倍率目录。
 #[derive(Clone, Eq, PartialEq)]
 pub struct GroupPricingCatalog {
     groups: Vec<GroupPricingRecord>,
     group_model_ratios: Vec<GroupModelRatioRecord>,
+    group_model_ratio_overrides: Vec<GroupModelRatioOverrideRecord>,
 }
 
 impl GroupPricingCatalog {
@@ -216,6 +286,12 @@ impl GroupPricingCatalog {
     pub fn group_model_ratios(&self) -> &[GroupModelRatioRecord] {
         &self.group_model_ratios
     }
+
+    /// 返回按来源、目标分组和模型稳定排序的模型覆盖倍率。
+    #[must_use]
+    pub fn group_model_ratio_overrides(&self) -> &[GroupModelRatioOverrideRecord] {
+        &self.group_model_ratio_overrides
+    }
 }
 
 impl fmt::Debug for GroupPricingCatalog {
@@ -224,6 +300,10 @@ impl fmt::Debug for GroupPricingCatalog {
             .debug_struct("GroupPricingCatalog")
             .field("group_count", &self.groups.len())
             .field("group_model_ratio_count", &self.group_model_ratios.len())
+            .field(
+                "group_model_ratio_override_count",
+                &self.group_model_ratio_overrides.len(),
+            )
             .finish()
     }
 }
@@ -312,9 +392,25 @@ impl GroupPricingRepository {
                 .into_iter()
                 .map(|model| GroupModelRatioRecord::try_from_model(model, &active_groups))
                 .collect::<Result<Vec<_>, _>>()?;
+            let override_models = group_model_ratio_overrides::Entity::find()
+                .order_by_asc(group_model_ratio_overrides::Column::SourceGroupId)
+                .order_by_asc(group_model_ratio_overrides::Column::TargetGroupId)
+                .order_by_asc(group_model_ratio_overrides::Column::Model)
+                .limit(ratio_limit)
+                .all(self.pool.connection())
+                .await
+                .map_err(|_| GroupPricingRepositoryError::Query)?;
+            if override_models.len() > MAX_GROUP_MODEL_RATIO_ENTRIES {
+                return Err(GroupPricingRepositoryError::Invariant);
+            }
+            let group_model_ratio_overrides = override_models
+                .into_iter()
+                .map(|model| GroupModelRatioOverrideRecord::try_from_model(model, &active_groups))
+                .collect::<Result<Vec<_>, _>>()?;
             Ok(GroupPricingCatalog {
                 groups,
                 group_model_ratios,
+                group_model_ratio_overrides,
             })
         }
         .with_subscriber(NoSubscriber::default());

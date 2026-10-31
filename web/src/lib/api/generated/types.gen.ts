@@ -639,17 +639,20 @@ export type AdminGroupKeyPolicy = {
     group_id: number;
     selection_mode: GroupKeySelectionMode;
     allowed_user_ids: Array<number>;
+    allowed_group_ids: Array<number>;
 };
 export type AdminGroupKeyPolicyUpdateResult = {
     group_id: number;
     selection_mode: GroupKeySelectionMode;
     allowed_user_ids: Array<number>;
+    allowed_group_ids: Array<number>;
     disabled_key_count: number;
     disabled_user_count: number;
 };
 export type AdminGroupKeyPolicyWriteRequest = {
     selection_mode: GroupKeySelectionMode;
     allowed_user_ids?: Array<number>;
+    allowed_group_ids?: Array<number>;
     disable_keys_losing_access?: boolean;
 };
 export type AdminGroupListResponse = {
@@ -659,9 +662,16 @@ export type AdminGroupListResponse = {
 export type AdminGroupModelPolicy = {
     group_id: number;
     allowed_models: Array<string> | null;
+    ratio_overrides: Array<AdminGroupModelRatioOverride>;
 };
 export type AdminGroupModelPolicyWriteRequest = {
     allowed_models: Array<string> | null;
+    ratio_overrides?: Array<AdminGroupModelRatioOverride> | null;
+};
+export type AdminGroupModelRatioOverride = {
+    source_group_id: number;
+    model: string;
+    ratio_micros: number;
 };
 export type AdminGroupPeakWindow = {
     weekdays: Array<number>;
@@ -1730,7 +1740,7 @@ export type FrontendTemplateSummary = {
     valid: boolean;
     error?: string | null;
 };
-export type GroupKeySelectionMode = 'default_only' | 'all_users' | 'selected_users';
+export type GroupKeySelectionMode = 'default_only' | 'all_users' | 'selected_users' | 'selected_groups';
 export type HttpExtensionDescriptor = {
     id: string;
     name: string;

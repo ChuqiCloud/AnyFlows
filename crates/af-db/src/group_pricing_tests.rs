@@ -4,7 +4,7 @@ use sea_orm::{ActiveModelBehavior, ActiveModelTrait, IntoActiveModel, Set};
 
 use crate::{
     DatabaseOptions, GroupPricingRepository, GroupPricingRepositoryError, MigrationOptions,
-    entity::{group_model_ratios, groups},
+    entity::{group_model_ratio_overrides, group_model_ratios, groups},
 };
 
 #[tokio::test]
@@ -30,6 +30,24 @@ async fn repository_loads_active_groups_and_inter_group_overrides() -> Result<()
     }
     .insert(pool.connection())
     .await?;
+    group_model_ratio_overrides::ActiveModel {
+        source_group_id: Set(source.id),
+        target_group_id: Set(target.id),
+        model: Set("deepseek-chat".to_owned()),
+        ratio_micros: Set(650_000),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    group_model_ratio_overrides::ActiveModel {
+        source_group_id: Set(source.id),
+        target_group_id: Set(target.id),
+        model: Set("*".to_owned()),
+        ratio_micros: Set(550_000),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
 
     let catalog = GroupPricingRepository::new(pool.clone())
         .load_snapshot()
@@ -49,6 +67,20 @@ async fn repository_loads_active_groups_and_inter_group_overrides() -> Result<()
     assert_eq!(override_record.source_group_id().get(), source.id);
     assert_eq!(override_record.target_group_id().get(), target.id);
     assert_eq!(override_record.ratio_micros(), 750_000);
+    assert_eq!(catalog.group_model_ratio_overrides().len(), 2);
+    let model_override = catalog
+        .group_model_ratio_overrides()
+        .iter()
+        .find(|record| record.model() == "deepseek-chat")
+        .expect("精确模型覆盖必须存在");
+    assert_eq!(model_override.model(), "deepseek-chat");
+    assert_eq!(model_override.ratio_micros(), 650_000);
+    let wildcard_override = catalog
+        .group_model_ratio_overrides()
+        .iter()
+        .find(|record| record.model() == "*")
+        .expect("全模型覆盖必须被持久化边界接受");
+    assert_eq!(wildcard_override.ratio_micros(), 550_000);
     pool.close().await?;
     Ok(())
 }
@@ -131,6 +163,19 @@ async fn active_models_enforce_group_pricing_invariants_without_database_checks(
     };
     assert!(
         invalid_override
+            .before_save(pool.connection(), true)
+            .await
+            .is_err()
+    );
+    let invalid_model_override = group_model_ratio_overrides::ActiveModel {
+        source_group_id: Set(source.id),
+        target_group_id: Set(target.id),
+        model: Set("  ".to_owned()),
+        ratio_micros: Set(1_000_000),
+        ..Default::default()
+    };
+    assert!(
+        invalid_model_override
             .before_save(pool.connection(), true)
             .await
             .is_err()

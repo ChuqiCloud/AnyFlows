@@ -161,11 +161,45 @@ impl fmt::Debug for GroupModelRatioSourceRecord {
     }
 }
 
+/// 来源提供的用户分组到实际计费分组的模型覆盖倍率；`*` 表示所有模型。
+#[derive(Clone, Eq, PartialEq)]
+pub struct GroupModelRatioOverrideSourceRecord {
+    source_group_id: GroupId,
+    target_group_id: GroupId,
+    model: String,
+    ratio: PricingRatio,
+}
+
+impl GroupModelRatioOverrideSourceRecord {
+    /// 使用已校验分组标识、公开模型和非负定点倍率构造记录。
+    #[must_use]
+    pub fn new(
+        source_group_id: GroupId,
+        target_group_id: GroupId,
+        model: String,
+        ratio: PricingRatio,
+    ) -> Self {
+        Self {
+            source_group_id,
+            target_group_id,
+            model,
+            ratio,
+        }
+    }
+}
+
+impl fmt::Debug for GroupModelRatioOverrideSourceRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("GroupModelRatioOverrideSourceRecord(<redacted>)")
+    }
+}
+
 /// 来源一次完整读取返回的目录输入。
 #[derive(Clone, Eq, PartialEq)]
 pub struct GroupPricingSourceCatalog {
     groups: Vec<GroupPricingSourceRecord>,
     group_model_ratios: Vec<GroupModelRatioSourceRecord>,
+    group_model_ratio_overrides: Vec<GroupModelRatioOverrideSourceRecord>,
 }
 
 impl GroupPricingSourceCatalog {
@@ -178,7 +212,18 @@ impl GroupPricingSourceCatalog {
         Self {
             groups,
             group_model_ratios,
+            group_model_ratio_overrides: Vec::new(),
         }
+    }
+
+    /// 设置模型覆盖目录；`*` 表示所有模型，重复和悬空引用由快照构建边界统一拒绝。
+    #[must_use]
+    pub fn with_model_ratio_overrides(
+        mut self,
+        overrides: Vec<GroupModelRatioOverrideSourceRecord>,
+    ) -> Self {
+        self.group_model_ratio_overrides = overrides;
+        self
     }
 }
 
@@ -188,6 +233,10 @@ impl fmt::Debug for GroupPricingSourceCatalog {
             .debug_struct("GroupPricingSourceCatalog")
             .field("group_count", &self.groups.len())
             .field("group_model_ratio_count", &self.group_model_ratios.len())
+            .field(
+                "group_model_ratio_override_count",
+                &self.group_model_ratio_overrides.len(),
+            )
             .finish()
     }
 }
@@ -204,6 +253,7 @@ pub struct GroupPricingSnapshot {
     generation: u64,
     groups: BTreeMap<GroupId, GroupPricing>,
     group_model_ratios: BTreeMap<(GroupId, GroupId), PricingRatio>,
+    group_model_ratio_overrides: BTreeMap<(GroupId, GroupId, String), PricingRatio>,
 }
 
 impl GroupPricingSnapshot {
@@ -223,6 +273,12 @@ impl GroupPricingSnapshot {
     #[must_use]
     pub fn group_model_ratio_count(&self) -> usize {
         self.group_model_ratios.len()
+    }
+
+    /// 返回模型覆盖倍率数。
+    #[must_use]
+    pub fn group_model_ratio_override_count(&self) -> usize {
+        self.group_model_ratio_overrides.len()
     }
 
     /// 为一次请求固定基础、跨分组附加与当前高峰三层倍率。
@@ -256,10 +312,22 @@ impl GroupPricingSnapshot {
             .groups
             .get(&target_group_id)
             .ok_or(GroupPricingLookupError::TargetGroupNotFound)?;
+        // Prefer a model-specific override, then the all-model wildcard, then
+        // the source-to-target global ratio, with 1.0 as the final default.
         let group_model = self
-            .group_model_ratios
-            .get(&(source_group_id, target_group_id))
+            .group_model_ratio_overrides
+            .get(&(source_group_id, target_group_id, model.to_owned()))
             .copied()
+            .or_else(|| {
+                self.group_model_ratio_overrides
+                    .get(&(source_group_id, target_group_id, "*".to_owned()))
+                    .copied()
+            })
+            .or_else(|| {
+                self.group_model_ratios
+                    .get(&(source_group_id, target_group_id))
+                    .copied()
+            })
             .unwrap_or(PricingRatio::ONE);
         let applied_peak = if let Some(schedule) = &target.peak_schedule {
             PricingRatio::new(schedule.ratio_for(model, time).unwrap_or(1_000_000))
@@ -284,6 +352,10 @@ impl fmt::Debug for GroupPricingSnapshot {
             .field("generation", &self.generation)
             .field("group_count", &self.groups.len())
             .field("group_model_ratio_count", &self.group_model_ratios.len())
+            .field(
+                "group_model_ratio_override_count",
+                &self.group_model_ratio_overrides.len(),
+            )
             .finish()
     }
 }
@@ -503,7 +575,20 @@ impl GroupPricingSource for DatabaseGroupPricingSource {
                     ))
                 })
                 .collect::<Result<Vec<_>, GroupPricingSourceError>>()?;
-            Ok(GroupPricingSourceCatalog::new(groups, group_model_ratios))
+            let group_model_ratio_overrides = catalog
+                .group_model_ratio_overrides()
+                .iter()
+                .map(|record| {
+                    Ok(GroupModelRatioOverrideSourceRecord::new(
+                        record.source_group_id(),
+                        record.target_group_id(),
+                        record.model().to_owned(),
+                        pricing_ratio(record.ratio_micros())?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, GroupPricingSourceError>>()?;
+            Ok(GroupPricingSourceCatalog::new(groups, group_model_ratios)
+                .with_model_ratio_overrides(group_model_ratio_overrides))
         })
     }
 }
@@ -516,6 +601,9 @@ fn build_snapshot(
         return Err(GroupPricingCacheError::GroupCapacityExceeded);
     }
     if catalog.group_model_ratios.len() > MAX_GROUP_MODEL_RATIO_ENTRIES {
+        return Err(GroupPricingCacheError::GroupModelRatioCapacityExceeded);
+    }
+    if catalog.group_model_ratio_overrides.len() > MAX_GROUP_MODEL_RATIO_ENTRIES {
         return Err(GroupPricingCacheError::GroupModelRatioCapacityExceeded);
     }
     let mut groups = BTreeMap::new();
@@ -551,10 +639,30 @@ fn build_snapshot(
             return Err(GroupPricingCacheError::DuplicateGroupModelRatio);
         }
     }
+    let mut group_model_ratio_overrides = BTreeMap::new();
+    for record in catalog.group_model_ratio_overrides {
+        if !groups.contains_key(&record.source_group_id)
+            || !groups.contains_key(&record.target_group_id)
+            || record.model.is_empty()
+            || record.model.chars().any(char::is_control)
+        {
+            return Err(GroupPricingCacheError::OrphanGroupModelRatio);
+        }
+        if group_model_ratio_overrides
+            .insert(
+                (record.source_group_id, record.target_group_id, record.model),
+                record.ratio,
+            )
+            .is_some()
+        {
+            return Err(GroupPricingCacheError::DuplicateGroupModelRatio);
+        }
+    }
     Ok(GroupPricingSnapshot {
         generation,
         groups,
         group_model_ratios,
+        group_model_ratio_overrides,
     })
 }
 

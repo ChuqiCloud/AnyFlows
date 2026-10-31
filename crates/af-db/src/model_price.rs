@@ -246,6 +246,11 @@ pub(crate) fn is_valid_model_name(model: &str) -> bool {
         && !model.chars().any(char::is_control)
 }
 
+/// 校验模型倍率覆盖键；`*` 保留为全模型回退，其余键遵循 Canonical 模型名规则。
+pub(crate) fn is_valid_model_ratio_override_name(model: &str) -> bool {
+    model == "*" || is_valid_model_name(model)
+}
+
 /// 保持 Rust Decimal 与 PostgreSQL/MySQL `DECIMAL(38,28)` 的共同可表示范围。
 pub(crate) fn is_valid_model_price_decimal(price: Decimal) -> bool {
     if price < Decimal::ZERO || price.scale() > 28 {

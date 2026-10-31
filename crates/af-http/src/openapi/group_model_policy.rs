@@ -5,7 +5,10 @@
 use utoipa::OpenApi;
 
 use crate::{
-    group_model_policy::{AdminGroupModelPolicyResponse, AdminGroupModelPolicyWriteRequest},
+    group_model_policy::{
+        AdminGroupModelPolicyResponse, AdminGroupModelPolicyWriteRequest,
+        AdminGroupModelRatioOverride,
+    },
     management_error::ManagementErrorBody,
 };
 
@@ -14,7 +17,7 @@ use crate::{
     path = "/api/admin/groups/{id}/model-policy",
     operation_id = "getAdminGroupModelPolicy",
     tag = "分组管理",
-    summary = "读取分组可调用模型白名单",
+    summary = "读取分组模型访问与倍率策略",
     params(("id" = i64, Path, minimum = 1, description = "分组 ID")),
     responses(
         (status = 200, description = "分组当前模型限制；空值表示不限制", body = AdminGroupModelPolicyResponse),
@@ -32,8 +35,8 @@ fn get_admin_group_model_policy() {}
     path = "/api/admin/groups/{id}/model-policy",
     operation_id = "updateAdminGroupModelPolicy",
     tag = "分组管理",
-    summary = "整体替换分组可调用模型白名单",
-    description = "白名单与 Key 自身白名单取交集。将 allowed_models 设为 null 清除限制；非空数组按 Canonical 模型名区分大小写精确匹配。",
+    summary = "整体替换分组模型访问与倍率策略",
+    description = "白名单与 Key 自身白名单取交集。将 allowed_models 设为 null 清除限制；提供 ratio_overrides 时整体替换目标分组的模型倍率覆盖，省略时保留已有覆盖。ratio_overrides 的 model=\"*\" 表示所有模型，精确模型优先于通配覆盖，未命中时回退来源到目标分组的全局倍率。",
     params(("id" = i64, Path, minimum = 1, description = "分组 ID")),
     request_body = AdminGroupModelPolicyWriteRequest,
     responses(
@@ -53,6 +56,7 @@ fn update_admin_group_model_policy() {}
     paths(get_admin_group_model_policy, update_admin_group_model_policy),
     components(schemas(
         AdminGroupModelPolicyResponse,
+        AdminGroupModelRatioOverride,
         AdminGroupModelPolicyWriteRequest,
         ManagementErrorBody
     ))
