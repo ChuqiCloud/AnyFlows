@@ -54,9 +54,10 @@ pub use extensions::{
     ServiceAccountAuditError, ServiceAccountAuditFuture, ServiceAccountAuditSink,
 };
 pub use group_pricing_cache::{
-    GroupModelRatioSourceRecord, GroupPeakPricing, GroupPricingCache, GroupPricingCacheError,
-    GroupPricingLookupError, GroupPricingSnapshot, GroupPricingSource, GroupPricingSourceCatalog,
-    GroupPricingSourceError, GroupPricingSourceFuture, GroupPricingSourceRecord,
+    GroupModelRatioOverrideSourceRecord, GroupModelRatioSourceRecord, GroupPeakPricing,
+    GroupPricingCache, GroupPricingCacheError, GroupPricingLookupError, GroupPricingSnapshot,
+    GroupPricingSource, GroupPricingSourceCatalog, GroupPricingSourceError,
+    GroupPricingSourceFuture, GroupPricingSourceRecord,
 };
 pub use lifecycle::{
     BillingCompletion, BillingLifecycleError, BillingLifecycleState, BillingPrechargeError,

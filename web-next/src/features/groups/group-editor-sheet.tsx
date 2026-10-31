@@ -57,7 +57,7 @@ export function GroupEditorSheet({ group, groups, open, onOpenChange }: GroupEdi
               ) : null}
               {group ? (
                 <div className={panel === 'model-policy' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
-                  <GroupModelPolicyEditor key={group.id} groupId={group.id} />
+                  <GroupModelPolicyEditor key={group.id} groupId={group.id} portalContainer={portalContainer} />
                 </div>
               ) : null}
             </DrawerBody>

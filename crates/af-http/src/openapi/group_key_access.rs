@@ -59,7 +59,7 @@ fn get_admin_group_key_policy() {}
     operation_id = "updateAdminGroupKeyPolicy",
     tag = "分组管理",
     summary = "设置分组的用户 Key 自助选择策略",
-    description = "整体替换策略及指定用户授权。用户默认组始终可用，策略变更不改写已有 Key 的分组。只有 selected_users 模式接受非空授权列表。可选 disable_keys_losing_access=true 会在同一事务中停用因新策略失去授权的现有 Key，并返回停用 Key 数量和受影响用户数；缺省为 false。",
+    description = "整体替换策略及指定用户或来源分组授权。用户默认组始终可用，策略变更不改写已有 Key 的分组。selected_users 模式接受 allowed_user_ids，selected_groups 模式接受 allowed_group_ids。可选 disable_keys_losing_access=true 会在同一事务中停用因新策略失去授权的现有 Key，并返回停用 Key 数量和受影响用户数；缺省为 false。",
     params(("id" = i64, Path, minimum = 1, description = "分组 ID")),
     request_body = AdminGroupKeyPolicyWriteRequest,
     responses(
