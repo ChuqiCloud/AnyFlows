@@ -12,7 +12,8 @@ use super::{
     MigrationOptions,
 };
 use crate::entity::{
-    abilities, channel_groups, group_model_ratios, groups, scheduler_outbox_events,
+    abilities, channel_groups, group_group_grants, group_model_ratio_overrides, group_model_ratios,
+    groups, scheduler_outbox_events,
 };
 
 #[tokio::test]
@@ -304,6 +305,29 @@ async fn delete_clears_safe_runtime_relationships_atomically() -> Result<(), Box
             .await?,
         0
     );
+    assert_eq!(
+        group_group_grants::Entity::find()
+            .filter(
+                group_group_grants::Column::SourceGroupId
+                    .eq(target.group_id().get())
+                    .or(group_group_grants::Column::TargetGroupId.eq(target.group_id().get())),
+            )
+            .count(fixture.pool.connection())
+            .await?,
+        0
+    );
+    assert_eq!(
+        group_model_ratio_overrides::Entity::find()
+            .filter(
+                group_model_ratio_overrides::Column::SourceGroupId
+                    .eq(target.group_id().get())
+                    .or(group_model_ratio_overrides::Column::TargetGroupId
+                        .eq(target.group_id().get()),),
+            )
+            .count(fixture.pool.connection())
+            .await?,
+        0
+    );
 
     fixture.pool.close().await?;
     Ok(())
@@ -482,6 +506,34 @@ async fn insert_runtime_relations(
                 default_group_id.into(),
                 target_group_id.into(),
                 1_200_000_i64.into(),
+            ],
+        ))
+        .await?;
+    connection
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO group_group_grants (target_group_id, source_group_id) VALUES (?, ?), (?, ?)",
+            [
+                target_group_id.into(),
+                default_group_id.into(),
+                default_group_id.into(),
+                target_group_id.into(),
+            ],
+        ))
+        .await?;
+    connection
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO group_model_ratio_overrides (source_group_id, target_group_id, model, ratio_micros) VALUES (?, ?, ?, ?), (?, ?, ?, ?)",
+            [
+                target_group_id.into(),
+                default_group_id.into(),
+                "delete-model".into(),
+                1_300_000_i64.into(),
+                default_group_id.into(),
+                target_group_id.into(),
+                "delete-model".into(),
+                1_400_000_i64.into(),
             ],
         ))
         .await?;

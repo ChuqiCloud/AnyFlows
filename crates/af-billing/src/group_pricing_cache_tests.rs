@@ -4,9 +4,9 @@ use std::{
 };
 
 use crate::{
-    GroupModelRatioSourceRecord, GroupPeakPricing, GroupPricingCache, GroupPricingCacheError,
-    GroupPricingSource, GroupPricingSourceCatalog, GroupPricingSourceError,
-    GroupPricingSourceFuture, GroupPricingSourceRecord, PricingRatio,
+    GroupModelRatioOverrideSourceRecord, GroupModelRatioSourceRecord, GroupPeakPricing,
+    GroupPricingCache, GroupPricingCacheError, GroupPricingSource, GroupPricingSourceCatalog,
+    GroupPricingSourceError, GroupPricingSourceFuture, GroupPricingSourceRecord, PricingRatio,
 };
 use af_domain::{GroupId, GroupPeakSchedule, GroupPeakWindow, PricingWeekTime};
 
@@ -60,7 +60,21 @@ async fn snapshot_applies_base_special_and_cross_midnight_peak_ratios() {
             target_group,
             PricingRatio::new(750_000).unwrap(),
         )],
-    ))]));
+    )
+    .with_model_ratio_overrides(vec![
+        GroupModelRatioOverrideSourceRecord::new(
+            source_group,
+            target_group,
+            "deepseek-chat".to_owned(),
+            PricingRatio::new(650_000).unwrap(),
+        ),
+        GroupModelRatioOverrideSourceRecord::new(
+            source_group,
+            target_group,
+            "*".to_owned(),
+            PricingRatio::new(550_000).unwrap(),
+        ),
+    ]))]));
     let cache = GroupPricingCache::load(source).await.unwrap();
     let snapshot = cache.snapshot().unwrap();
 
@@ -68,7 +82,7 @@ async fn snapshot_applies_base_special_and_cross_midnight_peak_ratios() {
         .ratios_for_request(source_group, target_group, 23 * 3_600 + 30 * 60)
         .unwrap();
     assert_eq!(peak_ratios.group().micros(), 1_200_000);
-    assert_eq!(peak_ratios.group_model().micros(), 750_000);
+    assert_eq!(peak_ratios.group_model().micros(), 550_000);
     assert_eq!(peak_ratios.applied_peak().micros(), 2_000_000);
 
     let quiet_ratios = snapshot
@@ -80,6 +94,61 @@ async fn snapshot_applies_base_special_and_cross_midnight_peak_ratios() {
         .ratios_for_request(source_group, target_group, 1_200)
         .unwrap();
     assert_eq!(after_midnight.applied_peak().micros(), 2_000_000);
+    let model_override = snapshot
+        .ratios_for_model_at(
+            source_group,
+            target_group,
+            "deepseek-chat",
+            PricingWeekTime::new(1, 12 * 3_600).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(model_override.group_model().micros(), 650_000);
+
+    let wildcard_override = snapshot
+        .ratios_for_model_at(
+            source_group,
+            target_group,
+            "other-model",
+            PricingWeekTime::new(1, 12 * 3_600).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(wildcard_override.group_model().micros(), 550_000);
+}
+
+#[tokio::test]
+async fn model_ratio_lookup_falls_back_to_global_then_one() {
+    let source_group = GroupId::new(1).unwrap();
+    let target_group = GroupId::new(2).unwrap();
+    let source = Arc::new(SequenceSource::new([Ok(GroupPricingSourceCatalog::new(
+        vec![
+            GroupPricingSourceRecord::new(source_group, PricingRatio::ONE, None),
+            GroupPricingSourceRecord::new(target_group, PricingRatio::ONE, None),
+        ],
+        vec![GroupModelRatioSourceRecord::new(
+            source_group,
+            target_group,
+            PricingRatio::new(750_000).unwrap(),
+        )],
+    ))]));
+    let cache = GroupPricingCache::load(source).await.unwrap();
+    let snapshot = cache.snapshot().unwrap();
+    let time = PricingWeekTime::new(1, 0).unwrap();
+
+    assert_eq!(
+        snapshot
+            .ratios_for_model_at(source_group, target_group, "unlisted", time)
+            .unwrap()
+            .group_model()
+            .micros(),
+        750_000
+    );
+    assert_eq!(
+        snapshot
+            .ratios_for_model_at(source_group, source_group, "unlisted", time)
+            .unwrap()
+            .group_model(),
+        PricingRatio::ONE
+    );
 }
 
 #[tokio::test]

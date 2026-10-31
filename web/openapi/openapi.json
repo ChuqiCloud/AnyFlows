@@ -9491,7 +9491,7 @@
           "分组管理"
         ],
         "summary": "设置分组的用户 Key 自助选择策略",
-        "description": "整体替换策略及指定用户授权。用户默认组始终可用，策略变更不改写已有 Key 的分组。只有 selected_users 模式接受非空授权列表。可选 disable_keys_losing_access=true 会在同一事务中停用因新策略失去授权的现有 Key，并返回停用 Key 数量和受影响用户数；缺省为 false。",
+        "description": "整体替换策略及指定用户或来源分组授权。用户默认组始终可用，策略变更不改写已有 Key 的分组。selected_users 模式接受 allowed_user_ids，selected_groups 模式接受 allowed_group_ids。可选 disable_keys_losing_access=true 会在同一事务中停用因新策略失去授权的现有 Key，并返回停用 Key 数量和受影响用户数；缺省为 false。",
         "operationId": "updateAdminGroupKeyPolicy",
         "parameters": [
           {
@@ -9590,7 +9590,7 @@
         "tags": [
           "分组管理"
         ],
-        "summary": "读取分组可调用模型白名单",
+        "summary": "读取分组模型访问与倍率策略",
         "operationId": "getAdminGroupModelPolicy",
         "parameters": [
           {
@@ -9667,8 +9667,8 @@
         "tags": [
           "分组管理"
         ],
-        "summary": "整体替换分组可调用模型白名单",
-        "description": "白名单与 Key 自身白名单取交集。将 allowed_models 设为 null 清除限制；非空数组按 Canonical 模型名区分大小写精确匹配。",
+        "summary": "整体替换分组模型访问与倍率策略",
+        "description": "白名单与 Key 自身白名单取交集。将 allowed_models 设为 null 清除限制；提供 ratio_overrides 时整体替换目标分组的模型倍率覆盖，省略时保留已有覆盖。ratio_overrides 的 model=\"*\" 表示所有模型，精确模型优先于通配覆盖，未命中时回退来源到目标分组的全局倍率。",
         "operationId": "updateAdminGroupModelPolicy",
         "parameters": [
           {
@@ -25447,7 +25447,8 @@
         "required": [
           "group_id",
           "selection_mode",
-          "allowed_user_ids"
+          "allowed_user_ids",
+          "allowed_group_ids"
         ],
         "properties": {
           "group_id": {
@@ -25465,6 +25466,14 @@
               "format": "int64"
             },
             "maxItems": 1000
+          },
+          "allowed_group_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "maxItems": 1000
           }
         },
         "additionalProperties": false
@@ -25475,6 +25484,7 @@
           "group_id",
           "selection_mode",
           "allowed_user_ids",
+          "allowed_group_ids",
           "disabled_key_count",
           "disabled_user_count"
         ],
@@ -25488,6 +25498,14 @@
             "$ref": "#/components/schemas/GroupKeySelectionMode"
           },
           "allowed_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "maxItems": 1000
+          },
+          "allowed_group_ids": {
             "type": "array",
             "items": {
               "type": "integer",
@@ -25520,6 +25538,14 @@
             "$ref": "#/components/schemas/GroupKeySelectionMode"
           },
           "allowed_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "maxItems": 1000
+          },
+          "allowed_group_ids": {
             "type": "array",
             "items": {
               "type": "integer",
@@ -25563,7 +25589,8 @@
         "type": "object",
         "required": [
           "group_id",
-          "allowed_models"
+          "allowed_models",
+          "ratio_overrides"
         ],
         "properties": {
           "group_id": {
@@ -25582,6 +25609,14 @@
             "description": "NULL 表示不限制；非空数组表示仅允许精确匹配列出的模型。",
             "maxItems": 512,
             "minItems": 1
+          },
+          "ratio_overrides": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminGroupModelRatioOverride"
+            },
+            "description": "来源分组到当前目标分组的模型倍率覆盖。",
+            "maxItems": 1024
           }
         },
         "additionalProperties": false
@@ -25603,6 +25638,43 @@
             "description": "NULL 清除限制；非空数组设置白名单。",
             "maxItems": 512,
             "minItems": 1
+          },
+          "ratio_overrides": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AdminGroupModelRatioOverride"
+            },
+            "description": "提供时整体替换当前目标分组的模型倍率覆盖；省略时保留已有覆盖。",
+            "maxItems": 1024
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminGroupModelRatioOverride": {
+        "type": "object",
+        "required": [
+          "source_group_id",
+          "model",
+          "ratio_micros"
+        ],
+        "properties": {
+          "source_group_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "ratio_micros": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         },
         "additionalProperties": false
@@ -31906,7 +31978,8 @@
         "enum": [
           "default_only",
           "all_users",
-          "selected_users"
+          "selected_users",
+          "selected_groups"
         ]
       },
       "HttpExtensionDescriptor": {

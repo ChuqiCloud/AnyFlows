@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use af_admin::{
-    GroupModelPolicyError, GroupModelPolicyRecord, GroupModelPolicyService, SessionAuthentication,
-    SessionAuthenticator,
+    GroupModelPolicyError, GroupModelPolicyRecord, GroupModelPolicyService,
+    GroupModelRatioOverridePolicyRecord, SessionAuthentication, SessionAuthenticator,
 };
+use af_domain::GroupId;
 use axum::{
     Json, Router,
     extract::{Extension, Path, State, rejection::JsonRejection},
@@ -30,6 +31,20 @@ pub(crate) struct AdminGroupModelPolicyResponse {
     /// NULL 表示不限制；非空数组表示仅允许精确匹配列出的模型。
     #[schema(required = true, min_items = 1, max_items = 512)]
     allowed_models: Option<Vec<String>>,
+    /// 来源分组到当前目标分组的模型倍率覆盖。
+    #[schema(max_items = 1024)]
+    ratio_overrides: Vec<AdminGroupModelRatioOverride>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct AdminGroupModelRatioOverride {
+    #[schema(minimum = 1)]
+    source_group_id: i64,
+    #[schema(min_length = 1, max_length = 256)]
+    model: String,
+    #[schema(minimum = 0)]
+    ratio_micros: i64,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -39,6 +54,9 @@ pub(crate) struct AdminGroupModelPolicyWriteRequest {
     #[serde(deserialize_with = "deserialize_allowed_models")]
     #[schema(required = true, min_items = 1, max_items = 512)]
     allowed_models: Option<Vec<String>>,
+    /// 提供时整体替换当前目标分组的模型倍率覆盖；省略时保留已有覆盖。
+    #[schema(max_items = 1024)]
+    ratio_overrides: Option<Vec<AdminGroupModelRatioOverride>>,
 }
 
 fn deserialize_allowed_models<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
@@ -53,6 +71,15 @@ impl From<GroupModelPolicyRecord> for AdminGroupModelPolicyResponse {
         Self {
             group_id: policy.group_id.get(),
             allowed_models: policy.allowed_models,
+            ratio_overrides: policy
+                .ratio_overrides
+                .into_iter()
+                .map(|item| AdminGroupModelRatioOverride {
+                    source_group_id: item.source_group_id.get(),
+                    model: item.model,
+                    ratio_micros: item.ratio_micros,
+                })
+                .collect(),
         }
     }
 }
@@ -105,11 +132,31 @@ async fn update_admin_group_model_policy(
     request: Result<Json<AdminGroupModelPolicyWriteRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let target_group_id = crate::management_groups::parse_group_id(&group_id)?;
+    let overrides = request
+        .ratio_overrides
+        .map(|items| {
+            items
+                .into_iter()
+                .map(|item| {
+                    let source_group_id = GroupId::new(item.source_group_id)
+                        .map_err(|_| ManagementError::InvalidRequest)?;
+                    Ok(GroupModelRatioOverridePolicyRecord {
+                        source_group_id,
+                        target_group_id,
+                        model: item.model,
+                        ratio_micros: item.ratio_micros,
+                    })
+                })
+                .collect::<Result<Vec<_>, ManagementError>>()
+        })
+        .transpose()?;
     let policy = service
         .replace(
             authentication.principal(),
-            crate::management_groups::parse_group_id(&group_id)?,
+            target_group_id,
             request.allowed_models,
+            overrides,
         )
         .await
         .map_err(map_error)?;
@@ -121,7 +168,9 @@ fn map_error(error: GroupModelPolicyError) -> ManagementError {
         GroupModelPolicyError::InvalidInput => ManagementError::InvalidRequest,
         GroupModelPolicyError::Forbidden => ManagementError::Forbidden,
         GroupModelPolicyError::NotFound => ManagementError::GroupNotFound,
-        GroupModelPolicyError::Internal => ManagementError::Internal,
+        GroupModelPolicyError::Internal | GroupModelPolicyError::RuntimeRefreshFailed => {
+            ManagementError::Internal
+        }
     }
 }
 
@@ -176,6 +225,7 @@ mod tests {
                 Ok(GroupModelPolicyRecord {
                     group_id,
                     allowed_models: Some(vec!["gpt-test".to_owned()]),
+                    ratio_overrides: vec![],
                 })
             })
         }
@@ -185,12 +235,14 @@ mod tests {
             _: af_admin::SessionPrincipal,
             group_id: GroupId,
             allowed_models: Option<Vec<String>>,
+            _: Option<Vec<af_admin::GroupModelRatioOverridePolicyRecord>>,
         ) -> GroupModelPolicyFuture<'_> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             Box::pin(async move {
                 Ok(GroupModelPolicyRecord {
                     group_id,
                     allowed_models,
+                    ratio_overrides: vec![],
                 })
             })
         }
@@ -239,7 +291,7 @@ mod tests {
                 .unwrap();
         assert_eq!(
             body,
-            serde_json::json!({"group_id": 10, "allowed_models": ["gpt-test"]})
+            serde_json::json!({"group_id": 10, "allowed_models": ["gpt-test"], "ratio_overrides": []})
         );
         assert_eq!(service.calls.load(Ordering::SeqCst), 1);
     }

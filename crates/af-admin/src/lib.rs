@@ -40,6 +40,7 @@ mod group_key_access;
 mod group_model_policy;
 mod group_read;
 pub use af_db::GroupModelPolicyRecord;
+pub use af_db::GroupModelRatioOverridePolicyRecord;
 pub use group_key_access::{
     DatabaseGroupKeyAccessService, GroupKeyAccessService, GroupKeyPolicy, GroupKeyPolicyCommand,
     GroupKeyPolicyError, GroupKeyPolicyFuture, GroupKeyPolicyUpdate, GroupKeyPolicyUpdateFuture,
@@ -48,7 +49,7 @@ pub use group_key_access::{
 };
 pub use group_model_policy::{
     DatabaseGroupModelPolicyService, GroupModelPolicyError, GroupModelPolicyFuture,
-    GroupModelPolicyService,
+    GroupModelPolicyService, RuntimeRefreshingGroupModelPolicyService,
 };
 mod group_write;
 mod image_history;

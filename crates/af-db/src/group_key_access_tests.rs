@@ -150,6 +150,109 @@ async fn grants_replace_atomically_and_user_lists_follow_current_policy()
 }
 
 #[tokio::test]
+async fn selected_groups_authorizes_matching_defaults_and_revokes_only_lost_personal_keys()
+-> Result<(), Box<dyn Error>> {
+    let (pool, repository) = fixture().await?;
+    let target = GroupId::new(20)?;
+    let source = GroupId::new(30)?;
+    let matching_user = UserId::new(53)?;
+    let target_default_user = UserId::new(54)?;
+    for (id, default_group_id) in [
+        (matching_user.get(), source.get()),
+        (target_default_user.get(), target.get()),
+    ] {
+        pool.connection()
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                "INSERT INTO users (id, username, status, default_group_id, aff_code, settings) VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    id.into(),
+                    format!("selected-group-user-{id}").into(),
+                    1_i16.into(),
+                    default_group_id.into(),
+                    format!("selected-group-user-{id}").into(),
+                    "{}".into(),
+                ],
+            ))
+            .await?;
+    }
+
+    let policy = repository
+        .update_policy_with_access(
+            target,
+            GroupKeySelectionMode::SelectedGroups,
+            vec![],
+            vec![source],
+        )
+        .await?;
+    assert_eq!(policy.allowed_group_ids, [source]);
+    let denied = repository
+        .list_user_groups(UserId::new(51)?, None, 50)
+        .await?;
+    assert_eq!(
+        denied
+            .groups
+            .iter()
+            .map(|group| group.group_id)
+            .collect::<Vec<_>>(),
+        [GroupId::new(10)?]
+    );
+    let allowed = repository.list_user_groups(matching_user, None, 50).await?;
+    assert_eq!(
+        allowed
+            .groups
+            .iter()
+            .map(|group| group.group_id)
+            .collect::<Vec<_>>(),
+        [target, source]
+    );
+    let transaction = pool.connection().begin().await?;
+    assert!(
+        !user_can_select_key_group(&transaction, UserId::new(51)?, GroupId::new(10)?, target,)
+            .await?
+    );
+    assert!(user_can_select_key_group(&transaction, matching_user, source, target,).await?);
+    transaction.rollback().await?;
+
+    repository
+        .update_policy_with_access(target, GroupKeySelectionMode::AllUsers, vec![], vec![])
+        .await?;
+    for (id, user_id) in [
+        (701_i64, 51_i64),
+        (702, 52),
+        (703, matching_user.get()),
+        (704, target_default_user.get()),
+        (705, 51),
+    ] {
+        insert_test_token(&pool, id, user_id, target.get(), 1, None).await?;
+    }
+    tokens::Entity::update_many()
+        .filter(tokens::Column::Id.eq(705_i64))
+        .col_expr(tokens::Column::OrganizationId, Expr::value(Some(900_i64)))
+        .exec(pool.connection())
+        .await?;
+
+    let update = repository
+        .update_policy_with_access_and_key_revocation(
+            target,
+            GroupKeySelectionMode::SelectedGroups,
+            vec![],
+            vec![source],
+            true,
+        )
+        .await?;
+    assert_eq!(update.disabled_key_count, 2);
+    assert_eq!(update.disabled_user_count, 2);
+    assert_eq!(token_status(&pool, 701).await?, 2);
+    assert_eq!(token_status(&pool, 702).await?, 2);
+    assert_eq!(token_status(&pool, 703).await?, 1);
+    assert_eq!(token_status(&pool, 704).await?, 1);
+    assert_eq!(token_status(&pool, 705).await?, 1);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn revoking_group_access_disables_only_active_keys_that_lose_access()
 -> Result<(), Box<dyn Error>> {
     let (pool, repository) = fixture().await?;

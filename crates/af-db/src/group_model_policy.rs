@@ -4,7 +4,8 @@ use std::{fmt, time::Duration};
 
 use af_domain::{GroupId, TokenModelPolicy};
 use sea_orm::{
-    ColumnTrait, DbBackend, EntityTrait, QueryFilter, QuerySelect, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, DbBackend, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+    Set, TransactionTrait,
     sea_query::{Expr, LockType, OnConflict},
 };
 use thiserror::Error;
@@ -13,14 +14,27 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool,
-    entity::{group_model_policies, groups},
+    entity::{group_model_policies, group_model_ratio_overrides, groups},
 };
+
+/// 单个来源分组到当前目标分组的模型倍率覆盖。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GroupModelRatioOverridePolicyRecord {
+    pub source_group_id: GroupId,
+    pub target_group_id: GroupId,
+    pub model: String,
+    pub ratio_micros: i64,
+}
+
+/// 一次策略写入允许指定的最大模型倍率覆盖数。
+pub const MAX_GROUP_MODEL_RATIO_OVERRIDES: usize = 1_024;
 
 /// 未配置时不限制模型；配置时仅允许列出的 Canonical 模型名。
 #[derive(Clone, Eq, PartialEq)]
 pub struct GroupModelPolicyRecord {
     pub group_id: GroupId,
     pub allowed_models: Option<Vec<String>>,
+    pub ratio_overrides: Vec<GroupModelRatioOverridePolicyRecord>,
 }
 
 impl fmt::Debug for GroupModelPolicyRecord {
@@ -30,6 +44,7 @@ impl fmt::Debug for GroupModelPolicyRecord {
             .field("group_id", &self.group_id)
             .field("restricted", &self.allowed_models.is_some())
             .field("model_count", &self.allowed_models.as_ref().map(Vec::len))
+            .field("ratio_override_count", &self.ratio_overrides.len())
             .finish()
     }
 }
@@ -79,6 +94,7 @@ impl GroupModelPolicyRepository {
                 .one(self.pool.connection())
                 .await
                 .map_err(internal)?;
+            let ratio_overrides = load_ratio_overrides(self.pool.connection(), group_id).await?;
             Ok(GroupModelPolicyRecord {
                 group_id,
                 allowed_models: policy
@@ -98,6 +114,7 @@ impl GroupModelPolicyRepository {
                             .collect::<Result<Vec<_>, _>>()
                     })
                     .transpose()?,
+                ratio_overrides,
             })
         })
         .await
@@ -109,6 +126,17 @@ impl GroupModelPolicyRepository {
         group_id: GroupId,
         allowed_models: Option<Vec<String>>,
     ) -> Result<GroupModelPolicyRecord, GroupModelPolicyRepositoryError> {
+        self.replace_with_ratio_overrides(group_id, allowed_models, None)
+            .await
+    }
+
+    /// 原子替换白名单与当前目标分组的全部模型倍率覆盖。
+    pub async fn replace_with_ratio_overrides(
+        &self,
+        group_id: GroupId,
+        allowed_models: Option<Vec<String>>,
+        ratio_overrides: Option<Vec<GroupModelRatioOverridePolicyRecord>>,
+    ) -> Result<GroupModelPolicyRecord, GroupModelPolicyRepositoryError> {
         allowed_models
             .as_ref()
             .map(|models| {
@@ -116,10 +144,34 @@ impl GroupModelPolicyRepository {
                     .map_err(|_| GroupModelPolicyRepositoryError::InvalidInput)
             })
             .transpose()?;
+        if let Some(ratio_overrides) = &ratio_overrides {
+            validate_ratio_overrides(ratio_overrides)?;
+            if ratio_overrides
+                .iter()
+                .any(|record| record.target_group_id != group_id)
+            {
+                return Err(GroupModelPolicyRepositoryError::InvalidInput);
+            }
+        }
+        let mut groups_to_lock = ratio_overrides
+            .as_ref()
+            .into_iter()
+            .flatten()
+            .map(|record| record.source_group_id)
+            .collect::<Vec<_>>();
+        groups_to_lock.push(group_id);
+        groups_to_lock.sort_unstable();
+        groups_to_lock.dedup();
         self.bounded(async move {
             let transaction = self.pool.connection().begin().await.map_err(internal)?;
-            if !active_group_exists_tx(&transaction, group_id).await? {
-                return Err(GroupModelPolicyRepositoryError::NotFound);
+            for locked_group_id in groups_to_lock {
+                if !active_group_exists_tx(&transaction, locked_group_id).await? {
+                    return Err(if locked_group_id == group_id {
+                        GroupModelPolicyRepositoryError::NotFound
+                    } else {
+                        GroupModelPolicyRepositoryError::InvalidInput
+                    });
+                }
             }
             match &allowed_models {
                 Some(models) => {
@@ -146,10 +198,31 @@ impl GroupModelPolicyRepository {
                         .map_err(internal)?;
                 }
             }
+            if let Some(ratio_overrides) = &ratio_overrides {
+                group_model_ratio_overrides::Entity::delete_many()
+                    .filter(group_model_ratio_overrides::Column::TargetGroupId.eq(group_id.get()))
+                    .exec(&transaction)
+                    .await
+                    .map_err(internal)?;
+                for override_record in ratio_overrides {
+                    group_model_ratio_overrides::ActiveModel {
+                        source_group_id: Set(override_record.source_group_id.get()),
+                        target_group_id: Set(group_id.get()),
+                        model: Set(override_record.model.clone()),
+                        ratio_micros: Set(override_record.ratio_micros),
+                        ..Default::default()
+                    }
+                    .insert(&transaction)
+                    .await
+                    .map_err(internal)?;
+                }
+            }
+            let ratio_overrides = load_ratio_overrides(&transaction, group_id).await?;
             transaction.commit().await.map_err(internal)?;
             Ok(GroupModelPolicyRecord {
                 group_id,
                 allowed_models,
+                ratio_overrides,
             })
         })
         .await
@@ -180,6 +253,63 @@ impl GroupModelPolicyRepository {
         .await
         .map_err(|_| GroupModelPolicyRepositoryError::Internal)?
     }
+}
+
+async fn load_ratio_overrides<C: sea_orm::ConnectionTrait>(
+    connection: &C,
+    target_group_id: GroupId,
+) -> Result<Vec<GroupModelRatioOverridePolicyRecord>, GroupModelPolicyRepositoryError> {
+    let rows = group_model_ratio_overrides::Entity::find()
+        .filter(group_model_ratio_overrides::Column::TargetGroupId.eq(target_group_id.get()))
+        .order_by_asc(group_model_ratio_overrides::Column::SourceGroupId)
+        .order_by_asc(group_model_ratio_overrides::Column::Model)
+        .all(connection)
+        .await
+        .map_err(internal)?;
+    if rows.len() > MAX_GROUP_MODEL_RATIO_OVERRIDES {
+        return Err(GroupModelPolicyRepositoryError::Internal);
+    }
+    let mut records = Vec::with_capacity(rows.len());
+    for row in rows {
+        if row.ratio_micros < 0
+            || !crate::model_price::is_valid_model_ratio_override_name(&row.model)
+        {
+            return Err(GroupModelPolicyRepositoryError::Internal);
+        }
+        let source_group_id = GroupId::new(row.source_group_id)
+            .map_err(|_| GroupModelPolicyRepositoryError::Internal)?;
+        if !active_group_exists(connection, source_group_id).await? {
+            return Err(GroupModelPolicyRepositoryError::Internal);
+        }
+        records.push(GroupModelRatioOverridePolicyRecord {
+            source_group_id,
+            target_group_id: GroupId::new(row.target_group_id)
+                .map_err(|_| GroupModelPolicyRepositoryError::Internal)?,
+            model: row.model,
+            ratio_micros: row.ratio_micros,
+        });
+    }
+    Ok(records)
+}
+
+fn validate_ratio_overrides(
+    ratio_overrides: &[GroupModelRatioOverridePolicyRecord],
+) -> Result<(), GroupModelPolicyRepositoryError> {
+    if ratio_overrides.len() > MAX_GROUP_MODEL_RATIO_OVERRIDES {
+        return Err(GroupModelPolicyRepositoryError::InvalidInput);
+    }
+    let mut keys = std::collections::BTreeSet::new();
+    for record in ratio_overrides {
+        if record.target_group_id.get() <= 0
+            || record.source_group_id.get() <= 0
+            || record.ratio_micros < 0
+            || !crate::model_price::is_valid_model_ratio_override_name(&record.model)
+            || !keys.insert((record.source_group_id, record.model.as_str()))
+        {
+            return Err(GroupModelPolicyRepositoryError::InvalidInput);
+        }
+    }
+    Ok(())
 }
 
 async fn active_group_exists<C: sea_orm::ConnectionTrait>(

@@ -1,8 +1,8 @@
 use std::{collections::BTreeSet, future::Future, pin::Pin};
 
 use af_db::{
-    GroupKeyAccessError, GroupKeyAccessRepository, MAX_GROUP_KEY_ALLOWED_USERS,
-    MAX_USER_TOKEN_GROUP_PAGE_SIZE,
+    GroupKeyAccessError, GroupKeyAccessRepository, MAX_GROUP_KEY_ALLOWED_GROUPS,
+    MAX_GROUP_KEY_ALLOWED_USERS, MAX_USER_TOKEN_GROUP_PAGE_SIZE,
 };
 use af_domain::{GroupId, UserId};
 use thiserror::Error;
@@ -19,6 +19,7 @@ pub use af_db::{
 pub struct GroupKeyPolicyCommand {
     selection_mode: GroupKeySelectionMode,
     allowed_user_ids: Vec<UserId>,
+    allowed_group_ids: Vec<GroupId>,
     disable_keys_losing_access: bool,
 }
 
@@ -28,7 +29,7 @@ impl GroupKeyPolicyCommand {
         selection_mode: GroupKeySelectionMode,
         allowed_user_ids: Vec<UserId>,
     ) -> Result<Self, GroupKeyPolicyError> {
-        Self::with_revocation(selection_mode, allowed_user_ids, false)
+        Self::with_groups_and_revocation(selection_mode, allowed_user_ids, Vec::new(), false)
     }
 
     /// 创建策略替换命令，并可选择同事务停用失去授权的现有 Key。
@@ -37,15 +38,38 @@ impl GroupKeyPolicyCommand {
         allowed_user_ids: Vec<UserId>,
         disable_keys_losing_access: bool,
     ) -> Result<Self, GroupKeyPolicyError> {
+        Self::with_groups_and_revocation(
+            selection_mode,
+            allowed_user_ids,
+            Vec::new(),
+            disable_keys_losing_access,
+        )
+    }
+
+    /// 创建策略替换命令，并按模式指定用户或来源分组授权。
+    pub fn with_groups_and_revocation(
+        selection_mode: GroupKeySelectionMode,
+        allowed_user_ids: Vec<UserId>,
+        allowed_group_ids: Vec<GroupId>,
+        disable_keys_losing_access: bool,
+    ) -> Result<Self, GroupKeyPolicyError> {
         if allowed_user_ids.len() > MAX_GROUP_KEY_ALLOWED_USERS
+            || allowed_group_ids.len() > MAX_GROUP_KEY_ALLOWED_GROUPS
             || (selection_mode != GroupKeySelectionMode::SelectedUsers
                 && !allowed_user_ids.is_empty())
+            || (selection_mode != GroupKeySelectionMode::SelectedGroups
+                && !allowed_group_ids.is_empty())
         {
             return Err(GroupKeyPolicyError::InvalidInput);
         }
         Ok(Self {
             selection_mode,
             allowed_user_ids: allowed_user_ids
+                .into_iter()
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+            allowed_group_ids: allowed_group_ids
                 .into_iter()
                 .collect::<BTreeSet<_>>()
                 .into_iter()
@@ -183,10 +207,11 @@ impl GroupKeyAccessService for DatabaseGroupKeyAccessService {
             require_admin(principal)?;
             let result = self
                 .repository
-                .update_policy_with_key_revocation(
+                .update_policy_with_access_and_key_revocation(
                     group_id,
                     command.selection_mode,
                     command.allowed_user_ids,
+                    command.allowed_group_ids,
                     command.disable_keys_losing_access,
                 )
                 .await

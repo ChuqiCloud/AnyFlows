@@ -2026,6 +2026,11 @@ impl Bootstrap<RelayReady> {
         } = self;
         let mut infrastructure = stage.infrastructure;
         infrastructure.admin_group_writer = admin_group_writer;
+        infrastructure.group_model_policy_service =
+            Arc::new(af_admin::RuntimeRefreshingGroupModelPolicyService::new(
+                Arc::clone(&infrastructure.group_model_policy_service),
+                Arc::clone(&group_pricing_refresher),
+            ));
         infrastructure.initial_setup = Arc::new(RuntimeRefreshingInitialSetup::new(
             infrastructure.initial_setup,
             group_pricing_refresher,
