@@ -21,7 +21,7 @@ use axum::{
     Router,
     extract::DefaultBodyLimit,
     middleware,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use http::{
     HeaderName, HeaderValue, Method,
@@ -87,6 +87,9 @@ use crate::management_setup::{initialize_setup, setup_status};
 use crate::management_token_writes::{create_admin_token, delete_admin_token, update_admin_token};
 use crate::management_tokens::{get_admin_token, list_admin_tokens};
 use crate::management_usage_logs::{list_admin_usage_logs, list_user_usage_logs};
+use crate::management_user_security::{
+    get_admin_user_security, reset_admin_user_two_factor, revoke_admin_user_passkey,
+};
 use crate::management_users::{
     create_admin_user, delete_admin_user, get_admin_user, list_admin_users, update_admin_user,
 };
@@ -190,6 +193,7 @@ pub fn build_router(
     passkey_authentication_service: Option<Arc<dyn PasskeyAuthenticationService>>,
     password_reset_service: Arc<dyn PasswordResetService>,
     user_profile_service: Arc<dyn af_admin::UserProfileService>,
+    admin_user_security_service: Option<Arc<dyn af_admin::AdminUserSecurityService>>,
     user_wallet_service: Arc<dyn UserWalletService>,
     user_notification_service: Arc<dyn UserNotificationService>,
     platform_audit_service: Option<Arc<dyn af_admin::PlatformAuditService>>,
@@ -338,7 +342,8 @@ pub fn build_router(
     .with_admin_usage_log_reader(admin_usage_log_reader)
     .with_admin_wallet_service(admin_wallet_service)
     .with_admin_refund_service(admin_refund_service)
-    .with_platform_audit_service(platform_audit_service.clone());
+    .with_platform_audit_service(platform_audit_service.clone())
+    .with_admin_user_security_service(admin_user_security_service);
     let platform_audit_routes = platform_audit_service
         .map(|service| {
             build_platform_audit_router(service, Arc::clone(&http_state.session_authenticator))
@@ -699,6 +704,24 @@ pub fn build_router(
             get(get_admin_user)
                 .put(update_admin_user)
                 .delete(delete_admin_user)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(user_item_authentication.clone()),
+        )
+        .route(
+            "/api/admin/users/{id}/security",
+            get(get_admin_user_security)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(user_item_authentication.clone()),
+        )
+        .route(
+            "/api/admin/users/{id}/security/two-factor/reset",
+            post(reset_admin_user_two_factor)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(user_item_authentication.clone()),
+        )
+        .route(
+            "/api/admin/users/{id}/security/passkeys/{passkey_id}",
+            delete(revoke_admin_user_passkey)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(user_item_authentication),
         )

@@ -1795,6 +1795,7 @@
       "account": "账户信息",
       "access": "角色与归属",
       "limits": "资源限制",
+    "security": "个人安全",
       "emailHint": "邮箱可留空，填写后可用于通知和找回密码。",
       "createPasswordHint": "创建用户必须设置初始密码，保存后不会再次显示。",
       "updatePasswordHint": "留空表示保留当前密码，填写后将重置密码。",
@@ -1808,6 +1809,32 @@
       "conflict": "用户名或邮箱已被其他用户使用，请修改后重试。",
       "submitError": "保存失败，请检查字段后重试。"
     },
+  "security": {
+    "loading": "正在读取安全措施",
+    "loadError": "无法读取该用户的安全措施。",
+    "twoFactor": "二次验证",
+    "states": {
+      "disabled": "未启用",
+      "pending": "等待绑定",
+      "enabled": "已启用"
+    },
+    "boundAt": "绑定时间：{{value}}",
+    "lastVerifiedAt": "最近验证：{{value}}",
+    "pendingAt": "开始绑定：{{value}}",
+    "expiresAt": "有效期至：{{value}}",
+    "notRecorded": "未记录",
+    "resetTwoFactor": "停用二次验证",
+    "resetTwoFactorConfirm": "确定要停用该用户的二次验证吗？现有绑定和待绑定状态都会被清除，用户需要重新登录。",
+    "passkeys": "Passkey",
+    "passkeyCount": "{{count}} 个",
+    "noPasskeys": "该用户没有 Passkey。",
+    "passkeyCreatedAt": "创建于 {{value}}",
+    "passkeyLastUsedAt": "最近使用 {{value}}",
+    "revokePasskey": "撤销",
+    "revokePasskeyConfirm": "确定要撤销这个 Passkey 吗？撤销后无法恢复。",
+    "revoked": "已撤销",
+    "actionError": "安全措施更新失败，请刷新后重试。"
+  },
     "fields": {
       "username": "用户名",
       "email": "邮箱",
