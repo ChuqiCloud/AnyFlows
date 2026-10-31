@@ -1,13 +1,16 @@
 use std::{error::Error, time::Duration};
 
 use af_domain::UserId;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set,
+    entity::prelude::TimeDateTimeWithTimeZone,
+};
 use serde_json::json;
 
 use super::{
     CREDENTIAL_ENVELOPE_NONCE_BYTES, DatabaseOptions, DatabasePool, EncryptedCredentialEnvelope,
-    InitialSetupRecord, InitialSetupRepository, MigrationOptions, PasskeyAuthenticationOutcome,
-    PasskeyRepository, PasskeyRepositoryError,
+    InitialSetupRecord, InitialSetupRepository, MigrationOptions, PasskeyAdminRevokeOutcome,
+    PasskeyAuthenticationOutcome, PasskeyRepository, PasskeyRepositoryError,
 };
 use crate::entity::{passkey_authentication_challenges, passkeys, users};
 
@@ -133,6 +136,48 @@ async fn zero_counter_is_valid_but_positive_counter_regression_marks_anomaly()
             .authentication_target_for_user(fixture.user_id)
             .await?
             .is_none()
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn admin_revoke_invalidates_sessions_and_excludes_deleted_users() -> Result<(), Box<dyn Error>>
+{
+    let fixture = fixture(0).await?;
+    let now = super::DatabaseTimestamp::now_utc();
+    let record = passkey(&fixture).await?;
+
+    assert_eq!(
+        fixture
+            .repository
+            .admin_revoke(fixture.user_id, record.id, now)
+            .await?,
+        PasskeyAdminRevokeOutcome::Revoked
+    );
+    let updated_user = users::Entity::find_by_id(fixture.user_id.get())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("测试用户必须存在");
+    assert_eq!(updated_user.session_version, fixture.session_version + 1);
+    assert_eq!(
+        fixture
+            .repository
+            .admin_revoke(fixture.user_id, record.id, now)
+            .await?,
+        PasskeyAdminRevokeOutcome::AlreadyRevoked
+    );
+
+    let mut deleted = updated_user.into_active_model();
+    deleted.deleted_at = Set(Some(TimeDateTimeWithTimeZone::now_utc()));
+    deleted.update(fixture.pool.connection()).await?;
+    assert_eq!(
+        fixture
+            .repository
+            .admin_revoke(fixture.user_id, record.id, now)
+            .await?,
+        PasskeyAdminRevokeOutcome::NotFound
     );
 
     fixture.pool.close().await?;

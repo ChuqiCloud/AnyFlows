@@ -399,6 +399,67 @@ impl UserProfileRepository {
         }
     }
 
+    /// 读取管理端用户的 TOTP、待绑定和绑定时间状态；已禁用用户仍可查询。
+    pub async fn admin_two_factor_state(
+        &self,
+        user_id: UserId,
+    ) -> Result<Option<UserTwoFactorStateRecord>, UserProfileRepositoryError> {
+        match timeout(self.operation_timeout, async {
+            let Some(user) = users::Entity::find_by_id(user_id.get())
+                .filter(users::Column::DeletedAt.is_null())
+                .one(self.pool.connection())
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| record_internal_error(UserProfileRepositoryError::Query))?
+            else {
+                return Ok(None);
+            };
+            let enrollment = user_two_factor_enrollments::Entity::find_by_id(user_id.get())
+                .one(self.pool.connection())
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| record_internal_error(UserProfileRepositoryError::Query))?;
+            let pending_is_current = enrollment.as_ref().is_some_and(|record| {
+                record.pending_session_version == Some(user.session_version)
+                    && record.pending_attempts < MAX_TWO_FACTOR_ENROLLMENT_ATTEMPTS
+            });
+            Ok(Some(UserTwoFactorStateRecord {
+                enabled: user.totp_secret.is_some(),
+                pending_created_at: enrollment
+                    .as_ref()
+                    .filter(|_| pending_is_current)
+                    .and_then(|record| record.pending_created_at),
+                pending_expires_at: enrollment
+                    .as_ref()
+                    .filter(|_| pending_is_current)
+                    .and_then(|record| record.pending_expires_at),
+                bound_at: enrollment.as_ref().and_then(|record| record.bound_at),
+                last_verified_at: enrollment.and_then(|record| record.last_verified_at),
+            }))
+        })
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(record_internal_error(UserProfileRepositoryError::Timeout)),
+        }
+    }
+
+    /// 管理员重置用户 TOTP，清理已启用密文和待绑定状态并撤销旧会话。
+    pub async fn admin_reset_two_factor(
+        &self,
+        user_id: UserId,
+    ) -> Result<UserTwoFactorMutationOutcome, UserProfileRepositoryError> {
+        match timeout(
+            self.operation_timeout,
+            self.admin_reset_two_factor_inner(user_id),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(record_internal_error(UserProfileRepositoryError::Timeout)),
+        }
+    }
+
     /// 校验当前密码、会话版本与有效期后原子占用一次绑定验证尝试。
     pub async fn pending_two_factor(
         &self,
@@ -898,6 +959,50 @@ impl UserProfileRepository {
         Ok(UserTwoFactorMutationOutcome::Updated)
     }
 
+    async fn admin_reset_two_factor_inner(
+        &self,
+        user_id: UserId,
+    ) -> Result<UserTwoFactorMutationOutcome, UserProfileRepositoryError> {
+        let transaction = self.begin_transaction().await?;
+        let Some(existing) = lock_user_any(&transaction, user_id).await? else {
+            commit_transaction(transaction).await?;
+            return Ok(UserTwoFactorMutationOutcome::NotFound);
+        };
+        let enrollment = user_two_factor_enrollments::Entity::find_by_id(user_id.get())
+            .one(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(UserProfileRepositoryError::Query))?;
+        let has_pending = enrollment.as_ref().is_some_and(|record| {
+            record.pending_configuration.is_some()
+                || record.pending_created_at.is_some()
+                || record.pending_expires_at.is_some()
+        });
+        if existing.totp_secret.is_none() && !has_pending {
+            commit_transaction(transaction).await?;
+            return Ok(UserTwoFactorMutationOutcome::NotEnabled);
+        }
+        let next_session_version = existing
+            .session_version
+            .checked_add(1)
+            .ok_or_else(|| record_internal_error(UserProfileRepositoryError::Invariant))?;
+        let mut active = existing.into_active_model();
+        active.totp_secret = Set(None);
+        active.session_version = Set(next_session_version);
+        active
+            .update(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_write_error)?;
+        user_two_factor_enrollments::Entity::delete_by_id(user_id.get())
+            .exec(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(UserProfileRepositoryError::Query))?;
+        commit_transaction(transaction).await?;
+        Ok(UserTwoFactorMutationOutcome::Updated)
+    }
+
     async fn begin_transaction(&self) -> Result<DatabaseTransaction, UserProfileRepositoryError> {
         self.pool
             .connection()
@@ -946,6 +1051,22 @@ pub(crate) async fn lock_user(
     let mut query = users::Entity::find_by_id(user_id.get())
         .filter(users::Column::Status.eq(1_i16))
         .filter(users::Column::DeletedAt.is_null());
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    query
+        .one(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(|_| record_internal_error(UserProfileRepositoryError::Query))
+}
+
+pub(crate) async fn lock_user_any(
+    transaction: &DatabaseTransaction,
+    user_id: UserId,
+) -> Result<Option<users::Model>, UserProfileRepositoryError> {
+    let mut query =
+        users::Entity::find_by_id(user_id.get()).filter(users::Column::DeletedAt.is_null());
     if transaction.get_database_backend() != DbBackend::Sqlite {
         query = query.lock(LockType::Update);
     }
@@ -1366,6 +1487,96 @@ mod tests {
                 .last_verified_at,
             Some(now)
         );
+        pool.close().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn admin_reset_two_factor_clears_pending_and_active_state_and_invalidates_sessions()
+    -> Result<(), Box<dyn Error>> {
+        let (pool, user_id) = fixture().await?;
+        let repository = UserProfileRepository::new(pool.clone(), Duration::from_secs(5))?;
+        let now = TimeDateTimeWithTimeZone::now_utc();
+        let pending = enrollment_envelope(6);
+        let active = enrollment_envelope(7);
+        let initial_session_version = users::Entity::find_by_id(user_id.get())
+            .one(pool.connection())
+            .await?
+            .expect("测试用户必须存在")
+            .session_version;
+
+        repository
+            .enable_two_factor(
+                user_id,
+                b"old secure password",
+                pending.clone(),
+                now,
+                now + time::Duration::minutes(10),
+            )
+            .await?;
+        assert_eq!(
+            repository.admin_reset_two_factor(user_id).await?,
+            UserTwoFactorMutationOutcome::Updated
+        );
+        assert!(
+            !repository
+                .admin_two_factor_state(user_id)
+                .await?
+                .unwrap()
+                .enabled
+        );
+        assert!(
+            repository
+                .admin_two_factor_state(user_id)
+                .await?
+                .unwrap()
+                .pending_created_at
+                .is_none()
+        );
+
+        repository
+            .enable_two_factor(
+                user_id,
+                b"old secure password",
+                pending.clone(),
+                now,
+                now + time::Duration::minutes(10),
+            )
+            .await?;
+        let expected = repository
+            .pending_two_factor(user_id, b"old secure password", now)
+            .await?
+            .expect("待绑定材料必须存在")
+            .0;
+        assert_eq!(
+            repository
+                .confirm_two_factor(user_id, b"old secure password", expected, active, now)
+                .await?,
+            UserTwoFactorMutationOutcome::Updated
+        );
+        assert!(
+            repository
+                .admin_two_factor_state(user_id)
+                .await?
+                .unwrap()
+                .enabled
+        );
+        assert_eq!(
+            repository.admin_reset_two_factor(user_id).await?,
+            UserTwoFactorMutationOutcome::Updated
+        );
+        let state = repository.admin_two_factor_state(user_id).await?.unwrap();
+        assert!(!state.enabled);
+        assert!(state.bound_at.is_none());
+        assert_eq!(
+            users::Entity::find_by_id(user_id.get())
+                .one(pool.connection())
+                .await?
+                .expect("测试用户必须存在")
+                .session_version,
+            initial_session_version + 2
+        );
+
         pool.close().await?;
         Ok(())
     }

@@ -106,8 +106,11 @@ try {
     await delay(1000)
   }
   assert.ok(ready, serverOutput)
+  const warmup = await fetch(`http://127.0.0.1:${port}/.about-smoke.tsx`, { signal: AbortSignal.timeout(180_000) })
+  assert.ok(warmup.ok, await warmup.text())
   browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
   page = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'zh-CN', reducedMotion: 'reduce' })
+  page.setDefaultNavigationTimeout(120_000)
   page.on('pageerror', error => errors.push(error.message))
   await page.addInitScript(() => localStorage.setItem('anyflows.locale', 'zh'))
   await page.route('https://tracking.invalid/**', async route => {

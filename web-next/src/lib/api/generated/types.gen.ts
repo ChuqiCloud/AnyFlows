@@ -1409,6 +1409,26 @@ export type AdminUserListResponse = {
     users: Array<AdminUser>;
     next_cursor: number | null;
 };
+export type AdminUserSecurityPasskeyResponse = {
+    id: number;
+    display_name: string;
+    created_at: number;
+    last_used_at: number | null;
+    revoked_at: number | null;
+};
+export type AdminUserSecurityResponse = {
+    user_id: number;
+    two_factor: AdminUserSecurityTwoFactorResponse;
+    passkeys: Array<AdminUserSecurityPasskeyResponse>;
+};
+export type AdminUserSecurityTwoFactorResponse = {
+    enabled: boolean;
+    state: string;
+    pending_created_at: number | null;
+    pending_expires_at: number | null;
+    bound_at: number | null;
+    last_verified_at: number | null;
+};
 export type AdminUserStatus = 'enabled' | 'disabled';
 export type AdminUserSubscriptionBindRequest = {
     plan_id: string;
@@ -4858,6 +4878,67 @@ export type UpdateAdminUserResponses = {
     200: AdminUser;
 };
 export type UpdateAdminUserResponse = UpdateAdminUserResponses[keyof UpdateAdminUserResponses];
+export type GetAdminUserSecurityData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/users/{id}/security';
+};
+export type GetAdminUserSecurityErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminUserSecurityError = GetAdminUserSecurityErrors[keyof GetAdminUserSecurityErrors];
+export type GetAdminUserSecurityResponses = {
+    200: AdminUserSecurityResponse;
+};
+export type GetAdminUserSecurityResponse = GetAdminUserSecurityResponses[keyof GetAdminUserSecurityResponses];
+export type ResetAdminUserTwoFactorData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/users/{id}/security/two-factor/reset';
+};
+export type ResetAdminUserTwoFactorErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ResetAdminUserTwoFactorError = ResetAdminUserTwoFactorErrors[keyof ResetAdminUserTwoFactorErrors];
+export type ResetAdminUserTwoFactorResponses = {
+    200: AdminUserSecurityResponse;
+};
+export type ResetAdminUserTwoFactorResponse = ResetAdminUserTwoFactorResponses[keyof ResetAdminUserTwoFactorResponses];
+export type RevokeAdminUserPasskeyData = {
+    body?: never;
+    path: {
+        id: number;
+        passkey_id: number;
+    };
+    query?: never;
+    url: '/api/admin/users/{id}/security/passkeys/{passkey_id}';
+};
+export type RevokeAdminUserPasskeyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type RevokeAdminUserPasskeyError = RevokeAdminUserPasskeyErrors[keyof RevokeAdminUserPasskeyErrors];
+export type RevokeAdminUserPasskeyResponses = {
+    204: void;
+};
+export type RevokeAdminUserPasskeyResponse = RevokeAdminUserPasskeyResponses[keyof RevokeAdminUserPasskeyResponses];
 export type ListAdminWalletEntriesData = {
     body?: never;
     path: {

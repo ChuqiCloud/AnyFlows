@@ -6,6 +6,10 @@ use utoipa::OpenApi;
 
 use crate::{
     management_error::ManagementErrorBody,
+    management_user_security::{
+        AdminUserSecurityPasskeyResponse, AdminUserSecurityResponse,
+        AdminUserSecurityTwoFactorResponse,
+    },
     management_users::{
         AdminUserCreateRequest, AdminUserListResponse, AdminUserResponse, AdminUserUpdateRequest,
     },
@@ -111,6 +115,66 @@ fn update_admin_user() {}
 )]
 fn delete_admin_user() {}
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/users/{id}/security",
+    operation_id = "getAdminUserSecurity",
+    tag = "用户安全",
+    summary = "读取用户个人安全设置",
+    params(("id" = i64, Path, minimum = 1, description = "用户 ID")),
+    responses(
+        (status = 200, description = "用户安全设置脱敏快照", body = AdminUserSecurityResponse),
+        (status = 400, description = "用户 ID 无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
+        (status = 404, description = "用户不存在", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn get_admin_user_security() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/users/{id}/security/two-factor/reset",
+    operation_id = "resetAdminUserTwoFactor",
+    tag = "用户安全",
+    summary = "重置用户 TOTP 二次验证",
+    params(("id" = i64, Path, minimum = 1, description = "用户 ID")),
+    responses(
+        (status = 200, description = "TOTP 已重置并返回新的脱敏安全快照", body = AdminUserSecurityResponse),
+        (status = 400, description = "用户 ID 无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
+        (status = 404, description = "用户不存在", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn reset_admin_user_two_factor() {}
+
+#[utoipa::path(
+    delete,
+    path = "/api/admin/users/{id}/security/passkeys/{passkey_id}",
+    operation_id = "revokeAdminUserPasskey",
+    tag = "用户安全",
+    summary = "撤销用户 Passkey",
+    params(
+        ("id" = i64, Path, minimum = 1, description = "用户 ID"),
+        ("passkey_id" = i64, Path, minimum = 1, description = "Passkey ID")
+    ),
+    responses(
+        (status = 204, description = "Passkey 已撤销"),
+        (status = 400, description = "用户 ID 或 Passkey ID 无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
+        (status = 404, description = "用户或 Passkey 不存在", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn revoke_admin_user_passkey() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -118,7 +182,10 @@ fn delete_admin_user() {}
         create_admin_user,
         get_admin_user,
         update_admin_user,
-        delete_admin_user
+        delete_admin_user,
+        get_admin_user_security,
+        reset_admin_user_two_factor,
+        revoke_admin_user_passkey
     ),
     components(schemas(
         AdminUserStatusSchema,
@@ -126,6 +193,9 @@ fn delete_admin_user() {}
         AdminUserListResponse,
         AdminUserCreateRequest,
         AdminUserUpdateRequest,
+        AdminUserSecurityTwoFactorResponse,
+        AdminUserSecurityPasskeyResponse,
+        AdminUserSecurityResponse,
         ManagementErrorBody
     ))
 )]
