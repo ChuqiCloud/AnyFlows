@@ -1795,6 +1795,7 @@
       "account": "Account information",
       "access": "Role and ownership",
       "limits": "Resource limits",
+    "security": "Personal security",
       "emailHint": "Email is optional and can be used for notifications and password recovery.",
       "createPasswordHint": "An initial password is required and is never shown again after saving.",
       "updatePasswordHint": "Leave blank to keep the current password, or enter a value to reset it.",
@@ -1808,6 +1809,32 @@
       "conflict": "The username or email is already used by another account.",
       "submitError": "The user could not be saved. Check the fields and try again."
     },
+  "security": {
+    "loading": "Loading security measures",
+    "loadError": "The user's security measures could not be loaded.",
+    "twoFactor": "Two-factor authentication",
+    "states": {
+      "disabled": "Disabled",
+      "pending": "Awaiting confirmation",
+      "enabled": "Enabled"
+    },
+    "boundAt": "Bound: {{value}}",
+    "lastVerifiedAt": "Last verified: {{value}}",
+    "pendingAt": "Binding started: {{value}}",
+    "expiresAt": "Expires: {{value}}",
+    "notRecorded": "Not recorded",
+    "resetTwoFactor": "Disable 2FA",
+    "resetTwoFactorConfirm": "Disable two-factor authentication for this user? The current binding and any pending enrollment will be cleared, and the user will need to sign in again.",
+    "passkeys": "Passkeys",
+    "passkeyCount": "{{count}}",
+    "noPasskeys": "This user has no passkeys.",
+    "passkeyCreatedAt": "Created {{value}}",
+    "passkeyLastUsedAt": "Last used {{value}}",
+    "revokePasskey": "Revoke",
+    "revokePasskeyConfirm": "Revoke this passkey? It cannot be restored afterward.",
+    "revoked": "Revoked",
+    "actionError": "The security measure could not be updated. Refresh and try again."
+  },
     "fields": {
       "username": "Username",
       "email": "Email",

@@ -6,8 +6,11 @@ import {
   createAdminUser,
   deleteAdminUser,
   getAdminUser,
+  getAdminUserSecurity,
   listAdminWalletEntries,
   listAdminUsers,
+  resetAdminUserTwoFactor,
+  revokeAdminUserPasskey,
   updateAdminUser,
 } from '@/lib/api/generated/sdk.gen'
 import type {
@@ -18,6 +21,7 @@ import type {
 
 export const adminUsersQueryKey = ['admin-users'] as const
 export const adminWalletQueryKey = ['admin-wallet'] as const
+export const adminUserSecurityQueryKey = ['admin-user-security'] as const
 
 /** 仅在管理员明确打开用户资料时读取单个非敏感账户快照。 */
 export function useAdminUser(userId?: number) {
@@ -49,6 +53,45 @@ export function useAdminUsers(pageSize = 25) {
       return data
     },
     getNextPageParam: (page) => page.next_cursor ?? undefined,
+  })
+}
+
+/** 只在管理员打开用户编辑页时读取该用户的非敏感安全状态。 */
+export function useAdminUserSecurity(userId?: number) {
+  return useQuery({
+    queryKey: [...adminUserSecurityQueryKey, userId],
+    enabled: userId !== undefined,
+    queryFn: async ({ signal }) => {
+      const { data } = await getAdminUserSecurity({
+        client: apiClient,
+        path: { id: userId as number },
+        signal,
+      })
+      return data
+    },
+  })
+}
+
+/** 清除目标用户的 TOTP 绑定或待绑定状态，并让服务端撤销其旧会话。 */
+export function useResetAdminUserTwoFactor(userId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await resetAdminUserTwoFactor({ client: apiClient, path: { id: userId } })
+      return data
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...adminUserSecurityQueryKey, userId] }),
+  })
+}
+
+/** 撤销目标用户的指定 Passkey，并让服务端撤销其旧会话。 */
+export function useRevokeAdminUserPasskey(userId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (passkeyId: number) => {
+      await revokeAdminUserPasskey({ client: apiClient, path: { id: userId, passkey_id: passkeyId } })
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...adminUserSecurityQueryKey, userId] }),
   })
 }
 

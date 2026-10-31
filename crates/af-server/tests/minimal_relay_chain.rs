@@ -2066,6 +2066,7 @@ async fn start_server(
         None,
         Arc::new(RejectPasswordReset),
         Arc::new(RejectUserProfile),
+        None,
         Arc::new(RejectUserWallet),
         Arc::new(RejectUserNotifications),
         None,

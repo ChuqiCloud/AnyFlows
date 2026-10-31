@@ -619,6 +619,9 @@ mod tests {
             "listUserUsageLogs",
             "listSelfPlatformAuditLogs",
             "listAdminUsers",
+            "getAdminUserSecurity",
+            "resetAdminUserTwoFactor",
+            "revokeAdminUserPasskey",
             "listModels",
             "listGatewayModels",
             "listModelProviders",
@@ -701,7 +704,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 598);
+        assert_eq!(schemas.len(), 601);
         assert!(schemas.contains_key("AdminProxyCleanupRequest"));
         assert!(schemas.contains_key("AdminProxyCleanupResult"));
         assert!(schemas.contains_key("ServiceLevelPoint"));
@@ -1031,6 +1034,9 @@ mod tests {
         assert!(schemas.contains_key("PlatformUserOrganizationListResponse"));
         assert!(schemas.contains_key("AdminUserCreateRequest"));
         assert!(schemas.contains_key("AdminUserUpdateRequest"));
+        assert!(schemas.contains_key("AdminUserSecurityTwoFactorResponse"));
+        assert!(schemas.contains_key("AdminUserSecurityPasskeyResponse"));
+        assert!(schemas.contains_key("AdminUserSecurityResponse"));
         assert!(schemas.contains_key("AdminWalletEntry"));
         assert!(schemas.contains_key("AdminWalletEntryType"));
         assert!(schemas.contains_key("AdminWalletListResponse"));

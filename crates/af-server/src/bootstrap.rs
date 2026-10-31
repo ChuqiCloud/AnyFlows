@@ -202,6 +202,7 @@ pub struct AuthenticationReady {
     passkey_authentication_service: Option<Arc<dyn PasskeyAuthenticationService>>,
     password_reset_service: Arc<dyn PasswordResetService>,
     user_profile_service: Arc<dyn UserProfileService>,
+    admin_user_security_service: Arc<dyn af_admin::AdminUserSecurityService>,
     user_wallet_service: Arc<dyn UserWalletService>,
     account_verification_provider: Arc<dyn af_admin::AccountVerificationProvider>,
     verification_settings_service: Option<Arc<af_admin::DatabaseVerificationSettingsService>>,
@@ -1205,12 +1206,17 @@ impl Bootstrap<DatabaseReady> {
         } = self;
         let user_profile_service: Arc<dyn UserProfileService> =
             Arc::new(build_user_profile_service(
-                user_profile_repository,
+                user_profile_repository.clone(),
                 balance_alert_settings_repository,
-                passkey_repository,
+                passkey_repository.clone(),
                 system_secret_cipher.clone(),
                 stage.passkey_public_base_url.as_deref(),
                 email_binding_service,
+            ));
+        let admin_user_security_service: Arc<dyn af_admin::AdminUserSecurityService> =
+            Arc::new(af_admin::DatabaseAdminUserSecurityService::new(
+                user_profile_repository,
+                passkey_repository,
             ));
         let session_authenticator: Arc<dyn SessionAuthenticator> = Arc::new(session_authenticator);
         let extensions = build_extensions(RuntimeExtensionContext {
@@ -1250,6 +1256,7 @@ impl Bootstrap<DatabaseReady> {
                 passkey_authentication_service,
                 password_reset_service: Arc::new(password_reset_service),
                 user_profile_service,
+                admin_user_security_service,
                 user_wallet_service: Arc::new(DatabaseUserWalletService::new(
                     wallet_ledger_repository.clone(),
                 )),
@@ -2671,6 +2678,9 @@ impl Bootstrap<Supervised> {
                 .clone(),
             Arc::clone(&self.stage.infrastructure.password_reset_service),
             Arc::clone(&self.stage.infrastructure.user_profile_service),
+            Some(Arc::clone(
+                &self.stage.infrastructure.admin_user_security_service,
+            )),
             Arc::clone(&self.stage.infrastructure.user_wallet_service),
             Arc::clone(&self.stage.infrastructure.user_notification_service),
             Some(Arc::clone(
