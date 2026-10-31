@@ -1,0 +1,86 @@
+.prompt-composer,
+.prompt-composer__shell,
+.prompt-composer__content {
+  min-width: 0;
+  width: 100%;
+}
+
+.prompt-composer__shell {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-xl);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-sm);
+}
+
+.prompt-composer__shell:focus-within {
+  border-color: var(--info);
+  box-shadow: var(--shadow-glow-info);
+}
+
+.prompt-composer__content {
+  padding: 0.875rem 1rem 0.5rem;
+}
+
+.prompt-composer__textarea {
+  display: block;
+  width: 100%;
+  min-height: 4.5rem;
+  max-height: min(11rem, 30dvh);
+  resize: none;
+  overflow-y: auto;
+  border: 0;
+  padding: 0;
+  outline: none;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+}
+
+.prompt-composer__textarea::placeholder {
+  color: var(--muted-foreground);
+}
+
+.prompt-composer__textarea:disabled {
+  opacity: 0.6;
+}
+
+.prompt-composer__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-top: 1px dashed var(--hairline);
+  padding: 0.5rem 0.625rem;
+}
+
+.prompt-composer__toolbar-start {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 12rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.5rem;
+}
+
+.prompt-composer__toolbar-end {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.prompt-composer__status {
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.prompt-composer__status:empty {
+  display: none;
+}
