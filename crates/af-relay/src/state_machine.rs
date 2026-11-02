@@ -464,9 +464,9 @@ impl RelayAttemptReport {
     pub fn request_aborted(&self) -> bool {
         self.failures.iter().any(|failure| {
             failure.request_aborted
-                || failure.client_simulation().is_some_and(|simulation| {
-                    simulation.result() == ClientSimulationResult::Failed
-                })
+                || failure
+                    .client_simulation()
+                    .is_some_and(|simulation| simulation.result() == ClientSimulationResult::Failed)
         })
     }
 

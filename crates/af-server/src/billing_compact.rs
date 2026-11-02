@@ -13,16 +13,19 @@ use af_protocol::{
 use af_relay::ResponsesCompactionResponse;
 
 use crate::billing_chat::{
-    PlannedExecutionFailure,
-    complete_with_retries, map_lifecycle_error, map_snapshot_error, new_reservation_id,
-    precharge_with_retries,
+    PlannedExecutionFailure, complete_with_retries, map_lifecycle_error, map_snapshot_error,
+    new_reservation_id, precharge_with_retries,
 };
 
 /// 已固定路由计划的一次 Responses Compact 异步执行结果。
 pub type PlannedResponsesCompactExecutionFuture = Pin<
     Box<
-        dyn Future<Output = Result<crate::RoutedExecution<ResponsesCompactionResponse>, PlannedExecutionFailure>>
-            + Send
+        dyn Future<
+                Output = Result<
+                    crate::RoutedExecution<ResponsesCompactionResponse>,
+                    PlannedExecutionFailure,
+                >,
+            > + Send
             + 'static,
     >,
 >;
@@ -479,7 +482,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn user_route_terminal_protocol_failure_preserves_error_without_attempting_group_failover() {
+    async fn user_route_terminal_protocol_failure_preserves_error_without_attempting_group_failover()
+     {
         for terminal in [false, true] {
             let mut fixture = billing_fixture(compact_usage(2, 0, 0, 1, 0), false).await;
             fixture.service.inner = Arc::new(PlannerStub {
@@ -491,11 +495,24 @@ mod tests {
                 executions: fixture.executions.clone(),
             });
             let principal = principal().with_user_route_id(Some(1));
-            let failure = fixture.service.call_billed_single(
-                &principal, None, request(), "compact-terminal-profile", None, None,
-            ).await.err().expect("execution must fail");
+            let failure = fixture
+                .service
+                .call_billed_single(
+                    &principal,
+                    None,
+                    request(),
+                    "compact-terminal-profile",
+                    None,
+                    None,
+                )
+                .await
+                .err()
+                .expect("execution must fail");
             if terminal {
-                assert_eq!(failure.error, AfError::Upstream(af_domain::UpstreamError::ProtocolError));
+                assert_eq!(
+                    failure.error,
+                    AfError::Upstream(af_domain::UpstreamError::ProtocolError)
+                );
             } else {
                 // The default cancellation port fails closed before another group can be charged.
                 assert_eq!(failure.error, AfError::Internal);

@@ -364,12 +364,7 @@ impl UserRouteRepository {
             if txn.get_database_backend() != DbBackend::Sqlite {
                 member_query = member_query.lock(LockType::Update);
             }
-            if member_query
-                .one(&txn)
-                .await
-                .map_err(internal)?
-                .is_none()
-            {
+            if member_query.one(&txn).await.map_err(internal)?.is_none() {
                 return Ok(false);
             }
             let allowed = group_access(&txn, owner, default, group).await?;

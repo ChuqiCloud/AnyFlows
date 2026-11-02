@@ -197,7 +197,7 @@ impl UserRouteRepository {
             match lock_route(&txn, route_id).await {
                 Err(UserRouteError::Unavailable) => return Ok(()),
                 result => result?,
-            }
+            };
             if user_route_members::Entity::find_by_id((route_id, group_id.get()))
                 .one(&txn)
                 .await
