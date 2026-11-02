@@ -282,6 +282,22 @@ struct SemaphoreAttemptGate(Arc<tokio::sync::Semaphore>);
 
 struct SemaphoreAttemptPermit(tokio::sync::OwnedSemaphorePermit);
 
+struct ReleasedLimitedAttemptGate(Arc<tokio::sync::Semaphore>);
+
+impl RelayAttemptGate for ReleasedLimitedAttemptGate {
+    fn acquire(&self) -> RelayAttemptGateFuture<'_> {
+        Box::pin(async move {
+            let _permit = self
+                .0
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|_| RelayAttemptGateError::Internal)?;
+            Err(RelayAttemptGateError::Limited)
+        })
+    }
+}
+
 impl RelayAttemptGate for SemaphoreAttemptGate {
     fn acquire(&self) -> RelayAttemptGateFuture<'_> {
         Box::pin(async move {
@@ -431,6 +447,47 @@ async fn race_refills_failed_slot_without_waiting_for_silent_peer() {
 }
 
 #[tokio::test]
+async fn race_refills_retryable_server_failure_with_next_candidate() {
+    let (failed_address, failed_server) = spawn_proxy(vec![ProxyResponse {
+        status_line: "503 Service Unavailable",
+        body: b"{}",
+    }]);
+    let (success_address, success_server) = spawn_proxy(vec![ProxyResponse {
+        status_line: "200 OK",
+        body: br#"{"ok":"next-key"}"#,
+    }]);
+    let pending_slots = Arc::new(tokio::sync::Semaphore::new(0));
+    let make_candidate = |address| {
+        grouped_candidate(&proxy_client(address), "http://race.invalid", 1)
+            .with_race_width(Some(2))
+            .with_retry_limit(Some(0))
+    };
+    let machine = RelayStateMachine::new(vec![
+        make_candidate(failed_address),
+        make_candidate(success_address)
+            .with_attempt_gate(Arc::new(SemaphoreAttemptGate(pending_slots))),
+        make_candidate(success_address),
+    ])
+    .unwrap();
+
+    let response = tokio::time::timeout(TEST_TIMEOUT, machine.execute_with_report(request()))
+        .await
+        .expect("a server failure must refill before the blocked sibling completes")
+        .unwrap();
+    assert_eq!(response.report().successful_candidate_index(), Some(2));
+    assert_eq!(response.attempts().get(), 2);
+    assert_eq!(response.report().failures().len(), 1);
+    assert_eq!(
+        response.report().failures()[0].error(),
+        UpstreamError::ServerError {
+            status: UpstreamServerStatus::new(503).unwrap(),
+        }
+    );
+    failed_server.join().unwrap();
+    success_server.join().unwrap();
+}
+
+#[tokio::test]
 async fn race_channel_failure_skips_unstarted_keys_and_then_falls_back() {
     let (address, server) = spawn_proxy(vec![ProxyResponse {
         status_line: "200 OK",
@@ -448,7 +505,7 @@ async fn race_channel_failure_skips_unstarted_keys_and_then_falls_back() {
         candidate(&client, "http://unsupported.invalid", &["another-model"])
             .with_channel_group(ChannelId::new(1).unwrap())
             .with_race_width(Some(2)),
-        make_candidate(1).with_attempt_gate(Arc::new(SemaphoreAttemptGate(slots.clone()))),
+        make_candidate(1).with_attempt_gate(Arc::new(ReleasedLimitedAttemptGate(slots.clone()))),
         make_candidate(1).with_attempt_gate(unused_gate),
         make_candidate(2),
     ])
@@ -461,7 +518,7 @@ async fn race_channel_failure_skips_unstarted_keys_and_then_falls_back() {
             .await
             .is_err()
     );
-    slots.close();
+    slots.add_permits(1);
     let response = tokio::time::timeout(TEST_TIMEOUT, execution)
         .await
         .unwrap()
@@ -746,6 +803,66 @@ async fn failed_client_simulation_is_protocol_error_without_fallback() {
 }
 
 #[tokio::test]
+async fn race_preserves_fail_closed_client_simulation_for_mixed_widths() {
+    let client = direct_client();
+    for race_width in [1, 2] {
+        let (unused_gate, unused_acquired, _) = attempt_gate(GateMode::Limited);
+        let simulated_candidate = grouped_candidate(&client, "https://first.invalid", 1)
+            .with_race_width(Some(race_width))
+            .with_client_simulation(Arc::new(BuiltInClientSimulation::new(
+                ClientSimulationProfile::AnthropicCliHeadersV1,
+            )));
+        let machine = RelayStateMachine::new(vec![
+            simulated_candidate,
+            grouped_candidate(&client, "https://fallback.invalid", 2)
+                .with_race_width(Some(2))
+                .with_attempt_gate(unused_gate),
+        ])
+        .unwrap();
+
+        let error = machine.execute_with_report(request()).await.unwrap_err();
+        assert_eq!(
+            error.error(),
+            RelayError::Upstream(UpstreamError::ProtocolError)
+        );
+        assert_eq!(error.report().failures().len(), 1);
+        assert_eq!(
+            error.report().failures()[0]
+                .client_simulation()
+                .unwrap()
+                .result(),
+            ClientSimulationResult::Failed,
+        );
+        assert_eq!(unused_acquired.load(Ordering::Acquire), 0);
+    }
+}
+
+#[tokio::test]
+async fn race_policy_error_aborts_before_fallback_candidate() {
+    let client = direct_client();
+    let fallback_slots = Arc::new(tokio::sync::Semaphore::new(0));
+    let first = grouped_candidate(&client, "http://127.0.0.1", 1).with_race_width(Some(2));
+    let second = grouped_candidate(&client, "http://fallback.invalid", 1)
+        .with_race_width(Some(2))
+        .with_attempt_gate(Arc::new(SemaphoreAttemptGate(fallback_slots)));
+    let machine = RelayStateMachine::new(vec![first, second]).unwrap();
+
+    let error = tokio::time::timeout(TEST_TIMEOUT, machine.execute_with_report(request()))
+        .await
+        .expect("policy failure must cancel the blocked race sibling")
+        .unwrap_err();
+    let policy_error = UpstreamError::network(af_domain::NetworkFailureKind::Policy);
+    assert_eq!(error.error(), RelayError::Upstream(policy_error));
+    assert!(
+        error
+            .report()
+            .failures()
+            .iter()
+            .any(|failure| failure.error() == policy_error)
+    );
+}
+
+#[tokio::test]
 async fn retries_rate_limit_on_the_next_candidate() {
     let (address, server) = spawn_proxy(vec![
         ProxyResponse {
@@ -846,6 +963,75 @@ async fn does_not_retry_client_bad_request() {
         machine.execute(request()).await.unwrap_err(),
         RelayError::Upstream(UpstreamError::BadRequest)
     );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn race_bad_request_aborts_pending_sibling_without_fallback() {
+    let (address, server) = spawn_proxy(vec![ProxyResponse {
+        status_line: "400 Bad Request",
+        body: b"{}",
+    }]);
+    let client = proxy_client(address);
+    let pending_slots = Arc::new(tokio::sync::Semaphore::new(0));
+    let (unused_gate, unused_acquired, _) = attempt_gate(GateMode::Limited);
+    let machine = RelayStateMachine::new(vec![
+        grouped_candidate(&client, "http://first.invalid", 1).with_race_width(Some(2)),
+        grouped_candidate(&client, "http://second.invalid", 1)
+            .with_race_width(Some(2))
+            .with_attempt_gate(Arc::new(SemaphoreAttemptGate(pending_slots))),
+        grouped_candidate(&client, "http://fallback.invalid", 2)
+            .with_race_width(Some(2))
+            .with_attempt_gate(unused_gate),
+    ])
+    .unwrap();
+
+    // The sibling cannot send or complete before the 400. A terminal error
+    // must cancel that pending task instead of waiting for it or using fallback.
+    let error = tokio::time::timeout(TEST_TIMEOUT, machine.execute_with_report(request()))
+        .await
+        .expect("a BadRequest must abort the pending race sibling")
+        .unwrap_err();
+    assert_eq!(
+        error.error(),
+        RelayError::Upstream(UpstreamError::BadRequest)
+    );
+    assert!(
+        error
+            .report()
+            .failures()
+            .iter()
+            .any(|failure| failure.error() == UpstreamError::BadRequest)
+    );
+    assert_eq!(unused_acquired.load(Ordering::Acquire), 0);
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn mixed_race_widths_do_not_fallback_after_serial_bad_request() {
+    let (address, server) = spawn_proxy(vec![ProxyResponse {
+        status_line: "400 Bad Request",
+        body: b"{}",
+    }]);
+    let client = proxy_client(address);
+    let (unused_gate, unused_acquired, _) = attempt_gate(GateMode::Limited);
+    let machine = RelayStateMachine::new(vec![
+        grouped_candidate(&client, "http://serial.invalid", 1).with_race_width(Some(1)),
+        grouped_candidate(&client, "http://race.invalid", 2)
+            .with_race_width(Some(2))
+            .with_attempt_gate(unused_gate),
+    ])
+    .unwrap();
+
+    let error = tokio::time::timeout(TEST_TIMEOUT, machine.execute_with_report(request()))
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(
+        error.error(),
+        RelayError::Upstream(UpstreamError::BadRequest)
+    );
+    assert_eq!(unused_acquired.load(Ordering::Acquire), 0);
     server.join().unwrap();
 }
 

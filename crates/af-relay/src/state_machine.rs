@@ -768,6 +768,45 @@ pub struct RelayExecutionPolicy {
     retry_delay: Duration,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FailureAction {
+    RetryCurrentCandidate,
+    RouteToNextCandidate,
+    AbortRequest,
+}
+
+fn classify_failure_action(
+    error: UpstreamError,
+    retry_current_candidate: bool,
+    protocol_error_can_fallback: bool,
+    client_simulation_failed: bool,
+) -> FailureAction {
+    if client_simulation_failed {
+        return FailureAction::AbortRequest;
+    }
+    if matches!(
+        error,
+        UpstreamError::BadRequest
+            | UpstreamError::Network {
+                kind: af_domain::NetworkFailureKind::Policy,
+            }
+    ) {
+        return FailureAction::AbortRequest;
+    }
+    if retry_current_candidate
+        && (is_same_candidate_retryable(error)
+            || (protocol_error_can_fallback && error == UpstreamError::ProtocolError))
+    {
+        return FailureAction::RetryCurrentCandidate;
+    }
+    if is_retryable(error) || (protocol_error_can_fallback && error == UpstreamError::ProtocolError)
+    {
+        FailureAction::RouteToNextCandidate
+    } else {
+        FailureAction::AbortRequest
+    }
+}
+
 impl RelayExecutionPolicy {
     #[must_use]
     pub const fn new(race_width: usize, retry_limit: u8, retry_delay: Duration) -> Self {
@@ -963,10 +1002,14 @@ impl RelayStateMachine {
                     }
                     Err(error) => {
                         let (last_error, report) = error.into_parts();
+                        let action = race_failure_action(&last_error, &report);
                         failures.extend(report.failures.into_iter().map(|mut failure| {
                             failure.candidate_index += index;
                             failure
                         }));
+                        if action == FailureAction::AbortRequest {
+                            return Err(RelayExecutionError::new(last_error, failures));
+                        }
                         index = match last_error {
                             RelayError::Upstream(error) => self.next_candidate_index(index, error),
                             _ => index + 1,
@@ -1010,12 +1053,12 @@ impl RelayStateMachine {
                 let (candidate_index, result) = match joined {
                     Ok(result) => result,
                     Err(_) => {
-                        last_error = RelayError::AttemptGateFailed;
-                        if next < end {
-                            spawn_candidate(&mut tasks, next);
-                            next += 1;
-                        }
-                        continue;
+                        tasks.abort_all();
+                        while tasks.join_next().await.is_some() {}
+                        return Err(RelayExecutionError::new(
+                            RelayError::AttemptGateFailed,
+                            failures,
+                        ));
                     }
                 };
                 match result {
@@ -1039,10 +1082,16 @@ impl RelayStateMachine {
                     }
                     Err(error) => {
                         let (error, report) = error.into_parts();
+                        let action = race_failure_action(&error, &report);
                         failures.extend(report.failures.into_iter().map(|mut failure| {
                             failure.candidate_index += candidate_index;
                             failure
                         }));
+                        if action == FailureAction::AbortRequest {
+                            tasks.abort_all();
+                            while tasks.join_next().await.is_some() {}
+                            return Err(RelayExecutionError::new(error, failures));
+                        }
                         if let RelayError::Upstream(upstream) = error {
                             let following = self.next_candidate_index(candidate_index, upstream);
                             if following > candidate_index + 1 {
@@ -1299,13 +1348,13 @@ impl RelayStateMachine {
                             .with_client_simulation(client_simulation),
                     );
                     last_error = Some(RelayError::Upstream(mapped));
-                    if is_retryable(mapped) {
-                        let limit = candidate
-                            .retry_limit
-                            .unwrap_or(self.execution_policy.retry_limit);
-                        if is_same_candidate_retryable(mapped)
-                            && reserve_candidate_retry(&mut retry_counts, index, limit)
-                        {
+                    let limit = candidate
+                        .retry_limit
+                        .unwrap_or(self.execution_policy.retry_limit);
+                    let retry_same_candidate = is_same_candidate_retryable(mapped)
+                        && reserve_candidate_retry(&mut retry_counts, index, limit);
+                    match classify_failure_action(mapped, retry_same_candidate, false, false) {
+                        FailureAction::RetryCurrentCandidate => {
                             let delay = candidate
                                 .retry_delay_ms
                                 .map_or(self.execution_policy.retry_delay, Duration::from_millis);
@@ -1314,13 +1363,17 @@ impl RelayStateMachine {
                             }
                             continue;
                         }
-                        index = self.next_candidate_index(index, mapped);
-                        continue;
+                        FailureAction::RouteToNextCandidate => {
+                            index = self.next_candidate_index(index, mapped);
+                            continue;
+                        }
+                        FailureAction::AbortRequest => {
+                            return Err(RelayExecutionError::new(
+                                RelayError::Upstream(mapped),
+                                failures,
+                            ));
+                        }
                     }
-                    return Err(RelayExecutionError::new(
-                        RelayError::Upstream(mapped),
-                        failures,
-                    ));
                 }
             };
             let (mut response, transport_fallback) = outcome.into_parts();
@@ -1365,27 +1418,32 @@ impl RelayStateMachine {
                             let limit = candidate
                                 .retry_limit
                                 .unwrap_or(self.execution_policy.retry_limit);
-                            if (is_same_candidate_retryable(error)
+                            let retry_same_candidate = (is_same_candidate_retryable(error)
                                 || error == UpstreamError::ProtocolError)
-                                && reserve_candidate_retry(&mut retry_counts, index, limit)
+                                && reserve_candidate_retry(&mut retry_counts, index, limit);
+                            match classify_failure_action(error, retry_same_candidate, true, false)
                             {
-                                let delay = candidate.retry_delay_ms.map_or(
-                                    self.execution_policy.retry_delay,
-                                    Duration::from_millis,
-                                );
-                                if !delay.is_zero() {
-                                    sleep(delay).await;
+                                FailureAction::RetryCurrentCandidate => {
+                                    let delay = candidate.retry_delay_ms.map_or(
+                                        self.execution_policy.retry_delay,
+                                        Duration::from_millis,
+                                    );
+                                    if !delay.is_zero() {
+                                        sleep(delay).await;
+                                    }
+                                    continue;
                                 }
-                                continue;
+                                FailureAction::RouteToNextCandidate => {
+                                    index = self.next_candidate_index(index, error);
+                                    continue;
+                                }
+                                FailureAction::AbortRequest => {
+                                    return Err(RelayExecutionError::new(
+                                        RelayError::Upstream(error),
+                                        failures,
+                                    ));
+                                }
                             }
-                            if is_retryable(error) || error == UpstreamError::ProtocolError {
-                                index = self.next_candidate_index(index, error);
-                                continue;
-                            }
-                            return Err(RelayExecutionError::new(
-                                RelayError::Upstream(error),
-                                failures,
-                            ));
                         }
                     }
                 }
@@ -1432,13 +1490,13 @@ impl RelayStateMachine {
                             .with_client_simulation(client_simulation),
                     );
                     last_error = Some(RelayError::Upstream(mapped));
-                    if is_retryable(mapped) {
-                        let limit = candidate
-                            .retry_limit
-                            .unwrap_or(self.execution_policy.retry_limit);
-                        if is_same_candidate_retryable(mapped)
-                            && reserve_candidate_retry(&mut retry_counts, index, limit)
-                        {
+                    let limit = candidate
+                        .retry_limit
+                        .unwrap_or(self.execution_policy.retry_limit);
+                    let retry_same_candidate = is_same_candidate_retryable(mapped)
+                        && reserve_candidate_retry(&mut retry_counts, index, limit);
+                    match classify_failure_action(mapped, retry_same_candidate, false, false) {
+                        FailureAction::RetryCurrentCandidate => {
                             let delay = candidate
                                 .retry_delay_ms
                                 .map_or(self.execution_policy.retry_delay, Duration::from_millis);
@@ -1447,13 +1505,17 @@ impl RelayStateMachine {
                             }
                             continue;
                         }
-                        index = self.next_candidate_index(index, mapped);
-                        continue;
+                        FailureAction::RouteToNextCandidate => {
+                            index = self.next_candidate_index(index, mapped);
+                            continue;
+                        }
+                        FailureAction::AbortRequest => {
+                            return Err(RelayExecutionError::new(
+                                RelayError::Upstream(mapped),
+                                failures,
+                            ));
+                        }
                     }
-                    return Err(RelayExecutionError::new(
-                        RelayError::Upstream(mapped),
-                        failures,
-                    ));
                 }
             };
             let classified = classify_upstream_status(status, retry_after, &body);
@@ -1475,13 +1537,13 @@ impl RelayStateMachine {
                 .with_client_simulation(client_simulation),
             );
             last_error = Some(RelayError::Upstream(classified));
-            if is_retryable(classified) {
-                let limit = candidate
-                    .retry_limit
-                    .unwrap_or(self.execution_policy.retry_limit);
-                if is_same_candidate_retryable(classified)
-                    && reserve_candidate_retry(&mut retry_counts, index, limit)
-                {
+            let limit = candidate
+                .retry_limit
+                .unwrap_or(self.execution_policy.retry_limit);
+            let retry_same_candidate = is_same_candidate_retryable(classified)
+                && reserve_candidate_retry(&mut retry_counts, index, limit);
+            match classify_failure_action(classified, retry_same_candidate, false, false) {
+                FailureAction::RetryCurrentCandidate => {
                     let delay = candidate
                         .retry_delay_ms
                         .map_or(self.execution_policy.retry_delay, Duration::from_millis);
@@ -1490,13 +1552,17 @@ impl RelayStateMachine {
                     }
                     continue;
                 }
-                index = self.next_candidate_index(index, classified);
-                continue;
+                FailureAction::RouteToNextCandidate => {
+                    index = self.next_candidate_index(index, classified);
+                    continue;
+                }
+                FailureAction::AbortRequest => {
+                    return Err(RelayExecutionError::new(
+                        RelayError::Upstream(classified),
+                        failures,
+                    ));
+                }
             }
-            return Err(RelayExecutionError::new(
-                RelayError::Upstream(classified),
-                failures,
-            ));
         }
 
         Err(RelayExecutionError::new(
@@ -1545,6 +1611,32 @@ impl RelayStateMachine {
             next += 1;
         }
         next
+    }
+}
+
+/// Race mode must not let a request-scoped or policy-scoped failure be hidden by
+/// a concurrent fallback. Candidate-local transient failures may still refill a
+/// race slot and proceed according to the normal retry policy.
+fn race_failure_action(error: &RelayError, report: &RelayAttemptReport) -> FailureAction {
+    let client_simulation_failed = report.failures.iter().any(|failure| {
+        failure
+            .client_simulation()
+            .is_some_and(|simulation| simulation.result() == ClientSimulationResult::Failed)
+    });
+    match error {
+        RelayError::Upstream(upstream) => {
+            classify_failure_action(*upstream, false, true, client_simulation_failed)
+        }
+        RelayError::InvalidModel | RelayError::Request(_) | RelayError::AttemptGateFailed => {
+            FailureAction::AbortRequest
+        }
+        RelayError::Adaptor(_) | RelayError::ConcurrencyUnavailable => {
+            if client_simulation_failed {
+                FailureAction::AbortRequest
+            } else {
+                FailureAction::RouteToNextCandidate
+            }
+        }
     }
 }
 
@@ -1623,6 +1715,56 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
+
+    #[test]
+    fn race_aborts_request_scoped_failures() {
+        let report = RelayAttemptReport::failed(Vec::new());
+        assert_eq!(
+            race_failure_action(&RelayError::Upstream(UpstreamError::BadRequest), &report),
+            FailureAction::AbortRequest,
+        );
+        assert_eq!(
+            race_failure_action(
+                &RelayError::Upstream(UpstreamError::network(
+                    af_domain::NetworkFailureKind::Policy,
+                )),
+                &report,
+            ),
+            FailureAction::AbortRequest,
+        );
+        assert_eq!(
+            race_failure_action(
+                &RelayError::Upstream(UpstreamError::ServerError {
+                    status: UpstreamServerStatus::new(503).unwrap(),
+                }),
+                &report,
+            ),
+            FailureAction::RouteToNextCandidate,
+        );
+        assert_eq!(
+            race_failure_action(&RelayError::AttemptGateFailed, &report),
+            FailureAction::AbortRequest,
+        );
+        assert_eq!(
+            race_failure_action(&RelayError::ConcurrencyUnavailable, &report),
+            FailureAction::RouteToNextCandidate,
+        );
+    }
+
+    #[test]
+    fn race_aborts_failed_client_simulation_even_when_error_is_protocol_error() {
+        let failure =
+            RelayAttemptFailure::new(0, UpstreamError::ProtocolError, Duration::from_millis(1))
+                .with_client_simulation(Some(RelayClientSimulationAttempt::new(
+                    ClientSimulationProfile::AnthropicCliHeadersV1,
+                    ClientSimulationResult::Failed,
+                )));
+        let report = RelayAttemptReport::failed(vec![failure]);
+        assert_eq!(
+            race_failure_action(&RelayError::Upstream(UpstreamError::ProtocolError), &report),
+            FailureAction::AbortRequest,
+        );
+    }
 
     #[test]
     fn candidate_body_factory_runs_only_when_body_is_requested() {

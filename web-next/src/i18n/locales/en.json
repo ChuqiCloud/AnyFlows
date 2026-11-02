@@ -5056,7 +5056,7 @@
       "newOrder": "Start new order",
       "paymentResumeHint": "You can resume this order with the same payment details.",
       "resumePayment": "Resume payment",
-      "orderRecoveryPending": "The order ID is saved so you can resume later; payment details are never stored."
+      "orderRecoveryPending": "The order ID is saved so you can resume later; payment secrets are never stored."
     },
     "fields": {
       "name": "Plan name",
