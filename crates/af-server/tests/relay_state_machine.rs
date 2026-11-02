@@ -992,7 +992,10 @@ async fn race_bad_request_aborts_pending_sibling_without_fallback() {
         .await
         .expect("a BadRequest must abort the pending race sibling")
         .unwrap_err();
-    assert_eq!(error.error(), RelayError::Upstream(UpstreamError::BadRequest));
+    assert_eq!(
+        error.error(),
+        RelayError::Upstream(UpstreamError::BadRequest)
+    );
     assert!(
         error
             .report()
@@ -1024,7 +1027,10 @@ async fn mixed_race_widths_do_not_fallback_after_serial_bad_request() {
         .await
         .unwrap()
         .unwrap_err();
-    assert_eq!(error.error(), RelayError::Upstream(UpstreamError::BadRequest));
+    assert_eq!(
+        error.error(),
+        RelayError::Upstream(UpstreamError::BadRequest)
+    );
     assert_eq!(unused_acquired.load(Ordering::Acquire), 0);
     server.join().unwrap();
 }

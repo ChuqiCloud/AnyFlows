@@ -358,10 +358,7 @@ mod tests {
                 )
                 .await
                 .expect("Gemini safety blocks are valid terminal responses");
-                assert_eq!(
-                    ready.into_body().into_bytes().await.unwrap().as_ref(),
-                    body
-                );
+                assert_eq!(ready.into_body().into_bytes().await.unwrap().as_ref(), body);
             }
         }
     }
@@ -379,10 +376,7 @@ mod tests {
                 )
                 .await
                 .expect("Gemini SAFETY finish is valid with an empty candidate");
-                assert_eq!(
-                    ready.into_body().into_bytes().await.unwrap().as_ref(),
-                    body
-                );
+                assert_eq!(ready.into_body().into_bytes().await.unwrap().as_ref(), body);
             }
         }
     }

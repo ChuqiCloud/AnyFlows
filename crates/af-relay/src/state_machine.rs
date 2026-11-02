@@ -799,8 +799,7 @@ fn classify_failure_action(
     {
         return FailureAction::RetryCurrentCandidate;
     }
-    if is_retryable(error)
-        || (protocol_error_can_fallback && error == UpstreamError::ProtocolError)
+    if is_retryable(error) || (protocol_error_can_fallback && error == UpstreamError::ProtocolError)
     {
         FailureAction::RouteToNextCandidate
     } else {
@@ -1422,12 +1421,8 @@ impl RelayStateMachine {
                             let retry_same_candidate = (is_same_candidate_retryable(error)
                                 || error == UpstreamError::ProtocolError)
                                 && reserve_candidate_retry(&mut retry_counts, index, limit);
-                            match classify_failure_action(
-                                error,
-                                retry_same_candidate,
-                                true,
-                                false,
-                            ) {
+                            match classify_failure_action(error, retry_same_candidate, true, false)
+                            {
                                 FailureAction::RetryCurrentCandidate => {
                                     let delay = candidate.retry_delay_ms.map_or(
                                         self.execution_policy.retry_delay,
