@@ -215,6 +215,7 @@ impl BillingChatService {
                 principal: *principal,
                 model: &model,
                 protocol: response_protocol,
+                operation: request.canonical().operation,
                 upper_bound: &upper_bound,
                 pricing: self.pricing_source.as_ref(),
                 defer_success_feedback: true,
@@ -297,11 +298,12 @@ impl BillingChatService {
         if let crate::model_subject::ModelSubject::User(principal) = subject {
             if principal.user_route_id().is_some()
                 && !self.inner.supports_request(principal.group_id(), &request, response_protocol)? {
-                return Err(UserRouteAttemptError::before_delivery(
+                return Err(UserRouteAttemptError::candidate_plan(
                     af_domain::UpstreamError::ModelUnsupported.into(),
                 ));
             }
         }
+        let requested_pricing_model = request.canonical().model.clone();
         let planned = match subject {
             crate::model_subject::ModelSubject::User(principal) => {
                 self.inner
@@ -349,7 +351,12 @@ impl BillingChatService {
         let source_group_id = subject.billing_source_group_id();
         let target_group_id = planned.target_group_id();
         let pricing_model = planned.pricing_model().to_owned();
-        let snapshot = match fixed_snapshot {
+        if let crate::model_subject::ModelSubject::User(principal) = subject {
+            if principal.user_route_id().is_some() && target_group_id != principal.group_id() {
+                return Err(AfError::Internal.into());
+            }
+        }
+        let snapshot = match fixed_snapshot.filter(|_| pricing_model == requested_pricing_model) {
             Some(snapshot) => snapshot,
             None => self.pricing_source
             .capture_for_request_at(
@@ -364,14 +371,7 @@ impl BillingChatService {
             .map_err(map_snapshot_error)?,
         };
         if !crate::user_route_runtime::price_ratio_allowed(&snapshot, maximum_price_ratio)? {
-            return Err(AfError::ModelNotAllowed.into());
-        }
-        if let crate::model_subject::ModelSubject::User(principal) = subject {
-            if principal.user_route_id().is_some()
-                && (target_group_id != principal.group_id()
-                    || pricing_model != planned.canonical_request().canonical().model) {
-                return Err(AfError::Internal.into());
-            }
+            return Err(UserRouteAttemptError::candidate_plan(AfError::ModelNotAllowed));
         }
         let plan = BillingRequestPlan::prepare(snapshot.resolver(), &upper_bound)
             .map_err(map_lifecycle_error)?
@@ -473,7 +473,7 @@ impl BillingChatService {
                 )
                 .await
                 .map_err(map_lifecycle_error)?;
-                if let Some(feedback) = self.route_feedback(subject, &pricing_model, target_group_id, started_at) {
+                if let Some(feedback) = self.route_feedback(subject, &requested_pricing_model, target_group_id, started_at) {
                     feedback.finish(true, false).await;
                 }
                 Ok(crate::RoutedExecution::new(BilledChatExecution::Full {
@@ -490,7 +490,7 @@ impl BillingChatService {
                     started_at,
                     first_token: started_at.elapsed(),
                     outcome: None,
-                    route_feedback: self.route_feedback(subject, &pricing_model, target_group_id, started_at),
+                    route_feedback: self.route_feedback(subject, &requested_pricing_model, target_group_id, started_at),
                 });
                 Ok(crate::RoutedExecution::new(BilledChatExecution::Stream {
                     body,
@@ -721,6 +721,23 @@ impl Drop for StreamRequestOutcomeGuard {
 }
 
 impl GenerationCompletionHook for BillingStreamCompletionHook {
+    fn on_delivery(
+        mut self: Box<Self>,
+        usage: Result<Usage, UsageResolutionError>,
+        outcome: af_relay::StreamDeliveryOutcome,
+    ) -> GenerationCompletionFuture {
+        if !matches!(outcome,
+            af_relay::StreamDeliveryOutcome::Completed | af_relay::StreamDeliveryOutcome::UpstreamFailed) {
+            // Client cancellation and local delivery limits do not measure upstream stability.
+            self.route_feedback = None;
+        }
+        self.on_complete(if outcome == af_relay::StreamDeliveryOutcome::Completed {
+            usage
+        } else {
+            Err(UsageResolutionError::Interrupted)
+        })
+    }
+
     fn on_complete(
         mut self: Box<Self>,
         usage: Result<Usage, UsageResolutionError>,
@@ -961,6 +978,7 @@ pub(crate) fn map_lifecycle_error(error: BillingLifecycleError) -> AfError {
 #[cfg(test)]
 mod tests {
     mod service_gateway;
+    mod user_routes;
     use std::sync::{Arc, Mutex};
 
     use af_adapter::{Bytes, HeaderMap};

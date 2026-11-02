@@ -1168,15 +1168,24 @@ impl IntoResponse for ManagementError {
             ),
             Self::UserRouteNotFound => (
                 StatusCode::NOT_FOUND,
-                ManagementErrorBody { code: "user_route_not_found", message: "User route not found" },
+                ManagementErrorBody {
+                    code: "user_route_not_found",
+                    message: "User route not found",
+                },
             ),
             Self::UserRouteLimitReached => (
                 StatusCode::CONFLICT,
-                ManagementErrorBody { code: "user_route_limit_reached", message: "User route limit reached" },
+                ManagementErrorBody {
+                    code: "user_route_limit_reached",
+                    message: "User route limit reached",
+                },
             ),
             Self::UserRouteUnavailable => (
                 StatusCode::FORBIDDEN,
-                ManagementErrorBody { code: "user_route_unavailable", message: "User route unavailable" },
+                ManagementErrorBody {
+                    code: "user_route_unavailable",
+                    message: "User route unavailable",
+                },
             ),
             Self::RouteNotFound => (
                 StatusCode::NOT_FOUND,

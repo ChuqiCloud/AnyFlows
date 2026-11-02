@@ -256,14 +256,14 @@ async fn user_route_crud_is_owner_scoped_and_delete_keeps_bound_keys_closed()
         routes.lookup_for_token(fixture.owner, token.token_id()).await.unwrap_err(),
         UserRouteError::Unavailable,
     );
-    assert_eq!(
+    assert!(matches!(
         fixture.repository.update(
             fixture.owner,
             token.token_id(),
             write_record("still-bound", 1, None),
-        ).await.unwrap_err(),
-        UserTokenRepositoryError::UserRouteUnavailable,
-    );
+        ).await,
+        Err(UserTokenRepositoryError::UserRouteUnavailable),
+    ));
     assert_eq!(routes.get(fixture.owner, route.id).await.unwrap_err(), UserRouteError::NotFound);
     fixture.pool.close().await?;
     Ok(())

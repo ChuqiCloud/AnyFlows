@@ -55,7 +55,11 @@ impl UserTokenWriteRequest {
             self.model_limits,
             self.allow_ips,
         )
-        .and_then(|command| command.with_group_id(group_id).with_user_route_id(self.user_route_id))
+        .and_then(|command| {
+            command
+                .with_group_id(group_id)
+                .with_user_route_id(self.user_route_id)
+        })
         .map_err(|_| ManagementError::InvalidRequest)
     }
 

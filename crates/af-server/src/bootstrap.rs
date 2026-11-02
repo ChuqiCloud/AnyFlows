@@ -1952,7 +1952,8 @@ impl Bootstrap<RelayReady> {
                     task_release_sink,
                     usage_record_sink,
                 ),
-            ),
+            )
+            .with_user_route_runtime(user_route_runtime.clone()),
         ));
         let embedding: Arc<dyn EmbeddingService> = Arc::new(
             BillingEmbeddingService::new(

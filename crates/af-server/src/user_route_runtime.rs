@@ -12,7 +12,7 @@ use af_db::{
     UserRouteModelHealth, UserRouteRecord, UserRouteRepository,
 };
 use af_domain::{
-    AfError, GatewayPrincipal, GroupId, NetworkFailureKind, Protocol, RateLimitScope, UpstreamError,
+    AfError, GatewayPrincipal, GroupId, NetworkFailureKind, Operation, Protocol, RateLimitScope, UpstreamError,
     UserRouteStrategy,
 };
 use af_protocol::Usage;
@@ -45,6 +45,34 @@ pub(crate) struct UserRouteCandidate {
     member: UserRouteMemberRecord,
     quoted_quota: i64,
     health: Option<UserRouteModelHealth>,
+}
+
+struct QuotedGroup {
+    group_id: GroupId,
+    member: UserRouteMemberRecord,
+    quoted_quota: i64,
+    health: Option<UserRouteModelHealth>,
+}
+
+trait CandidateOrdering {
+    fn group_id(&self) -> GroupId;
+    fn member(&self) -> &UserRouteMemberRecord;
+    fn quote(&self) -> i64;
+    fn health(&self) -> Option<&UserRouteModelHealth>;
+}
+
+impl CandidateOrdering for UserRouteCandidate {
+    fn group_id(&self) -> GroupId { self.group_id }
+    fn member(&self) -> &UserRouteMemberRecord { &self.member }
+    fn quote(&self) -> i64 { self.quoted_quota }
+    fn health(&self) -> Option<&UserRouteModelHealth> { self.health.as_ref() }
+}
+
+impl CandidateOrdering for QuotedGroup {
+    fn group_id(&self) -> GroupId { self.group_id }
+    fn member(&self) -> &UserRouteMemberRecord { &self.member }
+    fn quote(&self) -> i64 { self.quoted_quota }
+    fn health(&self) -> Option<&UserRouteModelHealth> { self.health.as_ref() }
 }
 
 impl UserRouteRuntime {
@@ -144,7 +172,7 @@ impl UserRouteRuntime {
     ) -> Result<bool, AfError> {
         if !self
             .repository
-            .check_group_access(principal.user_id(), group_id)
+            .check_route_member(principal.user_id(), principal.user_route_id().ok_or(AfError::InvalidApiKey)?, group_id)
             .await
             .map_err(map_repository_error)?
         {
@@ -214,13 +242,15 @@ impl UserRouteRuntime {
         }
     }
 
-    pub(crate) async fn candidates(
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn candidates_for_operation(
         &self,
         plan: &UserRouteRequestPlan,
         principal: GatewayPrincipal,
         upper_bound: &Usage,
         pricing: &dyn RequestPricingSnapshotSource,
         protocol: Protocol,
+        operation: Option<Operation>,
     ) -> Result<Vec<UserRouteCandidate>, AfError> {
         let time = crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?;
         let now = now_millis()?;
@@ -234,7 +264,7 @@ impl UserRouteRuntime {
                 continue;
             }
             permitted = true;
-            if !self.supports_protocol(member.group_id, &plan.model, protocol)? {
+            if !self.supports_operation(member.group_id, &plan.model, protocol, operation)? {
                 continue;
             }
             let health = plan
@@ -302,17 +332,59 @@ impl UserRouteRuntime {
                 return Err(AfError::Internal);
             }
         }
-        candidates.truncate(plan.route.max_group_attempts as usize);
         Ok(candidates)
     }
 
-    fn supports_protocol(&self, group_id: GroupId, model: &str, protocol: Protocol) -> Result<bool, AfError> {
+    /// Fixed-price asynchronous tasks share strategy ordering without constructing token prices.
+    pub(crate) async fn order_quoted_groups(
+        &self,
+        plan: &UserRouteRequestPlan,
+        quoted: Vec<(GroupId, i64)>,
+    ) -> Result<Vec<GroupId>, AfError> {
+        let now = now_millis()?;
+        let mut seen = std::collections::BTreeSet::new();
+        let mut candidates = Vec::with_capacity(quoted.len());
+        for (group_id, quoted_quota) in quoted {
+            if quoted_quota < 0 || !seen.insert(group_id) {
+                return Err(AfError::Internal);
+            }
+            let member = plan.route.members.iter().find(|member| member.group_id == group_id)
+                .ok_or(AfError::ModelNotAllowed)?.clone();
+            let health = plan.health.iter().find(|health| health.group_id == group_id).cloned();
+            if health.as_ref().and_then(|health| health.cooldown_until_millis)
+                .is_some_and(|until| until > now) {
+                continue;
+            }
+            candidates.push(QuotedGroup { group_id, member, quoted_quota, health });
+        }
+        if candidates.is_empty() {
+            return Err(UpstreamError::overloaded().into());
+        }
+        order_candidates(plan.route.strategy, &mut candidates)?;
+        let mut groups = candidates.into_iter().map(|candidate| candidate.group_id).collect::<Vec<_>>();
+        if plan.route.strategy == UserRouteStrategy::RoundRobin {
+            let selected = self.repository.claim_round_robin(plan.route.id, &groups).await.map_err(map_repository_error)?;
+            let index = groups.iter().position(|group| *group == selected).ok_or(AfError::Internal)?;
+            groups.rotate_left(index);
+        }
+        Ok(groups)
+    }
+
+    pub(crate) fn supports_protocol(&self, group_id: GroupId, model: &str, protocol: Protocol) -> Result<bool, AfError> {
+        self.supports_operation(group_id, model, protocol, None)
+    }
+
+    fn supports_operation(&self, group_id: GroupId, model: &str, protocol: Protocol, operation: Option<Operation>) -> Result<bool, AfError> {
         let Some(index) = &self.channel_index else {
             return Ok(true);
         };
         let snapshot = index.snapshot().map_err(|_| AfError::Internal)?;
         for candidate in snapshot.candidates(group_id, model).map_err(|_| AfError::InvalidRequest)? {
             let target = snapshot.runtime_target(candidate.channel_id()).ok_or(AfError::Internal)?;
+            if operation == Some(Operation::ResponsesCompact)
+                && target.schedulable_responses_compact_model(model).is_none() {
+                continue;
+            }
             if compatible_protocol(protocol, target.protocol())
                 && target.channel_type().supports_runtime(target.protocol()) {
                 return Ok(true);
@@ -351,7 +423,7 @@ pub(crate) fn price_ratio_allowed(
     )
 }
 
-fn ratio_product_allowed(ratios: [i64; 3], maximum: i64) -> Result<bool, AfError> {
+pub(crate) fn ratio_product_allowed(ratios: [i64; 3], maximum: i64) -> Result<bool, AfError> {
     if ratios.iter().any(|ratio| *ratio < 0) || maximum < 0 {
         return Err(AfError::Internal);
     }
@@ -390,38 +462,38 @@ pub(crate) fn permits_group_failover(error: &AfError) -> bool {
     }
 }
 
-fn order_candidates(
+fn order_candidates<T: CandidateOrdering>(
     strategy: UserRouteStrategy,
-    candidates: &mut Vec<UserRouteCandidate>,
+    candidates: &mut Vec<T>,
 ) -> Result<(), AfError> {
     match strategy {
         UserRouteStrategy::Ordered => candidates.sort_by_key(|candidate| {
-            (candidate.member.priority, candidate.group_id)
+            (candidate.member().priority, candidate.group_id())
         }),
         UserRouteStrategy::RoundRobin => candidates.sort_by_key(|candidate| {
             (
-                candidate.member.last_selected_at_millis,
-                candidate.member.priority,
-                candidate.group_id,
+                candidate.member().last_selected_at_millis,
+                candidate.member().priority,
+                candidate.group_id(),
             )
         }),
         UserRouteStrategy::PriceFirst => candidates.sort_by_key(|candidate| {
             (
-                candidate.quoted_quota,
-                candidate.member.priority,
-                candidate.group_id,
+                candidate.quote(),
+                candidate.member().priority,
+                candidate.group_id(),
             )
         }),
         UserRouteStrategy::StableFirst => candidates.sort_by(|left, right| {
-            compare_health(left.health.as_ref(), right.health.as_ref())
-                .then_with(|| left.member.priority.cmp(&right.member.priority))
-                .then_with(|| left.group_id.cmp(&right.group_id))
+            compare_health(left.health(), right.health())
+                .then_with(|| left.member().priority.cmp(&right.member().priority))
+                .then_with(|| left.group_id().cmp(&right.group_id()))
         }),
         UserRouteStrategy::Weighted => {
             let mut remaining = std::mem::take(candidates);
             while !remaining.is_empty() {
                 let total = remaining.iter().try_fold(0_u64, |sum, candidate| {
-                    sum.checked_add(u64::from(candidate.member.weight))
+                    sum.checked_add(u64::from(candidate.member().weight))
                         .ok_or(AfError::Internal)
                 })?;
                 if total == 0 {
@@ -431,7 +503,7 @@ fn order_candidates(
                 let index = remaining
                     .iter()
                     .position(|candidate| {
-                        let weight = u64::from(candidate.member.weight);
+                        let weight = u64::from(candidate.member().weight);
                         if ticket < weight {
                             true
                         } else {
@@ -536,6 +608,43 @@ mod tests {
         assert_eq!(compare_health(Some(&healthy), Some(&unhealthy)), Ordering::Less);
         assert_eq!(compare_health(Some(&healthy), None), Ordering::Less);
         assert_eq!(compare_health(None, Some(&unhealthy)), Ordering::Greater);
+    }
+
+    #[test]
+    fn order_and_price_preferences_use_configured_facts() {
+        let mut groups = vec![quoted(1, 2, 20), quoted(2, 0, 30), quoted(3, 1, 10)];
+        order_candidates(UserRouteStrategy::Ordered, &mut groups).unwrap();
+        assert_eq!(ids(&groups), vec![2, 3, 1]);
+        order_candidates(UserRouteStrategy::PriceFirst, &mut groups).unwrap();
+        assert_eq!(ids(&groups), vec![3, 1, 2]);
+        groups[1].member.last_selected_at_millis = Some(10);
+        groups[0].member.last_selected_at_millis = Some(20);
+        order_candidates(UserRouteStrategy::RoundRobin, &mut groups).unwrap();
+        assert_eq!(ids(&groups), vec![2, 1, 3]);
+    }
+
+    #[test]
+    fn weighted_order_never_repeats_or_drops_a_member() {
+        let mut groups = vec![quoted(1, 0, 10), quoted(2, 1, 10), quoted(3, 2, 10)];
+        groups[0].member.weight = 10_000;
+        order_candidates(UserRouteStrategy::Weighted, &mut groups).unwrap();
+        let mut groups = ids(&groups);
+        groups.sort_unstable();
+        assert_eq!(groups, vec![1, 2, 3]);
+    }
+
+    fn quoted(group: i64, priority: i32, quoted_quota: i64) -> QuotedGroup {
+        let group_id = GroupId::new(group).unwrap();
+        QuotedGroup {
+            group_id,
+            member: UserRouteMemberRecord { group_id, priority, weight: 1, last_selected_at_millis: None },
+            quoted_quota,
+            health: None,
+        }
+    }
+
+    fn ids(groups: &[QuotedGroup]) -> Vec<i64> {
+        groups.iter().map(|group| group.group_id.get()).collect()
     }
 
     fn health(success_count: u64, fail_count: u64, total_latency_ms: u64) -> UserRouteModelHealth {

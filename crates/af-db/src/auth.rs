@@ -269,7 +269,10 @@ impl TokenAuthRepository {
                 )
                 .col_expr(tokens::Column::Status, Expr::value(1_i16))
                 .col_expr(tokens::Column::GroupId, Expr::value(Option::<i64>::None))
-                .col_expr(tokens::Column::UserRouteId, Expr::value(Option::<i64>::None))
+                .col_expr(
+                    tokens::Column::UserRouteId,
+                    Expr::value(Option::<i64>::None),
+                )
                 .col_expr(
                     tokens::Column::OrganizationId,
                     Expr::value(Option::<i64>::None),
@@ -423,9 +426,13 @@ impl TokenAuthRepository {
             .await?;
         if let TokenAuthLookupOutcome::Authenticated { principal, .. } = &outcome {
             if let Some(route_id) = principal.user_route_id() {
-                let repository = crate::UserRouteRepository::new(self.pool.clone(), self.lookup_timeout)
-                    .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
-                match repository.lookup_for_token(principal.user_id(), principal.token_id()).await {
+                let repository =
+                    crate::UserRouteRepository::new(self.pool.clone(), self.lookup_timeout)
+                        .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+                match repository
+                    .lookup_for_token(principal.user_id(), principal.token_id())
+                    .await
+                {
                     Ok(Some(route)) if route.id == route_id => {}
                     Ok(_) | Err(crate::UserRouteError::Unavailable) => {
                         return Ok(TokenAuthLookupOutcome::Rejected);
@@ -1024,15 +1031,19 @@ mod tests {
     async fn user_route_key_preserves_token_policy_without_default_group_intersection() {
         let mut row = auth_row(false);
         row.token_user_route_id = Some(7);
-        row.token_model_limits = Some(TokenModelAllowlist::validate(
-            serde_json::json!(["alternate-model"]),
-        ).unwrap());
-        row.group_model_limits = Some(TokenModelAllowlist::validate(
-            serde_json::json!(["default-model"]),
-        ).unwrap());
+        row.token_model_limits =
+            Some(TokenModelAllowlist::validate(serde_json::json!(["alternate-model"])).unwrap());
+        row.group_model_limits =
+            Some(TokenModelAllowlist::validate(serde_json::json!(["default-model"])).unwrap());
         row.group_rpm_limit = Some(1);
         let outcome = row.validate(client_ip(), None).await.unwrap();
-        let TokenAuthLookupOutcome::Authenticated { principal, model_policy, group_rpm_limit, .. } = outcome else {
+        let TokenAuthLookupOutcome::Authenticated {
+            principal,
+            model_policy,
+            group_rpm_limit,
+            ..
+        } = outcome
+        else {
             panic!("personal route key should preserve its own model policy");
         };
         assert_eq!(principal.user_route_id(), Some(7));
@@ -1049,11 +1060,17 @@ mod tests {
             if !organization {
                 row.token_group_id = Some(3);
             }
-            assert_eq!(row.validate(client_ip(), None).await, Ok(TokenAuthLookupOutcome::Rejected));
+            assert_eq!(
+                row.validate(client_ip(), None).await,
+                Ok(TokenAuthLookupOutcome::Rejected)
+            );
         }
         let mut row = auth_row(false);
         row.token_user_route_id = Some(0);
-        assert_eq!(row.validate(client_ip(), None).await, Ok(TokenAuthLookupOutcome::Rejected));
+        assert_eq!(
+            row.validate(client_ip(), None).await,
+            Ok(TokenAuthLookupOutcome::Rejected)
+        );
     }
 
     #[tokio::test]

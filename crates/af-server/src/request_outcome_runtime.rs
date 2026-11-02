@@ -18,7 +18,11 @@ impl<T> RoutedExecution<T> {
     /// 绑定已经由候选报告确认的最终成功渠道。
     #[must_use]
     pub const fn new(value: T, channel_id: ChannelId) -> Self {
-        Self { value, channel_id, target_group_id: None }
+        Self {
+            value,
+            channel_id,
+            target_group_id: None,
+        }
     }
 
     /// 保留跨分组调度最终选中的计费分组，供请求终态观测使用。
@@ -61,8 +65,11 @@ impl RequestOutcomeContext {
     pub fn with_target_group_id(mut self, group_id: af_domain::GroupId) -> Self {
         if let Some(subject) = self.subject {
             self.subject = Some(RequestOutcomeSubject::new(
-                subject.user_id(), subject.token_id(), group_id,
-                subject.organization_id(), subject.organization_team_id(),
+                subject.user_id(),
+                subject.token_id(),
+                group_id,
+                subject.organization_id(),
+                subject.organization_team_id(),
             ));
         }
         self
@@ -134,8 +141,11 @@ impl RequestOutcomeContext {
             Ok(routed) => {
                 if let (Some(group_id), Some(subject)) = (routed.target_group_id, self.subject) {
                     self.subject = Some(RequestOutcomeSubject::new(
-                        subject.user_id(), subject.token_id(), group_id,
-                        subject.organization_id(), subject.organization_team_id(),
+                        subject.user_id(),
+                        subject.token_id(),
+                        group_id,
+                        subject.organization_id(),
+                        subject.organization_team_id(),
                     ));
                 }
                 let channel_id = routed.channel_id();

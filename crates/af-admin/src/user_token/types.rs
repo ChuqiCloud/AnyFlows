@@ -140,7 +140,9 @@ impl UserToken {
 
     /// 返回绑定的用户智能路由。
     #[must_use]
-    pub const fn user_route_id(&self) -> Option<i64> { self.user_route_id }
+    pub const fn user_route_id(&self) -> Option<i64> {
+        self.user_route_id
+    }
 
     /// 返回当前解析的实际分组。
     #[must_use]
@@ -356,17 +358,24 @@ impl UserTokenWriteCommand {
     }
 
     /// 设置创建时的用户路由绑定。
-    pub fn with_user_route_id(mut self, user_route_id: Option<i64>) -> Result<Self, UserTokenError> {
+    pub fn with_user_route_id(
+        mut self,
+        user_route_id: Option<i64>,
+    ) -> Result<Self, UserTokenError> {
         if user_route_id.is_some_and(|id| id <= 0)
             || (user_route_id.is_some() && self.group_id.is_some())
-        { return Err(UserTokenError::InvalidInput); }
+        {
+            return Err(UserTokenError::InvalidInput);
+        }
         self.user_route_id = user_route_id;
         Ok(self)
     }
 
     /// 返回用户路由绑定。
     #[must_use]
-    pub const fn user_route_id(&self) -> Option<i64> { self.user_route_id }
+    pub const fn user_route_id(&self) -> Option<i64> {
+        self.user_route_id
+    }
 
     pub(super) fn into_record(self) -> UserTokenWriteRecord {
         UserTokenWriteRecord::new(

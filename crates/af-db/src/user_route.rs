@@ -254,15 +254,17 @@ impl UserRouteRepository {
             if !row.enabled { return Err(UserRouteError::Unavailable); }
             let mut route = snapshot(&txn, row).await?;
             let default_group = GroupId::new(owner_row.default_group_id).map_err(|_| UserRouteError::Internal)?;
-            // 每次请求重新读取授权，撤销成员不会因历史绑定继续可用。
-            let mut eligible = Vec::with_capacity(route.members.len());
-            for member in route.members {
-                if group_access(&txn, owner, default_group, member.group_id).await? {
-                    eligible.push(member);
+            // 始终按分组 ID 加锁，避免不同用户的相反优先级形成锁环。
+            let groups = route.members.iter().map(|member| member.group_id).collect::<BTreeSet<_>>();
+            let mut eligible = BTreeSet::new();
+            for group in groups {
+                if group_access(&txn, owner, default_group, group).await? {
+                    eligible.insert(group);
                 }
             }
             if eligible.is_empty() { return Err(UserRouteError::Unavailable); }
-            route.members = eligible;
+            // 授权过滤保留用户配置的成员顺序。
+            route.members.retain(|member| eligible.contains(&member.group_id));
             txn.commit().await.map_err(internal)?;
             Ok(Some(route))
         }).await
@@ -277,6 +279,33 @@ impl UserRouteRepository {
             let result = group_access(&txn, owner, default, group).await?;
             txn.commit().await.map_err(internal)?;
             Ok(result)
+        }).await
+    }
+
+    /// 尝试前重新核对当前路由启停、所有权、成员关系及分组授权。
+    pub async fn check_route_member(&self, owner: UserId, route_id: i64, group: GroupId) -> Result<bool, UserRouteError> {
+        self.bounded(async {
+            let txn = self.pool.connection().begin().await.map_err(internal)?;
+            let owner_row = ensure_owner(&txn, owner).await?;
+            match owned_route(&txn, owner, route_id).await {
+                Err(UserRouteError::NotFound) => return Ok(false),
+                result => { result?; }
+            }
+            match lock_route(&txn, route_id).await {
+                Err(UserRouteError::Unavailable) => return Ok(false),
+                result => result?,
+            }
+            let route = owned_route(&txn, owner, route_id).await?;
+            if !route.enabled { return Ok(false); }
+            if user_route_members::Entity::find_by_id((route_id, group.get()))
+                .one(&txn).await.map_err(internal)?.is_none()
+            {
+                return Ok(false);
+            }
+            let default = GroupId::new(owner_row.default_group_id).map_err(|_| UserRouteError::Internal)?;
+            let allowed = group_access(&txn, owner, default, group).await?;
+            txn.commit().await.map_err(internal)?;
+            Ok(allowed)
         }).await
     }
 

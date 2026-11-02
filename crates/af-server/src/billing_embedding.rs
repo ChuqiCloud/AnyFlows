@@ -139,6 +139,7 @@ impl BillingEmbeddingService {
             principal: *principal,
             model: &model,
             protocol: af_domain::Protocol::OpenAiEmbeddings,
+            operation: af_domain::Operation::Embedding,
             upper_bound: &upper_bound,
             pricing: self.pricing_source.as_ref(),
             defer_success_feedback: false,
@@ -185,7 +186,9 @@ impl BillingEmbeddingService {
             .map_err(map_snapshot_error)?,
         };
         if !crate::user_route_runtime::price_ratio_allowed(&snapshot, max_price_ratio_micros)? {
-            return Err(AfError::ModelNotAllowed.into());
+            return Err(crate::user_route_execution::UserRouteAttemptError::candidate_plan(
+                AfError::ModelNotAllowed,
+            ));
         }
         let plan = BillingRequestPlan::prepare(snapshot.resolver(), &upper_bound)
             .map_err(map_lifecycle_error)?

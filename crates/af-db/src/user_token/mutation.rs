@@ -59,19 +59,25 @@ pub(super) async fn create(
     let default_group_id = owner.default_group_id();
     if let Some(route_id) = record.user_route_id {
         crate::user_route::validate_token_route(
-            &transaction, record.owner_user_id, default_group_id, route_id,
-        ).await.map_err(map_user_route_error)?;
+            &transaction,
+            record.owner_user_id,
+            default_group_id,
+            route_id,
+        )
+        .await
+        .map_err(map_user_route_error)?;
     }
     let effective_group_id = record.group_id.unwrap_or(default_group_id);
-    if record.user_route_id.is_none() && !user_can_select_key_group(
-        &transaction,
-        record.owner_user_id,
-        default_group_id,
-        effective_group_id,
-    )
-    .with_subscriber(NoSubscriber::default())
-    .await
-    .map_err(|_| record_internal_error(UserTokenRepositoryError::Query))?
+    if record.user_route_id.is_none()
+        && !user_can_select_key_group(
+            &transaction,
+            record.owner_user_id,
+            default_group_id,
+            effective_group_id,
+        )
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(|_| record_internal_error(UserTokenRepositoryError::Query))?
     {
         rollback(transaction).await?;
         return Err(if record.group_id.is_some() {
@@ -166,16 +172,26 @@ pub(super) async fn update(
         // 与授权撤销共享 group 行锁，避免同时保存时重新启用刚被停用的 Key。
         let allowed = if let Some(route_id) = token.user_route_id {
             match crate::user_route::validate_token_route(
-                &transaction, owner_user_id, owner.default_group_id(), route_id,
-            ).await {
+                &transaction,
+                owner_user_id,
+                owner.default_group_id(),
+                route_id,
+            )
+            .await
+            {
                 Ok(()) => true,
                 Err(crate::UserRouteError::Unavailable | crate::UserRouteError::NotFound) => false,
                 Err(error) => return Err(map_user_route_error(error)),
             }
         } else {
             user_can_select_key_group(
-                &transaction, owner_user_id, owner.default_group_id(), group_id,
-            ).await.map_err(|_| record_internal_error(UserTokenRepositoryError::Query))?
+                &transaction,
+                owner_user_id,
+                owner.default_group_id(),
+                group_id,
+            )
+            .await
+            .map_err(|_| record_internal_error(UserTokenRepositoryError::Query))?
         };
         let query = if transaction.get_database_backend() == DbBackend::Sqlite {
             query
@@ -194,7 +210,9 @@ pub(super) async fn update(
             rollback(transaction).await?;
             return Err(if token.user_route_id.is_some() {
                 UserTokenRepositoryError::UserRouteUnavailable
-            } else { UserTokenRepositoryError::GroupUnavailable });
+            } else {
+                UserTokenRepositoryError::GroupUnavailable
+            });
         }
     }
     // 只更新普通用户可控列，管理员绑定的分组、重试和窗口字段保持原值。

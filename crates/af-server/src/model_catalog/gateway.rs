@@ -24,17 +24,26 @@ impl RuntimeModelCatalogReader {
                 if authentication.principal().user_route_id().is_some() =>
             {
                 let principal = authentication.principal();
-                let route = self.user_routes.as_ref().ok_or(ModelCatalogReadError::Internal)?
-                    .lookup_for_token(principal.user_id(), principal.token_id()).await
+                let route = self
+                    .user_routes
+                    .as_ref()
+                    .ok_or(ModelCatalogReadError::Internal)?
+                    .lookup_for_token(principal.user_id(), principal.token_id())
+                    .await
                     .map_err(|_| ModelCatalogReadError::Internal)?
                     .ok_or(ModelCatalogReadError::Internal)?;
                 if Some(route.id) != principal.user_route_id() {
                     return Err(ModelCatalogReadError::Internal);
                 }
-                let repository = self.user_routes.as_ref().ok_or(ModelCatalogReadError::Internal)?;
+                let repository = self
+                    .user_routes
+                    .as_ref()
+                    .ok_or(ModelCatalogReadError::Internal)?;
                 let mut permitted = Vec::new();
                 for member in route.members {
-                    if repository.check_group_access(principal.user_id(), member.group_id).await
+                    if repository
+                        .check_group_access(principal.user_id(), member.group_id)
+                        .await
                         .map_err(|_| ModelCatalogReadError::Internal)?
                     {
                         permitted.push(member.group_id);
@@ -46,7 +55,10 @@ impl RuntimeModelCatalogReader {
         };
         let mut groups = Vec::with_capacity(group_ids.len());
         for group_id in group_ids {
-            let policy = self.group_model_policy.policy_for_group(group_id).await
+            let policy = self
+                .group_model_policy
+                .policy_for_group(group_id)
+                .await
                 .map_err(super::map_group_model_policy_error)?;
             groups.push((group_id, policy));
         }
@@ -73,8 +85,10 @@ impl RuntimeModelCatalogReader {
                 let mut available = false;
                 for (group_id, policy) in &groups {
                     if policy.allows(record.model())
-                        && !runtime.candidates(*group_id, record.model())
-                            .map_err(|_| ModelCatalogReadError::Internal)?.is_empty()
+                        && !runtime
+                            .candidates(*group_id, record.model())
+                            .map_err(|_| ModelCatalogReadError::Internal)?
+                            .is_empty()
                     {
                         available = true;
                         break;

@@ -3,7 +3,7 @@
 use std::{future::Future, time::Instant};
 
 use af_billing::{RequestPricingSnapshot, RequestPricingSnapshotSource};
-use af_domain::{AfError, GatewayPrincipal, Protocol};
+use af_domain::{AfError, GatewayPrincipal, Operation, Protocol};
 use af_protocol::Usage;
 
 use crate::{RoutedExecution, user_route_runtime::{UserRouteRuntime, permits_group_failover}};
@@ -12,24 +12,25 @@ use crate::{RoutedExecution, user_route_runtime::{UserRouteRuntime, permits_grou
 pub(crate) struct UserRouteAttemptError {
     pub(crate) error: AfError,
     retryable: bool,
+    counts_attempt: bool,
 }
 
 impl UserRouteAttemptError {
     pub(crate) fn before_delivery(error: AfError) -> Self {
         let retryable = permits_group_failover(&error);
-        Self { error, retryable }
+        Self { error, retryable, counts_attempt: true }
     }
 
     pub(crate) fn candidate_plan(error: AfError) -> Self {
         let retryable = matches!(error, AfError::ModelNotAllowed | AfError::ModelUnavailable)
             || permits_group_failover(&error);
-        Self { error, retryable }
+        Self { error, retryable, counts_attempt: false }
     }
 }
 
 impl From<AfError> for UserRouteAttemptError {
     fn from(error: AfError) -> Self {
-        Self { error, retryable: false }
+        Self { error, retryable: false, counts_attempt: false }
     }
 }
 
@@ -48,6 +49,7 @@ pub(crate) struct UserRouteExecution<'a> {
     pub(crate) principal: GatewayPrincipal,
     pub(crate) model: &'a str,
     pub(crate) protocol: Protocol,
+    pub(crate) operation: Operation,
     pub(crate) upper_bound: &'a Usage,
     pub(crate) pricing: &'a dyn RequestPricingSnapshotSource,
     pub(crate) defer_success_feedback: bool,
@@ -70,11 +72,15 @@ impl UserRouteExecution<'_> {
         }
         let runtime = runtime.ok_or(AfError::Internal)?;
         let plan = runtime.load(self.principal, self.model).await?.ok_or(AfError::InvalidApiKey)?;
-        let candidates = runtime.candidates(
-            &plan, self.principal, self.upper_bound, self.pricing, self.protocol,
+        let candidates = runtime.candidates_for_operation(
+            &plan, self.principal, self.upper_bound, self.pricing, self.protocol, Some(self.operation),
         ).await?;
         let mut last_error = AfError::ModelNotAllowed;
+        let mut attempts = 0;
         for candidate in candidates {
+            if attempts >= plan.route.max_group_attempts {
+                break;
+            }
             if !runtime.check_access(self.principal, candidate.group_id, self.model).await? {
                 continue;
             }
@@ -100,7 +106,10 @@ impl UserRouteExecution<'_> {
                     return Ok(result.with_target_group_id(candidate.group_id));
                 }
                 Err(failure) => {
-                    runtime.feedback(&plan, candidate.group_id, false, latency, failure.retryable).await;
+                    if failure.counts_attempt {
+                        attempts += 1;
+                        runtime.feedback(&plan, candidate.group_id, false, latency, failure.retryable).await;
+                    }
                     if !failure.retryable {
                         return Err(failure.error);
                     }

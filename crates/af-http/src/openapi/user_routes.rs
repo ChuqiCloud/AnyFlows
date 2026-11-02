@@ -6,7 +6,9 @@ use utoipa::OpenApi;
 
 use crate::{
     management_error::ManagementErrorBody,
-    user_routes::{UserRouteListResponse, UserRouteResponse, UserRouteStrategySchema, UserRouteWriteRequest},
+    user_routes::{
+        UserRouteListResponse, UserRouteResponse, UserRouteStrategySchema, UserRouteWriteRequest,
+    },
 };
 
 #[utoipa::path(
@@ -101,9 +103,23 @@ fn delete_user_route() {}
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(list_user_routes, create_user_route, get_user_route, update_user_route, delete_user_route),
-    components(schemas(UserRouteStrategySchema, UserRouteListResponse, UserRouteResponse, UserRouteWriteRequest, ManagementErrorBody))
+    paths(
+        list_user_routes,
+        create_user_route,
+        get_user_route,
+        update_user_route,
+        delete_user_route
+    ),
+    components(schemas(
+        UserRouteStrategySchema,
+        UserRouteListResponse,
+        UserRouteResponse,
+        UserRouteWriteRequest,
+        ManagementErrorBody
+    ))
 )]
 struct UserRoutesApi;
 
-pub(super) fn document() -> utoipa::openapi::OpenApi { UserRoutesApi::openapi() }
+pub(super) fn document() -> utoipa::openapi::OpenApi {
+    UserRoutesApi::openapi()
+}

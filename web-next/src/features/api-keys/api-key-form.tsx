@@ -65,6 +65,11 @@ export function ApiKeyForm({ token, portalContainer, onCancel, onIssued, onSaved
   const limitReached = hasManagementErrorCode(submitError, 'token_limit_reached')
   const groupUnavailable = hasManagementErrorCode(submitError, 'group_unavailable')
   const routeUnavailable = hasManagementErrorCode(submitError, 'user_route_unavailable') || hasManagementErrorCode(submitError, 'user_route_not_found')
+  const changeRoutingMode = (mode: ApiKeyFormValues['routingMode']) => {
+    form.setValue('routingMode', mode)
+    form.clearErrors(['groupId', 'userRouteId'])
+    createMutation.reset()
+  }
   const onSubmit = form.handleSubmit(async (values) => {
     if (!token) {
       if (values.routingMode === 'route') {
@@ -124,10 +129,10 @@ export function ApiKeyForm({ token, portalContainer, onCancel, onIssued, onSaved
             <section className="grid gap-2">
               <span className="text-xs font-medium">{t('apiKeys.routing.label')}</span>
               <div role="group" aria-label={t('apiKeys.routing.label')} className="grid grid-cols-2 gap-1 rounded-lg bg-surface-2 p-1">
-                <Button type="button" size="sm" variant={routingMode === 'group' ? 'solid' : 'light'} aria-pressed={routingMode === 'group'} isDisabled={pending} onPress={() => { form.setValue('routingMode', 'group'); form.clearErrors(['groupId', 'userRouteId']) }}>
+                <Button type="button" size="sm" variant={routingMode === 'group' ? 'solid' : 'light'} aria-pressed={routingMode === 'group'} isDisabled={pending} onPress={() => changeRoutingMode('group')}>
                   <UsersRound className="size-3.5" aria-hidden="true" />{t('apiKeys.routing.groupMode')}
                 </Button>
-                <Button type="button" size="sm" variant={routingMode === 'route' ? 'solid' : 'light'} aria-pressed={routingMode === 'route'} isDisabled={pending} onPress={() => { form.setValue('routingMode', 'route'); form.clearErrors(['groupId', 'userRouteId']) }}>
+                <Button type="button" size="sm" variant={routingMode === 'route' ? 'solid' : 'light'} aria-pressed={routingMode === 'route'} isDisabled={pending} onPress={() => changeRoutingMode('route')}>
                   <Route className="size-3.5" aria-hidden="true" />{t('apiKeys.routing.routeMode')}
                 </Button>
               </div>
