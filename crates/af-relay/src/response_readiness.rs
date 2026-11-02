@@ -66,10 +66,20 @@ pub(crate) async fn validate(
     let ready = async {
         let mut size = 0_usize;
         loop {
-            let bytes = poll_fn(|context| source.poll_next(context))
-                .await
-                .ok_or(UpstreamError::ProtocolError)?
-                .map_err(map_adaptor_error)?;
+            let Some(bytes) = poll_fn(|context| source.poll_next(context)).await else {
+                let events = decoder.finish()?;
+                if let Some(error) = events.iter().find_map(|event| match event {
+                    CanonicalStreamEvent::Error(error) => Some(*error),
+                    _ => None,
+                }) {
+                    return Err(error);
+                }
+                if events.iter().any(is_usable) {
+                    return Ok(());
+                }
+                return Err(UpstreamError::ProtocolError);
+            };
+            let bytes = bytes.map_err(map_adaptor_error)?;
             size = size
                 .checked_add(bytes.len())
                 .filter(|size| *size <= MAX_PREFETCH_BYTES)
@@ -104,6 +114,12 @@ fn is_usable(event: &CanonicalStreamEvent) -> bool {
         CanonicalStreamEvent::ReasoningDelta { text, .. } => !text.is_empty(),
         CanonicalStreamEvent::ToolCallStart { name, .. } => !name.is_empty(),
         CanonicalStreamEvent::ToolCallArgsDelta { partial_json, .. } => !partial_json.is_empty(),
+        // Gemini can legally finish without content when safety policy blocks the prompt.
+        CanonicalStreamEvent::PromptBlocked
+        | CanonicalStreamEvent::Finish {
+            reason: FinishReason::ContentFilter,
+            ..
+        } => true,
         // A completed native compaction block is meaningful output even if its readable
         // summary is null. Do not require text or commit a still incomplete block.
         CanonicalStreamEvent::CompactionEnd { .. }
@@ -157,6 +173,47 @@ mod tests {
             value["type"].as_str().unwrap()
         )
         .into_bytes()
+    }
+
+    fn gemini_frame(value: Value) -> Vec<u8> {
+        format!("data: {value}\n\n").into_bytes()
+    }
+
+    fn gemini_prompt_blocked() -> Vec<u8> {
+        gemini_frame(json!({
+            "responseId": "response-readiness-safety",
+            "modelVersion": "gemini-test",
+            "promptFeedback": {
+                "blockReason": "SAFETY",
+                "safetyRatings": [{
+                    "category": "HARM_CATEGORY_HARASSMENT",
+                    "probability": "HIGH",
+                    "blocked": true
+                }]
+            },
+            "usageMetadata": {
+                "promptTokenCount": 3,
+                "candidatesTokenCount": 0,
+                "totalTokenCount": 3
+            }
+        }))
+    }
+
+    fn gemini_empty_safety_candidate() -> Vec<u8> {
+        gemini_frame(json!({
+            "responseId": "response-readiness-content-filter",
+            "modelVersion": "gemini-test",
+            "candidates": [{
+                "index": 0,
+                "content": {"role": "model", "parts": []},
+                "finishReason": "SAFETY"
+            }],
+            "usageMetadata": {
+                "promptTokenCount": 3,
+                "candidatesTokenCount": 0,
+                "totalTokenCount": 3
+            }
+        }))
     }
 
     fn anthropic_compaction(content: Value, complete: bool) -> Vec<u8> {
@@ -284,6 +341,42 @@ mod tests {
                 .await
                 .unwrap_err();
                 assert_eq!(error, UpstreamError::ProtocolError);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn gemini_prompt_blocked_is_a_usable_terminal_response() {
+        let body = gemini_prompt_blocked();
+        for mode in [ResponseMode::Full, ResponseMode::Stream] {
+            for chunked in [false, true] {
+                let ready = validate(
+                    response(&body, chunked),
+                    Protocol::Gemini,
+                    mode,
+                    Duration::from_secs(1),
+                )
+                .await
+                .expect("Gemini safety blocks are valid terminal responses");
+                assert_eq!(ready.into_body().into_bytes().await.unwrap().as_ref(), body);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn gemini_empty_safety_candidate_is_a_usable_content_filter_terminal() {
+        let body = gemini_empty_safety_candidate();
+        for mode in [ResponseMode::Full, ResponseMode::Stream] {
+            for chunked in [false, true] {
+                let ready = validate(
+                    response(&body, chunked),
+                    Protocol::Gemini,
+                    mode,
+                    Duration::from_secs(1),
+                )
+                .await
+                .expect("Gemini SAFETY finish is valid with an empty candidate");
+                assert_eq!(ready.into_body().into_bytes().await.unwrap().as_ref(), body);
             }
         }
     }

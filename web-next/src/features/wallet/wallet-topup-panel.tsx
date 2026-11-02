@@ -121,8 +121,18 @@ export function WalletTopupPanel({
     setSelectedMethodKey((current) => methods.some((method) => methodKey(method) === current) ? current : methodKey(methods[0]))
   }, [methods, resetAttempt, restoredAttempt])
 
-  const applyOrder = useCallback(async (nextOrder: TopupOrderView) => {
+  const applyOrder = useCallback(async (nextOrder: TopupOrderView, currentAttempt: TopupAttempt) => {
     setOrder(nextOrder)
+    const paymentIntentId = nextOrder.payment?.kind === 'stripe'
+      ? nextOrder.payment.payment_intent_id
+      : undefined
+    const nextAttempt = {
+      ...currentAttempt,
+      orderId: nextOrder.order_id,
+      ...(paymentIntentId ? { paymentIntentId } : {}),
+    }
+    setAttempt(nextAttempt)
+    storeTopupAttempt(nextAttempt, topupScope)
     if (nextOrder.status !== 'paid') return
 
     clearStoredTopupAttempt(topupScope)
@@ -140,7 +150,7 @@ export function WalletTopupPanel({
       payment_method: currentAttempt.paymentMethod,
       provider: currentAttempt.provider,
     })
-    await applyOrder(nextOrder)
+    await applyOrder(nextOrder, currentAttempt)
   }, [applyOrder, createOrRecoverOrder, resetOrderMutation])
 
   useEffect(() => {
@@ -238,11 +248,11 @@ export function WalletTopupPanel({
 
           <section className="min-w-0 p-4">
             {order?.status === 'paid' ? <TopupState icon={CheckCircle2} tone="success" title={t('wallet.topup.states.paidTitle')} body={t('wallet.topup.states.paidBody', { amount: formatQuota(order.quota_amount) })} action={<Button type="button" size="sm" variant="bordered" onClick={resetAttempt}>{t('wallet.topup.actions.done')}</Button>} />
+              : order && ['failed', 'canceled', 'expired'].includes(order.status) ? <TopupState icon={AlertTriangle} tone="destructive" title={t(`wallet.topup.states.${order.status}Title`)} body={t(`wallet.topup.states.${order.status}Body`)} action={<Button type="button" size="sm" variant="bordered" onClick={resetAttempt}>{t('wallet.topup.actions.newAttempt')}</Button>} />
               : confirmation === 'succeeded' || confirmation === 'processing' ? <TopupState icon={Clock3} tone="warning" title={t(confirmation === 'succeeded' ? 'wallet.topup.states.confirmedTitle' : 'wallet.topup.states.processingTitle')} body={t('wallet.topup.states.confirmedBody')} action={<Button type="button" size="sm" variant="bordered" isDisabled={orderMutation.isPending} onClick={retryAttempt}><RefreshCw className={cn('size-3.5', orderMutation.isPending && 'animate-spin')} aria-hidden="true" />{t('wallet.topup.actions.refreshStatus')}</Button>} />
-              : activePayment?.kind === 'stripe' && stripe ? <Elements key={activePayment.payment_intent_id} stripe={stripe} options={{ appearance, clientSecret: activePayment.client_secret, locale: locale === 'zh-CN' ? 'zh' : 'en' }}><WalletStripePaymentForm amountLabel={amountLabel} returnUrl={topupReturnUrl(returnPath)} onConfirmed={paymentConfirmed} /></Elements>
+              : activePayment?.kind === 'stripe' && stripe ? <Elements key={activePayment.payment_intent_id} stripe={stripe} options={{ appearance, clientSecret: activePayment.client_secret, locale: locale === 'zh-CN' ? 'zh' : 'en' }}><WalletStripePaymentForm amountLabel={amountLabel} returnUrl={topupReturnUrl(returnPath, { orderId: order?.order_id, paymentIntentId: activePayment.payment_intent_id })} onConfirmed={paymentConfirmed} /></Elements>
               : activePayment?.kind === 'redirect' && redirectUrl && selectedMethod.qr_enabled && selectedMethod.provider === 'epay' && selectedMethod.payment_method !== 'card' ? <EpayQrPayment url={redirectUrl} paymentMethod={selectedMethod.payment_method} refreshing={orderMutation.isPending} onRefresh={retryAttempt} />
               : activePayment?.kind === 'redirect' && redirectUrl ? <TopupState icon={ExternalLink} tone="brand" title={t('wallet.topup.states.redirectTitle')} body={t('wallet.topup.states.redirectBody')} action={<Button type="button" size="sm" color="primary" onClick={() => window.location.assign(redirectUrl)}><ExternalLink className="size-3.5" aria-hidden="true" />{t('wallet.topup.actions.openPayment')}</Button>} />
-              : order && ['failed', 'canceled', 'expired'].includes(order.status) ? <TopupState icon={AlertTriangle} tone="destructive" title={t(`wallet.topup.states.${order.status}Title`)} body={t(`wallet.topup.states.${order.status}Body`)} action={<Button type="button" size="sm" variant="bordered" onClick={resetAttempt}>{t('wallet.topup.actions.newAttempt')}</Button>} />
               : orderMutation.isError ? <TopupState icon={AlertTriangle} tone="destructive" title={t('wallet.topup.states.errorTitle')} body={t(`wallet.topup.errors.${topupErrorKey(apiErrorCode(orderMutation.error))}`)} action={<Button type="button" size="sm" variant="bordered" onClick={retryAttempt}><RefreshCw className="size-3.5" aria-hidden="true" />{t('wallet.topup.actions.retrySame')}</Button>} />
               : orderMutation.isPending ? <TopupState icon={LoaderCircle} tone="brand" spinning title={t('wallet.topup.states.creatingTitle')} body={t('wallet.topup.states.creatingBody')} />
               : attempt ? <TopupState icon={Clock3} tone="warning" title={t('wallet.topup.states.resumeTitle')} body={t('wallet.topup.states.resumeBody', { amount: moneyFormat.format(attempt.amountMinor / 100) })} action={<Button type="button" size="sm" color="primary" onClick={retryAttempt}><RefreshCw className="size-3.5" aria-hidden="true" />{t('wallet.topup.actions.resume')}</Button>} />

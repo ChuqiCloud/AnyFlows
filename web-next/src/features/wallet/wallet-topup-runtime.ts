@@ -3,27 +3,17 @@ import { useEffect, useState } from 'react'
 
 import { ApiError } from '@/lib/api'
 import { parseStoredTopupAttempt, type TopupAttempt } from './topup-form-model'
+import {
+  cleanWalletPaymentReturnUrl,
+  createTopupPaymentReturnUrl,
+  topupPaymentRedirectStatus,
+  type PaymentConfirmationPhase,
+} from './payment-return-model'
 
 const topupAttemptStorageKey = 'anyflows.wallet.topup-attempt'
-const stripeReturnParameters = [
-  'payment_intent',
-  'payment_intent_client_secret',
-  'redirect_status',
-] as const
-const epayReturnParameters = [
-  'pid',
-  'trade_no',
-  'out_trade_no',
-  'type',
-  'name',
-  'money',
-  'trade_status',
-  'sign',
-  'sign_type',
-] as const
 
 export const publicTopupAmountBounds = { min: 50, max: 99_999_999 } as const
-export type TopupConfirmationPhase = 'succeeded' | 'processing' | 'failed'
+export type TopupConfirmationPhase = PaymentConfirmationPhase
 
 /** 读取并校验当前浏览器会话中尚未完成的充值尝试。 */
 export function readStoredTopupAttempt(scope = 'personal') {
@@ -37,7 +27,7 @@ export function readStoredTopupAttempt(scope = 'personal') {
   }
 }
 
-/** 仅持久化金额、支付方式与幂等键，绝不保存支付会话密钥。 */
+/** 持久化重试与回跳所需的非敏感标识，不保存支付会话密钥。 */
 export function storeTopupAttempt(attempt: TopupAttempt, scope = 'personal') {
   try {
     sessionStorage.setItem(topupStorageKey(scope), JSON.stringify(attempt))
@@ -57,47 +47,24 @@ export function clearStoredTopupAttempt(scope = 'personal') {
 
 /** 消费支付跳转结果并移除签名材料；易支付结果只触发本地订单状态恢复。 */
 export function usePaymentRedirectStatus() {
-  const [status] = useState<TopupConfirmationPhase | undefined>(() => {
-    const parameters = paymentReturnParameters(new URL(window.location.href))
-    const value = parameters.get('redirect_status')
-    if (value === 'succeeded' || value === 'processing' || value === 'failed') return value
-    if (epayReturnParameters.some((parameter) => parameters.has(parameter))) return 'processing'
-    return undefined
-  })
+  const [status] = useState(() => topupPaymentRedirectStatus(new URL(window.location.href), readStoredTopupAttempt()))
   useEffect(() => {
-    const url = new URL(window.location.href)
-    let changed = false
-    for (const parameter of stripeReturnParameters) {
-      if (!url.searchParams.has(parameter)) continue
-      url.searchParams.delete(parameter)
-      changed = true
-    }
-    for (const parameter of epayReturnParameters) {
-      if (!url.searchParams.has(parameter)) continue
-      url.searchParams.delete(parameter)
-      changed = true
-    }
-    if (changed) window.history.replaceState(window.history.state, '', url)
+    const url = cleanWalletPaymentReturnUrl(new URL(window.location.href))
+    if (url.href !== window.location.href) window.history.replaceState(window.history.state, '', url)
   }, [])
   return status
 }
 
 /** 返回支付完成后回到本人钱包的固定地址。 */
-export function topupReturnUrl(returnPath = '/console/wallet') {
-  const url = new URL(window.location.href)
-  for (const parameter of stripeReturnParameters) url.searchParams.delete(parameter)
-  for (const parameter of epayReturnParameters) url.searchParams.delete(parameter)
-  url.pathname = returnPath
-  return url.toString()
+export function topupReturnUrl(
+  returnPath = '/console/wallet',
+  correlation?: { orderId?: string; paymentIntentId?: string },
+) {
+  return createTopupPaymentReturnUrl(new URL(window.location.href), returnPath, correlation ?? {}).toString()
 }
 
 function topupStorageKey(scope: string) {
   return scope === 'personal' ? topupAttemptStorageKey : `${topupAttemptStorageKey}.${scope}`
-}
-
-/** 支付网关回跳参数统一落在查询串上。 */
-function paymentReturnParameters(url: URL) {
-  return new URLSearchParams(url.search)
 }
 
 /** 跟随全局主题切换 Stripe iframe 外观，不复制站内主题状态。 */

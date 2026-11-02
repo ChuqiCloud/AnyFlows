@@ -44,6 +44,24 @@ const site = {
   balance_display: { mode: 'quota', unit_name: '算力积分', unit_symbol: '积分', quota_units_per_display_unit: '10000', symbol_position: 'suffix', fraction_digits: 0 },
   authentication: { password_login_enabled: true, registration_enabled: false, registration_email_required: false, oauth_providers: [], turnstile_site_key: null },
 }
+const subscriptionPlan = {
+  plan_id: 'ci-subscription-plan', name: 'CI subscription plan', quota_amount: 100000,
+  cycle: 'monthly', plan_version: 1, price_provider: 'epay', price_currency: 'CNY', price_amount_minor: 1000,
+}
+const terminalSubscriptionPlan = {
+  plan_id: 'ci-terminal-subscription-plan', name: 'CI terminal subscription plan', quota_amount: 200000,
+  cycle: 'monthly', plan_version: 1, price_provider: 'stripe', price_currency: 'USD', price_amount_minor: 2000,
+}
+const groupWindow = { usage: 0, started_at: 1700000000, resets_at: 1700086400 }
+const group = {
+  id: 1, name: 'ci-group', display_name: 'CI group', ratio_micros: 1000000,
+  peak_ratio_micros: null, peak_start: null, peak_end: null, peak_windows: null,
+  is_exclusive: false, daily_limit: null, weekly_limit: null, monthly_limit: null,
+  daily_window: groupWindow, weekly_window: groupWindow, monthly_window: groupWindow,
+  rpm_limit: null, fallback_group_id: null, flags: {},
+}
+const subscriptionCreateRequests = []
+let terminalSubscriptionOrderStatus = 'failed'
 let modelMode = 'ready'
 let server
 let browser
@@ -112,6 +130,27 @@ try {
       await route.abort('aborted').catch(() => {})
       return
     }
+    if (path === '/api/account/subscription-orders' && request.method() === 'POST' && role === 'user') {
+      const body = request.postDataJSON()
+      const { idempotency_key, ...snapshot } = body
+      const { plan_id, plan_version, price_provider, price_currency, price_amount_minor } = subscriptionPlan
+      assert.deepEqual(snapshot, { plan_id, plan_version, price_provider, price_currency, price_amount_minor })
+      assert.ok(typeof idempotency_key === 'string' && idempotency_key.length > 0, 'Creating a subscription supplies an idempotency key')
+      subscriptionCreateRequests.push(body)
+      // Fail before an order exists, including on the explicit retry. No payment
+      // session endpoint should be called after either failed create attempt.
+      await route.fulfill({ status: 503, contentType: 'application/json', body: '{"code":"topup_unavailable"}' })
+      return
+    }
+    if (path === '/api/account/subscription-orders/ci-terminal-order' && request.method() === 'GET' && role === 'user') {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+        order_id: 'ci-terminal-order', plan_id: terminalSubscriptionPlan.plan_id, plan_version: 1,
+        price_provider: 'stripe', price_currency: 'USD', price_amount_minor: 2000, quota_amount: 200000,
+        status: terminalSubscriptionOrderStatus, version: 1, expires_at: null, paid_at: null,
+        created_at: 1700000000, updated_at: 1700000000, replayed: false,
+      }) })
+      return
+    }
     if (request.method() !== 'GET' || (role !== 'admin' && path.startsWith('/api/admin/'))) {
       errors.push(`Unauthorized or unexpected request: ${request.method()} ${path} (${role})`)
       await route.fulfill({ status: 403, contentType: 'application/json', body: '{"code":"forbidden"}' })
@@ -136,9 +175,23 @@ try {
       case '/api/account/profile': data = { id: 1, username: 'CI user', email: null, role, notifications: {} }; break
       case '/api/account/notifications': data = { entries: [], next_cursor: null, unread_count: 0 }; break
       case '/api/account/wallet': data = { balance: 100000, used_quota: 0, frozen_quota: 0 }; break
+      case '/api/account/wallet/entries':
+      case '/api/account/refund-reconciliations': data = { entries: [], next_cursor: null }; break
+      case '/api/account/subscriptions': data = { subscriptions: [], next_cursor: null }; break
+      case '/api/account/subscription-catalog': data = { plans: [subscriptionPlan, terminalSubscriptionPlan] }; break
+      case '/api/account/wallet/topups/config':
+        data = { methods: [
+          { provider: 'epay', payment_method: 'alipay', currency: 'CNY', min_amount_minor: 50, max_amount_minor: 99999999, qr_enabled: false },
+          { provider: 'stripe', payment_method: 'card', currency: 'USD', min_amount_minor: 50, max_amount_minor: 99999999, publishable_key: null, qr_enabled: false },
+        ] }
+        break
       case '/api/tokens': data = { tokens: [], next_cursor: null, capacity: 32 }; break
       case '/api/account/usage-logs': data = { logs: [], failed_logs: [], next_cursor: null, failed_next_cursor: null }; break
       case '/api/admin/tokens': data = { tokens: [], next_cursor: null }; break
+      case '/api/admin/groups': data = { groups: [group], next_cursor: null }; break
+      case '/api/admin/groups/1/key-policy': data = { group_id: 1, selection_mode: 'default_only', allowed_user_ids: [], allowed_group_ids: [] }; break
+      case '/api/admin/groups/1/model-policy': data = { group_id: 1, allowed_models: null, ratio_overrides: [{ source_group_id: 1, model: '*', ratio_micros: 1000000 }] }; break
+      case '/api/admin/models': data = { models: [], next_cursor: null }; break
       case '/api/admin/software':
         data = { edition: 'community', version: '0.3.0-beta.6', core_version: '0.3.0-beta.6', target: 'x86_64-unknown-linux-gnu', deployment: 'binary', node_id: 'ci-navigation', launch_mode: 'launcher', launcher_protocol: 1, launcher_version: '0.3.0-beta.6', update_phase: 'idle', check_enabled: true, install_enabled: true, restart_required: false, update_available: false }
         break
@@ -201,6 +254,55 @@ try {
   assert.equal(new URL(page.url()).pathname, '/console')
   assert.ok(requests.some(request => request.role === 'user' && request.path === '/api/account/wallet'))
   assert.ok(!requests.some(request => request.role === 'user' && request.path.startsWith('/api/admin/')), 'User overview never calls management APIs')
+
+  // A first create failure must be visible even though no order was returned,
+  // and its retry must use the same idempotency key without an unhandled rejection.
+  await open('/console/wallet', 'user')
+  const subscriptionCatalog = page.getByRole('region', { name: label('subscriptions.catalog.title'), exact: true })
+  const subscriptionRow = subscriptionCatalog.getByRole('article').filter({ has: page.getByRole('heading', { name: subscriptionPlan.name, exact: true }) })
+  await subscriptionRow.getByRole('button', { name: label('subscriptions.catalog.orderCreate'), exact: true }).click()
+  const subscriptionError = subscriptionRow.getByRole('alert')
+  await subscriptionError.getByText(label('subscriptions.errors.paymentUnavailable'), { exact: true }).waitFor()
+  assert.equal(subscriptionCreateRequests.length, 1, 'Initial create sends exactly one request')
+  assert.equal(await subscriptionRow.getByText(label('subscriptions.catalog.orderId'), { exact: true }).count(), 0, 'An unsuccessful create never displays an order')
+  const retrySubscription = subscriptionError.getByRole('button', { name: label('subscriptions.catalog.retryPayment'), exact: true })
+  assert.ok(await retrySubscription.isEnabled(), 'Initial create failure offers an enabled retry')
+  await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === '/api/account/subscription-orders' && response.request().method() === 'POST'),
+    retrySubscription.click(),
+  ])
+  await subscriptionError.getByText(label('subscriptions.errors.paymentUnavailable'), { exact: true }).waitFor()
+  assert.equal(subscriptionCreateRequests.length, 2, 'Retry sends another create request')
+  assert.equal(subscriptionCreateRequests[1].idempotency_key, subscriptionCreateRequests[0].idempotency_key, 'Retry keeps the original subscription idempotency key')
+  assert.equal(await subscriptionRow.getByText(label('subscriptions.catalog.orderId'), { exact: true }).count(), 0, 'Failed retry still has no order')
+  await page.screenshot({ path: resolve(screenshots, 'subscription-create-failure.png'), fullPage: true, animations: 'disabled' })
+
+  // A redirect may report processing while the server has already recorded a
+  // terminal order. The terminal order state must win and expose a new-order
+  // action for failed, canceled, and expired orders.
+  await page.evaluate((planId) => {
+    sessionStorage.setItem(`anyflows.subscription.payment-attempt:${planId}`, JSON.stringify({
+      idempotencyKey: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', orderId: 'ci-terminal-order',
+      paymentIntentId: 'ci-terminal-payment', paymentMethod: 'card', planId, provider: 'stripe',
+    }))
+  }, terminalSubscriptionPlan.plan_id)
+  for (const status of ['failed', 'canceled', 'expired']) {
+    terminalSubscriptionOrderStatus = status
+    await open(`/console/wallet?flow=subscription&subscription_order_id=ci-terminal-order&subscription_payment_intent=ci-terminal-payment&payment_intent=ci-terminal-payment&redirect_status=processing`, 'user')
+    const terminalCatalog = page.getByRole('region', { name: label('subscriptions.catalog.title'), exact: true })
+    const terminalRow = terminalCatalog.getByRole('article').filter({ has: page.getByRole('heading', { name: terminalSubscriptionPlan.name, exact: true }) })
+    const newOrder = terminalRow.getByRole('button', { name: label('subscriptions.catalog.newOrder'), exact: true })
+    await newOrder.waitFor()
+    await page.waitForFunction(() => !new URL(window.location.href).searchParams.has('flow'))
+    assert.equal(await terminalRow.getByText(label('subscriptions.catalog.paymentProcessing'), { exact: true }).count(), 0, `${status} terminal order must not remain in processing state`)
+    assert.equal(await terminalRow.getByText(label(`subscriptions.catalog.payment${status[0].toUpperCase()}${status.slice(1)}`), { exact: true }).count(), 1, `${status} terminal order shows its server state`)
+    if (status === 'expired') {
+      await newOrder.click()
+      await terminalRow.getByRole('button', { name: label('subscriptions.catalog.orderCreate'), exact: true }).waitFor()
+      assert.equal(subscriptionCreateRequests.length, 2, 'Resetting a terminal order does not automatically create another order')
+    }
+  }
+  await page.screenshot({ path: resolve(screenshots, 'subscription-terminal-order.png'), fullPage: true, animations: 'disabled' })
 
   // Render the real Playground through App so missing component CSS cannot pass
   // as it could in an isolated fixture with its own layout rules.
@@ -293,6 +395,33 @@ try {
   await clearConversation.click()
   await page.setViewportSize({ width: 1280, height: 960 })
 
+  // Use actual keyboard events against the real editor. Keeping an element
+  // handle makes remounting the input detectable even if focus were restored.
+  await open('/console/system-settings/groups', 'admin')
+  await page.getByRole('heading', { name: label('groups.title'), exact: true }).waitFor()
+  await page.getByRole('row').filter({ hasText: group.display_name }).getByRole('button', { name: label('groups.actions.edit'), exact: true }).click()
+  const groupEditor = page.getByRole('dialog')
+  await groupEditor.getByRole('button', { name: label('groups.modelPolicy.tab'), exact: true }).click()
+  const ratioRules = groupEditor.getByRole('region', { name: label('groups.modelPolicy.ratioTitle'), exact: true })
+  const typeRatioModel = async (input, value) => {
+    await input.click()
+    const original = await input.elementHandle()
+    assert.ok(original, 'The model input is mounted before typing')
+    try {
+      await page.keyboard.type(value, { delay: 25 })
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+      assert.ok(await original.evaluate(element => element.isConnected && document.activeElement === element), 'Editing the ratio model preserves the same focused input')
+      assert.equal(await input.inputValue(), value, 'Every typed character is retained')
+    } finally {
+      await original.dispose()
+    }
+  }
+  await typeRatioModel(ratioRules.getByRole('textbox', { name: label('groups.modelPolicy.ratioModel'), exact: true }), 'ci-existing-model')
+  await ratioRules.getByRole('button', { name: label('groups.modelPolicy.ratioAdd'), exact: true }).click()
+  await typeRatioModel(ratioRules.getByRole('textbox', { name: label('groups.modelPolicy.ratioModel'), exact: true }).nth(1), 'ci-new-model')
+  assert.equal(await ratioRules.getByRole('textbox', { name: label('groups.modelPolicy.ratioModel'), exact: true }).first().inputValue(), 'ci-existing-model', 'Adding and editing a rule retains the previous model')
+  await page.screenshot({ path: resolve(screenshots, 'group-ratio-input-focus.png'), fullPage: true, animations: 'disabled' })
+
   // Deep links select the system section; all existing administrator groups remain reachable.
   await open('/console/tokens', 'admin')
   await page.getByRole('heading', { name: label('tokens.title'), exact: true }).waitFor()
@@ -330,7 +459,7 @@ try {
   await visibleNav().waitFor({ state: 'hidden' })
   await page.screenshot({ path: resolve(screenshots, 'admin-system-mobile.png'), fullPage: true, animations: 'disabled' })
   assert.deepEqual(errors, [])
-  console.log('Navigation browser checks passed for web-next: landing, language, user overview, Playground composer layout and cancellation, administrator groups, and mobile drawer.')
+  console.log('Navigation browser checks passed for web-next: landing, language, user overview, subscription create failure and retry, terminal subscription orders after redirect, Playground composer layout and cancellation, group ratio input focus, administrator groups, and mobile drawer.')
 } catch (error) {
   if (page) await page.screenshot({ path: resolve(screenshots, 'failure.png'), fullPage: true, animations: 'disabled' }).catch(() => {})
   console.error(serverOutput)
