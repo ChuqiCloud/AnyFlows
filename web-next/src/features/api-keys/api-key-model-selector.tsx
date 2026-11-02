@@ -10,17 +10,20 @@ import { cn } from '@/lib/utils'
 const MAX_SELECTED_MODELS = 512
 
 type ApiKeyModelSelectorProps = {
+  allowCustom?: boolean
   values: string[]
   error?: string
   onChange: (values: string[]) => void
 }
 
 /** 从当前登录用户的可用模型目录中选择精确白名单。 */
-export function ApiKeyModelSelector({ values, error, onChange }: ApiKeyModelSelectorProps) {
+export function ApiKeyModelSelector({ allowCustom = false, values, error, onChange }: ApiKeyModelSelectorProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
+  const [customModel, setCustomModel] = useState('')
+  const [customModelError, setCustomModelError] = useState(false)
   const catalogQuery = useModelCatalog(search, EMPTY_MODEL_CATALOG_FILTERS, true)
   const models = useMemo(
     () => catalogQuery.data?.pages.flatMap((page) => page.models) ?? [],
@@ -42,9 +45,41 @@ export function ApiKeyModelSelector({ values, error, onChange }: ApiKeyModelSele
       onChange([...values, model])
     }
   }
+  const addCustomModel = () => {
+    const model = customModel.trim()
+    const bytes = new TextEncoder().encode(model).length
+    const totalBytes = values.reduce((total, value) => total + new TextEncoder().encode(value).length, 0)
+    if (!model || bytes > 256 || /\p{Cc}/u.test(model)
+      || (!values.includes(model) && totalBytes + bytes > 32 * 1024)
+      || (values.length >= MAX_SELECTED_MODELS && !values.includes(model))) {
+      setCustomModelError(true)
+      return
+    }
+    if (!values.includes(model)) onChange([...values, model])
+    setCustomModel('')
+    setCustomModelError(false)
+  }
 
   return (
     <div className="grid gap-2">
+      {allowCustom ? (
+        <div className="grid gap-1.5">
+          <p className="text-xs leading-5 text-muted-foreground">{t('apiKeys.modelSelector.routeHint')}</p>
+          <div className="flex gap-2">
+            <Input
+              aria-label={t('apiKeys.modelSelector.customLabel')}
+              placeholder={t('apiKeys.modelSelector.customPlaceholder')}
+              size="sm"
+              value={customModel}
+              isInvalid={customModelError}
+              onValueChange={(value) => { setCustomModel(value); setCustomModelError(false) }}
+              onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addCustomModel() } }}
+            />
+            <Button type="button" size="sm" variant="bordered" onPress={addCustomModel}>{t('apiKeys.modelSelector.addCustom')}</Button>
+          </div>
+          {customModelError ? <p role="alert" className="text-xs text-destructive">{t('apiKeys.modelSelector.customInvalid')}</p> : null}
+        </div>
+      ) : null}
       <Drawer
         backdrop="blur"
         classNames={{ base: 'w-full max-h-none sm:max-w-md' }}

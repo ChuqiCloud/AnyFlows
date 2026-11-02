@@ -147,6 +147,7 @@
     "videoTasks": "视频任务",
     "imagePlaza": "生图广场",
     "apiKeys": "我的 API Key",
+    "userRoutes": "我的智能路由",
     "organizationApiKeys": "企业 API Key",
     "organizationServiceAccounts": "服务账号",
     "organizationBudgets": "企业预算",
@@ -1414,6 +1415,22 @@
     }
   },
   "apiKeys": {
+    "routing": {
+      "label": "路由方式",
+      "groupMode": "单一分组",
+      "routeMode": "智能路由",
+      "routeLabel": "选择智能路由",
+      "routePlaceholder": "请选择已启用的智能路由",
+      "routeHint": "请求按路由策略选择分组，可重试失败时自动切换。按实际选中分组计费，绑定在签发后不能更改。",
+      "invalidRoute": "请选择已启用且当前可用的智能路由。",
+      "unavailable": "所选智能路由已被停用或不可用，请重新选择。",
+      "loading": "正在读取智能路由",
+      "loadError": "智能路由读取失败，请重试后创建 Key。",
+      "empty": "还没有已启用的智能路由。",
+      "manage": "管理智能路由",
+      "immutable": "此 Key 固定绑定该路由，修改路由策略会影响后续请求。路由被停用或删除后，Key 将停止调用，不会自动跟随默认分组。",
+      "bound": "智能路由 · {{name}}"
+    },
     "group": {
       "label": "计费分组",
       "option": "{{name}} · 基础 {{ratio}} 倍",
@@ -1500,7 +1517,7 @@
       "expiryHint": "留空表示永不过期，时间按当前设备时区填写。",
       "unlimitedHint": "不对当前 API Key 设置额外的额度上限。",
       "quotaHint": "仅在关闭无限额度时生效。",
-      "modelsHint": "留空表示允许当前分组的全部可用模型。",
+      "modelsHint": "留空表示允许绑定分组或智能路由中全部可用模型。",
       "ipsHint": "逐条添加 IP 或 CIDR，留空表示不限制来源。",
       "submitError": "保存失败，请检查字段后重试。",
       "limitError": "当前账号已达到 API Key 容量上限。"
@@ -1521,6 +1538,11 @@
       "date": "请输入有效的日期和时间。"
     },
     "modelSelector": {
+      "routeHint": "下方选择器展示账户当前分组目录，可手动添加其他路由成员支持的精确模型名。留空允许路由中全部可用模型；每次调用仍检查成员是否支持该模型。",
+      "customLabel": "添加模型名称",
+      "customPlaceholder": "输入路由成员支持的精确模型名",
+      "addCustom": "添加模型",
+      "customInvalid": "请输入不含控制字符且不超过 256 字节的模型名，最多 512 项。",
       "title": "选择可用模型",
       "description": "未选择任何模型时不限制模型范围。",
       "search": "搜索模型",
@@ -1558,6 +1580,90 @@
       "description": "删除 {{name}} 后，使用此 API Key 的请求将立即失去访问权限。此操作不可撤销。",
       "failed": "删除失败，Key 仍然有效，请稍后重试。"
     }
+  },
+  "userRoutes": {
+    "title": "我的智能路由",
+    "subtitle": "把当前允许使用的分组组合成路由，为 Key 设置价格、稳定性或轮询策略。调用按最终选中的分组计费。",
+    "enabled": "已启用",
+    "disabled": "已停用",
+    "fields": {
+      "name": "路由名称",
+      "strategy": "选择策略",
+      "status": "路由状态",
+      "members": "候选分组",
+      "priority": "优先级",
+      "weight": "权重",
+      "attempts": "最多尝试分组数",
+      "maxPrice": "实际倍率上限"
+    },
+    "strategies": {
+      "price_first": "价格优先",
+      "stable_first": "稳定优先",
+      "ordered": "顺序优先",
+      "round_robin": "轮询",
+      "weighted": "加权分配"
+    },
+    "strategyHints": {
+      "price_first": "按本次模型请求的实际计费倍率从低到高选择，可重试失败时继续尝试下一组。",
+      "stable_first": "优先选择近期成功率较高、延迟较低的分组；历史数据不足时参考优先级。",
+      "ordered": "优先级数字越小越先尝试；可重试失败时切换到后续分组。",
+      "round_robin": "请求在可用分组间轮流分配，可重试失败时继续切换。",
+      "weighted": "按权重分配请求，权重越高被选择的机会越多，可重试失败时继续切换。"
+    },
+    "membersHint": "最多 16 个分组，只能选择当前有权使用的分组。选项显示基础倍率，实际排序与费用还会考虑本次模型、专属倍率及分时倍率。优先级数字越小越靠前。",
+    "groupLoadError": "无法读取可选分组，请重试。",
+    "loadingGroups": "正在读取可选分组",
+    "unavailableGroup": "分组 #{{id}}（当前不可用）",
+    "memberNumber": "候选分组 {{number}}",
+    "memberGroup": "候选 {{number}} 的分组",
+    "memberPriority": "候选 {{number}} 的优先级",
+    "memberWeight": "候选 {{number}} 的权重",
+    "noGroups": "当前没有可加入路由的分组。",
+    "attemptsHint": "1–16，包含首次尝试；只对可重试失败切换分组。",
+    "priceHint": "留空表示不限。最多六位小数，填 0 时只允许零倍率分组。按请求的实际计费倍率筛选。",
+    "unlimitedPrice": "不限倍率",
+    "attemptsValue": "最多尝试 {{count}} 组",
+    "priceValue": "倍率上限 {{value}} 倍",
+    "actions": {
+      "retry": "重试",
+      "moveUp": "上移分组",
+      "moveDown": "下移分组",
+      "removeMember": "移除分组",
+      "addMember": "添加分组",
+      "cancel": "取消",
+      "save": "保存修改",
+      "create": "创建路由",
+      "edit": "编辑路由",
+      "delete": "删除路由",
+      "refresh": "刷新"
+    },
+    "editor": {
+      "create": "创建智能路由",
+      "edit": "编辑智能路由",
+      "description": "保存后可在签发 Key 时绑定。修改策略会影响已绑定 Key 的后续请求；停用后这些 Key 将停止调用。"
+    },
+    "validation": {
+      "name": "请输入不含控制字符且不超过 128 字节的名称。",
+      "strategy": "请选择有效的路由策略。",
+      "groups": "请先成功读取分组目录，并替换当前无权使用的分组。",
+      "members": "请选择 1–16 个候选分组。",
+      "duplicate": "候选分组不能重复。",
+      "memberValues": "优先级须为 0–2147483647 的整数，权重须为 1–10000 的整数。",
+      "attempts": "最多尝试分组数须为 1–16 的整数。",
+      "price": "请输入范围内的非负倍率，最多六位小数，或留空表示不限。"
+    },
+    "errors": {
+      "unknown": "操作失败，请检查配置后重试。",
+      "group_unavailable": "候选分组已不可用，请重新选择。",
+      "user_route_unavailable": "该路由已不可用，请刷新后重试。",
+      "user_route_not_found": "该路由已被删除或不存在，请刷新列表。",
+      "user_route_limit_reached": "已达到智能路由数量上限。"
+    },
+    "columns": { "route": "路由", "strategy": "策略与倍率", "members": "候选分组", "actions": "操作" },
+    "empty": { "title": "还没有智能路由", "body": "选择可用分组和分配策略，创建后即可为它签发 API Key。" },
+    "delete": { "title": "删除智能路由", "body": "删除「{{name}}」后，绑定此路由的 Key 将停止调用，不会自动改用默认分组。需要继续使用时请创建新路由和 Key。" },
+    "summary": { "loaded": "共 {{count}} 条路由", "capacity": "容量 {{count}} / {{capacity}}" },
+    "error": { "title": "无法读取智能路由", "body": "路由列表暂时不可用，请稍后重试。" }
   },
   "platformOrganizations": {
     "eyebrow": "平台企业运营",

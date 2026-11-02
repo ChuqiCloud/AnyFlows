@@ -14,6 +14,9 @@ pub(crate) struct UserTokenWriteRequest {
     /// PUT 省略或 null 保留原分组，非 null 不允许修改。
     #[schema(minimum = 1)]
     group_id: Option<i64>,
+    /// 仅创建时选择自己的智能路由，与非空 group_id 互斥。
+    #[schema(minimum = 1)]
+    user_route_id: Option<i64>,
     #[schema(min_length = 1, max_length = 128)]
     name: String,
     #[schema(value_type = crate::openapi::schema::UserTokenStatusSchema)]
@@ -52,12 +55,16 @@ impl UserTokenWriteRequest {
             self.model_limits,
             self.allow_ips,
         )
-        .map(|command| command.with_group_id(group_id))
+        .and_then(|command| {
+            command
+                .with_group_id(group_id)
+                .with_user_route_id(self.user_route_id)
+        })
         .map_err(|_| ManagementError::InvalidRequest)
     }
 
     pub(super) fn into_update_command(self) -> Result<UserTokenWriteCommand, ManagementError> {
-        if self.group_id.is_some() {
+        if self.group_id.is_some() || self.user_route_id.is_some() {
             return Err(ManagementError::InvalidRequest);
         }
         self.into_command()
@@ -74,6 +81,9 @@ pub(crate) struct UserTokenResponse {
     /// 固定分组；null 表示跟随用户默认分组。
     #[schema(minimum = 1, required = true)]
     group_id: Option<i64>,
+    /// 用户智能路由绑定；null 表示未绑定用户路由。
+    #[schema(minimum = 1, required = true)]
+    user_route_id: Option<i64>,
     /// 当前解析的实际分组。
     #[schema(minimum = 1)]
     effective_group_id: i64,
@@ -117,6 +127,7 @@ impl UserTokenResponse {
         Self {
             id: token.token_id().get(),
             group_id: token.group_id().map(GroupId::get),
+            user_route_id: token.user_route_id(),
             effective_group_id: token.effective_group_id().get(),
             group_display_name: token.group_display_name().to_owned(),
             key_prefix: token.key_prefix().to_owned(),

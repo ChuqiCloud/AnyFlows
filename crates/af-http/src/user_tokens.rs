@@ -232,6 +232,7 @@ fn map_user_token_error(error: UserTokenError) -> ManagementError {
         UserTokenError::InvalidSession => ManagementError::InvalidSession,
         UserTokenError::LimitReached => ManagementError::TokenLimitReached,
         UserTokenError::GroupUnavailable => ManagementError::GroupUnavailable,
+        UserTokenError::UserRouteUnavailable => ManagementError::UserRouteUnavailable,
         UserTokenError::NotFound => ManagementError::TokenNotFound,
         UserTokenError::Internal => ManagementError::Internal,
     }

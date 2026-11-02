@@ -13,8 +13,9 @@ use af_relay::{
 use af_scheduler::{IndexedRoutePlan, RouteWaitKind};
 
 use crate::{
-    PlannedResponsesCompactExecution, PlannedResponsesCompactExecutionFuture,
-    ResponsesCompactRoutePlanFuture, ResponsesCompactRoutePlanner,
+    PlannedExecutionFailure, PlannedResponsesCompactExecution,
+    PlannedResponsesCompactExecutionFuture, ResponsesCompactRoutePlanFuture,
+    ResponsesCompactRoutePlanner,
     adaptor_credential::build_adaptor_credential,
     auto_ban_feedback::{ChannelAutoBanAttemptTarget, persist_channel_auto_ban_feedback},
     concurrency_runtime::RuntimeConcurrencyPermit,
@@ -316,11 +317,12 @@ impl PlannedResponsesCompactExecution for ScheduledResponsesCompactExecution {
             if let Some(permit) = user_permit {
                 permit.release().await;
             }
-            result.and_then(|response| {
-                successful_channel_id
+            match result {
+                Ok(response) => successful_channel_id
                     .map(|channel_id| crate::RoutedExecution::new(response, channel_id))
-                    .ok_or(AfError::Internal)
-            })
+                    .ok_or(AfError::Internal.into()),
+                Err(error) => Err(PlannedExecutionFailure::from_relay_report(error, &report)),
+            }
         })
     }
 }

@@ -238,6 +238,7 @@ pub struct AuthenticationReady {
     admin_group_writer: Arc<dyn AdminGroupWriter>,
     group_key_access_service: Arc<dyn af_admin::GroupKeyAccessService>,
     group_model_policy_repository: af_db::GroupModelPolicyRepository,
+    user_route_repository: af_db::UserRouteRepository,
     group_model_policy_service: Arc<dyn af_admin::GroupModelPolicyService>,
     admin_route_reader: Arc<dyn AdminRouteReader>,
     admin_route_writer: Arc<dyn AdminRouteWriter>,
@@ -549,6 +550,9 @@ pub enum BootstrapError {
     /// 分组模型策略仓储启动参数无效。
     #[error("分组模型策略仓储启动参数无效")]
     GroupModelPolicyRepository(#[source] af_db::GroupModelPolicyRepositoryError),
+    /// 用户路由仓储的启动参数无效。
+    #[error("用户路由仓储启动参数无效")]
+    UserRouteRepository(#[source] af_db::UserRouteError),
     /// 管理员智能路由仓储的启动参数无效。
     #[error("管理员智能路由仓储启动参数无效")]
     AdminRouteRepository(#[source] AdminRouteRepositoryConfigError),
@@ -893,6 +897,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::GroupModelPolicyRepository)?;
+        let user_route_repository = af_db::UserRouteRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::UserRouteRepository)?;
         let repository = TokenAuthRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -1332,6 +1341,7 @@ impl Bootstrap<DatabaseReady> {
                     group_key_access_repository,
                 )),
                 group_model_policy_repository: group_model_policy_repository.clone(),
+                user_route_repository,
                 group_model_policy_service: Arc::new(
                     af_admin::DatabaseGroupModelPolicyService::new(group_model_policy_repository),
                 ),
@@ -1816,8 +1826,26 @@ impl Bootstrap<RelayReady> {
             None => pricing_source,
         };
         let pricing_source = Arc::new(pricing_source);
-        let model_catalog_reader: Arc<dyn ModelCatalogReader> =
-            Arc::new(RuntimeModelCatalogReader::new(
+        let user_route_runtime = crate::user_route_runtime::UserRouteRuntime::new(
+            self.stage.infrastructure.user_route_repository.clone(),
+        )
+        .with_group_model_policy(
+            self.stage
+                .infrastructure
+                .group_model_policy_repository
+                .clone(),
+        )
+        .with_channel_index(channel_index.clone())
+        .with_group_admission(
+            AdminGroupRepository::new(
+                self.stage.infrastructure.infrastructure.database.clone(),
+                Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::AdminGroupRepository)?,
+            request_rate_limit_store.clone(),
+        );
+        let model_catalog_reader: Arc<dyn ModelCatalogReader> = Arc::new(
+            RuntimeModelCatalogReader::new(
                 channel_index.clone(),
                 model_prices.clone(),
                 pricing_source.clone(),
@@ -1826,7 +1854,9 @@ impl Bootstrap<RelayReady> {
                     .infrastructure
                     .group_model_policy_repository
                     .clone(),
-            ));
+            )
+            .with_user_routes(self.stage.infrastructure.user_route_repository.clone()),
+        );
         let quota_repository =
             QuotaRepository::new(self.stage.infrastructure.infrastructure.database.clone());
         let quota_repository = match self.stage.infrastructure.extensions.quota.as_ref() {
@@ -1930,7 +1960,8 @@ impl Bootstrap<RelayReady> {
                     task_release_sink,
                     usage_record_sink,
                 ),
-            ),
+            )
+            .with_user_route_runtime(user_route_runtime.clone()),
         ));
         let embedding: Arc<dyn EmbeddingService> = Arc::new(
             BillingEmbeddingService::new(
@@ -1941,7 +1972,8 @@ impl Bootstrap<RelayReady> {
                 Some(settlement_port.clone()),
                 usage_port.clone(),
             )
-            .with_request_outcomes(request_outcomes.clone()),
+            .with_request_outcomes(request_outcomes.clone())
+            .with_user_route_runtime(user_route_runtime.clone()),
         );
         let image: Arc<dyn ImageService> = Arc::new(
             BillingImageService::new(
@@ -1952,7 +1984,8 @@ impl Bootstrap<RelayReady> {
                 Some(settlement_port.clone()),
                 usage_port.clone(),
             )
-            .with_request_outcomes(request_outcomes.clone()),
+            .with_request_outcomes(request_outcomes.clone())
+            .with_user_route_runtime(user_route_runtime.clone()),
         );
         let rerank: Arc<dyn RerankService> = Arc::new(
             BillingRerankService::new(
@@ -1963,7 +1996,8 @@ impl Bootstrap<RelayReady> {
                 Some(settlement_port.clone()),
                 usage_port.clone(),
             )
-            .with_request_outcomes(request_outcomes.clone()),
+            .with_request_outcomes(request_outcomes.clone())
+            .with_user_route_runtime(user_route_runtime.clone()),
         );
         let audio: Arc<dyn AudioService> = Arc::new(
             BillingAudioService::new(
@@ -1974,7 +2008,8 @@ impl Bootstrap<RelayReady> {
                 Some(settlement_port.clone()),
                 usage_port.clone(),
             )
-            .with_request_outcomes(request_outcomes.clone()),
+            .with_request_outcomes(request_outcomes.clone())
+            .with_user_route_runtime(user_route_runtime.clone()),
         );
         let speech: Arc<dyn SpeechService> = Arc::new(
             BillingSpeechService::new(
@@ -1985,7 +2020,8 @@ impl Bootstrap<RelayReady> {
                 Some(settlement_port.clone()),
                 usage_port.clone(),
             )
-            .with_request_outcomes(request_outcomes.clone()),
+            .with_request_outcomes(request_outcomes.clone())
+            .with_user_route_runtime(user_route_runtime.clone()),
         );
         let responses_compact: Arc<dyn ResponsesCompactService> = Arc::new(
             BillingResponsesCompactService::new(
@@ -1996,7 +2032,8 @@ impl Bootstrap<RelayReady> {
                 Some(settlement_port.clone()),
                 usage_port.clone(),
             )
-            .with_request_outcomes(request_outcomes.clone()),
+            .with_request_outcomes(request_outcomes.clone())
+            .with_user_route_runtime(user_route_runtime.clone()),
         );
         let chat: Arc<dyn ChatService> = Arc::new(
             BillingChatService::new(
@@ -2008,6 +2045,7 @@ impl Bootstrap<RelayReady> {
                 usage_port,
             )
             .with_request_outcomes(request_outcomes)
+            .with_user_route_runtime(user_route_runtime.clone())
             .with_service_account_billing(
                 self.stage
                     .infrastructure
@@ -2761,6 +2799,12 @@ impl Bootstrap<Supervised> {
             ))
         };
         let router = router
+            .merge(af_http::build_user_route_router(
+                Arc::new(af_admin::DatabaseUserRouteService::new(
+                    self.stage.infrastructure.user_route_repository.clone(),
+                )),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
             .merge(af_http::build_group_key_access_router(
                 Arc::clone(&self.stage.infrastructure.group_key_access_service),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),

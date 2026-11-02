@@ -38,7 +38,7 @@ fn list_user_tokens() {}
     operation_id = "createUserToken",
     tag = "我的 API Key",
     summary = "签发我的 API Key",
-    description = "group_id 省略或为 null 时跟随用户默认组；指定 ID 时固定绑定该路由及计费组，并在事务中复验可选权限。",
+    description = "group_id 省略或为 null 时跟随用户默认组；user_route_id 选择一个本人路由组，二者互斥，服务端在签发事务中复验所有成员分组的访问权限。",
     request_body = UserTokenWriteRequest,
     responses(
         (status = 201, description = "Key 已签发，完整明文仅返回一次", body = IssuedUserTokenResponse<'static>),

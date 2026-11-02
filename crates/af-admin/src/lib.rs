@@ -101,8 +101,14 @@ mod usage_log_read;
 mod user_notifications;
 mod user_profile;
 mod user_read;
+mod user_route;
 mod user_security;
 mod user_token;
+pub use user_route::{
+    DatabaseUserRouteService, UserRouteDeleteFuture, UserRouteError, UserRouteFuture,
+    UserRouteListFuture, UserRouteMemberRecord, UserRouteMemberWrite, UserRouteRecord,
+    UserRouteService, UserRouteWrite,
+};
 mod user_topup;
 mod user_wallet;
 mod user_write;

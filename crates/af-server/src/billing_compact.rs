@@ -13,15 +13,19 @@ use af_protocol::{
 use af_relay::ResponsesCompactionResponse;
 
 use crate::billing_chat::{
-    complete_with_retries, map_lifecycle_error, map_snapshot_error, new_reservation_id,
-    precharge_with_retries,
+    PlannedExecutionFailure, complete_with_retries, map_lifecycle_error, map_snapshot_error,
+    new_reservation_id, precharge_with_retries,
 };
 
 /// 已固定路由计划的一次 Responses Compact 异步执行结果。
 pub type PlannedResponsesCompactExecutionFuture = Pin<
     Box<
-        dyn Future<Output = Result<crate::RoutedExecution<ResponsesCompactionResponse>, AfError>>
-            + Send
+        dyn Future<
+                Output = Result<
+                    crate::RoutedExecution<ResponsesCompactionResponse>,
+                    PlannedExecutionFailure,
+                >,
+            > + Send
             + 'static,
     >,
 >;
@@ -63,6 +67,7 @@ pub struct BillingResponsesCompactService {
     settlement: Option<Arc<dyn BillingSettlementPort>>,
     usage: Arc<dyn UsageRecordPort>,
     request_outcomes: Option<crate::RequestOutcomeRuntime>,
+    user_routes: Option<crate::user_route_runtime::UserRouteRuntime>,
 }
 
 impl BillingResponsesCompactService {
@@ -84,6 +89,7 @@ impl BillingResponsesCompactService {
             settlement,
             usage,
             request_outcomes: None,
+            user_routes: None,
         }
     }
 
@@ -117,6 +123,16 @@ impl BillingResponsesCompactService {
             .await
     }
 
+    /// 使用统一的用户分组策略包裹单组计费执行。
+    #[must_use]
+    pub(crate) fn with_user_route_runtime(
+        mut self,
+        runtime: crate::user_route_runtime::UserRouteRuntime,
+    ) -> Self {
+        self.user_routes = Some(runtime);
+        self
+    }
+
     async fn call_billed(
         &self,
         principal: &GatewayPrincipal,
@@ -124,39 +140,122 @@ impl BillingResponsesCompactService {
         request: CanonicalResponsesCompactionRequest,
         request_id: &str,
     ) -> Result<crate::RoutedExecution<ResponsesCompactionResponse>, AfError> {
+        if principal.user_route_id().is_none() {
+            return self
+                .call_billed_single(principal, user_concurrency, request, request_id, None, None)
+                .await
+                .map_err(|failure| failure.error);
+        }
+        let model = request.model().to_owned();
+        let upper_bound = compact_usage_upper_bound(&request)?;
+        crate::user_route_execution::UserRouteExecution {
+            principal: *principal,
+            model: &model,
+            protocol: af_domain::Protocol::OpenAiResponses,
+            operation: af_domain::Operation::ResponsesCompact,
+            upper_bound: &upper_bound,
+            pricing: self.pricing_source.as_ref(),
+            defer_success_feedback: false,
+        }
+        .run(
+            self.user_routes.as_ref(),
+            request,
+            |principal, request, snapshot, maximum| async move {
+                self.call_billed_single(
+                    &principal,
+                    user_concurrency,
+                    request,
+                    request_id,
+                    snapshot,
+                    maximum,
+                )
+                .await
+            },
+        )
+        .await
+    }
+
+    async fn call_billed_single(
+        &self,
+        principal: &GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
+        request: CanonicalResponsesCompactionRequest,
+        request_id: &str,
+        frozen_snapshot: Option<af_billing::RequestPricingSnapshot>,
+        max_price_ratio_micros: Option<i64>,
+    ) -> Result<
+        crate::RoutedExecution<ResponsesCompactionResponse>,
+        crate::user_route_execution::UserRouteAttemptError,
+    > {
         let upper_bound = compact_usage_upper_bound(&request)?;
         let model = request.model().to_owned();
         let planned = self
             .inner
             .plan(principal, user_concurrency, request, request_id)
-            .await?;
-        let snapshot = self
-            .pricing_source
-            .capture_for_request_at(
-                &model,
-                principal.billing_source_group_id(),
-                planned.target_group_id(),
-                principal
-                    .organization_principal()
-                    .map(|organization| organization.organization_id()),
-                af_domain::Protocol::OpenAiResponses,
-                crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?,
-            )
             .await
-            .map_err(map_snapshot_error)?;
+            .map_err(crate::user_route_execution::UserRouteAttemptError::candidate_plan)?;
+        let snapshot = match frozen_snapshot {
+            Some(snapshot) => {
+                if planned.target_group_id() != principal.group_id() {
+                    return Err(AfError::Internal.into());
+                }
+                snapshot
+            }
+            None => self
+                .pricing_source
+                .capture_for_request_at(
+                    &model,
+                    principal.billing_source_group_id(),
+                    planned.target_group_id(),
+                    principal
+                        .organization_principal()
+                        .map(|organization| organization.organization_id()),
+                    af_domain::Protocol::OpenAiResponses,
+                    crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?,
+                )
+                .await
+                .map_err(map_snapshot_error)?,
+        };
+        if !crate::user_route_runtime::price_ratio_allowed(&snapshot, max_price_ratio_micros)? {
+            return Err(
+                crate::user_route_execution::UserRouteAttemptError::candidate_plan(
+                    AfError::ModelNotAllowed,
+                ),
+            );
+        }
         let plan = BillingRequestPlan::prepare(snapshot.resolver(), &upper_bound)
             .map_err(map_lifecycle_error)?
             .with_contract_price(snapshot.contract_price());
         let reservation_id = new_reservation_id()?;
         let mut lifecycle = start_lifecycle(self, plan, *principal, reservation_id).await?;
 
-        let routed = planned.execute().await?;
+        let routed = match planned.execute().await {
+            Ok(routed) => routed,
+            Err(failure) => {
+                let permits_group_failover = failure.permits_group_failover();
+                let error = failure.into_error();
+                if principal.user_route_id().is_some()
+                    && permits_group_failover
+                    && crate::user_route_runtime::permits_group_failover(&error)
+                {
+                    crate::user_route_execution::cancel_before_failover(
+                        &mut lifecycle,
+                        self.precharge.as_deref(),
+                    )
+                    .await?;
+                    return Err(
+                        crate::user_route_execution::UserRouteAttemptError::before_delivery(error),
+                    );
+                }
+                return Err(error.into());
+            }
+        };
         let channel_id = routed.channel_id();
         let response = routed.into_value();
         let (body, compact_usage) = response.into_parts();
         let usage = normalize_compact_usage(compact_usage)?;
         if !usage_within_upper_bound(&usage, &upper_bound)? {
-            return Err(AfError::Internal);
+            return Err(AfError::Internal.into());
         }
         let _ = complete_with_retries(&mut lifecycle, usage)
             .await
@@ -383,6 +482,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn user_route_terminal_protocol_failure_preserves_error_without_attempting_group_failover()
+     {
+        for terminal in [false, true] {
+            let mut fixture = billing_fixture(compact_usage(2, 0, 0, 1, 0), false).await;
+            fixture.service.inner = Arc::new(PlannerStub {
+                target_group_id: GroupId::new(3).unwrap(),
+                response_usage: compact_usage(2, 0, 0, 1, 0),
+                succeed: false,
+                protocol_failure: Some(terminal),
+                plans: fixture.plans.clone(),
+                executions: fixture.executions.clone(),
+            });
+            let principal = principal().with_user_route_id(Some(1));
+            let failure = fixture
+                .service
+                .call_billed_single(
+                    &principal,
+                    None,
+                    request(),
+                    "compact-terminal-profile",
+                    None,
+                    None,
+                )
+                .await
+                .err()
+                .expect("execution must fail");
+            if terminal {
+                assert_eq!(
+                    failure.error,
+                    AfError::Upstream(af_domain::UpstreamError::ProtocolError)
+                );
+            } else {
+                // The default cancellation port fails closed before another group can be charged.
+                assert_eq!(failure.error, AfError::Internal);
+            }
+            assert_eq!(*fixture.executions.lock().unwrap(), 1);
+            assert!(fixture.settlement.calls.lock().unwrap().is_empty());
+            assert!(fixture.usage.records.lock().unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
     async fn previous_response_reference_is_rejected_before_planning() {
         let fixture = billing_fixture(compact_usage(2, 0, 0, 1, 0), true).await;
         let request = openai_responses_compact::parse_request(
@@ -410,6 +551,7 @@ mod tests {
         target_group_id: GroupId,
         response_usage: ResponsesCompactionUsage,
         succeed: bool,
+        protocol_failure: Option<bool>,
         plans: Arc<Mutex<usize>>,
         executions: Arc<Mutex<usize>>,
     }
@@ -425,6 +567,7 @@ mod tests {
             let target_group_id = self.target_group_id;
             let response_usage = self.response_usage;
             let succeed = self.succeed;
+            let protocol_failure = self.protocol_failure;
             let plans = Arc::clone(&self.plans);
             let executions = Arc::clone(&self.executions);
             Box::pin(async move {
@@ -433,6 +576,7 @@ mod tests {
                     target_group_id,
                     response_usage,
                     succeed,
+                    protocol_failure,
                     executions,
                 })
                     as Box<dyn PlannedResponsesCompactExecution>)
@@ -444,6 +588,7 @@ mod tests {
         target_group_id: GroupId,
         response_usage: ResponsesCompactionUsage,
         succeed: bool,
+        protocol_failure: Option<bool>,
         executions: Arc<Mutex<usize>>,
     }
 
@@ -455,8 +600,16 @@ mod tests {
         fn execute(self: Box<Self>) -> PlannedResponsesCompactExecutionFuture {
             Box::pin(async move {
                 *self.executions.lock().unwrap() += 1;
+                if let Some(terminal) = self.protocol_failure {
+                    let error = AfError::Upstream(af_domain::UpstreamError::ProtocolError);
+                    return Err(if terminal {
+                        PlannedExecutionFailure::terminal(error)
+                    } else {
+                        error.into()
+                    });
+                }
                 if !self.succeed {
-                    return Err(AfError::Internal);
+                    return Err(AfError::Internal.into());
                 }
                 Ok(crate::RoutedExecution::new(
                     ResponsesCompactionResponse::new(
@@ -551,6 +704,7 @@ mod tests {
                 target_group_id: GroupId::new(3).unwrap(),
                 response_usage,
                 succeed,
+                protocol_failure: None,
                 plans: Arc::clone(&plans),
                 executions: Arc::clone(&executions),
             }),

@@ -1,11 +1,12 @@
 use std::{error::Error, time::Duration};
 
-use af_domain::{GroupId, TokenId, UserId};
+use af_domain::{GroupId, TokenId, UserId, UserRouteStrategy};
 use sea_orm::{ConnectionTrait, DbBackend, QueryResult, Statement};
 
 use super::{
     DatabaseOptions, InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
-    MAX_USER_TOKENS_PER_USER, MigrationOptions, UserTokenCreateRecord, UserTokenDeleteOutcome,
+    MAX_USER_TOKENS_PER_USER, MigrationOptions, UserRouteError, UserRouteMemberWrite,
+    UserRouteRepository, UserRouteWrite, UserTokenCreateRecord, UserTokenDeleteOutcome,
     UserTokenLookupOutcome, UserTokenMutationOutcome, UserTokenRepository,
     UserTokenRepositoryError, UserTokenWriteRecord,
 };
@@ -235,6 +236,80 @@ async fn fixed_group_requires_authorization_without_rebinding_existing_keys()
     Ok(())
 }
 
+#[tokio::test]
+async fn user_route_crud_is_owner_scoped_and_delete_keeps_bound_keys_closed()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let routes = UserRouteRepository::new(fixture.pool.clone(), Duration::from_secs(5))?;
+    let route = routes.create(fixture.owner, route_write(true)).await?;
+    assert_eq!(route.members.len(), 1);
+    assert_eq!(route.members[0].group_id, GroupId::new(1)?);
+    assert_eq!(
+        routes.get(fixture.other, route.id).await.unwrap_err(),
+        UserRouteError::NotFound
+    );
+
+    let token = fixture
+        .repository
+        .create(create_record(fixture.owner, 900, 1).with_user_route_id(Some(route.id)))
+        .await?;
+    assert_eq!(token.user_route_id(), Some(route.id));
+
+    routes.delete(fixture.owner, route.id).await?;
+    assert_eq!(
+        routes
+            .lookup_for_token(fixture.owner, token.token_id())
+            .await
+            .unwrap_err(),
+        UserRouteError::Unavailable,
+    );
+    assert!(matches!(
+        fixture
+            .repository
+            .update(
+                fixture.owner,
+                token.token_id(),
+                write_record("still-bound", 1, None),
+            )
+            .await,
+        Err(UserTokenRepositoryError::UserRouteUnavailable),
+    ));
+    assert_eq!(
+        routes.get(fixture.owner, route.id).await.unwrap_err(),
+        UserRouteError::NotFound
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn user_route_rejects_fixed_group_binding_and_invalid_members() -> Result<(), Box<dyn Error>>
+{
+    let fixture = fixture().await?;
+    let routes = UserRouteRepository::new(fixture.pool.clone(), Duration::from_secs(5))?;
+    let route = routes.create(fixture.owner, route_write(true)).await?;
+    assert_eq!(
+        fixture
+            .repository
+            .create(
+                create_record(fixture.owner, 901, 1)
+                    .with_group_id(Some(GroupId::new(1)?))
+                    .with_user_route_id(Some(route.id)),
+            )
+            .await
+            .unwrap_err(),
+        UserTokenRepositoryError::InvalidInput,
+    );
+    let mut invalid = route_write(true);
+    invalid.members.push(invalid.members[0].clone());
+    assert_eq!(
+        routes.create(fixture.owner, invalid).await.unwrap_err(),
+        UserRouteError::InvalidInput
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
 async fn set_owner_default_group(fixture: &Fixture, group_id: i64) -> Result<(), Box<dyn Error>> {
     fixture
         .pool
@@ -456,6 +531,21 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
 
 fn create_record(owner: UserId, index: usize, status: i16) -> UserTokenCreateRecord {
     create_record_with_expiration(owner, index, status, None)
+}
+
+fn route_write(enabled: bool) -> UserRouteWrite {
+    UserRouteWrite {
+        name: "test route".to_owned(),
+        strategy: UserRouteStrategy::Ordered,
+        enabled,
+        max_group_attempts: 1,
+        max_price_ratio_micros: None,
+        members: vec![UserRouteMemberWrite {
+            group_id: GroupId::new(1).expect("valid fixture group"),
+            priority: 0,
+            weight: 1,
+        }],
+    }
 }
 
 fn create_record_with_expiration(

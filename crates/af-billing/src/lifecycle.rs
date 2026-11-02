@@ -221,6 +221,7 @@ impl fmt::Debug for BillingRequestPlan {
 
 enum LifecycleState {
     Free,
+    Cancelled,
     Metered {
         billing_mode: BillingMode,
         session: BillingSession,
@@ -246,6 +247,8 @@ pub enum BillingLifecycleState {
     Completed,
     /// 退款信号已经入队，不再允许结算。
     RefundQueued,
+    /// 尚未交付的请求已取消，所有预留均已确认释放。
+    Cancelled,
 }
 
 /// 覆盖一次完整 Relay 重试循环的计费生命周期。
@@ -268,15 +271,42 @@ impl BillingRequestLifecycle {
     pub const fn state(&self) -> BillingLifecycleState {
         match &self.state {
             LifecycleState::Free => BillingLifecycleState::Free,
+            LifecycleState::Cancelled => BillingLifecycleState::Cancelled,
             LifecycleState::Metered { session, .. } => match session.state() {
                 BillingSessionState::Reserved => BillingLifecycleState::Reserved,
                 BillingSessionState::SettlementPending => BillingLifecycleState::SettlementPending,
                 BillingSessionState::Settled => BillingLifecycleState::UsagePending,
                 BillingSessionState::RefundQueued => BillingLifecycleState::RefundQueued,
+                BillingSessionState::Refunded => BillingLifecycleState::Cancelled,
             },
             LifecycleState::UsagePending(_) => BillingLifecycleState::UsagePending,
             LifecycleState::Completed(_) => BillingLifecycleState::Completed,
         }
+    }
+
+    /// 失败尝试在切换分组前必须等待此方法确认退款，取消期间仍保留 RAII 兜底。
+    pub async fn cancel_before_delivery(
+        &mut self,
+        precharge_port: &dyn BillingPrechargePort,
+    ) -> Result<(), BillingPrechargeError> {
+        match &mut self.state {
+            LifecycleState::Free | LifecycleState::Cancelled => {}
+            LifecycleState::Metered {
+                session,
+                pending_completion: None,
+                ..
+            } if session.state() == BillingSessionState::Reserved => {
+                precharge_port.cancel(session.reservation_id()).await?;
+                session
+                    .mark_refunded()
+                    .map_err(|_| BillingPrechargeError::Invariant)?;
+            }
+            LifecycleState::Metered { .. }
+            | LifecycleState::UsagePending(_)
+            | LifecycleState::Completed(_) => return Err(BillingPrechargeError::Conflict),
+        }
+        self.state = LifecycleState::Cancelled;
+        Ok(())
     }
 
     /// 用最终 usage 完成免费记录或按量结算；相同 usage 的终态重放不会重复副作用。
@@ -306,6 +336,7 @@ impl BillingRequestLifecycle {
         observation: BillingUsageObservation,
     ) -> Result<BillingCompletion, BillingLifecycleError> {
         match self.state {
+            LifecycleState::Cancelled => return Err(BillingLifecycleError::InvalidActivation),
             LifecycleState::UsagePending(completion) => {
                 ensure_same_completion(completion, usage, dimensions, observation)?;
                 return self.try_record_usage();
@@ -330,7 +361,9 @@ impl BillingRequestLifecycle {
                 pending_completion: None,
                 ..
             } => None,
-            LifecycleState::UsagePending(_) | LifecycleState::Completed(_) => {
+            LifecycleState::Cancelled
+            | LifecycleState::UsagePending(_)
+            | LifecycleState::Completed(_) => {
                 unreachable!("终态与待记录状态已在定价前返回")
             }
         };
@@ -370,7 +403,9 @@ impl BillingRequestLifecycle {
             LifecycleState::Free | LifecycleState::Metered { .. } => {
                 return Err(BillingLifecycleError::BillingModeChanged);
             }
-            LifecycleState::UsagePending(_) | LifecycleState::Completed(_) => {
+            LifecycleState::Cancelled
+            | LifecycleState::UsagePending(_)
+            | LifecycleState::Completed(_) => {
                 unreachable!("终态与待记录状态已在定价前返回")
             }
         };

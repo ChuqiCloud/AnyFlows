@@ -147,6 +147,7 @@
     "videoTasks": "Video tasks",
     "imagePlaza": "Image studio",
     "apiKeys": "My API keys",
+    "userRoutes": "My smart routes",
     "organizationApiKeys": "Organization API keys",
     "organizationServiceAccounts": "Service accounts",
     "organizationBudgets": "Organization budgets",
@@ -1414,6 +1415,22 @@
     }
   },
   "apiKeys": {
+    "routing": {
+      "label": "Routing",
+      "groupMode": "Single group",
+      "routeMode": "Smart route",
+      "routeLabel": "Choose a smart route",
+      "routePlaceholder": "Select an enabled smart route",
+      "routeHint": "The route strategy selects a group and switches after retryable failures. Billing uses the selected group. The binding cannot be changed after the key is issued.",
+      "invalidRoute": "Choose an enabled smart route that is currently available.",
+      "unavailable": "The selected smart route is disabled or unavailable. Choose another route.",
+      "loading": "Loading smart routes",
+      "loadError": "Smart routes could not be loaded. Retry before issuing a key.",
+      "empty": "No enabled smart routes yet.",
+      "manage": "Manage smart routes",
+      "immutable": "This key is bound to this route. Route changes apply to future requests. Disabling or deleting the route stops calls through this key; it does not follow the default group.",
+      "bound": "Smart route · {{name}}"
+    },
     "group": {
       "label": "Billing group",
       "option": "{{name}} · base {{ratio}}×",
@@ -1500,7 +1517,7 @@
       "expiryHint": "Leave blank for no expiry. Times use this device's time zone.",
       "unlimitedHint": "Do not apply an additional quota limit to this key.",
       "quotaHint": "Used only when unlimited quota is off.",
-      "modelsHint": "Leave empty to allow every model available to your group.",
+      "modelsHint": "Leave empty to allow every model available to the bound group or smart route.",
       "ipsHint": "Add IP or CIDR entries individually. Leave empty for any source.",
       "submitError": "The key could not be saved. Check the fields and try again.",
       "limitError": "This account has reached its API key limit."
@@ -1521,6 +1538,11 @@
       "date": "Enter a valid date and time."
     },
     "modelSelector": {
+      "routeHint": "The picker shows your account's current group catalog. You can add exact model names supported by other route members. Leave empty to allow all models available through the route; each request still checks member support.",
+      "customLabel": "Add model name",
+      "customPlaceholder": "Enter an exact model name supported by route members",
+      "addCustom": "Add model",
+      "customInvalid": "Enter a model name without control characters, up to 256 bytes and 512 entries.",
       "title": "Select available models",
       "description": "Leave the selection empty to allow every available model.",
       "search": "Search models",
@@ -1558,6 +1580,90 @@
       "description": "Deleting {{name}} immediately revokes requests that use this key. This action cannot be undone.",
       "failed": "Deletion failed. The key is still valid. Try again shortly."
     }
+  },
+  "userRoutes": {
+    "title": "My smart routes",
+    "subtitle": "Combine groups you can use and choose a price, stability, or rotation strategy for your keys. Billing uses the group selected for each request.",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "fields": {
+      "name": "Route name",
+      "strategy": "Selection strategy",
+      "status": "Route status",
+      "members": "Candidate groups",
+      "priority": "Priority",
+      "weight": "Weight",
+      "attempts": "Maximum group attempts",
+      "maxPrice": "Effective multiplier limit"
+    },
+    "strategies": {
+      "price_first": "Price first",
+      "stable_first": "Stability first",
+      "ordered": "Priority order",
+      "round_robin": "Round robin",
+      "weighted": "Weighted distribution"
+    },
+    "strategyHints": {
+      "price_first": "Try groups from the lowest effective billing multiplier for this model request. Retryable failures advance to the next group.",
+      "stable_first": "Prefer groups with recent successful requests and lower latency. Priority is used when there is not enough history.",
+      "ordered": "Lower priority numbers are tried first. Retryable failures advance to the next group.",
+      "round_robin": "Rotate requests between available groups and switch after retryable failures.",
+      "weighted": "Distribute requests by weight. Higher weights receive more requests, with switching after retryable failures."
+    },
+    "membersHint": "Choose up to 16 groups you are allowed to use. Options show base multipliers; actual ordering and charges also use model, user-specific, and scheduled multipliers. Lower priority numbers come first.",
+    "groupLoadError": "Available groups could not be loaded. Try again.",
+    "loadingGroups": "Loading available groups",
+    "unavailableGroup": "Group #{{id}} (unavailable)",
+    "memberNumber": "Candidate group {{number}}",
+    "memberGroup": "Group for candidate {{number}}",
+    "memberPriority": "Priority for candidate {{number}}",
+    "memberWeight": "Weight for candidate {{number}}",
+    "noGroups": "There are no groups you can add to a route.",
+    "attemptsHint": "1–16, including the first attempt. Groups switch only after retryable failures.",
+    "priceHint": "Leave blank for no limit. Up to six decimal places; 0 allows only zero-multiplier groups. Applied to the request's effective billing multiplier.",
+    "unlimitedPrice": "No multiplier limit",
+    "attemptsValue": "Up to {{count}} groups",
+    "priceValue": "Multiplier limit {{value}}×",
+    "actions": {
+      "retry": "Retry",
+      "moveUp": "Move group up",
+      "moveDown": "Move group down",
+      "removeMember": "Remove group",
+      "addMember": "Add group",
+      "cancel": "Cancel",
+      "save": "Save changes",
+      "create": "Create route",
+      "edit": "Edit route",
+      "delete": "Delete route",
+      "refresh": "Refresh"
+    },
+    "editor": {
+      "create": "Create smart route",
+      "edit": "Edit smart route",
+      "description": "Bind this route when issuing a key. Changes affect future requests from bound keys. Disabling the route stops their calls."
+    },
+    "validation": {
+      "name": "Enter a name without control characters, up to 128 bytes.",
+      "strategy": "Choose a valid routing strategy.",
+      "groups": "Load the group directory and replace any groups you can no longer use.",
+      "members": "Choose between 1 and 16 candidate groups.",
+      "duplicate": "Candidate groups must be unique.",
+      "memberValues": "Priority must be an integer from 0 to 2147483647; weight must be an integer from 1 to 10000.",
+      "attempts": "Maximum group attempts must be an integer from 1 to 16.",
+      "price": "Enter an in-range non-negative multiplier with up to six decimal places, or leave blank for no limit."
+    },
+    "errors": {
+      "unknown": "The operation failed. Check the configuration and try again.",
+      "group_unavailable": "A candidate group is no longer available. Choose another group.",
+      "user_route_unavailable": "This route is no longer available. Refresh and try again.",
+      "user_route_not_found": "This route was deleted or does not exist. Refresh the list.",
+      "user_route_limit_reached": "The smart route limit has been reached."
+    },
+    "columns": { "route": "Route", "strategy": "Strategy and multiplier", "members": "Candidate groups", "actions": "Actions" },
+    "empty": { "title": "No smart routes yet", "body": "Choose available groups and a strategy, then issue an API key for your route." },
+    "delete": { "title": "Delete smart route", "body": "Deleting {{name}} stops calls through its bound keys. They do not switch to the default group. Create a new route and key to continue." },
+    "summary": { "loaded": "{{count}} routes", "capacity": "Capacity {{count}} / {{capacity}}" },
+    "error": { "title": "Smart routes could not be loaded", "body": "The route list is temporarily unavailable. Try again shortly." }
   },
   "platformOrganizations": {
     "eyebrow": "Platform organization operations",
