@@ -69,6 +69,8 @@ export function parseStoredTopupAttempt(
       || !Number.isSafeInteger(parsed.amountMinor)
       || !validPaymentProvider(parsed.provider)
       || !validPaymentMethod(parsed.paymentMethod)
+      || !validOptionalId(parsed.orderId)
+      || !validOptionalId(parsed.paymentIntentId)
       || (parsed.amountMinor ?? 0) < bounds.min
       || (parsed.amountMinor ?? 0) > bounds.max
     ) {
@@ -93,6 +95,10 @@ function validPaymentProvider(value: unknown): value is PaymentProvider {
 
 function validPaymentMethod(value: unknown): value is PaymentMethod {
   return value === 'card' || value === 'alipay' || value === 'wxpay'
+}
+
+function validOptionalId(value: unknown) {
+  return value === undefined || (typeof value === 'string' && value.length > 0 && value.trim() === value)
 }
 
 /** 将整数美分还原为金额输入框需要的两位小数文本。 */

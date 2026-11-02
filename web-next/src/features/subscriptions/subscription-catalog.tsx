@@ -23,6 +23,11 @@ import { useUserTopupConfiguration } from '@/features/wallet/wallet-api'
 import { WalletStripePaymentForm } from '@/features/wallet/wallet-stripe-payment-form'
 import { EpayQrPayment } from '@/features/wallet/epay-qr-payment'
 import { stripeTopupAppearance } from '@/features/wallet/wallet-topup-runtime'
+import {
+  cleanSubscriptionPaymentReturnUrl,
+  createSubscriptionPaymentReturnUrl,
+  subscriptionPaymentRedirectStatus,
+} from '@/features/wallet/payment-return-model'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import type { SubscriptionCatalogPlan, SubscriptionOrder } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
@@ -35,15 +40,11 @@ import {
   currentUserSubscriptionsQueryKey,
 } from './subscription-api'
 import { createSubscriptionIdempotencyKey } from './subscription-form-model'
-
-type StoredSubscriptionPaymentAttempt = {
-  idempotencyKey: string
-  orderId?: string
-  paymentIntentId?: string
-  paymentMethod: PaymentMethod
-  planId: string
-  provider: string
-}
+import {
+  parseStoredSubscriptionAttempt,
+  submitCreatedSubscriptionPayment,
+  type SubscriptionPaymentAttempt,
+} from './subscription-payment-model'
 
 type PaymentPhase = 'processing' | 'succeeded'
 
@@ -195,22 +196,12 @@ function CatalogPlanRow({
   const busy = createMutation.isPending || paymentMutation.isPending
 
   useEffect(() => {
-    if (!matchesSubscriptionReturn(attempt)) return
     const url = new URL(window.location.href)
-    const status = url.searchParams.get('redirect_status')
+    const status = subscriptionPaymentRedirectStatus(url, attempt)
+    if (status === undefined) return
     if (status === 'succeeded') setPhase('succeeded')
     else if (status === 'processing') setPhase('processing')
-    for (const parameter of [
-      'flow',
-      'subscription_order_id',
-      'subscription_payment_intent',
-      'payment_intent',
-      'payment_intent_client_secret',
-      'redirect_status',
-    ]) {
-      url.searchParams.delete(parameter)
-    }
-    window.history.replaceState(window.history.state, '', url)
+    window.history.replaceState(window.history.state, '', cleanSubscriptionPaymentReturnUrl(url))
   }, [attempt])
 
   useEffect(() => {
@@ -229,7 +220,7 @@ function CatalogPlanRow({
       : availableMethods[0].payment_method)
   }, [availableMethods])
 
-  const persistAttempt = (next: StoredSubscriptionPaymentAttempt) => {
+  const persistAttempt = (next: SubscriptionPaymentAttempt) => {
     setAttempt(next)
     try {
       sessionStorage.setItem(subscriptionAttemptStorageKey(plan.plan_id), JSON.stringify(next))
@@ -273,12 +264,13 @@ function CatalogPlanRow({
   const createOrder = async () => {
     if (method === undefined || busy) return
     const idempotencyKey = attempt?.idempotencyKey ?? createSubscriptionIdempotencyKey()
-    persistAttempt({
+    const nextAttempt: SubscriptionPaymentAttempt = {
       idempotencyKey,
       paymentMethod: method.payment_method,
       planId: plan.plan_id,
       provider: plan.price_provider,
-    })
+    }
+    persistAttempt(nextAttempt)
     const nextOrder = await createMutation.mutateAsync({
       idempotency_key: idempotencyKey,
       plan_id: plan.plan_id,
@@ -288,7 +280,12 @@ function CatalogPlanRow({
       price_amount_minor: plan.price_amount_minor,
     })
     setOrder(nextOrder)
-    await submitPayment(nextOrder.order_id, method.payment_method, idempotencyKey)
+    await submitCreatedSubscriptionPayment(
+      nextAttempt,
+      nextOrder.order_id,
+      persistAttempt,
+      () => submitPayment(nextOrder.order_id, method.payment_method, idempotencyKey),
+    )
   }
 
   const resumePayment = async () => {
@@ -427,7 +424,7 @@ function CatalogPlanRow({
             <Elements stripe={stripe} options={{ clientSecret: payment.client_secret, appearance: stripeTopupAppearance('light'), locale: locale === 'zh-CN' ? 'zh' : 'en' }}>
               <WalletStripePaymentForm
                 amountLabel={amountLabel}
-                returnUrl={subscriptionReturnUrl(order.order_id, payment.payment_intent_id)}
+                returnUrl={createSubscriptionPaymentReturnUrl(window.location.origin, order.order_id, payment.payment_intent_id).toString()}
                 onConfirmed={paymentConfirmed}
               />
             </Elements>
@@ -506,33 +503,9 @@ function subscriptionAttemptStorageKey(planId: string) {
   return `anyflows.subscription.payment-attempt:${planId}`
 }
 
-function subscriptionReturnUrl(orderId: string, paymentIntentId: string | null) {
-  const url = new URL('/console/wallet', window.location.origin)
-  url.searchParams.set('flow', 'subscription')
-  url.searchParams.set('subscription_order_id', orderId)
-  if (paymentIntentId) url.searchParams.set('subscription_payment_intent', paymentIntentId)
-  return url.toString()
-}
-
-function matchesSubscriptionReturn(attempt: StoredSubscriptionPaymentAttempt | undefined) {
-  if (!attempt?.orderId || !attempt.paymentIntentId) return false
-  const parameters = new URL(window.location.href).searchParams
-  return parameters.get('flow') === 'subscription'
-    && parameters.get('subscription_order_id') === attempt.orderId
-    && parameters.get('subscription_payment_intent') === attempt.paymentIntentId
-    && parameters.get('payment_intent') === attempt.paymentIntentId
-}
-
-function readStoredAttempt(plan: Pick<SubscriptionCatalogPlan, 'plan_id' | 'price_provider'>): StoredSubscriptionPaymentAttempt | undefined {
+function readStoredAttempt(plan: Pick<SubscriptionCatalogPlan, 'plan_id' | 'price_provider'>) {
   try {
-    const value: unknown = JSON.parse(sessionStorage.getItem(subscriptionAttemptStorageKey(plan.plan_id)) ?? 'null')
-    if (!value || typeof value !== 'object') return undefined
-    const candidate = value as Partial<StoredSubscriptionPaymentAttempt>
-    if (candidate.planId !== plan.plan_id || candidate.provider !== plan.price_provider || typeof candidate.idempotencyKey !== 'string') return undefined
-    if (!['card', 'alipay', 'wxpay'].includes(candidate.paymentMethod ?? '')) return undefined
-    if (candidate.orderId !== undefined && typeof candidate.orderId !== 'string') return undefined
-    if (candidate.paymentIntentId !== undefined && typeof candidate.paymentIntentId !== 'string') return undefined
-    return candidate as StoredSubscriptionPaymentAttempt
+    return parseStoredSubscriptionAttempt(sessionStorage.getItem(subscriptionAttemptStorageKey(plan.plan_id)), plan)
   } catch {
     return undefined
   }

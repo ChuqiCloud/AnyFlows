@@ -1003,10 +1003,14 @@ impl RelayStateMachine {
                     }
                     Err(error) => {
                         let (last_error, report) = error.into_parts();
+                        let action = race_failure_action(&last_error, &report);
                         failures.extend(report.failures.into_iter().map(|mut failure| {
                             failure.candidate_index += index;
                             failure
                         }));
+                        if action == FailureAction::AbortRequest {
+                            return Err(RelayExecutionError::new(last_error, failures));
+                        }
                         index = match last_error {
                             RelayError::Upstream(error) => self.next_candidate_index(index, error),
                             _ => index + 1,
@@ -1050,12 +1054,12 @@ impl RelayStateMachine {
                 let (candidate_index, result) = match joined {
                     Ok(result) => result,
                     Err(_) => {
-                        last_error = RelayError::AttemptGateFailed;
-                        if next < end {
-                            spawn_candidate(&mut tasks, next);
-                            next += 1;
-                        }
-                        continue;
+                        tasks.abort_all();
+                        while tasks.join_next().await.is_some() {}
+                        return Err(RelayExecutionError::new(
+                            RelayError::AttemptGateFailed,
+                            failures,
+                        ));
                     }
                 };
                 match result {
@@ -1720,22 +1724,28 @@ mod tests {
     #[test]
     fn race_aborts_request_scoped_failures() {
         let report = RelayAttemptReport::failed(Vec::new());
-        assert_eq!(race_failure_action(
-            &RelayError::Upstream(UpstreamError::BadRequest),
-            &report,
-        ), FailureAction::AbortRequest);
-        assert_eq!(race_failure_action(
-            &RelayError::Upstream(UpstreamError::network(
-                af_domain::NetworkFailureKind::Policy,
-            )),
-            &report,
-        ), FailureAction::AbortRequest);
-        assert_eq!(race_failure_action(
-            &RelayError::Upstream(UpstreamError::ServerError {
-                status: UpstreamServerStatus::new(503).unwrap(),
-            }),
-            &report,
-        ), FailureAction::RouteToNextCandidate);
+        assert_eq!(
+            race_failure_action(&RelayError::Upstream(UpstreamError::BadRequest), &report),
+            FailureAction::AbortRequest,
+        );
+        assert_eq!(
+            race_failure_action(
+                &RelayError::Upstream(UpstreamError::network(
+                    af_domain::NetworkFailureKind::Policy,
+                )),
+                &report,
+            ),
+            FailureAction::AbortRequest,
+        );
+        assert_eq!(
+            race_failure_action(
+                &RelayError::Upstream(UpstreamError::ServerError {
+                    status: UpstreamServerStatus::new(503).unwrap(),
+                }),
+                &report,
+            ),
+            FailureAction::RouteToNextCandidate,
+        );
         assert_eq!(
             race_failure_action(&RelayError::AttemptGateFailed, &report),
             FailureAction::AbortRequest,
@@ -1748,20 +1758,17 @@ mod tests {
 
     #[test]
     fn race_aborts_failed_client_simulation_even_when_error_is_protocol_error() {
-        let failure = RelayAttemptFailure::new(
-            0,
-            UpstreamError::ProtocolError,
-            Duration::from_millis(1),
-        )
-        .with_client_simulation(Some(RelayClientSimulationAttempt::new(
-            ClientSimulationProfile::AnthropicCliHeadersV1,
-            ClientSimulationResult::Failed,
-        )));
+        let failure =
+            RelayAttemptFailure::new(0, UpstreamError::ProtocolError, Duration::from_millis(1))
+                .with_client_simulation(Some(RelayClientSimulationAttempt::new(
+                    ClientSimulationProfile::AnthropicCliHeadersV1,
+                    ClientSimulationResult::Failed,
+                )));
         let report = RelayAttemptReport::failed(vec![failure]);
-        assert_eq!(race_failure_action(
-            &RelayError::Upstream(UpstreamError::ProtocolError),
-            &report,
-        ), FailureAction::AbortRequest);
+        assert_eq!(
+            race_failure_action(&RelayError::Upstream(UpstreamError::ProtocolError), &report),
+            FailureAction::AbortRequest,
+        );
     }
 
     #[test]
