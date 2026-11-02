@@ -1003,7 +1003,7 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
     let user_id = insert(
         database.seed(),
         format!(
-            "INSERT INTO users (username, default_group_id, aff_code, quota, settings) VALUES ('video-persistence', {group_id}, 'video-persistence-aff', 10000000, '{{}}')"
+            "INSERT INTO users (username, default_group_id, aff_code, quota, settings, status) VALUES ('video-persistence', {group_id}, 'video-persistence-aff', 10000000, '{{}}', 1)"
         ),
     )
     .await?;
