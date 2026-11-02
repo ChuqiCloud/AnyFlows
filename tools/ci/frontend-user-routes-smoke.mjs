@@ -141,7 +141,8 @@ try {
     await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'not_found' }) })
   })
   await page.goto(`${origin}/.user-routes-smoke.html`)
-  const selectTrigger = name => page.getByRole('button', { name, exact: true }).or(page.getByRole('combobox', { name, exact: true })).filter({ visible: true })
+  // HeroUI includes the selected value before the field label in the accessible name.
+  const selectTrigger = name => page.getByRole('button', { name }).or(page.getByRole('combobox', { name })).filter({ visible: true })
   await page.getByRole('heading', { name: label('userRoutes.title'), exact: true }).waitFor()
   await page.getByRole('button', { name: label('userRoutes.actions.create'), exact: true }).click()
   const createDialog = page.getByRole('dialog')
@@ -195,7 +196,8 @@ try {
 } catch (error) {
   if (page) await page.screenshot({ path: resolve(screenshots, 'failure.png'), fullPage: true, animations: 'disabled' }).catch(() => {})
   console.error(serverOutput)
-  console.error(JSON.stringify({ browserErrors: errors, requests }))
+  const ariaSnapshot = page ? await page.locator('body').ariaSnapshot().catch(() => undefined) : undefined
+  console.error(JSON.stringify({ browserErrors: errors, requests, ariaSnapshot }))
   throw error
 } finally {
   if (browser) await browser.close()
