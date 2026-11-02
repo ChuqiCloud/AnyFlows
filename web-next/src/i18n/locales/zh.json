@@ -5055,7 +5055,7 @@
       "newOrder": "创建新订单",
       "paymentResumeHint": "此订单可以使用相同的支付信息继续支付。",
       "resumePayment": "恢复支付",
-      "orderRecoveryPending": "订单标识会被保存用于恢复，支付材料不会写入存储。"
+      "orderRecoveryPending": "订单标识会被保存用于恢复，支付密钥不会写入存储。"
     },
     "fields": {
       "name": "计划名称",

@@ -10,6 +10,8 @@ const stripeReturnParameters = [
   'payment_intent_client_secret',
   'redirect_status',
 ] as const
+const paymentFlowParameters = ['flow'] as const
+const topupReturnParameters = ['topup_order_id', 'topup_payment_intent'] as const
 const epayReturnParameters = [
   'pid',
   'trade_no',
@@ -37,7 +39,7 @@ export function readStoredTopupAttempt(scope = 'personal') {
   }
 }
 
-/** 仅持久化金额、支付方式与幂等键，绝不保存支付会话密钥。 */
+/** 持久化重试与回跳所需的非敏感标识，不保存支付会话密钥。 */
 export function storeTopupAttempt(attempt: TopupAttempt, scope = 'personal') {
   try {
     sessionStorage.setItem(topupStorageKey(scope), JSON.stringify(attempt))
@@ -58,7 +60,9 @@ export function clearStoredTopupAttempt(scope = 'personal') {
 /** 消费支付跳转结果并移除签名材料；易支付结果只触发本地订单状态恢复。 */
 export function usePaymentRedirectStatus() {
   const [status] = useState<TopupConfirmationPhase | undefined>(() => {
-    const parameters = paymentReturnParameters(new URL(window.location.href))
+    const url = new URL(window.location.href)
+    const parameters = paymentReturnParameters(url)
+    if (!matchesStoredTopupReturn(url)) return undefined
     const value = parameters.get('redirect_status')
     if (value === 'succeeded' || value === 'processing' || value === 'failed') return value
     if (epayReturnParameters.some((parameter) => parameters.has(parameter))) return 'processing'
@@ -66,8 +70,20 @@ export function usePaymentRedirectStatus() {
   })
   useEffect(() => {
     const url = new URL(window.location.href)
+    const flow = url.searchParams.get('flow')
     let changed = false
-    for (const parameter of stripeReturnParameters) {
+    if (flow === 'subscription') {
+      if (url.searchParams.has('payment_intent_client_secret')) {
+        url.searchParams.delete('payment_intent_client_secret')
+        changed = true
+      }
+      if (changed) window.history.replaceState(window.history.state, '', url)
+      return
+    }
+    const parametersToRemove = flow === 'topup'
+      ? [...paymentFlowParameters, ...topupReturnParameters, ...stripeReturnParameters]
+      : stripeReturnParameters
+    for (const parameter of parametersToRemove) {
       if (!url.searchParams.has(parameter)) continue
       url.searchParams.delete(parameter)
       changed = true
@@ -83,11 +99,18 @@ export function usePaymentRedirectStatus() {
 }
 
 /** 返回支付完成后回到本人钱包的固定地址。 */
-export function topupReturnUrl(returnPath = '/console/wallet') {
+export function topupReturnUrl(
+  returnPath = '/console/wallet',
+  correlation?: { orderId?: string; paymentIntentId?: string },
+) {
   const url = new URL(window.location.href)
   for (const parameter of stripeReturnParameters) url.searchParams.delete(parameter)
+  for (const parameter of topupReturnParameters) url.searchParams.delete(parameter)
   for (const parameter of epayReturnParameters) url.searchParams.delete(parameter)
   url.pathname = returnPath
+  url.searchParams.set('flow', 'topup')
+  if (correlation?.orderId) url.searchParams.set('topup_order_id', correlation.orderId)
+  if (correlation?.paymentIntentId) url.searchParams.set('topup_payment_intent', correlation.paymentIntentId)
   return url.toString()
 }
 
@@ -98,6 +121,16 @@ function topupStorageKey(scope: string) {
 /** 支付网关回跳参数统一落在查询串上。 */
 function paymentReturnParameters(url: URL) {
   return new URLSearchParams(url.search)
+}
+
+function matchesStoredTopupReturn(url: URL) {
+  const parameters = paymentReturnParameters(url)
+  if (parameters.get('flow') !== 'topup') return false
+  const attempt = readStoredTopupAttempt()
+  if (!attempt?.orderId || !attempt.paymentIntentId) return false
+  if (parameters.get('topup_order_id') !== attempt.orderId) return false
+  return parameters.get('topup_payment_intent') === attempt.paymentIntentId
+    && parameters.get('payment_intent') === attempt.paymentIntentId
 }
 
 /** 跟随全局主题切换 Stripe iframe 外观，不复制站内主题状态。 */

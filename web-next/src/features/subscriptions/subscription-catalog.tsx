@@ -39,6 +39,7 @@ import { createSubscriptionIdempotencyKey } from './subscription-form-model'
 type StoredSubscriptionPaymentAttempt = {
   idempotencyKey: string
   orderId?: string
+  paymentIntentId?: string
   paymentMethod: PaymentMethod
   planId: string
   provider: string
@@ -194,6 +195,25 @@ function CatalogPlanRow({
   const busy = createMutation.isPending || paymentMutation.isPending
 
   useEffect(() => {
+    if (!matchesSubscriptionReturn(attempt)) return
+    const url = new URL(window.location.href)
+    const status = url.searchParams.get('redirect_status')
+    if (status === 'succeeded') setPhase('succeeded')
+    else if (status === 'processing') setPhase('processing')
+    for (const parameter of [
+      'flow',
+      'subscription_order_id',
+      'subscription_payment_intent',
+      'payment_intent',
+      'payment_intent_client_secret',
+      'redirect_status',
+    ]) {
+      url.searchParams.delete(parameter)
+    }
+    window.history.replaceState(window.history.state, '', url)
+  }, [attempt])
+
+  useEffect(() => {
     if (orderQuery.data === undefined) return
     setOrder(orderQuery.data)
     if (orderQuery.data.status === 'paid') {
@@ -228,7 +248,7 @@ function CatalogPlanRow({
     paymentMutation.reset()
   }
 
-  const submitPayment = async (orderId: string, paymentMethod: PaymentMethod) => {
+  const submitPayment = async (orderId: string, paymentMethod: PaymentMethod, idempotencyKey = attempt?.idempotencyKey ?? createSubscriptionIdempotencyKey()) => {
     const result = await paymentMutation.mutateAsync({
       body: { payment_method: paymentMethod },
       orderId,
@@ -237,8 +257,9 @@ function CatalogPlanRow({
     setPayment(result.payment)
     setPhase(undefined)
     persistAttempt({
-      idempotencyKey: attempt?.idempotencyKey ?? createSubscriptionIdempotencyKey(),
+      idempotencyKey,
       orderId,
+      paymentIntentId: result.payment.payment_intent_id ?? undefined,
       paymentMethod,
       planId: plan.plan_id,
       provider: plan.price_provider,
@@ -267,13 +288,16 @@ function CatalogPlanRow({
       price_amount_minor: plan.price_amount_minor,
     })
     setOrder(nextOrder)
-    await submitPayment(nextOrder.order_id, method.payment_method)
+    await submitPayment(nextOrder.order_id, method.payment_method, idempotencyKey)
   }
 
   const resumePayment = async () => {
     if (attempt?.orderId === undefined || method === undefined || busy) return
-    await submitPayment(attempt.orderId, method.payment_method)
+    await submitPayment(attempt.orderId, method.payment_method, attempt.idempotencyKey)
   }
+
+  const runCreateOrder = () => { void createOrder().catch(() => undefined) }
+  const runResumePayment = () => { void resumePayment().catch(() => undefined) }
 
   const refreshOrder = async () => {
     const refreshed = await orderQuery.refetch()
@@ -350,10 +374,20 @@ function CatalogPlanRow({
               })}
             </div>
           ) : null}
-          <Button type="button" color="primary" size="sm" className="w-fit" isDisabled={method === undefined || busy} onClick={() => void createOrder()}>
+          <Button type="button" color="primary" size="sm" className="w-fit" isDisabled={method === undefined || busy} onClick={runCreateOrder}>
             {busy ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : <CreditCard className="size-3.5" aria-hidden="true" />}
             {t(busy ? 'subscriptions.catalog.paymentCreating' : 'subscriptions.catalog.orderCreate')}
           </Button>
+          {createMutation.isError || paymentMutation.isError ? (
+            <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-destructive">
+              <AlertTriangle className="size-3.5" aria-hidden="true" />
+              <span>{t(`subscriptions.errors.${paymentErrorKey}`)}</span>
+              <Button type="button" size="sm" variant="bordered" isDisabled={busy} onClick={attempt?.orderId ? runResumePayment : runCreateOrder}>
+                <RefreshCw className="size-3.5" aria-hidden="true" />
+                {t('subscriptions.catalog.retryPayment')}
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -389,9 +423,13 @@ function CatalogPlanRow({
                 {t('subscriptions.catalog.refreshPayment')}
               </Button>
             </div>
-          ) : payment?.client_secret && stripe ? (
+          ) : payment?.client_secret && payment.payment_intent_id && stripe ? (
             <Elements stripe={stripe} options={{ clientSecret: payment.client_secret, appearance: stripeTopupAppearance('light'), locale: locale === 'zh-CN' ? 'zh' : 'en' }}>
-              <WalletStripePaymentForm amountLabel={amountLabel} returnUrl={`${window.location.origin}/console/wallet`} onConfirmed={paymentConfirmed} />
+              <WalletStripePaymentForm
+                amountLabel={amountLabel}
+                returnUrl={subscriptionReturnUrl(order.order_id, payment.payment_intent_id)}
+                onConfirmed={paymentConfirmed}
+              />
             </Elements>
           ) : redirectUrl && method?.qr_enabled && method.provider === 'epay' && method.payment_method !== 'card' ? (
             <EpayQrPayment url={redirectUrl} paymentMethod={method.payment_method} refreshing={orderQuery.isFetching} onRefresh={() => void refreshOrder()} />
@@ -412,7 +450,7 @@ function CatalogPlanRow({
             <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-destructive">
               <AlertTriangle className="size-3.5" aria-hidden="true" />
               <span>{t(`subscriptions.errors.${paymentErrorKey}`)}</span>
-              <Button type="button" size="sm" variant="bordered" isDisabled={busy} onClick={() => void (attempt?.orderId ? resumePayment() : createOrder())}>
+              <Button type="button" size="sm" variant="bordered" isDisabled={busy} onClick={attempt?.orderId ? runResumePayment : runCreateOrder}>
                 <RefreshCw className="size-3.5" aria-hidden="true" />
                 {t('subscriptions.catalog.retryPayment')}
               </Button>
@@ -434,7 +472,7 @@ function CatalogPlanRow({
           ) : (
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="text-muted-foreground">{t('subscriptions.catalog.paymentResumeHint')}</span>
-              <Button type="button" color="primary" size="sm" isDisabled={method === undefined || busy} onClick={() => void resumePayment()}>
+              <Button type="button" color="primary" size="sm" isDisabled={method === undefined || busy} onClick={runResumePayment}>
                 <RotateCcw className="size-3.5" aria-hidden="true" />
                 {t('subscriptions.catalog.resumePayment')}
               </Button>
@@ -468,6 +506,23 @@ function subscriptionAttemptStorageKey(planId: string) {
   return `anyflows.subscription.payment-attempt:${planId}`
 }
 
+function subscriptionReturnUrl(orderId: string, paymentIntentId: string | null) {
+  const url = new URL('/console/wallet', window.location.origin)
+  url.searchParams.set('flow', 'subscription')
+  url.searchParams.set('subscription_order_id', orderId)
+  if (paymentIntentId) url.searchParams.set('subscription_payment_intent', paymentIntentId)
+  return url.toString()
+}
+
+function matchesSubscriptionReturn(attempt: StoredSubscriptionPaymentAttempt | undefined) {
+  if (!attempt?.orderId || !attempt.paymentIntentId) return false
+  const parameters = new URL(window.location.href).searchParams
+  return parameters.get('flow') === 'subscription'
+    && parameters.get('subscription_order_id') === attempt.orderId
+    && parameters.get('subscription_payment_intent') === attempt.paymentIntentId
+    && parameters.get('payment_intent') === attempt.paymentIntentId
+}
+
 function readStoredAttempt(plan: Pick<SubscriptionCatalogPlan, 'plan_id' | 'price_provider'>): StoredSubscriptionPaymentAttempt | undefined {
   try {
     const value: unknown = JSON.parse(sessionStorage.getItem(subscriptionAttemptStorageKey(plan.plan_id)) ?? 'null')
@@ -475,6 +530,8 @@ function readStoredAttempt(plan: Pick<SubscriptionCatalogPlan, 'plan_id' | 'pric
     const candidate = value as Partial<StoredSubscriptionPaymentAttempt>
     if (candidate.planId !== plan.plan_id || candidate.provider !== plan.price_provider || typeof candidate.idempotencyKey !== 'string') return undefined
     if (!['card', 'alipay', 'wxpay'].includes(candidate.paymentMethod ?? '')) return undefined
+    if (candidate.orderId !== undefined && typeof candidate.orderId !== 'string') return undefined
+    if (candidate.paymentIntentId !== undefined && typeof candidate.paymentIntentId !== 'string') return undefined
     return candidate as StoredSubscriptionPaymentAttempt
   } catch {
     return undefined

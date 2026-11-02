@@ -850,6 +850,37 @@ async fn does_not_retry_client_bad_request() {
 }
 
 #[tokio::test]
+async fn race_does_not_hide_client_bad_request_behind_fallback_success() {
+    let (address, server) = spawn_proxy(vec![
+        ProxyResponse {
+            status_line: "400 Bad Request",
+            body: b"{}",
+        },
+        ProxyResponse {
+            status_line: "200 OK",
+            body: br#"{"ok":"must-not-win"}"#,
+        },
+    ]);
+    let client = proxy_client(address);
+    let machine = RelayStateMachine::new(vec![
+        grouped_candidate(&client, "http://first.invalid", 1)
+            .with_race_width(Some(2)),
+        grouped_candidate(&client, "http://second.invalid", 1)
+            .with_race_width(Some(2)),
+    ])
+    .unwrap();
+
+    let error = machine.execute_with_report(request()).await.unwrap_err();
+    assert_eq!(error.error(), RelayError::Upstream(UpstreamError::BadRequest));
+    assert!(error
+        .report()
+        .failures()
+        .iter()
+        .any(|failure| failure.error() == UpstreamError::BadRequest));
+    server.join().unwrap();
+}
+
+#[tokio::test]
 async fn credential_url_and_finalization_failures_fall_through_to_next_candidate() {
     let (address, server) = spawn_proxy(vec![ProxyResponse {
         status_line: "200 OK",

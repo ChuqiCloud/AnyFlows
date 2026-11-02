@@ -10,6 +10,8 @@ export type TopupAttempt = Readonly<{
   amountMinor: number
   paymentMethod: PaymentMethod
   provider: PaymentProvider
+  orderId?: string
+  paymentIntentId?: string
 }>
 
 type RandomValues = (buffer: Uint8Array<ArrayBuffer>) => Uint8Array<ArrayBuffer>
@@ -77,6 +79,8 @@ export function parseStoredTopupAttempt(
       amountMinor: parsed.amountMinor as number,
       paymentMethod: parsed.paymentMethod,
       provider: parsed.provider,
+      ...(typeof parsed.orderId === 'string' && parsed.orderId.length > 0 ? { orderId: parsed.orderId } : {}),
+      ...(typeof parsed.paymentIntentId === 'string' && parsed.paymentIntentId.length > 0 ? { paymentIntentId: parsed.paymentIntentId } : {}),
     }
   } catch {
     return undefined
