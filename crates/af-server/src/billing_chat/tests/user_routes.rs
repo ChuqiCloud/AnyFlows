@@ -116,7 +116,7 @@ async fn routed_fixture(label: &str) -> (SqliteTestDatabase, UserRouteRuntime, G
     let backend = database.seed().get_database_backend();
     for sql in [
         "INSERT INTO groups (id, name, display_name, flags) VALUES (3, 'route-a', 'A', '{}'), (4, 'route-b', 'B', '{}')".to_owned(),
-        "INSERT INTO users (id, username, default_group_id, aff_code, quota, settings) VALUES (2, 'routed-user', 3, 'routed-aff', 1000000000, '{}')".to_owned(),
+        "INSERT INTO users (id, username, status, default_group_id, aff_code, quota, settings) VALUES (2, 'routed-user', 1, 3, 'routed-aff', 1000000000, '{}')".to_owned(),
         format!("INSERT INTO tokens (id, user_id, key_hash, key_prefix, name, status, remain_quota) VALUES (1, 2, '{}', 'sk-route', 'routed-key', 1, 1000000000)", "ab".repeat(32)),
         "INSERT INTO channels (id, name, \"type\", protocol, model_mapping, param_override, header_override, settings) VALUES (1, 'route-channel', 'openai', 'openai_chat', '{}', '{}', '{}', '{}')".to_owned(),
     ] {
