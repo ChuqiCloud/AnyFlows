@@ -13,6 +13,7 @@ const stripeReturnParameters = [
 const paymentFlowParameters = ['flow'] as const
 const topupReturnParameters = ['topup_order_id', 'topup_payment_intent'] as const
 const epayReturnParameters = [
+  'epay_return',
   'pid',
   'trade_no',
   'out_trade_no',
@@ -81,18 +82,9 @@ export function usePaymentRedirectStatus() {
       return
     }
     const parametersToRemove = flow === 'topup'
-      ? [...paymentFlowParameters, ...topupReturnParameters, ...stripeReturnParameters]
-      : stripeReturnParameters
-    for (const parameter of parametersToRemove) {
-      if (!url.searchParams.has(parameter)) continue
-      url.searchParams.delete(parameter)
-      changed = true
-    }
-    for (const parameter of epayReturnParameters) {
-      if (!url.searchParams.has(parameter)) continue
-      url.searchParams.delete(parameter)
-      changed = true
-    }
+      ? [...paymentFlowParameters, ...topupReturnParameters, ...stripeReturnParameters, ...epayReturnParameters]
+      : [...stripeReturnParameters, ...epayReturnParameters]
+    changed = removePaymentReturnParameters(url, parametersToRemove) || changed
     if (changed) window.history.replaceState(window.history.state, '', url)
   }, [])
   return status
@@ -120,17 +112,50 @@ function topupStorageKey(scope: string) {
 
 /** 支付网关回跳参数统一落在查询串上。 */
 function paymentReturnParameters(url: URL) {
-  return new URLSearchParams(url.search)
+  const parameters = new URLSearchParams(url.search)
+  const hashQuery = url.hash.indexOf('?')
+  if (hashQuery >= 0) {
+    for (const [key, value] of new URLSearchParams(url.hash.slice(hashQuery + 1))) {
+      parameters.set(key, value)
+    }
+  }
+  return parameters
 }
 
 function matchesStoredTopupReturn(url: URL) {
   const parameters = paymentReturnParameters(url)
-  if (parameters.get('flow') !== 'topup') return false
   const attempt = readStoredTopupAttempt()
-  if (!attempt?.orderId || !attempt.paymentIntentId) return false
-  if (parameters.get('topup_order_id') !== attempt.orderId) return false
-  return parameters.get('topup_payment_intent') === attempt.paymentIntentId
+  if (!attempt?.orderId || parameters.get('flow') === 'subscription') return false
+  if (attempt.provider === 'epay') {
+    return parameters.get('out_trade_no') === attempt.orderId
+      && epayReturnParameters.some((parameter) => parameter !== 'out_trade_no' && parameters.has(parameter))
+  }
+  if (parameters.get('flow') !== 'topup' || !attempt.paymentIntentId) return false
+  return parameters.get('topup_order_id') === attempt.orderId
+    && parameters.get('topup_payment_intent') === attempt.paymentIntentId
     && parameters.get('payment_intent') === attempt.paymentIntentId
+}
+
+function removePaymentReturnParameters(url: URL, names: readonly string[]) {
+  const wanted = new Set(names)
+  let changed = false
+  for (const parameter of names) {
+    if (!url.searchParams.has(parameter)) continue
+    url.searchParams.delete(parameter)
+    changed = true
+  }
+  const hashQuery = url.hash.indexOf('?')
+  if (hashQuery < 0) return changed
+  const prefix = url.hash.slice(0, hashQuery)
+  const hashParameters = new URLSearchParams(url.hash.slice(hashQuery + 1))
+  for (const parameter of wanted) {
+    if (!hashParameters.has(parameter)) continue
+    hashParameters.delete(parameter)
+    changed = true
+  }
+  const query = hashParameters.toString()
+  url.hash = query ? `${prefix}?${query}` : prefix
+  return changed
 }
 
 /** 跟随全局主题切换 Stripe iframe 外观，不复制站内主题状态。 */
