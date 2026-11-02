@@ -48,6 +48,10 @@ const subscriptionPlan = {
   plan_id: 'ci-subscription-plan', name: 'CI subscription plan', quota_amount: 100000,
   cycle: 'monthly', plan_version: 1, price_provider: 'epay', price_currency: 'CNY', price_amount_minor: 1000,
 }
+const terminalSubscriptionPlan = {
+  plan_id: 'ci-terminal-subscription-plan', name: 'CI terminal subscription plan', quota_amount: 200000,
+  cycle: 'monthly', plan_version: 1, price_provider: 'stripe', price_currency: 'USD', price_amount_minor: 2000,
+}
 const groupWindow = { usage: 0, started_at: 1700000000, resets_at: 1700086400 }
 const group = {
   id: 1, name: 'ci-group', display_name: 'CI group', ratio_micros: 1000000,
@@ -57,6 +61,7 @@ const group = {
   rpm_limit: null, fallback_group_id: null, flags: {},
 }
 const subscriptionCreateRequests = []
+let terminalSubscriptionOrderStatus = 'failed'
 let modelMode = 'ready'
 let server
 let browser
@@ -137,6 +142,15 @@ try {
       await route.fulfill({ status: 503, contentType: 'application/json', body: '{"code":"topup_unavailable"}' })
       return
     }
+    if (path === '/api/account/subscription-orders/ci-terminal-order' && request.method() === 'GET' && role === 'user') {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+        order_id: 'ci-terminal-order', plan_id: terminalSubscriptionPlan.plan_id, plan_version: 1,
+        price_provider: 'stripe', price_currency: 'USD', price_amount_minor: 2000, quota_amount: 200000,
+        status: terminalSubscriptionOrderStatus, version: 1, expires_at: null, paid_at: null,
+        created_at: 1700000000, updated_at: 1700000000, replayed: false,
+      }) })
+      return
+    }
     if (request.method() !== 'GET' || (role !== 'admin' && path.startsWith('/api/admin/'))) {
       errors.push(`Unauthorized or unexpected request: ${request.method()} ${path} (${role})`)
       await route.fulfill({ status: 403, contentType: 'application/json', body: '{"code":"forbidden"}' })
@@ -164,9 +178,12 @@ try {
       case '/api/account/wallet/entries':
       case '/api/account/refund-reconciliations': data = { entries: [], next_cursor: null }; break
       case '/api/account/subscriptions': data = { subscriptions: [], next_cursor: null }; break
-      case '/api/account/subscription-catalog': data = { plans: [subscriptionPlan] }; break
+      case '/api/account/subscription-catalog': data = { plans: [subscriptionPlan, terminalSubscriptionPlan] }; break
       case '/api/account/wallet/topups/config':
-        data = { methods: [{ provider: 'epay', payment_method: 'alipay', currency: 'CNY', min_amount_minor: 50, max_amount_minor: 99999999, qr_enabled: false }] }
+        data = { methods: [
+          { provider: 'epay', payment_method: 'alipay', currency: 'CNY', min_amount_minor: 50, max_amount_minor: 99999999, qr_enabled: false },
+          { provider: 'stripe', payment_method: 'card', currency: 'USD', min_amount_minor: 50, max_amount_minor: 99999999, publishable_key: null, qr_enabled: false },
+        ] }
         break
       case '/api/tokens': data = { tokens: [], next_cursor: null, capacity: 32 }; break
       case '/api/account/usage-logs': data = { logs: [], failed_logs: [], next_cursor: null, failed_next_cursor: null }; break
@@ -259,6 +276,33 @@ try {
   assert.equal(subscriptionCreateRequests[1].idempotency_key, subscriptionCreateRequests[0].idempotency_key, 'Retry keeps the original subscription idempotency key')
   assert.equal(await subscriptionRow.getByText(label('subscriptions.catalog.orderId'), { exact: true }).count(), 0, 'Failed retry still has no order')
   await page.screenshot({ path: resolve(screenshots, 'subscription-create-failure.png'), fullPage: true, animations: 'disabled' })
+
+  // A redirect may report processing while the server has already recorded a
+  // terminal order. The terminal order state must win and expose a new-order
+  // action for failed, canceled, and expired orders.
+  await page.evaluate((planId) => {
+    sessionStorage.setItem(`anyflows.subscription.payment-attempt:${planId}`, JSON.stringify({
+      idempotencyKey: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', orderId: 'ci-terminal-order',
+      paymentIntentId: 'ci-terminal-payment', paymentMethod: 'card', planId, provider: 'stripe',
+    }))
+  }, terminalSubscriptionPlan.plan_id)
+  for (const status of ['failed', 'canceled', 'expired']) {
+    terminalSubscriptionOrderStatus = status
+    await open(`/console/wallet?flow=subscription&subscription_order_id=ci-terminal-order&subscription_payment_intent=ci-terminal-payment&payment_intent=ci-terminal-payment&redirect_status=processing`, 'user')
+    const terminalCatalog = page.getByRole('region', { name: label('subscriptions.catalog.title'), exact: true })
+    const terminalRow = terminalCatalog.getByRole('article').filter({ has: page.getByRole('heading', { name: terminalSubscriptionPlan.name, exact: true }) })
+    const newOrder = terminalRow.getByRole('button', { name: label('subscriptions.catalog.newOrder'), exact: true })
+    await newOrder.waitFor()
+    await page.waitForFunction(() => !new URL(window.location.href).searchParams.has('flow'))
+    assert.equal(await terminalRow.getByText(label('subscriptions.catalog.paymentProcessing'), { exact: true }).count(), 0, `${status} terminal order must not remain in processing state`)
+    assert.equal(await terminalRow.getByText(label(`subscriptions.catalog.payment${status[0].toUpperCase()}${status.slice(1)}`), { exact: true }).count(), 1, `${status} terminal order shows its server state`)
+    if (status === 'expired') {
+      await newOrder.click()
+      await terminalRow.getByRole('button', { name: label('subscriptions.catalog.orderCreate'), exact: true }).waitFor()
+      assert.equal(subscriptionCreateRequests.length, 2, 'Resetting a terminal order does not automatically create another order')
+    }
+  }
+  await page.screenshot({ path: resolve(screenshots, 'subscription-terminal-order.png'), fullPage: true, animations: 'disabled' })
 
   // Render the real Playground through App so missing component CSS cannot pass
   // as it could in an isolated fixture with its own layout rules.
@@ -415,7 +459,7 @@ try {
   await visibleNav().waitFor({ state: 'hidden' })
   await page.screenshot({ path: resolve(screenshots, 'admin-system-mobile.png'), fullPage: true, animations: 'disabled' })
   assert.deepEqual(errors, [])
-  console.log('Navigation browser checks passed for web-next: landing, language, user overview, subscription create failure and retry, Playground composer layout and cancellation, group ratio input focus, administrator groups, and mobile drawer.')
+  console.log('Navigation browser checks passed for web-next: landing, language, user overview, subscription create failure and retry, terminal subscription orders after redirect, Playground composer layout and cancellation, group ratio input focus, administrator groups, and mobile drawer.')
 } catch (error) {
   if (page) await page.screenshot({ path: resolve(screenshots, 'failure.png'), fullPage: true, animations: 'disabled' }).catch(() => {})
   console.error(serverOutput)

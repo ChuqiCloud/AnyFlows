@@ -411,6 +411,15 @@ function CatalogPlanRow({
                 {t('subscriptions.catalog.refreshSubscription')}
               </Button>
             </div>
+          ) : ['failed', 'canceled', 'expired'].includes(order.status) ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-destructive">
+              <AlertTriangle className="size-3.5" aria-hidden="true" />
+              <span>{t(`subscriptions.catalog.payment${order.status[0].toUpperCase()}${order.status.slice(1)}`)}</span>
+              <Button type="button" size="sm" variant="bordered" onClick={clearAttempt}>
+                <RotateCcw className="size-3.5" aria-hidden="true" />
+                {t('subscriptions.catalog.newOrder')}
+              </Button>
+            </div>
           ) : phase !== undefined ? (
             <div className="flex flex-wrap items-center gap-2 text-xs text-warning-foreground">
               <RefreshCw className={orderQuery.isFetching ? 'size-3.5 animate-spin' : 'size-3.5'} aria-hidden="true" />
@@ -456,15 +465,6 @@ function CatalogPlanRow({
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" />
               {t('subscriptions.catalog.paymentCreating')}
-            </div>
-          ) : ['failed', 'canceled', 'expired'].includes(order.status) ? (
-            <div className="flex flex-wrap items-center gap-2 text-xs text-destructive">
-              <AlertTriangle className="size-3.5" aria-hidden="true" />
-              <span>{t(`subscriptions.catalog.payment${order.status[0].toUpperCase()}${order.status.slice(1)}`)}</span>
-              <Button type="button" size="sm" variant="bordered" onClick={clearAttempt}>
-                <RotateCcw className="size-3.5" aria-hidden="true" />
-                {t('subscriptions.catalog.newOrder')}
-              </Button>
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2 text-xs">
