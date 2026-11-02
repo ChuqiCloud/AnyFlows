@@ -1,6 +1,11 @@
 //! Personal route policy selection stays outside the per-group relay and billing lifecycle.
 
-use std::{cmp::Ordering, num::NonZeroU32, sync::Arc, time::{Duration, SystemTime}};
+use std::{
+    cmp::Ordering,
+    num::NonZeroU32,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use af_billing::{
     PricingContext, RequestPricingSnapshot, RequestPricingSnapshotError,
@@ -8,12 +13,13 @@ use af_billing::{
 };
 use af_cache::{RequestRateLimitOutcome, RequestRateLimitRule, RequestRateLimitSubject};
 use af_db::{
-    AdminGroupLookupOutcome, AdminGroupRepository, GroupModelPolicyRepository, GroupModelPolicyRepositoryError, UserRouteMemberRecord,
-    UserRouteModelHealth, UserRouteRecord, UserRouteRepository,
+    AdminGroupLookupOutcome, AdminGroupRepository, GroupModelPolicyRepository,
+    GroupModelPolicyRepositoryError, UserRouteMemberRecord, UserRouteModelHealth, UserRouteRecord,
+    UserRouteRepository,
 };
 use af_domain::{
-    AfError, GatewayPrincipal, GroupId, NetworkFailureKind, Operation, Protocol, RateLimitScope, UpstreamError,
-    UserRouteStrategy,
+    AfError, GatewayPrincipal, GroupId, NetworkFailureKind, Operation, Protocol, RateLimitScope,
+    UpstreamError, UserRouteStrategy,
 };
 use af_protocol::Usage;
 use af_scheduler::InMemoryChannelIndex;
@@ -62,17 +68,33 @@ trait CandidateOrdering {
 }
 
 impl CandidateOrdering for UserRouteCandidate {
-    fn group_id(&self) -> GroupId { self.group_id }
-    fn member(&self) -> &UserRouteMemberRecord { &self.member }
-    fn quote(&self) -> i64 { self.quoted_quota }
-    fn health(&self) -> Option<&UserRouteModelHealth> { self.health.as_ref() }
+    fn group_id(&self) -> GroupId {
+        self.group_id
+    }
+    fn member(&self) -> &UserRouteMemberRecord {
+        &self.member
+    }
+    fn quote(&self) -> i64 {
+        self.quoted_quota
+    }
+    fn health(&self) -> Option<&UserRouteModelHealth> {
+        self.health.as_ref()
+    }
 }
 
 impl CandidateOrdering for QuotedGroup {
-    fn group_id(&self) -> GroupId { self.group_id }
-    fn member(&self) -> &UserRouteMemberRecord { &self.member }
-    fn quote(&self) -> i64 { self.quoted_quota }
-    fn health(&self) -> Option<&UserRouteModelHealth> { self.health.as_ref() }
+    fn group_id(&self) -> GroupId {
+        self.group_id
+    }
+    fn member(&self) -> &UserRouteMemberRecord {
+        &self.member
+    }
+    fn quote(&self) -> i64 {
+        self.quoted_quota
+    }
+    fn health(&self) -> Option<&UserRouteModelHealth> {
+        self.health.as_ref()
+    }
 }
 
 impl UserRouteRuntime {
@@ -104,22 +126,34 @@ impl UserRouteRuntime {
         let Some(admission) = &self.group_admission else {
             return Ok(());
         };
-        let group = match admission.groups.get(group_id).await.map_err(|_| AfError::Internal)? {
+        let group = match admission
+            .groups
+            .get(group_id)
+            .await
+            .map_err(|_| AfError::Internal)?
+        {
             AdminGroupLookupOutcome::Found(group) => group,
             AdminGroupLookupOutcome::NotFound => return Err(AfError::ModelNotAllowed),
         };
         let limit = match group.rpm_limit() {
             None | Some(0) => return Ok(()),
-            Some(value) => u32::try_from(value).ok().and_then(NonZeroU32::new)
+            Some(value) => u32::try_from(value)
+                .ok()
+                .and_then(NonZeroU32::new)
                 .ok_or(AfError::Internal)?,
         };
         let rule = RequestRateLimitRule::new(
-            RequestRateLimitSubject::Group(group_id), limit, Duration::from_secs(60),
-        ).map_err(|_| AfError::Internal)?;
+            RequestRateLimitSubject::Group(group_id),
+            limit,
+            Duration::from_secs(60),
+        )
+        .map_err(|_| AfError::Internal)?;
         let store = admission.store.as_ref().ok_or(AfError::Internal)?;
         match store.admit(&[rule]).await.map_err(|_| AfError::Internal)? {
             RequestRateLimitOutcome::Admitted => Ok(()),
-            RequestRateLimitOutcome::Limited(_) => Err(UpstreamError::rate_limited(RateLimitScope::Window).into()),
+            RequestRateLimitOutcome::Limited(_) => {
+                Err(UpstreamError::rate_limited(RateLimitScope::Window).into())
+            }
         }
     }
 
@@ -172,7 +206,11 @@ impl UserRouteRuntime {
     ) -> Result<bool, AfError> {
         if !self
             .repository
-            .check_route_member(principal.user_id(), principal.user_route_id().ok_or(AfError::InvalidApiKey)?, group_id)
+            .check_route_member(
+                principal.user_id(),
+                principal.user_route_id().ok_or(AfError::InvalidApiKey)?,
+                group_id,
+            )
             .await
             .map_err(map_repository_error)?
         {
@@ -186,11 +224,7 @@ impl UserRouteRuntime {
         }
     }
 
-    pub(crate) async fn selected(
-        &self,
-        route_id: i64,
-        group_id: GroupId,
-    ) -> Result<(), AfError> {
+    pub(crate) async fn selected(&self, route_id: i64, group_id: GroupId) -> Result<(), AfError> {
         self.repository
             .record_selection(route_id, group_id)
             .await
@@ -205,7 +239,15 @@ impl UserRouteRuntime {
         latency_ms: u64,
         retryable_failure: bool,
     ) {
-        self.feedback_for(plan.route.id, &plan.model, group_id, success, latency_ms, retryable_failure).await;
+        self.feedback_for(
+            plan.route.id,
+            &plan.model,
+            group_id,
+            success,
+            latency_ms,
+            retryable_failure,
+        )
+        .await;
     }
 
     pub(crate) async fn feedback_for(
@@ -320,13 +362,19 @@ impl UserRouteRuntime {
         }
         order_candidates(plan.route.strategy, &mut candidates)?;
         if plan.route.strategy == UserRouteStrategy::RoundRobin {
-            let ids = candidates.iter().map(|value| value.group_id).collect::<Vec<_>>();
+            let ids = candidates
+                .iter()
+                .map(|value| value.group_id)
+                .collect::<Vec<_>>();
             let selected = self
                 .repository
                 .claim_round_robin(plan.route.id, &ids)
                 .await
                 .map_err(map_repository_error)?;
-            if let Some(index) = candidates.iter().position(|value| value.group_id == selected) {
+            if let Some(index) = candidates
+                .iter()
+                .position(|value| value.group_id == selected)
+            {
                 candidates.rotate_left(index);
             } else {
                 return Err(AfError::Internal);
@@ -348,45 +396,90 @@ impl UserRouteRuntime {
             if quoted_quota < 0 || !seen.insert(group_id) {
                 return Err(AfError::Internal);
             }
-            let member = plan.route.members.iter().find(|member| member.group_id == group_id)
-                .ok_or(AfError::ModelNotAllowed)?.clone();
-            let health = plan.health.iter().find(|health| health.group_id == group_id).cloned();
-            if health.as_ref().and_then(|health| health.cooldown_until_millis)
-                .is_some_and(|until| until > now) {
+            let member = plan
+                .route
+                .members
+                .iter()
+                .find(|member| member.group_id == group_id)
+                .ok_or(AfError::ModelNotAllowed)?
+                .clone();
+            let health = plan
+                .health
+                .iter()
+                .find(|health| health.group_id == group_id)
+                .cloned();
+            if health
+                .as_ref()
+                .and_then(|health| health.cooldown_until_millis)
+                .is_some_and(|until| until > now)
+            {
                 continue;
             }
-            candidates.push(QuotedGroup { group_id, member, quoted_quota, health });
+            candidates.push(QuotedGroup {
+                group_id,
+                member,
+                quoted_quota,
+                health,
+            });
         }
         if candidates.is_empty() {
             return Err(UpstreamError::overloaded().into());
         }
         order_candidates(plan.route.strategy, &mut candidates)?;
-        let mut groups = candidates.into_iter().map(|candidate| candidate.group_id).collect::<Vec<_>>();
+        let mut groups = candidates
+            .into_iter()
+            .map(|candidate| candidate.group_id)
+            .collect::<Vec<_>>();
         if plan.route.strategy == UserRouteStrategy::RoundRobin {
-            let selected = self.repository.claim_round_robin(plan.route.id, &groups).await.map_err(map_repository_error)?;
-            let index = groups.iter().position(|group| *group == selected).ok_or(AfError::Internal)?;
+            let selected = self
+                .repository
+                .claim_round_robin(plan.route.id, &groups)
+                .await
+                .map_err(map_repository_error)?;
+            let index = groups
+                .iter()
+                .position(|group| *group == selected)
+                .ok_or(AfError::Internal)?;
             groups.rotate_left(index);
         }
         Ok(groups)
     }
 
-    pub(crate) fn supports_protocol(&self, group_id: GroupId, model: &str, protocol: Protocol) -> Result<bool, AfError> {
+    pub(crate) fn supports_protocol(
+        &self,
+        group_id: GroupId,
+        model: &str,
+        protocol: Protocol,
+    ) -> Result<bool, AfError> {
         self.supports_operation(group_id, model, protocol, None)
     }
 
-    fn supports_operation(&self, group_id: GroupId, model: &str, protocol: Protocol, operation: Option<Operation>) -> Result<bool, AfError> {
+    fn supports_operation(
+        &self,
+        group_id: GroupId,
+        model: &str,
+        protocol: Protocol,
+        operation: Option<Operation>,
+    ) -> Result<bool, AfError> {
         let Some(index) = &self.channel_index else {
             return Ok(true);
         };
         let snapshot = index.snapshot().map_err(|_| AfError::Internal)?;
-        for candidate in snapshot.candidates(group_id, model).map_err(|_| AfError::InvalidRequest)? {
-            let target = snapshot.runtime_target(candidate.channel_id()).ok_or(AfError::Internal)?;
+        for candidate in snapshot
+            .candidates(group_id, model)
+            .map_err(|_| AfError::InvalidRequest)?
+        {
+            let target = snapshot
+                .runtime_target(candidate.channel_id())
+                .ok_or(AfError::Internal)?;
             if operation == Some(Operation::ResponsesCompact)
-                && target.schedulable_responses_compact_model(model).is_none() {
+                && target.schedulable_responses_compact_model(model).is_none()
+            {
                 continue;
             }
             if compatible_protocol(protocol, target.protocol())
-                && target.channel_type().supports_runtime(target.protocol()) {
+                && target.channel_type().supports_runtime(target.protocol())
+            {
                 return Ok(true);
             }
         }
@@ -395,9 +488,18 @@ impl UserRouteRuntime {
 }
 
 fn compatible_protocol(requested: Protocol, upstream: Protocol) -> bool {
-    let conversation = |protocol| matches!(protocol,
-        Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Anthropic | Protocol::Gemini);
-    requested == upstream || (conversation(requested) && conversation(upstream))
+    let conversation = |protocol| {
+        matches!(
+            protocol,
+            Protocol::OpenAiChat
+                | Protocol::OpenAiResponses
+                | Protocol::Anthropic
+                | Protocol::Gemini
+        )
+    };
+    requested == upstream
+        || (conversation(requested) && conversation(upstream))
+        || (requested == Protocol::OpenAiImages && upstream == Protocol::OpenAiChat)
         || (matches!(requested, Protocol::JinaRerank | Protocol::CohereRerank)
             && matches!(upstream, Protocol::JinaRerank | Protocol::CohereRerank))
 }
@@ -455,9 +557,7 @@ pub(crate) fn permits_group_failover(error: &AfError) -> bool {
             | UpstreamError::ProtocolError
             | UpstreamError::ServerError { .. },
         ) => true,
-        AfError::Upstream(UpstreamError::Network { kind }) => {
-            *kind != NetworkFailureKind::Policy
-        }
+        AfError::Upstream(UpstreamError::Network { kind }) => *kind != NetworkFailureKind::Policy,
         _ => false,
     }
 }
@@ -467,9 +567,9 @@ fn order_candidates<T: CandidateOrdering>(
     candidates: &mut Vec<T>,
 ) -> Result<(), AfError> {
     match strategy {
-        UserRouteStrategy::Ordered => candidates.sort_by_key(|candidate| {
-            (candidate.member().priority, candidate.group_id())
-        }),
+        UserRouteStrategy::Ordered => {
+            candidates.sort_by_key(|candidate| (candidate.member().priority, candidate.group_id()))
+        }
         UserRouteStrategy::RoundRobin => candidates.sort_by_key(|candidate| {
             (
                 candidate.member().last_selected_at_millis,
@@ -572,6 +672,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn image_requests_accept_chat_upstreams_without_broadening_conversation_compatibility() {
+        for upstream in [Protocol::OpenAiImages, Protocol::OpenAiChat] {
+            assert!(compatible_protocol(Protocol::OpenAiImages, upstream));
+        }
+        for upstream in [
+            Protocol::OpenAiResponses,
+            Protocol::Anthropic,
+            Protocol::Gemini,
+            Protocol::JinaRerank,
+            Protocol::CohereRerank,
+        ] {
+            assert!(!compatible_protocol(Protocol::OpenAiImages, upstream));
+        }
+        for requested in [
+            Protocol::OpenAiChat,
+            Protocol::OpenAiResponses,
+            Protocol::Anthropic,
+            Protocol::Gemini,
+        ] {
+            assert!(!compatible_protocol(requested, Protocol::OpenAiImages));
+        }
+    }
+
+    #[test]
     fn failover_rejects_request_and_policy_errors() {
         for error in [
             AfError::InvalidRequest,
@@ -605,7 +729,10 @@ mod tests {
     fn stable_order_compares_failure_rate_with_smoothed_cold_start() {
         let healthy = health(19, 0, 1_900);
         let unhealthy = health(10, 8, 100);
-        assert_eq!(compare_health(Some(&healthy), Some(&unhealthy)), Ordering::Less);
+        assert_eq!(
+            compare_health(Some(&healthy), Some(&unhealthy)),
+            Ordering::Less
+        );
         assert_eq!(compare_health(Some(&healthy), None), Ordering::Less);
         assert_eq!(compare_health(None, Some(&unhealthy)), Ordering::Greater);
     }
@@ -637,7 +764,12 @@ mod tests {
         let group_id = GroupId::new(group).unwrap();
         QuotedGroup {
             group_id,
-            member: UserRouteMemberRecord { group_id, priority, weight: 1, last_selected_at_millis: None },
+            member: UserRouteMemberRecord {
+                group_id,
+                priority,
+                weight: 1,
+                last_selected_at_millis: None,
+            },
             quoted_quota,
             health: None,
         }

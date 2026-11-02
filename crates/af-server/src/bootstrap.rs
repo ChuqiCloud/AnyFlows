@@ -1829,17 +1829,23 @@ impl Bootstrap<RelayReady> {
         let user_route_runtime = crate::user_route_runtime::UserRouteRuntime::new(
             self.stage.infrastructure.user_route_repository.clone(),
         )
-        .with_group_model_policy(self.stage.infrastructure.group_model_policy_repository.clone())
+        .with_group_model_policy(
+            self.stage
+                .infrastructure
+                .group_model_policy_repository
+                .clone(),
+        )
         .with_channel_index(channel_index.clone())
         .with_group_admission(
             AdminGroupRepository::new(
                 self.stage.infrastructure.infrastructure.database.clone(),
                 Duration::from_secs(self.config.auth().lookup_timeout_secs()),
-            ).map_err(BootstrapError::AdminGroupRepository)?,
+            )
+            .map_err(BootstrapError::AdminGroupRepository)?,
             request_rate_limit_store.clone(),
         );
-        let model_catalog_reader: Arc<dyn ModelCatalogReader> =
-            Arc::new(RuntimeModelCatalogReader::new(
+        let model_catalog_reader: Arc<dyn ModelCatalogReader> = Arc::new(
+            RuntimeModelCatalogReader::new(
                 channel_index.clone(),
                 model_prices.clone(),
                 pricing_source.clone(),
@@ -1848,7 +1854,9 @@ impl Bootstrap<RelayReady> {
                     .infrastructure
                     .group_model_policy_repository
                     .clone(),
-            ).with_user_routes(self.stage.infrastructure.user_route_repository.clone()));
+            )
+            .with_user_routes(self.stage.infrastructure.user_route_repository.clone()),
+        );
         let quota_repository =
             QuotaRepository::new(self.stage.infrastructure.infrastructure.database.clone());
         let quota_repository = match self.stage.infrastructure.extensions.quota.as_ref() {

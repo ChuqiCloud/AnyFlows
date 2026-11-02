@@ -5,8 +5,8 @@ use sea_orm::{ConnectionTrait, DbBackend, QueryResult, Statement};
 
 use super::{
     DatabaseOptions, InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
-    MAX_USER_TOKENS_PER_USER, MigrationOptions, UserTokenCreateRecord, UserTokenDeleteOutcome,
-    UserRouteError, UserRouteMemberWrite, UserRouteRepository, UserRouteWrite,
+    MAX_USER_TOKENS_PER_USER, MigrationOptions, UserRouteError, UserRouteMemberWrite,
+    UserRouteRepository, UserRouteWrite, UserTokenCreateRecord, UserTokenDeleteOutcome,
     UserTokenLookupOutcome, UserTokenMutationOutcome, UserTokenRepository,
     UserTokenRepositoryError, UserTokenWriteRecord,
 };
@@ -244,48 +244,68 @@ async fn user_route_crud_is_owner_scoped_and_delete_keeps_bound_keys_closed()
     let route = routes.create(fixture.owner, route_write(true)).await?;
     assert_eq!(route.members.len(), 1);
     assert_eq!(route.members[0].group_id, GroupId::new(1)?);
-    assert_eq!(routes.get(fixture.other, route.id).await.unwrap_err(), UserRouteError::NotFound);
+    assert_eq!(
+        routes.get(fixture.other, route.id).await.unwrap_err(),
+        UserRouteError::NotFound
+    );
 
-    let token = fixture.repository.create(
-        create_record(fixture.owner, 900, 1).with_user_route_id(Some(route.id)),
-    ).await?;
+    let token = fixture
+        .repository
+        .create(create_record(fixture.owner, 900, 1).with_user_route_id(Some(route.id)))
+        .await?;
     assert_eq!(token.user_route_id(), Some(route.id));
 
     routes.delete(fixture.owner, route.id).await?;
     assert_eq!(
-        routes.lookup_for_token(fixture.owner, token.token_id()).await.unwrap_err(),
+        routes
+            .lookup_for_token(fixture.owner, token.token_id())
+            .await
+            .unwrap_err(),
         UserRouteError::Unavailable,
     );
     assert!(matches!(
-        fixture.repository.update(
-            fixture.owner,
-            token.token_id(),
-            write_record("still-bound", 1, None),
-        ).await,
+        fixture
+            .repository
+            .update(
+                fixture.owner,
+                token.token_id(),
+                write_record("still-bound", 1, None),
+            )
+            .await,
         Err(UserTokenRepositoryError::UserRouteUnavailable),
     ));
-    assert_eq!(routes.get(fixture.owner, route.id).await.unwrap_err(), UserRouteError::NotFound);
+    assert_eq!(
+        routes.get(fixture.owner, route.id).await.unwrap_err(),
+        UserRouteError::NotFound
+    );
     fixture.pool.close().await?;
     Ok(())
 }
 
 #[tokio::test]
-async fn user_route_rejects_fixed_group_binding_and_invalid_members()
--> Result<(), Box<dyn Error>> {
+async fn user_route_rejects_fixed_group_binding_and_invalid_members() -> Result<(), Box<dyn Error>>
+{
     let fixture = fixture().await?;
     let routes = UserRouteRepository::new(fixture.pool.clone(), Duration::from_secs(5))?;
     let route = routes.create(fixture.owner, route_write(true)).await?;
     assert_eq!(
-        fixture.repository.create(
-            create_record(fixture.owner, 901, 1)
-                .with_group_id(Some(GroupId::new(1)?))
-                .with_user_route_id(Some(route.id)),
-        ).await.unwrap_err(),
+        fixture
+            .repository
+            .create(
+                create_record(fixture.owner, 901, 1)
+                    .with_group_id(Some(GroupId::new(1)?))
+                    .with_user_route_id(Some(route.id)),
+            )
+            .await
+            .unwrap_err(),
         UserTokenRepositoryError::InvalidInput,
     );
     let mut invalid = route_write(true);
     invalid.members.push(invalid.members[0].clone());
-    assert_eq!(routes.create(fixture.owner, invalid).await.unwrap_err(), UserRouteError::InvalidInput);
+    assert_eq!(
+        routes.create(fixture.owner, invalid).await.unwrap_err(),
+        UserRouteError::InvalidInput
+    );
     fixture.pool.close().await?;
     Ok(())
 }

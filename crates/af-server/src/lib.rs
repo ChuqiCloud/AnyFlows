@@ -70,7 +70,7 @@ pub use billing_audio::{
 };
 pub use billing_chat::{
     BillingChatService, ChatRoutePlanFuture, ChatRoutePlanner, PlannedChatExecution,
-    PlannedChatExecutionFuture,
+    PlannedChatExecutionFuture, PlannedExecutionFailure,
 };
 pub use billing_compact::{
     BillingResponsesCompactService, PlannedResponsesCompactExecution,

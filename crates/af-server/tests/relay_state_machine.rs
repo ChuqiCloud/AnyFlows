@@ -791,6 +791,7 @@ async fn failed_client_simulation_is_protocol_error_without_fallback() {
         error.error(),
         RelayError::Upstream(UpstreamError::ProtocolError)
     );
+    assert!(error.report().request_aborted());
     assert_eq!(error.report().failures().len(), 1);
     let simulation = error.report().failures()[0]
         .client_simulation()
@@ -825,6 +826,7 @@ async fn race_preserves_fail_closed_client_simulation_for_mixed_widths() {
             error.error(),
             RelayError::Upstream(UpstreamError::ProtocolError)
         );
+        assert!(error.report().request_aborted());
         assert_eq!(error.report().failures().len(), 1);
         assert_eq!(
             error.report().failures()[0]

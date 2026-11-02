@@ -37,9 +37,71 @@ const DEFAULT_MAX_OUTPUT_TOKENS: i64 = 8_192;
 /// 已固定路由计划的一次异步执行结果。
 pub type PlannedChatExecutionFuture = Pin<
     Box<
-        dyn Future<Output = Result<crate::RoutedExecution<ChatResponse>, AfError>> + Send + 'static,
+        dyn Future<Output = Result<crate::RoutedExecution<ChatResponse>, PlannedExecutionFailure>>
+            + Send
+            + 'static,
     >,
 >;
+
+/// 组内执行错误同时保留公开错误分类与请求级终止语义。
+#[derive(Debug, thiserror::Error)]
+#[error("{error}")]
+pub struct PlannedExecutionFailure {
+    #[source]
+    error: AfError,
+    permits_group_failover: bool,
+}
+
+impl PlannedExecutionFailure {
+    /// 返回对外保持兼容的错误分类。
+    #[must_use]
+    pub const fn error(&self) -> &AfError {
+        &self.error
+    }
+
+    /// 消费内部执行错误并交还公开错误分类。
+    #[must_use]
+    pub fn into_error(self) -> AfError {
+        self.error
+    }
+
+    pub(crate) fn permits_group_failover(&self) -> bool {
+        self.permits_group_failover
+    }
+
+    pub(crate) fn terminal(error: AfError) -> Self {
+        Self {
+            error,
+            permits_group_failover: false,
+        }
+    }
+
+    pub(crate) fn from_relay_report(
+        error: AfError,
+        report: &af_relay::RelayAttemptReport,
+    ) -> Self {
+        if report.request_aborted() {
+            Self::terminal(error)
+        } else {
+            error.into()
+        }
+    }
+}
+
+impl From<AfError> for PlannedExecutionFailure {
+    fn from(error: AfError) -> Self {
+        Self {
+            error,
+            permits_group_failover: true,
+        }
+    }
+}
+
+impl From<af_domain::UpstreamError> for PlannedExecutionFailure {
+    fn from(error: af_domain::UpstreamError) -> Self {
+        AfError::from(error).into()
+    }
+}
 
 /// 路由计划生成的异步返回类型；Redis 粘性查找必须在计费预扣前完成。
 pub type ChatRoutePlanFuture<'a> =
@@ -449,9 +511,12 @@ impl BillingChatService {
 
         let routed = match planned.execute().await {
             Ok(routed) => routed,
-            Err(error) => {
+            Err(failure) => {
+                let permits_group_failover = failure.permits_group_failover();
+                let error = failure.into_error();
                 if matches!(subject, crate::model_subject::ModelSubject::User(principal)
                     if principal.user_route_id().is_some())
+                    && permits_group_failover
                     && crate::user_route_runtime::permits_group_failover(&error) {
                     cancel_before_failover(&mut lifecycle, self.precharge.as_deref()).await?;
                     return Err(UserRouteAttemptError::before_delivery(error));

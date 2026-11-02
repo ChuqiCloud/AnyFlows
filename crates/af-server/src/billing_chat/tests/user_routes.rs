@@ -11,6 +11,8 @@ use af_domain::{UpstreamError, UserRouteStrategy};
 enum FirstGroupResult {
     Success,
     Retryable,
+    ProtocolError,
+    RequestAborted,
     BadRequest,
     FullWithoutUsage,
     UnsupportedPlan,
@@ -67,6 +69,10 @@ impl PlannedChatExecution for GroupExecution {
                 match self.first {
                     FirstGroupResult::Success => {}
                     FirstGroupResult::Retryable => return Err(UpstreamError::overloaded().into()),
+                    FirstGroupResult::ProtocolError => return Err(UpstreamError::ProtocolError.into()),
+                    FirstGroupResult::RequestAborted => return Err(
+                        PlannedExecutionFailure::terminal(UpstreamError::ProtocolError.into()),
+                    ),
                     FirstGroupResult::BadRequest => return Err(UpstreamError::BadRequest.into()),
                     FirstGroupResult::FullWithoutUsage => return Ok(crate::RoutedExecution::new(
                         ChatResponse::Full {
@@ -222,6 +228,40 @@ async fn user_route_request_error_and_completed_response_are_never_replayed() {
         ).await;
         assert!(result.is_err());
         assert_eq!(attempts.lock().unwrap().as_slice(), &[GroupId::new(3).unwrap()]);
+        database.close().await;
+    }
+}
+
+#[tokio::test]
+async fn user_route_preserves_request_abort_without_disabling_protocol_error_failover() {
+    for (index, first, should_failover) in [
+        (0, FirstGroupResult::ProtocolError, true),
+        (1, FirstGroupResult::RequestAborted, false),
+    ] {
+        let label = format!("user-route-request-abort-{index}");
+        let (database, runtime, principal) = routed_fixture(&label).await;
+        let attempts = Arc::new(Mutex::new(Vec::new()));
+        let service = paid_service(
+            &database,
+            runtime,
+            GroupPlanner {
+                first,
+                attempts: attempts.clone(),
+                pricing_model_override: None,
+            },
+            metered_snapshot_source_with_target(GroupId::new(4).unwrap()).await,
+            Arc::new(UsageStub::default()),
+        );
+        let result = service.chat_completions(
+            &principal, None, request(), Protocol::OpenAiChat, &label, diagnostic(),
+        ).await;
+        if should_failover {
+            assert!(matches!(result, Ok(ChatResponse::Full { .. })));
+            assert_eq!(attempts.lock().unwrap().as_slice(), &[GroupId::new(3).unwrap(), GroupId::new(4).unwrap()]);
+        } else {
+            assert!(matches!(result, Err(AfError::Upstream(UpstreamError::ProtocolError))));
+            assert_eq!(attempts.lock().unwrap().as_slice(), &[GroupId::new(3).unwrap()]);
+        }
         database.close().await;
     }
 }

@@ -41,20 +41,41 @@ async fn route_video_releases_cheapest_failure_and_bills_frozen_backup_group()
     let (fixture, routes, backup) = user_route_fixture().await?;
     let mut success = successful_submission(&fixture);
     success.target_group_id = backup;
-    let runtime = Arc::new(MockRuntime::new(vec![
-        Err((af_domain::UpstreamError::overloaded().into(), VideoTaskSubmissionDisposition::DefinitelyNotAccepted)),
-        Ok(success),
-    ]).with_poll(successful_poll(8)));
-    let coordinator = fixture.coordinator(runtime.clone()).with_user_route_runtime(routes);
+    let runtime = Arc::new(
+        MockRuntime::new(vec![
+            Err((
+                af_domain::UpstreamError::overloaded().into(),
+                VideoTaskSubmissionDisposition::DefinitelyNotAccepted,
+            )),
+            Ok(success),
+        ])
+        .with_poll(successful_poll(8)),
+    );
+    let coordinator = fixture
+        .coordinator(runtime.clone())
+        .with_user_route_runtime(routes);
     let request_id = async_request_id(0x81);
-    let task = coordinator.submit(
-        async_task_id(0x81), request_id, fixture.principal, request(), "video-route-failover",
-    ).await?;
+    let task = coordinator
+        .submit(
+            async_task_id(0x81),
+            request_id,
+            fixture.principal,
+            request(),
+            "video-route-failover",
+        )
+        .await?;
     assert_eq!(
         *runtime.submitted_groups.lock().unwrap(),
-        vec![(fixture.principal.group_id(), fixture.principal.group_id()), (backup, backup)],
+        vec![
+            (fixture.principal.group_id(), fixture.principal.group_id()),
+            (backup, backup)
+        ],
     );
-    let billing = fixture.billings.find(fixture.principal.user_id(), task.task_id()).await?.unwrap();
+    let billing = fixture
+        .billings
+        .find(fixture.principal.user_id(), task.task_id())
+        .await?
+        .unwrap();
     assert_eq!(billing.target_group_id(), backup);
     assert_eq!(billing.ratios(), [2_000_000, 1_000_000, 1_000_000]);
     let reservations = fixture.database.seed().query_all(Statement::from_sql_and_values(
@@ -63,27 +84,56 @@ async fn route_video_releases_cheapest_failure_and_bills_frozen_backup_group()
         [fixture.principal.token_id().get().into()],
     )).await?;
     assert_eq!(reservations.len(), 2);
-    assert_eq!(reservations[0].try_get::<i64>("", "group_id")?, fixture.principal.group_id().get());
-    assert_eq!(reservations[1].try_get::<i64>("", "group_id")?, backup.get());
+    assert_eq!(
+        reservations[0].try_get::<i64>("", "group_id")?,
+        fixture.principal.group_id().get()
+    );
+    assert_eq!(
+        reservations[1].try_get::<i64>("", "group_id")?,
+        backup.get()
+    );
     assert_eq!(reservations[0].try_get::<i16>("", "status")?, 4);
     assert_eq!(reservations[1].try_get::<i16>("", "status")?, 1);
 
     // 停用路由不改变已经受理任务的重放及轮询绑定。
-    fixture.database.seed().execute(Statement::from_sql_and_values(
-        DbBackend::Sqlite, "UPDATE user_routes SET enabled = false WHERE id = ?",
-        [fixture.principal.user_route_id().unwrap().into()],
-    )).await?;
-    let replay = coordinator.submit(
-        async_task_id(0x82), request_id, fixture.principal, request(), "video-route-replay",
-    ).await?;
+    fixture
+        .database
+        .seed()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE user_routes SET enabled = false WHERE id = ?",
+            [fixture.principal.user_route_id().unwrap().into()],
+        ))
+        .await?;
+    let replay = coordinator
+        .submit(
+            async_task_id(0x82),
+            request_id,
+            fixture.principal,
+            request(),
+            "video-route-replay",
+        )
+        .await?;
     assert_eq!(replay.task_id(), task.task_id());
     assert_eq!(runtime.submission_count(), 2);
-    coordinator.poll(fixture.principal.user_id(), task.task_id(), "video-route-poll").await?;
+    coordinator
+        .poll(
+            fixture.principal.user_id(),
+            task.task_id(),
+            "video-route-poll",
+        )
+        .await?;
     assert_eq!(*runtime.polled_groups.lock().unwrap(), vec![backup]);
-    let quota = fixture.database.seed().query_one(Statement::from_sql_and_values(
-        DbBackend::Sqlite, "SELECT frozen_quota FROM users WHERE id = ?",
-        [fixture.principal.user_id().get().into()],
-    )).await?.unwrap();
+    let quota = fixture
+        .database
+        .seed()
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT frozen_quota FROM users WHERE id = ?",
+            [fixture.principal.user_id().get().into()],
+        ))
+        .await?
+        .unwrap();
     assert_eq!(quota.try_get::<i64>("", "frozen_quota")?, 0);
     fixture.database.close().await;
     Ok(())
@@ -93,26 +143,56 @@ async fn route_video_releases_cheapest_failure_and_bills_frozen_backup_group()
 async fn route_video_does_not_failover_bad_request_or_unknown_acceptance()
 -> Result<(), Box<dyn Error>> {
     for (error, disposition, expected_unknown) in [
-        (af_domain::UpstreamError::BadRequest.into(), VideoTaskSubmissionDisposition::DefinitelyNotAccepted, false),
-        (af_domain::UpstreamError::overloaded().into(), VideoTaskSubmissionDisposition::AcceptanceUnknown, true),
+        (
+            af_domain::UpstreamError::BadRequest.into(),
+            VideoTaskSubmissionDisposition::DefinitelyNotAccepted,
+            false,
+        ),
+        (
+            af_domain::UpstreamError::overloaded().into(),
+            VideoTaskSubmissionDisposition::AcceptanceUnknown,
+            true,
+        ),
     ] {
         let (fixture, routes, _) = user_route_fixture().await?;
         let runtime = Arc::new(MockRuntime::new(vec![Err((error, disposition))]));
-        let coordinator = fixture.coordinator(runtime.clone()).with_user_route_runtime(routes);
+        let coordinator = fixture
+            .coordinator(runtime.clone())
+            .with_user_route_runtime(routes);
         let request_id = async_request_id(0x91);
-        let result = coordinator.submit(
-            async_task_id(0x91), request_id, fixture.principal, request(), "video-route-terminal",
-        ).await;
+        let result = coordinator
+            .submit(
+                async_task_id(0x91),
+                request_id,
+                fixture.principal,
+                request(),
+                "video-route-terminal",
+            )
+            .await;
         if expected_unknown {
-            assert!(matches!(result, Err(PersistentVideoTaskError::SubmissionOutcomeUnknown)));
             assert!(matches!(
-                coordinator.submit(
-                    async_task_id(0x92), request_id, fixture.principal, request(), "video-route-unknown-replay",
-                ).await,
+                result,
+                Err(PersistentVideoTaskError::SubmissionOutcomeUnknown)
+            ));
+            assert!(matches!(
+                coordinator
+                    .submit(
+                        async_task_id(0x92),
+                        request_id,
+                        fixture.principal,
+                        request(),
+                        "video-route-unknown-replay",
+                    )
+                    .await,
                 Err(PersistentVideoTaskError::SubmissionOutcomeUnknown),
             ));
         } else {
-            assert!(matches!(result, Err(PersistentVideoTaskError::Runtime(AfError::Upstream(af_domain::UpstreamError::BadRequest)))));
+            assert!(matches!(
+                result,
+                Err(PersistentVideoTaskError::Runtime(AfError::Upstream(
+                    af_domain::UpstreamError::BadRequest
+                )))
+            ));
         }
         assert_eq!(runtime.submission_count(), 1);
         fixture.database.close().await;
@@ -127,26 +207,61 @@ async fn route_video_resumes_reserved_target_even_after_health_cooldown()
     let mut success = successful_submission(&fixture);
     success.target_group_id = backup;
     let runtime = Arc::new(MockRuntime::new(vec![Ok(success)]));
-    let coordinator = fixture.coordinator(runtime.clone()).with_user_route_runtime(routes);
+    let coordinator = fixture
+        .coordinator(runtime.clone())
+        .with_user_route_runtime(routes);
     let video = request();
     let request_id = async_request_id(0xa1);
-    let claim = coordinator.claim(AsyncTaskSubmissionClaim::new(
-        async_task_id(0xa1), request_id, fixture.principal, Protocol::XaiVideo,
-        REQUESTED_MODEL.to_owned(), request_fingerprint(&video), Some(8), now()?,
-    )?).await?;
-    let billing = coordinator.prepare_billing(&claim, backup, video.resolution()).await?;
+    let claim = coordinator
+        .claim(AsyncTaskSubmissionClaim::new(
+            async_task_id(0xa1),
+            request_id,
+            fixture.principal,
+            Protocol::XaiVideo,
+            REQUESTED_MODEL.to_owned(),
+            request_fingerprint(&video),
+            Some(8),
+            now()?,
+        )?)
+        .await?;
+    let billing = coordinator
+        .prepare_billing(&claim, backup, video.resolution())
+        .await?;
     let original_reservation = billing.reservation_id();
     coordinator.reserve_billing(&claim, billing).await?;
-    let repository = af_db::UserRouteRepository::new(fixture.database.pool().clone(), Duration::from_secs(5))?;
+    let repository =
+        af_db::UserRouteRepository::new(fixture.database.pool().clone(), Duration::from_secs(5))?;
     for _ in 0..3 {
-        repository.record_attempt(fixture.principal.user_route_id().unwrap(), backup, REQUESTED_MODEL, false, 1, true).await?;
+        repository
+            .record_attempt(
+                fixture.principal.user_route_id().unwrap(),
+                backup,
+                REQUESTED_MODEL,
+                false,
+                1,
+                true,
+            )
+            .await?;
     }
-    let task = coordinator.submit(
-        async_task_id(0xa2), request_id, fixture.principal, video, "video-route-resume",
-    ).await?;
-    let resumed = fixture.billings.find(fixture.principal.user_id(), task.task_id()).await?.unwrap();
+    let task = coordinator
+        .submit(
+            async_task_id(0xa2),
+            request_id,
+            fixture.principal,
+            video,
+            "video-route-resume",
+        )
+        .await?;
+    let resumed = fixture
+        .billings
+        .find(fixture.principal.user_id(), task.task_id())
+        .await?
+        .unwrap();
     assert_eq!(resumed.reservation_id(), original_reservation);
-    assert_eq!(*runtime.submitted_groups.lock().unwrap(), vec![(backup, backup)]);
+    assert_eq!(
+        *runtime.submitted_groups.lock().unwrap(),
+        vec![(backup, backup)]
+    );
     fixture.database.close().await;
     Ok(())
 }
@@ -157,31 +272,55 @@ async fn user_route_fixture() -> Result<(Fixture, UserRouteRuntime, GroupId), Bo
         fixture.database.seed(),
         "INSERT INTO groups (name, display_name, ratio_micros, flags) VALUES ('video-backup', '视频备用分组', 2000000, '{}')",
     ).await?)?;
-    fixture.database.seed().execute(Statement::from_sql_and_values(
-        DbBackend::Sqlite,
-        "INSERT INTO group_key_policies (group_id, selection_mode) VALUES (?, 'all_users')",
-        [backup.get().into()],
-    )).await?;
-    let repository = af_db::UserRouteRepository::new(fixture.database.pool().clone(), Duration::from_secs(5))?;
-    let route = repository.create(fixture.principal.user_id(), af_db::UserRouteWrite {
-        name: "视频智能路由".to_owned(),
-        strategy: af_domain::UserRouteStrategy::PriceFirst,
-        enabled: true,
-        max_group_attempts: 2,
-        max_price_ratio_micros: None,
-        members: [fixture.principal.group_id(), backup].into_iter().enumerate().map(|(priority, group_id)| {
-            af_db::UserRouteMemberWrite { group_id, priority: priority as i32, weight: 1 }
-        }).collect(),
-    }).await?;
-    fixture.database.seed().execute(Statement::from_sql_and_values(
-        DbBackend::Sqlite,
-        "UPDATE tokens SET group_id = NULL, user_route_id = ? WHERE id = ?",
-        [route.id.into(), fixture.principal.token_id().get().into()],
-    )).await?;
+    fixture
+        .database
+        .seed()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO group_key_policies (group_id, selection_mode) VALUES (?, 'all_users')",
+            [backup.get().into()],
+        ))
+        .await?;
+    let repository =
+        af_db::UserRouteRepository::new(fixture.database.pool().clone(), Duration::from_secs(5))?;
+    let route = repository
+        .create(
+            fixture.principal.user_id(),
+            af_db::UserRouteWrite {
+                name: "视频智能路由".to_owned(),
+                strategy: af_domain::UserRouteStrategy::PriceFirst,
+                enabled: true,
+                max_group_attempts: 2,
+                max_price_ratio_micros: None,
+                members: [fixture.principal.group_id(), backup]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(priority, group_id)| af_db::UserRouteMemberWrite {
+                        group_id,
+                        priority: priority as i32,
+                        weight: 1,
+                    })
+                    .collect(),
+            },
+        )
+        .await?;
+    fixture
+        .database
+        .seed()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE tokens SET group_id = NULL, user_route_id = ? WHERE id = ?",
+            [route.id.into(), fixture.principal.token_id().get().into()],
+        ))
+        .await?;
     fixture.principal = fixture.principal.with_user_route_id(Some(route.id));
-    fixture.group_pricing = GroupPricingCache::load_from_database(fixture.database.pool().clone()).await?;
+    fixture.group_pricing =
+        GroupPricingCache::load_from_database(fixture.database.pool().clone()).await?;
     let runtime = UserRouteRuntime::new(repository).with_group_model_policy(
-        af_db::GroupModelPolicyRepository::new(fixture.database.pool().clone(), Duration::from_secs(5))?,
+        af_db::GroupModelPolicyRepository::new(
+            fixture.database.pool().clone(),
+            Duration::from_secs(5),
+        )?,
     );
     Ok((fixture, runtime, backup))
 }
@@ -774,7 +913,10 @@ impl PersistentVideoTaskRuntime for MockRuntime {
         _request_id: &'a str,
     ) -> PersistentSubmissionFuture<'a> {
         self.submission_count.fetch_add(1, Ordering::SeqCst);
-        self.submitted_groups.lock().expect("模拟分组记录不能中毒").push((group_id, expected_target_group_id));
+        self.submitted_groups
+            .lock()
+            .expect("模拟分组记录不能中毒")
+            .push((group_id, expected_target_group_id));
         let result = self
             .submissions
             .lock()
@@ -795,9 +937,10 @@ impl PersistentVideoTaskRuntime for MockRuntime {
         _request_id: &'a str,
     ) -> PersistentPollFuture<'a> {
         self.poll_count.fetch_add(1, Ordering::SeqCst);
-        self.polled_groups.lock().expect("模拟轮询记录不能中毒").push(
-            claim.target_group_id().expect("已受理任务必须保存目标分组"),
-        );
+        self.polled_groups
+            .lock()
+            .expect("模拟轮询记录不能中毒")
+            .push(claim.target_group_id().expect("已受理任务必须保存目标分组"));
         let poll = self.poll.lock().expect("模拟轮询结果锁不能中毒").clone();
         Box::pin(async move { Ok(poll) })
     }

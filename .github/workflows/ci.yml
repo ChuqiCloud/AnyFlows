@@ -737,6 +737,13 @@ jobs:
           cargo test --locked -p af-relay --lib response_readiness
           cargo test --locked -p af-server --test relay_state_machine
 
+      - name: Run focused personal routing regression tests
+        if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
+        run: |
+          cargo test --locked -p af-db --lib user_route
+          cargo test --locked -p af-server --lib user_route
+          cargo test --locked -p af-server --lib route_video_
+
       - name: Run Clippy
         if: needs.changes.outputs.full == 'true'
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings

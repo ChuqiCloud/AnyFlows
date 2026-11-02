@@ -7,7 +7,8 @@ use std::{
 
 use crate::model_subject::ModelSubject;
 use crate::{
-    ChatRoutePlanFuture, ChatRoutePlanner, PlannedChatExecution, PlannedChatExecutionFuture,
+    ChatRoutePlanFuture, ChatRoutePlanner, PlannedChatExecution, PlannedExecutionFailure,
+    PlannedChatExecutionFuture,
     adaptor_credential::build_adaptor_credential,
     auto_ban_feedback::{ChannelAutoBanAttemptTarget, persist_channel_auto_ban_feedback},
     concurrency_runtime::{
@@ -1516,7 +1517,7 @@ impl PlannedChatExecution for ScheduledChatExecution {
                             .await
                             .into_parts()
                     }
-                    _ => return Err(AfError::InvalidRequest),
+                    _ => return Err(AfError::InvalidRequest.into()),
                 }
             };
             let successful_channel_id = report
@@ -1551,7 +1552,7 @@ impl PlannedChatExecution for ScheduledChatExecution {
                                 channel_id,
                             )
                         })
-                        .ok_or(AfError::Internal)
+                        .ok_or(AfError::Internal.into())
                 }
                 Ok(ChatResponse::Stream { body, usage }) => {
                     let body = af_relay::with_delivery_completion(
@@ -1571,14 +1572,16 @@ impl PlannedChatExecution for ScheduledChatExecution {
                                 channel_id,
                             )
                         })
-                        .ok_or(AfError::Internal)
+                        .ok_or(AfError::Internal.into())
                 }
                 Err(error) => {
+                    let failure =
+                        PlannedExecutionFailure::from_relay_report(error, &feedback.report);
                     feedback.finish(false, false).await;
                     if let Some(permit) = user_permit {
                         permit.release().await;
                     }
-                    Err(error)
+                    Err(failure)
                 }
             }
         })
