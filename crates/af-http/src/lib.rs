@@ -117,6 +117,8 @@ mod turnstile;
 mod user_notifications;
 mod user_profile;
 mod user_tokens;
+mod user_routes;
+pub use user_routes::build_user_route_router;
 mod user_topups;
 mod user_wallet;
 mod video_task_service;

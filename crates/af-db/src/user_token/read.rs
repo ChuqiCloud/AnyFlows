@@ -114,11 +114,17 @@ pub(super) fn record_from_row(
         owner_user_id,
         effective_group_id,
         group_display_name,
+        row.try_get::<Option<i64>>("", "user_route_id")
+            .map_err(|_| record_internal_error(UserTokenRepositoryError::Invariant))?,
     )
 }
 
 fn base_query(database_backend: sea_orm::DbBackend) -> SelectStatement {
     admin_token::base_query(database_backend)
+        .expr_as(
+            Expr::col((tokens::Entity, tokens::Column::UserRouteId)),
+            Alias::new("user_route_id"),
+        )
         .expr_as(
             Expr::col((groups::Entity, groups::Column::DisplayName)),
             Alias::new("group_display_name"),

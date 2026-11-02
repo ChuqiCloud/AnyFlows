@@ -53,6 +53,8 @@ mod supervisor;
 mod test_database;
 mod token_request_admission;
 mod turnstile;
+mod user_route_execution;
+mod user_route_runtime;
 mod utc_time;
 mod video_task_service;
 

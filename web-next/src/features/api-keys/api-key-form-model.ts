@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import type { UserToken, UserTokenWriteRequest } from '@/lib/api/generated/types.gen'
 import { isSelectableTokenGroup, type SelectableTokenGroup } from './api-key-group-model.ts'
+import { isSelectableUserRoute, tokenUserRouteId, type UserRoute } from '../user-routes/user-route-model.ts'
 
 const MAX_MODEL_COUNT = 512
 const MAX_MODEL_BYTES = 256
@@ -13,7 +14,9 @@ const MAX_IP_TOTAL_BYTES = 4096
 const ipOrCidrSchema = z.union([z.ipv4(), z.ipv6(), z.cidrv4(), z.cidrv6()])
 
 export type ApiKeyFormValues = {
+  routingMode: 'group' | 'route'
   groupId: string
+  userRouteId: string
   name: string
   status: 'enabled' | 'disabled'
   remainQuota: number
@@ -33,7 +36,9 @@ type ValidationMessages = {
 /** 前端复现公开容量边界，服务端仍是最终校验来源。 */
 export function buildApiKeyFormSchema(messages: ValidationMessages) {
   return z.object({
+    routingMode: z.enum(['group', 'route']),
     groupId: z.string(),
+    userRouteId: z.string(),
     name: z.string().refine(isValidName, messages.invalidField),
     status: z.enum(['enabled', 'disabled']),
     remainQuota: z.number().int(messages.invalidField).safe(messages.invalidField).min(0, messages.invalidField),
@@ -45,8 +50,11 @@ export function buildApiKeyFormSchema(messages: ValidationMessages) {
 }
 
 export function defaultApiKeyValues(token?: UserToken): ApiKeyFormValues {
+  const routeId = tokenUserRouteId(token ?? {})
   return {
+    routingMode: routeId === undefined ? 'group' : 'route',
     groupId: token?.group_id === null || token?.group_id === undefined ? '' : String(token.group_id),
+    userRouteId: routeId === undefined ? '' : String(routeId),
     name: token?.name ?? '',
     status: token?.status ?? 'enabled',
     remainQuota: token?.remain_quota ?? 0,
@@ -69,11 +77,16 @@ export function toApiKeyRequest(values: ApiKeyFormValues): UserTokenWriteRequest
   }
 }
 
-/** 仅签发时发送分组；编辑和启停始终使用不含 group_id 的基础请求。 */
+/** 仅签发时发送绑定；编辑和启停始终使用不含分组或路由绑定的基础请求。 */
 export function toCreateApiKeyRequest(
   values: ApiKeyFormValues,
   groups: SelectableTokenGroup[],
-): UserTokenWriteRequest & { group_id: number | null } {
+  routes?: UserRoute[],
+): UserTokenWriteRequest & { group_id: number | null; user_route_id?: number | null } {
+  if (values.routingMode === 'route') {
+    if (!isSelectableUserRoute(values.userRouteId, routes)) throw new Error('所选智能路由不可用')
+    return { ...toApiKeyRequest(values), group_id: null, user_route_id: Number(values.userRouteId) }
+  }
   if (!isSelectableTokenGroup(values.groupId, groups)) throw new Error('所选分组不可用')
   return { ...toApiKeyRequest(values), group_id: values.groupId === '' ? null : Number(values.groupId) }
 }

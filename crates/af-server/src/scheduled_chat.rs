@@ -1317,6 +1317,23 @@ impl ScheduledChatService {
 }
 
 impl ChatRoutePlanner for ScheduledChatService {
+    fn supports_request(
+        &self,
+        group_id: GroupId,
+        request: &CanonicalRequestEnvelope,
+        response_protocol: Protocol,
+    ) -> Result<bool, AfError> {
+        let Some(route) = self.scheduler.route_plan(group_id, &request.canonical().model)
+            .map_err(map_scheduler_error)? else { return Ok(false); };
+        match select_upstream_protocol(&route, request, response_protocol) {
+            Ok(protocol) => Ok(route.candidates().iter().any(|candidate| {
+                target_matches_protocol(candidate.runtime_target(), protocol)
+            })),
+            Err(AfError::InvalidRequest) => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
     fn plan<'a>(
         &'a self,
         principal: &'a GatewayPrincipal,

@@ -50,3 +50,25 @@ test('旧Key固定组即使已不在目录中，编辑及启停都不提交新�
   assert.equal(toggled.status, 'disabled')
   assert.deepEqual(toggled.model_limits, ['model-a'])
 })
+
+test('智能路由 Key 只在签发时提交路由绑定，编辑和启停不提交分组或路由', () => {
+  const route = { id: 12, name: '稳健路由', strategy: 'stable_first', enabled: true, max_group_attempts: 2, max_price_ratio_micros: null, members: [{ group_id: 1, priority: 0, weight: 1 }] }
+  const values = { ...defaultApiKeyValues(), name: 'routed', routingMode: 'route', userRouteId: '12' }
+  const create = toCreateApiKeyRequest(values, groups, [route])
+  assert.equal(create.group_id, null)
+  assert.equal(create.user_route_id, 12)
+
+  const token = {
+    id: 5, name: 'routed', key_prefix: 'sk-af-route', status: 'enabled',
+    group_id: null, effective_group_id: 1, group_display_name: '默认', user_route_id: 12,
+    remain_quota: 100, unlimited_quota: false, used_quota: 20,
+    expired_at: null, model_limits: null, allow_ips: null,
+    created_at: 1_800_000_000, updated_at: 1_800_000_000,
+  }
+  const edited = toApiKeyRequest({ ...defaultApiKeyValues(token), name: 'renamed' })
+  const toggled = apiKeyRequestWithStatus(token, 'disabled')
+  for (const request of [edited, toggled]) {
+    assert.equal('group_id' in request, false)
+    assert.equal('user_route_id' in request, false)
+  }
+})

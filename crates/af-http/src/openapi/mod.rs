@@ -55,6 +55,7 @@ mod usage_logs;
 mod user_notifications;
 mod user_profile;
 mod user_tokens;
+mod user_routes;
 mod user_topups;
 mod user_wallet;
 mod users;
@@ -128,6 +129,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(playground_conversations::document());
     document.merge(playground_image_history::document());
     document.merge(user_tokens::document());
+    document.merge(user_routes::document());
     document.merge(tokens::document());
     document.merge(usage_logs::document());
     document.merge(channels::document());
