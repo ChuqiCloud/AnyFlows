@@ -372,11 +372,9 @@ impl BillingChatService {
         );
         if let crate::model_subject::ModelSubject::User(principal) = subject
             && principal.user_route_id().is_some()
-            && !self.inner.supports_request(
-                principal.group_id(),
-                &request,
-                response_protocol,
-            )?
+            && !self
+                .inner
+                .supports_request(principal.group_id(), &request, response_protocol)?
         {
             return Err(UserRouteAttemptError::candidate_plan(
                 af_domain::UpstreamError::ModelUnsupported.into(),
