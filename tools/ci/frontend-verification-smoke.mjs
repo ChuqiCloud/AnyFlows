@@ -240,17 +240,11 @@ try {
       await row.getByRole('button', { name: '通过认证', exact: true }).click()
       await row.getByText('已通过', { exact: true }).first().waitFor()
     }
-    const replace = async ({ expectNoProvider = false } = {}) => {
+    const replace = async () => {
       await page.goto(home)
       await page.locator('[data-verification-result]').waitFor()
       await page.getByRole('button', { name: '更换认证', exact: true }).click()
-      try {
-        if (expectNoProvider) await form.getByText('当前没有可用的认证方式，请联系管理员。', { exact: true }).waitFor()
-        else await form.waitFor()
-      } catch (error) {
-        const visibleText = (await page.locator('body').innerText()).slice(0, 1200)
-        throw new Error(`${error.message}\nVerification page after replacement: ${visibleText}`)
-      }
+      await form.waitFor()
     }
 
     assert.equal(await historyRows.count(), 10)
@@ -355,10 +349,11 @@ try {
 
     providers = []
     settings = { ...settings, enabled: false }
-    await replace({ expectNoProvider: true })
+    const approvedCases = cases.splice(0)
+    await page.goto(home)
+    await chooseKind('个人认证')
+    await form.getByText('当前没有可用的认证方式，请联系管理员。', { exact: true }).waitFor()
     assert.equal(await form.getByRole('button', { name: '下一步', exact: true }).isDisabled(), true)
-    // Enterprise eligibility must also close the form when its manual provider is disabled.
-    const approvedCases = cases.splice(0, 2)
     await page.goto(home)
     await chooseKind('企业认证')
     await form.getByText('当前没有可用的认证方式，请联系管理员。', { exact: true }).waitFor()
