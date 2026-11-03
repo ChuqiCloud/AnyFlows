@@ -169,6 +169,7 @@ try {
   assert.equal(await page.getByText('Enterprise 27', { exact: false }).count(), 0, 'History must mask identity names')
   const providerSelect = page.getByRole('combobox', { name: '认证方式', exact: true })
   const documentSelect = page.getByRole('combobox', { name: '证件类型', exact: true })
+  await providerSelect.locator('option[value="manual"]').waitFor()
   assert.deepEqual(await providerSelect.locator('option').evaluateAll((options) => options.map((option) => option.value)), ['manual'])
   await documentSelect.selectOption('passport')
   assert.equal(await documentSelect.inputValue(), 'passport')
