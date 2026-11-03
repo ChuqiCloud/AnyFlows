@@ -349,7 +349,8 @@ try {
 
     providers = []
     settings = { ...settings, enabled: false }
-    const approvedCases = cases.splice(0)
+    const savedCases = cases.map((item) => ({ ...item }))
+    cases.forEach((item) => { item.status = 5 })
     await page.goto(home)
     await chooseKind('个人认证')
     await form.getByText('当前没有可用的认证方式，请联系管理员。', { exact: true }).waitFor()
@@ -358,7 +359,7 @@ try {
     await chooseKind('企业认证')
     await form.getByText('当前没有可用的认证方式，请联系管理员。', { exact: true }).waitFor()
     assert.equal(await form.getByRole('button', { name: '下一步', exact: true }).isDisabled(), true)
-    cases.unshift(...approvedCases)
+    cases.splice(0, cases.length, ...savedCases.map((item) => ({ ...item, status: item.status >= 1 && item.status <= 3 ? 4 : item.status })))
 
     providers = ['manual', 'alipay']
     settings = { ...settings, individual_manual_enabled: true, enterprise_manual_enabled: true, enabled: true }
