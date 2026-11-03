@@ -424,21 +424,21 @@ impl TokenAuthRepository {
         let outcome = row
             .validate(client_ip, self.organization_validator.as_deref())
             .await?;
-        if let TokenAuthLookupOutcome::Authenticated { principal, .. } = &outcome {
-            if let Some(route_id) = principal.user_route_id() {
-                let repository =
-                    crate::UserRouteRepository::new(self.pool.clone(), self.lookup_timeout)
-                        .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
-                match repository
-                    .lookup_for_token(principal.user_id(), principal.token_id())
-                    .await
-                {
-                    Ok(Some(route)) if route.id == route_id => {}
-                    Ok(_) | Err(crate::UserRouteError::Unavailable) => {
-                        return Ok(TokenAuthLookupOutcome::Rejected);
-                    }
-                    Err(_) => return Err(record_internal_error(TokenAuthRepositoryError::Query)),
+        if let TokenAuthLookupOutcome::Authenticated { principal, .. } = &outcome
+            && let Some(route_id) = principal.user_route_id()
+        {
+            let repository =
+                crate::UserRouteRepository::new(self.pool.clone(), self.lookup_timeout)
+                    .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+            match repository
+                .lookup_for_token(principal.user_id(), principal.token_id())
+                .await
+            {
+                Ok(Some(route)) if route.id == route_id => {}
+                Ok(_) | Err(crate::UserRouteError::Unavailable) => {
+                    return Ok(TokenAuthLookupOutcome::Rejected);
                 }
+                Err(_) => return Err(record_internal_error(TokenAuthRepositoryError::Query)),
             }
         }
         Ok(outcome)
