@@ -140,11 +140,25 @@ try {
       reviewed += 1
       body = cases[0]
     } else if (request.method() === 'POST') {
-      assert.match(request.headers()['content-type'], /^multipart\/form-data; boundary=/)
-      assert.ok(request.postDataBuffer().includes(Buffer.from('name="file:0"')))
-      assert.ok(request.postDataBuffer().includes(Buffer.from(`"kind":"${submissionKind}"`)))
-      assert.ok(request.postDataBuffer().includes(Buffer.from('"document_country":"CN"')))
-      assert.ok(request.postDataBuffer().includes(Buffer.from(`"document_type":"${submissionKind === 'enterprise' ? 'business_registration' : 'passport'}"`)))
+      const contentType = request.headers()['content-type']
+      const postData = request.postDataBuffer()
+      const body = postData?.toString('latin1') ?? ''
+      const multipartFields = [...body.matchAll(/Content-Disposition:[^\r\n]*?name="([^"]+)"/giu)].map((match) => match[1])
+      const metadataHeader = body.indexOf('name="metadata"')
+      const metadataStart = body.indexOf('\r\n\r\n', metadataHeader)
+      const metadataPart = metadataStart < 0 ? undefined : body.slice(metadataStart + 4).split('\r\n', 1)[0]
+      const metadata = metadataPart ? JSON.parse(metadataPart) : undefined
+      const metadataSummary = metadata && {
+        kind: metadata.kind,
+        document_country: metadata.document_country,
+        document_type: metadata.document_type,
+        materials: metadata.materials,
+      }
+      assert.match(contentType, /^multipart\/form-data; boundary=/, `${path} must use multipart form data`)
+      assert.ok(multipartFields.includes('file:0'), `${path} multipart fields were ${JSON.stringify(multipartFields)}, metadata was ${JSON.stringify(metadataSummary)}`)
+      assert.equal(metadata?.kind, submissionKind, `${path} metadata had an unexpected kind: ${JSON.stringify(metadataSummary)}`)
+      assert.equal(metadata?.document_country, 'CN', `${path} metadata had an unexpected document country: ${JSON.stringify(metadataSummary)}`)
+      assert.equal(metadata?.document_type, submissionKind === 'enterprise' ? 'business_registration' : 'passport', `${path} metadata had an unexpected document type: ${JSON.stringify(metadataSummary)}`)
       cases.unshift({ ...cases[0], id: 28 + submitted, kind: submissionKind, subject_name: submissionKind === 'enterprise' ? 'New Enterprise' : 'Test Individual', document_type: submissionKind === 'enterprise' ? 'business_registration' : 'passport', document_number_masked: submissionKind === 'enterprise' ? '91****43' : 'P****78', status: 1, version: 1, review_reason: null, reviewer_user_id: null })
       submitted += 1
       body = cases[0]
