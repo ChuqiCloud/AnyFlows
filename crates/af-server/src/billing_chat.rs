@@ -370,18 +370,17 @@ impl BillingChatService {
         let request = request.with_default_max_output_tokens(
             TokenCount::new(DEFAULT_MAX_OUTPUT_TOKENS).expect("网关默认输出上限必须是合法正整数"),
         );
-        if let crate::model_subject::ModelSubject::User(principal) = subject {
-            if principal.user_route_id().is_some()
-                && !self.inner.supports_request(
-                    principal.group_id(),
-                    &request,
-                    response_protocol,
-                )?
-            {
-                return Err(UserRouteAttemptError::candidate_plan(
-                    af_domain::UpstreamError::ModelUnsupported.into(),
-                ));
-            }
+        if let crate::model_subject::ModelSubject::User(principal) = subject
+            && principal.user_route_id().is_some()
+            && !self.inner.supports_request(
+                principal.group_id(),
+                &request,
+                response_protocol,
+            )?
+        {
+            return Err(UserRouteAttemptError::candidate_plan(
+                af_domain::UpstreamError::ModelUnsupported.into(),
+            ));
         }
         let requested_pricing_model = request.canonical().model.clone();
         let planned = match subject {
@@ -431,10 +430,11 @@ impl BillingChatService {
         let source_group_id = subject.billing_source_group_id();
         let target_group_id = planned.target_group_id();
         let pricing_model = planned.pricing_model().to_owned();
-        if let crate::model_subject::ModelSubject::User(principal) = subject {
-            if principal.user_route_id().is_some() && target_group_id != principal.group_id() {
-                return Err(AfError::Internal.into());
-            }
+        if let crate::model_subject::ModelSubject::User(principal) = subject
+            && principal.user_route_id().is_some()
+            && target_group_id != principal.group_id()
+        {
+            return Err(AfError::Internal.into());
         }
         let snapshot = match fixed_snapshot.filter(|_| pricing_model == requested_pricing_model) {
             Some(snapshot) => snapshot,

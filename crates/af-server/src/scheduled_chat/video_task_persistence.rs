@@ -740,13 +740,12 @@ impl PersistentVideoTaskCoordinator {
             .billings
             .find(claim.principal().user_id(), claim.task_id())
             .await?
+            && existing.state() != AsyncTaskBillingState::Released
         {
-            if existing.state() != AsyncTaskBillingState::Released {
-                if existing.target_group_id() != target_group_id {
-                    return Err(PersistentVideoTaskError::Invariant);
-                }
-                return Ok(existing);
+            if existing.target_group_id() != target_group_id {
+                return Err(PersistentVideoTaskError::Invariant);
             }
+            return Ok(existing);
         }
         let pricing = self.capture_pricing(claim, target_group_id, requested_resolution)?;
         self.prepare_billing_with_snapshot(claim, target_group_id, pricing)
