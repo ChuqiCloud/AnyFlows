@@ -142,11 +142,11 @@ try {
     } else if (request.method() === 'POST') {
       const contentType = request.headers()['content-type']
       const postData = request.postDataBuffer()
-      const body = postData?.toString('latin1') ?? ''
-      const multipartFields = [...body.matchAll(/Content-Disposition:[^\r\n]*?name="([^"]+)"/giu)].map((match) => match[1])
-      const metadataHeader = body.indexOf('name="metadata"')
-      const metadataStart = body.indexOf('\r\n\r\n', metadataHeader)
-      const metadataPart = metadataStart < 0 ? undefined : body.slice(metadataStart + 4).split('\r\n', 1)[0]
+      const postBody = postData?.toString('latin1') ?? ''
+      const multipartFields = [...postBody.matchAll(/Content-Disposition:[^\r\n]*?name="([^"]+)"/giu)].map((match) => match[1])
+      const metadataHeader = postBody.indexOf('name="metadata"')
+      const metadataStart = postBody.indexOf('\r\n\r\n', metadataHeader)
+      const metadataPart = metadataStart < 0 ? undefined : postBody.slice(metadataStart + 4).split('\r\n', 1)[0]
       const metadata = metadataPart ? JSON.parse(metadataPart) : undefined
       const metadataSummary = metadata && {
         kind: metadata.kind,
