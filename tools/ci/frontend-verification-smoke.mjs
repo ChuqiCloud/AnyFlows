@@ -150,16 +150,22 @@ try {
       const metadata = metadataPart ? JSON.parse(metadataPart) : undefined
       const metadataSummary = metadata && {
         kind: metadata.kind,
+        provider: metadata.provider,
         document_country: metadata.document_country,
         document_type: metadata.document_type,
         materials: metadata.materials,
       }
+      const fileFields = multipartFields.filter((field) => /^file:\d+$/u.test(field)).sort()
       assert.match(contentType, /^multipart\/form-data; boundary=/, `${path} must use multipart form data`)
-      assert.ok(multipartFields.includes('file:0'), `${path} multipart fields were ${JSON.stringify(multipartFields)}, metadata was ${JSON.stringify(metadataSummary)}`)
+      assert.ok(['manual', 'alipay'].includes(metadata?.provider), `${path} metadata had an unexpected provider: ${JSON.stringify(metadataSummary)}`)
+      assert.deepEqual(fileFields, (metadata?.materials ?? []).map((material) => `file:${material.file_field}`).sort(), `${path} file fields did not match the declared materials: ${JSON.stringify(metadataSummary)}`)
+      if (metadata.provider === 'manual') assert.ok(fileFields.includes('file:0'), `${path} manual review must upload its first material: ${JSON.stringify(metadataSummary)}`)
+      else assert.deepEqual(metadata.materials, [], `${path} Alipay verification must not upload manual-review materials: ${JSON.stringify(metadataSummary)}`)
       assert.equal(metadata?.kind, submissionKind, `${path} metadata had an unexpected kind: ${JSON.stringify(metadataSummary)}`)
       assert.equal(metadata?.document_country, 'CN', `${path} metadata had an unexpected document country: ${JSON.stringify(metadataSummary)}`)
-      assert.equal(metadata?.document_type, submissionKind === 'enterprise' ? 'business_registration' : 'passport', `${path} metadata had an unexpected document type: ${JSON.stringify(metadataSummary)}`)
-      cases.unshift({ ...cases[0], id: 28 + submitted, kind: submissionKind, subject_name: submissionKind === 'enterprise' ? 'New Enterprise' : 'Test Individual', document_type: submissionKind === 'enterprise' ? 'business_registration' : 'passport', document_number_masked: submissionKind === 'enterprise' ? '91****43' : 'P****78', status: 1, version: 1, review_reason: null, reviewer_user_id: null })
+      const expectedDocumentType = metadata.provider === 'alipay' ? 'national_id' : submissionKind === 'enterprise' ? 'business_registration' : 'passport'
+      assert.equal(metadata?.document_type, expectedDocumentType, `${path} metadata had an unexpected document type: ${JSON.stringify(metadataSummary)}`)
+      cases.unshift({ ...cases[0], id: 28 + submitted, kind: submissionKind, provider: metadata.provider, subject_name: metadata.subject_name, document_type: metadata.document_type, document_number_masked: submissionKind === 'enterprise' ? '91****43' : 'P****78', status: 1, version: 1, review_reason: null, reviewer_user_id: null })
       submitted += 1
       body = cases[0]
     } else if (/\/\d+$/.test(path)) {
