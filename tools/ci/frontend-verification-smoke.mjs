@@ -134,11 +134,14 @@ try {
       return
     } else if (path.endsWith('/decision')) {
       const update = request.postDataJSON()
-      assert.equal(update.expected_version, cases[0].version)
+      const recordId = Number(path.split('/').at(-2))
+      const recordIndex = cases.findIndex((item) => item.id === recordId)
+      assert.notEqual(recordIndex, -1, `Cannot review missing verification case ${recordId}`)
+      assert.equal(update.expected_version, cases[recordIndex].version)
       assert.equal(update.status, 4)
-      cases[0] = { ...cases[0], status: 4, version: cases[0].version + 1 }
+      cases[recordIndex] = { ...cases[recordIndex], status: 4, version: cases[recordIndex].version + 1 }
       reviewed += 1
-      body = cases[0]
+      body = cases[recordIndex]
     } else if (request.method() === 'POST') {
       const contentType = request.headers()['content-type']
       const postData = request.postDataBuffer()
