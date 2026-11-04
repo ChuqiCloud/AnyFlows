@@ -32,6 +32,7 @@ pub(crate) struct RuntimeModelCatalogReader {
     pricing_source: Arc<dyn RequestPricingSnapshotSource>,
     model_metadata: AdminModelRepository,
     group_model_policy: GroupModelPolicyRepository,
+    user_routes: Option<af_db::UserRouteRepository>,
     clock: CatalogClock,
 }
 
@@ -50,8 +51,14 @@ impl RuntimeModelCatalogReader {
             pricing_source,
             model_metadata,
             group_model_policy,
+            user_routes: None,
             clock: Arc::new(crate::utc_time::current_pricing_time),
         }
+    }
+
+    pub(crate) fn with_user_routes(mut self, repository: af_db::UserRouteRepository) -> Self {
+        self.user_routes = Some(repository);
+        self
     }
 
     fn catalog_item_from_pricing(

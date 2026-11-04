@@ -8,6 +8,7 @@ test('控制台概览和用户工作台允许普通用户访问', () => {
     '/console',
     '/console/',
     '/console/api-keys',
+    '/console/user-routes',
     '/console/wallet',
     '/console/subscriptions',
     '/console/invitations',

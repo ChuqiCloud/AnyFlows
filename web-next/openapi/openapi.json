@@ -12559,7 +12559,7 @@
           "我的 API Key"
         ],
         "summary": "签发我的 API Key",
-        "description": "group_id 省略或为 null 时跟随用户默认组；指定 ID 时固定绑定该路由及计费组，并在事务中复验可选权限。",
+        "description": "group_id 省略或为 null 时跟随用户默认组；user_route_id 选择一个本人路由组，二者互斥，服务端在签发事务中复验所有成员分组的访问权限。",
         "operationId": "createUserToken",
         "requestBody": {
           "content": {
@@ -12851,6 +12851,382 @@
           },
           "404": {
             "description": "Key 不存在或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/user-routes": {
+      "get": {
+        "tags": [
+          "我的智能路由"
+        ],
+        "summary": "读取我的智能路由",
+        "operationId": "listUserRoutes",
+        "responses": {
+          "200": {
+            "description": "当前用户的智能路由及容量",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRouteListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "我的智能路由"
+        ],
+        "summary": "创建我的智能路由",
+        "operationId": "createUserRoute",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserRouteWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "路由已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRoute"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "路由或成员字段无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "路由成员分组当前不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "用户路由数量已达上限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/user-routes/{id}": {
+      "get": {
+        "tags": [
+          "我的智能路由"
+        ],
+        "summary": "读取我的一个智能路由",
+        "operationId": "getUserRoute",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "用户路由 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前用户的智能路由",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRoute"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "路由 ID 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "路由不存在或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "我的智能路由"
+        ],
+        "summary": "完整替换我的一个智能路由",
+        "operationId": "updateUserRoute",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "用户路由 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserRouteWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "路由已更新",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRoute"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "路由或成员字段无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "路由成员分组当前不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "路由不存在或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "我的智能路由"
+        ],
+        "summary": "删除我的一个智能路由",
+        "operationId": "deleteUserRoute",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "用户路由 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "路由已删除"
+          },
+          "400": {
+            "description": "路由 ID 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "路由不存在或不属于当前用户",
             "content": {
               "application/json": {
                 "schema": {
@@ -35988,6 +36364,164 @@
         },
         "additionalProperties": false
       },
+      "UserRoute": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "strategy",
+          "enabled",
+          "max_group_attempts",
+          "max_price_ratio_micros",
+          "members"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "strategy": {
+            "$ref": "#/components/schemas/UserRouteStrategySchema"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "max_group_attempts": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 16,
+            "minimum": 1
+          },
+          "max_price_ratio_micros": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserRouteMember"
+            },
+            "maxItems": 16,
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserRouteListResponse": {
+        "type": "object",
+        "required": [
+          "items",
+          "capacity"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserRoute"
+            },
+            "maxItems": 32
+          },
+          "capacity": {
+            "type": "integer",
+            "maximum": 32,
+            "minimum": 32
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserRouteMember": {
+        "type": "object",
+        "required": [
+          "group_id",
+          "priority",
+          "weight"
+        ],
+        "properties": {
+          "group_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "weight": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 10000,
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserRouteStrategySchema": {
+        "type": "string",
+        "description": "用户路由可选策略的稳定 API 枚举。",
+        "enum": [
+          "price_first",
+          "stable_first",
+          "ordered",
+          "round_robin",
+          "weighted"
+        ]
+      },
+      "UserRouteWriteRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "strategy",
+          "enabled",
+          "max_group_attempts",
+          "max_price_ratio_micros",
+          "members"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "strategy": {
+            "$ref": "#/components/schemas/UserRouteStrategySchema"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "max_group_attempts": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 16,
+            "minimum": 1
+          },
+          "max_price_ratio_micros": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserRouteMember"
+            },
+            "maxItems": 16,
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "UserSubscription": {
         "type": "object",
         "description": "当前用户或管理员可读取的用户订阅窗口。",
@@ -36127,6 +36661,7 @@
         "required": [
           "id",
           "group_id",
+          "user_route_id",
           "effective_group_id",
           "group_display_name",
           "key_prefix",
@@ -36154,6 +36689,15 @@
             ],
             "format": "int64",
             "description": "固定分组；null 表示跟随用户默认分组。",
+            "minimum": 1
+          },
+          "user_route_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "用户智能路由绑定；null 表示未绑定用户路由。",
             "minimum": 1
           },
           "effective_group_id": {
@@ -36357,6 +36901,15 @@
             ],
             "format": "int64",
             "description": "仅创建时可选固定分组；POST 省略或 null 跟随用户默认分组。\nPUT 省略或 null 保留原分组，非 null 不允许修改。",
+            "minimum": 1
+          },
+          "user_route_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "仅创建时选择自己的智能路由，与非空 group_id 互斥。",
             "minimum": 1
           },
           "name": {

@@ -186,6 +186,8 @@ try {
         ] }
         break
       case '/api/tokens': data = { tokens: [], next_cursor: null, capacity: 32 }; break
+      case '/api/user-routes': data = { items: [], capacity: 32 }; break
+      case '/api/token-groups': data = { groups: [], next_cursor: null }; break
       case '/api/account/usage-logs': data = { logs: [], failed_logs: [], next_cursor: null, failed_next_cursor: null }; break
       case '/api/admin/tokens': data = { tokens: [], next_cursor: null }; break
       case '/api/admin/groups': data = { groups: [group], next_cursor: null }; break
@@ -248,6 +250,11 @@ try {
   await open('/console', 'user')
   await page.getByRole('heading', { name: label('dashboard.user.title'), exact: true }).waitFor()
   await item('overview').waitFor()
+  await item('userRoutes').waitFor()
+  await item('userRoutes').click()
+  await page.getByRole('heading', { name: label('userRoutes.title'), exact: true }).waitFor()
+  assert.equal(new URL(page.url()).pathname, '/console/user-routes')
+  assert.equal(await item('userRoutes').getAttribute('aria-selected'), 'true')
   assert.equal(await page.getByRole('button', { name: label('nav.sections.system'), exact: true }).count(), 0)
   await open('/console/tokens', 'user')
   await page.getByRole('heading', { name: label('dashboard.user.title'), exact: true }).waitFor()

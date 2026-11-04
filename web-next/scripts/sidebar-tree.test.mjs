@@ -68,5 +68,6 @@ test('grouped system navigation retains every existing administrator entry exact
   assert.ok(adminWorkspaceItems.includes('overview'))
   assert.ok(userWorkspaceItems.includes('overview'))
   assert.ok(userWorkspaceItems.includes('apiKeys'))
+  assert.ok(userWorkspaceItems.includes('userRoutes'))
   assert.ok(systemPinnedItems.includes('keys'))
 })

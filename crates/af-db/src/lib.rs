@@ -244,10 +244,15 @@ mod usage_log;
 #[cfg(test)]
 mod usage_log_tests;
 mod user_profile;
+mod user_route;
 mod user_session;
 #[cfg(test)]
 mod user_session_tests;
 mod user_token;
+pub use user_route::{
+    UserRouteError, UserRouteMemberRecord, UserRouteMemberWrite, UserRouteModelHealth,
+    UserRouteRecord, UserRouteRepository, UserRouteWrite,
+};
 #[cfg(test)]
 mod user_token_tests;
 mod wallet_ledger;

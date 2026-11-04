@@ -224,6 +224,12 @@ pub(crate) enum ManagementError {
     GroupConflict,
     /// 分组仍被有效用户或有效令牌引用。
     GroupInUse,
+    /// 用户路由规则不存在或不属于当前用户。
+    UserRouteNotFound,
+    /// 用户路由数量已达上限。
+    UserRouteLimitReached,
+    /// 路由或某个成员分组当前不可用或已撤权。
+    UserRouteUnavailable,
     /// 智能路由不存在或已经被软删除。
     RouteNotFound,
     /// 智能路由名称与当前有效路由冲突。
@@ -1158,6 +1164,27 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "group_in_use",
                     message: "Group in use",
+                },
+            ),
+            Self::UserRouteNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "user_route_not_found",
+                    message: "User route not found",
+                },
+            ),
+            Self::UserRouteLimitReached => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "user_route_limit_reached",
+                    message: "User route limit reached",
+                },
+            ),
+            Self::UserRouteUnavailable => (
+                StatusCode::FORBIDDEN,
+                ManagementErrorBody {
+                    code: "user_route_unavailable",
+                    message: "User route unavailable",
                 },
             ),
             Self::RouteNotFound => (

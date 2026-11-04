@@ -50,6 +50,7 @@ const navItems = {
   videoTasks: { key: 'videoTasks', icon: 'solar:video-frame-linear', href: '/console/video-tasks' },
   imagePlaza: { key: 'imagePlaza', icon: 'solar:gallery-wide-linear', href: '/console/image-plaza' },
   apiKeys: { key: 'apiKeys', icon: 'solar:key-linear', href: '/console/api-keys' },
+  userRoutes: { key: 'userRoutes', icon: 'solar:routing-2-linear', href: '/console/user-routes' },
   accountVerification: { key: 'accountVerification', icon: 'solar:verified-check-linear', href: '/console/account-verification' },
   accountVerificationReviews: { key: 'accountVerificationReviews', icon: 'solar:clipboard-check-linear', href: '/console/account-verification-reviews' },
   invitationSettings: { key: 'invitationSettings', icon: 'solar:gift-linear', href: '/console/system-settings/invitations' },

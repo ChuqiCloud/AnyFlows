@@ -5,6 +5,7 @@ export type NavKey =
   | 'videoTasks'
   | 'imagePlaza'
   | 'apiKeys'
+  | 'userRoutes'
   | 'announcements'
   | 'wallet'
   | 'subscriptions'
@@ -50,6 +51,7 @@ export const userWorkspaceItems = [
   'imagePlaza',
   'usage',
   'apiKeys',
+  'userRoutes',
   'wallet',
   'invitations',
   'accountVerification',
@@ -64,6 +66,7 @@ export const adminWorkspaceItems = [
   'imagePlaza',
   'usage',
   'apiKeys',
+  'userRoutes',
   'wallet',
   'invitations',
   'accountVerification',

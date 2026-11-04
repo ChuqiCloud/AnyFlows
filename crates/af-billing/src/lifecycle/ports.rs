@@ -35,6 +35,11 @@ pub trait BillingPrechargePort: Send + Sync + 'static {
         amount: Quota,
     ) -> BillingPrechargeFuture<'a>;
 
+    /// 在尚未交付的尝试失败后同步确认全额退款；不支持的端口必须关闭跨组重试。
+    fn cancel<'a>(&'a self, _reservation_id: BillingReservationId) -> BillingPrechargeFuture<'a> {
+        Box::pin(async { Err(BillingPrechargeError::Unavailable) })
+    }
+
     /// 使用同一预留绑定可选合同价快照；未覆盖的实现兼容旧预扣入口。
     fn precharge_with_snapshot<'a>(
         &'a self,
@@ -76,6 +81,23 @@ pub enum BillingPrechargeError {
 }
 
 impl BillingPrechargePort for QuotaRepository {
+    fn cancel<'a>(&'a self, reservation_id: BillingReservationId) -> BillingPrechargeFuture<'a> {
+        Box::pin(async move {
+            let outcome = QuotaRepository::refund(self, reservation_id)
+                .await
+                .map_err(map_quota_repository_precharge_error)?;
+            match outcome {
+                QuotaMutationOutcome::Applied
+                | QuotaMutationOutcome::Existing(QuotaReservationStatus::Refunded) => Ok(()),
+                QuotaMutationOutcome::Existing(
+                    QuotaReservationStatus::Reserved
+                    | QuotaReservationStatus::SettlementPending
+                    | QuotaReservationStatus::Settled,
+                ) => Err(BillingPrechargeError::Conflict),
+            }
+        })
+    }
+
     fn precharge<'a>(
         &'a self,
         reservation_id: BillingReservationId,

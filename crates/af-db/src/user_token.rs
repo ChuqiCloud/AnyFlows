@@ -141,7 +141,8 @@ pub(super) fn record_internal_error(error: UserTokenRepositoryError) -> UserToke
         UserTokenRepositoryError::InvalidInput
         | UserTokenRepositoryError::OwnerUnavailable
         | UserTokenRepositoryError::LimitReached
-        | UserTokenRepositoryError::GroupUnavailable => return error,
+        | UserTokenRepositoryError::GroupUnavailable
+        | UserTokenRepositoryError::UserRouteUnavailable => return error,
     };
     tracing::error!(target: "af_db::user_token", error_kind, "用户 API Key 仓储发生内部错误");
     error

@@ -209,6 +209,7 @@ pub struct GatewayPrincipal {
     user_id: UserId,
     group_id: GroupId,
     billing_source_group_id: GroupId,
+    user_route_id: Option<i64>,
     organization: Option<OrganizationGatewayPrincipal>,
     playground: bool,
 }
@@ -294,6 +295,7 @@ impl GatewayPrincipal {
             user_id,
             group_id,
             billing_source_group_id: group_id,
+            user_route_id: None,
             organization: None,
             playground: false,
         }
@@ -307,6 +309,7 @@ impl GatewayPrincipal {
             user_id,
             group_id,
             billing_source_group_id: group_id,
+            user_route_id: None,
             organization: None,
             playground: true,
         }
@@ -325,6 +328,7 @@ impl GatewayPrincipal {
             user_id,
             group_id,
             billing_source_group_id: group_id,
+            user_route_id: None,
             organization: Some(organization),
             playground: false,
         }
@@ -346,6 +350,26 @@ impl GatewayPrincipal {
     #[must_use]
     pub const fn group_id(self) -> GroupId {
         self.group_id
+    }
+
+    /// 为已复验授权的一次分组尝试固定目标组，保留签发用户、Key 与计费来源组。
+    #[must_use]
+    pub const fn with_routing_group_id(mut self, group_id: GroupId) -> Self {
+        self.group_id = group_id;
+        self
+    }
+
+    /// 绑定鉴权时核实的个人路由组；组织和试炼场请求不应携带此字段。
+    #[must_use]
+    pub const fn with_user_route_id(mut self, user_route_id: Option<i64>) -> Self {
+        self.user_route_id = user_route_id;
+        self
+    }
+
+    /// 返回个人 Key 绑定的用户路由组标识，普通单分组 Key 返回空。
+    #[must_use]
+    pub const fn user_route_id(self) -> Option<i64> {
+        self.user_route_id
     }
 
     /// 固定鉴权时读取的用户默认组，用于来源组到目标组的附加倍率。

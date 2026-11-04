@@ -48,6 +48,7 @@ impl UserTokenStatus {
 pub struct UserToken {
     token_id: TokenId,
     group_id: Option<GroupId>,
+    user_route_id: Option<i64>,
     effective_group_id: GroupId,
     group_display_name: String,
     key_prefix: String,
@@ -87,6 +88,7 @@ impl UserToken {
         Self {
             token_id,
             group_id,
+            user_route_id: None,
             effective_group_id,
             group_display_name,
             key_prefix,
@@ -107,6 +109,7 @@ impl UserToken {
         Ok(Self {
             token_id: record.token_id(),
             group_id: record.group_id(),
+            user_route_id: record.user_route_id(),
             effective_group_id: record.effective_group_id(),
             group_display_name: record.group_display_name().to_owned(),
             key_prefix: record.key_prefix().to_owned(),
@@ -133,6 +136,12 @@ impl UserToken {
     #[must_use]
     pub const fn group_id(&self) -> Option<GroupId> {
         self.group_id
+    }
+
+    /// 返回绑定的用户智能路由。
+    #[must_use]
+    pub const fn user_route_id(&self) -> Option<i64> {
+        self.user_route_id
     }
 
     /// 返回当前解析的实际分组。
@@ -290,6 +299,7 @@ impl UserTokenPage {
 /// 普通用户创建或更新 Key 的命令。
 pub struct UserTokenWriteCommand {
     group_id: Option<GroupId>,
+    user_route_id: Option<i64>,
     name: String,
     status: UserTokenStatus,
     remain_quota: i64,
@@ -323,6 +333,7 @@ impl UserTokenWriteCommand {
         validate_ip_allowlist(allow_ips.as_deref()).map_err(|_| UserTokenError::InvalidInput)?;
         Ok(Self {
             group_id: None,
+            user_route_id: None,
             name,
             status,
             remain_quota,
@@ -344,6 +355,26 @@ impl UserTokenWriteCommand {
     #[must_use]
     pub const fn group_id(&self) -> Option<GroupId> {
         self.group_id
+    }
+
+    /// 设置创建时的用户路由绑定。
+    pub fn with_user_route_id(
+        mut self,
+        user_route_id: Option<i64>,
+    ) -> Result<Self, UserTokenError> {
+        if user_route_id.is_some_and(|id| id <= 0)
+            || (user_route_id.is_some() && self.group_id.is_some())
+        {
+            return Err(UserTokenError::InvalidInput);
+        }
+        self.user_route_id = user_route_id;
+        Ok(self)
+    }
+
+    /// 返回用户路由绑定。
+    #[must_use]
+    pub const fn user_route_id(&self) -> Option<i64> {
+        self.user_route_id
     }
 
     pub(super) fn into_record(self) -> UserTokenWriteRecord {
@@ -412,6 +443,9 @@ pub enum UserTokenError {
     /// 指定分组不可用或未向当前用户开放。
     #[error("用户 API Key 分组不可用")]
     GroupUnavailable,
+    /// 指定路由停用、删除、越权或成员已撤权。
+    #[error("用户智能路由不可用")]
+    UserRouteUnavailable,
     /// Key 不存在、已经软删除或不属于当前用户。
     #[error("用户 API Key 不存在")]
     NotFound,
