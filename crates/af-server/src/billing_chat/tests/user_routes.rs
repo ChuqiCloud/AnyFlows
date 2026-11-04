@@ -257,18 +257,19 @@ async fn user_route_releases_first_group_then_bills_actual_successful_group() {
         attempts.lock().unwrap().as_slice(),
         &[GroupId::new(3).unwrap(), GroupId::new(4).unwrap()]
     );
-    let records = usage_port.records.lock().unwrap();
-    assert_eq!(records.len(), 1);
-    assert_eq!(
-        records[0].principal().unwrap().group_id(),
-        GroupId::new(4).unwrap()
-    );
-    assert_eq!(
-        records[0].principal().unwrap().billing_source_group_id(),
-        GroupId::new(3).unwrap()
-    );
-    assert_eq!(records[0].quota(), expected);
-    drop(records);
+    {
+        let records = usage_port.records.lock().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(
+            records[0].principal().unwrap().group_id(),
+            GroupId::new(4).unwrap()
+        );
+        assert_eq!(
+            records[0].principal().unwrap().billing_source_group_id(),
+            GroupId::new(3).unwrap()
+        );
+        assert_eq!(records[0].quota(), expected);
+    }
     let backend = database.seed().get_database_backend();
     let reservations = database
         .seed()

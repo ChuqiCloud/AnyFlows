@@ -720,9 +720,9 @@ jobs:
           git diff -- web/openapi/openapi.json
           exit 1
 
-      - name: Check development workspace
+      - name: Check development workspace with Clippy
         if: needs.changes.outputs.full != 'true'
-        run: cargo check --workspace --all-targets --all-features --locked
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
       - name: Run focused Passkey compatibility tests
         if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'

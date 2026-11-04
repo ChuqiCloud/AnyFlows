@@ -44,18 +44,16 @@ export function AccountVerificationPage({ admin = false }: { admin?: boolean }) 
   const verified = useVerifiedAccount(!admin)
   const query = useAccountVerifications(admin, status)
   const entries = query.data?.pages.flatMap((p) => p.cases) ?? []
-  // 远端还有下一页时把已知总页数 +1，让分页条能翻到未下载的那一页。
+  // 远端还有数据时保留一条未知记录，让分页条能翻到仍需补齐的尾页。
   const pageCount = Math.max(1, Math.ceil((entries.length + (query.hasNextPage ? 1 : 0)) / pageSize))
   const currentPage = Math.min(page, pageCount)
   const visibleEntries = entries.slice((currentPage - 1) * pageSize, currentPage * pageSize)
-  // 还有远端页时，翻到最后一页继续往后会自动拉取下一页。
-  const goToPage = (next: number) => {
-    const loadedPages = Math.ceil(entries.length / pageSize)
-    if (next > loadedPages && query.hasNextPage && !query.isFetchingNextPage) {
-      void query.fetchNextPage()
-    }
-    setPage(next)
-  }
+
+  // 尾页的部分记录可能已在前一个 cursor 中，按当前页所需条数补齐，不等待翻到不存在的下一页。
+  useEffect(() => {
+    if (entries.length >= currentPage * pageSize || !query.hasNextPage || query.isFetchingNextPage || query.isFetchNextPageError) return
+    void query.fetchNextPage()
+  }, [currentPage, entries.length, pageSize, query.fetchNextPage, query.hasNextPage, query.isFetchNextPageError, query.isFetchingNextPage])
 
   useEffect(() => {
     if (selected === undefined || pendingScroll.current !== selected) return
@@ -204,7 +202,7 @@ export function AccountVerificationPage({ admin = false }: { admin?: boolean }) 
             page={currentPage}
             pageSize={pageSize}
             total={Math.max(1, entries.length + (query.hasNextPage ? 1 : 0))}
-            onPage={(next) => { goToPage(next); setSelected(undefined) }}
+            onPage={(next) => { setPage(next); setSelected(undefined) }}
             onPageSize={(size) => { setPageSize(size); setPage(1); setSelected(undefined) }}
           />
         ) : null}
