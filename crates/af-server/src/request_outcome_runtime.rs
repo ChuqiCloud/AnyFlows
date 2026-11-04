@@ -11,13 +11,25 @@ use af_domain::{AfError, ChannelId, GatewayPrincipal, Operation, Protocol, Upstr
 pub struct RoutedExecution<T> {
     value: T,
     channel_id: ChannelId,
+    target_group_id: Option<af_domain::GroupId>,
 }
 
 impl<T> RoutedExecution<T> {
     /// 绑定已经由候选报告确认的最终成功渠道。
     #[must_use]
     pub const fn new(value: T, channel_id: ChannelId) -> Self {
-        Self { value, channel_id }
+        Self {
+            value,
+            channel_id,
+            target_group_id: None,
+        }
+    }
+
+    /// 保留跨分组调度最终选中的计费分组，供请求终态观测使用。
+    #[must_use]
+    pub fn with_target_group_id(mut self, group_id: af_domain::GroupId) -> Self {
+        self.target_group_id = Some(group_id);
+        self
     }
 
     /// 返回最终成功渠道。
@@ -48,6 +60,21 @@ pub struct RequestOutcomeContext {
 }
 
 impl RequestOutcomeContext {
+    /// 使用实际执行组记录跨分组请求，不改变原始用户及 Key 归属。
+    #[must_use]
+    pub fn with_target_group_id(mut self, group_id: af_domain::GroupId) -> Self {
+        if let Some(subject) = self.subject {
+            self.subject = Some(RequestOutcomeSubject::new(
+                subject.user_id(),
+                subject.token_id(),
+                group_id,
+                subject.organization_id(),
+                subject.organization_team_id(),
+            ));
+        }
+        self
+    }
+
     /// 固化请求标识和低基数路由维度，不接收主体、凭据或原始协议内容。
     #[must_use]
     pub fn new(request_id: &str, protocol: Protocol, operation: Operation, model: &str) -> Self {
@@ -106,12 +133,21 @@ impl RequestOutcomeContext {
 
     /// 持久化服务调用终态并剥离内部渠道包装。
     pub async fn finish<T>(
-        self,
+        mut self,
         runtime: Option<&RequestOutcomeRuntime>,
         result: Result<RoutedExecution<T>, AfError>,
     ) -> Result<T, AfError> {
         match result {
             Ok(routed) => {
+                if let (Some(group_id), Some(subject)) = (routed.target_group_id, self.subject) {
+                    self.subject = Some(RequestOutcomeSubject::new(
+                        subject.user_id(),
+                        subject.token_id(),
+                        group_id,
+                        subject.organization_id(),
+                        subject.organization_team_id(),
+                    ));
+                }
                 let channel_id = routed.channel_id();
                 let value = routed.into_value();
                 self.record_success(runtime, channel_id).await;

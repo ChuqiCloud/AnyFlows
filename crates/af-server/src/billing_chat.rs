@@ -9,8 +9,8 @@ use af_adapter::Bytes;
 use af_billing::{
     BillingLifecycleError, BillingPrechargeError, BillingPrechargePort, BillingRequestLifecycle,
     BillingRequestPlan, BillingSettlementPort, BillingUsageContext, BillingUsageDimensions,
-    BillingUsageObservation, BillingUsageTiming, RefundSignalPort, RequestPricingSnapshotError,
-    RequestPricingSnapshotSource, UsageRecordPort,
+    BillingUsageObservation, BillingUsageTiming, RefundSignalPort, RequestPricingSnapshot,
+    RequestPricingSnapshotError, RequestPricingSnapshotSource, UsageRecordPort,
 };
 use af_domain::{
     AfError, BillingContractPriceSnapshot, BillingReservationId, ChannelId, ConcurrencyLimit,
@@ -26,6 +26,11 @@ use af_relay::{
 use tokio::time::sleep;
 use uuid::Uuid;
 
+use crate::user_route_execution::{
+    UserRouteAttemptError, UserRouteExecution, cancel_before_failover,
+};
+use crate::user_route_runtime::UserRouteRuntime;
+
 const MAX_PRECHARGE_ATTEMPTS: usize = 3;
 const MAX_COMPLETION_ATTEMPTS: usize = 3;
 const RETRY_DELAY: Duration = Duration::from_millis(20);
@@ -34,9 +39,68 @@ const DEFAULT_MAX_OUTPUT_TOKENS: i64 = 8_192;
 /// 已固定路由计划的一次异步执行结果。
 pub type PlannedChatExecutionFuture = Pin<
     Box<
-        dyn Future<Output = Result<crate::RoutedExecution<ChatResponse>, AfError>> + Send + 'static,
+        dyn Future<Output = Result<crate::RoutedExecution<ChatResponse>, PlannedExecutionFailure>>
+            + Send
+            + 'static,
     >,
 >;
+
+/// 组内执行错误同时保留公开错误分类与请求级终止语义。
+#[derive(Debug, thiserror::Error)]
+#[error("{error}")]
+pub struct PlannedExecutionFailure {
+    #[source]
+    error: AfError,
+    permits_group_failover: bool,
+}
+
+impl PlannedExecutionFailure {
+    /// 返回对外保持兼容的错误分类。
+    #[must_use]
+    pub const fn error(&self) -> &AfError {
+        &self.error
+    }
+
+    /// 消费内部执行错误并交还公开错误分类。
+    #[must_use]
+    pub fn into_error(self) -> AfError {
+        self.error
+    }
+
+    pub(crate) fn permits_group_failover(&self) -> bool {
+        self.permits_group_failover
+    }
+
+    pub(crate) fn terminal(error: AfError) -> Self {
+        Self {
+            error,
+            permits_group_failover: false,
+        }
+    }
+
+    pub(crate) fn from_relay_report(error: AfError, report: &af_relay::RelayAttemptReport) -> Self {
+        if report.request_aborted() {
+            Self::terminal(error)
+        } else {
+            error.into()
+        }
+    }
+}
+
+impl From<AfError> for PlannedExecutionFailure {
+    fn from(error: AfError) -> Self {
+        Self {
+            error,
+            permits_group_failover: true,
+        }
+    }
+}
+
+impl From<af_domain::UpstreamError> for PlannedExecutionFailure {
+    fn from(error: af_domain::UpstreamError) -> Self {
+        AfError::from(error).into()
+    }
+}
 
 /// 路由计划生成的异步返回类型；Redis 粘性查找必须在计费预扣前完成。
 pub type ChatRoutePlanFuture<'a> =
@@ -69,17 +133,29 @@ enum BilledChatExecution {
         body: Bytes,
         usage: Usage,
         channel_id: ChannelId,
+        target_group_id: GroupId,
     },
     Stream {
         body: Box<dyn GenerationStream>,
         usage: OpenAiChatUsageHandle,
         channel_id: ChannelId,
+        target_group_id: GroupId,
         completion: Box<BillingStreamCompletionHook>,
     },
 }
 
 /// 为已认证 Chat 请求信封生成不可变路由计划的对象安全端口。
 pub trait ChatRoutePlanner: Send + Sync {
+    /// 检查组内对话协议能否表达当前请求；此阶段不得发送上游调用。
+    fn supports_request(
+        &self,
+        _group_id: GroupId,
+        _request: &CanonicalRequestEnvelope,
+        _response_protocol: Protocol,
+    ) -> Result<bool, AfError> {
+        Ok(true)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn plan_service_account<'a>(
         &'a self,
@@ -119,6 +195,7 @@ pub struct BillingChatService {
     usage: Arc<dyn UsageRecordPort>,
     request_outcomes: Option<crate::RequestOutcomeRuntime>,
     service_billing: Option<Arc<dyn af_billing::ServiceAccountBillingPort>>,
+    user_routes: Option<UserRouteRuntime>,
 }
 
 impl BillingChatService {
@@ -141,6 +218,7 @@ impl BillingChatService {
             usage,
             request_outcomes: None,
             service_billing: None,
+            user_routes: None,
         }
     }
 
@@ -160,6 +238,11 @@ impl BillingChatService {
         self
     }
 
+    pub(crate) fn with_user_route_runtime(mut self, runtime: UserRouteRuntime) -> Self {
+        self.user_routes = Some(runtime);
+        self
+    }
+
     async fn call(
         &self,
         principal: &GatewayPrincipal,
@@ -176,23 +259,67 @@ impl BillingChatService {
             request.requested_model(),
             *principal,
         );
-        match self
-            .call_billed(
-                crate::model_subject::ModelSubject::User(*principal),
-                user_concurrency,
+        let request = request.with_default_max_output_tokens(
+            TokenCount::new(DEFAULT_MAX_OUTPUT_TOKENS).expect("网关默认输出上限必须是合法正整数"),
+        );
+        let result = async {
+            if principal.user_route_id().is_none() {
+                return self
+                    .call_billed(
+                        crate::model_subject::ModelSubject::User(*principal),
+                        user_concurrency,
+                        request,
+                        response_protocol,
+                        request_id,
+                        diagnostic,
+                        None,
+                        None,
+                    )
+                    .await
+                    .map(crate::RoutedExecution::into_value)
+                    .map_err(|failure| failure.error);
+            }
+            let model = request.canonical().model.clone();
+            let upper_bound = estimate_openai_request_upper_bound(request.canonical())
+                .map_err(map_upper_bound_error)?;
+            UserRouteExecution {
+                principal: *principal,
+                model: &model,
+                protocol: response_protocol,
+                operation: request.canonical().operation,
+                upper_bound: &upper_bound,
+                pricing: self.pricing_source.as_ref(),
+                defer_success_feedback: true,
+            }
+            .run(
+                self.user_routes.as_ref(),
                 request,
-                response_protocol,
-                request_id,
-                diagnostic,
+                |principal, request, snapshot, maximum| {
+                    self.call_billed(
+                        crate::model_subject::ModelSubject::User(principal),
+                        user_concurrency,
+                        request,
+                        response_protocol,
+                        request_id,
+                        diagnostic.clone(),
+                        snapshot,
+                        maximum,
+                    )
+                },
             )
             .await
-        {
+            .map(crate::RoutedExecution::into_value)
+        }
+        .await;
+        match result {
             Ok(BilledChatExecution::Full {
                 body,
                 usage,
                 channel_id,
+                target_group_id,
             }) => {
                 outcome
+                    .with_target_group_id(target_group_id)
                     .record_success(self.request_outcomes.as_ref(), channel_id)
                     .await;
                 Ok(ChatResponse::Full {
@@ -204,10 +331,11 @@ impl BillingChatService {
                 body,
                 usage,
                 channel_id,
+                target_group_id,
                 mut completion,
             }) => {
                 completion.outcome = Some(StreamRequestOutcome {
-                    context: outcome,
+                    context: outcome.with_target_group_id(target_group_id),
                     runtime: self.request_outcomes.clone(),
                     channel_id,
                 });
@@ -234,25 +362,38 @@ impl BillingChatService {
         response_protocol: Protocol,
         request_id: &str,
         diagnostic: RelayDiagnosticInput,
-    ) -> Result<BilledChatExecution, AfError> {
+        fixed_snapshot: Option<RequestPricingSnapshot>,
+        maximum_price_ratio: Option<i64>,
+    ) -> Result<crate::RoutedExecution<BilledChatExecution>, UserRouteAttemptError> {
         let started_at = Instant::now();
         // 缺省值必须同时约束预扣和上游输出，避免预留额度低于平台真实成本。
         let request = request.with_default_max_output_tokens(
             TokenCount::new(DEFAULT_MAX_OUTPUT_TOKENS).expect("网关默认输出上限必须是合法正整数"),
         );
+        if let crate::model_subject::ModelSubject::User(principal) = subject
+            && principal.user_route_id().is_some()
+            && !self
+                .inner
+                .supports_request(principal.group_id(), &request, response_protocol)?
+        {
+            return Err(UserRouteAttemptError::candidate_plan(
+                af_domain::UpstreamError::ModelUnsupported.into(),
+            ));
+        }
+        let requested_pricing_model = request.canonical().model.clone();
         let planned = match subject {
-            crate::model_subject::ModelSubject::User(principal) => {
-                self.inner
-                    .plan(
-                        &principal,
-                        user_concurrency,
-                        request,
-                        response_protocol,
-                        request_id,
-                        diagnostic,
-                    )
-                    .await?
-            }
+            crate::model_subject::ModelSubject::User(principal) => self
+                .inner
+                .plan(
+                    &principal,
+                    user_concurrency,
+                    request,
+                    response_protocol,
+                    request_id,
+                    diagnostic,
+                )
+                .await
+                .map_err(UserRouteAttemptError::candidate_plan)?,
             crate::model_subject::ModelSubject::ServiceAccount {
                 identity,
                 group_id,
@@ -287,18 +428,32 @@ impl BillingChatService {
         let source_group_id = subject.billing_source_group_id();
         let target_group_id = planned.target_group_id();
         let pricing_model = planned.pricing_model().to_owned();
-        let snapshot = self
-            .pricing_source
-            .capture_for_request_at(
-                &pricing_model,
-                source_group_id,
-                target_group_id,
-                subject.organization_id(),
-                response_protocol,
-                crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?,
-            )
-            .await
-            .map_err(map_snapshot_error)?;
+        if let crate::model_subject::ModelSubject::User(principal) = subject
+            && principal.user_route_id().is_some()
+            && target_group_id != principal.group_id()
+        {
+            return Err(AfError::Internal.into());
+        }
+        let snapshot = match fixed_snapshot.filter(|_| pricing_model == requested_pricing_model) {
+            Some(snapshot) => snapshot,
+            None => self
+                .pricing_source
+                .capture_for_request_at(
+                    &pricing_model,
+                    source_group_id,
+                    target_group_id,
+                    subject.organization_id(),
+                    response_protocol,
+                    crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?,
+                )
+                .await
+                .map_err(map_snapshot_error)?,
+        };
+        if !crate::user_route_runtime::price_ratio_allowed(&snapshot, maximum_price_ratio)? {
+            return Err(UserRouteAttemptError::candidate_plan(
+                AfError::ModelNotAllowed,
+            ));
+        }
         let plan = BillingRequestPlan::prepare(snapshot.resolver(), &upper_bound)
             .map_err(map_lifecycle_error)?
             .with_contract_price(snapshot.contract_price());
@@ -334,7 +489,7 @@ impl BillingChatService {
                             Ok(lifecycle) => lifecycle,
                             Err(error) => {
                                 let _ = port.try_signal_refund(identity, reservation_id);
-                                return Err(map_lifecycle_error(error));
+                                return Err(map_lifecycle_error(error).into());
                             }
                         }
                     }
@@ -366,14 +521,29 @@ impl BillingChatService {
                         Ok(lifecycle) => lifecycle,
                         Err(error) => {
                             let _ = refund.try_signal_refund(reservation_id);
-                            return Err(map_lifecycle_error(error));
+                            return Err(map_lifecycle_error(error).into());
                         }
                     }
                 }
             },
         };
 
-        let routed = planned.execute().await?;
+        let routed = match planned.execute().await {
+            Ok(routed) => routed,
+            Err(failure) => {
+                let permits_group_failover = failure.permits_group_failover();
+                let error = failure.into_error();
+                if matches!(subject, crate::model_subject::ModelSubject::User(principal)
+                    if principal.user_route_id().is_some())
+                    && permits_group_failover
+                    && crate::user_route_runtime::permits_group_failover(&error)
+                {
+                    cancel_before_failover(&mut lifecycle, self.precharge.as_deref()).await?;
+                    return Err(UserRouteAttemptError::before_delivery(error));
+                }
+                return Err(error.into());
+            }
+        };
         let channel_id = routed.channel_id();
         let response = routed.into_value();
         match response {
@@ -388,11 +558,24 @@ impl BillingChatService {
                 )
                 .await
                 .map_err(map_lifecycle_error)?;
-                Ok(BilledChatExecution::Full {
-                    body,
-                    usage,
+                if let Some(feedback) = self.route_feedback(
+                    subject,
+                    &requested_pricing_model,
+                    target_group_id,
+                    started_at,
+                ) {
+                    feedback.finish(true, false).await;
+                }
+                Ok(crate::RoutedExecution::new(
+                    BilledChatExecution::Full {
+                        body,
+                        usage,
+                        channel_id,
+                        target_group_id,
+                    },
                     channel_id,
-                })
+                )
+                .with_target_group_id(target_group_id))
             }
             ChatResponse::Stream { body, usage } => {
                 let completion = Box::new(BillingStreamCompletionHook {
@@ -401,15 +584,45 @@ impl BillingChatService {
                     started_at,
                     first_token: started_at.elapsed(),
                     outcome: None,
+                    route_feedback: self.route_feedback(
+                        subject,
+                        &requested_pricing_model,
+                        target_group_id,
+                        started_at,
+                    ),
                 });
-                Ok(BilledChatExecution::Stream {
-                    body,
-                    usage,
+                Ok(crate::RoutedExecution::new(
+                    BilledChatExecution::Stream {
+                        body,
+                        usage,
+                        channel_id,
+                        target_group_id,
+                        completion,
+                    },
                     channel_id,
-                    completion,
-                })
+                )
+                .with_target_group_id(target_group_id))
             }
         }
+    }
+
+    fn route_feedback(
+        &self,
+        subject: crate::model_subject::ModelSubject,
+        model: &str,
+        group_id: GroupId,
+        started_at: Instant,
+    ) -> Option<UserRouteFeedback> {
+        let crate::model_subject::ModelSubject::User(principal) = subject else {
+            return None;
+        };
+        Some(UserRouteFeedback {
+            runtime: self.user_routes.clone()?,
+            route_id: principal.user_route_id()?,
+            model: model.to_owned(),
+            group_id,
+            started_at,
+        })
     }
 }
 
@@ -444,13 +657,17 @@ impl ChatService for BillingChatService {
                     response_protocol,
                     request_id,
                     diagnostic,
+                    None,
+                    None,
                 )
                 .await
+                .map(crate::RoutedExecution::into_value)
             {
                 Ok(BilledChatExecution::Full {
                     body,
                     usage,
                     channel_id,
+                    target_group_id: _,
                 }) => {
                     outcome
                         .record_success(self.request_outcomes.as_ref(), channel_id)
@@ -464,6 +681,7 @@ impl ChatService for BillingChatService {
                     body,
                     usage,
                     channel_id,
+                    target_group_id: _,
                     mut completion,
                 }) => {
                     completion.outcome = Some(StreamRequestOutcome {
@@ -476,7 +694,8 @@ impl ChatService for BillingChatService {
                         usage,
                     })
                 }
-                Err(error) => {
+                Err(failure) => {
+                    let error = failure.error;
                     outcome
                         .record_failure(self.request_outcomes.as_ref(), &error, None)
                         .await;
@@ -512,6 +731,30 @@ struct BillingStreamCompletionHook {
     started_at: Instant,
     first_token: Duration,
     outcome: Option<StreamRequestOutcome>,
+    route_feedback: Option<UserRouteFeedback>,
+}
+
+struct UserRouteFeedback {
+    runtime: UserRouteRuntime,
+    route_id: i64,
+    model: String,
+    group_id: GroupId,
+    started_at: Instant,
+}
+
+impl UserRouteFeedback {
+    async fn finish(self, success: bool, retryable_failure: bool) {
+        self.runtime
+            .feedback_for(
+                self.route_id,
+                &self.model,
+                self.group_id,
+                success,
+                u64::try_from(self.started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+                retryable_failure,
+            )
+            .await;
+    }
 }
 
 /// 流式计费与请求终态共享的一次性低敏感度上下文。
@@ -588,6 +831,26 @@ impl Drop for StreamRequestOutcomeGuard {
 }
 
 impl GenerationCompletionHook for BillingStreamCompletionHook {
+    fn on_delivery(
+        mut self: Box<Self>,
+        usage: Result<Usage, UsageResolutionError>,
+        outcome: af_relay::StreamDeliveryOutcome,
+    ) -> GenerationCompletionFuture {
+        if !matches!(
+            outcome,
+            af_relay::StreamDeliveryOutcome::Completed
+                | af_relay::StreamDeliveryOutcome::UpstreamFailed
+        ) {
+            // Client cancellation and local delivery limits do not measure upstream stability.
+            self.route_feedback = None;
+        }
+        self.on_complete(if outcome == af_relay::StreamDeliveryOutcome::Completed {
+            usage
+        } else {
+            Err(UsageResolutionError::Interrupted)
+        })
+    }
+
     fn on_complete(
         mut self: Box<Self>,
         usage: Result<Usage, UsageResolutionError>,
@@ -599,10 +862,16 @@ impl GenerationCompletionHook for BillingStreamCompletionHook {
                 return;
             };
             let Ok(usage) = usage else {
+                if let Some(feedback) = self.route_feedback.take() {
+                    feedback.finish(false, true).await;
+                }
                 drop(lifecycle);
                 outcome.record_failure(AfError::RequestOutcomeUnknown).await;
                 return;
             };
+            if let Some(feedback) = self.route_feedback.take() {
+                feedback.finish(true, false).await;
+            }
             let observation = call_observation(
                 self.context,
                 Some(self.first_token),
@@ -822,6 +1091,7 @@ pub(crate) fn map_lifecycle_error(error: BillingLifecycleError) -> AfError {
 #[cfg(test)]
 mod tests {
     mod service_gateway;
+    mod user_routes;
     use std::sync::{Arc, Mutex};
 
     use af_adapter::{Bytes, HeaderMap};

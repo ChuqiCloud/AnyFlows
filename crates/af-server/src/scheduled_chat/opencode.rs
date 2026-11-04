@@ -60,7 +60,7 @@ pub(super) fn prepare_plan(
 /// 兼容模式的健康、粘性与诊断均在实际终态后提交。
 pub(super) async fn execute(
     execution: ScheduledChatExecution,
-) -> Result<crate::RoutedExecution<ChatResponse>, AfError> {
+) -> Result<crate::RoutedExecution<ChatResponse>, PlannedExecutionFailure> {
     let ScheduledChatExecution {
         tool_plan,
         machine,
@@ -114,7 +114,7 @@ pub(super) async fn execute(
         Ok(ChatResponse::Stream { body, usage }) => {
             let Some(channel) = channel else {
                 feedback.finish().await;
-                return Err(AfError::Internal);
+                return Err(AfError::Internal.into());
             };
             let body = body.with_completion_hook(Box::new(Completion {
                 feedback: Some(feedback),
@@ -128,11 +128,15 @@ pub(super) async fn execute(
             feedback.finish().await;
             channel
                 .map(|channel| crate::RoutedExecution::new(response, channel))
-                .ok_or(AfError::Internal)
+                .ok_or(AfError::Internal.into())
         }
         Err(error) => {
+            let failure = PlannedExecutionFailure::from_relay_report(
+                error,
+                &feedback.report.snapshot().report,
+            );
             feedback.finish().await;
-            Err(error)
+            Err(failure)
         }
     }
 }

@@ -13,6 +13,7 @@ pub const MAX_USER_TOKEN_PAGE_SIZE: usize = 100;
 /// 普通用户可读取的非敏感 API Key 快照。
 pub struct UserTokenRecord {
     inner: AdminTokenRecord,
+    user_route_id: Option<i64>,
     effective_group_id: GroupId,
     group_display_name: String,
 }
@@ -23,6 +24,7 @@ impl UserTokenRecord {
         expected_owner: UserId,
         effective_group_id: GroupId,
         group_display_name: String,
+        user_route_id: Option<i64>,
     ) -> Result<Self, UserTokenRepositoryError> {
         if record.user_id() != expected_owner {
             return Err(super::record_internal_error(
@@ -31,6 +33,7 @@ impl UserTokenRecord {
         }
         Ok(Self {
             inner: record,
+            user_route_id,
             effective_group_id,
             group_display_name,
         })
@@ -46,6 +49,12 @@ impl UserTokenRecord {
     #[must_use]
     pub const fn group_id(&self) -> Option<GroupId> {
         self.inner.group_id()
+    }
+
+    /// 返回用户路由绑定；关闭或删除后也保留该标识。
+    #[must_use]
+    pub const fn user_route_id(&self) -> Option<i64> {
+        self.user_route_id
     }
 
     /// 返回当前解析的实际分组。
@@ -168,6 +177,7 @@ pub struct UserTokenCreateRecord {
     pub(super) key_prefix: String,
     pub(super) fields: UserTokenWriteRecord,
     pub(super) group_id: Option<GroupId>,
+    pub(super) user_route_id: Option<i64>,
 }
 
 impl UserTokenCreateRecord {
@@ -185,6 +195,7 @@ impl UserTokenCreateRecord {
             key_prefix,
             fields,
             group_id: None,
+            user_route_id: None,
         }
     }
 
@@ -192,6 +203,13 @@ impl UserTokenCreateRecord {
     #[must_use]
     pub fn with_group_id(mut self, group_id: Option<GroupId>) -> Self {
         self.group_id = group_id;
+        self
+    }
+
+    /// 创建时选择用户路由，与固定分组互斥。
+    #[must_use]
+    pub fn with_user_route_id(mut self, user_route_id: Option<i64>) -> Self {
+        self.user_route_id = user_route_id;
         self
     }
 }
@@ -284,6 +302,9 @@ pub enum UserTokenRepositoryError {
     /// 指定分组不可用或未向当前用户开放。
     #[error("用户 API Key 分组不可用")]
     GroupUnavailable,
+    /// 路由停用、删除、越权或成员授权已发生变化。
+    #[error("用户智能路由不可用")]
+    UserRouteUnavailable,
     /// 获取连接、事务或执行 SQL 失败。
     #[error("用户 API Key 数据库操作失败")]
     Query,

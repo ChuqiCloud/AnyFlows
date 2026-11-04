@@ -2447,6 +2447,33 @@ export type UserRedemptionResult = {
     redeemed_at: number;
     replayed: boolean;
 };
+export type UserRoute = {
+    id: number;
+    name: string;
+    strategy: UserRouteStrategySchema;
+    enabled: boolean;
+    max_group_attempts: number;
+    max_price_ratio_micros: number | null;
+    members: Array<UserRouteMember>;
+};
+export type UserRouteListResponse = {
+    items: Array<UserRoute>;
+    capacity: number;
+};
+export type UserRouteMember = {
+    group_id: number;
+    priority: number;
+    weight: number;
+};
+export type UserRouteStrategySchema = 'price_first' | 'stable_first' | 'ordered' | 'round_robin' | 'weighted';
+export type UserRouteWriteRequest = {
+    name: string;
+    strategy: UserRouteStrategySchema;
+    enabled: boolean;
+    max_group_attempts: number;
+    max_price_ratio_micros: number | null;
+    members: Array<UserRouteMember>;
+};
 export type UserSubscription = {
     subscription_id: string;
     user_id: number;
@@ -2472,6 +2499,7 @@ export type UserSubscriptionStatus = 'active' | 'suspended' | 'canceled' | 'expi
 export type UserToken = {
     id: number;
     group_id: number | null;
+    user_route_id: number | null;
     effective_group_id: number;
     group_display_name: string;
     key_prefix: string;
@@ -2504,6 +2532,7 @@ export type UserTokenListResponse = {
 export type UserTokenStatus = 'enabled' | 'disabled';
 export type UserTokenWriteRequest = {
     group_id?: number | null;
+    user_route_id?: number | null;
     name: string;
     status: UserTokenStatus;
     remain_quota: number;
@@ -5925,6 +5954,97 @@ export type UpdateUserTokenResponses = {
     200: UserToken;
 };
 export type UpdateUserTokenResponse = UpdateUserTokenResponses[keyof UpdateUserTokenResponses];
+export type ListUserRoutesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/user-routes';
+};
+export type ListUserRoutesErrors = {
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListUserRoutesError = ListUserRoutesErrors[keyof ListUserRoutesErrors];
+export type ListUserRoutesResponses = {
+    200: UserRouteListResponse;
+};
+export type ListUserRoutesResponse = ListUserRoutesResponses[keyof ListUserRoutesResponses];
+export type CreateUserRouteData = {
+    body: UserRouteWriteRequest;
+    path?: never;
+    query?: never;
+    url: '/api/user-routes';
+};
+export type CreateUserRouteErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateUserRouteError = CreateUserRouteErrors[keyof CreateUserRouteErrors];
+export type CreateUserRouteResponses = {
+    201: UserRoute;
+};
+export type CreateUserRouteResponse = CreateUserRouteResponses[keyof CreateUserRouteResponses];
+export type DeleteUserRouteData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/user-routes/{id}';
+};
+export type DeleteUserRouteErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type DeleteUserRouteError = DeleteUserRouteErrors[keyof DeleteUserRouteErrors];
+export type DeleteUserRouteResponses = {
+    204: void;
+};
+export type DeleteUserRouteResponse = DeleteUserRouteResponses[keyof DeleteUserRouteResponses];
+export type GetUserRouteData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/user-routes/{id}';
+};
+export type GetUserRouteErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetUserRouteError = GetUserRouteErrors[keyof GetUserRouteErrors];
+export type GetUserRouteResponses = {
+    200: UserRoute;
+};
+export type GetUserRouteResponse = GetUserRouteResponses[keyof GetUserRouteResponses];
+export type UpdateUserRouteData = {
+    body: UserRouteWriteRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/user-routes/{id}';
+};
+export type UpdateUserRouteErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type UpdateUserRouteError = UpdateUserRouteErrors[keyof UpdateUserRouteErrors];
+export type UpdateUserRouteResponses = {
+    200: UserRoute;
+};
+export type UpdateUserRouteResponse = UpdateUserRouteResponses[keyof UpdateUserRouteResponses];
 export type ListAdminTokensData = {
     body?: never;
     path?: never;

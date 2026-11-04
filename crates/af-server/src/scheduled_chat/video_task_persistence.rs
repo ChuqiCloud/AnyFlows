@@ -3,7 +3,7 @@ use std::{
     future::Future,
     pin::Pin,
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use af_billing::{
@@ -35,6 +35,8 @@ use af_protocol::{
 use af_relay::VideoTaskSubmissionDisposition;
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
+
+use crate::user_route_runtime::{UserRouteRuntime, permits_group_failover, ratio_product_allowed};
 
 use super::{
     BoundVideoTaskSubmission, ScheduledChatService, VideoTaskRuntime,
@@ -131,6 +133,12 @@ struct PersistentSubmission {
     credential_revision: u64,
     binding_fingerprint: AsyncTaskBindingFingerprint,
     attempt_timeout: std::time::Duration,
+}
+
+struct RoutedVideoCandidate {
+    routing_group_id: GroupId,
+    target_group_id: GroupId,
+    pricing: XaiVideoPricingSnapshot,
 }
 
 impl PersistentSubmission {
@@ -231,6 +239,7 @@ pub(crate) struct PersistentVideoTaskCoordinator {
     group_pricing: GroupPricingCache,
     model_prices: ModelPriceCache,
     billing_ports: PersistentVideoTaskBillingPorts,
+    user_routes: Option<UserRouteRuntime>,
 }
 
 impl PersistentVideoTaskCoordinator {
@@ -272,7 +281,13 @@ impl PersistentVideoTaskCoordinator {
             group_pricing,
             model_prices,
             billing_ports,
+            user_routes: None,
         }
+    }
+
+    pub(crate) fn with_user_route_runtime(mut self, runtime: UserRouteRuntime) -> Self {
+        self.user_routes = Some(runtime);
+        self
     }
 
     /// 只读取 owner-scoped 视频任务历史，不解析运行时绑定或访问上游。
@@ -337,6 +352,18 @@ impl PersistentVideoTaskCoordinator {
             AsyncTaskSubmissionState::Claimed => {}
         }
 
+        if principal.user_route_id().is_some() {
+            return self
+                .submit_routed(
+                    claim,
+                    principal,
+                    request,
+                    requested_resolution,
+                    relay_request_id,
+                )
+                .await;
+        }
+
         let target_group_id = self
             .runtime
             .target_group(claim.principal().group_id(), claim.requested_model())
@@ -374,6 +401,216 @@ impl PersistentVideoTaskCoordinator {
             }
             Err(_) => Err(PersistentVideoTaskError::SubmissionOutcomeUnknown),
         }
+    }
+
+    async fn submit_routed(
+        &self,
+        mut claim: AsyncTaskSubmissionRecord,
+        principal: GatewayPrincipal,
+        request: CanonicalVideoGenerationRequest,
+        requested_resolution: Option<AsyncTaskVideoResolution>,
+        relay_request_id: &str,
+    ) -> Result<AsyncTaskRecord, PersistentVideoTaskError> {
+        let runtime = self
+            .user_routes
+            .as_ref()
+            .ok_or(PersistentVideoTaskError::Invariant)?;
+        let plan = runtime
+            .load(principal, claim.requested_model())
+            .await
+            .map_err(PersistentVideoTaskError::Runtime)?
+            .ok_or(PersistentVideoTaskError::Invariant)?;
+        let existing = self
+            .billings
+            .find(principal.user_id(), claim.task_id())
+            .await?;
+        let mut candidates = Vec::with_capacity(plan.route.members.len());
+        let mut last_error = AfError::ModelNotAllowed;
+        for member in &plan.route.members {
+            if !runtime
+                .check_access(principal, member.group_id, claim.requested_model())
+                .await
+                .map_err(PersistentVideoTaskError::Runtime)?
+                || !runtime
+                    .supports_protocol(member.group_id, claim.requested_model(), Protocol::XaiVideo)
+                    .map_err(PersistentVideoTaskError::Runtime)?
+            {
+                continue;
+            }
+            let target_group_id = match self
+                .runtime
+                .target_group(member.group_id, claim.requested_model())
+                .await
+            {
+                Ok(group_id) => group_id,
+                Err(error)
+                    if permits_group_failover(&error) || error == AfError::ModelNotAllowed =>
+                {
+                    last_error = error;
+                    continue;
+                }
+                Err(error) => return Err(PersistentVideoTaskError::Runtime(error)),
+            };
+            let pricing = match existing.as_ref().filter(|billing| {
+                billing.target_group_id() == target_group_id
+                    && billing.state() != AsyncTaskBillingState::Released
+            }) {
+                Some(billing) => restore_pricing(billing)?,
+                None => match self.capture_pricing(&claim, target_group_id, request.resolution()) {
+                    Ok(pricing) => pricing,
+                    Err(PersistentVideoTaskError::Runtime(AfError::ModelNotAllowed)) => continue,
+                    Err(error) => return Err(error),
+                },
+            };
+            if let Some(maximum) = plan.route.max_price_ratio_micros {
+                let ratios = pricing.ratios();
+                if !ratio_product_allowed(
+                    [
+                        ratios.group().micros(),
+                        ratios.group_model().micros(),
+                        ratios.applied_peak().micros(),
+                    ],
+                    maximum,
+                )
+                .map_err(PersistentVideoTaskError::Runtime)?
+                {
+                    continue;
+                }
+            }
+            candidates.push(RoutedVideoCandidate {
+                routing_group_id: member.group_id,
+                target_group_id,
+                pricing,
+            });
+        }
+        if candidates.is_empty() {
+            return Err(PersistentVideoTaskError::Runtime(last_error));
+        }
+        let quotes = candidates
+            .iter()
+            .map(|candidate| {
+                candidate
+                    .pricing
+                    .maximum_upper_bound()
+                    .map(|quota| (candidate.routing_group_id, quota.units()))
+                    .map_err(|_| PersistentVideoTaskError::Billing)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let locked_target = existing
+            .as_ref()
+            .filter(|billing| billing.state() != AsyncTaskBillingState::Released)
+            .map(AsyncTaskBillingRecord::target_group_id);
+        let mut groups = if locked_target.is_some() {
+            // 已持久化的发网前计划不受新的冷却与轮询分配影响。
+            candidates
+                .iter()
+                .map(|candidate| candidate.routing_group_id)
+                .collect()
+        } else {
+            runtime
+                .order_quoted_groups(&plan, quotes)
+                .await
+                .map_err(PersistentVideoTaskError::Runtime)?
+        };
+        // 恢复尚未发网的冻结计划时，先复用该计划，禁止按新顺序替换预扣目标。
+        if let Some(existing) =
+            existing.filter(|billing| billing.state() != AsyncTaskBillingState::Released)
+        {
+            let index = groups
+                .iter()
+                .position(|group| {
+                    candidates.iter().any(|candidate| {
+                        candidate.routing_group_id == *group
+                            && candidate.target_group_id == existing.target_group_id()
+                    })
+                })
+                .ok_or(PersistentVideoTaskError::Invariant)?;
+            groups.rotate_left(index);
+        }
+        let mut attempts = 0_u32;
+        for group_id in groups {
+            if attempts >= plan.route.max_group_attempts {
+                break;
+            }
+            if !runtime
+                .check_access(principal, group_id, claim.requested_model())
+                .await
+                .map_err(PersistentVideoTaskError::Runtime)?
+            {
+                continue;
+            }
+            let candidate = candidates
+                .iter()
+                .find(|candidate| candidate.routing_group_id == group_id)
+                .ok_or(PersistentVideoTaskError::Invariant)?;
+            if locked_target != Some(candidate.target_group_id) {
+                if let Err(error) = runtime.admit_group(group_id).await {
+                    if permits_group_failover(&error) {
+                        last_error = error;
+                        continue;
+                    }
+                    return Err(PersistentVideoTaskError::Runtime(error));
+                }
+                runtime
+                    .selected(plan.route.id, group_id)
+                    .await
+                    .map_err(PersistentVideoTaskError::Runtime)?;
+            }
+            let billing = self
+                .prepare_billing_with_snapshot(&claim, candidate.target_group_id, candidate.pricing)
+                .await?;
+            let billing = self.reserve_billing(&claim, billing).await?;
+            let attempt_id = random_attempt_id()?;
+            let begun = self.begin(&claim, attempt_id).await?;
+            attempts += 1;
+            let started = Instant::now();
+            let result = self
+                .runtime
+                .submit(
+                    group_id,
+                    billing.target_group_id(),
+                    request.clone(),
+                    relay_request_id,
+                )
+                .await;
+            let latency = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+            match result {
+                Ok(submission) => {
+                    runtime
+                        .feedback(&plan, group_id, true, latency, false)
+                        .await;
+                    let accepted = self
+                        .accept(&begun, attempt_id, submission, requested_resolution)
+                        .await?;
+                    self.ensure_billing_submitted(&accepted, billing).await?;
+                    return self.ensure_task(&accepted).await;
+                }
+                Err(error)
+                    if error.disposition()
+                        == VideoTaskSubmissionDisposition::DefinitelyNotAccepted =>
+                {
+                    let error = error.into_error();
+                    let retryable = permits_group_failover(&error);
+                    self.release_pre_submission(&begun, attempt_id, billing)
+                        .await?;
+                    runtime
+                        .feedback(&plan, group_id, false, latency, retryable)
+                        .await;
+                    if !retryable {
+                        return Err(PersistentVideoTaskError::Runtime(error));
+                    }
+                    last_error = error;
+                    claim = self
+                        .submissions
+                        .find(principal.user_id(), claim.task_id())
+                        .await?
+                        .filter(|current| current.state() == AsyncTaskSubmissionState::Claimed)
+                        .ok_or(PersistentVideoTaskError::SubmissionOutcomeUnknown)?;
+                }
+                Err(_) => return Err(PersistentVideoTaskError::SubmissionOutcomeUnknown),
+            }
+        }
+        Err(PersistentVideoTaskError::Runtime(last_error))
     }
 
     /// 从持久化绑定轮询任务，并使用最终任务版本执行一次状态 CAS。
@@ -503,17 +740,38 @@ impl PersistentVideoTaskCoordinator {
             .billings
             .find(claim.principal().user_id(), claim.task_id())
             .await?
+            && existing.state() != AsyncTaskBillingState::Released
         {
             if existing.target_group_id() != target_group_id {
                 return Err(PersistentVideoTaskError::Invariant);
             }
+            return Ok(existing);
+        }
+        let pricing = self.capture_pricing(claim, target_group_id, requested_resolution)?;
+        self.prepare_billing_with_snapshot(claim, target_group_id, pricing)
+            .await
+    }
+
+    async fn prepare_billing_with_snapshot(
+        &self,
+        claim: &AsyncTaskSubmissionRecord,
+        target_group_id: GroupId,
+        pricing: XaiVideoPricingSnapshot,
+    ) -> Result<AsyncTaskBillingRecord, PersistentVideoTaskError> {
+        if let Some(existing) = self
+            .billings
+            .find(claim.principal().user_id(), claim.task_id())
+            .await?
+        {
             if existing.state() != AsyncTaskBillingState::Released {
+                if existing.target_group_id() != target_group_id {
+                    return Err(PersistentVideoTaskError::Invariant);
+                }
                 return Ok(existing);
             }
             self.clear_released_billing(existing).await?;
         }
 
-        let pricing = self.capture_pricing(claim, target_group_id, requested_resolution)?;
         let ratios = pricing.ratios();
         let write = AsyncTaskBillingPlan::new(
             claim.task_id(),
@@ -575,7 +833,12 @@ impl PersistentVideoTaskCoordinator {
                 claim.requested_model(),
                 time,
             )
-            .map_err(|_| PersistentVideoTaskError::Billing)?;
+            .map_err(|error| match error {
+                af_billing::GroupPricingLookupError::TargetGroupNotFound => {
+                    PersistentVideoTaskError::Runtime(AfError::ModelNotAllowed)
+                }
+                _ => PersistentVideoTaskError::Billing,
+            })?;
         if let Some(micros) = model_snapshot
             .get(claim.requested_model())
             .and_then(|price| price.peak_ratio_at(time))
@@ -603,7 +866,9 @@ impl PersistentVideoTaskCoordinator {
         }
         let plan = TaskBillingPlan::new(
             billing.reservation_id(),
-            claim.principal(),
+            claim
+                .principal()
+                .with_routing_group_id(billing.target_group_id()),
             billing.upper_bound(),
         )
         .map_err(|_| PersistentVideoTaskError::Billing)?;
@@ -800,7 +1065,9 @@ impl PersistentVideoTaskCoordinator {
             .usage
             .persist(BillingUsageRecord::for_per_call(
                 billing.reservation_id(),
-                claim.principal(),
+                claim
+                    .principal()
+                    .with_routing_group_id(billing.target_group_id()),
                 dimensions,
                 actual_quota,
             ))

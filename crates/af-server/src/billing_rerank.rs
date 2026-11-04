@@ -60,6 +60,7 @@ pub struct BillingRerankService {
     settlement: Option<Arc<dyn BillingSettlementPort>>,
     usage: Arc<dyn UsageRecordPort>,
     request_outcomes: Option<crate::RequestOutcomeRuntime>,
+    user_routes: Option<crate::user_route_runtime::UserRouteRuntime>,
 }
 
 impl BillingRerankService {
@@ -81,6 +82,7 @@ impl BillingRerankService {
             settlement,
             usage,
             request_outcomes: None,
+            user_routes: None,
         }
     }
 
@@ -114,6 +116,16 @@ impl BillingRerankService {
             .await
     }
 
+    /// 使用统一的用户分组策略包裹单组计费执行。
+    #[must_use]
+    pub(crate) fn with_user_route_runtime(
+        mut self,
+        runtime: crate::user_route_runtime::UserRouteRuntime,
+    ) -> Self {
+        self.user_routes = Some(runtime);
+        self
+    }
+
     async fn call_billed(
         &self,
         principal: &GatewayPrincipal,
@@ -121,33 +133,110 @@ impl BillingRerankService {
         request: CanonicalRerankRequest,
         request_id: &str,
     ) -> Result<crate::RoutedExecution<RerankResponse>, AfError> {
+        if principal.user_route_id().is_none() {
+            return self
+                .call_billed_single(principal, user_concurrency, request, request_id, None, None)
+                .await
+                .map_err(|failure| failure.error);
+        }
+        let model = request.model().to_owned();
+        let upper_bound = rerank_usage_upper_bound(&request)?;
+        crate::user_route_execution::UserRouteExecution {
+            principal: *principal,
+            model: &model,
+            protocol: af_domain::Protocol::JinaRerank,
+            operation: af_domain::Operation::Rerank,
+            upper_bound: &upper_bound,
+            pricing: self.pricing_source.as_ref(),
+            defer_success_feedback: false,
+        }
+        .run(
+            self.user_routes.as_ref(),
+            request,
+            |principal, request, snapshot, maximum| async move {
+                self.call_billed_single(
+                    &principal,
+                    user_concurrency,
+                    request,
+                    request_id,
+                    snapshot,
+                    maximum,
+                )
+                .await
+            },
+        )
+        .await
+    }
+
+    async fn call_billed_single(
+        &self,
+        principal: &GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
+        request: CanonicalRerankRequest,
+        request_id: &str,
+        frozen_snapshot: Option<af_billing::RequestPricingSnapshot>,
+        max_price_ratio_micros: Option<i64>,
+    ) -> Result<
+        crate::RoutedExecution<RerankResponse>,
+        crate::user_route_execution::UserRouteAttemptError,
+    > {
         let upper_bound = rerank_usage_upper_bound(&request)?;
         let model = request.model().to_owned();
         let planned = self
             .inner
             .plan(principal, user_concurrency, request, request_id)
-            .await?;
-        let snapshot = self
-            .pricing_source
-            .capture_for_request_at(
-                &model,
-                principal.billing_source_group_id(),
-                planned.target_group_id(),
-                principal
-                    .organization_principal()
-                    .map(|organization| organization.organization_id()),
-                af_domain::Protocol::JinaRerank,
-                crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?,
-            )
             .await
-            .map_err(map_snapshot_error)?;
+            .map_err(crate::user_route_execution::UserRouteAttemptError::candidate_plan)?;
+        let snapshot = match frozen_snapshot {
+            Some(snapshot) => {
+                if planned.target_group_id() != principal.group_id() {
+                    return Err(AfError::Internal.into());
+                }
+                snapshot
+            }
+            None => self
+                .pricing_source
+                .capture_for_request_at(
+                    &model,
+                    principal.billing_source_group_id(),
+                    planned.target_group_id(),
+                    principal
+                        .organization_principal()
+                        .map(|organization| organization.organization_id()),
+                    af_domain::Protocol::JinaRerank,
+                    crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?,
+                )
+                .await
+                .map_err(map_snapshot_error)?,
+        };
+        if !crate::user_route_runtime::price_ratio_allowed(&snapshot, max_price_ratio_micros)? {
+            return Err(
+                crate::user_route_execution::UserRouteAttemptError::candidate_plan(
+                    AfError::ModelNotAllowed,
+                ),
+            );
+        }
         let plan = BillingRequestPlan::prepare(snapshot.resolver(), &upper_bound)
             .map_err(map_lifecycle_error)?
             .with_contract_price(snapshot.contract_price());
         let reservation_id = new_reservation_id()?;
         let mut lifecycle = start_lifecycle(self, plan, *principal, reservation_id).await?;
 
-        let routed = planned.execute().await?;
+        let routed = match planned.execute().await {
+            Ok(routed) => routed,
+            Err(error) => {
+                if principal.user_route_id().is_some() {
+                    crate::user_route_execution::cancel_before_failover(
+                        &mut lifecycle,
+                        self.precharge.as_deref(),
+                    )
+                    .await?;
+                }
+                return Err(
+                    crate::user_route_execution::UserRouteAttemptError::before_delivery(error),
+                );
+            }
+        };
         let channel_id = routed.channel_id();
         let response = routed.into_value();
         let (body, usage) = response.into_parts();

@@ -97,7 +97,7 @@ impl PlannedChatExecution for FailedExecution {
         &self.0
     }
     fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {
-        Box::pin(async { Err(AfError::Internal) })
+        Box::pin(async { Err(AfError::Internal.into()) })
     }
 }
 

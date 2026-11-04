@@ -18,6 +18,7 @@ pub struct Model {
     pub name: String,
     pub status: i16,
     pub group_id: Option<i64>,
+    pub user_route_id: Option<i64>,
     pub organization_id: Option<i64>,
     pub organization_membership_id: Option<i64>,
     pub organization_team_id: Option<i64>,

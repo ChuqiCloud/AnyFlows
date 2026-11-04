@@ -6,6 +6,8 @@ import type { UserToken } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { SiteTooltip } from '@/shared/components/site-tooltip'
+import { useUserRoutes } from '@/features/user-routes/user-route-api'
+import { tokenUserRouteId } from '@/features/user-routes/user-route-model'
 
 type ApiKeyTableProps = {
   tokens: UserToken[]
@@ -47,15 +49,17 @@ function QuotaValue({ token }: { token: UserToken }) {
   )
 }
 
-function PolicyValue({ token }: { token: UserToken }) {
+function PolicyValue({ token, routeNames }: { token: UserToken; routeNames: Map<number, string> }) {
   const { t } = useTranslation()
+  const routeId = tokenUserRouteId(token)
+  const binding = routeId === undefined
+    ? token.group_id === null
+      ? t('apiKeys.group.following', { name: token.group_display_name })
+      : t('apiKeys.group.bound', { name: token.group_display_name })
+    : t('apiKeys.routing.bound', { name: routeNames.get(routeId) ?? `#${routeId}` })
   return (
     <div className="grid min-w-0 gap-1">
-      <span className="truncate text-xs" title={token.group_display_name}>
-        {token.group_id === null
-          ? t('apiKeys.group.following', { name: token.group_display_name })
-          : t('apiKeys.group.bound', { name: token.group_display_name })}
-      </span>
+      <span className="truncate text-xs" title={binding}>{binding}</span>
       <div className="flex min-w-0 gap-1 overflow-hidden">
         <Chip className="min-w-0 bg-surface-2 text-muted-foreground [&>span]:flex [&>span]:min-w-0" size="sm" variant="flat">
           <span className="min-w-0 flex-1 truncate">{token.model_limits ? t('apiKeys.values.models', { count: token.model_limits.length }) : t('apiKeys.values.allModels')}</span>
@@ -112,6 +116,8 @@ function RowActions(props: {
 
 export function ApiKeyTable(props: ApiKeyTableProps) {
   const { t } = useTranslation()
+  const routesQuery = useUserRoutes(props.tokens.some((token) => tokenUserRouteId(token) !== undefined))
+  const routeNames = new Map((routesQuery.data?.items ?? []).map((route) => [route.id, route.name] as const))
   if (props.tokens.length === 0) {
     return (
       <div className="grid min-h-64 place-items-center border-t border-[var(--hairline)] py-10 text-center">
@@ -136,7 +142,7 @@ export function ApiKeyTable(props: ApiKeyTableProps) {
               <tr key={token.id} className="hover:bg-surface-2/35">
                 <td className="px-3 py-2.5"><div className="flex items-center gap-2"><span className="truncate font-medium">{token.name}</span><StatusBadge token={token} /></div><div className="mt-1 truncate font-mono text-[0.6875rem] text-muted-foreground">{token.key_prefix}... <span aria-hidden="true">#</span>{token.id}</div></td>
                 <td className="px-3 py-2.5 tabular-nums"><QuotaValue token={token} /></td>
-                <td className="px-3 py-2.5"><PolicyValue token={token} /></td>
+                <td className="px-3 py-2.5"><PolicyValue token={token} routeNames={routeNames} /></td>
                 <td className="px-3 py-2.5 tabular-nums"><ValidityValue token={token} /></td>
                 <td className="px-2 py-2.5"><RowActions token={token} toggling={props.togglingId === token.id} onDelete={props.onDelete} onEdit={props.onEdit} onToggle={props.onToggle} /></td>
               </tr>
@@ -152,7 +158,7 @@ export function ApiKeyTable(props: ApiKeyTableProps) {
             <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--hairline)] pt-3 text-xs">
               <div><dt className="text-muted-foreground">{t('apiKeys.columns.quota')}</dt><dd className="mt-1 tabular-nums"><QuotaValue token={token} /></dd></div>
               <div><dt className="text-muted-foreground">{t('apiKeys.columns.validity')}</dt><dd className="mt-1 tabular-nums"><ValidityValue token={token} /></dd></div>
-              <div className="col-span-2"><dt className="text-muted-foreground">{t('apiKeys.columns.policy')}</dt><dd className="mt-1"><PolicyValue token={token} /></dd></div>
+              <div className="col-span-2"><dt className="text-muted-foreground">{t('apiKeys.columns.policy')}</dt><dd className="mt-1"><PolicyValue token={token} routeNames={routeNames} /></dd></div>
             </dl>
           </article>
         ))}

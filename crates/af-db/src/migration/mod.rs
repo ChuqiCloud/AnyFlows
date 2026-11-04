@@ -126,6 +126,7 @@ mod m20261029_000161_add_model_peak_windows;
 mod m20261030_000162_create_user_two_factor_enrollments;
 mod m20261031_000163_create_group_group_grants;
 mod m20261031_000164_create_group_model_ratio_overrides;
+mod m20261102_000165_create_user_routes;
 mod schema;
 
 #[cfg(test)]
@@ -523,6 +524,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261030_000162_create_user_two_factor_enrollments::Migration),
             Box::new(m20261031_000163_create_group_group_grants::Migration),
             Box::new(m20261031_000164_create_group_model_ratio_overrides::Migration),
+            Box::new(m20261102_000165_create_user_routes::Migration),
         ]
     }
 }

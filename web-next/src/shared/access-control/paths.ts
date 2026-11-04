@@ -1,6 +1,7 @@
 /** 控制台里普通用户即可访问的一级路径段；其余一律要求管理员。 */
 const USER_ACCESSIBLE_SEGMENTS = new Set([
   "api-keys",
+  "user-routes",
   "wallet",
   "subscriptions",
   "invitations",

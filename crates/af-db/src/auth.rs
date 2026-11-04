@@ -270,6 +270,10 @@ impl TokenAuthRepository {
                 .col_expr(tokens::Column::Status, Expr::value(1_i16))
                 .col_expr(tokens::Column::GroupId, Expr::value(Option::<i64>::None))
                 .col_expr(
+                    tokens::Column::UserRouteId,
+                    Expr::value(Option::<i64>::None),
+                )
+                .col_expr(
                     tokens::Column::OrganizationId,
                     Expr::value(Option::<i64>::None),
                 )
@@ -337,6 +341,7 @@ impl TokenAuthRepository {
                 name: Set(PLAYGROUND_TOKEN_NAME.to_owned()),
                 status: Set(1),
                 group_id: Set(None),
+                user_route_id: Set(None),
                 organization_id: Set(None),
                 organization_membership_id: Set(None),
                 organization_team_id: Set(None),
@@ -416,8 +421,27 @@ impl TokenAuthRepository {
         };
         let row = TokenAuthRow::try_from_query_result(&result)
             .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
-        row.validate(client_ip, self.organization_validator.as_deref())
-            .await
+        let outcome = row
+            .validate(client_ip, self.organization_validator.as_deref())
+            .await?;
+        if let TokenAuthLookupOutcome::Authenticated { principal, .. } = &outcome
+            && let Some(route_id) = principal.user_route_id()
+        {
+            let repository =
+                crate::UserRouteRepository::new(self.pool.clone(), self.lookup_timeout)
+                    .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+            match repository
+                .lookup_for_token(principal.user_id(), principal.token_id())
+                .await
+            {
+                Ok(Some(route)) if route.id == route_id => {}
+                Ok(_) | Err(crate::UserRouteError::Unavailable) => {
+                    return Ok(TokenAuthLookupOutcome::Rejected);
+                }
+                Err(_) => return Err(record_internal_error(TokenAuthRepositoryError::Query)),
+            }
+        }
+        Ok(outcome)
     }
 }
 
@@ -454,6 +478,14 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
         .expr_as(
             Expr::col((tokens::Entity, tokens::Column::Status)),
             Alias::new("token_status"),
+        )
+        .expr_as(
+            Expr::col((tokens::Entity, tokens::Column::UserRouteId)),
+            Alias::new("token_user_route_id"),
+        )
+        .expr_as(
+            Expr::col((tokens::Entity, tokens::Column::GroupId)),
+            Alias::new("token_group_id"),
         )
         .expr_as(
             Expr::col((tokens::Entity, tokens::Column::ExpiredAt)),
@@ -626,6 +658,8 @@ fn json_serialized_length(database_backend: DbBackend, value: Expr) -> SimpleExp
 
 struct TokenAuthRow {
     token_id: i64,
+    token_user_route_id: Option<i64>,
+    token_group_id: Option<i64>,
     token_status: i16,
     token_expired_at: Option<TimeDateTimeWithTimeZone>,
     token_deleted_at: Option<TimeDateTimeWithTimeZone>,
@@ -654,6 +688,8 @@ impl TokenAuthRow {
     fn try_from_query_result(result: &QueryResult) -> Result<Self, DbErr> {
         Ok(Self {
             token_id: result.try_get("", "token_id")?,
+            token_user_route_id: result.try_get("", "token_user_route_id")?,
+            token_group_id: result.try_get("", "token_group_id")?,
             token_status: result.try_get("", "token_status")?,
             token_expired_at: result.try_get("", "token_expired_at")?,
             token_deleted_at: result.try_get("", "token_deleted_at")?,
@@ -688,7 +724,7 @@ impl TokenAuthRow {
     ) -> Result<TokenAuthLookupOutcome, TokenAuthRepositoryError> {
         if self.token_model_limits_oversized
             || self.token_allow_ips_oversized
-            || self.group_model_limits_oversized
+            || (self.token_user_route_id.is_none() && self.group_model_limits_oversized)
         {
             return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
         }
@@ -709,7 +745,11 @@ impl TokenAuthRow {
         let Some(group_id) = self.group_id else {
             return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
         };
-        let group_rpm_limit = normalize_rpm_limit(self.group_rpm_limit)?;
+        let group_rpm_limit = if self.token_user_route_id.is_some() {
+            None
+        } else {
+            normalize_rpm_limit(self.group_rpm_limit)?
+        };
         let token_id = TokenId::new(self.token_id)
             .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
         let user_id = UserId::new(user_id)
@@ -721,6 +761,12 @@ impl TokenAuthRow {
             .and_then(|value| GroupId::new(value).ok())
             .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant))?;
         let organization_context = self.organization_context(token_id, user_id)?;
+        if self.token_user_route_id.is_some_and(|id| id <= 0)
+            || (self.token_user_route_id.is_some()
+                && (self.token_group_id.is_some() || organization_context.is_some()))
+        {
+            return Ok(TokenAuthLookupOutcome::Rejected);
+        }
         let token_model_policy = self.token_model_limits.map_or_else(
             TokenModelPolicy::unrestricted,
             TokenModelAllowlist::into_policy,
@@ -729,7 +775,11 @@ impl TokenAuthRow {
             TokenModelPolicy::unrestricted,
             TokenModelAllowlist::into_policy,
         );
-        let model_policy = token_model_policy.intersect(&group_model_policy);
+        let model_policy = if self.token_user_route_id.is_some() {
+            token_model_policy
+        } else {
+            token_model_policy.intersect(&group_model_policy)
+        };
         if !token_enabled
             || self.token_deleted_at.is_some()
             || self
@@ -771,7 +821,9 @@ impl TokenAuthRow {
             None => GatewayPrincipal::new(token_id, user_id, group_id),
         };
         Ok(TokenAuthLookupOutcome::Authenticated {
-            principal: principal.with_billing_source_group_id(billing_source_group_id),
+            principal: principal
+                .with_billing_source_group_id(billing_source_group_id)
+                .with_user_route_id(self.token_user_route_id),
             model_policy,
             user_concurrency,
             user_rpm_limit,
@@ -936,6 +988,8 @@ mod tests {
     fn auth_row(organization: bool) -> TokenAuthRow {
         TokenAuthRow {
             token_id: 1,
+            token_user_route_id: None,
+            token_group_id: None,
             token_status: 1,
             token_expired_at: None,
             token_deleted_at: None,
@@ -971,6 +1025,52 @@ mod tests {
             OrganizationMembershipId::new(11).expect("test membership ID must be valid"),
             None,
         )
+    }
+
+    #[tokio::test]
+    async fn user_route_key_preserves_token_policy_without_default_group_intersection() {
+        let mut row = auth_row(false);
+        row.token_user_route_id = Some(7);
+        row.token_model_limits =
+            Some(TokenModelAllowlist::validate(serde_json::json!(["alternate-model"])).unwrap());
+        row.group_model_limits =
+            Some(TokenModelAllowlist::validate(serde_json::json!(["default-model"])).unwrap());
+        row.group_rpm_limit = Some(1);
+        let outcome = row.validate(client_ip(), None).await.unwrap();
+        let TokenAuthLookupOutcome::Authenticated {
+            principal,
+            model_policy,
+            group_rpm_limit,
+            ..
+        } = outcome
+        else {
+            panic!("personal route key should preserve its own model policy");
+        };
+        assert_eq!(principal.user_route_id(), Some(7));
+        assert!(model_policy.allows("alternate-model"));
+        assert!(!model_policy.allows("default-model"));
+        assert_eq!(group_rpm_limit, None);
+    }
+
+    #[tokio::test]
+    async fn corrupt_user_route_bindings_fail_closed_before_organization_validation() {
+        for organization in [false, true] {
+            let mut row = auth_row(organization);
+            row.token_user_route_id = Some(7);
+            if !organization {
+                row.token_group_id = Some(3);
+            }
+            assert_eq!(
+                row.validate(client_ip(), None).await,
+                Ok(TokenAuthLookupOutcome::Rejected)
+            );
+        }
+        let mut row = auth_row(false);
+        row.token_user_route_id = Some(0);
+        assert_eq!(
+            row.validate(client_ip(), None).await,
+            Ok(TokenAuthLookupOutcome::Rejected)
+        );
     }
 
     #[tokio::test]

@@ -271,6 +271,7 @@ pub struct RelayAttemptFailure {
     elapsed: Duration,
     diagnostic: Option<RelayAttemptDiagnostic>,
     client_simulation: Option<RelayClientSimulationAttempt>,
+    request_aborted: bool,
 }
 
 impl RelayAttemptFailure {
@@ -283,6 +284,7 @@ impl RelayAttemptFailure {
             elapsed,
             diagnostic: None,
             client_simulation: None,
+            request_aborted: false,
         }
     }
 
@@ -301,6 +303,7 @@ impl RelayAttemptFailure {
             elapsed,
             diagnostic: None,
             client_simulation: None,
+            request_aborted: false,
         }
     }
 
@@ -314,6 +317,11 @@ impl RelayAttemptFailure {
         client_simulation: Option<RelayClientSimulationAttempt>,
     ) -> Self {
         self.client_simulation = client_simulation;
+        self
+    }
+
+    fn abort_request(mut self) -> Self {
+        self.request_aborted = true;
         self
     }
 
@@ -449,6 +457,17 @@ impl RelayAttemptReport {
     #[must_use]
     pub fn failures(&self) -> &[RelayAttemptFailure] {
         &self.failures
+    }
+
+    /// 本地 fail-closed 配置失败必须终止整个请求，不能退回其他渠道或用户分组。
+    #[must_use]
+    pub fn request_aborted(&self) -> bool {
+        self.failures.iter().any(|failure| {
+            failure.request_aborted
+                || failure
+                    .client_simulation()
+                    .is_some_and(|simulation| simulation.result() == ClientSimulationResult::Failed)
+        })
     }
 
     /// 返回最终成功候选的安全诊断快照。
@@ -1242,7 +1261,8 @@ impl RelayStateMachine {
                                 UpstreamError::ProtocolError,
                                 attempt_started_at.elapsed(),
                             )
-                            .with_client_simulation(client_simulation),
+                            .with_client_simulation(client_simulation)
+                            .abort_request(),
                         );
                         // 仿真档案是显式配置，应用失败不得静默退回未仿真请求或其他候选。
                         return Err(RelayExecutionError::new(
@@ -1267,11 +1287,14 @@ impl RelayStateMachine {
                 ) {
                     Ok(request) => request,
                     Err(_) => {
-                        failures.push(RelayAttemptFailure::new(
-                            index,
-                            UpstreamError::ProtocolError,
-                            attempt_started_at.elapsed(),
-                        ));
+                        failures.push(
+                            RelayAttemptFailure::new(
+                                index,
+                                UpstreamError::ProtocolError,
+                                attempt_started_at.elapsed(),
+                            )
+                            .abort_request(),
+                        );
                         return Err(RelayExecutionError::new(
                             RelayError::Upstream(UpstreamError::ProtocolError),
                             failures,
@@ -1618,20 +1641,16 @@ impl RelayStateMachine {
 /// a concurrent fallback. Candidate-local transient failures may still refill a
 /// race slot and proceed according to the normal retry policy.
 fn race_failure_action(error: &RelayError, report: &RelayAttemptReport) -> FailureAction {
-    let client_simulation_failed = report.failures.iter().any(|failure| {
-        failure
-            .client_simulation()
-            .is_some_and(|simulation| simulation.result() == ClientSimulationResult::Failed)
-    });
+    let request_aborted = report.request_aborted();
     match error {
         RelayError::Upstream(upstream) => {
-            classify_failure_action(*upstream, false, true, client_simulation_failed)
+            classify_failure_action(*upstream, false, true, request_aborted)
         }
         RelayError::InvalidModel | RelayError::Request(_) | RelayError::AttemptGateFailed => {
             FailureAction::AbortRequest
         }
         RelayError::Adaptor(_) | RelayError::ConcurrencyUnavailable => {
-            if client_simulation_failed {
+            if request_aborted {
                 FailureAction::AbortRequest
             } else {
                 FailureAction::RouteToNextCandidate

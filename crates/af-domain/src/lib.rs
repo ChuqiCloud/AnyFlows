@@ -36,7 +36,11 @@ mod subscription;
 mod subscription_window;
 mod task;
 mod token_policy;
+mod user_routing;
 pub use service_model_policy::{ServiceModelPolicy, ServiceModelPolicyError};
+pub use user_routing::{
+    MAX_USER_ROUTE_MEMBERS, MAX_USER_ROUTE_WEIGHT, MAX_USER_ROUTES, UserRouteStrategy,
+};
 mod wallet;
 
 /// 试炼场自动申请的内部 Token 名称；普通用户不能通过界面主动复用该名称。

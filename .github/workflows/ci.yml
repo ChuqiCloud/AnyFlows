@@ -130,9 +130,9 @@ jobs:
           }
 
           {
-            echo "frontend=$(matches '^(web/|web-next/|tools/ci/(check-frontend-parity|frontend-about-smoke|frontend-navigation-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend=$(matches '^(web/|web-next/|tools/ci/(check-frontend-parity|frontend-about-smoke|frontend-navigation-smoke|frontend-user-routes-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_about=$(matches '^((web|web-next)/src/features/(about/|site-settings/software-(update-(panel|api)|release-notes)\.tsx?$)|tools/ci/frontend-about-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
-            echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-navigation-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-(navigation|user-routes)-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "rust=$(matches '^(crates/|tools/xtask/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$|\.github/workflows/ci\.yml$)')"
             echo "database=$(matches '^(crates/af-db/|tools/ci/(run-db-migration-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
             echo "redis=$(matches '^(crates/af-cache/|tools/ci/(run-cache-redis-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
@@ -553,7 +553,9 @@ jobs:
       - name: Browser smoke test landing and console navigation
         if: ${{ matrix.frontend == 'web-next' && needs.changes.outputs.frontend_navigation == 'true' }}
         shell: bash
-        run: PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-navigation-smoke.mjs
+        run: |
+          PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-navigation-smoke.mjs
+          PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-user-routes-smoke.mjs
 
       - name: Browser smoke test gallery and verification workflows
         if: github.event_name == 'workflow_dispatch'
@@ -718,9 +720,9 @@ jobs:
           git diff -- web/openapi/openapi.json
           exit 1
 
-      - name: Check development workspace
+      - name: Check development workspace with Clippy
         if: needs.changes.outputs.full != 'true'
-        run: cargo check --workspace --all-targets --all-features --locked
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
       - name: Run focused Passkey compatibility tests
         if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
@@ -734,6 +736,13 @@ jobs:
         run: |
           cargo test --locked -p af-relay --lib response_readiness
           cargo test --locked -p af-server --test relay_state_machine
+
+      - name: Run focused personal routing regression tests
+        if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
+        run: |
+          cargo test --locked -p af-db --lib user_route
+          cargo test --locked -p af-server --lib user_route
+          cargo test --locked -p af-server --lib route_video_
 
       - name: Run Clippy
         if: needs.changes.outputs.full == 'true'
