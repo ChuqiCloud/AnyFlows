@@ -236,7 +236,8 @@ impl BillingResponsesCompactService {
                 let error = failure.into_error();
                 if principal.user_route_id().is_some()
                     && permits_group_failover
-                    && crate::user_route_runtime::permits_group_failover(&error)
+                    && (error == AfError::ConcurrencyLimited
+                        || crate::user_route_runtime::permits_group_failover(&error))
                 {
                     crate::user_route_execution::cancel_before_failover(
                         &mut lifecycle,

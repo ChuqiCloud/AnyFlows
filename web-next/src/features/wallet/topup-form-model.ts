@@ -14,6 +14,13 @@ export type TopupAttempt = Readonly<{
   paymentIntentId?: string
 }>
 
+export function isCurrentTopupAttempt(
+  current: Pick<TopupAttempt, 'idempotencyKey'> | undefined,
+  expected: Pick<TopupAttempt, 'idempotencyKey'>,
+) {
+  return current?.idempotencyKey === expected.idempotencyKey
+}
+
 type RandomValues = (buffer: Uint8Array<ArrayBuffer>) => Uint8Array<ArrayBuffer>
 
 const idempotencyKeyPattern = /^[0-9a-f]{32}$/

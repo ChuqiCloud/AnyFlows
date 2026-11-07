@@ -20,7 +20,9 @@ pub(crate) struct UserRouteAttemptError {
 
 impl UserRouteAttemptError {
     pub(crate) fn before_delivery(error: AfError) -> Self {
-        let retryable = permits_group_failover(&error);
+        // This constructor is only used after a group's candidate plan has begun execution;
+        // ConcurrencyLimited here therefore means that group's account slots were full.
+        let retryable = error == AfError::ConcurrencyLimited || permits_group_failover(&error);
         Self {
             error,
             retryable,
@@ -159,5 +161,23 @@ impl UserRouteExecution<'_> {
             }
         }
         Err(last_error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UserRouteAttemptError;
+    use af_domain::{AfError, UpstreamError};
+
+    #[test]
+    fn execution_concurrency_limit_fails_over_but_planning_concurrency_limit_does_not() {
+        let account_limit = UserRouteAttemptError::before_delivery(AfError::ConcurrencyLimited);
+        assert!(account_limit.retryable);
+
+        let user_limit = UserRouteAttemptError::candidate_plan(AfError::ConcurrencyLimited);
+        assert!(!user_limit.retryable);
+        assert!(
+            !UserRouteAttemptError::before_delivery(UpstreamError::BadRequest.into()).retryable
+        );
     }
 }
