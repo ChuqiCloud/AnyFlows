@@ -5,12 +5,16 @@ import {
   cleanSubscriptionPaymentReturnUrl,
   cleanWalletPaymentReturnUrl,
   createSubscriptionPaymentReturnUrl,
+  browserRouterBasename,
+  browserRouterPath,
   createTopupPaymentReturnUrl,
+  migrateLegacyEpayHashReturn,
   subscriptionPaymentRedirectStatus,
   topupPaymentRedirectStatus,
 } from '../src/features/wallet/payment-return-model.ts'
-import { parseStoredTopupAttempt } from '../src/features/wallet/topup-form-model.ts'
+import { isCurrentTopupAttempt, parseStoredTopupAttempt } from '../src/features/wallet/topup-form-model.ts'
 import { parseStoredSubscriptionAttempt, submitCreatedSubscriptionPayment } from '../src/features/subscriptions/subscription-payment-model.ts'
+import { paymentCallbackUrls } from '../src/features/payment-settings/payment-settings-form-model.ts'
 
 const stripeAttempt = { provider: 'stripe', orderId: 'topup-1', paymentIntentId: 'pi-1' }
 
@@ -75,6 +79,26 @@ test('Epay requires exact out_trade_no and supports hash callbacks', () => {
   assert.equal(topupPaymentRedirectStatus(new URL('https://example.test/?epay_return=1&out_trade_no=topup-10'), { provider: 'epay', orderId: 'topup-1' }), undefined)
 })
 
+test('legacy Epay hash return migrates to the BrowserRouter wallet path', () => {
+  const legacy = new URL('https://example.test/gateway/#/console/wallet?epay_return=1&out_trade_no=topup-1&trade_no=trade-1&trade_status=TRADE_SUCCESS')
+  const migrated = migrateLegacyEpayHashReturn(legacy)
+  assert.equal(migrated.pathname, '/gateway/console/wallet')
+  assert.equal(migrated.hash, '')
+  assert.equal(browserRouterBasename(migrated.pathname), '/gateway')
+  assert.equal(topupPaymentRedirectStatus(migrated, { provider: 'epay', orderId: 'topup-1' }), 'processing')
+  assert.equal(migrateLegacyEpayHashReturn(new URL('https://example.test/#/console/wallet?tab=billing')).hash, '#/console/wallet?tab=billing')
+  const conflicting = migrateLegacyEpayHashReturn(new URL('https://example.test/?out_trade_no=other#/console/wallet?epay_return=1&out_trade_no=topup-1'))
+  assert.equal(topupPaymentRedirectStatus(conflicting, { provider: 'epay', orderId: 'topup-1' }), undefined)
+})
+
+test('late topup responses only apply to the current idempotent attempt', () => {
+  const first = { idempotencyKey: 'a'.repeat(32) }
+  const replacement = { idempotencyKey: 'b'.repeat(32) }
+  assert.equal(isCurrentTopupAttempt(first, first), true)
+  assert.equal(isCurrentTopupAttempt(replacement, first), false)
+  assert.equal(isCurrentTopupAttempt(undefined, first), false)
+})
+
 test('old callback parameters and malformed storage do not restore a payment', () => {
   assert.equal(topupPaymentRedirectStatus(new URL('https://example.test/console/wallet?payment_intent=pi-1&redirect_status=succeeded'), stripeAttempt), undefined)
   const bounds = { min: 50, max: 99_999_999 }
@@ -115,6 +139,17 @@ test('new return URLs replace stale flow material while preserving the destinati
   subscription.searchParams.set('payment_intent', 'pi-sub')
   subscription.searchParams.set('redirect_status', 'succeeded')
   assert.equal(subscriptionPaymentRedirectStatus(subscription, { provider: 'stripe', orderId: 'sub-1', paymentIntentId: 'pi-sub' }), 'succeeded')
+  const prefixedTopup = createTopupPaymentReturnUrl(new URL('https://example.test/gateway/console/wallet'), browserRouterPath('/gateway/console/wallet', '/console/wallet'), stripeAttempt)
+  const prefixedSubscription = createSubscriptionPaymentReturnUrl('https://example.test', 'sub-1', 'pi-sub', browserRouterPath('/gateway/console/wallet', '/console/wallet'))
+  assert.equal(prefixedTopup.pathname, '/gateway/console/wallet')
+  assert.equal(prefixedSubscription.pathname, '/gateway/console/wallet')
+  assert.equal(browserRouterBasename('/console/wallet'), '')
+})
+
+test('Epay settings display the BrowserRouter return path', () => {
+  const callbacks = paymentCallbackUrls('https://example.test/gateway/')
+  assert.equal(callbacks?.epay, 'https://example.test/gateway/api/payment/webhook/epay')
+  assert.equal(callbacks?.return, 'https://example.test/gateway/console/wallet?epay_return=1')
 })
 
 test('a created order remains recoverable when preparing payment fails', async () => {

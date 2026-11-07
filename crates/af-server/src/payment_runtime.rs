@@ -504,8 +504,9 @@ fn epay_callback_urls(
     let prefix = base.path().trim_end_matches('/').to_owned();
     base.set_path(&format!("{prefix}/api/payment/webhook/epay"));
     let notify_url = base.to_string();
-    base.set_path(&format!("{prefix}/"));
-    base.set_fragment(Some("/console/wallet?epay_return=1"));
+    base.set_path(&format!("{prefix}/console/wallet"));
+    base.set_query(Some("epay_return=1"));
+    base.set_fragment(None);
     Ok((notify_url, base.to_string()))
 }
 
@@ -540,7 +541,7 @@ mod tests {
         );
         assert_eq!(
             returning,
-            "https://example.com/gateway/#/console/wallet?epay_return=1"
+            "https://example.com/gateway/console/wallet?epay_return=1"
         );
     }
 }

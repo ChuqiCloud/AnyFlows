@@ -216,16 +216,28 @@ fn build_public_full_response(
     public_response_id: String,
     client_model: String,
 ) -> Result<af_adapter::Bytes, ()> {
-    // 对外响应只保留 Canonical 语义，清除上游 ID、模型和同源 raw。
-    let public_response = CanonicalResponse::new(
-        Operation::Chat,
-        public_response_id,
-        client_model,
-        upstream_response.created_at,
-        upstream_response.choices,
-        Some(usage),
-    );
-    let value = gemini::build_response(&public_response).map_err(|_| ())?;
+    let value = if upstream_response.choices.is_empty() {
+        // PromptBlocked is represented by an empty choice list; preserve its
+        // validated Gemini promptFeedback because the protocol builder needs it.
+        gemini::rebuild_prompt_blocked_response(
+            &upstream_response,
+            public_response_id,
+            client_model,
+            usage,
+        )
+        .map_err(|_| ())?
+    } else {
+        // Ordinary responses expose canonical semantics only, not upstream identity/raw fields.
+        let public_response = CanonicalResponse::new(
+            Operation::Chat,
+            public_response_id,
+            client_model,
+            upstream_response.created_at,
+            upstream_response.choices,
+            Some(usage),
+        );
+        gemini::build_response(&public_response).map_err(|_| ())?
+    };
     serde_json::to_vec(&value)
         .map(af_adapter::Bytes::from)
         .map_err(|_| ())
@@ -269,6 +281,48 @@ mod tests {
             value["candidates"][0]["content"]["parts"][0]["text"],
             "answer"
         );
+        let rendered = String::from_utf8(body.to_vec()).unwrap();
+        assert!(!rendered.contains("private-response"));
+        assert!(!rendered.contains("private-upstream-model"));
+    }
+
+    #[test]
+    fn full_prompt_blocked_response_preserves_feedback_and_rebuilds_public_identity() {
+        let upstream = json!({
+            "responseId": "private-response",
+            "modelVersion": "private-upstream-model",
+            "candidates": [],
+            "promptFeedback": {
+                "blockReason": "SAFETY",
+                "safetyRatings": [{
+                    "category": "HARM_CATEGORY_HARASSMENT",
+                    "probability": "HIGH",
+                    "blocked": true
+                }]
+            },
+            "usageMetadata": {
+                "promptTokenCount": 3,
+                "candidatesTokenCount": 0,
+                "totalTokenCount": 3
+            }
+        });
+        let upstream = gemini::parse_response(&serde_json::to_vec(&upstream).unwrap()).unwrap();
+        let usage = upstream.usage.unwrap();
+
+        let body = build_public_full_response(
+            upstream,
+            usage,
+            "response-public".to_owned(),
+            "public-model".to_owned(),
+        )
+        .unwrap();
+
+        let value: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(value["responseId"], "response-public");
+        assert_eq!(value["modelVersion"], "public-model");
+        assert_eq!(value["candidates"], json!([]));
+        assert_eq!(value["promptFeedback"]["blockReason"], "SAFETY");
+        assert_eq!(value["usageMetadata"]["totalTokenCount"], 3);
         let rendered = String::from_utf8(body.to_vec()).unwrap();
         assert!(!rendered.contains("private-response"));
         assert!(!rendered.contains("private-upstream-model"));

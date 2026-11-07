@@ -24,6 +24,7 @@ import { WalletStripePaymentForm } from '@/features/wallet/wallet-stripe-payment
 import { EpayQrPayment } from '@/features/wallet/epay-qr-payment'
 import { stripeTopupAppearance } from '@/features/wallet/wallet-topup-runtime'
 import {
+  browserRouterPath,
   cleanSubscriptionPaymentReturnUrl,
   createSubscriptionPaymentReturnUrl,
   subscriptionPaymentRedirectStatus,
@@ -433,7 +434,7 @@ function CatalogPlanRow({
             <Elements stripe={stripe} options={{ clientSecret: payment.client_secret, appearance: stripeTopupAppearance('light'), locale: locale === 'zh-CN' ? 'zh' : 'en' }}>
               <WalletStripePaymentForm
                 amountLabel={amountLabel}
-                returnUrl={createSubscriptionPaymentReturnUrl(window.location.origin, order.order_id, payment.payment_intent_id).toString()}
+                returnUrl={createSubscriptionPaymentReturnUrl(window.location.origin, order.order_id, payment.payment_intent_id, browserRouterPath(window.location.pathname, '/console/wallet')).toString()}
                 onConfirmed={paymentConfirmed}
               />
             </Elements>

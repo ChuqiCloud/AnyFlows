@@ -79,6 +79,8 @@ try {
   const verificationReady = new Promise((resolve) => { releaseVerification = resolve })
   let submissionKind = 'enterprise'
   let submitted = 0
+  let allowVerificationSubmission = false
+  let unexpectedVerificationSubmissions = 0
   let reviewed = 0
   let downloads = 0
   let providers = ['manual']
@@ -142,7 +144,13 @@ try {
       cases[recordIndex] = { ...cases[recordIndex], status: 4, version: cases[recordIndex].version + 1 }
       reviewed += 1
       body = cases[recordIndex]
-    } else if (request.method() === 'POST') {
+    } else if (path === '/api/account/verifications' && request.method() === 'POST') {
+      if (!allowVerificationSubmission) {
+        unexpectedVerificationSubmissions += 1
+        await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'Unexpected verification submission' }) })
+        return
+      }
+      allowVerificationSubmission = false
       const contentType = request.headers()['content-type']
       const postData = request.postDataBuffer()
       const postBody = postData?.toString('latin1') ?? ''
@@ -186,6 +194,15 @@ try {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
   })
   const home = `http://127.0.0.1:${port}/.verification-smoke.html`
+  const submitVerification = async (scope = page) => {
+    allowVerificationSubmission = true
+    const response = page.waitForResponse((value) => {
+      const request = value.request()
+      return request.method() === 'POST' && new URL(value.url()).pathname === '/api/account/verifications'
+    })
+    await scope.getByRole('button', { name: '提交认证', exact: true }).click()
+    await response
+  }
   await page.goto(home)
   await page.getByRole('status').first().waitFor()
   releaseVerification()
@@ -241,12 +258,17 @@ try {
       await row.getByText('已通过', { exact: true }).first().waitFor()
     }
     const replace = async () => {
-      await page.goto(home)
+      const verifiedResponse = page.waitForResponse((response) => {
+        const url = new URL(response.url())
+        return url.pathname === '/api/account/verifications' && url.searchParams.get('status') === '4'
+      })
+      await page.goto(`${home}?fixture=${Date.now()}`)
+      const verifiedPayload = await (await verifiedResponse).json()
+      assert.ok(verifiedPayload.cases.some((item) => item.status === 4), `Expected an approved verification fixture; statuses=${cases.map((item) => `${item.id}:${item.status}`).join(',')}`)
       await page.locator('[data-verification-result]').waitFor()
       await page.getByRole('button', { name: '更换认证', exact: true }).click()
       await form.waitFor()
     }
-
     assert.equal(await historyRows.count(), 10)
     assert.equal(downloads, 0)
     const historical = await openRecord(27)
@@ -277,7 +299,7 @@ try {
     await assertSelectDisabled('证件类型')
     await nextStep()
     await form.locator('input[type="file"]').setInputFiles({ name: 'license.png', mimeType: 'image/png', buffer: png })
-    await form.getByRole('button', { name: '提交认证', exact: true }).click()
+    await submitVerification()
     await page.locator('#verification-case-28').waitFor()
     assert.equal(submitted, 1)
     await approve(28)
@@ -312,7 +334,7 @@ try {
     await fillIdentity('Test Individual', 'P12345678', 'Personal manual review')
     await nextStep()
     await form.locator('input[type="file"]').setInputFiles({ name: 'passport.png', mimeType: 'image/png', buffer: png })
-    await form.getByRole('button', { name: '提交认证', exact: true }).click()
+    await submitVerification()
     await page.locator('#verification-case-29').waitFor()
     assert.equal(submitted, 2)
     await approve(29)
@@ -346,6 +368,8 @@ try {
     await fillIdentity('Alipay Applicant', '11010519491231002X', 'Alipay identity review')
     await nextStep()
     assert.equal(await form.locator('input[type="file"]').count(), 0)
+    assert.equal(submitted, 2, 'Alipay identity completion must not submit before the explicit action')
+    assert.equal(unexpectedVerificationSubmissions, 0, 'Advancing form steps must not issue verification requests')
 
     providers = []
     settings = { ...settings, enabled: false }
@@ -359,11 +383,40 @@ try {
     await chooseKind('企业认证')
     await form.getByText('当前没有可用的认证方式，请联系管理员。', { exact: true }).waitFor()
     assert.equal(await form.getByRole('button', { name: '下一步', exact: true }).isDisabled(), true)
-    cases.splice(0, cases.length, ...savedCases.map((item) => ({ ...item, status: item.status >= 1 && item.status <= 3 ? 4 : item.status })))
+    cases.splice(0, cases.length, ...savedCases)
 
     providers = ['manual', 'alipay']
     settings = { ...settings, individual_manual_enabled: true, enterprise_manual_enabled: true, enabled: true }
-    await replace()
+    const originalStates = cases.map((item) => ({ ...item }))
+    cases.forEach((item) => { item.status = 5 })
+    cases.unshift({ ...cases[0], id: 30, status: 3, provider: 'manual', provider_status: null })
+    try {
+      await page.goto(home)
+      await page.getByRole('button', { name: '补充材料', exact: true }).click()
+      await form.waitFor()
+      await page.getByText('新资料审核期间，原认证结果与已有资格继续有效。', { exact: true }).waitFor()
+      await page.getByRole('button', { name: '返回认证结果', exact: true }).click()
+      await form.waitFor({ state: 'detached' })
+      await page.getByRole('button', { name: '补充材料', exact: true }).waitFor()
+    } finally {
+      cases.splice(0, cases.length, ...originalStates)
+    }
+
+    cases.forEach((item) => { item.status = 5 })
+    cases.unshift({ ...cases[0], id: 30, status: 1, provider: 'alipay', provider_status: 'expired', kind: 'individual' })
+    try {
+      await page.goto(home)
+      const expiredRecord = await openRecord(30)
+      await expiredRecord.getByRole('button', { name: '重新填写认证', exact: true }).click()
+      await form.waitFor()
+      await provider('支付宝实名认证').waitFor()
+      assert.equal(await provider('支付宝实名认证').getAttribute('aria-pressed'), 'true', 'Expired Alipay authorization must reopen with Alipay selected')
+    } finally {
+      cases.splice(0, cases.length, ...originalStates)
+    }
+
+    await page.goto(`${home}?fixture=${Date.now()}`)
+    await chooseKind('个人认证')
     await provider('人工审核').click()
     await nextStep()
     await chooseOption('证件类型', '护照')
@@ -410,7 +463,7 @@ try {
     await page.getByLabel('证件号码', { exact: true }).fill('91350211M000100Y43')
     await page.getByLabel('认证说明', { exact: true }).fill('Enterprise identity review')
     await page.locator('input[type="file"]').setInputFiles({ name: 'license.png', mimeType: 'image/png', buffer: png })
-    await page.getByRole('button', { name: '提交认证', exact: true }).click()
+    await submitVerification()
     await page.locator('#verification-case-28').waitFor()
     assert.equal(submitted, 1)
     await page.goto(`${home}?mode=admin`)
@@ -450,7 +503,7 @@ try {
     await page.getByLabel('证件号码', { exact: true }).fill('P12345678')
     await page.getByLabel('认证说明', { exact: true }).fill('Personal manual review')
     await page.locator('input[type="file"]').setInputFiles({ name: 'passport.png', mimeType: 'image/png', buffer: png })
-    await page.getByRole('button', { name: '提交认证', exact: true }).click()
+    await submitVerification()
     await page.locator('#verification-case-29').waitFor()
     assert.equal(submitted, 2)
     await page.goto(`${home}?mode=admin`)
