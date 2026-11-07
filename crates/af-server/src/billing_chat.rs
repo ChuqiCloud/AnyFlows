@@ -536,7 +536,8 @@ impl BillingChatService {
                 if matches!(subject, crate::model_subject::ModelSubject::User(principal)
                     if principal.user_route_id().is_some())
                     && permits_group_failover
-                    && crate::user_route_runtime::permits_group_failover(&error)
+                    && (error == AfError::ConcurrencyLimited
+                        || crate::user_route_runtime::permits_group_failover(&error))
                 {
                     cancel_before_failover(&mut lifecycle, self.precharge.as_deref()).await?;
                     return Err(UserRouteAttemptError::before_delivery(error));
