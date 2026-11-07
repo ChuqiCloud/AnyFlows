@@ -258,8 +258,7 @@ try {
       await row.getByText('已通过', { exact: true }).first().waitFor()
     }
     const replace = async () => {
-      if (page.url() === home) await page.reload()
-      else await page.goto(home)
+      await page.goto(`${home}?fixture=${Date.now()}`)
       await page.locator('[data-verification-result]').waitFor()
       await page.getByRole('button', { name: '更换认证', exact: true }).click()
       await form.waitFor()
