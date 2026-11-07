@@ -401,7 +401,7 @@ try {
     try {
       await page.goto(home)
       const expiredRecord = await openRecord(30)
-      await expiredRecord.getByRole('button', { name: '重新发起授权', exact: true }).click()
+      await expiredRecord.getByRole('button', { name: '重新填写认证', exact: true }).click()
       await form.waitFor()
       await provider('支付宝实名认证').waitFor()
       assert.equal(await provider('支付宝实名认证').getAttribute('aria-pressed'), 'true', 'Expired Alipay authorization must reopen with Alipay selected')
