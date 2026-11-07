@@ -124,6 +124,26 @@ try {
     } else { errors.push(`Unexpected API: ${url.pathname}`); await route.fulfill({ status: 404, body: '{}' }); return }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(response) })
   })
+  const selectOption = async (scope, name, value) => {
+    const combobox = scope.getByRole('combobox', { name, exact: true })
+    if (await combobox.count()) {
+      const isNative = await combobox.first().evaluate(element => element instanceof HTMLSelectElement)
+      if (isNative) {
+        await combobox.first().selectOption(String(value))
+        return
+      }
+    }
+    const selector = `select[aria-label=${JSON.stringify(name)}]`
+    const nativeSelect = scope.locator(selector).first()
+    const optionLabel = await nativeSelect.locator('option').evaluateAll((options, selectedValue) => {
+      const option = options.find(item => item.value === selectedValue)
+      return option?.textContent?.trim()
+    }, String(value))
+    assert.ok(optionLabel, `Missing ${name} option with value ${value}`)
+    const trigger = scope.locator(`button[data-slot="trigger"][aria-label=${JSON.stringify(name)}]`).filter({ visible: true })
+    await trigger.click()
+    await page.getByRole('option', { name: optionLabel, exact: true }).click()
+  }
   await page.goto(`http://127.0.0.1:${port}/.dashboard-smoke.html`)
   await page.locator('.report-sla-row').first().waitFor()
   const sla = page.locator('.report-sla')
@@ -148,7 +168,7 @@ try {
   await delay(400)
   assert.equal(requests.length, pageRequestCount, 'An unchanged normalized search preserves pagination')
   assert.equal(await sla.getByText('custom-model-5', { exact: true }).isVisible(), true)
-  await sla.getByRole('combobox', { name: '每页', exact: true }).selectOption('5')
+  await selectOption(sla, '每页', '5')
   await sla.getByText('gpt-5', { exact: true }).waitFor()
   assert.equal(await sla.locator('.report-sla-row').count(), 5)
   await sla.getByRole('textbox', { name: '搜索模型或渠道' }).fill('unknown-only')
@@ -161,13 +181,13 @@ try {
   await sla.getByRole('button', { name: '渠道', exact: true }).click()
   await sla.getByText('OpenAI Production', { exact: true }).waitFor()
   assert.equal(requests.at(-1).dimension, 'channel')
-  await sla.getByRole('combobox', { name: '排序', exact: true }).selectOption('failures')
+  await selectOption(sla, '排序', 'failures')
   await page.waitForFunction(() => document.querySelector('.report-sla-name strong')?.textContent === 'Channel 19')
-  await sla.getByRole('combobox', { name: '目标', exact: true }).selectOption('0.99')
+  await selectOption(sla, '目标', '0.99')
   const requestCount = requests.length
-  await sla.getByRole('combobox', { name: '目标', exact: true }).selectOption('0.9999')
+  await selectOption(sla, '目标', '0.9999')
   assert.equal(requests.length, requestCount, 'Target changes use the loaded outcomes')
-  await sla.getByRole('combobox', { name: '排序', exact: true }).selectOption('requests')
+  await selectOption(sla, '排序', 'requests')
   await sla.getByText('OpenAI Production', { exact: true }).waitFor()
   await sla.getByRole('button', { name: '下一页', exact: true }).click()
   await sla.getByText('unknown-only', { exact: true }).waitFor()
