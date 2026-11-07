@@ -389,7 +389,7 @@ try {
       await page.getByRole('button', { name: '补充材料', exact: true }).click()
       await form.waitFor()
       await page.getByText('新资料审核期间，原认证结果与已有资格继续有效。', { exact: true }).waitFor()
-      await form.getByRole('button', { name: '返回认证结果', exact: true }).click()
+      await page.getByRole('button', { name: '返回认证结果', exact: true }).click()
       await form.waitFor({ state: 'detached' })
       await page.getByRole('button', { name: '补充材料', exact: true }).waitFor()
     } finally {
