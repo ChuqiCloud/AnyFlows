@@ -37,9 +37,9 @@ import {
 } from './wallet-api'
 import { WalletStripePaymentForm } from './wallet-stripe-payment-form'
 import { EpayQrPayment } from './epay-qr-payment'
+import { browserRouterPath } from './payment-return-model'
 import {
   apiErrorCode,
-  browserRouterPath,
   clearStoredTopupAttempt,
   publicTopupAmountBounds,
   readStoredTopupAttempt,
