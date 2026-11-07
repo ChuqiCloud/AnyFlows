@@ -1,3 +1,40 @@
+## 0.3.0-beta.7 - 2026-11-07
+
+本版本基于 `v0.3.0-beta.6`，增加个人智能路由和管理员账号安全管理，完善分组授权与计费倍率，修复 Relay 安全拦截、支付回跳和认证流程。
+
+### 新增
+
+- 用户可从自身获授权分组创建个人智能路由组，支持价格优先、稳定优先、固定顺序、轮询和加权策略，并为路由组签发个人 Key；管理入口位于 web-next。([#94](https://github.com/ChuqiCloud/AnyFlows/pull/94))
+- 分组 Key 签发策略支持按用户默认分组授权，并支持按来源组和模型覆盖计费倍率。([#91](https://github.com/ChuqiCloud/AnyFlows/pull/91))
+- 管理员可查看用户二次验证状态和 Passkey 目录、停用 TOTP、撤销指定 Passkey，相关安全操作同时使目标用户现有会话失效。([#90](https://github.com/ChuqiCloud/AnyFlows/pull/90))
+
+### 改进
+
+- TOTP 采用两阶段绑定：生成二维码后须输入认证器验证码确认，确认成功后才启用二次验证并展示一次性备用码；补充绑定有效期、绑定时间和最近验证时间。([#89](https://github.com/ChuqiCloud/AnyFlows/pull/89))
+- 个人智能路由支持限制尝试分组数和计费倍率，组内账号并发已满时可切换备用分组；用户级并发限制仍终止请求。([#94](https://github.com/ChuqiCloud/AnyFlows/pull/94)、[#95](https://github.com/ChuqiCloud/AnyFlows/pull/95))
+
+### 修复
+
+- 修复 Gemini 合法安全拦截被误判为无效响应的问题，保留非流式响应中的安全反馈，并避免竞速模式将不可重试错误交由其他候选成功响应掩盖。([#93](https://github.com/ChuqiCloud/AnyFlows/pull/93)、[#95](https://github.com/ChuqiCloud/AnyFlows/pull/95))
+- 修复订阅与个人充值回跳串扰、易支付回跳路径和过期响应覆盖当前充值尝试的问题；统一 web-next 支付回跳的部署路径前缀，并补齐首次创建订阅订单失败后的错误和重试入口。([#93](https://github.com/ChuqiCloud/AnyFlows/pull/93)、[#95](https://github.com/ChuqiCloud/AnyFlows/pull/95))
+- 修复模型体验底部输入区布局和取消流响应处理，避免输入区错位及取消后的未处理错误。([#92](https://github.com/ChuqiCloud/AnyFlows/pull/92))
+- 修复倍率模型名编辑时输入框失去焦点的问题。([#93](https://github.com/ChuqiCloud/AnyFlows/pull/93))
+- 修复认证补材料与支付宝授权过期后无法重新进入表单的问题，沿用待处理记录的认证类型和方式，并确保分步表单只在明确提交后发起申请。([#95](https://github.com/ChuqiCloud/AnyFlows/pull/95))
+
+### 安全更新
+
+- 更新两套前端的 `follow-redirects` 和 `minimatch` 依赖版本。([#90](https://github.com/ChuqiCloud/AnyFlows/pull/90)、[#91](https://github.com/ChuqiCloud/AnyFlows/pull/91))
+
+### 升级与兼容
+
+- 本版本包含 TOTP 待绑定、分组授权与倍率覆盖、个人智能路由相关数据库迁移；升级前备份数据库、配置和计费 WAL，首次启动时自动执行迁移。([#89](https://github.com/ChuqiCloud/AnyFlows/pull/89)、[#91](https://github.com/ChuqiCloud/AnyFlows/pull/91)、[#94](https://github.com/ChuqiCloud/AnyFlows/pull/94))
+- 已有 TOTP 配置和单分组 Key 保持兼容；Classic 前端继续随发行包提供，个人智能路由的管理入口位于 web-next。([#89](https://github.com/ChuqiCloud/AnyFlows/pull/89)、[#94](https://github.com/ChuqiCloud/AnyFlows/pull/94))
+- Stripe 回跳须携带流程与订单关联信息，并匹配当前浏览器会话中的支付尝试；缺少关联信息的旧回跳不会自动恢复支付。([#93](https://github.com/ChuqiCloud/AnyFlows/pull/93))
+
+本版本为社区版 Beta 预发布。
+
+完整变更：[v0.3.0-beta.6...v0.3.0-beta.7](https://github.com/ChuqiCloud/AnyFlows/compare/v0.3.0-beta.6...v0.3.0-beta.7)。
+
 ## 0.3.0-beta.6 - 2026-10-30
 
 本版本基于 `v0.3.0-beta.5`，完善分组授权、模型计费策略、调用观测和双前端控制台体验，用于新一轮社区测试与部署验收。
