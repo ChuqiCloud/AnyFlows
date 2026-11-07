@@ -22,7 +22,7 @@ mod upstream_error;
 mod wire;
 
 pub use build::{BuildRequestError, build_request};
-pub use build_response::{BuildResponseError, build_response};
+pub use build_response::{BuildResponseError, build_response, rebuild_prompt_blocked_response};
 pub use error::encode_error;
 pub use parse_response::{ParseResponseError, parse_response};
 pub use streaming::{

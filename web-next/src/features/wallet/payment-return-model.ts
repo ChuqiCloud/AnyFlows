@@ -11,6 +11,18 @@ const topupParameters = ['topup_order_id', 'topup_payment_intent'] as const
 const subscriptionParameters = ['subscription_order_id', 'subscription_payment_intent'] as const
 const epayParameters = ['epay_return', 'pid', 'trade_no', 'out_trade_no', 'type', 'name', 'money', 'trade_status', 'sign', 'sign_type'] as const
 
+/** 从当前控制台路径推导部署前缀，供路由器和支付回跳地址共用。 */
+export function browserRouterBasename(pathname: string) {
+  const segments = pathname.split('/').filter(Boolean)
+  const consoleIndex = segments.indexOf('console')
+  return consoleIndex > 0 ? `/${segments.slice(0, consoleIndex).join('/')}` : ''
+}
+
+export function browserRouterPath(pathname: string, routePath: string) {
+  const basename = browserRouterBasename(pathname)
+  return `${basename}${routePath.startsWith('/') ? routePath : `/${routePath}`}`
+}
+
 /** 同时读取服务商 query 和现有易支付 hash 回跳，保留重复字段供匹配时拒绝歧义。 */
 function returnParameters(url: URL) {
   const parameters = new URLSearchParams(url.search)
@@ -84,11 +96,34 @@ export function createTopupPaymentReturnUrl(input: URL, returnPath: string, atte
   return url
 }
 
-export function createSubscriptionPaymentReturnUrl(origin: string, orderId: string, paymentIntentId: string) {
-  const url = new URL('/console/wallet', origin)
+export function createSubscriptionPaymentReturnUrl(origin: string, orderId: string, paymentIntentId: string, returnPath = '/console/wallet') {
+  const url = new URL(returnPath, origin)
   url.searchParams.set('flow', 'subscription')
   url.searchParams.set('subscription_order_id', orderId)
   url.searchParams.set('subscription_payment_intent', paymentIntentId)
+  return url
+}
+
+/** Move callbacks created by the previous hash-based Epay URL onto the BrowserRouter path. */
+export function migrateLegacyEpayHashReturn(input: URL) {
+  const url = new URL(input)
+  const match = /^#(\/console\/wallet)(?:\?(.*))?$/u.exec(url.hash)
+  if (!match) return url
+
+  const hashParameters = new URLSearchParams(match[2] ?? '')
+  if (!hashParameters.has('epay_return') && !hashParameters.has('out_trade_no')) return url
+
+  const parameters = new URLSearchParams(url.search)
+  hashParameters.forEach((value, key) => {
+    if (!parameters.getAll(key).includes(value)) parameters.append(key, value)
+  })
+  const currentPath = url.pathname.replace(/\/+$/u, '')
+  const prefix = currentPath.endsWith(match[1])
+    ? currentPath.slice(0, -match[1].length)
+    : currentPath
+  url.pathname = `${prefix}${match[1]}`
+  url.search = parameters.toString()
+  url.hash = ''
   return url
 }
 

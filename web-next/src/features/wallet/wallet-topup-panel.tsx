@@ -24,6 +24,7 @@ import type { UserTopupMethod, UserTopupPayment } from '@/features/payment-setti
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import {
   createTopupAttempt,
+  isCurrentTopupAttempt,
   topupAmountInput,
   topupAmountMinor,
   type TopupAttempt,
@@ -36,6 +37,7 @@ import {
 } from './wallet-api'
 import { WalletStripePaymentForm } from './wallet-stripe-payment-form'
 import { EpayQrPayment } from './epay-qr-payment'
+import { browserRouterPath } from './payment-return-model'
 import {
   apiErrorCode,
   clearStoredTopupAttempt,
@@ -77,13 +79,14 @@ export function WalletTopupPanel({
   const createOrRecoverOrder = orderMutation.mutateAsync
   const resetOrderMutation = orderMutation.reset
   const topupScope = 'personal'
-  const returnPath = '/console/wallet'
+  const returnPath = browserRouterPath(window.location.pathname, '/console/wallet')
   const [restoredAttempt] = useState(() => readStoredTopupAttempt(topupScope))
   const [attempt, setAttempt] = useState<TopupAttempt | undefined>(restoredAttempt)
   const [selectedMethodKey, setSelectedMethodKey] = useState(() => restoredAttempt ? attemptMethodKey(restoredAttempt) : '')
   const [amountInput, setAmountInput] = useState(() => restoredAttempt ? topupAmountInput(restoredAttempt.amountMinor) : '10.00')
   const [order, setOrder] = useState<TopupOrderView>()
   const [confirmation, setConfirmation] = useState<TopupConfirmationPhase>()
+  const attemptRef = useRef<TopupAttempt | undefined>(restoredAttempt)
   const redirectStatus = usePaymentRedirectStatus()
   const redirectRecoveryStarted = useRef(false)
   const theme = useRootTheme()
@@ -103,6 +106,7 @@ export function WalletTopupPanel({
     : null, [selectedMethod])
 
   const resetAttempt = useCallback(() => {
+    attemptRef.current = undefined
     clearStoredTopupAttempt(topupScope)
     setAttempt(undefined)
     setOrder(undefined)
@@ -122,6 +126,7 @@ export function WalletTopupPanel({
   }, [methods, resetAttempt, restoredAttempt])
 
   const applyOrder = useCallback(async (nextOrder: TopupOrderView, currentAttempt: TopupAttempt) => {
+    if (!isCurrentTopupAttempt(attemptRef.current, currentAttempt)) return
     setOrder(nextOrder)
     const paymentIntentId = nextOrder.payment?.kind === 'stripe'
       ? nextOrder.payment.payment_intent_id
@@ -131,6 +136,7 @@ export function WalletTopupPanel({
       orderId: nextOrder.order_id,
       ...(paymentIntentId ? { paymentIntentId } : {}),
     }
+    attemptRef.current = nextAttempt
     setAttempt(nextAttempt)
     storeTopupAttempt(nextAttempt, topupScope)
     if (nextOrder.status !== 'paid') return
@@ -161,8 +167,9 @@ export function WalletTopupPanel({
   }, [attempt, methods.length, redirectStatus, submitAttempt])
 
   const startTopup = () => {
-    if (amountMinor === undefined || !selectedMethod) return
+    if (attemptRef.current || amountMinor === undefined || !selectedMethod) return
     const nextAttempt = createTopupAttempt(amountMinor, selectedMethod.provider, selectedMethod.payment_method)
+    attemptRef.current = nextAttempt
     storeTopupAttempt(nextAttempt, topupScope)
     setAttempt(nextAttempt)
     setOrder(undefined)
@@ -187,7 +194,7 @@ export function WalletTopupPanel({
   }
 
   const paymentConfirmed = async (status: PaymentIntent.Status) => {
-    if (!attempt) return
+    if (!attempt || !isCurrentTopupAttempt(attemptRef.current, attempt)) return
     setConfirmation(status === 'succeeded'
       ? 'succeeded'
       : status === 'processing' || status === 'requires_capture'

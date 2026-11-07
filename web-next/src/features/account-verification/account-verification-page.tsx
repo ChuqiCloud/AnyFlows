@@ -40,6 +40,7 @@ export function AccountVerificationPage({ admin = false }: { admin?: boolean }) 
   const [pageSize, setPageSize] = useState(10)
   // 未认证时用户选择的认证主体；undefined 表示还停在"选择个人/企业"首屏。
   const [choice, setChoice] = useState<VerificationKind>()
+  const [preferredProvider, setPreferredProvider] = useState<VerificationProvider>('manual')
   const pendingScroll = useRef<number | undefined>(undefined)
   const verified = useVerifiedAccount(!admin)
   const query = useAccountVerifications(admin, status)
@@ -79,27 +80,28 @@ export function AccountVerificationPage({ admin = false }: { admin?: boolean }) 
     {!admin ? (
       verified.isPending ? <StatusCardSkeleton /> : verified.isError ? (
         <p role="alert" className="rounded-xl border border-danger/25 bg-danger/8 p-4 text-sm text-danger">{t('verificationCenter.loadError')}</p>
-      ) : verified.data && !replacing ? (
-        <VerifiedAccount record={verified.data} onReplace={() => { setReplacing(true); setFormRestart((value) => value + 1) }} />
-      ) : pending ? (
+      ) : verified.data && !replacing && pending?.status !== 3 ? (
+        <VerifiedAccount record={verified.data} onReplace={() => { setChoice(undefined); setPreferredProvider('manual'); setReplacing(true); setFormRestart((value) => value + 1) }} />
+      ) : pending && !replacing ? (
         <ResultCard
           status={pending.status}
           providerStatus={pending.provider_status}
           record={pending}
-          actions={<>
+          actions={<div className="flex flex-wrap items-center justify-center gap-2">
+            {verified.data && pending.status === 3 ? <p className="w-full text-center text-xs text-default-500">{t('verificationCenter.replacementHint')}</p> : null}
             {pending.status === 3 ? (
-              <Button color="primary" size="sm" onClick={() => { setReplacing(true); setFormRestart((v) => v + 1) }}>
+              <Button color="primary" size="sm" onClick={() => { setChoice(pending.kind); setPreferredProvider(pending.provider); setReplacing(true); setFormRestart((v) => v + 1) }}>
                 {t('verificationCenter.supplementAction')}
               </Button>
             ) : null}
             <Button size="sm" variant="light" onClick={() => setSelected(pending.id)}>{t('verificationCenter.details')}</Button>
-          </>}
+          </div>}
         />
       ) : showForm || replacing ? (
         <div className="grid gap-3">
-          {verified.data || pending ? (
+          {replacing || verified.data || pending ? (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-default-200 bg-content1 p-4">
-              <p className="text-sm text-default-500">{t('verificationCenter.replacementHint')}</p>
+              <p className="text-sm text-default-500">{verified.data || pending ? t('verificationCenter.replacementHint') : t('verificationCenter.notVerifiedHint')}</p>
               <Button type="button" size="sm" variant="bordered" onClick={() => setReplacing(false)}>{t('verificationCenter.backToResult')}</Button>
             </div>
           ) : null}
@@ -117,6 +119,7 @@ export function AccountVerificationPage({ admin = false }: { admin?: boolean }) 
           ) : (
             <AccountVerificationForm
               initialKind={choice ?? 'individual'}
+              initialProvider={preferredProvider}
               key={formRestart}
               restartSignal={formRestart}
               onSubmitted={(id) => { setStatus(undefined); setSelected(id); pendingScroll.current = id; setReplacing(false) }}
@@ -187,7 +190,7 @@ export function AccountVerificationPage({ admin = false }: { admin?: boolean }) 
                     </button>
                     {expanded ? (
                       <div className="border-t border-default-200 px-4 py-4">
-                        <VerificationDetailPanel key={`${admin}-${item.id}`} id={item.id} admin={admin} onRestart={() => { setStatus(undefined); setSelected(undefined); setReplacing(true); setFormRestart((value) => value + 1) }} />
+                        <VerificationDetailPanel key={`${admin}-${item.id}`} id={item.id} admin={admin} onRestart={(kind, provider) => { setChoice(kind); setPreferredProvider(provider); setStatus(undefined); setSelected(undefined); setReplacing(true); setFormRestart((value) => value + 1) }} />
                       </div>
                     ) : null}
                   </article>
@@ -383,7 +386,7 @@ function VerificationLoading() {
   return <HistorySkeleton />
 }
 
-function AccountVerificationForm({ restartSignal, initialKind = 'individual', onSubmitted }: { restartSignal: number; initialKind?: VerificationKind; onSubmitted: (id: number) => void }) {
+function AccountVerificationForm({ restartSignal, initialKind = 'individual', initialProvider = 'manual', onSubmitted }: { restartSignal: number; initialKind?: VerificationKind; initialProvider?: VerificationProvider; onSubmitted: (id: number) => void }) {
   const { t } = useTranslation()
   const eligibility = useAccountEligibility()
   const verifiedAccountEntry = useConsoleExtensionEntryPoint('account-verification')
@@ -391,7 +394,7 @@ function AccountVerificationForm({ restartSignal, initialKind = 'individual', on
   const [step, setStep] = useState<0 | 1 | 2>(0)
   // 认证主体由首屏选择卡决定，表单内不再重复选择。
   const [kind] = useState<VerificationKind>(initialKind)
-  const [provider, setProvider] = useState<VerificationProvider>(restartSignal > 0 ? 'alipay' : 'manual')
+  const [provider, setProvider] = useState<VerificationProvider>(initialProvider)
   const [name, setName] = useState('')
   const [country, setCountry] = useState('CN')
   const [documentType, setDocumentType] = useState('national_id')
@@ -426,7 +429,7 @@ function AccountVerificationForm({ restartSignal, initialKind = 'individual', on
   const stepTwoValid = provider === 'alipay' || (files.length > 0 && files.length <= 5 && files.every((f) => f.size > 0 && f.size <= 10_000_000 && ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'].includes(f.type)) && files.reduce((sum, f) => sum + f.size, 0) <= 25_000_000)
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (eligibility.isError || !providerOptions.includes(provider) || mutation.isPending) return
+    if (step !== 2 || !stepOneValid || eligibility.isError || !providerOptions.includes(provider) || mutation.isPending) return
     const valid = provider === 'alipay' ? files.length === 0 : stepTwoValid
     setFileError(!valid)
     if (!valid) return
@@ -521,16 +524,16 @@ function AccountVerificationForm({ restartSignal, initialKind = 'individual', on
       <div className="flex items-center justify-between gap-2 border-t border-default-200 pt-4">
         {step > 0 ? <Button type="button" variant="light" onClick={() => setStep((step - 1) as 0 | 1)}>{t('verificationCenter.back')}</Button> : <span />}
         {step < 2 ? (
-          <Button type="button" color="primary" isDisabled={step === 0 ? providerOptions.length === 0 : !stepOneValid} onClick={() => setStep((step + 1) as 1 | 2)}>{t('verificationCenter.next')}</Button>
+          <Button key="next" type="button" color="primary" isDisabled={step === 0 ? providerOptions.length === 0 : !stepOneValid} onClick={() => setStep((step + 1) as 1 | 2)}>{t('verificationCenter.next')}</Button>
         ) : (
-          <Button type="submit" color="primary" isDisabled={mutation.isPending || eligibility.isError || !providerOptions.includes(provider) || (provider !== 'alipay' && !stepTwoValid)}>{mutation.isPending ? <LoaderCircle className="size-4 animate-spin" /> : <FileCheck2 className="size-4" />}{t('verificationCenter.submit')}</Button>
+          <Button key="submit" type="submit" color="primary" isDisabled={mutation.isPending || eligibility.isError || !stepOneValid || !providerOptions.includes(provider) || (provider !== 'alipay' && !stepTwoValid)}>{mutation.isPending ? <LoaderCircle className="size-4 animate-spin" /> : <FileCheck2 className="size-4" />}{t('verificationCenter.submit')}</Button>
         )}
       </div>
     </form>
   </section>
 }
 
-function VerificationDetailPanel({ id, admin, onRestart }: { id: number; admin: boolean; onRestart: () => void }) {
+function VerificationDetailPanel({ id, admin, onRestart }: { id: number; admin: boolean; onRestart: (kind: VerificationKind, provider: VerificationProvider) => void }) {
   const { t } = useTranslation()
   const query = useVerificationDetail(id, admin)
   const mutation = useReviewAccountVerification()
@@ -542,7 +545,7 @@ function VerificationDetailPanel({ id, admin, onRestart }: { id: number; admin: 
   if (query.isPending) return <HistorySkeleton />
   if (!query.data) return <p role="alert" className="text-sm text-danger">{t('verificationCenter.loadError')}</p>
   return <div className="grid gap-4"><p className="whitespace-pre-wrap text-sm">{query.data.case.summary}</p>
-    {!admin && query.data.case.provider === 'alipay' ? <AlipayVerification key={id} record={query.data.case} receivedAt={query.dataUpdatedAt} checking={query.isFetching} checkError={query.isError} onCheck={() => void query.refetch()} onRestart={onRestart} /> : null}
+    {!admin && query.data.case.provider === 'alipay' ? <AlipayVerification key={id} record={query.data.case} receivedAt={query.dataUpdatedAt} checking={query.isFetching} checkError={query.isError} onCheck={() => void query.refetch()} onRestart={() => onRestart(query.data.case.kind, query.data.case.provider)} /> : null}
     <p className="text-xs text-default-500">{query.data.case.document_country} · {t(`verificationCenter.documentTypes.${query.data.case.document_type}`, { defaultValue: query.data.case.document_type })}{query.data.case.document_number_masked ? ` · ${query.data.case.document_number_masked}` : ''}</p>
     {query.data.case.review_reason ? <p className="rounded-lg bg-default-100 p-3 text-sm">{t('verificationCenter.reviewReason')}: {query.data.case.review_reason}</p> : null}
     <p className="text-xs text-default-500">{t('verificationCenter.updated')}: {new Date(query.data.case.updated_at * 1000).toLocaleString()}</p>

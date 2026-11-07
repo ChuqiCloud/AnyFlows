@@ -14,6 +14,7 @@ enum FirstGroupResult {
     ProtocolError,
     RequestAborted,
     BadRequest,
+    AccountConcurrencyLimited,
     FullWithoutUsage,
     UnsupportedPlan,
 }
@@ -86,6 +87,9 @@ impl PlannedChatExecution for GroupExecution {
                         ));
                     }
                     FirstGroupResult::BadRequest => return Err(UpstreamError::BadRequest.into()),
+                    FirstGroupResult::AccountConcurrencyLimited => {
+                        return Err(AfError::ConcurrencyLimited.into());
+                    }
                     FirstGroupResult::FullWithoutUsage => {
                         return Ok(crate::RoutedExecution::new(
                             ChatResponse::Full {
@@ -355,6 +359,40 @@ async fn user_route_attempt_limit_counts_upstream_calls_and_skips_unsupported_gr
         );
         database.close().await;
     }
+}
+
+#[tokio::test]
+async fn user_route_fails_over_when_preferred_group_account_slots_are_full() {
+    let (database, runtime, principal) = routed_fixture("user-route-account-concurrency").await;
+    let attempts = Arc::new(Mutex::new(Vec::new()));
+    let service = paid_service(
+        &database,
+        runtime,
+        GroupPlanner {
+            first: FirstGroupResult::AccountConcurrencyLimited,
+            attempts: attempts.clone(),
+            pricing_model_override: None,
+        },
+        metered_snapshot_source_with_target(GroupId::new(4).unwrap()).await,
+        Arc::new(UsageStub::default()),
+    );
+    let result = service
+        .chat_completions(
+            &principal,
+            None,
+            request(),
+            Protocol::OpenAiChat,
+            "routed-account-concurrency",
+            diagnostic(),
+        )
+        .await;
+
+    assert!(matches!(result, Ok(ChatResponse::Full { .. })));
+    assert_eq!(
+        attempts.lock().unwrap().as_slice(),
+        &[GroupId::new(3).unwrap(), GroupId::new(4).unwrap()]
+    );
+    database.close().await;
 }
 
 #[tokio::test]
