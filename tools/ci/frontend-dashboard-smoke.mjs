@@ -127,19 +127,21 @@ try {
   const selectOption = async (scope, name, value) => {
     const combobox = scope.getByRole('combobox', { name, exact: true })
     if (await combobox.count()) {
-      const isNative = await combobox.first().evaluate(element => element instanceof HTMLSelectElement)
-      if (isNative) {
+      const hasNativeOption = await combobox.first().evaluate((element, selectedValue) =>
+        element instanceof HTMLSelectElement && [...element.options].some(option => option.value === selectedValue), String(value))
+      if (hasNativeOption) {
         await combobox.first().selectOption(String(value))
         return
       }
     }
-    const selector = `select[aria-label=${JSON.stringify(name)}]`
-    const nativeSelect = scope.locator(selector).first()
-    const optionLabel = await nativeSelect.locator('option').evaluateAll((options, selectedValue) => {
-      const option = options.find(item => item.value === selectedValue)
-      return option?.textContent?.trim()
-    }, String(value))
-    assert.ok(optionLabel, `Missing ${name} option with value ${value}`)
+    const optionLabel = name === '每页'
+      ? String(value)
+      : name === '排序'
+        ? ({ requests: '请求量优先', failures: '失败数优先' })[value]
+        : name === '目标'
+          ? new Intl.NumberFormat('zh-CN', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 3 }).format(Number(value))
+          : undefined
+    assert.ok(optionLabel, `Missing ${name} option label for value ${value}`)
     const trigger = scope.locator(`button[data-slot="trigger"][aria-label=${JSON.stringify(name)}]`).filter({ visible: true })
     await trigger.click()
     await page.getByRole('option', { name: optionLabel, exact: true }).click()
