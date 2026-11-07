@@ -415,7 +415,8 @@ try {
       cases.splice(0, cases.length, ...originalStates)
     }
 
-    await replace()
+    await page.goto(`${home}?fixture=${Date.now()}`)
+    await chooseKind('个人认证')
     await provider('人工审核').click()
     await nextStep()
     await chooseOption('证件类型', '护照')
