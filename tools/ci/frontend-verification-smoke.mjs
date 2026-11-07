@@ -258,7 +258,13 @@ try {
       await row.getByText('已通过', { exact: true }).first().waitFor()
     }
     const replace = async () => {
+      const verifiedResponse = page.waitForResponse((response) => {
+        const url = new URL(response.url())
+        return url.pathname === '/api/account/verifications' && url.searchParams.get('status') === '4'
+      })
       await page.goto(`${home}?fixture=${Date.now()}`)
+      const verifiedPayload = await (await verifiedResponse).json()
+      assert.ok(verifiedPayload.cases.some((item) => item.status === 4), `Expected an approved verification fixture; statuses=${cases.map((item) => `${item.id}:${item.status}`).join(',')}`)
       await page.locator('[data-verification-result]').waitFor()
       await page.getByRole('button', { name: '更换认证', exact: true }).click()
       await form.waitFor()

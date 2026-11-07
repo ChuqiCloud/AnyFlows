@@ -176,6 +176,8 @@ mod tests {
 
         let user_limit = UserRouteAttemptError::candidate_plan(AfError::ConcurrencyLimited);
         assert!(!user_limit.retryable);
-        assert!(!UserRouteAttemptError::before_delivery(UpstreamError::BadRequest.into()).retryable);
+        assert!(
+            !UserRouteAttemptError::before_delivery(UpstreamError::BadRequest.into()).retryable
+        );
     }
 }
