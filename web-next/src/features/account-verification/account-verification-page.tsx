@@ -81,7 +81,7 @@ export function AccountVerificationPage({ admin = false }: { admin?: boolean }) 
       verified.isPending ? <StatusCardSkeleton /> : verified.isError ? (
         <p role="alert" className="rounded-xl border border-danger/25 bg-danger/8 p-4 text-sm text-danger">{t('verificationCenter.loadError')}</p>
       ) : verified.data && !replacing && pending?.status !== 3 ? (
-        <VerifiedAccount record={verified.data} onReplace={() => { setChoice(verified.data?.kind ?? 'individual'); setPreferredProvider(verified.data?.provider ?? 'manual'); setReplacing(true); setFormRestart((value) => value + 1) }} />
+        <VerifiedAccount record={verified.data} onReplace={() => { setChoice(undefined); setPreferredProvider('manual'); setReplacing(true); setFormRestart((value) => value + 1) }} />
       ) : pending && !replacing ? (
         <ResultCard
           status={pending.status}
