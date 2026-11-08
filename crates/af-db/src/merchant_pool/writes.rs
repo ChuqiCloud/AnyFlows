@@ -200,6 +200,9 @@ impl MerchantPoolRepository {
             let service=if let Some(id)=id {
                 let service=lock_service(&txn,id).await?;
                 if service.merchant_id!=merchant.id { return Err(MerchantPoolError::NotFound); }
+                if revisions::Entity::find().filter(revisions::Column::ServiceId.eq(id)).count(&txn).await.map_err(internal)? >= 256 {
+                    return Err(MerchantPoolError::LimitReached);
+                }
                 if service.pool_id!=write.pool_id || service.status=="suspended" { return Err(MerchantPoolError::Conflict); }
                 if let Some(pending)=service.pending_revision_id {
                     let current=load_revision(&txn,pending,id).await?;
@@ -405,6 +408,48 @@ impl MerchantPoolRepository {
         }).await
     }
 
+    /// Restore the existing approved version without publishing or discarding any pending edit.
+    pub async fn resume_service(&self,actor:UserId,id:i64)->Result<MerchantOwnedService,MerchantPoolError> {
+        self.bounded(async {
+            let txn=self.pool.connection().begin().await.map_err(internal)?;
+            let initial=find_service(&txn,id).await?;
+            let merchant=profiles::Entity::find_by_id(initial.merchant_id).one(&txn).await.map_err(internal)?.ok_or(MerchantPoolError::NotFound)?;
+            lock_owner(&txn,UserId::new(merchant.owner_user_id).map_err(internal)?).await?;
+            let merchant=profiles::Entity::find_by_id(initial.merchant_id).one(&txn).await.map_err(internal)?.ok_or(MerchantPoolError::NotFound)?;
+            if merchant.status!="approved" { return Err(MerchantPoolError::Conflict); }
+            let service=lock_service(&txn,id).await?;
+            if service.status!="suspended" || !service.platform_suspended { return Err(MerchantPoolError::Conflict); }
+            let revision=load_revision(&txn,service.published_revision_id.ok_or(MerchantPoolError::Conflict)?,id).await?;
+            if revision.status!="published" { return Err(MerchantPoolError::Conflict); }
+            let pool=find_pool(&txn,service.pool_id).await?;
+            if !pool.enabled { return Err(MerchantPoolError::Conflict); }
+            let models=revision_models(&revision)?;
+            validate_ratios(&pool,revision.default_ratio_micros,&models)?;
+            for model in &models {
+                if super::catalog::model_price(&txn,&model.model,model.ratio_micros.unwrap_or(revision.default_ratio_micros)).await?.is_none() {
+                    return Err(MerchantPoolError::InvalidInput);
+                }
+            }
+            let channel=channels::Entity::find_by_id(revision.channel_id).filter(channels::Column::DeletedAt.is_null())
+                .one(&txn).await.map_err(internal)?.ok_or(MerchantPoolError::Conflict)?;
+            if credentials::Entity::find_by_id(revision.credential_id).filter(credentials::Column::ChannelId.eq(channel.id))
+                .filter(credentials::Column::DeletedAt.is_null()).one(&txn).await.map_err(internal)?.is_none() { return Err(MerchantPoolError::Conflict); }
+            let now=DatabaseTimestamp::now_utc();
+            let routing=ValidatedChannelRouting::new(models.into_iter().map(|model|model.model).collect(),
+                vec![GroupId::new(pool.group_id).map_err(internal)?]).map_err(internal)?;
+            synchronize_channel_routing(&txn,ChannelId::new(channel.id).map_err(internal)?,&routing,
+                ChannelAbilityMetadata{enabled:!service.merchant_paused,priority:0,weight:1,tag:Some("merchant-pool")},now).await.map_err(internal)?;
+            set_channel_enabled(&txn,channel.id,!service.merchant_paused,now).await?;
+            let merchant_paused=service.merchant_paused;
+            let mut active=service.into_active_model();active.platform_suspended=Set(false);
+            active.status=Set(if merchant_paused {"paused"}else{"published"}.to_owned());
+            active.updated_at=Set(now);
+            let result=service_snapshot(&txn,active.update(&txn).await.map_err(internal)?).await?;
+            audit_control(&txn,actor,"service.resume",id,None,Some(serde_json::json!({"published_revision_id":revision.id}))).await?;
+            txn.commit().await.map_err(internal)?;Ok(result)
+        }).await
+    }
+
     pub async fn review_service(
         &self,
         actor: UserId,
@@ -489,6 +534,7 @@ fn validate_ratios(
         || models
             .iter()
             .any(|model| !allowed.contains(&model.ratio_micros.unwrap_or(default)))
+        || models.iter().any(|model| model.supports_vision)
     {
         return Err(MerchantPoolError::InvalidInput);
     }

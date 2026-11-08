@@ -14,6 +14,7 @@ pub(super) fn document()->OpenApi{
         ("strategy",json!({"type":"string","enum":["price_first","stable_first","ordered","round_robin","weighted"]})),
         ("enabled",json!({"type":"boolean"})),("max_merchant_attempts",json!({"type":"integer","minimum":1,"maximum":16})),
         ("max_price_ratio_micros",nullable(integer())),("members",json!({"type":"array","minItems":1,"maxItems":16,"items":reference("MerchantRouteMember")})),
+        ("excluded_merchant_ids",json!({"type":"array","maxItems":128,"items":integer()})),
         ("allow_pool_fallback",json!({"type":"boolean"})),("accept_new_merchants",json!({"type":"boolean"}))];
     let mut response_fields=fields.clone();response_fields.push(("id",integer()));
     let stats=object(&[("service_id",integer()),("merchant_id",integer()),("sample_count",integer()),("success_count",integer()),
@@ -25,6 +26,9 @@ pub(super) fn document()->OpenApi{
         ("outcome",json!({"type":"string","enum":["success","failure","ignored"]})),("latency_ms",integer()),("completed_at",integer())]);
     let bucket=object(&[("started_at",integer()),("ended_at",integer()),("success_count",integer()),("failure_count",integer()),("sample_count",integer()),("status",json!({"type":"string"}))]);
     let mut doc=json!({"openapi":"3.1.0","info":{"title":"Merchant routes","version":"1"},"paths":{},"components":{"schemas":{
+        "MerchantRoutePreviewRequest":object(&[("route",reference("MerchantRouteWriteRequest")),("model",json!({"type":"string"})),("protocol",json!({"type":"string","enum":["openai_chat","openai_responses"]})),("streaming",json!({"type":"boolean"})),("input_tokens",integer()),("output_tokens",integer())]),
+        "MerchantRoutePreviewItem":object(&[("merchant_id",integer()),("merchant_name",json!({"type":"string"})),("service_id",integer()),("service_name",json!({"type":"string"})),("sales_ratio_micros",integer()),("estimated_quota",nullable(integer())),("eligible",json!({"type":"boolean"})),("reason",nullable(json!({"type":"string"})))]),
+        "MerchantRoutePreview":object(&[("items",json!({"type":"array","items":reference("MerchantRoutePreviewItem")})),("quota_per_usd",integer()),("as_of",integer())]),
         "MerchantTimelineBucket":bucket,
         "MerchantServiceTimeline":object(&[("service_id",integer()),("merchant_id",integer()),("buckets",json!({"type":"array","items":reference("MerchantTimelineBucket")}))]),
         "MerchantTimelineResponse":object(&[("items",json!({"type":"array","items":reference("MerchantServiceTimeline")})),("as_of",integer()),("window_seconds",integer())]),
@@ -36,6 +40,7 @@ pub(super) fn document()->OpenApi{
     for (path,method,id,response,request,status) in [
         ("/api/merchant-pool/routes","get","listMerchantRoutes","MerchantRouteList",false,"200"),
         ("/api/merchant-pool/routes","post","createMerchantRoute","MerchantRoute",true,"201"),
+        ("/api/merchant-pool/routes/preview","post","previewMerchantRoute","MerchantRoutePreview",true,"200"),
         ("/api/merchant-pool/routes/{id}","get","getMerchantRoute","MerchantRoute",false,"200"),
         ("/api/merchant-pool/routes/{id}","put","updateMerchantRoute","MerchantRoute",true,"200"),
         ("/api/merchant-pool/routes/{id}","delete","deleteMerchantRoute","",false,"204"),
@@ -49,7 +54,7 @@ pub(super) fn document()->OpenApi{
             "403":{"description":"Unavailable"},"404":{"description":"Not found"},"500":{"description":"Unavailable"}}});
         operation["responses"][status]=if response.is_empty(){json!({"description":"Deleted"})}
             else{json!({"description":"Success","content":{"application/json":{"schema":reference(response)}}})};
-        if request {operation["requestBody"]=json!({"required":true,"content":{"application/json":{"schema":reference("MerchantRouteWriteRequest")}}});}
+        if request {operation["requestBody"]=json!({"required":true,"content":{"application/json":{"schema":reference(if path.ends_with("preview"){"MerchantRoutePreviewRequest"}else{"MerchantRouteWriteRequest"})}}});}
         let mut params=Vec::new();
         if path.contains("{id}"){params.push(json!({"name":"id","in":"path","required":true,"schema":integer()}));}
         if path.contains("{pool_id}") || path=="/api/merchant/statistics" {

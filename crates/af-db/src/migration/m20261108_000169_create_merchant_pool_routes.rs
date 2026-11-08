@@ -31,6 +31,7 @@ impl MigrationTrait for Migration {
                             .json_binary()
                             .not_null(),
                     )
+                    .col(ColumnDef::new(Alias::new("excluded_merchant_ids")).json_binary().not_null())
                     .col(
                         ColumnDef::new(Alias::new("allow_pool_fallback"))
                             .boolean()

@@ -1060,8 +1060,6 @@ async fn settle_adjustment(
     crate::merchant_finance::settle_merchant_billing(
         savepoint,
         key,
-        state.user_id,
-        user_state.used_quota,
         user_state.frozen_quota,
         reserved,
         actual,

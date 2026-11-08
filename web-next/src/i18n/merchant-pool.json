@@ -195,7 +195,8 @@
       "paused": "商户暂停",
       "superseded": "已替代",
       "paid": "已付款",
-      "failed": "失败"
+      "failed": "失败",
+      "unsupported": "当前不支持"
     },
     "windows": {
       "900": "最近 15 分钟",
@@ -289,7 +290,34 @@
     "ownStatisticsHint": "只展示自己服务的真实调用表现，与消费者分组权限独立；不会展示消费者身份、Key 或提示词。",
     "ownStatisticsEmpty": "当前筛选范围内没有已完成的有效调用。",
     "successCount": "成功尝试",
-    "failureCount": "失败尝试"
+    "failureCount": "失败尝试",
+    "excludedMerchants": "排除商户",
+    "excludedHint": "排除名单在全池兜底时同样生效；候选成员与排除名单不能重叠。",
+    "addExclusion": "添加排除",
+    "removeExclusion": "移除排除：{{name}}",
+    "routePreview": "候选与报价预览",
+    "previewInputTokens": "预计输入 token",
+    "previewOutputTokens": "预计输出 token",
+    "previewCandidates": "预览当前路由",
+    "invalidPreview": "请完善路由配置、模型名和非负整数用量。",
+    "previewError": "暂时无法生成候选预览，路由草稿已保留，仍可保存。",
+    "previewEmpty": "当前模型没有可展示的商户候选。",
+    "previewEligible": "当前可选",
+    "previewIneligible": "当前不可选",
+    "estimatedCharge": "预计费用 {{value}}",
+    "routePreviewHint": "这是按输入用量、当前价格和运行状态生成的快照，不会实际调用上游。实际执行会重新检查权限、能力和价格；轮询、权重或状态变化可能改变候选顺序。",
+    "restorePublished": "恢复已审核旧版本",
+    "previewReasons": {
+      "excluded": "已在排除名单",
+      "not_selected": "不在所选候选范围内",
+      "model_unavailable": "当前不提供该模型",
+      "protocol_unsupported": "不支持所选协议",
+      "streaming_unsupported": "不支持所选流式模式",
+      "price_exceeded": "超过价格上限",
+      "unavailable": "当前不可用"
+    },
+    "meteringHint": "商户池使用平台本地 token 估算进行预扣与成功结算，包含可见文本、可见推理和工具调用；不使用商户自报用量或不可见推理 token 生成商户收入。首版只支持文本，不接收视觉输入。",
+    "visionUnavailable": "视觉输入（首版暂不支持）"
   },
   "en": {
     "title": "Merchant pool",
@@ -487,7 +515,8 @@
       "paused": "Merchant paused",
       "superseded": "Superseded",
       "paid": "Paid",
-      "failed": "Failed"
+      "failed": "Failed",
+      "unsupported": "Currently unsupported"
     },
     "windows": {
       "900": "Last 15 minutes",
@@ -581,6 +610,33 @@
     "ownStatisticsHint": "View real traffic for your own services independently of consumer pool access. Consumer identities, Keys and prompts are not exposed.",
     "ownStatisticsEmpty": "No eligible completed attempts match these filters.",
     "successCount": "Successful attempts",
-    "failureCount": "Failed attempts"
+    "failureCount": "Failed attempts",
+    "excludedMerchants": "Excluded merchants",
+    "excludedHint": "Exclusions also apply to pool-wide fallback. A selected candidate cannot also be excluded.",
+    "addExclusion": "Exclude",
+    "removeExclusion": "Remove exclusion: {{name}}",
+    "routePreview": "Candidate and price preview",
+    "previewInputTokens": "Estimated input tokens",
+    "previewOutputTokens": "Estimated output tokens",
+    "previewCandidates": "Preview current route",
+    "invalidPreview": "Complete the route, model name and non-negative integer usage.",
+    "previewError": "Could not generate a preview. The route draft is preserved and can still be saved.",
+    "previewEmpty": "No merchant candidates are available for this model.",
+    "previewEligible": "Currently eligible",
+    "previewIneligible": "Currently ineligible",
+    "estimatedCharge": "Estimated charge {{value}}",
+    "routePreviewHint": "This snapshot uses the entered usage, current prices and runtime state without calling upstream services. Execution rechecks access, capabilities and price limits; rotation, weights or state changes can alter the order.",
+    "restorePublished": "Restore published revision",
+    "previewReasons": {
+      "excluded": "Explicitly excluded",
+      "not_selected": "Outside the selected candidates",
+      "model_unavailable": "Model unavailable",
+      "protocol_unsupported": "Protocol unsupported",
+      "streaming_unsupported": "Streaming mode unsupported",
+      "price_exceeded": "Price limit exceeded",
+      "unavailable": "Currently unavailable"
+    },
+    "meteringHint": "Merchant pools use platform-local token estimates for reservations and successful settlement, including visible text, visible reasoning and tool calls. Merchant-reported usage and hidden reasoning tokens do not generate merchant income. The initial release supports text only, without vision input.",
+    "visionUnavailable": "Vision input (not supported in this release)"
   }
 }

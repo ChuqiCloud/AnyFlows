@@ -650,6 +650,7 @@ impl ScheduledChatService {
             .map_err(|_| AfError::Internal)?
             .with_execution_policy(self.relay_execution_policy());
         Ok(ScheduledChatExecution {
+            merchant_local_usage: false,
             target_group_id,
             pricing_model: routed_model,
             tool_plan,
@@ -1380,6 +1381,7 @@ impl ScheduledChatService {
                 )
                 .await?;
             plan.debug_trace = debug_trace;
+            plan.merchant_local_usage = principal.merchant_channel_id().is_some();
             Ok(Box::new(plan) as Box<dyn PlannedChatExecution>)
         })
     }
@@ -1474,6 +1476,7 @@ impl fmt::Debug for ScheduledChatService {
 }
 
 struct ScheduledChatExecution {
+    merchant_local_usage: bool,
     target_group_id: GroupId,
     pricing_model: String,
     machine: RelayStateMachine,
@@ -1518,9 +1521,13 @@ impl PlannedChatExecution for ScheduledChatExecution {
 
     fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {
         if self.tool_plan.is_some() {
+            if self.merchant_local_usage {
+                return Box::pin(async { Err(AfError::ModelNotAllowed.into()) });
+            }
             return Box::pin(opencode::execute(*self));
         }
         let Self {
+            merchant_local_usage,
             target_group_id: _,
             pricing_model: _,
             tool_plan: _,
@@ -1549,7 +1556,11 @@ impl PlannedChatExecution for ScheduledChatExecution {
             };
             let operation = request.canonical().operation;
             let routing_started_at = Instant::now();
-            let (result, report) = if upstream_protocol != response_protocol
+            let (result, report) = if merchant_local_usage {
+                af_relay::relay_merchant_conversation_with_report(
+                    &machine,request,upstream_protocol,response_protocol,&request_id,
+                ).await
+            } else if upstream_protocol != response_protocol
                 || machine.requires_conversation_decoder()
             {
                 relay_conversation_with_report(

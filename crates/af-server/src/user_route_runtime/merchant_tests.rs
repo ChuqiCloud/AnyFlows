@@ -110,6 +110,7 @@ async fn fixture(label: &str, only_first: bool, ceiling: Option<i64>) -> Fixture
             UserId::new(4).unwrap(),
             None,
             MerchantRouteWrite {
+                excluded_merchant_ids:Vec::new(),
                 name: "Pool route".to_owned(),
                 pool_id: pool.id,
                 strategy: UserRouteStrategy::Ordered,
@@ -182,7 +183,7 @@ fn service_write(pool: i64, ratio: i64) -> MerchantServiceWrite {
             max_output_tokens: Some(2048),
             supports_streaming: true,
             supports_tools: true,
-            supports_vision: true,
+            supports_vision: false,
         }],
         concurrency: Some(5),
         timeout_secs: 60,

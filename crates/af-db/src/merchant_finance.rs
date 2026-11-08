@@ -1190,12 +1190,9 @@ pub(crate) async fn cancel_merchant_billing(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn settle_merchant_billing(
     tx: &DatabaseTransaction,
     key: &str,
-    user_id: i64,
-    used: i64,
     frozen: i64,
     reserved: Quota,
     actual: Quota,
@@ -1212,11 +1209,12 @@ pub(crate) async fn settle_merchant_billing(
     if get::<String>(&row, "status").map_err(quota_error)? != "reserved" {
         return Err(QuotaRepositoryError::Conflict);
     }
-    let other_frozen = frozen
-        .checked_sub(reserved.units())
-        .ok_or(QuotaRepositoryError::Invariant)?;
-    if cash_backed_quota(tx, user_id, used, other_frozen).await? < actual.units() {
-        return Err(QuotaRepositoryError::MerchantFundingInsufficient);
+    // Purchased backing was checked while the user row was locked at precharge.
+    // That money is now physically frozen. Other requests may spend gifts in the
+    // meantime and increase used_quota; they cannot invalidate this captured hold.
+    // No merchant supplement is permitted, so the original hold fully covers actual.
+    if frozen < reserved.units() {
+        return Err(QuotaRepositoryError::Invariant);
     }
     let merchant_id: i64 = get(&row, "merchant_id").map_err(quota_error)?;
     let fee: i64 = get(&row, "commission_bps").map_err(quota_error)?;

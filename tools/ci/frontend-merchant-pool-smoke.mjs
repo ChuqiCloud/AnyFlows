@@ -26,13 +26,16 @@ const now = Math.floor(Date.now() / 1000)
 const pool = { id: 1, group_id: 8, name: 'CI shared pool', description: 'CI pool', enabled: true, commission_bps: 500, effective_commission_bps: 500, commission_inherit_global: false, min_ratio_micros: 100000, max_ratio_micros: 10000000, settlement_delay_secs: 86400, created_at: now, updated_at: now }
 const offer = { model: 'gpt-fixture', sales_ratio_micros: 800000, context_window: 128000, max_output_tokens: 4096, supports_streaming: true, supports_tools: true, supports_vision: false, prices: { currency: 'USD', unit: 'million_tokens', input: '0.80', output: '1.60', cache_read: '0.08', cache_write_5m: '1.00', cache_write_1h: '1.60', version: 1 } }
 const publicService = { id: 51, pool_id: 1, merchant_id: 6, merchant_name: 'CI merchant', name: 'CI service', description: 'Reviewed service', status: 'published', revision: 1, models: [offer], updated_at: now }
+const excludedService = { ...publicService, id: 52, merchant_id: 7, merchant_name: 'CI excluded merchant', name: 'CI excluded service' }
 const profile = { id: 6, owner_user_id: 3, name: 'CI merchant', description: 'CI relay', status: 'approved', review_reason: null, created_at: now, updated_at: now }
 const list = items => ({ items, total: items.length, page: 1, page_size: 20 })
 let routes = []
 let services = []
 let routeFailures = 1
+let previewFailures = 1
 let withdrawalFailures = 1
 const routeRequests = []
+const previewRequests = []
 const withdrawalRequests = []
 const errors = []
 let server, browser, page
@@ -73,7 +76,7 @@ try {
     if (path === '/api/site') return respond({ balance_display: { mode: 'quota', unit_name: '积分', unit_symbol: '积分', quota_units_per_display_unit: '10000', symbol_position: 'suffix', fraction_digits: 0 } })
     assert.equal(request.headers().authorization, 'Bearer ci-merchant')
     if (path === '/api/merchant-pools' || path === '/api/merchant/available-pools') return respond(list([pool]))
-    if (path === '/api/merchant-pools/1/services') return respond(list([publicService]))
+    if (path === '/api/merchant-pools/1/services') return respond(list(new URL(request.url()).searchParams.get('model') ? [publicService] : [publicService, excludedService]))
     if (path === '/api/merchant-pools/1/statistics') return respond({ items: [{ service_id: 51, merchant_id: 6, sample_count: 10, success_count: 9, failure_count: 1, success_rate: 90, ttft_p50_ms: 123, ttft_p95_ms: 400, latency_p50_ms: 300, latency_p95_ms: 900, status: 'normal', updated_at: now }], as_of: now, window_seconds: 86400 })
     if (path === '/api/merchant-pools/1/timeline') return respond({ items: [], as_of: now, window_seconds: 86400 })
     if (path === '/api/merchant/profile') return respond(profile)
@@ -82,6 +85,15 @@ try {
       const body = request.postDataJSON(); routeRequests.push(body)
       if (routeFailures-- > 0) return respond({ error: { code: 'conflict' } }, 409)
       routes = [{ id: 21, ...body }]; return respond(routes[0], 201)
+    }
+    if (path === '/api/merchant-pool/routes/preview' && method === 'POST') {
+      const body = request.postDataJSON(); previewRequests.push(body)
+      assert.deepEqual(body.route.excluded_merchant_ids, [7])
+      assert.equal(body.model, 'gpt-fixture')
+      assert.equal(body.input_tokens, 1000)
+      assert.equal(body.output_tokens, 1000)
+      if (previewFailures-- > 0) return respond({ error: { code: 'unavailable' } }, 503)
+      return respond({ items: [{ merchant_id: 6, merchant_name: 'CI merchant', service_id: 51, service_name: 'CI service', sales_ratio_micros: 800000, estimated_quota: 1200, eligible: true, reason: null }, { merchant_id: 7, merchant_name: 'CI excluded merchant', service_id: 52, service_name: 'CI excluded service', sales_ratio_micros: 800000, estimated_quota: null, eligible: false, reason: 'excluded' }], quota_per_usd: 500000, as_of: now })
     }
     if (path === '/api/merchant/services' && method === 'GET') return respond(list(services))
     if (path === '/api/merchant/services' && method === 'POST') {
@@ -120,6 +132,16 @@ try {
   await dialog.getByRole('textbox', { name: label('name'), exact: true }).fill('CI merchant route')
   await dialog.getByRole('button', { name: label('addMerchant'), exact: true }).click()
   await dialog.getByRole('combobox', { name: label('merchant'), exact: true }).selectOption('6')
+  await dialog.getByRole('combobox', { name: label('excludedMerchants'), exact: true }).selectOption('7')
+  await dialog.getByRole('button', { name: label('addExclusion'), exact: true }).click()
+  await dialog.getByRole('textbox', { name: label('model'), exact: true }).fill('gpt-fixture')
+  await dialog.getByRole('button', { name: label('previewCandidates'), exact: true }).click()
+  await dialog.getByText(label('previewError'), { exact: true }).waitFor()
+  assert.equal(await dialog.getByRole('textbox', { name: label('name'), exact: true }).inputValue(), 'CI merchant route')
+  await dialog.getByRole('button', { name: label('previewCandidates'), exact: true }).click()
+  await dialog.getByText(label('previewEligible'), { exact: true }).waitFor()
+  await dialog.getByText(label('previewReasons.excluded'), { exact: true }).waitFor()
+  assert.equal(previewRequests.length, 2)
   await dialog.getByRole('button', { name: label('save'), exact: true }).click()
   await dialog.getByRole('alert').waitFor()
   assert.equal(await dialog.getByRole('textbox', { name: label('name'), exact: true }).inputValue(), 'CI merchant route')
@@ -129,6 +151,7 @@ try {
   assert.deepEqual(routeRequests[0].members, [{ merchant_id: 6, priority: 0, weight: 1 }])
   assert.equal(routeRequests[0].accept_new_merchants, false)
   assert.equal(routeRequests[0].allow_pool_fallback, false)
+  assert.deepEqual(routeRequests[0].excluded_merchant_ids, [7])
   await page.getByRole('button', { name: 'workspace', exact: true }).click()
   await page.getByRole('button', { name: label('createService'), exact: true }).click()
   dialog = page.getByRole('dialog')

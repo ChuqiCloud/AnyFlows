@@ -85,6 +85,7 @@ pub(super) fn document()->OpenApi {
         ("get","/api/admin/merchant-services","listAdminMerchantServices",None,"MerchantOwnedServicePage",200),
         ("get","/api/admin/merchant-services/{id}","getAdminMerchantService",None,"MerchantOwnedService",200),
         ("post","/api/admin/merchant-services/{id}/review","reviewAdminMerchantService",Some("MerchantReviewRequest"),"MerchantOwnedService",200),
+        ("post","/api/admin/merchant-services/{id}/resume","resumeAdminMerchantService",None,"MerchantOwnedService",200),
         ("get","/api/admin/merchant-pool-settings","getAdminMerchantPoolSettings",None,"MerchantPoolSettings",200),
         ("put","/api/admin/merchant-pool-settings","updateAdminMerchantPoolSettings",Some("MerchantPoolSettings"),"MerchantPoolSettings",200),
         ("get","/api/admin/merchant-pools/{pool}/merchants/{merchant}/terms","getAdminMerchantPoolTerms",None,"MerchantPoolTerms",200),

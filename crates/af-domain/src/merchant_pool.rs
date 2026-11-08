@@ -307,6 +307,7 @@ impl MerchantServiceWrite {
                     .is_some_and(|n| n <= 0 || n > 100_000_000)
                 || model.context_window == Some(0)
                 || model.max_output_tokens == Some(0)
+                || model.supports_vision
                 || matches!((model.context_window,model.max_output_tokens),(Some(c),Some(o)) if o > c)
             {
                 return Err(MerchantPoolError::InvalidInput);

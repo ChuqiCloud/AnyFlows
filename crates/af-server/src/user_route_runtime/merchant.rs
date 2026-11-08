@@ -19,13 +19,15 @@ impl UserRouteRuntime {
         let time=crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?;
         let offers=pools.published_candidates(scope.pool_id,None,&plan.model).await.map_err(|_|AfError::Internal)?;
         let features=features.ok_or(AfError::ModelNotAllowed)?;
+        if features.vision { return Err(AfError::ModelNotAllowed); }
         let statistics=self.repository.merchant_statistics_filtered(scope.pool_id,Some(&plan.model),900,
             Some(protocol.as_str()),Some(features.streaming)).await.map_err(map_repository_error)?;
         let mut candidates:Vec<UserRouteCandidate>=Vec::new();
         let mut fallback:Vec<UserRouteCandidate>=Vec::new();
         for offer in offers {
+            if scope.excluded_merchant_ids.contains(&offer.merchant_id) {continue;}
             if features.unsupported_media || (features.streaming && !offer.model.supports_streaming)
-                || (features.tools && !offer.model.supports_tools) || (features.vision && !offer.model.supports_vision)
+                || (features.tools && !offer.model.supports_tools) || offer.model.supports_vision
                 || offer.model.max_output_tokens.is_some_and(|n| upper_bound.output_tokens().get()>i64::from(n))
                 || offer.model.context_window.is_some_and(|n| upper_bound.checked_input_tokens()
                     .is_ok_and(|input|input.get().saturating_add(upper_bound.output_tokens().get())>i64::from(n))) {continue;}
@@ -81,6 +83,7 @@ impl UserRouteRuntime {
         let current=self.repository.merchant_route(principal.user_id(),plan.route.id).await.map_err(map_repository_error)?;
         if !current.configuration.enabled || current.configuration.pool_id!=offer.pool_id {return Ok(false);}
         let scope=self.repository.merchant_scope(plan.route.id).await.map_err(map_repository_error)?.ok_or(AfError::InvalidApiKey)?;
+        if scope.excluded_merchant_ids.contains(&offer.merchant_id) {return Ok(false);}
         if !scope.members.iter().any(|m|m.merchant_id==offer.merchant_id)
             && (!scope.allow_pool_fallback || (!scope.accept_new_merchants && !scope.enrolled_merchants.contains(&offer.merchant_id))) {return Ok(false);}
         if !pools.check_pool_access(principal.user_id(),offer.pool_id).await.map_err(|_|AfError::Internal)? {return Ok(false);}

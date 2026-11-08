@@ -10,6 +10,7 @@ use crate::{management_auth::{ManagementAuthenticationState,authenticate_managem
 pub fn build_merchant_route_router(service:Arc<dyn MerchantRouteService>,auth:Arc<dyn SessionAuthenticator>)->Router {
     Router::new()
         .route("/api/merchant-pool/routes",get(list).post(create))
+        .route("/api/merchant-pool/routes/preview",axum::routing::post(preview))
         .route("/api/merchant-pool/routes/{id}",get(read).put(update).delete(remove))
         .route("/api/merchant-pool/attempts",get(attempts))
         .route("/api/merchant/statistics",get(own_statistics))
@@ -21,6 +22,11 @@ pub fn build_merchant_route_router(service:Arc<dyn MerchantRouteService>,auth:Ar
         .with_state(MerchantRouteHttpState{service})
 }
 #[derive(Serialize)] struct RouteList {items:Vec<af_admin::MerchantRouteRecord>,capacity:usize}
+async fn preview(State(s):State<MerchantRouteHttpState>,Extension(a):Extension<SessionAuthentication>,
+    body:Result<Json<af_admin::MerchantRoutePreviewRequest>,JsonRejection>)->Result<Response,ManagementError>{
+    let Json(request)=body.map_err(|_|ManagementError::InvalidRequest)?;
+    Ok(no_store_json(s.service.preview(a.principal(),request).await.map_err(map_error)?))
+}
 #[derive(Deserialize)] #[serde(deny_unknown_fields)] struct AttemptQuery{request_id:String}
 #[derive(Serialize)] struct AttemptList{items:Vec<af_admin::MerchantConsumerAttempt>}
 async fn attempts(State(s):State<MerchantRouteHttpState>,Extension(a):Extension<SessionAuthentication>,

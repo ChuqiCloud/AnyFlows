@@ -11,7 +11,7 @@ impl MerchantPoolRepository {
             let commission=super::terms::resolve_commission(self.pool.connection(),&pool,Some(merchant.id)).await?;
             let mut models=Vec::with_capacity(write.models.len());let mut names=std::collections::BTreeSet::new();
             for model in write.models {
-                if !af_domain::validate_merchant_text(&model.model,255,false) || !names.insert(model.model.clone()) { return Err(MerchantPoolError::InvalidInput); }
+                if !af_domain::validate_merchant_text(&model.model,255,false) || !names.insert(model.model.clone()) || model.supports_vision { return Err(MerchantPoolError::InvalidInput); }
                 let ratio=model.ratio_micros.unwrap_or(write.default_ratio_micros);
                 if !(pool.min_ratio_micros..=pool.max_ratio_micros).contains(&ratio) { return Err(MerchantPoolError::InvalidInput); }
                 let base_prices=model_price(self.pool.connection(),&model.model,1_000_000).await?.ok_or(MerchantPoolError::InvalidInput)?;
@@ -55,6 +55,7 @@ impl MerchantPoolRepository {
                 let revision=load_revision(self.pool.connection(),revision_id,row.id).await?;
                 if revision.status!="published" { continue; }
                 let Some(model)=revision_models(&revision)?.into_iter().find(|item|item.model==model) else { continue };
+                if model.supports_vision { continue; }
                 let ratio=model.ratio_micros.unwrap_or(revision.default_ratio_micros);
                 if !(pool.min_ratio_micros..=pool.max_ratio_micros).contains(&ratio) { continue; }
                 if model_price(self.pool.connection(),&model.model,ratio).await?.is_none() { continue; }
@@ -82,7 +83,6 @@ impl MerchantPoolRepository {
             let pool=find_pool(self.pool.connection(),pool_id).await?;
             let mut items=Vec::new();
             for row in rows {
-                if let Some(status)=&query.status { if &row.status!=status { continue; } }
                 let merchant=profiles::Entity::find_by_id(row.merchant_id).one(self.pool.connection()).await.map_err(internal)?
                     .ok_or(MerchantPoolError::Unavailable)?;
                 if let Some(search)=&query.search {
@@ -106,9 +106,20 @@ impl MerchantPoolRepository {
                         supports_streaming:model.supports_streaming,supports_tools:model.supports_tools,supports_vision:model.supports_vision});
                 }
                 if models.is_empty() { continue; }
-                let status=if merchant.status!="approved" { "suspended".to_owned() }
+                let merchant_active=match active_owner(self.pool.connection(),UserId::new(merchant.owner_user_id).map_err(internal)?).await {
+                    Ok(_)=>true,Err(MerchantPoolError::Forbidden)=>false,Err(error)=>return Err(error),
+                };
+                let channel_active=channels::Entity::find_by_id(revision.channel_id)
+                    .filter(channels::Column::Status.eq(Status::Enabled.code())).filter(channels::Column::DeletedAt.is_null())
+                    .one(self.pool.connection()).await.map_err(internal)?.is_some();
+                let status=if merchant.status!="approved" || !merchant_active || row.platform_suspended { "suspended".to_owned() }
+                    else if row.merchant_paused { "paused".to_owned() }
+                    else if row.status!="published" { row.status }
+                    else if models.iter().any(|model|model.supports_vision) { "unsupported".to_owned() }
+                    else if !channel_active || revision.status!="published" { "unavailable".to_owned() }
                     else if models.iter().any(|m|m.prices.is_none() || !(pool.min_ratio_micros..=pool.max_ratio_micros).contains(&m.sales_ratio_micros)) { "unavailable".to_owned() }
-                    else { row.status };
+                    else { "published".to_owned() };
+                if query.status.as_ref().is_some_and(|filter|filter!=&status) { continue; }
                 items.push(MerchantCatalogService{id:row.id,pool_id,merchant_id:merchant.id,merchant_name:merchant.name,
                     name:row.name,description:row.description,status,protocol:revision.protocol,revision:revision.revision,models,updated_at:revision.updated_at.unix_timestamp()});
             }

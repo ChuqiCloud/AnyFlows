@@ -18,6 +18,7 @@ pub(super) mod scope {
         pub pool_id: i64,
         #[sea_orm(column_type = "JsonBinary")] pub members: Json,
         #[sea_orm(column_type = "JsonBinary")] pub enrolled_merchants: Json,
+        #[sea_orm(column_type = "JsonBinary")] pub excluded_merchant_ids:Json,
         pub allow_pool_fallback: bool,
         pub accept_new_merchants: bool,
         pub updated_at_millis: i64,
@@ -61,6 +62,7 @@ pub struct MerchantRouteWrite {
     pub max_merchant_attempts: u32,
     pub max_price_ratio_micros: Option<i64>,
     pub members: Vec<MerchantRouteMember>,
+    #[serde(default)] pub excluded_merchant_ids:Vec<i64>,
     pub allow_pool_fallback: bool,
     pub accept_new_merchants: bool,
 }
@@ -76,6 +78,7 @@ pub struct MerchantRouteScope {
     pub pool_id: i64,
     pub members: Vec<MerchantRouteMember>,
     pub enrolled_merchants: Vec<i64>,
+    pub excluded_merchant_ids:Vec<i64>,
     pub allow_pool_fallback: bool,
     pub accept_new_merchants: bool,
 }
@@ -88,6 +91,9 @@ impl MerchantRouteWrite {
             || !(1..=16).contains(&self.max_merchant_attempts)
             || self.max_price_ratio_micros.is_some_and(|n| n < 0)
             || self.members.is_empty() || self.members.len() > MAX_USER_ROUTE_MEMBERS
+            || self.excluded_merchant_ids.len()>128 || self.excluded_merchant_ids.iter().any(|id|*id<=0)
+            || self.excluded_merchant_ids.iter().collect::<BTreeSet<_>>().len()!=self.excluded_merchant_ids.len()
+            || self.members.iter().any(|m|self.excluded_merchant_ids.contains(&m.merchant_id))
             || (self.accept_new_merchants && !self.allow_pool_fallback)
             || self.members.iter().any(|m| m.merchant_id <= 0 || m.priority < 0
                 || m.weight == 0 || m.weight > 10_000 || m.last_selected_at_millis.is_some()
@@ -105,6 +111,7 @@ pub(super) async fn route_scope<C: ConnectionTrait>(connection: &C, route_id: i6
             pool_id: row.pool_id,
             members: serde_json::from_value(row.members).map_err(|_| UserRouteError::Internal)?,
             enrolled_merchants: serde_json::from_value(row.enrolled_merchants).map_err(|_| UserRouteError::Internal)?,
+            excluded_merchant_ids:serde_json::from_value(row.excluded_merchant_ids).map_err(|_|UserRouteError::Internal)?,
             allow_pool_fallback: row.allow_pool_fallback,
             accept_new_merchants: row.accept_new_merchants,
         })).transpose()
@@ -194,6 +201,7 @@ impl UserRouteRepository {
             scope::ActiveModel {route_id:Set(row.id),pool_id:Set(write.pool_id),
                 members:Set(serde_json::to_value(&write.members).map_err(|_|UserRouteError::Internal)?),
                 enrolled_merchants:Set(serde_json::to_value(enrolled_merchants).map_err(|_|UserRouteError::Internal)?),
+                excluded_merchant_ids:Set(serde_json::to_value(&write.excluded_merchant_ids).map_err(|_|UserRouteError::Internal)?),
                 allow_pool_fallback:Set(write.allow_pool_fallback),accept_new_merchants:Set(write.accept_new_merchants),
                 updated_at_millis:Set(now.unix_timestamp_nanos() as i64 / 1_000_000)}
                 .insert(&txn).await.map_err(internal)?;
@@ -246,12 +254,12 @@ mod enrollment_tests {
         MerchantRouteWrite{name:"Renamed route".to_owned(),pool_id:1,strategy:UserRouteStrategy::Ordered,
             enabled:true,max_merchant_attempts:3,max_price_ratio_micros:Some(1_000_000),
             members:vec![MerchantRouteMember{merchant_id:10,priority:0,weight:1,last_selected_at_millis:None}],
-            allow_pool_fallback:true,accept_new_merchants:false}
+            excluded_merchant_ids:Vec::new(),allow_pool_fallback:true,accept_new_merchants:false}
     }
 
     #[test]
     fn editing_an_existing_fixed_pool_route_does_not_enroll_new_merchants(){
-        let previous=MerchantRouteScope{pool_id:1,members:Vec::new(),enrolled_merchants:vec![10,20],allow_pool_fallback:true,accept_new_merchants:false};
+        let previous=MerchantRouteScope{pool_id:1,members:Vec::new(),enrolled_merchants:vec![10,20],excluded_merchant_ids:Vec::new(),allow_pool_fallback:true,accept_new_merchants:false};
         let write=configuration();
         assert_eq!(enrollment_snapshot(Some(&previous),&write,vec![10,20,30]),vec![10,20]);
         assert_eq!(enrollment_snapshot(None,&write,vec![10,20,30]),vec![10,20,30]);
@@ -259,7 +267,7 @@ mod enrollment_tests {
 
     #[test]
     fn explicitly_switching_fallback_policy_captures_the_current_pool(){
-        let mut previous=MerchantRouteScope{pool_id:1,members:Vec::new(),enrolled_merchants:vec![10],allow_pool_fallback:false,accept_new_merchants:false};
+        let mut previous=MerchantRouteScope{pool_id:1,members:Vec::new(),enrolled_merchants:vec![10],excluded_merchant_ids:Vec::new(),allow_pool_fallback:false,accept_new_merchants:false};
         let write=configuration();
         assert_eq!(enrollment_snapshot(Some(&previous),&write,vec![10,20]),vec![10,20]);
         previous.allow_pool_fallback=true;previous.accept_new_merchants=true;
@@ -272,7 +280,7 @@ fn route_record(row:user_routes::Model,scope:MerchantRouteScope)->Result<Merchan
     Ok(MerchantRouteRecord{id:row.id,configuration:MerchantRouteWrite{name:row.name,pool_id:scope.pool_id,
         strategy:UserRouteStrategy::parse(&row.strategy).ok_or(UserRouteError::Internal)?,enabled:row.enabled,
         max_merchant_attempts:u32::try_from(row.max_group_attempts).map_err(|_|UserRouteError::Internal)?,
-        max_price_ratio_micros:row.max_price_ratio_micros,members,allow_pool_fallback:scope.allow_pool_fallback,
+        max_price_ratio_micros:row.max_price_ratio_micros,members,excluded_merchant_ids:scope.excluded_merchant_ids,allow_pool_fallback:scope.allow_pool_fallback,
         accept_new_merchants:scope.accept_new_merchants}})
 }
 

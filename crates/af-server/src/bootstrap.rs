@@ -2819,9 +2819,9 @@ impl Bootstrap<Supervised> {
                     af_admin::DatabaseMerchantPoolService::new(
                         merchant_repository.clone(),
                         CredentialEncryptor::new(self.config.credential_encryption())
-                            .map_err(BootstrapError::CredentialEncryption)?,
+                        .expect("凭据加密配置已在基础设施初始化时校验"),
                         CredentialDecryptor::new(self.config.credential_encryption())
-                            .map_err(BootstrapError::CredentialDecryption)?,
+                        .expect("凭据解密配置已在基础设施初始化时校验"),
                     )
                     .with_blocked_hosts(
                         self.config

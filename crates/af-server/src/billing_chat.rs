@@ -440,6 +440,12 @@ impl BillingChatService {
         {
             return Err(AfError::Internal.into());
         }
+        if matches!(subject,crate::model_subject::ModelSubject::User(principal)
+            if principal.merchant_billing_snapshot().is_some())
+            && (fixed_snapshot.is_none() || pricing_model != requested_pricing_model)
+        {
+            return Err(AfError::ModelNotAllowed.into());
+        }
         let snapshot = match fixed_snapshot.filter(|_| pricing_model == requested_pricing_model) {
             Some(snapshot) => snapshot,
             None => self

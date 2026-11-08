@@ -328,3 +328,30 @@ async fn concurrent_merchant_requests_cannot_reserve_the_same_cash_twice()
     fixture.close().await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn already_cash_backed_merchant_hold_survives_parallel_gift_spending()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture(config()).await?;
+    let principal = merchant(&fixture, 1_000, 0).await?;
+    let merchant_id = reservation_id(0xd8);
+    let ordinary_id = reservation_id(0xd9);
+    fixture.repository.precharge(merchant_id, principal, quota(1_000)).await?;
+    // The remaining wallet is promotional credit. An ordinary request may spend it
+    // while the merchant request is still running, but not the frozen cash backing.
+    fixture.repository.precharge(ordinary_id, fixture.principal, quota(1_000)).await?;
+    fixture.repository.settle(ordinary_id, quota(1_000)).await?;
+    assert_eq!(account_snapshot(&fixture.pool, fixture.principal).await?.user_frozen_quota, 1_000);
+    assert_eq!(fixture.repository.settle(merchant_id, quota(1_000)).await?, QuotaMutationOutcome::Applied);
+    let finance = MerchantFinanceRepository::new(fixture.pool.clone(), VALID_OPERATION_TIMEOUT);
+    let balance = finance.balance(77).await?;
+    assert_eq!(balance.total_gross_quota, 1_000);
+    assert_eq!(balance.total_commission_quota, 50);
+    assert_eq!(balance.available_quota, 950);
+    assert_eq!(account_snapshot(&fixture.pool, fixture.principal).await?.user_frozen_quota, 0);
+    // A second merchant request cannot spend the original cash hold again.
+    assert_eq!(fixture.repository.precharge(reservation_id(0xda), principal, quota(1)).await,
+        Err(QuotaRepositoryError::MerchantFundingInsufficient));
+    fixture.close().await?;
+    Ok(())
+}

@@ -132,9 +132,9 @@ jobs:
           }
 
           {
-            echo "frontend=$(matches '^(web-next/|tools/ci/(frontend-about-smoke|frontend-navigation-smoke|frontend-user-routes-smoke|frontend-oauth-invitation-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend=$(matches '^(web-next/|tools/ci/(frontend-about-smoke|frontend-navigation-smoke|frontend-user-routes-smoke|frontend-merchant-pool-smoke|frontend-oauth-invitation-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_about=$(matches '^(web-next/src/features/(about/|site-settings/software-(update-(panel|api)|release-notes)\.tsx?$)|tools/ci/frontend-about-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
-            echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-(navigation|user-routes|oauth-invitation)-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-(navigation|user-routes|merchant-pool|oauth-invitation)-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_verification=$(matches '^(web-next/src/features/(account-verification|wallet|api-keys|playground)/|tools/ci/frontend-verification-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "rust=$(matches '^(crates/|tools/xtask/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$|\.github/workflows/ci\.yml$)')"
             echo "database=$(matches '^(crates/af-db/|tools/ci/(run-db-migration-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
@@ -607,7 +607,9 @@ jobs:
         uses: ./.ci-actions/gitea-upload-artifact
         with:
           name: navigation-screenshots-web-next
-          path: ${{ runner.temp }}/navigation-screenshots-web-next/*.png
+          path: |
+            ${{ runner.temp }}/navigation-screenshots-web-next/*.png
+            ${{ runner.temp }}/merchant-pool-screenshots-web-next/*.png
           retention-days: 7
           if-no-files-found: ignore
 
@@ -616,7 +618,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: navigation-screenshots-web-next
-          path: ${{ runner.temp }}/navigation-screenshots-web-next/*.png
+          path: |
+            ${{ runner.temp }}/navigation-screenshots-web-next/*.png
+            ${{ runner.temp }}/merchant-pool-screenshots-web-next/*.png
           retention-days: 7
           if-no-files-found: ignore
 

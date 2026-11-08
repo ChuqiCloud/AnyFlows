@@ -79,6 +79,7 @@ pub fn build_merchant_pool_router(
         )
         .route("/api/admin/merchant-services", get(admin_services))
         .route("/api/admin/merchant-services/{id}", get(admin_service))
+        .route("/api/admin/merchant-services/{id}/resume",axum::routing::post(resume_service))
         .route(
             "/api/admin/merchant-services/{id}/review",
             axum::routing::post(review_service),
@@ -375,6 +376,9 @@ async fn review_service(
             .review_service(auth.principal(), id(service)?, body(request)?)
             .await?,
     ))
+}
+async fn resume_service(State(s):State<MerchantHttpState>,Extension(auth):Extension<SessionAuthentication>,Path(service):Path<i64>)->Result<Response,MerchantHttpError> {
+    Ok(no_store_json(s.service.resume_service(auth.principal(),id(service)?).await?))
 }
 async fn settings(
     State(s): State<MerchantHttpState>,

@@ -117,6 +117,7 @@ pub trait MerchantPoolService: Send + Sync {
         id: i64,
         review: MerchantReview,
     ) -> MerchantFuture<'_, MerchantOwnedService>;
+    fn resume_service(&self,principal:SessionPrincipal,id:i64)->MerchantFuture<'_,MerchantOwnedService>;
     fn settings(&self, principal: SessionPrincipal) -> MerchantFuture<'_, MerchantPoolSettings>;
     fn write_settings(
         &self,
@@ -472,6 +473,15 @@ impl MerchantPoolService for DatabaseMerchantPoolService {
             self.repository
                 .review_service(p.user_id(), id, review)
                 .await
+        })
+    }
+    fn resume_service(&self,p:SessionPrincipal,id:i64)->MerchantFuture<'_,MerchantOwnedService> {
+        Box::pin(async move {
+            admin(p)?;
+            let service=self.repository.get_service(None,id).await?;
+            let published=service.published.as_ref().ok_or(MerchantPoolError::Conflict)?;
+            self.validate_endpoint(&published.base_url).await?;
+            self.repository.resume_service(p.user_id(),id).await
         })
     }
     fn settings(&self, p: SessionPrincipal) -> MerchantFuture<'_, MerchantPoolSettings> {
