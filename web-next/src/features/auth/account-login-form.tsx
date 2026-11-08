@@ -24,7 +24,8 @@ import {
   inputWrapperClass,
 } from '@/features/auth/auth-form-styles'
 import { beginOAuthLogin, type OAuthLoginProvider } from '@/features/auth/oauth-login-api'
-import { OAuthProviderIcon } from '@/features/auth/oauth-provider-icon'
+import { OAuthLoginButtons } from '@/features/auth/oauth-login-buttons'
+import { invitationAuthLink } from '@/features/auth/invitation-context'
 import {
   authenticateWithPasskey,
   PasskeyClientError,
@@ -45,6 +46,7 @@ type LoginError = LoginNotice | 'invalidCredentials' | 'twoFactorRequired' | 'tw
 type AccountLoginFormProps = {
   site?: PublicSiteSettings
   notice?: LoginNotice
+  inviteCode?: string
   onAuthenticated: () => void
   onLoginMethodSelect: (method: RegisteredExtensionLoginMethod) => void
 }
@@ -65,7 +67,7 @@ function classifyLoginError(error: unknown): LoginError {
 }
 
 /** 账号密码登录表单：OAuth、用户名密码、二次验证与 Passkey。 */
-export function AccountLoginForm({ site, notice, onAuthenticated, onLoginMethodSelect }: AccountLoginFormProps) {
+export function AccountLoginForm({ site, notice, inviteCode, onAuthenticated, onLoginMethodSelect }: AccountLoginFormProps) {
   const { t, i18n } = useTranslation()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -83,7 +85,7 @@ export function AccountLoginForm({ site, notice, onAuthenticated, onLoginMethodS
       return data
     },
   })
-  const oauthMutation = useMutation({ mutationFn: beginOAuthLogin })
+  const oauthMutation = useMutation({ mutationFn: (provider: OAuthLoginProvider) => beginOAuthLogin(provider, inviteCode) })
   const passkeyMutation = useMutation({ mutationFn: authenticateWithPasskey })
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -157,7 +159,7 @@ export function AccountLoginForm({ site, notice, onAuthenticated, onLoginMethodS
   const oauthProviders = site?.authentication.oauth_providers ?? []
   const oauthLoginEnabled = oauthProviders.length > 0
   const registrationEnabled = site?.authentication.registration_enabled ?? false
-  const registrationAvailable = passwordLoginEnabled && registrationEnabled
+  const registrationAvailable = registrationEnabled && (passwordLoginEnabled || oauthLoginEnabled)
   const turnstileSiteKey = site?.authentication.turnstile_site_key ?? null
   const passkeySupported = passwordLoginEnabled && supportsPasskeyAuthentication()
   const visibleError = loginError ?? (noticeDismissed ? undefined : notice)
@@ -173,36 +175,12 @@ export function AccountLoginForm({ site, notice, onAuthenticated, onLoginMethodS
 
   return (
     <form className="animate-in fade-in-0 grid gap-5 duration-200" onSubmit={handleSubmit}>
-      {oauthProviders.map((provider) => {
-        const providerId = provider.id as OAuthLoginProvider
-        const isStarting = oauthMutation.isPending && oauthMutation.variables === providerId
-        const isCustomProvider = provider.id.startsWith('custom_')
-        const providerLabel = isCustomProvider
-          ? t('auth.login.oauth.custom', { provider: provider.display_name })
-          : t(`auth.login.oauth.${provider.id}`)
-        const startingLabel = isCustomProvider
-          ? t('auth.login.oauthStarting.custom', { provider: provider.display_name })
-          : t(`auth.login.oauthStarting.${provider.id}`)
-        return (
-          <Button
-            key={provider.id}
-            data-slot="button"
-            type="button"
-            size="lg"
-            variant="flat"
-            className={cn(buttonSecondaryLg, 'h-auto min-h-11 w-full whitespace-normal break-words py-3 text-center leading-5')}
-            isDisabled={oauthMutation.isPending || passkeyMutation.isPending}
-            onPress={() => void handleOAuthLogin(providerId)}
-          >
-            {isStarting
-              ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-              : <OAuthProviderIcon provider={providerId} />}
-            {isStarting
-              ? startingLabel
-              : providerLabel}
-          </Button>
-        )
-      })}
+      <OAuthLoginButtons
+        providers={oauthProviders}
+        pendingProvider={oauthMutation.isPending ? oauthMutation.variables : undefined}
+        disabled={loginMutation.isPending || passkeyMutation.isPending}
+        onSelect={(provider) => void handleOAuthLogin(provider)}
+      />
 
       {extensionLoginMethods.map((method) => (
         <Button
@@ -354,7 +332,7 @@ export function AccountLoginForm({ site, notice, onAuthenticated, onLoginMethodS
       {registrationAvailable ? (
         <p className="text-center text-sm text-muted-foreground">
           {t('auth.login.noAccount')}{' '}
-          <a href="/register" className="font-medium text-info underline-offset-4 hover:underline">
+          <a href={invitationAuthLink('/register', inviteCode)} className="font-medium text-info underline-offset-4 hover:underline">
             <UserRoundPlus className="mr-1 inline size-3.5" aria-hidden="true" />
             {t('auth.login.register')}
           </a>

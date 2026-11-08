@@ -246,63 +246,73 @@ pub(crate) fn build_oauth_login_router(
 
 async fn start_github_login(
     State(state): State<OAuthLoginHttpState>,
+    RawQuery(raw_query): RawQuery,
 ) -> Result<Response, ManagementError> {
-    start_login(state, GITHUB_PROVIDER, GITHUB_CALLBACK_PATH).await
+    start_login(state, GITHUB_PROVIDER, GITHUB_CALLBACK_PATH, raw_query).await
 }
 
 async fn start_discord_login(
     State(state): State<OAuthLoginHttpState>,
+    RawQuery(raw_query): RawQuery,
 ) -> Result<Response, ManagementError> {
-    start_login(state, DISCORD_PROVIDER, DISCORD_CALLBACK_PATH).await
+    start_login(state, DISCORD_PROVIDER, DISCORD_CALLBACK_PATH, raw_query).await
 }
 
 async fn start_oidc_login(
     State(state): State<OAuthLoginHttpState>,
+    RawQuery(raw_query): RawQuery,
 ) -> Result<Response, ManagementError> {
-    start_login(state, OIDC_PROVIDER, OIDC_CALLBACK_PATH).await
+    start_login(state, OIDC_PROVIDER, OIDC_CALLBACK_PATH, raw_query).await
 }
 
 async fn start_linuxdo_login(
     State(state): State<OAuthLoginHttpState>,
+    RawQuery(raw_query): RawQuery,
 ) -> Result<Response, ManagementError> {
-    start_login(state, LINUXDO_PROVIDER, LINUXDO_CALLBACK_PATH).await
+    start_login(state, LINUXDO_PROVIDER, LINUXDO_CALLBACK_PATH, raw_query).await
 }
 
 async fn start_wechat_login(
     State(state): State<OAuthLoginHttpState>,
+    RawQuery(raw_query): RawQuery,
 ) -> Result<Response, ManagementError> {
-    start_login(state, WECHAT_PROVIDER, WECHAT_CALLBACK_PATH).await
+    start_login(state, WECHAT_PROVIDER, WECHAT_CALLBACK_PATH, raw_query).await
 }
 
 async fn start_telegram_login(
     State(state): State<OAuthLoginHttpState>,
+    RawQuery(raw_query): RawQuery,
 ) -> Result<Response, ManagementError> {
-    start_login(state, TELEGRAM_PROVIDER, TELEGRAM_CALLBACK_PATH).await
+    start_login(state, TELEGRAM_PROVIDER, TELEGRAM_CALLBACK_PATH, raw_query).await
 }
 
 async fn start_google_login(
     State(state): State<OAuthLoginHttpState>,
+    RawQuery(raw_query): RawQuery,
 ) -> Result<Response, ManagementError> {
-    start_login(state, GOOGLE_PROVIDER, GOOGLE_CALLBACK_PATH).await
+    start_login(state, GOOGLE_PROVIDER, GOOGLE_CALLBACK_PATH, raw_query).await
 }
 
 async fn start_custom_oauth2_login(
     State(state): State<OAuthLoginHttpState>,
     Path(provider_key): Path<String>,
+    RawQuery(raw_query): RawQuery,
 ) -> Result<Response, ManagementError> {
     let callback_path =
         custom_oauth2_callback_path(&provider_key).map_err(map_oauth_login_error)?;
-    start_login(state, &provider_key, &callback_path).await
+    start_login(state, &provider_key, &callback_path, raw_query).await
 }
 
 async fn start_login(
     state: OAuthLoginHttpState,
     provider: &str,
     callback_path: &str,
+    raw_query: Option<String>,
 ) -> Result<Response, ManagementError> {
+    let invite_code = parse_start_invitation(raw_query.as_deref())?;
     let started = state
         .service
-        .begin(provider)
+        .begin_with_invitation(provider, invite_code)
         .await
         .map_err(map_oauth_login_error)?;
     let (state_digest, secure) = oauth_state_cookie_material(started.authorization_url())?;
@@ -314,6 +324,25 @@ async fn start_login(
         oauth_state_set_cookie(&state_digest, secure, callback_path)?,
     );
     Ok(response)
+}
+
+fn parse_start_invitation(raw_query: Option<&str>) -> Result<Option<String>, ManagementError> {
+    let mut invite_code = None;
+    for (name, value) in url::form_urlencoded::parse(raw_query.unwrap_or_default().as_bytes()) {
+        if name != "invite_code"
+            || invite_code.is_some()
+            || value.len() != 25
+            || !value.starts_with("af-")
+            || !value
+                .bytes()
+                .skip(3)
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            return Err(ManagementError::InvalidRequest);
+        }
+        invite_code = Some(value.into_owned());
+    }
+    Ok(invite_code)
 }
 
 /// 外部回调始终使用 303 且禁止 Referer，避免 code/state 进入后续前端请求。

@@ -317,7 +317,7 @@ impl AdminUserRepository {
 
     async fn create_registration_inner(
         &self,
-        mut record: AdminUserCreateRecord,
+        record: AdminUserCreateRecord,
         challenge: Option<AuthChallengeConsume>,
         invite_code: Option<&str>,
         rebate_quota: Quota,
@@ -341,39 +341,18 @@ impl AdminUserRepository {
             }
         }
 
-        record.inviter_id = match invite_code {
-            Some(code) => match lock_inviter_by_code(&transaction, code).await? {
-                Some(user_id) => Some(user_id),
-                None => {
-                    rollback_transaction(transaction).await?;
-                    return Ok(AdminUserRegistrationCreateOutcome::InvitationRejected);
-                }
-            },
-            None => None,
+        let Some(snapshot) = create_registration_user_in_transaction(
+            &transaction,
+            record,
+            invite_code,
+            rebate_quota,
+            credited_at,
+        )
+        .await?
+        else {
+            rollback_transaction(transaction).await?;
+            return Ok(AdminUserRegistrationCreateOutcome::InvitationRejected);
         };
-
-        let snapshot = create_user_in_transaction(&transaction, record).await?;
-        if let Some(inviter_id) = record_inviter(&transaction, snapshot.user_id()).await?
-            && !rebate_quota.is_zero()
-        {
-            let grant = InviteRebateGrant::new(
-                registration_rebate_event_id(snapshot.user_id())?,
-                snapshot.user_id(),
-                rebate_quota,
-                credited_at,
-            )
-            .map_err(|_| record_internal_error(AdminUserRepositoryError::Invariant))?;
-            match grant_in_transaction(&transaction, &grant)
-                .await
-                .map_err(map_invite_rebate_error)?
-            {
-                InviteRebateGrantOutcome::Applied(record)
-                    if record.inviter_user_id() == inviter_id => {}
-                _ => {
-                    return Err(record_internal_error(AdminUserRepositoryError::Invariant));
-                }
-            }
-        }
         commit_transaction(transaction).await?;
         Ok(AdminUserRegistrationCreateOutcome::Created(snapshot))
     }
@@ -478,6 +457,45 @@ async fn begin_transaction(
         .with_subscriber(NoSubscriber::default())
         .await
         .map_err(|_| record_internal_error(AdminUserRepositoryError::Query))
+}
+
+/// 在调用方事务中绑定有效邀请关系、创建用户并发放一次邀请人奖励。
+/// 新用户的注册赠送与受邀奖励已由调用方合入创建记录。
+pub(crate) async fn create_registration_user_in_transaction(
+    transaction: &DatabaseTransaction,
+    mut record: AdminUserCreateRecord,
+    invite_code: Option<&str>,
+    rebate_quota: Quota,
+    credited_at: u64,
+) -> Result<Option<AdminUserRecord>, AdminUserRepositoryError> {
+    record.inviter_id = match invite_code {
+        Some(code) => match lock_inviter_by_code(transaction, code).await? {
+            Some(user_id) => Some(user_id),
+            None => return Ok(None),
+        },
+        None => None,
+    };
+    let snapshot = create_user_in_transaction(transaction, record).await?;
+    if let Some(inviter_id) = record_inviter(transaction, snapshot.user_id()).await?
+        && !rebate_quota.is_zero()
+    {
+        let grant = InviteRebateGrant::new(
+            registration_rebate_event_id(snapshot.user_id())?,
+            snapshot.user_id(),
+            rebate_quota,
+            credited_at,
+        )
+        .map_err(|_| record_internal_error(AdminUserRepositoryError::Invariant))?;
+        match grant_in_transaction(transaction, &grant)
+            .await
+            .map_err(map_invite_rebate_error)?
+        {
+            InviteRebateGrantOutcome::Applied(record) if record.inviter_user_id() == inviter_id => {
+            }
+            _ => return Err(record_internal_error(AdminUserRepositoryError::Invariant)),
+        }
+    }
+    Ok(Some(snapshot))
 }
 
 pub(crate) async fn create_user_in_transaction(

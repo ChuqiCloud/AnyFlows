@@ -6425,6 +6425,18 @@
         ],
         "summary": "启动 GitHub OAuth 登录",
         "operationId": "startGitHubOAuthLogin",
+        "parameters": [
+          {
+            "name": "invite_code",
+            "in": "query",
+            "description": "仅首次注册时使用的邀请码，绑定到本次登录 state",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^af-[A-Za-z0-9_-]{22}$"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "服务端构造的 GitHub 授权地址",
@@ -6432,6 +6444,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OAuthLoginStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "邀请码查询参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
                 }
               }
             }
@@ -6466,6 +6488,18 @@
         ],
         "summary": "启动 Discord OAuth 登录",
         "operationId": "startDiscordOAuthLogin",
+        "parameters": [
+          {
+            "name": "invite_code",
+            "in": "query",
+            "description": "仅首次注册时使用的邀请码，绑定到本次登录 state",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^af-[A-Za-z0-9_-]{22}$"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "服务端构造的 Discord 授权地址",
@@ -6473,6 +6507,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OAuthLoginStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "邀请码查询参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
                 }
               }
             }
@@ -20533,6 +20577,18 @@
         ],
         "summary": "启动 OIDC 登录",
         "operationId": "startOidcLogin",
+        "parameters": [
+          {
+            "name": "invite_code",
+            "in": "query",
+            "description": "仅首次注册时使用的邀请码，绑定到本次登录 state",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^af-[A-Za-z0-9_-]{22}$"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "服务端构造的 OIDC 授权地址",
@@ -20540,6 +20596,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OAuthLoginStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "邀请码查询参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
                 }
               }
             }
@@ -20574,6 +20640,18 @@
         ],
         "summary": "启动 LinuxDO 登录",
         "operationId": "startLinuxDoLogin",
+        "parameters": [
+          {
+            "name": "invite_code",
+            "in": "query",
+            "description": "仅首次注册时使用的邀请码，绑定到本次登录 state",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^af-[A-Za-z0-9_-]{22}$"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "服务端构造的 LinuxDO 授权地址",
@@ -20581,6 +20659,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OAuthLoginStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "邀请码查询参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
                 }
               }
             }
@@ -20615,6 +20703,18 @@
         ],
         "summary": "启动微信开放平台二维码登录",
         "operationId": "startWeChatOAuthLogin",
+        "parameters": [
+          {
+            "name": "invite_code",
+            "in": "query",
+            "description": "仅首次注册时使用的邀请码，绑定到本次登录 state",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^af-[A-Za-z0-9_-]{22}$"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "服务端构造的微信官方授权地址",
@@ -20622,6 +20722,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OAuthLoginStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "邀请码查询参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
                 }
               }
             }
@@ -20656,6 +20766,18 @@
         ],
         "summary": "启动 Telegram 登录",
         "operationId": "startTelegramLogin",
+        "parameters": [
+          {
+            "name": "invite_code",
+            "in": "query",
+            "description": "仅首次注册时使用的邀请码，绑定到本次登录 state",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^af-[A-Za-z0-9_-]{22}$"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "服务端构造的 Telegram OIDC 授权地址",
@@ -20663,6 +20785,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OAuthLoginStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "邀请码查询参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
                 }
               }
             }
@@ -20697,6 +20829,18 @@
         ],
         "summary": "启动 Google OIDC 登录",
         "operationId": "startGoogleLogin",
+        "parameters": [
+          {
+            "name": "invite_code",
+            "in": "query",
+            "description": "仅首次注册时使用的邀请码，绑定到本次登录 state",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^af-[A-Za-z0-9_-]{22}$"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "服务端构造的 Google OIDC 授权地址",
@@ -20704,6 +20848,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OAuthLoginStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "邀请码查询参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
                 }
               }
             }
@@ -20748,6 +20902,16 @@
               "type": "string",
               "pattern": "^custom_[a-z0-9_-]+$"
             }
+          },
+          {
+            "name": "invite_code",
+            "in": "query",
+            "description": "仅首次注册时使用的邀请码，绑定到本次登录 state",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^af-[A-Za-z0-9_-]{22}$"
+            }
           }
         ],
         "responses": {
@@ -20762,7 +20926,7 @@
             }
           },
           "400": {
-            "description": "Provider key 格式无效",
+            "description": "Provider key 或邀请码查询参数无效",
             "content": {
               "application/json": {
                 "schema": {
