@@ -132,9 +132,9 @@ jobs:
           }
 
           {
-            echo "frontend=$(matches '^(web-next/|tools/ci/(frontend-about-smoke|frontend-navigation-smoke|frontend-user-routes-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend=$(matches '^(web-next/|tools/ci/(frontend-about-smoke|frontend-navigation-smoke|frontend-user-routes-smoke|frontend-oauth-invitation-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_about=$(matches '^(web-next/src/features/(about/|site-settings/software-(update-(panel|api)|release-notes)\.tsx?$)|tools/ci/frontend-about-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
-            echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-(navigation|user-routes)-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-(navigation|user-routes|oauth-invitation)-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_verification=$(matches '^(web-next/src/features/(account-verification|wallet|api-keys|playground)/|tools/ci/frontend-verification-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "rust=$(matches '^(crates/|tools/xtask/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$|\.github/workflows/ci\.yml$)')"
             echo "database=$(matches '^(crates/af-db/|tools/ci/(run-db-migration-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
@@ -554,6 +554,7 @@ jobs:
         run: |
           PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-navigation-smoke.mjs
           PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-user-routes-smoke.mjs
+          PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-oauth-invitation-smoke.mjs
 
       - name: Browser smoke test gallery and verification workflows
         if: github.event_name == 'workflow_dispatch'
@@ -739,6 +740,15 @@ jobs:
         run: |
           cargo test --locked -p af-relay --lib response_readiness
           cargo test --locked -p af-server --test relay_state_machine
+
+      - name: Run focused OAuth invitation regression tests
+        if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
+        run: |
+          cargo test --locked -p af-db --lib oauth
+          cargo test --locked -p af-db --lib invite_rebate
+          cargo test --locked -p af-admin --lib oauth_login
+          cargo test --locked -p af-admin --lib registration
+          cargo test --locked -p af-http --lib oauth_login
 
       - name: Run focused personal routing regression tests
         if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'

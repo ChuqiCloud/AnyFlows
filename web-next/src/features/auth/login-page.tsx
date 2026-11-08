@@ -10,18 +10,21 @@ import { AuthPageShell } from '@/features/auth/auth-page-shell'
 import { buttonPrimary, buttonSecondary, cardClass } from '@/features/auth/auth-form-styles'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import { type RegisteredExtensionLoginMethod } from '@/extensions/registry'
+import { invitationAuthLink } from './invitation-context'
 
 export type { LoginNotice }
 
 type LoginPageProps = {
   notice?: LoginNotice
+  inviteCode?: string
+  invitationInvalid?: boolean
   onAuthenticated: () => void
 }
 
 /**
  * 登录页：公开站点能力就绪后挂载账号登录表单。
  */
-export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
+export function LoginPage({ notice, inviteCode, invitationInvalid, onAuthenticated }: LoginPageProps) {
   const { t, i18n } = useTranslation()
   const [activeLoginMethod, setActiveLoginMethod] = useState<RegisteredExtensionLoginMethod | null>(null)
   const siteQuery = usePublicSiteSettings()
@@ -61,6 +64,13 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
               </div>
             )}
           />
+        ) : invitationInvalid ? (
+          <AuthCapabilityCard
+            icon={<AlertCircle className="size-5" aria-hidden="true" />}
+            title={t('registration.validation.inviteCode')}
+            body={t('registration.errors.invitationRejected')}
+            action={<Button as="a" color="primary" href={invitationAuthLink('/login')}>{t('registration.actions.login')}</Button>}
+          />
         ) : (
           <Card shadow="none" className={cn(cardClass, 'mx-auto w-full max-w-[400px] bg-card/94 backdrop-blur-2xl')}>
             {/* HeroUI 头部默认横排 + items-center + p-3，补回原竖排与 p-5 基准。 */}
@@ -83,6 +93,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
               ) : (
                 <AccountLoginForm
                   notice={notice}
+                  inviteCode={inviteCode}
                   site={site}
                   onAuthenticated={onAuthenticated}
                   onLoginMethodSelect={setActiveLoginMethod}

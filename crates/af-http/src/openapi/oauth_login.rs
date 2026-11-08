@@ -19,8 +19,10 @@ use crate::{
     operation_id = "startGitHubOAuthLogin",
     tag = "OAuth 登录",
     summary = "启动 GitHub OAuth 登录",
+    params(("invite_code" = Option<String>, Query, pattern = "^af-[A-Za-z0-9_-]{22}$", description = "仅首次注册时使用的邀请码，绑定到本次登录 state")),
     responses(
         (status = 200, description = "服务端构造的 GitHub 授权地址", body = OAuthLoginStartResponse),
+        (status = 400, description = "邀请码查询参数无效", body = ManagementErrorBody),
         (status = 409, description = "GitHub OAuth 登录尚未完整配置", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     )
@@ -33,8 +35,10 @@ fn start_github_oauth_login() {}
     operation_id = "startDiscordOAuthLogin",
     tag = "OAuth 登录",
     summary = "启动 Discord OAuth 登录",
+    params(("invite_code" = Option<String>, Query, pattern = "^af-[A-Za-z0-9_-]{22}$", description = "仅首次注册时使用的邀请码，绑定到本次登录 state")),
     responses(
         (status = 200, description = "服务端构造的 Discord 授权地址", body = OAuthLoginStartResponse),
+        (status = 400, description = "邀请码查询参数无效", body = ManagementErrorBody),
         (status = 409, description = "Discord OAuth 登录尚未完整配置", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     )
@@ -47,8 +51,10 @@ fn start_discord_oauth_login() {}
     operation_id = "startOidcLogin",
     tag = "OAuth 登录",
     summary = "启动 OIDC 登录",
+    params(("invite_code" = Option<String>, Query, pattern = "^af-[A-Za-z0-9_-]{22}$", description = "仅首次注册时使用的邀请码，绑定到本次登录 state")),
     responses(
         (status = 200, description = "服务端构造的 OIDC 授权地址", body = OAuthLoginStartResponse),
+        (status = 400, description = "邀请码查询参数无效", body = ManagementErrorBody),
         (status = 409, description = "OIDC 登录尚未完整配置", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     )
@@ -61,8 +67,10 @@ fn start_oidc_oauth_login() {}
     operation_id = "startLinuxDoLogin",
     tag = "OAuth 登录",
     summary = "启动 LinuxDO 登录",
+    params(("invite_code" = Option<String>, Query, pattern = "^af-[A-Za-z0-9_-]{22}$", description = "仅首次注册时使用的邀请码，绑定到本次登录 state")),
     responses(
         (status = 200, description = "服务端构造的 LinuxDO 授权地址", body = OAuthLoginStartResponse),
+        (status = 400, description = "邀请码查询参数无效", body = ManagementErrorBody),
         (status = 409, description = "LinuxDO 登录尚未完整配置", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     )
@@ -75,8 +83,10 @@ fn start_linuxdo_oauth_login() {}
     operation_id = "startWeChatOAuthLogin",
     tag = "OAuth 登录",
     summary = "启动微信开放平台二维码登录",
+    params(("invite_code" = Option<String>, Query, pattern = "^af-[A-Za-z0-9_-]{22}$", description = "仅首次注册时使用的邀请码，绑定到本次登录 state")),
     responses(
         (status = 200, description = "服务端构造的微信官方授权地址", body = OAuthLoginStartResponse),
+        (status = 400, description = "邀请码查询参数无效", body = ManagementErrorBody),
         (status = 409, description = "微信登录尚未完整配置", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     )
@@ -89,8 +99,10 @@ fn start_wechat_oauth_login() {}
     operation_id = "startTelegramLogin",
     tag = "OAuth 登录",
     summary = "启动 Telegram 登录",
+    params(("invite_code" = Option<String>, Query, pattern = "^af-[A-Za-z0-9_-]{22}$", description = "仅首次注册时使用的邀请码，绑定到本次登录 state")),
     responses(
         (status = 200, description = "服务端构造的 Telegram OIDC 授权地址", body = OAuthLoginStartResponse),
+        (status = 400, description = "邀请码查询参数无效", body = ManagementErrorBody),
         (status = 409, description = "Telegram 登录尚未完整配置", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     )
@@ -103,8 +115,10 @@ fn start_telegram_oauth_login() {}
     operation_id = "startGoogleLogin",
     tag = "OAuth 登录",
     summary = "启动 Google OIDC 登录",
+    params(("invite_code" = Option<String>, Query, pattern = "^af-[A-Za-z0-9_-]{22}$", description = "仅首次注册时使用的邀请码，绑定到本次登录 state")),
     responses(
         (status = 200, description = "服务端构造的 Google OIDC 授权地址", body = OAuthLoginStartResponse),
+        (status = 400, description = "邀请码查询参数无效", body = ManagementErrorBody),
         (status = 409, description = "Google 登录尚未完整配置", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     )
@@ -117,15 +131,18 @@ fn start_google_oauth_login() {}
     operation_id = "startCustomOAuth2Login",
     tag = "OAuth 登录",
     summary = "启动自定义 OAuth2 登录",
-    params((
-        "provider_key" = String,
-        Path,
-        pattern = "^custom_[a-z0-9_-]+$",
-        description = "已启用的 custom_ 命名空间 Provider key"
-    )),
+    params(
+        (
+            "provider_key" = String,
+            Path,
+            pattern = "^custom_[a-z0-9_-]+$",
+            description = "已启用的 custom_ 命名空间 Provider key"
+        ),
+        ("invite_code" = Option<String>, Query, pattern = "^af-[A-Za-z0-9_-]{22}$", description = "仅首次注册时使用的邀请码，绑定到本次登录 state")
+    ),
     responses(
         (status = 200, description = "服务端按固定配置构造的授权地址", body = OAuthLoginStartResponse),
-        (status = 400, description = "Provider key 格式无效", body = ManagementErrorBody),
+        (status = 400, description = "Provider key 或邀请码查询参数无效", body = ManagementErrorBody),
         (status = 409, description = "Provider 不存在、已禁用或配置不完整", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     )

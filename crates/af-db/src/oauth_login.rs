@@ -1,6 +1,6 @@
 use std::{fmt, net::IpAddr, time::Duration};
 
-use af_domain::{GroupId, UserId};
+use af_domain::{GroupId, Quota, UserId};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
@@ -16,7 +16,7 @@ use url::Url;
 
 use crate::{
     AdminUserCreateRecord, DatabasePool, EncryptedCredentialEnvelope,
-    admin_user_write::create_user_in_transaction,
+    admin_user_write::create_registration_user_in_transaction,
     entity::{
         EncryptedJson, SensitiveString, authentication_settings, oauth_login_providers,
         oauth_login_transactions, user_oauth_identities, users,
@@ -301,6 +301,35 @@ impl OAuthLoginRepository {
         ticket_expires_at: u64,
         completed_at: u64,
     ) -> Result<OAuthIdentityCompletion, OAuthLoginRepositoryError> {
+        self.complete_identity_with_invitation(
+            claim,
+            provider,
+            subject,
+            local_username,
+            ticket_digest,
+            ticket_expires_at,
+            completed_at,
+            None,
+        )
+        .await
+    }
+
+    /// 首次创建身份时在同一事务内发放 state 绑定的邀请码奖励。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "字段组成一次不可分割的 OAuth 身份完成事实"
+    )]
+    pub async fn complete_identity_with_invitation(
+        &self,
+        claim: OAuthLoginStateClaim,
+        provider: &str,
+        subject: &str,
+        local_username: &str,
+        ticket_digest: &str,
+        ticket_expires_at: u64,
+        completed_at: u64,
+        invite_code: Option<&str>,
+    ) -> Result<OAuthIdentityCompletion, OAuthLoginRepositoryError> {
         match timeout(
             self.operation_timeout,
             self.complete_identity_inner(
@@ -311,6 +340,7 @@ impl OAuthLoginRepository {
                 ticket_digest,
                 ticket_expires_at,
                 completed_at,
+                invite_code,
             ),
         )
         .await
@@ -507,6 +537,7 @@ impl OAuthLoginRepository {
         ticket_digest: &str,
         ticket_expires_at: u64,
         completed_at: u64,
+        invite_code: Option<&str>,
     ) -> Result<OAuthIdentityCompletion, OAuthLoginRepositoryError> {
         validate_provider(provider)?;
         validate_subject(subject)?;
@@ -548,12 +579,28 @@ impl OAuthLoginRepository {
                 let Some(default_group_id) = settings.registration_default_group_id else {
                     return Ok(OAuthIdentityCompletion::Rejected);
                 };
-                if !settings.registration_enabled || settings.registration_initial_quota < 0 {
+                if !settings.registration_enabled {
                     return Ok(OAuthIdentityCompletion::Rejected);
                 }
+                if settings.registration_initial_quota < 0
+                    || settings.invitation_invitee_quota < 0
+                    || settings.invitation_rebate_quota < 0
+                {
+                    return Err(internal(OAuthLoginRepositoryError::Invariant));
+                }
+                let initial_quota = settings
+                    .registration_initial_quota
+                    .checked_add(if invite_code.is_some() {
+                        settings.invitation_invitee_quota
+                    } else {
+                        0
+                    })
+                    .ok_or_else(|| internal(OAuthLoginRepositoryError::Invariant))?;
+                let rebate_quota = Quota::new(settings.invitation_rebate_quota)
+                    .map_err(|_| internal(OAuthLoginRepositoryError::Invariant))?;
                 let group_id = GroupId::new(default_group_id)
                     .map_err(|_| internal(OAuthLoginRepositoryError::Invariant))?;
-                let user = create_user_in_transaction(
+                let Some(user) = create_registration_user_in_transaction(
                     &transaction,
                     AdminUserCreateRecord::new(
                         local_username.to_owned(),
@@ -562,13 +609,19 @@ impl OAuthLoginRepository {
                         0,
                         ACTIVE_USER_STATUS,
                         group_id,
-                        settings.registration_initial_quota,
+                        initial_quota,
                         None,
                         None,
                     ),
+                    invite_code,
+                    rebate_quota,
+                    completed_at,
                 )
                 .await
-                .map_err(map_user_error)?;
+                .map_err(map_user_error)?
+                else {
+                    return Ok(OAuthIdentityCompletion::Rejected);
+                };
                 user_oauth_identities::ActiveModel {
                     user_id: Set(user.user_id().get()),
                     provider: Set(provider.to_owned()),

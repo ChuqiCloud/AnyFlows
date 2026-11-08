@@ -2,8 +2,8 @@ use std::{fmt, future::Future, pin::Pin};
 
 use af_account::{
     CustomOAuth2EndpointBundle, CustomOAuth2ProviderConfig, CustomOAuth2ProviderKey,
-    LoginOAuthProvider, OAuthLoginClient, OAuthLoginClientError, PlainSystemSecret,
-    SystemSecretCipher, SystemSecretKind,
+    DecryptedSystemSecret, LoginOAuthProvider, OAuthLoginClient, OAuthLoginClientError,
+    PlainSystemSecret, SystemSecretCipher, SystemSecretKind,
 };
 use af_db::{
     CustomOAuth2IdentityCompletion, CustomOAuth2LoginRepository, CustomOAuth2LoginRepositoryError,
@@ -19,7 +19,7 @@ use thiserror::Error;
 use url::Url;
 use zeroize::{Zeroize as _, Zeroizing};
 
-use crate::{SessionPrincipal, SessionRole};
+use crate::{SessionPrincipal, SessionRole, registration::is_valid_invitation_code};
 
 const STATE_TTL_SECONDS: u64 = 10 * 60;
 const TICKET_TTL_SECONDS: u64 = 2 * 60;
@@ -267,6 +267,18 @@ pub trait OAuthLoginService: Send + Sync {
 
     fn begin<'a>(&'a self, provider: &'a str) -> OAuthLoginServiceFuture<'a, OAuthLoginStart>;
 
+    /// 将可选邀请码绑定到本次授权流程；未接入邀请的适配器拒绝携带邀请码。
+    fn begin_with_invitation<'a>(
+        &'a self,
+        provider: &'a str,
+        invite_code: Option<String>,
+    ) -> OAuthLoginServiceFuture<'a, OAuthLoginStart> {
+        if invite_code.is_some() {
+            return Box::pin(async { Err(OAuthLoginError::InvalidInput) });
+        }
+        self.begin(provider)
+    }
+
     fn complete<'a>(
         &'a self,
         provider: &'a str,
@@ -369,22 +381,35 @@ impl DatabaseOAuthLoginService {
         Ok(providers)
     }
 
-    async fn begin_inner(&self, provider: &str) -> Result<OAuthLoginStart, OAuthLoginError> {
-        if LoginOAuthProvider::from_id(provider).is_some() {
-            return self.begin_builtin(provider).await;
+    async fn begin_inner(
+        &self,
+        provider: &str,
+        invite_code: Option<String>,
+    ) -> Result<OAuthLoginStart, OAuthLoginError> {
+        if invite_code
+            .as_deref()
+            .is_some_and(|code| !is_valid_invitation_code(code))
+        {
+            return Err(OAuthLoginError::InvalidInput);
         }
-        self.begin_custom(provider).await
+        if LoginOAuthProvider::from_id(provider).is_some() {
+            return self.begin_builtin(provider, invite_code.as_deref()).await;
+        }
+        self.begin_custom(provider, invite_code.as_deref()).await
     }
 
-    async fn begin_builtin(&self, provider: &str) -> Result<OAuthLoginStart, OAuthLoginError> {
+    async fn begin_builtin(
+        &self,
+        provider: &str,
+        invite_code: Option<&str>,
+    ) -> Result<OAuthLoginStart, OAuthLoginError> {
         let profile = require_provider(provider)?;
         let settings = self.available_provider(profile).await?;
         let client_id = settings.client_id().ok_or(OAuthLoginError::Unavailable)?;
         let redirect_uri = self.redirect_uri(profile).await?;
         let verifier = random_token()?;
         let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
-        let verifier_secret =
-            PlainSystemSecret::new(verifier.to_string()).map_err(|_| OAuthLoginError::Internal)?;
+        let verifier_secret = login_state_secret(verifier.as_str(), invite_code)?;
         let envelope = self
             .cipher
             .encrypt(SystemSecretKind::OAuthLoginState, &verifier_secret)
@@ -430,14 +455,17 @@ impl DatabaseOAuthLoginService {
         })
     }
 
-    async fn begin_custom(&self, provider: &str) -> Result<OAuthLoginStart, OAuthLoginError> {
+    async fn begin_custom(
+        &self,
+        provider: &str,
+        invite_code: Option<&str>,
+    ) -> Result<OAuthLoginStart, OAuthLoginError> {
         let key = custom_provider_key(provider)?;
         let (record, config) = self.available_custom_provider(&key).await?;
         let redirect_uri = self.custom_redirect_uri(key.as_str()).await?;
         let verifier = random_token()?;
         let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
-        let verifier_secret =
-            PlainSystemSecret::new(verifier.to_string()).map_err(|_| OAuthLoginError::Internal)?;
+        let verifier_secret = login_state_secret(verifier.as_str(), invite_code)?;
         let envelope = self
             .cipher
             .encrypt(SystemSecretKind::OAuthLoginState, &verifier_secret)
@@ -495,6 +523,7 @@ impl DatabaseOAuthLoginService {
             .cipher
             .decrypt(SystemSecretKind::OAuthLoginState, &envelope)
             .map_err(|_| OAuthLoginError::Rejected)?;
+        let (verifier, invite_code) = parse_login_state_secret(verifier)?;
         let settings = self.available_provider(profile).await?;
         let client_id = settings.client_id().ok_or(OAuthLoginError::Unavailable)?;
         let client_secret = self.decrypt_client_secret(profile, &settings)?;
@@ -508,7 +537,7 @@ impl DatabaseOAuthLoginService {
                     client_id,
                     &client_secret,
                     code.as_str(),
-                    verifier.expose_secret(),
+                    verifier.as_str(),
                     &redirect_uri,
                 )
                 .await
@@ -520,7 +549,7 @@ impl DatabaseOAuthLoginService {
                     client_id,
                     &client_secret,
                     code.as_str(),
-                    profile.uses_pkce().then_some(verifier.expose_secret()),
+                    profile.uses_pkce().then_some(verifier.as_str()),
                     &redirect_uri,
                 )
                 .await
@@ -535,7 +564,7 @@ impl DatabaseOAuthLoginService {
         let local_username = local_username(profile, identity.username(), identity.subject());
         match self
             .repository
-            .complete_identity(
+            .complete_identity_with_invitation(
                 claim,
                 provider,
                 identity.subject(),
@@ -543,6 +572,7 @@ impl DatabaseOAuthLoginService {
                 &digest("oauth-login-ticket-v1", &ticket),
                 ticket_expires_at,
                 now,
+                invite_code.as_deref(),
             )
             .await
             .map_err(map_repository_error)?
@@ -581,6 +611,7 @@ impl DatabaseOAuthLoginService {
             .cipher
             .decrypt(SystemSecretKind::OAuthLoginState, &envelope)
             .map_err(|_| OAuthLoginError::Rejected)?;
+        let (verifier, invite_code) = parse_login_state_secret(verifier)?;
         let (record, config) = self.available_custom_provider(&key).await?;
         if record.version() != claim.configuration_version() {
             return Err(OAuthLoginError::Rejected);
@@ -599,7 +630,7 @@ impl DatabaseOAuthLoginService {
                 &config,
                 &client_secret,
                 code.as_str(),
-                verifier.expose_secret(),
+                verifier.as_str(),
                 &redirect_uri,
             )
             .await
@@ -613,7 +644,7 @@ impl DatabaseOAuthLoginService {
         let local_username = custom_local_username(key.as_str(), identity.subject());
         match self
             .custom_login_repository
-            .complete_identity(
+            .complete_identity_with_invitation(
                 claim,
                 key.as_str(),
                 identity.subject(),
@@ -621,6 +652,7 @@ impl DatabaseOAuthLoginService {
                 &digest("custom-oauth2-login-ticket-v1", &ticket),
                 ticket_expires_at,
                 now,
+                invite_code.as_deref(),
             )
             .await
             .map_err(map_custom_login_repository_error)?
@@ -863,7 +895,15 @@ impl OAuthLoginService for DatabaseOAuthLoginService {
     }
 
     fn begin<'a>(&'a self, provider: &'a str) -> OAuthLoginServiceFuture<'a, OAuthLoginStart> {
-        Box::pin(self.begin_inner(provider))
+        Box::pin(self.begin_inner(provider, None))
+    }
+
+    fn begin_with_invitation<'a>(
+        &'a self,
+        provider: &'a str,
+        invite_code: Option<String>,
+    ) -> OAuthLoginServiceFuture<'a, OAuthLoginStart> {
+        Box::pin(self.begin_inner(provider, invite_code))
     }
 
     fn complete<'a>(
@@ -913,6 +953,42 @@ impl fmt::Debug for DatabaseOAuthLoginService {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("DatabaseOAuthLoginService(<已脱敏>)")
     }
+}
+
+/// 邀请码只进入加密 state；旧的不含邀请的 state 仍保存原始 verifier。
+fn login_state_secret(
+    verifier: &str,
+    invite_code: Option<&str>,
+) -> Result<PlainSystemSecret, OAuthLoginError> {
+    let plaintext = match invite_code {
+        Some(code) => {
+            if !is_valid_invitation_code(code) {
+                return Err(OAuthLoginError::InvalidInput);
+            }
+            serde_json::to_string(&(verifier, code)).map_err(|_| OAuthLoginError::Internal)?
+        }
+        None => verifier.to_owned(),
+    };
+    PlainSystemSecret::new(plaintext).map_err(|_| OAuthLoginError::Internal)
+}
+
+fn parse_login_state_secret(
+    secret: DecryptedSystemSecret,
+) -> Result<(Zeroizing<String>, Option<String>), OAuthLoginError> {
+    if !secret.expose_secret().starts_with('[') {
+        validate_ticket(secret.expose_secret())?;
+        return Ok((secret.into_zeroizing(), None));
+    }
+    let (verifier, invite_code): (&str, &str) =
+        serde_json::from_str(secret.expose_secret()).map_err(|_| OAuthLoginError::Rejected)?;
+    validate_ticket(verifier)?;
+    if !is_valid_invitation_code(invite_code) {
+        return Err(OAuthLoginError::Rejected);
+    }
+    Ok((
+        Zeroizing::new(verifier.to_owned()),
+        Some(invite_code.to_owned()),
+    ))
 }
 
 fn encode_state_envelope(envelope: &EncryptedCredentialEnvelope) -> String {
@@ -1250,6 +1326,82 @@ fn map_oauth_client_error(error: OAuthLoginClientError) -> OAuthLoginError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn state_cipher() -> SystemSecretCipher {
+        let settings: af_config::CredentialEncryptionSettings =
+            serde_json::from_value(serde_json::json!({
+                "key_id": "oauth-invitation-test",
+                "key": URL_SAFE_NO_PAD.encode([0x29; af_config::CREDENTIAL_ENCRYPTION_KEY_BYTES]),
+            }))
+            .unwrap();
+        SystemSecretCipher::new(&settings).unwrap()
+    }
+
+    #[test]
+    fn invitation_state_round_trip_preserves_pkce_and_legacy_authorizations() {
+        let cipher = state_cipher();
+        let verifier = "A".repeat(43);
+        let invitation = "af-AAAAAAAAAAAAAAAAAAAAAA";
+        for invite_code in [None, Some(invitation)] {
+            let secret = login_state_secret(&verifier, invite_code).unwrap();
+            let envelope = cipher
+                .encrypt(SystemSecretKind::OAuthLoginState, &secret)
+                .unwrap();
+            let state = encode_state_envelope(&envelope);
+            assert!(!state.contains(invitation));
+            let envelope = decode_state_envelope(&state).unwrap();
+            let plaintext = cipher
+                .decrypt(SystemSecretKind::OAuthLoginState, &envelope)
+                .unwrap();
+            let (recovered_verifier, recovered_invite) =
+                parse_login_state_secret(plaintext).unwrap();
+            assert_eq!(recovered_verifier.as_str(), verifier);
+            assert_eq!(recovered_invite.as_deref(), invite_code);
+        }
+    }
+
+    #[test]
+    fn invitation_state_rejects_malformed_payloads_and_tampered_ciphertext() {
+        let cipher = state_cipher();
+        for plaintext in [
+            "[\"short-verifier\",\"af-AAAAAAAAAAAAAAAAAAAAAA\"]".to_owned(),
+            format!("[\"{}\",\"invalid-invite\"]", "A".repeat(43)),
+            format!(
+                "[\"{}\",\"af-AAAAAAAAAAAAAAAAAAAAAA\",\"extra\"]",
+                "A".repeat(43)
+            ),
+        ] {
+            let secret = PlainSystemSecret::new(plaintext).unwrap();
+            let envelope = cipher
+                .encrypt(SystemSecretKind::OAuthLoginState, &secret)
+                .unwrap();
+            let decrypted = cipher
+                .decrypt(SystemSecretKind::OAuthLoginState, &envelope)
+                .unwrap();
+            assert!(matches!(
+                parse_login_state_secret(decrypted),
+                Err(OAuthLoginError::Rejected)
+            ));
+        }
+        let secret =
+            login_state_secret(&"A".repeat(43), Some("af-AAAAAAAAAAAAAAAAAAAAAA")).unwrap();
+        let envelope = cipher
+            .encrypt(SystemSecretKind::OAuthLoginState, &secret)
+            .unwrap();
+        let mut ciphertext = envelope.ciphertext().to_vec();
+        ciphertext[0] ^= 1;
+        let tampered = EncryptedCredentialEnvelope::new(
+            envelope.key_id().to_owned(),
+            *envelope.nonce(),
+            ciphertext,
+        )
+        .unwrap();
+        assert!(
+            cipher
+                .decrypt(SystemSecretKind::OAuthLoginState, &tampered)
+                .is_err()
+        );
+    }
 
     #[test]
     fn admin_command_rejects_ambiguous_secret_updates_and_redacts_debug() {
