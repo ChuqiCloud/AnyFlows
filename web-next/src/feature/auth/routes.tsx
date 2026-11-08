@@ -1,6 +1,7 @@
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { LoginPage, type LoginNotice } from "@/features/auth/login-page";
+import { readInvitationContext } from "@/features/auth/invitation-context";
 import { OAuthCallbackPage } from "@/features/auth/oauth-callback-page";
 import { ResetPasswordPage } from "@/features/auth/reset-password-page";
 import { createModuleRouteMetaResolver } from "@/shared/modules";
@@ -17,10 +18,14 @@ const routeMeta = createModuleRouteMetaResolver(authModule, {
 function LoginRoute() {
   const notice = (useLocation().state as { notice?: LoginNotice } | null)?.notice;
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const invitation = readInvitationContext(params);
 
   return (
     <LoginPage
       notice={notice}
+      inviteCode={invitation.kind === "valid" ? invitation.code : undefined}
+      invitationInvalid={invitation.kind === "invalid"}
       onAuthenticated={() => navigate("/console", { replace: true })}
     />
   );

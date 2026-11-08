@@ -1,6 +1,6 @@
 use std::{fmt, time::Duration};
 
-use af_domain::{GroupId, UserId};
+use af_domain::{GroupId, Quota, UserId};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
     QueryFilter, QuerySelect, Set, SqlErr, TransactionTrait,
@@ -13,7 +13,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     AdminUserCreateRecord, DatabasePool,
-    admin_user_write::create_user_in_transaction,
+    admin_user_write::create_registration_user_in_transaction,
     entity::{
         SensitiveString, authentication_settings, custom_oauth2_identities,
         custom_oauth2_login_transactions, users,
@@ -144,6 +144,35 @@ impl CustomOAuth2LoginRepository {
         ticket_expires_at: u64,
         completed_at: u64,
     ) -> Result<CustomOAuth2IdentityCompletion, CustomOAuth2LoginRepositoryError> {
+        self.complete_identity_with_invitation(
+            claim,
+            provider_key,
+            subject,
+            local_username,
+            ticket_digest,
+            ticket_expires_at,
+            completed_at,
+            None,
+        )
+        .await
+    }
+
+    /// 首次创建身份时在同一事务内发放 state 绑定的邀请码奖励。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "字段共同组成不可分割的自定义 OAuth2 身份完成事实"
+    )]
+    pub async fn complete_identity_with_invitation(
+        &self,
+        claim: CustomOAuth2LoginStateClaim,
+        provider_key: &str,
+        subject: &str,
+        local_username: &str,
+        ticket_digest: &str,
+        ticket_expires_at: u64,
+        completed_at: u64,
+        invite_code: Option<&str>,
+    ) -> Result<CustomOAuth2IdentityCompletion, CustomOAuth2LoginRepositoryError> {
         match timeout(
             self.operation_timeout,
             self.complete_identity_inner(
@@ -154,6 +183,7 @@ impl CustomOAuth2LoginRepository {
                 ticket_digest,
                 ticket_expires_at,
                 completed_at,
+                invite_code,
             ),
         )
         .await
@@ -284,6 +314,7 @@ impl CustomOAuth2LoginRepository {
         ticket_digest: &str,
         ticket_expires_at: u64,
         completed_at: u64,
+        invite_code: Option<&str>,
     ) -> Result<CustomOAuth2IdentityCompletion, CustomOAuth2LoginRepositoryError> {
         validate_provider_key(provider_key)?;
         validate_subject(subject)?;
@@ -327,12 +358,28 @@ impl CustomOAuth2LoginRepository {
                 let Some(default_group_id) = settings.registration_default_group_id else {
                     return Ok(CustomOAuth2IdentityCompletion::Rejected);
                 };
-                if !settings.registration_enabled || settings.registration_initial_quota < 0 {
+                if !settings.registration_enabled {
                     return Ok(CustomOAuth2IdentityCompletion::Rejected);
                 }
+                if settings.registration_initial_quota < 0
+                    || settings.invitation_invitee_quota < 0
+                    || settings.invitation_rebate_quota < 0
+                {
+                    return Err(internal(CustomOAuth2LoginRepositoryError::Invariant));
+                }
+                let initial_quota = settings
+                    .registration_initial_quota
+                    .checked_add(if invite_code.is_some() {
+                        settings.invitation_invitee_quota
+                    } else {
+                        0
+                    })
+                    .ok_or_else(|| internal(CustomOAuth2LoginRepositoryError::Invariant))?;
+                let rebate_quota = Quota::new(settings.invitation_rebate_quota)
+                    .map_err(|_| internal(CustomOAuth2LoginRepositoryError::Invariant))?;
                 let group_id = GroupId::new(default_group_id)
                     .map_err(|_| internal(CustomOAuth2LoginRepositoryError::Invariant))?;
-                let user = create_user_in_transaction(
+                let Some(user) = create_registration_user_in_transaction(
                     &transaction,
                     AdminUserCreateRecord::new(
                         local_username.to_owned(),
@@ -341,13 +388,19 @@ impl CustomOAuth2LoginRepository {
                         0,
                         ACTIVE_USER_STATUS,
                         group_id,
-                        settings.registration_initial_quota,
+                        initial_quota,
                         None,
                         None,
                     ),
+                    invite_code,
+                    rebate_quota,
+                    completed_at,
                 )
                 .await
-                .map_err(map_user_error)?;
+                .map_err(map_user_error)?
+                else {
+                    return Ok(CustomOAuth2IdentityCompletion::Rejected);
+                };
                 custom_oauth2_identities::ActiveModel {
                     user_id: Set(user.user_id().get()),
                     provider_key: Set(provider_key.to_owned()),
