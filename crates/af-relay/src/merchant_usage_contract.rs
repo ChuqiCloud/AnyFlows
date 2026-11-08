@@ -9,7 +9,6 @@ use af_protocol::{
     CanonicalStreamEvent, ContentBlock, ContentDelta, FinishReason, Message, ResponseChoice,
     Sampling, StreamOptions, TokenCount, UsageDetails, UsageSemantics, UsageSource,
 };
-use serde_json::json;
 use wiremock::{
     Mock, MockServer, ResponseTemplate,
     matchers::{method, path},
@@ -52,7 +51,7 @@ fn request(protocol: Protocol, stream: bool) -> CanonicalRequestEnvelope {
     );
     canonical.sampling =
         Sampling::new(None, None, Some(TokenCount::new(128).unwrap()), vec![]).unwrap();
-    canonical.stream_options = StreamOptions::new(true);
+    canonical.stream_options = StreamOptions::new(stream);
     canonical.into()
 }
 
@@ -312,7 +311,9 @@ async fn merchant_stream_matrix_uses_one_observed_usage_for_completion_and_downs
 #[tokio::test]
 async fn merchant_gemini_prompt_block_is_a_legal_terminal_response() {
     let canonical = request(Protocol::Gemini, true).into_canonical();
-    let raw = Bytes::from_static(b"data: {\"promptFeedback\":{\"blockReason\":\"SAFETY\"}}\n\n");
+    let raw = Bytes::from_static(
+        b"data: {\"responseId\":\"supplier\",\"modelVersion\":\"gpt-4o\",\"promptFeedback\":{\"blockReason\":\"SAFETY\"}}\n\n",
+    );
     let body = UpstreamResponse::full(StatusCode::OK, HeaderMap::new(), raw)
         .unwrap()
         .into_body();

@@ -15,7 +15,7 @@ export function MerchantCatalogTable({ services, model, statistics, timelines, c
     <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={t('merchantPool.catalogTable')}>
       <table className="w-full min-w-[1330px] text-left text-xs tabular-nums">
         <thead><tr className="border-b border-[var(--hairline)] bg-surface-2/60 text-muted-foreground">
-          {['merchantService', 'status', 'model', 'ratio', 'price', 'success', 'timing', 'trend', 'updated', 'actions'].map((name, index) => <th key={name} scope="col" className={`h-10 px-2 font-medium whitespace-nowrap ${index === 0 ? 'sticky left-0 z-20 w-48 bg-surface-1 pl-3.5' : ''}`}>{t(`merchantPool.tableColumns.${name}`)}</th>)}
+          {['merchantService', 'status', 'model', 'ratio', 'price', 'success', 'timing', 'trend', 'updated', 'actions'].map((name, index) => <th key={name} scope="col" className={`h-10 px-2 font-medium whitespace-nowrap ${index === 0 ? 'sticky left-0 z-20 w-48 bg-surface-1 pl-3.5' : index === 9 ? 'lg:sticky lg:right-0 lg:z-20 lg:border-l lg:border-[var(--hairline)] lg:bg-surface-1' : ''}`}>{t(`merchantPool.tableColumns.${name}`)}</th>)}
         </tr></thead>
         <tbody>{services.map((service) => {
           const offer = service.models.find((item) => item.model === model)
@@ -30,7 +30,7 @@ export function MerchantCatalogTable({ services, model, statistics, timelines, c
             <td className={cell}><span className="block">{t('merchantPool.ttftCompact', { p50: milliseconds(stats?.ttft_p50_ms), p95: milliseconds(stats?.ttft_p95_ms) })}</span><span className="mt-0.5 block text-[11px] text-muted-foreground">{t('merchantPool.latency', { value: milliseconds(stats?.latency_p95_ms) })}</span></td>
             <td className={cell}><div className="w-28"><MerchantTimelineStrip timeline={timelines.get(service.id)} compact />{!timelines.get(service.id) ? <span className="text-muted-foreground">—</span> : null}</div></td>
             <td className={`${cell} text-[11px] text-muted-foreground`}>{poolTimestamp(service.updated_at, i18n.language)}</td>
-            <td className={cell}><div className="flex flex-col gap-1"><Link className="text-primary hover:underline" to={`/console/merchant-pool/merchants/${service.merchant_id}?pool=${service.pool_id}&service=${service.id}`}>{t('merchantPool.details')}</Link><Link className="text-primary hover:underline" to={`/console/merchant-pool/routes?pool=${service.pool_id}&merchant=${service.merchant_id}`}>{t('merchantPool.addToRoute')}</Link></div></td>
+            <td className={`${cell} lg:sticky lg:right-0 lg:z-10 lg:border-l lg:border-[var(--hairline)] lg:bg-surface-1 lg:group-hover:bg-surface-2`}><div className="flex flex-col gap-1"><Link className="text-primary hover:underline" to={`/console/merchant-pool/merchants/${service.merchant_id}?pool=${service.pool_id}&service=${service.id}`}>{t('merchantPool.details')}</Link><Link className="text-primary hover:underline" to={`/console/merchant-pool/routes?pool=${service.pool_id}&merchant=${service.merchant_id}`}>{t('merchantPool.addToRoute')}</Link></div></td>
           </tr>
         })}</tbody>
       </table>

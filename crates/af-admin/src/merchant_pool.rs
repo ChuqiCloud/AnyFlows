@@ -306,16 +306,14 @@ impl MerchantPoolService for DatabaseMerchantPoolService {
                 self.repository.get_service(Some(p.user_id()), id).await?;
             }
             self.validate_endpoint(&write.base_url).await?;
-            if let Some(key) = &write.api_key {
-                if let Ok(key) = crate::PresentedApiKey::parse(key) {
-                    if self
-                        .repository
-                        .platform_key_exists(key.digest().as_str())
-                        .await?
-                    {
-                        return Err(MerchantPoolError::InvalidInput);
-                    }
-                }
+            if let Some(key) = &write.api_key
+                && let Ok(key) = crate::PresentedApiKey::parse(key)
+                && self
+                    .repository
+                    .platform_key_exists(key.digest().as_str())
+                    .await?
+            {
+                return Err(MerchantPoolError::InvalidInput);
             }
             self.repository
                 .write_service(
@@ -373,14 +371,13 @@ impl MerchantPoolService for DatabaseMerchantPoolService {
             if key.is_empty() || key.len() > 8192 {
                 return Err(MerchantPoolError::InvalidInput);
             }
-            if let Ok(presented) = crate::PresentedApiKey::parse(&key) {
-                if self
+            if let Ok(presented) = crate::PresentedApiKey::parse(&key)
+                && self
                     .repository
                     .platform_key_exists(presented.digest().as_str())
                     .await?
-                {
-                    return Err(MerchantPoolError::InvalidInput);
-                }
+            {
+                return Err(MerchantPoolError::InvalidInput);
             }
             let secret =
                 PlainCredentialSecret::api_key(key).map_err(|_| MerchantPoolError::InvalidInput)?;

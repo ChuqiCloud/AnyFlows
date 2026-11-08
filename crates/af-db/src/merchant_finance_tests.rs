@@ -296,18 +296,31 @@ async fn merchant_cannot_turn_oversized_usage_into_additional_wallet_debits()
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_merchant_requests_cannot_reserve_the_same_cash_twice()
 -> Result<(), Box<dyn Error>> {
-    let fixture = fixture(config()).await?;
+    let database = TestDatabase::new();
+    let fixture = concurrent_fixture(&database, config()).await?;
     let principal = merchant(&fixture, 1_000, 0).await?;
-    let first = fixture
-        .repository
-        .precharge(reservation_id(0xd6), principal, quota(600));
-    let second = fixture
-        .repository
-        .precharge(reservation_id(0xd7), principal, quota(600));
-    let (left, right) = tokio::join!(first, second);
+    let barrier = Arc::new(Barrier::new(3));
+    let first_repository = fixture.repository.clone();
+    let first_barrier = Arc::clone(&barrier);
+    let first = tokio::spawn(async move {
+        first_barrier.wait().await;
+        first_repository
+            .precharge(reservation_id(0xd6), principal, quota(600))
+            .await
+    });
+    let second_repository = fixture.repository.clone();
+    let second_barrier = Arc::clone(&barrier);
+    let second = tokio::spawn(async move {
+        second_barrier.wait().await;
+        second_repository
+            .precharge(reservation_id(0xd7), principal, quota(600))
+            .await
+    });
+    barrier.wait().await;
+    let (left, right) = (first.await?, second.await?);
     assert!(matches!(
         (&left, &right),
         (
@@ -326,6 +339,7 @@ async fn concurrent_merchant_requests_cannot_reserve_the_same_cash_twice()
         600
     );
     fixture.close().await?;
+    drop(database);
     Ok(())
 }
 

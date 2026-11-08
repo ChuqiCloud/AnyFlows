@@ -345,8 +345,24 @@
       "reason": "处理原因",
       "reference": "编号",
       "amount": "金额",
-      "payment": "付款凭证"
-    }
+      "payment": "付款凭证",
+      "route": "路由",
+      "strategy": "策略",
+      "members": "候选 / 排除",
+      "attempts": "最多尝试",
+      "priceLimit": "倍率上限",
+      "inputPrice": "输入单价",
+      "outputPrice": "输出单价",
+      "cachePrice": "缓存单价",
+      "context": "上下文",
+      "maxOutput": "最大输出",
+      "capabilities": "能力",
+      "outcomes": "成功 / 失败",
+      "ttftP50": "首字 P50",
+      "ttftP95": "首字 P95",
+      "durationP95": "完整耗时 P95"
+    },
+    "excludedCount": "排除 {{count}} 家"
   },
   "en": {
     "title": "Merchant pool",
@@ -694,7 +710,23 @@
       "reason": "Reason",
       "reference": "ID",
       "amount": "Amount",
-      "payment": "Payment reference"
-    }
+      "payment": "Payment reference",
+      "route": "Route",
+      "strategy": "Strategy",
+      "members": "Selected / Excluded",
+      "attempts": "Max attempts",
+      "priceLimit": "Multiplier limit",
+      "inputPrice": "Input price",
+      "outputPrice": "Output price",
+      "cachePrice": "Cache prices",
+      "context": "Context",
+      "maxOutput": "Max output",
+      "capabilities": "Capabilities",
+      "outcomes": "Success / Failure",
+      "ttftP50": "TTFT P50",
+      "ttftP95": "TTFT P95",
+      "durationP95": "Duration P95"
+    },
+    "excludedCount": "{{count}} excluded"
   }
 }
