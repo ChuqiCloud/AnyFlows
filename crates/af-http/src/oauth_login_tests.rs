@@ -297,8 +297,7 @@ fn oauth_start_contract_keeps_invitation_optional_and_documents_input_rejection(
         assert_eq!(invitation["in"], "query", "{path}");
         assert_eq!(invitation["required"], false, "{path}");
         assert_eq!(
-            invitation["schema"]["pattern"],
-            "^af-[A-Za-z0-9_-]{22}$",
+            invitation["schema"]["pattern"], "^af-[A-Za-z0-9_-]{22}$",
             "{path}"
         );
         assert!(!operation["responses"]["400"].is_null(), "{path}");

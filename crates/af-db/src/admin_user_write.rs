@@ -490,8 +490,8 @@ pub(crate) async fn create_registration_user_in_transaction(
             .await
             .map_err(map_invite_rebate_error)?
         {
-            InviteRebateGrantOutcome::Applied(record)
-                if record.inviter_user_id() == inviter_id => {}
+            InviteRebateGrantOutcome::Applied(record) if record.inviter_user_id() == inviter_id => {
+            }
             _ => return Err(record_internal_error(AdminUserRepositoryError::Invariant)),
         }
     }

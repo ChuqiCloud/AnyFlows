@@ -8,8 +8,8 @@ use crate::{
     CustomOAuth2ProviderWriteRecord, DatabaseOptions, EncryptedCredentialEnvelope,
     MigrationOptions, connect_and_migrate,
     entity::{
-        authentication_settings, custom_oauth2_identities, custom_oauth2_login_transactions, groups,
-        invite_rebate_events, users, wallet_ledger_entries,
+        authentication_settings, custom_oauth2_identities, custom_oauth2_login_transactions,
+        groups, invite_rebate_events, users, wallet_ledger_entries,
     },
 };
 
@@ -221,10 +221,7 @@ async fn custom_oauth2_invitation_rewards_are_atomic_and_only_for_new_identities
         .repository
         .create_state(PROVIDER, 1, STATE, 200)
         .await?;
-    let claim = fixture
-        .repository
-        .claim_state(PROVIDER, STATE, 100)
-        .await?;
+    let claim = fixture.repository.claim_state(PROVIDER, STATE, 100).await?;
     let issued = fixture
         .repository
         .complete_identity_with_invitation(
@@ -404,10 +401,7 @@ async fn custom_oauth2_invitation_rejection_rolls_back_user_identity_and_wallet(
             .repository
             .create_state(PROVIDER, 1, STATE, 200)
             .await?;
-        let claim = fixture
-            .repository
-            .claim_state(PROVIDER, STATE, 100)
-            .await?;
+        let claim = fixture.repository.claim_state(PROVIDER, STATE, 100).await?;
         let result = fixture
             .repository
             .complete_identity_with_invitation(
@@ -431,7 +425,9 @@ async fn custom_oauth2_invitation_rejection_rolls_back_user_identity_and_wallet(
             assert_eq!(result?, CustomOAuth2IdentityCompletion::Rejected);
         }
         assert_eq!(
-            users::Entity::find().count(fixture.pool.connection()).await?,
+            users::Entity::find()
+                .count(fixture.pool.connection())
+                .await?,
             1
         );
         assert_eq!(

@@ -2,9 +2,8 @@ use std::{fmt, future::Future, pin::Pin};
 
 use af_account::{
     CustomOAuth2EndpointBundle, CustomOAuth2ProviderConfig, CustomOAuth2ProviderKey,
-    DecryptedSystemSecret,
-    LoginOAuthProvider, OAuthLoginClient, OAuthLoginClientError, PlainSystemSecret,
-    SystemSecretCipher, SystemSecretKind,
+    DecryptedSystemSecret, LoginOAuthProvider, OAuthLoginClient, OAuthLoginClientError,
+    PlainSystemSecret, SystemSecretCipher, SystemSecretKind,
 };
 use af_db::{
     CustomOAuth2IdentityCompletion, CustomOAuth2LoginRepository, CustomOAuth2LoginRepositoryError,
@@ -387,7 +386,10 @@ impl DatabaseOAuthLoginService {
         provider: &str,
         invite_code: Option<String>,
     ) -> Result<OAuthLoginStart, OAuthLoginError> {
-        if invite_code.as_deref().is_some_and(|code| !is_valid_invitation_code(code)) {
+        if invite_code
+            .as_deref()
+            .is_some_and(|code| !is_valid_invitation_code(code))
+        {
             return Err(OAuthLoginError::InvalidInput);
         }
         if LoginOAuthProvider::from_id(provider).is_some() {
@@ -983,7 +985,10 @@ fn parse_login_state_secret(
     if !is_valid_invitation_code(invite_code) {
         return Err(OAuthLoginError::Rejected);
     }
-    Ok((Zeroizing::new(verifier.to_owned()), Some(invite_code.to_owned())))
+    Ok((
+        Zeroizing::new(verifier.to_owned()),
+        Some(invite_code.to_owned()),
+    ))
 }
 
 fn encode_state_envelope(envelope: &EncryptedCredentialEnvelope) -> String {
@@ -1339,12 +1344,17 @@ mod tests {
         let invitation = "af-AAAAAAAAAAAAAAAAAAAAAA";
         for invite_code in [None, Some(invitation)] {
             let secret = login_state_secret(&verifier, invite_code).unwrap();
-            let envelope = cipher.encrypt(SystemSecretKind::OAuthLoginState, &secret).unwrap();
+            let envelope = cipher
+                .encrypt(SystemSecretKind::OAuthLoginState, &secret)
+                .unwrap();
             let state = encode_state_envelope(&envelope);
             assert!(!state.contains(invitation));
             let envelope = decode_state_envelope(&state).unwrap();
-            let plaintext = cipher.decrypt(SystemSecretKind::OAuthLoginState, &envelope).unwrap();
-            let (recovered_verifier, recovered_invite) = parse_login_state_secret(plaintext).unwrap();
+            let plaintext = cipher
+                .decrypt(SystemSecretKind::OAuthLoginState, &envelope)
+                .unwrap();
+            let (recovered_verifier, recovered_invite) =
+                parse_login_state_secret(plaintext).unwrap();
             assert_eq!(recovered_verifier.as_str(), verifier);
             assert_eq!(recovered_invite.as_deref(), invite_code);
         }
@@ -1356,15 +1366,28 @@ mod tests {
         for plaintext in [
             "[\"short-verifier\",\"af-AAAAAAAAAAAAAAAAAAAAAA\"]".to_owned(),
             format!("[\"{}\",\"invalid-invite\"]", "A".repeat(43)),
-            format!("[\"{}\",\"af-AAAAAAAAAAAAAAAAAAAAAA\",\"extra\"]", "A".repeat(43)),
+            format!(
+                "[\"{}\",\"af-AAAAAAAAAAAAAAAAAAAAAA\",\"extra\"]",
+                "A".repeat(43)
+            ),
         ] {
             let secret = PlainSystemSecret::new(plaintext).unwrap();
-            let envelope = cipher.encrypt(SystemSecretKind::OAuthLoginState, &secret).unwrap();
-            let decrypted = cipher.decrypt(SystemSecretKind::OAuthLoginState, &envelope).unwrap();
-            assert!(matches!(parse_login_state_secret(decrypted), Err(OAuthLoginError::Rejected)));
+            let envelope = cipher
+                .encrypt(SystemSecretKind::OAuthLoginState, &secret)
+                .unwrap();
+            let decrypted = cipher
+                .decrypt(SystemSecretKind::OAuthLoginState, &envelope)
+                .unwrap();
+            assert!(matches!(
+                parse_login_state_secret(decrypted),
+                Err(OAuthLoginError::Rejected)
+            ));
         }
-        let secret = login_state_secret(&"A".repeat(43), Some("af-AAAAAAAAAAAAAAAAAAAAAA")).unwrap();
-        let envelope = cipher.encrypt(SystemSecretKind::OAuthLoginState, &secret).unwrap();
+        let secret =
+            login_state_secret(&"A".repeat(43), Some("af-AAAAAAAAAAAAAAAAAAAAAA")).unwrap();
+        let envelope = cipher
+            .encrypt(SystemSecretKind::OAuthLoginState, &secret)
+            .unwrap();
         let mut ciphertext = envelope.ciphertext().to_vec();
         ciphertext[0] ^= 1;
         let tampered = EncryptedCredentialEnvelope::new(
@@ -1373,7 +1396,11 @@ mod tests {
             ciphertext,
         )
         .unwrap();
-        assert!(cipher.decrypt(SystemSecretKind::OAuthLoginState, &tampered).is_err());
+        assert!(
+            cipher
+                .decrypt(SystemSecretKind::OAuthLoginState, &tampered)
+                .is_err()
+        );
     }
 
     #[test]

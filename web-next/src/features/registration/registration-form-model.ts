@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 import type { RegistrationRequestWritable } from '@/lib/api/generated/types.gen'
-import { isValidInvitationCode } from '../auth/invitation-context'
+import { isValidInvitationCode } from '../auth/invitation-context.ts'
 
 export type RegistrationFormValues = {
   username: string

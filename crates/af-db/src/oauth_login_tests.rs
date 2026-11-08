@@ -532,7 +532,9 @@ async fn oauth_invitation_rejection_rolls_back_user_identity_and_wallet()
             assert_eq!(result?, OAuthIdentityCompletion::Rejected);
         }
         assert_eq!(
-            users::Entity::find().count(fixture.pool.connection()).await?,
+            users::Entity::find()
+                .count(fixture.pool.connection())
+                .await?,
             1
         );
         assert_eq!(
