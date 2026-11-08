@@ -45,7 +45,7 @@ Thanks to the following partners for supporting AnyFlows.
 
 ## Installation
 
-Community binary packages currently support Linux amd64 and include the Next frontend. Rust and Node.js are not required at runtime. Download the archive and matching `.sha256` file from [Releases](https://github.com/ChuqiCloud/AnyFlows/releases). Beta releases are intended for testing.
+Release packages are built for Linux amd64/arm64, Windows amd64/arm64, and macOS amd64/arm64. Each package includes the main program, launcher, and Next frontend; Rust and Node.js are not required at runtime. Download the archive and matching `.sha256` file for your OS and architecture from [Releases](https://github.com/ChuqiCloud/AnyFlows/releases). Linux and macOS packages use tar.gz; Windows packages use ZIP. Beta releases are intended for testing.
 
 Replace `VERSION` with the downloaded version, including its prerelease suffix, then verify and extract the archive:
 
@@ -55,6 +55,8 @@ sha256sum --check "$PACKAGE.tar.gz.sha256"
 tar -xzf "$PACKAGE.tar.gz"
 cd "$PACKAGE"
 ```
+
+This example uses the Linux amd64 package. For Linux ARM64, use the matching `linux-arm64` archive.
 
 Follow [binary deployment](docs/deployment-and-configuration.md) to create a service account, configure the database and keys, and start the application with systemd. A single node can use SQLite. The default address is `127.0.0.1:8080`. Create the administrator through an SSH tunnel, then configure an HTTPS reverse proxy.
 
