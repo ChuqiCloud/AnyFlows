@@ -732,6 +732,7 @@ jobs:
           exit 1
 
       - name: Check development workspace with Clippy
+        id: development_clippy
         if: needs.changes.outputs.full != 'true'
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
@@ -774,13 +775,15 @@ jobs:
           cargo test --locked -p af-server --test account_verification_http
 
       - name: Run focused merchant pool regression tests
-        if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
+        if: ${{ !cancelled() && needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true' && steps.development_clippy.outcome == 'success' }}
         run: |
-          cargo test --locked -p af-domain --lib merchant
-          cargo test --locked -p af-billing --lib merchant
-          cargo test --locked -p af-db --lib merchant
-          cargo test --locked -p af-relay --lib merchant
-          cargo test --locked -p af-server --lib merchant
+          failed=0
+          for package in af-domain af-billing af-db af-relay af-server; do
+            if ! cargo test --locked -p "$package" --lib merchant; then
+              failed=1
+            fi
+          done
+          exit "$failed"
 
       - name: Run Clippy
         if: needs.changes.outputs.full == 'true'

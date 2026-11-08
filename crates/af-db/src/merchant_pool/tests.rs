@@ -22,7 +22,7 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
         (3, "merchant-admin"),
     ] {
         pool.connection().execute(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "INSERT INTO users (id,username,status,role,default_group_id,aff_code) VALUES (?,?,1,?,1,?)",
+            "INSERT INTO users (id,username,status,role,default_group_id,aff_code,settings) VALUES (?,?,1,?,1,?,'{}')",
             [id.into(),name.into(),if id==3 {1_i16}else{0_i16}.into(),format!("merchant-aff-{id}").into()])).await?;
     }
     pool.connection().execute_unprepared("INSERT INTO model_prices (model,billing_mode,input_price,output_price) VALUES ('gpt-test',1,2,4)").await?;

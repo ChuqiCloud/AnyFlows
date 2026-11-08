@@ -33,7 +33,7 @@ async fn fixture(label: &str, only_first: bool, ceiling: Option<i64>) -> Fixture
     let database = SqliteTestDatabase::new(label).await;
     for statement in [
         "INSERT INTO groups (id,name,display_name,flags) VALUES (1,'pool-group','Shared pool','{}')".to_owned(),
-        "INSERT INTO users (id,username,status,role,default_group_id,aff_code) VALUES (1,'merchant-a',1,0,1,'ma'),(2,'merchant-b',1,0,1,'mb'),(3,'merchant-admin',1,1,1,'admin'),(4,'merchant-consumer',1,0,1,'consumer')".to_owned(),
+        "INSERT INTO users (id,username,status,role,default_group_id,aff_code,settings) VALUES (1,'merchant-a',1,0,1,'ma','{}'),(2,'merchant-b',1,0,1,'mb','{}'),(3,'merchant-admin',1,1,1,'admin','{}'),(4,'merchant-consumer',1,0,1,'consumer','{}')".to_owned(),
         "INSERT INTO model_prices (model,billing_mode,input_price,output_price) VALUES ('gpt-test',1,2,4)".to_owned(),
         format!("INSERT INTO tokens (id,user_id,key_hash,key_prefix,name,status,remain_quota) VALUES (1,4,'{}','sk-pool','pool-key',1,1000000000)","ab".repeat(32)),
     ] { database.seed().execute_unprepared(&statement).await.unwrap(); }
