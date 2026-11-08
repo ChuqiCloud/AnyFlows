@@ -2001,6 +2001,7 @@ export type MerchantRoute = {
     accept_new_merchants: boolean;
     allow_pool_fallback: boolean;
     enabled: boolean;
+    excluded_merchant_ids: Array<number>;
     id: number;
     max_merchant_attempts: number;
     max_price_ratio_micros: number | null;
@@ -2018,10 +2019,34 @@ export type MerchantRouteMember = {
     priority: number;
     weight: number;
 };
+export type MerchantRoutePreview = {
+    as_of: number;
+    items: Array<MerchantRoutePreviewItem>;
+    quota_per_usd: number;
+};
+export type MerchantRoutePreviewItem = {
+    eligible: boolean;
+    estimated_quota: number | null;
+    merchant_id: number;
+    merchant_name: string;
+    reason: string | null;
+    sales_ratio_micros: number;
+    service_id: number;
+    service_name: string;
+};
+export type MerchantRoutePreviewRequest = {
+    input_tokens: number;
+    model: string;
+    output_tokens: number;
+    protocol: 'openai_chat' | 'openai_responses';
+    route: MerchantRouteWriteRequest;
+    streaming: boolean;
+};
 export type MerchantRouteWriteRequest = {
     accept_new_merchants: boolean;
     allow_pool_fallback: boolean;
     enabled: boolean;
+    excluded_merchant_ids: Array<number>;
     max_merchant_attempts: number;
     max_price_ratio_micros: number | null;
     members: Array<MerchantRouteMember>;
@@ -4906,6 +4931,39 @@ export type GetAdminMerchantServiceResponses = {
     200: MerchantOwnedService;
 };
 export type GetAdminMerchantServiceResponse = GetAdminMerchantServiceResponses[keyof GetAdminMerchantServiceResponses];
+export type ResumeAdminMerchantServiceData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-services/{id}/resume';
+};
+export type ResumeAdminMerchantServiceErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ResumeAdminMerchantServiceError = ResumeAdminMerchantServiceErrors[keyof ResumeAdminMerchantServiceErrors];
+export type ResumeAdminMerchantServiceResponses = {
+    200: MerchantOwnedService;
+};
+export type ResumeAdminMerchantServiceResponse = ResumeAdminMerchantServiceResponses[keyof ResumeAdminMerchantServiceResponses];
 export type ReviewAdminMerchantServiceData = {
     body: MerchantReviewRequest;
     path: {
@@ -7374,6 +7432,23 @@ export type CreateMerchantRouteResponses = {
     201: MerchantRoute;
 };
 export type CreateMerchantRouteResponse = CreateMerchantRouteResponses[keyof CreateMerchantRouteResponses];
+export type PreviewMerchantRouteData = {
+    body: MerchantRoutePreviewRequest;
+    path?: never;
+    query?: never;
+    url: '/api/merchant-pool/routes/preview';
+};
+export type PreviewMerchantRouteErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    500: unknown;
+};
+export type PreviewMerchantRouteResponses = {
+    200: MerchantRoutePreview;
+};
+export type PreviewMerchantRouteResponse = PreviewMerchantRouteResponses[keyof PreviewMerchantRouteResponses];
 export type DeleteMerchantRouteData = {
     body?: never;
     path: {

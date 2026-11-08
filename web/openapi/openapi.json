@@ -6686,6 +6686,103 @@
         ]
       }
     },
+    "/api/admin/merchant-services/{id}/resume": {
+      "post": {
+        "tags": [
+          "商户共享池"
+        ],
+        "operationId": "resumeAdminMerchantService",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Merchant pool operation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantOwnedService"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/merchant-services/{id}/review": {
       "post": {
         "tags": [
@@ -16724,6 +16821,56 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MerchantRoute"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Invalid session"
+          },
+          "403": {
+            "description": "Unavailable"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "500": {
+            "description": "Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/merchant-pool/routes/preview": {
+      "post": {
+        "tags": [
+          "商户共享池"
+        ],
+        "operationId": "previewMerchantRoute",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MerchantRoutePreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantRoutePreview"
                 }
               }
             }
@@ -38307,6 +38454,7 @@
           "max_merchant_attempts",
           "max_price_ratio_micros",
           "members",
+          "excluded_merchant_ids",
           "allow_pool_fallback",
           "accept_new_merchants",
           "id"
@@ -38320,6 +38468,14 @@
           },
           "enabled": {
             "type": "boolean"
+          },
+          "excluded_merchant_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "maxItems": 128
           },
           "id": {
             "type": "integer",
@@ -38414,6 +38570,127 @@
         },
         "additionalProperties": false
       },
+      "MerchantRoutePreview": {
+        "type": "object",
+        "required": [
+          "items",
+          "quota_per_usd",
+          "as_of"
+        ],
+        "properties": {
+          "as_of": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MerchantRoutePreviewItem"
+            }
+          },
+          "quota_per_usd": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MerchantRoutePreviewItem": {
+        "type": "object",
+        "required": [
+          "merchant_id",
+          "merchant_name",
+          "service_id",
+          "service_name",
+          "sales_ratio_micros",
+          "estimated_quota",
+          "eligible",
+          "reason"
+        ],
+        "properties": {
+          "eligible": {
+            "type": "boolean"
+          },
+          "estimated_quota": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "format": "int64"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "merchant_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "merchant_name": {
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sales_ratio_micros": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "service_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "service_name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MerchantRoutePreviewRequest": {
+        "type": "object",
+        "required": [
+          "route",
+          "model",
+          "protocol",
+          "streaming",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "properties": {
+          "input_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "model": {
+            "type": "string"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "openai_chat",
+              "openai_responses"
+            ]
+          },
+          "route": {
+            "$ref": "#/components/schemas/MerchantRouteWriteRequest"
+          },
+          "streaming": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "MerchantRouteWriteRequest": {
         "type": "object",
         "required": [
@@ -38424,6 +38701,7 @@
           "max_merchant_attempts",
           "max_price_ratio_micros",
           "members",
+          "excluded_merchant_ids",
           "allow_pool_fallback",
           "accept_new_merchants"
         ],
@@ -38436,6 +38714,14 @@
           },
           "enabled": {
             "type": "boolean"
+          },
+          "excluded_merchant_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "maxItems": 128
           },
           "max_merchant_attempts": {
             "type": "integer",
