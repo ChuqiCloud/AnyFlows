@@ -13,7 +13,7 @@ test('pagination bounds metadata and preserves template order', () => {
   assert.equal(first.items.length, 8)
   assert.equal(first.items[0].id, 'embedded-next')
   assert.equal(first.pages, 3)
-  assert.equal(last.items.length, 7)
+  assert.equal(last.items.length, 6)
   assert.equal(new Set([...first.items, ...paginateTemplates(templates, 'all', '', 2, 8).items, ...last.items].map((item) => item.id)).size, 22)
 })
 

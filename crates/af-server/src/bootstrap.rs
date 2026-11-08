@@ -78,13 +78,12 @@ use af_db::{
     DebugTraceSnapshotCipherError, EmailSettingsRepository, EmailSettingsRepositoryConfigError,
     ImageHistoryRepository, ImageHistoryRepositoryConfigError, InitialSetupRepository,
     InitialSetupRepositoryConfigError, InitialSetupRepositoryError, MigrationOptions,
-    ModelPriceRepository, ModelProviderCatalogRepository,
-    ModelProviderCatalogRepositoryError, ModelSyncRepository, NetworkSettingsMode,
-    NetworkSettingsRecord, NetworkSettingsRepository, NetworkSettingsRepositoryConfigError,
-    OAuthLoginRepository, OAuthLoginRepositoryError, PasskeyRepository, PasswordResetRepository,
-    PasswordResetRepositoryConfigError, PaymentSecretUpdate, PaymentSettingsRepository,
-    PaymentSettingsRepositoryConfigError, PaymentSettingsRepositoryError,
-    PaymentSettingsWriteRecord, PlaygroundConversationRepository,
+    ModelPriceRepository, ModelProviderCatalogRepository, ModelProviderCatalogRepositoryError,
+    ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
+    NetworkSettingsRepositoryConfigError, OAuthLoginRepository, OAuthLoginRepositoryError,
+    PasskeyRepository, PasswordResetRepository, PasswordResetRepositoryConfigError,
+    PaymentSecretUpdate, PaymentSettingsRepository, PaymentSettingsRepositoryConfigError,
+    PaymentSettingsRepositoryError, PaymentSettingsWriteRecord, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
     RedemptionRepositoryConfigError, RefundRepository, RefundRepositoryConfigError,
@@ -849,7 +848,10 @@ async fn ensure_next_frontend_default(
         .await
         .map_err(BootstrapError::SiteSettingsRead)?;
     // Empty and Classic selections from older installations now resolve to Next.
-    if matches!(site_settings.frontend_template_id(), None | Some("embedded")) {
+    if matches!(
+        site_settings.frontend_template_id(),
+        None | Some("embedded")
+    ) {
         site_settings_repository
             .set_frontend_template_id(Some(NEW_INSTALL_FRONTEND_TEMPLATE_ID.to_owned()))
             .await

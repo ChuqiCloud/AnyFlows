@@ -634,12 +634,8 @@ mod tests {
         let next: Arc<dyn FrontendAssetSource> = Arc::new(TemplateSnapshot {
             assets: HashMap::from([("index.html".to_owned(), FrontendAsset::from_bytes("next"))]),
         });
-        let manager = FrontendTemplateManager::new(
-            root.clone(),
-            Arc::clone(&next),
-            repository.clone(),
-            None,
-        );
+        let manager =
+            FrontendTemplateManager::new(root.clone(), Arc::clone(&next), repository.clone(), None);
         let catalog = manager.list().await.unwrap();
         assert_eq!(
             catalog
