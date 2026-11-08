@@ -2165,7 +2165,8 @@ mod tests {
                 0_i64.into(),
             ])
             .to_owned();
-        database.seed()
+        database
+            .seed()
             .execute(database.seed().get_database_backend().build(&insert))
             .await
             .unwrap();

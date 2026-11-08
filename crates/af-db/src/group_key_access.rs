@@ -14,7 +14,10 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool,
-    entity::{group_group_grants, group_key_policies, groups, merchant_pools, tokens, user_group_grants, users},
+    entity::{
+        group_group_grants, group_key_policies, groups, merchant_pools, tokens, user_group_grants,
+        users,
+    },
 };
 
 /// 一次策略写入允许指定的最大用户数。
