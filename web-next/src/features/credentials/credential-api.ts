@@ -33,6 +33,8 @@ export type CredentialUsageSnapshot = {
   fetched_at: number | null
 }
 
+const CREDENTIAL_USAGE_REFETCH_INTERVAL_MS = 60_000
+
 export async function getAdminCredentialUsage(channelId: number, credentialId: number, signal?: AbortSignal) {
   const result = await apiClient.get<{ 200: CredentialUsageSnapshot }, unknown, true>({
     security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }],
@@ -41,6 +43,15 @@ export async function getAdminCredentialUsage(channelId: number, credentialId: n
     signal,
   })
   return result.data
+}
+
+export function useAdminCredentialUsage(channelId: number, credentialId: number) {
+  return useQuery({
+    queryKey: [...adminChannelCredentialsQueryKey(channelId), 'usage', credentialId],
+    refetchInterval: CREDENTIAL_USAGE_REFETCH_INTERVAL_MS,
+    refetchIntervalInBackground: false,
+    queryFn: ({ signal }) => getAdminCredentialUsage(channelId, credentialId, signal),
+  })
 }
 
 export async function importAdminCredentialFiles(channelId: number, files: Array<{ name: string; content: string }>, kind: 'api_key' | 'oauth', signal?: AbortSignal) {
