@@ -8,35 +8,33 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const frontend = process.argv[2]
-assert.ok(['web', 'web-next'].includes(frontend))
+assert.equal(frontend, 'web-next')
 assert.ok(process.env.PLAYWRIGHT_PACKAGE_ROOT, 'Browser tests run in the remote CI tool environment')
 const require = createRequire(resolve(process.env.PLAYWRIGHT_PACKAGE_ROOT, 'package.json'))
 const { chromium } = require('playwright')
 const directory = resolve(root, frontend)
-const port = frontend === 'web' ? 4173 : 4174
+const port = 4174
 const html = resolve(directory, '.gallery-smoke.html')
 const entry = resolve(directory, '.gallery-smoke.tsx')
-const isNext = frontend === 'web-next'
 const errors = []
 let server
 let browser
 let serverOutput = ''
 
 try {
-  // Match the real index.html bootstrap: the site defaults to dark before
-  // React or HeroUI mounts, so the two token systems start in the same mode.
+  // Match the real index.html bootstrap before React and HeroUI mount.
   await writeFile(html, '<!doctype html><html lang="zh" class="dark"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Frontend gallery CI</title><div id="root"></div><script type="module" src="/.gallery-smoke.tsx"></script></html>')
   await writeFile(entry, `
     import React from 'react';
     import { createRoot } from 'react-dom/client';
     import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-    ${isNext ? "import { HeroUIProvider } from '@heroui/react';" : ''}
+    import { HeroUIProvider } from '@heroui/react';
     import './src/index.css';
     import './src/i18n';
     import { FrontendTemplatePanel } from './src/features/site-settings/frontend-template-panel';
     createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        ${isNext ? '<HeroUIProvider>' : ''}<main style={{ padding: '16px', maxWidth: '1280px', margin: 'auto' }}><FrontendTemplatePanel /></main>${isNext ? '</HeroUIProvider>' : ''}
+        <HeroUIProvider><main style={{ padding: '16px', maxWidth: '1280px', margin: 'auto' }}><FrontendTemplatePanel /></main></HeroUIProvider>
       </QueryClientProvider>
     );
   `)
@@ -55,23 +53,21 @@ try {
   await page.addInitScript(() => {
     localStorage.setItem('anyflows.locale', 'zh')
   })
-  let activeId = null
+  let activeId = 'theme-0'
   let catalogRequests = 0
   let previewRequests = 0
   let activations = 0
   const templates = [
-    { id: 'embedded', name: 'AnyFlows Classic', builtin: true },
     { id: 'embedded-next', name: 'AnyFlows Next', builtin: true },
     ...Array.from({ length: 24 }, (_, index) => ({ id: `theme-${index}`, name: `Theme ${index}`, builtin: false })),
   ].map((template) => ({ ...template, version: '1.0', api_contract: '0.2', valid: true, error: null, author: 'CI fixture', description: null, preview_url: `/api/admin/frontend-templates/${template.id}/preview` }))
-  const image = await readFile(resolve(root, 'crates/af-server/src/frontend_previews/classic.svg'))
   const nextImage = await readFile(resolve(root, 'crates/af-server/src/frontend_previews/next.svg'))
   await page.route((url) => url.pathname.startsWith('/api/'), async (route) => {
     const request = route.request()
     const path = new URL(request.url()).pathname
     if (path.endsWith('/preview')) {
       previewRequests += 1
-      await route.fulfill({ contentType: 'image/svg+xml', body: path.includes('/embedded-next/') ? nextImage : image })
+      await route.fulfill({ contentType: 'image/svg+xml', body: nextImage })
       return
     }
     if (path.endsWith('/active')) { activations += 1; activeId = request.postDataJSON().template_id }
@@ -80,33 +76,29 @@ try {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ active_id: activeId, templates }) })
   })
   await page.goto(`http://127.0.0.1:${port}/.gallery-smoke.html`)
-  await page.getByRole('heading', { name: 'AnyFlows Classic', exact: true }).waitFor()
+  await page.getByRole('heading', { name: 'AnyFlows Next', exact: true }).waitFor()
   await page.locator('article img').first().waitFor()
   assert.equal(await page.locator('article').count(), 8)
   assert.ok(previewRequests > 0 && previewRequests <= 8, `Initial page fetched ${previewRequests} previews`)
   assert.equal(catalogRequests, 1)
   await page.getByRole('button', { name: '下一页', exact: true }).click()
-  await page.getByRole('heading', { name: 'Theme 6', exact: true }).waitFor()
+  await page.getByRole('heading', { name: 'Theme 7', exact: true }).waitFor()
   assert.equal(await page.locator('article').count(), 8)
   assert.equal(catalogRequests, 1, 'Pagination must reuse catalog metadata')
   for (const size of [12, 8]) {
-    if (isNext) {
-      const pageSize = page.locator('footer button[aria-haspopup="listbox"]')
-      assert.equal((await pageSize.innerText()).trim(), size === 12 ? '8' : '12', 'The selected page size must be visible')
-      await pageSize.click()
-      await page.getByRole('option', { name: String(size), exact: true }).click()
-      await page.getByRole('listbox').waitFor({ state: 'hidden' })
-      assert.equal((await pageSize.innerText()).trim(), String(size))
-    } else {
-      await page.getByRole('combobox', { name: '每页', exact: true }).selectOption(String(size))
-    }
+    const pageSize = page.locator('footer button[aria-haspopup="listbox"]')
+    assert.equal((await pageSize.innerText()).trim(), size === 12 ? '8' : '12', 'The selected page size must be visible')
+    await pageSize.click()
+    await page.getByRole('option', { name: String(size), exact: true }).click()
+    await page.getByRole('listbox').waitFor({ state: 'hidden' })
+    assert.equal((await pageSize.innerText()).trim(), String(size))
     await page.waitForFunction((count) => document.querySelectorAll('article').length === count, size)
-    await page.getByRole('heading', { name: 'AnyFlows Classic', exact: true }).waitFor()
+    await page.getByRole('heading', { name: 'AnyFlows Next', exact: true }).waitFor()
   }
   assert.equal(catalogRequests, 1, 'Page-size changes must reuse catalog metadata')
   await page.getByRole('button', { name: /内置前端/ }).click()
-  await page.getByRole('heading', { name: 'AnyFlows Classic', exact: true }).waitFor()
-  assert.equal(await page.locator('article').count(), 2)
+  await page.getByRole('heading', { name: 'AnyFlows Next', exact: true }).waitFor()
+  assert.equal(await page.locator('article').count(), 1)
   await page.getByRole('button', { name: '预览', exact: true }).first().click()
   await page.getByRole('dialog').waitFor()
   assert.equal(activations, 0, 'Preview must not activate a template')

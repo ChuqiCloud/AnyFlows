@@ -33,6 +33,6 @@ Docker 仅提供版本检测和发布说明；后端和命令行同时禁止替�
 
 ## 发布包
 
-公开 tag 发布为 Linux glibc、Windows MSVC、macOS 分别构建 amd64 和 arm64 原生包，包含 Classic、Next 内置前端；Windows 使用 ZIP，其他平台使用 tar.gz，同时发布原始二进制及各自 SHA-256 文件。Linux 包在 Debian 12（Bookworm）环境中构建，需要 glibc 2.36 或更新版本及 OpenSSL 3 运行库。macOS 包要求 macOS 15 或更新版本，并静态链接 OpenSSL；Windows 包静态链接 OpenSSL 与 MSVC C 运行库。
+公开 tag 发布为 Linux glibc、Windows MSVC、macOS 分别构建 amd64 和 arm64 原生包，包含内置 Next 前端；Windows 使用 ZIP，其他平台使用 tar.gz，同时发布原始二进制及各自 SHA-256 文件。Linux 包在 Debian 12（Bookworm）环境中构建，需要 glibc 2.36 或更新版本及 OpenSSL 3 运行库。macOS 包要求 macOS 15 或更新版本，并静态链接 OpenSSL；Windows 包静态链接 OpenSSL 与 MSVC C 运行库。
 
 自动识别区分操作系统、CPU 架构及 Linux libc，不会给 musl 构建选择 glibc 文件。未发布对应平台包时明确显示无匹配包，保留手动部署方式。

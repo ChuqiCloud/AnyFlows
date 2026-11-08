@@ -11,8 +11,8 @@ on:
       frontend:
         description: Frontend to check
         type: choice
-        default: all
-        options: [all, web, web-next]
+        default: web-next
+        options: [web-next]
 
 permissions:
   contents: read
@@ -70,7 +70,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        frontend: ${{ fromJSON(inputs.frontend == 'web' && '["web"]' || inputs.frontend == 'web-next' && '["web-next"]' || '["web","web-next"]') }}
+        frontend: [web-next]
     steps:
       - name: Check out source
         shell: bash
