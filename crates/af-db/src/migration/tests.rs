@@ -122,6 +122,14 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         .await?
         .ok_or("authentication settings must survive the upgrade")?;
     assert_eq!(row.try_get::<i64>("", "invitation_invitee_quota")?, 0);
+    let verification_settings = crate::AccountVerificationSettingsRepository::new(
+        pool.clone(),
+        std::time::Duration::from_secs(10),
+    )
+    .settings()
+    .await?;
+    assert!(!verification_settings.require_verification_for_topup);
+    assert!(!verification_settings.require_verification_for_api);
     let sql = match backend {
         DbBackend::MySql => {
             "SELECT `ratio_micros`, `peak_ratio_micros`, `peak_start`, `peak_end`, `peak_windows` FROM `groups` WHERE `id` = 1"

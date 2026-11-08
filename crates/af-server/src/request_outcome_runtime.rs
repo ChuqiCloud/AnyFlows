@@ -335,7 +335,9 @@ impl std::fmt::Debug for RequestOutcomeRuntime {
 
 fn classify_error(error: &AfError) -> RequestFailureKind {
     match error {
-        AfError::InvalidRequest | AfError::InvalidApiKey => RequestFailureKind::InvalidRequest,
+        AfError::InvalidRequest | AfError::InvalidApiKey | AfError::AccountVerificationRequired => {
+            RequestFailureKind::InvalidRequest
+        }
         AfError::ModelNotAllowed | AfError::ModelUnavailable => RequestFailureKind::ModelNotAllowed,
         AfError::InsufficientQuota => RequestFailureKind::InsufficientQuota,
         AfError::QuotaWindowLimited { .. } => RequestFailureKind::QuotaLimited,

@@ -348,6 +348,8 @@ string_enum! {
         InvalidRequest => "invalid_request",
         /// API Key 无效、过期或已禁用。
         InvalidApiKey => "invalid_api_key",
+        /// 当前用户尚未满足实名认证准入要求。
+        AccountVerificationRequired => "account_verification_required",
         /// 可用额度不足。
         InsufficientQuota => "insufficient_quota",
         /// 请求的模型不存在或不可用。

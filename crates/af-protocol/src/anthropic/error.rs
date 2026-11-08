@@ -35,6 +35,7 @@ const fn anthropic_error_type(code: PublicErrorCode) -> &'static str {
     match code {
         PublicErrorCode::InvalidRequest => "invalid_request_error",
         PublicErrorCode::InvalidApiKey => "authentication_error",
+        PublicErrorCode::AccountVerificationRequired => "permission_error",
         PublicErrorCode::InsufficientQuota => "billing_error",
         PublicErrorCode::ModelNotFound | PublicErrorCode::TaskNotFound => "not_found_error",
         PublicErrorCode::IdempotencyConflict => "invalid_request_error",

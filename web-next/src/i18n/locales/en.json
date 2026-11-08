@@ -1,4 +1,17 @@
 {
+  "verificationAccess": {
+    "topup": "Complete individual or business identity verification before starting an online or redemption-code top-up.",
+    "api": "Complete individual or business identity verification before using a personal key or the playground to call APIs.",
+    "action": "Verify identity",
+    "settings": {
+      "title": "Identity requirements",
+      "description": "Approved individual or business verification meets the requirement. Enable either switch independently or enable both.",
+      "topup": "Require verification before top-ups",
+      "topupHint": "Applies to new online and redemption-code top-ups. Existing payment notifications, statements, and balance queries remain available.",
+      "api": "Require verification before API calls",
+      "apiHint": "Applies to personal keys and the playground. Users can still sign in, manage keys, and complete identity verification."
+    }
+  },
   "runtimeStatus": {
     "eyebrow": "SYSTEM MONITOR",
     "title": "Runtime status",
@@ -3576,6 +3589,7 @@
     "error": {
       "title": "The task request could not be completed",
       "codes": {
+        "account_verification_required": "Complete individual or business identity verification before calling APIs.",
         "invalid_api_key": "The API key is invalid, expired, or disabled.",
         "task_not_found": "The task does not exist within the current user scope.",
         "idempotency_conflict": "These settings were already used for another submission. Start a new task.",
@@ -3751,6 +3765,7 @@
     },
     "errors": {
       "invalid_key": "The API key is invalid, disabled, or unavailable from this source.",
+      "account_verification_required": "Complete individual or business identity verification before calling APIs.",
       "insufficient_quota": "The API key does not have enough quota for this request.",
       "rate_limited": "The API key has reached a request limit. Try again later.",
       "model_unavailable": "This key cannot use the selected model, or the model is unavailable.",

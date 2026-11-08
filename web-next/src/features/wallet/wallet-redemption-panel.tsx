@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { ApiError } from '@/lib/api'
 import type { UserRedemptionResult } from '@/lib/api/generated/types.gen'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
+import { isVerificationRequiredError, useVerificationAccess, VerificationAccessNotice } from '@/features/account-verification/verification-access-notice'
 import { useRedeemUserCode } from './wallet-api'
 
 type RedemptionValues = {
@@ -18,6 +19,7 @@ type RedemptionValues = {
 export function WalletRedemptionPanel() {
   const { t } = useTranslation()
   const mutation = useRedeemUserCode()
+  const verificationRequired = useVerificationAccess('topup', mutation.error)
   const { formatQuota } = useBalanceDisplay()
   const [result, setResult] = useState<UserRedemptionResult>()
   const form = useForm<RedemptionValues>({
@@ -28,9 +30,14 @@ export function WalletRedemptionPanel() {
   })
 
   const submit = form.handleSubmit(async ({ code }) => {
-    const redeemed = await mutation.mutateAsync({ code })
-    setResult(redeemed)
-    form.reset()
+    if (verificationRequired) return
+    try {
+      const redeemed = await mutation.mutateAsync({ code })
+      setResult(redeemed)
+      form.reset()
+    } catch {
+      // The mutation keeps the failure visible without leaving an unhandled rejection.
+    }
   })
   const errorKey = redemptionErrorKey(apiErrorCode(mutation.error))
 
@@ -46,6 +53,7 @@ export function WalletRedemptionPanel() {
             <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('wallet.redemption.description')}</p>
           </div>
         </div>
+        {verificationRequired ? <VerificationAccessNotice scope="topup" /> : null}
         <form className="flex flex-col gap-2" onSubmit={(event) => void submit(event)}>
           <div className="min-w-0">
             <label className="sr-only" htmlFor="wallet-redemption-code">{t('wallet.redemption.field')}</label>
@@ -54,7 +62,7 @@ export function WalletRedemptionPanel() {
               placeholder="rc-af-…"
               autoComplete="off"
               autoCapitalize="none"
-              isDisabled={mutation.isPending}
+              isDisabled={mutation.isPending || verificationRequired}
               size="sm"
               spellCheck="false"
               classNames={{ input: 'font-mono text-xs' }}
@@ -69,7 +77,7 @@ export function WalletRedemptionPanel() {
               <p role="alert" className="mt-1 text-xs text-destructive">{form.formState.errors.code.message}</p>
             ) : null}
           </div>
-          <Button type="submit" color="primary" isDisabled={mutation.isPending}>
+          <Button type="submit" color="primary" isDisabled={mutation.isPending || verificationRequired}>
             {mutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <TicketCheck className="size-4" aria-hidden="true" />}
             {t(mutation.isPending ? 'wallet.redemption.redeeming' : 'wallet.redemption.submit')}
           </Button>
@@ -87,7 +95,7 @@ export function WalletRedemptionPanel() {
               balance: formatQuota(result.balance_after),
             })}</span>
           </div>
-        ) : mutation.isError ? (
+        ) : mutation.isError && !isVerificationRequiredError(mutation.error) ? (
           <p role="alert" className="border-t border-[var(--hairline)] pt-3 text-xs text-destructive">
             {t(`wallet.redemption.errors.${errorKey}`)}
           </p>

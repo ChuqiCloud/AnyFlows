@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Input, Switch, Textarea } from '@heroui/react'
 import { RefreshCw, Save } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 import { apiClient, ApiError } from '@/lib/api'
 import { jsonBodySerializer } from '@/lib/api/generated/client'
@@ -9,9 +10,11 @@ import { sessionSecurity, verificationGet } from './account-verification-api'
 
 type Settings = { source: 'environment' | 'database'; manual_enabled: boolean; enabled: boolean; app_id: string | null;
   individual_manual_enabled: boolean; enterprise_manual_enabled: boolean; individual_reason_required: boolean; enterprise_reason_required: boolean;
+  require_verification_for_topup: boolean; require_verification_for_api: boolean;
   private_key_configured: boolean; public_key_configured: boolean; gateway_url: string;
   biz_code: string; timeout_secs: number; version: number }
 type Draft = { manual_enabled: boolean; individual_manual_enabled: boolean; enterprise_manual_enabled: boolean; individual_reason_required: boolean; enterprise_reason_required: boolean; enabled: boolean; app_id: string; private_key: string; public_key: string;
+  require_verification_for_topup: boolean; require_verification_for_api: boolean;
   gateway_url: string; biz_code: string; timeout_secs: number }
 type SettingsRequest = Omit<Draft, 'private_key' | 'public_key'> & {
   private_key?: string; public_key?: string; expected_version: number }
@@ -20,11 +23,14 @@ const toDraft = (settings: Settings): Draft => ({ manual_enabled: settings.manua
   individual_manual_enabled: settings.individual_manual_enabled ?? settings.manual_enabled,
   enterprise_manual_enabled: settings.enterprise_manual_enabled ?? settings.manual_enabled,
   individual_reason_required: settings.individual_reason_required ?? true,
+  require_verification_for_topup: settings.require_verification_for_topup ?? false,
+  require_verification_for_api: settings.require_verification_for_api ?? false,
   enterprise_reason_required: settings.enterprise_reason_required ?? true, enabled: settings.enabled,
   app_id: settings.app_id ?? '', private_key: '', public_key: '', gateway_url: settings.gateway_url,
   biz_code: settings.biz_code, timeout_secs: settings.timeout_secs })
 
 export function VerificationSettingsPanel() {
+  const { t } = useTranslation()
   const client = useQueryClient()
   const query = useQuery({ queryKey: settingsKey, queryFn: ({ signal }) =>
     verificationGet<Settings>('/api/admin/account-verification-settings', signal), retry: false,
@@ -51,6 +57,14 @@ export function VerificationSettingsPanel() {
     <header><h2 className="text-lg font-semibold">实名认证配置</h2><p className="mt-1 text-sm text-default-500">在这里控制用户可选择的认证方式。关闭某项后，用户提交页面不会再显示该方式。</p><a className="mt-2 inline-block text-sm underline underline-offset-4" href="/console/account-verification-reviews">审核个人与企业账号认证</a></header>
     {environment ? <p className="border-l-2 border-warning px-3 text-sm text-default-500">当前使用启动配置。首次在线保存后以后台设置为准；若启用支付宝，请重新填写两把密钥。</p> : null}
     <form onSubmit={submit} className="grid max-w-3xl gap-4">
+      <section className="grid gap-3 rounded-xl border border-default-200 bg-content1 p-4">
+        <h3 className="font-medium">{t('verificationAccess.settings.title')}</h3>
+        <p className="text-sm text-default-500">{t('verificationAccess.settings.description')}</p>
+        <Switch aria-label={t('verificationAccess.settings.topup')} isSelected={draft.require_verification_for_topup} onValueChange={(require_verification_for_topup) => setDraft({ ...draft, require_verification_for_topup })}>{t('verificationAccess.settings.topup')}</Switch>
+        <p className="text-xs text-default-500">{t('verificationAccess.settings.topupHint')}</p>
+        <Switch aria-label={t('verificationAccess.settings.api')} isSelected={draft.require_verification_for_api} onValueChange={(require_verification_for_api) => setDraft({ ...draft, require_verification_for_api })}>{t('verificationAccess.settings.api')}</Switch>
+        <p className="text-xs text-default-500">{t('verificationAccess.settings.apiHint')}</p>
+      </section>
       <section className="grid gap-3 rounded-xl border border-default-200 bg-content1 p-4"><h3 className="font-medium">个人认证</h3><Switch aria-label="个人认证人工审核" isSelected={draft.individual_manual_enabled} onValueChange={(individual_manual_enabled) => setDraft({ ...draft, individual_manual_enabled })}>启用人工审核</Switch><Switch aria-label="个人认证支付宝" isSelected={draft.enabled} onValueChange={(enabled) => setDraft({ ...draft, enabled })}>启用支付宝实名认证</Switch><Switch aria-label="个人认证理由必填" isSelected={draft.individual_reason_required} onValueChange={(individual_reason_required) => setDraft({ ...draft, individual_reason_required })}>要求填写认证理由</Switch></section>
       <section className="grid gap-3 rounded-xl border border-default-200 bg-content1 p-4"><h3 className="font-medium">企业认证</h3><Switch aria-label="企业认证人工审核" isSelected={draft.enterprise_manual_enabled} onValueChange={(enterprise_manual_enabled) => setDraft({ ...draft, enterprise_manual_enabled })}>启用人工审核</Switch><Switch aria-label="企业认证理由必填" isSelected={draft.enterprise_reason_required} onValueChange={(enterprise_reason_required) => setDraft({ ...draft, enterprise_reason_required })}>要求填写认证理由</Switch></section>
       <Input label="应用 ID" value={draft.app_id} maxLength={128} onValueChange={(app_id) => setDraft({ ...draft, app_id })} />

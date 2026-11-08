@@ -1,4 +1,4 @@
-use std::{fmt, future::Future, num::NonZeroU32, pin::Pin};
+use std::{fmt, future::Future, num::NonZeroU32, pin::Pin, sync::Arc};
 
 use af_db::{TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository};
 use af_domain::{
@@ -7,7 +7,7 @@ use af_domain::{
 };
 use thiserror::Error;
 
-use crate::ApiKeyDigest;
+use crate::{ApiKeyDigest, VerificationAccessError, VerificationAccessService};
 
 /// 一次令牌认证调用的对象安全 Future。
 pub type TokenAuthenticationFuture<'a> = Pin<
@@ -105,6 +105,9 @@ pub enum TokenAuthenticationError {
     /// 凭据不存在，或令牌、用户、有效分组、客户端 IP 不允许继续访问。
     #[error("API Key 无效")]
     InvalidApiKey,
+    /// 用户尚未满足管理员配置的实名调用要求。
+    #[error("请先完成实名认证再调用接口")]
+    VerificationRequired,
     /// 持久化查询失败、超时或数据违反鉴权不变量。
     #[error("令牌认证内部失败")]
     Internal,
@@ -140,13 +143,33 @@ pub trait TokenAuthenticator: Send + Sync {
 /// 使用 `af-db` 仓储完成令牌与客户端 IP 认证的生产实现。
 pub struct DatabaseTokenAuthenticator {
     repository: TokenAuthRepository,
+    verification_access: Option<Arc<VerificationAccessService>>,
 }
 
 impl DatabaseTokenAuthenticator {
     /// 绑定已配置硬超时的令牌仓储。
     #[must_use]
     pub const fn new(repository: TokenAuthRepository) -> Self {
-        Self { repository }
+        Self {
+            repository,
+            verification_access: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_verification_access(mut self, access: Arc<VerificationAccessService>) -> Self {
+        self.verification_access = Some(access);
+        self
+    }
+
+    async fn ensure_verification(&self, user: UserId) -> Result<(), TokenAuthenticationError> {
+        if let Some(access) = &self.verification_access {
+            access.ensure_api(user).await.map_err(|error| match error {
+                VerificationAccessError::Required => TokenAuthenticationError::VerificationRequired,
+                VerificationAccessError::Unavailable => TokenAuthenticationError::Internal,
+            })?;
+        }
+        Ok(())
     }
 }
 
@@ -166,9 +189,12 @@ impl TokenAuthenticator for DatabaseTokenAuthenticator {
                     user_concurrency,
                     user_rpm_limit,
                     group_rpm_limit,
-                }) => Ok(TokenAuthentication::new(principal, model_policy)
-                    .with_user_concurrency(user_concurrency)
-                    .with_rpm_limits(user_rpm_limit, group_rpm_limit)),
+                }) => {
+                    self.ensure_verification(principal.user_id()).await?;
+                    Ok(TokenAuthentication::new(principal, model_policy)
+                        .with_user_concurrency(user_concurrency)
+                        .with_rpm_limits(user_rpm_limit, group_rpm_limit))
+                }
                 Ok(TokenAuthLookupOutcome::Rejected) => {
                     Err(TokenAuthenticationError::InvalidApiKey)
                 }
@@ -189,9 +215,12 @@ impl TokenAuthenticator for DatabaseTokenAuthenticator {
                     user_concurrency,
                     user_rpm_limit,
                     group_rpm_limit,
-                }) => Ok(TokenAuthentication::new(principal, model_policy)
-                    .with_user_concurrency(user_concurrency)
-                    .with_rpm_limits(user_rpm_limit, group_rpm_limit)),
+                }) => {
+                    self.ensure_verification(principal.user_id()).await?;
+                    Ok(TokenAuthentication::new(principal, model_policy)
+                        .with_user_concurrency(user_concurrency)
+                        .with_rpm_limits(user_rpm_limit, group_rpm_limit))
+                }
                 Ok(TokenAuthLookupOutcome::Rejected) => {
                     Err(TokenAuthenticationError::InvalidApiKey)
                 }

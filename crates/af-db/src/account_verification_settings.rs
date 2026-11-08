@@ -12,6 +12,10 @@ use crate::{
     entity::{EncryptedJson, account_verification_settings as settings},
 };
 
+#[cfg(test)]
+#[path = "account_verification_settings_tests.rs"]
+mod tests;
+
 #[derive(Clone)]
 pub struct AccountVerificationSettingsRepository {
     pool: DatabasePool,
@@ -36,6 +40,8 @@ pub struct AccountVerificationSettingsRecord {
     pub enterprise_manual_enabled: bool,
     pub individual_reason_required: bool,
     pub enterprise_reason_required: bool,
+    pub require_verification_for_topup: bool,
+    pub require_verification_for_api: bool,
     pub enabled: bool,
     pub app_id: Option<String>,
     pub credentials: Option<EncryptedCredentialEnvelope>,
@@ -111,6 +117,14 @@ impl AccountVerificationSettingsRepository {
                     settings::Column::EnterpriseReasonRequired,
                     Expr::value(record.enterprise_reason_required),
                 )
+                .col_expr(
+                    settings::Column::RequireVerificationForTopup,
+                    Expr::value(record.require_verification_for_topup),
+                )
+                .col_expr(
+                    settings::Column::RequireVerificationForApi,
+                    Expr::value(record.require_verification_for_api),
+                )
                 .col_expr(settings::Column::AlipayEnabled, Expr::value(record.enabled))
                 .col_expr(settings::Column::AlipayAppId, Expr::value(record.app_id))
                 .col_expr(
@@ -160,6 +174,8 @@ fn record_from_model(
         enterprise_manual_enabled: model.enterprise_manual_enabled,
         individual_reason_required: model.individual_reason_required,
         enterprise_reason_required: model.enterprise_reason_required,
+        require_verification_for_topup: model.require_verification_for_topup,
+        require_verification_for_api: model.require_verification_for_api,
         enabled: model.alipay_enabled,
         app_id: model.alipay_app_id.map(|value| value.as_str().to_owned()),
         credentials: model

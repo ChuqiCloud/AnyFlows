@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import { useVerificationAccess, VerificationAccessNotice } from '@/features/account-verification/verification-access-notice'
 import { VideoTaskWorkspace } from '@/features/video-tasks/video-task-workspace'
 import { PlaygroundComparisonPanel } from './playground-comparison-panel'
 import { PlaygroundModelPicker } from './playground-model-picker'
@@ -15,6 +16,7 @@ import { usePlaygroundConfiguration } from './use-playground-configuration'
 import { usePlaygroundHistory } from './use-playground-history'
 
 export function PlaygroundPage() {
+  const verificationRequired = useVerificationAccess('api')
   const [mode, setMode] = useState<PlaygroundMode>('chat')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const configuration = usePlaygroundConfiguration()
@@ -94,6 +96,7 @@ export function PlaygroundPage() {
 
   const canSend = Boolean(
     configuration.selectedModels.length > 0
+    && !verificationRequired
     && configuration.selectedProtocolsReady
     && !configuration.catalogInvalid
     && comparison.draft.trim()
@@ -152,6 +155,7 @@ export function PlaygroundPage() {
         status={status}
         onClear={clearConversation}
       />
+      {verificationRequired ? <VerificationAccessNotice scope="api" /> : null}
       <PlaygroundComparisonPanel
         canSend={canSend}
         draft={comparison.draft}
@@ -162,8 +166,8 @@ export function PlaygroundPage() {
         status={status}
         streaming={comparison.streaming}
         onDraftChange={comparison.setDraft}
-        onRetry={comparison.retry}
-        onSend={comparison.send}
+        onRetry={(model) => verificationRequired ? Promise.resolve(false) : comparison.retry(model)}
+        onSend={() => verificationRequired ? Promise.resolve(false) : comparison.send()}
         onSettingsToggle={() => setSettingsOpen((open) => !open)}
         onStopAll={comparison.stopAll}
         onStopModel={comparison.stopModel}

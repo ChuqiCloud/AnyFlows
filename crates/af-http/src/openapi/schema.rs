@@ -677,6 +677,7 @@ pub(crate) enum ManagementErrorCodeSchema {
     TurnstileUnavailable,
     InvalidSession,
     Forbidden,
+    AccountVerificationRequired,
     SetupConflict,
     SiteSettingsConflict,
     AnnouncementInvalidRequest,
