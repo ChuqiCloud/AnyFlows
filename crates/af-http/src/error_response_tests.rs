@@ -53,6 +53,13 @@ fn error_cases() -> Vec<ErrorCase> {
             message: "Invalid API key.",
         },
         ErrorCase {
+            error: AfError::AccountVerificationRequired,
+            status: StatusCode::FORBIDDEN,
+            code: PublicErrorCode::AccountVerificationRequired,
+            kind: "permission_error",
+            message: "Complete account identity verification before calling the API.",
+        },
+        ErrorCase {
             error: AfError::ModelNotAllowed,
             status: StatusCode::NOT_FOUND,
             code: PublicErrorCode::ModelNotFound,
@@ -196,6 +203,11 @@ fn public_error_metadata_covers_every_stable_code() {
             "Invalid API key.",
         ),
         (
+            PublicErrorCode::AccountVerificationRequired,
+            StatusCode::FORBIDDEN,
+            "Complete account identity verification before calling the API.",
+        ),
+        (
             PublicErrorCode::InsufficientQuota,
             StatusCode::TOO_MANY_REQUESTS,
             "Insufficient quota.",
@@ -315,6 +327,7 @@ async fn maps_every_current_domain_error_to_anthropic_wire() {
         let expected_kind = match case.code {
             PublicErrorCode::InvalidRequest => "invalid_request_error",
             PublicErrorCode::InvalidApiKey => "authentication_error",
+            PublicErrorCode::AccountVerificationRequired => "permission_error",
             PublicErrorCode::InsufficientQuota => "billing_error",
             PublicErrorCode::ModelNotFound | PublicErrorCode::TaskNotFound => "not_found_error",
             PublicErrorCode::IdempotencyConflict => "invalid_request_error",
@@ -348,6 +361,7 @@ async fn maps_every_current_domain_error_to_google_json_api_wire() {
         let expected_status = match case.code {
             PublicErrorCode::InvalidRequest => "INVALID_ARGUMENT",
             PublicErrorCode::InvalidApiKey => "UNAUTHENTICATED",
+            PublicErrorCode::AccountVerificationRequired => "PERMISSION_DENIED",
             PublicErrorCode::InsufficientQuota | PublicErrorCode::RateLimited => {
                 "RESOURCE_EXHAUSTED"
             }

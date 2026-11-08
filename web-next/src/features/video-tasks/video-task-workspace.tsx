@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { EMPTY_MODEL_CATALOG_FILTERS, useModelCatalog } from '@/features/models/model-api'
+import { useVerificationAccess, VerificationAccessNotice } from '@/features/account-verification/verification-access-notice'
 import { VideoTaskHistoryPanel } from './video-task-history-panel'
 import { VideoTaskRequestPanel } from './video-task-request-panel'
 import { VideoTaskResultPanel } from './video-task-result-panel'
@@ -17,6 +18,7 @@ type VideoTaskWorkspaceProps = {
 export function VideoTaskWorkspace(props: VideoTaskWorkspaceProps) {
   const { t } = useTranslation()
   const workspace = useVideoTaskWorkspace()
+  const verificationRequired = useVerificationAccess('api')
   const history = useVideoTaskHistory()
   const refreshHistory = history.refresh
   const [submittedRequest, setSubmittedRequest] = useState<VideoTaskRequest>()
@@ -37,6 +39,7 @@ export function VideoTaskWorkspace(props: VideoTaskWorkspaceProps) {
   }, [refreshHistory, workspace.taskId])
 
   const submit = (request: VideoTaskRequest) => {
+    if (verificationRequired) return
     setSubmittedRequest(request)
     void workspace.submit(request)
   }
@@ -60,12 +63,13 @@ export function VideoTaskWorkspace(props: VideoTaskWorkspaceProps) {
         })}
       </header>
 
+      {verificationRequired ? <VerificationAccessNotice scope="api" /> : null}
       <div className="grid min-h-0 min-w-0 flex-1 gap-2.5 lg:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[20rem_16rem_minmax(0,1fr)]">
         <aside className="self-start overflow-hidden rounded-xl border border-dashed border-[var(--hairline)] bg-surface-1/82 backdrop-blur-xl lg:sticky lg:top-3">
           <VideoTaskRequestPanel
             key={workspace.idempotencyKey}
             busy={workspace.busy}
-            credentialReady
+            credentialReady={!verificationRequired}
             locked={workspace.requestLocked}
             models={models}
             loadingModels={catalogQuery.isPending}
@@ -102,7 +106,7 @@ export function VideoTaskWorkspace(props: VideoTaskWorkspaceProps) {
           onNew={startNew}
           onPoll={() => void workspace.poll()}
           onRetrySubmission={() => {
-            if (submittedRequest) void workspace.submit(submittedRequest)
+            if (submittedRequest && !verificationRequired) void workspace.submit(submittedRequest)
           }}
         />
       </div>

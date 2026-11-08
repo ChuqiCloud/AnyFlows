@@ -206,6 +206,7 @@ pub struct AuthenticationReady {
     user_wallet_service: Arc<dyn UserWalletService>,
     account_verification_provider: Arc<dyn af_admin::AccountVerificationProvider>,
     verification_settings_service: Option<Arc<af_admin::DatabaseVerificationSettingsService>>,
+    verification_access: Arc<af_admin::VerificationAccessService>,
     user_notification_service: Arc<dyn af_admin::UserNotificationService>,
     extensions: RuntimeExtensions,
     platform_audit_service: Arc<dyn af_admin::PlatformAuditService>,
@@ -1242,8 +1243,17 @@ impl Bootstrap<DatabaseReady> {
             Some(validator) => repository.with_organization_validator(Arc::clone(validator)),
             None => repository,
         };
-        let database_authenticator: Arc<dyn TokenAuthenticator> =
-            Arc::new(DatabaseTokenAuthenticator::new(repository));
+        let verification_access = Arc::new(af_admin::VerificationAccessService::new(
+            af_db::AccountVerificationSettingsRepository::new(
+                stage.database.clone(),
+                Duration::from_secs(config.auth().lookup_timeout_secs()),
+            ),
+            af_db::AccountVerificationRepository::new(stage.database.clone()),
+        ));
+        let database_authenticator: Arc<dyn TokenAuthenticator> = Arc::new(
+            DatabaseTokenAuthenticator::new(repository)
+                .with_verification_access(verification_access.clone()),
+        );
         let platform_audit_service = Arc::new(af_admin::DatabasePlatformAuditService::new(
             af_db::PlatformAuditRepository::new(stage.database.clone()),
         ));
@@ -1273,12 +1283,16 @@ impl Bootstrap<DatabaseReady> {
                     af_admin::ManualAccountVerificationProvider,
                 ),
                 verification_settings_service: None,
+                verification_access: verification_access.clone(),
                 user_notification_service: Arc::new(DatabaseUserNotificationService::new(
                     user_notification_repository,
                 )),
                 extensions,
                 platform_audit_service,
-                redemption_service: Arc::new(DatabaseRedemptionService::new(redemption_repository)),
+                redemption_service: Arc::new(
+                    DatabaseRedemptionService::new(redemption_repository)
+                        .with_verification_access(verification_access),
+                ),
                 subscription_service: Arc::new(DatabaseSubscriptionService::new(
                     subscription_repository.clone(),
                 )),
@@ -1598,7 +1612,8 @@ impl Bootstrap<RelayReady> {
                 self.stage.upstream_clients.clone(),
                 request_timeout,
             )
-            .with_order_extension(self.stage.infrastructure.extensions.payment_orders.clone()),
+            .with_order_extension(self.stage.infrastructure.extensions.payment_orders.clone())
+            .with_verification_access(self.stage.infrastructure.verification_access.clone()),
         );
         let admin_refund_service: Arc<dyn AdminRefundService> = Arc::new(
             DatabaseAdminRefundService::new(admin_refund_repository, Some(payment_runtime.clone())),

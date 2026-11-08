@@ -1,5 +1,6 @@
 use std::{
     fmt,
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -9,7 +10,7 @@ use af_db::{
     RedemptionRepository, RedemptionRepositoryError,
 };
 
-use crate::{SessionPrincipal, SessionRole};
+use crate::{SessionPrincipal, SessionRole, VerificationAccessError, VerificationAccessService};
 
 use super::audit::{AdminRedemptionAuditPage, AdminRedemptionAuditQuery, RedemptionAuditFuture};
 use super::types::{
@@ -23,13 +24,23 @@ use super::types::{
 /// 使用原子兑换仓储的生产应用服务。
 pub struct DatabaseRedemptionService {
     repository: RedemptionRepository,
+    verification_access: Option<Arc<VerificationAccessService>>,
 }
 
 impl DatabaseRedemptionService {
     /// 绑定已经配置数据库截止时间的兑换码仓储。
     #[must_use]
     pub const fn new(repository: RedemptionRepository) -> Self {
-        Self { repository }
+        Self {
+            repository,
+            verification_access: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_verification_access(mut self, access: Arc<VerificationAccessService>) -> Self {
+        self.verification_access = Some(access);
+        self
     }
 }
 
@@ -145,6 +156,17 @@ impl RedemptionService for DatabaseRedemptionService {
         command: UserRedemptionCommand,
     ) -> RedemptionRedeemFuture<'a> {
         Box::pin(async move {
+            if let Some(access) = &self.verification_access {
+                access
+                    .ensure_topup(principal.user_id())
+                    .await
+                    .map_err(|error| match error {
+                        VerificationAccessError::Required => {
+                            RedemptionServiceError::VerificationRequired
+                        }
+                        VerificationAccessError::Unavailable => RedemptionServiceError::Internal,
+                    })?;
+            }
             let attempt = RedemptionAttempt::new(principal.user_id(), command.code, unix_now()?)
                 .map_err(|_| RedemptionServiceError::Internal)?;
             match recover_redeem(&self.repository, &attempt).await? {

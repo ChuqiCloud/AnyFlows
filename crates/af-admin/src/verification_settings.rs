@@ -35,6 +35,8 @@ pub struct AdminVerificationSettings {
     pub enterprise_manual_enabled: bool,
     pub individual_reason_required: bool,
     pub enterprise_reason_required: bool,
+    pub require_verification_for_topup: bool,
+    pub require_verification_for_api: bool,
     pub enabled: bool,
     pub app_id: Option<String>,
     pub private_key_configured: bool,
@@ -52,6 +54,8 @@ pub struct VerificationSettingsCommand {
     pub enterprise_manual_enabled: Option<bool>,
     pub individual_reason_required: Option<bool>,
     pub enterprise_reason_required: Option<bool>,
+    pub require_verification_for_topup: Option<bool>,
+    pub require_verification_for_api: Option<bool>,
     pub enabled: bool,
     pub app_id: Option<String>,
     pub private_key: Option<String>,
@@ -79,6 +83,8 @@ pub struct VerificationPolicy {
     pub enterprise_manual_enabled: bool,
     pub individual_reason_required: bool,
     pub enterprise_reason_required: bool,
+    pub require_verification_for_topup: bool,
+    pub require_verification_for_api: bool,
 }
 
 impl VerificationPolicy {
@@ -152,6 +158,8 @@ impl DatabaseVerificationSettingsService {
                 enterprise_manual_enabled: true,
                 individual_reason_required: true,
                 enterprise_reason_required: true,
+                require_verification_for_topup: record.require_verification_for_topup,
+                require_verification_for_api: record.require_verification_for_api,
                 enabled: self.fallback.enabled(),
                 app_id: self
                     .fallback
@@ -274,6 +282,12 @@ impl DatabaseVerificationSettingsService {
                         .unwrap_or(command.manual_enabled),
                     individual_reason_required: command.individual_reason_required.unwrap_or(true),
                     enterprise_reason_required: command.enterprise_reason_required.unwrap_or(true),
+                    require_verification_for_topup: command
+                        .require_verification_for_topup
+                        .unwrap_or(current.require_verification_for_topup),
+                    require_verification_for_api: command
+                        .require_verification_for_api
+                        .unwrap_or(current.require_verification_for_api),
                     enabled: command.enabled,
                     app_id,
                     credentials,
@@ -297,6 +311,8 @@ impl DatabaseVerificationSettingsService {
             enterprise_manual_enabled: record.enterprise_manual_enabled,
             individual_reason_required: record.individual_reason_required,
             enterprise_reason_required: record.enterprise_reason_required,
+            require_verification_for_topup: record.require_verification_for_topup,
+            require_verification_for_api: record.require_verification_for_api,
             enabled: record.enabled,
             app_id: record.app_id.clone(),
             private_key_configured: record.credentials.is_some(),
@@ -343,6 +359,8 @@ impl DatabaseVerificationSettingsService {
                 enterprise_manual_enabled: record.enterprise_manual_enabled,
                 individual_reason_required: record.individual_reason_required,
                 enterprise_reason_required: record.enterprise_reason_required,
+                require_verification_for_topup: record.require_verification_for_topup,
+                require_verification_for_api: record.require_verification_for_api,
             }
         } else {
             VerificationPolicy {
@@ -350,6 +368,8 @@ impl DatabaseVerificationSettingsService {
                 enterprise_manual_enabled: true,
                 individual_reason_required: true,
                 enterprise_reason_required: true,
+                require_verification_for_topup: record.require_verification_for_topup,
+                require_verification_for_api: record.require_verification_for_api,
             }
         })
     }

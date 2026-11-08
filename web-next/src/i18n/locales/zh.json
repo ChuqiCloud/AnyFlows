@@ -1,4 +1,17 @@
 {
+  "verificationAccess": {
+    "topup": "请先完成个人或企业实名认证，再发起在线充值或兑换码充值。",
+    "api": "请先完成个人或企业实名认证，再使用个人 Key 或模型体验调用接口。",
+    "action": "前往实名认证",
+    "settings": {
+      "title": "实名使用限制",
+      "description": "个人或企业认证任一通过即可满足实名要求。两个开关独立生效，可单独开启或同时开启。",
+      "topup": "实名后才允许充值",
+      "topupHint": "限制新发起在线充值和兑换码充值；已有支付通知、账单和余额查询不受影响。",
+      "api": "实名后才允许调用接口",
+      "apiHint": "限制个人 Key 和模型体验的接口调用；用户仍可登录、管理 Key 和完成实名认证。"
+    }
+  },
   "runtimeStatus": {
     "eyebrow": "系统监控",
     "title": "运行状态",
@@ -3576,6 +3589,7 @@
     "error": {
       "title": "无法完成任务请求",
       "codes": {
+        "account_verification_required": "请先完成个人或企业实名认证，再调用接口。",
         "invalid_api_key": "API Key 无效、过期或已停用。",
         "task_not_found": "当前用户范围内不存在该任务。",
         "idempotency_conflict": "这些参数已用于其他提交，请新建任务。",
@@ -3751,6 +3765,7 @@
     },
     "errors": {
       "invalid_key": "API Key 无效、已禁用或不允许当前来源。",
+      "account_verification_required": "请先完成个人或企业实名认证，再调用接口。",
       "insufficient_quota": "API Key 可用额度不足，无法完成本次请求。",
       "rate_limited": "请求已达到令牌限流上限，请稍后再试。",
       "model_unavailable": "当前 Key 无权使用该模型，或模型暂不可用。",

@@ -115,6 +115,7 @@ fn disable_admin_redemption_batch() {}
         (status = 200, description = "兑换成功或恢复本人已到账事实", body = UserRedemptionResponse),
         (status = 400, description = "兑换码格式无效或不存在", body = ManagementErrorBody),
         (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "当前用户须先完成实名认证才能充值", body = ManagementErrorBody),
         (status = 409, description = "批次停用、兑换码已使用或余额溢出", body = ManagementErrorBody),
         (status = 410, description = "兑换码已过期", body = ManagementErrorBody),
         (status = 503, description = "提交结果未知，可重试同一兑换码确认", body = ManagementErrorBody),

@@ -604,6 +604,9 @@ fn map_service_error(error: RedemptionServiceError) -> ManagementError {
         RedemptionServiceError::InvalidInput => ManagementError::InvalidRequest,
         RedemptionServiceError::Forbidden => ManagementError::Forbidden,
         RedemptionServiceError::InvalidSession => ManagementError::InvalidSession,
+        RedemptionServiceError::VerificationRequired => {
+            ManagementError::AccountVerificationRequired
+        }
         RedemptionServiceError::BatchNotFound => ManagementError::RedemptionBatchNotFound,
         RedemptionServiceError::BatchConflict => ManagementError::RedemptionBatchConflict,
         RedemptionServiceError::CodeInvalid => ManagementError::RedemptionCodeInvalid,

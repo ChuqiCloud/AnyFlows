@@ -276,6 +276,7 @@ fn map_topup_error(error: UserTopupError) -> ManagementError {
     match error {
         UserTopupError::InvalidInput => ManagementError::InvalidRequest,
         UserTopupError::InvalidSession => ManagementError::InvalidSession,
+        UserTopupError::VerificationRequired => ManagementError::AccountVerificationRequired,
         UserTopupError::Conflict => ManagementError::TopupOrderConflict,
         UserTopupError::OutcomeUnknown => ManagementError::TopupOrderOutcomeUnknown,
         UserTopupError::Unavailable => ManagementError::TopupUnavailable,

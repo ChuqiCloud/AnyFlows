@@ -8,6 +8,10 @@ fn error_encoder_covers_every_public_code_with_openai_shape() {
     let cases = [
         (PublicErrorCode::InvalidRequest, "invalid_request_error"),
         (PublicErrorCode::InvalidApiKey, "invalid_request_error"),
+        (
+            PublicErrorCode::AccountVerificationRequired,
+            "permission_error",
+        ),
         (PublicErrorCode::InsufficientQuota, "insufficient_quota"),
         (PublicErrorCode::ModelNotFound, "invalid_request_error"),
         (PublicErrorCode::TaskNotFound, "invalid_request_error"),

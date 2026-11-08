@@ -21,10 +21,23 @@ export async function materialBlob(url: string, signal: AbortSignal): Promise<Bl
 }
 export function verificationBase(admin: boolean) { return admin ? '/api/admin/account-verifications' : '/api/account/verifications' }
 
+export type AccountEligibility = {
+  verified?: boolean
+  require_verification_for_topup?: boolean
+  require_verification_for_api?: boolean
+  enterprise_verified: boolean
+  can_apply_for_organization: boolean
+  providers?: VerificationProvider[]
+  individual_providers?: VerificationProvider[]
+  enterprise_providers?: VerificationProvider[]
+  individual_reason_required?: boolean
+  enterprise_reason_required?: boolean
+}
+
 export function useAccountEligibility() {
   return useQuery({ queryKey: [...verificationKey, 'eligibility'], gcTime: 0, retry: false,
     refetchInterval: 30_000, refetchIntervalInBackground: false,
-    queryFn: ({ signal }) => verificationGet<{ enterprise_verified: boolean; can_apply_for_organization: boolean; providers?: VerificationProvider[]; individual_providers?: VerificationProvider[]; enterprise_providers?: VerificationProvider[]; individual_reason_required?: boolean; enterprise_reason_required?: boolean }>('/api/account/verifications/eligibility', signal) })
+    queryFn: ({ signal }) => verificationGet<AccountEligibility>('/api/account/verifications/eligibility', signal) })
 }
 export function useVerifiedAccount(enabled: boolean) {
   return useQuery({ queryKey: [...verificationKey, 'verified'], enabled, gcTime: 0, retry: false,

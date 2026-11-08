@@ -37,6 +37,7 @@ jobs:
       frontend: ${{ steps.paths.outputs.frontend }}
       frontend_about: ${{ steps.paths.outputs.frontend_about }}
       frontend_navigation: ${{ steps.paths.outputs.frontend_navigation }}
+      frontend_verification: ${{ steps.paths.outputs.frontend_verification }}
       rust: ${{ steps.paths.outputs.rust }}
       database: ${{ steps.paths.outputs.database }}
       redis: ${{ steps.paths.outputs.redis }}
@@ -84,6 +85,7 @@ jobs:
               echo "frontend=true"
               echo "frontend_about=true"
               echo "frontend_navigation=true"
+              echo "frontend_verification=true"
               echo "rust=true"
               echo "database=true"
               echo "redis=true"
@@ -133,6 +135,7 @@ jobs:
             echo "frontend=$(matches '^(web/|web-next/|tools/ci/(check-frontend-parity|frontend-about-smoke|frontend-navigation-smoke|frontend-user-routes-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_about=$(matches '^((web|web-next)/src/features/(about/|site-settings/software-(update-(panel|api)|release-notes)\.tsx?$)|tools/ci/frontend-about-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-(navigation|user-routes)-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend_verification=$(matches '^(web-next/src/features/(account-verification|wallet|api-keys|playground)/|tools/ci/frontend-verification-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "rust=$(matches '^(crates/|tools/xtask/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$|\.github/workflows/ci\.yml$)')"
             echo "database=$(matches '^(crates/af-db/|tools/ci/(run-db-migration-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
             echo "redis=$(matches '^(crates/af-cache/|tools/ci/(run-cache-redis-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
@@ -531,7 +534,7 @@ jobs:
         run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build
 
       - name: Install browser runtime for frontend checks
-        if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend_about == 'true' || (matrix.frontend == 'web-next' && needs.changes.outputs.frontend_navigation == 'true') }}
+        if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend_about == 'true' || (matrix.frontend == 'web-next' && (needs.changes.outputs.frontend_navigation == 'true' || needs.changes.outputs.frontend_verification == 'true')) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -566,6 +569,11 @@ jobs:
           PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-gallery-smoke.mjs '${{ matrix.frontend }}'
           PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-verification-smoke.mjs '${{ matrix.frontend }}'
           PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-dashboard-smoke.mjs '${{ matrix.frontend }}'
+
+      - name: Browser smoke test verification access policy
+        if: ${{ github.event_name != 'workflow_dispatch' && matrix.frontend == 'web-next' && needs.changes.outputs.frontend_verification == 'true' }}
+        shell: bash
+        run: PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-verification-smoke.mjs web-next
 
       - name: Prepare Gitea screenshot uploader
         if: ${{ always() && (needs.changes.outputs.frontend_about == 'true' || (matrix.frontend == 'web-next' && needs.changes.outputs.frontend_navigation == 'true')) && github.server_url != 'https://github.com' }}
@@ -743,6 +751,15 @@ jobs:
           cargo test --locked -p af-db --lib user_route
           cargo test --locked -p af-server --lib user_route
           cargo test --locked -p af-server --lib route_video_
+
+      - name: Run focused account verification access tests
+        if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
+        run: |
+          cargo test --locked -p af-db --lib account_verification
+          cargo test --locked -p af-admin --lib verification
+          cargo test --locked -p af-http --lib verification
+          cargo test --locked -p af-http --lib error_response_tests
+          cargo test --locked -p af-server --test account_verification_http
 
       - name: Run Clippy
         if: needs.changes.outputs.full == 'true'

@@ -9,6 +9,11 @@ fn encodes_closed_google_json_api_statuses() {
         (PublicErrorCode::InvalidRequest, 400, "INVALID_ARGUMENT"),
         (PublicErrorCode::InvalidApiKey, 401, "UNAUTHENTICATED"),
         (
+            PublicErrorCode::AccountVerificationRequired,
+            403,
+            "PERMISSION_DENIED",
+        ),
+        (
             PublicErrorCode::InsufficientQuota,
             429,
             "RESOURCE_EXHAUSTED",
