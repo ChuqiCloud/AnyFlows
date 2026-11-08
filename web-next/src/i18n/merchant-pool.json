@@ -257,7 +257,17 @@
       "success": "成功",
       "failure": "失败",
       "ignored": "未计入"
-    }
+    },
+    "recentAvailability": "近期可用性",
+    "availabilitySummary": "{{total}} 个时间段中有 {{known}} 段存在真实调用数据",
+    "sortSuccess": "成功率",
+    "sortLatency": "响应延迟",
+    "moreFilters": "协议、能力与倍率筛选",
+    "capability": "能力",
+    "responseMode": "响应模式",
+    "nonStreaming": "非流式",
+    "rotateKey": "更换密钥",
+    "rotateKeyHint": "只替换当前已发布接口的上游密钥，接口地址和模型保持原审核版本。新密钥加密保存，不会回显。"
   },
   "en": {
     "title": "Merchant pool",
@@ -517,6 +527,16 @@
       "success": "Succeeded",
       "failure": "Failed",
       "ignored": "Excluded"
-    }
+    },
+    "recentAvailability": "Recent availability",
+    "availabilitySummary": "Real traffic data for {{known}} of {{total}} time buckets",
+    "sortSuccess": "Success rate",
+    "sortLatency": "Response latency",
+    "moreFilters": "Protocol, capability and price filters",
+    "capability": "Capability",
+    "responseMode": "Response mode",
+    "nonStreaming": "Non-streaming",
+    "rotateKey": "Rotate key",
+    "rotateKeyHint": "Replace the upstream key for the published endpoint. The reviewed endpoint and models stay unchanged. New keys are encrypted and never returned."
   }
 }

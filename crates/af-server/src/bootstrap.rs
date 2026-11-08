@@ -2817,9 +2817,9 @@ impl Bootstrap<Supervised> {
             .merge(af_http::build_merchant_pool_router(
                 Arc::new(af_admin::DatabaseMerchantPoolService::new(merchant_repository.clone(),
                     CredentialEncryptor::new(self.config.credential_encryption())
-                        .map_err(BootstrapError::CredentialEncryptor)?,
+                        .map_err(BootstrapError::CredentialEncryption)?,
                     CredentialDecryptor::new(self.config.credential_encryption())
-                        .map_err(BootstrapError::CredentialDecryptor)?,
+                        .map_err(BootstrapError::CredentialDecryption)?,
                 ).with_blocked_hosts(self.config.server().cors_allowed_origins().iter()
                     .filter_map(|origin|url::Url::parse(origin.as_str()).ok()
                         .and_then(|url|url.host_str().map(str::to_owned))).collect())),

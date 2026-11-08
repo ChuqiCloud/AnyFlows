@@ -449,6 +449,7 @@ pub(crate) async fn cancel_merchant_billing(tx:&DatabaseTransaction,key:&str,rej
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn settle_merchant_billing(tx:&DatabaseTransaction,key:&str,user_id:i64,used:i64,frozen:i64,reserved:Quota,actual:Quota)->Result<(),QuotaRepositoryError>{
     let Some(row)=merchant_reservation(tx,key,true).await.map_err(quota_error)? else{return Ok(());};
     if actual.units()>reserved.units(){return Err(QuotaRepositoryError::MerchantUsageExceedsAuthorization);}

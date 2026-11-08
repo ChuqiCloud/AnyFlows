@@ -256,7 +256,7 @@ mod user_session_tests;
 mod user_token;
 pub use user_route::{
     MerchantRouteMember, MerchantRouteWrite, MerchantRouteRecord, MerchantRouteScope,
-    MerchantAttemptWrite, MerchantServiceStatistics,MerchantConsumerAttempt,
+    MerchantAttemptWrite, MerchantServiceStatistics,MerchantConsumerAttempt,MerchantTimelineBucket,MerchantServiceTimeline,
     UserRouteError, UserRouteMemberRecord, UserRouteMemberWrite, UserRouteModelHealth,
     UserRouteRecord, UserRouteRepository, UserRouteWrite,
 };

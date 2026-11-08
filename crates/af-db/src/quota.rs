@@ -915,7 +915,7 @@ impl QuotaRepository {
                     };
                     return rollback_with_error(transaction, error).await;
                 }
-                state = match load_reservation(&transaction, key, true).await {
+                state = match load_reservation(&transaction, key.clone(), true).await {
                     Ok(Some(state)) => state,
                     Ok(None) => {
                         return rollback_with_error(transaction, QuotaRepositoryError::Invariant)
@@ -1412,6 +1412,8 @@ fn record_internal_error(error: QuotaRepositoryError) -> QuotaRepositoryError {
         | QuotaRepositoryError::NotFound
         | QuotaRepositoryError::Conflict
         | QuotaRepositoryError::UserQuotaInsufficient
+        | QuotaRepositoryError::MerchantFundingInsufficient
+        | QuotaRepositoryError::MerchantUsageExceedsAuthorization
         | QuotaRepositoryError::OrganizationQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient
         | QuotaRepositoryError::GroupWindowQuotaInsufficient { .. }

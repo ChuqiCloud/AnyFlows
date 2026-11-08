@@ -22,6 +22,7 @@ pub trait MerchantPoolService:Send+Sync {
     fn write_service(&self,principal:SessionPrincipal,id:Option<i64>,write:MerchantServiceWrite)->MerchantFuture<'_,MerchantOwnedService>;
     fn submit_service(&self,principal:SessionPrincipal,id:i64)->MerchantFuture<'_,MerchantOwnedService>;
     fn pause_service(&self,principal:SessionPrincipal,id:i64,paused:bool)->MerchantFuture<'_,MerchantOwnedService>;
+    fn rotate_service_key(&self,principal:SessionPrincipal,id:i64,key:String)->MerchantFuture<'_,MerchantOwnedService>;
     fn admin_pools(&self,principal:SessionPrincipal,query:MerchantListQuery)->MerchantFuture<'_,MerchantPage<MerchantPool>>;
     fn write_pool(&self,principal:SessionPrincipal,id:Option<i64>,write:MerchantPoolWrite)->MerchantFuture<'_,MerchantPool>;
     fn admin_merchants(&self,principal:SessionPrincipal,query:MerchantListQuery)->MerchantFuture<'_,MerchantPage<MerchantProfile>>;
@@ -87,6 +88,9 @@ impl MerchantPoolService for DatabaseMerchantPoolService {
     fn write_service(&self,p:SessionPrincipal,id:Option<i64>,write:MerchantServiceWrite)->MerchantFuture<'_,MerchantOwnedService> {
         Box::pin(async move {
             write.validate()?;
+            let merchant=self.repository.owner_merchant(p.user_id()).await?.ok_or(MerchantPoolError::Forbidden)?;
+            if merchant.status!="approved" { return Err(MerchantPoolError::Forbidden); }
+            if let Some(id)=id { self.repository.get_service(Some(p.user_id()),id).await?; }
             self.validate_endpoint(&write.base_url).await?;
             if let Some(key)=&write.api_key {
                 if let Ok(key)=crate::PresentedApiKey::parse(key) {
@@ -108,6 +112,17 @@ impl MerchantPoolService for DatabaseMerchantPoolService {
     }
     fn submit_service(&self,p:SessionPrincipal,id:i64)->MerchantFuture<'_,MerchantOwnedService> { Box::pin(async move { self.repository.submit_service(p.user_id(),id).await }) }
     fn pause_service(&self,p:SessionPrincipal,id:i64,paused:bool)->MerchantFuture<'_,MerchantOwnedService> { Box::pin(async move { self.repository.pause_service(p.user_id(),id,paused).await }) }
+    fn rotate_service_key(&self,p:SessionPrincipal,id:i64,key:String)->MerchantFuture<'_,MerchantOwnedService> {
+        Box::pin(async move {
+            if key.is_empty() || key.len()>8192 { return Err(MerchantPoolError::InvalidInput); }
+            if let Ok(presented)=crate::PresentedApiKey::parse(&key) {
+                if self.repository.platform_key_exists(presented.digest().as_str()).await? { return Err(MerchantPoolError::InvalidInput); }
+            }
+            let secret=PlainCredentialSecret::api_key(key).map_err(|_|MerchantPoolError::InvalidInput)?;
+            self.repository.rotate_service_key(p.user_id(),id,|channel,credential|self.encryptor.encrypt(channel,credential.get(),&secret)
+                .map_err(|_|MerchantPoolError::Unavailable)).await
+        })
+    }
     fn admin_pools(&self,p:SessionPrincipal,q:MerchantListQuery)->MerchantFuture<'_,MerchantPage<MerchantPool>> { Box::pin(async move { admin(p)?;self.repository.list_pools(None,q).await }) }
     fn write_pool(&self,p:SessionPrincipal,id:Option<i64>,write:MerchantPoolWrite)->MerchantFuture<'_,MerchantPool> { Box::pin(async move { admin(p)?;self.repository.write_pool(p.user_id(),id,write).await }) }
     fn admin_merchants(&self,p:SessionPrincipal,q:MerchantListQuery)->MerchantFuture<'_,MerchantPage<MerchantProfile>> { Box::pin(async move { admin(p)?;self.repository.list_profiles(q).await }) }

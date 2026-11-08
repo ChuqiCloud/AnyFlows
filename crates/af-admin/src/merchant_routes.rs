@@ -1,17 +1,19 @@
 //! Consumer merchant routing never grants merchant management privileges.
 use std::{future::Future,pin::Pin};
 use af_db::{MerchantPoolRepository,UserRouteRepository,UserRouteError};
-pub use af_db::{MerchantRouteWrite,MerchantRouteRecord,MerchantServiceStatistics,MerchantConsumerAttempt};
+pub use af_db::{MerchantRouteWrite,MerchantRouteRecord,MerchantServiceStatistics,MerchantConsumerAttempt,MerchantServiceTimeline};
 use crate::SessionPrincipal;
 
 pub type MerchantRouteFuture<'a,T> = Pin<Box<dyn Future<Output=Result<T,UserRouteError>>+Send+'a>>;
 pub trait MerchantRouteService:Send+Sync {
+    fn timeline(&self,principal:SessionPrincipal,pool_id:i64,model:Option<String>,window_seconds:u32,protocol:Option<String>,streaming:Option<bool>)
+        ->MerchantRouteFuture<'_,Vec<MerchantServiceTimeline>>;
     fn attempts(&self,principal:SessionPrincipal,request_id:String)->MerchantRouteFuture<'_,Vec<MerchantConsumerAttempt>>;
     fn list(&self,principal:SessionPrincipal)->MerchantRouteFuture<'_,Vec<MerchantRouteRecord>>;
     fn get(&self,principal:SessionPrincipal,id:i64)->MerchantRouteFuture<'_,MerchantRouteRecord>;
     fn save(&self,principal:SessionPrincipal,id:Option<i64>,write:MerchantRouteWrite)->MerchantRouteFuture<'_,MerchantRouteRecord>;
     fn delete(&self,principal:SessionPrincipal,id:i64)->MerchantRouteFuture<'_,()>;
-    fn statistics(&self,principal:SessionPrincipal,pool_id:i64,model:Option<String>,window_seconds:u32)
+    fn statistics(&self,principal:SessionPrincipal,pool_id:i64,model:Option<String>,window_seconds:u32,protocol:Option<String>,streaming:Option<bool>)
         ->MerchantRouteFuture<'_,Vec<MerchantServiceStatistics>>;
 }
 pub struct DatabaseMerchantRouteService { routes:UserRouteRepository,pools:MerchantPoolRepository }
@@ -20,6 +22,15 @@ impl DatabaseMerchantRouteService {
     pub const fn new(routes:UserRouteRepository,pools:MerchantPoolRepository)->Self {Self{routes,pools}}
 }
 impl MerchantRouteService for DatabaseMerchantRouteService {
+    fn timeline(&self,p:SessionPrincipal,pool_id:i64,model:Option<String>,window_seconds:u32,protocol:Option<String>,streaming:Option<bool>)
+        ->MerchantRouteFuture<'_,Vec<MerchantServiceTimeline>>{
+        Box::pin(async move {
+            if !self.pools.check_pool_access(p.user_id(),pool_id).await.map_err(|_|UserRouteError::Internal)? {
+                return Err(UserRouteError::NotFound);
+            }
+            self.routes.merchant_timeline(pool_id,model.as_deref(),window_seconds,protocol.as_deref(),streaming).await
+        })
+    }
     fn attempts(&self,p:SessionPrincipal,request_id:String)->MerchantRouteFuture<'_,Vec<MerchantConsumerAttempt>>{
         Box::pin(async move {self.routes.merchant_attempts(p.user_id(),&request_id).await})
     }
@@ -38,13 +49,13 @@ impl MerchantRouteService for DatabaseMerchantRouteService {
             self.routes.delete(p.user_id(),id).await
         })
     }
-    fn statistics(&self,p:SessionPrincipal,pool_id:i64,model:Option<String>,window_seconds:u32)
+    fn statistics(&self,p:SessionPrincipal,pool_id:i64,model:Option<String>,window_seconds:u32,protocol:Option<String>,streaming:Option<bool>)
         ->MerchantRouteFuture<'_,Vec<MerchantServiceStatistics>> {
         Box::pin(async move {
             if !self.pools.check_pool_access(p.user_id(),pool_id).await.map_err(|_|UserRouteError::Internal)? {
                 return Err(UserRouteError::NotFound);
             }
-            self.routes.merchant_statistics(pool_id,model.as_deref(),window_seconds).await
+            self.routes.merchant_statistics_filtered(pool_id,model.as_deref(),window_seconds,protocol.as_deref(),streaming).await
         })
     }
 }

@@ -151,19 +151,18 @@ export function ApiKeyForm({ token, initialRouteId, portalContainer, onCancel, o
           ) : null}
           {!token && routingMode === 'route' ? (
             <ApiKeyField id="api-key-user-route" label={t('apiKeys.routing.routeLabel')} error={form.formState.errors.userRouteId?.message ?? (!isSelectableUserRoute(userRouteId, selectableRoutes) && routesReady ? t('apiKeys.routing.invalidRoute') : undefined)} hint={t('apiKeys.routing.routeHint')}>
-              <Select
+              <select
                 id="api-key-user-route"
                 aria-label={t('apiKeys.routing.routeLabel')}
-                placeholder={t('apiKeys.routing.routePlaceholder')}
-                size="sm"
-                selectedKeys={isSelectableUserRoute(userRouteId, selectableRoutes) ? [userRouteId] : []}
-                isDisabled={routesFetching || !routesReady}
-                isInvalid={!!form.formState.errors.userRouteId || (routesReady && !isSelectableUserRoute(userRouteId, selectableRoutes))}
-                popoverProps={portalContainer ? { portalContainer } : undefined}
-                onSelectionChange={(keys) => { const value = Array.from(keys)[0]; if (value !== undefined) { form.setValue('userRouteId', String(value)); form.clearErrors('userRouteId') } }}
+                className="min-h-9 w-full rounded-lg border border-[var(--hairline)] bg-background px-3 text-sm disabled:opacity-50"
+                value={isSelectableUserRoute(userRouteId, selectableRoutes) ? userRouteId : ''}
+                disabled={routesFetching || !routesReady}
+                aria-invalid={!!form.formState.errors.userRouteId || (routesReady && !isSelectableUserRoute(userRouteId, selectableRoutes))}
+                onChange={(event) => { form.setValue('userRouteId', event.target.value); form.clearErrors('userRouteId') }}
               >
-                {selectableRoutes.filter((route) => route.enabled).map((route) => <SelectItem key={String(route.id)} textValue={route.name}>{route.name}{'pool_id' in route ? ` · ${t('merchantPool.title')}` : ''}</SelectItem>)}
-              </Select>
+                <option value="" disabled>{t('apiKeys.routing.routePlaceholder')}</option>
+                {selectableRoutes.filter((route) => route.enabled).map((route) => <option key={route.id} value={String(route.id)}>{route.name}{'pool_id' in route ? ` · ${t('merchantPool.title')}` : ''}</option>)}
+              </select>
               {routesQuery.isPending || merchantRoutesQuery.isPending ? <p role="status" className="text-xs text-muted-foreground">{t('apiKeys.routing.loading')}</p> : null}
               {routesQuery.isError || merchantRoutesQuery.isError ? <div role="alert" className="flex items-center justify-between gap-2 text-xs text-destructive"><span>{t('apiKeys.routing.loadError')}</span><Button type="button" size="sm" variant="flat" isDisabled={routesFetching} onPress={() => void Promise.all([routesQuery.refetch(), merchantRoutesQuery.refetch()])}>{t('apiKeys.actions.retry')}</Button></div> : null}
               {routesReady && selectableRoutes.filter((route) => route.enabled).length === 0 ? <p className="text-xs text-muted-foreground">{t('apiKeys.routing.empty')}</p> : null}

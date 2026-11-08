@@ -13,6 +13,7 @@ pub fn build_merchant_route_router(service:Arc<dyn MerchantRouteService>,auth:Ar
         .route("/api/merchant-pool/routes/{id}",get(read).put(update).delete(remove))
         .route("/api/merchant-pool/attempts",get(attempts))
         .route("/api/merchant-pools/{pool_id}/statistics",get(statistics))
+        .route("/api/merchant-pools/{pool_id}/timeline",get(timeline))
         .layer(DefaultBodyLimit::max(32*1024))
         .layer(tower_http::limit::RequestBodyLimitLayer::new(32*1024))
         .layer(middleware::from_fn_with_state(ManagementAuthenticationState::new(auth),authenticate_management_session))
@@ -48,12 +49,19 @@ async fn remove(State(s):State<MerchantRouteHttpState>,Extension(a):Extension<Se
     ->Result<http::StatusCode,ManagementError>{
     s.service.delete(a.principal(),id).await.map_err(map_error)?;Ok(http::StatusCode::NO_CONTENT)
 }
-#[derive(Deserialize)] #[serde(deny_unknown_fields)] struct StatisticsQuery {model:Option<String>,window_seconds:Option<u32>}
+#[derive(Deserialize)] #[serde(deny_unknown_fields)] struct StatisticsQuery {model:Option<String>,window_seconds:Option<u32>,protocol:Option<String>,streaming:Option<bool>}
 #[derive(Serialize)] struct StatisticsResponse {items:Vec<af_admin::MerchantServiceStatistics>,as_of:i64,window_seconds:u32}
+#[derive(Serialize)] struct TimelineResponse {items:Vec<af_admin::MerchantServiceTimeline>,as_of:i64,window_seconds:u32}
+async fn timeline(State(s):State<MerchantRouteHttpState>,Extension(a):Extension<SessionAuthentication>,Path(pool_id):Path<i64>,
+    Query(q):Query<StatisticsQuery>)->Result<Response,ManagementError>{
+    let window_seconds=q.window_seconds.unwrap_or(86400);
+    let items=s.service.timeline(a.principal(),pool_id,q.model,window_seconds,q.protocol,q.streaming).await.map_err(map_error)?;
+    Ok(no_store_json(TimelineResponse{items,as_of:time::OffsetDateTime::now_utc().unix_timestamp(),window_seconds}))
+}
 async fn statistics(State(s):State<MerchantRouteHttpState>,Extension(a):Extension<SessionAuthentication>,Path(pool_id):Path<i64>,
     Query(q):Query<StatisticsQuery>)->Result<Response,ManagementError>{
     let window_seconds=q.window_seconds.unwrap_or(86400);
-    let items=s.service.statistics(a.principal(),pool_id,q.model,window_seconds).await.map_err(map_error)?;
+    let items=s.service.statistics(a.principal(),pool_id,q.model,window_seconds,q.protocol,q.streaming).await.map_err(map_error)?;
     Ok(no_store_json(StatisticsResponse{items,as_of:time::OffsetDateTime::now_utc().unix_timestamp(),window_seconds}))
 }
 fn map_error(error:UserRouteError)->ManagementError{

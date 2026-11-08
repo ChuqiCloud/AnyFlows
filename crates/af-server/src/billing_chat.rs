@@ -762,7 +762,7 @@ struct UserRouteFeedback {
 impl UserRouteFeedback {
     async fn finish(self, success: bool, retryable_failure: bool) {
         if let Some(terms)=self.merchant {
-            self.runtime.merchant_feedback(terms,self.route_id,&self.request_id,&self.model,self.protocol,success,
+            self.runtime.merchant_feedback(terms,self.route_id,&self.request_id,&self.model,self.protocol,self.first_token_ms.is_some(),success,
                 u64::try_from(self.started_at.elapsed().as_millis()).unwrap_or(u64::MAX),self.first_token_ms,retryable_failure).await;
             return;
         }
@@ -1096,6 +1096,8 @@ fn map_precharge_error(error: BillingPrechargeError) -> AfError {
 
 pub(crate) fn map_lifecycle_error(error: BillingLifecycleError) -> AfError {
     match error {
+        BillingLifecycleError::Settlement(af_billing::BillingSettlementError::MerchantUsageExceedsAuthorization)
+            => af_domain::UpstreamError::ProtocolError.into(),
         BillingLifecycleError::Settlement(
             af_billing::BillingSettlementError::InsufficientQuota | af_billing::BillingSettlementError::MerchantFundingInsufficient,
         ) => AfError::InsufficientQuota,

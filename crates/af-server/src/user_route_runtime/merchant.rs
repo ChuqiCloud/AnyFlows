@@ -98,9 +98,10 @@ impl UserRouteRuntime {
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn merchant_feedback(&self,terms:MerchantBillingSnapshot,route_id:i64,request_id:&str,model:&str,
-        protocol:Protocol,success:bool,latency_ms:u64,ttft_ms:Option<u64>,retryable:bool){
+        protocol:Protocol,streaming:bool,success:bool,latency_ms:u64,ttft_ms:Option<u64>,retryable:bool){
         let write=MerchantAttemptWrite{id:uuid::Uuid::new_v4().to_string(),pool_id:terms.pool_id(),route_id,request_id:request_id.to_owned(),
             merchant_id:terms.merchant_id(),service_id:terms.service_id(),model:model.to_owned(),protocol:protocol.as_str().to_owned(),
+            streaming,
             outcome:if success {"success"}else if retryable {"failure"}else{"ignored"}.to_owned(),
             latency_ms:i64::try_from(latency_ms).unwrap_or(i64::MAX),
             ttft_ms:ttft_ms.and_then(|n|i64::try_from(n).ok())};

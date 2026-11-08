@@ -16,10 +16,17 @@ impl MigrationTrait for Migration {
         }
         for name in ["gross_quota", "commission_quota", "net_quota", "available_at", "created_at"] {
             reservations.col(ColumnDef::new(Alias::new(name)).big_integer().not_null().default(0_i64));
+            reservations.check(Expr::col(Alias::new(name)).gte(0_i64));
         }
         reservations.col(ColumnDef::new(Alias::new("status")).string_len(16).not_null().default("reserved"))
             .col(ColumnDef::new(Alias::new("reported_quota")).big_integer())
             .col(ColumnDef::new(Alias::new("released")).boolean().not_null().default(false))
+            .check(Expr::col(Alias::new("status")).is_in(["reserved","settled","canceled","usage_rejected","reversed"]))
+            .check(Expr::col(Alias::new("sales_ratio_micros")).gt(0_i64))
+            .check(Expr::col(Alias::new("commission_bps")).between(0_i64,10_000_i64))
+            .check(Expr::col(Alias::new("settlement_delay_secs")).between(0_i64,7_776_000_i64))
+            .check(Expr::col(Alias::new("reported_quota")).gte(0_i64))
+            .check(Expr::col(Alias::new("gross_quota")).eq(Expr::col(Alias::new("commission_quota")).add(Expr::col(Alias::new("net_quota")))))
             .foreign_key(ForeignKey::create().name("fk_merchant_billing_reservation")
                 .from(Alias::new("merchant_billing_reservations"), Alias::new("reservation_key"))
                 .to(Alias::new("billing_reservations"), Alias::new("idempotency_key"))
@@ -84,6 +91,9 @@ impl MigrationTrait for Migration {
         manager.create_table(withdrawals.to_owned()).await?;
         manager.create_index(Index::create().name("idx_merchant_withdrawal_owner")
             .table(Alias::new("merchant_withdrawals")).col(Alias::new("merchant_id"))
+            .col(Alias::new("id")).to_owned()).await?;
+        manager.create_index(Index::create().name("idx_merchant_withdrawal_status")
+            .table(Alias::new("merchant_withdrawals")).col(Alias::new("status"))
             .col(Alias::new("id")).to_owned()).await?;
         Ok(())
     }

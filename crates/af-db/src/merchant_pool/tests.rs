@@ -121,3 +121,48 @@ async fn merchant_commission_overrides_pool_and_global_and_is_resolved_for_owner
     assert_eq!(fixture.repository.published_candidates(fixture.shared_pool,None,"gpt-test").await?[0].commission_bps,900);
     fixture.pool.close().await?;Ok(())
 }
+
+#[tokio::test]
+async fn key_rotation_uses_existing_aead_binding_and_never_changes_offer()->Result<(),Box<dyn Error>> {
+    let fixture=fixture().await?;let service=publish(&fixture).await?;
+    let before=fixture.repository.published_candidates(fixture.shared_pool,None,"gpt-test").await?.remove(0);
+    fixture.repository.rotate_service_key(UserId::new(1)?,service.id,|channel,credential| {
+        assert_eq!(channel.get(),before.channel_id);assert!(credential.get()>0);
+        EncryptedCredentialEnvelope::new("merchant-test",[3;24],vec![4;32]).map_err(internal)
+    }).await?;
+    let after=fixture.repository.published_candidates(fixture.shared_pool,None,"gpt-test").await?.remove(0);
+    assert_eq!(before.revision_id,after.revision_id);assert_eq!(before.sales_ratio_micros,after.sales_ratio_micros);
+    assert_eq!(before.channel_id,after.channel_id);
+    let row=credentials::Entity::find().filter(credentials::Column::ChannelId.eq(before.channel_id)).one(fixture.pool.connection()).await?.expect("credential exists");
+    assert_eq!(row.secret.envelope_parts()?.1,[3;24]);
+    fixture.pool.close().await?;Ok(())
+}
+
+#[tokio::test]
+async fn catalog_applies_model_capability_and_ratio_filters_before_pagination()->Result<(),Box<dyn Error>> {
+    let fixture=fixture().await?;publish(&fixture).await?;
+    let no_match=MerchantListQuery{model:Some("gpt-test".to_owned()),protocol:Some("openai_responses".to_owned()),..Default::default()};
+    assert_eq!(fixture.repository.catalog(UserId::new(2)?,fixture.shared_pool,no_match).await?.total,0);
+    let no_match=MerchantListQuery{capability:Some("vision".to_owned()),..Default::default()};
+    assert_eq!(fixture.repository.catalog(UserId::new(2)?,fixture.shared_pool,no_match).await?.total,0);
+    let no_match=MerchantListQuery{min_ratio_micros:Some(750_000),..Default::default()};
+    assert_eq!(fixture.repository.catalog(UserId::new(2)?,fixture.shared_pool,no_match).await?.total,0);
+    let matches=MerchantListQuery{model:Some("gpt-test".to_owned()),protocol:Some("openai_chat".to_owned()),capability:Some("tools".to_owned()),max_ratio_micros:Some(500_000),..Default::default()};
+    assert_eq!(fixture.repository.catalog(UserId::new(2)?,fixture.shared_pool,matches).await?.total,1);
+    let invalid=MerchantListQuery{sort:Some("price".to_owned()),..Default::default()};
+    assert!(matches!(fixture.repository.catalog(UserId::new(2)?,fixture.shared_pool,invalid).await,Err(MerchantPoolError::InvalidInput)));
+    fixture.pool.close().await?;Ok(())
+}
+
+#[tokio::test]
+async fn revoked_pool_access_hides_catalog_and_repricing_removes_runtime_supply()->Result<(),Box<dyn Error>> {
+    let fixture=fixture().await?;publish(&fixture).await?;
+    fixture.pool.connection().execute_unprepared("INSERT INTO groups (id,name,display_name,flags) VALUES (2,'other-group','Other Group','{}')").await?;
+    fixture.pool.connection().execute_unprepared("UPDATE users SET default_group_id=2 WHERE id=2").await?;
+    assert!(!fixture.repository.check_pool_access(UserId::new(2)?,fixture.shared_pool).await?);
+    assert!(matches!(fixture.repository.catalog(UserId::new(2)?,fixture.shared_pool,MerchantListQuery::default()).await,Err(MerchantPoolError::NotFound)));
+    let mut config=pool_write();config.min_ratio_micros=750_000;
+    fixture.repository.write_pool(UserId::new(3)?,Some(fixture.shared_pool),config).await?;
+    assert!(fixture.repository.published_candidates(fixture.shared_pool,None,"gpt-test").await?.is_empty());
+    fixture.pool.close().await?;Ok(())
+}

@@ -554,6 +554,7 @@ jobs:
         run: |
           PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-navigation-smoke.mjs
           PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-user-routes-smoke.mjs
+          PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-merchant-pool-smoke.mjs
           PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-oauth-invitation-smoke.mjs
 
       - name: Browser smoke test gallery and verification workflows

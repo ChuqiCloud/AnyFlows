@@ -23,7 +23,11 @@ pub(super) fn document()->OpenApi{
     let attempt=object(&[("merchant_id",integer()),("merchant_name",json!({"type":"string"})),("service_id",integer()),
         ("service_name",json!({"type":"string"})),("request_id",json!({"type":"string"})),
         ("outcome",json!({"type":"string","enum":["success","failure","ignored"]})),("latency_ms",integer()),("completed_at",integer())]);
+    let bucket=object(&[("started_at",integer()),("ended_at",integer()),("success_count",integer()),("failure_count",integer()),("sample_count",integer()),("status",json!({"type":"string"}))]);
     let mut doc=json!({"openapi":"3.1.0","info":{"title":"Merchant routes","version":"1"},"paths":{},"components":{"schemas":{
+        "MerchantTimelineBucket":bucket,
+        "MerchantServiceTimeline":object(&[("service_id",integer()),("merchant_id",integer()),("buckets",json!({"type":"array","items":reference("MerchantTimelineBucket")}))]),
+        "MerchantTimelineResponse":object(&[("items",json!({"type":"array","items":reference("MerchantServiceTimeline")})),("as_of",integer()),("window_seconds",integer())]),
         "MerchantRouteMember":member,"MerchantRouteWriteRequest":object(&fields),"MerchantRoute":object(&response_fields),
         "MerchantRouteList":object(&[("items",json!({"type":"array","items":reference("MerchantRoute")})),("capacity",integer())]),
         "MerchantServiceStatistics":stats,"MerchantStatisticsResponse":object(&[("items",json!({"type":"array","items":reference("MerchantServiceStatistics")})),("as_of",integer()),("window_seconds",integer())]),
@@ -36,6 +40,7 @@ pub(super) fn document()->OpenApi{
         ("/api/merchant-pool/routes/{id}","put","updateMerchantRoute","MerchantRoute",true,"200"),
         ("/api/merchant-pool/routes/{id}","delete","deleteMerchantRoute","",false,"204"),
         ("/api/merchant-pools/{pool_id}/statistics","get","getMerchantPoolStatistics","MerchantStatisticsResponse",false,"200"),
+        ("/api/merchant-pools/{pool_id}/timeline","get","getMerchantPoolTimeline","MerchantTimelineResponse",false,"200"),
         ("/api/merchant-pool/attempts","get","getMerchantAttempts","MerchantAttemptList",false,"200"),
     ] {
         let mut operation=json!({"operationId":id,"tags":["商户共享池"],"security":[{"bearerAuth":[]}],"responses":{
@@ -50,6 +55,8 @@ pub(super) fn document()->OpenApi{
             params.push(json!({"name":"pool_id","in":"path","required":true,"schema":integer()}));
             params.push(json!({"name":"model","in":"query","required":false,"schema":{"type":"string"}}));
             params.push(json!({"name":"window_seconds","in":"query","required":false,"schema":{"type":"integer","enum":[900,3600,86400,604800],"default":86400}}));
+            params.push(json!({"name":"protocol","in":"query","required":false,"schema":{"type":"string","enum":["openai_chat","openai_responses"]}}));
+            params.push(json!({"name":"streaming","in":"query","required":false,"schema":{"type":"boolean"}}));
         }
         if path.ends_with("attempts"){params.push(json!({"name":"request_id","in":"query","required":true,"schema":{"type":"string","maxLength":128}}));}
         if !params.is_empty(){operation["parameters"]=json!(params);}

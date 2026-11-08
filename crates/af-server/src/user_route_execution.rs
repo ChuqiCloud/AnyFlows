@@ -176,7 +176,8 @@ impl UserRouteExecution<'_> {
                 Ok(result) => {
                     if !self.defer_success_feedback {
                         if let Some(terms)=principal.merchant_billing_snapshot() {
-                            runtime.merchant_feedback(terms,plan.route.id,self.request_id,self.model,self.protocol,true,latency,None,false).await;
+                            runtime.merchant_feedback(terms,plan.route.id,self.request_id,self.model,self.protocol,
+                                self.merchant_features.is_some_and(|f|f.streaming),true,latency,None,false).await;
                         }else{
                             runtime
                             .feedback(&plan, candidate.group_id, true, latency, false)
@@ -189,7 +190,8 @@ impl UserRouteExecution<'_> {
                     if failure.counts_attempt {
                         attempts += 1;
                         if let Some(terms)=principal.merchant_billing_snapshot(){
-                            runtime.merchant_feedback(terms,plan.route.id,self.request_id,self.model,self.protocol,false,latency,None,failure.retryable).await;
+                            runtime.merchant_feedback(terms,plan.route.id,self.request_id,self.model,self.protocol,
+                                self.merchant_features.is_some_and(|f|f.streaming),false,latency,None,failure.retryable).await;
                         }else{
                             runtime
                             .feedback(&plan, candidate.group_id, false, latency, failure.retryable)

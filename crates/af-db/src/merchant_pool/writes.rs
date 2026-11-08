@@ -1,4 +1,5 @@
 use super::*;
+use tracing::{instrument::WithSubscriber as _,subscriber::NoSubscriber};
 
 impl MerchantPoolRepository {
     pub async fn apply(&self,owner:UserId,write:MerchantApplication)->Result<MerchantProfile,MerchantPoolError> {
@@ -149,26 +150,26 @@ impl MerchantPoolRepository {
                 weight:Set(1),priority:Set(0),auto_ban:Set(true),model_mapping:Set(serde_json::Value::Object(mapping)),
                 param_override:Set(serde_json::json!({})),header_override:Set(HeaderOverrides::validate(serde_json::json!({})).map_err(internal)?),
                 settings:Set(SensitiveJson::from(serde_json::json!({"relay_race_width":1}))),tag:Set(Some("merchant-pool".to_owned())),
-                created_at:Set(now),updated_at:Set(now),..Default::default()}.insert(&txn).await.map_err(internal)?;
+                created_at:Set(now),updated_at:Set(now),..Default::default()}.insert(&txn).with_subscriber(NoSubscriber::default()).await.map_err(internal)?;
             let channel_id=ChannelId::new(channel.id).map_err(internal)?;
             let placeholder=EncryptedJson::from_envelope(serde_json::json!({"version":1,"algorithm":"xchacha20poly1305",
                 "key_id":"transaction-pending","nonce":URL_SAFE_NO_PAD.encode([0_u8;24]),"ciphertext":URL_SAFE_NO_PAD.encode([0_u8;16])})).map_err(internal)?;
             let credential=credentials::ActiveModel{channel_id:Set(channel.id),kind:Set("api_key".to_owned()),secret:Set(placeholder),
                 status:Set(Status::Enabled.code()),priority:Set(0),weight:Set(1),concurrency:Set(write.concurrency.map(i32::try_from).transpose().map_err(invalid)?),
                 schedulable:Set(true),quota_dimension:Set("global".to_owned()),oauth_token_pending:Set(false),oauth_revision:Set(0),
-                created_at:Set(now),updated_at:Set(now),..Default::default()}.insert(&txn).await.map_err(internal)?;
+                created_at:Set(now),updated_at:Set(now),..Default::default()}.insert(&txn).with_subscriber(NoSubscriber::default()).await.map_err(internal)?;
             let credential_id=CredentialId::new(credential.id).map_err(internal)?;
             let encrypted=encrypt(channel_id,credential_id,previous_secret,write.api_key.take())?;
             let encrypted=EncryptedJson::from_envelope(serde_json::json!({"version":1,"algorithm":"xchacha20poly1305",
                 "key_id":encrypted.key_id(),"nonce":URL_SAFE_NO_PAD.encode(encrypted.nonce()),"ciphertext":URL_SAFE_NO_PAD.encode(encrypted.ciphertext())})).map_err(internal)?;
-            let mut credential=credential.into_active_model();credential.secret=Set(encrypted);credential.update(&txn).await.map_err(internal)?;
+            let mut credential=credential.into_active_model();credential.secret=Set(encrypted);credential.update(&txn).with_subscriber(NoSubscriber::default()).await.map_err(internal)?;
             let number=previous.as_ref().map_or(Ok(1),|previous|previous.revision.checked_add(1).ok_or(MerchantPoolError::Unavailable))?;
             let revision=revisions::ActiveModel{service_id:Set(service.id),revision:Set(number),status:Set("draft".to_owned()),
                 name:Set(write.name.clone()),description:Set(write.description.clone()),
                 base_url:Set(ChannelBaseUrl::parse(&write.base_url).map_err(invalid)?),protocol:Set(write.protocol),default_ratio_micros:Set(write.default_ratio_micros),
                 models:Set(serde_json::to_value(&write.models).map_err(internal)?),channel_id:Set(channel.id),credential_id:Set(credential_id.get()),
                 concurrency:Set(write.concurrency.map(i32::try_from).transpose().map_err(invalid)?),timeout_secs:Set(write.timeout_secs.try_into().map_err(invalid)?),
-                review_reason:Set(None),created_at:Set(now),updated_at:Set(now),..Default::default()}.insert(&txn).await.map_err(internal)?;
+                review_reason:Set(None),created_at:Set(now),updated_at:Set(now),..Default::default()}.insert(&txn).with_subscriber(NoSubscriber::default()).await.map_err(internal)?;
             if let Some(previous)=previous {
                 if Some(previous.id)!=service.published_revision_id {
                     let mut previous=previous.into_active_model();previous.status=Set("superseded".to_owned());previous.updated_at=Set(now);
@@ -224,6 +225,42 @@ impl MerchantPoolRepository {
         }).await
     }
 
+    pub async fn rotate_service_key<F>(&self,owner:UserId,id:i64,encrypt:F)->Result<MerchantOwnedService,MerchantPoolError>
+    where F:FnOnce(ChannelId,CredentialId)->Result<EncryptedCredentialEnvelope,MerchantPoolError>+Send {
+        self.bounded(async {
+            let txn=self.pool.connection().begin().await.map_err(internal)?;
+            lock_owner(&txn,owner).await?;
+            let merchant=require_merchant(&txn,owner,true).await?;
+            let service=lock_service(&txn,id).await?;
+            if service.merchant_id!=merchant.id { return Err(MerchantPoolError::NotFound); }
+            if !matches!(service.status.as_str(),"published"|"paused") { return Err(MerchantPoolError::Conflict); }
+            let revision=load_revision(&txn,service.published_revision_id.ok_or(MerchantPoolError::Conflict)?,service.id).await?;
+            let channel_id=ChannelId::new(revision.channel_id).map_err(internal)?;
+            let credential_id=CredentialId::new(revision.credential_id).map_err(internal)?;
+            let envelope=encrypt(channel_id,credential_id)?;
+            let encrypted=EncryptedJson::from_envelope(serde_json::json!({"version":1,"algorithm":"xchacha20poly1305",
+                "key_id":envelope.key_id(),"nonce":URL_SAFE_NO_PAD.encode(envelope.nonce()),"ciphertext":URL_SAFE_NO_PAD.encode(envelope.ciphertext())})).map_err(internal)?;
+            let now=DatabaseTimestamp::now_utc();
+            let affected=credentials::Entity::update_many().filter(credentials::Column::Id.eq(credential_id.get()))
+                .filter(credentials::Column::ChannelId.eq(channel_id.get())).filter(credentials::Column::DeletedAt.is_null())
+                .col_expr(credentials::Column::Secret,Expr::value(encrypted)).col_expr(credentials::Column::Status,Expr::value(Status::Enabled.code()))
+                .col_expr(credentials::Column::Schedulable,Expr::value(true))
+                .col_expr(credentials::Column::RateLimitedAt,Expr::value(None::<DatabaseTimestamp>))
+                .col_expr(credentials::Column::RateLimitResetAt,Expr::value(None::<DatabaseTimestamp>))
+                .col_expr(credentials::Column::OverloadUntil,Expr::value(None::<DatabaseTimestamp>))
+                .col_expr(credentials::Column::TempUnschedulableUntil,Expr::value(None::<DatabaseTimestamp>))
+                .col_expr(credentials::Column::TempUnschedulableReason,Expr::value(None::<String>))
+                .col_expr(credentials::Column::UpdatedAt,Expr::value(now))
+                .exec(&txn).with_subscriber(NoSubscriber::default()).await.map_err(internal)?;
+            if affected.rows_affected!=1 { return Err(MerchantPoolError::Conflict); }
+            set_channel_enabled(&txn,channel_id.get(),!service.merchant_paused,now).await?;
+            enqueue_scheduler_catalog_change(&txn,SchedulerCatalogSubject::Channel(channel_id),now).await.map_err(internal)?;
+            audit_control(&txn,owner,"service.key.rotate",id,None,Some(serde_json::json!({"revision_id":revision.id}))).await?;
+            let result=service_snapshot(&txn,service).await?;
+            txn.commit().await.map_err(internal)?;Ok(result)
+        }).await
+    }
+
     pub async fn review_service(&self,actor:UserId,id:i64,review:MerchantReview)->Result<MerchantOwnedService,MerchantPoolError> {
         validate_review(&review,true)?;
         self.bounded(async {
@@ -231,6 +268,7 @@ impl MerchantPoolRepository {
             let initial=find_service(&txn,id).await?;
             let merchant=profiles::Entity::find_by_id(initial.merchant_id).one(&txn).await.map_err(internal)?.ok_or(MerchantPoolError::NotFound)?;
             lock_owner(&txn,UserId::new(merchant.owner_user_id).map_err(internal)?).await?;
+            let merchant=profiles::Entity::find_by_id(initial.merchant_id).one(&txn).await.map_err(internal)?.ok_or(MerchantPoolError::NotFound)?;
             let service=lock_service(&txn,id).await?;
             let now=DatabaseTimestamp::now_utc();
             if review.decision=="suspend" {

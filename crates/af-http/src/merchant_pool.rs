@@ -26,6 +26,7 @@ pub fn build_merchant_pool_router(service:Arc<dyn MerchantPoolService>,authentic
         .route("/api/merchant/services/{id}",get(owned_service).put(update_service))
         .route("/api/merchant/services/{id}/submit",axum::routing::post(submit))
         .route("/api/merchant/services/{id}/pause",axum::routing::post(pause))
+        .route("/api/merchant/services/{id}/key",axum::routing::post(rotate_key))
         .route("/api/admin/merchant-pools",get(admin_pools).post(create_pool))
         .route("/api/admin/merchant-pools/{id}",axum::routing::put(update_pool))
         .route("/api/admin/merchants",get(admin_merchants))
@@ -42,6 +43,9 @@ pub fn build_merchant_pool_router(service:Arc<dyn MerchantPoolService>,authentic
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PauseWrite { paused:bool }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KeyWrite { api_key:String }
 
 struct MerchantHttpError(MerchantPoolError);
 impl From<MerchantPoolError> for MerchantHttpError { fn from(value:MerchantPoolError)->Self { Self(value) } }
@@ -100,6 +104,9 @@ async fn submit(State(s):State<MerchantHttpState>,Extension(auth):Extension<Sess
 }
 async fn pause(State(s):State<MerchantHttpState>,Extension(auth):Extension<SessionAuthentication>,Path(service):Path<i64>,request:Result<Json<PauseWrite>,JsonRejection>)->Result<Response,MerchantHttpError> {
     Ok(no_store_json(s.service.pause_service(auth.principal(),id(service)?,body(request)?.paused).await?))
+}
+async fn rotate_key(State(s):State<MerchantHttpState>,Extension(auth):Extension<SessionAuthentication>,Path(service):Path<i64>,request:Result<Json<KeyWrite>,JsonRejection>)->Result<Response,MerchantHttpError> {
+    Ok(no_store_json(s.service.rotate_service_key(auth.principal(),id(service)?,body(request)?.api_key).await?))
 }
 async fn admin_pools(State(s):State<MerchantHttpState>,Extension(auth):Extension<SessionAuthentication>,Query(q):Query<MerchantListQuery>)->Result<Response,MerchantHttpError> {
     Ok(no_store_json(s.service.admin_pools(auth.principal(),q).await?))

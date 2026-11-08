@@ -35,6 +35,7 @@ impl MerchantPoolRepository {
                 let Some(model)=revision_models(&revision)?.into_iter().find(|item|item.model==model) else { continue };
                 let ratio=model.ratio_micros.unwrap_or(revision.default_ratio_micros);
                 if !(pool.min_ratio_micros..=pool.max_ratio_micros).contains(&ratio) { continue; }
+                if model_price(self.pool.connection(),&model.model,ratio).await?.is_none() { continue; }
                 let channel=channels::Entity::find_by_id(revision.channel_id).filter(channels::Column::DeletedAt.is_null())
                     .filter(channels::Column::Status.eq(Status::Enabled.code())).one(self.pool.connection()).await.map_err(internal)?;
                 if channel.is_none() { continue; }
@@ -68,22 +69,52 @@ impl MerchantPoolRepository {
                 }
                 let Some(id)=row.published_revision_id else { continue };
                 let revision=load_revision(self.pool.connection(),id,row.id).await?;
+                if query.protocol.as_ref().is_some_and(|protocol|protocol!=&revision.protocol) { continue; }
                 let mut models=Vec::new();
                 for model in revision_models(&revision)? {
                     if query.model.as_ref().is_some_and(|name|name!=&model.model) { continue; }
                     let ratio=model.ratio_micros.unwrap_or(revision.default_ratio_micros);
+                    if query.min_ratio_micros.is_some_and(|min|ratio<min) || query.max_ratio_micros.is_some_and(|max|ratio>max) { continue; }
+                    let capable=match query.capability.as_deref() {
+                        Some("streaming")=>model.supports_streaming,Some("tools")=>model.supports_tools,Some("vision")=>model.supports_vision,_=>true,
+                    };
+                    if !capable { continue; }
                     models.push(MerchantModelOffer{prices:model_price(self.pool.connection(),&model.model,ratio).await?,
                         model:model.model,sales_ratio_micros:ratio,context_window:model.context_window,max_output_tokens:model.max_output_tokens,
                         supports_streaming:model.supports_streaming,supports_tools:model.supports_tools,supports_vision:model.supports_vision});
                 }
                 if models.is_empty() { continue; }
                 let status=if merchant.status!="approved" { "suspended".to_owned() }
-                    else if models.iter().any(|m|!(pool.min_ratio_micros..=pool.max_ratio_micros).contains(&m.sales_ratio_micros)) { "unavailable".to_owned() }
+                    else if models.iter().any(|m|m.prices.is_none() || !(pool.min_ratio_micros..=pool.max_ratio_micros).contains(&m.sales_ratio_micros)) { "unavailable".to_owned() }
                     else { row.status };
                 items.push(MerchantCatalogService{id:row.id,pool_id,merchant_id:merchant.id,merchant_name:merchant.name,
-                    name:row.name,description:row.description,status,revision:revision.revision,models,updated_at:revision.updated_at.unix_timestamp()});
+                    name:row.name,description:row.description,status,protocol:revision.protocol,revision:revision.revision,models,updated_at:revision.updated_at.unix_timestamp()});
             }
-            if query.sort.as_deref()==Some("price") && query.model.is_some() {
+            if matches!(query.sort.as_deref(),Some("success_rate"|"latency")) {
+                let statistics=crate::UserRouteRepository::new(self.pool.clone(),self.timeout).map_err(internal)?
+                    .merchant_statistics_filtered(pool_id,query.model.as_deref(),query.window_seconds.unwrap_or(86400),query.protocol.as_deref(),query.streaming)
+                    .await.map_err(internal)?;
+                let by_service=statistics.into_iter().map(|row|(row.service_id,row)).collect::<std::collections::HashMap<_,_>>();
+                items.sort_by(|left,right| {
+                    let l=by_service.get(&left.id).filter(|row|row.sample_count>=20);
+                    let r=by_service.get(&right.id).filter(|row|row.sample_count>=20);
+                    let ranked=match (l,r) {
+                        (Some(l),Some(r))=>{
+                            if query.sort.as_deref()==Some("success_rate") {
+                                // Compare a smoothed estimate with integer arithmetic; low samples never lead.
+                                let lv=u128::from(l.success_count+1)*u128::from(r.sample_count+2);
+                                let rv=u128::from(r.success_count+1)*u128::from(l.sample_count+2);
+                                rv.cmp(&lv)
+                            } else {
+                                let delay=|row:&crate::MerchantServiceStatistics| if query.streaming==Some(true) {row.ttft_p50_ms}else{row.latency_p50_ms};
+                                match (delay(l),delay(r)) {(Some(l),Some(r))=>l.cmp(&r),(Some(_),None)=>std::cmp::Ordering::Less,(None,Some(_))=>std::cmp::Ordering::Greater,_=>std::cmp::Ordering::Equal}
+                            }
+                        },
+                        (Some(_),None)=>std::cmp::Ordering::Less,(None,Some(_))=>std::cmp::Ordering::Greater,_=>std::cmp::Ordering::Equal,
+                    };
+                    ranked.then_with(||left.id.cmp(&right.id))
+                });
+            } else if query.sort.as_deref()==Some("price") && query.model.is_some() {
                 items.sort_by_key(|row| (row.models.first().map(|m|m.sales_ratio_micros).unwrap_or(i64::MAX),row.id));
             } else { items.sort_by(|a,b|a.merchant_name.cmp(&b.merchant_name).then_with(||a.name.cmp(&b.name)).then_with(||a.id.cmp(&b.id))); }
             page_items(items,&query)

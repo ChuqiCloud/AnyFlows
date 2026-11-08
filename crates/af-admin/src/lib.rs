@@ -496,7 +496,7 @@ mod token_auth_tests;
 mod account_verification;
 mod merchant_routes;
 pub use merchant_routes::{MerchantRouteService,DatabaseMerchantRouteService,MerchantRouteFuture,
-    MerchantRouteWrite,MerchantRouteRecord,MerchantServiceStatistics,MerchantConsumerAttempt};
+    MerchantRouteWrite,MerchantRouteRecord,MerchantServiceStatistics,MerchantConsumerAttempt,MerchantServiceTimeline};
 pub use account_verification::{
     AccountVerificationError, AccountVerificationMaterial, AccountVerificationProvider,
     AccountVerificationProviderError, AccountVerificationRecord, AccountVerificationService,

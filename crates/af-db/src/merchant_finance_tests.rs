@@ -106,3 +106,17 @@ async fn merchant_cannot_turn_oversized_usage_into_additional_wallet_debits()->R
     assert_eq!(finance.balance(77).await?.total_gross_quota,0);
     fixture.close().await?;Ok(())
 }
+
+#[tokio::test]
+async fn concurrent_merchant_requests_cannot_reserve_the_same_cash_twice()->Result<(),Box<dyn Error>>{
+    let fixture=fixture(config()).await?;let principal=merchant(&fixture,1_000,0).await?;
+    let first=fixture.repository.precharge(reservation_id(0xd6),principal,quota(600));
+    let second=fixture.repository.precharge(reservation_id(0xd7),principal,quota(600));
+    let(left,right)=tokio::join!(first,second);
+    assert!(matches!((&left,&right),
+        (Ok(QuotaMutationOutcome::Applied),Err(QuotaRepositoryError::MerchantFundingInsufficient))
+        |(Err(QuotaRepositoryError::MerchantFundingInsufficient),Ok(QuotaMutationOutcome::Applied))));
+    assert_eq!(reservation_count(&fixture.pool).await?,1);
+    assert_eq!(account_snapshot(&fixture.pool,fixture.principal).await?.user_frozen_quota,600);
+    fixture.close().await?;Ok(())
+}

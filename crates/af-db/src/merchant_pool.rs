@@ -236,8 +236,16 @@ fn pagination(query:&MerchantListQuery)->Result<(u32,u32),MerchantPoolError> {
     if page==0 || page>1_000_000 || size==0 || size>100
         || query.search.as_ref().is_some_and(|s|s.len()>128)
         || query.model.as_ref().is_some_and(|s|s.len()>255)
+        || query.protocol.as_ref().is_some_and(|s|!matches!(s.as_str(),"openai_chat"|"openai_responses"))
+        || query.capability.as_ref().is_some_and(|s|!matches!(s.as_str(),"streaming"|"tools"|"vision"))
+        || query.min_ratio_micros.is_some_and(|n|n<0 || n>100_000_000)
+        || query.max_ratio_micros.is_some_and(|n|n<0 || n>100_000_000)
+        || matches!((query.min_ratio_micros,query.max_ratio_micros),(Some(min),Some(max)) if min>max)
+        || query.window_seconds.is_some_and(|n|![900,3600,86400,604800].contains(&n))
         || query.status.as_ref().is_some_and(|s|s.len()>32)
-        || query.sort.as_ref().is_some_and(|s|!matches!(s.as_str(),"price"|"name")) {
+        || query.sort.as_ref().is_some_and(|s|!matches!(s.as_str(),"price"|"name"|"success_rate"|"latency"))
+        || (query.sort.as_ref().is_some_and(|s|matches!(s.as_str(),"price"|"success_rate"|"latency")) && query.model.as_ref().is_none_or(|model|model.is_empty()))
+        || (query.sort.as_deref()==Some("latency") && query.streaming.is_none()) {
         return Err(MerchantPoolError::InvalidInput);
     }
     Ok((page,size))

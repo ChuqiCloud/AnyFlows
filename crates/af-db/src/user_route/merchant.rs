@@ -34,6 +34,7 @@ mod attempts {
         #[sea_orm(primary_key, auto_increment = false)] pub id: String,
         pub pool_id: i64, pub route_id: i64, pub request_id:String, pub merchant_id: i64, pub service_id: i64,
         pub model: String, pub protocol: String, pub outcome: String,
+        pub streaming:bool,
         pub latency_ms: i64, pub ttft_ms: Option<i64>, pub completed_at_millis: i64,
     }
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)] pub enum Relation {}
@@ -239,6 +240,7 @@ fn route_record(row:user_routes::Model,scope:MerchantRouteScope)->Result<Merchan
 pub struct MerchantAttemptWrite {
     pub id:String, pub pool_id:i64, pub route_id:i64, pub request_id:String, pub merchant_id:i64, pub service_id:i64,
     pub model:String, pub protocol:String, pub outcome:String, pub latency_ms:i64, pub ttft_ms:Option<i64>,
+    pub streaming:bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -254,7 +256,47 @@ pub struct MerchantConsumerAttempt {
     pub request_id:String,pub outcome:String,pub latency_ms:i64,pub completed_at:i64,
 }
 
+#[derive(Clone,Debug,Serialize)]
+pub struct MerchantTimelineBucket {
+    pub started_at:i64,pub ended_at:i64,pub success_count:u64,pub failure_count:u64,pub sample_count:u64,pub status:String,
+}
+#[derive(Clone,Debug,Serialize)]
+pub struct MerchantServiceTimeline {pub service_id:i64,pub merchant_id:i64,pub buckets:Vec<MerchantTimelineBucket>}
+
 impl UserRouteRepository {
+    pub async fn merchant_timeline(&self,pool_id:i64,model:Option<&str>,window_seconds:u32,
+        protocol:Option<&str>,streaming:Option<bool>)
+        ->Result<Vec<MerchantServiceTimeline>,UserRouteError>{
+        if ![900,3600,86400,604800].contains(&window_seconds) || model.is_some_and(|m|m.len()>255) {
+            return Err(UserRouteError::InvalidInput);
+        }
+        self.bounded(async {
+            let end=super::runtime::now_millis()?/1000;
+            let start=end-i64::from(window_seconds);
+            let mut query=attempts::Entity::find().filter(attempts::Column::PoolId.eq(pool_id))
+                .filter(attempts::Column::CompletedAtMillis.gte(start*1000))
+                .filter(attempts::Column::CompletedAtMillis.lte(end*1000))
+                .filter(attempts::Column::Outcome.ne("ignored"));
+            if let Some(model)=model.filter(|m|!m.is_empty()){query=query.filter(attempts::Column::Model.eq(model));}
+            if let Some(protocol)=protocol.filter(|p|!p.is_empty()){query=query.filter(attempts::Column::Protocol.eq(protocol));}
+            if let Some(streaming)=streaming{query=query.filter(attempts::Column::Streaming.eq(streaming));}
+            let rows=query.order_by_desc(attempts::Column::CompletedAtMillis).limit(100_001)
+                .all(self.pool.connection()).await.map_err(internal)?;
+            if rows.len()>100_000 {return Err(UserRouteError::LimitReached);}
+            let mut groups:BTreeMap<(i64,i64),Vec<MerchantTimelineBucket>>=BTreeMap::new();
+            for row in rows {
+                let buckets=groups.entry((row.service_id,row.merchant_id)).or_insert_with(||(0..24)
+                    .map(|i|MerchantTimelineBucket{started_at:start+i*i64::from(window_seconds)/24,
+                        ended_at:start+(i+1)*i64::from(window_seconds)/24,success_count:0,failure_count:0,sample_count:0,status:"unknown".to_owned()}).collect());
+                let index=usize::try_from((row.completed_at_millis/1000-start)*24/i64::from(window_seconds)).unwrap_or(23).min(23);
+                let bucket=&mut buckets[index];bucket.sample_count+=1;
+                if row.outcome=="success"{bucket.success_count+=1;}else{bucket.failure_count+=1;}
+                bucket.status=if bucket.sample_count<5{"unknown"}else if bucket.failure_count*10>bucket.sample_count{"degraded"}else{"normal"}.to_owned();
+            }
+            Ok(groups.into_iter().map(|((service_id,merchant_id),buckets)|MerchantServiceTimeline{service_id,merchant_id,buckets}).collect())
+        }).await
+    }
+
     pub async fn merchant_attempts(&self,owner:UserId,request_id:&str)->Result<Vec<MerchantConsumerAttempt>,UserRouteError>{
         if request_id.is_empty() || request_id.len()>128 {return Err(UserRouteError::InvalidInput);}
         self.bounded(async {
@@ -289,6 +331,7 @@ impl UserRouteRepository {
             attempts::Entity::insert(attempts::ActiveModel {id:Set(write.id),pool_id:Set(write.pool_id),
                 route_id:Set(write.route_id),request_id:Set(write.request_id),merchant_id:Set(write.merchant_id),service_id:Set(write.service_id),
                 model:Set(write.model),protocol:Set(write.protocol),outcome:Set(write.outcome),
+                streaming:Set(write.streaming),
                 latency_ms:Set(write.latency_ms),ttft_ms:Set(write.ttft_ms),completed_at_millis:Set(now)})
                 .on_conflict(sea_orm::sea_query::OnConflict::column(attempts::Column::Id).do_nothing().to_owned())
                 .do_nothing().exec(self.pool.connection()).await.map_err(internal)?;
@@ -297,6 +340,12 @@ impl UserRouteRepository {
     }
 
     pub async fn merchant_statistics(&self,pool_id:i64,model:Option<&str>,window_seconds:u32)
+        ->Result<Vec<MerchantServiceStatistics>,UserRouteError>{
+        self.merchant_statistics_filtered(pool_id,model,window_seconds,None,None).await
+    }
+
+    pub async fn merchant_statistics_filtered(&self,pool_id:i64,model:Option<&str>,window_seconds:u32,
+        protocol:Option<&str>,streaming:Option<bool>)
         ->Result<Vec<MerchantServiceStatistics>,UserRouteError>{
         if ![900,3600,86400,604800].contains(&window_seconds) || model.is_some_and(|m|m.len()>255) {
             return Err(UserRouteError::InvalidInput);
@@ -307,8 +356,11 @@ impl UserRouteRepository {
                 .filter(attempts::Column::CompletedAtMillis.gte(now-i64::from(window_seconds)*1000))
                 .filter(attempts::Column::Outcome.ne("ignored"));
             if let Some(model)=model.filter(|m|!m.is_empty()){query=query.filter(attempts::Column::Model.eq(model));}
-            let rows=query.order_by_desc(attempts::Column::CompletedAtMillis).limit(100_000)
+            if let Some(protocol)=protocol.filter(|p|!p.is_empty()){query=query.filter(attempts::Column::Protocol.eq(protocol));}
+            if let Some(streaming)=streaming{query=query.filter(attempts::Column::Streaming.eq(streaming));}
+            let rows=query.order_by_desc(attempts::Column::CompletedAtMillis).limit(100_001)
                 .all(self.pool.connection()).await.map_err(internal)?;
+            if rows.len()>100_000 {return Err(UserRouteError::LimitReached);}
             let mut groups:BTreeMap<(i64,i64),Vec<attempts::Model>>=BTreeMap::new();
             for row in rows {groups.entry((row.service_id,row.merchant_id)).or_default().push(row);}
             Ok(groups.into_iter().map(|((service_id,merchant_id),rows)|{

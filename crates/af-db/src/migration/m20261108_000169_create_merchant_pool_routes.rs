@@ -31,6 +31,7 @@ impl MigrationTrait for Migration {
             .col(ColumnDef::new(Alias::new("service_id")).big_integer().not_null())
             .col(ColumnDef::new(Alias::new("model")).string_len(255).not_null())
             .col(ColumnDef::new(Alias::new("protocol")).string_len(32).not_null())
+            .col(ColumnDef::new(Alias::new("streaming")).boolean().not_null())
             .col(ColumnDef::new(Alias::new("outcome")).string_len(32).not_null())
             .col(ColumnDef::new(Alias::new("latency_ms")).big_integer().not_null())
             .col(ColumnDef::new(Alias::new("ttft_ms")).big_integer())

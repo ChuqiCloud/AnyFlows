@@ -26,7 +26,7 @@ use crate::{
 mod runtime;
 mod merchant;
 pub use merchant::{MerchantRouteMember, MerchantRouteWrite, MerchantRouteRecord, MerchantRouteScope,
-    MerchantAttemptWrite, MerchantServiceStatistics,MerchantConsumerAttempt};
+    MerchantAttemptWrite, MerchantServiceStatistics,MerchantConsumerAttempt,MerchantTimelineBucket,MerchantServiceTimeline};
 pub use runtime::UserRouteModelHealth;
 
 /// 已验证的用户路由成员，不包含渠道或凭据详情。
