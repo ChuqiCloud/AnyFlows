@@ -763,3 +763,35 @@ async fn vision_supply_is_rejected_and_legacy_published_vision_is_not_routable()
     fixture.pool.close().await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn pool_groups_are_hidden_and_cannot_issue_direct_keys_but_route_keys_still_work()->Result<(),Box<dyn Error>> {
+    let fixture=fixture().await?;publish(&fixture).await?;
+    let consumer=UserId::new(2)?;
+    fixture.pool.connection().execute_unprepared("INSERT INTO groups (id,name,display_name,flags) VALUES (2,'ordinary','Ordinary','{}')").await?;
+    let access=crate::GroupKeyAccessRepository::new(fixture.pool.clone(),Duration::from_secs(5))?;
+    access.update_policy(GroupId::new(2)?,crate::GroupKeySelectionMode::AllUsers,Vec::new()).await?;
+    let directory=access.list_user_groups(consumer,None,100).await?;
+    assert_eq!(directory.groups.iter().map(|group|group.group_id.get()).collect::<Vec<_>>(),vec![2]);
+    let tokens=crate::UserTokenRepository::new(fixture.pool.clone(),Duration::from_secs(5))?;
+    let key=|serial:u64| crate::UserTokenCreateRecord::new(consumer,format!("{serial:064x}"),format!("sk-af-{serial:012}"),
+        crate::UserTokenWriteRecord::new("merchant key selection".to_owned(),1,1_000_000,false,None,None,None));
+    assert!(matches!(tokens.create(key(1).with_group_id(Some(GroupId::new(1)?))).await,Err(crate::UserTokenRepositoryError::GroupUnavailable)));
+    assert!(matches!(tokens.create(key(2)).await,Err(crate::UserTokenRepositoryError::GroupUnavailable)));
+    let routes=crate::UserRouteRepository::new(fixture.pool.clone(),Duration::from_secs(5))?;
+    let route=routes.write_merchant_route(consumer,None,crate::MerchantRouteWrite {
+        name:"Merchant-only route".to_owned(),pool_id:fixture.shared_pool,strategy:af_domain::UserRouteStrategy::Ordered,enabled:true,
+        max_merchant_attempts:1,max_price_ratio_micros:None,members:vec![crate::MerchantRouteMember {
+            merchant_id:fixture.merchant,priority:0,weight:1,last_selected_at_millis:None,
+        }],excluded_merchant_ids:Vec::new(),allow_pool_fallback:false,accept_new_merchants:false,
+    }).await?;
+    let issued=tokens.create(key(3).with_user_route_id(Some(route.id))).await?;
+    assert_eq!(issued.user_route_id(),Some(route.id));assert_eq!(issued.group_id(),None);
+    assert!(routes.lookup_for_token(consumer,issued.token_id()).await?.is_some());
+    assert_eq!(tokens.create(key(4).with_group_id(Some(GroupId::new(2)?))).await?.effective_group_id(),GroupId::new(2)?);
+    let mut config=pool_write();config.enabled=false;
+    fixture.repository.write_pool(UserId::new(3)?,Some(fixture.shared_pool),config).await?;
+    assert_eq!(access.list_user_groups(consumer,None,100).await?.groups.iter().map(|group|group.group_id.get()).collect::<Vec<_>>(),vec![2]);
+    assert!(matches!(tokens.create(key(5)).await,Err(crate::UserTokenRepositoryError::GroupUnavailable)));
+    fixture.pool.close().await?;Ok(())
+}

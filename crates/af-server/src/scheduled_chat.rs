@@ -2126,12 +2126,8 @@ mod tests {
             ConnectionTrait,
             sea_query::{Alias, Query},
         };
-        let pool = connect_and_migrate(
-            &DatabaseOptions::new("sqlite::memory:").unwrap(),
-            MigrationOptions::default(),
-        )
-        .await
-        .unwrap();
+        let database = crate::test_database::SqliteTestDatabase::new("merchant-text-only").await;
+        let pool = database.pool();
         let groups = AdminGroupRepository::new(pool.clone(), Duration::from_secs(1)).unwrap();
         let pool_group = groups
             .create(group_record("merchant-text-only", None))
@@ -2169,8 +2165,8 @@ mod tests {
                 0_i64.into(),
             ])
             .to_owned();
-        pool.connection()
-            .execute(pool.connection().get_database_backend().build(&insert))
+        database.seed()
+            .execute(database.seed().get_database_backend().build(&insert))
             .await
             .unwrap();
         let service =
@@ -2195,7 +2191,7 @@ mod tests {
                 .err(),
             Some(AfError::ModelNotAllowed)
         );
-        pool.close().await.unwrap();
+        database.close().await;
     }
 
     #[test]
