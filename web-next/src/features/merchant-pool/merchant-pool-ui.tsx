@@ -35,7 +35,7 @@ export function PoolEmpty({ children }: { children?: ReactNode }) { const { t } 
 
 export function PoolStatus({ status }: { status: string }) {
   const { t } = useTranslation()
-  const success = ['active', 'published', 'approved', 'available', 'paid'].includes(status)
+  const success = ['active', 'normal', 'published', 'approved', 'available', 'paid'].includes(status)
   const danger = ['rejected', 'suspended', 'disabled', 'platform_paused', 'failed'].includes(status)
   return <Chip size="sm" variant="flat" className={success ? 'bg-success/10 text-success' : danger ? 'bg-danger/10 text-danger' : 'bg-warning/10 text-warning'}>{t(`merchantPool.status.${status}`, { defaultValue: status })}</Chip>
 }

@@ -201,8 +201,12 @@ impl BillingSettlementPort for QuotaRepository {
 #[allow(unreachable_patterns)]
 const fn map_quota_repository_error(error: QuotaRepositoryError) -> BillingSettlementError {
     match error {
-        QuotaRepositoryError::MerchantUsageExceedsAuthorization => BillingSettlementError::MerchantUsageExceedsAuthorization,
-        QuotaRepositoryError::MerchantFundingInsufficient => BillingSettlementError::MerchantFundingInsufficient,
+        QuotaRepositoryError::MerchantUsageExceedsAuthorization => {
+            BillingSettlementError::MerchantUsageExceedsAuthorization
+        }
+        QuotaRepositoryError::MerchantFundingInsufficient => {
+            BillingSettlementError::MerchantFundingInsufficient
+        }
         QuotaRepositoryError::UserQuotaInsufficient
         | QuotaRepositoryError::OrganizationQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient
@@ -230,7 +234,9 @@ const fn map_quota_repository_precharge_error(
     error: QuotaRepositoryError,
 ) -> BillingPrechargeError {
     match error {
-        QuotaRepositoryError::MerchantFundingInsufficient => BillingPrechargeError::MerchantFundingInsufficient,
+        QuotaRepositoryError::MerchantFundingInsufficient => {
+            BillingPrechargeError::MerchantFundingInsufficient
+        }
         QuotaRepositoryError::UserQuotaInsufficient
         | QuotaRepositoryError::OrganizationQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient => BillingPrechargeError::InsufficientQuota,

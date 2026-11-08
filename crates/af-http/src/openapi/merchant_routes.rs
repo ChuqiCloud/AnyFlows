@@ -41,6 +41,7 @@ pub(super) fn document()->OpenApi{
         ("/api/merchant-pool/routes/{id}","delete","deleteMerchantRoute","",false,"204"),
         ("/api/merchant-pools/{pool_id}/statistics","get","getMerchantPoolStatistics","MerchantStatisticsResponse",false,"200"),
         ("/api/merchant-pools/{pool_id}/timeline","get","getMerchantPoolTimeline","MerchantTimelineResponse",false,"200"),
+        ("/api/merchant/statistics","get","getOwnMerchantStatistics","MerchantStatisticsResponse",false,"200"),
         ("/api/merchant-pool/attempts","get","getMerchantAttempts","MerchantAttemptList",false,"200"),
     ] {
         let mut operation=json!({"operationId":id,"tags":["商户共享池"],"security":[{"bearerAuth":[]}],"responses":{
@@ -51,8 +52,8 @@ pub(super) fn document()->OpenApi{
         if request {operation["requestBody"]=json!({"required":true,"content":{"application/json":{"schema":reference("MerchantRouteWriteRequest")}}});}
         let mut params=Vec::new();
         if path.contains("{id}"){params.push(json!({"name":"id","in":"path","required":true,"schema":integer()}));}
-        if path.contains("{pool_id}"){
-            params.push(json!({"name":"pool_id","in":"path","required":true,"schema":integer()}));
+        if path.contains("{pool_id}") || path=="/api/merchant/statistics" {
+            if path.contains("{pool_id}") {params.push(json!({"name":"pool_id","in":"path","required":true,"schema":integer()}));}
             params.push(json!({"name":"model","in":"query","required":false,"schema":{"type":"string"}}));
             params.push(json!({"name":"window_seconds","in":"query","required":false,"schema":{"type":"integer","enum":[900,3600,86400,604800],"default":86400}}));
             params.push(json!({"name":"protocol","in":"query","required":false,"schema":{"type":"string","enum":["openai_chat","openai_responses"]}}));

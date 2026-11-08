@@ -207,33 +207,37 @@ pub struct MerchantReview {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct MerchantPoolSettings { pub commission_bps: u16 }
+pub struct MerchantPoolSettings {
+    pub commission_bps: u16,
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct MerchantPoolTerms { pub commission_bps: Option<u16> }
+pub struct MerchantPoolTerms {
+    pub commission_bps: Option<u16>,
+}
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MerchantQuoteWrite {
-    pub pool_id:i64,
-    pub default_ratio_micros:i64,
-    pub models:Vec<MerchantModelWrite>,
+    pub pool_id: i64,
+    pub default_ratio_micros: i64,
+    pub models: Vec<MerchantModelWrite>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct MerchantQuoteModel {
-    pub model:String,
-    pub sales_ratio_micros:i64,
-    pub base_prices:MerchantModelPrices,
-    pub prices:MerchantModelPrices,
-    pub net_prices:MerchantModelPrices,
+    pub model: String,
+    pub sales_ratio_micros: i64,
+    pub base_prices: MerchantModelPrices,
+    pub prices: MerchantModelPrices,
+    pub net_prices: MerchantModelPrices,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct MerchantQuote {
-    pub models:Vec<MerchantQuoteModel>,
-    pub effective_commission_bps:u16,
+    pub models: Vec<MerchantQuoteModel>,
+    pub effective_commission_bps: u16,
 }
 
 #[derive(Clone, Debug)]
@@ -252,17 +256,23 @@ pub struct MerchantRuntimeCandidate {
 }
 
 pub fn validate_merchant_text(value: &str, maximum: usize, empty: bool) -> bool {
-    (empty || !value.is_empty()) && value.len() <= maximum
-        && value.trim() == value && !value.chars().any(char::is_control)
+    (empty || !value.is_empty())
+        && value.len() <= maximum
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
 }
 
 impl MerchantPoolWrite {
     pub fn validate(&self) -> Result<(), MerchantPoolError> {
-        if self.group_id <= 0 || !validate_merchant_text(&self.name, 128, false)
+        if self.group_id <= 0
+            || !validate_merchant_text(&self.name, 128, false)
             || !validate_merchant_text(&self.description, 2048, true)
-            || self.commission_bps > 10_000 || self.min_ratio_micros <= 0
-            || self.max_ratio_micros < self.min_ratio_micros || self.max_ratio_micros > 100_000_000
-            || self.settlement_delay_secs > 90 * 86_400 {
+            || self.commission_bps > 10_000
+            || self.min_ratio_micros <= 0
+            || self.max_ratio_micros < self.min_ratio_micros
+            || self.max_ratio_micros > 100_000_000
+            || self.settlement_delay_secs > 90 * 86_400
+        {
             return Err(MerchantPoolError::InvalidInput);
         }
         Ok(())
@@ -271,14 +281,20 @@ impl MerchantPoolWrite {
 
 impl MerchantServiceWrite {
     pub fn validate(&self) -> Result<(), MerchantPoolError> {
-        if self.pool_id <= 0 || !validate_merchant_text(&self.name, 128, false)
+        if self.pool_id <= 0
+            || !validate_merchant_text(&self.name, 128, false)
             || !validate_merchant_text(&self.description, 2048, true)
             || !matches!(self.protocol.as_str(), "openai_chat" | "openai_responses")
-            || self.default_ratio_micros <= 0 || self.default_ratio_micros > 100_000_000
-            || self.models.is_empty() || self.models.len() > MAX_MERCHANT_SERVICE_MODELS
+            || self.default_ratio_micros <= 0
+            || self.default_ratio_micros > 100_000_000
+            || self.models.is_empty()
+            || self.models.len() > MAX_MERCHANT_SERVICE_MODELS
             || !(1..=300).contains(&self.timeout_secs)
             || self.concurrency.is_some_and(|n| n == 0 || n > 10_000)
-            || self.api_key.as_ref().is_some_and(|key| key.is_empty() || key.len() > 8192 || key.chars().any(char::is_control)) {
+            || self.api_key.as_ref().is_some_and(|key| {
+                key.is_empty() || key.len() > 8192 || key.chars().any(char::is_control)
+            })
+        {
             return Err(MerchantPoolError::InvalidInput);
         }
         let mut names = std::collections::BTreeSet::new();
@@ -286,9 +302,13 @@ impl MerchantServiceWrite {
             if !validate_merchant_text(&model.model, 255, false)
                 || !validate_merchant_text(&model.upstream_model, 255, false)
                 || !names.insert(&model.model)
-                || model.ratio_micros.is_some_and(|n| n <= 0 || n > 100_000_000)
-                || model.context_window == Some(0) || model.max_output_tokens == Some(0)
-                || matches!((model.context_window,model.max_output_tokens),(Some(c),Some(o)) if o > c) {
+                || model
+                    .ratio_micros
+                    .is_some_and(|n| n <= 0 || n > 100_000_000)
+                || model.context_window == Some(0)
+                || model.max_output_tokens == Some(0)
+                || matches!((model.context_window,model.max_output_tokens),(Some(c),Some(o)) if o > c)
+            {
                 return Err(MerchantPoolError::InvalidInput);
             }
         }

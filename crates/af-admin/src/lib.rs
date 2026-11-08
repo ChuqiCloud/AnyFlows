@@ -14,9 +14,10 @@ pub use verification_settings::{
 mod announcement;
 mod api_key;
 mod merchant_finance;
-pub use merchant_finance::{DatabaseMerchantFinanceService, MerchantFinanceBalance,
-    MerchantFinanceEntry, MerchantFinanceError, MerchantFinancePage, MerchantFinanceService,
-    MerchantWithdrawal};
+pub use merchant_finance::{
+    DatabaseMerchantFinanceService, MerchantFinanceBalance, MerchantFinanceEntry,
+    MerchantFinanceError, MerchantFinancePage, MerchantFinanceService, MerchantWithdrawal,
+};
 mod auth_challenge_security;
 mod balance_alert_settings;
 mod balance_alert_task;
@@ -495,8 +496,6 @@ mod token_auth_tests;
 
 mod account_verification;
 mod merchant_routes;
-pub use merchant_routes::{MerchantRouteService,DatabaseMerchantRouteService,MerchantRouteFuture,
-    MerchantRouteWrite,MerchantRouteRecord,MerchantServiceStatistics,MerchantConsumerAttempt,MerchantServiceTimeline};
 pub use account_verification::{
     AccountVerificationError, AccountVerificationMaterial, AccountVerificationProvider,
     AccountVerificationProviderError, AccountVerificationRecord, AccountVerificationService,
@@ -504,3 +503,8 @@ pub use account_verification::{
     validate_verification_material,
 };
 pub use alipay_verification::{AlipayAccountVerificationProvider, AlipayProviderConfigError};
+pub use merchant_routes::{
+    DatabaseMerchantRouteService, MerchantConsumerAttempt, MerchantRouteFuture,
+    MerchantRouteRecord, MerchantRouteService, MerchantRouteWrite, MerchantServiceStatistics,
+    MerchantServiceTimeline,
+};

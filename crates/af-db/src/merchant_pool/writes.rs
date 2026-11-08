@@ -1,32 +1,64 @@
 use super::*;
-use tracing::{instrument::WithSubscriber as _,subscriber::NoSubscriber};
+use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 impl MerchantPoolRepository {
-    pub async fn apply(&self,owner:UserId,write:MerchantApplication)->Result<MerchantProfile,MerchantPoolError> {
-        if !af_domain::validate_merchant_text(&write.name,128,false)
-            || !af_domain::validate_merchant_text(&write.description,2048,true) { return Err(MerchantPoolError::InvalidInput); }
+    pub async fn apply(
+        &self,
+        owner: UserId,
+        write: MerchantApplication,
+    ) -> Result<MerchantProfile, MerchantPoolError> {
+        if !af_domain::validate_merchant_text(&write.name, 128, false)
+            || !af_domain::validate_merchant_text(&write.description, 2048, true)
+        {
+            return Err(MerchantPoolError::InvalidInput);
+        }
         self.bounded(async {
-            let txn=self.pool.connection().begin().await.map_err(internal)?;
-            lock_owner(&txn,owner).await?;
-            let existing=profiles::Entity::find().filter(profiles::Column::OwnerUserId.eq(owner.get())).one(&txn).await.map_err(internal)?;
-            let now=DatabaseTimestamp::now_utc();
-            let row=if let Some(existing)=existing {
-                if existing.status!="rejected" { return Err(MerchantPoolError::Conflict); }
-                let mut active=existing.into_active_model();
-                active.name=Set(write.name);active.description=Set(write.description);
-                active.status=Set("pending".to_owned());active.review_reason=Set(None);active.updated_at=Set(now);
+            let txn = self.pool.connection().begin().await.map_err(internal)?;
+            lock_owner(&txn, owner).await?;
+            let existing = profiles::Entity::find()
+                .filter(profiles::Column::OwnerUserId.eq(owner.get()))
+                .one(&txn)
+                .await
+                .map_err(internal)?;
+            let now = DatabaseTimestamp::now_utc();
+            let row = if let Some(existing) = existing {
+                if existing.status != "rejected" {
+                    return Err(MerchantPoolError::Conflict);
+                }
+                let mut active = existing.into_active_model();
+                active.name = Set(write.name);
+                active.description = Set(write.description);
+                active.status = Set("pending".to_owned());
+                active.review_reason = Set(None);
+                active.updated_at = Set(now);
                 active.update(&txn).await.map_err(internal)?
             } else {
-                profiles::ActiveModel{owner_user_id:Set(owner.get()),name:Set(write.name),description:Set(write.description),
-                    status:Set("pending".to_owned()),review_reason:Set(None),created_at:Set(now),updated_at:Set(now),..Default::default()}
-                    .insert(&txn).await.map_err(internal)?
+                profiles::ActiveModel {
+                    owner_user_id: Set(owner.get()),
+                    name: Set(write.name),
+                    description: Set(write.description),
+                    status: Set("pending".to_owned()),
+                    review_reason: Set(None),
+                    created_at: Set(now),
+                    updated_at: Set(now),
+                    ..Default::default()
+                }
+                .insert(&txn)
+                .await
+                .map_err(internal)?
             };
             txn.commit().await.map_err(internal)?;
             Ok(profile_snapshot(row))
-        }).await
+        })
+        .await
     }
 
-    pub async fn write_pool(&self,actor:UserId,id:Option<i64>,write:MerchantPoolWrite)->Result<MerchantPool,MerchantPoolError> {
+    pub async fn write_pool(
+        &self,
+        actor: UserId,
+        id: Option<i64>,
+        write: MerchantPoolWrite,
+    ) -> Result<MerchantPool, MerchantPoolError> {
         write.validate()?;
         self.bounded(async {
             let txn=self.pool.connection().begin().await.map_err(internal)?;
@@ -60,44 +92,98 @@ impl MerchantPoolRepository {
         }).await
     }
 
-    pub async fn review_merchant(&self,actor:UserId,id:i64,review:MerchantReview)->Result<MerchantProfile,MerchantPoolError> {
-        validate_review(&review,false)?;
+    pub async fn review_merchant(
+        &self,
+        actor: UserId,
+        id: i64,
+        review: MerchantReview,
+    ) -> Result<MerchantProfile, MerchantPoolError> {
+        validate_review(&review, false)?;
         self.bounded(async {
-            let txn=self.pool.connection().begin().await.map_err(internal)?;
-            let row=profiles::Entity::find_by_id(id).one(&txn).await.map_err(internal)?.ok_or(MerchantPoolError::NotFound)?;
-            lock_owner(&txn,UserId::new(row.owner_user_id).map_err(internal)?).await?;
-            let row=profiles::Entity::find_by_id(id).one(&txn).await.map_err(internal)?.ok_or(MerchantPoolError::NotFound)?;
-            let before=row.status.clone();
-            let now=DatabaseTimestamp::now_utc();
-            if review.decision=="reject" && row.status!="pending" { return Err(MerchantPoolError::Conflict); }
-            if review.decision=="approve" && !matches!(row.status.as_str(),"pending"|"suspended") { return Err(MerchantPoolError::Conflict); }
-            let mut active=row.into_active_model();
-            active.status=Set(match review.decision.as_str(){"approve"=>"approved","reject"=>"rejected",_=>"suspended"}.to_owned());
-            active.review_reason=Set(Some(review.reason));active.updated_at=Set(now);
-            let result=active.update(&txn).await.map_err(internal)?;
-            if review.decision=="suspend" {
-                let list=services::Entity::find().filter(services::Column::MerchantId.eq(id)).all(&txn).await.map_err(internal)?;
+            let txn = self.pool.connection().begin().await.map_err(internal)?;
+            let row = profiles::Entity::find_by_id(id)
+                .one(&txn)
+                .await
+                .map_err(internal)?
+                .ok_or(MerchantPoolError::NotFound)?;
+            lock_owner(&txn, UserId::new(row.owner_user_id).map_err(internal)?).await?;
+            let row = profiles::Entity::find_by_id(id)
+                .one(&txn)
+                .await
+                .map_err(internal)?
+                .ok_or(MerchantPoolError::NotFound)?;
+            let before = row.status.clone();
+            let now = DatabaseTimestamp::now_utc();
+            if review.decision == "reject" && row.status != "pending" {
+                return Err(MerchantPoolError::Conflict);
+            }
+            if review.decision == "approve"
+                && !matches!(row.status.as_str(), "pending" | "suspended")
+            {
+                return Err(MerchantPoolError::Conflict);
+            }
+            let mut active = row.into_active_model();
+            active.status = Set(match review.decision.as_str() {
+                "approve" => "approved",
+                "reject" => "rejected",
+                _ => "suspended",
+            }
+            .to_owned());
+            active.review_reason = Set(Some(review.reason));
+            active.updated_at = Set(now);
+            let result = active.update(&txn).await.map_err(internal)?;
+            if review.decision == "suspend" {
+                let list = services::Entity::find()
+                    .filter(services::Column::MerchantId.eq(id))
+                    .all(&txn)
+                    .await
+                    .map_err(internal)?;
                 for service in list {
-                    if let Some(revision_id)=service.published_revision_id {
-                        let revision=load_revision(&txn,revision_id,service.id).await?;
-                        set_channel_enabled(&txn,revision.channel_id,false,now).await?;
+                    if let Some(revision_id) = service.published_revision_id {
+                        let revision = load_revision(&txn, revision_id, service.id).await?;
+                        set_channel_enabled(&txn, revision.channel_id, false, now).await?;
                     }
-                    let mut service=service.into_active_model();service.status=Set("suspended".to_owned());service.platform_suspended=Set(true);service.updated_at=Set(now);
+                    let mut service = service.into_active_model();
+                    service.status = Set("suspended".to_owned());
+                    service.platform_suspended = Set(true);
+                    service.updated_at = Set(now);
                     service.update(&txn).await.map_err(internal)?;
                 }
             }
-            audit_control(&txn,actor,"merchant.review",id,Some(serde_json::json!({"status":before})),
-                Some(serde_json::json!({"status":result.status,"reason":result.review_reason}))).await?;
+            audit_control(
+                &txn,
+                actor,
+                "merchant.review",
+                id,
+                Some(serde_json::json!({"status":before})),
+                Some(serde_json::json!({"status":result.status,"reason":result.review_reason})),
+            )
+            .await?;
             txn.commit().await.map_err(internal)?;
             Ok(profile_snapshot(result))
-        }).await
+        })
+        .await
     }
 
     /// A single transaction owns the draft channel, credential AEAD binding and revision.
-    pub async fn write_service<F>(&self,owner:UserId,id:Option<i64>,write:MerchantServiceWrite,encrypt:F)->Result<MerchantOwnedService,MerchantPoolError>
-    where F:FnOnce(ChannelId,CredentialId,Option<MerchantCredentialMaterial>,Option<String>)->Result<EncryptedCredentialEnvelope,MerchantPoolError> + Send {
+    pub async fn write_service<F>(
+        &self,
+        owner: UserId,
+        id: Option<i64>,
+        write: MerchantServiceWrite,
+        encrypt: F,
+    ) -> Result<MerchantOwnedService, MerchantPoolError>
+    where
+        F: FnOnce(
+                ChannelId,
+                CredentialId,
+                Option<MerchantCredentialMaterial>,
+                Option<String>,
+            ) -> Result<EncryptedCredentialEnvelope, MerchantPoolError>
+            + Send,
+    {
         write.validate()?;
-        let mut write=write;
+        let mut write = write;
         self.bounded(async {
             let txn=self.pool.connection().begin().await.map_err(internal)?;
             lock_owner(&txn,owner).await?;
@@ -186,47 +272,105 @@ impl MerchantPoolRepository {
         }).await
     }
 
-    pub async fn submit_service(&self,owner:UserId,id:i64)->Result<MerchantOwnedService,MerchantPoolError> {
+    pub async fn submit_service(
+        &self,
+        owner: UserId,
+        id: i64,
+    ) -> Result<MerchantOwnedService, MerchantPoolError> {
         self.bounded(async {
-            let txn=self.pool.connection().begin().await.map_err(internal)?;
-            lock_owner(&txn,owner).await?;
-            let merchant=require_merchant(&txn,owner,true).await?;
-            let service=lock_service(&txn,id).await?;
-            if service.merchant_id!=merchant.id { return Err(MerchantPoolError::NotFound); }
-            if service.status=="suspended" { return Err(MerchantPoolError::Forbidden); }
-            let revision=load_revision(&txn,service.pending_revision_id.ok_or(MerchantPoolError::Conflict)?,id).await?;
-            if !matches!(revision.status.as_str(),"draft"|"rejected") { return Err(MerchantPoolError::Conflict); }
-            let now=DatabaseTimestamp::now_utc();
-            let mut revision=revision.into_active_model();revision.status=Set("pending".to_owned());revision.review_reason=Set(None);revision.updated_at=Set(now);
+            let txn = self.pool.connection().begin().await.map_err(internal)?;
+            lock_owner(&txn, owner).await?;
+            let merchant = require_merchant(&txn, owner, true).await?;
+            let service = lock_service(&txn, id).await?;
+            if service.merchant_id != merchant.id {
+                return Err(MerchantPoolError::NotFound);
+            }
+            if service.status == "suspended" {
+                return Err(MerchantPoolError::Forbidden);
+            }
+            let revision = load_revision(
+                &txn,
+                service
+                    .pending_revision_id
+                    .ok_or(MerchantPoolError::Conflict)?,
+                id,
+            )
+            .await?;
+            if !matches!(revision.status.as_str(), "draft" | "rejected") {
+                return Err(MerchantPoolError::Conflict);
+            }
+            let now = DatabaseTimestamp::now_utc();
+            let mut revision = revision.into_active_model();
+            revision.status = Set("pending".to_owned());
+            revision.review_reason = Set(None);
+            revision.updated_at = Set(now);
             revision.update(&txn).await.map_err(internal)?;
-            let published=service.published_revision_id.is_some();
-            let mut service=service.into_active_model();
-            if !published { service.status=Set("pending".to_owned()); }
-            service.updated_at=Set(now);
-            let result=service_snapshot(&txn,service.update(&txn).await.map_err(internal)?).await?;
-            txn.commit().await.map_err(internal)?;Ok(result)
-        }).await
+            let published = service.published_revision_id.is_some();
+            let mut service = service.into_active_model();
+            if !published {
+                service.status = Set("pending".to_owned());
+            }
+            service.updated_at = Set(now);
+            let result =
+                service_snapshot(&txn, service.update(&txn).await.map_err(internal)?).await?;
+            txn.commit().await.map_err(internal)?;
+            Ok(result)
+        })
+        .await
     }
 
-    pub async fn pause_service(&self,owner:UserId,id:i64,paused:bool)->Result<MerchantOwnedService,MerchantPoolError> {
+    pub async fn pause_service(
+        &self,
+        owner: UserId,
+        id: i64,
+        paused: bool,
+    ) -> Result<MerchantOwnedService, MerchantPoolError> {
         self.bounded(async {
-            let txn=self.pool.connection().begin().await.map_err(internal)?;
-            lock_owner(&txn,owner).await?;
-            let merchant=require_merchant(&txn,owner,true).await?;
-            let service=lock_service(&txn,id).await?;
-            if service.merchant_id!=merchant.id { return Err(MerchantPoolError::NotFound); }
-            if !matches!(service.status.as_str(),"published"|"paused") { return Err(MerchantPoolError::Conflict); }
-            let revision=load_revision(&txn,service.published_revision_id.ok_or(MerchantPoolError::Conflict)?,id).await?;
-            let now=DatabaseTimestamp::now_utc();
-            set_channel_enabled(&txn,revision.channel_id,!paused,now).await?;
-            let mut service=service.into_active_model();service.merchant_paused=Set(paused);service.status=Set(if paused{"paused"}else{"published"}.to_owned());service.updated_at=Set(now);
-            let result=service_snapshot(&txn,service.update(&txn).await.map_err(internal)?).await?;
-            txn.commit().await.map_err(internal)?;Ok(result)
-        }).await
+            let txn = self.pool.connection().begin().await.map_err(internal)?;
+            lock_owner(&txn, owner).await?;
+            let merchant = require_merchant(&txn, owner, true).await?;
+            let service = lock_service(&txn, id).await?;
+            if service.merchant_id != merchant.id {
+                return Err(MerchantPoolError::NotFound);
+            }
+            if !matches!(service.status.as_str(), "published" | "paused") {
+                return Err(MerchantPoolError::Conflict);
+            }
+            let revision = load_revision(
+                &txn,
+                service
+                    .published_revision_id
+                    .ok_or(MerchantPoolError::Conflict)?,
+                id,
+            )
+            .await?;
+            let now = DatabaseTimestamp::now_utc();
+            set_channel_enabled(&txn, revision.channel_id, !paused, now).await?;
+            let mut service = service.into_active_model();
+            service.merchant_paused = Set(paused);
+            service.status = Set(if paused { "paused" } else { "published" }.to_owned());
+            service.updated_at = Set(now);
+            let result =
+                service_snapshot(&txn, service.update(&txn).await.map_err(internal)?).await?;
+            txn.commit().await.map_err(internal)?;
+            Ok(result)
+        })
+        .await
     }
 
-    pub async fn rotate_service_key<F>(&self,owner:UserId,id:i64,encrypt:F)->Result<MerchantOwnedService,MerchantPoolError>
-    where F:FnOnce(ChannelId,CredentialId)->Result<EncryptedCredentialEnvelope,MerchantPoolError>+Send {
+    pub async fn rotate_service_key<F>(
+        &self,
+        owner: UserId,
+        id: i64,
+        encrypt: F,
+    ) -> Result<MerchantOwnedService, MerchantPoolError>
+    where
+        F: FnOnce(
+                ChannelId,
+                CredentialId,
+            ) -> Result<EncryptedCredentialEnvelope, MerchantPoolError>
+            + Send,
+    {
         self.bounded(async {
             let txn=self.pool.connection().begin().await.map_err(internal)?;
             lock_owner(&txn,owner).await?;
@@ -261,8 +405,13 @@ impl MerchantPoolRepository {
         }).await
     }
 
-    pub async fn review_service(&self,actor:UserId,id:i64,review:MerchantReview)->Result<MerchantOwnedService,MerchantPoolError> {
-        validate_review(&review,true)?;
+    pub async fn review_service(
+        &self,
+        actor: UserId,
+        id: i64,
+        review: MerchantReview,
+    ) -> Result<MerchantOwnedService, MerchantPoolError> {
+        validate_review(&review, true)?;
         self.bounded(async {
             let txn=self.pool.connection().begin().await.map_err(internal)?;
             let initial=find_service(&txn,id).await?;
@@ -319,27 +468,59 @@ impl MerchantPoolRepository {
     }
 }
 
-fn validate_review(review:&MerchantReview,versioned:bool)->Result<(),MerchantPoolError> {
-    if !matches!(review.decision.as_str(),"approve"|"reject"|"suspend")
-        || !af_domain::validate_merchant_text(&review.reason,2048,false)
-        || (versioned && review.decision!="suspend" && review.expected_revision.is_none_or(|n|n<=0)) {
+fn validate_review(review: &MerchantReview, versioned: bool) -> Result<(), MerchantPoolError> {
+    if !matches!(review.decision.as_str(), "approve" | "reject" | "suspend")
+        || !af_domain::validate_merchant_text(&review.reason, 2048, false)
+        || (versioned
+            && review.decision != "suspend"
+            && review.expected_revision.is_none_or(|n| n <= 0))
+    {
         return Err(MerchantPoolError::InvalidInput);
     }
     Ok(())
 }
-fn validate_ratios(pool:&pools::Model,default:i64,models:&[MerchantModelWrite])->Result<(),MerchantPoolError> {
-    let allowed=pool.min_ratio_micros..=pool.max_ratio_micros;
-    if !allowed.contains(&default) || models.iter().any(|model|!allowed.contains(&model.ratio_micros.unwrap_or(default))) {
+fn validate_ratios(
+    pool: &pools::Model,
+    default: i64,
+    models: &[MerchantModelWrite],
+) -> Result<(), MerchantPoolError> {
+    let allowed = pool.min_ratio_micros..=pool.max_ratio_micros;
+    if !allowed.contains(&default)
+        || models
+            .iter()
+            .any(|model| !allowed.contains(&model.ratio_micros.unwrap_or(default)))
+    {
         return Err(MerchantPoolError::InvalidInput);
     }
     Ok(())
 }
-async fn set_channel_enabled(txn:&DatabaseTransaction,id:i64,enabled:bool,now:DatabaseTimestamp)->Result<(),MerchantPoolError> {
-    let channel_id=ChannelId::new(id).map_err(internal)?;
-    channels::Entity::update_many().filter(channels::Column::Id.eq(id)).filter(channels::Column::DeletedAt.is_null())
-        .col_expr(channels::Column::Status,Expr::value(if enabled{Status::Enabled.code()}else{Status::Disabled.code()}))
-        .col_expr(channels::Column::UpdatedAt,Expr::value(now)).exec(txn).await.map_err(internal)?;
-    set_channel_abilities_enabled(txn,channel_id,enabled,now).await.map_err(internal)?;
-    enqueue_scheduler_catalog_change(txn,SchedulerCatalogSubject::Channel(channel_id),now).await.map_err(internal)?;
+async fn set_channel_enabled(
+    txn: &DatabaseTransaction,
+    id: i64,
+    enabled: bool,
+    now: DatabaseTimestamp,
+) -> Result<(), MerchantPoolError> {
+    let channel_id = ChannelId::new(id).map_err(internal)?;
+    channels::Entity::update_many()
+        .filter(channels::Column::Id.eq(id))
+        .filter(channels::Column::DeletedAt.is_null())
+        .col_expr(
+            channels::Column::Status,
+            Expr::value(if enabled {
+                Status::Enabled.code()
+            } else {
+                Status::Disabled.code()
+            }),
+        )
+        .col_expr(channels::Column::UpdatedAt, Expr::value(now))
+        .exec(txn)
+        .await
+        .map_err(internal)?;
+    set_channel_abilities_enabled(txn, channel_id, enabled, now)
+        .await
+        .map_err(internal)?;
+    enqueue_scheduler_catalog_change(txn, SchedulerCatalogSubject::Channel(channel_id), now)
+        .await
+        .map_err(internal)?;
     Ok(())
 }

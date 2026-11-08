@@ -112,6 +112,7 @@ pub use software_updates::{
     SoftwareUpdateErrorBody, SoftwareUpdateFuture, SoftwareUpdateService,
     build_software_update_router,
 };
+mod merchant_routes;
 mod speech_service;
 mod streaming;
 mod subscriptions;
@@ -119,7 +120,6 @@ mod turnstile;
 mod user_notifications;
 mod user_profile;
 mod user_routes;
-mod merchant_routes;
 pub use merchant_routes::build_merchant_route_router;
 mod user_tokens;
 pub use user_routes::build_user_route_router;

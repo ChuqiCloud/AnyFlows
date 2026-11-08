@@ -18,11 +18,12 @@ impl UserRouteRuntime {
         }
         let time=crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?;
         let offers=pools.published_candidates(scope.pool_id,None,&plan.model).await.map_err(|_|AfError::Internal)?;
-        let statistics=self.repository.merchant_statistics(scope.pool_id,Some(&plan.model),900).await.map_err(map_repository_error)?;
+        let features=features.ok_or(AfError::ModelNotAllowed)?;
+        let statistics=self.repository.merchant_statistics_filtered(scope.pool_id,Some(&plan.model),900,
+            Some(protocol.as_str()),Some(features.streaming)).await.map_err(map_repository_error)?;
         let mut candidates:Vec<UserRouteCandidate>=Vec::new();
         let mut fallback:Vec<UserRouteCandidate>=Vec::new();
         for offer in offers {
-            let Some(features)=features else {return Err(AfError::ModelNotAllowed);};
             if features.unsupported_media || (features.streaming && !offer.model.supports_streaming)
                 || (features.tools && !offer.model.supports_tools) || (features.vision && !offer.model.supports_vision)
                 || offer.model.max_output_tokens.is_some_and(|n| upper_bound.output_tokens().get()>i64::from(n))
@@ -44,7 +45,7 @@ impl UserRouteRuntime {
             if !price_ratio_allowed(&snapshot,plan.route.max_price_ratio_micros)? {continue;}
             let quoted_quota=snapshot.resolver().resolve(&PricingContext::new(upper_bound))
                 .map_err(|_|AfError::Internal)?.quota().units();
-            let health=statistics.iter().find(|s|s.service_id==offer.service_id).map(|s|UserRouteModelHealth{
+            let health=statistics.iter().find(|s|s.service_id==offer.service_id && s.sample_count>=20).map(|s|UserRouteModelHealth{
                 group_id,success_count:s.success_count,fail_count:s.failure_count,
                 total_latency_ms:u64::try_from(s.latency_p50_ms.unwrap_or(0)).unwrap_or(0).saturating_mul(s.success_count),
                 cooldown_until_millis:None,updated_at_millis:s.updated_at.saturating_mul(1000)});

@@ -187,11 +187,13 @@ impl UserRouteRepository {
                     created_at:Set(now),updated_at:Set(now),deleted_at:Set(None),..Default::default() }
                     .insert(&txn).await.map_err(internal)?
             };
+            let previous_scope = route_scope(&txn,row.id).await?;
+            let enrolled_merchants = enrollment_snapshot(previous_scope.as_ref(),&write,current_merchants);
             sync_members(&txn,row.id,&[UserRouteMemberWrite {group_id:pool_group,priority:0,weight:1}]).await?;
             scope::Entity::delete_by_id(row.id).exec(&txn).await.map_err(internal)?;
             scope::ActiveModel {route_id:Set(row.id),pool_id:Set(write.pool_id),
                 members:Set(serde_json::to_value(&write.members).map_err(|_|UserRouteError::Internal)?),
-                enrolled_merchants:Set(serde_json::to_value(current_merchants).map_err(|_|UserRouteError::Internal)?),
+                enrolled_merchants:Set(serde_json::to_value(enrolled_merchants).map_err(|_|UserRouteError::Internal)?),
                 allow_pool_fallback:Set(write.allow_pool_fallback),accept_new_merchants:Set(write.accept_new_merchants),
                 updated_at_millis:Set(now.unix_timestamp_nanos() as i64 / 1_000_000)}
                 .insert(&txn).await.map_err(internal)?;
@@ -224,6 +226,44 @@ impl UserRouteRepository {
             txn.commit().await.map_err(internal)?;
             Ok(selected)
         }).await
+    }
+}
+
+/// Editing a name, budget or priority does not consent to new data recipients.
+fn enrollment_snapshot(previous:Option<&MerchantRouteScope>,write:&MerchantRouteWrite,current:Vec<i64>)->Vec<i64>{
+    match previous {
+        Some(previous) if previous.pool_id==write.pool_id && previous.allow_pool_fallback
+            && write.allow_pool_fallback && !previous.accept_new_merchants && !write.accept_new_merchants => previous.enrolled_merchants.clone(),
+        _=>current,
+    }
+}
+
+#[cfg(test)]
+mod enrollment_tests {
+    use super::*;
+
+    fn configuration()->MerchantRouteWrite {
+        MerchantRouteWrite{name:"Renamed route".to_owned(),pool_id:1,strategy:UserRouteStrategy::Ordered,
+            enabled:true,max_merchant_attempts:3,max_price_ratio_micros:Some(1_000_000),
+            members:vec![MerchantRouteMember{merchant_id:10,priority:0,weight:1,last_selected_at_millis:None}],
+            allow_pool_fallback:true,accept_new_merchants:false}
+    }
+
+    #[test]
+    fn editing_an_existing_fixed_pool_route_does_not_enroll_new_merchants(){
+        let previous=MerchantRouteScope{pool_id:1,members:Vec::new(),enrolled_merchants:vec![10,20],allow_pool_fallback:true,accept_new_merchants:false};
+        let write=configuration();
+        assert_eq!(enrollment_snapshot(Some(&previous),&write,vec![10,20,30]),vec![10,20]);
+        assert_eq!(enrollment_snapshot(None,&write,vec![10,20,30]),vec![10,20,30]);
+    }
+
+    #[test]
+    fn explicitly_switching_fallback_policy_captures_the_current_pool(){
+        let mut previous=MerchantRouteScope{pool_id:1,members:Vec::new(),enrolled_merchants:vec![10],allow_pool_fallback:false,accept_new_merchants:false};
+        let write=configuration();
+        assert_eq!(enrollment_snapshot(Some(&previous),&write,vec![10,20]),vec![10,20]);
+        previous.allow_pool_fallback=true;previous.accept_new_merchants=true;
+        assert_eq!(enrollment_snapshot(Some(&previous),&write,vec![10,20]),vec![10,20]);
     }
 }
 

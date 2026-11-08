@@ -207,15 +207,19 @@ impl ScheduledChatService {
         self
     }
 
-    pub(crate) fn with_merchant_pools(mut self,pools:af_db::MerchantPoolRepository)->Self {
-        self.merchant_pools=Some(pools);
+    pub(crate) fn with_merchant_pools(mut self, pools: af_db::MerchantPoolRepository) -> Self {
+        self.merchant_pools = Some(pools);
         self
     }
 
     /// Text-only merchant supply must never enter a planner without a merchant quote.
     async fn ensure_non_merchant_group(&self, group_id: GroupId) -> Result<(), AfError> {
         if let Some(pools) = &self.merchant_pools
-            && pools.pool_for_group(group_id).await.map_err(|_| AfError::Internal)?.is_some()
+            && pools
+                .pool_for_group(group_id)
+                .await
+                .map_err(|_| AfError::Internal)?
+                .is_some()
         {
             return Err(AfError::ModelNotAllowed);
         }
@@ -957,8 +961,12 @@ impl ScheduledChatService {
         session_scope: Option<&StableSessionScope>,
     ) -> Result<PreparedRouteSelection, AfError> {
         if principal.merchant_channel_id().is_none()
-            && let Some(pools)=&self.merchant_pools
-            && pools.pool_for_group(principal.group_id()).await.map_err(|_|AfError::Internal)?.is_some()
+            && let Some(pools) = &self.merchant_pools
+            && pools
+                .pool_for_group(principal.group_id())
+                .await
+                .map_err(|_| AfError::Internal)?
+                .is_some()
         {
             return Err(AfError::ModelNotAllowed);
         }
@@ -966,15 +974,20 @@ impl ScheduledChatService {
         let mut incompatible_route_seen = false;
         let mut group_chain = self.route_group_chain(principal).await?;
         if principal.merchant_channel_id().is_none()
-            && let Some(pools)=&self.merchant_pools
+            && let Some(pools) = &self.merchant_pools
         {
-            let mut ordinary=Vec::with_capacity(group_chain.len());
+            let mut ordinary = Vec::with_capacity(group_chain.len());
             for group in group_chain {
-                if pools.pool_for_group(group).await.map_err(|_|AfError::Internal)?.is_none(){
+                if pools
+                    .pool_for_group(group)
+                    .await
+                    .map_err(|_| AfError::Internal)?
+                    .is_none()
+                {
                     ordinary.push(group);
                 }
             }
-            group_chain=ordinary;
+            group_chain = ordinary;
         }
         let rules = if principal.is_playground() {
             match &self.smart_routes {
@@ -1218,7 +1231,11 @@ impl ScheduledChatService {
     ) -> ChatRoutePlanFuture<'a> {
         Box::pin(async move {
             if principal.merchant_channel_id().is_some()
-                && (request.canonical().continuation.previous_response_id().is_some()
+                && (request
+                    .canonical()
+                    .continuation
+                    .previous_response_id()
+                    .is_some()
                     || request.canonical().continuation.conversation_id().is_some())
             {
                 // 首版不把供应商私有会话标识发送给可能不同的供应商。
@@ -2089,21 +2106,79 @@ mod tests {
 
     #[tokio::test]
     async fn non_text_planners_reject_merchant_pool_groups_even_when_pool_is_disabled() {
-        use sea_orm::{ConnectionTrait, sea_query::{Alias, Query}};
-        let pool = connect_and_migrate(&DatabaseOptions::new("sqlite::memory:").unwrap(), MigrationOptions::default())
-            .await.unwrap();
+        use sea_orm::{
+            ConnectionTrait,
+            sea_query::{Alias, Query},
+        };
+        let pool = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
         let groups = AdminGroupRepository::new(pool.clone(), Duration::from_secs(1)).unwrap();
-        let pool_group = groups.create(group_record("merchant-text-only", None)).await.unwrap().group_id();
-        let normal_group = groups.create(group_record("ordinary", None)).await.unwrap().group_id();
-        let insert = Query::insert().into_table(Alias::new("merchant_pools"))
-            .columns(["group_id", "name", "description", "enabled", "commission_bps", "min_ratio_micros", "max_ratio_micros", "settlement_delay_secs"].map(Alias::new))
-            .values_panic([pool_group.get().into(), "Text pool".into(), "".into(), false.into(), 500_i32.into(), 1_i64.into(), 100_000_000_i64.into(), 0_i64.into()]).to_owned();
-        pool.connection().execute(pool.connection().get_database_backend().build(&insert)).await.unwrap();
-        let service = service(Vec::new()).await
-            .with_merchant_pools(af_db::MerchantPoolRepository::new(pool.clone(), Duration::from_secs(1)));
-        assert_eq!(service.ensure_non_merchant_group(pool_group).await, Err(AfError::ModelNotAllowed));
-        assert_eq!(service.ensure_non_merchant_group(normal_group).await, Ok(()));
-        assert_eq!(service.video_route(pool_group, "unavailable-model").await.err(), Some(AfError::ModelNotAllowed));
+        let pool_group = groups
+            .create(group_record("merchant-text-only", None))
+            .await
+            .unwrap()
+            .group_id();
+        let normal_group = groups
+            .create(group_record("ordinary", None))
+            .await
+            .unwrap()
+            .group_id();
+        let insert = Query::insert()
+            .into_table(Alias::new("merchant_pools"))
+            .columns(
+                [
+                    "group_id",
+                    "name",
+                    "description",
+                    "enabled",
+                    "commission_bps",
+                    "min_ratio_micros",
+                    "max_ratio_micros",
+                    "settlement_delay_secs",
+                ]
+                .map(Alias::new),
+            )
+            .values_panic([
+                pool_group.get().into(),
+                "Text pool".into(),
+                "".into(),
+                false.into(),
+                500_i32.into(),
+                1_i64.into(),
+                100_000_000_i64.into(),
+                0_i64.into(),
+            ])
+            .to_owned();
+        pool.connection()
+            .execute(pool.connection().get_database_backend().build(&insert))
+            .await
+            .unwrap();
+        let service =
+            service(Vec::new())
+                .await
+                .with_merchant_pools(af_db::MerchantPoolRepository::new(
+                    pool.clone(),
+                    Duration::from_secs(1),
+                ));
+        assert_eq!(
+            service.ensure_non_merchant_group(pool_group).await,
+            Err(AfError::ModelNotAllowed)
+        );
+        assert_eq!(
+            service.ensure_non_merchant_group(normal_group).await,
+            Ok(())
+        );
+        assert_eq!(
+            service
+                .video_route(pool_group, "unavailable-model")
+                .await
+                .err(),
+            Some(AfError::ModelNotAllowed)
+        );
         pool.close().await.unwrap();
     }
 

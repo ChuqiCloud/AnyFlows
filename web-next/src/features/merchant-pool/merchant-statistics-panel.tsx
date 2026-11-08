@@ -1,0 +1,19 @@
+import { useState } from 'react'
+import { Input } from '@heroui/react'
+import { useTranslation } from 'react-i18next'
+import { useOwnedMerchantServiceDirectory, useOwnedMerchantStatistics } from './merchant-pool-api'
+import { MerchantHealth } from './merchant-catalog-card'
+import { poolTimestamp } from './merchant-pool-model'
+import { PoolEmpty, PoolError, PoolField, PoolHeader, PoolLoading, PoolSelect, PoolStatus } from './merchant-pool-ui'
+
+export function MerchantStatisticsPanel() {
+  const { t, i18n } = useTranslation()
+  const [model, setModel] = useState('')
+  const [protocol, setProtocol] = useState('')
+  const [streaming, setStreaming] = useState('true')
+  const [windowSeconds, setWindowSeconds] = useState('86400')
+  const directory = useOwnedMerchantServiceDirectory()
+  const query = useOwnedMerchantStatistics(model, Number(windowSeconds), { protocol: protocol || undefined, streaming: streaming === 'true' })
+  const names = new Map(directory.data?.map((service) => [service.id, service]))
+  return <section className="grid gap-4"><PoolHeader title={t('merchantPool.ownStatistics')} description={t('merchantPool.ownStatisticsHint')} refreshing={query.isFetching || directory.isFetching} onRefresh={() => void Promise.all([query.refetch(), directory.refetch()])} /><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><PoolField label={t('merchantPool.model')}><Input aria-label={t('merchantPool.model')} size="sm" value={model} onValueChange={setModel} placeholder={t('merchantPool.modelPlaceholder')} /></PoolField><PoolField label={t('merchantPool.protocol')}><PoolSelect label={t('merchantPool.protocol')} value={protocol} onChange={setProtocol} options={[{ value: 'openai_chat', label: 'OpenAI Chat Completions' }, { value: 'openai_responses', label: 'OpenAI Responses' }]} /></PoolField><PoolField label={t('merchantPool.responseMode')}><PoolSelect label={t('merchantPool.responseMode')} allowEmpty={false} value={streaming} onChange={setStreaming} options={[{ value: 'true', label: t('merchantPool.streaming') }, { value: 'false', label: t('merchantPool.nonStreaming') }]} /></PoolField><PoolField label={t('merchantPool.statWindow')}><PoolSelect label={t('merchantPool.statWindow')} allowEmpty={false} value={windowSeconds} onChange={setWindowSeconds} options={['900', '3600', '86400', '604800'].map((value) => ({ value, label: t(`merchantPool.windows.${value}`) }))} /></PoolField></div>{directory.isError ? <PoolError onRetry={() => void directory.refetch()} /> : null}{query.isPending ? <PoolLoading /> : query.isError ? <PoolError message={t('merchantPool.statsError')} onRetry={() => void query.refetch()} /> : query.data.items.length === 0 ? <PoolEmpty>{t('merchantPool.ownStatisticsEmpty')}</PoolEmpty> : <div className="grid gap-3 sm:grid-cols-2">{query.data.items.map((stats) => { const service = names.get(stats.service_id); return <article key={stats.service_id} className="grid gap-3 rounded-lg border border-[var(--hairline)] p-4"><div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold">{service?.name ?? `#${stats.service_id}`}</h3>{service ? <PoolStatus status={service.status} /> : null}</div><MerchantHealth stats={stats} /><dl className="flex flex-wrap gap-4 text-xs"><div><dt className="text-muted-foreground">{t('merchantPool.successCount')}</dt><dd className="mt-1 tabular-nums">{stats.success_count.toLocaleString()}</dd></div><div><dt className="text-muted-foreground">{t('merchantPool.failureCount')}</dt><dd className="mt-1 tabular-nums">{stats.failure_count.toLocaleString()}</dd></div></dl></article> })}</div>}{query.data ? <p className="text-xs text-muted-foreground">{t('merchantPool.statsAsOf', { value: poolTimestamp(query.data.as_of, i18n.language) })}</p> : null}<p className="text-xs leading-5 text-muted-foreground">{t('merchantPool.statisticsHint')}</p></section>
+}

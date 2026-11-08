@@ -2809,34 +2809,51 @@ impl Bootstrap<Supervised> {
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))
         };
-        let merchant_repository=af_db::MerchantPoolRepository::new(
+        let merchant_repository = af_db::MerchantPoolRepository::new(
             self.stage.infrastructure.infrastructure.database.clone(),
             Duration::from_secs(self.config.auth().lookup_timeout_secs()),
         );
         let router = router
             .merge(af_http::build_merchant_pool_router(
-                Arc::new(af_admin::DatabaseMerchantPoolService::new(merchant_repository.clone(),
-                    CredentialEncryptor::new(self.config.credential_encryption())
-                        .map_err(BootstrapError::CredentialEncryption)?,
-                    CredentialDecryptor::new(self.config.credential_encryption())
-                        .map_err(BootstrapError::CredentialDecryption)?,
-                ).with_blocked_hosts(self.config.server().cors_allowed_origins().iter()
-                    .filter_map(|origin|url::Url::parse(origin.as_str()).ok()
-                        .and_then(|url|url.host_str().map(str::to_owned))).collect())),
+                Arc::new(
+                    af_admin::DatabaseMerchantPoolService::new(
+                        merchant_repository.clone(),
+                        CredentialEncryptor::new(self.config.credential_encryption())
+                            .map_err(BootstrapError::CredentialEncryption)?,
+                        CredentialDecryptor::new(self.config.credential_encryption())
+                            .map_err(BootstrapError::CredentialDecryption)?,
+                    )
+                    .with_blocked_hosts(
+                        self.config
+                            .server()
+                            .cors_allowed_origins()
+                            .iter()
+                            .filter_map(|origin| {
+                                url::Url::parse(origin.as_str())
+                                    .ok()
+                                    .and_then(|url| url.host_str().map(str::to_owned))
+                            })
+                            .collect(),
+                    ),
+                ),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))
             .merge(af_http::build_merchant_route_router(
                 Arc::new(af_admin::DatabaseMerchantRouteService::new(
-                    self.stage.infrastructure.user_route_repository.clone(),merchant_repository.clone(),
-                )),Arc::clone(&self.stage.infrastructure.session_authenticator),
+                    self.stage.infrastructure.user_route_repository.clone(),
+                    merchant_repository.clone(),
+                )),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))
             .merge(af_http::build_merchant_finance_router(
-                Arc::new(af_admin::DatabaseMerchantFinanceService::new(merchant_repository.clone(),
+                Arc::new(af_admin::DatabaseMerchantFinanceService::new(
+                    merchant_repository.clone(),
                     af_db::MerchantFinanceRepository::new(
                         self.stage.infrastructure.infrastructure.database.clone(),
                         Duration::from_secs(self.config.auth().lookup_timeout_secs()),
                     ),
-                )),Arc::clone(&self.stage.infrastructure.session_authenticator),
+                )),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))
             .merge(af_http::build_user_route_router(
                 Arc::new(af_admin::DatabaseUserRouteService::new(

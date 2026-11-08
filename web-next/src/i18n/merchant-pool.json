@@ -284,7 +284,12 @@
       "cache_read": "缓存读取",
       "cache_write_5m": "缓存写入（5 分钟）",
       "cache_write_1h": "缓存写入（1 小时）"
-    }
+    },
+    "ownStatistics": "我的调用统计",
+    "ownStatisticsHint": "只展示自己服务的真实调用表现，与消费者分组权限独立；不会展示消费者身份、Key 或提示词。",
+    "ownStatisticsEmpty": "当前筛选范围内没有已完成的有效调用。",
+    "successCount": "成功尝试",
+    "failureCount": "失败尝试"
   },
   "en": {
     "title": "Merchant pool",
@@ -571,6 +576,11 @@
       "cache_read": "Cache read",
       "cache_write_5m": "Cache write (5 minutes)",
       "cache_write_1h": "Cache write (1 hour)"
-    }
+    },
+    "ownStatistics": "My service statistics",
+    "ownStatisticsHint": "View real traffic for your own services independently of consumer pool access. Consumer identities, Keys and prompts are not exposed.",
+    "ownStatisticsEmpty": "No eligible completed attempts match these filters.",
+    "successCount": "Successful attempts",
+    "failureCount": "Failed attempts"
   }
 }

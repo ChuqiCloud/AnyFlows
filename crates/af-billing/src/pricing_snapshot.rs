@@ -95,16 +95,24 @@ pub struct RequestPricingSnapshot {
 impl RequestPricingSnapshot {
     /// Merchant pools sell the platform base price at their published sales ratio.
     /// Group, peak and contract multipliers must never leak into this quote.
-    pub fn with_merchant_sales_ratio(mut self, ratio_micros: i64) -> Result<Self, RequestPricingSnapshotError> {
-        if ratio_micros <= 0 || self.contract_price.is_some()
-            || !matches!(self.model_mode, ModelPriceMode::PerToken | ModelPriceMode::Free)
+    pub fn with_merchant_sales_ratio(
+        mut self,
+        ratio_micros: i64,
+    ) -> Result<Self, RequestPricingSnapshotError> {
+        if ratio_micros <= 0
+            || self.contract_price.is_some()
+            || !matches!(
+                self.model_mode,
+                ModelPriceMode::PerToken | ModelPriceMode::Free
+            )
         {
             return Err(RequestPricingSnapshotError::MerchantPricingUnavailable);
         }
         let ratio = PricingRatio::new(ratio_micros)
             .map_err(|_| RequestPricingSnapshotError::MerchantPricingUnavailable)?;
         let ratios = PricingRatios::new(ratio, PricingRatio::ONE, PricingRatio::ONE);
-        let resolver = self.ratio_resolver
+        let resolver = self
+            .ratio_resolver
             .ok_or(RequestPricingSnapshotError::MerchantPricingUnavailable)?
             .with_ratios(ratios);
         self.ratios = ratios;

@@ -203,11 +203,15 @@ fn profile_snapshot(row:profiles::Model)->MerchantProfile {
 }
 fn pool_snapshot(row:pools::Model)->Result<MerchantPool,MerchantPoolError> {
     Ok(MerchantPool{id:row.id,group_id:row.group_id,name:row.name,description:row.description,
-        enabled:row.enabled,commission_bps:row.commission_bps.try_into().map_err(internal)?,
-        commission_inherit_global:row.commission_inherit_global,effective_commission_bps:row.commission_bps.try_into().map_err(internal)?,
+        enabled:row.enabled,commission_bps:commission_value(row.commission_bps)?,
+        commission_inherit_global:row.commission_inherit_global,effective_commission_bps:commission_value(row.commission_bps)?,
         min_ratio_micros:row.min_ratio_micros,max_ratio_micros:row.max_ratio_micros,
         settlement_delay_secs:row.settlement_delay_secs.try_into().map_err(internal)?,
         created_at:row.created_at.unix_timestamp(),updated_at:row.updated_at.unix_timestamp()})
+}
+fn commission_value(value:i32)->Result<u16,MerchantPoolError> {
+    if !(0..=10_000).contains(&value) { return Err(MerchantPoolError::Unavailable); }
+    value.try_into().map_err(internal)
 }
 fn revision_models(row:&revisions::Model)->Result<Vec<MerchantModelWrite>,MerchantPoolError> {
     serde_json::from_value(row.models.clone()).map_err(internal)

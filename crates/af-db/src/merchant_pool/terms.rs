@@ -24,7 +24,7 @@ impl MerchantPoolRepository {
             find_pool(self.pool.connection(),pool_id).await?;
             if profiles::Entity::find_by_id(merchant_id).one(self.pool.connection()).await.map_err(internal)?.is_none() { return Err(MerchantPoolError::NotFound); }
             let row=terms::Entity::find_by_id((pool_id,merchant_id)).one(self.pool.connection()).await.map_err(internal)?;
-            Ok(MerchantPoolTerms{commission_bps:row.and_then(|row|row.commission_bps).map(u16::try_from).transpose().map_err(internal)?})
+            Ok(MerchantPoolTerms{commission_bps:row.and_then(|row|row.commission_bps).map(commission_value).transpose()?})
         }).await
     }
     pub async fn write_terms(&self,actor:UserId,pool_id:i64,merchant_id:i64,write:MerchantPoolTerms)->Result<MerchantPoolTerms,MerchantPoolError> {
@@ -50,14 +50,14 @@ impl MerchantPoolRepository {
 
 async fn global_commission<C:ConnectionTrait>(connection:&C)->Result<u16,MerchantPoolError> {
     settings::Entity::find_by_id(1).one(connection).await.map_err(internal)?
-        .map_or(Ok(500),|row|u16::try_from(row.commission_bps).map_err(internal))
+        .map_or(Ok(500),|row|commission_value(row.commission_bps))
 }
 pub(super) async fn resolve_commission<C:ConnectionTrait>(connection:&C,pool:&pools::Model,merchant_id:Option<i64>)->Result<u16,MerchantPoolError> {
     if let Some(merchant_id)=merchant_id {
         if let Some(bps)=terms::Entity::find_by_id((pool.id,merchant_id)).one(connection).await.map_err(internal)?.and_then(|row|row.commission_bps) {
-            return bps.try_into().map_err(internal);
+            return commission_value(bps);
         }
     }
     if pool.commission_inherit_global { global_commission(connection).await }
-    else { pool.commission_bps.try_into().map_err(internal) }
+    else { commission_value(pool.commission_bps) }
 }

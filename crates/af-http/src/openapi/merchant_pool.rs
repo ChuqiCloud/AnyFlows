@@ -103,12 +103,12 @@ pub(super) fn document()->OpenApi {
             }
         }
         if response.ends_with("Page") {
-            parameters.extend([json!({"name":"page","in":"query","schema":{"type":"integer","minimum":1}}),
-                json!({"name":"page_size","in":"query","schema":{"type":"integer","minimum":1,"maximum":100}})]);
-            for name in ["model","protocol","capability","search","status","sort"] { parameters.push(json!({"name":name,"in":"query","schema":{"type":"string"}})); }
-            for name in ["min_ratio_micros","max_ratio_micros"] { parameters.push(json!({"name":name,"in":"query","schema":{"type":"integer","minimum":0,"maximum":100000000}})); }
-            parameters.push(json!({"name":"window_seconds","in":"query","schema":{"type":"integer","enum":[900,3600,86400,604800]}}));
-            parameters.push(json!({"name":"streaming","in":"query","schema":{"type":"boolean"}}));
+            parameters.extend([json!({"name":"page","in":"query","required":false,"schema":{"type":"integer","minimum":1}}),
+                json!({"name":"page_size","in":"query","required":false,"schema":{"type":"integer","minimum":1,"maximum":100}})]);
+            for name in ["model","protocol","capability","search","status","sort"] { parameters.push(json!({"name":name,"in":"query","required":false,"schema":{"type":"string"}})); }
+            for name in ["min_ratio_micros","max_ratio_micros"] { parameters.push(json!({"name":name,"in":"query","required":false,"schema":{"type":"integer","minimum":0,"maximum":100000000}})); }
+            parameters.push(json!({"name":"window_seconds","in":"query","required":false,"schema":{"type":"integer","enum":[900,3600,86400,604800]}}));
+            parameters.push(json!({"name":"streaming","in":"query","required":false,"schema":{"type":"boolean"}}));
         }
         let mut operation=json!({"operationId":operation,"tags":["商户共享池"],"parameters":parameters,"security":[{"bearerAuth":[]}],"responses":responses});
         if let Some(request)=request { operation["requestBody"]=json!({"required":true,"content":{"application/json":{"schema":reference(request)}}}); }

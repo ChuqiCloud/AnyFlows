@@ -77,25 +77,40 @@ pub(crate) struct UserRouteExecution<'a> {
     pub(crate) merchant_features: Option<MerchantRequestFeatures>,
 }
 
-#[derive(Clone,Copy)]
-pub(crate) struct MerchantRequestFeatures {pub(crate) streaming:bool,pub(crate) tools:bool,pub(crate) vision:bool,pub(crate) unsupported_media:bool}
+#[derive(Clone, Copy)]
+pub(crate) struct MerchantRequestFeatures {
+    pub(crate) streaming: bool,
+    pub(crate) tools: bool,
+    pub(crate) vision: bool,
+    pub(crate) unsupported_media: bool,
+}
 
 impl MerchantRequestFeatures {
-    pub(crate) fn for_request(request:&af_protocol::CanonicalRequest)->Self {
-        fn media(content:&[af_protocol::ContentBlock])->(bool,bool){
-            content.iter().fold((false,false),|(vision,unsupported),block|{
-                let (v,u)=match block {
-                    af_protocol::ContentBlock::Image{..}=>(true,false),
-                    af_protocol::ContentBlock::Audio{..}=>(false,true),
-                    af_protocol::ContentBlock::ToolResult{content,..}=>media(content),
-                    _=>(false,false),
-                };(vision||v,unsupported||u)
-            })
+    pub(crate) fn for_request(request: &af_protocol::CanonicalRequest) -> Self {
+        fn media(content: &[af_protocol::ContentBlock]) -> (bool, bool) {
+            content
+                .iter()
+                .fold((false, false), |(vision, unsupported), block| {
+                    let (v, u) = match block {
+                        af_protocol::ContentBlock::Image { .. } => (true, false),
+                        af_protocol::ContentBlock::Audio { .. } => (false, true),
+                        af_protocol::ContentBlock::ToolResult { content, .. } => media(content),
+                        _ => (false, false),
+                    };
+                    (vision || v, unsupported || u)
+                })
         }
-        let (vision,unsupported)=request.messages.iter().map(|m|media(&m.content))
-            .fold((false,false),|(a,b),(c,d)|(a||c,b||d));
-        Self{streaming:request.stream,tools:!request.tools.is_empty(),vision,
-            unsupported_media:unsupported||!request.attachments.is_empty()}
+        let (vision, unsupported) = request
+            .messages
+            .iter()
+            .map(|m| media(&m.content))
+            .fold((false, false), |(a, b), (c, d)| (a || c, b || d));
+        Self {
+            streaming: request.stream,
+            tools: !request.tools.is_empty(),
+            vision,
+            unsupported_media: unsupported || !request.attachments.is_empty(),
+        }
     }
 }
 
@@ -144,8 +159,10 @@ impl UserRouteExecution<'_> {
             {
                 continue;
             }
-            if let Some(merchant)=candidate.merchant.as_ref()
-                && !runtime.validate_merchant_candidate(self.principal,&plan,merchant).await?
+            if let Some(merchant) = candidate.merchant.as_ref()
+                && !runtime
+                    .validate_merchant_candidate(self.principal, &plan, merchant)
+                    .await?
             {
                 continue;
             }
@@ -160,8 +177,8 @@ impl UserRouteExecution<'_> {
                 runtime.selected(plan.route.id, candidate.group_id).await?;
             }
             let mut principal = self.principal.with_routing_group_id(candidate.group_id);
-            if let Some(merchant)=candidate.merchant.as_ref() {
-                principal=UserRouteRuntime::merchant_principal(principal,merchant)?;
+            if let Some(merchant) = candidate.merchant.as_ref() {
+                principal = UserRouteRuntime::merchant_principal(principal, merchant)?;
             }
             let started = Instant::now();
             let result = execute(
@@ -175,13 +192,25 @@ impl UserRouteExecution<'_> {
             match result {
                 Ok(result) => {
                     if !self.defer_success_feedback {
-                        if let Some(terms)=principal.merchant_billing_snapshot() {
-                            runtime.merchant_feedback(terms,plan.route.id,self.request_id,self.model,self.protocol,
-                                self.merchant_features.is_some_and(|f|f.streaming),true,latency,None,false).await;
-                        }else{
+                        if let Some(terms) = principal.merchant_billing_snapshot() {
                             runtime
-                            .feedback(&plan, candidate.group_id, true, latency, false)
-                            .await;
+                                .merchant_feedback(
+                                    terms,
+                                    plan.route.id,
+                                    self.request_id,
+                                    self.model,
+                                    self.protocol,
+                                    self.merchant_features.is_some_and(|f| f.streaming),
+                                    true,
+                                    latency,
+                                    None,
+                                    false,
+                                )
+                                .await;
+                        } else {
+                            runtime
+                                .feedback(&plan, candidate.group_id, true, latency, false)
+                                .await;
                         }
                     }
                     return Ok(result.with_target_group_id(candidate.group_id));
@@ -189,13 +218,31 @@ impl UserRouteExecution<'_> {
                 Err(failure) => {
                     if failure.counts_attempt {
                         attempts += 1;
-                        if let Some(terms)=principal.merchant_billing_snapshot(){
-                            runtime.merchant_feedback(terms,plan.route.id,self.request_id,self.model,self.protocol,
-                                self.merchant_features.is_some_and(|f|f.streaming),false,latency,None,failure.retryable).await;
-                        }else{
+                        if let Some(terms) = principal.merchant_billing_snapshot() {
                             runtime
-                            .feedback(&plan, candidate.group_id, false, latency, failure.retryable)
-                            .await;
+                                .merchant_feedback(
+                                    terms,
+                                    plan.route.id,
+                                    self.request_id,
+                                    self.model,
+                                    self.protocol,
+                                    self.merchant_features.is_some_and(|f| f.streaming),
+                                    false,
+                                    latency,
+                                    None,
+                                    failure.retryable,
+                                )
+                                .await;
+                        } else {
+                            runtime
+                                .feedback(
+                                    &plan,
+                                    candidate.group_id,
+                                    false,
+                                    latency,
+                                    failure.retryable,
+                                )
+                                .await;
                         }
                     }
                     if !failure.retryable {

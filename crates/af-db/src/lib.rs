@@ -92,9 +92,11 @@ mod balance_alert;
 mod billing_batch;
 mod billing_contract;
 mod merchant_finance;
-pub use merchant_finance::{MerchantFinanceBalance, MerchantFinanceEntry, MerchantFinanceError,
-    MerchantFinancePage, MerchantFinanceRepository, MerchantWithdrawal};
 pub use billing_contract::{BillingContractPriceSnapshotError, OrganizationContractPriceSnapshot};
+pub use merchant_finance::{
+    MerchantFinanceBalance, MerchantFinanceEntry, MerchantFinanceError, MerchantFinancePage,
+    MerchantFinanceRepository, MerchantWithdrawal,
+};
 #[cfg(test)]
 mod billing_batch_tests;
 mod channel_settings;
@@ -255,10 +257,10 @@ mod user_session;
 mod user_session_tests;
 mod user_token;
 pub use user_route::{
-    MerchantRouteMember, MerchantRouteWrite, MerchantRouteRecord, MerchantRouteScope,
-    MerchantAttemptWrite, MerchantServiceStatistics,MerchantConsumerAttempt,MerchantTimelineBucket,MerchantServiceTimeline,
-    UserRouteError, UserRouteMemberRecord, UserRouteMemberWrite, UserRouteModelHealth,
-    UserRouteRecord, UserRouteRepository, UserRouteWrite,
+    MerchantAttemptWrite, MerchantConsumerAttempt, MerchantRouteMember, MerchantRouteRecord,
+    MerchantRouteScope, MerchantRouteWrite, MerchantServiceStatistics, MerchantServiceTimeline,
+    MerchantTimelineBucket, UserRouteError, UserRouteMemberRecord, UserRouteMemberWrite,
+    UserRouteModelHealth, UserRouteRecord, UserRouteRepository, UserRouteWrite,
 };
 #[cfg(test)]
 mod user_token_tests;

@@ -68,14 +68,20 @@ struct QuotedGroup {
 
 trait CandidateOrdering {
     fn group_id(&self) -> GroupId;
-    fn identity(&self) -> i64 { self.group_id().get() }
+    fn identity(&self) -> i64 {
+        self.group_id().get()
+    }
     fn member(&self) -> &UserRouteMemberRecord;
     fn quote(&self) -> i64;
     fn health(&self) -> Option<&UserRouteModelHealth>;
 }
 
 impl CandidateOrdering for UserRouteCandidate {
-    fn identity(&self) -> i64 { self.merchant.as_ref().map_or(self.group_id.get(),|m|m.merchant_id) }
+    fn identity(&self) -> i64 {
+        self.merchant
+            .as_ref()
+            .map_or(self.group_id.get(), |m| m.merchant_id)
+    }
     fn group_id(&self) -> GroupId {
         self.group_id
     }
@@ -199,7 +205,11 @@ impl UserRouteRuntime {
         if Some(route.id) != principal.user_route_id() {
             return Err(AfError::InvalidApiKey);
         }
-        let merchant_scope = self.repository.merchant_scope(route.id).await.map_err(map_repository_error)?;
+        let merchant_scope = self
+            .repository
+            .merchant_scope(route.id)
+            .await
+            .map_err(map_repository_error)?;
         let health = self
             .repository
             .load_model_health(route.id, model)
@@ -312,7 +322,17 @@ impl UserRouteRuntime {
         merchant_features: Option<crate::user_route_execution::MerchantRequestFeatures>,
     ) -> Result<Vec<UserRouteCandidate>, AfError> {
         if plan.merchant_scope.is_some() {
-            return self.merchant_candidates(plan,principal,upper_bound,pricing,protocol,operation,merchant_features).await;
+            return self
+                .merchant_candidates(
+                    plan,
+                    principal,
+                    upper_bound,
+                    pricing,
+                    protocol,
+                    operation,
+                    merchant_features,
+                )
+                .await;
         }
         let time = crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?;
         let now = now_millis()?;
@@ -320,7 +340,11 @@ impl UserRouteRuntime {
         let mut permitted = false;
         for member in &plan.route.members {
             if let Some(pools) = &self.merchant_pools
-                && pools.pool_for_group(member.group_id).await.map_err(|_|AfError::Internal)?.is_some()
+                && pools
+                    .pool_for_group(member.group_id)
+                    .await
+                    .map_err(|_| AfError::Internal)?
+                    .is_some()
             {
                 continue;
             }
@@ -415,13 +439,19 @@ impl UserRouteRuntime {
         plan: &UserRouteRequestPlan,
         quoted: Vec<(GroupId, i64)>,
     ) -> Result<Vec<GroupId>, AfError> {
-        if plan.merchant_scope.is_some() {return Err(AfError::ModelNotAllowed);}
+        if plan.merchant_scope.is_some() {
+            return Err(AfError::ModelNotAllowed);
+        }
         let now = now_millis()?;
         let mut seen = std::collections::BTreeSet::new();
         let mut candidates = Vec::with_capacity(quoted.len());
         for (group_id, quoted_quota) in quoted {
             if let Some(pools) = &self.merchant_pools
-                && pools.pool_for_group(group_id).await.map_err(|_| AfError::Internal)?.is_some()
+                && pools
+                    .pool_for_group(group_id)
+                    .await
+                    .map_err(|_| AfError::Internal)?
+                    .is_some()
             {
                 continue;
             }

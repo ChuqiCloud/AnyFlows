@@ -160,7 +160,8 @@ impl MerchantPoolRepository {
 }
 
 fn net_prices(prices:&MerchantModelPrices,commission:u16)->Result<MerchantModelPrices,MerchantPoolError> {
-    let ratio=Decimal::from(10_000_u16-commission).checked_div(Decimal::from(10_000)).ok_or(MerchantPoolError::Unavailable)?;
+    let net_bps=10_000_u16.checked_sub(commission).ok_or(MerchantPoolError::Unavailable)?;
+    let ratio=Decimal::from(net_bps).checked_div(Decimal::from(10_000)).ok_or(MerchantPoolError::Unavailable)?;
     let net=|value:&str|->Result<String,MerchantPoolError> {
         value.parse::<Decimal>().map_err(internal)?.checked_mul(ratio).map(|value|value.normalize().to_string()).ok_or(MerchantPoolError::Unavailable)
     };

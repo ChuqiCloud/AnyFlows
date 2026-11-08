@@ -417,8 +417,15 @@ impl QuotaRepository {
             Err(error) => return rollback_with_error(transaction, error).await,
         };
         if let Err(error) = crate::merchant_finance::reserve_merchant_billing(
-            &transaction, &key, principal, amount, user_state.used_quota, user_state.frozen_quota,
-        ).await {
+            &transaction,
+            &key,
+            principal,
+            amount,
+            user_state.used_quota,
+            user_state.frozen_quota,
+        )
+        .await
+        {
             return rollback_with_error(transaction, error).await;
         }
         if reservation_kind.uses_group_windows()
@@ -427,8 +434,10 @@ impl QuotaRepository {
         {
             return rollback_with_error(transaction, error).await;
         }
-        let uses_subscription = if funding.is_none() && reservation_kind.allows_subscription()
-            && principal.merchant_billing_snapshot().is_none() {
+        let uses_subscription = if funding.is_none()
+            && reservation_kind.allows_subscription()
+            && principal.merchant_billing_snapshot().is_none()
+        {
             match subscription::try_reserve(&transaction, &key, &parent, amount, now).await {
                 Ok(value) => value,
                 Err(error) => return rollback_with_error(transaction, error).await,
@@ -520,8 +529,11 @@ impl QuotaRepository {
             .ok_or(QuotaRepositoryError::Invariant)
             .and_then(ReservationState::try_from_result)?;
         crate::merchant_finance::verify_merchant_replay(
-            self.pool.connection(), &key, principal.merchant_billing_snapshot(),
-        ).await?;
+            self.pool.connection(),
+            &key,
+            principal.merchant_billing_snapshot(),
+        )
+        .await?;
         subscription::load_allocation(self.pool.connection(), &key, &state).await?;
         group_windows::load_allocation(self.pool.connection(), &key, &state).await?;
         token_windows::load_allocation(self.pool.connection(), &key, &state).await?;
@@ -568,9 +580,11 @@ impl QuotaRepository {
             return Err(QuotaRepositoryError::Conflict);
         }
         if actual.units() > observed.reserved_quota
-            && crate::merchant_finance::has_merchant_reservation(self.pool.connection(), &key).await?
+            && crate::merchant_finance::has_merchant_reservation(self.pool.connection(), &key)
+                .await?
         {
-            self.refund_inner_with_merchant_rejection(id, reservation_kind, Some(actual)).await?;
+            self.refund_inner_with_merchant_rejection(id, reservation_kind, Some(actual))
+                .await?;
             return Err(QuotaRepositoryError::MerchantUsageExceedsAuthorization);
         }
         if !reservation_kind.allows_supplement() && actual.units() > observed.reserved_quota {
@@ -819,7 +833,8 @@ impl QuotaRepository {
         id: BillingReservationId,
         reservation_kind: QuotaReservationKind,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
-        self.refund_inner_with_merchant_rejection(id, reservation_kind, None).await
+        self.refund_inner_with_merchant_rejection(id, reservation_kind, None)
+            .await
     }
 
     async fn refund_inner_with_merchant_rejection(
@@ -982,8 +997,14 @@ impl QuotaRepository {
             };
             return rollback_with_error(transaction, error).await;
         }
-        if let Err(error)=crate::merchant_finance::cancel_merchant_billing(&transaction,&key,merchant_rejected_quota).await {
-            return rollback_with_error(transaction,error).await;
+        if let Err(error) = crate::merchant_finance::cancel_merchant_billing(
+            &transaction,
+            &key,
+            merchant_rejected_quota,
+        )
+        .await
+        {
+            return rollback_with_error(transaction, error).await;
         }
         commit_applied(transaction).await
     }
@@ -1037,9 +1058,15 @@ async fn settle_adjustment(
     } = adjustment;
     let backend = savepoint.get_database_backend();
     crate::merchant_finance::settle_merchant_billing(
-        savepoint, key, state.user_id, user_state.used_quota, user_state.frozen_quota,
-        reserved, actual,
-    ).await?;
+        savepoint,
+        key,
+        state.user_id,
+        user_state.used_quota,
+        user_state.frozen_quota,
+        reserved,
+        actual,
+    )
+    .await?;
     group_windows::apply_settlement(
         savepoint,
         state,

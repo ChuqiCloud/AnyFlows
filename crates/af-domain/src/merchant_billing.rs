@@ -28,36 +28,64 @@ impl MerchantBillingSnapshot {
         commission_bps: u16,
         settlement_delay_secs: u32,
     ) -> Result<Self, MerchantBillingSnapshotError> {
-        if pool_id <= 0 || merchant_id <= 0 || service_id <= 0 || pricing_version <= 0
-            || sales_ratio_micros <= 0 || commission_bps > 10_000
+        if pool_id <= 0
+            || merchant_id <= 0
+            || service_id <= 0
+            || pricing_version <= 0
+            || sales_ratio_micros <= 0
+            || commission_bps > 10_000
             || settlement_delay_secs > 90 * 86_400
         {
             return Err(MerchantBillingSnapshotError);
         }
-        Ok(Self { pool_id, merchant_id, service_id, pricing_version, sales_ratio_micros,
-            commission_bps, settlement_delay_secs })
+        Ok(Self {
+            pool_id,
+            merchant_id,
+            service_id,
+            pricing_version,
+            sales_ratio_micros,
+            commission_bps,
+            settlement_delay_secs,
+        })
     }
 
     #[must_use]
-    pub const fn pool_id(self) -> i64 { self.pool_id }
+    pub const fn pool_id(self) -> i64 {
+        self.pool_id
+    }
     #[must_use]
-    pub const fn merchant_id(self) -> i64 { self.merchant_id }
+    pub const fn merchant_id(self) -> i64 {
+        self.merchant_id
+    }
     #[must_use]
-    pub const fn service_id(self) -> i64 { self.service_id }
+    pub const fn service_id(self) -> i64 {
+        self.service_id
+    }
     #[must_use]
-    pub const fn pricing_version(self) -> i64 { self.pricing_version }
+    pub const fn pricing_version(self) -> i64 {
+        self.pricing_version
+    }
     #[must_use]
-    pub const fn sales_ratio_micros(self) -> i64 { self.sales_ratio_micros }
+    pub const fn sales_ratio_micros(self) -> i64 {
+        self.sales_ratio_micros
+    }
     #[must_use]
-    pub const fn commission_bps(self) -> u16 { self.commission_bps }
+    pub const fn commission_bps(self) -> u16 {
+        self.commission_bps
+    }
     #[must_use]
-    pub const fn settlement_delay_secs(self) -> u32 { self.settlement_delay_secs }
+    pub const fn settlement_delay_secs(self) -> u32 {
+        self.settlement_delay_secs
+    }
 
     /// Round only the commission; merchant receives the exact remainder.
     pub fn split(self, gross_quota: i64) -> Result<(i64, i64), MerchantBillingSnapshotError> {
-        if gross_quota < 0 { return Err(MerchantBillingSnapshotError); }
-        let commission = i64::try_from(i128::from(gross_quota) * i128::from(self.commission_bps) / 10_000)
-            .map_err(|_| MerchantBillingSnapshotError)?;
+        if gross_quota < 0 {
+            return Err(MerchantBillingSnapshotError);
+        }
+        let commission =
+            i64::try_from(i128::from(gross_quota) * i128::from(self.commission_bps) / 10_000)
+                .map_err(|_| MerchantBillingSnapshotError)?;
         Ok((commission, gross_quota - commission))
     }
 }
