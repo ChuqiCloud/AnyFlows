@@ -2,10 +2,9 @@
 use std::{future::Future,pin::Pin,net::IpAddr};
 use af_account::{CredentialDecryptor,CredentialEncryptor,PlainCredentialSecret};
 use af_db::MerchantPoolRepository;
-pub use af_domain::{MerchantApplication,MerchantCatalogService,MerchantListQuery,MerchantModelOffer,
-    MerchantModelPrices,MerchantModelWrite,MerchantOwnedService,MerchantPage,MerchantPool,
+use af_domain::{MerchantApplication,MerchantCatalogService,MerchantListQuery,MerchantOwnedService,MerchantPage,MerchantPool,
     MerchantPoolError,MerchantPoolSettings,MerchantPoolTerms,MerchantPoolWrite,MerchantProfile,
-    MerchantReview,MerchantRevision,MerchantServiceWrite};
+    MerchantReview,MerchantServiceWrite};
 use crate::{SessionPrincipal,SessionRole};
 
 pub type MerchantFuture<'a,T> = Pin<Box<dyn Future<Output=Result<T,MerchantPoolError>>+Send+'a>>;
@@ -15,6 +14,7 @@ pub trait MerchantPoolService:Send+Sync {
     fn catalog(&self,principal:SessionPrincipal,pool:i64,query:MerchantListQuery)->MerchantFuture<'_,MerchantPage<MerchantCatalogService>>;
     fn catalog_service(&self,principal:SessionPrincipal,pool:i64,id:i64)->MerchantFuture<'_,MerchantCatalogService>;
     fn profile(&self,principal:SessionPrincipal)->MerchantFuture<'_,Option<MerchantProfile>>;
+    fn quote(&self,principal:SessionPrincipal,write:af_domain::MerchantQuoteWrite)->MerchantFuture<'_,af_domain::MerchantQuote>;
     fn apply(&self,principal:SessionPrincipal,write:MerchantApplication)->MerchantFuture<'_,MerchantProfile>;
     fn available_pools(&self,principal:SessionPrincipal,query:MerchantListQuery)->MerchantFuture<'_,MerchantPage<MerchantPool>>;
     fn services(&self,principal:SessionPrincipal,query:MerchantListQuery)->MerchantFuture<'_,MerchantPage<MerchantOwnedService>>;
@@ -81,6 +81,7 @@ impl MerchantPoolService for DatabaseMerchantPoolService {
     fn catalog(&self,p:SessionPrincipal,pool:i64,q:MerchantListQuery)->MerchantFuture<'_,MerchantPage<MerchantCatalogService>> { Box::pin(async move { self.repository.catalog(p.user_id(),pool,q).await }) }
     fn catalog_service(&self,p:SessionPrincipal,pool:i64,id:i64)->MerchantFuture<'_,MerchantCatalogService> { Box::pin(async move { self.repository.catalog_service(p.user_id(),pool,id).await }) }
     fn profile(&self,p:SessionPrincipal)->MerchantFuture<'_,Option<MerchantProfile>> { Box::pin(async move { self.repository.owner_merchant(p.user_id()).await }) }
+    fn quote(&self,p:SessionPrincipal,write:af_domain::MerchantQuoteWrite)->MerchantFuture<'_,af_domain::MerchantQuote> { Box::pin(async move { self.repository.quote(p.user_id(),write).await }) }
     fn apply(&self,p:SessionPrincipal,write:MerchantApplication)->MerchantFuture<'_,MerchantProfile> { Box::pin(async move { self.repository.apply(p.user_id(),write).await }) }
     fn available_pools(&self,p:SessionPrincipal,q:MerchantListQuery)->MerchantFuture<'_,MerchantPage<MerchantPool>> { Box::pin(async move { self.repository.available_supply_pools(p.user_id(),q).await }) }
     fn services(&self,p:SessionPrincipal,q:MerchantListQuery)->MerchantFuture<'_,MerchantPage<MerchantOwnedService>> { Box::pin(async move { self.repository.list_services(Some(p.user_id()),q).await }) }

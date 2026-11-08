@@ -1,4 +1,4 @@
-import { poolEventKey } from './merchant-pool-model'
+import { poolEventKey } from './merchant-pool-model.ts'
 
 const attempts = new Map<string, { fingerprint: string; eventKey: string }>()
 

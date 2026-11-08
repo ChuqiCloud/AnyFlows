@@ -37,6 +37,7 @@ impl SpeechRoutePlanner for ScheduledChatService {
         request_id: &'a str,
     ) -> SpeechRoutePlanFuture<'a> {
         Box::pin(async move {
+            self.ensure_non_merchant_group(principal.group_id()).await?;
             let route = if self.health.is_some() {
                 let (channel_ids, channel_health) = self
                     .load_channel_health(principal.group_id(), request.model())

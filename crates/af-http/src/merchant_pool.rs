@@ -21,6 +21,7 @@ pub fn build_merchant_pool_router(service:Arc<dyn MerchantPoolService>,authentic
         .route("/api/merchant-pools/{pool}/services/{id}",get(catalog_service))
         .route("/api/merchant/profile",get(profile))
         .route("/api/merchant/apply",axum::routing::post(apply))
+        .route("/api/merchant/quote",axum::routing::post(quote))
         .route("/api/merchant/available-pools",get(available_pools))
         .route("/api/merchant/services",get(owned_services).post(create_service))
         .route("/api/merchant/services/{id}",get(owned_service).put(update_service))
@@ -83,6 +84,9 @@ async fn profile(State(s):State<MerchantHttpState>,Extension(auth):Extension<Ses
 }
 async fn apply(State(s):State<MerchantHttpState>,Extension(auth):Extension<SessionAuthentication>,request:Result<Json<MerchantApplication>,JsonRejection>)->Result<Response,MerchantHttpError> {
     Ok(created(s.service.apply(auth.principal(),body(request)?).await?))
+}
+async fn quote(State(s):State<MerchantHttpState>,Extension(auth):Extension<SessionAuthentication>,request:Result<Json<af_domain::MerchantQuoteWrite>,JsonRejection>)->Result<Response,MerchantHttpError> {
+    Ok(no_store_json(s.service.quote(auth.principal(),body(request)?).await?))
 }
 async fn available_pools(State(s):State<MerchantHttpState>,Extension(auth):Extension<SessionAuthentication>,Query(q):Query<MerchantListQuery>)->Result<Response,MerchantHttpError> {
     Ok(no_store_json(s.service.available_pools(auth.principal(),q).await?))

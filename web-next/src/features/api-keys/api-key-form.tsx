@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Button, Input, Select, SelectItem } from '@heroui/react'
+import { Button, Input } from '@heroui/react'
 import { Controller, useForm } from 'react-hook-form'
 import { LoaderCircle, Route, UsersRound } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -61,8 +61,8 @@ export function ApiKeyForm({ token, initialRouteId, portalContainer, onCancel, o
   const routesQuery = useUserRoutes((!token && routingMode === 'route') || boundRouteId !== undefined)
   const merchantRoutesQuery = useMerchantPoolRoutes((!token && routingMode === 'route') || boundRouteId !== undefined)
   const selectableRoutes = [...(routesQuery.data?.items ?? []), ...(merchantRoutesQuery.data?.items ?? [])]
-  const routesReady = routesQuery.isSuccess && merchantRoutesQuery.isSuccess
-  const routesFetching = routesQuery.isFetching || merchantRoutesQuery.isFetching
+  const routesReady = routesQuery.isSuccess || merchantRoutesQuery.isSuccess
+  const routesFetching = routesQuery.isFetching && merchantRoutesQuery.isFetching
   const unlimitedQuota = form.watch('unlimitedQuota')
   const groupSelectionReady = token
     ? true

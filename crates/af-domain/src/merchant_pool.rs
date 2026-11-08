@@ -213,6 +213,29 @@ pub struct MerchantPoolSettings { pub commission_bps: u16 }
 #[serde(deny_unknown_fields)]
 pub struct MerchantPoolTerms { pub commission_bps: Option<u16> }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MerchantQuoteWrite {
+    pub pool_id:i64,
+    pub default_ratio_micros:i64,
+    pub models:Vec<MerchantModelWrite>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MerchantQuoteModel {
+    pub model:String,
+    pub sales_ratio_micros:i64,
+    pub base_prices:MerchantModelPrices,
+    pub prices:MerchantModelPrices,
+    pub net_prices:MerchantModelPrices,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MerchantQuote {
+    pub models:Vec<MerchantQuoteModel>,
+    pub effective_commission_bps:u16,
+}
+
 #[derive(Clone, Debug)]
 pub struct MerchantRuntimeCandidate {
     pub pool_id: i64,

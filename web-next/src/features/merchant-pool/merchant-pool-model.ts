@@ -5,6 +5,7 @@ export type MerchantPool = { id: number; group_id: number; name: string; descrip
 export type MerchantPoolWrite = Omit<MerchantPool, 'id' | 'created_at' | 'updated_at' | 'effective_commission_bps'>
 export type MerchantProfile = { id: number; owner_user_id: number; name: string; description: string; status: 'pending' | 'approved' | 'rejected' | 'suspended'; review_reason: string | null; created_at: number; updated_at: number }
 export type MerchantPrices = { currency: 'USD'; unit: 'million_tokens'; input: string; output: string; cache_read: string; cache_write_5m: string; cache_write_1h: string; version: number }
+export type MerchantQuote = { models: Array<{ model: string; sales_ratio_micros: number; base_prices: MerchantPrices; prices: MerchantPrices; net_prices: MerchantPrices }>; effective_commission_bps: number }
 export type MerchantModelWrite = { model: string; upstream_model: string; ratio_micros: number | null; context_window: number | null; max_output_tokens: number | null; supports_streaming: boolean; supports_tools: boolean; supports_vision: boolean }
 export type MerchantModelOffer = Omit<MerchantModelWrite, 'upstream_model' | 'ratio_micros'> & { sales_ratio_micros: number; prices: MerchantPrices | null }
 export type MerchantCatalogService = { id: number; pool_id: number; merchant_id: number; merchant_name: string; name: string; description: string; status: string; revision: number; protocol: string; models: MerchantModelOffer[]; updated_at: number }

@@ -24,6 +24,8 @@ use af_domain::{
 use af_protocol::Usage;
 use af_scheduler::InMemoryChannelIndex;
 mod merchant;
+#[cfg(test)]
+mod merchant_tests;
 
 #[derive(Clone)]
 pub(crate) struct UserRouteRuntime {
@@ -418,6 +420,11 @@ impl UserRouteRuntime {
         let mut seen = std::collections::BTreeSet::new();
         let mut candidates = Vec::with_capacity(quoted.len());
         for (group_id, quoted_quota) in quoted {
+            if let Some(pools) = &self.merchant_pools
+                && pools.pool_for_group(group_id).await.map_err(|_| AfError::Internal)?.is_some()
+            {
+                continue;
+            }
             if quoted_quota < 0 || !seen.insert(group_id) {
                 return Err(AfError::Internal);
             }

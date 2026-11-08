@@ -38,6 +38,10 @@ pub(super) fn document()->OpenApi {
         ("cache_read",string()),("cache_write_5m",string()),("cache_write_1h",string()),("version",integer())],&[]));
     let mut offer=common_model;offer.extend([("sales_ratio_micros",integer()),("prices",nullable(reference("MerchantModelPrices")))]);
     schemas.insert("MerchantModelOffer".to_owned(),object(&offer,&[]));
+    schemas.insert("MerchantQuoteRequest".to_owned(),object(&[("pool_id",integer()),("default_ratio_micros",integer()),("models",array(reference("MerchantModelWrite")))],&[]));
+    schemas.insert("MerchantQuoteModel".to_owned(),object(&[("model",string()),("sales_ratio_micros",integer()),("base_prices",reference("MerchantModelPrices")),
+        ("prices",reference("MerchantModelPrices")),("net_prices",reference("MerchantModelPrices"))],&[]));
+    schemas.insert("MerchantQuote".to_owned(),object(&[("models",array(reference("MerchantQuoteModel"))),("effective_commission_bps",integer())],&[]));
     let revision_fields=vec![("name",string()),("description",string()),("base_url",string()),
         ("protocol",enumeration(&["openai_chat","openai_responses"])),("default_ratio_micros",integer()),
         ("models",array(reference("MerchantModelWrite"))),("concurrency",nullable(integer())),("timeout_secs",integer())];
@@ -64,6 +68,7 @@ pub(super) fn document()->OpenApi {
         ("get","/api/merchant-pools/{pool}/services/{id}","getMerchantPoolService",None,"MerchantCatalogService",200),
         ("get","/api/merchant/profile","getMerchantProfile",None,"MerchantProfile",200),
         ("post","/api/merchant/apply","applyMerchant",Some("MerchantApplicationRequest"),"MerchantProfile",201),
+        ("post","/api/merchant/quote","quoteMerchantService",Some("MerchantQuoteRequest"),"MerchantQuote",200),
         ("get","/api/merchant/available-pools","listMerchantAvailablePools",None,"MerchantPoolPage",200),
         ("get","/api/merchant/services","listOwnedMerchantServices",None,"MerchantOwnedServicePage",200),
         ("post","/api/merchant/services","createMerchantService",Some("MerchantServiceWriteRequest"),"MerchantOwnedService",201),

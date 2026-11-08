@@ -1,6 +1,28 @@
 use super::*;
 
 impl MerchantPoolRepository {
+    pub async fn quote(&self,owner:UserId,write:af_domain::MerchantQuoteWrite)->Result<af_domain::MerchantQuote,MerchantPoolError> {
+        self.bounded(async {
+            let merchant=require_merchant(self.pool.connection(),owner,true).await?;
+            let pool=find_pool(self.pool.connection(),write.pool_id).await?;
+            if !pool.enabled || write.models.is_empty() || write.models.len()>128 || write.default_ratio_micros<=0 {
+                return Err(MerchantPoolError::InvalidInput);
+            }
+            let commission=super::terms::resolve_commission(self.pool.connection(),&pool,Some(merchant.id)).await?;
+            let mut models=Vec::with_capacity(write.models.len());let mut names=std::collections::BTreeSet::new();
+            for model in write.models {
+                if !af_domain::validate_merchant_text(&model.model,255,false) || !names.insert(model.model.clone()) { return Err(MerchantPoolError::InvalidInput); }
+                let ratio=model.ratio_micros.unwrap_or(write.default_ratio_micros);
+                if !(pool.min_ratio_micros..=pool.max_ratio_micros).contains(&ratio) { return Err(MerchantPoolError::InvalidInput); }
+                let base_prices=model_price(self.pool.connection(),&model.model,1_000_000).await?.ok_or(MerchantPoolError::InvalidInput)?;
+                let prices=model_price(self.pool.connection(),&model.model,ratio).await?.ok_or(MerchantPoolError::InvalidInput)?;
+                let net_prices=net_prices(&prices,commission)?;
+                models.push(af_domain::MerchantQuoteModel{model:model.model,sales_ratio_micros:ratio,base_prices,prices,net_prices});
+            }
+            Ok(af_domain::MerchantQuote{models,effective_commission_bps:commission})
+        }).await
+    }
+
     pub async fn available_supply_pools(&self,owner:UserId,query:MerchantListQuery)->Result<MerchantPage<MerchantPool>,MerchantPoolError> {
         let merchant=require_merchant(self.pool.connection(),owner,false).await?;
         let rows=pools::Entity::find().filter(pools::Column::Enabled.eq(true)).order_by_asc(pools::Column::Id)
@@ -135,6 +157,15 @@ impl MerchantPoolRepository {
             page+=1;
         }
     }
+}
+
+fn net_prices(prices:&MerchantModelPrices,commission:u16)->Result<MerchantModelPrices,MerchantPoolError> {
+    let ratio=Decimal::from(10_000_u16-commission).checked_div(Decimal::from(10_000)).ok_or(MerchantPoolError::Unavailable)?;
+    let net=|value:&str|->Result<String,MerchantPoolError> {
+        value.parse::<Decimal>().map_err(internal)?.checked_mul(ratio).map(|value|value.normalize().to_string()).ok_or(MerchantPoolError::Unavailable)
+    };
+    Ok(MerchantModelPrices{currency:prices.currency.clone(),unit:prices.unit.clone(),input:net(&prices.input)?,output:net(&prices.output)?,
+        cache_read:net(&prices.cache_read)?,cache_write_5m:net(&prices.cache_write_5m)?,cache_write_1h:net(&prices.cache_write_1h)?,version:prices.version})
 }
 
 pub(super) async fn model_price<C:ConnectionTrait>(connection:&C,model:&str,ratio:i64)->Result<Option<MerchantModelPrices>,MerchantPoolError> {

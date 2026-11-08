@@ -267,7 +267,24 @@
     "responseMode": "响应模式",
     "nonStreaming": "非流式",
     "rotateKey": "更换密钥",
-    "rotateKeyHint": "只替换当前已发布接口的上游密钥，接口地址和模型保持原审核版本。新密钥加密保存，不会回显。"
+    "rotateKeyHint": "只替换当前已发布接口的上游密钥，接口地址和模型保持原审核版本。新密钥加密保存，不会回显。",
+    "modelHealth": "按模型查看运行表现",
+    "quotePreview": "当前模型报价预览",
+    "quoteUnit": "价格单位：美元 / 百万 token",
+    "quoteDimension": "计费项",
+    "basePrice": "平台基准价",
+    "salePrice": "用户售价",
+    "netPrice": "商户预计收入",
+    "quoteHint": "预览由平台统一计算，实际按成功请求用量和固定费率逐笔结算，可能存在最小计费单位舍入差异；这不是商户利润。",
+    "previewPrices": "预览价格与净收入",
+    "quoteError": "无法生成报价，请检查平台模型名、倍率范围和模型定价是否可用。",
+    "priceDimensions": {
+      "input": "输入",
+      "output": "输出",
+      "cache_read": "缓存读取",
+      "cache_write_5m": "缓存写入（5 分钟）",
+      "cache_write_1h": "缓存写入（1 小时）"
+    }
   },
   "en": {
     "title": "Merchant pool",
@@ -537,6 +554,23 @@
     "responseMode": "Response mode",
     "nonStreaming": "Non-streaming",
     "rotateKey": "Rotate key",
-    "rotateKeyHint": "Replace the upstream key for the published endpoint. The reviewed endpoint and models stay unchanged. New keys are encrypted and never returned."
+    "rotateKeyHint": "Replace the upstream key for the published endpoint. The reviewed endpoint and models stay unchanged. New keys are encrypted and never returned.",
+    "modelHealth": "Performance by model",
+    "quotePreview": "Current model quote",
+    "quoteUnit": "Unit: USD per million tokens",
+    "quoteDimension": "Dimension",
+    "basePrice": "Platform base price",
+    "salePrice": "User sale price",
+    "netPrice": "Estimated merchant income",
+    "quoteHint": "The platform calculates this preview. Successful requests settle using actual usage and fixed rates, with possible minimum-unit rounding. This is not merchant profit.",
+    "previewPrices": "Preview prices and income",
+    "quoteError": "Could not generate a quote. Check platform model names, multiplier limits and available pricing.",
+    "priceDimensions": {
+      "input": "Input",
+      "output": "Output",
+      "cache_read": "Cache read",
+      "cache_write_5m": "Cache write (5 minutes)",
+      "cache_write_1h": "Cache write (1 hour)"
+    }
   }
 }
