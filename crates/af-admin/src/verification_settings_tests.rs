@@ -22,7 +22,9 @@ use tokio::{
 const PRIVATE_KEY: &str = include_str!("fixtures/alipay_verification_test_private.pem");
 const TIMEOUT: Duration = Duration::from_secs(10);
 
-fn verification_settings_command(settings: &AdminVerificationSettings) -> VerificationSettingsCommand {
+fn verification_settings_command(
+    settings: &AdminVerificationSettings,
+) -> VerificationSettingsCommand {
     VerificationSettingsCommand {
         expected_version: settings.version,
         manual_enabled: settings.manual_enabled,

@@ -178,7 +178,8 @@ mod tests {
             "biz_code": "FACE",
             "timeout_secs": 8
         });
-        let legacy: AdminVerificationSettingsRequest = serde_json::from_value(body.clone()).unwrap();
+        let legacy: AdminVerificationSettingsRequest =
+            serde_json::from_value(body.clone()).unwrap();
         assert_eq!(legacy.require_verification_for_topup, None);
         assert_eq!(legacy.require_verification_for_api, None);
 

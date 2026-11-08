@@ -707,9 +707,7 @@ impl UserTopupService for DatabaseUserTopupService {
                             .get_order(order_id)
                             .await
                             .map_err(map_repository_error)?;
-                        if existing
-                            .is_none_or(|order| order.status() == TopupOrderStatus::Created)
-                        {
+                        if existing.is_none_or(|order| order.status() == TopupOrderStatus::Created) {
                             return Err(UserTopupError::VerificationRequired);
                         }
                     }

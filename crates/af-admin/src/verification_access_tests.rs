@@ -3,8 +3,8 @@ use std::{error::Error, sync::Arc, time::Duration};
 use af_db::{
     AccountVerificationSubmit, AdminTokenCreateRecord, AdminTokenRepository, AdminTokenWriteRecord,
     AdminUserCreateRecord, AdminUserLookupOutcome, AdminUserRepository, DatabaseOptions,
-    DatabasePool, InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository, MigrationOptions,
-    RedemptionRepository, TokenAuthRepository, VerificationMaterialWrite,
+    DatabasePool, InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
+    MigrationOptions, RedemptionRepository, TokenAuthRepository, VerificationMaterialWrite,
 };
 use af_domain::{TrustedClientIp, UserId};
 
@@ -88,7 +88,10 @@ impl Fixture {
     }
 
     async fn approve(&self, kind: &str) -> Result<(), Box<dyn Error>> {
-        let case = self.verifications.submit(self.user, submission(kind)).await?;
+        let case = self
+            .verifications
+            .submit(self.user, submission(kind))
+            .await?;
         self.verifications
             .decide(
                 case.id,
@@ -234,8 +237,8 @@ async fn unavailable_settings_do_not_disable_enforcement() -> Result<(), Box<dyn
 }
 
 #[tokio::test]
-async fn api_keys_and_playground_share_live_verification_enforcement()
--> Result<(), Box<dyn Error>> {
+async fn api_keys_and_playground_share_live_verification_enforcement() -> Result<(), Box<dyn Error>>
+{
     let fixture = Fixture::new().await?;
     let presented = PresentedApiKey::parse(TEST_KEY)?;
     let digest = presented.digest();
@@ -261,11 +264,9 @@ async fn api_keys_and_playground_share_live_verification_enforcement()
             ),
         ))
         .await?;
-    let authenticator = DatabaseTokenAuthenticator::new(TokenAuthRepository::new(
-        fixture.pool.clone(),
-        TIMEOUT,
-    )?)
-    .with_verification_access(fixture.access.clone());
+    let authenticator =
+        DatabaseTokenAuthenticator::new(TokenAuthRepository::new(fixture.pool.clone(), TIMEOUT)?)
+            .with_verification_access(fixture.access.clone());
     let ip = TrustedClientIp::new("192.0.2.10".parse()?);
     fixture.configure(true, false).await?;
     assert!(authenticator.authenticate(&digest, ip).await.is_ok());
@@ -298,11 +299,9 @@ async fn api_keys_and_playground_share_live_verification_enforcement()
 #[tokio::test]
 async fn blocked_redemption_does_not_consume_the_code() -> Result<(), Box<dyn Error>> {
     let fixture = Fixture::new().await?;
-    let service = DatabaseRedemptionService::new(RedemptionRepository::new(
-        fixture.pool.clone(),
-        TIMEOUT,
-    )?)
-    .with_verification_access(fixture.access.clone());
+    let service =
+        DatabaseRedemptionService::new(RedemptionRepository::new(fixture.pool.clone(), TIMEOUT)?)
+            .with_verification_access(fixture.access.clone());
     let issued = service
         .create(
             SessionPrincipal::new(fixture.reviewer, SessionRole::Admin),

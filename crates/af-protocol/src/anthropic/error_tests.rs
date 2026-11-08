@@ -8,7 +8,10 @@ fn encodes_closed_anthropic_error_types() {
     let cases = [
         (PublicErrorCode::InvalidRequest, "invalid_request_error"),
         (PublicErrorCode::InvalidApiKey, "authentication_error"),
-        (PublicErrorCode::AccountVerificationRequired, "permission_error"),
+        (
+            PublicErrorCode::AccountVerificationRequired,
+            "permission_error",
+        ),
         (PublicErrorCode::InsufficientQuota, "billing_error"),
         (PublicErrorCode::ModelNotFound, "not_found_error"),
         (PublicErrorCode::TaskNotFound, "not_found_error"),

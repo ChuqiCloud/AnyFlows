@@ -174,6 +174,7 @@ try {
       case '/api/admin/model-provider-catalog': data = { providers: [] }; break
       case '/api/account/profile': data = { id: 1, username: 'CI user', email: null, role, notifications: {} }; break
       case '/api/account/notifications': data = { entries: [], next_cursor: null, unread_count: 0 }; break
+      case '/api/account/verifications/eligibility': data = { verified: false, require_verification_for_topup: false, require_verification_for_api: false, enterprise_verified: false, can_apply_for_organization: false, providers: [], individual_providers: [], enterprise_providers: [], individual_reason_required: true, enterprise_reason_required: true }; break
       case '/api/account/wallet': data = { balance: 100000, used_quota: 0, frozen_quota: 0 }; break
       case '/api/account/wallet/entries':
       case '/api/account/refund-reconciliations': data = { entries: [], next_cursor: null }; break

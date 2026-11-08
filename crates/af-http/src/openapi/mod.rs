@@ -773,7 +773,10 @@ mod tests {
                         .any(|value| value == "account_verification_required")
                 })
         );
-        for path in ["/api/account/wallet/topups", "/api/account/wallet/redemptions"] {
+        for path in [
+            "/api/account/wallet/topups",
+            "/api/account/wallet/redemptions",
+        ] {
             assert!(
                 document["paths"][path]["post"]["responses"]
                     .get("403")
