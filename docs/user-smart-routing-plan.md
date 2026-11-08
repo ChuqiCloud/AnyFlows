@@ -4,7 +4,7 @@
 
 用户从当前有权使用的实体分组中创建自己的路由组，并为它创建个人 API Key。外部客户端继续请求原有模型名；路由组根据策略选取支持该模型及请求协议的分组，再复用现有组内调度。成员不暴露底层渠道、凭据或上游密钥。
 
-本次支持 price_first、stable_first、ordered、round_robin、weighted 五种策略。原有单分组 Key 保持兼容。Classic web 不增加功能；web-next 提供路由组管理和 Key 绑定。
+本次支持 price_first、stable_first、ordered、round_robin、weighted 五种策略。原有单分组 Key 保持兼容。该功能由 `web-next` 提供；保留的 `web/` Classic 源码不随服务构建。
 
 ## 数据、权限与 API
 

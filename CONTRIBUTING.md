@@ -6,7 +6,7 @@
 
 说明版本、部署方式、复现步骤、预期行为和实际结果。日志保留 HTTP 状态码、请求 ID 和相关错误，移除 API Key、会话、密码、认证材料和个人信息。
 
-页面问题还需注明前端主题（Classic 或 Next）、浏览器和视口尺寸。
+页面问题还需注明前端模板、浏览器和视口尺寸。
 
 ## 开发环境
 
@@ -14,7 +14,7 @@
 - 前端使用 Node.js 和 Corepack，pnpm 版本以各前端的 `package.json` 为准。
 - SQLite 可用于本地开发，PostgreSQL、MySQL 和 Redis 按改动范围准备。
 
-运行前按 [配置参考](docs/configuration.md) 设置开发环境，使用独立的数据库和密钥。完整构建包含 Rust 和两套前端。
+运行前按 [配置参考](docs/configuration.md) 设置开发环境，使用独立的数据库和密钥。服务构建包含 Rust 和 `web-next`；`web/` Classic 前端源码保留供查阅，不参与服务构建和前端 CI。
 
 ## 按改动范围检查
 
@@ -26,29 +26,29 @@ cargo check --workspace --all-targets --all-features --locked
 cargo test --workspace --all-features --locked
 ```
 
-前端在对应目录使用 `package.json` 指定的 pnpm 版本安装锁定依赖并检查：
+Next 前端使用 `web-next` 目录中的 pnpm 版本安装锁定依赖并检查：
 
 ```bash
-cd web
+cd web-next
 corepack pnpm install --frozen-lockfile
 corepack pnpm check
 ```
 
-Next 使用 `web-next` 目录。共享行为的改动需检查两套前端，并在根目录运行 `node tools/ci/check-frontend-parity.mjs`。
+Classic 前端源码仍保留在 `web/`，但不再随服务发布。新前端功能只需维护和检查 `web-next`。
 
 文档改动检查链接、命令和实现是否一致。CI 按路径选择前端、Rust、数据库和部署检查；手动运行可执行完整检查。触发条件见 [CI 配置](.github/workflows/ci.yml)。
 
-## 接口与双前端
+## 接口与前端
 
-接口以 Rust 定义为源。修改后分别在 `web` 和 `web-next` 目录生成客户端：
+接口以 Rust 定义为源。在 `web-next` 中生成客户端和 OpenAPI 定义：
 
 ```bash
 corepack pnpm api:generate
 ```
 
-该命令导出 OpenAPI 并生成当前前端的客户端。完成后，在根目录执行 `cargo xtask openapi check`。生成文件随接口改动提交，不手工编辑。
+该命令导出 OpenAPI 并生成 Next 前端的客户端。生成文件会同步到保留的 `web/` 源码目录；完成后，在根目录执行 `cargo xtask openapi check`。生成文件随接口改动提交，不手工编辑。
 
-Classic 与 Next 共用接口、权限和业务规则，视觉组件分别适配各自主题。新增交互应覆盖加载、空数据、失败和移动端状态。
+新增交互应覆盖加载、空数据、失败和移动端状态。
 
 ## 新增渠道
 
@@ -57,12 +57,11 @@ Classic 与 Next 共用接口、权限和业务规则，视觉组件分别适配
 1. 仅增加品牌时维护品牌目录。新增适配器需实现协议、认证和强类型配置，并接入 `af-adapter` 工厂。
 2. 在 [`channel_capability.rs`](crates/af-domain/src/channel_capability.rs) 声明已接入的协议、调度、探活、模型发现与凭据类型。`supports_credential_kind` 保留历史兼容范围，`creatable_credential_kinds` 定义新建选项。
 3. 常规渠道通过 `standard_adaptor_settings` 装配；固定入口、异步任务或额外参数使用专用配置。能力声明不替代认证校验。
-4. 导出两套前端能力目录，补充表单与协议回归，生成文件随源码提交：
+4. 导出前端能力目录，补充表单与协议回归，生成文件随源码提交：
 
 ```bash
 cargo xtask channel-capabilities export
 cargo xtask channel-capabilities check
-node tools/ci/check-frontend-parity.mjs
 ```
 
 ## Pull Request

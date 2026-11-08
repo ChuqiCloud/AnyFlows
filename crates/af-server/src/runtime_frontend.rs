@@ -18,7 +18,7 @@ const MAX_TEMPLATE_NAME_BYTES: usize = 160;
 const MAX_TEMPLATE_VERSION_BYTES: usize = 64;
 const MAX_API_CONTRACT_BYTES: usize = 64;
 const MAX_PREVIEW_BYTES: usize = 2 * 1024 * 1024;
-const BUILTIN_CLASSIC: &str = "embedded";
+const LEGACY_BUILTIN_CLASSIC: &str = "embedded";
 const BUILTIN_NEXT: &str = "embedded-next";
 
 const MAX_METADATA_BYTES: u64 = 64 * 1024;
@@ -85,7 +85,6 @@ pub(crate) struct FrontendTemplateManager {
     active: RwLock<Arc<SelectedAssets>>,
     catalog: RwLock<FrontendTemplateCatalog>,
     templates: RwLock<HashMap<String, Arc<dyn FrontendAssetSource>>>,
-    embedded_next: Arc<dyn FrontendAssetSource>,
     previews: RwLock<HashMap<String, FrontendTemplatePreview>>,
     mutation: tokio::sync::Mutex<()>,
 }
@@ -94,13 +93,11 @@ impl FrontendTemplateManager {
     pub(crate) fn new(
         root: PathBuf,
         embedded: Arc<dyn FrontendAssetSource>,
-        embedded_next: Arc<dyn FrontendAssetSource>,
         repository: SiteSettingsRepository,
         initial_active_id: Option<String>,
     ) -> Arc<Self> {
         let manager = Arc::new(Self {
             root,
-            embedded_next,
             previews: RwLock::new(HashMap::new()),
             mutation: tokio::sync::Mutex::new(()),
             embedded: Arc::clone(&embedded),
@@ -116,13 +113,17 @@ impl FrontendTemplateManager {
             templates: RwLock::new(HashMap::new()),
         });
         manager.scan_now();
-        if let Some(id) = initial_active_id.as_deref().filter(|id| *id != "embedded")
-            && manager.activate_now(id).is_err()
-        {
-            warn!(
-                template_id = id,
-                "数据库中的前端模板不存在或损坏，继续使用内嵌前端"
-            );
+        if let Some(id) = initial_active_id.as_deref() {
+            match id {
+                LEGACY_BUILTIN_CLASSIC | BUILTIN_NEXT => {}
+                id if manager.activate_now(id).is_err() => {
+                    warn!(
+                        template_id = id,
+                        "数据库中的前端模板不存在或损坏，继续使用内嵌 Next 前端"
+                    );
+                }
+                _ => {}
+            }
         }
         manager
     }
@@ -133,16 +134,15 @@ impl FrontendTemplateManager {
 
     fn replace_scanned(&self, scanned: Vec<ScannedTemplate>) {
         let mut templates: HashMap<String, Arc<dyn FrontendAssetSource>> = HashMap::new();
-        templates.insert(BUILTIN_CLASSIC.to_owned(), Arc::clone(&self.embedded));
-        templates.insert(BUILTIN_NEXT.to_owned(), Arc::clone(&self.embedded_next));
-        let mut previews = HashMap::from([
-            (BUILTIN_CLASSIC.to_owned(), builtin_preview(false)),
-            (BUILTIN_NEXT.to_owned(), builtin_preview(true)),
-        ]);
-        let mut summaries = vec![builtin_summary(false), builtin_summary(true)];
+        templates.insert(BUILTIN_NEXT.to_owned(), Arc::clone(&self.embedded));
+        let mut previews = HashMap::from([(BUILTIN_NEXT.to_owned(), builtin_preview())]);
+        let mut summaries = vec![builtin_summary()];
         for item in scanned {
             // Builtin IDs are reserved, so disk content cannot shadow trusted assets.
-            if matches!(item.summary.id.as_str(), BUILTIN_CLASSIC | BUILTIN_NEXT) {
+            if matches!(
+                item.summary.id.as_str(),
+                LEGACY_BUILTIN_CLASSIC | BUILTIN_NEXT
+            ) {
                 warn!(
                     template_id = item.summary.id,
                     "外部模板使用了保留的内置模板 ID"
@@ -170,7 +170,8 @@ impl FrontendTemplateManager {
             .and_then(|catalog| catalog.active_id.clone());
         let active_id = previous_active_id
             .clone()
-            .filter(|id| templates.contains_key(id));
+            .filter(|id| templates.contains_key(id))
+            .or_else(|| Some(BUILTIN_NEXT.to_owned()));
         let active_snapshot = active_id.as_ref().and_then(|id| templates.get(id)).cloned();
         if let Ok(mut destination) = self.previews.write() {
             *destination = previews;
@@ -190,14 +191,7 @@ impl FrontendTemplateManager {
                         embedded: Arc::clone(&self.embedded),
                     });
                 }
-                None if previous_active_id.is_some() => {
-                    *active = Arc::new(SelectedAssets {
-                        selected: None,
-                        embedded: Arc::clone(&self.embedded),
-                    });
-                    warn!("当前外部前端模板已不可用，已回退到内嵌前端");
-                }
-                None => {}
+                None => unreachable!("Next is always available as the embedded fallback"),
             }
         }
     }
@@ -292,7 +286,10 @@ impl FrontendTemplateService for FrontendTemplateManager {
     ) -> af_http::FrontendTemplateFuture<'_, FrontendTemplateCatalog> {
         Box::pin(async move {
             let _guard = self.mutation.lock().await;
-            let template_id = template_id.filter(|id| id != "embedded");
+            let template_id = match template_id.as_deref() {
+                None | Some(LEGACY_BUILTIN_CLASSIC) => Some(BUILTIN_NEXT.to_owned()),
+                _ => template_id,
+            };
             let current = self.active_id();
             if current == template_id {
                 let persisted = self
@@ -321,23 +318,7 @@ impl FrontendTemplateService for FrontendTemplateManager {
                         .map_err(|_| FrontendTemplateError::Conflict)?;
                     self.activate_now(id)?;
                 }
-                None => {
-                    self.repository
-                        .set_frontend_template_id(None)
-                        .await
-                        .map_err(|_| FrontendTemplateError::Conflict)?;
-                    let mut active = self
-                        .active
-                        .write()
-                        .map_err(|_| FrontendTemplateError::Internal)?;
-                    *active = Arc::new(SelectedAssets {
-                        selected: None,
-                        embedded: Arc::clone(&self.embedded),
-                    });
-                    if let Ok(mut catalog) = self.catalog.write() {
-                        catalog.active_id = None;
-                    }
-                }
+                None => unreachable!("legacy and empty selections map to Next"),
             }
             info!(template_id = ?template_id, "前端模板已切换");
             self.catalog()
@@ -349,35 +330,24 @@ fn preview_url(id: &str) -> String {
     format!("/api/admin/frontend-templates/{id}/preview")
 }
 
-fn builtin_summary(next: bool) -> FrontendTemplateSummary {
-    let id = if next { BUILTIN_NEXT } else { BUILTIN_CLASSIC };
+fn builtin_summary() -> FrontendTemplateSummary {
     FrontendTemplateSummary {
-        id: id.to_owned(),
-        name: if next {
-            "AnyFlows Next"
-        } else {
-            "AnyFlows Classic"
-        }
-        .to_owned(),
+        id: BUILTIN_NEXT.to_owned(),
+        name: "AnyFlows Next".to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
         api_contract: "0.2".to_owned(),
         builtin: true,
         description: None,
         author: Some("AnyFlows".to_owned()),
-        preview_url: Some(preview_url(id)),
+        preview_url: Some(preview_url(BUILTIN_NEXT)),
         valid: true,
         error: None,
     }
 }
 
-fn builtin_preview(next: bool) -> FrontendTemplatePreview {
-    let content: &'static [u8] = if next {
-        include_bytes!("frontend_previews/next.svg")
-    } else {
-        include_bytes!("frontend_previews/classic.svg")
-    };
+fn builtin_preview() -> FrontendTemplatePreview {
     FrontendTemplatePreview {
-        asset: FrontendAsset::from_static(content),
+        asset: FrontendAsset::from_static(include_bytes!("frontend_previews/next.svg")),
         content_type: "image/svg+xml",
     }
 }
@@ -446,7 +416,7 @@ fn scan_directory(root: &Path) -> Vec<ScannedTemplate> {
 
 fn load_template(id: &str, directory: &Path) -> Result<ScannedTemplate, String> {
     validate_template_id(id)?;
-    if matches!(id, BUILTIN_CLASSIC | BUILTIN_NEXT) {
+    if matches!(id, LEGACY_BUILTIN_CLASSIC | BUILTIN_NEXT) {
         return Err("外部模板不能使用内置模板的保留 ID".to_owned());
     }
     let metadata_path = directory.join("template.json");
@@ -645,7 +615,7 @@ mod tests {
         ] {
             assert!(load_preview(path, &assets).is_err(), "{path}");
         }
-        assert!(load_template(BUILTIN_CLASSIC, Path::new("unused")).is_err());
+        assert!(load_template(LEGACY_BUILTIN_CLASSIC, Path::new("unused")).is_err());
         assert!(load_template(BUILTIN_NEXT, Path::new("unused")).is_err());
     }
 
@@ -661,22 +631,11 @@ mod tests {
         fs::create_dir_all(root.join("demo")).unwrap();
         fs::write(root.join("demo/template.json"), r#"{"schema_version":1,"id":"demo","name":"Demo","version":"1","api_contract":"0.2","entry":"index.html","author":"Team","description":"Demo layout"}"#).unwrap();
         fs::write(root.join("demo/index.html"), "external").unwrap();
-        let classic: Arc<dyn FrontendAssetSource> = Arc::new(TemplateSnapshot {
-            assets: HashMap::from([(
-                "index.html".to_owned(),
-                FrontendAsset::from_bytes("classic"),
-            )]),
-        });
         let next: Arc<dyn FrontendAssetSource> = Arc::new(TemplateSnapshot {
             assets: HashMap::from([("index.html".to_owned(), FrontendAsset::from_bytes("next"))]),
         });
-        let manager = FrontendTemplateManager::new(
-            root.clone(),
-            Arc::clone(&classic),
-            Arc::clone(&next),
-            repository.clone(),
-            None,
-        );
+        let manager =
+            FrontendTemplateManager::new(root.clone(), Arc::clone(&next), repository.clone(), None);
         let catalog = manager.list().await.unwrap();
         assert_eq!(
             catalog
@@ -684,35 +643,30 @@ mod tests {
                 .iter()
                 .filter(|template| template.builtin)
                 .count(),
-            2
+            1
         );
-        assert_eq!(catalog.templates.len(), 3);
-        assert!(manager.preview(BUILTIN_CLASSIC).is_ok());
+        assert_eq!(catalog.templates.len(), 2);
+        assert!(manager.preview(LEGACY_BUILTIN_CLASSIC).is_err());
         assert!(manager.preview(BUILTIN_NEXT).is_ok());
-        assert_eq!(
-            manager.asset("index.html").unwrap().content().as_ref(),
-            b"classic"
-        );
-        assert_eq!(manager.active_id(), None);
-
-        manager
-            .activate(Some(BUILTIN_NEXT.to_owned()))
-            .await
-            .unwrap();
         assert_eq!(
             manager.asset("index.html").unwrap().content().as_ref(),
             b"next"
         );
+        assert_eq!(manager.active_id().as_deref(), Some(BUILTIN_NEXT));
+        manager.scan().await.unwrap();
         assert_eq!(
             repository.settings().await.unwrap().frontend_template_id(),
             Some(BUILTIN_NEXT)
         );
-        manager.scan().await.unwrap();
+
+        manager
+            .activate(Some(LEGACY_BUILTIN_CLASSIC.to_owned()))
+            .await
+            .unwrap();
         assert_eq!(manager.active_id().as_deref(), Some(BUILTIN_NEXT));
         let restarted = FrontendTemplateManager::new(
             root.clone(),
-            classic,
-            next,
+            Arc::clone(&next),
             repository.clone(),
             Some(BUILTIN_NEXT.to_owned()),
         );
@@ -728,28 +682,21 @@ mod tests {
         );
         fs::remove_file(root.join("demo/index.html")).unwrap();
         manager.scan().await.unwrap();
-        assert_eq!(manager.active_id(), None);
+        assert_eq!(manager.active_id().as_deref(), Some(BUILTIN_NEXT));
         assert_eq!(
             manager.asset("index.html").unwrap().content().as_ref(),
-            b"classic"
+            b"next"
         );
         assert_eq!(
             repository.settings().await.unwrap().frontend_template_id(),
-            None
+            Some(BUILTIN_NEXT)
         );
         assert!(manager.activate(Some("demo".to_owned())).await.is_err());
-        assert_eq!(manager.active_id(), None);
-        manager
-            .activate(Some(BUILTIN_NEXT.to_owned()))
-            .await
-            .unwrap();
-        manager
-            .activate(Some(BUILTIN_CLASSIC.to_owned()))
-            .await
-            .unwrap();
+        assert_eq!(manager.active_id().as_deref(), Some(BUILTIN_NEXT));
+        manager.activate(None).await.unwrap();
         assert_eq!(
             repository.settings().await.unwrap().frontend_template_id(),
-            None
+            Some(BUILTIN_NEXT)
         );
         fs::remove_dir_all(root).unwrap();
         database.close().await;

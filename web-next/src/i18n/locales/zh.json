@@ -4130,7 +4130,7 @@
     },
     "templates": {
       "title": "前端模板商店",
-      "description": "在经典内置前端、新版内置前端和外部模板之间切换。先预览，再启用；切换会即时应用于整个站点。",
+      "description": "在内置 Next 前端和外部模板之间切换。先预览，再启用；切换会即时应用于整个站点。",
       "selector": "当前模板",
       "embedded": "内嵌前端",
       "embeddedOption": "内嵌前端（默认）",
@@ -4157,7 +4157,6 @@
       "enabled": "使用中",
       "loading": "正在加载模板目录",
       "empty": "没有符合条件的模板",
-      "classicDescription": "经典控制台，紧凑布局与清晰的数据表格。官方内置，可随时恢复。",
       "nextDescription": "新版控制台，基于 HeroUI 的全新导航、卡片和交互界面。官方内置。",
       "externalDescription": "从运行目录加载的独立前端模板。",
       "installHint": "外部模板请放入配置的模板目录（默认 public/templates），包含 template.json 和构建产物，然后重新扫描。预览图片可在元数据中配置。",

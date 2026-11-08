@@ -3,36 +3,19 @@ use std::{collections::HashMap, sync::LazyLock};
 use af_http::{FrontendAsset, FrontendAssetSource};
 use include_dir::{Dir, include_dir};
 
-static FRONTEND_DIST: Dir<'static> = include_dir!("$OUT_DIR/web-dist");
 static FRONTEND_NEXT_DIST: Dir<'static> = include_dir!("$OUT_DIR/web-next-dist");
 static FRONTEND_NEXT_ASSETS: LazyLock<HashMap<String, FrontendAsset>> = LazyLock::new(|| {
     let mut assets = HashMap::new();
     collect_assets(&FRONTEND_NEXT_DIST, &mut assets);
     assets
 });
-static FRONTEND_ASSETS: LazyLock<HashMap<String, FrontendAsset>> = LazyLock::new(|| {
-    let mut assets = HashMap::new();
-    collect_assets(&FRONTEND_DIST, &mut assets);
-    assets
-});
-
-/// 提供编译进服务二进制的前端资源。
-#[derive(Debug)]
-pub(crate) struct EmbeddedFrontendAssets;
-
-/// 新版前端与经典前端独立内嵌，不依赖运行目录中的外部模板。
+/// 提供编译进服务二进制的 Next 前端资源。
 #[derive(Debug)]
 pub(crate) struct EmbeddedNextFrontendAssets;
 
 impl FrontendAssetSource for EmbeddedNextFrontendAssets {
     fn asset(&self, path: &str) -> Option<FrontendAsset> {
         FRONTEND_NEXT_ASSETS.get(path).cloned()
-    }
-}
-
-impl FrontendAssetSource for EmbeddedFrontendAssets {
-    fn asset(&self, path: &str) -> Option<FrontendAsset> {
-        FRONTEND_ASSETS.get(path).cloned()
     }
 }
 
@@ -51,8 +34,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn embedded_frontend_always_contains_index() {
-        assert!(EmbeddedFrontendAssets.asset("index.html").is_some());
+    fn embedded_frontend_contains_next_index() {
         assert!(EmbeddedNextFrontendAssets.asset("index.html").is_some());
     }
 }

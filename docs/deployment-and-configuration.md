@@ -1,6 +1,6 @@
 # 二进制安装
 
-本文以 Debian / Ubuntu 和 systemd 为例，说明二进制安装、管理员初始化及 HTTPS 配置。发布包内含 Classic、Next 两套前端，运行时无需 Rust 或 Node.js。
+本文以 Debian / Ubuntu 和 systemd 为例，说明二进制安装、管理员初始化及 HTTPS 配置。发布包内含 Next 前端，运行时无需 Rust 或 Node.js。
 
 ## 1. 准备服务器
 

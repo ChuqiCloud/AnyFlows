@@ -10,7 +10,7 @@ AnyFlows is a self-hosted AI API gateway. It connects multiple model providers t
 - Streaming, tool calls, and multi-turn conversations, preserving supported history and usage data.
 - Channels, credential pools, account pools, and routing based on model capabilities and channel status.
 - Users, groups, model permissions, pricing, and quotas.
-- Classic and Next administration frontends, with support for external static templates.
+- A built-in Next administration frontend, with support for external static templates.
 - SQLite, PostgreSQL, and MySQL, with optional Redis for shared state.
 
 This repository contains the standalone community edition.
@@ -45,7 +45,7 @@ Thanks to the following partners for supporting AnyFlows.
 
 ## Installation
 
-Community binary packages currently support Linux amd64 and include both frontends. Rust and Node.js are not required at runtime. Download the archive and matching `.sha256` file from [Releases](https://github.com/ChuqiCloud/AnyFlows/releases). Beta releases are intended for testing.
+Community binary packages currently support Linux amd64 and include the Next frontend. Rust and Node.js are not required at runtime. Download the archive and matching `.sha256` file from [Releases](https://github.com/ChuqiCloud/AnyFlows/releases). Beta releases are intended for testing.
 
 Replace `VERSION` with the downloaded version, including its prerelease suffix, then verify and extract the archive:
 

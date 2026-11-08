@@ -124,12 +124,10 @@ jobs:
             echo "VCPKGRS_TRIPLET=${{ matrix.triplet }}" >> "$GITHUB_ENV"
             echo "OPENSSL_STATIC=1" >> "$GITHUB_ENV"
           fi
-      - name: Build embedded frontends
+      - name: Build embedded Next frontend
         run: |
           corepack enable
-          corepack pnpm@10.33.0 --dir web install --frozen-lockfile
           corepack pnpm@10.33.0 --dir web-next install --frozen-lockfile
-          corepack pnpm@10.33.0 --dir web build
           corepack pnpm@10.33.0 --dir web-next build
       - name: Build native release binary
         id: native-build
@@ -186,7 +184,7 @@ jobs:
             found { print }
           ' CHANGELOG.md > release/CHANGELOG.md
           test -s release/CHANGELOG.md
-          { printf '# AnyFlows %s\n\nLinux、Windows、macOS 的 amd64 与 arm64 原生包，包含 Classic、Next 内置前端。\n\n' "$RELEASE_TAG"; cat release/CHANGELOG.md; printf '\n## SHA-256\n\n```text\n'; cat release/SHA256SUMS; printf '```\n'; } > release/RELEASE_NOTES.md
+          { printf '# AnyFlows %s\n\nLinux、Windows、macOS 的 amd64 与 arm64 原生包，包含 Next 内置前端。\n\n' "$RELEASE_TAG"; cat release/CHANGELOG.md; printf '\n## SHA-256\n\n```text\n'; cat release/SHA256SUMS; printf '```\n'; } > release/RELEASE_NOTES.md
       - name: Publish complete GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

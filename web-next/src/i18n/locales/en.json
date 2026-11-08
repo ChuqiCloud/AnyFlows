@@ -4131,7 +4131,7 @@
     },
     "templates": {
       "title": "Frontend templates",
-      "description": "Choose between Classic, Next and external templates. Preview first; activation changes the frontend for the entire site immediately.",
+      "description": "Choose between the built-in Next frontend and external templates. Preview first; activation changes the frontend for the entire site immediately.",
       "selector": "Active template",
       "embedded": "Embedded frontend",
       "embeddedOption": "Embedded frontend (default)",
@@ -4158,7 +4158,6 @@
       "enabled": "Active",
       "loading": "Loading template catalog",
       "empty": "No matching templates",
-      "classicDescription": "The classic console with a compact layout and clear data tables. Built in and always available as a fallback.",
       "nextDescription": "The new HeroUI console with redesigned navigation, cards and interactions. Built into the server.",
       "externalDescription": "An independent frontend loaded from the runtime template directory.",
       "installHint": "Place template.json and built assets in the configured template directory (public/templates by default), then rescan. Set a preview image in the metadata to display a thumbnail.",

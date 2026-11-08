@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        frontend: [web, web-next]
+        frontend: [web-next]
     steps:
       - name: Check out repository
         shell: bash
@@ -62,7 +62,6 @@ jobs:
           npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} install --frozen-lockfile
       - name: Check scripts and community contracts
         run: |
-          node tools/ci/check-frontend-parity.mjs
           npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} lint
       - name: Build community frontend
         run: npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build
