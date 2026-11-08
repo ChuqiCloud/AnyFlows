@@ -317,7 +317,36 @@
       "unavailable": "当前不可用"
     },
     "meteringHint": "商户池使用平台本地 token 估算进行预扣与成功结算，包含可见文本、可见推理和工具调用；不使用商户自报用量或不可见推理 token 生成商户收入。首版只支持文本，不接收视觉输入。",
-    "visionUnavailable": "视觉输入（首版暂不支持）"
+    "visionUnavailable": "视觉输入（首版暂不支持）",
+    "catalogTable": "商户服务列表",
+    "selectModelShort": "选择模型查看报价",
+    "ttftCompact": "首字 {{p50}} / {{p95}}",
+    "statisticsAndBilling": "统计口径与计费说明",
+    "meteringRules": "计量规则",
+    "tableColumns": {
+      "merchantService": "商户 / 服务",
+      "status": "状态",
+      "model": "模型",
+      "ratio": "倍率",
+      "price": "输入 / 输出 / 缓存价格",
+      "success": "成功率 / 样本",
+      "timing": "首字 / 完整耗时",
+      "trend": "近期趋势",
+      "updated": "更新时间",
+      "actions": "操作",
+      "service": "服务",
+      "pool": "共享池",
+      "revision": "线上 / 草稿版本",
+      "group": "分组",
+      "commission": "服务费",
+      "settlement": "结算延迟",
+      "merchant": "商户",
+      "description": "说明",
+      "reason": "处理原因",
+      "reference": "编号",
+      "amount": "金额",
+      "payment": "付款凭证"
+    }
   },
   "en": {
     "title": "Merchant pool",
@@ -637,6 +666,35 @@
       "unavailable": "Currently unavailable"
     },
     "meteringHint": "Merchant pools use platform-local token estimates for reservations and successful settlement, including visible text, visible reasoning and tool calls. Merchant-reported usage and hidden reasoning tokens do not generate merchant income. The initial release supports text only, without vision input.",
-    "visionUnavailable": "Vision input (not supported in this release)"
+    "visionUnavailable": "Vision input (not supported in this release)",
+    "catalogTable": "Merchant service table",
+    "selectModelShort": "Select a model for prices",
+    "ttftCompact": "TTFT {{p50}} / {{p95}}",
+    "statisticsAndBilling": "Statistics and billing details",
+    "meteringRules": "Metering rules",
+    "tableColumns": {
+      "merchantService": "Merchant / Service",
+      "status": "Status",
+      "model": "Model",
+      "ratio": "Multiplier",
+      "price": "Input / Output / Cache prices",
+      "success": "Success / Samples",
+      "timing": "TTFT / Duration",
+      "trend": "Recent activity",
+      "updated": "Updated",
+      "actions": "Actions",
+      "service": "Service",
+      "pool": "Pool",
+      "revision": "Published / Draft",
+      "group": "Group",
+      "commission": "Commission",
+      "settlement": "Settlement delay",
+      "merchant": "Merchant",
+      "description": "Description",
+      "reason": "Reason",
+      "reference": "ID",
+      "amount": "Amount",
+      "payment": "Payment reference"
+    }
   }
 }

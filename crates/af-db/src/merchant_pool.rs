@@ -214,10 +214,10 @@ impl MerchantPoolRepository {
             }
             let mut result = Vec::new();
             for row in rows {
-                if let Some(user) = owner {
-                    if !self.check_pool_access(user, row.id).await? {
-                        continue;
-                    }
+                if let Some(user) = owner
+                    && !self.check_pool_access(user, row.id).await?
+                {
+                    continue;
                 }
                 result.push(self.effective_pool(row, None).await?);
             }
@@ -513,10 +513,10 @@ fn pagination(query: &MerchantListQuery) -> Result<(u32, u32), MerchantPoolError
             .is_some_and(|s| !matches!(s.as_str(), "streaming" | "tools" | "vision"))
         || query
             .min_ratio_micros
-            .is_some_and(|n| n < 0 || n > 100_000_000)
+            .is_some_and(|n| !(0..=100_000_000).contains(&n))
         || query
             .max_ratio_micros
-            .is_some_and(|n| n < 0 || n > 100_000_000)
+            .is_some_and(|n| !(0..=100_000_000).contains(&n))
         || matches!((query.min_ratio_micros,query.max_ratio_micros),(Some(min),Some(max)) if min>max)
         || query
             .window_seconds

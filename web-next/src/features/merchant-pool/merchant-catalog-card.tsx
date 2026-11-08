@@ -1,7 +1,5 @@
-import { Checkbox } from '@heroui/react'
-import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import type { MerchantCatalogService, MerchantModelOffer, MerchantStatistics, MerchantTimeline } from './merchant-pool-model'
+import type { MerchantModelOffer, MerchantStatistics, MerchantTimeline } from './merchant-pool-model'
 import { poolRatio, poolTimestamp } from './merchant-pool-model'
 import { PoolStatus } from './merchant-pool-ui'
 
@@ -16,19 +14,8 @@ export function MerchantHealth({ stats }: { stats?: MerchantStatistics }) {
   return <div className="grid gap-1 text-xs tabular-nums"><div className="flex flex-wrap items-center gap-2"><span className="font-medium">{stats?.sample_count && stats.success_rate !== null ? `${stats.success_rate.toFixed(1)}%` : t('merchantPool.noData')}</span>{stats?.sample_count ? <span className="text-muted-foreground">{t('merchantPool.samples', { count: stats.sample_count })}</span> : null}</div>{stats?.sample_count && stats.sample_count < 100 ? <span className="text-warning">{t('merchantPool.lowSamples')}</span> : null}<span className="text-muted-foreground">{t('merchantPool.ttft', { p50: millis(stats?.ttft_p50_ms), p95: millis(stats?.ttft_p95_ms) })}</span><span className="text-muted-foreground">{t('merchantPool.latency', { value: millis(stats?.latency_p95_ms) })}</span>{stats ? <PoolStatus status={stats.status} /> : null}</div>
 }
 
-export function MerchantTimelineStrip({ timeline }: { timeline?: MerchantTimeline }) {
+export function MerchantTimelineStrip({ timeline, compact = false }: { timeline?: MerchantTimeline; compact?: boolean }) {
   const { t, i18n } = useTranslation()
   if (!timeline) return null
-  return <div className="mt-2"><span className="sr-only">{t('merchantPool.recentAvailability')}</span><div className="flex gap-0.5" role="img" aria-label={t('merchantPool.availabilitySummary', { known: timeline.buckets.filter((bucket) => bucket.sample_count > 0).length, total: timeline.buckets.length })}>{timeline.buckets.map((bucket) => <div key={bucket.started_at} className={`h-5 min-w-0 flex-1 rounded-sm ${bucket.status === 'normal' ? 'bg-success/70' : bucket.status === 'degraded' ? 'bg-warning/80' : 'bg-surface-2'}`} title={`${poolTimestamp(bucket.started_at, i18n.language)} — ${poolTimestamp(bucket.ended_at, i18n.language)} · ${t(`merchantPool.status.${bucket.status}`)} · ${t('merchantPool.samples', { count: bucket.sample_count })}`} />)}</div></div>
-}
-
-export function MerchantCatalogCard({ service, model, stats, timeline, selected, disabled, onSelect }: { service: MerchantCatalogService; model: string; stats?: MerchantStatistics; timeline?: MerchantTimeline; selected?: boolean; disabled?: boolean; onSelect?: () => void }) {
-  const { t, i18n } = useTranslation()
-  const offer = service.models.find((item) => item.model === model)
-  return <article className="grid gap-4 rounded-xl border border-[var(--hairline)] bg-surface-1 p-4 lg:grid-cols-[minmax(12rem,1.3fr)_minmax(12rem,1fr)_minmax(13rem,1fr)_auto]">
-    <div className="min-w-0"><div className="flex items-center gap-2">{onSelect ? <Checkbox size="sm" aria-label={t('merchantPool.compareService', { name: service.name })} isSelected={Boolean(selected)} isDisabled={disabled && !selected} onValueChange={onSelect} /> : null}<h3 className="truncate text-sm font-semibold">{service.merchant_name}</h3><PoolStatus status={service.status} /></div><p className="mt-1 text-xs">{service.name}</p><p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{service.description}</p><div className="mt-2 flex flex-wrap gap-1">{service.models.slice(0, 5).map((item) => <span key={item.model} className="max-w-full truncate rounded bg-surface-2 px-1.5 py-0.5 text-[0.6875rem]">{item.model}</span>)}{service.models.length > 5 ? <span className="text-xs text-muted-foreground">+{service.models.length - 5}</span> : null}</div></div>
-    <div>{offer ? <MerchantModelPrice offer={offer} /> : <div className="text-xs leading-5 text-muted-foreground">{t('merchantPool.selectModelToCompare')}<p className="mt-1">{t('merchantPool.modelCount', { count: service.models.length })}</p></div>}</div>
-    <div><MerchantHealth stats={stats} /><MerchantTimelineStrip timeline={timeline} /></div>
-    <div className="flex flex-wrap gap-3 text-xs lg:flex-col lg:items-end"><Link className="text-primary hover:underline" to={`/console/merchant-pool/merchants/${service.merchant_id}?pool=${service.pool_id}&service=${service.id}`}>{t('merchantPool.details')}</Link><Link className="text-primary hover:underline" to={`/console/merchant-pool/routes?pool=${service.pool_id}&merchant=${service.merchant_id}`}>{t('merchantPool.addToRoute')}</Link><span className="text-[0.6875rem] text-muted-foreground">{t('merchantPool.updated', { value: poolTimestamp(service.updated_at, i18n.language) })}</span></div>
-  </article>
+  return <div className={compact ? '' : 'mt-2'}><span className="sr-only">{t('merchantPool.recentAvailability')}</span><div className="flex gap-0.5" role="img" aria-label={t('merchantPool.availabilitySummary', { known: timeline.buckets.filter((bucket) => bucket.sample_count > 0).length, total: timeline.buckets.length })}>{timeline.buckets.map((bucket) => <div key={bucket.started_at} className={`${compact ? 'h-3' : 'h-5'} min-w-0 flex-1 rounded-sm ${bucket.status === 'normal' ? 'bg-success/70' : bucket.status === 'degraded' ? 'bg-warning/80' : 'bg-surface-2'}`} title={`${poolTimestamp(bucket.started_at, i18n.language)} — ${poolTimestamp(bucket.ended_at, i18n.language)} · ${t(`merchantPool.status.${bucket.status}`)} · ${t('merchantPool.samples', { count: bucket.sample_count })}`} />)}</div></div>
 }

@@ -21,7 +21,7 @@ export function PoolField({ label, children, hint }: { label: string; children: 
 
 export function PoolSelect({ label, value, onChange, options, disabled, allowEmpty = true }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; disabled?: boolean; allowEmpty?: boolean }) {
   const { t } = useTranslation()
-  return <select className="min-h-9 w-full min-w-0 rounded-lg border border-[var(--hairline)] bg-background px-2.5 text-xs disabled:opacity-50" aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled}>{allowEmpty ? <option value="">{t('merchantPool.all')}</option> : null}{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+  return <select className="min-h-8 w-full min-w-0 rounded-lg border border-[var(--hairline)] bg-background px-2.5 text-xs disabled:opacity-50" aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled}>{allowEmpty ? <option value="">{t('merchantPool.all')}</option> : null}{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
 }
 
 export function PoolError({ onRetry, message }: { onRetry?: () => void; message?: string }) {
@@ -37,7 +37,7 @@ export function PoolStatus({ status }: { status: string }) {
   const { t } = useTranslation()
   const success = ['active', 'normal', 'published', 'approved', 'available', 'paid'].includes(status)
   const danger = ['rejected', 'suspended', 'disabled', 'platform_paused', 'failed'].includes(status)
-  return <Chip size="sm" variant="flat" className={success ? 'bg-success/10 text-success' : danger ? 'bg-danger/10 text-danger' : 'bg-warning/10 text-warning'}>{t(`merchantPool.status.${status}`, { defaultValue: status })}</Chip>
+  return <Chip size="sm" variant="flat" className={`h-5 px-1 text-[11px] ${success ? 'bg-success/10 text-success' : danger ? 'bg-danger/10 text-danger' : 'bg-warning/10 text-warning'}`}>{t(`merchantPool.status.${status}`, { defaultValue: status })}</Chip>
 }
 
 export function PoolPager({ page, hasMore, loading, onChange }: { page: number; hasMore: boolean; loading: boolean; onChange: (page: number) => void }) {

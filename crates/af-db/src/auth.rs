@@ -58,6 +58,8 @@ pub enum TokenAuthLookupError {
 
 /// 完成持久化校验后的令牌鉴权结果。
 #[derive(Clone, Debug, Eq, PartialEq)]
+// Keep the owned authorization snapshot inline on the successful request path.
+#[allow(clippy::large_enum_variant)]
 pub enum TokenAuthLookupOutcome {
     /// 令牌、用户、有效分组和客户端 IP 均已通过校验，并携带本次请求的策略快照。
     Authenticated {

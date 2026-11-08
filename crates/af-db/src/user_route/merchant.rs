@@ -870,9 +870,7 @@ impl UserRouteRepository {
                         ttft_p95_ms: percentile(&ttft, 95),
                         latency_p50_ms: percentile(&latency, 50),
                         latency_p95_ms: percentile(&latency, 95),
-                        status: if now / 1000 - updated_at > 900 {
-                            "unknown"
-                        } else if sample_count < 20 {
+                        status: if now / 1000 - updated_at > 900 || sample_count < 20 {
                             "unknown"
                         } else if failure_count * 10 > sample_count {
                             "degraded"

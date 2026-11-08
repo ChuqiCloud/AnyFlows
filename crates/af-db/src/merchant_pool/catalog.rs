@@ -300,13 +300,14 @@ impl MerchantPoolRepository {
                     row.status
                 } else if models.iter().any(|model| model.supports_vision) {
                     "unsupported".to_owned()
-                } else if !channel_active || revision.status != "published" {
-                    "unavailable".to_owned()
-                } else if models.iter().any(|m| {
-                    m.prices.is_none()
-                        || !(pool.min_ratio_micros..=pool.max_ratio_micros)
-                            .contains(&m.sales_ratio_micros)
-                }) {
+                } else if !channel_active
+                    || revision.status != "published"
+                    || models.iter().any(|m| {
+                        m.prices.is_none()
+                            || !(pool.min_ratio_micros..=pool.max_ratio_micros)
+                                .contains(&m.sales_ratio_micros)
+                    })
+                {
                     "unavailable".to_owned()
                 } else {
                     "published".to_owned()

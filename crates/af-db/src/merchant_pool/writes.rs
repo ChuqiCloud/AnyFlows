@@ -259,11 +259,10 @@ impl MerchantPoolRepository {
                 models:Set(serde_json::to_value(&write.models).map_err(internal)?),channel_id:Set(channel.id),credential_id:Set(credential_id.get()),
                 concurrency:Set(write.concurrency.map(i32::try_from).transpose().map_err(invalid)?),timeout_secs:Set(write.timeout_secs.try_into().map_err(invalid)?),
                 review_reason:Set(None),created_at:Set(now),updated_at:Set(now),..Default::default()}.insert(&txn).with_subscriber(NoSubscriber::default()).await.map_err(internal)?;
-            if let Some(previous)=previous {
-                if Some(previous.id)!=service.published_revision_id {
+            if let Some(previous)=previous
+                && Some(previous.id)!=service.published_revision_id {
                     let mut previous=previous.into_active_model();previous.status=Set("superseded".to_owned());previous.updated_at=Set(now);
                     previous.update(&txn).await.map_err(internal)?;
-                }
             }
             let mut service=service.into_active_model();service.pending_revision_id=Set(Some(revision.id));service.updated_at=Set(now);
             // Draft descriptions cannot replace the live reviewed projection.
@@ -568,12 +567,11 @@ impl MerchantPoolRepository {
                 let channel=ChannelId::new(revision.channel_id).map_err(internal)?;
                 synchronize_channel_routing(&txn,channel,&routing,ChannelAbilityMetadata{enabled:!service.merchant_paused,priority:0,weight:1,tag:Some("merchant-pool")},now).await.map_err(internal)?;
                 set_channel_enabled(&txn,revision.channel_id,!service.merchant_paused,now).await?;
-                if let Some(previous_id)=service.published_revision_id {
-                    if previous_id!=revision.id {
+                if let Some(previous_id)=service.published_revision_id
+                    && previous_id!=revision.id {
                         let previous=load_revision(&txn,previous_id,id).await?;
                         set_channel_enabled(&txn,previous.channel_id,false,now).await?;
                         let mut previous=previous.into_active_model();previous.status=Set("superseded".to_owned());previous.updated_at=Set(now);previous.update(&txn).await.map_err(internal)?;
-                    }
                 }
             }
             let mut revision_active=revision.into_active_model();revision_active.status=Set(if rejected{"rejected"}else{"published"}.to_owned());

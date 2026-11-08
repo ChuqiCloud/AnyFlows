@@ -175,7 +175,10 @@ impl MerchantRouteService for DatabaseMerchantRouteService {
                         Some("not_selected")
                     } else if service.status != "published" {
                         Some("unavailable")
-                    } else if service.protocol != request.protocol {
+                    } else if !matches!(
+                        service.protocol.as_str(),
+                        "openai_chat" | "openai_responses"
+                    ) {
                         Some("protocol_unsupported")
                     } else if model.is_none() {
                         Some("model_unavailable")

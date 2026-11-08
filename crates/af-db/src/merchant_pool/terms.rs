@@ -123,15 +123,14 @@ pub(super) async fn resolve_commission<C: ConnectionTrait>(
     pool: &pools::Model,
     merchant_id: Option<i64>,
 ) -> Result<u16, MerchantPoolError> {
-    if let Some(merchant_id) = merchant_id {
-        if let Some(bps) = terms::Entity::find_by_id((pool.id, merchant_id))
+    if let Some(merchant_id) = merchant_id
+        && let Some(bps) = terms::Entity::find_by_id((pool.id, merchant_id))
             .one(connection)
             .await
             .map_err(internal)?
             .and_then(|row| row.commission_bps)
-        {
-            return commission_value(bps);
-        }
+    {
+        return commission_value(bps);
     }
     if pool.commission_inherit_global {
         global_commission(connection).await
