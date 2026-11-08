@@ -28,19 +28,20 @@ import {
   updateAdminGoogleOAuthLoginSettings,
 } from '@/lib/api/generated/sdk.gen'
 import type { AdminOAuthLoginProviderSettingsRequest } from '@/lib/api/generated/types.gen'
+import { oauthInvitationQuery } from './invitation-context'
 
 export type BuiltinOAuthLoginProvider = 'github' | 'discord' | 'oidc' | 'linuxdo' | 'wechat' | 'telegram' | 'google'
 export type CustomOAuthLoginProvider = `custom_${string}`
 export type OAuthLoginProvider = BuiltinOAuthLoginProvider | CustomOAuthLoginProvider
 
 const startOAuthLogin = {
-  github: () => startGitHubOAuthLogin({ client: apiClient }),
-  discord: () => startDiscordOAuthLogin({ client: apiClient }),
-  oidc: () => startOidcLogin({ client: apiClient }),
-  linuxdo: () => startLinuxDoLogin({ client: apiClient }),
-  wechat: () => startWeChatOAuthLogin({ client: apiClient }),
-  telegram: () => startTelegramLogin({ client: apiClient }),
-  google: () => startGoogleLogin({ client: apiClient }),
+  github: (inviteCode?: string) => startGitHubOAuthLogin({ client: apiClient, query: oauthInvitationQuery(inviteCode) }),
+  discord: (inviteCode?: string) => startDiscordOAuthLogin({ client: apiClient, query: oauthInvitationQuery(inviteCode) }),
+  oidc: (inviteCode?: string) => startOidcLogin({ client: apiClient, query: oauthInvitationQuery(inviteCode) }),
+  linuxdo: (inviteCode?: string) => startLinuxDoLogin({ client: apiClient, query: oauthInvitationQuery(inviteCode) }),
+  wechat: (inviteCode?: string) => startWeChatOAuthLogin({ client: apiClient, query: oauthInvitationQuery(inviteCode) }),
+  telegram: (inviteCode?: string) => startTelegramLogin({ client: apiClient, query: oauthInvitationQuery(inviteCode) }),
+  google: (inviteCode?: string) => startGoogleLogin({ client: apiClient, query: oauthInvitationQuery(inviteCode) }),
 }
 
 const getAdminOAuthLoginSettings = {
@@ -76,15 +77,16 @@ export const adminOAuthLoginSettingsQueryKey = (provider: BuiltinOAuthLoginProvi
   [...adminOAuthLoginSettingsQueryPrefix, provider] as const
 
 /** 请求服务端生成的固定 Provider 授权地址，前端不拼接 OAuth 参数。 */
-export async function beginOAuthLogin(provider: OAuthLoginProvider) {
+export async function beginOAuthLogin(provider: OAuthLoginProvider, inviteCode?: string) {
   if (isCustomOAuthLoginProvider(provider)) {
     const { data } = await startCustomOAuth2Login({
       client: apiClient,
       path: { provider_key: provider },
+      query: oauthInvitationQuery(inviteCode),
     })
     return data
   }
-  const { data } = await startOAuthLogin[provider]()
+  const { data } = await startOAuthLogin[provider](inviteCode)
   return data
 }
 

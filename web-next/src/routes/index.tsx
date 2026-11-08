@@ -12,6 +12,7 @@ import { forgeRoutes } from '@/feature/routes'
 import { ConsoleLayout, useConsoleSession } from '@/routes/console-layout'
 import { ConsoleExtensionPage } from '@/extensions/extension-page'
 import { consoleExtensionRoutes } from '@/extensions/registry'
+import { readInvitationContext } from '@/features/auth/invitation-context'
 import { ManagementGate } from '@/routes/management-gate'
 
 type ConsoleOutletContext = {
@@ -56,9 +57,11 @@ function SetupRoute() {
 function RegistrationRoute() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
+  const invitation = readInvitationContext(params)
 
   return createElement(lazyRegistrationPage, {
-    inviteCode: params.get('invite') ?? undefined,
+    inviteCode: invitation.kind === 'valid' ? invitation.code : undefined,
+    invitationInvalid: invitation.kind === 'invalid',
     onAuthenticated: () => navigate('/console', { replace: true }),
   })
 }

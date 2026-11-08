@@ -4451,10 +4451,13 @@ export type CompleteAdminOAuthManualCallbackResponse = CompleteAdminOAuthManualC
 export type StartGitHubOAuthLoginData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        invite_code?: string;
+    };
     url: '/api/auth/oauth/github/start';
 };
 export type StartGitHubOAuthLoginErrors = {
+    400: ManagementError;
     409: ManagementError;
     500: ManagementError;
 };
@@ -4466,10 +4469,13 @@ export type StartGitHubOAuthLoginResponse = StartGitHubOAuthLoginResponses[keyof
 export type StartDiscordOAuthLoginData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        invite_code?: string;
+    };
     url: '/api/auth/oauth/discord/start';
 };
 export type StartDiscordOAuthLoginErrors = {
+    400: ManagementError;
     409: ManagementError;
     500: ManagementError;
 };
@@ -7656,10 +7662,13 @@ export type GetVersionResponse = GetVersionResponses[keyof GetVersionResponses];
 export type StartOidcLoginData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        invite_code?: string;
+    };
     url: '/api/auth/oauth/oidc/start';
 };
 export type StartOidcLoginErrors = {
+    400: ManagementError;
     409: ManagementError;
     500: ManagementError;
 };
@@ -7671,10 +7680,13 @@ export type StartOidcLoginResponse = StartOidcLoginResponses[keyof StartOidcLogi
 export type StartLinuxDoLoginData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        invite_code?: string;
+    };
     url: '/api/auth/oauth/linuxdo/start';
 };
 export type StartLinuxDoLoginErrors = {
+    400: ManagementError;
     409: ManagementError;
     500: ManagementError;
 };
@@ -7686,10 +7698,13 @@ export type StartLinuxDoLoginResponse = StartLinuxDoLoginResponses[keyof StartLi
 export type StartWeChatOAuthLoginData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        invite_code?: string;
+    };
     url: '/api/auth/oauth/wechat/start';
 };
 export type StartWeChatOAuthLoginErrors = {
+    400: ManagementError;
     409: ManagementError;
     500: ManagementError;
 };
@@ -7701,10 +7716,13 @@ export type StartWeChatOAuthLoginResponse = StartWeChatOAuthLoginResponses[keyof
 export type StartTelegramLoginData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        invite_code?: string;
+    };
     url: '/api/auth/oauth/telegram/start';
 };
 export type StartTelegramLoginErrors = {
+    400: ManagementError;
     409: ManagementError;
     500: ManagementError;
 };
@@ -7716,10 +7734,13 @@ export type StartTelegramLoginResponse = StartTelegramLoginResponses[keyof Start
 export type StartGoogleLoginData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        invite_code?: string;
+    };
     url: '/api/auth/oauth/google/start';
 };
 export type StartGoogleLoginErrors = {
+    400: ManagementError;
     409: ManagementError;
     500: ManagementError;
 };
@@ -7733,7 +7754,9 @@ export type StartCustomOAuth2LoginData = {
     path: {
         provider_key: string;
     };
-    query?: never;
+    query?: {
+        invite_code?: string;
+    };
     url: '/api/auth/oauth/custom/{provider_key}/start';
 };
 export type StartCustomOAuth2LoginErrors = {

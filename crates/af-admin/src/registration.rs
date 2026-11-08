@@ -762,7 +762,7 @@ fn is_valid_verification_code(code: &str) -> bool {
     code.len() == REGISTRATION_EMAIL_CODE_BYTES && code.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-fn is_valid_invitation_code(code: &str) -> bool {
+pub(crate) fn is_valid_invitation_code(code: &str) -> bool {
     code.len() == 25
         && code.starts_with("af-")
         && code[3..]

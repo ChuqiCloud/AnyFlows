@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import type { RegistrationRequestWritable } from '@/lib/api/generated/types.gen'
+import { isValidInvitationCode } from '../auth/invitation-context.ts'
 
 export type RegistrationFormValues = {
   username: string
@@ -44,7 +45,7 @@ export function buildRegistrationFormSchema(
       messages.invalidVerificationCode,
     ),
     inviteCode: z.string().refine(
-      (value) => value.length === 0 || /^af-[A-Za-z0-9_-]{22}$/u.test(value),
+      (value) => value.length === 0 || isValidInvitationCode(value),
       messages.invalidInviteCode,
     ),
     password: z.string().refine(isValidPassword, messages.invalidPassword),
