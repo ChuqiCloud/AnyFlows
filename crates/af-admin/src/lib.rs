@@ -1,6 +1,10 @@
 //! 登录用户与管理域应用服务。
 
 mod alipay_verification;
+mod verification_access;
+pub use verification_access::{
+    VerificationAccessError, VerificationAccessService, VerificationAccessStatus,
+};
 mod verification_settings;
 pub use verification_settings::{
     AdminVerificationSettings, DatabaseManualAccountVerificationProvider,

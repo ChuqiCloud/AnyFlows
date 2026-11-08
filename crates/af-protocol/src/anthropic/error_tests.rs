@@ -8,6 +8,10 @@ fn encodes_closed_anthropic_error_types() {
     let cases = [
         (PublicErrorCode::InvalidRequest, "invalid_request_error"),
         (PublicErrorCode::InvalidApiKey, "authentication_error"),
+        (
+            PublicErrorCode::AccountVerificationRequired,
+            "permission_error",
+        ),
         (PublicErrorCode::InsufficientQuota, "billing_error"),
         (PublicErrorCode::ModelNotFound, "not_found_error"),
         (PublicErrorCode::TaskNotFound, "not_found_error"),
@@ -20,6 +24,7 @@ fn encodes_closed_anthropic_error_types() {
         (PublicErrorCode::RateLimited, "rate_limit_error"),
         (PublicErrorCode::InternalError, "api_error"),
     ];
+    assert_eq!(cases.len(), PublicErrorCode::ALL.len());
 
     for (code, kind) in cases {
         assert_eq!(

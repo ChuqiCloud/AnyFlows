@@ -2125,6 +2125,16 @@
               }
             }
           },
+          "403": {
+            "description": "当前用户须先完成实名认证才能充值",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
           "409": {
             "description": "批次停用、兑换码已使用或余额溢出",
             "content": {
@@ -5472,6 +5482,16 @@
           },
           "401": {
             "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户须先完成实名认证才能充值",
             "content": {
               "application/json": {
                 "schema": {
@@ -21851,6 +21871,9 @@
       "AccountVerificationEligibilityResponse": {
         "type": "object",
         "required": [
+          "verified",
+          "require_verification_for_topup",
+          "require_verification_for_api",
           "enterprise_verified",
           "can_apply_for_organization",
           "providers",
@@ -21860,6 +21883,15 @@
           "enterprise_reason_required"
         ],
         "properties": {
+          "verified": {
+            "type": "boolean"
+          },
+          "require_verification_for_topup": {
+            "type": "boolean"
+          },
+          "require_verification_for_api": {
+            "type": "boolean"
+          },
           "enterprise_verified": {
             "type": "boolean"
           },
@@ -30863,6 +30895,8 @@
           "enterprise_manual_enabled",
           "individual_reason_required",
           "enterprise_reason_required",
+          "require_verification_for_topup",
+          "require_verification_for_api",
           "enabled",
           "private_key_configured",
           "public_key_configured",
@@ -30888,6 +30922,12 @@
             "type": "boolean"
           },
           "enterprise_reason_required": {
+            "type": "boolean"
+          },
+          "require_verification_for_topup": {
+            "type": "boolean"
+          },
+          "require_verification_for_api": {
             "type": "boolean"
           },
           "enabled": {
@@ -30959,6 +30999,18 @@
             ]
           },
           "enterprise_reason_required": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "require_verification_for_topup": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "require_verification_for_api": {
             "type": [
               "boolean",
               "null"
@@ -32556,6 +32608,7 @@
               "turnstile_unavailable",
               "invalid_session",
               "forbidden",
+              "account_verification_required",
               "setup_conflict",
               "site_settings_conflict",
               "announcement_invalid_request",

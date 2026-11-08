@@ -166,6 +166,10 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
         [
             (PublicErrorCode::InvalidRequest, "invalid_request"),
             (PublicErrorCode::InvalidApiKey, "invalid_api_key"),
+            (
+                PublicErrorCode::AccountVerificationRequired,
+                "account_verification_required"
+            ),
             (PublicErrorCode::InsufficientQuota, "insufficient_quota"),
             (PublicErrorCode::ModelNotFound, "model_not_found"),
             (PublicErrorCode::TaskNotFound, "task_not_found"),

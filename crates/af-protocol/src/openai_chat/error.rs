@@ -35,6 +35,7 @@ struct OpenAiErrorBody {
 
 fn openai_error_type(code: PublicErrorCode) -> &'static str {
     match code {
+        PublicErrorCode::AccountVerificationRequired => "permission_error",
         PublicErrorCode::InvalidRequest
         | PublicErrorCode::InvalidApiKey
         | PublicErrorCode::ModelNotFound

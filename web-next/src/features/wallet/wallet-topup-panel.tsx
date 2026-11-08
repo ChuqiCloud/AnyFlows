@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import type { UserTopupMethod, UserTopupPayment } from '@/features/payment-settings/payment-settings-types'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
+import { isVerificationRequiredError, useVerificationAccess, VerificationAccessNotice } from '@/features/account-verification/verification-access-notice'
 import {
   createTopupAttempt,
   isCurrentTopupAttempt,
@@ -75,6 +76,7 @@ export function WalletTopupPanel({
   const queryClient = useQueryClient()
   const configurationQuery = useUserTopupConfiguration()
   const orderMutation = useCreateUserTopupOrder()
+  const verificationRequired = useVerificationAccess('topup', orderMutation.error)
   const { formatQuota } = useBalanceDisplay()
   const createOrRecoverOrder = orderMutation.mutateAsync
   const resetOrderMutation = orderMutation.reset
@@ -167,7 +169,7 @@ export function WalletTopupPanel({
   }, [attempt, methods.length, redirectStatus, submitAttempt])
 
   const startTopup = () => {
-    if (attemptRef.current || amountMinor === undefined || !selectedMethod) return
+    if (verificationRequired || attemptRef.current || amountMinor === undefined || !selectedMethod) return
     const nextAttempt = createTopupAttempt(amountMinor, selectedMethod.provider, selectedMethod.payment_method)
     attemptRef.current = nextAttempt
     storeTopupAttempt(nextAttempt, topupScope)
@@ -227,6 +229,7 @@ export function WalletTopupPanel({
           <Chip className="gap-1.5 bg-surface-2 text-muted-foreground" size="sm" variant="flat">{paymentMethodIcon(selectedMethod)}{t(`wallet.topup.methods.${selectedMethod.payment_method}`)} · {selectedMethod.currency}</Chip>
         </div>
 
+        {verificationRequired ? <div className="px-4 pt-4"><VerificationAccessNotice scope="topup" /></div> : null}
         <div className="grid lg:grid-cols-[minmax(0,0.9fr)_minmax(20rem,1.1fr)]">
           <section className="border-b border-[var(--hairline)] p-4 lg:border-r lg:border-b-0">
             <div>
@@ -260,10 +263,11 @@ export function WalletTopupPanel({
               : activePayment?.kind === 'stripe' && stripe ? <Elements key={activePayment.payment_intent_id} stripe={stripe} options={{ appearance, clientSecret: activePayment.client_secret, locale: locale === 'zh-CN' ? 'zh' : 'en' }}><WalletStripePaymentForm amountLabel={amountLabel} returnUrl={topupReturnUrl(returnPath, { orderId: order?.order_id, paymentIntentId: activePayment.payment_intent_id })} onConfirmed={paymentConfirmed} /></Elements>
               : activePayment?.kind === 'redirect' && redirectUrl && selectedMethod.qr_enabled && selectedMethod.provider === 'epay' && selectedMethod.payment_method !== 'card' ? <EpayQrPayment url={redirectUrl} paymentMethod={selectedMethod.payment_method} refreshing={orderMutation.isPending} onRefresh={retryAttempt} />
               : activePayment?.kind === 'redirect' && redirectUrl ? <TopupState icon={ExternalLink} tone="brand" title={t('wallet.topup.states.redirectTitle')} body={t('wallet.topup.states.redirectBody')} action={<Button type="button" size="sm" color="primary" onClick={() => window.location.assign(redirectUrl)}><ExternalLink className="size-3.5" aria-hidden="true" />{t('wallet.topup.actions.openPayment')}</Button>} />
-              : orderMutation.isError ? <TopupState icon={AlertTriangle} tone="destructive" title={t('wallet.topup.states.errorTitle')} body={t(`wallet.topup.errors.${topupErrorKey(apiErrorCode(orderMutation.error))}`)} action={<Button type="button" size="sm" variant="bordered" onClick={retryAttempt}><RefreshCw className="size-3.5" aria-hidden="true" />{t('wallet.topup.actions.retrySame')}</Button>} />
+              : orderMutation.isError && !isVerificationRequiredError(orderMutation.error) ? <TopupState icon={AlertTriangle} tone="destructive" title={t('wallet.topup.states.errorTitle')} body={t(`wallet.topup.errors.${topupErrorKey(apiErrorCode(orderMutation.error))}`)} action={<Button type="button" size="sm" variant="bordered" onClick={retryAttempt}><RefreshCw className="size-3.5" aria-hidden="true" />{t('wallet.topup.actions.retrySame')}</Button>} />
+              : isVerificationRequiredError(orderMutation.error) ? null
               : orderMutation.isPending ? <TopupState icon={LoaderCircle} tone="brand" spinning title={t('wallet.topup.states.creatingTitle')} body={t('wallet.topup.states.creatingBody')} />
               : attempt ? <TopupState icon={Clock3} tone="warning" title={t('wallet.topup.states.resumeTitle')} body={t('wallet.topup.states.resumeBody', { amount: moneyFormat.format(attempt.amountMinor / 100) })} action={<Button type="button" size="sm" color="primary" onClick={retryAttempt}><RefreshCw className="size-3.5" aria-hidden="true" />{t('wallet.topup.actions.resume')}</Button>} />
-              : <TopupState icon={BadgeDollarSign} tone="brand" title={t('wallet.topup.states.readyTitle')} body={t('wallet.topup.states.readyBody')} action={<Button type="button" size="sm" color="primary" isDisabled={amountMinor === undefined} onClick={startTopup}><CreditCard className="size-3.5" aria-hidden="true" />{t('wallet.topup.actions.continue')}</Button>} />}
+              : <TopupState icon={BadgeDollarSign} tone="brand" title={t('wallet.topup.states.readyTitle')} body={t('wallet.topup.states.readyBody')} action={<Button type="button" size="sm" color="primary" isDisabled={verificationRequired || amountMinor === undefined} onClick={startTopup}><CreditCard className="size-3.5" aria-hidden="true" />{t('wallet.topup.actions.continue')}</Button>} />}
           </section>
         </div>
       </CardBody>

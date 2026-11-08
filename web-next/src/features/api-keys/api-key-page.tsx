@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
 import { useClientTablePagination } from '@/components/data-table/use-table-pagination'
 import { cn } from '@/lib/utils'
+import { useVerificationAccess, VerificationAccessNotice } from '@/features/account-verification/verification-access-notice'
 import type { IssuedUserToken, UserToken } from '@/lib/api/generated/types.gen'
 import { useApiKeys, useUpdateApiKey } from './api-key-api'
 import { ApiKeyDeleteDialog } from './api-key-delete-dialog'
@@ -19,6 +20,7 @@ type EditorState = UserToken | 'create' | undefined
 export function ApiKeyPage() {
   const { t } = useTranslation()
   const keysQuery = useApiKeys()
+  const verificationRequired = useVerificationAccess('api')
   const toggleMutation = useUpdateApiKey()
   const [editor, setEditor] = useState<EditorState>()
   const [deleting, setDeleting] = useState<UserToken>()
@@ -60,6 +62,7 @@ export function ApiKeyPage() {
         </div>
       </header>
 
+      {verificationRequired ? <VerificationAccessNotice scope="api" /> : null}
       <div className="flex min-h-8 items-center justify-between gap-3 border-t border-[var(--hairline)] py-2 text-xs text-muted-foreground">
         <span>{t('apiKeys.count', { count: tokens.length, active: activeCount })}</span>
         <Chip className={cn('border-transparent', atCapacity ? 'bg-warning/10 text-warning' : 'bg-surface-2 text-muted-foreground')} size="sm" variant="flat">

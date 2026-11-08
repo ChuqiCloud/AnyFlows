@@ -90,6 +90,8 @@ pub(crate) enum ManagementError {
     /// 当前用户没有企业认证操作权限。
     OrganizationVerificationForbidden,
     AccountVerificationSelfReview,
+    /// 当前用户须先完成实名认证才能充值。
+    AccountVerificationRequired,
     /// 企业认证服务暂不可用。
     OrganizationVerificationUnavailable,
     /// 企业成员或团队 CAS 版本冲突。
@@ -660,6 +662,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "account_verification_self_review",
                     message: "Administrators cannot review their own verification",
+                },
+            ),
+            Self::AccountVerificationRequired => (
+                StatusCode::FORBIDDEN,
+                ManagementErrorBody {
+                    code: "account_verification_required",
+                    message: "Complete account identity verification before adding wallet funds",
                 },
             ),
             Self::OrganizationVerificationUnavailable => (

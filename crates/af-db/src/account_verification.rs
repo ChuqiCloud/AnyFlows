@@ -156,6 +156,24 @@ impl AccountVerificationRepository {
             .await
     }
 
+    /// 任一个人或企业认证已通过即具备实名资格；重提材料不会覆盖原有批准记录。
+    pub async fn verified(&self, user: UserId) -> Result<bool, AccountVerificationError> {
+        self.run(async {
+            Ok(cases::Entity::find()
+                .select_only()
+                .column(cases::Column::Id)
+                .filter(cases::Column::UserId.eq(user.get()))
+                .filter(cases::Column::Kind.is_in(["individual", "enterprise"]))
+                .filter(cases::Column::Status.eq(4))
+                .into_tuple::<i64>()
+                .one(self.pool.connection())
+                .await
+                .map_err(unavailable)?
+                .is_some())
+        })
+        .await
+    }
+
     pub async fn list(
         &self,
         user: Option<UserId>,

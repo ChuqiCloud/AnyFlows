@@ -28,11 +28,13 @@ try {
     import React from 'react';
     import { createRoot } from 'react-dom/client';
     import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+    import { BrowserRouter } from 'react-router-dom';
     ${isNext ? "import { HeroUIProvider } from '@heroui/react';" : ''}
     import './src/index.css';
     import './src/i18n';
     import { AccountVerificationPage } from './src/features/account-verification/account-verification-page';
     import { VerificationSettingsPanel } from './src/features/account-verification/verification-settings-panel';
+    ${isNext ? "import { WalletTopupPanel } from './src/features/wallet/wallet-topup-panel'; import { WalletRedemptionPanel } from './src/features/wallet/wallet-redemption-panel';" : ''}
     import { ModelProviderCatalogPanel } from './src/features/model-management/model-provider-catalog-panel';
     import { SoftwareUpdatePanel } from './src/features/site-settings/software-update-panel';
     import { AuthenticationSettingsPage } from './src/features/authentication-settings/authentication-settings-page';
@@ -43,9 +45,9 @@ try {
     const mode = new URLSearchParams(location.search).get('mode');
     createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        ${isNext ? '<HeroUIProvider>' : ''}<main style={{ padding: '16px', maxWidth: '1100px', margin: 'auto' }}>
-          {mode === 'software' ? <SoftwareUpdatePanel /> : mode === 'rewards' ? <AuthenticationSettingsPage rewardsOnly /> : mode === 'settings' ? <VerificationSettingsPanel /> : mode === 'catalog' ? <ModelProviderCatalogPanel /> : <AccountVerificationPage admin={mode === 'admin'} />}
-        </main>${isNext ? '</HeroUIProvider>' : ''}
+        <BrowserRouter>${isNext ? '<HeroUIProvider>' : ''}<main style={{ padding: '16px', maxWidth: '1100px', margin: 'auto' }}>
+          {${isNext ? "mode === 'wallet-access' ? <><WalletRedemptionPanel /><WalletTopupPanel /></> : " : ''}mode === 'software' ? <SoftwareUpdatePanel /> : mode === 'rewards' ? <AuthenticationSettingsPage rewardsOnly /> : mode === 'settings' ? <VerificationSettingsPanel /> : mode === 'catalog' ? <ModelProviderCatalogPanel /> : <AccountVerificationPage admin={mode === 'admin'} />}
+        </main>${isNext ? '</HeroUIProvider>' : ''}</BrowserRouter>
       </QueryClientProvider>
     );
   `)
@@ -84,7 +86,7 @@ try {
   let reviewed = 0
   let downloads = 0
   let providers = ['manual']
-  let settings = { source: 'database', manual_enabled: true, individual_manual_enabled: true, enterprise_manual_enabled: true, individual_reason_required: true, enterprise_reason_required: true, enabled: false, app_id: 'test-app', private_key_configured: true, public_key_configured: true, gateway_url: 'https://openapi.alipay.com/gateway.do', biz_code: 'FACE', timeout_secs: 10, version: 1 }
+  let settings = { source: 'database', manual_enabled: true, individual_manual_enabled: true, enterprise_manual_enabled: true, individual_reason_required: true, enterprise_reason_required: true, require_verification_for_topup: false, require_verification_for_api: false, enabled: false, app_id: 'test-app', private_key_configured: true, public_key_configured: true, gateway_url: 'https://openapi.alipay.com/gateway.do', biz_code: 'FACE', timeout_secs: 10, version: 1 }
   let settingsWrites = 0
   const catalog = [{ provider_key: 'custom-ai', display_name: 'Custom AI', logo: 'OpenAI', aliases: [], enabled: true, sort_order: 0, version: 1 }]
   let catalogWrites = 0
@@ -97,6 +99,8 @@ try {
     const path = url.pathname
     let body
     if (path === '/api/extensions') body = []
+    else if (path === '/api/site') body = {}
+    else if (path === '/api/account/wallet/topups/config') body = { methods: [{ currency: 'CNY', max_amount_minor: 100000, min_amount_minor: 50, payment_method: 'alipay', provider: 'epay', qr_enabled: false }] }
     else if (path === '/api/admin/authentication-settings') {
       if (request.method() === 'PUT') {
         const update = request.postDataJSON()
@@ -108,7 +112,7 @@ try {
       }
       body = rewardSettings
     } else if (path === '/api/admin/groups') body = { groups: [{ id: 3, name: 'default', display_name: '默认分组', enabled: true, version: 1 }], next_cursor: null }
-    else if (path.endsWith('/eligibility')) body = { enterprise_verified: reviewed > 0, can_apply_for_organization: reviewed > 0, providers, individual_providers: [...(settings.individual_manual_enabled ? ['manual'] : []), ...(settings.enabled ? ['alipay'] : [])], enterprise_providers: settings.enterprise_manual_enabled ? ['manual'] : [], individual_reason_required: settings.individual_reason_required, enterprise_reason_required: settings.enterprise_reason_required }
+    else if (path.endsWith('/eligibility')) body = { verified: reviewed > 0, require_verification_for_topup: settings.require_verification_for_topup, require_verification_for_api: settings.require_verification_for_api, enterprise_verified: reviewed > 0, can_apply_for_organization: reviewed > 0, providers, individual_providers: [...(settings.individual_manual_enabled ? ['manual'] : []), ...(settings.enabled ? ['alipay'] : [])], enterprise_providers: settings.enterprise_manual_enabled ? ['manual'] : [], individual_reason_required: settings.individual_reason_required, enterprise_reason_required: settings.enterprise_reason_required }
     else if (path === '/api/admin/account-verification-settings') {
       if (request.method() === 'PUT') {
         const update = request.postDataJSON()
@@ -358,6 +362,17 @@ try {
     await page.getByRole('button', { name: '保存配置', exact: true }).click()
     await page.getByText('配置已保存并生效。', { exact: true }).waitFor()
     assert.equal(settingsWrites, 1)
+    for (const [requireTopup, requireApi] of [[true, false], [false, true], [true, true], [false, false]]) {
+      await toggle('实名后才允许充值', requireTopup)
+      await toggle('实名后才允许调用接口', requireApi)
+      const saved = page.waitForResponse((response) => response.url().endsWith('/api/admin/account-verification-settings') && response.request().method() === 'PUT')
+      await page.getByRole('button', { name: '保存配置', exact: true }).click()
+      await saved
+      await page.getByText('配置已保存并生效。', { exact: true }).waitFor()
+      assert.equal(settings.require_verification_for_topup, requireTopup)
+      assert.equal(settings.require_verification_for_api, requireApi)
+    }
+    assert.equal(settingsWrites, 5)
     await replace()
     await provider('支付宝实名认证').waitFor()
     assert.equal(await form.locator('button[aria-pressed]').count(), 1)
@@ -561,6 +576,33 @@ try {
     await providerSelect.selectOption('manual')
     assert.equal(await page.locator('input[type="file"]').evaluate((input) => input.files.length), 0)
 
+  }
+
+  if (isNext) {
+    const previousSettings = { ...settings }
+    const previouslyReviewed = reviewed
+    reviewed = 0
+    for (const [requireTopup, requireApi] of [[false, false], [true, false], [false, true], [true, true]]) {
+      settings = { ...settings, require_verification_for_topup: requireTopup, require_verification_for_api: requireApi }
+      const eligibility = page.waitForResponse((response) => response.url().includes('/api/account/verifications/eligibility'))
+      await page.goto(`${home}?mode=wallet-access`)
+      await eligibility
+      const continuePayment = page.getByRole('button', { name: '继续支付', exact: true })
+      await continuePayment.waitFor()
+      if (requireTopup) await page.getByRole('link', { name: '前往实名认证', exact: true }).first().waitFor()
+      assert.equal(await continuePayment.isDisabled(), requireTopup, `Top-up access must follow its own switch (${requireTopup}, ${requireApi})`)
+      assert.equal(await page.getByRole('button', { name: '立即兑换', exact: true }).isDisabled(), requireTopup)
+      assert.equal(await page.getByRole('link', { name: '前往实名认证', exact: true }).count(), requireTopup ? 2 : 0)
+    }
+    reviewed = 1
+    await page.reload()
+    await page.getByRole('button', { name: '继续支付', exact: true }).waitFor()
+    await page.waitForFunction(() => !document.querySelector('button[type="submit"]')?.disabled)
+    assert.equal(await page.getByRole('button', { name: '继续支付', exact: true }).isDisabled(), false)
+    assert.equal(await page.getByRole('button', { name: '立即兑换', exact: true }).isDisabled(), false)
+    assert.equal(await page.getByRole('link', { name: '前往实名认证', exact: true }).count(), 0)
+    settings = previousSettings
+    reviewed = previouslyReviewed
   }
 
   await page.goto(`${home}?mode=rewards`)
