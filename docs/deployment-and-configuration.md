@@ -12,7 +12,7 @@ sudo apt install -y ca-certificates curl openssl tar
 uname -m
 ```
 
-`x86_64` 对应 amd64，`aarch64` 对应 arm64。下载发布页实际提供且与系统架构匹配的归档。GNU/Linux 包不适用于 Alpine、Windows 或 macOS。
+`x86_64` 对应 amd64，`aarch64` 对应 arm64。发布页提供 Linux amd64 和 arm64 原生包；下载与系统架构匹配的归档。GNU/Linux 包不适用于 Alpine、Windows 或 macOS；Windows 和 macOS 请下载对应平台的发行包。
 
 本文使用 SQLite，无需单独安装数据库。多节点部署使用共享 PostgreSQL 或 MySQL，配置见 [多节点部署](multi-node-deployment.md)。
 
@@ -20,7 +20,7 @@ uname -m
 
 从 [Releases](https://github.com/ChuqiCloud/AnyFlows/releases) 下载二进制归档和同名 `.sha256` 文件，放在服务器的同一目录。Alpha、Beta 和 RC 为预发布版本。GitHub 自动生成的 Source code 压缩包不含可执行程序；源码部署见 [Docker Compose 部署](docker-compose.md)。
 
-以下以 `v0.3.0-beta.7` 的 amd64 包为例，使用其他版本时修改 `PACKAGE`：
+以下以 `v0.3.0-beta.7` 的 Linux amd64 包为例。Linux ARM64 将 `PACKAGE` 中的 `amd64` 替换为 `arm64`；使用其他版本时替换版本号：
 
 ```bash
 PACKAGE='anyflows-v0.3.0-beta.7-linux-amd64'

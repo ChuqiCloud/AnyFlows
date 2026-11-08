@@ -46,9 +46,9 @@ AnyFlows 是一个可自行部署的 AI API 网关。将不同厂商的模型接
 
 ## 二进制部署
 
-Linux 服务器可使用发布包部署。包内包含主程序、启动器和 Next 前端，运行时不需要 Rust 或 Node.js。默认通过启动器运行并开启在线更新，也支持直接运行主程序。
+可从发布页下载 Linux amd64/arm64、Windows amd64/arm64、macOS amd64/arm64 构建包。包内包含主程序、启动器和 Next 前端，运行时不需要 Rust 或 Node.js。默认通过启动器运行并开启在线更新，也支持直接运行主程序。
 
-从 [Releases](https://github.com/ChuqiCloud/AnyFlows/releases) 下载归档及对应的 `.sha256` 文件。目前社区发布包提供 Linux amd64 版本；Beta 为测试版。
+从 [Releases](https://github.com/ChuqiCloud/AnyFlows/releases) 下载与操作系统、CPU 架构匹配的归档及对应 `.sha256` 文件。Linux 和 macOS 使用 tar.gz，Windows 使用 ZIP；Beta 为测试版。
 
 在下载目录校验并解压。将 `版本号` 替换为实际版本，保留预发布后缀：
 
@@ -58,6 +58,8 @@ sha256sum --check "$PACKAGE.tar.gz.sha256"
 tar -xzf "$PACKAGE.tar.gz"
 cd "$PACKAGE"
 ```
+
+上例使用 Linux amd64 包；ARM64 Linux 将文件名中的 `amd64` 换为 `arm64`。
 
 按 [二进制部署](docs/deployment-and-configuration.md) 创建服务用户、配置数据库和密钥，再通过 systemd 启动。单机可使用 SQLite，默认监听 `127.0.0.1:8080`。首次访问通过 SSH 隧道创建管理员，然后配置域名和 HTTPS。
 
