@@ -152,6 +152,7 @@ pub(crate) struct ScheduledChatService {
     channel_states: Option<ChannelStateRepository>,
     debug_trace: Option<DebugTraceRuntime>,
     groups: Option<AdminGroupRepository>,
+    merchant_pools: Option<af_db::MerchantPoolRepository>,
     model_call_admission: Option<AdminModelRepository>,
     smart_routes: Option<Arc<dyn SmartRouteResolver>>,
     smart_route_feedback: Option<SmartRouteRuntimeRepository>,
@@ -185,6 +186,7 @@ impl ScheduledChatService {
             channel_states: None,
             debug_trace: None,
             groups: None,
+            merchant_pools: None,
             model_call_admission: None,
             smart_routes: None,
             smart_route_feedback: None,
@@ -202,6 +204,11 @@ impl ScheduledChatService {
 
     pub(crate) fn with_relay_settings(mut self, settings: RelaySettings) -> Self {
         self.relay_settings = settings;
+        self
+    }
+
+    pub(crate) fn with_merchant_pools(mut self,pools:af_db::MerchantPoolRepository)->Self {
+        self.merchant_pools=Some(pools);
         self
     }
 
@@ -939,6 +946,12 @@ impl ScheduledChatService {
         request_id: &str,
         session_scope: Option<&StableSessionScope>,
     ) -> Result<PreparedRouteSelection, AfError> {
+        if principal.merchant_channel_id().is_none()
+            && let Some(pools)=&self.merchant_pools
+            && pools.pool_for_group(principal.group_id()).await.map_err(|_|AfError::Internal)?.is_some()
+        {
+            return Err(AfError::ModelNotAllowed);
+        }
         let mut unhealthy_route_seen = false;
         let mut incompatible_route_seen = false;
         let group_chain = self.route_group_chain(principal).await?;
@@ -955,13 +968,18 @@ impl ScheduledChatService {
         };
         if rules.is_empty() {
             for group_id in group_chain.iter().copied() {
-                let Some(unfiltered_route) = self
+                let Some(mut unfiltered_route) = self
                     .scheduler
                     .route_plan(group_id, &request.canonical().model)
                     .map_err(map_scheduler_error)?
                 else {
                     continue;
                 };
+                if let Some(channel_id) = principal.merchant_channel_id()
+                    && !unfiltered_route.restrict_to_channel(channel_id)
+                {
+                    continue;
+                }
                 let unfiltered_protocol =
                     match select_upstream_protocol(&unfiltered_route, request, response_protocol) {
                         Ok(protocol) => protocol,
@@ -1005,6 +1023,11 @@ impl ScheduledChatService {
                 let Some(mut route) = route else {
                     continue;
                 };
+                if let Some(channel_id) = principal.merchant_channel_id()
+                    && !route.restrict_to_channel(channel_id)
+                {
+                    continue;
+                }
                 let upstream_protocol =
                     match select_upstream_protocol(&route, request, response_protocol) {
                         Ok(protocol) => protocol,
@@ -1173,6 +1196,13 @@ impl ScheduledChatService {
         diagnostic: RelayDiagnosticInput,
     ) -> ChatRoutePlanFuture<'a> {
         Box::pin(async move {
+            if principal.merchant_channel_id().is_some()
+                && (request.canonical().continuation.previous_response_id().is_some()
+                    || request.canonical().continuation.conversation_id().is_some())
+            {
+                // 首版不把供应商私有会话标识发送给可能不同的供应商。
+                return Err(AfError::InvalidRequest);
+            }
             let mut session_scope =
                 stable_identity_session_scope(principal.identity(), request.canonical());
             let PreparedRouteSelection {

@@ -210,6 +210,8 @@ pub struct GatewayPrincipal {
     group_id: GroupId,
     billing_source_group_id: GroupId,
     user_route_id: Option<i64>,
+    merchant_billing_snapshot: Option<crate::MerchantBillingSnapshot>,
+    merchant_channel_id: Option<ChannelId>,
     organization: Option<OrganizationGatewayPrincipal>,
     playground: bool,
 }
@@ -296,6 +298,8 @@ impl GatewayPrincipal {
             group_id,
             billing_source_group_id: group_id,
             user_route_id: None,
+            merchant_billing_snapshot: None,
+            merchant_channel_id: None,
             organization: None,
             playground: false,
         }
@@ -310,6 +314,8 @@ impl GatewayPrincipal {
             group_id,
             billing_source_group_id: group_id,
             user_route_id: None,
+            merchant_billing_snapshot: None,
+            merchant_channel_id: None,
             organization: None,
             playground: true,
         }
@@ -329,6 +335,8 @@ impl GatewayPrincipal {
             group_id,
             billing_source_group_id: group_id,
             user_route_id: None,
+            merchant_billing_snapshot: None,
+            merchant_channel_id: None,
             organization: Some(organization),
             playground: false,
         }
@@ -370,6 +378,30 @@ impl GatewayPrincipal {
     #[must_use]
     pub const fn user_route_id(self) -> Option<i64> {
         self.user_route_id
+    }
+
+    /// 固定已复验的商户供给，不能由下游请求直接指定内部渠道。
+    #[must_use]
+    pub const fn with_merchant_target(
+        mut self,
+        snapshot: crate::MerchantBillingSnapshot,
+        channel_id: ChannelId,
+    ) -> Self {
+        self.merchant_billing_snapshot = Some(snapshot);
+        self.merchant_channel_id = Some(channel_id);
+        self
+    }
+
+    /// 返回本次商户尝试不可变的分账归属。
+    #[must_use]
+    pub const fn merchant_billing_snapshot(self) -> Option<crate::MerchantBillingSnapshot> {
+        self.merchant_billing_snapshot
+    }
+
+    /// 商户尝试只能在这一已审核渠道内调度凭据。
+    #[must_use]
+    pub const fn merchant_channel_id(self) -> Option<ChannelId> {
+        self.merchant_channel_id
     }
 
     /// 固定鉴权时读取的用户默认组，用于来源组到目标组的附加倍率。

@@ -20,6 +20,8 @@ pub use account_verification_settings::{
 pub type DatabaseTimestamp = sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 
 mod ability_write;
+mod merchant_pool;
+pub use merchant_pool::{MerchantCredentialMaterial, MerchantPoolRepository};
 #[cfg(test)]
 mod ability_write_tests;
 mod admin_channel;
@@ -89,6 +91,9 @@ mod auth_tests;
 mod balance_alert;
 mod billing_batch;
 mod billing_contract;
+mod merchant_finance;
+pub use merchant_finance::{MerchantFinanceBalance, MerchantFinanceEntry, MerchantFinanceError,
+    MerchantFinancePage, MerchantFinanceRepository, MerchantWithdrawal};
 pub use billing_contract::{BillingContractPriceSnapshotError, OrganizationContractPriceSnapshot};
 #[cfg(test)]
 mod billing_batch_tests;
@@ -250,6 +255,8 @@ mod user_session;
 mod user_session_tests;
 mod user_token;
 pub use user_route::{
+    MerchantRouteMember, MerchantRouteWrite, MerchantRouteRecord, MerchantRouteScope,
+    MerchantAttemptWrite, MerchantServiceStatistics,MerchantConsumerAttempt,
     UserRouteError, UserRouteMemberRecord, UserRouteMemberWrite, UserRouteModelHealth,
     UserRouteRecord, UserRouteRepository, UserRouteWrite,
 };

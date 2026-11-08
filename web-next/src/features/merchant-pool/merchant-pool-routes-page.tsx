@@ -1,0 +1,23 @@
+import { useState } from 'react'
+import { Button, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from '@heroui/react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { useMerchantAction, useMerchantPoolRoutes, useMerchantPools } from './merchant-pool-api'
+import type { MerchantPoolRoute } from './merchant-pool-model'
+import { poolRatio, positiveInteger } from './merchant-pool-model'
+import { MerchantPoolRouteEditor } from './merchant-pool-route-editor'
+import { PoolEmpty, PoolError, PoolHeader, PoolLoading, PoolNavigation, PoolStatus } from './merchant-pool-ui'
+
+export function MerchantPoolRoutesPage() {
+  const { t } = useTranslation()
+  const [params] = useSearchParams()
+  const initialPoolId = positiveInteger(params.get('pool') ?? '')
+  const initialMerchantId = positiveInteger(params.get('merchant') ?? '')
+  const [editor, setEditor] = useState<MerchantPoolRoute | 'create' | undefined>(initialMerchantId ? 'create' : undefined)
+  const [deleting, setDeleting] = useState<MerchantPoolRoute>()
+  const routes = useMerchantPoolRoutes()
+  const pools = useMerchantPools()
+  const action = useMerchantAction()
+  const remove = async () => { if (!deleting) return; try { await action.mutateAsync({ url: `/api/merchant-pool/routes/${deleting.id}`, method: 'delete' }); setDeleting(undefined) } catch { /* Retain confirmation on failure. */ } }
+  return <div className="flex flex-col gap-4"><PoolHeader title={t('merchantPool.routes')} description={t('merchantPool.routeSubtitle')} refreshing={routes.isFetching || pools.isFetching} onRefresh={() => void Promise.all([routes.refetch(), pools.refetch()])}><Button color="primary" size="sm" isDisabled={!routes.isSuccess || !pools.isSuccess || pools.data.items.length === 0 || routes.data.items.length >= routes.data.capacity} onPress={() => setEditor('create')}>{t('merchantPool.createRoute')}</Button></PoolHeader><PoolNavigation />{routes.isPending || pools.isPending ? <PoolLoading /> : routes.isError || pools.isError ? <PoolError onRetry={() => void Promise.all([routes.refetch(), pools.refetch()])} /> : routes.data.items.length === 0 ? <PoolEmpty>{t('merchantPool.routesEmpty')}</PoolEmpty> : <div className="grid gap-3">{routes.data.items.map((route) => <article key={route.id} className="flex flex-col gap-3 rounded-lg border border-[var(--hairline)] p-4 sm:flex-row sm:items-center sm:justify-between"><div className="grid gap-2"><div className="flex items-center gap-2"><h3 className="text-sm font-semibold">{route.name}</h3><PoolStatus status={route.enabled ? 'active' : 'disabled'} /></div><p className="text-xs text-muted-foreground">{pools.data.items.find((pool) => pool.id === route.pool_id)?.name ?? `#${route.pool_id}`} · {t(`userRoutes.strategies.${route.strategy}`)} · {t('merchantPool.routeMemberCount', { count: route.members.length })}</p><p className="text-xs text-muted-foreground">{t('merchantPool.maxAttemptsValue', { count: route.max_merchant_attempts })} · {route.max_price_ratio_micros === null ? t('merchantPool.noLimit') : t('merchantPool.ratioLimitValue', { value: poolRatio(route.max_price_ratio_micros) })}</p></div><div className="flex flex-wrap items-center gap-3 text-xs"><Link className="text-primary hover:underline" to={`/console/api-keys?route=${route.id}&create=1`}>{t('merchantPool.createKey')}</Link><Button size="sm" variant="flat" onPress={() => setEditor(route)}>{t('merchantPool.edit')}</Button><Button size="sm" variant="light" color="danger" onPress={() => { action.reset(); setDeleting(route) }}>{t('merchantPool.delete')}</Button></div></article>)}</div>}{editor !== undefined && pools.data ? <MerchantPoolRouteEditor key={editor === 'create' ? `new-${initialMerchantId ?? ''}` : editor.id} route={editor === 'create' ? undefined : editor} pools={pools.data.items} initialPoolId={initialPoolId} initialMerchantId={initialMerchantId} onClose={() => setEditor(undefined)} /> : null}<Modal isOpen={Boolean(deleting)} onOpenChange={(open) => { if (!open && !action.isPending) setDeleting(undefined) }}><ModalContent><ModalHeader>{t('merchantPool.deleteRoute')}</ModalHeader><ModalBody><p className="text-sm">{t('merchantPool.deleteRouteHint', { name: deleting?.name })}</p>{action.isError ? <PoolError message={t('merchantPool.saveError')} /> : null}</ModalBody><ModalFooter><Button size="sm" variant="flat" isDisabled={action.isPending} onPress={() => setDeleting(undefined)}>{t('merchantPool.cancel')}</Button><Button size="sm" color="danger" isLoading={action.isPending} onPress={() => void remove()}>{t('merchantPool.delete')}</Button></ModalFooter></ModalContent></Modal></div>
+}

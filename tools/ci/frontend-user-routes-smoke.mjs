@@ -99,6 +99,10 @@ try {
       await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: routes, capacity: 32 }) })
       return
     }
+    if (path === '/api/merchant-pool/routes' && request.method() === 'GET') {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [], capacity: 32 }) })
+      return
+    }
     if (path === '/api/user-routes' && request.method() === 'POST') {
       const body = request.postDataJSON()
       assert.equal(body.members.length, 2)

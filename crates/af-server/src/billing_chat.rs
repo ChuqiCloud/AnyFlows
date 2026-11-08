@@ -284,12 +284,14 @@ impl BillingChatService {
                 .map_err(map_upper_bound_error)?;
             UserRouteExecution {
                 principal: *principal,
+                request_id,
                 model: &model,
                 protocol: response_protocol,
                 operation: request.canonical().operation,
                 upper_bound: &upper_bound,
                 pricing: self.pricing_source.as_ref(),
                 defer_success_feedback: true,
+                merchant_features: Some(crate::user_route_execution::MerchantRequestFeatures::for_request(request.canonical())),
             }
             .run(
                 self.user_routes.as_ref(),
@@ -563,6 +565,8 @@ impl BillingChatService {
                     subject,
                     &requested_pricing_model,
                     target_group_id,
+                    response_protocol,
+                    request_id,
                     started_at,
                 ) {
                     feedback.finish(true, false).await;
@@ -589,6 +593,8 @@ impl BillingChatService {
                         subject,
                         &requested_pricing_model,
                         target_group_id,
+                        response_protocol,
+                        request_id,
                         started_at,
                     ),
                 });
@@ -612,6 +618,8 @@ impl BillingChatService {
         subject: crate::model_subject::ModelSubject,
         model: &str,
         group_id: GroupId,
+        protocol: Protocol,
+        request_id: &str,
         started_at: Instant,
     ) -> Option<UserRouteFeedback> {
         let crate::model_subject::ModelSubject::User(principal) = subject else {
@@ -622,6 +630,10 @@ impl BillingChatService {
             route_id: principal.user_route_id()?,
             model: model.to_owned(),
             group_id,
+            merchant: principal.merchant_billing_snapshot(),
+            protocol,
+            request_id: request_id.to_owned(),
+            first_token_ms: None,
             started_at,
         })
     }
@@ -740,11 +752,20 @@ struct UserRouteFeedback {
     route_id: i64,
     model: String,
     group_id: GroupId,
+    merchant: Option<af_domain::MerchantBillingSnapshot>,
+    protocol: Protocol,
+    request_id: String,
+    first_token_ms: Option<u64>,
     started_at: Instant,
 }
 
 impl UserRouteFeedback {
     async fn finish(self, success: bool, retryable_failure: bool) {
+        if let Some(terms)=self.merchant {
+            self.runtime.merchant_feedback(terms,self.route_id,&self.request_id,&self.model,self.protocol,success,
+                u64::try_from(self.started_at.elapsed().as_millis()).unwrap_or(u64::MAX),self.first_token_ms,retryable_failure).await;
+            return;
+        }
         self.runtime
             .feedback_for(
                 self.route_id,
@@ -856,6 +877,9 @@ impl GenerationCompletionHook for BillingStreamCompletionHook {
         mut self: Box<Self>,
         usage: Result<Usage, UsageResolutionError>,
     ) -> GenerationCompletionFuture {
+        if let Some(feedback)=self.route_feedback.as_mut(){
+            feedback.first_token_ms=u64::try_from(self.first_token.as_millis()).ok();
+        }
         let outcome = StreamRequestOutcomeGuard::new(self.outcome.take());
         Box::pin(async move {
             let Some(mut lifecycle) = self.lifecycle.take() else {
@@ -1058,7 +1082,7 @@ pub(crate) fn map_snapshot_error(_error: RequestPricingSnapshotError) -> AfError
 
 fn map_precharge_error(error: BillingPrechargeError) -> AfError {
     match error {
-        BillingPrechargeError::InsufficientQuota => AfError::InsufficientQuota,
+        BillingPrechargeError::InsufficientQuota | BillingPrechargeError::MerchantFundingInsufficient => AfError::InsufficientQuota,
         BillingPrechargeError::RateLimited { retry_after } => {
             AfError::QuotaWindowLimited { retry_after }
         }
@@ -1073,7 +1097,7 @@ fn map_precharge_error(error: BillingPrechargeError) -> AfError {
 pub(crate) fn map_lifecycle_error(error: BillingLifecycleError) -> AfError {
     match error {
         BillingLifecycleError::Settlement(
-            af_billing::BillingSettlementError::InsufficientQuota,
+            af_billing::BillingSettlementError::InsufficientQuota | af_billing::BillingSettlementError::MerchantFundingInsufficient,
         ) => AfError::InsufficientQuota,
         BillingLifecycleError::InvalidActivation
         | BillingLifecycleError::BillingModeChanged

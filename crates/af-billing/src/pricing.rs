@@ -463,6 +463,15 @@ pub struct RatioPricingResolver {
 }
 
 impl RatioPricingResolver {
+    /// Preserve platform base prices and replace all contextual multipliers.
+    #[must_use]
+    pub const fn with_ratios(self, ratios: PricingRatios) -> Self {
+        match self.mode {
+            RatioMode::Free => Self::free(),
+            RatioMode::Metered { prices, .. } => Self::metered(prices, ratios),
+        }
+    }
+
     /// 构造显式免费解析器；非零 usage 仍返回 Free 且零额度。
     #[must_use]
     pub const fn free() -> Self {

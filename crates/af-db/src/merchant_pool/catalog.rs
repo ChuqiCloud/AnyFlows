@@ -1,0 +1,121 @@
+use super::*;
+
+impl MerchantPoolRepository {
+    pub async fn available_supply_pools(&self,owner:UserId,query:MerchantListQuery)->Result<MerchantPage<MerchantPool>,MerchantPoolError> {
+        let merchant=require_merchant(self.pool.connection(),owner,false).await?;
+        let rows=pools::Entity::find().filter(pools::Column::Enabled.eq(true)).order_by_asc(pools::Column::Id)
+            .limit(1001).all(self.pool.connection()).await.map_err(internal)?;
+        if rows.len()>1000 { return Err(MerchantPoolError::LimitReached); }
+        let mut result=Vec::new();
+        for row in rows { result.push(self.effective_pool(row,Some(merchant.id)).await?); }
+        page_items(result,&query)
+    }
+
+    /// This is an execution capability, not a substitute for caller pool authorization.
+    pub async fn published_candidates(&self,pool_id:i64,merchant_id:Option<i64>,model:&str)->Result<Vec<MerchantRuntimeCandidate>,MerchantPoolError> {
+        self.bounded(async {
+            let pool=find_pool(self.pool.connection(),pool_id).await?;
+            if !pool.enabled { return Ok(Vec::new()); }
+            let mut selection=services::Entity::find().filter(services::Column::PoolId.eq(pool_id))
+                .filter(services::Column::Status.eq("published"));
+            if let Some(id)=merchant_id { selection=selection.filter(services::Column::MerchantId.eq(id)); }
+            let rows=selection.order_by_asc(services::Column::Id).limit(10_001).all(self.pool.connection()).await.map_err(internal)?;
+            if rows.len()>10_000 { return Err(MerchantPoolError::LimitReached); }
+            let mut candidates=Vec::new();
+            for row in rows {
+                let Some(revision_id)=row.published_revision_id else { continue };
+                let merchant=profiles::Entity::find_by_id(row.merchant_id).filter(profiles::Column::Status.eq("approved"))
+                    .one(self.pool.connection()).await.map_err(internal)?;
+                let Some(merchant)=merchant else { continue };
+                match active_owner(self.pool.connection(),UserId::new(merchant.owner_user_id).map_err(internal)?).await {
+                    Ok(_)=>{},Err(MerchantPoolError::Forbidden)=>continue,Err(error)=>return Err(error),
+                }
+                let revision=load_revision(self.pool.connection(),revision_id,row.id).await?;
+                if revision.status!="published" { continue; }
+                let Some(model)=revision_models(&revision)?.into_iter().find(|item|item.model==model) else { continue };
+                let ratio=model.ratio_micros.unwrap_or(revision.default_ratio_micros);
+                if !(pool.min_ratio_micros..=pool.max_ratio_micros).contains(&ratio) { continue; }
+                let channel=channels::Entity::find_by_id(revision.channel_id).filter(channels::Column::DeletedAt.is_null())
+                    .filter(channels::Column::Status.eq(Status::Enabled.code())).one(self.pool.connection()).await.map_err(internal)?;
+                if channel.is_none() { continue; }
+                candidates.push(MerchantRuntimeCandidate{pool_id,group_id:pool.group_id,merchant_id:row.merchant_id,
+                    service_id:row.id,revision_id,channel_id:revision.channel_id,sales_ratio_micros:ratio,
+                    commission_bps:super::terms::resolve_commission(self.pool.connection(),&pool,Some(row.merchant_id)).await?,
+                    settlement_delay_secs:pool.settlement_delay_secs.try_into().map_err(internal)?,
+                    protocol:revision.protocol,model});
+            }
+            Ok(candidates)
+        }).await
+    }
+
+    pub async fn catalog(&self,owner:UserId,pool_id:i64,query:MerchantListQuery)->Result<MerchantPage<MerchantCatalogService>,MerchantPoolError> {
+        if !self.check_pool_access(owner,pool_id).await? { return Err(MerchantPoolError::NotFound); }
+        self.bounded(async {
+            pagination(&query)?;
+            let rows=services::Entity::find().filter(services::Column::PoolId.eq(pool_id))
+                .filter(services::Column::PublishedRevisionId.is_not_null()).order_by_asc(services::Column::Id)
+                .limit(10_001).all(self.pool.connection()).await.map_err(internal)?;
+            if rows.len()>10_000 { return Err(MerchantPoolError::LimitReached); }
+            let pool=find_pool(self.pool.connection(),pool_id).await?;
+            let mut items=Vec::new();
+            for row in rows {
+                if let Some(status)=&query.status { if &row.status!=status { continue; } }
+                let merchant=profiles::Entity::find_by_id(row.merchant_id).one(self.pool.connection()).await.map_err(internal)?
+                    .ok_or(MerchantPoolError::Unavailable)?;
+                if let Some(search)=&query.search {
+                    let needle=search.to_lowercase();
+                    if !row.name.to_lowercase().contains(&needle) && !merchant.name.to_lowercase().contains(&needle) { continue; }
+                }
+                let Some(id)=row.published_revision_id else { continue };
+                let revision=load_revision(self.pool.connection(),id,row.id).await?;
+                let mut models=Vec::new();
+                for model in revision_models(&revision)? {
+                    if query.model.as_ref().is_some_and(|name|name!=&model.model) { continue; }
+                    let ratio=model.ratio_micros.unwrap_or(revision.default_ratio_micros);
+                    models.push(MerchantModelOffer{prices:model_price(self.pool.connection(),&model.model,ratio).await?,
+                        model:model.model,sales_ratio_micros:ratio,context_window:model.context_window,max_output_tokens:model.max_output_tokens,
+                        supports_streaming:model.supports_streaming,supports_tools:model.supports_tools,supports_vision:model.supports_vision});
+                }
+                if models.is_empty() { continue; }
+                let status=if merchant.status!="approved" { "suspended".to_owned() }
+                    else if models.iter().any(|m|!(pool.min_ratio_micros..=pool.max_ratio_micros).contains(&m.sales_ratio_micros)) { "unavailable".to_owned() }
+                    else { row.status };
+                items.push(MerchantCatalogService{id:row.id,pool_id,merchant_id:merchant.id,merchant_name:merchant.name,
+                    name:row.name,description:row.description,status,revision:revision.revision,models,updated_at:revision.updated_at.unix_timestamp()});
+            }
+            if query.sort.as_deref()==Some("price") && query.model.is_some() {
+                items.sort_by_key(|row| (row.models.first().map(|m|m.sales_ratio_micros).unwrap_or(i64::MAX),row.id));
+            } else { items.sort_by(|a,b|a.merchant_name.cmp(&b.merchant_name).then_with(||a.name.cmp(&b.name)).then_with(||a.id.cmp(&b.id))); }
+            page_items(items,&query)
+        }).await
+    }
+
+    pub async fn catalog_service(&self,owner:UserId,pool_id:i64,service_id:i64)->Result<MerchantCatalogService,MerchantPoolError> {
+        if !self.check_pool_access(owner,pool_id).await? { return Err(MerchantPoolError::NotFound); }
+        let row=find_service(self.pool.connection(),service_id).await?;
+        if row.pool_id!=pool_id || row.published_revision_id.is_none() { return Err(MerchantPoolError::NotFound); }
+        // Search is not used; filter and paginate through the stable catalog projection.
+        let query=MerchantListQuery{page_size:Some(100),..Default::default()};
+        let mut page=1;
+        loop {
+            let response=self.catalog(owner,pool_id,MerchantListQuery{page:Some(page),..query.clone()}).await?;
+            if let Some(item)=response.items.into_iter().find(|item|item.id==service_id) { return Ok(item); }
+            if u64::from(page)*100>=response.total { return Err(MerchantPoolError::NotFound); }
+            page+=1;
+        }
+    }
+}
+
+pub(super) async fn model_price<C:ConnectionTrait>(connection:&C,model:&str,ratio:i64)->Result<Option<MerchantModelPrices>,MerchantPoolError> {
+    let Some(price)=model_prices::Entity::find_by_id(SensitiveString::from(model)).one(connection).await.map_err(internal)? else { return Ok(None) };
+    // Shared pools initially support deterministic per-token text pricing only.
+    if price.billing_mode!=1 || price.billing_expression.is_some() { return Ok(None); }
+    let multiplier=Decimal::from(ratio).checked_div(Decimal::from(1_000_000)).ok_or(MerchantPoolError::Unavailable)?;
+    let final_price=|base:Decimal|->Result<String,MerchantPoolError> {
+        base.checked_mul(multiplier).map(|value|value.normalize().to_string()).ok_or(MerchantPoolError::Unavailable)
+    };
+    Ok(Some(MerchantModelPrices{currency:"USD".to_owned(),unit:"million_tokens".to_owned(),
+        input:final_price(price.input_price.expose())?,output:final_price(price.output_price.expose())?,
+        cache_read:final_price(price.cache_read_price.expose())?,cache_write_5m:final_price(price.cache_creation_5m_price.expose())?,
+        cache_write_1h:final_price(price.cache_creation_1h_price.expose())?,version:price.version}))
+}
