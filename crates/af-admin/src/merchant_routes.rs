@@ -68,7 +68,7 @@ impl MerchantRouteService for DatabaseMerchantRouteService {
                     let input=parse(&prices.input)?.checked_mul(Decimal::from(request.input_tokens)).ok_or(UserRouteError::Internal)?;
                     let output=parse(&prices.output)?.checked_mul(Decimal::from(request.output_tokens)).ok_or(UserRouteError::Internal)?;
                     let usd=input.checked_add(output).and_then(|n|n.checked_div(Decimal::from(1_000_000))).ok_or(UserRouteError::Internal)?;
-                    Some(af_billing::quota_from_usd(usd).map_err(|_|UserRouteError::Internal)?.units())
+                    Some(af_billing::quota_math::quota_from_usd(usd).map_err(|_|UserRouteError::Internal)?.units())
                 }else{None};
                 rows.push((member.map_or(i32::MAX,|m|m.priority),member.map_or(1,|m|m.weight),MerchantRoutePreviewItem{
                     merchant_id:service.merchant_id,merchant_name:service.merchant_name,service_id:service.id,service_name:service.name,
@@ -97,7 +97,7 @@ impl MerchantRouteService for DatabaseMerchantRouteService {
                     _=>left.0.cmp(&right.0),
                 }
             }).then_with(||left.2.merchant_id.cmp(&right.2.merchant_id)));
-            Ok(MerchantRoutePreview{items:rows.into_iter().map(|(_,_,item)|item).collect(),quota_per_usd:af_billing::QUOTA_PER_USD,
+            Ok(MerchantRoutePreview{items:rows.into_iter().map(|(_,_,item)|item).collect(),quota_per_usd:af_billing::quota_math::QUOTA_PER_USD,
                 as_of:time::OffsetDateTime::now_utc().unix_timestamp()})
         })
     }

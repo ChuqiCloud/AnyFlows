@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc,Mutex};
 
 use af_adapter::{Adaptor,AnthropicAdaptor,Bytes,Credential,HeaderMap,HttpClientConfig,HttpClientPool,
     OpenAiAdaptor,ProxyConfig,RelayContext,RemoteDnsPolicy,StatusCode,UpstreamResponse};
@@ -11,6 +11,13 @@ use wiremock::{Mock,MockServer,ResponseTemplate,matchers::{method,path}};
 use super::*;
 
 const PROTOCOLS:[Protocol;4]=[Protocol::OpenAiChat,Protocol::OpenAiResponses,Protocol::Anthropic,Protocol::Gemini];
+
+struct RecordUsage(Arc<Mutex<Option<Usage>>>);
+impl crate::GenerationCompletionHook for RecordUsage {
+    fn on_complete(self:Box<Self>,usage:Result<Usage,crate::UsageResolutionError>)->crate::GenerationCompletionFuture {
+        Box::pin(async move{*self.0.lock().unwrap()=Some(usage.unwrap());})
+    }
+}
 
 fn request(protocol:Protocol,stream:bool)->CanonicalRequestEnvelope {
     let mut canonical=CanonicalRequest::new(if protocol==Protocol::OpenAiResponses{Operation::Responses}else{Operation::Chat},
@@ -82,9 +89,12 @@ async fn merchant_stream_matrix_uses_one_observed_usage_for_completion_and_downs
         let body=UpstreamResponse::full(StatusCode::OK,HeaderMap::new(),Bytes::from(raw)).unwrap().into_body();
         let downstream_encoder=ChatStreamEncoder::new(downstream,"client","gpt-4o",1_700_000_000,&canonical,true).unwrap().with_upstream_protocol(upstream);
         let (stream,handle)=OpenAiChatStream::new(body,downstream_encoder,OpenAiChatUsageEstimator::new(&canonical).with_local_usage_only());
-        let mut stream=stream.with_decoder(ConversationDecoder::new(upstream).unwrap());
+        let recorded=Arc::new(Mutex::new(None));
+        let mut stream=stream.with_decoder(ConversationDecoder::new(upstream).unwrap())
+            .with_completion_hook(Box::new(RecordUsage(recorded.clone())));
         let mut output=Vec::new();while let Some(chunk)=stream.next_chunk().await{output.extend(chunk.unwrap());}
         let billed=handle.resolve().await.unwrap();assert_eq!(billed.source(),UsageSource::Estimated);
+        assert_eq!(*recorded.lock().unwrap(),Some(billed));
         assert!(billed.input_tokens().get()<100);assert!(billed.output_tokens().get()<100);
         let mut decoder=ConversationDecoder::new(downstream).unwrap();let mut decoded=decoder.push(&output).unwrap();decoded.extend(decoder.finish().unwrap());
         let usages=decoded.iter().filter_map(|event|if let CanonicalStreamEvent::Usage(usage)=event{Some(*usage)}else{None}).collect::<Vec<_>>();

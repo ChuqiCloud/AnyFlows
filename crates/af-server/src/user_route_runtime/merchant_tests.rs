@@ -110,7 +110,7 @@ async fn fixture(label: &str, only_first: bool, ceiling: Option<i64>) -> Fixture
             UserId::new(4).unwrap(),
             None,
             MerchantRouteWrite {
-                excluded_merchant_ids:Vec::new(),
+                excluded_merchant_ids: Vec::new(),
                 name: "Pool route".to_owned(),
                 pool_id: pool.id,
                 strategy: UserRouteStrategy::Ordered,

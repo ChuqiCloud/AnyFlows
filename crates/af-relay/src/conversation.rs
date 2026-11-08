@@ -47,7 +47,15 @@ pub async fn relay_conversation_with_report(
     response_protocol: Protocol,
     request_id: &str,
 ) -> (Result<ChatResponse, AfError>, RelayAttemptReport) {
-    relay_conversation_with_usage_policy(machine,request,upstream_protocol,response_protocol,request_id,false).await
+    relay_conversation_with_usage_policy(
+        machine,
+        request,
+        upstream_protocol,
+        response_protocol,
+        request_id,
+        false,
+    )
+    .await
 }
 
 /// Approved merchant supply is billed only from platform-observed text and tools.
@@ -59,7 +67,15 @@ pub async fn relay_merchant_conversation_with_report(
     response_protocol: Protocol,
     request_id: &str,
 ) -> (Result<ChatResponse, AfError>, RelayAttemptReport) {
-    relay_conversation_with_usage_policy(machine,request,upstream_protocol,response_protocol,request_id,true).await
+    relay_conversation_with_usage_policy(
+        machine,
+        request,
+        upstream_protocol,
+        response_protocol,
+        request_id,
+        true,
+    )
+    .await
 }
 
 async fn relay_conversation_with_usage_policy(
@@ -190,8 +206,14 @@ async fn relay_conversation_with_usage_policy(
         if local_usage_only {
             // Native passthrough can carry an independent supplier usage snapshot.
             // Rebuild the public envelope so the response and invoice share local usage.
-            response = CanonicalResponse::new(response.operation,response.id,response.model,
-                response.created_at,response.choices,Some(usage));
+            response = CanonicalResponse::new(
+                response.operation,
+                response.id,
+                response.model,
+                response.created_at,
+                response.choices,
+                Some(usage),
+            );
         }
         crate::anthropic_chat_bridge::adapt_response(
             upstream_protocol,

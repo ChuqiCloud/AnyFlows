@@ -504,8 +504,8 @@ pub use account_verification::{
 };
 pub use alipay_verification::{AlipayAccountVerificationProvider, AlipayProviderConfigError};
 pub use merchant_routes::{
-    MerchantRoutePreviewRequest,MerchantRoutePreview,MerchantRoutePreviewItem,
     DatabaseMerchantRouteService, MerchantConsumerAttempt, MerchantRouteFuture,
+    MerchantRoutePreview, MerchantRoutePreviewItem, MerchantRoutePreviewRequest,
     MerchantRouteRecord, MerchantRouteService, MerchantRouteWrite, MerchantServiceStatistics,
     MerchantServiceTimeline,
 };

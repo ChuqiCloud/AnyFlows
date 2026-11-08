@@ -584,49 +584,182 @@ async fn revoked_pool_access_hides_catalog_and_repricing_removes_runtime_supply(
 }
 
 #[tokio::test]
-async fn derived_catalog_state_filters_disabled_channels_after_projection()->Result<(),Box<dyn Error>> {
-    let fixture=fixture().await?;let service=publish(&fixture).await?;
-    let channel=fixture.repository.published_candidates(fixture.shared_pool,None,"gpt-test").await?.remove(0).channel_id;
-    channels::Entity::update_many().filter(channels::Column::Id.eq(channel))
-        .col_expr(channels::Column::Status,Expr::value(Status::Disabled.code())).exec(fixture.pool.connection()).await?;
-    let page=fixture.repository.catalog(UserId::new(2)?,fixture.shared_pool,MerchantListQuery::default()).await?;
-    assert_eq!(page.items[0].id,service.id);assert_eq!(page.items[0].status,"unavailable");
-    assert_eq!(fixture.repository.catalog(UserId::new(2)?,fixture.shared_pool,MerchantListQuery{status:Some("published".to_owned()),..Default::default()}).await?.total,0);
-    assert_eq!(fixture.repository.catalog(UserId::new(2)?,fixture.shared_pool,MerchantListQuery{status:Some("unavailable".to_owned()),..Default::default()}).await?.total,1);
-    fixture.pool.close().await?;Ok(())
+async fn derived_catalog_state_filters_disabled_channels_after_projection()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let service = publish(&fixture).await?;
+    let channel = fixture
+        .repository
+        .published_candidates(fixture.shared_pool, None, "gpt-test")
+        .await?
+        .remove(0)
+        .channel_id;
+    channels::Entity::update_many()
+        .filter(channels::Column::Id.eq(channel))
+        .col_expr(
+            channels::Column::Status,
+            Expr::value(Status::Disabled.code()),
+        )
+        .exec(fixture.pool.connection())
+        .await?;
+    let page = fixture
+        .repository
+        .catalog(
+            UserId::new(2)?,
+            fixture.shared_pool,
+            MerchantListQuery::default(),
+        )
+        .await?;
+    assert_eq!(page.items[0].id, service.id);
+    assert_eq!(page.items[0].status, "unavailable");
+    assert_eq!(
+        fixture
+            .repository
+            .catalog(
+                UserId::new(2)?,
+                fixture.shared_pool,
+                MerchantListQuery {
+                    status: Some("published".to_owned()),
+                    ..Default::default()
+                }
+            )
+            .await?
+            .total,
+        0
+    );
+    assert_eq!(
+        fixture
+            .repository
+            .catalog(
+                UserId::new(2)?,
+                fixture.shared_pool,
+                MerchantListQuery {
+                    status: Some("unavailable".to_owned()),
+                    ..Default::default()
+                }
+            )
+            .await?
+            .total,
+        1
+    );
+    fixture.pool.close().await?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn platform_resume_keeps_pending_revision_unpublished_and_merchant_pause_intact()->Result<(),Box<dyn Error>> {
-    let fixture=fixture().await?;let service=publish(&fixture).await?;
-    let mut write=service_write(fixture.shared_pool);write.default_ratio_micros=800_000;write.name="Pending changed name".to_owned();
-    fixture.repository.write_service(UserId::new(1)?,Some(service.id),write,envelope).await?;
-    fixture.repository.submit_service(UserId::new(1)?,service.id).await?;
-    fixture.repository.pause_service(UserId::new(1)?,service.id,true).await?;
-    fixture.repository.review_service(UserId::new(3)?,service.id,review("suspend",None)).await?;
-    let resumed=fixture.repository.resume_service(UserId::new(3)?,service.id).await?;
-    assert_eq!(resumed.status,"paused");assert_eq!(resumed.name,"Reviewed Service");
-    assert_eq!(resumed.published.as_ref().expect("published revision").revision,1);
-    assert_eq!(resumed.draft.as_ref().expect("pending revision").status,"pending");
-    assert_eq!(resumed.draft.as_ref().expect("pending revision").revision,2);
-    assert!(fixture.repository.published_candidates(fixture.shared_pool,None,"gpt-test").await?.is_empty());
-    fixture.repository.pause_service(UserId::new(1)?,service.id,false).await?;
-    assert_eq!(fixture.repository.published_candidates(fixture.shared_pool,None,"gpt-test").await?[0].sales_ratio_micros,500_000);
-    fixture.pool.close().await?;Ok(())
+async fn platform_resume_keeps_pending_revision_unpublished_and_merchant_pause_intact()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let service = publish(&fixture).await?;
+    let mut write = service_write(fixture.shared_pool);
+    write.default_ratio_micros = 800_000;
+    write.name = "Pending changed name".to_owned();
+    fixture
+        .repository
+        .write_service(UserId::new(1)?, Some(service.id), write, envelope)
+        .await?;
+    fixture
+        .repository
+        .submit_service(UserId::new(1)?, service.id)
+        .await?;
+    fixture
+        .repository
+        .pause_service(UserId::new(1)?, service.id, true)
+        .await?;
+    fixture
+        .repository
+        .review_service(UserId::new(3)?, service.id, review("suspend", None))
+        .await?;
+    let resumed = fixture
+        .repository
+        .resume_service(UserId::new(3)?, service.id)
+        .await?;
+    assert_eq!(resumed.status, "paused");
+    assert_eq!(resumed.name, "Reviewed Service");
+    assert_eq!(
+        resumed
+            .published
+            .as_ref()
+            .expect("published revision")
+            .revision,
+        1
+    );
+    assert_eq!(
+        resumed.draft.as_ref().expect("pending revision").status,
+        "pending"
+    );
+    assert_eq!(
+        resumed.draft.as_ref().expect("pending revision").revision,
+        2
+    );
+    assert!(
+        fixture
+            .repository
+            .published_candidates(fixture.shared_pool, None, "gpt-test")
+            .await?
+            .is_empty()
+    );
+    fixture
+        .repository
+        .pause_service(UserId::new(1)?, service.id, false)
+        .await?;
+    assert_eq!(
+        fixture
+            .repository
+            .published_candidates(fixture.shared_pool, None, "gpt-test")
+            .await?[0]
+            .sales_ratio_micros,
+        500_000
+    );
+    fixture.pool.close().await?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn vision_supply_is_rejected_and_legacy_published_vision_is_not_routable()->Result<(),Box<dyn Error>> {
-    let fixture=fixture().await?;
-    let mut write=service_write(fixture.shared_pool);write.models[0].supports_vision=true;
-    assert!(matches!(write.validate(),Err(MerchantPoolError::InvalidInput)));
-    assert!(matches!(fixture.repository.write_service(UserId::new(1)?,None,write,envelope).await,Err(MerchantPoolError::InvalidInput)));
-    let service=publish(&fixture).await?;
-    let revision=service.published.expect("published revision");let mut models=revision.models;models[0].supports_vision=true;
-    revisions::Entity::update_many().filter(revisions::Column::Id.eq(revision.id))
-        .col_expr(revisions::Column::Models,Expr::value(serde_json::to_value(models)?)).exec(fixture.pool.connection()).await?;
-    assert!(fixture.repository.published_candidates(fixture.shared_pool,None,"gpt-test").await?.is_empty());
-    let catalog=fixture.repository.catalog(UserId::new(2)?,fixture.shared_pool,MerchantListQuery::default()).await?;
-    assert_eq!(catalog.items[0].status,"unsupported");
-    fixture.pool.close().await?;Ok(())
+async fn vision_supply_is_rejected_and_legacy_published_vision_is_not_routable()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let mut write = service_write(fixture.shared_pool);
+    write.models[0].supports_vision = true;
+    assert!(matches!(
+        write.validate(),
+        Err(MerchantPoolError::InvalidInput)
+    ));
+    assert!(matches!(
+        fixture
+            .repository
+            .write_service(UserId::new(1)?, None, write, envelope)
+            .await,
+        Err(MerchantPoolError::InvalidInput)
+    ));
+    let service = publish(&fixture).await?;
+    let revision = service.published.expect("published revision");
+    let mut models = revision.models;
+    models[0].supports_vision = true;
+    revisions::Entity::update_many()
+        .filter(revisions::Column::Id.eq(revision.id))
+        .col_expr(
+            revisions::Column::Models,
+            Expr::value(serde_json::to_value(models)?),
+        )
+        .exec(fixture.pool.connection())
+        .await?;
+    assert!(
+        fixture
+            .repository
+            .published_candidates(fixture.shared_pool, None, "gpt-test")
+            .await?
+            .is_empty()
+    );
+    let catalog = fixture
+        .repository
+        .catalog(
+            UserId::new(2)?,
+            fixture.shared_pool,
+            MerchantListQuery::default(),
+        )
+        .await?;
+    assert_eq!(catalog.items[0].status, "unsupported");
+    fixture.pool.close().await?;
+    Ok(())
 }

@@ -1558,8 +1558,13 @@ impl PlannedChatExecution for ScheduledChatExecution {
             let routing_started_at = Instant::now();
             let (result, report) = if merchant_local_usage {
                 af_relay::relay_merchant_conversation_with_report(
-                    &machine,request,upstream_protocol,response_protocol,&request_id,
-                ).await
+                    &machine,
+                    request,
+                    upstream_protocol,
+                    response_protocol,
+                    &request_id,
+                )
+                .await
             } else if upstream_protocol != response_protocol
                 || machine.requires_conversation_decoder()
             {
