@@ -132,8 +132,8 @@ jobs:
           }
 
           {
-            echo "frontend=$(matches '^(web/|web-next/|tools/ci/(check-frontend-parity|frontend-about-smoke|frontend-navigation-smoke|frontend-user-routes-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
-            echo "frontend_about=$(matches '^((web|web-next)/src/features/(about/|site-settings/software-(update-(panel|api)|release-notes)\.tsx?$)|tools/ci/frontend-about-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend=$(matches '^(web-next/|tools/ci/(frontend-about-smoke|frontend-navigation-smoke|frontend-user-routes-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend_about=$(matches '^(web-next/src/features/(about/|site-settings/software-(update-(panel|api)|release-notes)\.tsx?$)|tools/ci/frontend-about-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-(navigation|user-routes)-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_verification=$(matches '^(web-next/src/features/(account-verification|wallet|api-keys|playground)/|tools/ci/frontend-verification-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "rust=$(matches '^(crates/|tools/xtask/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$|\.github/workflows/ci\.yml$)')"
@@ -408,12 +408,10 @@ jobs:
         shell: bash
         run: |
           corepack enable
-          corepack pnpm@10.33.0 --dir web install --frozen-lockfile
           corepack pnpm@10.33.0 --dir web-next install --frozen-lockfile
 
       - name: Build frontend
         run: |
-          corepack pnpm@10.33.0 --dir web build
           corepack pnpm@10.33.0 --dir web-next build
 
       - name: Build and verify Bookworm release binaries
@@ -489,7 +487,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        frontend: [web, web-next]
+        frontend: [web-next]
     steps:
       - name: Configure checkout endpoint
         if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
@@ -523,9 +521,6 @@ jobs:
 
       - name: Audit frontend dependencies
         run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} audit --audit-level=low
-
-      - name: Check shared frontend parity
-        run: node tools/ci/check-frontend-parity.mjs
 
       - name: Lint frontend
         run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} lint

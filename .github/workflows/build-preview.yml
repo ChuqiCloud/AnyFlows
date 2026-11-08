@@ -56,21 +56,14 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Build both embedded frontends
+      - name: Build embedded frontend
         run: |
           set -euo pipefail
           build_frontend() {
             npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir "$1" install --frozen-lockfile
             npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir "$1" build
           }
-          build_frontend web &
-          classic_pid=$!
-          build_frontend web-next &
-          next_pid=$!
-          result=0
-          wait "$classic_pid" || result=1
-          wait "$next_pid" || result=1
-          exit "$result"
+          build_frontend web-next
 
       - name: Build release binary
         run: |

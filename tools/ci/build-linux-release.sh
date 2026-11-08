@@ -19,7 +19,7 @@ toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' "$workspace/rust-toolchain.toml
   printf 'Update the pinned Bookworm image together with the Rust toolchain.\n' >&2
   exit 1
 }
-for frontend in web web-next; do
+for frontend in web-next; do
   [[ -s "$workspace/$frontend/dist/index.html" ]] || {
     printf 'Build %s before the native Linux release.\n' "$frontend" >&2
     exit 1
@@ -67,7 +67,7 @@ docker exec "$builder" mkdir -p /workspace/target/bookworm /workspace/target/boo
 
 # Copy instead of bind-mounting: a job may itself run inside a Docker container.
 git -C "$workspace" archive --format=tar HEAD | docker exec --interactive "$builder" tar -xf - -C /workspace
-for frontend in web web-next; do
+for frontend in web-next; do
   docker cp "$workspace/$frontend/dist" "$builder:/workspace/$frontend/dist"
 done
 for cache in bookworm bookworm-cargo; do

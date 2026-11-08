@@ -32308,7 +32308,7 @@
               "string",
               "null"
             ],
-            "description": "None 或空字符串表示恢复内嵌前端。"
+            "description": "None 或空字符串表示选择默认内置 Next 前端。"
           }
         },
         "additionalProperties": false
@@ -32325,7 +32325,7 @@
               "string",
               "null"
             ],
-            "description": "None 表示默认经典前端；embedded-next 表示新版内置前端。"
+            "description": "当前启用模板 ID；内置 Next 使用 `embedded-next`，外部模板使用其目录 ID。"
           },
           "templates": {
             "type": "array",

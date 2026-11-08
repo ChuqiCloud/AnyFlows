@@ -3,16 +3,11 @@ FROM node:24-bookworm-slim AS frontend
 
 WORKDIR /workspace
 RUN corepack enable
-COPY web/package.json web/pnpm-lock.yaml ./web/
-COPY web/patches ./web/patches
-RUN corepack pnpm@10.33.0 --dir web install --frozen-lockfile
 COPY web-next/package.json web-next/pnpm-lock.yaml ./web-next/
 COPY web-next/patches ./web-next/patches
 RUN corepack pnpm@10.33.0 --dir web-next install --frozen-lockfile
 COPY web-next ./web-next
 RUN corepack pnpm@10.33.0 --dir web-next build
-COPY web ./web
-RUN corepack pnpm@10.33.0 --dir web build
 
 # 第二阶段编译带前端内嵌资源的 Linux amd64 单二进制。
 FROM rust:1.97.1-bookworm AS builder
@@ -29,7 +24,6 @@ COPY Cargo.toml Cargo.lock rust-toolchain.toml rustfmt.toml clippy.toml deny.tom
 COPY .cargo ./.cargo
 COPY crates ./crates
 COPY tools ./tools
-COPY --from=frontend /workspace/web/dist ./web/dist
 COPY --from=frontend /workspace/web-next/dist ./web-next/dist
 RUN cargo build --release --locked --package af-server
 

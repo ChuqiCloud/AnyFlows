@@ -77,14 +77,13 @@ use af_db::{
     DebugTraceRepository, DebugTraceRepositoryConfigError, DebugTraceRepositoryError,
     DebugTraceSnapshotCipherError, EmailSettingsRepository, EmailSettingsRepositoryConfigError,
     ImageHistoryRepository, ImageHistoryRepositoryConfigError, InitialSetupRepository,
-    InitialSetupRepositoryConfigError, InitialSetupRepositoryError, InitialSetupStatus,
-    MigrationOptions, ModelPriceRepository, ModelProviderCatalogRepository,
-    ModelProviderCatalogRepositoryError, ModelSyncRepository, NetworkSettingsMode,
-    NetworkSettingsRecord, NetworkSettingsRepository, NetworkSettingsRepositoryConfigError,
-    OAuthLoginRepository, OAuthLoginRepositoryError, PasskeyRepository, PasswordResetRepository,
-    PasswordResetRepositoryConfigError, PaymentSecretUpdate, PaymentSettingsRepository,
-    PaymentSettingsRepositoryConfigError, PaymentSettingsRepositoryError,
-    PaymentSettingsWriteRecord, PlaygroundConversationRepository,
+    InitialSetupRepositoryConfigError, InitialSetupRepositoryError, MigrationOptions,
+    ModelPriceRepository, ModelProviderCatalogRepository, ModelProviderCatalogRepositoryError,
+    ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
+    NetworkSettingsRepositoryConfigError, OAuthLoginRepository, OAuthLoginRepositoryError,
+    PasskeyRepository, PasswordResetRepository, PasswordResetRepositoryConfigError,
+    PaymentSecretUpdate, PaymentSettingsRepository, PaymentSettingsRepositoryConfigError,
+    PaymentSettingsRepositoryError, PaymentSettingsWriteRecord, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
     RedemptionRepositoryConfigError, RefundRepository, RefundRepositoryConfigError,
@@ -139,7 +138,7 @@ use crate::{
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
     concurrency_runtime::{ConcurrencyCleanupWorker, ConcurrencyReleaseWorker, ConcurrencyRuntime},
     debug_trace_runtime::{AdminDebugTraceRuntimeApplier, DebugTraceRuntime, DebugTraceWorker},
-    frontend::{EmbeddedFrontendAssets, EmbeddedNextFrontendAssets},
+    frontend::EmbeddedNextFrontendAssets,
     group_pricing_refresh::RuntimeGroupPricingRefresher,
     model_catalog::RuntimeModelCatalogReader,
     model_discovery::DatabaseUpstreamModelDiscoverer,
@@ -788,8 +787,7 @@ impl Bootstrap<Configured> {
 impl Bootstrap<TelemetryReady> {
     /// 创建数据库连接池并在开始监听前执行 pending migrations。
     ///
-    /// 仅在没有用户且没有首次安装完成标记时，为未指定模板的新数据库设置 web-next 默认值；
-    /// 已安装数据库的模板选择保持原值。
+    /// 为未指定模板的数据库设置 web-next 默认值，并将旧 Classic 选择迁移到 Next。
     pub async fn connect_database(self) -> Result<Bootstrap<DatabaseReady>, BootstrapError> {
         let database_options = database_options(&self.config)?;
         let migration_options = migration_options(&self.config)?;
@@ -810,8 +808,7 @@ impl Bootstrap<TelemetryReady> {
             Duration::from_secs(self.config.auth().lookup_timeout_secs()),
         )
         .map_err(BootstrapError::SiteSettingsRepository)?;
-        set_new_install_frontend_default(&initial_setup_repository, &site_settings_repository)
-            .await?;
+        ensure_next_frontend_default(&site_settings_repository).await?;
         let site_settings = site_settings_repository
             .settings()
             .await
@@ -843,25 +840,18 @@ impl Bootstrap<TelemetryReady> {
     }
 }
 
-async fn set_new_install_frontend_default(
-    initial_setup_repository: &InitialSetupRepository,
+async fn ensure_next_frontend_default(
     site_settings_repository: &SiteSettingsRepository,
 ) -> Result<(), BootstrapError> {
-    if initial_setup_repository
-        .status()
-        .await
-        .map_err(BootstrapError::InitialSetupStatus)?
-        != InitialSetupStatus::Required
-    {
-        return Ok(());
-    }
-
     let site_settings = site_settings_repository
         .settings()
         .await
         .map_err(BootstrapError::SiteSettingsRead)?;
-    // None means Classic; preserve it once the database has passed first setup.
-    if site_settings.frontend_template_id().is_none() {
+    // Empty and Classic selections from older installations now resolve to Next.
+    if matches!(
+        site_settings.frontend_template_id(),
+        None | Some("embedded")
+    ) {
         site_settings_repository
             .set_frontend_template_id(Some(NEW_INSTALL_FRONTEND_TEMPLATE_ID.to_owned()))
             .await
@@ -2663,13 +2653,11 @@ impl Bootstrap<Supervised> {
             self.stage.payment_runtime.clone();
         let payment_webhook_routes = build_payment_webhook_router(payment_webhook_registry)
             .merge(build_refund_receipt_webhook_router(refund_receipt_registry));
-        let embedded_frontend: Arc<dyn FrontendAssetSource> = Arc::new(EmbeddedFrontendAssets);
         let frontend_template_manager = FrontendTemplateManager::new(
             self.config
                 .server()
                 .frontend_template_directory()
                 .to_path_buf(),
-            Arc::clone(&embedded_frontend),
             Arc::new(EmbeddedNextFrontendAssets),
             self.stage.infrastructure.site_settings_repository.clone(),
             self.stage
@@ -3389,7 +3377,7 @@ mod tests {
     use af_config::CREDENTIAL_ENCRYPTION_KEY_BYTES;
     use af_db::{
         DatabaseOptions, InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
-        MigrationOptions, SiteSettingsRepository, connect_and_migrate,
+        InitialSetupStatus, MigrationOptions, SiteSettingsRepository, connect_and_migrate,
     };
     use af_domain::{BillingReservationId, GatewayPrincipal, GroupId, QuotaDelta, TokenId, UserId};
     use af_http::{ReadinessFuture, ReadinessProbe};
@@ -3581,7 +3569,7 @@ mod tests {
         let site_settings_repository =
             SiteSettingsRepository::new(database.clone(), Duration::from_secs(5)).unwrap();
 
-        set_new_install_frontend_default(&setup_repository, &site_settings_repository)
+        ensure_next_frontend_default(&site_settings_repository)
             .await
             .unwrap();
         assert_eq!(
@@ -3618,7 +3606,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn installed_classic_frontend_is_preserved_on_startup() {
+    async fn legacy_classic_frontend_settings_migrate_to_next() {
         let database = connect_and_migrate(
             &DatabaseOptions::new("sqlite::memory:").unwrap(),
             MigrationOptions::default(),
@@ -3630,7 +3618,7 @@ mod tests {
         let site_settings_repository =
             SiteSettingsRepository::new(database.clone(), Duration::from_secs(5)).unwrap();
 
-        set_new_install_frontend_default(&setup_repository, &site_settings_repository)
+        ensure_next_frontend_default(&site_settings_repository)
             .await
             .unwrap();
         setup_repository
@@ -3640,13 +3628,23 @@ mod tests {
             ))
             .await
             .unwrap();
-        site_settings_repository
-            .set_frontend_template_id(None)
-            .await
-            .unwrap();
-        set_new_install_frontend_default(&setup_repository, &site_settings_repository)
-            .await
-            .unwrap();
+        for legacy_id in [None, Some("embedded".to_owned())] {
+            site_settings_repository
+                .set_frontend_template_id(legacy_id)
+                .await
+                .unwrap();
+            ensure_next_frontend_default(&site_settings_repository)
+                .await
+                .unwrap();
+            assert_eq!(
+                site_settings_repository
+                    .settings()
+                    .await
+                    .unwrap()
+                    .frontend_template_id(),
+                Some(NEW_INSTALL_FRONTEND_TEMPLATE_ID)
+            );
+        }
         assert_eq!(
             setup_repository.status().await.unwrap(),
             InitialSetupStatus::Complete
@@ -3657,7 +3655,7 @@ mod tests {
                 .await
                 .unwrap()
                 .frontend_template_id(),
-            None
+            Some(NEW_INSTALL_FRONTEND_TEMPLATE_ID)
         );
         database.close().await.unwrap();
     }
