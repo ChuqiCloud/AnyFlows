@@ -120,6 +120,8 @@ impl AccountVerificationService {
                 enterprise_manual_enabled: true,
                 individual_reason_required: true,
                 enterprise_reason_required: true,
+                require_verification_for_topup: false,
+                require_verification_for_api: false,
             }),
         }
     }
@@ -312,6 +314,13 @@ impl AccountVerificationService {
                 result.reason,
             )
             .await
+    }
+
+    pub async fn verified(
+        &self,
+        principal: SessionPrincipal,
+    ) -> Result<bool, AccountVerificationError> {
+        self.repository.verified(principal.user_id()).await
     }
 
     pub async fn enterprise_verified(

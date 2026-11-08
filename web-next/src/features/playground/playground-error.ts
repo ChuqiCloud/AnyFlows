@@ -31,6 +31,7 @@ export function classifyPlaygroundError(error: unknown): PlaygroundErrorKind {
   const statusCode = typeof details?.statusCode === 'number' ? details.statusCode : undefined
   const code = details ? responseErrorCode(details) ?? streamErrorCode(details) : undefined
 
+  if (code === 'account_verification_required') return 'account_verification_required'
   if (statusCode === 401 || code === 'invalid_api_key' || code === 'authentication_error') {
     return 'invalid_key'
   }

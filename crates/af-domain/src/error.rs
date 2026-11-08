@@ -247,6 +247,9 @@ pub enum AfError {
     /// 下游 API Key 缺失、格式无效或未通过认证。
     #[error("下游 API Key 无效")]
     InvalidApiKey,
+    /// 当前用户须先通过实名认证才能调用接口。
+    #[error("请先完成实名认证")]
+    AccountVerificationRequired,
     /// 请求模型未被当前下游令牌策略允许。
     #[error("下游令牌不允许请求的模型")]
     ModelNotAllowed,

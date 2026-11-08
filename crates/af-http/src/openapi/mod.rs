@@ -736,6 +736,54 @@ mod tests {
             schemas["AdminVerificationSettingsRequest"]["properties"]["private_key"]["writeOnly"],
             true
         );
+        for (schema_name, required_fields) in [
+            (
+                "AccountVerificationEligibilityResponse",
+                [
+                    "verified",
+                    "require_verification_for_topup",
+                    "require_verification_for_api",
+                ],
+            ),
+            (
+                "AdminVerificationSettings",
+                [
+                    "require_verification_for_topup",
+                    "require_verification_for_api",
+                    "version",
+                ],
+            ),
+        ] {
+            let required = schemas[schema_name]["required"]
+                .as_array()
+                .expect("required fields must be an array");
+            for field in required_fields {
+                assert!(
+                    required.iter().any(|value| value == field),
+                    "{schema_name}.{field}"
+                );
+            }
+        }
+        assert!(
+            schemas["ManagementErrorCode"]["enum"]
+                .as_array()
+                .is_some_and(|codes| {
+                    codes
+                        .iter()
+                        .any(|value| value == "account_verification_required")
+                })
+        );
+        for path in [
+            "/api/account/wallet/topups",
+            "/api/account/wallet/redemptions",
+        ] {
+            assert!(
+                document["paths"][path]["post"]["responses"]
+                    .get("403")
+                    .is_some(),
+                "{path}"
+            );
+        }
         assert!(schemas.contains_key("OpenAiModel"));
         assert!(schemas.contains_key("OpenAiModelList"));
         assert_eq!(

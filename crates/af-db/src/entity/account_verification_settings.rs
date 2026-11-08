@@ -13,6 +13,8 @@ pub struct Model {
     pub enterprise_manual_enabled: bool,
     pub individual_reason_required: bool,
     pub enterprise_reason_required: bool,
+    pub require_verification_for_topup: bool,
+    pub require_verification_for_api: bool,
     pub alipay_enabled: bool,
     #[sea_orm(column_type = "String(StringLen::N(128))", nullable)]
     pub alipay_app_id: Option<SensitiveString>,

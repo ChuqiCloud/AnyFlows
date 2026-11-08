@@ -82,6 +82,9 @@ pub(crate) async fn authenticate_playground_session(
         Err(TokenAuthenticationError::InvalidApiKey) => {
             api_error_response(state.error_protocol, AfError::InvalidApiKey)
         }
+        Err(TokenAuthenticationError::VerificationRequired) => {
+            api_error_response(state.error_protocol, AfError::AccountVerificationRequired)
+        }
         Err(TokenAuthenticationError::Internal)
         | Err(TokenAuthenticationError::RateLimitUnavailable) => {
             api_error_response(state.error_protocol, AfError::Internal)
@@ -181,6 +184,9 @@ pub(crate) async fn authenticate_api_key(
         }
         Err(TokenAuthenticationError::InvalidApiKey) => {
             api_error_response(state.error_protocol, AfError::InvalidApiKey)
+        }
+        Err(TokenAuthenticationError::VerificationRequired) => {
+            api_error_response(state.error_protocol, AfError::AccountVerificationRequired)
         }
         Err(TokenAuthenticationError::Internal) => {
             api_error_response(state.error_protocol, AfError::Internal)

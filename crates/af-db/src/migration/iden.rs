@@ -21,6 +21,8 @@ pub(in crate::migration) mod account_verification_settings {
         EnterpriseManualEnabled,
         IndividualReasonRequired,
         EnterpriseReasonRequired,
+        RequireVerificationForTopup,
+        RequireVerificationForApi,
         AlipayEnabled,
         AlipayAppId,
         AlipayCredentials,

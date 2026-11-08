@@ -23,7 +23,7 @@ use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use crate::SessionPrincipal;
+use crate::{SessionPrincipal, VerificationAccessError, VerificationAccessService};
 
 /// Stripe 首切片固定使用的结算币种。
 pub const STRIPE_TOPUP_CURRENCY: &str = "USD";
@@ -482,6 +482,9 @@ pub enum UserTopupError {
     /// 当前会话用户已经不存在或失效。
     #[error("充值订单会话无效")]
     InvalidSession,
+    /// 用户尚未满足管理员配置的实名充值要求。
+    #[error("请先完成实名认证再充值")]
+    VerificationRequired,
     /// 相同幂等键已经绑定不同充值事实。
     #[error("充值订单幂等事实冲突")]
     Conflict,
@@ -529,6 +532,7 @@ pub trait UserTopupService: Send + Sync {
 /// 使用原子充值仓储和支付 Provider 实现订单创建与提交。
 pub struct DatabaseUserTopupService {
     repository: TopupRepository,
+    verification_access: Option<Arc<VerificationAccessService>>,
     routes: HashMap<String, UserTopupProviderRoute>,
     configuration: UserTopupConfiguration,
     order_ttl: Duration,
@@ -635,10 +639,17 @@ impl DatabaseUserTopupService {
         });
         Ok(Self {
             repository,
+            verification_access: None,
             routes: route_map,
             configuration: UserTopupConfiguration::new(methods)?,
             order_ttl: STRIPE_TOPUP_ORDER_TTL,
         })
+    }
+
+    #[must_use]
+    pub fn with_verification_access(mut self, access: Arc<VerificationAccessService>) -> Self {
+        self.verification_access = Some(access);
+        self
     }
 }
 
@@ -680,6 +691,29 @@ impl UserTopupService for DatabaseUserTopupService {
                 command.provider(),
                 command.payment_method(),
             )?;
+            if command.organization_id().is_none()
+                && let Some(access) = &self.verification_access
+            {
+                match access.ensure_topup(principal.user_id()).await {
+                    Ok(()) => {}
+                    Err(VerificationAccessError::Unavailable) => {
+                        return Err(UserTopupError::Unavailable);
+                    }
+                    Err(VerificationAccessError::Required) => {
+                        // 新策略不能截断此前已发起的支付；仅允许重放待支付和终态订单。
+                        // create_order 仍会核对金额等幂等事实，Created 不得触发 Provider。
+                        let existing = self
+                            .repository
+                            .get_order(order_id)
+                            .await
+                            .map_err(map_repository_error)?;
+                        if existing.is_none_or(|order| order.status() == TopupOrderStatus::Created)
+                        {
+                            return Err(UserTopupError::VerificationRequired);
+                        }
+                    }
+                }
+            }
             let quota_amount = quota_for_route(route, command.amount_minor())?;
             let created_at = unix_now()?;
             let write = if let Some(organization_id) = command.organization_id() {
@@ -970,8 +1004,8 @@ mod tests {
 
     use af_billing::{PaymentOrderFuture, PaymentOrderInputError};
     use af_db::{
-        DatabaseOptions, InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
-        MigrationOptions,
+        AccountVerificationRepository, AccountVerificationSettingsRepository, DatabaseOptions,
+        InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository, MigrationOptions,
     };
 
     use super::*;
@@ -1075,6 +1109,12 @@ mod tests {
             panic!("空数据库必须完成首次安装");
         };
         let provider = Arc::new(RecordingPaymentProvider::default());
+        let settings =
+            AccountVerificationSettingsRepository::new(pool.clone(), Duration::from_secs(5));
+        let access = Arc::new(VerificationAccessService::new(
+            settings.clone(),
+            AccountVerificationRepository::new(pool.clone()),
+        ));
         let repository = TopupRepository::new(pool, Duration::from_secs(5))?;
         let service = DatabaseUserTopupService::new(
             repository,
@@ -1082,7 +1122,8 @@ mod tests {
                 "pk_test_public".to_owned(),
                 provider.clone(),
             )?],
-        )?;
+        )?
+        .with_verification_access(access);
         let principal = SessionPrincipal::new(user_id, crate::SessionRole::Admin);
         let command = UserTopupOrderCreateCommand::new(
             IDEMPOTENCY_KEY,
@@ -1090,6 +1131,18 @@ mod tests {
             "card".to_owned(),
             500,
         )?;
+
+        let mut policy = settings.settings().await?;
+        policy.require_verification_for_topup = true;
+        settings.update(policy.clone(), policy.version).await?;
+        assert!(matches!(
+            service.create(principal, command.clone()).await,
+            Err(UserTopupError::VerificationRequired)
+        ));
+        assert_eq!(provider.create_calls.load(Ordering::Acquire), 0);
+        policy = settings.settings().await?;
+        policy.require_verification_for_topup = false;
+        settings.update(policy.clone(), policy.version).await?;
 
         let created = service.create(principal, command.clone()).await?;
         assert_eq!(created.status(), TopupOrderStatus::Pending);
@@ -1099,6 +1152,63 @@ mod tests {
             "pi_test_123"
         );
 
+        policy = settings.settings().await?;
+        policy.require_verification_for_topup = true;
+        settings.update(policy.clone(), policy.version).await?;
+        assert!(matches!(
+            service
+                .create(
+                    principal,
+                    UserTopupOrderCreateCommand::new(
+                        IDEMPOTENCY_KEY,
+                        "stripe".to_owned(),
+                        "card".to_owned(),
+                        501,
+                    )?,
+                )
+                .await,
+            Err(UserTopupError::Conflict)
+        ));
+        assert_eq!(provider.recover_calls.load(Ordering::Acquire), 0);
+
+        let unsent_command = UserTopupOrderCreateCommand::new(
+            "abcdef1234567890abcdef1234567890",
+            "stripe".to_owned(),
+            "card".to_owned(),
+            500,
+        )?;
+        assert!(matches!(
+            service.create(principal, unsent_command.clone()).await,
+            Err(UserTopupError::VerificationRequired)
+        ));
+        let (unsent_request, unsent_order) = scoped_identifiers(
+            user_id,
+            None,
+            unsent_command.client_request_id(),
+            unsent_command.provider(),
+            unsent_command.payment_method(),
+        )?;
+        service
+            .repository
+            .create_order(TopupOrderCreate::new(
+                unsent_order,
+                unsent_request,
+                user_id,
+                "stripe".to_owned(),
+                "card".to_owned(),
+                500,
+                STRIPE_TOPUP_CURRENCY.to_owned(),
+                quota_for_route(&service.routes[&route_key("stripe", "card")], 500)?,
+                unix_now()?,
+            )?)
+            .await?;
+        assert!(matches!(
+            service.create(principal, unsent_command).await,
+            Err(UserTopupError::VerificationRequired)
+        ));
+        assert_eq!(provider.create_calls.load(Ordering::Acquire), 1);
+
+        // A pre-existing Pending payment remains recoverable while new payments are restricted.
         let replay = service.create(principal, command).await?;
         assert_eq!(replay.status(), TopupOrderStatus::Pending);
         assert!(replay.replayed());

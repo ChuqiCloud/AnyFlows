@@ -30,6 +30,8 @@ pub(crate) struct AdminVerificationSettingsResponse {
     enterprise_manual_enabled: bool,
     individual_reason_required: bool,
     enterprise_reason_required: bool,
+    require_verification_for_topup: bool,
+    require_verification_for_api: bool,
     enabled: bool,
     app_id: Option<String>,
     private_key_configured: bool,
@@ -49,6 +51,8 @@ impl From<AdminVerificationSettings> for AdminVerificationSettingsResponse {
             enterprise_manual_enabled: value.enterprise_manual_enabled,
             individual_reason_required: value.individual_reason_required,
             enterprise_reason_required: value.enterprise_reason_required,
+            require_verification_for_topup: value.require_verification_for_topup,
+            require_verification_for_api: value.require_verification_for_api,
             enabled: value.enabled,
             app_id: value.app_id,
             private_key_configured: value.private_key_configured,
@@ -71,6 +75,8 @@ pub(crate) struct AdminVerificationSettingsRequest {
     enterprise_manual_enabled: Option<bool>,
     individual_reason_required: Option<bool>,
     enterprise_reason_required: Option<bool>,
+    require_verification_for_topup: Option<bool>,
+    require_verification_for_api: Option<bool>,
     enabled: bool,
     app_id: Option<String>,
     #[schema(format = Password, write_only)]
@@ -129,6 +135,8 @@ async fn update(
                 enterprise_manual_enabled: request.enterprise_manual_enabled,
                 individual_reason_required: request.individual_reason_required,
                 enterprise_reason_required: request.enterprise_reason_required,
+                require_verification_for_topup: request.require_verification_for_topup,
+                require_verification_for_api: request.require_verification_for_api,
                 enabled: request.enabled,
                 app_id: request.app_id,
                 private_key: request.private_key,
@@ -151,5 +159,37 @@ fn map_error(error: VerificationSettingsError) -> ManagementError {
         VerificationSettingsError::Conflict => ManagementError::AccountVerificationSettingsConflict,
         VerificationSettingsError::Forbidden => ManagementError::Forbidden,
         VerificationSettingsError::Internal => ManagementError::Internal,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AdminVerificationSettingsRequest;
+    use serde_json::json;
+
+    #[test]
+    fn legacy_settings_requests_leave_access_switches_unspecified() {
+        let mut body = json!({
+            "expected_version": 1,
+            "manual_enabled": true,
+            "enabled": false,
+            "app_id": null,
+            "gateway_url": "https://openapi.alipay.com/gateway.do",
+            "biz_code": "FACE",
+            "timeout_secs": 8
+        });
+        let legacy: AdminVerificationSettingsRequest =
+            serde_json::from_value(body.clone()).unwrap();
+        assert_eq!(legacy.require_verification_for_topup, None);
+        assert_eq!(legacy.require_verification_for_api, None);
+
+        for (topup, api) in [(false, false), (true, false), (false, true), (true, true)] {
+            body["require_verification_for_topup"] = json!(topup);
+            body["require_verification_for_api"] = json!(api);
+            let request: AdminVerificationSettingsRequest =
+                serde_json::from_value(body.clone()).unwrap();
+            assert_eq!(request.require_verification_for_topup, Some(topup));
+            assert_eq!(request.require_verification_for_api, Some(api));
+        }
     }
 }

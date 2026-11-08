@@ -410,6 +410,9 @@ pub enum RedemptionServiceError {
     /// 当前会话用户已经不存在或失效。
     #[error("兑换码会话无效")]
     InvalidSession,
+    /// 用户尚未满足管理员配置的实名充值要求。
+    #[error("请先完成实名认证再充值")]
+    VerificationRequired,
     /// 目标批次不存在。
     #[error("兑换码批次不存在")]
     BatchNotFound,
