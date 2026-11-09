@@ -2,10 +2,10 @@ use std::fmt;
 
 use af_domain::{GroupId, GroupPeakSchedule};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbErr, EntityTrait,
-    QueryFilter, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
+    EntityTrait, IsolationLevel, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
     entity::prelude::{TimeDateTimeWithTimeZone, TimeTime},
-    sea_query::{Alias, Condition, Expr, Query, SelectStatement},
+    sea_query::{Alias, Condition, Expr, LockType, Query, SelectStatement},
 };
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
@@ -15,9 +15,11 @@ use crate::{
     ability_write::{AbilityWriteError, delete_group_abilities},
     admin_group::record_internal_error,
     entity::{
-        channel_groups, group_group_grants, group_model_ratio_overrides, group_model_ratios,
-        groups, tokens, users,
+        authentication_settings, channel_groups, group_group_grants, group_key_policies,
+        group_model_policies, group_model_ratio_overrides, group_model_ratios, groups, tokens,
+        user_group_grants, user_route_health, user_route_members, user_routes, users,
     },
+    group_key_access::lock_active_group,
 };
 
 /// 已由应用层校验的高峰倍率窗口。
@@ -169,7 +171,21 @@ impl AdminGroupRepository {
         &self,
         group_id: GroupId,
     ) -> Result<AdminGroupDeleteOutcome, AdminGroupRepositoryError> {
-        match timeout(self.lookup_timeout, self.delete_inner(group_id)).await {
+        self.delete_with_replacement(group_id, None).await
+    }
+
+    /// 显式迁移用户默认分组并撤销直接绑定 Key，再软删除原分组。
+    pub async fn delete_with_replacement(
+        &self,
+        group_id: GroupId,
+        replacement_group_id: Option<GroupId>,
+    ) -> Result<AdminGroupDeleteOutcome, AdminGroupRepositoryError> {
+        match timeout(
+            self.lookup_timeout,
+            self.delete_inner(group_id, replacement_group_id),
+        )
+        .await
+        {
             Ok(result) => result,
             Err(_) => Err(record_internal_error(AdminGroupRepositoryError::Timeout)),
         }
@@ -286,8 +302,79 @@ impl AdminGroupRepository {
     async fn delete_inner(
         &self,
         group_id: GroupId,
+        replacement_group_id: Option<GroupId>,
     ) -> Result<AdminGroupDeleteOutcome, AdminGroupRepositoryError> {
-        let transaction = begin_transaction(self).await?;
+        for _ in 0..3 {
+            if let Some(outcome) = self.delete_attempt(group_id, replacement_group_id).await? {
+                return Ok(outcome);
+            }
+            tokio::task::yield_now().await;
+        }
+        Err(record_internal_error(AdminGroupRepositoryError::Query))
+    }
+
+    async fn delete_attempt(
+        &self,
+        group_id: GroupId,
+        replacement_group_id: Option<GroupId>,
+    ) -> Result<Option<AdminGroupDeleteOutcome>, AdminGroupRepositoryError> {
+        let transaction = begin_delete_transaction(self).await?;
+        if transaction.get_database_backend() == DbBackend::Sqlite
+            && !lock_active_group(&transaction, group_id)
+                .await
+                .map_err(map_write_db_error)?
+        {
+            return Ok(Some(AdminGroupDeleteOutcome::NotFound));
+        }
+        let owners = deletion_owner_ids(&transaction, group_id).await?;
+        let mut owner_query = users::Entity::find()
+            .select_only()
+            .column(users::Column::Id)
+            .filter(users::Column::Id.is_in(owners))
+            .order_by_asc(users::Column::Id);
+        if transaction.get_database_backend() != DbBackend::Sqlite {
+            owner_query = owner_query.lock(LockType::Update);
+        }
+        let locked_owners = owner_query
+            .into_tuple::<i64>()
+            .all(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_write_db_error)?;
+        // Key and route mutations lock their owner before any group. Lock all
+        // affected owners first, then group IDs in order for reciprocal deletes.
+        let mut groups_to_lock = vec![group_id];
+        if let Some(replacement) = replacement_group_id {
+            groups_to_lock.push(replacement);
+        }
+        groups_to_lock.sort_by_key(|id| id.get());
+        groups_to_lock.dedup();
+        for id in groups_to_lock {
+            if !lock_active_group(&transaction, id)
+                .await
+                .map_err(map_write_db_error)?
+            {
+                return if id == group_id {
+                    Ok(Some(AdminGroupDeleteOutcome::NotFound))
+                } else {
+                    Err(AdminGroupRepositoryError::InvalidReference)
+                };
+            }
+        }
+        // A user or route may have bound the group between discovery and locking.
+        // Under READ COMMITTED this non-locking recheck sees that committed change
+        // without waiting on a new owner that is itself waiting for our group lock.
+        if deletion_owner_ids(&transaction, group_id)
+            .await?
+            .iter()
+            .any(|id| locked_owners.binary_search(id).is_err())
+        {
+            transaction
+                .rollback()
+                .await
+                .map_err(|_| record_internal_error(AdminGroupRepositoryError::Query))?;
+            return Ok(None);
+        }
         let now = TimeDateTimeWithTimeZone::now_utc();
         let result = groups::Entity::update_many()
             .filter(groups::Column::Id.eq(group_id.get()))
@@ -299,19 +386,25 @@ impl AdminGroupRepository {
             .await
             .map_err(map_write_db_error)?;
         if result.rows_affected == 0 {
-            return Ok(AdminGroupDeleteOutcome::NotFound);
+            return Ok(Some(AdminGroupDeleteOutcome::NotFound));
         }
         if result.rows_affected != 1 {
             return Err(record_internal_error(AdminGroupRepositoryError::Invariant));
         }
 
         // 先写墓碑再检查引用，事务回滚可保证失败时不暴露半删除状态。
+        if has_merchant_pool(&transaction, group_id, false).await? {
+            return Err(AdminGroupRepositoryError::InUse);
+        }
+        if let Some(replacement) = replacement_group_id {
+            migrate_group_owners(&transaction, group_id, replacement, now).await?;
+        }
         if has_blocking_reference(&transaction, group_id).await? {
             return Err(AdminGroupRepositoryError::InUse);
         }
         clear_safe_references(&transaction, group_id, now).await?;
         commit_transaction(transaction).await?;
-        Ok(AdminGroupDeleteOutcome::Deleted)
+        Ok(Some(AdminGroupDeleteOutcome::Deleted))
     }
 }
 
@@ -324,6 +417,73 @@ fn encode_peak_schedule(
                 .map_err(|_| AdminGroupRepositoryError::Invariant)
         })
         .transpose()
+}
+
+async fn begin_delete_transaction(
+    repository: &AdminGroupRepository,
+) -> Result<DatabaseTransaction, AdminGroupRepositoryError> {
+    let connection = repository.pool.connection();
+    let result = if connection.get_database_backend() == DbBackend::Sqlite {
+        connection
+            .begin()
+            .with_subscriber(NoSubscriber::default())
+            .await
+    } else {
+        connection
+            .begin_with_config(Some(IsolationLevel::ReadCommitted), None)
+            .with_subscriber(NoSubscriber::default())
+            .await
+    };
+    result.map_err(|_| record_internal_error(AdminGroupRepositoryError::Query))
+}
+
+async fn deletion_owner_ids(
+    transaction: &DatabaseTransaction,
+    group_id: GroupId,
+) -> Result<Vec<i64>, AdminGroupRepositoryError> {
+    let mut owners = users::Entity::find()
+        .select_only()
+        .column(users::Column::Id)
+        .filter(users::Column::DefaultGroupId.eq(group_id.get()))
+        .filter(users::Column::DeletedAt.is_null())
+        .into_tuple::<i64>()
+        .all(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_write_db_error)?;
+    let route_owners = Query::select()
+        .expr_as(
+            Expr::col((user_routes::Entity, user_routes::Column::OwnerUserId)),
+            Alias::new("owner_id"),
+        )
+        .from(user_routes::Entity)
+        .inner_join(
+            user_route_members::Entity,
+            Expr::col((user_routes::Entity, user_routes::Column::Id)).equals((
+                user_route_members::Entity,
+                user_route_members::Column::RouteId,
+            )),
+        )
+        .and_where(
+            Expr::col((
+                user_route_members::Entity,
+                user_route_members::Column::GroupId,
+            ))
+            .eq(group_id.get()),
+        )
+        .and_where(Expr::col((user_routes::Entity, user_routes::Column::DeletedAt)).is_null())
+        .to_owned();
+    let rows = transaction
+        .query_all(transaction.get_database_backend().build(&route_owners))
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_write_db_error)?;
+    for row in rows {
+        owners.push(row.try_get("", "owner_id").map_err(map_write_db_error)?);
+    }
+    owners.sort_unstable();
+    owners.dedup();
+    Ok(owners)
 }
 
 async fn begin_transaction(
@@ -415,7 +575,84 @@ async fn active_group_exists(
         .and_where(Expr::col((groups::Entity, groups::Column::DeletedAt)).is_null())
         .limit(1)
         .to_owned();
-    query_exists(transaction, query).await
+    current_query_exists(transaction, query).await
+}
+
+async fn has_merchant_pool(
+    transaction: &DatabaseTransaction,
+    group_id: GroupId,
+    include_deleted: bool,
+) -> Result<bool, AdminGroupRepositoryError> {
+    let mut query = Query::select()
+        .column(Alias::new("id"))
+        .from(Alias::new("merchant_pools"))
+        .and_where(Expr::col(Alias::new("group_id")).eq(group_id.get()))
+        .limit(1)
+        .to_owned();
+    if !include_deleted {
+        query.and_where(Expr::col(Alias::new("deleted_at")).is_null());
+    }
+    current_query_exists(transaction, query).await
+}
+
+async fn migrate_group_owners(
+    transaction: &DatabaseTransaction,
+    source: GroupId,
+    replacement: GroupId,
+    now: TimeDateTimeWithTimeZone,
+) -> Result<(), AdminGroupRepositoryError> {
+    if source == replacement {
+        return Err(AdminGroupRepositoryError::InvalidReference);
+    }
+    if !lock_active_group(transaction, replacement)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_write_db_error)?
+        || has_merchant_pool(transaction, replacement, true).await?
+    {
+        return Err(AdminGroupRepositoryError::InvalidReference);
+    }
+    users::Entity::update_many()
+        .filter(users::Column::DefaultGroupId.eq(source.get()))
+        .filter(users::Column::DeletedAt.is_null())
+        .col_expr(
+            users::Column::DefaultGroupId,
+            Expr::value(replacement.get()),
+        )
+        .col_expr(users::Column::UpdatedAt, Expr::value(now))
+        .exec(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_write_db_error)?;
+    // Preserve the explicit group binding on revoked keys: clearing it would silently
+    // grant access through the owner's replacement/default group.
+    tokens::Entity::update_many()
+        .filter(tokens::Column::GroupId.eq(source.get()))
+        .filter(tokens::Column::DeletedAt.is_null())
+        .col_expr(tokens::Column::Status, Expr::value(2_i16))
+        .col_expr(tokens::Column::DeletedAt, Expr::value(now))
+        .col_expr(tokens::Column::UpdatedAt, Expr::value(now))
+        .exec(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_write_db_error)?;
+    authentication_settings::Entity::update_many()
+        .filter(authentication_settings::Column::RegistrationDefaultGroupId.eq(source.get()))
+        .filter(authentication_settings::Column::Version.lt(i64::MAX))
+        .col_expr(
+            authentication_settings::Column::RegistrationDefaultGroupId,
+            Expr::value(replacement.get()),
+        )
+        .col_expr(
+            authentication_settings::Column::Version,
+            Expr::col(authentication_settings::Column::Version).add(1_i64),
+        )
+        .col_expr(authentication_settings::Column::UpdatedAt, Expr::value(now))
+        .exec(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_write_db_error)?;
+    Ok(())
 }
 
 async fn has_blocking_reference(
@@ -432,7 +669,7 @@ async fn has_blocking_reference(
         .and_where(Expr::col((users::Entity, users::Column::DeletedAt)).is_null())
         .limit(1)
         .to_owned();
-    if query_exists(transaction, active_user).await? {
+    if current_query_exists(transaction, active_user).await? {
         return Ok(true);
     }
     let active_token = Query::select()
@@ -445,7 +682,19 @@ async fn has_blocking_reference(
         .and_where(Expr::col((tokens::Entity, tokens::Column::DeletedAt)).is_null())
         .limit(1)
         .to_owned();
-    query_exists(transaction, active_token).await
+    if current_query_exists(transaction, active_token).await? {
+        return Ok(true);
+    }
+    let registration_default = Query::select()
+        .column(authentication_settings::Column::Id)
+        .from(authentication_settings::Entity)
+        .and_where(
+            Expr::col(authentication_settings::Column::RegistrationDefaultGroupId)
+                .eq(group_id.get()),
+        )
+        .limit(1)
+        .to_owned();
+    current_query_exists(transaction, registration_default).await
 }
 
 async fn clear_safe_references(
@@ -500,6 +749,75 @@ async fn clear_safe_references(
         .with_subscriber(NoSubscriber::default())
         .await
         .map_err(map_write_db_error)?;
+    user_group_grants::Entity::delete_many()
+        .filter(user_group_grants::Column::GroupId.eq(group_id.get()))
+        .exec(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_write_db_error)?;
+    group_key_policies::Entity::delete_by_id(group_id.get())
+        .exec(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_write_db_error)?;
+    group_model_policies::Entity::delete_by_id(group_id.get())
+        .exec(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_write_db_error)?;
+    let affected_routes = user_route_members::Entity::find()
+        .filter(user_route_members::Column::GroupId.eq(group_id.get()))
+        .all(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_write_db_error)?;
+    for member in &affected_routes {
+        let mut query = user_routes::Entity::find_by_id(member.route_id);
+        if transaction.get_database_backend() != DbBackend::Sqlite {
+            query = query.lock(LockType::Update);
+        }
+        query
+            .one(transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_write_db_error)?;
+    }
+    user_route_members::Entity::delete_many()
+        .filter(user_route_members::Column::GroupId.eq(group_id.get()))
+        .exec(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_write_db_error)?;
+    user_route_health::Entity::delete_many()
+        .filter(user_route_health::Column::GroupId.eq(group_id.get()))
+        .exec(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_write_db_error)?;
+    for member in affected_routes {
+        let mut remaining = user_route_members::Entity::find()
+            .filter(user_route_members::Column::RouteId.eq(member.route_id));
+        if transaction.get_database_backend() != DbBackend::Sqlite {
+            remaining = remaining.lock(LockType::Update);
+        }
+        if remaining
+            .one(transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_write_db_error)?
+            .is_none()
+        {
+            user_routes::Entity::update_many()
+                .filter(user_routes::Column::Id.eq(member.route_id))
+                .filter(user_routes::Column::DeletedAt.is_null())
+                .col_expr(user_routes::Column::Enabled, Expr::value(false))
+                .col_expr(user_routes::Column::UpdatedAt, Expr::value(now))
+                .exec(transaction)
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(map_write_db_error)?;
+        }
+    }
     Ok(())
 }
 
@@ -513,6 +831,18 @@ fn map_ability_write_error(error: AbilityWriteError) -> AdminGroupRepositoryErro
             record_internal_error(AdminGroupRepositoryError::Invariant)
         }
     }
+}
+
+async fn current_query_exists(
+    transaction: &DatabaseTransaction,
+    mut query: SelectStatement,
+) -> Result<bool, AdminGroupRepositoryError> {
+    // MySQL's default REPEATABLE READ must inspect the state after acquired row
+    // locks, including a pool or owner that committed while deletion was waiting.
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query.lock(LockType::Update);
+    }
+    query_exists(transaction, query).await
 }
 
 async fn query_exists(

@@ -33,6 +33,7 @@ use sea_orm::{
 use std::{future::Future, time::Duration};
 
 mod catalog;
+mod deletion;
 mod policies;
 mod terms;
 #[cfg(test)]
@@ -56,6 +57,21 @@ impl MerchantPoolRepository {
     #[must_use]
     pub fn new(pool: DatabasePool, timeout: Duration) -> Self {
         Self { pool, timeout }
+    }
+
+    /// Recover only the original target of a persisted task from retired supply.
+    pub async fn retired_video_target(
+        &self,
+        terms: af_domain::MerchantBillingSnapshot,
+        channel: ChannelId,
+        credential: CredentialId,
+    ) -> Result<Option<std::sync::Arc<crate::SchedulerRuntimeTargetRecord>>, MerchantPoolError>
+    {
+        crate::SchedulerRuntimeRepository::with_load_timeout(self.pool.clone(), self.timeout)
+            .map_err(internal)?
+            .load_retired_merchant_target(terms, channel, credential)
+            .await
+            .map_err(internal)
     }
 
     pub async fn platform_key_exists(&self, digest: &str) -> Result<bool, MerchantPoolError> {
@@ -162,7 +178,8 @@ impl MerchantPoolRepository {
     ) -> Result<MerchantPage<MerchantProfile>, MerchantPoolError> {
         self.bounded(async {
             let (page, size) = pagination(&query)?;
-            let mut selection = profiles::Entity::find();
+            let mut selection =
+                profiles::Entity::find().filter(profiles::Column::DeletedAt.is_null());
             if let Some(status) = &query.status {
                 selection = selection.filter(profiles::Column::Status.eq(status));
             }
@@ -198,6 +215,11 @@ impl MerchantPoolRepository {
     ) -> Result<MerchantPage<MerchantPool>, MerchantPoolError> {
         self.bounded(async {
             let mut selection = pools::Entity::find();
+            if owner.is_none() && query.status.as_deref() == Some("deleted") {
+                selection = selection.filter(pools::Column::DeletedAt.is_not_null());
+            } else {
+                selection = selection.filter(pools::Column::DeletedAt.is_null());
+            }
             if owner.is_some() {
                 selection = selection.filter(pools::Column::Enabled.eq(true));
             }
@@ -233,7 +255,8 @@ impl MerchantPoolRepository {
         query: MerchantListQuery,
     ) -> Result<MerchantPage<MerchantOwnedService>, MerchantPoolError> {
         self.bounded(async {
-            let mut selection = services::Entity::find();
+            let mut selection =
+                services::Entity::find().filter(services::Column::DeletedAt.is_null());
             if let Some(owner) = owner {
                 let merchant = require_merchant(self.pool.connection(), owner, false).await?;
                 selection = selection.filter(services::Column::MerchantId.eq(merchant.id));
@@ -347,6 +370,7 @@ async fn require_merchant<C: ConnectionTrait>(
     active_owner(connection, owner).await?;
     let row = profiles::Entity::find()
         .filter(profiles::Column::OwnerUserId.eq(owner.get()))
+        .filter(profiles::Column::DeletedAt.is_null())
         .one(connection)
         .await
         .map_err(internal)?
@@ -362,6 +386,7 @@ async fn find_pool<C: ConnectionTrait>(
     id: i64,
 ) -> Result<pools::Model, MerchantPoolError> {
     pools::Entity::find_by_id(id)
+        .filter(pools::Column::DeletedAt.is_null())
         .one(connection)
         .await
         .map_err(internal)?
@@ -372,6 +397,7 @@ async fn find_service<C: ConnectionTrait>(
     id: i64,
 ) -> Result<services::Model, MerchantPoolError> {
     services::Entity::find_by_id(id)
+        .filter(services::Column::DeletedAt.is_null())
         .one(connection)
         .await
         .map_err(internal)?
@@ -389,7 +415,8 @@ async fn lock_service(
             .await
             .map_err(internal)?;
     }
-    let mut selection = services::Entity::find_by_id(id);
+    let mut selection =
+        services::Entity::find_by_id(id).filter(services::Column::DeletedAt.is_null());
     if txn.get_database_backend() != DbBackend::Sqlite {
         selection = selection.lock(LockType::Update);
     }
@@ -418,7 +445,7 @@ fn pool_snapshot(row: pools::Model) -> Result<MerchantPool, MerchantPoolError> {
         group_id: row.group_id,
         name: row.name,
         description: row.description,
-        enabled: row.enabled,
+        enabled: row.enabled && row.deleted_at.is_none(),
         commission_bps: commission_value(row.commission_bps)?,
         commission_inherit_global: row.commission_inherit_global,
         effective_commission_bps: commission_value(row.commission_bps)?,

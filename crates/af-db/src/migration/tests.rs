@@ -104,6 +104,13 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     prepare_legacy_model_price(&pool).await?;
 
     Migrator::up(pool.connection(), None).await?;
+    for table in ["merchant_pools", "merchant_profiles", "merchant_services"] {
+        assert!(
+            SchemaManager::new(pool.connection())
+                .has_column(table, "deleted_at")
+                .await?
+        );
+    }
     assert!(
         Migrator::get_pending_migrations(pool.connection())
             .await?

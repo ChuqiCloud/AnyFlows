@@ -96,7 +96,11 @@ fn update_admin_group() {}
     operation_id = "deleteAdminGroup",
     tag = "分组管理",
     summary = "安全软删除管理员分组",
-    params(("id" = i64, Path, minimum = 1, description = "分组 ID")),
+    description = "不提供替代分组时，仍被用户、API Key 或注册默认设置引用的分组返回冲突。提供 replacement_group_id 后，迁移用户及注册默认设置并撤销直接绑定原分组的 Key。关联未删除商户池的分组必须先删除共享池。",
+    params(
+        ("id" = i64, Path, minimum = 1, description = "分组 ID"),
+        ("replacement_group_id" = Option<i64>, Query, minimum = 1, description = "显式选择有效的普通替代分组，不能是原分组或商户池分组")
+    ),
     responses(
         (status = 204, description = "分组已删除"),
         (status = 400, description = "分组 ID 无效", body = ManagementErrorBody),
