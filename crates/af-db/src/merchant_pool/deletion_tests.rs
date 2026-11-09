@@ -30,8 +30,10 @@ async fn deleting_pool_retires_all_revision_channels_and_keeps_group_isolation()
             .items
             .is_empty()
     );
-    let mut archived = MerchantListQuery::default();
-    archived.status = Some("deleted".to_owned());
+    let archived = MerchantListQuery {
+        status: Some("deleted".to_owned()),
+        ..MerchantListQuery::default()
+    };
     assert_eq!(
         fixture
             .repository
