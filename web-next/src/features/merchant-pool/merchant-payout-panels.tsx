@@ -20,18 +20,18 @@ function PayoutAccountForm({ account }: { account: MerchantPayoutAccount }) {
   const [label, setLabel] = useState(account.label)
   const [token, setToken] = useState('')
   const action = useMerchantAction()
-  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [errors, setErrors] = useState<Record<string, { key: string; values?: Record<string, string | number> }>>({})
   const clearError = (field: string) => setErrors((current) => { const next = { ...current }; delete next[field]; return next })
-  const inputError = (field: string) => ({ isInvalid: Boolean(errors[field]), errorMessage: errors[field] ? t(`merchantPool.validation.${errors[field]}`) : undefined })
+  const inputError = (field: string) => ({ isInvalid: Boolean(errors[field]), errorMessage: errors[field] ? t(`merchantPool.validation.${errors[field].key}`, errors[field].values) : undefined })
   const updateLabel = (value: string) => { setLabel(value); clearError('label'); if (action.isError) action.reset() }
   const updateToken = (value: string) => { setToken(value); clearError('token'); if (action.isError) action.reset() }
   const save = async (clear: boolean) => {
-    const nextErrors: Record<string, string> = {}
+    const nextErrors: Record<string, { key: string; values?: Record<string, string | number> }> = {}
     if (!clear) {
       const labelError = merchantTextError(label, 80, false)
-      if (labelError) nextErrors.label = labelError === 'textBytes' ? 'payoutLabelBytes' : labelError === 'singleLine' ? 'singleLine' : 'required'
+      if (labelError) nextErrors.label = { key: labelError === 'textBytes' ? 'payoutLabelBytes' : labelError === 'singleLine' ? 'singleLine' : 'required', ...(labelError === 'textBytes' ? { values: { max: 80 } } : {}) }
       const tokenError = merchantTextError(token, 1024)
-      if (tokenError) nextErrors.token = tokenError === 'textBytes' ? 'payoutAccountBytes' : tokenError === 'singleLine' ? 'singleLine' : 'payoutAccountRequired'
+      if (tokenError) nextErrors.token = { key: tokenError === 'textBytes' ? 'payoutAccountBytes' : tokenError === 'singleLine' ? 'singleLine' : 'payoutAccountRequired', ...(tokenError === 'textBytes' ? { values: { max: 1024 } } : {}) }
     }
     if (Object.keys(nextErrors).length) { setErrors(nextErrors); return }
     try { await action.mutateAsync({ url: '/api/merchant/payout-account', method: 'put', body: { expected_version: account.version, label: clear ? '' : label.trim(), clear, ...(!clear ? { account: token.trim() } : {}) } }); setToken(''); setErrors({}); action.reset() } catch { /* Write-only account remains in component memory for retry. */ }
