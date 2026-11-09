@@ -3,10 +3,18 @@ use crate::{validate_merchant_description, validate_merchant_text};
 #[test]
 fn merchant_descriptions_allow_lf_and_crlf_but_reject_other_controls() {
     assert!(validate_merchant_description("第一行\n第二行", 2048, true));
-    assert!(validate_merchant_description("第一行\r\n第二行", 2048, true));
+    assert!(validate_merchant_description(
+        "第一行\r\n第二行",
+        2048,
+        true
+    ));
     assert!(!validate_merchant_description("第一行\t第二行", 2048, true));
     assert!(!validate_merchant_description("第一行\r第二行", 2048, true));
-    assert!(!validate_merchant_description("第一行\u{0000}第二行", 2048, true));
+    assert!(!validate_merchant_description(
+        "第一行\u{0000}第二行",
+        2048,
+        true
+    ));
     assert!(!validate_merchant_text("第一行\n第二行", 2048, true));
 }
 
