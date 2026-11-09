@@ -586,9 +586,12 @@ mod tests {
     #[tokio::test]
     async fn merchant_deletion_requires_admin_before_repository_access() {
         use super::*;
-        let pool = af_db::connect(&af_db::DatabaseOptions::new("sqlite::memory:").unwrap())
-            .await
-            .unwrap();
+        let pool = af_db::connect_and_migrate(
+            &af_db::DatabaseOptions::new("sqlite::memory:").unwrap(),
+            af_db::MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
         let settings = serde_json::from_value(serde_json::json!({
             "key_id": "merchant-delete-test",
             "key": "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI"
