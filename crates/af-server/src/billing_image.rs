@@ -689,7 +689,10 @@ mod tests {
     }
 
     impl BillingPrechargePort for PrechargeStub {
-        fn cancel<'a>(&'a self, reservation_id: BillingReservationId) -> BillingPrechargeFuture<'a> {
+        fn cancel<'a>(
+            &'a self,
+            reservation_id: BillingReservationId,
+        ) -> BillingPrechargeFuture<'a> {
             Box::pin(async move {
                 self.cancellations.lock().unwrap().push(reservation_id);
                 Ok(())
