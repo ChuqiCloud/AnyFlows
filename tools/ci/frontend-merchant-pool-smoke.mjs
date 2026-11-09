@@ -30,6 +30,7 @@ const excludedService = { ...publicService, id: 52, merchant_id: 7, merchant_nam
 const reserveService = { ...publicService, id: 53, merchant_id: 8, merchant_name: 'CI reserve merchant', name: 'CI reserve service', description: '稳定优先，适合开发与备用切换。' }
 const timelineBuckets = Array.from({ length: 24 }, (_, index) => ({ started_at: now - (24 - index) * 3600, ended_at: now - (23 - index) * 3600, success_count: index >= 14 && index !== 20 ? 1 : 0, failure_count: index === 20 ? 1 : 0, sample_count: index >= 14 ? 1 : 0, status: index < 14 ? 'unknown' : index === 20 ? 'degraded' : 'normal' }))
 const profile = { id: 6, owner_user_id: 3, name: 'CI merchant', description: 'CI relay', status: 'approved', review_reason: null, created_at: now, updated_at: now }
+let activeProfile = null
 const list = items => ({ items, total: items.length, page: 1, page_size: 20 })
 let routes = []
 let services = []
@@ -52,6 +53,7 @@ const catalogRequests = []
 const poolRequests = []
 const serviceRequests = []
 const quoteRequests = []
+const applicationRequests = []
 const errors = []
 let server, browser, page
 let serverOutput = ''
@@ -129,7 +131,12 @@ try {
     }
     if (path === '/api/merchant-pools/1/statistics') return respond({ items: [{ service_id: 51, merchant_id: 6, sample_count: 10, success_count: 9, failure_count: 1, success_rate: 90, ttft_p50_ms: 123, ttft_p95_ms: 400, latency_p50_ms: 300, latency_p95_ms: 900, status: 'normal', updated_at: now }], as_of: now, window_seconds: 86400 })
     if (path === '/api/merchant-pools/1/timeline') return respond({ items: [{ service_id: 51, merchant_id: 6, buckets: timelineBuckets }], as_of: now, window_seconds: 86400 })
-    if (path === '/api/merchant/profile') return respond(profile)
+    if (path === '/api/merchant/profile' && method === 'GET') return respond(activeProfile)
+    if (path === '/api/merchant/apply' && method === 'POST') {
+      const body = request.postDataJSON(); applicationRequests.push(body)
+      activeProfile = { ...profile, name: body.name, description: body.description, status: 'pending' }
+      return respond(activeProfile, 201)
+    }
     if (path === '/api/merchant-pool/routes' && method === 'GET') return respond({ items: routes, capacity: 32 })
     if (path === '/api/merchant-pool/routes' && method === 'POST') {
       const body = request.postDataJSON(); routeRequests.push(body)
@@ -254,6 +261,14 @@ try {
   assert.equal(poolRequests.length, 0, 'A missing required group is rejected before submitting')
   await poolGroup.selectOption('9')
   await dialog.getByText(label('validation.groupRequired'), { exact: true }).first().waitFor({ state: 'hidden' })
+  const poolDescription = dialog.getByRole('textbox', { name: label('description'), exact: true })
+  const multilinePoolDescription = 'First pool line\nSecond pool line\r\nThird pool line'
+  await poolDescription.fill('Unsupported\ttab')
+  await dialog.getByRole('button', { name: label('save'), exact: true }).click()
+  await dialog.getByText(label('validation.singleLine'), { exact: true }).first().waitFor()
+  assert.equal(poolRequests.length, 0, 'Tabs remain invalid control characters in pool descriptions')
+  await poolDescription.fill(multilinePoolDescription)
+  await dialog.getByText(label('validation.singleLine'), { exact: true }).first().waitFor({ state: 'hidden' })
   await dialog.getByRole('checkbox', { name: label('inheritGlobalCommission'), exact: true }).uncheck()
   const poolFee = dialog.getByRole('textbox', { name: label('commissionRate'), exact: true })
   await poolFee.fill('12.345')
@@ -271,7 +286,7 @@ try {
   await dialog.waitFor({ state: 'hidden' })
   assert.equal(poolRequests.length, 2, 'An invalid disabled fee cannot block an inherited commission')
   assert.deepEqual(poolRequests[0], poolRequests[1])
-  assert.deepEqual(poolRequests[1], { name: 'CI inherited pool', description: '', group_id: 9, enabled: true, commission_bps: 0, commission_inherit_global: true, min_ratio_micros: 100000, max_ratio_micros: 10000000, settlement_delay_secs: 86400 })
+  assert.deepEqual(poolRequests[1], { name: 'CI inherited pool', description: multilinePoolDescription, group_id: 9, enabled: true, commission_bps: 0, commission_inherit_global: true, min_ratio_micros: 100000, max_ratio_micros: 10000000, settlement_delay_secs: 86400 })
   await page.getByRole('region', { name: label('adminTabs.pools'), exact: true }).getByText('CI inherited pool', { exact: true }).waitFor()
   await page.getByRole('button', { name: label('createPool'), exact: true }).click()
   dialog = page.getByRole('dialog')
@@ -304,7 +319,11 @@ try {
   await page.getByRole('button', { name: 'routes', exact: true }).click()
   await page.getByRole('button', { name: label('createRoute'), exact: true }).click()
   dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: label('save'), exact: true }).click()
+  await dialog.getByText(label('invalidForm'), { exact: true }).first().waitFor()
+  assert.equal(routeRequests.length, 0)
   await dialog.getByRole('textbox', { name: label('name'), exact: true }).fill('CI merchant route')
+  await dialog.getByText(label('invalidForm'), { exact: true }).first().waitFor({ state: 'hidden' })
   await dialog.getByRole('button', { name: label('addMerchant'), exact: true }).click()
   await dialog.getByRole('combobox', { name: label('merchant'), exact: true }).selectOption('6')
   await dialog.getByRole('combobox', { name: label('excludedMerchants'), exact: true }).selectOption('7')
@@ -342,6 +361,26 @@ try {
   assert.equal(routeRequests[0].allow_pool_fallback, false)
   assert.deepEqual(routeRequests[0].excluded_merchant_ids, [7])
   await page.getByRole('button', { name: 'workspace', exact: true }).click()
+  const applicationName = page.getByRole('textbox', { name: label('merchantName'), exact: true })
+  const applicationDescription = page.getByRole('textbox', { name: label('description'), exact: true })
+  await applicationName.fill('商'.repeat(43))
+  await page.getByRole('button', { name: label('submitApplication'), exact: true }).click()
+  await page.getByText(label('validation.textBytes').replace('{{max}}', '128'), { exact: true }).first().waitFor()
+  assert.equal(applicationRequests.length, 0, 'UTF-8 byte limits are checked before applying as a merchant')
+  await applicationName.fill('CI merchant application')
+  await page.getByText(label('validation.textBytes').replace('{{max}}', '128'), { exact: true }).first().waitFor({ state: 'hidden' })
+  await applicationDescription.fill('CI merchant\tintroduction')
+  await page.getByRole('button', { name: label('submitApplication'), exact: true }).click()
+  await page.getByText(label('validation.singleLine'), { exact: true }).first().waitFor()
+  assert.equal(applicationRequests.length, 0)
+  const multilineApplicationDescription = 'CI merchant introduction\nSecond line\r\nThird line'
+  await applicationDescription.fill(multilineApplicationDescription)
+  await page.getByText(label('validation.singleLine'), { exact: true }).first().waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: label('submitApplication'), exact: true }).click()
+  await page.getByText(label('awaitApproval'), { exact: true }).waitFor()
+  assert.deepEqual(applicationRequests, [{ name: 'CI merchant application', description: multilineApplicationDescription }], 'Merchant applications retain supported multiline descriptions')
+  activeProfile = profile
+  await page.getByRole('button', { name: label('refresh'), exact: true }).click()
   await page.getByRole('button', { name: label('createService'), exact: true }).click()
   dialog = page.getByRole('dialog')
   await dialog.getByRole('textbox', { name: label('name'), exact: true }).fill('CI submitted service')
@@ -429,8 +468,19 @@ try {
   await dialog.getByRole('button', { name: label('close'), exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: label('finance'), exact: true }).click()
-  await page.getByRole('textbox', { name: label('payoutAccountLabel'), exact: true }).fill('CI settlement account')
-  await page.getByLabel(label('payoutAccountToken'), { exact: true }).fill('ci-private-receiving-token')
+  const payoutAccountLabel = page.getByRole('textbox', { name: label('payoutAccountLabel'), exact: true })
+  const payoutAccountToken = page.getByLabel(label('payoutAccountToken'), { exact: true })
+  await payoutAccountLabel.fill('商'.repeat(27))
+  await page.getByRole('button', { name: label('save'), exact: true }).click()
+  await page.getByText(label('validation.payoutLabelBytes').replace('{{max}}', '80'), { exact: true }).waitFor()
+  assert.equal(accountRequests.length, 0, 'Oversized payout account labels are rejected before PUT')
+  await payoutAccountLabel.fill('CI settlement account')
+  await page.getByText(label('validation.payoutLabelBytes').replace('{{max}}', '80'), { exact: true }).waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: label('save'), exact: true }).click()
+  await page.getByText(label('validation.payoutAccountRequired'), { exact: true }).waitFor()
+  assert.equal(accountRequests.length, 0, 'A missing receiving account token is rejected before PUT')
+  await payoutAccountToken.fill('ci-private-receiving-token')
+  await page.getByText(label('validation.payoutAccountRequired'), { exact: true }).waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: label('save'), exact: true }).click()
   await page.getByText(label('saveError'), { exact: true }).waitFor()
   assert.equal(await page.getByLabel(label('payoutAccountToken'), { exact: true }).inputValue(), 'ci-private-receiving-token')
@@ -449,12 +499,25 @@ try {
   await page.getByRole('button', { name: 'admin', exact: true }).click()
   await page.getByRole('button', { name: label('adminTabs.payoutSettings'), exact: true }).click()
   await page.getByRole('textbox', { name: label('payoutGateway'), exact: true }).fill('https://payout.example.com')
-  await page.getByLabel(label('payoutSigningKey'), { exact: true }).fill('ci-private-signing-key')
+  const payoutDailyLimit = page.getByRole('textbox', { name: label('payoutDailyLimit'), exact: true })
+  const payoutSigningKey = page.getByLabel(label('payoutSigningKey'), { exact: true })
+  await payoutDailyLimit.fill('50000')
+  await payoutSigningKey.fill('short')
   await page.getByRole('checkbox', { name: label('enablePayout'), exact: true }).check()
   await page.getByRole('checkbox', { name: label('autoApprovePayout'), exact: true }).check()
   await page.getByRole('button', { name: label('save'), exact: true }).click()
+  await page.getByText(label('validation.dailyLimitBelowMaximum'), { exact: true }).waitFor()
+  await page.getByText(label('validation.signingKeyBytes').replace('{{min}}', '32').replace('{{max}}', '1024'), { exact: true }).waitFor()
+  assert.equal(payoutSettingsRequests.length, 0, 'Invalid payout settings never reach the server')
+  await payoutDailyLimit.fill('1000000')
+  await payoutSigningKey.fill('ci-private-signing-key-0123456789')
+  await page.getByText(label('validation.dailyLimitBelowMaximum'), { exact: true }).waitFor({ state: 'hidden' })
+  await page.getByText(label('validation.signingKeyBytes').replace('{{min}}', '32').replace('{{max}}', '1024'), { exact: true }).waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: label('save'), exact: true }).click()
   await page.getByText(label('saveError'), { exact: true }).waitFor()
-  assert.equal(await page.getByLabel(label('payoutSigningKey'), { exact: true }).inputValue(), 'ci-private-signing-key')
+  assert.equal(await payoutSigningKey.inputValue(), 'ci-private-signing-key-0123456789')
+  assert.equal(payoutSettingsRequests.length, 1)
+  assert.equal(payoutSettingsRequests[0].daily_limit_minor, 1000000)
   await page.getByRole('button', { name: label('save'), exact: true }).click()
   await page.waitForFunction(() => !document.querySelector('input[type="password"]')?.value)
   assert.equal(payoutSettingsRequests.length, 2)

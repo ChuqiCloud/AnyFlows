@@ -1,6 +1,6 @@
 import type { MerchantModelWrite, MerchantPool, MerchantProtocol, MerchantServiceWrite } from './merchant-pool-model'
 import { merchantTextProtocol, parsePoolRatio, poolRatio, positiveInteger } from './merchant-pool-model'
-import { merchantTextError } from './merchant-form-validation'
+import { merchantDescriptionError, merchantTextError } from './merchant-form-validation'
 
 export const MAX_MERCHANT_MODELS = 128
 export const MAX_MERCHANT_MODEL_TOKENS = 4_294_967_295
@@ -80,7 +80,8 @@ export function validateMerchantService(fields: MerchantServiceFields): Validati
   const modelResult = validateMerchantServiceModels(fields)
   const errors: MerchantServiceErrors = { ...modelResult.errors }
   textError(errors, 'name', fields.name, 128)
-  textError(errors, 'description', fields.description, 2048, false)
+  const descriptionError = merchantDescriptionError(fields.description, 2048, false)
+  if (descriptionError) errors.description = fieldError(descriptionError, { max: 2048 })
   textError(errors, 'apiKey', fields.apiKey, 8192, fields.keyRequired)
   const baseUrl = fields.baseUrl.trim()
   let validUrl = false

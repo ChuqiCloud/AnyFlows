@@ -3,7 +3,7 @@ import { Checkbox, Drawer, DrawerBody, DrawerContent, DrawerHeader, Input, Texta
 import { useTranslation } from 'react-i18next'
 import { useAdminGroupCatalog } from '@/features/groups/group-api'
 import { ApiError } from '@/lib/api'
-import { merchantTextError } from './merchant-form-validation'
+import { merchantDescriptionError, merchantTextError } from './merchant-form-validation'
 import { useMerchantAction } from './merchant-pool-api'
 import type { MerchantPool, MerchantPoolWrite } from './merchant-pool-model'
 import { parsePoolRatio, poolRatio, positiveInteger } from './merchant-pool-model'
@@ -48,7 +48,7 @@ export function MerchantPoolAdminEditor({ pool, onClose }: { pool?: MerchantPool
   const save = async () => {
     const next: PoolFieldErrors = {}
     const textError = (field: 'name' | 'description', value: string, max: number, required: boolean) => {
-      const issue = merchantTextError(value, max, required)
+      const issue = field === 'description' ? merchantDescriptionError(value, max, required) : merchantTextError(value, max, required)
       if (issue) next[field] = t(`merchantPool.validation.${issue}`, { max })
     }
     textError('name', name, 128, true)
@@ -89,7 +89,7 @@ export function MerchantPoolAdminEditor({ pool, onClose }: { pool?: MerchantPool
 
   return <Drawer isOpen placement="right" size="xl" scrollBehavior="inside" onOpenChange={(open) => { if (!open && !action.isPending) onClose() }}><DrawerContent className="min-w-0 bg-surface-1 text-foreground"><DrawerHeader>{t(pool ? 'merchantPool.editPool' : 'merchantPool.createPool')}</DrawerHeader><DrawerBody className="gap-4 pb-5">
     <PoolField label={t('merchantPool.name')}><Input size="sm" aria-label={t('merchantPool.name')} value={name} onValueChange={change(setName)} isRequired isInvalid={Boolean(errors.name)} errorMessage={errors.name} isDisabled={action.isPending} /></PoolField>
-    <PoolField label={t('merchantPool.description')} hint={t('merchantPool.validation.singleLineHint')}><Textarea size="sm" aria-label={t('merchantPool.description')} value={description} onValueChange={change(setDescription)} isInvalid={Boolean(errors.description)} errorMessage={errors.description} isDisabled={action.isPending} /></PoolField>
+    <PoolField label={t('merchantPool.description')} hint={t('merchantPool.validation.multilineHint')}><Textarea size="sm" aria-label={t('merchantPool.description')} value={description} onValueChange={change(setDescription)} isInvalid={Boolean(errors.description)} errorMessage={errors.description} isDisabled={action.isPending} /></PoolField>
     <PoolField label={t('merchantPool.group')} hint={t('merchantPool.poolGroupHint')}><PoolSelect label={t('merchantPool.group')} value={group} emptyLabel={t('merchantPool.validation.selectGroup')} disabled={Boolean(pool) || groups.isFetching || action.isPending} onChange={change(setGroup)} isInvalid={Boolean(errors.group)} errorMessage={errors.group} options={(groups.data ?? []).map((item) => ({ value: String(item.id), label: item.name }))} /></PoolField>
     {groups.isError ? <PoolError onRetry={() => void groups.refetch()} /> : null}
     <Checkbox size="sm" isSelected={inheritGlobal} onValueChange={change(setInheritGlobal)} isDisabled={action.isPending}>{t('merchantPool.inheritGlobalCommission')}</Checkbox>

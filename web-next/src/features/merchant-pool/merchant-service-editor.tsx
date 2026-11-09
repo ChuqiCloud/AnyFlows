@@ -81,7 +81,7 @@ export function MerchantServiceEditor({ service, pools, onClose }: { service?: M
             <PoolSelect allowEmpty={false} label={t('merchantPool.pool')} value={pool} disabled={Boolean(service)} onChange={editText(setPool)} options={pools.map((item) => ({ value: String(item.id), label: item.name }))} {...inputError('pool')} />
           </PoolField>
         </div>
-        <PoolField label={t('merchantPool.description')} hint={`${t('merchantPool.market.introHint')} ${t('merchantPool.validation.singleLineHint')}`}><Textarea size="sm" aria-label={t('merchantPool.description')} value={description} onValueChange={editText(setDescription)} maxLength={2048} {...inputError('description')} /></PoolField>
+        <PoolField label={t('merchantPool.description')} hint={`${t('merchantPool.market.introHint')} ${t('merchantPool.validation.multilineHint')}`}><Textarea size="sm" aria-label={t('merchantPool.description')} value={description} onValueChange={editText(setDescription)} maxLength={2048} {...inputError('description')} /></PoolField>
         <PoolField label={t('merchantPool.baseUrl')} hint={t('merchantPool.baseUrlHint')}><Input size="sm" aria-label={t('merchantPool.baseUrl')} type="url" value={baseUrl} onValueChange={editText(setBaseUrl)} autoComplete="off" placeholder="https://api.example.com/v1" {...inputError('baseUrl')} /></PoolField>
         <div className="grid gap-3 sm:grid-cols-2">
           <PoolField label={t('merchantPool.protocol')}><PoolSelect allowEmpty={false} label={t('merchantPool.protocol')} value={protocol} onChange={changeProtocol} options={[...merchantProtocols]} /></PoolField>
