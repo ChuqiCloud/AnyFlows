@@ -14,6 +14,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     DatabasePool,
     entity::{SensitiveString, authentication_settings, groups, registration_rate_limits},
+    group_key_access::lock_active_group,
 };
 
 const AUTHENTICATION_SETTINGS_ID: i16 = 1;
@@ -336,7 +337,11 @@ impl RegistrationRepository {
         let policy = record.into_policy(1, 0);
         validate_policy(policy).map_err(|_| RegistrationRepositoryError::InvalidPolicy)?;
         let transaction = begin_transaction(&self.pool).await?;
-        if !active_group_exists(&transaction, policy.default_group_id).await? {
+        if !lock_active_group(&transaction, policy.default_group_id)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(RegistrationRepositoryError::Query))?
+        {
             return Err(RegistrationRepositoryError::InvalidReference);
         }
         let existing = lock_authentication_settings(&transaction).await?;
@@ -381,7 +386,24 @@ impl RegistrationRepository {
         attempted_at: u64,
     ) -> Result<RegistrationAttemptOutcome, RegistrationRepositoryError> {
         let transaction = begin_transaction(&self.pool).await?;
+        let observed = if transaction.get_database_backend() == DbBackend::Sqlite {
+            settings_from_model(lock_authentication_settings(&transaction).await?)?
+        } else {
+            load_authentication_settings(&transaction).await?
+        };
+        let group_available = match observed.registration_default_group_id {
+            Some(group_id) => lock_active_group(&transaction, group_id)
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| record_internal_error(RegistrationRepositoryError::Query))?,
+            None => false,
+        };
+        // Group before settings matches deletion and policy writes. A concurrent
+        // default change fails this attempt instead of binding a stale snapshot.
         let settings = settings_from_model(lock_authentication_settings(&transaction).await?)?;
+        if settings.registration_default_group_id != observed.registration_default_group_id {
+            return Err(record_internal_error(RegistrationRepositoryError::Query));
+        }
         if !settings.password_login_enabled || !settings.registration_enabled {
             commit_transaction(transaction).await?;
             return Ok(RegistrationAttemptOutcome::Disabled);
@@ -389,7 +411,7 @@ impl RegistrationRepository {
         let default_group_id = settings
             .registration_default_group_id
             .ok_or_else(|| record_internal_error(RegistrationRepositoryError::Invariant))?;
-        if !active_group_exists(&transaction, default_group_id).await? {
+        if !group_available {
             return Err(record_internal_error(
                 RegistrationRepositoryError::Invariant,
             ));

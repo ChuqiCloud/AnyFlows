@@ -325,6 +325,20 @@ pub trait AdminGroupWriter: Send + Sync {
         principal: SessionPrincipal,
         group_id: GroupId,
     ) -> AdminGroupDeleteFuture<'a>;
+
+    /// 带显式替代分组的删除；未实现迁移的写入端不得静默降级。
+    fn delete_with_replacement<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        group_id: GroupId,
+        replacement_group_id: Option<GroupId>,
+    ) -> AdminGroupDeleteFuture<'a> {
+        if replacement_group_id.is_some() {
+            Box::pin(async { Err(AdminGroupWriteError::InvalidInput) })
+        } else {
+            self.delete(principal, group_id)
+        }
+    }
 }
 
 /// 在持久化成功后同步发布运行时分组计费快照的写入装饰器。
@@ -384,6 +398,20 @@ impl AdminGroupWriter for RuntimeRefreshingAdminGroupWriter {
     ) -> AdminGroupDeleteFuture<'a> {
         Box::pin(async move {
             self.writer.delete(principal, group_id).await?;
+            self.refresh_runtime().await
+        })
+    }
+
+    fn delete_with_replacement<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        group_id: GroupId,
+        replacement_group_id: Option<GroupId>,
+    ) -> AdminGroupDeleteFuture<'a> {
+        Box::pin(async move {
+            self.writer
+                .delete_with_replacement(principal, group_id, replacement_group_id)
+                .await?;
             self.refresh_runtime().await
         })
     }
@@ -458,6 +486,26 @@ impl AdminGroupWriter for DatabaseAdminGroupWriter {
             match self
                 .repository
                 .delete(group_id)
+                .await
+                .map_err(map_repository_error)?
+            {
+                AdminGroupDeleteOutcome::Deleted => Ok(()),
+                AdminGroupDeleteOutcome::NotFound => Err(AdminGroupWriteError::NotFound),
+            }
+        })
+    }
+
+    fn delete_with_replacement<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        group_id: GroupId,
+        replacement_group_id: Option<GroupId>,
+    ) -> AdminGroupDeleteFuture<'a> {
+        Box::pin(async move {
+            require_admin(principal)?;
+            match self
+                .repository
+                .delete_with_replacement(group_id, replacement_group_id)
                 .await
                 .map_err(map_repository_error)?
             {
@@ -617,6 +665,18 @@ mod tests {
         ) -> AdminGroupDeleteFuture<'a> {
             Box::pin(async { Ok(()) })
         }
+
+        fn delete_with_replacement<'a>(
+            &'a self,
+            principal: SessionPrincipal,
+            group_id: GroupId,
+            replacement_group_id: Option<GroupId>,
+        ) -> AdminGroupDeleteFuture<'a> {
+            assert_eq!(principal, admin_principal());
+            assert_eq!(group_id, GroupId::new(1).unwrap());
+            assert_eq!(replacement_group_id, Some(GroupId::new(2).unwrap()));
+            Box::pin(async { Ok(()) })
+        }
     }
 
     struct FailingGroupWriter;
@@ -691,8 +751,12 @@ mod tests {
             .await
             .unwrap();
         writer.delete(principal, group_id).await.unwrap();
+        writer
+            .delete_with_replacement(principal, group_id, Some(GroupId::new(2).unwrap()))
+            .await
+            .unwrap();
 
-        assert_eq!(refresher.calls.load(Ordering::SeqCst), 3);
+        assert_eq!(refresher.calls.load(Ordering::SeqCst), 4);
     }
 
     #[tokio::test]

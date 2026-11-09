@@ -67,6 +67,24 @@ impl SchedulerRuntimeChannelSource {
             return Ok(None);
         }
 
+        Self::parse_configuration(channel).map(Some)
+    }
+
+    /// 仅供已删除商户视频服务的持久化任务恢复，不进入普通调度目录。
+    pub(super) fn from_retired_merchant_entity(
+        channel: channels::Model,
+    ) -> Result<Option<Self>, SchedulerRuntimeSourceError> {
+        if channel.deleted_at.is_none()
+            || channel.status != Status::Disabled.code()
+            || channel.r#type != ChannelType::Xai.as_str()
+            || channel.protocol != Protocol::XaiVideo.as_str()
+        {
+            return Ok(None);
+        }
+        Self::parse_configuration(channel).map(Some)
+    }
+
+    fn parse_configuration(channel: channels::Model) -> Result<Self, SchedulerRuntimeSourceError> {
         let channel_id =
             ChannelId::new(channel.id).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let channel_type = channel
@@ -149,7 +167,7 @@ impl SchedulerRuntimeChannelSource {
             &responses_compact_model_mapping,
         )
         .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
-        Ok(Some(Self {
+        Ok(Self {
             channel_id,
             channel_type,
             protocol,
@@ -170,7 +188,7 @@ impl SchedulerRuntimeChannelSource {
             responses_compact_probe_result,
             responses_compact_model_mapping,
             relay_settings,
-        }))
+        })
     }
 
     /// 返回渠道数据库标识。
@@ -353,8 +371,7 @@ impl SchedulerRuntimeCredentialSource {
         parent: Option<credentials::Model>,
         proxy: Option<SchedulerRuntimeProxyRecord>,
     ) -> Result<Option<Self>, SchedulerRuntimeSourceError> {
-        let routing_credential_id =
-            CredentialId::new(credential.id).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        CredentialId::new(credential.id).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let status = Status::try_from(credential.status)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         if !status.is_enabled()
@@ -365,6 +382,34 @@ impl SchedulerRuntimeCredentialSource {
             return Ok(None);
         }
 
+        Self::parse_configuration(credential, parent, proxy)
+    }
+
+    /// 恢复原任务使用的商户 API Key；不放开 OAuth、影子凭据或待更新密钥。
+    pub(super) fn from_retired_merchant_entity(
+        credential: credentials::Model,
+        proxy: Option<SchedulerRuntimeProxyRecord>,
+    ) -> Result<Option<Self>, SchedulerRuntimeSourceError> {
+        if credential.deleted_at.is_none()
+            || credential.status != Status::Disabled.code()
+            || credential.schedulable
+            || credential.oauth_token_pending
+            || credential.kind != CredentialKind::ApiKey.as_str()
+            || credential.quota_dimension != CredentialQuotaDimension::Global.as_str()
+            || credential.parent_id.is_some()
+        {
+            return Ok(None);
+        }
+        Self::parse_configuration(credential, None, proxy)
+    }
+
+    fn parse_configuration(
+        credential: credentials::Model,
+        parent: Option<credentials::Model>,
+        proxy: Option<SchedulerRuntimeProxyRecord>,
+    ) -> Result<Option<Self>, SchedulerRuntimeSourceError> {
+        let routing_credential_id =
+            CredentialId::new(credential.id).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let channel_id = ChannelId::new(credential.channel_id)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let credential_kind = credential

@@ -482,6 +482,22 @@ pub(super) fn document() -> OpenApi {
             200,
         ),
         (
+            "delete",
+            "/api/admin/merchant-pools/{id}",
+            "deleteAdminMerchantPool",
+            None,
+            "",
+            204,
+        ),
+        (
+            "delete",
+            "/api/admin/merchants/{id}",
+            "deleteAdminMerchant",
+            None,
+            "",
+            204,
+        ),
+        (
             "get",
             "/api/admin/merchants",
             "listAdminMerchants",
@@ -570,7 +586,12 @@ pub(super) fn document() -> OpenApi {
             reference(response)
         };
         let mut responses = serde_json::Map::new();
-        responses.insert(status.to_string(),json!({"description":"Merchant pool operation result","content":{"application/json":{"schema":response_schema}}}));
+        let success = if status == 204 {
+            json!({"description":"Resource deleted; historical records retained"})
+        } else {
+            json!({"description":"Merchant pool operation result","content":{"application/json":{"schema":response_schema}}})
+        };
+        responses.insert(status.to_string(), success);
         for error in [400, 401, 403, 404, 409, 503] {
             responses.insert(error.to_string(),json!({"description":"Request rejected","content":{"application/json":{"schema":{"type":"object"}}}}));
         }
@@ -597,6 +618,10 @@ pub(super) fn document() -> OpenApi {
                 parameters.push(
                     json!({"name":name,"in":"query","required":false,"schema":{"type":"string"}}),
                 );
+                if name == "status" && operation == "listAdminMerchantPools" {
+                    parameters.last_mut().expect("status parameter")["description"] =
+                        json!("Use deleted to list retired pools; omit to list current pools.");
+                }
             }
             for name in ["min_ratio_micros", "max_ratio_micros"] {
                 parameters.push(json!({"name":name,"in":"query","required":false,"schema":{"type":"integer","minimum":0,"maximum":100000000}}));
@@ -612,4 +637,23 @@ pub(super) fn document() -> OpenApi {
     }
     serde_json::from_value(json!({"openapi":"3.1.0","info":{"title":"Merchant pool","version":"1"},"paths":paths,"components":{"schemas":schemas}}))
         .expect("merchant OpenAPI contract is a static valid document")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn merchant_delete_contracts_have_no_response_body() {
+        let value = serde_json::to_value(super::document()).unwrap();
+        for (path, operation) in [
+            ("/api/admin/merchant-pools/{id}", "deleteAdminMerchantPool"),
+            ("/api/admin/merchants/{id}", "deleteAdminMerchant"),
+        ] {
+            let delete = &value["paths"][path]["delete"];
+            assert_eq!(delete["operationId"], operation);
+            assert!(delete["responses"]["204"].get("content").is_none());
+            assert!(delete["requestBody"].is_null());
+            assert!(!delete["responses"]["403"].is_null());
+            assert!(!delete["responses"]["409"].is_null());
+        }
+    }
 }

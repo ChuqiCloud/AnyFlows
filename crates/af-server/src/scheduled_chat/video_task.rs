@@ -1,4 +1,4 @@
-use std::{fmt, future::Future, pin::Pin, time::Duration};
+use std::{fmt, future::Future, pin::Pin, sync::Arc, time::Duration};
 
 use af_adapter::{RelayContext, get_task_adaptor};
 use af_billing::{PricingRatio, PricingRatios, XaiVideoPricingSnapshot};
@@ -130,6 +130,7 @@ pub struct VideoTaskBinding {
     expected_model: VideoModel,
     binding_fingerprint: AsyncTaskBindingFingerprint,
     target_snapshot: BoundVideoTargetSnapshot,
+    retired_target: Option<Arc<SchedulerRuntimeTargetRecord>>,
 }
 
 impl VideoTaskBinding {
@@ -341,6 +342,7 @@ impl SubmissionBindingTarget {
             expected_model: self.snapshot.expected_model.clone(),
             binding_fingerprint,
             target_snapshot: self.snapshot,
+            retired_target: None,
         }
     }
 
@@ -657,6 +659,7 @@ impl ScheduledChatService {
             .scheduler
             .runtime_target(binding.channel_id)
             .map_err(map_scheduler_error)?
+            .or_else(|| binding.retired_target.clone())
             .ok_or(AfError::Internal)?;
         let runtime_credential = binding
             .target_snapshot
@@ -741,7 +744,7 @@ impl ScheduledChatService {
     }
 
     /// 从数据库绑定事实恢复当前运行时目标；任一配置漂移都失败关闭。
-    pub(super) fn restore_video_task_binding(
+    pub(super) async fn restore_video_task_binding(
         &self,
         task: &AsyncTaskRecord,
         claim: &AsyncTaskSubmissionRecord,
@@ -752,10 +755,32 @@ impl ScheduledChatService {
         let target_group_id = claim.target_group_id().ok_or(AfError::Internal)?;
         let attempt_timeout = claim.attempt_timeout().ok_or(AfError::Internal)?;
         let expected_fingerprint = claim.binding_fingerprint().ok_or(AfError::Internal)?;
-        let target = self
+        let current_target = self
             .scheduler
             .runtime_target(task.channel_id())
-            .map_err(map_scheduler_error)?
+            .map_err(map_scheduler_error)?;
+        let retired_target = if current_target.is_none()
+            && task.status() == &af_domain::TaskStatus::Succeeded
+            && task.terminal_at().is_some()
+        {
+            let principal = claim.principal();
+            let terms = principal
+                .merchant_billing_snapshot()
+                .ok_or(AfError::Internal)?;
+            if principal.merchant_channel_id() != Some(task.channel_id()) {
+                return Err(AfError::Internal);
+            }
+            self.merchant_pools
+                .as_ref()
+                .ok_or(AfError::Internal)?
+                .retired_video_target(terms, task.channel_id(), task.credential_id())
+                .await
+                .map_err(|_| AfError::Internal)?
+        } else {
+            None
+        };
+        let target = current_target
+            .or_else(|| retired_target.clone())
             .ok_or(AfError::Internal)?;
         if !target_matches_protocol(&target, Protocol::XaiVideo)
             || !target.parameter_overrides().is_empty()
@@ -793,7 +818,10 @@ impl ScheduledChatService {
         if binding_target.fingerprint(target_group_id) != expected_fingerprint {
             return Err(AfError::Internal);
         }
-        Ok(binding_target.into_binding(target_group_id, task.upstream_task_id().clone()))
+        let mut binding =
+            binding_target.into_binding(target_group_id, task.upstream_task_id().clone());
+        binding.retired_target = retired_target;
+        Ok(binding)
     }
 
     async fn persist_video_feedback(
@@ -862,6 +890,8 @@ const fn map_relay_error(error: RelayError) -> AfError {
 
 #[cfg(test)]
 mod tests {
+    mod retired_tests;
+
     use std::{
         io::{Read, Write},
         net::{SocketAddr, TcpListener, TcpStream},

@@ -1,6 +1,6 @@
 use crate::{
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
-    management_session::no_store_json,
+    management_session::{no_store_empty, no_store_json},
 };
 use af_admin::{MerchantPoolService, SessionAuthentication, SessionAuthenticator};
 use af_domain::{
@@ -70,9 +70,13 @@ pub fn build_merchant_pool_router(
         )
         .route(
             "/api/admin/merchant-pools/{id}",
-            axum::routing::put(update_pool),
+            axum::routing::put(update_pool).delete(delete_pool),
         )
         .route("/api/admin/merchants", get(admin_merchants))
+        .route(
+            "/api/admin/merchants/{id}",
+            axum::routing::delete(delete_merchant),
+        )
         .route(
             "/api/admin/merchants/{id}/review",
             axum::routing::post(review_merchant),
@@ -127,6 +131,7 @@ impl IntoResponse for MerchantHttpError {
             MerchantPoolError::Forbidden => (StatusCode::FORBIDDEN, "merchant_pool_forbidden"),
             MerchantPoolError::NotFound => (StatusCode::NOT_FOUND, "merchant_pool_not_found"),
             MerchantPoolError::Conflict => (StatusCode::CONFLICT, "merchant_pool_conflict"),
+            MerchantPoolError::InUse => (StatusCode::CONFLICT, "merchant_pool_in_use"),
             MerchantPoolError::LimitReached => {
                 (StatusCode::CONFLICT, "merchant_pool_limit_reached")
             }
@@ -327,6 +332,24 @@ async fn update_pool(
             .await?,
     ))
 }
+async fn delete_pool(
+    State(s): State<MerchantHttpState>,
+    Extension(auth): Extension<SessionAuthentication>,
+    Path(pool): Path<i64>,
+) -> Result<Response, MerchantHttpError> {
+    s.service.delete_pool(auth.principal(), id(pool)?).await?;
+    Ok(no_store_empty(StatusCode::NO_CONTENT))
+}
+async fn delete_merchant(
+    State(s): State<MerchantHttpState>,
+    Extension(auth): Extension<SessionAuthentication>,
+    Path(merchant): Path<i64>,
+) -> Result<Response, MerchantHttpError> {
+    s.service
+        .delete_merchant(auth.principal(), id(merchant)?)
+        .await?;
+    Ok(no_store_empty(StatusCode::NO_CONTENT))
+}
 async fn admin_merchants(
     State(s): State<MerchantHttpState>,
     Extension(auth): Extension<SessionAuthentication>,
@@ -430,4 +453,20 @@ async fn write_terms(
             .write_terms(auth.principal(), id(pool)?, id(merchant)?, body(request)?)
             .await?,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn merchant_deletion_in_use_is_a_distinct_conflict() {
+        let response = MerchantHttpError(MerchantPoolError::InUse).into_response();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let bytes = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["error"]["code"], "merchant_pool_in_use");
+    }
 }
