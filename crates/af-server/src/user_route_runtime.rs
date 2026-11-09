@@ -112,6 +112,19 @@ impl CandidateOrdering for QuotedGroup {
 }
 
 impl UserRouteRuntime {
+    pub(crate) async fn has_merchant_scope(
+        &self,
+        principal: GatewayPrincipal,
+    ) -> Result<bool, AfError> {
+        let Some(id) = principal.user_route_id() else {
+            return Ok(false);
+        };
+        self.repository
+            .merchant_scope(id)
+            .await
+            .map(|scope| scope.is_some())
+            .map_err(map_repository_error)
+    }
     pub(crate) fn new(repository: UserRouteRepository) -> Self {
         Self {
             repository,

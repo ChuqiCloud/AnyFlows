@@ -91,7 +91,7 @@ pub(super) fn document() -> OpenApi {
         ("status", json!({"type":"string"})),
     ]);
     let mut doc = json!({"openapi":"3.1.0","info":{"title":"Merchant routes","version":"1"},"paths":{},"components":{"schemas":{
-        "MerchantRoutePreviewRequest":object(&[("route",reference("MerchantRouteWriteRequest")),("model",json!({"type":"string"})),("protocol",json!({"type":"string","enum":["openai_chat","openai_responses"]})),("streaming",json!({"type":"boolean"})),("input_tokens",integer()),("output_tokens",integer())]),
+        "MerchantRoutePreviewRequest":object(&[("route",reference("MerchantRouteWriteRequest")),("model",json!({"type":"string"})),("protocol",json!({"type":"string","enum":["openai_chat","openai_responses","openai_images","openai_audio","openai_speech","xai_video"]})),("streaming",json!({"type":"boolean"})),("input_tokens",integer()),("output_tokens",integer()),("duration_seconds",nullable(json!({"type":"integer","minimum":1,"maximum":15}))),("resolution",nullable(json!({"type":"string","enum":["480p","720p","1080p"]})))]),
         "MerchantRoutePreviewItem":object(&[("merchant_id",integer()),("merchant_name",json!({"type":"string"})),("service_id",integer()),("service_name",json!({"type":"string"})),("sales_ratio_micros",integer()),("estimated_quota",nullable(integer())),("eligible",json!({"type":"boolean"})),("reason",nullable(json!({"type":"string"})))]),
         "MerchantRoutePreview":object(&[("items",json!({"type":"array","items":reference("MerchantRoutePreviewItem")})),("quota_per_usd",integer()),("as_of",integer())]),
         "MerchantTimelineBucket":bucket,
@@ -208,7 +208,7 @@ pub(super) fn document() -> OpenApi {
                 json!({"name":"model","in":"query","required":false,"schema":{"type":"string"}}),
             );
             params.push(json!({"name":"window_seconds","in":"query","required":false,"schema":{"type":"integer","enum":[900,3600,86400,604800],"default":86400}}));
-            params.push(json!({"name":"protocol","in":"query","required":false,"schema":{"type":"string","enum":["openai_chat","openai_responses"]}}));
+            params.push(json!({"name":"protocol","in":"query","required":false,"schema":{"type":"string","enum":["openai_chat","openai_responses","openai_images","openai_audio","openai_speech","xai_video"]}}));
             params.push(json!({"name":"streaming","in":"query","required":false,"schema":{"type":"boolean"}}));
         }
         if path.ends_with("attempts") {
@@ -221,6 +221,12 @@ pub(super) fn document() -> OpenApi {
             doc["paths"][path] = json!({});
         }
         doc["paths"][path][method] = operation;
+    }
+    if let Some(required) = doc
+        .pointer_mut("/components/schemas/MerchantRoutePreviewRequest/required")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        required.retain(|name| name != "duration_seconds" && name != "resolution");
     }
     serde_json::from_value(doc).expect("merchant route OpenAPI is valid")
 }

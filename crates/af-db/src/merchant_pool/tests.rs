@@ -1,4 +1,5 @@
 use super::*;
+use af_domain::{MerchantMaintenanceWrite, MerchantModelRatio, MerchantServicePriceWrite};
 use sea_orm::{DbBackend, Statement};
 use std::error::Error;
 
@@ -716,33 +717,31 @@ async fn platform_resume_keeps_pending_revision_unpublished_and_merchant_pause_i
 }
 
 #[tokio::test]
-async fn vision_supply_is_rejected_and_legacy_published_vision_is_not_routable()
+async fn reviewed_chat_vision_is_routable_and_non_chat_vision_is_rejected()
 -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
     let mut write = service_write(fixture.shared_pool);
     write.models[0].supports_vision = true;
+    write.validate()?;
+    let mut invalid = service_write(fixture.shared_pool);
+    invalid.protocol = "openai_images".to_owned();
+    invalid.models[0].supports_streaming = false;
+    invalid.models[0].supports_tools = false;
+    invalid.models[0].supports_vision = true;
     assert!(matches!(
-        write.validate(),
+        invalid.validate(),
         Err(MerchantPoolError::InvalidInput)
     ));
     assert!(matches!(
         fixture
             .repository
-            .write_service(UserId::new(1)?, None, write, envelope)
+            .write_service(UserId::new(1)?, None, invalid, envelope)
             .await,
         Err(MerchantPoolError::InvalidInput)
     ));
-    let service = publish(&fixture).await?;
-    let revision = service.published.expect("published revision");
-    let mut models = revision.models;
-    models[0].supports_vision = true;
-    revisions::Entity::update_many()
-        .filter(revisions::Column::Id.eq(revision.id))
-        .col_expr(
-            revisions::Column::Models,
-            Expr::value(serde_json::to_value(models)?),
-        )
-        .exec(fixture.pool.connection())
+    let service = fixture
+        .repository
+        .write_service(UserId::new(1)?, None, write, envelope)
         .await?;
     assert!(
         fixture
@@ -751,15 +750,47 @@ async fn vision_supply_is_rejected_and_legacy_published_vision_is_not_routable()
             .await?
             .is_empty()
     );
+    let service = fixture
+        .repository
+        .submit_service(UserId::new(1)?, service.id)
+        .await?;
+    assert!(
+        fixture
+            .repository
+            .published_candidates(fixture.shared_pool, None, "gpt-test")
+            .await?
+            .is_empty()
+    );
+    fixture
+        .repository
+        .review_service(
+            UserId::new(3)?,
+            service.id,
+            review(
+                "approve",
+                service.draft.as_ref().map(|revision| revision.revision),
+            ),
+        )
+        .await?;
+    let candidates = fixture
+        .repository
+        .published_candidates(fixture.shared_pool, None, "gpt-test")
+        .await?;
+    assert_eq!(candidates.len(), 1);
+    assert!(candidates[0].model.supports_vision);
     let catalog = fixture
         .repository
         .catalog(
             UserId::new(2)?,
             fixture.shared_pool,
-            MerchantListQuery::default(),
+            MerchantListQuery {
+                capability: Some("vision".to_owned()),
+                ..Default::default()
+            },
         )
         .await?;
-    assert_eq!(catalog.items[0].status, "unsupported");
+    assert_eq!(catalog.items[0].status, "published");
+    assert!(catalog.items[0].models[0].supports_vision);
     fixture.pool.close().await?;
     Ok(())
 }
@@ -884,6 +915,595 @@ async fn pool_groups_are_hidden_and_cannot_issue_direct_keys_but_route_keys_stil
         tokens.create(key(5)).await,
         Err(crate::UserTokenRepositoryError::GroupUnavailable)
     ));
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+fn price_write(revision: i64, effective_at: i64, ratio: i64) -> MerchantServicePriceWrite {
+    MerchantServicePriceWrite {
+        expected_revision_id: revision,
+        effective_at,
+        default_ratio_micros: ratio,
+        model_ratios: vec![],
+    }
+}
+
+async fn second_merchant(fixture: &Fixture) -> Result<(), Box<dyn Error>> {
+    let merchant = fixture
+        .repository
+        .apply(
+            UserId::new(2)?,
+            MerchantApplication {
+                name: "Merchant Two".to_owned(),
+                description: "Separate owner".to_owned(),
+            },
+        )
+        .await?;
+    fixture
+        .repository
+        .review_merchant(UserId::new(3)?, merchant.id, review("approve", None))
+        .await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn price_activation_is_versioned_idempotent_and_owner_scoped() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    second_merchant(&fixture).await?;
+    let service = publish(&fixture).await?;
+    let old = fixture
+        .repository
+        .published_candidates(fixture.shared_pool, None, "gpt-test")
+        .await?
+        .remove(0);
+    let now = DatabaseTimestamp::now_utc();
+    let future = now.unix_timestamp() + 3600;
+    assert!(matches!(
+        fixture
+            .repository
+            .schedule_service_price(
+                Some(UserId::new(2)?),
+                UserId::new(2)?,
+                service.id,
+                price_write(old.revision_id, future, 800_000)
+            )
+            .await,
+        Err(MerchantPoolError::NotFound)
+    ));
+    assert!(matches!(
+        fixture
+            .repository
+            .service_prices(
+                Some(UserId::new(2)?),
+                service.id,
+                MerchantListQuery::default()
+            )
+            .await,
+        Err(MerchantPoolError::NotFound)
+    ));
+    let mut invalid_model = price_write(old.revision_id, future, 800_000);
+    invalid_model.model_ratios.push(MerchantModelRatio {
+        model: "unreviewed-model".to_owned(),
+        ratio_micros: None,
+    });
+    assert!(matches!(
+        fixture
+            .repository
+            .schedule_service_price(
+                Some(UserId::new(1)?),
+                UserId::new(1)?,
+                service.id,
+                invalid_model
+            )
+            .await,
+        Err(MerchantPoolError::InvalidInput)
+    ));
+    assert!(matches!(
+        fixture
+            .repository
+            .schedule_service_price(
+                Some(UserId::new(1)?),
+                UserId::new(1)?,
+                service.id,
+                price_write(old.revision_id, future, 6_000_000)
+            )
+            .await,
+        Err(MerchantPoolError::InvalidInput)
+    ));
+    let scheduled = fixture
+        .repository
+        .schedule_service_price(
+            Some(UserId::new(1)?),
+            UserId::new(1)?,
+            service.id,
+            price_write(old.revision_id, future, 800_000),
+        )
+        .await?;
+    assert_eq!(scheduled.status, "scheduled");
+    assert!(matches!(
+        fixture
+            .repository
+            .cancel_service_price(
+                Some(UserId::new(2)?),
+                UserId::new(2)?,
+                service.id,
+                scheduled.id
+            )
+            .await,
+        Err(MerchantPoolError::NotFound)
+    ));
+    assert!(matches!(
+        fixture
+            .repository
+            .schedule_service_price(
+                Some(UserId::new(1)?),
+                UserId::new(1)?,
+                service.id,
+                price_write(old.revision_id, future, 900_000)
+            )
+            .await,
+        Err(MerchantPoolError::Conflict)
+    ));
+    let before = fixture
+        .repository
+        .published_candidates(fixture.shared_pool, None, "gpt-test")
+        .await?
+        .remove(0);
+    assert_eq!(
+        (before.price_version, before.sales_ratio_micros),
+        (old.price_version, 500_000)
+    );
+    let due = DatabaseTimestamp::from_unix_timestamp(future)?;
+    assert_eq!(
+        fixture
+            .repository
+            .apply_due_service_prices(service.id, due)
+            .await?,
+        1
+    );
+    assert_eq!(
+        fixture
+            .repository
+            .apply_due_service_prices(service.id, due)
+            .await?,
+        0
+    );
+    assert_eq!(fixture.repository.process_due_pricing(100).await?, 0);
+    let current = fixture
+        .repository
+        .published_candidates(fixture.shared_pool, None, "gpt-test")
+        .await?
+        .remove(0);
+    assert_eq!(
+        (current.price_version, current.sales_ratio_micros),
+        (scheduled.id, 800_000)
+    );
+    assert_eq!(
+        (old.price_version, old.sales_ratio_micros),
+        (before.price_version, 500_000)
+    );
+    assert_eq!(old.revision_id, current.revision_id);
+    let catalog = fixture
+        .repository
+        .catalog(
+            UserId::new(2)?,
+            fixture.shared_pool,
+            MerchantListQuery::default(),
+        )
+        .await?;
+    assert_eq!(catalog.items[0].price_version, scheduled.id);
+    assert_eq!(
+        catalog.items[0].models[0].sales_ratio_micros,
+        current.sales_ratio_micros
+    );
+    let history = fixture
+        .repository
+        .service_prices(
+            Some(UserId::new(1)?),
+            service.id,
+            MerchantListQuery::default(),
+        )
+        .await?;
+    assert_eq!(history.total, 2);
+    assert_eq!(
+        history
+            .items
+            .iter()
+            .find(|row| row.id == old.price_version)
+            .expect("original price")
+            .status,
+        "superseded"
+    );
+    assert_eq!(
+        fixture
+            .repository
+            .get_service(Some(UserId::new(1)?), service.id)
+            .await?
+            .active_price
+            .expect("active price")
+            .id,
+        scheduled.id
+    );
+    assert!(matches!(
+        fixture
+            .repository
+            .cancel_service_price(
+                Some(UserId::new(1)?),
+                UserId::new(1)?,
+                service.id,
+                scheduled.id
+            )
+            .await,
+        Err(MerchantPoolError::Conflict)
+    ));
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn new_review_invalidates_old_revision_price_plans() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let service = publish(&fixture).await?;
+    let revision = service.published.as_ref().expect("published").id;
+    let scheduled = fixture
+        .repository
+        .schedule_service_price(
+            Some(UserId::new(1)?),
+            UserId::new(1)?,
+            service.id,
+            price_write(
+                revision,
+                DatabaseTimestamp::now_utc().unix_timestamp() + 3600,
+                800_000,
+            ),
+        )
+        .await?;
+    let mut write = service_write(fixture.shared_pool);
+    write.default_ratio_micros = 900_000;
+    fixture
+        .repository
+        .write_service(UserId::new(1)?, Some(service.id), write, envelope)
+        .await?;
+    let pending = fixture
+        .repository
+        .submit_service(UserId::new(1)?, service.id)
+        .await?;
+    let published = fixture
+        .repository
+        .review_service(
+            UserId::new(3)?,
+            service.id,
+            review("approve", pending.draft.as_ref().map(|row| row.revision)),
+        )
+        .await?;
+    assert_ne!(
+        published.published.as_ref().expect("published").id,
+        revision
+    );
+    let history = fixture
+        .repository
+        .service_prices(
+            Some(UserId::new(1)?),
+            service.id,
+            MerchantListQuery::default(),
+        )
+        .await?;
+    let invalidated = history
+        .items
+        .iter()
+        .find(|row| row.id == scheduled.id)
+        .expect("old schedule");
+    assert_eq!(invalidated.status, "invalidated");
+    assert_eq!(
+        invalidated.reason.as_deref(),
+        Some("approved_revision_changed")
+    );
+    assert_eq!(
+        published
+            .active_price
+            .expect("new baseline")
+            .default_ratio_micros,
+        900_000
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn due_price_revalidates_platform_bounds_and_does_not_resume_suspension()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let service = publish(&fixture).await?;
+    let revision = service.published.as_ref().expect("published").id;
+    let future = DatabaseTimestamp::now_utc().unix_timestamp() + 3600;
+    let price = fixture
+        .repository
+        .schedule_service_price(
+            Some(UserId::new(1)?),
+            UserId::new(1)?,
+            service.id,
+            price_write(revision, future, 4_000_000),
+        )
+        .await?;
+    let mut pool = pool_write();
+    pool.max_ratio_micros = 2_000_000;
+    fixture
+        .repository
+        .write_pool(UserId::new(3)?, Some(fixture.shared_pool), pool)
+        .await?;
+    fixture
+        .repository
+        .review_service(UserId::new(3)?, service.id, review("suspend", None))
+        .await?;
+    fixture
+        .repository
+        .apply_due_service_prices(service.id, DatabaseTimestamp::from_unix_timestamp(future)?)
+        .await?;
+    let history = fixture
+        .repository
+        .service_prices(None, service.id, MerchantListQuery::default())
+        .await?;
+    assert_eq!(
+        history
+            .items
+            .iter()
+            .find(|row| row.id == price.id)
+            .expect("price")
+            .status,
+        "invalidated"
+    );
+    let current = fixture.repository.get_service(None, service.id).await?;
+    assert_eq!(current.status, "suspended");
+    assert_eq!(
+        current
+            .active_price
+            .expect("original active")
+            .default_ratio_micros,
+        500_000
+    );
+    assert!(
+        fixture
+            .repository
+            .published_candidates(fixture.shared_pool, None, "gpt-test")
+            .await?
+            .is_empty()
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn maintenance_is_scoped_and_only_blocks_during_its_active_window()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    second_merchant(&fixture).await?;
+    let service = publish(&fixture).await?;
+    let now = DatabaseTimestamp::now_utc().unix_timestamp();
+    let write = |blocks_requests| MerchantMaintenanceWrite {
+        starts_at: now - 60,
+        ends_at: now + 3600,
+        message: "Upstream maintenance".to_owned(),
+        blocks_requests,
+    };
+    let notice = fixture
+        .repository
+        .write_service_maintenance(
+            Some(UserId::new(1)?),
+            UserId::new(1)?,
+            service.id,
+            None,
+            write(false),
+        )
+        .await?;
+    assert_eq!(notice.status, "active");
+    assert_eq!(
+        fixture
+            .repository
+            .published_candidates(fixture.shared_pool, None, "gpt-test")
+            .await?
+            .len(),
+        1
+    );
+    assert!(matches!(
+        fixture
+            .repository
+            .service_maintenance(
+                Some(UserId::new(2)?),
+                service.id,
+                MerchantListQuery::default()
+            )
+            .await,
+        Err(MerchantPoolError::NotFound)
+    ));
+    assert!(matches!(
+        fixture
+            .repository
+            .write_service_maintenance(
+                Some(UserId::new(2)?),
+                UserId::new(2)?,
+                service.id,
+                Some(notice.id),
+                write(true)
+            )
+            .await,
+        Err(MerchantPoolError::NotFound)
+    ));
+    assert!(matches!(
+        fixture
+            .repository
+            .cancel_service_maintenance(
+                Some(UserId::new(2)?),
+                UserId::new(2)?,
+                service.id,
+                notice.id
+            )
+            .await,
+        Err(MerchantPoolError::NotFound)
+    ));
+    fixture
+        .repository
+        .write_service_maintenance(
+            Some(UserId::new(1)?),
+            UserId::new(1)?,
+            service.id,
+            Some(notice.id),
+            write(true),
+        )
+        .await?;
+    assert!(
+        fixture
+            .repository
+            .published_candidates(fixture.shared_pool, None, "gpt-test")
+            .await?
+            .is_empty()
+    );
+    let catalog = fixture
+        .repository
+        .catalog(
+            UserId::new(2)?,
+            fixture.shared_pool,
+            MerchantListQuery::default(),
+        )
+        .await?;
+    assert_eq!(catalog.items[0].status, "maintenance");
+    assert_eq!(
+        catalog.items[0].maintenance[0].message,
+        "Upstream maintenance"
+    );
+    assert_eq!(
+        super::policies::active_maintenance(fixture.pool.connection(), service.id, now + 3600)
+            .await?
+            .len(),
+        0
+    );
+    fixture
+        .repository
+        .review_service(UserId::new(3)?, service.id, review("suspend", None))
+        .await?;
+    let cancelled = fixture
+        .repository
+        .cancel_service_maintenance(
+            Some(UserId::new(1)?),
+            UserId::new(1)?,
+            service.id,
+            notice.id,
+        )
+        .await?;
+    assert_eq!(cancelled.status, "cancelled");
+    assert_eq!(
+        fixture
+            .repository
+            .cancel_service_maintenance(
+                Some(UserId::new(1)?),
+                UserId::new(1)?,
+                service.id,
+                notice.id
+            )
+            .await?
+            .status,
+        "cancelled"
+    );
+    assert_eq!(
+        fixture
+            .repository
+            .get_service(None, service.id)
+            .await?
+            .status,
+        "suspended"
+    );
+    assert_eq!(
+        fixture
+            .repository
+            .catalog(
+                UserId::new(2)?,
+                fixture.shared_pool,
+                MerchantListQuery::default()
+            )
+            .await?
+            .items[0]
+            .status,
+        "suspended"
+    );
+    assert!(
+        fixture
+            .repository
+            .published_candidates(fixture.shared_pool, None, "gpt-test")
+            .await?
+            .is_empty()
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn price_override_replacement_and_cancellation_keep_reviewed_model_mapping()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let service = publish(&fixture).await?;
+    let revision = service.published.as_ref().expect("published").id;
+    let now = DatabaseTimestamp::now_utc().unix_timestamp();
+    let mut first = price_write(revision, now, 800_000);
+    first.model_ratios.push(MerchantModelRatio {
+        model: "gpt-test".to_owned(),
+        ratio_micros: Some(700_000),
+    });
+    let first = fixture
+        .repository
+        .schedule_service_price(Some(UserId::new(1)?), UserId::new(1)?, service.id, first)
+        .await?;
+    assert_eq!(first.status, "active");
+    let mut candidate = fixture
+        .repository
+        .published_candidates(fixture.shared_pool, None, "gpt-test")
+        .await?
+        .remove(0);
+    assert_eq!(candidate.sales_ratio_micros, 700_000);
+    assert_eq!(candidate.model.upstream_model, "private-upstream-model");
+    let second = fixture
+        .repository
+        .schedule_service_price(
+            Some(UserId::new(1)?),
+            UserId::new(1)?,
+            service.id,
+            price_write(revision, now + 3600, 600_000),
+        )
+        .await?;
+    assert_eq!(second.model_ratios[0].ratio_micros, None);
+    let cancelled = fixture
+        .repository
+        .cancel_service_price(
+            Some(UserId::new(1)?),
+            UserId::new(1)?,
+            service.id,
+            second.id,
+        )
+        .await?;
+    assert_eq!(cancelled.status, "cancelled");
+    fixture
+        .repository
+        .apply_due_service_prices(
+            service.id,
+            DatabaseTimestamp::from_unix_timestamp(now + 3600)?,
+        )
+        .await?;
+    candidate = fixture
+        .repository
+        .published_candidates(fixture.shared_pool, None, "gpt-test")
+        .await?
+        .remove(0);
+    assert_eq!(candidate.price_version, first.id);
+    assert_eq!(candidate.sales_ratio_micros, 700_000);
+    let serialized = serde_json::to_string(
+        &fixture
+            .repository
+            .service_prices(
+                Some(UserId::new(1)?),
+                service.id,
+                MerchantListQuery::default(),
+            )
+            .await?,
+    )?;
+    assert!(!serialized.contains("private-upstream-model"));
     fixture.pool.close().await?;
     Ok(())
 }

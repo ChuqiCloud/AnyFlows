@@ -24,8 +24,8 @@ const port = 4181
 const origin = `http://127.0.0.1:${port}`
 const now = Math.floor(Date.now() / 1000)
 const pool = { id: 1, group_id: 8, name: 'CI shared pool', description: 'CI pool', enabled: true, commission_bps: 500, effective_commission_bps: 500, commission_inherit_global: false, min_ratio_micros: 100000, max_ratio_micros: 10000000, settlement_delay_secs: 86400, created_at: now, updated_at: now }
-const offer = { model: 'gpt-fixture', sales_ratio_micros: 800000, context_window: 128000, max_output_tokens: 4096, supports_streaming: true, supports_tools: true, supports_vision: false, prices: { currency: 'USD', unit: 'million_tokens', input: '0.80', output: '1.60', cache_read: '0.08', cache_write_5m: '1.00', cache_write_1h: '1.60', version: 1 } }
-const publicService = { id: 51, pool_id: 1, merchant_id: 6, merchant_name: 'CI merchant', name: 'CI service', description: 'Reviewed service', status: 'published', revision: 1, models: [offer], updated_at: now }
+const offer = { model: 'gpt-fixture', sales_ratio_micros: 800000, context_window: 128000, max_output_tokens: 4096, supports_streaming: true, supports_tools: true, supports_vision: false, prices: { currency: 'USD', unit: 'million_tokens', billing_mode: 'token', video_per_second: null, input: '0.80', output: '1.60', cache_read: '0.08', cache_write_5m: '1.00', cache_write_1h: '1.60', version: 1 } }
+const publicService = { id: 51, pool_id: 1, merchant_id: 6, merchant_name: 'CI merchant', name: 'CI service', description: 'Reviewed service', status: 'published', revision: 1, price_version: 0, protocol: 'openai_chat', maintenance: [], models: [offer], updated_at: now }
 const excludedService = { ...publicService, id: 52, merchant_id: 7, merchant_name: 'CI excluded merchant', name: 'CI excluded service' }
 const profile = { id: 6, owner_user_id: 3, name: 'CI merchant', description: 'CI relay', status: 'approved', review_reason: null, created_at: now, updated_at: now }
 const list = items => ({ items, total: items.length, page: 1, page_size: 20 })
@@ -34,6 +34,13 @@ let services = []
 let routeFailures = 1
 let previewFailures = 1
 let withdrawalFailures = 1
+let priceFailures = 1, noticeFailures = 1, accountFailures = 1, payoutSettingsFailures = 1
+let prices = [], notices = [], withdrawals = [], payouts = []
+let payoutAccount = { configured: false, label: '', version: 0 }
+let payoutSettings = { version: 0, enabled: false, auto_approve_enabled: false, gateway_url: '', currency: 'USD', quota_per_unit: 500000, min_amount_minor: 100, max_amount_minor: 100000, daily_limit_minor: 1000000, signing_key_configured: false }
+const priceRequests = [], noticeRequests = [], accountRequests = [], payoutSettingsRequests = []
+let payoutSubmissions = 0, payoutQueries = 0
+const videoService = { ...publicService, id: 61, protocol: 'xai_video', name: 'CI video service', models: [{ ...offer, model: 'grok-imagine-video', supports_streaming: false, supports_tools: false, prices: { ...offer.prices, unit: 'second', billing_mode: 'video', video_per_second: { p480: '0.04', p720: '0.06', p1080: null } } }] }
 const routeRequests = []
 const previewRequests = []
 const withdrawalRequests = []
@@ -51,12 +58,14 @@ try {
     import { HeroUIProvider } from '@heroui/react';
     import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
     import './src/index.css'; import './src/i18n';
+    import { useSiteTheme } from './src/shared/components/use-site-theme';
     import { MerchantPoolPage } from './src/features/merchant-pool/merchant-pool-page';
     import { MerchantPoolRoutesPage } from './src/features/merchant-pool/merchant-pool-routes-page';
+    import { MerchantAdminPage } from './src/features/merchant-pool/merchant-admin-page';
     import { MerchantWorkspacePage } from './src/features/merchant-pool/merchant-workspace-page';
     import { ApiKeyForm } from './src/features/api-keys/api-key-form';
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false }, mutations: { retry: false } } });
-    function App() { const [view, setView] = useState('catalog'); const [issued, setIssued] = useState(null); return <HeroUIProvider><QueryClientProvider client={client}><main style={{ padding: 16, maxWidth: 1200, margin: 'auto' }}><nav aria-label="CI views">{['catalog','routes','workspace','key'].map(value => <button key={value} onClick={() => setView(value)}>{value}</button>)}</nav>{view === 'catalog' ? <MerchantPoolPage /> : view === 'routes' ? <MerchantPoolRoutesPage /> : view === 'workspace' ? <MerchantWorkspacePage /> : <ApiKeyForm initialRouteId={21} onCancel={() => setView('routes')} onSaved={() => setView('routes')} onIssued={setIssued} />}{issued ? <output data-testid="issued">issued</output> : null}</main></QueryClientProvider></HeroUIProvider> }
+    function App() { useSiteTheme(); const [view, setView] = useState('catalog'); const [issued, setIssued] = useState(null); return <HeroUIProvider><QueryClientProvider client={client}><main style={{ padding: 16, maxWidth: 1200, margin: 'auto' }}><nav aria-label="CI views">{['catalog','routes','workspace','admin','key'].map(value => <button key={value} onClick={() => setView(value)}>{value}</button>)}</nav>{view === 'catalog' ? <MerchantPoolPage /> : view === 'routes' ? <MerchantPoolRoutesPage /> : view === 'workspace' ? <MerchantWorkspacePage /> : view === 'admin' ? <MerchantAdminPage /> : <ApiKeyForm initialRouteId={21} onCancel={() => setView('routes')} onSaved={() => setView('routes')} onIssued={setIssued} />}{issued ? <output data-testid="issued">issued</output> : null}</main></QueryClientProvider></HeroUIProvider> }
     createRoot(document.getElementById('root')).render(<BrowserRouter><App /></BrowserRouter>);
   `)
   server = spawn(process.execPath, [resolve(directory, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: directory, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -69,13 +78,14 @@ try {
   page = await browser.newPage({ viewport: { width: 1280, height: 1000 }, locale: 'zh-CN', reducedMotion: 'reduce' })
   page.setDefaultTimeout(20000)
   page.on('pageerror', error => errors.push(error.stack || error.message))
-  await page.addInitScript(() => { localStorage.setItem('anyflows.locale', 'zh'); sessionStorage.setItem('anyflows.management.access-token', 'ci-merchant') })
+  await page.addInitScript(() => { localStorage.setItem('anyflows.locale', 'zh'); localStorage.setItem('anyflows.theme', 'dark'); sessionStorage.setItem('anyflows.management.access-token', 'ci-merchant') })
   await page.route(url => url.pathname.startsWith('/api/'), async intercepted => {
     const request = intercepted.request(), path = new URL(request.url()).pathname, method = request.method()
     const respond = (body, status = 200) => intercepted.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     if (path === '/api/site') return respond({ balance_display: { mode: 'quota', unit_name: '积分', unit_symbol: '积分', quota_units_per_display_unit: '10000', symbol_position: 'suffix', fraction_digits: 0 } })
     assert.equal(request.headers().authorization, 'Bearer ci-merchant')
-    if (path === '/api/merchant-pools' || path === '/api/merchant/available-pools') return respond(list([pool]))
+    if (path === '/api/merchant-pools' || path === '/api/merchant/available-pools' || path === '/api/admin/merchant-pools') return respond(list([pool]))
+    if (path === '/api/merchant-pools/1/services' && new URL(request.url()).searchParams.get('protocol') === 'xai_video') { assert.equal(new URL(request.url()).searchParams.has('streaming'), false); return respond(list([videoService])) }
     if (path === '/api/merchant-pools/1/services') return respond(list(new URL(request.url()).searchParams.get('model') ? [publicService, excludedService, { ...publicService, id: 53, merchant_id: 8, merchant_name: 'CI reserve merchant', name: 'CI reserve service' }] : [publicService, excludedService]))
     if (path === '/api/merchant-pools/1/statistics') return respond({ items: [{ service_id: 51, merchant_id: 6, sample_count: 10, success_count: 9, failure_count: 1, success_rate: 90, ttft_p50_ms: 123, ttft_p95_ms: 400, latency_p50_ms: 300, latency_p95_ms: 900, status: 'normal', updated_at: now }], as_of: now, window_seconds: 86400 })
     if (path === '/api/merchant-pools/1/timeline') return respond({ items: [], as_of: now, window_seconds: 86400 })
@@ -89,30 +99,72 @@ try {
     if (path === '/api/merchant-pool/routes/preview' && method === 'POST') {
       const body = request.postDataJSON(); previewRequests.push(body)
       assert.deepEqual(body.route.excluded_merchant_ids, [7])
-      assert.equal(body.model, 'gpt-fixture')
+      assert.equal(body.model, body.protocol === 'xai_video' ? 'grok-imagine-video' : 'gpt-fixture')
       assert.equal(body.input_tokens, 1000)
       assert.equal(body.output_tokens, 1000)
       if (previewFailures-- > 0) return respond({ error: { code: 'unavailable' } }, 503)
       return respond({ items: [{ merchant_id: 6, merchant_name: 'CI merchant', service_id: 51, service_name: 'CI service', sales_ratio_micros: 800000, estimated_quota: 1200, eligible: true, reason: null }, { merchant_id: 7, merchant_name: 'CI excluded merchant', service_id: 52, service_name: 'CI excluded service', sales_ratio_micros: 800000, estimated_quota: null, eligible: false, reason: 'excluded' }], quota_per_usd: 500000, as_of: now })
     }
-    if (path === '/api/merchant/services' && method === 'GET') return respond(list(services))
+    if ((path === '/api/merchant/services' || path === '/api/admin/merchant-services') && method === 'GET') return respond(list(services))
     if (path === '/api/merchant/services' && method === 'POST') {
       const body = request.postDataJSON()
       assert.equal(body.api_key, 'ci-upstream-private-key')
       assert.equal(body.models[0].model, 'gpt-fixture')
       const { api_key, pool_id, name, description, ...revision } = body
       assert.ok(api_key)
-      services = [{ id: 88, merchant_id: 6, pool_id, name, description, status: 'draft', published: null, draft: { id: 9, revision: 1, status: 'draft', name, description, ...revision, has_api_key: true, review_reason: null, created_at: now, updated_at: now }, created_at: now, updated_at: now }]
+      services = [{ id: 88, merchant_id: 6, pool_id, name, description, status: 'draft', active_price: null, maintenance: [], published: null, draft: { id: 9, revision: 1, status: 'draft', name, description, ...revision, has_api_key: true, review_reason: null, created_at: now, updated_at: now }, created_at: now, updated_at: now }]
       return respond(services[0], 201)
     }
     if (path === '/api/merchant/finance') return respond({ merchant_id: 6, pending_quota: 0, available_quota: 100000, withdrawing_quota: 0, frozen_quota: 0, debt_quota: 0, total_gross_quota: 110000, total_commission_quota: 10000, total_paid_quota: 0, quota_per_usd: 500000 })
     if (path === '/api/merchant/finance/entries') return respond({ items: [], next_cursor: null })
-    if (path === '/api/merchant/withdrawals' && method === 'GET') return respond({ items: [], next_cursor: null })
+    if ((path === '/api/merchant/withdrawals' || path === '/api/admin/merchant-withdrawals') && method === 'GET') return respond({ items: withdrawals, next_cursor: null })
     if (path === '/api/merchant/withdrawals' && method === 'POST') {
       const body = request.postDataJSON(); withdrawalRequests.push(body)
       if (withdrawalFailures-- > 0) return respond({ error: { code: 'unavailable' } }, 503)
-      return respond({ id: 5, merchant_id: 6, ...body, status: 'pending', reference: null, reason: null, created_at: now, updated_at: now })
+      withdrawals = [{ id: 5, merchant_id: 6, ...body, payout: null, status: 'pending', reference: null, reason: null, created_at: now, updated_at: now }]; return respond(withdrawals[0])
     }
+    if (path === '/api/admin/merchants') return respond(list([profile]))
+    if (path === '/api/admin/merchant-pool-settings') return respond({ commission_bps: 500 })
+    if (path === '/api/merchant/services/88/prices' && method === 'GET') return respond(list(prices))
+    if (path === '/api/merchant/services/88/prices' && method === 'POST') {
+      const body = request.postDataJSON(); priceRequests.push(body)
+      assert.equal(body.expected_revision_id, 9)
+      assert.equal(body.default_ratio_micros, 900000)
+      assert.ok(body.effective_at > now)
+      if (priceFailures-- > 0) return respond({ error: { code: 'conflict' } }, 409)
+      prices = [{ id: 71, service_id: 88, revision_id: 9, ...body, status: 'scheduled', reason: null, created_at: now, updated_at: now }]
+      return respond(prices[0], 201)
+    }
+    if (path === '/api/merchant/services/88/prices/71/cancel') { prices[0].status = 'cancelled'; return respond(prices[0]) }
+    if (path === '/api/merchant/services/88/maintenance' && method === 'GET') return respond(list(notices))
+    if (path === '/api/merchant/services/88/maintenance' && method === 'POST') {
+      const body = request.postDataJSON(); noticeRequests.push(body)
+      if (noticeFailures-- > 0) return respond({ error: { code: 'conflict' } }, 409)
+      notices = [{ id: 81, service_id: 88, ...body, status: 'active', created_at: now, updated_at: now }]
+      return respond(notices[0], 201)
+    }
+    if (path === '/api/merchant/payout-account' && method === 'GET') return respond(payoutAccount)
+    if (path === '/api/merchant/payout-account' && method === 'PUT') {
+      const body = request.postDataJSON(); accountRequests.push(body)
+      if (accountFailures-- > 0) return respond({ error: { code: 'unavailable' } }, 503)
+      assert.equal(body.expected_version, payoutAccount.version)
+      payoutAccount = { configured: !body.clear, label: body.label, version: payoutAccount.version + 1 }; return respond(payoutAccount)
+    }
+    if ((path === '/api/merchant/payouts' || path === '/api/admin/merchant-payouts') && method === 'GET') return respond({ items: payouts, next_cursor: null })
+    if (path === '/api/admin/merchant-payout-settings' && method === 'GET') return respond(payoutSettings)
+    if (path === '/api/admin/merchant-payout-settings' && method === 'PUT') {
+      const body = request.postDataJSON(); payoutSettingsRequests.push(body)
+      if (payoutSettingsFailures-- > 0) return respond({ error: { code: 'conflict' } }, 409)
+      assert.equal(body.expected_version, payoutSettings.version)
+      const { expected_version, signing_key, clear_signing_key, ...fields } = body
+      payoutSettings = { ...fields, version: expected_version + 1, signing_key_configured: !clear_signing_key && (Boolean(signing_key) || payoutSettings.signing_key_configured) }; return respond(payoutSettings)
+    }
+    if (path === '/api/admin/merchant-withdrawals/5/payout') {
+      payoutSubmissions += 1; assert.equal(payoutSubmissions, 1)
+      payouts = [{ withdrawal_id: 5, merchant_id: 6, event_key: withdrawals[0].event_key, status: 'unknown', amount_minor: 1, currency: 'USD', reference: null, reason: 'gateway_timeout', created_at: now, updated_at: now }]
+      withdrawals[0].payout = payouts[0]; return respond(payouts[0])
+    }
+    if (path === '/api/admin/merchant-withdrawals/5/reconcile') { payoutQueries += 1; return respond(payouts[0]) }
     if (path === '/api/user-routes') return respond({ items: [], capacity: 32 })
     if (path === '/api/token-groups') return respond({ groups: [], next_cursor: null })
     if (path === '/api/models') return respond({ pricing_scope: 'group', next_cursor: null, models: [] })
@@ -147,6 +199,16 @@ try {
   await dialog.getByText(label('previewEligible'), { exact: true }).waitFor()
   await dialog.getByText(label('previewReasons.excluded'), { exact: true }).waitFor()
   assert.equal(previewRequests.length, 2)
+  await dialog.getByRole('combobox', { name: label('protocol'), exact: true }).selectOption('xai_video')
+  await dialog.getByRole('textbox', { name: label('model'), exact: true }).fill('grok-imagine-video')
+  await dialog.getByRole('spinbutton', { name: label('videoDuration'), exact: true }).fill('12')
+  await dialog.getByRole('combobox', { name: label('videoResolution'), exact: true }).selectOption('720p')
+  const videoPreviewResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/merchant-pool/routes/preview' && response.request().postDataJSON().protocol === 'xai_video')
+  await dialog.getByRole('button', { name: label('previewCandidates'), exact: true }).click()
+  await videoPreviewResponse
+  assert.equal(previewRequests.at(-1).duration_seconds, 12)
+  assert.equal(previewRequests.at(-1).resolution, '720p')
+  assert.equal(previewRequests.at(-1).streaming, false)
   await dialog.getByRole('button', { name: label('save'), exact: true }).click()
   await dialog.getByRole('alert').waitFor()
   assert.equal(await dialog.getByRole('textbox', { name: label('name'), exact: true }).inputValue(), 'CI merchant route')
@@ -177,7 +239,51 @@ try {
   assert.equal(await ownedServicesTable.locator('tbody tr').count(), 1, 'A created merchant service appears as one table row')
   await page.screenshot({ path: resolve(screenshots, 'merchant-workspace.png'), fullPage: true, animations: 'disabled' })
   assert.equal(await page.evaluate(() => Object.values(sessionStorage).some(value => value.includes('ci-upstream-private-key'))), false)
+  services[0] = { ...services[0], status: 'published', published: { ...services[0].draft, status: 'published' }, draft: null }
+  await page.getByRole('button', { name: 'routes', exact: true }).click()
+  await page.getByRole('button', { name: 'workspace', exact: true }).click()
+  await page.getByRole('button', { name: label('serviceLifecycle'), exact: true }).click()
+  dialog = page.getByRole('dialog')
+  await dialog.getByRole('textbox', { name: label('defaultRatio'), exact: true }).fill('0.9')
+  await dialog.getByRole('checkbox', { name: label('effectiveNow'), exact: true }).uncheck()
+  await dialog.getByRole('button', { name: label('publishPrice'), exact: true }).click()
+  await dialog.getByText(label('saveError'), { exact: true }).waitFor()
+  assert.equal(await dialog.getByRole('textbox', { name: label('defaultRatio'), exact: true }).inputValue(), '0.9')
+  await dialog.getByRole('button', { name: label('publishPrice'), exact: true }).click()
+  await dialog.getByRole('button', { name: label('cancelSchedule'), exact: true }).waitFor()
+  assert.equal(priceRequests.length, 2)
+  await dialog.getByRole('button', { name: label('cancelSchedule'), exact: true }).click()
+  await dialog.getByText(label('status.cancelled'), { exact: true }).waitFor()
+  await dialog.getByRole('button', { name: label('lifecycleTabs.maintenance'), exact: true }).click()
+  await dialog.getByRole('textbox', { name: label('maintenanceMessage'), exact: true }).fill('CI scheduled maintenance')
+  await dialog.getByRole('checkbox', { name: label('maintenanceBlocking'), exact: true }).check()
+  await dialog.getByRole('button', { name: label('publishNotice'), exact: true }).click()
+  await dialog.getByText(label('saveError'), { exact: true }).waitFor()
+  assert.equal(await dialog.getByRole('textbox', { name: label('maintenanceMessage'), exact: true }).inputValue(), 'CI scheduled maintenance')
+  await dialog.getByRole('button', { name: label('publishNotice'), exact: true }).click()
+  await dialog.getByRole('cell', { name: 'CI scheduled maintenance', exact: true }).waitFor()
+  assert.equal(noticeRequests.length, 2)
+  assert.equal(noticeRequests.at(-1).blocks_requests, true)
+  await page.screenshot({ path: resolve(screenshots, 'merchant-maintenance.png'), fullPage: true, animations: 'disabled' })
+  await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.documentElement.classList.add('light') })
+  await page.screenshot({ path: resolve(screenshots, 'merchant-maintenance-light.png'), fullPage: true, animations: 'disabled' })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.screenshot({ path: resolve(screenshots, 'merchant-maintenance-mobile-light.png'), fullPage: true, animations: 'disabled' })
+  await page.evaluate(() => { document.documentElement.classList.remove('light'); document.documentElement.classList.add('dark') })
+  await page.screenshot({ path: resolve(screenshots, 'merchant-maintenance-mobile.png'), fullPage: true, animations: 'disabled' })
+  await page.setViewportSize({ width: 1280, height: 1000 })
+  await dialog.getByRole('button', { name: label('close'), exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: label('finance'), exact: true }).click()
+  await page.getByRole('textbox', { name: label('payoutAccountLabel'), exact: true }).fill('CI settlement account')
+  await page.getByLabel(label('payoutAccountToken'), { exact: true }).fill('ci-private-receiving-token')
+  await page.getByRole('button', { name: label('save'), exact: true }).click()
+  await page.getByText(label('saveError'), { exact: true }).waitFor()
+  assert.equal(await page.getByLabel(label('payoutAccountToken'), { exact: true }).inputValue(), 'ci-private-receiving-token')
+  await page.getByRole('button', { name: label('save'), exact: true }).click()
+  await page.waitForFunction(() => !document.querySelector('input[type="password"]')?.value)
+  assert.equal(accountRequests.length, 2)
+  assert.equal(accountRequests[0].account, accountRequests[1].account)
   await page.getByRole('textbox', { name: label('withdrawalAmount'), exact: true }).fill('5000')
   await page.getByRole('button', { name: label('requestWithdrawal'), exact: true }).click()
   await page.getByRole('alert').waitFor()
@@ -186,6 +292,34 @@ try {
   assert.equal(withdrawalRequests.length, 2)
   assert.equal(withdrawalRequests[0].event_key, withdrawalRequests[1].event_key)
   assert.equal(withdrawalRequests[0].amount_quota, 5000)
+  await page.getByRole('button', { name: 'admin', exact: true }).click()
+  await page.getByRole('button', { name: label('adminTabs.payoutSettings'), exact: true }).click()
+  await page.getByRole('textbox', { name: label('payoutGateway'), exact: true }).fill('https://payout.example.com')
+  await page.getByLabel(label('payoutSigningKey'), { exact: true }).fill('ci-private-signing-key')
+  await page.getByRole('checkbox', { name: label('enablePayout'), exact: true }).check()
+  await page.getByRole('checkbox', { name: label('autoApprovePayout'), exact: true }).check()
+  await page.getByRole('button', { name: label('save'), exact: true }).click()
+  await page.getByText(label('saveError'), { exact: true }).waitFor()
+  assert.equal(await page.getByLabel(label('payoutSigningKey'), { exact: true }).inputValue(), 'ci-private-signing-key')
+  await page.getByRole('button', { name: label('save'), exact: true }).click()
+  await page.waitForFunction(() => !document.querySelector('input[type="password"]')?.value)
+  assert.equal(payoutSettingsRequests.length, 2)
+  assert.equal(payoutSettingsRequests[1].auto_approve_enabled, true)
+  await page.getByRole('button', { name: label('adminTabs.withdrawals'), exact: true }).click()
+  await page.getByRole('button', { name: label('queuePayout'), exact: true }).click()
+  await page.getByRole('button', { name: label('reconcilePayout'), exact: true }).waitFor()
+  assert.equal(await page.getByRole('button', { name: label('reviewWithdrawal'), exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: label('queuePayout'), exact: true }).count(), 0)
+  const reconcileResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/admin/merchant-withdrawals/5/reconcile' && response.request().method() === 'POST')
+  await page.getByRole('button', { name: label('reconcilePayout'), exact: true }).click()
+  await reconcileResponse
+  assert.equal(payoutSubmissions, 1)
+  assert.equal(payoutQueries, 1)
+  await page.screenshot({ path: resolve(screenshots, 'merchant-payouts.png'), fullPage: true, animations: 'disabled' })
+  await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.documentElement.classList.add('light') })
+  await page.screenshot({ path: resolve(screenshots, 'merchant-payouts-light.png'), fullPage: true, animations: 'disabled' })
+  await page.evaluate(() => { document.documentElement.classList.remove('light'); document.documentElement.classList.add('dark') })
+  assert.equal(await page.evaluate(() => [...Object.values(sessionStorage), ...Object.values(localStorage)].some(value => value.includes('ci-private-receiving-token') || value.includes('ci-private-signing-key'))), false)
   await page.getByRole('button', { name: 'key', exact: true }).click()
   await page.getByRole('textbox', { name: commonLabel('apiKeys.fields.name'), exact: true }).fill('CI merchant key')
   await page.getByRole('button', { name: commonLabel('apiKeys.actions.create'), exact: true }).click()
@@ -203,6 +337,13 @@ try {
   const fixedMerchant = await mobileTable.locator('tbody tr').first().locator('td').first().boundingBox()
   assert.ok(fixedMerchant && fixedMerchant.x >= 0 && fixedMerchant.x < mobileGeometry.viewport, 'Merchant identity remains visible while scrolling')
   await page.screenshot({ path: resolve(screenshots, 'merchant-catalog-mobile-actions.png'), fullPage: true, animations: 'disabled' })
+  await page.setViewportSize({ width: 1280, height: 1000 })
+  await page.getByText(label('moreFilters'), { exact: true }).click()
+  await page.getByRole('combobox', { name: label('protocol'), exact: true }).selectOption('xai_video')
+  await page.getByRole('textbox', { name: label('model'), exact: true }).fill('grok-imagine-video')
+  await page.getByText('480p: ' + label('pricePerSecond').replace('{{value}}', '0.04'), { exact: true }).waitFor()
+  await page.getByText(label('ttftNotApplicable'), { exact: true }).waitFor()
+  await page.screenshot({ path: resolve(screenshots, 'merchant-video.png'), fullPage: true, animations: 'disabled' })
   assert.deepEqual(errors, [])
   console.log('Merchant pool browser regression passed')
 } catch (error) {

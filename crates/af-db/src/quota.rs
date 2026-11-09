@@ -302,7 +302,10 @@ impl QuotaRepository {
         if principal.merchant_billing_snapshot().is_some()
             && (principal.organization_principal().is_some()
                 || contract_price.is_some()
-                || reservation_kind != QuotaReservationKind::Request)
+                || !matches!(
+                    reservation_kind,
+                    QuotaReservationKind::Request | QuotaReservationKind::BatchTask
+                ))
         {
             return Err(QuotaRepositoryError::Conflict);
         }

@@ -33,6 +33,7 @@ use sea_orm::{
 use std::{future::Future, time::Duration};
 
 mod catalog;
+mod policies;
 mod terms;
 #[cfg(test)]
 mod tests;
@@ -271,6 +272,8 @@ impl MerchantPoolRepository {
                 .map_err(internal)?;
             let mut items = Vec::with_capacity(rows.len());
             for row in rows {
+                self.apply_due_service_prices(row.id, DatabaseTimestamp::now_utc())
+                    .await?;
                 items.push(service_snapshot(self.pool.connection(), row).await?);
             }
             Ok(MerchantPage {
@@ -296,6 +299,8 @@ impl MerchantPoolRepository {
                     return Err(MerchantPoolError::NotFound);
                 }
             }
+            self.apply_due_service_prices(id, DatabaseTimestamp::now_utc())
+                .await?;
             service_snapshot(self.pool.connection(), row).await
         })
         .await
@@ -478,6 +483,16 @@ async fn service_snapshot<C: ConnectionTrait>(
         status: row.status,
         published: published.map(revision_snapshot).transpose()?,
         draft: draft.map(revision_snapshot).transpose()?,
+        active_price: policies::active_price(connection, row.id, row.published_revision_id)
+            .await?
+            .map(policies::price_snapshot)
+            .transpose()?,
+        maintenance: policies::active_maintenance(
+            connection,
+            row.id,
+            DatabaseTimestamp::now_utc().unix_timestamp(),
+        )
+        .await?,
         created_at: row.created_at.unix_timestamp(),
         updated_at: row.updated_at.unix_timestamp(),
     })
@@ -503,10 +518,17 @@ fn pagination(query: &MerchantListQuery) -> Result<(u32, u32), MerchantPoolError
         || size > 100
         || query.search.as_ref().is_some_and(|s| s.len() > 128)
         || query.model.as_ref().is_some_and(|s| s.len() > 255)
-        || query
-            .protocol
-            .as_ref()
-            .is_some_and(|s| !matches!(s.as_str(), "openai_chat" | "openai_responses"))
+        || query.protocol.as_ref().is_some_and(|s| {
+            !matches!(
+                s.as_str(),
+                "openai_chat"
+                    | "openai_responses"
+                    | "openai_images"
+                    | "openai_audio"
+                    | "openai_speech"
+                    | "xai_video"
+            )
+        })
         || query
             .capability
             .as_ref()

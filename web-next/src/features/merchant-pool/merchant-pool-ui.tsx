@@ -1,13 +1,21 @@
 import type { ReactNode } from 'react'
-import { Button, Chip, Skeleton } from '@heroui/react'
+import { Button, Chip, Skeleton, type ButtonProps } from '@heroui/react'
 import { RefreshCw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 
+export function PoolButton({ className, color = 'default', variant = 'solid', ...props }: ButtonProps) {
+  const neutral = color === 'default' || color === 'secondary'
+  const plain = variant === 'light' || variant === 'bordered' || variant === 'ghost' || variant === 'faded'
+  const accent = color === 'primary' ? 'text-primary' : color === 'danger' ? 'text-destructive' : color === 'success' ? 'text-success' : color === 'warning' ? 'text-warning' : undefined
+  const flat = color === 'primary' ? 'bg-primary/12 text-primary' : color === 'danger' ? 'bg-destructive/12 text-destructive' : color === 'success' ? 'bg-success/12 text-success' : color === 'warning' ? 'bg-warning/12 text-warning' : 'bg-surface-2 text-foreground'
+  return <Button {...props} color={color} variant={variant} className={cn(neutral && 'text-foreground', neutral && (variant === 'solid' || variant === 'shadow') && 'bg-surface-2', neutral && variant === 'bordered' && 'border-[var(--hairline)]', plain && (neutral ? 'data-[hover=true]:bg-surface-2' : accent), variant === 'flat' && flat, className)} />
+}
+
 export function PoolHeader({ title, description, refreshing, onRefresh, children }: { title: string; description: string; refreshing: boolean; onRefresh: () => void; children?: ReactNode }) {
   const { t } = useTranslation()
-  return <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-lg font-semibold">{title}</h2><p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">{description}</p></div><div className="flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="bordered" isDisabled={refreshing} onPress={onRefresh}><RefreshCw className={cn('size-3.5', refreshing && 'animate-spin')} aria-hidden="true" />{t('merchantPool.refresh')}</Button>{children}</div></header>
+  return <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-lg font-semibold">{title}</h2><p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">{description}</p></div><div className="flex flex-wrap items-center gap-2"><PoolButton type="button" size="sm" variant="bordered" isDisabled={refreshing} onPress={onRefresh}><RefreshCw className={cn('size-3.5', refreshing && 'animate-spin')} aria-hidden="true" />{t('merchantPool.refresh')}</PoolButton>{children}</div></header>
 }
 
 export function PoolNavigation() {
@@ -26,7 +34,7 @@ export function PoolSelect({ label, value, onChange, options, disabled, allowEmp
 
 export function PoolError({ onRetry, message }: { onRetry?: () => void; message?: string }) {
   const { t } = useTranslation()
-  return <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-danger/25 bg-danger/8 p-3 text-xs text-danger"><span>{message ?? t('merchantPool.loadError')}</span>{onRetry ? <Button type="button" size="sm" variant="flat" onPress={onRetry}>{t('merchantPool.retry')}</Button> : null}</div>
+  return <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-danger/25 bg-danger/8 p-3 text-xs text-danger"><span>{message ?? t('merchantPool.loadError')}</span>{onRetry ? <PoolButton type="button" size="sm" variant="flat" onPress={onRetry}>{t('merchantPool.retry')}</PoolButton> : null}</div>
 }
 
 export function PoolLoading() { return <div className="grid gap-3" role="status"><Skeleton className="h-20 rounded-lg" /><Skeleton className="h-20 rounded-lg" /><Skeleton className="h-20 rounded-lg" /></div> }
@@ -42,5 +50,5 @@ export function PoolStatus({ status }: { status: string }) {
 
 export function PoolPager({ page, hasMore, loading, onChange }: { page: number; hasMore: boolean; loading: boolean; onChange: (page: number) => void }) {
   const { t } = useTranslation()
-  return <div className="flex items-center justify-end gap-3 border-t border-[var(--hairline)] pt-3 text-xs"><Button size="sm" variant="flat" isDisabled={page === 0 || loading} onPress={() => onChange(page - 1)}>{t('merchantPool.previous')}</Button><span>{t('merchantPool.page', { page: page + 1 })}</span><Button size="sm" variant="flat" isDisabled={!hasMore || loading} onPress={() => onChange(page + 1)}>{t('merchantPool.next')}</Button></div>
+  return <div className="flex items-center justify-end gap-3 border-t border-[var(--hairline)] pt-3 text-xs"><PoolButton size="sm" variant="flat" isDisabled={page === 0 || loading} onPress={() => onChange(page - 1)}>{t('merchantPool.previous')}</PoolButton><span>{t('merchantPool.page', { page: page + 1 })}</span><PoolButton size="sm" variant="flat" isDisabled={!hasMore || loading} onPress={() => onChange(page + 1)}>{t('merchantPool.next')}</PoolButton></div>
 }

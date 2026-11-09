@@ -15,11 +15,14 @@ use af_billing::{
 };
 use af_db::{
     AsyncTaskBillingRepository, AsyncTaskRepository, AsyncTaskSubmissionRepository,
-    QuotaRepository, UsageLogRepository,
+    EncryptedCredentialEnvelope, MerchantFinanceRepository, MerchantPoolRepository,
+    MerchantRouteMember, MerchantRouteWrite, QuotaRepository, UsageLogRepository,
 };
 use af_domain::{
     AfError, AsyncTaskBindingFingerprint, AsyncTaskId, AsyncTaskRequestId, ChannelId, CredentialId,
-    GatewayPrincipal, GroupId, TaskProgress, TaskStatus, TokenId, UpstreamTaskId,
+    GatewayPrincipal, GroupId, MerchantApplication, MerchantModelWrite, MerchantPoolWrite,
+    MerchantReview, MerchantServiceWrite, TaskProgress, TaskStatus, TokenId, UpstreamTaskId,
+    UserId, UserRouteStrategy,
 };
 use af_protocol::{
     CanonicalTaskOutput, CanonicalTaskPoll, CanonicalVideoGenerationRequest, CanonicalVideoOutput,
@@ -866,6 +869,7 @@ struct MockRuntime {
     poll: Mutex<CanonicalTaskPoll>,
     submitted_groups: Mutex<Vec<(GroupId, GroupId)>>,
     polled_groups: Mutex<Vec<GroupId>>,
+    polled_bindings: Mutex<Vec<(ChannelId, CredentialId)>>,
 }
 
 impl MockRuntime {
@@ -879,6 +883,7 @@ impl MockRuntime {
             poll: Mutex::new(running_poll()),
             submitted_groups: Mutex::new(Vec::new()),
             polled_groups: Mutex::new(Vec::new()),
+            polled_bindings: Mutex::new(Vec::new()),
         }
     }
 
@@ -941,6 +946,13 @@ impl PersistentVideoTaskRuntime for MockRuntime {
             .lock()
             .expect("模拟轮询记录不能中毒")
             .push(claim.target_group_id().expect("已受理任务必须保存目标分组"));
+        self.polled_bindings
+            .lock()
+            .expect("模拟绑定记录不能中毒")
+            .push((
+                claim.channel_id().expect("已受理渠道"),
+                claim.credential_id().expect("已受理凭据"),
+            ));
         let poll = self.poll.lock().expect("模拟轮询结果锁不能中毒").clone();
         Box::pin(async move { Ok(poll) })
     }
@@ -1151,4 +1163,591 @@ fn async_task_id(marker: u8) -> AsyncTaskId {
 
 fn async_request_id(marker: u8) -> AsyncTaskRequestId {
     AsyncTaskRequestId::new([marker; 16]).expect("测试幂等标识必须非零")
+}
+
+struct MerchantVideoFixture {
+    fixture: Fixture,
+    routes: UserRouteRuntime,
+    pool_group: GroupId,
+    merchants: [i64; 2],
+    price_version: i64,
+}
+
+async fn merchant_video_fixture(with_cash: bool) -> Result<MerchantVideoFixture, Box<dyn Error>> {
+    let mut fixture = fixture().await?;
+    let pool_group = GroupId::new(insert(fixture.database.seed(),
+        "INSERT INTO groups (name, display_name, flags) VALUES ('merchant-video-pool', '视频商户池', '{}')").await?)?;
+    fixture
+        .database
+        .seed()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO group_key_policies (group_id, selection_mode) VALUES (?, 'all_users')",
+            [pool_group.get().into()],
+        ))
+        .await?;
+    let admin = UserId::new(insert(fixture.database.seed(), format!(
+        "INSERT INTO users (username,default_group_id,aff_code,settings,status,role) VALUES ('merchant-video-admin',{},'merchant-video-admin','{{}}',1,1)",
+        fixture.principal.group_id().get())).await?)?;
+    let pools =
+        MerchantPoolRepository::new(fixture.database.pool().clone(), Duration::from_secs(5));
+    let pool = pools
+        .write_pool(
+            admin,
+            None,
+            MerchantPoolWrite {
+                group_id: pool_group.get(),
+                name: "Merchant Video Pool".to_owned(),
+                description: String::new(),
+                enabled: true,
+                commission_bps: 500,
+                commission_inherit_global: false,
+                min_ratio_micros: 100_000,
+                max_ratio_micros: 5_000_000,
+                settlement_delay_secs: 3600,
+            },
+        )
+        .await?;
+    let mut merchants = Vec::new();
+    let mut first_price = None;
+    for (index, ratio) in [(1, 500_000), (2, 1_000_000)] {
+        let owner = UserId::new(insert(fixture.database.seed(), format!(
+            "INSERT INTO users (username,default_group_id,aff_code,settings,status) VALUES ('merchant-video-{index}',{},'merchant-video-aff-{index}','{{}}',1)",
+            fixture.principal.group_id().get())).await?)?;
+        let merchant = pools
+            .apply(
+                owner,
+                MerchantApplication {
+                    name: format!("Merchant Video {index}"),
+                    description: String::new(),
+                },
+            )
+            .await?;
+        let review = |expected_revision| MerchantReview {
+            decision: "approve".to_owned(),
+            reason: "Fixture approval".to_owned(),
+            expected_revision,
+        };
+        pools
+            .review_merchant(admin, merchant.id, review(None))
+            .await?;
+        let service = pools
+            .write_service(
+                owner,
+                None,
+                MerchantServiceWrite {
+                    pool_id: pool.id,
+                    name: format!("Merchant video supply {index}"),
+                    description: String::new(),
+                    base_url: "https://api.example.com/v1".to_owned(),
+                    protocol: "xai_video".to_owned(),
+                    api_key: Some("merchant-video-private".to_owned()),
+                    default_ratio_micros: ratio,
+                    models: vec![MerchantModelWrite {
+                        model: UPSTREAM_MODEL.to_owned(),
+                        upstream_model: UPSTREAM_MODEL.to_owned(),
+                        ratio_micros: None,
+                        context_window: None,
+                        max_output_tokens: None,
+                        supports_streaming: false,
+                        supports_tools: false,
+                        supports_vision: false,
+                    }],
+                    concurrency: Some(2),
+                    timeout_secs: 60,
+                },
+                |_, _, _, _| {
+                    EncryptedCredentialEnvelope::new("merchant-video", [1; 24], vec![2; 32])
+                        .map_err(|_| af_domain::MerchantPoolError::Unavailable)
+                },
+            )
+            .await?;
+        let pending = pools.submit_service(owner, service.id).await?;
+        let service = pools
+            .review_service(
+                admin,
+                service.id,
+                review(pending.draft.as_ref().map(|revision| revision.revision)),
+            )
+            .await?;
+        if index == 1 {
+            let revision = service
+                .published
+                .as_ref()
+                .expect("published merchant video revision");
+            let binding = fixture
+                .database
+                .seed()
+                .query_one(Statement::from_sql_and_values(
+                    DbBackend::Sqlite,
+                    "SELECT channel_id, credential_id FROM merchant_service_revisions WHERE id = ?",
+                    [revision.id.into()],
+                ))
+                .await?
+                .expect("reviewed binding");
+            fixture.channel_id = ChannelId::new(binding.try_get("", "channel_id")?)?;
+            fixture.credential_id = CredentialId::new(binding.try_get("", "credential_id")?)?;
+            first_price = service.active_price.map(|price| price.id);
+        }
+        merchants.push(merchant.id);
+    }
+    let repository =
+        af_db::UserRouteRepository::new(fixture.database.pool().clone(), Duration::from_secs(5))?;
+    let route = repository
+        .write_merchant_route(
+            fixture.principal.user_id(),
+            None,
+            MerchantRouteWrite {
+                name: "Merchant video route".to_owned(),
+                pool_id: pool.id,
+                strategy: UserRouteStrategy::Ordered,
+                enabled: true,
+                max_merchant_attempts: 2,
+                max_price_ratio_micros: None,
+                members: merchants
+                    .iter()
+                    .enumerate()
+                    .map(|(index, merchant)| MerchantRouteMember {
+                        merchant_id: *merchant,
+                        priority: index as i32,
+                        weight: 1,
+                        last_selected_at_millis: None,
+                    })
+                    .collect(),
+                excluded_merchant_ids: Vec::new(),
+                allow_pool_fallback: false,
+                accept_new_merchants: false,
+            },
+        )
+        .await?;
+    fixture
+        .database
+        .seed()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE tokens SET group_id = NULL, user_route_id = ? WHERE id = ?",
+            [route.id.into(), fixture.principal.token_id().get().into()],
+        ))
+        .await?;
+    fixture.principal = fixture.principal.with_user_route_id(Some(route.id));
+    if with_cash {
+        fixture.database.seed().execute(Statement::from_sql_and_values(DbBackend::Sqlite,
+            "INSERT INTO topup_orders (order_key,user_id,provider,status,amount_minor,currency,quota_amount,idempotency_key,version,paid_at) VALUES (?,?,'stripe',3,2000,'USD',10000000,?,1,CURRENT_TIMESTAMP)",
+            ["11".repeat(16).into(), fixture.principal.user_id().get().into(), "22".repeat(16).into()])).await?;
+        fixture.database.seed().execute(Statement::from_sql_and_values(DbBackend::Sqlite,
+            "INSERT INTO wallet_ledger_entries (event_key,user_id,entry_type,quota_delta,balance_before,balance_after) VALUES (?,?,3,10000000,0,10000000)",
+            ["33".repeat(16).into(), fixture.principal.user_id().get().into()])).await?;
+    }
+    fixture.group_pricing =
+        GroupPricingCache::load_from_database(fixture.database.pool().clone()).await?;
+    fixture.model_prices =
+        ModelPriceCache::load_from_database(fixture.database.pool().clone()).await?;
+    assert_eq!(
+        fixture
+            .database
+            .seed()
+            .query_one(Statement::from_string(
+                DbBackend::Sqlite,
+                "SELECT COUNT(*) AS count FROM model_prices".to_owned()
+            ))
+            .await?
+            .expect("model price count")
+            .try_get::<i64>("", "count")?,
+        0
+    );
+    let routes = UserRouteRuntime::new(repository)
+        .with_merchant_pools(pools)
+        .with_group_model_policy(af_db::GroupModelPolicyRepository::new(
+            fixture.database.pool().clone(),
+            Duration::from_secs(5),
+        )?);
+    Ok(MerchantVideoFixture {
+        fixture,
+        routes,
+        pool_group,
+        merchants: [merchants[0], merchants[1]],
+        price_version: first_price.expect("active sales price"),
+    })
+}
+
+fn merchant_video_request() -> CanonicalVideoGenerationRequest {
+    CanonicalVideoGenerationRequest::new(
+        VideoModel::new(UPSTREAM_MODEL).expect("official video model"),
+        VideoPrompt::new("private merchant video prompt").expect("video prompt"),
+        Some(VideoDuration::new(8).expect("requested duration")),
+        None,
+        Some(VideoResolution::P720),
+    )
+}
+
+fn merchant_successful_submission(fixture: &Fixture, pool_group: GroupId) -> PersistentSubmission {
+    let mut result = successful_submission(fixture);
+    result.target_group_id = pool_group;
+    result
+}
+
+async fn merchant_video_reservation(
+    fixture: &Fixture,
+) -> Result<sea_orm::QueryResult, Box<dyn Error>> {
+    Ok(fixture.database.seed().query_one(Statement::from_sql_and_values(DbBackend::Sqlite,
+        "SELECT r.reservation_kind,r.funding_source,r.status AS reservation_status,r.reserved_quota,r.actual_quota,m.status AS merchant_status,m.merchant_id,m.pricing_version,m.sales_ratio_micros,m.commission_bps,m.gross_quota,m.commission_quota,m.net_quota FROM billing_reservations r INNER JOIN merchant_billing_reservations m ON m.reservation_key=r.idempotency_key WHERE r.token_id = ?",
+        [fixture.principal.token_id().get().into()])).await?.expect("merchant-backed batch reservation"))
+}
+
+#[tokio::test]
+async fn merchant_video_cash_batch_settles_once_after_restart_and_route_disable()
+-> Result<(), Box<dyn Error>> {
+    let MerchantVideoFixture {
+        fixture,
+        routes,
+        pool_group,
+        merchants,
+        price_version,
+    } = merchant_video_fixture(true).await?;
+    let runtime = Arc::new(
+        MockRuntime::new(vec![Ok(merchant_successful_submission(
+            &fixture, pool_group,
+        ))])
+        .with_poll(successful_poll(8)),
+    );
+    let coordinator = fixture
+        .coordinator(runtime.clone())
+        .with_user_route_runtime(routes.clone());
+    let request_id = async_request_id(0xc1);
+    let task = coordinator
+        .submit(
+            async_task_id(0xc1),
+            request_id,
+            fixture.principal,
+            merchant_video_request(),
+            "merchant-video-submit",
+        )
+        .await?;
+    assert_eq!(
+        *runtime.submitted_groups.lock().unwrap(),
+        vec![(pool_group, pool_group)]
+    );
+    let claim = fixture
+        .submissions
+        .find_by_request(fixture.principal.user_id(), request_id)
+        .await?
+        .expect("accepted merchant claim");
+    assert_eq!(claim.principal().group_id(), fixture.principal.group_id());
+    assert_ne!(claim.principal().group_id(), pool_group);
+    assert_eq!(
+        claim
+            .principal()
+            .merchant_billing_snapshot()
+            .expect("merchant terms")
+            .pricing_version(),
+        price_version
+    );
+    let reserved = merchant_video_reservation(&fixture).await?;
+    assert_eq!(reserved.try_get::<i16>("", "reservation_kind")?, 2);
+    assert_eq!(reserved.try_get::<i16>("", "funding_source")?, 1);
+    assert_eq!(
+        reserved.try_get::<String>("", "merchant_status")?,
+        "reserved"
+    );
+    assert_eq!(reserved.try_get::<i64>("", "merchant_id")?, merchants[0]);
+    assert_eq!(
+        reserved.try_get::<i64>("", "pricing_version")?,
+        price_version
+    );
+    assert_eq!(reserved.try_get::<i64>("", "sales_ratio_micros")?, 500_000);
+    assert_eq!(reserved.try_get::<i64>("", "commission_bps")?, 500);
+    assert!(reserved.try_get::<i64>("", "reserved_quota")? >= 280_000);
+    fixture
+        .database
+        .seed()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE user_routes SET enabled=false WHERE id=?",
+            [fixture.principal.user_route_id().expect("route").into()],
+        ))
+        .await?;
+    drop(coordinator);
+    let restarted = fixture
+        .coordinator(runtime.clone())
+        .with_user_route_runtime(routes);
+    let replay = restarted
+        .submit(
+            async_task_id(0xc2),
+            request_id,
+            fixture.principal,
+            merchant_video_request(),
+            "merchant-video-replay",
+        )
+        .await?;
+    assert_eq!(replay.task_id(), task.task_id());
+    assert_eq!(runtime.submission_count(), 1);
+    let polled = restarted
+        .poll(
+            fixture.principal.user_id(),
+            task.task_id(),
+            "merchant-video-poll",
+        )
+        .await?;
+    assert!(
+        matches!(polled, PersistentVideoTaskPollOutcome::Updated { task, .. } if matches!(task.status(), TaskStatus::Succeeded))
+    );
+    assert_eq!(
+        *runtime.polled_bindings.lock().unwrap(),
+        vec![(fixture.channel_id, fixture.credential_id)]
+    );
+    assert_eq!(*runtime.polled_groups.lock().unwrap(), vec![pool_group]);
+    let settled = merchant_video_reservation(&fixture).await?;
+    assert_eq!(settled.try_get::<i16>("", "reservation_status")?, 3);
+    assert_eq!(settled.try_get::<String>("", "merchant_status")?, "settled");
+    assert_eq!(settled.try_get::<i64>("", "actual_quota")?, 280_000);
+    assert_eq!(settled.try_get::<i64>("", "gross_quota")?, 280_000);
+    assert_eq!(settled.try_get::<i64>("", "commission_quota")?, 14_000);
+    assert_eq!(settled.try_get::<i64>("", "net_quota")?, 266_000);
+    let finance =
+        MerchantFinanceRepository::new(fixture.database.pool().clone(), Duration::from_secs(5));
+    let balance = finance.balance(merchants[0]).await?;
+    assert_eq!(balance.total_gross_quota, 280_000);
+    assert_eq!(balance.total_commission_quota, 14_000);
+    assert_eq!(balance.pending_quota, 266_000);
+    assert_eq!(finance.balance(merchants[1]).await?.total_gross_quota, 0);
+    assert!(matches!(
+        restarted
+            .poll(
+                fixture.principal.user_id(),
+                task.task_id(),
+                "merchant-video-terminal-replay"
+            )
+            .await?,
+        PersistentVideoTaskPollOutcome::Terminal(_)
+    ));
+    assert_eq!(runtime.poll_count(), 1);
+    assert_eq!(
+        finance.entries(merchants[0], 100, None).await?.items.len(),
+        1
+    );
+    let user = fixture
+        .database
+        .seed()
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT quota,used_quota,frozen_quota FROM users WHERE id=?",
+            [fixture.principal.user_id().get().into()],
+        ))
+        .await?
+        .expect("consumer wallet");
+    assert_eq!(user.try_get::<i64>("", "quota")?, 9_720_000);
+    assert_eq!(user.try_get::<i64>("", "used_quota")?, 280_000);
+    assert_eq!(user.try_get::<i64>("", "frozen_quota")?, 0);
+    fixture.database.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn merchant_video_unknown_acceptance_keeps_original_merchant_and_never_resubmits()
+-> Result<(), Box<dyn Error>> {
+    let MerchantVideoFixture {
+        fixture,
+        routes,
+        pool_group,
+        merchants,
+        ..
+    } = merchant_video_fixture(true).await?;
+    let runtime = Arc::new(MockRuntime::new(vec![
+        Err((
+            AfError::Upstream(af_domain::UpstreamError::ProtocolError),
+            VideoTaskSubmissionDisposition::AcceptanceUnknown,
+        )),
+        Ok(merchant_successful_submission(&fixture, pool_group)),
+    ]));
+    let coordinator = fixture
+        .coordinator(runtime.clone())
+        .with_user_route_runtime(routes.clone());
+    let request_id = async_request_id(0xd1);
+    assert!(matches!(
+        coordinator
+            .submit(
+                async_task_id(0xd1),
+                request_id,
+                fixture.principal,
+                merchant_video_request(),
+                "merchant-video-unknown"
+            )
+            .await,
+        Err(PersistentVideoTaskError::SubmissionOutcomeUnknown)
+    ));
+    drop(coordinator);
+    let restarted = fixture
+        .coordinator(runtime.clone())
+        .with_user_route_runtime(routes);
+    assert!(matches!(
+        restarted
+            .submit(
+                async_task_id(0xd2),
+                request_id,
+                fixture.principal,
+                merchant_video_request(),
+                "merchant-video-unknown-replay"
+            )
+            .await,
+        Err(PersistentVideoTaskError::SubmissionOutcomeUnknown)
+    ));
+    assert_eq!(runtime.submission_count(), 1);
+    let claim = fixture
+        .submissions
+        .find_by_request(fixture.principal.user_id(), request_id)
+        .await?
+        .expect("unknown acceptance claim");
+    assert_eq!(claim.state(), AsyncTaskSubmissionState::Submitting);
+    assert_eq!(
+        claim
+            .principal()
+            .merchant_billing_snapshot()
+            .expect("frozen terms")
+            .merchant_id(),
+        merchants[0]
+    );
+    assert_eq!(
+        claim.principal().merchant_channel_id(),
+        Some(fixture.channel_id)
+    );
+    let reservation = merchant_video_reservation(&fixture).await?;
+    assert_eq!(reservation.try_get::<i16>("", "reservation_status")?, 1);
+    assert_eq!(
+        reservation.try_get::<String>("", "merchant_status")?,
+        "reserved"
+    );
+    let finance =
+        MerchantFinanceRepository::new(fixture.database.pool().clone(), Duration::from_secs(5));
+    assert_eq!(finance.balance(merchants[0]).await?.total_gross_quota, 0);
+    assert_eq!(finance.balance(merchants[1]).await?.total_gross_quota, 0);
+    fixture.database.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn merchant_video_duration_above_request_refunds_cash_without_proceeds()
+-> Result<(), Box<dyn Error>> {
+    let MerchantVideoFixture {
+        fixture,
+        routes,
+        pool_group,
+        merchants,
+        ..
+    } = merchant_video_fixture(true).await?;
+    let runtime = Arc::new(
+        MockRuntime::new(vec![Ok(merchant_successful_submission(
+            &fixture, pool_group,
+        ))])
+        .with_poll(successful_poll(15)),
+    );
+    let coordinator = fixture
+        .coordinator(runtime.clone())
+        .with_user_route_runtime(routes);
+    let task = coordinator
+        .submit(
+            async_task_id(0xe1),
+            async_request_id(0xe1),
+            fixture.principal,
+            merchant_video_request(),
+            "merchant-video-duration-submit",
+        )
+        .await?;
+    let outcome = coordinator
+        .poll(
+            fixture.principal.user_id(),
+            task.task_id(),
+            "merchant-video-duration-poll",
+        )
+        .await?;
+    assert!(
+        matches!(outcome, PersistentVideoTaskPollOutcome::Updated { task, billing_dimensions: None, .. } if matches!(task.status(), TaskStatus::Failed { .. }))
+    );
+    let reservation = merchant_video_reservation(&fixture).await?;
+    assert_eq!(reservation.try_get::<i16>("", "reservation_status")?, 4);
+    assert_eq!(
+        reservation.try_get::<String>("", "merchant_status")?,
+        "canceled"
+    );
+    assert_eq!(reservation.try_get::<i64>("", "gross_quota")?, 0);
+    assert_eq!(reservation.try_get::<i64>("", "commission_quota")?, 0);
+    assert_eq!(reservation.try_get::<i64>("", "net_quota")?, 0);
+    let finance =
+        MerchantFinanceRepository::new(fixture.database.pool().clone(), Duration::from_secs(5));
+    assert_eq!(finance.balance(merchants[0]).await?.total_gross_quota, 0);
+    assert!(
+        finance
+            .entries(merchants[0], 100, None)
+            .await?
+            .items
+            .is_empty()
+    );
+    let user = fixture
+        .database
+        .seed()
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT quota,used_quota,frozen_quota FROM users WHERE id=?",
+            [fixture.principal.user_id().get().into()],
+        ))
+        .await?
+        .expect("refunded consumer wallet");
+    assert_eq!(user.try_get::<i64>("", "quota")?, 10_000_000);
+    assert_eq!(user.try_get::<i64>("", "used_quota")?, 0);
+    assert_eq!(user.try_get::<i64>("", "frozen_quota")?, 0);
+    assert!(matches!(
+        coordinator
+            .poll(
+                fixture.principal.user_id(),
+                task.task_id(),
+                "merchant-video-duration-terminal"
+            )
+            .await?,
+        PersistentVideoTaskPollOutcome::Terminal(_)
+    ));
+    assert_eq!(runtime.poll_count(), 1);
+    fixture.database.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn merchant_video_batch_cannot_reserve_promotional_wallet_balance()
+-> Result<(), Box<dyn Error>> {
+    let MerchantVideoFixture {
+        fixture,
+        routes,
+        pool_group,
+        ..
+    } = merchant_video_fixture(false).await?;
+    let runtime = Arc::new(MockRuntime::new(vec![Ok(merchant_successful_submission(
+        &fixture, pool_group,
+    ))]));
+    let coordinator = fixture
+        .coordinator(runtime.clone())
+        .with_user_route_runtime(routes);
+    assert!(matches!(
+        coordinator
+            .submit(
+                async_task_id(0xf1),
+                async_request_id(0xf1),
+                fixture.principal,
+                merchant_video_request(),
+                "merchant-video-no-cash"
+            )
+            .await,
+        Err(PersistentVideoTaskError::Billing)
+    ));
+    assert_eq!(runtime.submission_count(), 0);
+    let count = fixture
+        .database
+        .seed()
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT COUNT(*) AS count FROM billing_reservations WHERE token_id=?",
+            [fixture.principal.token_id().get().into()],
+        ))
+        .await?
+        .expect("reservation count");
+    assert_eq!(count.try_get::<i64>("", "count")?, 0);
+    fixture.database.close().await;
+    Ok(())
 }

@@ -17,6 +17,8 @@ pub use client_profile::{
 mod concurrency;
 mod merchant_pool;
 pub use merchant_pool::*;
+mod merchant_service_policy;
+pub use merchant_service_policy::*;
 mod enums;
 mod error;
 mod gateway_identity;

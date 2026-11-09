@@ -131,6 +131,18 @@ pub(super) fn document() -> OpenApi {
             &[
                 ("currency", string()),
                 ("unit", string()),
+                ("billing_mode", enumeration(&["token", "free", "video"])),
+                (
+                    "video_per_second",
+                    nullable(object(
+                        &[
+                            ("p480", string()),
+                            ("p720", string()),
+                            ("p1080", nullable(string())),
+                        ],
+                        &[],
+                    )),
+                ),
                 ("input", string()),
                 ("output", string()),
                 ("cache_read", string()),
@@ -187,7 +199,14 @@ pub(super) fn document() -> OpenApi {
         ("base_url", string()),
         (
             "protocol",
-            enumeration(&["openai_chat", "openai_responses"]),
+            enumeration(&[
+                "openai_chat",
+                "openai_responses",
+                "openai_images",
+                "openai_audio",
+                "openai_speech",
+                "xai_video",
+            ]),
         ),
         ("default_ratio_micros", integer()),
         ("models", array(reference("MerchantModelWrite"))),
@@ -242,6 +261,8 @@ pub(super) fn document() -> OpenApi {
                 ),
                 ("published", nullable(reference("MerchantRevision"))),
                 ("draft", nullable(reference("MerchantRevision"))),
+                ("active_price", nullable(reference("MerchantServicePrice"))),
+                ("maintenance", array(reference("MerchantMaintenance"))),
                 ("created_at", integer()),
                 ("updated_at", integer()),
             ],
@@ -261,9 +282,18 @@ pub(super) fn document() -> OpenApi {
                 ("status", string()),
                 (
                     "protocol",
-                    enumeration(&["openai_chat", "openai_responses"]),
+                    enumeration(&[
+                        "openai_chat",
+                        "openai_responses",
+                        "openai_images",
+                        "openai_audio",
+                        "openai_speech",
+                        "xai_video",
+                    ]),
                 ),
                 ("revision", integer()),
+                ("price_version", integer()),
+                ("maintenance", array(reference("MerchantMaintenance"))),
                 ("models", array(reference("MerchantModelOffer"))),
                 ("updated_at", integer()),
             ],

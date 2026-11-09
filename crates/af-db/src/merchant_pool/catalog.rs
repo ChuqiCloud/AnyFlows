@@ -24,7 +24,6 @@ impl MerchantPoolRepository {
             for model in write.models {
                 if !af_domain::validate_merchant_text(&model.model, 255, false)
                     || !names.insert(model.model.clone())
-                    || model.supports_vision
                 {
                     return Err(MerchantPoolError::InvalidInput);
                 }
@@ -107,6 +106,17 @@ impl MerchantPoolRepository {
             }
             let mut candidates = Vec::new();
             for row in rows {
+                self.apply_due_service_prices(row.id, DatabaseTimestamp::now_utc())
+                    .await?;
+                let maintenance = super::policies::active_maintenance(
+                    self.pool.connection(),
+                    row.id,
+                    DatabaseTimestamp::now_utc().unix_timestamp(),
+                )
+                .await?;
+                if maintenance.iter().any(|notice| notice.blocks_requests) {
+                    continue;
+                }
                 let Some(revision_id) = row.published_revision_id else {
                     continue;
                 };
@@ -130,16 +140,22 @@ impl MerchantPoolRepository {
                 if revision.status != "published" {
                     continue;
                 }
-                let Some(model) = revision_models(&revision)?
+                let Some(price) = super::policies::active_price(
+                    self.pool.connection(),
+                    row.id,
+                    Some(revision_id),
+                )
+                .await?
+                else {
+                    continue;
+                };
+                let Some(model) = super::policies::price_models(&price)?
                     .into_iter()
                     .find(|item| item.model == model)
                 else {
                     continue;
                 };
-                if model.supports_vision {
-                    continue;
-                }
-                let ratio = model.ratio_micros.unwrap_or(revision.default_ratio_micros);
+                let ratio = model.ratio_micros.unwrap_or(price.default_ratio_micros);
                 if !(pool.min_ratio_micros..=pool.max_ratio_micros).contains(&ratio) {
                     continue;
                 }
@@ -164,6 +180,7 @@ impl MerchantPoolRepository {
                     merchant_id: row.merchant_id,
                     service_id: row.id,
                     revision_id,
+                    price_version: price.id,
                     channel_id: revision.channel_id,
                     sales_ratio_micros: ratio,
                     commission_bps: super::terms::resolve_commission(
@@ -210,6 +227,8 @@ impl MerchantPoolRepository {
             let pool = find_pool(self.pool.connection(), pool_id).await?;
             let mut items = Vec::new();
             for row in rows {
+                self.apply_due_service_prices(row.id, DatabaseTimestamp::now_utc())
+                    .await?;
                 let merchant = profiles::Entity::find_by_id(row.merchant_id)
                     .one(self.pool.connection())
                     .await
@@ -227,6 +246,17 @@ impl MerchantPoolRepository {
                     continue;
                 };
                 let revision = load_revision(self.pool.connection(), id, row.id).await?;
+                let Some(price) =
+                    super::policies::active_price(self.pool.connection(), row.id, Some(id)).await?
+                else {
+                    continue;
+                };
+                let maintenance = super::policies::active_maintenance(
+                    self.pool.connection(),
+                    row.id,
+                    DatabaseTimestamp::now_utc().unix_timestamp(),
+                )
+                .await?;
                 if query
                     .protocol
                     .as_ref()
@@ -235,7 +265,7 @@ impl MerchantPoolRepository {
                     continue;
                 }
                 let mut models = Vec::new();
-                for model in revision_models(&revision)? {
+                for model in super::policies::price_models(&price)? {
                     if query
                         .model
                         .as_ref()
@@ -243,7 +273,7 @@ impl MerchantPoolRepository {
                     {
                         continue;
                     }
-                    let ratio = model.ratio_micros.unwrap_or(revision.default_ratio_micros);
+                    let ratio = model.ratio_micros.unwrap_or(price.default_ratio_micros);
                     if query.min_ratio_micros.is_some_and(|min| ratio < min)
                         || query.max_ratio_micros.is_some_and(|max| ratio > max)
                     {
@@ -298,8 +328,8 @@ impl MerchantPoolRepository {
                     "paused".to_owned()
                 } else if row.status != "published" {
                     row.status
-                } else if models.iter().any(|model| model.supports_vision) {
-                    "unsupported".to_owned()
+                } else if maintenance.iter().any(|notice| notice.blocks_requests) {
+                    "maintenance".to_owned()
                 } else if !channel_active
                     || revision.status != "published"
                     || models.iter().any(|m| {
@@ -329,8 +359,13 @@ impl MerchantPoolRepository {
                     status,
                     protocol: revision.protocol,
                     revision: revision.revision,
+                    price_version: price.id,
+                    maintenance,
                     models,
-                    updated_at: revision.updated_at.unix_timestamp(),
+                    updated_at: revision
+                        .updated_at
+                        .unix_timestamp()
+                        .max(price.updated_at.unix_timestamp()),
                 });
             }
             if matches!(query.sort.as_deref(), Some("success_rate" | "latency")) {
@@ -476,6 +511,18 @@ fn net_prices(
     Ok(MerchantModelPrices {
         currency: prices.currency.clone(),
         unit: prices.unit.clone(),
+        billing_mode: prices.billing_mode.clone(),
+        video_per_second: prices
+            .video_per_second
+            .as_ref()
+            .map(|rates| {
+                Ok(af_domain::MerchantVideoPrices {
+                    p480: net(&rates.p480)?,
+                    p720: net(&rates.p720)?,
+                    p1080: rates.p1080.as_deref().map(net).transpose()?,
+                })
+            })
+            .transpose()?,
         input: net(&prices.input)?,
         output: net(&prices.output)?,
         cache_read: net(&prices.cache_read)?,
@@ -490,6 +537,37 @@ pub(super) async fn model_price<C: ConnectionTrait>(
     model: &str,
     ratio: i64,
 ) -> Result<Option<MerchantModelPrices>, MerchantPoolError> {
+    if model == "grok-imagine-video"
+        || model == "grok-imagine-video-1.5"
+        || model.starts_with("grok-imagine-video-1.5-")
+    {
+        let ratio = Decimal::from(ratio)
+            .checked_div(Decimal::from(1_000_000))
+            .ok_or(MerchantPoolError::Unavailable)?;
+        let scale = |micros| {
+            Decimal::new(micros, 6)
+                .checked_mul(ratio)
+                .map(|n| n.normalize().to_string())
+                .ok_or(MerchantPoolError::Unavailable)
+        };
+        let v15 = model != "grok-imagine-video";
+        return Ok(Some(MerchantModelPrices {
+            currency: "USD".to_owned(),
+            unit: "second".to_owned(),
+            billing_mode: "video".to_owned(),
+            video_per_second: Some(af_domain::MerchantVideoPrices {
+                p480: scale(if v15 { 80_000 } else { 50_000 })?,
+                p720: scale(if v15 { 140_000 } else { 70_000 })?,
+                p1080: if v15 { Some(scale(250_000)?) } else { None },
+            }),
+            input: "0".to_owned(),
+            output: "0".to_owned(),
+            cache_read: "0".to_owned(),
+            cache_write_5m: "0".to_owned(),
+            cache_write_1h: "0".to_owned(),
+            version: 1,
+        }));
+    }
     let Some(price) = model_prices::Entity::find_by_id(SensitiveString::from(model))
         .one(connection)
         .await
@@ -497,8 +575,8 @@ pub(super) async fn model_price<C: ConnectionTrait>(
     else {
         return Ok(None);
     };
-    // Shared pools initially support deterministic per-token text pricing only.
-    if price.billing_mode != 1 || price.billing_expression.is_some() {
+    // Media uses the same platform-normalized, deterministic token tariff.
+    if !matches!(price.billing_mode, 1 | 2) || price.billing_expression.is_some() {
         return Ok(None);
     }
     let multiplier = Decimal::from(ratio)
@@ -512,6 +590,13 @@ pub(super) async fn model_price<C: ConnectionTrait>(
     Ok(Some(MerchantModelPrices {
         currency: "USD".to_owned(),
         unit: "million_tokens".to_owned(),
+        billing_mode: if price.billing_mode == 2 {
+            "free"
+        } else {
+            "token"
+        }
+        .to_owned(),
+        video_per_second: None,
         input: final_price(price.input_price.expose())?,
         output: final_price(price.output_price.expose())?,
         cache_read: final_price(price.cache_read_price.expose())?,

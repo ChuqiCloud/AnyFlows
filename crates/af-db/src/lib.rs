@@ -91,6 +91,11 @@ mod auth_tests;
 mod balance_alert;
 mod billing_batch;
 mod billing_contract;
+mod merchant_payout;
+pub use merchant_payout::{
+    MerchantPayout, MerchantPayoutAccount, MerchantPayoutClaim, MerchantPayoutConfig,
+    MerchantPayoutRepository, MerchantPayoutSettings, decode_payout_secret, encode_payout_secret,
+};
 mod merchant_finance;
 pub use billing_contract::{BillingContractPriceSnapshotError, OrganizationContractPriceSnapshot};
 pub use merchant_finance::{

@@ -2,7 +2,168 @@ use super::*;
 use af_db::{MerchantAttemptWrite, MerchantRouteMember};
 use af_domain::{ChannelId, MerchantBillingSnapshot, MerchantRuntimeCandidate};
 
+pub(crate) struct MerchantVideoCandidate {
+    pub(crate) offer: MerchantRuntimeCandidate,
+    pub(crate) pricing: af_billing::XaiVideoPricingSnapshot,
+    member: UserRouteMemberRecord,
+    health: Option<UserRouteModelHealth>,
+    quote: i64,
+}
+impl CandidateOrdering for MerchantVideoCandidate {
+    fn identity(&self) -> i64 {
+        self.offer.merchant_id
+    }
+    fn group_id(&self) -> GroupId {
+        self.member.group_id
+    }
+    fn member(&self) -> &UserRouteMemberRecord {
+        &self.member
+    }
+    fn quote(&self) -> i64 {
+        self.quote
+    }
+    fn health(&self) -> Option<&UserRouteModelHealth> {
+        self.health.as_ref()
+    }
+}
 impl UserRouteRuntime {
+    pub(crate) async fn merchant_video_candidates(
+        &self,
+        plan: &UserRouteRequestPlan,
+        principal: GatewayPrincipal,
+        resolution: Option<af_protocol::VideoResolution>,
+    ) -> Result<Vec<MerchantVideoCandidate>, AfError> {
+        let scope = plan.merchant_scope.as_ref().ok_or(AfError::Internal)?;
+        let pools = self.merchant_pools.as_ref().ok_or(AfError::Internal)?;
+        if !pools
+            .check_pool_access(principal.user_id(), scope.pool_id)
+            .await
+            .map_err(|_| AfError::Internal)?
+        {
+            return Err(AfError::ModelNotAllowed);
+        }
+        let statistics = self
+            .repository
+            .merchant_statistics_filtered(
+                scope.pool_id,
+                Some(&plan.model),
+                900,
+                Some("xai_video"),
+                Some(false),
+            )
+            .await
+            .map_err(map_repository_error)?;
+        let mut selected = Vec::new();
+        let mut fallback = Vec::new();
+        for offer in pools
+            .published_candidates(scope.pool_id, None, &plan.model)
+            .await
+            .map_err(|_| AfError::Internal)?
+        {
+            if offer.protocol != "xai_video"
+                || offer.model.upstream_model != plan.model
+                || scope.excluded_merchant_ids.contains(&offer.merchant_id)
+                || plan
+                    .route
+                    .max_price_ratio_micros
+                    .is_some_and(|max| offer.sales_ratio_micros > max)
+            {
+                continue;
+            }
+            let member = scope
+                .members
+                .iter()
+                .find(|m| m.merchant_id == offer.merchant_id);
+            if member.is_none()
+                && (!scope.allow_pool_fallback
+                    || (!scope.accept_new_merchants
+                        && !scope.enrolled_merchants.contains(&offer.merchant_id)))
+            {
+                continue;
+            }
+            let group_id = GroupId::new(offer.group_id).map_err(|_| AfError::Internal)?;
+            if !self.check_access(principal, group_id, &plan.model).await? {
+                continue;
+            }
+            let ratios = af_billing::PricingRatios::new(
+                af_billing::PricingRatio::new(offer.sales_ratio_micros)
+                    .map_err(|_| AfError::Internal)?,
+                af_billing::PricingRatio::ONE,
+                af_billing::PricingRatio::ONE,
+            );
+            let pricing = af_billing::XaiVideoPricingSnapshot::new(resolution, ratios);
+            pricing
+                .rate_microusd(&plan.model)
+                .map_err(|_| AfError::ModelNotAllowed)?;
+            let health = statistics
+                .iter()
+                .find(|s| s.service_id == offer.service_id && s.sample_count >= 20)
+                .map(|s| UserRouteModelHealth {
+                    group_id,
+                    success_count: s.success_count,
+                    fail_count: s.failure_count,
+                    total_latency_ms: u64::try_from(s.latency_p50_ms.unwrap_or(0))
+                        .unwrap_or(0)
+                        .saturating_mul(s.success_count),
+                    cooldown_until_millis: None,
+                    updated_at_millis: s.updated_at.saturating_mul(1000),
+                });
+            let candidate = MerchantVideoCandidate {
+                quote: pricing
+                    .maximum_upper_bound()
+                    .map_err(|_| AfError::Internal)?
+                    .units(),
+                pricing,
+                member: UserRouteMemberRecord {
+                    group_id,
+                    priority: member.map_or(i32::MAX, |m| m.priority),
+                    weight: member.map_or(1, |m| m.weight),
+                    last_selected_at_millis: member.and_then(|m| m.last_selected_at_millis),
+                },
+                offer,
+                health,
+            };
+            let target: &mut Vec<MerchantVideoCandidate> = if member.is_some() {
+                &mut selected
+            } else {
+                &mut fallback
+            };
+            if let Some(index) = target
+                .iter()
+                .position(|old| old.offer.merchant_id == candidate.offer.merchant_id)
+            {
+                if candidate.quote < target[index].quote {
+                    target[index] = candidate;
+                }
+            } else {
+                target.push(candidate)
+            }
+        }
+        order_candidates(plan.route.strategy, &mut selected)?;
+        order_candidates(plan.route.strategy, &mut fallback)?;
+        if plan.route.strategy == UserRouteStrategy::RoundRobin && !selected.is_empty() {
+            let ids = selected
+                .iter()
+                .map(|c| c.offer.merchant_id)
+                .collect::<Vec<_>>();
+            let id = self
+                .repository
+                .claim_merchant_round_robin(principal.user_id(), plan.route.id, &ids)
+                .await
+                .map_err(map_repository_error)?;
+            let index = selected
+                .iter()
+                .position(|c| c.offer.merchant_id == id)
+                .ok_or(AfError::Internal)?;
+            selected.rotate_left(index);
+        }
+        selected.extend(fallback);
+        if selected.is_empty() {
+            return Err(AfError::ModelUnavailable);
+        };
+        Ok(selected)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn merchant_candidates(
         &self,
@@ -14,7 +175,17 @@ impl UserRouteRuntime {
         operation: Option<Operation>,
         features: Option<crate::user_route_execution::MerchantRequestFeatures>,
     ) -> Result<Vec<UserRouteCandidate>, AfError> {
-        if !matches!(operation, Some(Operation::Chat | Operation::Responses)) {
+        if !matches!(
+            operation,
+            Some(
+                Operation::Chat
+                    | Operation::Responses
+                    | Operation::Image
+                    | Operation::ImageEdit
+                    | Operation::Audio
+                    | Operation::Video
+            )
+        ) {
             return Err(AfError::ModelNotAllowed);
         }
         let scope = plan.merchant_scope.as_ref().ok_or(AfError::Internal)?;
@@ -31,10 +202,12 @@ impl UserRouteRuntime {
             .published_candidates(scope.pool_id, None, &plan.model)
             .await
             .map_err(|_| AfError::Internal)?;
-        let features = features.ok_or(AfError::ModelNotAllowed)?;
-        if features.vision {
-            return Err(AfError::ModelNotAllowed);
-        }
+        let features = features.unwrap_or(crate::user_route_execution::MerchantRequestFeatures {
+            streaming: false,
+            tools: false,
+            vision: false,
+            unsupported_media: false,
+        });
         let statistics = self
             .repository
             .merchant_statistics_filtered(
@@ -55,19 +228,23 @@ impl UserRouteRuntime {
             if features.unsupported_media
                 || (features.streaming && !offer.model.supports_streaming)
                 || (features.tools && !offer.model.supports_tools)
-                || offer.model.supports_vision
-                || offer
+                || (features.vision && !offer.model.supports_vision)
+            {
+                continue;
+            }
+            if matches!(operation, Some(Operation::Chat | Operation::Responses))
+                && (offer
                     .model
                     .max_output_tokens
                     .is_some_and(|n| upper_bound.output_tokens().get() > i64::from(n))
-                || offer.model.context_window.is_some_and(|n| {
-                    upper_bound.checked_input_tokens().is_ok_and(|input| {
-                        input
-                            .get()
-                            .saturating_add(upper_bound.output_tokens().get())
-                            > i64::from(n)
-                    })
-                })
+                    || offer.model.context_window.is_some_and(|n| {
+                        upper_bound.checked_input_tokens().is_ok_and(|input| {
+                            input
+                                .get()
+                                .saturating_add(upper_bound.output_tokens().get())
+                                > i64::from(n)
+                        })
+                    }))
             {
                 continue;
             }
@@ -98,6 +275,11 @@ impl UserRouteRuntime {
                 .parse::<Protocol>()
                 .map_err(|_| AfError::Internal)?;
             if !compatible_protocol(protocol, upstream) {
+                continue;
+            }
+            if !matches!(operation, Some(Operation::Chat | Operation::Responses))
+                && upstream != protocol
+            {
                 continue;
             }
             let snapshot = pricing
@@ -245,6 +427,7 @@ impl UserRouteRuntime {
                 && m.revision_id == offer.revision_id
                 && m.channel_id == offer.channel_id
                 && m.sales_ratio_micros == offer.sales_ratio_micros
+                && m.price_version == offer.price_version
         }))
     }
 
@@ -256,7 +439,7 @@ impl UserRouteRuntime {
             offer.pool_id,
             offer.merchant_id,
             offer.service_id,
-            offer.revision_id,
+            offer.price_version,
             offer.sales_ratio_micros,
             offer.commission_bps,
             offer.settlement_delay_secs,
@@ -280,8 +463,19 @@ impl UserRouteRuntime {
         ttft_ms: Option<u64>,
         retryable: bool,
     ) {
+        let id = if protocol == Protocol::XaiVideo {
+            use sha2::Digest as _;
+            let digest = sha2::Sha256::digest(
+                format!("{request_id}:{}:{success}", terms.service_id()).as_bytes(),
+            );
+            let mut bytes = [0_u8; 16];
+            bytes.copy_from_slice(&digest[..16]);
+            uuid::Uuid::from_bytes(bytes).to_string()
+        } else {
+            uuid::Uuid::new_v4().to_string()
+        };
         let write = MerchantAttemptWrite {
-            id: uuid::Uuid::new_v4().to_string(),
+            id,
             pool_id: terms.pool_id(),
             route_id,
             request_id: request_id.to_owned(),

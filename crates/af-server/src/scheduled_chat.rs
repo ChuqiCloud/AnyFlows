@@ -226,6 +226,42 @@ impl ScheduledChatService {
         Ok(())
     }
 
+    async fn scoped_media_route(
+        &self,
+        principal: &GatewayPrincipal,
+        model: &str,
+    ) -> Result<af_scheduler::IndexedRoutePlan, AfError> {
+        if principal.merchant_channel_id().is_none() {
+            self.ensure_non_merchant_group(principal.group_id()).await?;
+        }
+        let mut route = self
+            .scheduler
+            .route_plan(principal.group_id(), model)
+            .map_err(map_scheduler_error)?
+            .ok_or(self.missing_model_route_error(model).await)?;
+        if let Some(channel) = principal.merchant_channel_id()
+            && !route.restrict_to_channel(channel)
+        {
+            return Err(AfError::ModelUnavailable);
+        }
+        if self.health.is_some() {
+            let (_, health) = self
+                .load_channel_health(principal.group_id(), model)
+                .await?;
+            route = self
+                .scheduler
+                .route_plan_with_health(principal.group_id(), model, &health)
+                .map_err(map_scheduler_error)?
+                .ok_or_else(|| AfError::from(af_domain::UpstreamError::overloaded()))?;
+            if let Some(channel) = principal.merchant_channel_id()
+                && !route.restrict_to_channel(channel)
+            {
+                return Err(af_domain::UpstreamError::overloaded().into());
+            }
+        }
+        Ok(route)
+    }
+
     pub(crate) fn relay_execution_policy(&self) -> af_relay::RelayExecutionPolicy {
         af_relay::RelayExecutionPolicy::new(
             1,
@@ -1513,6 +1549,9 @@ impl PlannedChatExecution for ScheduledChatExecution {
     }
 
     fn usage_upper_bound(&self) -> Result<af_protocol::Usage, af_relay::UsageResolutionError> {
+        if self.merchant_local_usage {
+            return af_relay::estimate_merchant_request_upper_bound(self.request.canonical());
+        }
         match &self.tool_plan {
             Some(plan) => Ok(plan.upper_bound()),
             None => af_relay::estimate_openai_request_upper_bound(self.request.canonical()),

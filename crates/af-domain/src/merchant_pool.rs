@@ -129,6 +129,8 @@ pub struct MerchantOwnedService {
     pub status: String,
     pub published: Option<MerchantRevision>,
     pub draft: Option<MerchantRevision>,
+    pub active_price: Option<crate::MerchantServicePrice>,
+    pub maintenance: Vec<crate::MerchantMaintenance>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -137,12 +139,21 @@ pub struct MerchantOwnedService {
 pub struct MerchantModelPrices {
     pub currency: String,
     pub unit: String,
+    pub billing_mode: String,
+    pub video_per_second: Option<MerchantVideoPrices>,
     pub input: String,
     pub output: String,
     pub cache_read: String,
     pub cache_write_5m: String,
     pub cache_write_1h: String,
     pub version: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct MerchantVideoPrices {
+    pub p480: String,
+    pub p720: String,
+    pub p1080: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -168,6 +179,8 @@ pub struct MerchantCatalogService {
     pub status: String,
     pub protocol: String,
     pub revision: i64,
+    pub price_version: i64,
+    pub maintenance: Vec<crate::MerchantMaintenance>,
     pub models: Vec<MerchantModelOffer>,
     pub updated_at: i64,
 }
@@ -247,6 +260,7 @@ pub struct MerchantRuntimeCandidate {
     pub merchant_id: i64,
     pub service_id: i64,
     pub revision_id: i64,
+    pub price_version: i64,
     pub channel_id: i64,
     pub sales_ratio_micros: i64,
     pub commission_bps: u16,
@@ -284,7 +298,15 @@ impl MerchantServiceWrite {
         if self.pool_id <= 0
             || !validate_merchant_text(&self.name, 128, false)
             || !validate_merchant_text(&self.description, 2048, true)
-            || !matches!(self.protocol.as_str(), "openai_chat" | "openai_responses")
+            || !matches!(
+                self.protocol.as_str(),
+                "openai_chat"
+                    | "openai_responses"
+                    | "openai_images"
+                    | "openai_audio"
+                    | "openai_speech"
+                    | "xai_video"
+            )
             || self.default_ratio_micros <= 0
             || self.default_ratio_micros > 100_000_000
             || self.models.is_empty()
@@ -299,6 +321,14 @@ impl MerchantServiceWrite {
         }
         let mut names = std::collections::BTreeSet::new();
         for model in &self.models {
+            let video = model.model == "grok-imagine-video"
+                || model.model == "grok-imagine-video-1.5"
+                || model.model.starts_with("grok-imagine-video-1.5-");
+            if (self.protocol == "xai_video") != video
+                || (video && model.upstream_model != model.model)
+            {
+                return Err(MerchantPoolError::InvalidInput);
+            }
             if !validate_merchant_text(&model.model, 255, false)
                 || !validate_merchant_text(&model.upstream_model, 255, false)
                 || !names.insert(&model.model)
@@ -307,7 +337,10 @@ impl MerchantServiceWrite {
                     .is_some_and(|n| n <= 0 || n > 100_000_000)
                 || model.context_window == Some(0)
                 || model.max_output_tokens == Some(0)
-                || model.supports_vision
+                || (model.supports_vision
+                    && !matches!(self.protocol.as_str(), "openai_chat" | "openai_responses"))
+                || (!matches!(self.protocol.as_str(), "openai_chat" | "openai_responses")
+                    && (model.supports_streaming || model.supports_tools))
                 || matches!((model.context_window,model.max_output_tokens),(Some(c),Some(o)) if o > c)
             {
                 return Err(MerchantPoolError::InvalidInput);

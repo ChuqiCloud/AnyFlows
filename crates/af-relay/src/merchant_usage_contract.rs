@@ -6,8 +6,8 @@ use af_adapter::{
 };
 use af_domain::Role;
 use af_protocol::{
-    CanonicalStreamEvent, ContentBlock, ContentDelta, FinishReason, Message, ResponseChoice,
-    Sampling, StreamOptions, TokenCount, UsageDetails, UsageSemantics, UsageSource,
+    CanonicalStreamEvent, ContentBlock, ContentDelta, FinishReason, MediaSource, Message,
+    ResponseChoice, Sampling, StreamOptions, TokenCount, UsageDetails, UsageSemantics, UsageSource,
 };
 use wiremock::{
     Mock, MockServer, ResponseTemplate,
@@ -338,4 +338,182 @@ async fn merchant_gemini_prompt_block_is_a_legal_terminal_response() {
     let billed = handle.resolve().await.unwrap();
     assert_eq!(billed.source(), UsageSource::Estimated);
     assert_eq!(billed.output_tokens().get(), 0);
+}
+
+fn merchant_image() -> ContentBlock {
+    ContentBlock::Image {
+        source: MediaSource::Url("https://media.example/image.png".to_owned()),
+        mime_type: None,
+    }
+}
+
+#[test]
+fn merchant_visual_tariff_counts_direct_and_nested_images_without_trusting_supplier_usage() {
+    let mut visual = request(Protocol::OpenAiChat, false).into_canonical();
+    visual.messages[0].content.push(merchant_image());
+    visual.messages.push(Message::new(
+        Role::Tool,
+        vec![ContentBlock::ToolResult {
+            tool_use_id: "call_image".to_owned(),
+            content: vec![
+                ContentBlock::Text("tool result".to_owned()),
+                merchant_image(),
+            ],
+            structured_content: None,
+            is_error: false,
+        }],
+    ));
+    let mut text = visual.clone();
+    text.messages[0].content.pop();
+    let ContentBlock::ToolResult { content, .. } = &mut text.messages[1].content[0] else {
+        unreachable!()
+    };
+    content.pop();
+    let base = crate::estimate_openai_request_upper_bound(&text).unwrap();
+    let upper = crate::estimate_merchant_request_upper_bound(&visual).unwrap();
+    assert_eq!(
+        upper.input_tokens().get(),
+        base.input_tokens().get() + 2 * 1024
+    );
+    assert_eq!(upper.source(), UsageSource::Estimated);
+    assert_eq!(
+        crate::estimate_openai_request_upper_bound(&visual),
+        Err(crate::UsageResolutionError::UnsupportedContent)
+    );
+    let observed = OpenAiChatUsageEstimator::merchant(&visual)
+        .resolve_response(&canonical_response(Protocol::OpenAiChat))
+        .unwrap();
+    assert_eq!(observed.input_tokens(), upper.input_tokens());
+    assert_eq!(observed.source(), UsageSource::Estimated);
+    assert!(observed.output_tokens() < upper.output_tokens());
+    visual.messages[0].content.push(ContentBlock::Audio {
+        source: MediaSource::Base64("AA==".to_owned()),
+        mime_type: "audio/wav".to_owned(),
+    });
+    assert_eq!(
+        crate::estimate_merchant_request_upper_bound(&visual),
+        Err(crate::UsageResolutionError::UnsupportedContent)
+    );
+}
+
+#[tokio::test]
+async fn merchant_visual_requests_preserve_one_local_invoice_on_all_four_full_and_streaming_wires()
+{
+    for downstream in PROTOCOLS {
+        for streaming in [false, true] {
+            let mut canonical = request(downstream, streaming).into_canonical();
+            canonical.messages[0].content.push(merchant_image());
+            let upper = crate::estimate_merchant_request_upper_bound(&canonical).unwrap();
+            let source = if streaming {
+                let mut encoder = ChatStreamEncoder::new(
+                    Protocol::OpenAiChat,
+                    "supplier",
+                    "gpt-4o",
+                    1_700_000_000,
+                    &canonical,
+                    true,
+                )
+                .unwrap();
+                let mut bytes = Vec::new();
+                for event in events(false) {
+                    bytes.extend(encoder.encode_event(event).unwrap());
+                }
+                bytes.extend(
+                    encoder
+                        .encode_event(CanonicalStreamEvent::Usage(claimed_usage()))
+                        .unwrap(),
+                );
+                bytes.extend(encoder.finish(Ok(claimed_usage()), true).unwrap());
+                Bytes::from(bytes)
+            } else {
+                build_response(
+                    Protocol::OpenAiChat,
+                    canonical_response(Protocol::OpenAiChat),
+                    claimed_usage(),
+                    "supplier",
+                    "gpt-4o",
+                    1_700_000_000,
+                )
+                .unwrap()
+            };
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/v1/chat/completions"))
+                .respond_with(ResponseTemplate::new(200).set_body_bytes(source.to_vec()))
+                .expect(1)
+                .mount(&server)
+                .await;
+            let client = HttpClientPool::default()
+                .get(
+                    &HttpClientConfig::new(
+                        ProxyConfig::parse(server.uri()).unwrap(),
+                        af_adapter::HttpTimeouts::default(),
+                    )
+                    .with_remote_dns_policy(RemoteDnsPolicy::TrustProxy),
+                )
+                .unwrap();
+            let machine = RelayStateMachine::new(vec![crate::RelayCandidate::new(
+                Arc::new(OpenAiAdaptor::new()),
+                RelayContext::new(client)
+                    .with_base_url("http://upstream.example")
+                    .unwrap(),
+                Credential::api_key("fixture").unwrap(),
+            )])
+            .unwrap();
+            let (result, _) = relay_merchant_conversation_with_report(
+                &machine,
+                canonical.into(),
+                Protocol::OpenAiChat,
+                downstream,
+                "merchant-visual",
+            )
+            .await;
+            let (billed, wire) = match result.unwrap() {
+                ChatResponse::Full { body, usage } => {
+                    let billed = usage.unwrap();
+                    let wire = parse_response(downstream, &body).unwrap().usage.unwrap();
+                    (billed, wire)
+                }
+                ChatResponse::Stream { body, usage } => {
+                    let recorded = Arc::new(Mutex::new(None));
+                    let mut body =
+                        body.with_completion_hook(Box::new(RecordUsage(recorded.clone())));
+                    let mut decoder = ConversationDecoder::new(downstream).unwrap();
+                    let mut decoded = Vec::new();
+                    while let Some(chunk) = std::future::poll_fn(|context| {
+                        futures_core::Stream::poll_next(std::pin::Pin::new(body.as_mut()), context)
+                    })
+                    .await
+                    {
+                        decoded.extend(decoder.push(&chunk.unwrap()).unwrap());
+                    }
+                    decoded.extend(decoder.finish().unwrap());
+                    let billed = usage.resolve().await.unwrap();
+                    assert_eq!(*recorded.lock().unwrap(), Some(billed));
+                    let usages = decoded
+                        .iter()
+                        .filter_map(|event| {
+                            if let CanonicalStreamEvent::Usage(usage) = event {
+                                Some(*usage)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    assert_eq!(usages.len(), 1);
+                    (billed, usages[0])
+                }
+            };
+            assert_eq!(billed.source(), UsageSource::Estimated);
+            assert_eq!(billed.input_tokens(), upper.input_tokens());
+            assert!(billed.input_tokens().get() >= 1024);
+            assert!(billed.output_tokens() < upper.output_tokens());
+            assert_eq!(
+                wire.input_tokens(),
+                billed.input_tokens(),
+                "{downstream:?} stream={streaming}"
+            );
+            assert_eq!(wire.output_tokens(), billed.output_tokens());
+        }
+    }
 }

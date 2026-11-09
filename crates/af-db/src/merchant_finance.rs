@@ -73,6 +73,7 @@ pub struct MerchantWithdrawal {
     pub reason: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+    pub payout: Option<crate::MerchantPayout>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -162,6 +163,10 @@ impl MerchantFinanceRepository {
                 .iter()
                 .map(withdrawal_from_row)
                 .collect::<Result<Vec<_>, _>>()?;
+            for item in &mut items {
+                item.payout =
+                    crate::merchant_payout::find_public(self.pool.connection(), item.id).await?;
+            }
             let next_cursor = if items.len() > limit as usize {
                 items.pop();
                 items.last().map(|item| item.id)
@@ -283,6 +288,18 @@ impl MerchantFinanceRepository {
             let current = withdrawal_by_id(&tx, id, true)
                 .await?
                 .ok_or(MerchantFinanceError::NotFound)?;
+            let mut payout_query = select("merchant_payouts");
+            payout_query.and_where(Expr::col(Alias::new("withdrawal_id")).eq(id));
+            if tx
+                .query_one(tx.get_database_backend().build(&payout_query))
+                .await
+                .map_err(db_error)?
+                .is_some()
+            {
+                // A transfer may already exist remotely. Manual decisions must never
+                // compete with submission or reconciliation, even while disabled.
+                return Err(MerchantFinanceError::Conflict);
+            }
             if current.status != "pending" {
                 if current.status == status
                     && current.reference == reference
@@ -683,14 +700,14 @@ impl MerchantFinanceRepository {
     }
 }
 
-fn select(table: &str) -> SelectStatement {
+pub(crate) fn select(table: &str) -> SelectStatement {
     Query::select()
         .column(sea_orm::sea_query::Asterisk)
         .from(Alias::new(table))
         .to_owned()
 }
 
-async fn all<C: ConnectionTrait>(
+pub(crate) async fn all<C: ConnectionTrait>(
     connection: &C,
     query: SelectStatement,
 ) -> Result<Vec<QueryResult>, MerchantFinanceError> {
@@ -700,18 +717,21 @@ async fn all<C: ConnectionTrait>(
         .map_err(db_error)
 }
 
-fn get<T: sea_orm::TryGetable>(row: &QueryResult, column: &str) -> Result<T, MerchantFinanceError> {
+pub(crate) fn get<T: sea_orm::TryGetable>(
+    row: &QueryResult,
+    column: &str,
+) -> Result<T, MerchantFinanceError> {
     row.try_get("", column)
         .map_err(|_| MerchantFinanceError::Invariant)
 }
 
-fn db_error(_: DbErr) -> MerchantFinanceError {
+pub(crate) fn db_error(_: DbErr) -> MerchantFinanceError {
     MerchantFinanceError::Unavailable
 }
-fn checked_add(a: i64, b: i64) -> Result<i64, MerchantFinanceError> {
+pub(crate) fn checked_add(a: i64, b: i64) -> Result<i64, MerchantFinanceError> {
     a.checked_add(b).ok_or(MerchantFinanceError::Invariant)
 }
-fn now() -> i64 {
+pub(crate) fn now() -> i64 {
     TimeDateTimeWithTimeZone::now_utc().unix_timestamp()
 }
 fn page_limit(limit: u32) -> Result<u32, MerchantFinanceError> {
@@ -738,7 +758,7 @@ fn page_query(
     Ok(())
 }
 
-async fn ensure_account(
+pub(crate) async fn ensure_account(
     tx: &DatabaseTransaction,
     merchant_id: i64,
 ) -> Result<(), MerchantFinanceError> {
@@ -761,7 +781,7 @@ async fn ensure_account(
     Ok(())
 }
 
-async fn load_account(
+pub(crate) async fn load_account(
     tx: &DatabaseTransaction,
     merchant_id: i64,
     lock: bool,
@@ -806,7 +826,7 @@ async fn load_account(
     Ok(account)
 }
 
-async fn save_account(
+pub(crate) async fn save_account(
     tx: &DatabaseTransaction,
     account: &MerchantFinanceBalance,
     at: i64,
@@ -848,7 +868,7 @@ async fn save_account(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn append_entry(
+pub(crate) async fn append_entry(
     tx: &DatabaseTransaction,
     merchant_id: i64,
     event: &str,
@@ -913,6 +933,7 @@ fn withdrawal_from_row(row: &QueryResult) -> Result<MerchantWithdrawal, Merchant
         reason: get(row, "reason")?,
         created_at: get(row, "created_at")?,
         updated_at: get(row, "updated_at")?,
+        payout: None,
     })
 }
 async fn withdrawal_by_event(
@@ -928,7 +949,7 @@ async fn withdrawal_by_event(
         .map(withdrawal_from_row)
         .transpose()
 }
-async fn withdrawal_by_id(
+pub(crate) async fn withdrawal_by_id(
     tx: &DatabaseTransaction,
     id: i64,
     lock: bool,

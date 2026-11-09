@@ -254,6 +254,14 @@ impl BillingSpeechService {
         let duration = match probe_speech_duration(&body, output_format).await {
             Ok(duration) => duration,
             Err(error) => {
+                if principal.merchant_billing_snapshot().is_some() {
+                    crate::user_route_execution::cancel_before_failover(
+                        &mut lifecycle,
+                        self.precharge.as_deref(),
+                    )
+                    .await?;
+                    return Err(error.into());
+                }
                 // 上游已经成功产生成本但时长不可信，保留冻结上界且不伪造审计时长。
                 let _ = complete_with_dimensions_retries(
                     &mut lifecycle,
@@ -267,6 +275,14 @@ impl BillingSpeechService {
         };
         let actual = speech_usage(&billing_request, duration, UsageSource::Estimated)?;
         if !usage_within_upper_bound(&actual, &upper_bound)? {
+            if principal.merchant_billing_snapshot().is_some() {
+                crate::user_route_execution::cancel_before_failover(
+                    &mut lifecycle,
+                    self.precharge.as_deref(),
+                )
+                .await?;
+                return Err(AfError::Internal.into());
+            }
             let dimensions = BillingUsageDimensions::with_audio_duration(duration);
             let _ = complete_with_dimensions_retries(&mut lifecycle, upper_bound, dimensions)
                 .await
