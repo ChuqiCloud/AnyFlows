@@ -357,7 +357,7 @@ async fn explicit_group_replacement_moves_disabled_users_and_revokes_direct_keys
         .connection()
         .execute(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "INSERT INTO tokens (user_id, key_hash, key_prefix, name, group_id) VALUES (701, ?, 'sk-af-inherited', 'inherited', NULL)",
+            "INSERT INTO tokens (user_id, key_hash, key_prefix, name, status, group_id) VALUES (701, ?, 'sk-af-inherited', 'inherited', 1, NULL)",
             ["22".repeat(32).into()],
         ))
         .await?;

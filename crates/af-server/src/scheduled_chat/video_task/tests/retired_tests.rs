@@ -245,7 +245,7 @@ async fn retired_merchant_supply_only_remains_available_for_bound_completed_resu
 async fn seed_merchant_supply(database: &SqliteTestDatabase, proxy_address: SocketAddr) {
     for sql in [
         format!(
-            "UPDATE channels SET base_url='http://upstream.example', model_mapping='{{\"video-public\":\"{UPSTREAM_MODEL}\"}}', header_override='{{\"x-video-runtime\":\"enabled\"}}' WHERE id={CHANNEL_ID}"
+            "UPDATE channels SET status=1, base_url='http://upstream.example', model_mapping='{{\"video-public\":\"{UPSTREAM_MODEL}\"}}', header_override='{{\"x-video-runtime\":\"enabled\"}}' WHERE id={CHANNEL_ID}"
         ),
         format!(
             "INSERT INTO proxies (id,name,active_name,scheme,host,port,trust_proxy_dns,enabled,version) VALUES ({SECOND_CREDENTIAL_ID},'retired-video','retired-video','http','{}',{},1,1,1)",
@@ -253,7 +253,7 @@ async fn seed_merchant_supply(database: &SqliteTestDatabase, proxy_address: Sock
             proxy_address.port()
         ),
         format!(
-            "UPDATE credentials SET priority=10,weight=10,proxy_id={SECOND_CREDENTIAL_ID} WHERE id={SECOND_CREDENTIAL_ID}"
+            "UPDATE credentials SET status=1,schedulable=1,priority=10,weight=10,proxy_id={SECOND_CREDENTIAL_ID} WHERE id={SECOND_CREDENTIAL_ID}"
         ),
         format!(
             "INSERT INTO channel_models (channel_id,model) VALUES ({CHANNEL_ID},'{REQUESTED_MODEL}')"
