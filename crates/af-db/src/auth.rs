@@ -430,6 +430,7 @@ impl TokenAuthRepository {
             && principal.user_route_id().is_none()
             && crate::MerchantPoolRepository::new(self.pool.clone(), self.lookup_timeout)
                 .pool_for_group(principal.group_id())
+                .with_subscriber(NoSubscriber::default())
                 .await
                 .map_err(|_| record_internal_error(TokenAuthRepositoryError::Query))?
                 .is_some()

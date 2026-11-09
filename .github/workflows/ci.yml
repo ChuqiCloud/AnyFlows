@@ -783,6 +783,9 @@ jobs:
               failed=1
             fi
           done
+          if ! cargo test --locked -p af-db --lib auth_tests::lookup_digest_never_enters_trace_output -- --exact; then
+            failed=1
+          fi
           exit "$failed"
 
       - name: Run Clippy
