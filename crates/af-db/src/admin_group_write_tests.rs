@@ -3,8 +3,7 @@ use std::{error::Error, time::Duration};
 use af_domain::{GroupId, GroupPeakSchedule, GroupPeakWindow};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, PaginatorTrait, QueryFilter, Statement,
-    TransactionTrait,
-    sea_query::Expr,
+    TransactionTrait, sea_query::Expr,
 };
 
 use super::{
@@ -14,7 +13,8 @@ use super::{
 };
 use crate::entity::{
     abilities, authentication_settings, channel_groups, group_group_grants,
-    group_model_ratio_overrides, group_model_ratios, groups, scheduler_outbox_events, tokens, users,
+    group_model_ratio_overrides, group_model_ratios, groups, scheduler_outbox_events, tokens,
+    users,
 };
 
 #[tokio::test]
@@ -474,13 +474,23 @@ async fn invalid_group_replacements_roll_back_the_source_and_key_state()
         .group_id();
     let deleted = fixture
         .repository
-        .create(write_record("deleted-target", "Deleted target", None, false))
+        .create(write_record(
+            "deleted-target",
+            "Deleted target",
+            None,
+            false,
+        ))
         .await?
         .group_id();
     fixture.repository.delete(deleted).await?;
     let merchant_group = fixture
         .repository
-        .create(write_record("merchant-target", "Merchant target", None, false))
+        .create(write_record(
+            "merchant-target",
+            "Merchant target",
+            None,
+            false,
+        ))
         .await?
         .group_id();
     insert_pool(fixture.pool.connection(), merchant_group.get()).await?;
@@ -528,7 +538,12 @@ async fn merchant_pool_group_requires_pool_deletion_first() -> Result<(), Box<dy
     let fixture = fixture().await?;
     let group = fixture
         .repository
-        .create(write_record("merchant-source", "Merchant source", None, false))
+        .create(write_record(
+            "merchant-source",
+            "Merchant source",
+            None,
+            false,
+        ))
         .await?
         .group_id();
     insert_pool(fixture.pool.connection(), group.get()).await?;

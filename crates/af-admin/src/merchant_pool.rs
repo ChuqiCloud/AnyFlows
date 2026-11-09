@@ -600,8 +600,14 @@ mod tests {
             CredentialDecryptor::new(&settings).unwrap(),
         );
         let user = SessionPrincipal::new(af_domain::UserId::new(1).unwrap(), SessionRole::User);
-        assert_eq!(service.delete_pool(user, 1).await, Err(MerchantPoolError::Forbidden));
-        assert_eq!(service.delete_merchant(user, 1).await, Err(MerchantPoolError::Forbidden));
+        assert_eq!(
+            service.delete_pool(user, 1).await,
+            Err(MerchantPoolError::Forbidden)
+        );
+        assert_eq!(
+            service.delete_merchant(user, 1).await,
+            Err(MerchantPoolError::Forbidden)
+        );
     }
 
     #[test]

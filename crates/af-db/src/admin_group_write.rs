@@ -612,7 +612,10 @@ async fn migrate_group_owners(
     users::Entity::update_many()
         .filter(users::Column::DefaultGroupId.eq(source.get()))
         .filter(users::Column::DeletedAt.is_null())
-        .col_expr(users::Column::DefaultGroupId, Expr::value(replacement.get()))
+        .col_expr(
+            users::Column::DefaultGroupId,
+            Expr::value(replacement.get()),
+        )
         .col_expr(users::Column::UpdatedAt, Expr::value(now))
         .exec(transaction)
         .with_subscriber(NoSubscriber::default())

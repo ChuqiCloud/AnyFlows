@@ -1111,20 +1111,31 @@ pub(crate) async fn reserve_merchant_billing(
         ("merchant_profiles", snapshot.merchant_id()),
         ("merchant_services", snapshot.service_id()),
     ] {
-        let lock = Query::update().table(Alias::new(table))
+        let lock = Query::update()
+            .table(Alias::new(table))
             .value(Alias::new("id"), Expr::col(Alias::new("id")))
-            .and_where(Expr::col(Alias::new("id")).eq(id)).to_owned();
-        tx.execute(tx.get_database_backend().build(&lock)).await
+            .and_where(Expr::col(Alias::new("id")).eq(id))
+            .to_owned();
+        tx.execute(tx.get_database_backend().build(&lock))
+            .await
             .map_err(|_| QuotaRepositoryError::Query)?;
-        let mut query = Query::select().column(Alias::new("deleted_at"))
-            .from(Alias::new(table)).and_where(Expr::col(Alias::new("id")).eq(id)).to_owned();
+        let mut query = Query::select()
+            .column(Alias::new("deleted_at"))
+            .from(Alias::new(table))
+            .and_where(Expr::col(Alias::new("id")).eq(id))
+            .to_owned();
         if tx.get_database_backend() != sea_orm::DbBackend::Sqlite {
             query.lock(LockType::Update);
         }
-        let row = tx.query_one(tx.get_database_backend().build(&query)).await
-            .map_err(|_| QuotaRepositoryError::Query)?.ok_or(QuotaRepositoryError::Conflict)?;
+        let row = tx
+            .query_one(tx.get_database_backend().build(&query))
+            .await
+            .map_err(|_| QuotaRepositoryError::Query)?
+            .ok_or(QuotaRepositoryError::Conflict)?;
         if get::<Option<TimeDateTimeWithTimeZone>>(&row, "deleted_at")
-            .map_err(quota_error)?.is_some() {
+            .map_err(quota_error)?
+            .is_some()
+        {
             return Err(QuotaRepositoryError::Conflict);
         }
     }

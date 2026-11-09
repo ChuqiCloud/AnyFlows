@@ -181,7 +181,9 @@ impl SchedulerRuntimeRepository {
                 .filter(merchant_service_revisions::Column::ServiceId.eq(service.id))
                 .filter(merchant_service_revisions::Column::ChannelId.eq(channel_id.get()))
                 .filter(merchant_service_revisions::Column::CredentialId.eq(credential_id.get()))
-                .filter(merchant_service_revisions::Column::Status.is_in(["published", "superseded"]))
+                .filter(
+                    merchant_service_revisions::Column::Status.is_in(["published", "superseded"]),
+                )
                 .filter(merchant_service_revisions::Column::Protocol.eq("xai_video"))
                 .one(self.pool.connection())
                 .await
@@ -202,10 +204,12 @@ impl SchedulerRuntimeRepository {
             else {
                 return Ok(None);
             };
-            let mut profiles =
-                crate::client_profiles::runtime_profiles(self.pool.connection(), &[channel_id.get()])
-                    .await
-                    .map_err(|_| SchedulerRuntimeRepositoryError::Invariant)?;
+            let mut profiles = crate::client_profiles::runtime_profiles(
+                self.pool.connection(),
+                &[channel_id.get()],
+            )
+            .await
+            .map_err(|_| SchedulerRuntimeRepositoryError::Invariant)?;
             if let Some(profile) = profiles.remove(&channel_id.get()) {
                 let Some(profile) = profile else {
                     return Ok(None);

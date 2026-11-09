@@ -73,7 +73,10 @@ pub fn build_merchant_pool_router(
             axum::routing::put(update_pool).delete(delete_pool),
         )
         .route("/api/admin/merchants", get(admin_merchants))
-        .route("/api/admin/merchants/{id}", axum::routing::delete(delete_merchant))
+        .route(
+            "/api/admin/merchants/{id}",
+            axum::routing::delete(delete_merchant),
+        )
         .route(
             "/api/admin/merchants/{id}/review",
             axum::routing::post(review_merchant),
@@ -342,7 +345,9 @@ async fn delete_merchant(
     Extension(auth): Extension<SessionAuthentication>,
     Path(merchant): Path<i64>,
 ) -> Result<Response, MerchantHttpError> {
-    s.service.delete_merchant(auth.principal(), id(merchant)?).await?;
+    s.service
+        .delete_merchant(auth.principal(), id(merchant)?)
+        .await?;
     Ok(no_store_empty(StatusCode::NO_CONTENT))
 }
 async fn admin_merchants(
@@ -458,7 +463,9 @@ mod tests {
     async fn merchant_deletion_in_use_is_a_distinct_conflict() {
         let response = MerchantHttpError(MerchantPoolError::InUse).into_response();
         assert_eq!(response.status(), StatusCode::CONFLICT);
-        let bytes = axum::body::to_bytes(response.into_body(), 4096).await.unwrap();
+        let bytes = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
         let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(body["error"]["code"], "merchant_pool_in_use");
     }

@@ -57,7 +57,8 @@ async fn retired_merchant_supply_only_remains_available_for_bound_completed_resu
         UpstreamTaskId::new("retired-video-task").unwrap(),
     );
     let submissions =
-        AsyncTaskSubmissionRepository::new(database.pool().clone(), Duration::from_secs(5)).unwrap();
+        AsyncTaskSubmissionRepository::new(database.pool().clone(), Duration::from_secs(5))
+            .unwrap();
     let tasks = AsyncTaskRepository::new(database.pool().clone(), Duration::from_secs(5)).unwrap();
     let AsyncTaskSubmissionClaimOutcome::Created(claim) = submissions
         .claim(
@@ -78,9 +79,16 @@ async fn retired_merchant_supply_only_remains_available_for_bound_completed_resu
     else {
         panic!("claim must be created")
     };
-    let terms =
-        MerchantBillingSnapshot::new(POOL_ID, MERCHANT_ID, SERVICE_ID, PRICE_ID, 1_000_000, 500, 0)
-            .unwrap();
+    let terms = MerchantBillingSnapshot::new(
+        POOL_ID,
+        MERCHANT_ID,
+        SERVICE_ID,
+        PRICE_ID,
+        1_000_000,
+        500,
+        0,
+    )
+    .unwrap();
     let claim = submissions
         .bind_merchant(
             &claim,
@@ -175,12 +183,18 @@ async fn retired_merchant_supply_only_remains_available_for_bound_completed_resu
     );
     assert!(
         service
-            .submit_video_task(principal.group_id(), request(), "new-request-after-deletion")
+            .submit_video_task(
+                principal.group_id(),
+                request(),
+                "new-request-after-deletion"
+            )
             .await
             .is_err()
     );
     assert_eq!(
-        service.poll_video_task(&binding, "unrestored-binding").await,
+        service
+            .poll_video_task(&binding, "unrestored-binding")
+            .await,
         Err(AfError::Internal)
     );
     let restored = service
@@ -230,17 +244,41 @@ async fn retired_merchant_supply_only_remains_available_for_bound_completed_resu
 
 async fn seed_merchant_supply(database: &SqliteTestDatabase, proxy_address: SocketAddr) {
     for sql in [
-        format!("UPDATE channels SET base_url='http://upstream.example', model_mapping='{{\"video-public\":\"{UPSTREAM_MODEL}\"}}', header_override='{{\"x-video-runtime\":\"enabled\"}}' WHERE id={CHANNEL_ID}"),
-        format!("INSERT INTO proxies (id,name,active_name,scheme,host,port,trust_proxy_dns,enabled,version) VALUES ({SECOND_CREDENTIAL_ID},'retired-video','retired-video','http','{}',{},1,1,1)", proxy_address.ip(), proxy_address.port()),
-        format!("UPDATE credentials SET priority=10,weight=10,proxy_id={SECOND_CREDENTIAL_ID} WHERE id={SECOND_CREDENTIAL_ID}"),
-        format!("INSERT INTO channel_models (channel_id,model) VALUES ({CHANNEL_ID},'{REQUESTED_MODEL}')"),
-        format!("INSERT INTO channel_groups (channel_id,group_id) VALUES ({CHANNEL_ID},{GROUP_ID})"),
-        format!("INSERT INTO abilities (channel_id,group_id,model,enabled,priority,weight) VALUES ({CHANNEL_ID},{GROUP_ID},'{REQUESTED_MODEL}',1,10,1)"),
-        format!("INSERT INTO merchant_profiles (id,owner_user_id,name,description,status) VALUES ({MERCHANT_ID},{USER_ID},'Video merchant','','approved')"),
-        format!("INSERT INTO merchant_pools (id,group_id,name,description,enabled,commission_bps,min_ratio_micros,max_ratio_micros,settlement_delay_secs) VALUES ({POOL_ID},{GROUP_ID},'Video pool','',1,500,100000,10000000,0)"),
-        format!("INSERT INTO merchant_services (id,merchant_id,pool_id,name,description,status,published_revision_id) VALUES ({SERVICE_ID},{MERCHANT_ID},{POOL_ID},'Video supply','','published',{REVISION_ID})"),
-        format!("INSERT INTO merchant_service_revisions (id,service_id,revision,status,name,description,base_url,protocol,default_ratio_micros,models,channel_id,credential_id,timeout_secs) VALUES ({REVISION_ID},{SERVICE_ID},1,'published','Video supply','','http://upstream.example','xai_video',1000000,'[]',{CHANNEL_ID},{SECOND_CREDENTIAL_ID},60)"),
-        format!("INSERT INTO merchant_service_prices (id,service_id,revision_id,effective_at,default_ratio_micros,models,status) VALUES ({PRICE_ID},{SERVICE_ID},{REVISION_ID},0,1000000,'[]','active')"),
+        format!(
+            "UPDATE channels SET base_url='http://upstream.example', model_mapping='{{\"video-public\":\"{UPSTREAM_MODEL}\"}}', header_override='{{\"x-video-runtime\":\"enabled\"}}' WHERE id={CHANNEL_ID}"
+        ),
+        format!(
+            "INSERT INTO proxies (id,name,active_name,scheme,host,port,trust_proxy_dns,enabled,version) VALUES ({SECOND_CREDENTIAL_ID},'retired-video','retired-video','http','{}',{},1,1,1)",
+            proxy_address.ip(),
+            proxy_address.port()
+        ),
+        format!(
+            "UPDATE credentials SET priority=10,weight=10,proxy_id={SECOND_CREDENTIAL_ID} WHERE id={SECOND_CREDENTIAL_ID}"
+        ),
+        format!(
+            "INSERT INTO channel_models (channel_id,model) VALUES ({CHANNEL_ID},'{REQUESTED_MODEL}')"
+        ),
+        format!(
+            "INSERT INTO channel_groups (channel_id,group_id) VALUES ({CHANNEL_ID},{GROUP_ID})"
+        ),
+        format!(
+            "INSERT INTO abilities (channel_id,group_id,model,enabled,priority,weight) VALUES ({CHANNEL_ID},{GROUP_ID},'{REQUESTED_MODEL}',1,10,1)"
+        ),
+        format!(
+            "INSERT INTO merchant_profiles (id,owner_user_id,name,description,status) VALUES ({MERCHANT_ID},{USER_ID},'Video merchant','','approved')"
+        ),
+        format!(
+            "INSERT INTO merchant_pools (id,group_id,name,description,enabled,commission_bps,min_ratio_micros,max_ratio_micros,settlement_delay_secs) VALUES ({POOL_ID},{GROUP_ID},'Video pool','',1,500,100000,10000000,0)"
+        ),
+        format!(
+            "INSERT INTO merchant_services (id,merchant_id,pool_id,name,description,status,published_revision_id) VALUES ({SERVICE_ID},{MERCHANT_ID},{POOL_ID},'Video supply','','published',{REVISION_ID})"
+        ),
+        format!(
+            "INSERT INTO merchant_service_revisions (id,service_id,revision,status,name,description,base_url,protocol,default_ratio_micros,models,channel_id,credential_id,timeout_secs) VALUES ({REVISION_ID},{SERVICE_ID},1,'published','Video supply','','http://upstream.example','xai_video',1000000,'[]',{CHANNEL_ID},{SECOND_CREDENTIAL_ID},60)"
+        ),
+        format!(
+            "INSERT INTO merchant_service_prices (id,service_id,revision_id,effective_at,default_ratio_micros,models,status) VALUES ({PRICE_ID},{SERVICE_ID},{REVISION_ID},0,1000000,'[]','active')"
+        ),
     ] {
         database.seed().execute_unprepared(&sql).await.unwrap();
     }

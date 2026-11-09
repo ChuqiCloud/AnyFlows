@@ -65,7 +65,8 @@ impl MerchantPoolRepository {
         terms: af_domain::MerchantBillingSnapshot,
         channel: ChannelId,
         credential: CredentialId,
-    ) -> Result<Option<std::sync::Arc<crate::SchedulerRuntimeTargetRecord>>, MerchantPoolError> {
+    ) -> Result<Option<std::sync::Arc<crate::SchedulerRuntimeTargetRecord>>, MerchantPoolError>
+    {
         crate::SchedulerRuntimeRepository::with_load_timeout(self.pool.clone(), self.timeout)
             .map_err(internal)?
             .load_retired_merchant_target(terms, channel, credential)
@@ -177,8 +178,8 @@ impl MerchantPoolRepository {
     ) -> Result<MerchantPage<MerchantProfile>, MerchantPoolError> {
         self.bounded(async {
             let (page, size) = pagination(&query)?;
-            let mut selection = profiles::Entity::find()
-                .filter(profiles::Column::DeletedAt.is_null());
+            let mut selection =
+                profiles::Entity::find().filter(profiles::Column::DeletedAt.is_null());
             if let Some(status) = &query.status {
                 selection = selection.filter(profiles::Column::Status.eq(status));
             }
@@ -254,8 +255,8 @@ impl MerchantPoolRepository {
         query: MerchantListQuery,
     ) -> Result<MerchantPage<MerchantOwnedService>, MerchantPoolError> {
         self.bounded(async {
-            let mut selection = services::Entity::find()
-                .filter(services::Column::DeletedAt.is_null());
+            let mut selection =
+                services::Entity::find().filter(services::Column::DeletedAt.is_null());
             if let Some(owner) = owner {
                 let merchant = require_merchant(self.pool.connection(), owner, false).await?;
                 selection = selection.filter(services::Column::MerchantId.eq(merchant.id));
@@ -414,8 +415,8 @@ async fn lock_service(
             .await
             .map_err(internal)?;
     }
-    let mut selection = services::Entity::find_by_id(id)
-        .filter(services::Column::DeletedAt.is_null());
+    let mut selection =
+        services::Entity::find_by_id(id).filter(services::Column::DeletedAt.is_null());
     if txn.get_database_backend() != DbBackend::Sqlite {
         selection = selection.lock(LockType::Update);
     }
