@@ -6,11 +6,11 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-af-cache = { path = "../af-cache", version = "0.3.0-beta.7" }
-af-config = { path = "../af-config", version = "0.3.0-beta.7" }
-af-db = { path = "../af-db", version = "0.3.0-beta.7" }
-af-domain = { path = "../af-domain", version = "0.3.0-beta.7" }
-af-httpclient = { path = "../af-httpclient", version = "0.3.0-beta.7" }
+af-cache = { path = "../af-cache", version = "0.3.0-beta.8" }
+af-config = { path = "../af-config", version = "0.3.0-beta.8" }
+af-db = { path = "../af-db", version = "0.3.0-beta.8" }
+af-domain = { path = "../af-domain", version = "0.3.0-beta.8" }
+af-httpclient = { path = "../af-httpclient", version = "0.3.0-beta.8" }
 async-trait.workspace = true
 base64.workspace = true
 chacha20poly1305.workspace = true
