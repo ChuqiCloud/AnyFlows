@@ -21,6 +21,7 @@ use crate::{
     group_key_access::lock_active_group,
     identity_secret::{IdentitySecretError, generate_aff_code, hash_password},
     invite_rebate::grant_in_transaction,
+    token_owner_guard::lock_non_deleted_owner,
 };
 
 const ENABLED_USER_STATUS: i16 = 1;
@@ -364,7 +365,12 @@ impl AdminUserRepository {
         record: AdminUserUpdateRecord,
     ) -> Result<AdminUserMutationOutcome, AdminUserRepositoryError> {
         let transaction = begin_transaction(self).await?;
-        if !active_user_exists(&transaction, user_id).await? {
+        if lock_non_deleted_owner(&transaction, user_id)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(AdminUserRepositoryError::Query))?
+            .is_none()
+        {
             return Ok(AdminUserMutationOutcome::NotFound);
         }
         ensure_group_exists(&transaction, record.default_group_id).await?;
@@ -644,13 +650,6 @@ async fn fetch_user_snapshot(
     }
 }
 
-async fn active_user_exists(
-    transaction: &DatabaseTransaction,
-    user_id: UserId,
-) -> Result<bool, AdminUserRepositoryError> {
-    query_exists(transaction, active_user_exists_query(user_id)).await
-}
-
 async fn ensure_group_exists(
     transaction: &DatabaseTransaction,
     group_id: GroupId,
@@ -695,19 +694,6 @@ async fn query_exists(
         .await
         .map_err(|_| record_internal_error(AdminUserRepositoryError::Query))?;
     Ok(!results.is_empty())
-}
-
-fn active_user_exists_query(user_id: UserId) -> SelectStatement {
-    Query::select()
-        .expr_as(
-            Expr::col((users::Entity, users::Column::Id)),
-            Alias::new("id"),
-        )
-        .from(users::Entity)
-        .and_where(Expr::col((users::Entity, users::Column::Id)).eq(user_id.get()))
-        .and_where(Expr::col((users::Entity, users::Column::DeletedAt)).is_null())
-        .limit(1)
-        .to_owned()
 }
 
 fn identity_conflict_query(

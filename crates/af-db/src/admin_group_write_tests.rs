@@ -560,6 +560,67 @@ async fn merchant_pool_group_requires_pool_deletion_first() -> Result<(), Box<dy
 }
 
 #[tokio::test]
+async fn reciprocal_group_replacements_preserve_one_live_target_and_all_users()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let first = fixture
+        .repository
+        .create(write_record("first-source", "First source", None, false))
+        .await?
+        .group_id();
+    let second = fixture
+        .repository
+        .create(write_record("second-source", "Second source", None, false))
+        .await?
+        .group_id();
+    insert_user(
+        fixture.pool.connection(),
+        711,
+        "first-owner",
+        first.get(),
+        false,
+    )
+    .await?;
+    insert_user(
+        fixture.pool.connection(),
+        712,
+        "second-owner",
+        second.get(),
+        false,
+    )
+    .await?;
+    let (first_result, second_result) = tokio::join!(
+        fixture.repository.delete_with_replacement(first, Some(second)),
+        fixture.repository.delete_with_replacement(second, Some(first)),
+    );
+    let surviving = match (first_result, second_result) {
+        (Ok(AdminGroupDeleteOutcome::Deleted), Err(AdminGroupRepositoryError::InvalidReference)) => {
+            second
+        }
+        (Err(AdminGroupRepositoryError::InvalidReference), Ok(AdminGroupDeleteOutcome::Deleted)) => {
+            first
+        }
+        other => panic!("reciprocal deletion must retain one valid target: {other:?}"),
+    };
+    assert!(groups::Entity::find_by_id(surviving.get())
+        .one(fixture.pool.connection())
+        .await?
+        .unwrap()
+        .deleted_at
+        .is_none());
+    for id in [711_i64, 712] {
+        let user = users::Entity::find_by_id(id)
+            .one(fixture.pool.connection())
+            .await?
+            .unwrap();
+        assert_eq!(user.default_group_id, surviving.get());
+        assert!(user.deleted_at.is_none());
+    }
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn group_binding_write_guard_serializes_deletion_without_partial_migration()
 -> Result<(), Box<dyn Error>> {
     let file = std::env::temp_dir().join(format!(

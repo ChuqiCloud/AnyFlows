@@ -3,7 +3,7 @@ use std::fmt;
 use af_domain::{GroupId, GroupPeakSchedule};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
-    EntityTrait, QueryFilter, QuerySelect, Set, TransactionTrait,
+    EntityTrait, IsolationLevel, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
     entity::prelude::{TimeDateTimeWithTimeZone, TimeTime},
     sea_query::{Alias, Condition, Expr, LockType, Query, SelectStatement},
 };
@@ -304,7 +304,77 @@ impl AdminGroupRepository {
         group_id: GroupId,
         replacement_group_id: Option<GroupId>,
     ) -> Result<AdminGroupDeleteOutcome, AdminGroupRepositoryError> {
-        let transaction = begin_transaction(self).await?;
+        for _ in 0..3 {
+            if let Some(outcome) = self.delete_attempt(group_id, replacement_group_id).await? {
+                return Ok(outcome);
+            }
+            tokio::task::yield_now().await;
+        }
+        Err(record_internal_error(AdminGroupRepositoryError::Query))
+    }
+
+    async fn delete_attempt(
+        &self,
+        group_id: GroupId,
+        replacement_group_id: Option<GroupId>,
+    ) -> Result<Option<AdminGroupDeleteOutcome>, AdminGroupRepositoryError> {
+        let transaction = begin_delete_transaction(self).await?;
+        if transaction.get_database_backend() == DbBackend::Sqlite
+            && !lock_active_group(&transaction, group_id)
+                .await
+                .map_err(map_write_db_error)?
+        {
+            return Ok(Some(AdminGroupDeleteOutcome::NotFound));
+        }
+        let owners = deletion_owner_ids(&transaction, group_id).await?;
+        let mut owner_query = users::Entity::find()
+            .select_only()
+            .column(users::Column::Id)
+            .filter(users::Column::Id.is_in(owners))
+            .order_by_asc(users::Column::Id);
+        if transaction.get_database_backend() != DbBackend::Sqlite {
+            owner_query = owner_query.lock(LockType::Update);
+        }
+        let locked_owners = owner_query
+            .into_tuple::<i64>()
+            .all(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_write_db_error)?;
+        // Key and route mutations lock their owner before any group. Lock all
+        // affected owners first, then group IDs in order for reciprocal deletes.
+        let mut groups_to_lock = vec![group_id];
+        if let Some(replacement) = replacement_group_id {
+            groups_to_lock.push(replacement);
+        }
+        groups_to_lock.sort_by_key(|id| id.get());
+        groups_to_lock.dedup();
+        for id in groups_to_lock {
+            if !lock_active_group(&transaction, id)
+                .await
+                .map_err(map_write_db_error)?
+            {
+                return if id == group_id {
+                    Ok(Some(AdminGroupDeleteOutcome::NotFound))
+                } else {
+                    Err(AdminGroupRepositoryError::InvalidReference)
+                };
+            }
+        }
+        // A user or route may have bound the group between discovery and locking.
+        // Under READ COMMITTED this non-locking recheck sees that committed change
+        // without waiting on a new owner that is itself waiting for our group lock.
+        if deletion_owner_ids(&transaction, group_id)
+            .await?
+            .iter()
+            .any(|id| locked_owners.binary_search(id).is_err())
+        {
+            transaction
+                .rollback()
+                .await
+                .map_err(|_| record_internal_error(AdminGroupRepositoryError::Query))?;
+            return Ok(None);
+        }
         let now = TimeDateTimeWithTimeZone::now_utc();
         let result = groups::Entity::update_many()
             .filter(groups::Column::Id.eq(group_id.get()))
@@ -316,7 +386,7 @@ impl AdminGroupRepository {
             .await
             .map_err(map_write_db_error)?;
         if result.rows_affected == 0 {
-            return Ok(AdminGroupDeleteOutcome::NotFound);
+            return Ok(Some(AdminGroupDeleteOutcome::NotFound));
         }
         if result.rows_affected != 1 {
             return Err(record_internal_error(AdminGroupRepositoryError::Invariant));
@@ -334,7 +404,7 @@ impl AdminGroupRepository {
         }
         clear_safe_references(&transaction, group_id, now).await?;
         commit_transaction(transaction).await?;
-        Ok(AdminGroupDeleteOutcome::Deleted)
+        Ok(Some(AdminGroupDeleteOutcome::Deleted))
     }
 }
 
@@ -347,6 +417,70 @@ fn encode_peak_schedule(
                 .map_err(|_| AdminGroupRepositoryError::Invariant)
         })
         .transpose()
+}
+
+async fn begin_delete_transaction(
+    repository: &AdminGroupRepository,
+) -> Result<DatabaseTransaction, AdminGroupRepositoryError> {
+    let connection = repository.pool.connection();
+    let result = if connection.get_database_backend() == DbBackend::Sqlite {
+        connection
+            .begin()
+            .with_subscriber(NoSubscriber::default())
+            .await
+    } else {
+        connection
+            .begin_with_config(Some(IsolationLevel::ReadCommitted), None)
+            .with_subscriber(NoSubscriber::default())
+            .await
+    };
+    result.map_err(|_| record_internal_error(AdminGroupRepositoryError::Query))
+}
+
+async fn deletion_owner_ids(
+    transaction: &DatabaseTransaction,
+    group_id: GroupId,
+) -> Result<Vec<i64>, AdminGroupRepositoryError> {
+    let mut owners = users::Entity::find()
+        .select_only()
+        .column(users::Column::Id)
+        .filter(users::Column::DefaultGroupId.eq(group_id.get()))
+        .filter(users::Column::DeletedAt.is_null())
+        .into_tuple::<i64>()
+        .all(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_write_db_error)?;
+    let route_owners = Query::select()
+        .expr_as(
+            Expr::col((user_routes::Entity, user_routes::Column::OwnerUserId)),
+            Alias::new("owner_id"),
+        )
+        .from(user_routes::Entity)
+        .inner_join(
+            user_route_members::Entity,
+            Expr::col((user_routes::Entity, user_routes::Column::Id)).equals((
+                user_route_members::Entity,
+                user_route_members::Column::RouteId,
+            )),
+        )
+        .and_where(
+            Expr::col((user_route_members::Entity, user_route_members::Column::GroupId))
+                .eq(group_id.get()),
+        )
+        .and_where(Expr::col((user_routes::Entity, user_routes::Column::DeletedAt)).is_null())
+        .to_owned();
+    let rows = transaction
+        .query_all(transaction.get_database_backend().build(&route_owners))
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_write_db_error)?;
+    for row in rows {
+        owners.push(row.try_get("", "owner_id").map_err(map_write_db_error)?);
+    }
+    owners.sort_unstable();
+    owners.dedup();
+    Ok(owners)
 }
 
 async fn begin_transaction(

@@ -28,6 +28,8 @@ impl MerchantPoolRepository {
                 }
                 return Ok(());
             }
+            ensure_no_active_billing(&txn, "pool_id", id).await?;
+            ensure_no_active_tasks(&txn, Some(id), None).await?;
             let mut selection = services::Entity::find()
                 .filter(services::Column::PoolId.eq(id))
                 .filter(services::Column::DeletedAt.is_null())
@@ -38,8 +40,6 @@ impl MerchantPoolRepository {
             let list = selection.all(&txn)
                 .await
                 .map_err(internal)?;
-            ensure_no_active_billing(&txn, "pool_id", id).await?;
-            ensure_no_active_tasks(&txn, Some(id), None).await?;
             for service in list {
                 retire_service(&txn, service.id, now).await?;
             }
@@ -75,13 +75,15 @@ impl MerchantPoolRepository {
                 .col_expr(profiles::Column::UpdatedAt, Expr::value(now))
                 .exec(&txn).await.map_err(internal)?;
             if changed.rows_affected == 0 { return Ok(()); }
+            // Settlement locks its reservation before the finance account.
+            // Keep the same order while the profile lock blocks new admission.
+            ensure_no_active_billing(&txn, "merchant_id", id).await?;
             crate::merchant_finance::ensure_account(&txn, id).await.map_err(internal)?;
             let balance = crate::merchant_finance::load_account(&txn, id, true).await.map_err(internal)?;
             if [balance.pending_quota, balance.available_quota, balance.withdrawing_quota,
                 balance.frozen_quota, balance.debt_quota].into_iter().any(|value| value != 0) {
                 return Err(MerchantPoolError::InUse);
             }
-            ensure_no_active_billing(&txn, "merchant_id", id).await?;
             for (table, states) in [
                 ("merchant_withdrawals", vec!["pending"]),
                 ("merchant_payouts", vec!["pending", "processing", "unknown"]),
@@ -186,13 +188,21 @@ async fn ensure_no_active_tasks(txn: &DatabaseTransaction, pool: Option<i64>, me
     let mut services_query = services::Entity::find();
     if let Some(id) = pool { services_query = services_query.filter(services::Column::PoolId.eq(id)); }
     if let Some(id) = merchant { services_query = services_query.filter(services::Column::MerchantId.eq(id)); }
+    if txn.get_database_backend() != DbBackend::Sqlite {
+        services_query = services_query.lock(LockType::Update);
+    }
     let service_ids: Vec<i64> = services_query.select_only().column(services::Column::Id)
         .into_tuple().all(txn).await.map_err(internal)?;
-    let channels: Vec<i64> = revisions::Entity::find().select_only()
-        .column(revisions::Column::ChannelId).filter(revisions::Column::ServiceId.is_in(service_ids))
+    let mut revisions_query = revisions::Entity::find()
+        .filter(revisions::Column::ServiceId.is_in(service_ids));
+    if txn.get_database_backend() != DbBackend::Sqlite {
+        revisions_query = revisions_query.lock(LockType::Update);
+    }
+    let channels: Vec<i64> = revisions_query.select_only().column(revisions::Column::ChannelId)
         .into_tuple().all(txn).await.map_err(internal)?;
-    if async_tasks::Entity::find().filter(async_tasks::Column::ChannelId.is_in(channels))
-        .filter(async_tasks::Column::TerminalAt.is_null()).one(txn).await.map_err(internal)?.is_some() {
+    let tasks_query = async_tasks::Entity::find().filter(async_tasks::Column::ChannelId.is_in(channels))
+        .filter(async_tasks::Column::TerminalAt.is_null());
+    if tasks_query.one(txn).await.map_err(internal)?.is_some() {
         return Err(MerchantPoolError::InUse);
     }
     Ok(())
