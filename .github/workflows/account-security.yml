@@ -54,6 +54,7 @@ jobs:
           export PATH="$HOME/.cargo/bin:$PATH"
           rustup component add clippy
       - name: Cache Rust build artifacts
+        if: github.server_url == 'https://github.com'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4
         with:
           cache-on-failure: true
