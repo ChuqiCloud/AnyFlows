@@ -529,6 +529,7 @@ jobs:
         run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build
 
       - name: Install browser runtime for frontend checks
+        id: frontend_browser_runtime
         if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend_about == 'true' || (matrix.frontend == 'web-next' && (needs.changes.outputs.frontend_navigation == 'true' || needs.changes.outputs.frontend_verification == 'true')) }}
         shell: bash
         run: |
@@ -549,13 +550,16 @@ jobs:
         run: PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-about-smoke.mjs '${{ matrix.frontend }}'
 
       - name: Browser smoke test landing and console navigation
-        if: ${{ matrix.frontend == 'web-next' && needs.changes.outputs.frontend_navigation == 'true' }}
+        if: ${{ !cancelled() && steps.frontend_browser_runtime.outcome == 'success' && matrix.frontend == 'web-next' && needs.changes.outputs.frontend_navigation == 'true' }}
         shell: bash
         run: |
-          PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-navigation-smoke.mjs
-          PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-user-routes-smoke.mjs
-          PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-merchant-pool-smoke.mjs
-          PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-oauth-invitation-smoke.mjs
+          failed=0
+          for smoke in navigation user-routes merchant-pool oauth-invitation; do
+            if ! PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node "tools/ci/frontend-${smoke}-smoke.mjs"; then
+              failed=1
+            fi
+          done
+          exit "$failed"
 
       - name: Browser smoke test gallery and verification workflows
         if: github.event_name == 'workflow_dispatch'
