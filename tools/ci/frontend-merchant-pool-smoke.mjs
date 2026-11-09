@@ -58,8 +58,9 @@ const documentGeometry = () => {
     return { tag: node.tagName, className: node.getAttribute('class'), slot: node.getAttribute('data-slot'), inlineStyle: node.getAttribute('style'), left: rect.left, right: rect.right, rectWidth: rect.width, clientWidth: node.clientWidth, scrollWidth: node.scrollWidth, width: style.width, minWidth: style.minWidth, maxWidth: style.maxWidth, paddingLeft: style.paddingLeft, paddingRight: style.paddingRight, marginLeft: style.marginLeft, marginRight: style.marginRight, boxSizing: style.boxSizing, position: style.position, overflowX: style.overflowX, overflowY: style.overflowY, scrollbarGutter: style.scrollbarGutter }
   }
   const visibleOverflow = [...document.querySelectorAll('body *')].filter(node => {
+    const style = getComputedStyle(node)
     const rect = node.getBoundingClientRect()
-    if (rect.width === 0 || (rect.left >= -1 && rect.right <= innerWidth + 1)) return false
+    if (style.display === 'none' || style.visibility !== 'visible' || Number(style.opacity) === 0 || rect.width === 0 || (rect.left >= -1 && rect.right <= innerWidth + 1)) return false
     for (let ancestor = node.parentElement; ancestor && ancestor !== document.body; ancestor = ancestor.parentElement) {
       if (['auto', 'scroll', 'hidden', 'clip'].includes(getComputedStyle(ancestor).overflowX)) return false
     }
@@ -364,10 +365,13 @@ try {
   await page.getByRole('button', { name: 'catalog', exact: true }).click()
   await page.getByRole('heading', { name: label('market.title'), exact: true }).waitFor()
   const mobileTable = page.getByRole('region', { name: label('catalogTable'), exact: true })
-  const mobileGeometry = await mobileTable.evaluate(node => ({ viewport: innerWidth, pageWidth: document.documentElement.scrollWidth, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }))
-  if (mobileGeometry.pageWidth > mobileGeometry.viewport) console.error('Merchant mobile overflow geometry', JSON.stringify(await page.evaluate(documentGeometry)))
+  const mobileGeometry = await mobileTable.evaluate(node => ({ viewport: innerWidth, rootRight: document.documentElement.getBoundingClientRect().right, bodyWidth: document.body.clientWidth, bodyScrollWidth: document.body.scrollWidth, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }))
+  const mobileDocument = await page.evaluate(documentGeometry)
+  if (mobileGeometry.rootRight > mobileGeometry.viewport + 1 || mobileGeometry.bodyScrollWidth > mobileGeometry.bodyWidth + 1 || mobileDocument.visibleOverflow.length) console.error('Merchant mobile overflow geometry', JSON.stringify(mobileDocument))
   assert.ok(mobileGeometry.scrollWidth > mobileGeometry.clientWidth, 'Mobile merchant rows scroll within their table')
-  assert.ok(mobileGeometry.pageWidth <= mobileGeometry.viewport, 'The table must not force the mobile page beyond the viewport')
+  assert.ok(mobileGeometry.rootRight <= mobileGeometry.viewport + 1, 'The mobile document root must remain inside the viewport')
+  assert.ok(mobileGeometry.bodyScrollWidth <= mobileGeometry.bodyWidth + 1, 'The mobile page body must not overflow horizontally')
+  assert.deepEqual(mobileDocument.visibleOverflow, [], 'Visible page content must remain inside the mobile viewport')
   assert.equal(await mobileTable.locator('tbody tr').count(), 3)
   assert.equal(await mobileTable.getByText(publicService.description, { exact: true }).isVisible(), true, 'Merchant introductions remain visible on mobile')
   await page.screenshot({ path: resolve(screenshots, 'merchant-catalog-mobile.png'), fullPage: true, animations: 'disabled' })
