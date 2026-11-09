@@ -131,6 +131,9 @@ mod m20261108_000166_add_verification_access_policy;
 mod m20261108_000167_create_merchant_pools;
 mod m20261108_000168_create_merchant_finance;
 mod m20261108_000169_create_merchant_pool_routes;
+mod m20261108_000170_merchant_service_policies;
+mod m20261108_000171_create_merchant_payouts;
+mod m20261108_000172_persist_merchant_task_terms;
 mod schema;
 
 #[cfg(test)]
@@ -533,6 +536,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20261108_000167_create_merchant_pools::Migration),
             Box::new(m20261108_000168_create_merchant_finance::Migration),
             Box::new(m20261108_000169_create_merchant_pool_routes::Migration),
+            Box::new(m20261108_000170_merchant_service_policies::Migration),
+            Box::new(m20261108_000171_create_merchant_payouts::Migration),
+            Box::new(m20261108_000172_persist_merchant_task_terms::Migration),
         ]
     }
 }

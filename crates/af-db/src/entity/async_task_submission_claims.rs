@@ -21,6 +21,8 @@ pub struct Model {
     pub group_id: i64,
     /// 签发请求时固化的来源分组；历史 NULL 沿用 group_id。
     pub billing_source_group_id: Option<i64>,
+    #[sea_orm(column_type = "JsonBinary", nullable)]
+    pub merchant_snapshot: Option<Json>,
     #[sea_orm(column_type = "Char(Some(32))")]
     pub idempotency_key: SensitiveString,
     #[sea_orm(column_type = "String(StringLen::N(64))")]

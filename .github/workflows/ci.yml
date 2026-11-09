@@ -778,11 +778,14 @@ jobs:
         if: ${{ !cancelled() && needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true' && steps.development_clippy.outcome == 'success' }}
         run: |
           failed=0
-          for package in af-domain af-billing af-db af-relay af-server; do
+          for package in af-domain af-billing af-db af-admin af-relay af-server; do
             if ! cargo test --locked -p "$package" --lib merchant; then
               failed=1
             fi
           done
+          if ! cargo test --locked -p af-db --lib auth_tests::lookup_digest_never_enters_trace_output -- --exact; then
+            failed=1
+          fi
           exit "$failed"
 
       - name: Run Clippy

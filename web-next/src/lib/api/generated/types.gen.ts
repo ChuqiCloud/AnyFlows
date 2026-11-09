@@ -1794,12 +1794,14 @@ export type MerchantAttemptList = {
 export type MerchantCatalogService = {
     description: string;
     id: number;
+    maintenance: Array<MerchantMaintenance>;
     merchant_id: number;
     merchant_name: string;
     models: Array<MerchantModelOffer>;
     name: string;
     pool_id: number;
-    protocol: 'openai_chat' | 'openai_responses';
+    price_version: number;
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'xai_video';
     revision: number;
     status: string;
     updated_at: number;
@@ -1854,6 +1856,29 @@ export type MerchantFinanceHold = {
 export type MerchantKeyRotationRequest = {
     api_key: string;
 };
+export type MerchantMaintenance = {
+    blocks_requests: boolean;
+    created_at: number;
+    ends_at: number;
+    id: number;
+    message: string;
+    service_id: number;
+    starts_at: number;
+    status: 'scheduled' | 'active' | 'completed' | 'cancelled';
+    updated_at: number;
+};
+export type MerchantMaintenancePage = {
+    items: Array<MerchantMaintenance>;
+    page: number;
+    page_size: number;
+    total: number;
+};
+export type MerchantMaintenanceWrite = {
+    blocks_requests: boolean;
+    ends_at: number;
+    message: string;
+    starts_at: number;
+};
 export type MerchantModelOffer = {
     context_window: number | null;
     max_output_tokens: number | null;
@@ -1865,6 +1890,7 @@ export type MerchantModelOffer = {
     supports_vision: boolean;
 };
 export type MerchantModelPrices = {
+    billing_mode: 'token' | 'free' | 'video';
     cache_read: string;
     cache_write_1h: string;
     cache_write_5m: string;
@@ -1873,6 +1899,15 @@ export type MerchantModelPrices = {
     output: string;
     unit: string;
     version: number;
+    video_per_second: {
+        p1080: string | null;
+        p480: string;
+        p720: string;
+    } | null;
+};
+export type MerchantModelRatio = {
+    model: string;
+    ratio_micros?: number | null;
 };
 export type MerchantModelWrite = {
     context_window?: number | null;
@@ -1885,10 +1920,12 @@ export type MerchantModelWrite = {
     upstream_model: string;
 };
 export type MerchantOwnedService = {
+    active_price: MerchantServicePrice | null;
     created_at: number;
     description: string;
     draft: MerchantRevision | null;
     id: number;
+    maintenance: Array<MerchantMaintenance>;
     merchant_id: number;
     name: string;
     pool_id: number;
@@ -1904,6 +1941,56 @@ export type MerchantOwnedServicePage = {
 };
 export type MerchantPauseRequest = {
     paused: boolean;
+};
+export type MerchantPayout = {
+    withdrawal_id: number;
+    merchant_id: number;
+    event_key: string;
+    status: string;
+    amount_minor: number;
+    currency: string;
+    reference: string;
+    reason?: string | null;
+    created_at: number;
+    updated_at: number;
+};
+export type MerchantPayoutAccount = {
+    configured: boolean;
+    label: string;
+    version: number;
+};
+export type MerchantPayoutAccountCommand = {
+    expected_version: number;
+    label: string;
+    clear?: boolean | null;
+};
+export type MerchantPayoutPage = {
+    items: Array<MerchantPayout>;
+    next_cursor?: number | null;
+};
+export type MerchantPayoutSettings = {
+    version: number;
+    enabled: boolean;
+    auto_approve_enabled: boolean;
+    gateway_url: string;
+    currency: string;
+    quota_per_unit: number;
+    min_amount_minor: number;
+    max_amount_minor: number;
+    daily_limit_minor: number;
+    signing_key_configured: boolean;
+};
+export type MerchantPayoutSettingsCommand = {
+    expected_version: number;
+    enabled: boolean;
+    auto_approve_enabled: boolean;
+    gateway_url: string;
+    currency: string;
+    quota_per_unit: number;
+    min_amount_minor: number;
+    max_amount_minor: number;
+    daily_limit_minor: number;
+    clear_signing_key?: boolean | null;
 };
 export type MerchantPool = {
     commission_bps: number;
@@ -1990,7 +2077,7 @@ export type MerchantRevision = {
     id: number;
     models: Array<MerchantModelWrite>;
     name: string;
-    protocol: 'openai_chat' | 'openai_responses';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'xai_video';
     review_reason: string | null;
     revision: number;
     status: 'draft' | 'pending' | 'published' | 'rejected' | 'superseded';
@@ -2035,10 +2122,12 @@ export type MerchantRoutePreviewItem = {
     service_name: string;
 };
 export type MerchantRoutePreviewRequest = {
+    duration_seconds?: number | null;
     input_tokens: number;
     model: string;
     output_tokens: number;
-    protocol: 'openai_chat' | 'openai_responses';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'xai_video';
+    resolution?: '480p' | '720p' | '1080p' | null;
     route: MerchantRouteWriteRequest;
     streaming: boolean;
 };
@@ -2053,6 +2142,30 @@ export type MerchantRouteWriteRequest = {
     name: string;
     pool_id: number;
     strategy: 'price_first' | 'stable_first' | 'ordered' | 'round_robin' | 'weighted';
+};
+export type MerchantServicePrice = {
+    created_at: number;
+    default_ratio_micros: number;
+    effective_at: number;
+    id: number;
+    model_ratios: Array<MerchantModelRatio>;
+    reason: string | null;
+    revision_id: number;
+    service_id: number;
+    status: 'scheduled' | 'active' | 'superseded' | 'cancelled' | 'invalidated';
+    updated_at: number;
+};
+export type MerchantServicePricePage = {
+    items: Array<MerchantServicePrice>;
+    page: number;
+    page_size: number;
+    total: number;
+};
+export type MerchantServicePriceWrite = {
+    default_ratio_micros: number;
+    effective_at: number;
+    expected_revision_id: number;
+    model_ratios: Array<MerchantModelRatio>;
 };
 export type MerchantServiceStatistics = {
     failure_count: number;
@@ -2082,7 +2195,7 @@ export type MerchantServiceWriteRequest = {
     models: Array<MerchantModelWrite>;
     name: string;
     pool_id: number;
-    protocol: 'openai_chat' | 'openai_responses';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'xai_video';
     timeout_secs: number;
 };
 export type MerchantSettlementReversal = {
@@ -2116,6 +2229,7 @@ export type MerchantWithdrawal = {
     reason?: string | null;
     created_at: number;
     updated_at: number;
+    payout?: null | MerchantPayout;
 };
 export type MerchantWithdrawalDecision = {
     status: string;
@@ -3306,6 +3420,25 @@ export type LoginRequestWritable = {
     totp_code?: string | null;
     turnstile_token?: string | null;
 };
+export type MerchantPayoutAccountCommandWritable = {
+    expected_version: number;
+    label: string;
+    account?: string | null;
+    clear?: boolean | null;
+};
+export type MerchantPayoutSettingsCommandWritable = {
+    expected_version: number;
+    enabled: boolean;
+    auto_approve_enabled: boolean;
+    gateway_url: string;
+    currency: string;
+    quota_per_unit: number;
+    min_amount_minor: number;
+    max_amount_minor: number;
+    daily_limit_minor: number;
+    signing_key?: string | null;
+    clear_signing_key?: boolean | null;
+};
 export type MerchantServiceWriteRequestWritable = {
     api_key?: string | null;
     base_url: string;
@@ -3315,7 +3448,7 @@ export type MerchantServiceWriteRequestWritable = {
     models: Array<MerchantModelWrite>;
     name: string;
     pool_id: number;
-    protocol: 'openai_chat' | 'openai_responses';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'xai_video';
     timeout_secs: number;
 };
 export type RegistrationEmailVerificationRequestWritable = {
@@ -5575,6 +5708,486 @@ export type SubmitMerchantServiceResponses = {
     200: MerchantOwnedService;
 };
 export type SubmitMerchantServiceResponse = SubmitMerchantServiceResponses[keyof SubmitMerchantServiceResponses];
+export type ListServiceMaintenanceAdminData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+    url: '/api/admin/merchant-services/{id}/maintenance';
+};
+export type ListServiceMaintenanceAdminErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ListServiceMaintenanceAdminError = ListServiceMaintenanceAdminErrors[keyof ListServiceMaintenanceAdminErrors];
+export type ListServiceMaintenanceAdminResponses = {
+    200: MerchantMaintenancePage;
+};
+export type ListServiceMaintenanceAdminResponse = ListServiceMaintenanceAdminResponses[keyof ListServiceMaintenanceAdminResponses];
+export type CreateServiceMaintenanceAdminData = {
+    body: MerchantMaintenanceWrite;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-services/{id}/maintenance';
+};
+export type CreateServiceMaintenanceAdminErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type CreateServiceMaintenanceAdminError = CreateServiceMaintenanceAdminErrors[keyof CreateServiceMaintenanceAdminErrors];
+export type CreateServiceMaintenanceAdminResponses = {
+    201: MerchantMaintenance;
+};
+export type CreateServiceMaintenanceAdminResponse = CreateServiceMaintenanceAdminResponses[keyof CreateServiceMaintenanceAdminResponses];
+export type UpdateServiceMaintenanceAdminData = {
+    body: MerchantMaintenanceWrite;
+    path: {
+        id: number;
+        notice: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-services/{id}/maintenance/{notice}';
+};
+export type UpdateServiceMaintenanceAdminErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type UpdateServiceMaintenanceAdminError = UpdateServiceMaintenanceAdminErrors[keyof UpdateServiceMaintenanceAdminErrors];
+export type UpdateServiceMaintenanceAdminResponses = {
+    200: MerchantMaintenance;
+};
+export type UpdateServiceMaintenanceAdminResponse = UpdateServiceMaintenanceAdminResponses[keyof UpdateServiceMaintenanceAdminResponses];
+export type CancelServiceMaintenanceAdminData = {
+    body?: never;
+    path: {
+        id: number;
+        notice: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-services/{id}/maintenance/{notice}/cancel';
+};
+export type CancelServiceMaintenanceAdminErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type CancelServiceMaintenanceAdminError = CancelServiceMaintenanceAdminErrors[keyof CancelServiceMaintenanceAdminErrors];
+export type CancelServiceMaintenanceAdminResponses = {
+    200: MerchantMaintenance;
+};
+export type CancelServiceMaintenanceAdminResponse = CancelServiceMaintenanceAdminResponses[keyof CancelServiceMaintenanceAdminResponses];
+export type ListServicePricesAdminData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+    url: '/api/admin/merchant-services/{id}/prices';
+};
+export type ListServicePricesAdminErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ListServicePricesAdminError = ListServicePricesAdminErrors[keyof ListServicePricesAdminErrors];
+export type ListServicePricesAdminResponses = {
+    200: MerchantServicePricePage;
+};
+export type ListServicePricesAdminResponse = ListServicePricesAdminResponses[keyof ListServicePricesAdminResponses];
+export type ScheduleServicePriceAdminData = {
+    body: MerchantServicePriceWrite;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-services/{id}/prices';
+};
+export type ScheduleServicePriceAdminErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ScheduleServicePriceAdminError = ScheduleServicePriceAdminErrors[keyof ScheduleServicePriceAdminErrors];
+export type ScheduleServicePriceAdminResponses = {
+    201: MerchantServicePrice;
+};
+export type ScheduleServicePriceAdminResponse = ScheduleServicePriceAdminResponses[keyof ScheduleServicePriceAdminResponses];
+export type CancelServicePriceAdminData = {
+    body?: never;
+    path: {
+        id: number;
+        price: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-services/{id}/prices/{price}/cancel';
+};
+export type CancelServicePriceAdminErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type CancelServicePriceAdminError = CancelServicePriceAdminErrors[keyof CancelServicePriceAdminErrors];
+export type CancelServicePriceAdminResponses = {
+    200: MerchantServicePrice;
+};
+export type CancelServicePriceAdminResponse = CancelServicePriceAdminResponses[keyof CancelServicePriceAdminResponses];
+export type ListServiceMaintenanceOwnedData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+    url: '/api/merchant/services/{id}/maintenance';
+};
+export type ListServiceMaintenanceOwnedErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ListServiceMaintenanceOwnedError = ListServiceMaintenanceOwnedErrors[keyof ListServiceMaintenanceOwnedErrors];
+export type ListServiceMaintenanceOwnedResponses = {
+    200: MerchantMaintenancePage;
+};
+export type ListServiceMaintenanceOwnedResponse = ListServiceMaintenanceOwnedResponses[keyof ListServiceMaintenanceOwnedResponses];
+export type CreateServiceMaintenanceOwnedData = {
+    body: MerchantMaintenanceWrite;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}/maintenance';
+};
+export type CreateServiceMaintenanceOwnedErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type CreateServiceMaintenanceOwnedError = CreateServiceMaintenanceOwnedErrors[keyof CreateServiceMaintenanceOwnedErrors];
+export type CreateServiceMaintenanceOwnedResponses = {
+    201: MerchantMaintenance;
+};
+export type CreateServiceMaintenanceOwnedResponse = CreateServiceMaintenanceOwnedResponses[keyof CreateServiceMaintenanceOwnedResponses];
+export type UpdateServiceMaintenanceOwnedData = {
+    body: MerchantMaintenanceWrite;
+    path: {
+        id: number;
+        notice: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}/maintenance/{notice}';
+};
+export type UpdateServiceMaintenanceOwnedErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type UpdateServiceMaintenanceOwnedError = UpdateServiceMaintenanceOwnedErrors[keyof UpdateServiceMaintenanceOwnedErrors];
+export type UpdateServiceMaintenanceOwnedResponses = {
+    200: MerchantMaintenance;
+};
+export type UpdateServiceMaintenanceOwnedResponse = UpdateServiceMaintenanceOwnedResponses[keyof UpdateServiceMaintenanceOwnedResponses];
+export type CancelServiceMaintenanceOwnedData = {
+    body?: never;
+    path: {
+        id: number;
+        notice: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}/maintenance/{notice}/cancel';
+};
+export type CancelServiceMaintenanceOwnedErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type CancelServiceMaintenanceOwnedError = CancelServiceMaintenanceOwnedErrors[keyof CancelServiceMaintenanceOwnedErrors];
+export type CancelServiceMaintenanceOwnedResponses = {
+    200: MerchantMaintenance;
+};
+export type CancelServiceMaintenanceOwnedResponse = CancelServiceMaintenanceOwnedResponses[keyof CancelServiceMaintenanceOwnedResponses];
+export type ListServicePricesOwnedData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+    url: '/api/merchant/services/{id}/prices';
+};
+export type ListServicePricesOwnedErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ListServicePricesOwnedError = ListServicePricesOwnedErrors[keyof ListServicePricesOwnedErrors];
+export type ListServicePricesOwnedResponses = {
+    200: MerchantServicePricePage;
+};
+export type ListServicePricesOwnedResponse = ListServicePricesOwnedResponses[keyof ListServicePricesOwnedResponses];
+export type ScheduleServicePriceOwnedData = {
+    body: MerchantServicePriceWrite;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}/prices';
+};
+export type ScheduleServicePriceOwnedErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ScheduleServicePriceOwnedError = ScheduleServicePriceOwnedErrors[keyof ScheduleServicePriceOwnedErrors];
+export type ScheduleServicePriceOwnedResponses = {
+    201: MerchantServicePrice;
+};
+export type ScheduleServicePriceOwnedResponse = ScheduleServicePriceOwnedResponses[keyof ScheduleServicePriceOwnedResponses];
+export type CancelServicePriceOwnedData = {
+    body?: never;
+    path: {
+        id: number;
+        price: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}/prices/{price}/cancel';
+};
+export type CancelServicePriceOwnedErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type CancelServicePriceOwnedError = CancelServicePriceOwnedErrors[keyof CancelServicePriceOwnedErrors];
+export type CancelServicePriceOwnedResponses = {
+    200: MerchantServicePrice;
+};
+export type CancelServicePriceOwnedResponse = CancelServicePriceOwnedResponses[keyof CancelServicePriceOwnedResponses];
 export type GetAdminEmailSettingsData = {
     body?: never;
     path?: never;
@@ -7514,7 +8127,7 @@ export type GetMerchantPoolStatisticsData = {
     query?: {
         model?: string;
         window_seconds?: 900 | 3600 | 86400 | 604800;
-        protocol?: 'openai_chat' | 'openai_responses';
+        protocol?: 'openai_chat' | 'openai_responses' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'xai_video';
         streaming?: boolean;
     };
     url: '/api/merchant-pools/{pool_id}/statistics';
@@ -7538,7 +8151,7 @@ export type GetMerchantPoolTimelineData = {
     query?: {
         model?: string;
         window_seconds?: 900 | 3600 | 86400 | 604800;
-        protocol?: 'openai_chat' | 'openai_responses';
+        protocol?: 'openai_chat' | 'openai_responses' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'xai_video';
         streaming?: boolean;
     };
     url: '/api/merchant-pools/{pool_id}/timeline';
@@ -7560,7 +8173,7 @@ export type GetOwnMerchantStatisticsData = {
     query?: {
         model?: string;
         window_seconds?: 900 | 3600 | 86400 | 604800;
-        protocol?: 'openai_chat' | 'openai_responses';
+        protocol?: 'openai_chat' | 'openai_responses' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'xai_video';
         streaming?: boolean;
     };
     url: '/api/merchant/statistics';
@@ -7698,6 +8311,96 @@ export type ListAdminMerchantFinanceEntriesResponses = {
     200: MerchantFinanceEntryPage;
 };
 export type ListAdminMerchantFinanceEntriesResponse = ListAdminMerchantFinanceEntriesResponses[keyof ListAdminMerchantFinanceEntriesResponses];
+export type GetMerchantPayoutSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/merchant-payout-settings';
+};
+export type GetMerchantPayoutSettingsResponses = {
+    200: MerchantPayoutSettings;
+};
+export type GetMerchantPayoutSettingsResponse = GetMerchantPayoutSettingsResponses[keyof GetMerchantPayoutSettingsResponses];
+export type SaveMerchantPayoutSettingsData = {
+    body: MerchantPayoutSettingsCommandWritable;
+    path?: never;
+    query?: never;
+    url: '/api/admin/merchant-payout-settings';
+};
+export type SaveMerchantPayoutSettingsResponses = {
+    200: MerchantPayoutSettings;
+};
+export type SaveMerchantPayoutSettingsResponse = SaveMerchantPayoutSettingsResponses[keyof SaveMerchantPayoutSettingsResponses];
+export type GetMerchantPayoutAccountData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/merchant/payout-account';
+};
+export type GetMerchantPayoutAccountResponses = {
+    200: MerchantPayoutAccount;
+};
+export type GetMerchantPayoutAccountResponse = GetMerchantPayoutAccountResponses[keyof GetMerchantPayoutAccountResponses];
+export type SaveMerchantPayoutAccountData = {
+    body: MerchantPayoutAccountCommandWritable;
+    path?: never;
+    query?: never;
+    url: '/api/merchant/payout-account';
+};
+export type SaveMerchantPayoutAccountResponses = {
+    200: MerchantPayoutAccount;
+};
+export type SaveMerchantPayoutAccountResponse = SaveMerchantPayoutAccountResponses[keyof SaveMerchantPayoutAccountResponses];
+export type ListMerchantPayoutsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        limit?: number;
+        before_id?: number;
+    };
+    url: '/api/merchant/payouts';
+};
+export type ListMerchantPayoutsResponses = {
+    200: MerchantPayoutPage;
+};
+export type ListMerchantPayoutsResponse = ListMerchantPayoutsResponses[keyof ListMerchantPayoutsResponses];
+export type ListAdminMerchantPayoutsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        limit?: number;
+        before_id?: number;
+        merchant_id?: number;
+    };
+    url: '/api/admin/merchant-payouts';
+};
+export type ListAdminMerchantPayoutsResponses = {
+    200: MerchantPayoutPage;
+};
+export type ListAdminMerchantPayoutsResponse = ListAdminMerchantPayoutsResponses[keyof ListAdminMerchantPayoutsResponses];
+export type SubmitMerchantPayoutData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-withdrawals/{id}/payout';
+};
+export type SubmitMerchantPayoutResponses = {
+    200: MerchantPayout;
+};
+export type SubmitMerchantPayoutResponse = SubmitMerchantPayoutResponses[keyof SubmitMerchantPayoutResponses];
+export type ReconcileMerchantPayoutData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-withdrawals/{id}/reconcile';
+};
+export type ReconcileMerchantPayoutResponses = {
+    200: unknown;
+};
 export type ListAdminTokensData = {
     body?: never;
     path?: never;

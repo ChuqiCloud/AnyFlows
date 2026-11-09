@@ -280,8 +280,16 @@ impl BillingChatService {
                     .map_err(|failure| failure.error);
             }
             let model = request.canonical().model.clone();
-            let upper_bound = estimate_openai_request_upper_bound(request.canonical())
-                .map_err(map_upper_bound_error)?;
+            let merchant = match &self.user_routes {
+                Some(runtime) => runtime.has_merchant_scope(*principal).await?,
+                None => false,
+            };
+            let upper_bound = if merchant {
+                af_relay::estimate_merchant_request_upper_bound(request.canonical())
+            } else {
+                estimate_openai_request_upper_bound(request.canonical())
+            }
+            .map_err(map_upper_bound_error)?;
             UserRouteExecution {
                 principal: *principal,
                 request_id,

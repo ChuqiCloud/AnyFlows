@@ -57,6 +57,20 @@ type PersistentTargetGroupFuture<'a> =
 
 /// 持久化协调器实际需要的最小视频运行时端口。
 trait PersistentVideoTaskRuntime: Send + Sync {
+    fn submit_merchant<'a>(
+        &'a self,
+        principal: GatewayPrincipal,
+        expected_target_group_id: GroupId,
+        request: CanonicalVideoGenerationRequest,
+        request_id: &'a str,
+    ) -> PersistentSubmissionFuture<'a> {
+        self.submit(
+            principal.group_id(),
+            expected_target_group_id,
+            request,
+            request_id,
+        )
+    }
     fn target_group<'a>(
         &'a self,
         group_id: GroupId,
@@ -80,6 +94,19 @@ trait PersistentVideoTaskRuntime: Send + Sync {
 }
 
 impl PersistentVideoTaskRuntime for ScheduledChatService {
+    fn submit_merchant<'a>(
+        &'a self,
+        principal: GatewayPrincipal,
+        expected_target_group_id: GroupId,
+        request: CanonicalVideoGenerationRequest,
+        request_id: &'a str,
+    ) -> PersistentSubmissionFuture<'a> {
+        Box::pin(async move {
+            self.submit_merchant_video(principal, expected_target_group_id, request, request_id)
+                .await
+                .map(PersistentSubmission::from_bound)
+        })
+    }
     fn target_group<'a>(
         &'a self,
         group_id: GroupId,
@@ -353,6 +380,24 @@ impl PersistentVideoTaskCoordinator {
         }
 
         if principal.user_route_id().is_some() {
+            if self
+                .user_routes
+                .as_ref()
+                .ok_or(PersistentVideoTaskError::Invariant)?
+                .has_merchant_scope(principal)
+                .await
+                .map_err(PersistentVideoTaskError::Runtime)?
+            {
+                return self
+                    .submit_merchant_routed(
+                        claim,
+                        principal,
+                        request,
+                        requested_resolution,
+                        relay_request_id,
+                    )
+                    .await;
+            }
             return self
                 .submit_routed(
                     claim,
@@ -401,6 +446,137 @@ impl PersistentVideoTaskCoordinator {
             }
             Err(_) => Err(PersistentVideoTaskError::SubmissionOutcomeUnknown),
         }
+    }
+
+    async fn submit_merchant_routed(
+        &self,
+        mut claim: AsyncTaskSubmissionRecord,
+        principal: GatewayPrincipal,
+        request: CanonicalVideoGenerationRequest,
+        requested_resolution: Option<AsyncTaskVideoResolution>,
+        request_id: &str,
+    ) -> Result<AsyncTaskRecord, PersistentVideoTaskError> {
+        let runtime = self
+            .user_routes
+            .as_ref()
+            .ok_or(PersistentVideoTaskError::Invariant)?;
+        let plan = runtime
+            .load(principal, claim.requested_model())
+            .await
+            .map_err(PersistentVideoTaskError::Runtime)?
+            .ok_or(PersistentVideoTaskError::Invariant)?;
+        let candidates = runtime
+            .merchant_video_candidates(&plan, principal, request.resolution())
+            .await
+            .map_err(PersistentVideoTaskError::Runtime)?;
+        let mut last = AfError::ModelUnavailable;
+        for candidate in candidates
+            .into_iter()
+            .take(plan.route.max_group_attempts as usize)
+        {
+            if let Some(channel) = claim.principal().merchant_channel_id()
+                && channel.get() != candidate.offer.channel_id
+            {
+                continue;
+            }
+            if !runtime
+                .validate_merchant_candidate(principal, &plan, &candidate.offer)
+                .await
+                .map_err(PersistentVideoTaskError::Runtime)?
+            {
+                continue;
+            }
+            let group = GroupId::new(candidate.offer.group_id)
+                .map_err(|_| PersistentVideoTaskError::Invariant)?;
+            runtime
+                .admit_group(group)
+                .await
+                .map_err(PersistentVideoTaskError::Runtime)?;
+            let scoped = if claim.principal().merchant_billing_snapshot().is_some() {
+                claim.principal()
+            } else {
+                let scoped = UserRouteRuntime::merchant_principal(principal, &candidate.offer)
+                    .map_err(PersistentVideoTaskError::Runtime)?;
+                claim = self.submissions.bind_merchant(&claim, scoped).await?;
+                scoped
+            };
+            let terms = scoped
+                .merchant_billing_snapshot()
+                .ok_or(PersistentVideoTaskError::Invariant)?;
+            let pricing = XaiVideoPricingSnapshot::restore(
+                candidate.pricing.resolution(),
+                PricingRatios::new(
+                    PricingRatio::new(terms.sales_ratio_micros())
+                        .map_err(|_| PersistentVideoTaskError::Billing)?,
+                    PricingRatio::ONE,
+                    PricingRatio::ONE,
+                ),
+            );
+            let billing = self
+                .prepare_billing_with_snapshot(&claim, group, pricing)
+                .await?;
+            let billing = self.reserve_billing(&claim, billing).await?;
+            let attempt = random_attempt_id()?;
+            let begun = self.begin(&claim, attempt).await?;
+            let started = Instant::now();
+            let result = self
+                .runtime
+                .submit_merchant(
+                    scoped.with_routing_group_id(group),
+                    group,
+                    request.clone(),
+                    request_id,
+                )
+                .await;
+            match result {
+                Ok(submission) => {
+                    if submission.channel_id.get() != candidate.offer.channel_id {
+                        return Err(PersistentVideoTaskError::Invariant);
+                    }
+                    let accepted = self
+                        .accept(&begun, attempt, submission, requested_resolution)
+                        .await?;
+                    self.ensure_billing_submitted(&accepted, billing).await?;
+                    return self.ensure_task(&accepted).await;
+                }
+                Err(error)
+                    if error.disposition()
+                        == VideoTaskSubmissionDisposition::DefinitelyNotAccepted =>
+                {
+                    let error = error.into_error();
+                    let retryable = permits_group_failover(&error);
+                    self.release_pre_submission(&begun, attempt, billing)
+                        .await?;
+                    if let Some(terms) = scoped.merchant_billing_snapshot() {
+                        runtime
+                            .merchant_feedback(
+                                terms,
+                                plan.route.id,
+                                request_id,
+                                claim.requested_model(),
+                                Protocol::XaiVideo,
+                                false,
+                                false,
+                                u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                                None,
+                                retryable,
+                            )
+                            .await;
+                    }
+                    if !retryable {
+                        return Err(PersistentVideoTaskError::Runtime(error));
+                    }
+                    last = error;
+                    claim = self
+                        .submissions
+                        .find(principal.user_id(), claim.task_id())
+                        .await?
+                        .ok_or(PersistentVideoTaskError::Invariant)?;
+                }
+                Err(_) => return Err(PersistentVideoTaskError::SubmissionOutcomeUnknown),
+            }
+        }
+        Err(PersistentVideoTaskError::Runtime(last))
     }
 
     async fn submit_routed(
@@ -650,12 +826,34 @@ impl PersistentVideoTaskCoordinator {
             }
             return Ok(PersistentVideoTaskPollOutcome::Terminal(task));
         }
-        let poll = self
+        let mut poll = self
             .runtime
             .poll(&task, &claim, relay_request_id)
             .await
             .map_err(PersistentVideoTaskError::Runtime)?;
-        let billing_dimensions = video_billing_dimensions(&claim, &poll)?;
+        let mut billing_dimensions = video_billing_dimensions(&claim, &poll)?;
+        if claim.principal().merchant_billing_snapshot().is_some()
+            && billing_dimensions
+                .as_ref()
+                .and_then(|d| d.video_duration())
+                .is_some_and(|duration| {
+                    duration.seconds()
+                        > claim
+                            .video_duration_seconds()
+                            .unwrap_or(af_billing::DEFAULT_XAI_VIDEO_DURATION_SECONDS)
+                })
+        {
+            poll = CanonicalTaskPoll::new(
+                TaskStatus::Failed {
+                    failure: af_domain::TaskFailure::without_reason(
+                        af_domain::TaskFailureKind::Upstream,
+                    ),
+                },
+                None,
+            )
+            .map_err(|_| PersistentVideoTaskError::Invariant)?;
+            billing_dimensions = None;
+        }
         let expected_status = poll.status().clone();
         match &expected_status {
             TaskStatus::Succeeded => {
@@ -683,6 +881,15 @@ impl PersistentVideoTaskCoordinator {
                 )?,
             )
             .await?;
+        if expected_status.is_terminal()
+            && let Some(terms) = claim.principal().merchant_billing_snapshot()
+            && let Some(runtime) = &self.user_routes
+        {
+            runtime.merchant_feedback(terms,claim.principal().user_route_id().ok_or(PersistentVideoTaskError::Invariant)?,
+                &claim.request_id().persistence_key(),claim.requested_model(),Protocol::XaiVideo,false,matches!(expected_status,TaskStatus::Succeeded),
+                now()?.saturating_sub(claim.created_at()).saturating_mul(1000),None,
+                matches!(expected_status,TaskStatus::Failed{ref failure} if failure.kind()!=af_domain::TaskFailureKind::Cancelled)).await;
+        }
         Ok(PersistentVideoTaskPollOutcome::Updated {
             task: updated,
             poll,

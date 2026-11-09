@@ -41,6 +41,45 @@ impl ChatStreamEncoder {
         request: &CanonicalRequest,
         include_usage: bool,
     ) -> Result<Self, AfError> {
+        Self::new_with_metering(
+            protocol,
+            request_id,
+            client_model,
+            created_at,
+            request,
+            include_usage,
+            false,
+        )
+    }
+
+    pub(crate) fn merchant(
+        protocol: Protocol,
+        request_id: &str,
+        client_model: &str,
+        created_at: i64,
+        request: &CanonicalRequest,
+        include_usage: bool,
+    ) -> Result<Self, AfError> {
+        Self::new_with_metering(
+            protocol,
+            request_id,
+            client_model,
+            created_at,
+            request,
+            include_usage,
+            true,
+        )
+    }
+
+    fn new_with_metering(
+        protocol: Protocol,
+        request_id: &str,
+        client_model: &str,
+        created_at: i64,
+        request: &CanonicalRequest,
+        include_usage: bool,
+        merchant: bool,
+    ) -> Result<Self, AfError> {
         match protocol {
             Protocol::OpenAiResponses => Ok(Self::Responses {
                 bridge: None,
@@ -68,7 +107,11 @@ impl ChatStreamEncoder {
                 })
             }
             Protocol::Anthropic => {
-                let usage_estimator = OpenAiChatUsageEstimator::new(request);
+                let usage_estimator = if merchant {
+                    OpenAiChatUsageEstimator::merchant(request)
+                } else {
+                    OpenAiChatUsageEstimator::new(request)
+                };
                 let initial_usage = usage_estimator
                     .initial_usage()
                     .map_err(map_initial_usage_error)?;

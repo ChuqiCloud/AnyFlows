@@ -36,6 +36,8 @@ use crate::{
 const RESERVATION_TTL: Duration = Duration::from_secs(15 * 60);
 #[path = "merchant_finance_tests.rs"]
 mod merchant_finance_tests;
+#[path = "merchant_payout_tests.rs"]
+mod merchant_payout_tests;
 const VALID_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
 
 static NEXT_DATABASE: AtomicU64 = AtomicU64::new(0);

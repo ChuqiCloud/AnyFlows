@@ -98,7 +98,12 @@ async fn relay_conversation_with_usage_policy(
         Err(error) => return (Err(error), RelayAttemptReport::default()),
     };
     let encoder = if canonical.stream {
-        match ChatStreamEncoder::new(
+        let make_encoder = if local_usage_only {
+            ChatStreamEncoder::merchant
+        } else {
+            ChatStreamEncoder::new
+        };
+        match make_encoder(
             response_protocol,
             request_id,
             &client_model,
@@ -143,7 +148,7 @@ async fn relay_conversation_with_usage_policy(
     let status = response.status();
     let retry_after = parse_retry_after(response.headers());
     let estimator = if local_usage_only {
-        OpenAiChatUsageEstimator::new(&canonical).with_local_usage_only()
+        OpenAiChatUsageEstimator::merchant(&canonical)
     } else {
         OpenAiChatUsageEstimator::new(&canonical)
     };
