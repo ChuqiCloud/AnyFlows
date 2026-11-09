@@ -270,7 +270,17 @@ impl BillingAudioService {
         let (mut body, mut upstream_usage) = response.into_parts();
         if principal.merchant_billing_snapshot().is_some() {
             upstream_usage = Some(AudioTranscriptionUsage::Duration(local_duration));
-            body = crate::merchant_media::normalized_audio_usage(body, local_estimate)?;
+            body = match crate::merchant_media::normalized_audio_usage(body, local_estimate) {
+                Ok(body) => body,
+                Err(error) => {
+                    crate::user_route_execution::cancel_before_failover(
+                        &mut lifecycle,
+                        self.precharge.as_deref(),
+                    )
+                    .await?;
+                    return Err(error.into());
+                }
+            };
         }
         let normalized_usage = if principal.merchant_billing_snapshot().is_some() {
             Ok((local_estimate, local_duration))
