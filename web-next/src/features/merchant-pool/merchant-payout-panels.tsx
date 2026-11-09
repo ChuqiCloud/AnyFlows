@@ -6,6 +6,7 @@ import { useMerchantPayoutAccount, useMerchantPayouts } from './merchant-extensi
 import type { MerchantPayoutAccount } from './merchant-extension-model'
 import type { MerchantWithdrawal } from './merchant-pool-model'
 import { poolTimestamp } from './merchant-pool-model'
+import { merchantTextError } from './merchant-form-validation'
 import { MerchantManagementTable } from './merchant-management-tables'
 import { PoolButton as Button, PoolEmpty, PoolError, PoolField, PoolLoading, PoolStatus } from './merchant-pool-ui'
 
@@ -19,12 +20,23 @@ function PayoutAccountForm({ account }: { account: MerchantPayoutAccount }) {
   const [label, setLabel] = useState(account.label)
   const [token, setToken] = useState('')
   const action = useMerchantAction()
-  const [invalid, setInvalid] = useState(false)
+  const [errors, setErrors] = useState<Record<string, { key: string; values?: Record<string, string | number> }>>({})
+  const clearError = (field: string) => setErrors((current) => { const next = { ...current }; delete next[field]; return next })
+  const inputError = (field: string) => ({ isInvalid: Boolean(errors[field]), errorMessage: errors[field] ? t(`merchantPool.validation.${errors[field].key}`, errors[field].values) : undefined })
+  const updateLabel = (value: string) => { setLabel(value); clearError('label'); if (action.isError) action.reset() }
+  const updateToken = (value: string) => { setToken(value); clearError('token'); if (action.isError) action.reset() }
   const save = async (clear: boolean) => {
-    if (!clear && (!label.trim() || !token.trim())) { setInvalid(true); return }
-    try { await action.mutateAsync({ url: '/api/merchant/payout-account', method: 'put', body: { expected_version: account.version, label: clear ? '' : label.trim(), clear, ...(!clear ? { account: token.trim() } : {}) } }); setToken(''); setInvalid(false); action.reset() } catch { /* Write-only account remains in component memory for retry. */ }
+    const nextErrors: Record<string, { key: string; values?: Record<string, string | number> }> = {}
+    if (!clear) {
+      const labelError = merchantTextError(label, 80, false)
+      if (labelError) nextErrors.label = { key: labelError === 'textBytes' ? 'payoutLabelBytes' : labelError === 'singleLine' ? 'singleLine' : 'required', ...(labelError === 'textBytes' ? { values: { max: 80 } } : {}) }
+      const tokenError = merchantTextError(token, 1024)
+      if (tokenError) nextErrors.token = { key: tokenError === 'textBytes' ? 'payoutAccountBytes' : tokenError === 'singleLine' ? 'singleLine' : 'payoutAccountRequired', ...(tokenError === 'textBytes' ? { values: { max: 1024 } } : {}) }
+    }
+    if (Object.keys(nextErrors).length) { setErrors(nextErrors); return }
+    try { await action.mutateAsync({ url: '/api/merchant/payout-account', method: 'put', body: { expected_version: account.version, label: clear ? '' : label.trim(), clear, ...(!clear ? { account: token.trim() } : {}) } }); setToken(''); setErrors({}); action.reset() } catch { /* Write-only account remains in component memory for retry. */ }
   }
-  return <section className="grid gap-3 border-b border-[var(--hairline)] pb-3"><div className="flex items-center gap-2"><h4 className="text-xs font-semibold">{t('merchantPool.payoutAccount')}</h4><PoolStatus status={account.configured ? 'active' : 'disabled'} /></div><p className="text-xs leading-5 text-muted-foreground">{t('merchantPool.payoutAccountHint')}</p><div className="grid gap-3 sm:grid-cols-2"><PoolField label={t('merchantPool.payoutAccountLabel')}><Input aria-label={t('merchantPool.payoutAccountLabel')} size="sm" maxLength={80} value={label} onValueChange={setLabel} /></PoolField><PoolField label={t('merchantPool.payoutAccountToken')}><Input aria-label={t('merchantPool.payoutAccountToken')} size="sm" type="password" autoComplete="new-password" maxLength={1024} value={token} onValueChange={setToken} /></PoolField></div>{invalid ? <PoolError message={t('merchantPool.invalidForm')} /> : null}{action.isError ? <PoolError message={t('merchantPool.saveError')} /> : null}<div className="flex justify-end gap-2">{account.configured ? <Button size="sm" variant="light" color="danger" isDisabled={action.isPending} onPress={() => void save(true)}>{t('merchantPool.clearPayoutAccount')}</Button> : null}<Button size="sm" color="primary" isLoading={action.isPending} onPress={() => void save(false)}>{t('merchantPool.save')}</Button></div></section>
+  return <section className="grid gap-3 border-b border-[var(--hairline)] pb-3"><div className="flex items-center gap-2"><h4 className="text-xs font-semibold">{t('merchantPool.payoutAccount')}</h4><PoolStatus status={account.configured ? 'active' : 'disabled'} /></div><p className="text-xs leading-5 text-muted-foreground">{t('merchantPool.payoutAccountHint')}</p><div className="grid gap-3 sm:grid-cols-2"><PoolField label={t('merchantPool.payoutAccountLabel')}><Input aria-label={t('merchantPool.payoutAccountLabel')} size="sm" maxLength={80} value={label} onValueChange={updateLabel} {...inputError('label')} /></PoolField><PoolField label={t('merchantPool.payoutAccountToken')}><Input aria-label={t('merchantPool.payoutAccountToken')} size="sm" type="password" autoComplete="new-password" maxLength={1024} value={token} onValueChange={updateToken} {...inputError('token')} /></PoolField></div>{action.isError ? <PoolError message={t('merchantPool.saveError')} /> : null}<div className="flex justify-end gap-2">{account.configured ? <Button size="sm" variant="light" color="danger" isDisabled={action.isPending} onPress={() => void save(true)}>{t('merchantPool.clearPayoutAccount')}</Button> : null}<Button size="sm" color="primary" isLoading={action.isPending} onPress={() => void save(false)}>{t('merchantPool.save')}</Button></div></section>
 }
 
 export function MerchantWithdrawalsTable({ withdrawals, formatQuota, admin = false, payoutEnabled = false, onReview }: { withdrawals: MerchantWithdrawal[]; formatQuota: (value: number) => string; admin?: boolean; payoutEnabled?: boolean; onReview?: (withdrawal: MerchantWithdrawal) => void }) {

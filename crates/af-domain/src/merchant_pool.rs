@@ -276,11 +276,30 @@ pub fn validate_merchant_text(value: &str, maximum: usize, empty: bool) -> bool 
         && !value.chars().any(char::is_control)
 }
 
+/// Merchant introductions may contain line breaks, while names and identifiers remain single-line.
+pub fn validate_merchant_description(value: &str, maximum: usize, empty: bool) -> bool {
+    if !(empty || !value.is_empty()) || value.len() > maximum || value.trim() != value {
+        return false;
+    }
+    let mut chars = value.chars().peekable();
+    while let Some(character) = chars.next() {
+        match character {
+            '\n' => {}
+            '\r' if chars.peek() == Some(&'\n') => {
+                chars.next();
+            }
+            character if character.is_control() => return false,
+            _ => {}
+        }
+    }
+    true
+}
+
 impl MerchantPoolWrite {
     pub fn validate(&self) -> Result<(), MerchantPoolError> {
         if self.group_id <= 0
             || !validate_merchant_text(&self.name, 128, false)
-            || !validate_merchant_text(&self.description, 2048, true)
+            || !validate_merchant_description(&self.description, 2048, true)
             || self.commission_bps > 10_000
             || self.min_ratio_micros <= 0
             || self.max_ratio_micros < self.min_ratio_micros
@@ -297,7 +316,7 @@ impl MerchantServiceWrite {
     pub fn validate(&self) -> Result<(), MerchantPoolError> {
         if self.pool_id <= 0
             || !validate_merchant_text(&self.name, 128, false)
-            || !validate_merchant_text(&self.description, 2048, true)
+            || !validate_merchant_description(&self.description, 2048, true)
             || !matches!(
                 self.protocol.as_str(),
                 "openai_chat"
