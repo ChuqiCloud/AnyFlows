@@ -5835,6 +5835,7 @@
           {
             "name": "status",
             "in": "query",
+            "description": "Use deleted to list retired pools; omit to list current pools.",
             "required": false,
             "schema": {
               "type": "string"
@@ -6102,6 +6103,94 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "商户共享池"
+        ],
+        "operationId": "deleteAdminMerchantPool",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Resource deleted; historical records retained"
           },
           "400": {
             "description": "Request rejected",
@@ -7017,6 +7106,96 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/merchants/{id}": {
+      "delete": {
+        "tags": [
+          "商户共享池"
+        ],
+        "operationId": "deleteAdminMerchant",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Resource deleted; historical records retained"
           },
           "400": {
             "description": "Request rejected",
@@ -14232,6 +14411,7 @@
           "分组管理"
         ],
         "summary": "安全软删除管理员分组",
+        "description": "不提供替代分组时，仍被用户、API Key 或注册默认设置引用的分组返回冲突。提供 replacement_group_id 后，迁移用户及注册默认设置并撤销直接绑定原分组的 Key。关联未删除商户池的分组必须先删除共享池。",
         "operationId": "deleteAdminGroup",
         "parameters": [
           {
@@ -14239,6 +14419,17 @@
             "in": "path",
             "description": "分组 ID",
             "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "replacement_group_id",
+            "in": "query",
+            "description": "显式选择有效的普通替代分组，不能是原分组或商户池分组",
+            "required": false,
             "schema": {
               "type": "integer",
               "format": "int64",

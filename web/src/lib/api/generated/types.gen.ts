@@ -4886,6 +4886,39 @@ export type CreateAdminMerchantPoolResponses = {
     201: MerchantPool;
 };
 export type CreateAdminMerchantPoolResponse = CreateAdminMerchantPoolResponses[keyof CreateAdminMerchantPoolResponses];
+export type DeleteAdminMerchantPoolData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-pools/{id}';
+};
+export type DeleteAdminMerchantPoolErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type DeleteAdminMerchantPoolError = DeleteAdminMerchantPoolErrors[keyof DeleteAdminMerchantPoolErrors];
+export type DeleteAdminMerchantPoolResponses = {
+    204: void;
+};
+export type DeleteAdminMerchantPoolResponse = DeleteAdminMerchantPoolResponses[keyof DeleteAdminMerchantPoolResponses];
 export type UpdateAdminMerchantPoolData = {
     body: MerchantPoolWriteRequest;
     path: {
@@ -5174,6 +5207,39 @@ export type ListAdminMerchantsResponses = {
     200: MerchantProfilePage;
 };
 export type ListAdminMerchantsResponse = ListAdminMerchantsResponses[keyof ListAdminMerchantsResponses];
+export type DeleteAdminMerchantData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchants/{id}';
+};
+export type DeleteAdminMerchantErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type DeleteAdminMerchantError = DeleteAdminMerchantErrors[keyof DeleteAdminMerchantErrors];
+export type DeleteAdminMerchantResponses = {
+    204: void;
+};
+export type DeleteAdminMerchantResponse = DeleteAdminMerchantResponses[keyof DeleteAdminMerchantResponses];
 export type ReviewAdminMerchantData = {
     body: MerchantReviewRequest;
     path: {
@@ -7014,7 +7080,9 @@ export type DeleteAdminGroupData = {
     path: {
         id: number;
     };
-    query?: never;
+    query?: {
+        replacement_group_id?: number;
+    };
     url: '/api/admin/groups/{id}';
 };
 export type DeleteAdminGroupErrors = {

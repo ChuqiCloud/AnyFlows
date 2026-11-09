@@ -307,12 +307,7 @@ async fn ensure_no_active_tasks(
     let tasks_query = async_tasks::Entity::find()
         .filter(async_tasks::Column::ChannelId.is_in(channels))
         .filter(async_tasks::Column::TerminalAt.is_null());
-    if tasks_query
-        .one(txn)
-        .await
-        .map_err(internal)?
-        .is_some()
-    {
+    if tasks_query.one(txn).await.map_err(internal)?.is_some() {
         return Err(MerchantPoolError::InUse);
     }
     Ok(())

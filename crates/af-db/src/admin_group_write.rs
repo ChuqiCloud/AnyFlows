@@ -465,8 +465,11 @@ async fn deletion_owner_ids(
             )),
         )
         .and_where(
-            Expr::col((user_route_members::Entity, user_route_members::Column::GroupId))
-                .eq(group_id.get()),
+            Expr::col((
+                user_route_members::Entity,
+                user_route_members::Column::GroupId,
+            ))
+            .eq(group_id.get()),
         )
         .and_where(Expr::col((user_routes::Entity, user_routes::Column::DeletedAt)).is_null())
         .to_owned();

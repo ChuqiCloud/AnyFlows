@@ -605,24 +605,32 @@ async fn reciprocal_group_replacements_preserve_one_live_target_and_all_users()
     )
     .await?;
     let (first_result, second_result) = tokio::join!(
-        fixture.repository.delete_with_replacement(first, Some(second)),
-        fixture.repository.delete_with_replacement(second, Some(first)),
+        fixture
+            .repository
+            .delete_with_replacement(first, Some(second)),
+        fixture
+            .repository
+            .delete_with_replacement(second, Some(first)),
     );
     let surviving = match (first_result, second_result) {
-        (Ok(AdminGroupDeleteOutcome::Deleted), Err(AdminGroupRepositoryError::InvalidReference)) => {
-            second
-        }
-        (Err(AdminGroupRepositoryError::InvalidReference), Ok(AdminGroupDeleteOutcome::Deleted)) => {
-            first
-        }
+        (
+            Ok(AdminGroupDeleteOutcome::Deleted),
+            Err(AdminGroupRepositoryError::InvalidReference),
+        ) => second,
+        (
+            Err(AdminGroupRepositoryError::InvalidReference),
+            Ok(AdminGroupDeleteOutcome::Deleted),
+        ) => first,
         other => panic!("reciprocal deletion must retain one valid target: {other:?}"),
     };
-    assert!(groups::Entity::find_by_id(surviving.get())
-        .one(fixture.pool.connection())
-        .await?
-        .unwrap()
-        .deleted_at
-        .is_none());
+    assert!(
+        groups::Entity::find_by_id(surviving.get())
+            .one(fixture.pool.connection())
+            .await?
+            .unwrap()
+            .deleted_at
+            .is_none()
+    );
     for id in [711_i64, 712] {
         let user = users::Entity::find_by_id(id)
             .one(fixture.pool.connection())
