@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { Button, Chip, Skeleton, type ButtonProps } from '@heroui/react'
-import { RefreshCw } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Briefcase, GitBranch, RefreshCw, Store } from 'lucide-react'
+import { NavLink } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 
@@ -20,7 +20,8 @@ export function PoolHeader({ title, description, refreshing, onRefresh, children
 
 export function PoolNavigation() {
   const { t } = useTranslation()
-  return <nav aria-label={t('merchantPool.title')} className="flex flex-wrap gap-x-4 gap-y-2 border-b border-[var(--hairline)] pb-3 text-xs"><Link className="text-primary hover:underline" to="/console/merchant-pool">{t('merchantPool.title')}</Link><Link className="text-primary hover:underline" to="/console/merchant-pool/routes">{t('merchantPool.routes')}</Link><Link className="text-primary hover:underline" to="/console/merchant">{t('merchantPool.workspace')}</Link></nav>
+  const tabs = [{ to: '/console/merchant-pool', label: t('merchantPool.title'), icon: Store }, { to: '/console/merchant-pool/routes', label: t('merchantPool.routes'), icon: GitBranch }, { to: '/console/merchant', label: t('merchantPool.workspace'), icon: Briefcase }]
+  return <nav aria-label={t('merchantPool.title')} className="flex min-w-0 gap-1 overflow-x-auto border-b border-[var(--hairline)] pb-2 text-xs">{tabs.map(({ to, label, icon: Icon }) => <NavLink key={to} end to={to} className={({ isActive }) => cn('inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary', isActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-surface-2 hover:text-foreground')}><Icon className="size-3.5" aria-hidden="true" />{label}</NavLink>)}</nav>
 }
 
 export function PoolField({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {

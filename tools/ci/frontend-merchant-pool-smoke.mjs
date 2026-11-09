@@ -26,7 +26,9 @@ const now = Math.floor(Date.now() / 1000)
 const pool = { id: 1, group_id: 8, name: 'CI shared pool', description: 'CI pool', enabled: true, commission_bps: 500, effective_commission_bps: 500, commission_inherit_global: false, min_ratio_micros: 100000, max_ratio_micros: 10000000, settlement_delay_secs: 86400, created_at: now, updated_at: now }
 const offer = { model: 'gpt-fixture', sales_ratio_micros: 800000, context_window: 128000, max_output_tokens: 4096, supports_streaming: true, supports_tools: true, supports_vision: false, prices: { currency: 'USD', unit: 'million_tokens', billing_mode: 'token', video_per_second: null, input: '0.80', output: '1.60', cache_read: '0.08', cache_write_5m: '1.00', cache_write_1h: '1.60', version: 1 } }
 const publicService = { id: 51, pool_id: 1, merchant_id: 6, merchant_name: 'CI merchant', name: 'CI service', description: 'Reviewed service', status: 'published', revision: 1, price_version: 0, protocol: 'openai_chat', maintenance: [], models: [offer], updated_at: now }
-const excludedService = { ...publicService, id: 52, merchant_id: 7, merchant_name: 'CI excluded merchant', name: 'CI excluded service' }
+const excludedService = { ...publicService, id: 52, merchant_id: 7, merchant_name: 'CI excluded merchant', name: 'CI excluded service', description: '面向长文本和日常开发的独立渠道，商家公开说明会保留完整内容，但在市场行内收起以保持模型、报价和运行表现易于比较。'.repeat(3) }
+const reserveService = { ...publicService, id: 53, merchant_id: 8, merchant_name: 'CI reserve merchant', name: 'CI reserve service', description: '稳定优先，适合开发与备用切换。' }
+const timelineBuckets = Array.from({ length: 24 }, (_, index) => ({ started_at: now - (24 - index) * 3600, ended_at: now - (23 - index) * 3600, success_count: index >= 14 && index !== 20 ? 1 : 0, failure_count: index === 20 ? 1 : 0, sample_count: index >= 14 ? 1 : 0, status: index < 14 ? 'unknown' : index === 20 ? 'degraded' : 'normal' }))
 const profile = { id: 6, owner_user_id: 3, name: 'CI merchant', description: 'CI relay', status: 'approved', review_reason: null, created_at: now, updated_at: now }
 const list = items => ({ items, total: items.length, page: 1, page_size: 20 })
 let routes = []
@@ -44,6 +46,7 @@ const videoService = { ...publicService, id: 61, protocol: 'xai_video', name: 'C
 const routeRequests = []
 const previewRequests = []
 const withdrawalRequests = []
+const catalogRequests = []
 const errors = []
 let server, browser, page
 let serverOutput = ''
@@ -85,10 +88,14 @@ try {
     if (path === '/api/site') return respond({ balance_display: { mode: 'quota', unit_name: '积分', unit_symbol: '积分', quota_units_per_display_unit: '10000', symbol_position: 'suffix', fraction_digits: 0 } })
     assert.equal(request.headers().authorization, 'Bearer ci-merchant')
     if (path === '/api/merchant-pools' || path === '/api/merchant/available-pools' || path === '/api/admin/merchant-pools') return respond(list([pool]))
-    if (path === '/api/merchant-pools/1/services' && new URL(request.url()).searchParams.get('protocol') === 'xai_video') { assert.equal(new URL(request.url()).searchParams.has('streaming'), false); return respond(list([videoService])) }
-    if (path === '/api/merchant-pools/1/services') return respond(list(new URL(request.url()).searchParams.get('model') ? [publicService, excludedService, { ...publicService, id: 53, merchant_id: 8, merchant_name: 'CI reserve merchant', name: 'CI reserve service' }] : [publicService, excludedService]))
+    if (path === '/api/merchant-pools/1/services') {
+      const query = new URL(request.url()).searchParams
+      catalogRequests.push(Object.fromEntries(query))
+      if (query.get('protocol') === 'xai_video') { assert.equal(query.has('streaming'), false); return respond(list([videoService])) }
+      return respond(list(query.get('model') ? [publicService, excludedService, reserveService] : [publicService, excludedService]))
+    }
     if (path === '/api/merchant-pools/1/statistics') return respond({ items: [{ service_id: 51, merchant_id: 6, sample_count: 10, success_count: 9, failure_count: 1, success_rate: 90, ttft_p50_ms: 123, ttft_p95_ms: 400, latency_p50_ms: 300, latency_p95_ms: 900, status: 'normal', updated_at: now }], as_of: now, window_seconds: 86400 })
-    if (path === '/api/merchant-pools/1/timeline') return respond({ items: [], as_of: now, window_seconds: 86400 })
+    if (path === '/api/merchant-pools/1/timeline') return respond({ items: [{ service_id: 51, merchant_id: 6, buckets: timelineBuckets }], as_of: now, window_seconds: 86400 })
     if (path === '/api/merchant/profile') return respond(profile)
     if (path === '/api/merchant-pool/routes' && method === 'GET') return respond({ items: routes, capacity: 32 })
     if (path === '/api/merchant-pool/routes' && method === 'POST') {
@@ -172,17 +179,29 @@ try {
     return respond({ error: { code: 'not_found' } }, 404)
   })
   await page.goto(`${origin}/.merchant-pool-smoke.html`)
-  await page.getByRole('heading', { name: label('title'), exact: true }).waitFor()
+  await page.getByRole('heading', { name: label('market.title'), exact: true }).waitFor()
   await page.getByRole('textbox', { name: label('model'), exact: true }).fill('gpt-fixture')
   await page.getByText('90.0%', { exact: true }).waitFor()
   await page.getByText(label('lowSamples'), { exact: true }).waitFor()
   const catalogTable = page.getByRole('region', { name: label('catalogTable'), exact: true })
-  await catalogTable.getByRole('row').filter({ hasText: 'CI service' }).getByText(label('priceInput').replace('{{value}}', '0.80'), { exact: true }).waitFor()
+  const catalogRow = catalogTable.getByRole('row').filter({ hasText: 'CI service' })
+  await catalogRow.getByText(label('priceInput').replace('{{value}}', '0.80'), { exact: true }).waitFor()
+  assert.equal(await catalogRow.getByText(publicService.description, { exact: true }).isVisible(), true, 'Reviewed merchant introductions are visible without hovering')
+  assert.equal(await catalogTable.getByRole('row').filter({ hasText: excludedService.name }).getByText(excludedService.description, { exact: true }).isVisible(), true, 'Long introductions stay present while the row clamps their display')
   assert.equal(await catalogTable.locator('tbody tr').count(), 3, 'Each service renders exactly one compact table row')
-  assert.equal(await catalogTable.getByRole('columnheader').count(), 10)
+  assert.equal(await catalogTable.getByRole('columnheader').count(), 7)
+  const desktopGeometry = await catalogTable.evaluate(node => ({ viewport: innerWidth, pageWidth: document.documentElement.scrollWidth, left: node.getBoundingClientRect().left }))
+  assert.ok(desktopGeometry.pageWidth <= desktopGeometry.viewport, 'The market filters and long descriptions remain inside the desktop viewport')
   const desktopActions = await catalogTable.getByRole('columnheader', { name: label('tableColumns.actions'), exact: true }).boundingBox()
   assert.ok(desktopActions && desktopActions.x >= 0 && desktopActions.x + desktopActions.width <= 1280, 'Desktop actions remain visible without scrolling the table')
+  await catalogTable.evaluate(node => { node.scrollLeft = node.scrollWidth })
+  const desktopSource = await catalogTable.locator('tbody tr').first().locator('td').first().boundingBox()
+  assert.ok(desktopSource && Math.abs(desktopSource.x - desktopGeometry.left) < 2, 'The model and merchant identity remain fixed while the desktop table scrolls')
+  await catalogTable.evaluate(node => { node.scrollLeft = 0 })
   await page.screenshot({ path: resolve(screenshots, 'merchant-catalog.png'), fullPage: true, animations: 'disabled' })
+  await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.documentElement.classList.add('light') })
+  await page.screenshot({ path: resolve(screenshots, 'merchant-catalog-light.png'), fullPage: true, animations: 'disabled' })
+  await page.evaluate(() => { document.documentElement.classList.remove('light'); document.documentElement.classList.add('dark') })
   await page.getByRole('button', { name: 'routes', exact: true }).click()
   await page.getByRole('button', { name: label('createRoute'), exact: true }).click()
   let dialog = page.getByRole('dialog')
@@ -326,13 +345,17 @@ try {
   await page.getByTestId('issued').waitFor()
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: 'catalog', exact: true }).click()
-  await page.getByRole('heading', { name: label('title'), exact: true }).waitFor()
+  await page.getByRole('heading', { name: label('market.title'), exact: true }).waitFor()
   const mobileTable = page.getByRole('region', { name: label('catalogTable'), exact: true })
   const mobileGeometry = await mobileTable.evaluate(node => ({ viewport: innerWidth, pageWidth: document.documentElement.scrollWidth, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }))
   assert.ok(mobileGeometry.scrollWidth > mobileGeometry.clientWidth, 'Mobile merchant rows scroll within their table')
   assert.ok(mobileGeometry.pageWidth <= mobileGeometry.viewport, 'The table must not force the mobile page beyond the viewport')
   assert.equal(await mobileTable.locator('tbody tr').count(), 3)
+  assert.equal(await mobileTable.getByText(publicService.description, { exact: true }).isVisible(), true, 'Merchant introductions remain visible on mobile')
   await page.screenshot({ path: resolve(screenshots, 'merchant-catalog-mobile.png'), fullPage: true, animations: 'disabled' })
+  await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.documentElement.classList.add('light') })
+  await page.screenshot({ path: resolve(screenshots, 'merchant-catalog-mobile-light.png'), fullPage: true, animations: 'disabled' })
+  await page.evaluate(() => { document.documentElement.classList.remove('light'); document.documentElement.classList.add('dark') })
   await mobileTable.evaluate(node => { node.scrollLeft = node.scrollWidth })
   const fixedMerchant = await mobileTable.locator('tbody tr').first().locator('td').first().boundingBox()
   assert.ok(fixedMerchant && fixedMerchant.x >= 0 && fixedMerchant.x < mobileGeometry.viewport, 'Merchant identity remains visible while scrolling')
@@ -344,6 +367,20 @@ try {
   await page.getByText('480p: ' + label('pricePerSecond').replace('{{value}}', '0.04'), { exact: true }).waitFor()
   await page.getByText(label('ttftNotApplicable'), { exact: true }).waitFor()
   await page.screenshot({ path: resolve(screenshots, 'merchant-video.png'), fullPage: true, animations: 'disabled' })
+  await page.getByRole('textbox', { name: label('search'), exact: true }).fill('CI merchant')
+  await page.getByRole('textbox', { name: label('minimumRatio'), exact: true }).fill('0.5')
+  const resetResponse = page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return url.pathname === '/api/merchant-pools/1/services' && !url.searchParams.get('model') && !url.searchParams.get('search') && !url.searchParams.get('protocol') && !url.searchParams.get('min_ratio_micros')
+  })
+  await page.getByRole('button', { name: label('market.resetFilters'), exact: true }).click()
+  await resetResponse
+  assert.equal(await page.getByRole('textbox', { name: label('model'), exact: true }).inputValue(), '')
+  assert.equal(await page.getByRole('textbox', { name: label('search'), exact: true }).inputValue(), '')
+  const resetQuery = catalogRequests.at(-1)
+  for (const key of ['model', 'search', 'protocol', 'min_ratio_micros']) assert.ok(!resetQuery[key], `Reset clears the ${key} filter from the actual catalog request`)
+  assert.equal(resetQuery.sort, 'name')
+  assert.equal(resetQuery.page, '1')
   assert.deepEqual(errors, [])
   console.log('Merchant pool browser regression passed')
 } catch (error) {
