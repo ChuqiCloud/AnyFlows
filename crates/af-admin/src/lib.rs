@@ -15,7 +15,10 @@ mod announcement;
 mod api_key;
 mod merchant_payout;
 mod merchant_payout_gateway;
-pub use merchant_payout::{AdminMerchantPayoutSettings,DatabaseMerchantPayoutService,MerchantPayoutAccountCommand,MerchantPayoutSettingsCommand};
+pub use merchant_payout::{
+    AdminMerchantPayoutSettings, DatabaseMerchantPayoutService, MerchantPayoutAccountCommand,
+    MerchantPayoutSettingsCommand,
+};
 mod merchant_finance;
 pub use merchant_finance::{
     DatabaseMerchantFinanceService, MerchantFinanceBalance, MerchantFinanceEntry,

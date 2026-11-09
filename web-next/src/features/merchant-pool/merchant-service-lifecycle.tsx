@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, Checkbox, Drawer, DrawerBody, DrawerContent, DrawerHeader, Input, Textarea } from '@heroui/react'
+import { Button, Checkbox, Drawer, DrawerBody, DrawerContent, DrawerFooter, DrawerHeader, Input, Textarea } from '@heroui/react'
 import { useTranslation } from 'react-i18next'
 import { useMerchantAction } from './merchant-pool-api'
 import { merchantServicePath, useMerchantMaintenance, useMerchantServicePrices } from './merchant-extension-api'
@@ -14,7 +14,7 @@ export function MerchantServiceLifecycle({ service, admin = false, onClose }: { 
   const { t } = useTranslation()
   const [pending, setPending] = useState(false)
   const [panel, setPanel] = useState<'prices' | 'maintenance'>('prices')
-  return <Drawer isOpen isDismissable={!pending} size="4xl" placement="right" scrollBehavior="inside" onOpenChange={(open) => { if (!open && !pending) onClose() }}><DrawerContent><DrawerHeader className="flex-col gap-1"><h2>{t('merchantPool.serviceLifecycle')}: {service.name}</h2><p className="text-xs font-normal text-muted-foreground">{t('merchantPool.serviceLifecycleHint')}</p></DrawerHeader><DrawerBody className="gap-3 pb-5"><div className="flex gap-1" role="group" aria-label={t('merchantPool.serviceLifecycle')}>{(['prices', 'maintenance'] as const).map((value) => <Button key={value} size="sm" isDisabled={pending} variant={panel === value ? 'flat' : 'light'} onPress={() => setPanel(value)}>{t(`merchantPool.lifecycleTabs.${value}`)}</Button>)}</div>{panel === 'prices' ? <MerchantServicePrices service={service} admin={admin} onPendingChange={setPending} /> : <MerchantMaintenancePanel serviceId={service.id} admin={admin} onPendingChange={setPending} />}</DrawerBody></DrawerContent></Drawer>
+  return <Drawer isOpen isDismissable={!pending} isKeyboardDismissDisabled={pending} size="4xl" placement="right" scrollBehavior="inside" onOpenChange={(open) => { if (!open && !pending) onClose() }}><DrawerContent><DrawerHeader className="flex-col gap-1"><h2>{t('merchantPool.serviceLifecycle')}: {service.name}</h2><p className="text-xs font-normal text-muted-foreground">{t('merchantPool.serviceLifecycleHint')}</p></DrawerHeader><DrawerBody className="gap-3 pb-5"><div className="flex gap-1" role="group" aria-label={t('merchantPool.serviceLifecycle')}>{(['prices', 'maintenance'] as const).map((value) => <Button key={value} size="sm" isDisabled={pending} variant={panel === value ? 'flat' : 'light'} onPress={() => setPanel(value)}>{t(`merchantPool.lifecycleTabs.${value}`)}</Button>)}</div>{panel === 'prices' ? <MerchantServicePrices service={service} admin={admin} onPendingChange={setPending} /> : <MerchantMaintenancePanel serviceId={service.id} admin={admin} onPendingChange={setPending} />}</DrawerBody><DrawerFooter><Button size="sm" variant="flat" isDisabled={pending} onPress={onClose}>{t('merchantPool.close')}</Button></DrawerFooter></DrawerContent></Drawer>
 }
 
 function MerchantServicePrices({ service, admin, onPendingChange }: { service: MerchantOwnedService; admin: boolean; onPendingChange: (pending: boolean) => void }) {

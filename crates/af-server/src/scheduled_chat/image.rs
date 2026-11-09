@@ -31,9 +31,7 @@ fn supports_image_protocol(channel_type: ChannelType, protocol: Protocol) -> boo
     channel_type == ChannelType::OpenAi && IMAGE_UPSTREAM_PROTOCOLS.contains(&protocol)
 }
 
-use super::{
-    PreparedConcurrencyPlan, ScheduledChatService, adaptor_settings, header_overrides,
-};
+use super::{PreparedConcurrencyPlan, ScheduledChatService, adaptor_settings, header_overrides};
 
 impl ImageRoutePlanner for ScheduledChatService {
     fn plan<'a>(

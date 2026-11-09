@@ -222,8 +222,11 @@ pub(super) fn document() -> OpenApi {
         }
         doc["paths"][path][method] = operation;
     }
-    if let Some(required)=doc.pointer_mut("/components/schemas/MerchantRoutePreviewRequest/required").and_then(serde_json::Value::as_array_mut) {
-        required.retain(|name|name!="duration_seconds" && name!="resolution");
+    if let Some(required) = doc
+        .pointer_mut("/components/schemas/MerchantRoutePreviewRequest/required")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        required.retain(|name| name != "duration_seconds" && name != "resolution");
     }
     serde_json::from_value(doc).expect("merchant route OpenAPI is valid")
 }

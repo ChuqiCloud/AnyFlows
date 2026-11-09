@@ -122,12 +122,20 @@ pub fn estimate_openai_request_upper_bound(
 }
 
 /// Merchant visual input uses a fixed platform tariff of 1,024 normalized input tokens per image.
-pub fn estimate_merchant_request_upper_bound(request: &CanonicalRequest) -> Result<Usage, UsageResolutionError> {
+pub fn estimate_merchant_request_upper_bound(
+    request: &CanonicalRequest,
+) -> Result<Usage, UsageResolutionError> {
     let mut text = request.clone();
     strip_merchant_images(&mut text.messages)?;
     let upper = estimate_openai_request_upper_bound(&text)?;
-    Usage::new(merchant_input_tokens(request)?, upper.output_tokens(), *upper.details(), UsageSource::Estimated, UsageSemantics::Inclusive)
-        .map_err(|_| UsageResolutionError::Overflow)
+    Usage::new(
+        merchant_input_tokens(request)?,
+        upper.output_tokens(),
+        *upper.details(),
+        UsageSource::Estimated,
+        UsageSemantics::Inclusive,
+    )
+    .map_err(|_| UsageResolutionError::Overflow)
 }
 
 fn strip_merchant_images(messages: &mut [Message]) -> Result<i64, UsageResolutionError> {
@@ -135,8 +143,14 @@ fn strip_merchant_images(messages: &mut [Message]) -> Result<i64, UsageResolutio
         let mut count = 0_i64;
         for block in content.iter_mut() {
             match block {
-                ContentBlock::Image { .. } => count = count.checked_add(1).ok_or(UsageResolutionError::Overflow)?,
-                ContentBlock::ToolResult { content, .. } => count = count.checked_add(strip(content)?).ok_or(UsageResolutionError::Overflow)?,
+                ContentBlock::Image { .. } => {
+                    count = count.checked_add(1).ok_or(UsageResolutionError::Overflow)?
+                }
+                ContentBlock::ToolResult { content, .. } => {
+                    count = count
+                        .checked_add(strip(content)?)
+                        .ok_or(UsageResolutionError::Overflow)?
+                }
                 _ => {}
             }
         }
@@ -145,7 +159,9 @@ fn strip_merchant_images(messages: &mut [Message]) -> Result<i64, UsageResolutio
     }
     let mut count = 0_i64;
     for message in messages {
-        count = count.checked_add(strip(&mut message.content)?).ok_or(UsageResolutionError::Overflow)?;
+        count = count
+            .checked_add(strip(&mut message.content)?)
+            .ok_or(UsageResolutionError::Overflow)?;
     }
     Ok(count)
 }
@@ -154,8 +170,17 @@ fn merchant_input_tokens(request: &CanonicalRequest) -> Result<TokenCount, Usage
     let mut text = request.clone();
     let images = strip_merchant_images(&mut text.messages)?;
     let input = estimate_input_tokens(&text, TokenCounter::for_model(&text.model))?;
-    TokenCount::new(input.get().checked_add(images.checked_mul(1_024).ok_or(UsageResolutionError::Overflow)?).ok_or(UsageResolutionError::Overflow)?)
-        .map_err(|_| UsageResolutionError::Overflow)
+    TokenCount::new(
+        input
+            .get()
+            .checked_add(
+                images
+                    .checked_mul(1_024)
+                    .ok_or(UsageResolutionError::Overflow)?,
+            )
+            .ok_or(UsageResolutionError::Overflow)?,
+    )
+    .map_err(|_| UsageResolutionError::Overflow)
 }
 
 /// 使用模型对应的 OpenAI tokenizer 估算一组纯文本字段的令牌总数。

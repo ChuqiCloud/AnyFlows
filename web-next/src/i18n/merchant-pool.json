@@ -450,7 +450,8 @@
     },
     "notApplicable": "不适用",
     "payoutDisabled": "请先启用自动出款网关",
-    "initialPrice": "初始发布价格"
+    "initialPrice": "初始发布价格",
+    "close": "关闭"
   },
   "en": {
     "title": "Merchant pool",
@@ -903,6 +904,7 @@
     },
     "notApplicable": "Not applicable",
     "payoutDisabled": "Enable the payout gateway first",
-    "initialPrice": "Initial published price"
+    "initialPrice": "Initial published price",
+    "close": "Close"
   }
 }

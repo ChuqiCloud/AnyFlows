@@ -106,9 +106,17 @@ impl MerchantPoolRepository {
             }
             let mut candidates = Vec::new();
             for row in rows {
-                self.apply_due_service_prices(row.id, DatabaseTimestamp::now_utc()).await?;
-                let maintenance = super::policies::active_maintenance(self.pool.connection(), row.id, DatabaseTimestamp::now_utc().unix_timestamp()).await?;
-                if maintenance.iter().any(|notice| notice.blocks_requests) { continue; }
+                self.apply_due_service_prices(row.id, DatabaseTimestamp::now_utc())
+                    .await?;
+                let maintenance = super::policies::active_maintenance(
+                    self.pool.connection(),
+                    row.id,
+                    DatabaseTimestamp::now_utc().unix_timestamp(),
+                )
+                .await?;
+                if maintenance.iter().any(|notice| notice.blocks_requests) {
+                    continue;
+                }
                 let Some(revision_id) = row.published_revision_id else {
                     continue;
                 };
@@ -132,7 +140,15 @@ impl MerchantPoolRepository {
                 if revision.status != "published" {
                     continue;
                 }
-                let Some(price) = super::policies::active_price(self.pool.connection(), row.id, Some(revision_id)).await? else { continue; };
+                let Some(price) = super::policies::active_price(
+                    self.pool.connection(),
+                    row.id,
+                    Some(revision_id),
+                )
+                .await?
+                else {
+                    continue;
+                };
                 let Some(model) = super::policies::price_models(&price)?
                     .into_iter()
                     .find(|item| item.model == model)
@@ -211,7 +227,8 @@ impl MerchantPoolRepository {
             let pool = find_pool(self.pool.connection(), pool_id).await?;
             let mut items = Vec::new();
             for row in rows {
-                self.apply_due_service_prices(row.id, DatabaseTimestamp::now_utc()).await?;
+                self.apply_due_service_prices(row.id, DatabaseTimestamp::now_utc())
+                    .await?;
                 let merchant = profiles::Entity::find_by_id(row.merchant_id)
                     .one(self.pool.connection())
                     .await
@@ -229,8 +246,17 @@ impl MerchantPoolRepository {
                     continue;
                 };
                 let revision = load_revision(self.pool.connection(), id, row.id).await?;
-                let Some(price) = super::policies::active_price(self.pool.connection(), row.id, Some(id)).await? else { continue; };
-                let maintenance = super::policies::active_maintenance(self.pool.connection(), row.id, DatabaseTimestamp::now_utc().unix_timestamp()).await?;
+                let Some(price) =
+                    super::policies::active_price(self.pool.connection(), row.id, Some(id)).await?
+                else {
+                    continue;
+                };
+                let maintenance = super::policies::active_maintenance(
+                    self.pool.connection(),
+                    row.id,
+                    DatabaseTimestamp::now_utc().unix_timestamp(),
+                )
+                .await?;
                 if query
                     .protocol
                     .as_ref()
@@ -336,7 +362,10 @@ impl MerchantPoolRepository {
                     price_version: price.id,
                     maintenance,
                     models,
-                    updated_at: revision.updated_at.unix_timestamp().max(price.updated_at.unix_timestamp()),
+                    updated_at: revision
+                        .updated_at
+                        .unix_timestamp()
+                        .max(price.updated_at.unix_timestamp()),
                 });
             }
             if matches!(query.sort.as_deref(), Some("success_rate" | "latency")) {
@@ -483,9 +512,17 @@ fn net_prices(
         currency: prices.currency.clone(),
         unit: prices.unit.clone(),
         billing_mode: prices.billing_mode.clone(),
-        video_per_second: prices.video_per_second.as_ref().map(|rates| Ok(af_domain::MerchantVideoPrices {
-            p480: net(&rates.p480)?, p720: net(&rates.p720)?, p1080: rates.p1080.as_deref().map(net).transpose()?,
-        })).transpose()?,
+        video_per_second: prices
+            .video_per_second
+            .as_ref()
+            .map(|rates| {
+                Ok(af_domain::MerchantVideoPrices {
+                    p480: net(&rates.p480)?,
+                    p720: net(&rates.p720)?,
+                    p1080: rates.p1080.as_deref().map(net).transpose()?,
+                })
+            })
+            .transpose()?,
         input: net(&prices.input)?,
         output: net(&prices.output)?,
         cache_read: net(&prices.cache_read)?,
@@ -500,14 +537,35 @@ pub(super) async fn model_price<C: ConnectionTrait>(
     model: &str,
     ratio: i64,
 ) -> Result<Option<MerchantModelPrices>, MerchantPoolError> {
-    if model == "grok-imagine-video" || model == "grok-imagine-video-1.5" || model.starts_with("grok-imagine-video-1.5-") {
-        let ratio = Decimal::from(ratio).checked_div(Decimal::from(1_000_000)).ok_or(MerchantPoolError::Unavailable)?;
-        let scale = |micros| Decimal::new(micros, 6).checked_mul(ratio).map(|n| n.normalize().to_string()).ok_or(MerchantPoolError::Unavailable);
+    if model == "grok-imagine-video"
+        || model == "grok-imagine-video-1.5"
+        || model.starts_with("grok-imagine-video-1.5-")
+    {
+        let ratio = Decimal::from(ratio)
+            .checked_div(Decimal::from(1_000_000))
+            .ok_or(MerchantPoolError::Unavailable)?;
+        let scale = |micros| {
+            Decimal::new(micros, 6)
+                .checked_mul(ratio)
+                .map(|n| n.normalize().to_string())
+                .ok_or(MerchantPoolError::Unavailable)
+        };
         let v15 = model != "grok-imagine-video";
         return Ok(Some(MerchantModelPrices {
-            currency: "USD".to_owned(), unit: "second".to_owned(), billing_mode: "video".to_owned(),
-            video_per_second: Some(af_domain::MerchantVideoPrices {p480:scale(if v15 {80_000} else {50_000})?,p720:scale(if v15 {140_000} else {70_000})?,p1080:if v15 {Some(scale(250_000)?)} else {None}}),
-            input:"0".to_owned(),output:"0".to_owned(),cache_read:"0".to_owned(),cache_write_5m:"0".to_owned(),cache_write_1h:"0".to_owned(),version:1,
+            currency: "USD".to_owned(),
+            unit: "second".to_owned(),
+            billing_mode: "video".to_owned(),
+            video_per_second: Some(af_domain::MerchantVideoPrices {
+                p480: scale(if v15 { 80_000 } else { 50_000 })?,
+                p720: scale(if v15 { 140_000 } else { 70_000 })?,
+                p1080: if v15 { Some(scale(250_000)?) } else { None },
+            }),
+            input: "0".to_owned(),
+            output: "0".to_owned(),
+            cache_read: "0".to_owned(),
+            cache_write_5m: "0".to_owned(),
+            cache_write_1h: "0".to_owned(),
+            version: 1,
         }));
     }
     let Some(price) = model_prices::Entity::find_by_id(SensitiveString::from(model))
@@ -532,7 +590,12 @@ pub(super) async fn model_price<C: ConnectionTrait>(
     Ok(Some(MerchantModelPrices {
         currency: "USD".to_owned(),
         unit: "million_tokens".to_owned(),
-        billing_mode: if price.billing_mode == 2 {"free"} else {"token"}.to_owned(),
+        billing_mode: if price.billing_mode == 2 {
+            "free"
+        } else {
+            "token"
+        }
+        .to_owned(),
         video_per_second: None,
         input: final_price(price.input_price.expose())?,
         output: final_price(price.output_price.expose())?,

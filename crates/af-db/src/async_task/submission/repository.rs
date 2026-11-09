@@ -35,37 +35,81 @@ pub struct AsyncTaskSubmissionRepository {
 
 impl AsyncTaskSubmissionRepository {
     /// Persist commercial terms before reserving funds or sending a merchant task.
-    pub async fn bind_merchant(&self, current:&AsyncTaskSubmissionRecord, principal:GatewayPrincipal)->Result<AsyncTaskSubmissionRecord,AsyncTaskRepositoryError> {
-        let terms=principal.merchant_billing_snapshot().ok_or(AsyncTaskRepositoryError::Invariant)?;
-        let channel=principal.merchant_channel_id().ok_or(AsyncTaskRepositoryError::Invariant)?;
-        let route=principal.user_route_id().ok_or(AsyncTaskRepositoryError::Invariant)?;
-        if route <= 0 || !same_submission_identity(current.principal(), principal) { return Err(AsyncTaskRepositoryError::Conflict); }
-        let value=serde_json::json!({"terms":terms,"channel_id":channel.get(),"route_id":route});
-        let operation=async {
-            let stored = load_by_database_id(self.pool.connection(), current.database_id).await?
+    pub async fn bind_merchant(
+        &self,
+        current: &AsyncTaskSubmissionRecord,
+        principal: GatewayPrincipal,
+    ) -> Result<AsyncTaskSubmissionRecord, AsyncTaskRepositoryError> {
+        let terms = principal
+            .merchant_billing_snapshot()
+            .ok_or(AsyncTaskRepositoryError::Invariant)?;
+        let channel = principal
+            .merchant_channel_id()
+            .ok_or(AsyncTaskRepositoryError::Invariant)?;
+        let route = principal
+            .user_route_id()
+            .ok_or(AsyncTaskRepositoryError::Invariant)?;
+        if route <= 0 || !same_submission_identity(current.principal(), principal) {
+            return Err(AsyncTaskRepositoryError::Conflict);
+        }
+        let value = serde_json::json!({"terms":terms,"channel_id":channel.get(),"route_id":route});
+        let operation = async {
+            let stored = load_by_database_id(self.pool.connection(), current.database_id)
+                .await?
                 .ok_or(AsyncTaskRepositoryError::Invariant)?;
-            if !same_submission_identity(stored.principal(), principal) { return Err(AsyncTaskRepositoryError::Conflict); }
-            if stored.principal().merchant_billing_snapshot().is_some() {
-                return if same_merchant_binding(&stored, principal) { Ok(stored) } else { Err(AsyncTaskRepositoryError::Conflict) };
+            if !same_submission_identity(stored.principal(), principal) {
+                return Err(AsyncTaskRepositoryError::Conflict);
             }
-            if current.principal().merchant_billing_snapshot().is_some() || stored.version != current.version
-                || stored.state != AsyncTaskSubmissionState::Claimed { return Err(AsyncTaskRepositoryError::Conflict); }
+            if stored.principal().merchant_billing_snapshot().is_some() {
+                return if same_merchant_binding(&stored, principal) {
+                    Ok(stored)
+                } else {
+                    Err(AsyncTaskRepositoryError::Conflict)
+                };
+            }
+            if current.principal().merchant_billing_snapshot().is_some()
+                || stored.version != current.version
+                || stored.state != AsyncTaskSubmissionState::Claimed
+            {
+                return Err(AsyncTaskRepositoryError::Conflict);
+            }
             async_task_submission_claims::Entity::update_many()
                 .filter(async_task_submission_claims::Column::Id.eq(current.database_id))
                 .filter(async_task_submission_claims::Column::UserId.eq(principal.user_id().get()))
-                .filter(async_task_submission_claims::Column::TokenId.eq(principal.token_id().get()))
-                .filter(async_task_submission_claims::Column::GroupId.eq(principal.group_id().get()))
+                .filter(
+                    async_task_submission_claims::Column::TokenId.eq(principal.token_id().get()),
+                )
+                .filter(
+                    async_task_submission_claims::Column::GroupId.eq(principal.group_id().get()),
+                )
                 .filter(async_task_submission_claims::Column::Version.eq(current.version))
                 .filter(async_task_submission_claims::Column::State.eq(1_i16))
                 .filter(async_task_submission_claims::Column::MerchantSnapshot.is_null())
-                .col_expr(async_task_submission_claims::Column::MerchantSnapshot,Expr::value(value))
-                .col_expr(async_task_submission_claims::Column::Version,Expr::value(next_version(current.version)?))
-                .exec(self.pool.connection()).await.map_err(|_|AsyncTaskRepositoryError::Query)?;
-            let stored = load_by_database_id(self.pool.connection(),current.database_id).await?.ok_or(AsyncTaskRepositoryError::Invariant)?;
-            if !same_merchant_binding(&stored, principal) { return Err(AsyncTaskRepositoryError::Conflict); }
+                .col_expr(
+                    async_task_submission_claims::Column::MerchantSnapshot,
+                    Expr::value(value),
+                )
+                .col_expr(
+                    async_task_submission_claims::Column::Version,
+                    Expr::value(next_version(expected_version(current.version)?)?),
+                )
+                .exec(self.pool.connection())
+                .await
+                .map_err(|_| AsyncTaskRepositoryError::Query)?;
+            let stored = load_by_database_id(self.pool.connection(), current.database_id)
+                .await?
+                .ok_or(AsyncTaskRepositoryError::Invariant)?;
+            if !same_merchant_binding(&stored, principal) {
+                return Err(AsyncTaskRepositoryError::Conflict);
+            }
             Ok(stored)
         };
-        timeout(self.operation_timeout,operation.with_subscriber(NoSubscriber::default())).await.map_err(|_|AsyncTaskRepositoryError::OutcomeUnknown)?
+        timeout(
+            self.operation_timeout,
+            operation.with_subscriber(NoSubscriber::default()),
+        )
+        .await
+        .map_err(|_| AsyncTaskRepositoryError::OutcomeUnknown)?
     }
     /// 使用共享连接池和单次数据库操作截止时间构造提交仓储。
     pub fn new(
@@ -228,8 +272,10 @@ impl AsyncTaskSubmissionRepository {
 }
 
 fn same_submission_identity(left: GatewayPrincipal, right: GatewayPrincipal) -> bool {
-    left.user_id() == right.user_id() && left.token_id() == right.token_id()
-        && left.group_id() == right.group_id() && left.billing_source_group_id() == right.billing_source_group_id()
+    left.user_id() == right.user_id()
+        && left.token_id() == right.token_id()
+        && left.group_id() == right.group_id()
+        && left.billing_source_group_id() == right.billing_source_group_id()
 }
 
 fn same_merchant_binding(record: &AsyncTaskSubmissionRecord, principal: GatewayPrincipal) -> bool {
@@ -418,7 +464,10 @@ where
             async_task_submission_claims::Column::AttemptKey,
             Expr::value(Option::<SensitiveString>::None),
         )
-        .col_expr(async_task_submission_claims::Column::MerchantSnapshot,Expr::value(Option::<serde_json::Value>::None))
+        .col_expr(
+            async_task_submission_claims::Column::MerchantSnapshot,
+            Expr::value(Option::<serde_json::Value>::None),
+        )
         .col_expr(
             async_task_submission_claims::Column::Version,
             Expr::value(next_version),
@@ -447,7 +496,11 @@ async fn accept_in_transaction(
         return Ok(AsyncTaskSubmissionMutationOutcome::NotFound);
     };
     let expected_version = expected_version(write.expected_version)?;
-    if current.principal().merchant_channel_id().is_some_and(|channel| channel != write.channel_id) {
+    if current
+        .principal()
+        .merchant_channel_id()
+        .is_some_and(|channel| channel != write.channel_id)
+    {
         return Err(AsyncTaskRepositoryError::Conflict.into());
     }
     if current.matches_accept(write)

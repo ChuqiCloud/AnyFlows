@@ -132,7 +132,17 @@ pub(super) fn document() -> OpenApi {
                 ("currency", string()),
                 ("unit", string()),
                 ("billing_mode", enumeration(&["token", "free", "video"])),
-                ("video_per_second", nullable(object(&[("p480",string()),("p720",string()),("p1080",nullable(string()))],&[]))),
+                (
+                    "video_per_second",
+                    nullable(object(
+                        &[
+                            ("p480", string()),
+                            ("p720", string()),
+                            ("p1080", nullable(string())),
+                        ],
+                        &[],
+                    )),
+                ),
                 ("input", string()),
                 ("output", string()),
                 ("cache_read", string()),
@@ -189,7 +199,14 @@ pub(super) fn document() -> OpenApi {
         ("base_url", string()),
         (
             "protocol",
-            enumeration(&["openai_chat", "openai_responses", "openai_images", "openai_audio", "openai_speech", "xai_video"]),
+            enumeration(&[
+                "openai_chat",
+                "openai_responses",
+                "openai_images",
+                "openai_audio",
+                "openai_speech",
+                "xai_video",
+            ]),
         ),
         ("default_ratio_micros", integer()),
         ("models", array(reference("MerchantModelWrite"))),
@@ -265,7 +282,14 @@ pub(super) fn document() -> OpenApi {
                 ("status", string()),
                 (
                     "protocol",
-                    enumeration(&["openai_chat", "openai_responses", "openai_images", "openai_audio", "openai_speech", "xai_video"]),
+                    enumeration(&[
+                        "openai_chat",
+                        "openai_responses",
+                        "openai_images",
+                        "openai_audio",
+                        "openai_speech",
+                        "xai_video",
+                    ]),
                 ),
                 ("revision", integer()),
                 ("price_version", integer()),

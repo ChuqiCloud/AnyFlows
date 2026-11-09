@@ -449,8 +449,10 @@ impl MerchantPoolRepository {
             if !pool.enabled {
                 return Err(MerchantPoolError::Conflict);
             }
-            super::policies::apply_due_in_transaction(&txn, &service, DatabaseTimestamp::now_utc()).await?;
-            let (models, default_ratio) = super::policies::effective_price_terms(&txn, &revision).await?;
+            super::policies::apply_due_in_transaction(&txn, &service, DatabaseTimestamp::now_utc())
+                .await?;
+            let (models, default_ratio) =
+                super::policies::effective_price_terms(&txn, &revision).await?;
             validate_ratios(&pool, default_ratio, &models)?;
             for model in &models {
                 if super::catalog::model_price(

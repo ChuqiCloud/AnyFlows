@@ -2201,19 +2201,31 @@ impl Bootstrap<BillingReady> {
             debug_trace_worker,
             analytics_export_repository,
         } = stage;
-        let merchant_repository=af_db::MerchantPoolRepository::new(infrastructure.infrastructure.database.clone(),Duration::from_secs(config.auth().lookup_timeout_secs()));
-        let payout_service=Arc::new(af_admin::DatabaseMerchantPayoutService::new(
-            af_db::MerchantPayoutRepository::new(infrastructure.infrastructure.database.clone(),Duration::from_secs(config.auth().lookup_timeout_secs())),
-            merchant_repository.clone(),infrastructure.system_secret_cipher.clone(),upstream_clients.clone()));
-        supervisor.spawn("merchant-payout",move |task_shutdown| async move {
-            crate::merchant_payout_worker::run_until(payout_service,task_shutdown.cancelled()).await;
+        let merchant_repository = af_db::MerchantPoolRepository::new(
+            infrastructure.infrastructure.database.clone(),
+            Duration::from_secs(config.auth().lookup_timeout_secs()),
+        );
+        let payout_service = Arc::new(af_admin::DatabaseMerchantPayoutService::new(
+            af_db::MerchantPayoutRepository::new(
+                infrastructure.infrastructure.database.clone(),
+                Duration::from_secs(config.auth().lookup_timeout_secs()),
+            ),
+            merchant_repository.clone(),
+            infrastructure.system_secret_cipher.clone(),
+            upstream_clients.clone(),
+        ));
+        supervisor.spawn("merchant-payout", move |task_shutdown| async move {
+            crate::merchant_payout_worker::run_until(payout_service, task_shutdown.cancelled())
+                .await;
         });
-        supervisor.spawn("merchant-price-schedule",move |task_shutdown| async move {
-            let mut tick=tokio::time::interval(Duration::from_secs(5));
+        supervisor.spawn("merchant-price-schedule", move |task_shutdown| async move {
+            let mut tick = tokio::time::interval(Duration::from_secs(5));
             tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
-                tokio::select!{biased;()=task_shutdown.cancelled()=>return,_=tick.tick()=>{}}
-                if merchant_repository.process_due_pricing(100).await.is_err() {tracing::warn!("商户定时价格暂不可用，稍后重试");}
+                tokio::select! {biased;()=task_shutdown.cancelled()=>return,_=tick.tick()=>{}}
+                if merchant_repository.process_due_pricing(100).await.is_err() {
+                    tracing::warn!("商户定时价格暂不可用，稍后重试");
+                }
             }
         });
         let analytics_export_control = analytics_export_repository.as_ref().map(|repository| {
@@ -2830,13 +2842,23 @@ impl Bootstrap<Supervised> {
         );
         let router = router
             .merge(af_http::build_merchant_service_policy_router(
-                Arc::new(af_admin::DatabaseMerchantServicePolicy::new(merchant_repository.clone())),
-                Arc::clone(&self.stage.infrastructure.session_authenticator)))
+                Arc::new(af_admin::DatabaseMerchantServicePolicy::new(
+                    merchant_repository.clone(),
+                )),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
             .merge(af_http::build_merchant_payout_router(
                 Arc::new(af_admin::DatabaseMerchantPayoutService::new(
-                    af_db::MerchantPayoutRepository::new(self.stage.infrastructure.infrastructure.database.clone(),Duration::from_secs(self.config.auth().lookup_timeout_secs())),
-                    merchant_repository.clone(),self.stage.infrastructure.system_secret_cipher.clone(),self.stage.upstream_clients.clone())),
-                Arc::clone(&self.stage.infrastructure.session_authenticator)))
+                    af_db::MerchantPayoutRepository::new(
+                        self.stage.infrastructure.infrastructure.database.clone(),
+                        Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+                    ),
+                    merchant_repository.clone(),
+                    self.stage.infrastructure.system_secret_cipher.clone(),
+                    self.stage.upstream_clients.clone(),
+                )),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
             .merge(af_http::build_merchant_pool_router(
                 Arc::new(
                     af_admin::DatabaseMerchantPoolService::new(

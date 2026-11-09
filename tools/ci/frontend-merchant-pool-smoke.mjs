@@ -264,7 +264,7 @@ try {
   assert.equal(noticeRequests.length, 2)
   assert.equal(noticeRequests.at(-1).blocks_requests, true)
   await page.screenshot({ path: resolve(screenshots, 'merchant-maintenance.png'), fullPage: true, animations: 'disabled' })
-  await page.keyboard.press('Escape')
+  await dialog.getByRole('button', { name: label('close'), exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: label('finance'), exact: true }).click()
   await page.getByRole('textbox', { name: label('payoutAccountLabel'), exact: true }).fill('CI settlement account')

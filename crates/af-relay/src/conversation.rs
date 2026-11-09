@@ -98,7 +98,11 @@ async fn relay_conversation_with_usage_policy(
         Err(error) => return (Err(error), RelayAttemptReport::default()),
     };
     let encoder = if canonical.stream {
-        let make_encoder = if local_usage_only {ChatStreamEncoder::merchant} else {ChatStreamEncoder::new};
+        let make_encoder = if local_usage_only {
+            ChatStreamEncoder::merchant
+        } else {
+            ChatStreamEncoder::new
+        };
         match make_encoder(
             response_protocol,
             request_id,

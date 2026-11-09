@@ -391,12 +391,27 @@ impl VideoTaskRuntime for ScheduledChatService {
 }
 
 impl ScheduledChatService {
-    pub(super) async fn submit_merchant_video(&self,principal:GatewayPrincipal,expected_target_group_id:GroupId,request:CanonicalVideoGenerationRequest,request_id:&str)->Result<BoundVideoTaskSubmission,VideoTaskSubmissionRuntimeError> {
-        let route=self.scoped_media_route(&principal,request.model().as_str()).await?;
-        if route.target_group_id()!=expected_target_group_id {return Err(AfError::Internal.into())}
-        let health=self.load_credential_health(&route,Protocol::XaiVideo,request.model().as_str()).await?;
-        let loads=self.load_account_concurrency(&route,Protocol::XaiVideo,request.model().as_str()).await?;
-        self.execute_video_submission(route,request,request_id,loads.as_ref(),health.as_ref()).await
+    pub(super) async fn submit_merchant_video(
+        &self,
+        principal: GatewayPrincipal,
+        expected_target_group_id: GroupId,
+        request: CanonicalVideoGenerationRequest,
+        request_id: &str,
+    ) -> Result<BoundVideoTaskSubmission, VideoTaskSubmissionRuntimeError> {
+        let route = self
+            .scoped_media_route(&principal, request.model().as_str())
+            .await?;
+        if route.target_group_id() != expected_target_group_id {
+            return Err(AfError::Internal.into());
+        }
+        let health = self
+            .load_credential_health(&route, Protocol::XaiVideo, request.model().as_str())
+            .await?;
+        let loads = self
+            .load_account_concurrency(&route, Protocol::XaiVideo, request.model().as_str())
+            .await?;
+        self.execute_video_submission(route, request, request_id, loads.as_ref(), health.as_ref())
+            .await
     }
     pub(super) async fn video_route(
         &self,

@@ -141,11 +141,32 @@ pub(super) fn claim_record(
             .map_err(|_| AsyncTaskRepositoryError::Invariant)?,
     );
     if let Some(value) = model.merchant_snapshot {
-        let terms: af_domain::MerchantBillingSnapshot=serde_json::from_value(value["terms"].clone()).map_err(|_|AsyncTaskRepositoryError::Invariant)?;
-        let terms=af_domain::MerchantBillingSnapshot::new(terms.pool_id(),terms.merchant_id(),terms.service_id(),terms.pricing_version(),terms.sales_ratio_micros(),terms.commission_bps(),terms.settlement_delay_secs()).map_err(|_|AsyncTaskRepositoryError::Invariant)?;
-        let channel=ChannelId::new(value["channel_id"].as_i64().ok_or(AsyncTaskRepositoryError::Invariant)?).map_err(|_|AsyncTaskRepositoryError::Invariant)?;
-        let route=value["route_id"].as_i64().filter(|n|*n>0).ok_or(AsyncTaskRepositoryError::Invariant)?;
-        principal=principal.with_user_route_id(Some(route)).with_merchant_target(terms,channel);
+        let terms: af_domain::MerchantBillingSnapshot =
+            serde_json::from_value(value["terms"].clone())
+                .map_err(|_| AsyncTaskRepositoryError::Invariant)?;
+        let terms = af_domain::MerchantBillingSnapshot::new(
+            terms.pool_id(),
+            terms.merchant_id(),
+            terms.service_id(),
+            terms.pricing_version(),
+            terms.sales_ratio_micros(),
+            terms.commission_bps(),
+            terms.settlement_delay_secs(),
+        )
+        .map_err(|_| AsyncTaskRepositoryError::Invariant)?;
+        let channel = ChannelId::new(
+            value["channel_id"]
+                .as_i64()
+                .ok_or(AsyncTaskRepositoryError::Invariant)?,
+        )
+        .map_err(|_| AsyncTaskRepositoryError::Invariant)?;
+        let route = value["route_id"]
+            .as_i64()
+            .filter(|n| *n > 0)
+            .ok_or(AsyncTaskRepositoryError::Invariant)?;
+        principal = principal
+            .with_user_route_id(Some(route))
+            .with_merchant_target(terms, channel);
     }
     let protocol =
         Protocol::from_str(&model.protocol).map_err(|_| AsyncTaskRepositoryError::Invariant)?;
@@ -269,7 +290,9 @@ pub(super) fn claim_record(
         || accepted_at.is_some_and(|value| value < created_at || value > updated_at)
         || !shape_valid
         || !no_partial_binding
-        || principal.merchant_channel_id().is_some_and(|expected| channel_id.is_some_and(|actual| actual != expected))
+        || principal
+            .merchant_channel_id()
+            .is_some_and(|expected| channel_id.is_some_and(|actual| actual != expected))
     {
         return Err(AsyncTaskRepositoryError::Invariant);
     }

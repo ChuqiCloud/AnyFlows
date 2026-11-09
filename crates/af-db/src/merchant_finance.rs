@@ -164,7 +164,8 @@ impl MerchantFinanceRepository {
                 .map(withdrawal_from_row)
                 .collect::<Result<Vec<_>, _>>()?;
             for item in &mut items {
-                item.payout = crate::merchant_payout::find_public(self.pool.connection(), item.id).await?;
+                item.payout =
+                    crate::merchant_payout::find_public(self.pool.connection(), item.id).await?;
             }
             let next_cursor = if items.len() > limit as usize {
                 items.pop();
@@ -289,7 +290,12 @@ impl MerchantFinanceRepository {
                 .ok_or(MerchantFinanceError::NotFound)?;
             let mut payout_query = select("merchant_payouts");
             payout_query.and_where(Expr::col(Alias::new("withdrawal_id")).eq(id));
-            if tx.query_one(tx.get_database_backend().build(&payout_query)).await.map_err(db_error)?.is_some() {
+            if tx
+                .query_one(tx.get_database_backend().build(&payout_query))
+                .await
+                .map_err(db_error)?
+                .is_some()
+            {
                 // A transfer may already exist remotely. Manual decisions must never
                 // compete with submission or reconciliation, even while disabled.
                 return Err(MerchantFinanceError::Conflict);
@@ -711,7 +717,10 @@ pub(crate) async fn all<C: ConnectionTrait>(
         .map_err(db_error)
 }
 
-pub(crate) fn get<T: sea_orm::TryGetable>(row: &QueryResult, column: &str) -> Result<T, MerchantFinanceError> {
+pub(crate) fn get<T: sea_orm::TryGetable>(
+    row: &QueryResult,
+    column: &str,
+) -> Result<T, MerchantFinanceError> {
     row.try_get("", column)
         .map_err(|_| MerchantFinanceError::Invariant)
 }

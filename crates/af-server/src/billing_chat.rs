@@ -288,7 +288,8 @@ impl BillingChatService {
                 af_relay::estimate_merchant_request_upper_bound(request.canonical())
             } else {
                 estimate_openai_request_upper_bound(request.canonical())
-            }.map_err(map_upper_bound_error)?;
+            }
+            .map_err(map_upper_bound_error)?;
             UserRouteExecution {
                 principal: *principal,
                 request_id,
