@@ -78,7 +78,7 @@ export function toUserRouteRequest(draft: UserRouteDraft, groups?: SelectableTok
   }
 }
 
-export function isSelectableUserRoute(value: string, routes?: UserRoute[]) {
+export function isSelectableUserRoute(value: string, routes?: Array<Pick<UserRoute, 'id' | 'enabled'>>) {
   if (!/^[1-9]\d*$/.test(value)) return false
   const id = Number(value)
   return Number.isSafeInteger(id) && id > 0 && !!routes?.some((route) => route.id === id && route.enabled)

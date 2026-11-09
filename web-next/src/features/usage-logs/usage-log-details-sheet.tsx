@@ -3,6 +3,7 @@ import { Brain, Coins, Gauge, Route, UserRound, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
+import { MerchantAttemptPath } from '@/features/merchant-pool/merchant-attempt-path'
 import { DetailSection } from './usage-log-detail-section'
 import { formatUsageDateLong, formatUsageLatency, formatUsageNumber, usageLatencyTone, type UsageLatencyKind } from './usage-log-format'
 import { isAdminUsageLog, type UsageLogRow, usageLogCacheTokens, usageLogTotalTokens } from './usage-log-model'
@@ -62,6 +63,7 @@ export function UsageLogDetailsSheet({ log, admin, showPrincipal = admin, format
 
                 <DrawerBody className="min-h-0 flex-1 gap-0 overflow-hidden p-0">
                   <div className="min-h-0 flex-1 overflow-y-auto px-5">
+              {log.request_id ? <MerchantAttemptPath requestId={log.request_id} /> : null}
               <DetailSection
                 title={t('usageLogs.detailSections.request')}
                 icon={Route}

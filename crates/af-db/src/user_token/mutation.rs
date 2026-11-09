@@ -8,7 +8,7 @@ use sea_orm::{
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    entity::{TokenHash, TokenIpAllowlist, TokenModelAllowlist, tokens},
+    entity::{TokenHash, TokenIpAllowlist, TokenModelAllowlist, merchant_pools, tokens},
     group_key_access::user_can_select_key_group,
     token_owner_guard::{TokenOwnerGuardError, lock_non_deleted_owner, non_deleted_token_count},
 };
@@ -85,6 +85,18 @@ pub(super) async fn create(
         } else {
             record_internal_error(UserTokenRepositoryError::Invariant)
         });
+    }
+    // Pool groups require a merchant route quote and revenue attribution, even for default-group Keys.
+    if record.user_route_id.is_none()
+        && merchant_pools::Entity::find()
+            .filter(merchant_pools::Column::GroupId.eq(effective_group_id.get()))
+            .one(&transaction)
+            .await
+            .map_err(|_| record_internal_error(UserTokenRepositoryError::Query))?
+            .is_some()
+    {
+        rollback(transaction).await?;
+        return Err(UserTokenRepositoryError::GroupUnavailable);
     }
     if non_deleted_token_count(&transaction, record.owner_user_id)
         .await

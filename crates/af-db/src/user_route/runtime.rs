@@ -270,7 +270,7 @@ impl UserRouteRepository {
     }
 }
 
-fn now_millis() -> Result<i64, UserRouteError> {
+pub(super) fn now_millis() -> Result<i64, UserRouteError> {
     i64::try_from(TimeDateTimeWithTimeZone::now_utc().unix_timestamp_nanos() / 1_000_000)
         .map_err(|_| UserRouteError::Internal)
 }

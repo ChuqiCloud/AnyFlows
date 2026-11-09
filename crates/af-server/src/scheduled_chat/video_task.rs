@@ -396,6 +396,7 @@ impl ScheduledChatService {
         group_id: GroupId,
         model: &str,
     ) -> Result<IndexedRoutePlan, AfError> {
+        self.ensure_non_merchant_group(group_id).await?;
         if self.health.is_some() {
             let (channel_ids, channel_health) = self.load_channel_health(group_id, model).await?;
             let route = self

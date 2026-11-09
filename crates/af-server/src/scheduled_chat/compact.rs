@@ -41,6 +41,7 @@ impl ResponsesCompactRoutePlanner for ScheduledChatService {
         request_id: &'a str,
     ) -> ResponsesCompactRoutePlanFuture<'a> {
         Box::pin(async move {
+            self.ensure_non_merchant_group(principal.group_id()).await?;
             let route = if let Some(store) = &self.health {
                 let channel_ids = self
                     .scheduler

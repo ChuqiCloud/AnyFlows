@@ -48,6 +48,54 @@ impl ModelPriceSource for ModelSource {
 
 struct GroupSource;
 
+#[tokio::test]
+async fn merchant_sales_price_replaces_group_ratios_and_rejects_expression_prices() {
+    let model_cache = ModelPriceCache::load(Arc::new(ModelSource)).await.unwrap();
+    let group_cache = GroupPricingCache::load(Arc::new(GroupSource))
+        .await
+        .unwrap();
+    let source = CachedRequestPricingSnapshotSource::new(model_cache, group_cache);
+    let snapshot = source
+        .capture(
+            "snapshot-model",
+            GroupId::new(1).unwrap(),
+            GroupId::new(2).unwrap(),
+            0,
+        )
+        .unwrap()
+        .with_merchant_sales_ratio(800_000)
+        .unwrap();
+    assert_eq!(snapshot.ratios().group().micros(), 800_000);
+    assert_eq!(snapshot.ratios().group_model(), PricingRatio::ONE);
+    assert_eq!(snapshot.ratios().applied_peak(), PricingRatio::ONE);
+    assert_eq!(
+        snapshot
+            .ratio_resolver()
+            .unwrap()
+            .effective_token_prices()
+            .unwrap()
+            .unwrap()
+            .input(),
+        Decimal::new(8, 1)
+    );
+    assert!(matches!(
+        source
+            .capture(
+                "expression-model",
+                GroupId::new(1).unwrap(),
+                GroupId::new(2).unwrap(),
+                0
+            )
+            .unwrap()
+            .with_merchant_sales_ratio(800_000),
+        Err(RequestPricingSnapshotError::MerchantPricingUnavailable)
+    ));
+    assert!(matches!(
+        snapshot.with_merchant_sales_ratio(0),
+        Err(RequestPricingSnapshotError::MerchantPricingUnavailable)
+    ));
+}
+
 impl GroupPricingSource for GroupSource {
     fn load<'a>(&'a self) -> GroupPricingSourceFuture<'a> {
         Box::pin(async {

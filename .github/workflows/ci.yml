@@ -132,9 +132,9 @@ jobs:
           }
 
           {
-            echo "frontend=$(matches '^(web-next/|tools/ci/(frontend-about-smoke|frontend-navigation-smoke|frontend-user-routes-smoke|frontend-oauth-invitation-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend=$(matches '^(web-next/|tools/ci/(frontend-about-smoke|frontend-navigation-smoke|frontend-user-routes-smoke|frontend-merchant-pool-smoke|frontend-oauth-invitation-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_about=$(matches '^(web-next/src/features/(about/|site-settings/software-(update-(panel|api)|release-notes)\.tsx?$)|tools/ci/frontend-about-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
-            echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-(navigation|user-routes|oauth-invitation)-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-(navigation|user-routes|merchant-pool|oauth-invitation)-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_verification=$(matches '^(web-next/src/features/(account-verification|wallet|api-keys|playground)/|tools/ci/frontend-verification-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "rust=$(matches '^(crates/|tools/xtask/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$|\.github/workflows/ci\.yml$)')"
             echo "database=$(matches '^(crates/af-db/|tools/ci/(run-db-migration-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
@@ -554,6 +554,7 @@ jobs:
         run: |
           PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-navigation-smoke.mjs
           PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-user-routes-smoke.mjs
+          PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-merchant-pool-smoke.mjs
           PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-oauth-invitation-smoke.mjs
 
       - name: Browser smoke test gallery and verification workflows
@@ -606,7 +607,9 @@ jobs:
         uses: ./.ci-actions/gitea-upload-artifact
         with:
           name: navigation-screenshots-web-next
-          path: ${{ runner.temp }}/navigation-screenshots-web-next/*.png
+          path: |
+            ${{ runner.temp }}/navigation-screenshots-web-next/*.png
+            ${{ runner.temp }}/merchant-pool-screenshots-web-next/*.png
           retention-days: 7
           if-no-files-found: ignore
 
@@ -615,7 +618,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: navigation-screenshots-web-next
-          path: ${{ runner.temp }}/navigation-screenshots-web-next/*.png
+          path: |
+            ${{ runner.temp }}/navigation-screenshots-web-next/*.png
+            ${{ runner.temp }}/merchant-pool-screenshots-web-next/*.png
           retention-days: 7
           if-no-files-found: ignore
 
@@ -673,6 +678,8 @@ jobs:
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          cache-on-failure: true
 
       - name: Install dependency audit tool
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
@@ -725,6 +732,7 @@ jobs:
           exit 1
 
       - name: Check development workspace with Clippy
+        id: development_clippy
         if: needs.changes.outputs.full != 'true'
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
@@ -765,6 +773,17 @@ jobs:
           cargo test --locked -p af-http --lib verification
           cargo test --locked -p af-http --lib error_response_tests
           cargo test --locked -p af-server --test account_verification_http
+
+      - name: Run focused merchant pool regression tests
+        if: ${{ !cancelled() && needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true' && steps.development_clippy.outcome == 'success' }}
+        run: |
+          failed=0
+          for package in af-domain af-billing af-db af-relay af-server; do
+            if ! cargo test --locked -p "$package" --lib merchant; then
+              failed=1
+            fi
+          done
+          exit "$failed"
 
       - name: Run Clippy
         if: needs.changes.outputs.full == 'true'

@@ -128,6 +128,9 @@ mod m20261031_000163_create_group_group_grants;
 mod m20261031_000164_create_group_model_ratio_overrides;
 mod m20261102_000165_create_user_routes;
 mod m20261108_000166_add_verification_access_policy;
+mod m20261108_000167_create_merchant_pools;
+mod m20261108_000168_create_merchant_finance;
+mod m20261108_000169_create_merchant_pool_routes;
 mod schema;
 
 #[cfg(test)]
@@ -527,6 +530,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20261031_000164_create_group_model_ratio_overrides::Migration),
             Box::new(m20261102_000165_create_user_routes::Migration),
             Box::new(m20261108_000166_add_verification_access_policy::Migration),
+            Box::new(m20261108_000167_create_merchant_pools::Migration),
+            Box::new(m20261108_000168_create_merchant_finance::Migration),
+            Box::new(m20261108_000169_create_merchant_pool_routes::Migration),
         ]
     }
 }

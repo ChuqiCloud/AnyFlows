@@ -115,7 +115,14 @@ impl OpenAiChatStream {
         let mut resolved_usage = None;
         for event in events {
             match event {
+                CanonicalStreamEvent::AnthropicUsageMetadata { .. }
+                    if self.usage_estimator.uses_local_usage_only() => {}
                 CanonicalStreamEvent::Usage(usage) => {
+                    if self.usage_estimator.uses_local_usage_only() {
+                        // Suppress supplier billing claims on both the consumer wire and
+                        // the settlement handle. One local usage is emitted at StreamEnd.
+                        continue;
+                    }
                     let billing_usage = self
                         .source
                         .as_ref()

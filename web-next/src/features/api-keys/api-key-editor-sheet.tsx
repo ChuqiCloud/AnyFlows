@@ -7,6 +7,7 @@ import { ApiKeyForm } from './api-key-form'
 
 type ApiKeyEditorSheetProps = {
   token?: UserToken
+  initialRouteId?: number
   open: boolean
   onOpenChange: (open: boolean) => void
   onIssued: (issued: IssuedUserToken) => void
@@ -38,6 +39,7 @@ export function ApiKeyEditorSheet(props: ApiKeyEditorSheetProps) {
             <DrawerBody className="min-h-0 flex-1 gap-0 overflow-hidden p-0">
               <ApiKeyForm
                 token={props.token}
+                initialRouteId={props.initialRouteId}
                 portalContainer={portalContainer}
                 onCancel={() => props.onOpenChange(false)}
                 onIssued={(issued) => { props.onOpenChange(false); props.onIssued(issued) }}
