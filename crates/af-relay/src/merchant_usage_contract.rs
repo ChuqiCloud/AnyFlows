@@ -343,7 +343,7 @@ async fn merchant_gemini_prompt_block_is_a_legal_terminal_response() {
 fn merchant_image() -> ContentBlock {
     ContentBlock::Image {
         source: MediaSource::Url("https://media.example/image.png".to_owned()),
-        mime_type: Some("image/png".to_owned()),
+        mime_type: None,
     }
 }
 
