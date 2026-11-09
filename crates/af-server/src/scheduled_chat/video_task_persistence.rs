@@ -500,9 +500,18 @@ impl PersistentVideoTaskCoordinator {
                 claim = self.submissions.bind_merchant(&claim, scoped).await?;
                 scoped
             };
-            let terms=scoped.merchant_billing_snapshot().ok_or(PersistentVideoTaskError::Invariant)?;
-            let pricing = XaiVideoPricingSnapshot::restore(candidate.pricing.resolution(),PricingRatios::new(
-                PricingRatio::new(terms.sales_ratio_micros()).map_err(|_|PersistentVideoTaskError::Billing)?,PricingRatio::ONE,PricingRatio::ONE));
+            let terms = scoped
+                .merchant_billing_snapshot()
+                .ok_or(PersistentVideoTaskError::Invariant)?;
+            let pricing = XaiVideoPricingSnapshot::restore(
+                candidate.pricing.resolution(),
+                PricingRatios::new(
+                    PricingRatio::new(terms.sales_ratio_micros())
+                        .map_err(|_| PersistentVideoTaskError::Billing)?,
+                    PricingRatio::ONE,
+                    PricingRatio::ONE,
+                ),
+            );
             let billing = self
                 .prepare_billing_with_snapshot(&claim, group, pricing)
                 .await?;
