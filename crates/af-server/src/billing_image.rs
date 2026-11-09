@@ -266,7 +266,13 @@ impl BillingImageService {
         };
         let channel_id = routed.channel_id();
         let response = routed.into_value();
-        let (body, upstream_usage) = response.into_parts();
+        let (mut body, mut upstream_usage) = response.into_parts();
+        if principal.merchant_billing_snapshot().is_some() {
+            // The validated response has exactly the requested image count. Its published
+            // request tariff, rather than supplier usage, determines the invoice.
+            upstream_usage = Some(upper_bound);
+            body = crate::merchant_media::normalized_json_usage(body, upper_bound)?;
+        }
         let settlement_usage = match upstream_usage {
             Some(usage) if usage_within_upper_bound(&usage, &upper_bound)? => usage,
             Some(_) => return Err(AfError::Internal.into()),

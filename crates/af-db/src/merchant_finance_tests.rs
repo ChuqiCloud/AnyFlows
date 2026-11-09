@@ -3,7 +3,7 @@ use crate::{MerchantFinanceError, MerchantFinanceRepository};
 use af_domain::MerchantBillingSnapshot;
 use sea_orm::sea_query::Alias;
 
-fn config() -> FixtureConfig {
+pub(super) fn config() -> FixtureConfig {
     FixtureConfig {
         user_quota: 10_000,
         user_used_quota: 0,
@@ -13,7 +13,7 @@ fn config() -> FixtureConfig {
     }
 }
 
-async fn merchant(
+pub(super) async fn merchant(
     fixture: &Fixture,
     cash: i64,
     delay: u32,

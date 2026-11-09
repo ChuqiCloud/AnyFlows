@@ -78,7 +78,7 @@ pub use openai_chat_request::{OpenAiChatRequestOverrideError, OpenAiChatRequestO
 pub use openai_chat_stream::OpenAiChatStream;
 pub use openai_chat_usage::{
     OpenAiChatUsageHandle, UsageResolutionError, estimate_openai_chat_request_upper_bound,
-    estimate_openai_request_upper_bound, estimate_openai_text_tokens,
+    estimate_openai_request_upper_bound, estimate_openai_text_tokens, estimate_merchant_request_upper_bound,
 };
 pub use openai_embeddings::{
     EmbeddingResponse, RelayOpenAiEmbeddingsOutcome, relay_openai_embeddings,

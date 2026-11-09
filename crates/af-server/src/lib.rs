@@ -47,6 +47,8 @@ pub use software_updates::software_update_command;
 mod smtp_delivery;
 mod sticky_session;
 mod stripe_payment_intent;
+mod merchant_media;
+mod merchant_payout_worker;
 mod stripe_refund;
 mod supervisor;
 #[cfg(test)]

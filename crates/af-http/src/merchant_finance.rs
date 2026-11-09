@@ -65,6 +65,7 @@ struct WithdrawalSchema {
     reason: Option<String>,
     created_at: i64,
     updated_at: i64,
+    payout: Option<crate::merchant_payout::PayoutSchema>,
 }
 #[allow(dead_code)]
 #[derive(ToSchema)]
@@ -358,7 +359,7 @@ async fn admin_entries(
     ))
 }
 
-struct FinanceHttpError(MerchantFinanceError);
+pub(crate) struct FinanceHttpError(pub(crate) MerchantFinanceError);
 impl IntoResponse for FinanceHttpError {
     fn into_response(self) -> Response {
         let (status, code, message) = match self.0 {

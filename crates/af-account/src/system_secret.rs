@@ -30,6 +30,10 @@ pub enum SystemSecretKind {
     StripeWebhookSecret,
     /// 易支付商户密钥。
     EpayMerchantKey,
+    /// 通用商户出款网关签名密钥。
+    MerchantPayoutGateway,
+    /// 商户收款信息，商户标识参与 AAD。
+    MerchantPayoutAccount(i64),
     /// 支付宝实名认证密钥材料。
     AlipayVerificationCredentials,
     /// GitHub 用户登录 OAuth App 的 Client Secret。
@@ -68,6 +72,8 @@ impl SystemSecretKind {
             Self::StripeSecretKey => "stripe_secret_key",
             Self::StripeWebhookSecret => "stripe_webhook_secret",
             Self::EpayMerchantKey => "epay_merchant_key",
+            Self::MerchantPayoutGateway => "merchant_payout_gateway",
+            Self::MerchantPayoutAccount(_) => "merchant_payout_account",
             Self::AlipayVerificationCredentials => "alipay_verification_credentials",
             Self::OAuthLoginGithubClientSecret => "oauth_login_github_client_secret",
             Self::OAuthLoginDiscordClientSecret => "oauth_login_discord_client_secret",
@@ -315,6 +321,8 @@ fn system_secret_aad(kind: SystemSecretKind) -> Vec<u8> {
         SystemSecretKind::AlipayVerificationCredentials => {
             "account_verification_settings:1".to_owned()
         }
+        SystemSecretKind::MerchantPayoutGateway => "merchant_payout_settings:1".to_owned(),
+        SystemSecretKind::MerchantPayoutAccount(id) => format!("merchant_payout_accounts:{id}"),
         SystemSecretKind::OAuthLoginGithubClientSecret => "oauth_login_providers:github".to_owned(),
         SystemSecretKind::OAuthLoginDiscordClientSecret => {
             "oauth_login_providers:discord".to_owned()

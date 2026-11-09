@@ -20,6 +20,7 @@ mod group_model_policy;
 mod groups;
 mod invitations;
 mod merchant_pool;
+mod merchant_service_policy;
 mod merchant_routes;
 mod model_metadata;
 mod model_prices;
@@ -106,6 +107,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(user_topups::document());
     document.merge(invitations::document());
     document.merge(merchant_pool::document());
+    document.merge(merchant_service_policy::document());
     document.merge(email_settings::document());
     document.merge(extensions::document());
     document.merge(network_settings::document());
@@ -135,6 +137,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(user_routes::document());
     document.merge(merchant_routes::document());
     document.merge(crate::merchant_finance::document());
+    document.merge(crate::merchant_payout::document());
     document.merge(tokens::document());
     document.merge(usage_logs::document());
     document.merge(channels::document());

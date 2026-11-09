@@ -33,7 +33,6 @@ fn supports_image_protocol(channel_type: ChannelType, protocol: Protocol) -> boo
 
 use super::{
     PreparedConcurrencyPlan, ScheduledChatService, adaptor_settings, header_overrides,
-    map_scheduler_error,
 };
 
 impl ImageRoutePlanner for ScheduledChatService {
@@ -45,35 +44,7 @@ impl ImageRoutePlanner for ScheduledChatService {
         request_id: &'a str,
     ) -> ImageRoutePlanFuture<'a> {
         Box::pin(async move {
-            self.ensure_non_merchant_group(principal.group_id()).await?;
-            let route = if self.health.is_some() {
-                let (channel_ids, channel_health) = self
-                    .load_channel_health(principal.group_id(), request.model())
-                    .await?;
-                let route = self
-                    .scheduler
-                    .route_plan_with_health(principal.group_id(), request.model(), &channel_health)
-                    .map_err(map_scheduler_error)?;
-                match route {
-                    Some(route) => route,
-                    None => {
-                        return Err(if channel_ids.is_empty() {
-                            self.missing_model_route_error(request.model()).await
-                        } else {
-                            AfError::from(af_domain::UpstreamError::overloaded())
-                        });
-                    }
-                }
-            } else {
-                let route = self
-                    .scheduler
-                    .route_plan(principal.group_id(), request.model())
-                    .map_err(map_scheduler_error)?;
-                match route {
-                    Some(route) => route,
-                    None => return Err(self.missing_model_route_error(request.model()).await),
-                }
-            };
+            let route = self.scoped_media_route(principal, request.model()).await?;
             let credential_health = self
                 .load_credential_health_for_protocols(
                     &route,

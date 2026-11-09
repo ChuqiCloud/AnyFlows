@@ -63,6 +63,8 @@ pub(crate) mod merchant_pool_terms;
 pub(crate) mod merchant_pools;
 pub(crate) mod merchant_profiles;
 pub(crate) mod merchant_service_revisions;
+pub(crate) mod merchant_service_prices;
+pub(crate) mod merchant_maintenance;
 pub(crate) mod merchant_services;
 pub(crate) mod model_prices;
 pub(crate) mod model_provider_catalog;

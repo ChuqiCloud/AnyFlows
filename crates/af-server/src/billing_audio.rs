@@ -267,8 +267,12 @@ impl BillingAudioService {
         };
         let channel_id = routed.channel_id();
         let response = routed.into_value();
-        let (body, upstream_usage) = response.into_parts();
-        let normalized_usage = match upstream_usage {
+        let (mut body, mut upstream_usage) = response.into_parts();
+        if principal.merchant_billing_snapshot().is_some() {
+            upstream_usage = Some(AudioTranscriptionUsage::Duration(local_duration));
+            body = crate::merchant_media::normalized_audio_usage(body, local_estimate)?;
+        }
+        let normalized_usage = if principal.merchant_billing_snapshot().is_some() { Ok((local_estimate,local_duration)) } else {match upstream_usage {
             Some(AudioTranscriptionUsage::Tokens(usage)) => {
                 normalize_token_usage(usage).map(|usage| (usage, local_duration))
             }
@@ -277,7 +281,7 @@ impl BillingAudioService {
                     .map(|usage| (usage, duration))
             }
             None => Ok((local_estimate, local_duration)),
-        };
+        }};
         let (settlement_usage, audit_duration) = match normalized_usage {
             Ok(usage) => usage,
             Err(error) => {
