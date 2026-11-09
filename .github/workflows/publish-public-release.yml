@@ -82,13 +82,13 @@ jobs:
           toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
           rustup toolchain install "$toolchain" --profile minimal --target '${{ matrix.target }}'
       - name: Cache Rust release artifacts
-        if: runner.os != 'Linux'
+        if: ${{ runner.os != 'Linux' && github.server_url == 'https://github.com' }}
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4
         with:
           key: public-release-${{ matrix.target }}
       - name: Restore Bookworm release artifacts
         id: bookworm-cache
-        if: runner.os == 'Linux'
+        if: ${{ runner.os == 'Linux' && github.server_url == 'https://github.com' }}
         uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: |
@@ -151,7 +151,7 @@ jobs:
           path: release/*
           if-no-files-found: error
       - name: Save completed Bookworm compilation artifacts
-        if: ${{ always() && !cancelled() && runner.os == 'Linux' && steps.native-build.outputs.cache-ready == 'true' && steps.bookworm-cache.outputs.cache-hit != 'true' }}
+        if: ${{ always() && !cancelled() && runner.os == 'Linux' && github.server_url == 'https://github.com' && steps.native-build.outputs.cache-ready == 'true' && steps.bookworm-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: |
