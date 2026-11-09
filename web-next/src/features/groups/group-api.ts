@@ -4,7 +4,6 @@ import type { QueryClient } from '@tanstack/react-query'
 import { apiClient, ApiError } from '@/lib/api'
 import {
   createAdminGroup,
-  deleteAdminGroup,
   listAdminGroups,
   updateAdminGroup,
 } from '@/lib/api/generated/sdk.gen'
@@ -63,11 +62,28 @@ export function useUpdateAdminGroup() {
 export function useDeleteAdminGroup() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (id: number) => {
-      await deleteAdminGroup({ client: apiClient, path: { id } })
+    mutationFn: async ({ id, replacementGroupId }: { id: number; replacementGroupId?: number }) => {
+      await apiClient.delete({ url: `/api/admin/groups/${id}`, query: { replacement_group_id: replacementGroupId }, security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }], throwOnError: true })
     },
     onSuccess: () => invalidateGroupConsumers(queryClient),
   })
+}
+
+/** Retired pools retain group ownership so ordinary traffic cannot reuse merchant supply. */
+export function useMerchantPoolGroupBindings(enabled: boolean) {
+  return useQuery({ queryKey: ['merchant-pool', 'group-bindings'], enabled, queryFn: async ({ signal }) => {
+    const bindings = await Promise.all([undefined, 'deleted'].map(async (status) => {
+      const ids: number[] = []
+      let page = 1
+      while (true) {
+        const { data } = await apiClient.get<{ 200: { items: Array<{ group_id: number }>; page: number; page_size: number; total: number } }, unknown, true>({ url: '/api/admin/merchant-pools', query: { page, page_size: 100, status }, signal, security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }], throwOnError: true })
+        ids.push(...data.items.map((pool) => pool.group_id))
+        if (data.items.length === 0 || data.page * data.page_size >= data.total) return ids
+        page += 1
+      }
+    }))
+    return Array.from(new Set(bindings.flat()))
+  } })
 }
 
 /** 分组变更同时影响管理选择器与登录用户看到的实际模型倍率。 */
@@ -75,6 +91,10 @@ function invalidateGroupConsumers(queryClient: QueryClient) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: adminGroupCatalogQueryKey }),
     queryClient.invalidateQueries({ queryKey: ['model-catalog'] }),
+    queryClient.invalidateQueries({ queryKey: ['user-api-keys'] }),
+    queryClient.invalidateQueries({ queryKey: ['user-routes'] }),
+    queryClient.invalidateQueries({ queryKey: ['admin-users'] }),
+    queryClient.invalidateQueries({ queryKey: ['admin-tokens'] }),
   ])
 }
 

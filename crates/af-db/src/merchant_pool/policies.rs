@@ -328,6 +328,7 @@ async fn lock_scoped_service(
     }
     let initial = scoped_service(txn, owner, id).await?;
     let merchant = profiles::Entity::find_by_id(initial.merchant_id)
+        .filter(profiles::Column::DeletedAt.is_null())
         .one(txn)
         .await
         .map_err(internal)?
@@ -481,6 +482,9 @@ pub(super) async fn apply_due_in_transaction(
     service: &services::Model,
     now: DatabaseTimestamp,
 ) -> Result<usize, MerchantPoolError> {
+    if service.deleted_at.is_some() {
+        return Ok(0);
+    }
     let due = prices::Entity::find()
         .filter(prices::Column::ServiceId.eq(service.id))
         .filter(prices::Column::Status.eq("scheduled"))

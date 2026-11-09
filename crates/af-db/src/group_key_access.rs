@@ -713,7 +713,7 @@ pub(crate) async fn user_can_select_key_group<C: ConnectionTrait>(
     }
 }
 
-async fn lock_active_group<C: ConnectionTrait>(
+pub(crate) async fn lock_active_group<C: ConnectionTrait>(
     connection: &C,
     group_id: GroupId,
 ) -> Result<bool, DbErr> {

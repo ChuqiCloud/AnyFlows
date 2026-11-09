@@ -35,6 +35,9 @@ const list = items => ({ items, total: items.length, page: 1, page_size: 20 })
 let routes = []
 let services = []
 let adminPools = [pool]
+let adminMerchants = [profile]
+let poolDeleteFailures = 1, merchantDeleteFailures = 1
+const poolDeleteRequests = [], merchantDeleteRequests = []
 let poolFailures = 1
 let routeFailures = 1
 let previewFailures = 1
@@ -115,6 +118,19 @@ try {
     if ((path === '/api/merchant-pools' || path === '/api/merchant/available-pools') && method === 'GET') return respond(list([pool]))
     if (path === '/api/admin/groups' && method === 'GET') return respond({ groups: [{ id: 8, name: 'CI occupied group' }, { id: 9, name: 'CI dedicated group' }, { id: 10, name: 'CI second dedicated group' }], next_cursor: null })
     if (path === '/api/admin/merchant-pools' && method === 'GET') return respond(list(adminPools))
+    if (/^\/api\/admin\/merchant-pools\/\d+$/.test(path) && method === 'DELETE') {
+      const id = Number(path.split('/').at(-1)); poolDeleteRequests.push(id)
+      if (poolDeleteFailures-- > 0) return respond({ error: { code: 'merchant_pool_in_use' } }, 409)
+      adminPools = adminPools.filter(item => item.id !== id)
+      return intercepted.fulfill({ status: 204 })
+    }
+    if (/^\/api\/admin\/merchants\/\d+$/.test(path) && method === 'DELETE') {
+      const id = Number(path.split('/').at(-1)); merchantDeleteRequests.push(id)
+      if (merchantDeleteFailures-- > 0) return respond({ error: { code: 'merchant_pool_in_use' } }, 409)
+      adminMerchants = adminMerchants.filter(item => item.id !== id)
+      services = services.filter(item => item.merchant_id !== id)
+      return intercepted.fulfill({ status: 204 })
+    }
     if (path === '/api/admin/merchant-pools' && method === 'POST') {
       const body = request.postDataJSON(); poolRequests.push(body)
       assert.ok([9, 10].includes(body.group_id), 'A new pool submits a selected dedicated group')
@@ -175,7 +191,7 @@ try {
       if (withdrawalFailures-- > 0) return respond({ error: { code: 'unavailable' } }, 503)
       withdrawals = [{ id: 5, merchant_id: 6, ...body, payout: null, status: 'pending', reference: null, reason: null, created_at: now, updated_at: now }]; return respond(withdrawals[0])
     }
-    if (path === '/api/admin/merchants') return respond(list([profile]))
+    if (path === '/api/admin/merchants') return respond(list(adminMerchants))
     if (path === '/api/admin/merchant-pool-settings') return respond({ commission_bps: 500 })
     if (path === '/api/merchant/services/88/prices' && method === 'GET') return respond(list(prices))
     if (path === '/api/merchant/services/88/prices' && method === 'POST') {
@@ -583,6 +599,35 @@ try {
   for (const key of ['model', 'search', 'protocol', 'min_ratio_micros']) assert.ok(!resetQuery[key], `Reset clears the ${key} filter from the actual catalog request`)
   assert.equal(resetQuery.sort, 'name')
   assert.equal(resetQuery.page, '1')
+  await page.getByRole('button', { name: 'admin', exact: true }).click()
+  const adminPoolsTable = page.getByRole('region', { name: label('adminTabs.pools'), exact: true })
+  const deletablePoolRow = adminPoolsTable.getByRole('row').filter({ hasText: 'CI inherited pool' })
+  await deletablePoolRow.getByRole('button', { name: label('delete'), exact: true }).click()
+  dialog = page.getByRole('dialog')
+  await dialog.getByText(label('deletion.poolHint'), { exact: true }).waitFor()
+  assert.equal(poolDeleteRequests.length, 0, 'Opening the confirmation does not delete a pool')
+  await dialog.getByRole('button', { name: label('cancel'), exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  await deletablePoolRow.getByRole('button', { name: label('delete'), exact: true }).click()
+  dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: label('delete'), exact: true }).click()
+  await dialog.getByText(label('deletion.inUse'), { exact: true }).waitFor()
+  assert.equal(await dialog.getByText('CI inherited pool', { exact: true }).isVisible(), true, 'A blocked deletion retains the chosen pool')
+  await dialog.getByRole('button', { name: label('delete'), exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  await adminPoolsTable.getByText('CI inherited pool', { exact: true }).waitFor({ state: 'hidden' })
+  assert.deepEqual(poolDeleteRequests, [2, 2])
+  await page.getByRole('button', { name: label('adminTabs.merchants'), exact: true }).click()
+  const adminMerchantsTable = page.getByRole('region', { name: label('adminTabs.merchants'), exact: true })
+  await adminMerchantsTable.getByRole('row').filter({ hasText: profile.name }).getByRole('button', { name: label('delete'), exact: true }).click()
+  dialog = page.getByRole('dialog')
+  await dialog.getByText(label('deletion.merchantHint'), { exact: true }).waitFor()
+  await dialog.getByRole('button', { name: label('delete'), exact: true }).click()
+  await dialog.getByText(label('deletion.inUse'), { exact: true }).waitFor()
+  await dialog.getByRole('button', { name: label('delete'), exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  await adminMerchantsTable.waitFor({ state: 'hidden' })
+  assert.deepEqual(merchantDeleteRequests, [6, 6])
   assert.deepEqual(errors, [])
   console.log('Merchant pool browser regression passed')
 } catch (error) {

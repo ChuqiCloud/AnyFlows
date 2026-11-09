@@ -145,7 +145,7 @@ impl PersistentVideoTaskRuntime for ScheduledChatService {
         request_id: &'a str,
     ) -> PersistentPollFuture<'a> {
         Box::pin(async move {
-            let binding = self.restore_video_task_binding(task, claim)?;
+            let binding = self.restore_video_task_binding(task, claim).await?;
             self.poll_video_task(&binding, request_id).await
         })
     }

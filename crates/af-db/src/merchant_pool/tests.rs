@@ -3,6 +3,9 @@ use af_domain::{MerchantMaintenanceWrite, MerchantModelRatio, MerchantServicePri
 use sea_orm::{DbBackend, Statement};
 use std::error::Error;
 
+#[path = "deletion_tests.rs"]
+mod deletion_tests;
+
 struct Fixture {
     repository: MerchantPoolRepository,
     pool: DatabasePool,

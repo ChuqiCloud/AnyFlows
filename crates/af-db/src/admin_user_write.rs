@@ -17,7 +17,8 @@ use crate::{
     InviteRebateGrant, InviteRebateGrantOutcome, InviteRebateRepositoryError,
     admin_user::{detail_query, record_internal_error},
     auth_challenge::consume_in_transaction,
-    entity::{groups, tokens, users},
+    entity::{tokens, users},
+    group_key_access::lock_active_group,
     identity_secret::{IdentitySecretError, generate_aff_code, hash_password},
     invite_rebate::grant_in_transaction,
 };
@@ -654,7 +655,11 @@ async fn ensure_group_exists(
     transaction: &DatabaseTransaction,
     group_id: GroupId,
 ) -> Result<(), AdminUserRepositoryError> {
-    if query_exists(transaction, active_group_exists_query(group_id)).await? {
+    if lock_active_group(transaction, group_id)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(|_| record_internal_error(AdminUserRepositoryError::Query))?
+    {
         Ok(())
     } else {
         Err(AdminUserRepositoryError::InvalidReference)
@@ -701,19 +706,6 @@ fn active_user_exists_query(user_id: UserId) -> SelectStatement {
         .from(users::Entity)
         .and_where(Expr::col((users::Entity, users::Column::Id)).eq(user_id.get()))
         .and_where(Expr::col((users::Entity, users::Column::DeletedAt)).is_null())
-        .limit(1)
-        .to_owned()
-}
-
-fn active_group_exists_query(group_id: GroupId) -> SelectStatement {
-    Query::select()
-        .expr_as(
-            Expr::col((groups::Entity, groups::Column::Id)),
-            Alias::new("id"),
-        )
-        .from(groups::Entity)
-        .and_where(Expr::col((groups::Entity, groups::Column::Id)).eq(group_id.get()))
-        .and_where(Expr::col((groups::Entity, groups::Column::DeletedAt)).is_null())
         .limit(1)
         .to_owned()
 }

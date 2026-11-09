@@ -98,6 +98,7 @@ struct FakeAdminGroupAccess {
     create_calls: AtomicUsize,
     update_calls: AtomicUsize,
     delete_calls: AtomicUsize,
+    replacement_group_id: AtomicUsize,
 }
 
 impl FakeAdminGroupAccess {
@@ -106,6 +107,7 @@ impl FakeAdminGroupAccess {
             create_calls: AtomicUsize::new(0),
             update_calls: AtomicUsize::new(0),
             delete_calls: AtomicUsize::new(0),
+            replacement_group_id: AtomicUsize::new(0),
         }
     }
 }
@@ -180,6 +182,19 @@ impl AdminGroupWriter for FakeAdminGroupAccess {
                 _ => Ok(()),
             }
         })
+    }
+
+    fn delete_with_replacement<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        group_id: GroupId,
+        replacement_group_id: Option<GroupId>,
+    ) -> AdminGroupDeleteFuture<'a> {
+        self.replacement_group_id.store(
+            replacement_group_id.map_or(0, |id| id.get() as usize),
+            Ordering::Relaxed,
+        );
+        self.delete(principal, group_id)
     }
 }
 
@@ -431,6 +446,44 @@ async fn write_errors_have_stable_codes_and_delete_is_no_store() {
         .unwrap();
     assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
     assert_eq!(deleted.headers()[CACHE_CONTROL], "no-store");
+}
+
+#[tokio::test]
+async fn delete_query_forwards_replacement_and_rejects_invalid_parameters() {
+    let access = Arc::new(FakeAdminGroupAccess::new());
+    let app = router(Arc::clone(&access));
+    for query in [
+        "replacement_group_id=0",
+        "replacement_group_id=-1",
+        "replacement_group_id=bad",
+        "replacement_group_id=2&replacement_group_id=3",
+        "unexpected=2",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(empty_request(
+                "DELETE",
+                &format!("/api/admin/groups/42?{query}"),
+                ADMIN_TOKEN,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response_json(response).await["code"], "invalid_request");
+    }
+    assert_eq!(access.delete_calls.load(Ordering::Relaxed), 0);
+    let response = app
+        .oneshot(empty_request(
+            "DELETE",
+            "/api/admin/groups/42?replacement_group_id=7",
+            ADMIN_TOKEN,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
+    assert_eq!(access.delete_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(access.replacement_group_id.load(Ordering::Relaxed), 7);
 }
 
 fn sample_group(id: i64, name: &str) -> AdminGroup {

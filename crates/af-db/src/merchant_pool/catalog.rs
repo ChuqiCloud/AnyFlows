@@ -62,6 +62,7 @@ impl MerchantPoolRepository {
         let merchant = require_merchant(self.pool.connection(), owner, false).await?;
         let rows = pools::Entity::find()
             .filter(pools::Column::Enabled.eq(true))
+            .filter(pools::Column::DeletedAt.is_null())
             .order_by_asc(pools::Column::Id)
             .limit(1001)
             .all(self.pool.connection())
@@ -91,6 +92,7 @@ impl MerchantPoolRepository {
             }
             let mut selection = services::Entity::find()
                 .filter(services::Column::PoolId.eq(pool_id))
+                .filter(services::Column::DeletedAt.is_null())
                 .filter(services::Column::Status.eq("published"));
             if let Some(id) = merchant_id {
                 selection = selection.filter(services::Column::MerchantId.eq(id));
@@ -122,6 +124,7 @@ impl MerchantPoolRepository {
                 };
                 let merchant = profiles::Entity::find_by_id(row.merchant_id)
                     .filter(profiles::Column::Status.eq("approved"))
+                    .filter(profiles::Column::DeletedAt.is_null())
                     .one(self.pool.connection())
                     .await
                     .map_err(internal)?;
@@ -215,6 +218,7 @@ impl MerchantPoolRepository {
             pagination(&query)?;
             let rows = services::Entity::find()
                 .filter(services::Column::PoolId.eq(pool_id))
+                .filter(services::Column::DeletedAt.is_null())
                 .filter(services::Column::PublishedRevisionId.is_not_null())
                 .order_by_asc(services::Column::Id)
                 .limit(10_001)
@@ -230,6 +234,7 @@ impl MerchantPoolRepository {
                 self.apply_due_service_prices(row.id, DatabaseTimestamp::now_utc())
                     .await?;
                 let merchant = profiles::Entity::find_by_id(row.merchant_id)
+                    .filter(profiles::Column::DeletedAt.is_null())
                     .one(self.pool.connection())
                     .await
                     .map_err(internal)?

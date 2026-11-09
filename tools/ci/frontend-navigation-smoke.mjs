@@ -61,6 +61,9 @@ const group = {
   rpm_limit: null, fallback_group_id: null, flags: {},
 }
 const subscriptionCreateRequests = []
+let adminGroups = [group, { ...group, id: 2, name: 'ci-replacement', display_name: 'CI replacement group' }, { ...group, id: 3, name: 'ci-pool-group', display_name: 'CI merchant pool group' }, { ...group, id: 4, name: 'ci-retired-pool-group', display_name: 'CI retired merchant pool group' }]
+const groupDeleteRequests = []
+let groupTransferFailures = 1
 let terminalSubscriptionOrderStatus = 'failed'
 let modelMode = 'ready'
 let server
@@ -122,6 +125,15 @@ try {
     const token = request.headers().authorization || ''
     const role = token.includes('ci-admin') ? 'admin' : token.includes('ci-user') ? 'user' : 'public'
     requests.push({ path, role })
+    if (path === '/api/admin/groups/1' && request.method() === 'DELETE' && role === 'admin') {
+      const query = new URL(request.url()).searchParams
+      groupDeleteRequests.push(Object.fromEntries(query))
+      if (!query.has('replacement_group_id')) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'group_in_use' }) })
+      assert.equal(query.get('replacement_group_id'), '2', 'An explicit destination is required for user transfer')
+      if (groupTransferFailures-- > 0) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'temporary_error' }) })
+      adminGroups = adminGroups.filter(item => item.id !== 1)
+      return route.fulfill({ status: 204 })
+    }
     if (path === '/api/playground/v1/chat/completions' && request.method() === 'POST' && role === 'user') {
       assert.equal(request.postDataJSON().model, model.model)
       // Hold the response until the real composer has entered its sending state.
@@ -191,7 +203,8 @@ try {
       case '/api/token-groups': data = { groups: [], next_cursor: null }; break
       case '/api/account/usage-logs': data = { logs: [], failed_logs: [], next_cursor: null, failed_next_cursor: null }; break
       case '/api/admin/tokens': data = { tokens: [], next_cursor: null }; break
-      case '/api/admin/groups': data = { groups: [group], next_cursor: null }; break
+      case '/api/admin/groups': data = { groups: adminGroups, next_cursor: null }; break
+      case '/api/admin/merchant-pools': data = { items: new URL(request.url()).searchParams.get('status') === 'deleted' ? [{ id: 8, group_id: 4 }] : [{ id: 7, group_id: 3 }], page: 1, page_size: 100, total: 1 }; break
       case '/api/admin/groups/1/key-policy': data = { group_id: 1, selection_mode: 'default_only', allowed_user_ids: [], allowed_group_ids: [] }; break
       case '/api/admin/groups/1/model-policy': data = { group_id: 1, allowed_models: null, ratio_overrides: [{ source_group_id: 1, model: '*', ratio_micros: 1000000 }] }; break
       case '/api/admin/models': data = { models: [], next_cursor: null }; break
@@ -429,6 +442,29 @@ try {
   await typeRatioModel(ratioRules.getByRole('textbox', { name: label('groups.modelPolicy.ratioModel'), exact: true }).nth(1), 'ci-new-model')
   assert.equal(await ratioRules.getByRole('textbox', { name: label('groups.modelPolicy.ratioModel'), exact: true }).first().inputValue(), 'ci-existing-model', 'Adding and editing a rule retains the previous model')
   await page.screenshot({ path: resolve(screenshots, 'group-ratio-input-focus.png'), fullPage: true, animations: 'disabled' })
+
+  await open('/console/system-settings/groups', 'admin')
+  const sourceGroupRow = page.getByRole('row').filter({ hasText: group.display_name })
+  await sourceGroupRow.getByRole('button', { name: label('groups.actions.delete'), exact: true }).click()
+  const deleteGroupDialog = page.getByRole('dialog')
+  const replacementGroup = deleteGroupDialog.getByRole('combobox', { name: label('groups.delete.replacement'), exact: true })
+  await replacementGroup.getByRole('option', { name: 'CI replacement group', exact: true }).waitFor({ state: 'attached' })
+  await replacementGroup.selectOption('')
+  assert.equal(await replacementGroup.getByRole('option', { name: group.display_name, exact: true }).count(), 0, 'A group cannot migrate users to itself')
+  assert.equal(await replacementGroup.getByRole('option', { name: 'CI merchant pool group', exact: true }).count(), 0, 'Merchant-pool groups cannot receive transferred users')
+  assert.equal(await replacementGroup.getByRole('option', { name: 'CI retired merchant pool group', exact: true }).count(), 0, 'Deleted pools retain their group isolation')
+  await deleteGroupDialog.getByRole('button', { name: label('groups.actions.delete'), exact: true }).click()
+  await deleteGroupDialog.getByText(label('groups.errors.group_in_use'), { exact: true }).waitFor()
+  await replacementGroup.selectOption('2')
+  await deleteGroupDialog.getByText(label('groups.errors.group_in_use'), { exact: true }).waitFor({ state: 'hidden' })
+  await deleteGroupDialog.getByText(label('groups.delete.transferHint').replace('{{name}}', 'CI replacement group'), { exact: true }).waitFor()
+  await deleteGroupDialog.getByRole('button', { name: label('groups.actions.delete'), exact: true }).click()
+  await deleteGroupDialog.getByText(label('groups.errors.unknown'), { exact: true }).waitFor()
+  assert.equal(await replacementGroup.inputValue(), '2', 'A failed delete retains the selected destination')
+  await deleteGroupDialog.getByRole('button', { name: label('groups.actions.delete'), exact: true }).click()
+  await deleteGroupDialog.waitFor({ state: 'hidden' })
+  await sourceGroupRow.waitFor({ state: 'hidden' })
+  assert.deepEqual(groupDeleteRequests, [{}, { replacement_group_id: '2' }, { replacement_group_id: '2' }])
 
   // Deep links select the system section; all existing administrator groups remain reachable.
   await open('/console/tokens', 'admin')

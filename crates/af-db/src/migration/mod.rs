@@ -134,6 +134,7 @@ mod m20261108_000169_create_merchant_pool_routes;
 mod m20261108_000170_merchant_service_policies;
 mod m20261108_000171_create_merchant_payouts;
 mod m20261108_000172_persist_merchant_task_terms;
+mod m20261109_000173_merchant_resource_deletion;
 mod schema;
 
 #[cfg(test)]
@@ -539,6 +540,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261108_000170_merchant_service_policies::Migration),
             Box::new(m20261108_000171_create_merchant_payouts::Migration),
             Box::new(m20261108_000172_persist_merchant_task_terms::Migration),
+            Box::new(m20261109_000173_merchant_resource_deletion::Migration),
         ]
     }
 }

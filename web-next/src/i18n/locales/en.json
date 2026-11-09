@@ -2261,7 +2261,7 @@
     },
     "errors": {
       "group_conflict": "The stable name is already used by another active group.",
-      "group_in_use": "Active users or API keys still use this group, so it cannot be deleted.",
+      "group_in_use": "Users, API keys or a shared pool still reference this group. Select a destination for users; delete an associated shared pool first.",
       "invalid_request": "The group fields are invalid. Check them and try again.",
       "internal_error": "The data may have committed, but runtime refresh or storage failed. Refresh the list before retrying.",
       "unknown": "The group operation failed. Refresh the list to confirm its current state."
@@ -2277,7 +2277,12 @@
     },
     "delete": {
       "title": "Delete group",
-      "description": "Deleting {{name}} also clears channel, ability, and fallback relationships that can be safely detached. This action cannot be undone."
+      "description": "Deleting {{name}} clears its channel, ability and fallback relationships. Historical requests and financial records remain. This action cannot be undone.",
+      "replacement": "Move users to",
+      "noReplacement": "No transfer; delete only if no users or keys reference it",
+      "replacementHint": "Choose a destination if users or API keys reference this group. Shared-pool groups cannot receive transferred users.",
+      "transferHint": "Users move to “{{name}}” and API keys directly bound to the original group are revoked. User accounts and historical records remain.",
+      "targetsError": "Unable to load transfer destinations. Try again."
     }
   },
   "modelManagement": {

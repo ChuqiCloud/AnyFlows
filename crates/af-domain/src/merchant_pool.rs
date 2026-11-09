@@ -14,6 +14,8 @@ pub enum MerchantPoolError {
     NotFound,
     #[error("merchant pool state conflict")]
     Conflict,
+    #[error("merchant pool resource has unfinished business")]
+    InUse,
     #[error("merchant pool capacity reached")]
     LimitReached,
     #[error("merchant pool service unavailable")]
