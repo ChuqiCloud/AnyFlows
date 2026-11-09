@@ -570,6 +570,12 @@
     margin-right: 0 !important;
   }
 
+  /* react-textarea-autosize retains a body-level measurement node after drawers close.
+     Keep a former desktop width inside the viewport after resizing to mobile. */
+  body > textarea[aria-hidden="true"][tabindex="-1"] {
+    max-width: 100%;
+  }
+
   /* 标题：SF Pro Display 在大字号下自带光学字距，只轻收一点 */
   h1, h2, h3, h4 {
     letter-spacing: 0;
