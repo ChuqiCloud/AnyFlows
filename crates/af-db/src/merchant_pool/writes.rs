@@ -233,7 +233,7 @@ impl MerchantPoolRepository {
             } else { None };
             let mapping=write.models.iter().map(|model|(model.model.clone(),serde_json::Value::String(model.upstream_model.clone())))
                 .collect::<serde_json::Map<_,_>>();
-            let channel=channels::ActiveModel{name:Set(format!("merchant:{}:{}",merchant.id,service.id)),r#type:Set("openai".to_owned()),
+            let channel=channels::ActiveModel{name:Set(format!("merchant:{}:{}",merchant.id,service.id)),r#type:Set(if write.protocol=="xai_video" {"xai"} else {"openai"}.to_owned()),
                 protocol:Set(write.protocol.clone()),base_url:Set(Some(ChannelBaseUrl::parse(&write.base_url).map_err(invalid)?)),
                 timeout_secs:Set(Some(i32::try_from(write.timeout_secs).map_err(invalid)?)),status:Set(Status::Disabled.code()),
                 weight:Set(1),priority:Set(0),auto_ban:Set(true),model_mapping:Set(serde_json::Value::Object(mapping)),
@@ -449,13 +449,16 @@ impl MerchantPoolRepository {
             if !pool.enabled {
                 return Err(MerchantPoolError::Conflict);
             }
-            let models = revision_models(&revision)?;
-            validate_ratios(&pool, revision.default_ratio_micros, &models)?;
+            super::policies::apply_due_in_transaction(&txn, &service, DatabaseTimestamp::now_utc())
+                .await?;
+            let (models, default_ratio) =
+                super::policies::effective_price_terms(&txn, &revision).await?;
+            validate_ratios(&pool, default_ratio, &models)?;
             for model in &models {
                 if super::catalog::model_price(
                     &txn,
                     &model.model,
-                    model.ratio_micros.unwrap_or(revision.default_ratio_micros),
+                    model.ratio_micros.unwrap_or(default_ratio),
                 )
                 .await?
                 .is_none()
@@ -558,10 +561,11 @@ impl MerchantPoolRepository {
             if !rejected {
                 let pool=find_pool(&txn,service.pool_id).await?;
                 if !pool.enabled { return Err(MerchantPoolError::Conflict); }
-                let models=revision_models(&revision)?;
-                validate_ratios(&pool,revision.default_ratio_micros,&models)?;
+                super::policies::apply_due_in_transaction(&txn,&service,now).await?;
+                let (models,default_ratio)=super::policies::effective_price_terms(&txn,&revision).await?;
+                validate_ratios(&pool,default_ratio,&models)?;
                 for model in &models {
-                    if super::catalog::model_price(&txn,&model.model,model.ratio_micros.unwrap_or(revision.default_ratio_micros)).await?.is_none() { return Err(MerchantPoolError::InvalidInput); }
+                    if super::catalog::model_price(&txn,&model.model,model.ratio_micros.unwrap_or(default_ratio)).await?.is_none() { return Err(MerchantPoolError::InvalidInput); }
                 }
                 let routing=ValidatedChannelRouting::new(models.into_iter().map(|m|m.model).collect(),vec![GroupId::new(pool.group_id).map_err(internal)?]).map_err(internal)?;
                 let channel=ChannelId::new(revision.channel_id).map_err(internal)?;
@@ -577,6 +581,7 @@ impl MerchantPoolRepository {
             let mut revision_active=revision.into_active_model();revision_active.status=Set(if rejected{"rejected"}else{"published"}.to_owned());
             revision_active.review_reason=Set(Some(review.reason));revision_active.updated_at=Set(now);
             let revision=revision_active.update(&txn).await.map_err(internal)?;
+            if !rejected { super::policies::activate_revision_price(&txn,&revision,now).await?; }
             let was_published=service.published_revision_id.is_some();
             let merchant_paused=service.merchant_paused;
             let mut active=service.into_active_model();active.updated_at=Set(now);
@@ -600,7 +605,7 @@ fn validate_review(review: &MerchantReview, versioned: bool) -> Result<(), Merch
     }
     Ok(())
 }
-fn validate_ratios(
+pub(super) fn validate_ratios(
     pool: &pools::Model,
     default: i64,
     models: &[MerchantModelWrite],
@@ -610,7 +615,6 @@ fn validate_ratios(
         || models
             .iter()
             .any(|model| !allowed.contains(&model.ratio_micros.unwrap_or(default)))
-        || models.iter().any(|model| model.supports_vision)
     {
         return Err(MerchantPoolError::InvalidInput);
     }

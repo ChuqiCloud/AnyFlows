@@ -18,6 +18,10 @@ pub struct MerchantRoutePreviewRequest {
     pub streaming: bool,
     pub input_tokens: i64,
     pub output_tokens: i64,
+    #[serde(default)]
+    pub duration_seconds: Option<u8>,
+    #[serde(default)]
+    pub resolution: Option<String>,
 }
 #[derive(Serialize)]
 pub struct MerchantRoutePreviewItem {
@@ -115,12 +119,24 @@ impl MerchantRouteService for DatabaseMerchantRouteService {
                 || request.model.len() > 255
                 || !matches!(
                     request.protocol.as_str(),
-                    "openai_chat" | "openai_responses"
+                    "openai_chat"
+                        | "openai_responses"
+                        | "openai_images"
+                        | "openai_audio"
+                        | "openai_speech"
+                        | "xai_video"
                 )
                 || request.input_tokens < 0
                 || request.output_tokens < 0
                 || request.input_tokens > 10_000_000
                 || request.output_tokens > 10_000_000
+                || request
+                    .duration_seconds
+                    .is_some_and(|n| !(1..=15).contains(&n))
+                || request
+                    .resolution
+                    .as_deref()
+                    .is_some_and(|n| !matches!(n, "480p" | "720p" | "1080p"))
             {
                 return Err(UserRouteError::InvalidInput);
             }
@@ -175,10 +191,15 @@ impl MerchantRouteService for DatabaseMerchantRouteService {
                         Some("not_selected")
                     } else if service.status != "published" {
                         Some("unavailable")
-                    } else if !matches!(
-                        service.protocol.as_str(),
-                        "openai_chat" | "openai_responses"
-                    ) {
+                    } else if service.protocol != request.protocol
+                        && !(matches!(
+                            service.protocol.as_str(),
+                            "openai_chat" | "openai_responses"
+                        ) && matches!(
+                            request.protocol.as_str(),
+                            "openai_chat" | "openai_responses"
+                        ))
+                    {
                         Some("protocol_unsupported")
                     } else if model.is_none() {
                         Some("model_unavailable")
@@ -203,10 +224,21 @@ impl MerchantRouteService for DatabaseMerchantRouteService {
                     let output = parse(&prices.output)?
                         .checked_mul(Decimal::from(request.output_tokens))
                         .ok_or(UserRouteError::Internal)?;
-                    let usd = input
+                    let mut usd = input
                         .checked_add(output)
                         .and_then(|n| n.checked_div(Decimal::from(1_000_000)))
                         .ok_or(UserRouteError::Internal)?;
+                    if let Some(rates) = &prices.video_per_second {
+                        let rate = match request.resolution.as_deref().unwrap_or("480p") {
+                            "480p" => Some(rates.p480.as_str()),
+                            "720p" => Some(rates.p720.as_str()),
+                            _ => rates.p1080.as_deref(),
+                        }
+                        .ok_or(UserRouteError::InvalidInput)?;
+                        usd = parse(rate)?
+                            .checked_mul(Decimal::from(request.duration_seconds.unwrap_or(8)))
+                            .ok_or(UserRouteError::Internal)?;
+                    }
                     Some(
                         af_billing::quota_math::quota_from_usd(usd)
                             .map_err(|_| UserRouteError::Internal)?

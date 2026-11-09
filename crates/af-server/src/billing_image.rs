@@ -266,7 +266,23 @@ impl BillingImageService {
         };
         let channel_id = routed.channel_id();
         let response = routed.into_value();
-        let (body, upstream_usage) = response.into_parts();
+        let (mut body, mut upstream_usage) = response.into_parts();
+        if principal.merchant_billing_snapshot().is_some() {
+            // The validated response has exactly the requested image count. Its published
+            // request tariff, rather than supplier usage, determines the invoice.
+            upstream_usage = Some(upper_bound);
+            body = match crate::merchant_media::normalized_json_usage(body, upper_bound) {
+                Ok(body) => body,
+                Err(error) => {
+                    crate::user_route_execution::cancel_before_failover(
+                        &mut lifecycle,
+                        self.precharge.as_deref(),
+                    )
+                    .await?;
+                    return Err(error.into());
+                }
+            };
+        }
         let settlement_usage = match upstream_usage {
             Some(usage) if usage_within_upper_bound(&usage, &upper_bound)? => usage,
             Some(_) => return Err(AfError::Internal.into()),
@@ -579,10 +595,43 @@ mod tests {
         assert!(fixture.usage.records.lock().unwrap().is_empty());
     }
 
+    #[tokio::test]
+    async fn merchant_normalization_failure_cancels_before_return_even_when_refund_queue_is_full() {
+        let mut fixture = billing_fixture(None, true).await;
+        fixture.service.inner = Arc::new(PlannerStub {
+            target_group_id: GroupId::new(3).unwrap(),
+            response_usage: None,
+            succeed: true,
+            body: Bytes::from_static(b"{invalid-json"),
+        });
+        let refund = Arc::new(SaturatedRefund::default());
+        fixture.service.refund = Some(refund.clone());
+        let merchant = principal().with_merchant_target(
+            af_domain::MerchantBillingSnapshot::new(1, 1, 1, 1, 1_000_000, 500, 0).unwrap(),
+            af_domain::ChannelId::new(1).unwrap(),
+        );
+        let error = fixture
+            .service
+            .generate(&merchant, None, request(), "merchant-invalid-image")
+            .await
+            .unwrap_err();
+        assert_eq!(error, AfError::Internal);
+        let precharged = fixture.precharge.calls.lock().unwrap();
+        assert_eq!(precharged.len(), 1);
+        assert_eq!(
+            *fixture.precharge.cancellations.lock().unwrap(),
+            vec![precharged[0].0]
+        );
+        assert!(refund.calls.lock().unwrap().is_empty());
+        assert!(fixture.settlement.calls.lock().unwrap().is_empty());
+        assert!(fixture.usage.records.lock().unwrap().is_empty());
+    }
+
     struct PlannerStub {
         target_group_id: GroupId,
         response_usage: Option<Usage>,
         succeed: bool,
+        body: Bytes,
     }
 
     impl ImageRoutePlanner for PlannerStub {
@@ -596,11 +645,13 @@ mod tests {
             let target_group_id = self.target_group_id;
             let response_usage = self.response_usage;
             let succeed = self.succeed;
+            let body = self.body.clone();
             Box::pin(async move {
                 Ok(Box::new(ExecutionStub {
                     target_group_id,
                     response_usage,
                     succeed,
+                    body,
                 }) as Box<dyn PlannedImageExecution>)
             })
         }
@@ -610,6 +661,7 @@ mod tests {
         target_group_id: GroupId,
         response_usage: Option<Usage>,
         succeed: bool,
+        body: Bytes,
     }
 
     impl PlannedImageExecution for ExecutionStub {
@@ -623,7 +675,7 @@ mod tests {
                     return Err(AfError::Internal);
                 }
                 Ok(crate::RoutedExecution::new(
-                    ImageResponse::new(Bytes::from_static(b"{}"), self.response_usage),
+                    ImageResponse::new(self.body, self.response_usage),
                     af_domain::ChannelId::new(1).unwrap(),
                 ))
             })
@@ -633,9 +685,19 @@ mod tests {
     #[derive(Default)]
     struct PrechargeStub {
         calls: Mutex<Vec<(BillingReservationId, Quota)>>,
+        cancellations: Mutex<Vec<BillingReservationId>>,
     }
 
     impl BillingPrechargePort for PrechargeStub {
+        fn cancel<'a>(
+            &'a self,
+            reservation_id: BillingReservationId,
+        ) -> BillingPrechargeFuture<'a> {
+            Box::pin(async move {
+                self.cancellations.lock().unwrap().push(reservation_id);
+                Ok(())
+            })
+        }
         fn precharge<'a>(
             &'a self,
             reservation_id: BillingReservationId,
@@ -658,6 +720,18 @@ mod tests {
         fn try_signal_refund(&self, reservation_id: BillingReservationId) -> RefundSignalOutcome {
             self.calls.lock().unwrap().push(reservation_id);
             RefundSignalOutcome::Accepted
+        }
+    }
+
+    #[derive(Default)]
+    struct SaturatedRefund {
+        calls: Mutex<Vec<BillingReservationId>>,
+    }
+
+    impl RefundSignalPort for SaturatedRefund {
+        fn try_signal_refund(&self, reservation_id: BillingReservationId) -> RefundSignalOutcome {
+            self.calls.lock().unwrap().push(reservation_id);
+            RefundSignalOutcome::Saturated
         }
     }
 
@@ -705,6 +779,7 @@ mod tests {
                 target_group_id: GroupId::new(3).unwrap(),
                 response_usage,
                 succeed,
+                body: Bytes::from_static(b"{}"),
             }),
             Arc::new(metered_snapshot_source().await),
             Some(precharge.clone()),

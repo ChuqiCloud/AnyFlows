@@ -267,16 +267,34 @@ impl BillingAudioService {
         };
         let channel_id = routed.channel_id();
         let response = routed.into_value();
-        let (body, upstream_usage) = response.into_parts();
-        let normalized_usage = match upstream_usage {
-            Some(AudioTranscriptionUsage::Tokens(usage)) => {
-                normalize_token_usage(usage).map(|usage| (usage, local_duration))
+        let (mut body, mut upstream_usage) = response.into_parts();
+        if principal.merchant_billing_snapshot().is_some() {
+            upstream_usage = Some(AudioTranscriptionUsage::Duration(local_duration));
+            body = match crate::merchant_media::normalized_audio_usage(body, local_estimate) {
+                Ok(body) => body,
+                Err(error) => {
+                    crate::user_route_execution::cancel_before_failover(
+                        &mut lifecycle,
+                        self.precharge.as_deref(),
+                    )
+                    .await?;
+                    return Err(error.into());
+                }
+            };
+        }
+        let normalized_usage = if principal.merchant_billing_snapshot().is_some() {
+            Ok((local_estimate, local_duration))
+        } else {
+            match upstream_usage {
+                Some(AudioTranscriptionUsage::Tokens(usage)) => {
+                    normalize_token_usage(usage).map(|usage| (usage, local_duration))
+                }
+                Some(AudioTranscriptionUsage::Duration(duration)) => {
+                    normalize_duration_usage(duration, UsageSource::Upstream)
+                        .map(|usage| (usage, duration))
+                }
+                None => Ok((local_estimate, local_duration)),
             }
-            Some(AudioTranscriptionUsage::Duration(duration)) => {
-                normalize_duration_usage(duration, UsageSource::Upstream)
-                    .map(|usage| (usage, duration))
-            }
-            None => Ok((local_estimate, local_duration)),
         };
         let (settlement_usage, audit_duration) = match normalized_usage {
             Ok(usage) => usage,

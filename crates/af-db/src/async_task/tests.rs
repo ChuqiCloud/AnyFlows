@@ -1107,3 +1107,238 @@ fn encrypted_envelope(marker: &str) -> Json {
         .collect(),
     )
 }
+
+#[tokio::test]
+async fn merchant_submission_binding_is_atomic_and_preserves_original_claim_identity()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let AsyncTaskSubmissionClaimOutcome::Created(claim) = fixture
+        .submissions
+        .claim(submission_claim(&fixture, 0xb4, 0xc4, 0xd4)?)
+        .await?
+    else {
+        panic!("created claim");
+    };
+    let terms = af_domain::MerchantBillingSnapshot::new(1, 2, 3, 4, 500_000, 500, 3600)?;
+    let other_terms = af_domain::MerchantBillingSnapshot::new(1, 2, 3, 5, 600_000, 500, 3600)?;
+    let principal = claim
+        .principal()
+        .with_user_route_id(Some(11))
+        .with_merchant_target(terms, fixture.channel_id);
+    let other = claim
+        .principal()
+        .with_user_route_id(Some(11))
+        .with_merchant_target(other_terms, fixture.channel_id);
+    let replica = AsyncTaskSubmissionRepository::new(fixture.pool.clone(), Duration::from_secs(5))?;
+    let (left, right) = tokio::join!(
+        fixture.submissions.bind_merchant(&claim, principal),
+        replica.bind_merchant(&claim, other)
+    );
+    let winner = match (left, right) {
+        (Ok(record), Err(AsyncTaskRepositoryError::Conflict))
+        | (Err(AsyncTaskRepositoryError::Conflict), Ok(record)) => record,
+        result => panic!("exactly one competing price may bind: {result:?}"),
+    };
+    assert_eq!(winner.version(), claim.version() + 1);
+    assert_eq!(winner.principal().group_id(), claim.principal().group_id());
+    assert_eq!(
+        winner.principal().billing_source_group_id(),
+        claim.principal().billing_source_group_id()
+    );
+    let replay = fixture
+        .submissions
+        .claim(submission_claim(&fixture, 0xb5, 0xc4, 0xd4)?)
+        .await?;
+    let AsyncTaskSubmissionClaimOutcome::Existing(replay) = replay else {
+        panic!("replayed claim");
+    };
+    assert_eq!(
+        replay.principal().merchant_billing_snapshot(),
+        winner.principal().merchant_billing_snapshot()
+    );
+    assert_eq!(
+        replica
+            .bind_merchant(&claim, winner.principal())
+            .await?
+            .version(),
+        winner.version()
+    );
+    assert!(matches!(
+        replica
+            .bind_merchant(&winner, winner.principal().with_user_route_id(Some(12)))
+            .await,
+        Err(AsyncTaskRepositoryError::Conflict)
+    ));
+    let different_token = GatewayPrincipal::new(
+        fixture.second.principal.token_id(),
+        winner.principal().user_id(),
+        winner.principal().group_id(),
+    )
+    .with_user_route_id(Some(11))
+    .with_merchant_target(terms, fixture.channel_id);
+    assert!(matches!(
+        replica.bind_merchant(&winner, different_token).await,
+        Err(AsyncTaskRepositoryError::Conflict)
+    ));
+    let attempt = AsyncTaskAttemptId::new([0xe4; 16])?;
+    let AsyncTaskSubmissionMutationOutcome::Applied(begun) = fixture
+        .submissions
+        .begin(AsyncTaskSubmissionBegin::new(
+            winner.task_id(),
+            winner.principal().user_id(),
+            winner.version(),
+            attempt,
+            UPDATED_AT,
+        )?)
+        .await?
+    else {
+        panic!("begun");
+    };
+    let AsyncTaskSubmissionMutationOutcome::Applied(released) = fixture
+        .submissions
+        .release(AsyncTaskSubmissionRelease::new(
+            begun.task_id(),
+            begun.principal().user_id(),
+            begun.version(),
+            attempt,
+            UPDATED_AT + 1,
+        )?)
+        .await?
+    else {
+        panic!("released");
+    };
+    assert!(released.principal().merchant_billing_snapshot().is_none());
+    assert!(released.principal().merchant_channel_id().is_none());
+    assert!(matches!(
+        replica.bind_merchant(&winner, winner.principal()).await,
+        Err(AsyncTaskRepositoryError::Conflict)
+    ));
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn accepted_merchant_terms_survive_recovery_and_cannot_accept_a_different_channel()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let AsyncTaskSubmissionClaimOutcome::Created(claim) = fixture
+        .submissions
+        .claim(submission_claim(&fixture, 0xb6, 0xc6, 0xd6)?)
+        .await?
+    else {
+        panic!("created claim");
+    };
+    let terms = af_domain::MerchantBillingSnapshot::new(1, 2, 3, 4, 500_000, 500, 3600)?;
+    let principal = claim
+        .principal()
+        .with_user_route_id(Some(11))
+        .with_merchant_target(terms, fixture.channel_id);
+    let bound = fixture.submissions.bind_merchant(&claim, principal).await?;
+    let attempt = AsyncTaskAttemptId::new([0xe6; 16])?;
+    let AsyncTaskSubmissionMutationOutcome::Applied(begun) = fixture
+        .submissions
+        .begin(AsyncTaskSubmissionBegin::new(
+            bound.task_id(),
+            bound.principal().user_id(),
+            bound.version(),
+            attempt,
+            UPDATED_AT,
+        )?)
+        .await?
+    else {
+        panic!("begun");
+    };
+    let accept = |channel| {
+        AsyncTaskSubmissionAccept::new(
+            begun.task_id(),
+            begun.principal().user_id(),
+            begun.version(),
+            attempt,
+            fixture.second.principal.group_id(),
+            "grok-video".to_owned(),
+            channel,
+            fixture.credential_id,
+            u64::MAX - 7,
+            UpstreamTaskId::new("merchant-video-accepted").expect("task id"),
+            AsyncTaskBindingFingerprint::new([0xf6; 32]),
+            Duration::from_secs(5),
+            Some(AsyncTaskVideoResolution::P720),
+            submitted(),
+            UPDATED_AT + 1,
+        )
+    };
+    assert!(matches!(
+        fixture
+            .submissions
+            .accept(accept(ChannelId::new(fixture.channel_id.get() + 1000)?)?)
+            .await,
+        Err(AsyncTaskRepositoryError::Conflict)
+    ));
+    let AsyncTaskSubmissionMutationOutcome::Applied(accepted) = fixture
+        .submissions
+        .accept(accept(fixture.channel_id)?)
+        .await?
+    else {
+        panic!("accepted");
+    };
+    let replica = AsyncTaskSubmissionRepository::new(fixture.pool.clone(), Duration::from_secs(5))?;
+    let recovered = replica
+        .find_by_request(claim.principal().user_id(), claim.request_id())
+        .await?
+        .expect("accepted claim");
+    assert_eq!(recovered.state(), AsyncTaskSubmissionState::Accepted);
+    assert_eq!(
+        recovered.principal().merchant_billing_snapshot(),
+        Some(terms)
+    );
+    assert_eq!(
+        recovered.principal().merchant_channel_id(),
+        Some(fixture.channel_id)
+    );
+    assert_eq!(recovered.principal().user_route_id(), Some(11));
+    assert_eq!(
+        recovered.principal().group_id(),
+        claim.principal().group_id()
+    );
+    assert_eq!(
+        recovered.target_group_id(),
+        Some(fixture.second.principal.group_id())
+    );
+    assert_eq!(
+        replica.bind_merchant(&bound, principal).await?.state(),
+        AsyncTaskSubmissionState::Accepted
+    );
+    assert!(matches!(
+        replica
+            .release(AsyncTaskSubmissionRelease::new(
+                accepted.task_id(),
+                accepted.principal().user_id(),
+                accepted.version(),
+                attempt,
+                UPDATED_AT + 2
+            )?)
+            .await,
+        Err(AsyncTaskRepositoryError::Conflict)
+    ));
+    let inconsistent = serde_json::json!({"terms":terms,"channel_id":fixture.channel_id.get() + 1000,"route_id":11}).to_string();
+    fixture
+        .pool
+        .connection()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE async_task_submission_claims SET merchant_snapshot = ? WHERE user_id = ?",
+            [
+                inconsistent.into(),
+                claim.principal().user_id().get().into(),
+            ],
+        ))
+        .await?;
+    assert!(matches!(
+        replica
+            .find_by_request(claim.principal().user_id(), claim.request_id())
+            .await,
+        Err(AsyncTaskRepositoryError::Invariant)
+    ));
+    fixture.pool.close().await?;
+    Ok(())
+}

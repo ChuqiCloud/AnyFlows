@@ -112,7 +112,7 @@ struct KeyWrite {
     api_key: String,
 }
 
-struct MerchantHttpError(MerchantPoolError);
+pub(crate) struct MerchantHttpError(MerchantPoolError);
 impl From<MerchantPoolError> for MerchantHttpError {
     fn from(value: MerchantPoolError) -> Self {
         Self(value)
@@ -140,19 +140,19 @@ impl IntoResponse for MerchantHttpError {
         response
     }
 }
-fn body<T>(request: Result<Json<T>, JsonRejection>) -> Result<T, MerchantHttpError> {
+pub(crate) fn body<T>(request: Result<Json<T>, JsonRejection>) -> Result<T, MerchantHttpError> {
     request
         .map(|Json(value)| value)
         .map_err(|_| MerchantPoolError::InvalidInput.into())
 }
-fn id(value: i64) -> Result<i64, MerchantHttpError> {
+pub(crate) fn id(value: i64) -> Result<i64, MerchantHttpError> {
     if value > 0 {
         Ok(value)
     } else {
         Err(MerchantPoolError::InvalidInput.into())
     }
 }
-fn created<T: Serialize>(value: T) -> Response {
+pub(crate) fn created<T: Serialize>(value: T) -> Response {
     let mut response = no_store_json(value);
     *response.status_mut() = StatusCode::CREATED;
     response

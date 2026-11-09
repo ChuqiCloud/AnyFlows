@@ -3,7 +3,7 @@
 use thiserror::Error;
 
 /// Validated terms captured before reserving a consumer's money.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MerchantBillingSnapshot {
     pool_id: i64,
     merchant_id: i64,

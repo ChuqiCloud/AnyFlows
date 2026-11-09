@@ -156,6 +156,7 @@ impl TaskBillingSettlementPort for QuotaRepository {
 const fn map_reserve_error(error: QuotaRepositoryError) -> TaskBillingReserveError {
     match error {
         QuotaRepositoryError::UserQuotaInsufficient
+        | QuotaRepositoryError::MerchantFundingInsufficient
         | QuotaRepositoryError::OrganizationQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient => {
             TaskBillingReserveError::InsufficientQuota

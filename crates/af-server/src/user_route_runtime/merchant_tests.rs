@@ -466,3 +466,142 @@ async fn revoked_or_cross_owner_route_binding_never_falls_back_to_other_supply()
     );
     fixture.database.close().await;
 }
+
+#[tokio::test]
+async fn merchant_media_candidates_require_the_declared_protocol_and_keep_channel_scope() {
+    let fixture = fixture("merchant-media-scope", true, None).await;
+    for protocol in [
+        Protocol::OpenAiImages,
+        Protocol::OpenAiAudio,
+        Protocol::OpenAiSpeech,
+    ] {
+        let mut write = service_write(fixture.pool_id, 700_000);
+        write.protocol = protocol.as_str().to_owned();
+        write.models[0].supports_streaming = false;
+        write.models[0].supports_tools = false;
+        write.models[0].context_window = Some(1);
+        write.models[0].max_output_tokens = Some(1);
+        let service = fixture
+            .pools
+            .write_service(UserId::new(1).unwrap(), None, write, |_, _, _, _| {
+                EncryptedCredentialEnvelope::new("merchant-tests", [1; 24], vec![2; 32])
+                    .map_err(|_| af_domain::MerchantPoolError::Unavailable)
+            })
+            .await
+            .unwrap();
+        fixture
+            .pools
+            .submit_service(UserId::new(1).unwrap(), service.id)
+            .await
+            .unwrap();
+        fixture
+            .pools
+            .review_service(
+                UserId::new(3).unwrap(),
+                service.id,
+                review("approve", Some(1)),
+            )
+            .await
+            .unwrap();
+        let plan = fixture
+            .runtime
+            .load(fixture.principal, "gpt-test")
+            .await
+            .unwrap()
+            .unwrap();
+        let operation = if protocol == Protocol::OpenAiImages {
+            Operation::Image
+        } else {
+            Operation::Audio
+        };
+        let selected = fixture
+            .runtime
+            .candidates_for_operation(
+                &plan,
+                fixture.principal,
+                &usage(),
+                &fixture.pricing,
+                protocol,
+                Some(operation),
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(selected.len(), 1);
+        let offer = selected[0].merchant.as_ref().unwrap();
+        assert_eq!(offer.service_id, service.id);
+        assert_eq!(offer.merchant_id, fixture.merchant_a);
+        let scoped = UserRouteRuntime::merchant_principal(fixture.principal, offer).unwrap();
+        assert_eq!(
+            scoped.merchant_channel_id().unwrap().get(),
+            offer.channel_id
+        );
+        assert_eq!(
+            scoped
+                .merchant_billing_snapshot()
+                .unwrap()
+                .sales_ratio_micros(),
+            700_000
+        );
+    }
+    fixture.database.close().await;
+}
+
+#[tokio::test]
+async fn merchant_video_candidates_use_platform_card_and_exclude_text_supply() {
+    let fixture = fixture("merchant-video-scope", true, None).await;
+    let mut write = service_write(fixture.pool_id, 500_000);
+    write.protocol = "xai_video".to_owned();
+    write.models[0].model = "grok-imagine-video-1.5".to_owned();
+    write.models[0].upstream_model = write.models[0].model.clone();
+    write.models[0].supports_streaming = false;
+    write.models[0].supports_tools = false;
+    let service = fixture
+        .pools
+        .write_service(UserId::new(1).unwrap(), None, write, |_, _, _, _| {
+            EncryptedCredentialEnvelope::new("merchant-tests", [1; 24], vec![2; 32])
+                .map_err(|_| af_domain::MerchantPoolError::Unavailable)
+        })
+        .await
+        .unwrap();
+    fixture
+        .pools
+        .submit_service(UserId::new(1).unwrap(), service.id)
+        .await
+        .unwrap();
+    fixture
+        .pools
+        .review_service(
+            UserId::new(3).unwrap(),
+            service.id,
+            review("approve", Some(1)),
+        )
+        .await
+        .unwrap();
+    let plan = fixture
+        .runtime
+        .load(fixture.principal, "grok-imagine-video-1.5")
+        .await
+        .unwrap()
+        .unwrap();
+    let offers = fixture
+        .runtime
+        .merchant_video_candidates(
+            &plan,
+            fixture.principal,
+            Some(af_protocol::VideoResolution::P720),
+        )
+        .await
+        .unwrap();
+    assert_eq!(offers.len(), 1);
+    assert_eq!(offers[0].offer.service_id, service.id);
+    assert_eq!(offers[0].pricing.ratios().group().micros(), 500_000);
+    assert_eq!(
+        offers[0]
+            .pricing
+            .rate_microusd("grok-imagine-video-1.5")
+            .unwrap(),
+        140_000
+    );
+    fixture.database.close().await;
+}
