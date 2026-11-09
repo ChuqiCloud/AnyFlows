@@ -133,6 +133,8 @@ mod enums_tests;
 #[cfg(test)]
 mod error_tests;
 #[cfg(test)]
+mod merchant_pool_tests;
+#[cfg(test)]
 mod network_tests;
 #[cfg(test)]
 mod payment_tests;

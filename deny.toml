@@ -8,6 +8,7 @@ yanked = "deny"
 unused-ignored-advisory = "deny"
 ignore = [
     { id = "RUSTSEC-2023-0071", reason = "SQLx MySQL 仅执行 RSA 公钥加密，不执行该公告涉及的私钥运算。" },
+    { id = "RUSTSEC-2026-0459", reason = "当前 SeaORM 1.1.20 锁定 SQLx 0.8/libsqlite3-sys 0.30，修复版本需升级 SeaORM 2.x；生产镜像使用 PostgreSQL，SQLite 仅用于迁移和测试。待依赖链支持修复版本后移除。" },
 ]
 
 [licenses]
