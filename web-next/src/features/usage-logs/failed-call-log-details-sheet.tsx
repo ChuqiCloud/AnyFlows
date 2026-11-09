@@ -1,6 +1,7 @@
 import { Chip, Drawer, DrawerBody, DrawerContent, DrawerHeader } from '@heroui/react'
 import { CircleAlert, Clock3, Route, UserRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { MerchantAttemptPath } from '@/features/merchant-pool/merchant-attempt-path'
 
 import { DetailSection } from './usage-log-detail-section'
 import { formatUsageDateLong, formatUsageLatency } from './usage-log-format'
@@ -23,6 +24,7 @@ function FailedCallLogDetails({ log, admin, showPrincipal, onTraceOpen, onUserSe
 
   return (
     <>
+      {log.request_id ? <MerchantAttemptPath requestId={log.request_id} /> : null}
       <DetailSection
         title={t('usageLogs.detailSections.request')}
         icon={Route}

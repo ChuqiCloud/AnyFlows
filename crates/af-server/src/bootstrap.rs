@@ -1769,6 +1769,10 @@ impl Bootstrap<RelayReady> {
                 self.stage.infrastructure.infrastructure.database.clone(),
             ),
         )
+        .with_merchant_pools(af_db::MerchantPoolRepository::new(
+            self.stage.infrastructure.infrastructure.database.clone(),
+            Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+        ))
         .with_relay_settings(*self.config.relay())
         .with_proxy_cipher(self.stage.infrastructure.system_secret_cipher.clone())
         .with_proxy_pools(
@@ -1834,6 +1838,10 @@ impl Bootstrap<RelayReady> {
         let user_route_runtime = crate::user_route_runtime::UserRouteRuntime::new(
             self.stage.infrastructure.user_route_repository.clone(),
         )
+        .with_merchant_pools(af_db::MerchantPoolRepository::new(
+            self.stage.infrastructure.infrastructure.database.clone(),
+            Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+        ))
         .with_group_model_policy(
             self.stage
                 .infrastructure
@@ -2801,7 +2809,52 @@ impl Bootstrap<Supervised> {
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))
         };
+        let merchant_repository = af_db::MerchantPoolRepository::new(
+            self.stage.infrastructure.infrastructure.database.clone(),
+            Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+        );
         let router = router
+            .merge(af_http::build_merchant_pool_router(
+                Arc::new(
+                    af_admin::DatabaseMerchantPoolService::new(
+                        merchant_repository.clone(),
+                        CredentialEncryptor::new(self.config.credential_encryption())
+                            .expect("凭据加密配置已在基础设施初始化时校验"),
+                        CredentialDecryptor::new(self.config.credential_encryption())
+                            .expect("凭据解密配置已在基础设施初始化时校验"),
+                    )
+                    .with_blocked_hosts(
+                        self.config
+                            .server()
+                            .cors_allowed_origins()
+                            .iter()
+                            .filter_map(|origin| {
+                                url::Url::parse(origin.as_str())
+                                    .ok()
+                                    .and_then(|url| url.host_str().map(str::to_owned))
+                            })
+                            .collect(),
+                    ),
+                ),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+            .merge(af_http::build_merchant_route_router(
+                Arc::new(af_admin::DatabaseMerchantRouteService::new(
+                    self.stage.infrastructure.user_route_repository.clone(),
+                    merchant_repository.clone(),
+                )),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+            .merge(af_http::build_merchant_finance_router(
+                Arc::new(af_admin::DatabaseMerchantFinanceService::new(
+                    merchant_repository.clone(),
+                    af_db::MerchantFinanceRepository::new(
+                        self.stage.infrastructure.infrastructure.database.clone(),
+                        Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+                    ),
+                )),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
             .merge(af_http::build_user_route_router(
                 Arc::new(af_admin::DatabaseUserRouteService::new(
                     self.stage.infrastructure.user_route_repository.clone(),

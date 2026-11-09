@@ -14,7 +14,10 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool,
-    entity::{group_group_grants, group_key_policies, groups, tokens, user_group_grants, users},
+    entity::{
+        group_group_grants, group_key_policies, groups, merchant_pools, tokens, user_group_grants,
+        users,
+    },
 };
 
 /// 一次策略写入允许指定的最大用户数。
@@ -450,6 +453,10 @@ impl GroupKeyAccessRepository {
                     .eq("selected_groups"),
                 )
                 .to_owned();
+            let pool_groups = Query::select()
+                .column(merchant_pools::Column::GroupId)
+                .from(merchant_pools::Entity)
+                .to_owned();
             let mut query = groups::Entity::find()
                 .select_only()
                 .columns([
@@ -458,6 +465,7 @@ impl GroupKeyAccessRepository {
                     groups::Column::RatioMicros,
                 ])
                 .filter(groups::Column::DeletedAt.is_null())
+                .filter(Expr::col(groups::Column::Id).not_in_subquery(pool_groups))
                 .filter(
                     Condition::any()
                         .add(groups::Column::Id.eq(owner.default_group_id))

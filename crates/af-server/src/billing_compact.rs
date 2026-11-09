@@ -150,12 +150,14 @@ impl BillingResponsesCompactService {
         let upper_bound = compact_usage_upper_bound(&request)?;
         crate::user_route_execution::UserRouteExecution {
             principal: *principal,
+            request_id,
             model: &model,
             protocol: af_domain::Protocol::OpenAiResponses,
             operation: af_domain::Operation::ResponsesCompact,
             upper_bound: &upper_bound,
             pricing: self.pricing_source.as_ref(),
             defer_success_feedback: false,
+            merchant_features: None,
         }
         .run(
             self.user_routes.as_ref(),

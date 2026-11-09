@@ -227,6 +227,7 @@ try {
     let response
     if (url.pathname === '/api/admin/usage-logs') response = adminResponse
     else if (url.pathname === '/api/account/usage-logs') response = userResponse
+    else if (url.pathname === '/api/merchant-pool/attempts') response = { items: [] }
     else if (url.pathname === '/api/admin/users/41') response = owner
     else if (url.pathname === '/api/admin/users/42') {
       await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'not_found', message: '用户不存在' }) })

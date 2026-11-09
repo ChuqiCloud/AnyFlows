@@ -4,6 +4,8 @@ mod auto_ban;
 mod billing;
 mod billing_contract;
 mod billing_runtime;
+mod merchant_billing;
+pub use merchant_billing::{MerchantBillingSnapshot, MerchantBillingSnapshotError};
 mod channel;
 mod channel_capability;
 mod client_profile;
@@ -13,6 +15,8 @@ pub use client_profile::{
     built_in_client_profiles, validate_client_identity_header, validate_client_profile_key,
 };
 mod concurrency;
+mod merchant_pool;
+pub use merchant_pool::*;
 mod enums;
 mod error;
 mod gateway_identity;

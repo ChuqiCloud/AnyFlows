@@ -152,6 +152,7 @@ pub(crate) struct ScheduledChatService {
     channel_states: Option<ChannelStateRepository>,
     debug_trace: Option<DebugTraceRuntime>,
     groups: Option<AdminGroupRepository>,
+    merchant_pools: Option<af_db::MerchantPoolRepository>,
     model_call_admission: Option<AdminModelRepository>,
     smart_routes: Option<Arc<dyn SmartRouteResolver>>,
     smart_route_feedback: Option<SmartRouteRuntimeRepository>,
@@ -185,6 +186,7 @@ impl ScheduledChatService {
             channel_states: None,
             debug_trace: None,
             groups: None,
+            merchant_pools: None,
             model_call_admission: None,
             smart_routes: None,
             smart_route_feedback: None,
@@ -203,6 +205,25 @@ impl ScheduledChatService {
     pub(crate) fn with_relay_settings(mut self, settings: RelaySettings) -> Self {
         self.relay_settings = settings;
         self
+    }
+
+    pub(crate) fn with_merchant_pools(mut self, pools: af_db::MerchantPoolRepository) -> Self {
+        self.merchant_pools = Some(pools);
+        self
+    }
+
+    /// Text-only merchant supply must never enter a planner without a merchant quote.
+    async fn ensure_non_merchant_group(&self, group_id: GroupId) -> Result<(), AfError> {
+        if let Some(pools) = &self.merchant_pools
+            && pools
+                .pool_for_group(group_id)
+                .await
+                .map_err(|_| AfError::Internal)?
+                .is_some()
+        {
+            return Err(AfError::ModelNotAllowed);
+        }
+        Ok(())
     }
 
     pub(crate) fn relay_execution_policy(&self) -> af_relay::RelayExecutionPolicy {
@@ -629,6 +650,7 @@ impl ScheduledChatService {
             .map_err(|_| AfError::Internal)?
             .with_execution_policy(self.relay_execution_policy());
         Ok(ScheduledChatExecution {
+            merchant_local_usage: false,
             target_group_id,
             pricing_model: routed_model,
             tool_plan,
@@ -939,9 +961,35 @@ impl ScheduledChatService {
         request_id: &str,
         session_scope: Option<&StableSessionScope>,
     ) -> Result<PreparedRouteSelection, AfError> {
+        if principal.merchant_channel_id().is_none()
+            && let Some(pools) = &self.merchant_pools
+            && pools
+                .pool_for_group(principal.group_id())
+                .await
+                .map_err(|_| AfError::Internal)?
+                .is_some()
+        {
+            return Err(AfError::ModelNotAllowed);
+        }
         let mut unhealthy_route_seen = false;
         let mut incompatible_route_seen = false;
-        let group_chain = self.route_group_chain(principal).await?;
+        let mut group_chain = self.route_group_chain(principal).await?;
+        if principal.merchant_channel_id().is_none()
+            && let Some(pools) = &self.merchant_pools
+        {
+            let mut ordinary = Vec::with_capacity(group_chain.len());
+            for group in group_chain {
+                if pools
+                    .pool_for_group(group)
+                    .await
+                    .map_err(|_| AfError::Internal)?
+                    .is_none()
+                {
+                    ordinary.push(group);
+                }
+            }
+            group_chain = ordinary;
+        }
         let rules = if principal.is_playground() {
             match &self.smart_routes {
                 Some(resolver) => resolver
@@ -955,13 +1003,18 @@ impl ScheduledChatService {
         };
         if rules.is_empty() {
             for group_id in group_chain.iter().copied() {
-                let Some(unfiltered_route) = self
+                let Some(mut unfiltered_route) = self
                     .scheduler
                     .route_plan(group_id, &request.canonical().model)
                     .map_err(map_scheduler_error)?
                 else {
                     continue;
                 };
+                if let Some(channel_id) = principal.merchant_channel_id()
+                    && !unfiltered_route.restrict_to_channel(channel_id)
+                {
+                    continue;
+                }
                 let unfiltered_protocol =
                     match select_upstream_protocol(&unfiltered_route, request, response_protocol) {
                         Ok(protocol) => protocol,
@@ -1005,6 +1058,11 @@ impl ScheduledChatService {
                 let Some(mut route) = route else {
                     continue;
                 };
+                if let Some(channel_id) = principal.merchant_channel_id()
+                    && !route.restrict_to_channel(channel_id)
+                {
+                    continue;
+                }
                 let upstream_protocol =
                     match select_upstream_protocol(&route, request, response_protocol) {
                         Ok(protocol) => protocol,
@@ -1173,6 +1231,17 @@ impl ScheduledChatService {
         diagnostic: RelayDiagnosticInput,
     ) -> ChatRoutePlanFuture<'a> {
         Box::pin(async move {
+            if principal.merchant_channel_id().is_some()
+                && (request
+                    .canonical()
+                    .continuation
+                    .previous_response_id()
+                    .is_some()
+                    || request.canonical().continuation.conversation_id().is_some())
+            {
+                // 首版不把供应商私有会话标识发送给可能不同的供应商。
+                return Err(AfError::InvalidRequest);
+            }
             let mut session_scope =
                 stable_identity_session_scope(principal.identity(), request.canonical());
             let PreparedRouteSelection {
@@ -1312,6 +1381,7 @@ impl ScheduledChatService {
                 )
                 .await?;
             plan.debug_trace = debug_trace;
+            plan.merchant_local_usage = principal.merchant_channel_id().is_some();
             Ok(Box::new(plan) as Box<dyn PlannedChatExecution>)
         })
     }
@@ -1406,6 +1476,7 @@ impl fmt::Debug for ScheduledChatService {
 }
 
 struct ScheduledChatExecution {
+    merchant_local_usage: bool,
     target_group_id: GroupId,
     pricing_model: String,
     machine: RelayStateMachine,
@@ -1450,9 +1521,13 @@ impl PlannedChatExecution for ScheduledChatExecution {
 
     fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {
         if self.tool_plan.is_some() {
+            if self.merchant_local_usage {
+                return Box::pin(async { Err(AfError::ModelNotAllowed.into()) });
+            }
             return Box::pin(opencode::execute(*self));
         }
         let Self {
+            merchant_local_usage,
             target_group_id: _,
             pricing_model: _,
             tool_plan: _,
@@ -1481,7 +1556,16 @@ impl PlannedChatExecution for ScheduledChatExecution {
             };
             let operation = request.canonical().operation;
             let routing_started_at = Instant::now();
-            let (result, report) = if upstream_protocol != response_protocol
+            let (result, report) = if merchant_local_usage {
+                af_relay::relay_merchant_conversation_with_report(
+                    &machine,
+                    request,
+                    upstream_protocol,
+                    response_protocol,
+                    &request_id,
+                )
+                .await
+            } else if upstream_protocol != response_protocol
                 || machine.requires_conversation_decoder()
             {
                 relay_conversation_with_report(
@@ -2034,6 +2118,81 @@ mod tests {
             &HeaderMap::new(),
             &Bytes::new(),
         )
+    }
+
+    #[tokio::test]
+    async fn non_text_planners_reject_merchant_pool_groups_even_when_pool_is_disabled() {
+        use sea_orm::{
+            ConnectionTrait,
+            sea_query::{Alias, Query},
+        };
+        let database = crate::test_database::SqliteTestDatabase::new("merchant-text-only").await;
+        let pool = database.pool();
+        let groups = AdminGroupRepository::new(pool.clone(), Duration::from_secs(1)).unwrap();
+        let pool_group = groups
+            .create(group_record("merchant-text-only", None))
+            .await
+            .unwrap()
+            .group_id();
+        let normal_group = groups
+            .create(group_record("ordinary", None))
+            .await
+            .unwrap()
+            .group_id();
+        let insert = Query::insert()
+            .into_table(Alias::new("merchant_pools"))
+            .columns(
+                [
+                    "group_id",
+                    "name",
+                    "description",
+                    "enabled",
+                    "commission_bps",
+                    "min_ratio_micros",
+                    "max_ratio_micros",
+                    "settlement_delay_secs",
+                ]
+                .map(Alias::new),
+            )
+            .values_panic([
+                pool_group.get().into(),
+                "Text pool".into(),
+                "".into(),
+                false.into(),
+                500_i32.into(),
+                1_i64.into(),
+                100_000_000_i64.into(),
+                0_i64.into(),
+            ])
+            .to_owned();
+        database
+            .seed()
+            .execute(database.seed().get_database_backend().build(&insert))
+            .await
+            .unwrap();
+        let service =
+            service(Vec::new())
+                .await
+                .with_merchant_pools(af_db::MerchantPoolRepository::new(
+                    pool.clone(),
+                    Duration::from_secs(1),
+                ));
+        assert_eq!(
+            service.ensure_non_merchant_group(pool_group).await,
+            Err(AfError::ModelNotAllowed)
+        );
+        assert_eq!(
+            service.ensure_non_merchant_group(normal_group).await,
+            Ok(())
+        );
+        assert_eq!(
+            service
+                .video_route(pool_group, "unavailable-model")
+                .await
+                .err(),
+            Some(AfError::ModelNotAllowed)
+        );
+        database.close().await;
     }
 
     #[test]

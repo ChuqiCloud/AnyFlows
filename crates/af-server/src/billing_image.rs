@@ -151,6 +151,7 @@ impl BillingImageService {
         };
         crate::user_route_execution::UserRouteExecution {
             principal: *principal,
+            request_id,
             model: &model,
             protocol: af_domain::Protocol::OpenAiImages,
             operation: match &request {
@@ -160,6 +161,7 @@ impl BillingImageService {
             upper_bound: &upper_bound,
             pricing: self.pricing_source.as_ref(),
             defer_success_feedback: false,
+            merchant_features: None,
         }
         .run(
             self.user_routes.as_ref(),

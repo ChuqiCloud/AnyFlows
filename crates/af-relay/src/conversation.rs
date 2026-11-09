@@ -12,6 +12,10 @@ mod matrix_contract;
 #[path = "compaction_contract.rs"]
 mod compaction_contract;
 
+#[cfg(test)]
+#[path = "merchant_usage_contract.rs"]
+mod merchant_usage_contract;
+
 use af_adapter::{Bytes, Method, ResponseMode, StatusCode};
 use af_domain::{AfError, Operation, Protocol, UpstreamError};
 use af_protocol::{
@@ -42,6 +46,45 @@ pub async fn relay_conversation_with_report(
     upstream_protocol: Protocol,
     response_protocol: Protocol,
     request_id: &str,
+) -> (Result<ChatResponse, AfError>, RelayAttemptReport) {
+    relay_conversation_with_usage_policy(
+        machine,
+        request,
+        upstream_protocol,
+        response_protocol,
+        request_id,
+        false,
+    )
+    .await
+}
+
+/// Approved merchant supply is billed only from platform-observed text and tools.
+/// This entry point is selected by trusted gateway context, never by wire headers.
+pub async fn relay_merchant_conversation_with_report(
+    machine: &RelayStateMachine,
+    request: CanonicalRequestEnvelope,
+    upstream_protocol: Protocol,
+    response_protocol: Protocol,
+    request_id: &str,
+) -> (Result<ChatResponse, AfError>, RelayAttemptReport) {
+    relay_conversation_with_usage_policy(
+        machine,
+        request,
+        upstream_protocol,
+        response_protocol,
+        request_id,
+        true,
+    )
+    .await
+}
+
+async fn relay_conversation_with_usage_policy(
+    machine: &RelayStateMachine,
+    request: CanonicalRequestEnvelope,
+    upstream_protocol: Protocol,
+    response_protocol: Protocol,
+    request_id: &str,
+    local_usage_only: bool,
 ) -> (Result<ChatResponse, AfError>, RelayAttemptReport) {
     let anthropic_beta = request.anthropic_beta().map(str::to_owned);
     let client_model = request.requested_model().to_owned();
@@ -99,7 +142,11 @@ pub async fn relay_conversation_with_report(
     };
     let status = response.status();
     let retry_after = parse_retry_after(response.headers());
-    let estimator = OpenAiChatUsageEstimator::new(&canonical);
+    let estimator = if local_usage_only {
+        OpenAiChatUsageEstimator::new(&canonical).with_local_usage_only()
+    } else {
+        OpenAiChatUsageEstimator::new(&canonical)
+    };
     let result = async {
         if status != StatusCode::OK {
             let body = response
@@ -141,7 +188,9 @@ pub async fn relay_conversation_with_report(
                 .map_err(map_adaptor_error)?;
             parse_response(upstream_protocol, &body)?
         };
-        let usage = if upstream_protocol == Protocol::Anthropic {
+        let usage = if local_usage_only {
+            None
+        } else if upstream_protocol == Protocol::Anthropic {
             anthropic::billing_usage(&response).map_err(|_| UpstreamError::ProtocolError)?
         } else {
             None
@@ -154,6 +203,18 @@ pub async fn relay_conversation_with_report(
             },
             Ok,
         )?;
+        if local_usage_only {
+            // Native passthrough can carry an independent supplier usage snapshot.
+            // Rebuild the public envelope so the response and invoice share local usage.
+            response = CanonicalResponse::new(
+                response.operation,
+                response.id,
+                response.model,
+                response.created_at,
+                response.choices,
+                Some(usage),
+            );
+        }
         crate::anthropic_chat_bridge::adapt_response(
             upstream_protocol,
             response_protocol,

@@ -299,6 +299,13 @@ impl QuotaRepository {
         reservation_kind: QuotaReservationKind,
         contract_price: Option<BillingContractPriceSnapshot>,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
+        if principal.merchant_billing_snapshot().is_some()
+            && (principal.organization_principal().is_some()
+                || contract_price.is_some()
+                || reservation_kind != QuotaReservationKind::Request)
+        {
+            return Err(QuotaRepositoryError::Conflict);
+        }
         if principal.organization_principal().is_some() && self.funding_extension.is_none() {
             let Some(extension) = self.extension.as_ref() else {
                 return Err(QuotaRepositoryError::ExtensionUnavailable);
@@ -342,7 +349,7 @@ impl QuotaRepository {
         }
 
         // 先取得会被修改的父行锁，避免 MySQL 外键检查先持有共享锁后再升级而死锁。
-        let (group_state, _, token_state) = match lock_subject(
+        let (group_state, user_state, token_state) = match lock_subject(
             &transaction,
             principal.group_id().get(),
             principal.user_id().get(),
@@ -409,13 +416,28 @@ impl QuotaRepository {
             }
             Err(error) => return rollback_with_error(transaction, error).await,
         };
+        if let Err(error) = crate::merchant_finance::reserve_merchant_billing(
+            &transaction,
+            &key,
+            principal,
+            amount,
+            user_state.used_quota,
+            user_state.frozen_quota,
+        )
+        .await
+        {
+            return rollback_with_error(transaction, error).await;
+        }
         if reservation_kind.uses_group_windows()
             && let Err(error) =
                 group_windows::reserve(&transaction, &key, &parent, group_state, amount, now).await
         {
             return rollback_with_error(transaction, error).await;
         }
-        let uses_subscription = if funding.is_none() && reservation_kind.allows_subscription() {
+        let uses_subscription = if funding.is_none()
+            && reservation_kind.allows_subscription()
+            && principal.merchant_billing_snapshot().is_none()
+        {
             match subscription::try_reserve(&transaction, &key, &parent, amount, now).await {
                 Ok(value) => value,
                 Err(error) => return rollback_with_error(transaction, error).await,
@@ -506,6 +528,12 @@ impl QuotaRepository {
             .as_ref()
             .ok_or(QuotaRepositoryError::Invariant)
             .and_then(ReservationState::try_from_result)?;
+        crate::merchant_finance::verify_merchant_replay(
+            self.pool.connection(),
+            &key,
+            principal.merchant_billing_snapshot(),
+        )
+        .await?;
         subscription::load_allocation(self.pool.connection(), &key, &state).await?;
         group_windows::load_allocation(self.pool.connection(), &key, &state).await?;
         token_windows::load_allocation(self.pool.connection(), &key, &state).await?;
@@ -550,6 +578,14 @@ impl QuotaRepository {
             .ok_or(QuotaRepositoryError::NotFound)?;
         if observed.reservation_kind != reservation_kind {
             return Err(QuotaRepositoryError::Conflict);
+        }
+        if actual.units() > observed.reserved_quota
+            && crate::merchant_finance::has_merchant_reservation(self.pool.connection(), &key)
+                .await?
+        {
+            self.refund_inner_with_merchant_rejection(id, reservation_kind, Some(actual))
+                .await?;
+            return Err(QuotaRepositoryError::MerchantUsageExceedsAuthorization);
         }
         if !reservation_kind.allows_supplement() && actual.units() > observed.reserved_quota {
             return Err(QuotaRepositoryError::ActualExceedsReservation);
@@ -757,6 +793,7 @@ impl QuotaRepository {
             Err(
                 error @ (QuotaRepositoryError::OrganizationQuotaInsufficient
                 | QuotaRepositoryError::UserQuotaInsufficient
+                | QuotaRepositoryError::MerchantFundingInsufficient
                 | QuotaRepositoryError::TokenQuotaInsufficient
                 | QuotaRepositoryError::GroupWindowQuotaInsufficient { .. }
                 | QuotaRepositoryError::TokenWindowQuotaInsufficient { .. }),
@@ -795,6 +832,16 @@ impl QuotaRepository {
         &self,
         id: BillingReservationId,
         reservation_kind: QuotaReservationKind,
+    ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
+        self.refund_inner_with_merchant_rejection(id, reservation_kind, None)
+            .await
+    }
+
+    async fn refund_inner_with_merchant_rejection(
+        &self,
+        id: BillingReservationId,
+        reservation_kind: QuotaReservationKind,
+        merchant_rejected_quota: Option<Quota>,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
         let key = id.persistence_key();
         let observed = load_reservation(self.pool.connection(), key.clone(), false)
@@ -883,7 +930,7 @@ impl QuotaRepository {
                     };
                     return rollback_with_error(transaction, error).await;
                 }
-                state = match load_reservation(&transaction, key, true).await {
+                state = match load_reservation(&transaction, key.clone(), true).await {
                     Ok(Some(state)) => state,
                     Ok(None) => {
                         return rollback_with_error(transaction, QuotaRepositoryError::Invariant)
@@ -950,6 +997,15 @@ impl QuotaRepository {
             };
             return rollback_with_error(transaction, error).await;
         }
+        if let Err(error) = crate::merchant_finance::cancel_merchant_billing(
+            &transaction,
+            &key,
+            merchant_rejected_quota,
+        )
+        .await
+        {
+            return rollback_with_error(transaction, error).await;
+        }
         commit_applied(transaction).await
     }
 }
@@ -1001,6 +1057,14 @@ async fn settle_adjustment(
         funding_extension,
     } = adjustment;
     let backend = savepoint.get_database_backend();
+    crate::merchant_finance::settle_merchant_billing(
+        savepoint,
+        key,
+        user_state.frozen_quota,
+        reserved,
+        actual,
+    )
+    .await?;
     group_windows::apply_settlement(
         savepoint,
         state,
@@ -1373,6 +1437,8 @@ fn record_internal_error(error: QuotaRepositoryError) -> QuotaRepositoryError {
         | QuotaRepositoryError::NotFound
         | QuotaRepositoryError::Conflict
         | QuotaRepositoryError::UserQuotaInsufficient
+        | QuotaRepositoryError::MerchantFundingInsufficient
+        | QuotaRepositoryError::MerchantUsageExceedsAuthorization
         | QuotaRepositoryError::OrganizationQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient
         | QuotaRepositoryError::GroupWindowQuotaInsufficient { .. }
