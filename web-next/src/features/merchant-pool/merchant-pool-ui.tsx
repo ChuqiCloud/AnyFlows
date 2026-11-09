@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
 import { Button, Chip, Skeleton, type ButtonProps } from '@heroui/react'
 import { Briefcase, GitBranch, RefreshCw, Store } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
@@ -28,9 +28,10 @@ export function PoolField({ label, children, hint }: { label: string; children: 
   return <label className="grid min-w-0 gap-1.5 text-xs"><span className="font-medium">{label}</span>{children}{hint ? <span className="leading-5 text-muted-foreground">{hint}</span> : null}</label>
 }
 
-export function PoolSelect({ label, value, onChange, options, disabled, allowEmpty = true }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; disabled?: boolean; allowEmpty?: boolean }) {
+export function PoolSelect({ label, value, onChange, options, disabled, allowEmpty = true, emptyLabel, isInvalid = false, errorMessage }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; disabled?: boolean; allowEmpty?: boolean; emptyLabel?: string; isInvalid?: boolean; errorMessage?: string }) {
   const { t } = useTranslation()
-  return <select className="min-h-8 w-full min-w-0 rounded-lg border border-[var(--hairline)] bg-background px-2.5 text-xs disabled:opacity-50" aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled}>{allowEmpty ? <option value="">{t('merchantPool.all')}</option> : null}{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+  const errorId = useId()
+  return <><select className={cn('min-h-8 w-full min-w-0 rounded-lg border bg-background px-2.5 text-xs disabled:opacity-50', isInvalid ? 'border-danger' : 'border-[var(--hairline)]')} aria-label={label} aria-invalid={isInvalid || undefined} aria-describedby={isInvalid && errorMessage ? errorId : undefined} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled}>{allowEmpty ? <option value="">{emptyLabel ?? t('merchantPool.all')}</option> : null}{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{isInvalid && errorMessage ? <span id={errorId} className="text-[11px] leading-5 text-danger">{errorMessage}</span> : null}</>
 }
 
 export function PoolError({ onRetry, message }: { onRetry?: () => void; message?: string }) {

@@ -33,6 +33,8 @@ const profile = { id: 6, owner_user_id: 3, name: 'CI merchant', description: 'CI
 const list = items => ({ items, total: items.length, page: 1, page_size: 20 })
 let routes = []
 let services = []
+let adminPools = [pool]
+let poolFailures = 1
 let routeFailures = 1
 let previewFailures = 1
 let withdrawalFailures = 1
@@ -47,6 +49,9 @@ const routeRequests = []
 const previewRequests = []
 const withdrawalRequests = []
 const catalogRequests = []
+const poolRequests = []
+const serviceRequests = []
+const quoteRequests = []
 const errors = []
 let server, browser, page
 let serverOutput = ''
@@ -105,7 +110,17 @@ try {
     const respond = (body, status = 200) => intercepted.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     if (path === '/api/site') return respond({ balance_display: { mode: 'quota', unit_name: '积分', unit_symbol: '积分', quota_units_per_display_unit: '10000', symbol_position: 'suffix', fraction_digits: 0 } })
     assert.equal(request.headers().authorization, 'Bearer ci-merchant')
-    if (path === '/api/merchant-pools' || path === '/api/merchant/available-pools' || path === '/api/admin/merchant-pools') return respond(list([pool]))
+    if ((path === '/api/merchant-pools' || path === '/api/merchant/available-pools') && method === 'GET') return respond(list([pool]))
+    if (path === '/api/admin/groups' && method === 'GET') return respond({ groups: [{ id: 8, name: 'CI occupied group' }, { id: 9, name: 'CI dedicated group' }, { id: 10, name: 'CI second dedicated group' }], next_cursor: null })
+    if (path === '/api/admin/merchant-pools' && method === 'GET') return respond(list(adminPools))
+    if (path === '/api/admin/merchant-pools' && method === 'POST') {
+      const body = request.postDataJSON(); poolRequests.push(body)
+      assert.ok([9, 10].includes(body.group_id), 'A new pool submits a selected dedicated group')
+      if (poolFailures-- > 0) return respond({ error: { code: 'merchant_pool_conflict', message: 'merchant pool state conflict' } }, 409)
+      const createdPool = { id: adminPools.length + 1, ...body, effective_commission_bps: body.commission_inherit_global ? 500 : body.commission_bps, created_at: now, updated_at: now }
+      adminPools = [...adminPools, createdPool]
+      return respond(createdPool, 201)
+    }
     if (path === '/api/merchant-pools/1/services') {
       const query = new URL(request.url()).searchParams
       catalogRequests.push(Object.fromEntries(query))
@@ -133,12 +148,17 @@ try {
     if ((path === '/api/merchant/services' || path === '/api/admin/merchant-services') && method === 'GET') return respond(list(services))
     if (path === '/api/merchant/services' && method === 'POST') {
       const body = request.postDataJSON()
+      serviceRequests.push(body)
       assert.equal(body.api_key, 'ci-upstream-private-key')
       assert.equal(body.models[0].model, 'gpt-fixture')
       const { api_key, pool_id, name, description, ...revision } = body
       assert.ok(api_key)
       services = [{ id: 88, merchant_id: 6, pool_id, name, description, status: 'draft', active_price: null, maintenance: [], published: null, draft: { id: 9, revision: 1, status: 'draft', name, description, ...revision, has_api_key: true, review_reason: null, created_at: now, updated_at: now }, created_at: now, updated_at: now }]
       return respond(services[0], 201)
+    }
+    if (path === '/api/merchant/quote' && method === 'POST') {
+      const body = request.postDataJSON(); quoteRequests.push(body)
+      return respond({ models: [{ model: body.models[0].model, sales_ratio_micros: body.default_ratio_micros, base_prices: offer.prices, prices: offer.prices, net_prices: offer.prices }], effective_commission_bps: 500 })
     }
     if (path === '/api/merchant/finance') return respond({ merchant_id: 6, pending_quota: 0, available_quota: 100000, withdrawing_quota: 0, frozen_quota: 0, debt_quota: 0, total_gross_quota: 110000, total_commission_quota: 10000, total_paid_quota: 0, quota_per_usd: 500000 })
     if (path === '/api/merchant/finance/entries') return respond({ items: [], next_cursor: null })
@@ -220,9 +240,70 @@ try {
   await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.documentElement.classList.add('light') })
   await page.screenshot({ path: resolve(screenshots, 'merchant-catalog-light.png'), fullPage: true, animations: 'disabled' })
   await page.evaluate(() => { document.documentElement.classList.remove('light'); document.documentElement.classList.add('dark') })
+  await page.getByRole('button', { name: 'admin', exact: true }).click()
+  await page.getByRole('button', { name: label('createPool'), exact: true }).click()
+  let dialog = page.getByRole('dialog')
+  const poolName = dialog.getByRole('textbox', { name: label('name'), exact: true })
+  const poolGroup = dialog.getByRole('combobox', { name: label('group'), exact: true })
+  await poolGroup.getByRole('option', { name: 'CI dedicated group', exact: true }).waitFor({ state: 'attached' })
+  assert.equal(await poolGroup.inputValue(), '', 'Creating a pool never silently chooses a group')
+  assert.equal(await poolGroup.getByRole('option', { name: label('validation.selectGroup'), exact: true }).count(), 1, 'The required group placeholder does not say all groups')
+  await poolName.fill('CI inherited pool')
+  await dialog.getByRole('button', { name: label('save'), exact: true }).click()
+  await dialog.getByText(label('validation.groupRequired'), { exact: true }).first().waitFor()
+  assert.equal(poolRequests.length, 0, 'A missing required group is rejected before submitting')
+  await poolGroup.selectOption('9')
+  await dialog.getByText(label('validation.groupRequired'), { exact: true }).first().waitFor({ state: 'hidden' })
+  await dialog.getByRole('checkbox', { name: label('inheritGlobalCommission'), exact: true }).uncheck()
+  const poolFee = dialog.getByRole('textbox', { name: label('commissionRate'), exact: true })
+  await poolFee.fill('12.345')
+  await dialog.getByRole('button', { name: label('save'), exact: true }).click()
+  await dialog.getByText(label('validation.commission'), { exact: true }).first().waitFor()
+  assert.equal(poolRequests.length, 0)
+  await dialog.getByRole('checkbox', { name: label('inheritGlobalCommission'), exact: true }).check()
+  assert.equal(await poolFee.isDisabled(), true)
+  await dialog.getByText(label('validation.commission'), { exact: true }).first().waitFor({ state: 'hidden' })
+  await dialog.getByRole('button', { name: label('save'), exact: true }).click()
+  await dialog.getByText(label('validation.groupConflict'), { exact: true }).first().waitFor()
+  assert.equal(await poolName.inputValue(), 'CI inherited pool', 'A server-side group conflict preserves the draft')
+  assert.equal(await poolGroup.inputValue(), '9')
+  await dialog.getByRole('button', { name: label('save'), exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  assert.equal(poolRequests.length, 2, 'An invalid disabled fee cannot block an inherited commission')
+  assert.deepEqual(poolRequests[0], poolRequests[1])
+  assert.deepEqual(poolRequests[1], { name: 'CI inherited pool', description: '', group_id: 9, enabled: true, commission_bps: 0, commission_inherit_global: true, min_ratio_micros: 100000, max_ratio_micros: 10000000, settlement_delay_secs: 86400 })
+  await page.getByRole('region', { name: label('adminTabs.pools'), exact: true }).getByText('CI inherited pool', { exact: true }).waitFor()
+  await page.getByRole('button', { name: label('createPool'), exact: true }).click()
+  dialog = page.getByRole('dialog')
+  await dialog.getByRole('textbox', { name: label('name'), exact: true }).fill('CI explicit pool')
+  await dialog.getByRole('combobox', { name: label('group'), exact: true }).selectOption('10')
+  const minimumPoolRatio = dialog.getByRole('textbox', { name: label('minimumRatio'), exact: true })
+  const maximumPoolRatio = dialog.getByRole('textbox', { name: label('maximumRatio'), exact: true })
+  const poolDelay = dialog.getByRole('spinbutton', { name: label('settlementDelay'), exact: true })
+  await minimumPoolRatio.fill('0')
+  await maximumPoolRatio.fill('101')
+  await poolDelay.fill('2161')
+  await dialog.getByRole('button', { name: label('save'), exact: true }).click()
+  await dialog.getByText(label('validation.settlementDelay'), { exact: true }).first().waitFor()
+  assert.equal(await minimumPoolRatio.getAttribute('aria-invalid'), 'true')
+  assert.equal(await maximumPoolRatio.getAttribute('aria-invalid'), 'true')
+  assert.equal(await poolDelay.getAttribute('aria-invalid'), 'true')
+  assert.equal(poolRequests.length, 2, 'Pool boundary errors never reach the server')
+  await minimumPoolRatio.fill('0.1')
+  await maximumPoolRatio.fill('10')
+  await poolDelay.fill('24')
+  await dialog.getByRole('checkbox', { name: label('inheritGlobalCommission'), exact: true }).uncheck()
+  await dialog.getByRole('textbox', { name: label('commissionRate'), exact: true }).fill('15.25')
+  await dialog.getByRole('button', { name: label('save'), exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  assert.equal(poolRequests.length, 3)
+  assert.equal(poolRequests[2].commission_bps, 1525)
+  assert.equal(poolRequests[2].commission_inherit_global, false)
+  assert.equal(poolRequests[2].group_id, 10)
+  await page.screenshot({ path: resolve(screenshots, 'merchant-admin-pools.png'), fullPage: true, animations: 'disabled' })
   await page.getByRole('button', { name: 'routes', exact: true }).click()
   await page.getByRole('button', { name: label('createRoute'), exact: true }).click()
-  let dialog = page.getByRole('dialog')
+  dialog = page.getByRole('dialog')
   await dialog.getByRole('textbox', { name: label('name'), exact: true }).fill('CI merchant route')
   await dialog.getByRole('button', { name: label('addMerchant'), exact: true }).click()
   await dialog.getByRole('combobox', { name: label('merchant'), exact: true }).selectOption('6')
@@ -269,8 +350,44 @@ try {
   const modelInput = dialog.getByRole('textbox', { name: label('canonicalModel'), exact: true })
   await modelInput.fill('gpt-fixture')
   assert.equal(await modelInput.evaluate(input => input === document.activeElement), true)
+  const serviceConcurrency = dialog.getByRole('spinbutton', { name: label('concurrency'), exact: true })
+  const serviceUrl = dialog.getByRole('textbox', { name: label('baseUrl'), exact: true })
+  const serviceContext = dialog.getByRole('spinbutton', { name: label('contextWindow'), exact: true })
+  const serviceOutput = dialog.getByRole('spinbutton', { name: label('maxOutput'), exact: true })
+  await serviceConcurrency.fill('10001')
+  await dialog.getByRole('button', { name: label('saveDraft'), exact: true }).click()
+  await dialog.getByText(label('validation.positiveIntegerRange').replace('{{max}}', '10000'), { exact: true }).first().waitFor()
+  assert.equal(await serviceConcurrency.getAttribute('aria-invalid'), 'true')
+  assert.equal(serviceRequests.length, 0, 'Concurrency outside the server limit is not submitted')
+  await serviceConcurrency.fill('10')
+  await serviceUrl.fill('https://upstream.example.com:9443/v1')
+  await dialog.getByRole('button', { name: label('saveDraft'), exact: true }).click()
+  await dialog.getByText(label('validation.httpsEndpoint'), { exact: true }).first().waitFor()
+  assert.equal(serviceRequests.length, 0, 'Merchant upstream URLs must use HTTPS on port 443')
+  await serviceUrl.fill('https://upstream.example.com/v1')
+  await serviceContext.fill('4294967296')
+  await dialog.getByRole('button', { name: label('previewPrices'), exact: true }).click()
+  await dialog.getByText(label('validation.positiveIntegerRange').replace('{{max}}', '4294967295'), { exact: true }).first().waitFor()
+  assert.equal(await serviceContext.getAttribute('aria-invalid'), 'true')
+  assert.equal(quoteRequests.length, 0, 'A quote must not silently convert an out-of-range model limit to null')
+  await serviceContext.fill('4096')
+  await serviceOutput.fill('4097')
+  await dialog.getByRole('button', { name: label('saveDraft'), exact: true }).click()
+  await dialog.getByText(label('validation.outputExceedsContext'), { exact: true }).first().waitFor()
+  assert.equal(serviceRequests.length, 0, 'The output limit cannot exceed the model context window')
+  await serviceOutput.fill('4096')
+  await dialog.getByText(label('validation.outputExceedsContext'), { exact: true }).first().waitFor({ state: 'hidden' })
+  await dialog.getByRole('button', { name: label('previewPrices'), exact: true }).click()
+  await dialog.getByRole('heading', { name: label('quotePreview'), exact: true }).waitFor()
+  assert.equal(quoteRequests.length, 1)
+  assert.equal(quoteRequests[0].models[0].context_window, 4096)
+  assert.equal(quoteRequests[0].models[0].max_output_tokens, 4096)
   await dialog.getByRole('button', { name: label('saveDraft'), exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
+  assert.equal(serviceRequests.length, 1)
+  assert.equal(serviceRequests[0].concurrency, 10)
+  assert.equal(serviceRequests[0].models[0].context_window, 4096)
+  assert.equal(serviceRequests[0].models[0].max_output_tokens, 4096)
   const ownedServicesTable = page.getByRole('region', { name: label('myServices'), exact: true })
   await ownedServicesTable.getByRole('cell', { name: /CI submitted service/ }).waitFor()
   assert.equal(await ownedServicesTable.locator('tbody tr').count(), 1, 'A created merchant service appears as one table row')
@@ -408,7 +525,7 @@ try {
 } catch (error) {
   if (page) await page.screenshot({ path: resolve(screenshots, 'failure.png'), fullPage: true, animations: 'disabled' }).catch(() => {})
   console.error(serverOutput)
-  console.error(JSON.stringify({ errors, routeRequests, withdrawalRequests, geometry: page ? await page.evaluate(documentGeometry).catch(() => undefined) : undefined, ariaSnapshot: page ? await page.locator('body').ariaSnapshot().catch(() => undefined) : undefined }))
+  console.error(JSON.stringify({ errors, poolRequests, serviceRequestCount: serviceRequests.length, quoteRequests, routeRequests, withdrawalRequests, geometry: page ? await page.evaluate(documentGeometry).catch(() => undefined) : undefined, ariaSnapshot: page ? await page.locator('body').ariaSnapshot().catch(() => undefined) : undefined }))
   throw error
 } finally {
   if (browser) await browser.close()
