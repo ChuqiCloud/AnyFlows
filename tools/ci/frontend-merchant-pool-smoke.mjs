@@ -51,6 +51,23 @@ const errors = []
 let server, browser, page
 let serverOutput = ''
 
+const documentGeometry = () => {
+  const describe = node => {
+    const style = getComputedStyle(node)
+    const rect = node.getBoundingClientRect()
+    return { tag: node.tagName, className: node.getAttribute('class'), slot: node.getAttribute('data-slot'), inlineStyle: node.getAttribute('style'), left: rect.left, right: rect.right, rectWidth: rect.width, clientWidth: node.clientWidth, scrollWidth: node.scrollWidth, width: style.width, minWidth: style.minWidth, maxWidth: style.maxWidth, paddingLeft: style.paddingLeft, paddingRight: style.paddingRight, marginLeft: style.marginLeft, marginRight: style.marginRight, boxSizing: style.boxSizing, position: style.position, overflowX: style.overflowX, overflowY: style.overflowY, scrollbarGutter: style.scrollbarGutter }
+  }
+  const visibleOverflow = [...document.querySelectorAll('body *')].filter(node => {
+    const rect = node.getBoundingClientRect()
+    if (rect.width === 0 || (rect.left >= -1 && rect.right <= innerWidth + 1)) return false
+    for (let ancestor = node.parentElement; ancestor && ancestor !== document.body; ancestor = ancestor.parentElement) {
+      if (['auto', 'scroll', 'hidden', 'clip'].includes(getComputedStyle(ancestor).overflowX)) return false
+    }
+    return true
+  }).slice(0, 30).map(describe)
+  return { viewport: innerWidth, viewportHeight: innerHeight, scrollX, html: describe(document.documentElement), body: describe(document.body), scrollLocked: document.body.getAttribute('data-scroll-locked'), scrollbarWidth: getComputedStyle(document.body).getPropertyValue('--scrollbar-width'), activeDialogs: [...document.querySelectorAll('[role="dialog"]')].map(describe), visibleOverflow }
+}
+
 try {
   await mkdir(screenshots, { recursive: true })
   await writeFile(html, '<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/.merchant-pool-smoke.tsx"></script></html>')
@@ -348,6 +365,7 @@ try {
   await page.getByRole('heading', { name: label('market.title'), exact: true }).waitFor()
   const mobileTable = page.getByRole('region', { name: label('catalogTable'), exact: true })
   const mobileGeometry = await mobileTable.evaluate(node => ({ viewport: innerWidth, pageWidth: document.documentElement.scrollWidth, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }))
+  if (mobileGeometry.pageWidth > mobileGeometry.viewport) console.error('Merchant mobile overflow geometry', JSON.stringify(await page.evaluate(documentGeometry)))
   assert.ok(mobileGeometry.scrollWidth > mobileGeometry.clientWidth, 'Mobile merchant rows scroll within their table')
   assert.ok(mobileGeometry.pageWidth <= mobileGeometry.viewport, 'The table must not force the mobile page beyond the viewport')
   assert.equal(await mobileTable.locator('tbody tr').count(), 3)
@@ -386,7 +404,7 @@ try {
 } catch (error) {
   if (page) await page.screenshot({ path: resolve(screenshots, 'failure.png'), fullPage: true, animations: 'disabled' }).catch(() => {})
   console.error(serverOutput)
-  console.error(JSON.stringify({ errors, routeRequests, withdrawalRequests, ariaSnapshot: page ? await page.locator('body').ariaSnapshot().catch(() => undefined) : undefined }))
+  console.error(JSON.stringify({ errors, routeRequests, withdrawalRequests, geometry: page ? await page.evaluate(documentGeometry).catch(() => undefined) : undefined, ariaSnapshot: page ? await page.locator('body').ariaSnapshot().catch(() => undefined) : undefined }))
   throw error
 } finally {
   if (browser) await browser.close()

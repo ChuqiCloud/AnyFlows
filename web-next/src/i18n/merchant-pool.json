@@ -478,7 +478,7 @@
         "openai_speech": "语音合成",
         "xai_video": "视频生成"
       },
-      "searchPlaceholder": "商家名称、服务名称或介绍",
+      "searchPlaceholder": "商家名称或服务名称",
       "selected": "已选",
       "noFilters": "未设置筛选条件",
       "resetFilters": "重置筛选",
@@ -984,7 +984,7 @@
         "openai_speech": "Speech",
         "xai_video": "Video"
       },
-      "searchPlaceholder": "Merchant, service or introduction",
+      "searchPlaceholder": "Merchant or service name",
       "selected": "Selected",
       "noFilters": "No filters applied",
       "resetFilters": "Reset filters",
