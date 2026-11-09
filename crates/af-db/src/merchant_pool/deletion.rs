@@ -231,8 +231,7 @@ async fn ensure_no_active_tasks(
     pool: Option<i64>,
     merchant: Option<i64>,
 ) -> Result<(), MerchantPoolError> {
-    let mut selection = async_task_submission_claims::Entity::find()
-        .filter(async_task_submission_claims::Column::MerchantSnapshot.is_not_null());
+    let mut selection = unresolved_merchant_claims();
     if txn.get_database_backend() != DbBackend::Sqlite {
         selection = selection.lock(LockType::Update);
     }
@@ -319,6 +318,46 @@ async fn ensure_no_active_tasks(
     Ok(())
 }
 
+pub(super) fn unresolved_merchant_claims() -> sea_orm::Select<async_task_submission_claims::Entity> {
+    let matching_task = Query::select()
+        .expr(Expr::val(1_i16))
+        .from(async_tasks::Entity)
+        .and_where(
+            Expr::col((async_tasks::Entity, async_tasks::Column::TaskKey)).equals((
+                async_task_submission_claims::Entity,
+                async_task_submission_claims::Column::TaskKey,
+            )),
+        )
+        .to_owned();
+    let terminal_task = matching_task
+        .clone()
+        .and_where(
+            Expr::col((async_tasks::Entity, async_tasks::Column::TerminalAt)).is_not_null(),
+        )
+        .and_where(Expr::col((async_tasks::Entity, async_tasks::Column::Status)).is_in([4_i16, 5_i16]))
+        .to_owned();
+    // Keep the locking query on claims only. Locking a joined task would invert
+    // the task settlement order while merchant deletion holds the finance account.
+    async_task_submission_claims::Entity::find()
+        .filter(async_task_submission_claims::Column::MerchantSnapshot.is_not_null())
+        .filter(
+            async_task_submission_claims::Column::State
+                .ne(1_i16)
+                .or(async_task_submission_claims::Column::AttemptKey.is_not_null()),
+        )
+        .filter(
+            async_task_submission_claims::Column::State
+                .ne(3_i16)
+                .or(Expr::exists(terminal_task).not().and(
+                    Expr::exists(matching_task).or(
+                        async_task_submission_claims::Column::Status.is_null().or(
+                            async_task_submission_claims::Column::Status.is_not_in([4_i16, 5_i16]),
+                        ),
+                    ),
+                )),
+        )
+}
+
 async fn retire_service(
     txn: &DatabaseTransaction,
     id: i64,
@@ -330,11 +369,13 @@ async fn retire_service(
     service.platform_suspended = Set(true);
     service.updated_at = Set(now);
     service.update(txn).await.map_err(internal)?;
-    let history = revisions::Entity::find()
+    let mut history = revisions::Entity::find()
         .filter(revisions::Column::ServiceId.eq(id))
-        .all(txn)
-        .await
-        .map_err(internal)?;
+        .order_by_asc(revisions::Column::Id);
+    if txn.get_database_backend() != DbBackend::Sqlite {
+        history = history.lock(LockType::Update);
+    }
+    let history = history.all(txn).await.map_err(internal)?;
     for revision in history {
         let channel = ChannelId::new(revision.channel_id).map_err(internal)?;
         channels::Entity::update_many()

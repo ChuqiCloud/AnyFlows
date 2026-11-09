@@ -347,6 +347,12 @@ async fn accepted_tasks_block_deletion_until_polled_terminal_state() -> Result<(
         panic!("claim must begin");
     };
     assert_eq!(
+        super::super::deletion::unresolved_merchant_claims()
+            .count(fixture.pool.connection())
+            .await?,
+        1
+    );
+    assert_eq!(
         fixture
             .repository
             .delete_pool(UserId::new(3)?, fixture.shared_pool)
@@ -377,12 +383,41 @@ async fn accepted_tasks_block_deletion_until_polled_terminal_state() -> Result<(
     else {
         panic!("claim must be accepted");
     };
+    // Acceptance without a materialized task must still block retirement.
+    assert_eq!(
+        fixture
+            .repository
+            .delete_pool(UserId::new(3)?, fixture.shared_pool)
+            .await,
+        Err(MerchantPoolError::InUse)
+    );
+    fixture
+        .pool
+        .connection()
+        .execute_unprepared(
+            "UPDATE async_task_submission_claims SET status=4,progress_basis_points=10000",
+        )
+        .await?;
+    // A terminal provider acceptance is sufficient when no task was materialized.
+    assert_eq!(
+        super::super::deletion::unresolved_merchant_claims()
+            .count(fixture.pool.connection())
+            .await?,
+        0
+    );
     let AsyncTaskCreateOutcome::Created(task) = tasks
         .create(accepted.task_create()?.expect("accepted task"))
         .await?
     else {
         panic!("task must be created");
     };
+    // A materialized live task takes precedence over a terminal claim snapshot.
+    assert_eq!(
+        super::super::deletion::unresolved_merchant_claims()
+            .count(fixture.pool.connection())
+            .await?,
+        1
+    );
     assert_eq!(
         fixture
             .repository
@@ -390,6 +425,13 @@ async fn accepted_tasks_block_deletion_until_polled_terminal_state() -> Result<(
             .await,
         Err(MerchantPoolError::InUse)
     );
+    fixture
+        .pool
+        .connection()
+        .execute_unprepared(
+            "UPDATE async_task_submission_claims SET status=1,progress_basis_points=0",
+        )
+        .await?;
     tasks
         .transition(AsyncTaskTransition::new(
             task_id,
@@ -399,6 +441,13 @@ async fn accepted_tasks_block_deletion_until_polled_terminal_state() -> Result<(
             1003,
         )?)
         .await?;
+    // Polling changes the task only; terminal history must be excluded from the lock set.
+    assert_eq!(
+        super::super::deletion::unresolved_merchant_claims()
+            .count(fixture.pool.connection())
+            .await?,
+        0
+    );
     fixture
         .repository
         .delete_pool(UserId::new(3)?, fixture.shared_pool)
@@ -466,6 +515,12 @@ async fn unattempted_merchant_claim_does_not_keep_unused_supply_alive() -> Resul
         ChannelId::new(revision.channel_id)?,
     );
     submissions.bind_merchant(&claim, principal).await?;
+    assert_eq!(
+        super::super::deletion::unresolved_merchant_claims()
+            .count(fixture.pool.connection())
+            .await?,
+        0
+    );
     fixture.pool.connection().execute(Statement::from_sql_and_values(
         DbBackend::Sqlite,
         "INSERT INTO billing_reservations (idempotency_key,user_id,token_id,group_id,reserved_quota,expires_at) VALUES (?,2,1,1,100,datetime('now','+1 minute'))",
