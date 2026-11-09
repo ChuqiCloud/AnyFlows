@@ -378,19 +378,6 @@ jobs:
           git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
           git checkout --detach FETCH_HEAD
 
-      - name: Restore Bookworm release artifacts on Gitea
-        id: bookworm-cache-gitea
-        if: github.server_url != 'https://github.com'
-        uses: actions/cache/restore@f4b3439a656ba812b8cb417d2d49f9c810103092 # v3.4.0
-        with:
-          path: |
-            target/bookworm
-            target/bookworm-cargo
-          key: ci-release-bookworm-x86_64-unknown-linux-gnu-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/ci/build-linux-release.sh') }}-${{ github.sha }}
-          restore-keys: |
-            ci-release-bookworm-x86_64-unknown-linux-gnu-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/ci/build-linux-release.sh') }}-
-            ci-release-bookworm-x86_64-unknown-linux-gnu-
-
       - name: Restore Bookworm release artifacts on GitHub
         id: bookworm-cache-github
         if: github.server_url == 'https://github.com'
@@ -460,15 +447,6 @@ jobs:
           test -s "$archive"
           test -s "$archive.sha256"
 
-      - name: Save completed Bookworm compilation artifacts on Gitea
-        if: ${{ always() && !cancelled() && github.server_url != 'https://github.com' && steps.bookworm-build.outputs.cache-ready == 'true' && steps.bookworm-cache-gitea.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@f4b3439a656ba812b8cb417d2d49f9c810103092 # v3.4.0
-        with:
-          path: |
-            target/bookworm
-            target/bookworm-cargo
-          key: ${{ steps.bookworm-cache-gitea.outputs.cache-primary-key }}
-
       - name: Save completed Bookworm compilation artifacts on GitHub
         if: ${{ always() && !cancelled() && github.server_url == 'https://github.com' && steps.bookworm-build.outputs.cache-ready == 'true' && steps.bookworm-cache-github.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
@@ -529,6 +507,7 @@ jobs:
         run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build
 
       - name: Install browser runtime for frontend checks
+        id: frontend_browser_runtime
         if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend_about == 'true' || (matrix.frontend == 'web-next' && (needs.changes.outputs.frontend_navigation == 'true' || needs.changes.outputs.frontend_verification == 'true')) }}
         shell: bash
         run: |
@@ -549,13 +528,16 @@ jobs:
         run: PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-about-smoke.mjs '${{ matrix.frontend }}'
 
       - name: Browser smoke test landing and console navigation
-        if: ${{ matrix.frontend == 'web-next' && needs.changes.outputs.frontend_navigation == 'true' }}
+        if: ${{ !cancelled() && steps.frontend_browser_runtime.outcome == 'success' && matrix.frontend == 'web-next' && needs.changes.outputs.frontend_navigation == 'true' }}
         shell: bash
         run: |
-          PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-navigation-smoke.mjs
-          PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-user-routes-smoke.mjs
-          PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-merchant-pool-smoke.mjs
-          PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-oauth-invitation-smoke.mjs
+          failed=0
+          for smoke in navigation user-routes merchant-pool oauth-invitation; do
+            if ! PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node "tools/ci/frontend-${smoke}-smoke.mjs"; then
+              failed=1
+            fi
+          done
+          exit "$failed"
 
       - name: Browser smoke test gallery and verification workflows
         if: github.event_name == 'workflow_dispatch'
@@ -677,6 +659,7 @@ jobs:
           rustc --version --verbose
 
       - name: Cache Rust build artifacts
+        if: github.server_url == 'https://github.com'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           cache-on-failure: true
@@ -786,6 +769,9 @@ jobs:
           if ! cargo test --locked -p af-db --lib auth_tests::lookup_digest_never_enters_trace_output -- --exact; then
             failed=1
           fi
+          if ! cargo test --locked -p af-server --lib bootstrap::tests::current_stages_start_and_shutdown_in_order -- --exact; then
+            failed=1
+          fi
           exit "$failed"
 
       - name: Run Clippy
@@ -855,6 +841,7 @@ jobs:
           rustup toolchain install "$toolchain" --profile minimal
 
       - name: Cache Rust build artifacts
+        if: github.server_url == 'https://github.com'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Run real ClickHouse integration test on Gitea
@@ -923,6 +910,7 @@ jobs:
           echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
 
       - name: Cache Rust build artifacts
+        if: github.server_url == 'https://github.com'
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: |
@@ -992,6 +980,7 @@ jobs:
           rustup toolchain install "$toolchain" --profile minimal
 
       - name: Cache database test build artifacts
+        if: github.server_url == 'https://github.com'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: database-smoke
@@ -1055,6 +1044,7 @@ jobs:
           rustup toolchain install "$toolchain" --profile minimal
 
       - name: Cache database test build artifacts
+        if: github.server_url == 'https://github.com'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: database-smoke
@@ -1111,6 +1101,7 @@ jobs:
           rustup toolchain install "$toolchain" --profile minimal
 
       - name: Cache database test build artifacts
+        if: github.server_url == 'https://github.com'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: database-smoke
@@ -1164,6 +1155,7 @@ jobs:
           rustup toolchain install "$toolchain" --profile minimal
 
       - name: Cache Redis test build artifacts
+        if: github.server_url == 'https://github.com'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Run isolated Redis cache smoke test
