@@ -479,6 +479,8 @@ async fn merchant_media_candidates_require_the_declared_protocol_and_keep_channe
         write.protocol = protocol.as_str().to_owned();
         write.models[0].supports_streaming = false;
         write.models[0].supports_tools = false;
+        write.models[0].context_window = Some(1);
+        write.models[0].max_output_tokens = Some(1);
         let service = fixture
             .pools
             .write_service(UserId::new(1).unwrap(), None, write, |_, _, _, _| {
@@ -553,6 +555,7 @@ async fn merchant_video_candidates_use_platform_card_and_exclude_text_supply() {
     write.models[0].model = "grok-imagine-video-1.5".to_owned();
     write.models[0].upstream_model = write.models[0].model.clone();
     write.models[0].supports_streaming = false;
+    write.models[0].supports_tools = false;
     let service = fixture
         .pools
         .write_service(UserId::new(1).unwrap(), None, write, |_, _, _, _| {

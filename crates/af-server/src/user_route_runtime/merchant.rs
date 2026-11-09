@@ -229,18 +229,22 @@ impl UserRouteRuntime {
                 || (features.streaming && !offer.model.supports_streaming)
                 || (features.tools && !offer.model.supports_tools)
                 || (features.vision && !offer.model.supports_vision)
-                || offer
+            {
+                continue;
+            }
+            if matches!(operation, Some(Operation::Chat | Operation::Responses))
+                && (offer
                     .model
                     .max_output_tokens
                     .is_some_and(|n| upper_bound.output_tokens().get() > i64::from(n))
-                || offer.model.context_window.is_some_and(|n| {
-                    upper_bound.checked_input_tokens().is_ok_and(|input| {
-                        input
-                            .get()
-                            .saturating_add(upper_bound.output_tokens().get())
-                            > i64::from(n)
-                    })
-                })
+                    || offer.model.context_window.is_some_and(|n| {
+                        upper_bound.checked_input_tokens().is_ok_and(|input| {
+                            input
+                                .get()
+                                .saturating_add(upper_bound.output_tokens().get())
+                                > i64::from(n)
+                        })
+                    }))
             {
                 continue;
             }

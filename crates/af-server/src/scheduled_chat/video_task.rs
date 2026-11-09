@@ -8,7 +8,7 @@ use af_db::{
 };
 use af_domain::{
     AfError, AsyncTaskBindingFingerprint, ChannelAutoBanRules, ChannelId, ChannelTimeout,
-    CredentialId, GroupId, Protocol, TaskSubmission, UpstreamTaskId,
+    CredentialId, GatewayPrincipal, GroupId, Protocol, TaskSubmission, UpstreamTaskId,
 };
 use af_protocol::{CanonicalTaskPoll, CanonicalVideoGenerationRequest, VideoModel};
 use af_relay::{

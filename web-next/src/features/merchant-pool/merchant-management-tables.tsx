@@ -1,9 +1,8 @@
 import type { ReactNode } from 'react'
-import { Button } from '@heroui/react'
 import { useTranslation } from 'react-i18next'
 import type { MerchantOwnedService, MerchantPool, MerchantProfile } from './merchant-pool-model'
 import { poolRatio, poolTimestamp } from './merchant-pool-model'
-import { PoolStatus } from './merchant-pool-ui'
+import { PoolButton as Button, PoolStatus } from './merchant-pool-ui'
 
 const cell = 'border-b border-[var(--hairline)] px-2 py-2 align-middle whitespace-nowrap'
 const first = `${cell} pl-3.5`

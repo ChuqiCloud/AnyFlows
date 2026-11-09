@@ -339,6 +339,8 @@ impl MerchantServiceWrite {
                 || model.max_output_tokens == Some(0)
                 || (model.supports_vision
                     && !matches!(self.protocol.as_str(), "openai_chat" | "openai_responses"))
+                || (!matches!(self.protocol.as_str(), "openai_chat" | "openai_responses")
+                    && (model.supports_streaming || model.supports_tools))
                 || matches!((model.context_window,model.max_output_tokens),(Some(c),Some(o)) if o > c)
             {
                 return Err(MerchantPoolError::InvalidInput);

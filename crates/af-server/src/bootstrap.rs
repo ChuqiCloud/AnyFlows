@@ -2214,17 +2214,23 @@ impl Bootstrap<BillingReady> {
             infrastructure.system_secret_cipher.clone(),
             upstream_clients.clone(),
         ));
-        supervisor.spawn("merchant-payout", move |task_shutdown| async move {
-            crate::merchant_payout_worker::run_until(payout_service, task_shutdown.cancelled())
-                .await;
+        supervisor.spawn("merchant-payout", move |task_shutdown| {
+            let payout_service = Arc::clone(&payout_service);
+            async move {
+                crate::merchant_payout_worker::run_until(payout_service, task_shutdown.cancelled())
+                    .await;
+            }
         });
-        supervisor.spawn("merchant-price-schedule", move |task_shutdown| async move {
-            let mut tick = tokio::time::interval(Duration::from_secs(5));
-            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            loop {
-                tokio::select! {biased;()=task_shutdown.cancelled()=>return,_=tick.tick()=>{}}
-                if merchant_repository.process_due_pricing(100).await.is_err() {
-                    tracing::warn!("商户定时价格暂不可用，稍后重试");
+        supervisor.spawn("merchant-price-schedule", move |task_shutdown| {
+            let merchant_repository = merchant_repository.clone();
+            async move {
+                let mut tick = tokio::time::interval(Duration::from_secs(5));
+                tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    tokio::select! {biased;()=task_shutdown.cancelled()=>return,_=tick.tick()=>{}}
+                    if merchant_repository.process_due_pricing(100).await.is_err() {
+                        tracing::warn!("商户定时价格暂不可用，稍后重试");
+                    }
                 }
             }
         });

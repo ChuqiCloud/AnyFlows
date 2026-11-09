@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { Button, Input } from '@heroui/react'
+import { Input } from '@heroui/react'
 import { useTranslation } from 'react-i18next'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { merchantWithdrawalAmount, poolTimestamp, type MerchantWithdrawal } from './merchant-pool-model'
 import { clearMerchantFinancialAttempt, merchantFinancialAttempt } from './merchant-financial-attempt'
 import { useMerchantAction, useMerchantEntries, useMerchantFinance, useMerchantWithdrawals } from './merchant-pool-api'
 import { MerchantPayoutAccountPanel, MerchantPayoutsPanel, MerchantWithdrawalsTable } from './merchant-payout-panels'
-import { PoolEmpty, PoolError, PoolField, PoolLoading } from './merchant-pool-ui'
+import { PoolButton as Button, PoolEmpty, PoolError, PoolField, PoolLoading } from './merchant-pool-ui'
 
 export function MerchantFinancePanel() {
   const { t, i18n } = useTranslation()

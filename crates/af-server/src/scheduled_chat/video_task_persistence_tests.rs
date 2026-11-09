@@ -1456,7 +1456,7 @@ async fn merchant_video_cash_batch_settles_once_after_restart_and_route_disable(
     );
     assert_eq!(reserved.try_get::<i64>("", "sales_ratio_micros")?, 500_000);
     assert_eq!(reserved.try_get::<i64>("", "commission_bps")?, 500);
-    assert!(reserved.try_get::<i64>("", "reserved_quota")? >= 160_000);
+    assert!(reserved.try_get::<i64>("", "reserved_quota")? >= 280_000);
     fixture
         .database
         .seed()
@@ -1499,16 +1499,16 @@ async fn merchant_video_cash_batch_settles_once_after_restart_and_route_disable(
     let settled = merchant_video_reservation(&fixture).await?;
     assert_eq!(settled.try_get::<i16>("", "reservation_status")?, 3);
     assert_eq!(settled.try_get::<String>("", "merchant_status")?, "settled");
-    assert_eq!(settled.try_get::<i64>("", "actual_quota")?, 160_000);
-    assert_eq!(settled.try_get::<i64>("", "gross_quota")?, 160_000);
-    assert_eq!(settled.try_get::<i64>("", "commission_quota")?, 8_000);
-    assert_eq!(settled.try_get::<i64>("", "net_quota")?, 152_000);
+    assert_eq!(settled.try_get::<i64>("", "actual_quota")?, 280_000);
+    assert_eq!(settled.try_get::<i64>("", "gross_quota")?, 280_000);
+    assert_eq!(settled.try_get::<i64>("", "commission_quota")?, 14_000);
+    assert_eq!(settled.try_get::<i64>("", "net_quota")?, 266_000);
     let finance =
         MerchantFinanceRepository::new(fixture.database.pool().clone(), Duration::from_secs(5));
     let balance = finance.balance(merchants[0]).await?;
-    assert_eq!(balance.total_gross_quota, 160_000);
-    assert_eq!(balance.total_commission_quota, 8_000);
-    assert_eq!(balance.pending_quota, 152_000);
+    assert_eq!(balance.total_gross_quota, 280_000);
+    assert_eq!(balance.total_commission_quota, 14_000);
+    assert_eq!(balance.pending_quota, 266_000);
     assert_eq!(finance.balance(merchants[1]).await?.total_gross_quota, 0);
     assert!(matches!(
         restarted
@@ -1535,8 +1535,8 @@ async fn merchant_video_cash_batch_settles_once_after_restart_and_route_disable(
         ))
         .await?
         .expect("consumer wallet");
-    assert_eq!(user.try_get::<i64>("", "quota")?, 9_840_000);
-    assert_eq!(user.try_get::<i64>("", "used_quota")?, 160_000);
+    assert_eq!(user.try_get::<i64>("", "quota")?, 9_720_000);
+    assert_eq!(user.try_get::<i64>("", "used_quota")?, 280_000);
     assert_eq!(user.try_get::<i64>("", "frozen_quota")?, 0);
     fixture.database.close().await;
     Ok(())

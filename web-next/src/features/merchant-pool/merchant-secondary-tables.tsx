@@ -1,11 +1,10 @@
-import { Button } from '@heroui/react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { MerchantPriceBreakdown } from './merchant-catalog-card'
 import { MerchantManagementTable } from './merchant-management-tables'
 import type { MerchantModelOffer, MerchantOwnedService, MerchantPool, MerchantPoolRoute, MerchantStatistics } from './merchant-pool-model'
 import { poolRatio, poolTimestamp, merchantTextProtocol } from './merchant-pool-model'
-import { PoolStatus } from './merchant-pool-ui'
+import { PoolButton as Button, PoolStatus } from './merchant-pool-ui'
 
 const cell = 'border-b border-[var(--hairline)] px-2 py-2 align-middle whitespace-nowrap'
 

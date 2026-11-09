@@ -91,7 +91,10 @@ impl AsyncTaskSubmissionRepository {
                 )
                 .col_expr(
                     async_task_submission_claims::Column::Version,
-                    Expr::value(next_version(i64::try_from(current.version).map_err(|_|AsyncTaskRepositoryError::Invariant)?)?),
+                    Expr::value(next_version(
+                        i64::try_from(current.version)
+                            .map_err(|_| AsyncTaskRepositoryError::Invariant)?,
+                    )?),
                 )
                 .exec(self.pool.connection())
                 .await

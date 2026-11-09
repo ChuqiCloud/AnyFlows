@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { Button, Checkbox, Input } from '@heroui/react'
+import { Checkbox, Input } from '@heroui/react'
 import { useTranslation } from 'react-i18next'
 import { useMerchantAction } from './merchant-pool-api'
 import { useMerchantPayoutSettings } from './merchant-extension-api'
 import type { MerchantPayoutSettings, MerchantPayoutSettingsWrite } from './merchant-extension-model'
 import { positiveInteger } from './merchant-pool-model'
-import { PoolError, PoolField, PoolLoading, PoolSelect } from './merchant-pool-ui'
+import { PoolButton as Button, PoolError, PoolField, PoolLoading, PoolSelect } from './merchant-pool-ui'
 
 export function MerchantPayoutSettingsPanel() {
   const query = useMerchantPayoutSettings()

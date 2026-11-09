@@ -58,13 +58,14 @@ try {
     import { HeroUIProvider } from '@heroui/react';
     import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
     import './src/index.css'; import './src/i18n';
+    import { useSiteTheme } from './src/shared/components/use-site-theme';
     import { MerchantPoolPage } from './src/features/merchant-pool/merchant-pool-page';
     import { MerchantPoolRoutesPage } from './src/features/merchant-pool/merchant-pool-routes-page';
     import { MerchantAdminPage } from './src/features/merchant-pool/merchant-admin-page';
     import { MerchantWorkspacePage } from './src/features/merchant-pool/merchant-workspace-page';
     import { ApiKeyForm } from './src/features/api-keys/api-key-form';
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false }, mutations: { retry: false } } });
-    function App() { const [view, setView] = useState('catalog'); const [issued, setIssued] = useState(null); return <HeroUIProvider><QueryClientProvider client={client}><main style={{ padding: 16, maxWidth: 1200, margin: 'auto' }}><nav aria-label="CI views">{['catalog','routes','workspace','admin','key'].map(value => <button key={value} onClick={() => setView(value)}>{value}</button>)}</nav>{view === 'catalog' ? <MerchantPoolPage /> : view === 'routes' ? <MerchantPoolRoutesPage /> : view === 'workspace' ? <MerchantWorkspacePage /> : view === 'admin' ? <MerchantAdminPage /> : <ApiKeyForm initialRouteId={21} onCancel={() => setView('routes')} onSaved={() => setView('routes')} onIssued={setIssued} />}{issued ? <output data-testid="issued">issued</output> : null}</main></QueryClientProvider></HeroUIProvider> }
+    function App() { useSiteTheme(); const [view, setView] = useState('catalog'); const [issued, setIssued] = useState(null); return <HeroUIProvider><QueryClientProvider client={client}><main style={{ padding: 16, maxWidth: 1200, margin: 'auto' }}><nav aria-label="CI views">{['catalog','routes','workspace','admin','key'].map(value => <button key={value} onClick={() => setView(value)}>{value}</button>)}</nav>{view === 'catalog' ? <MerchantPoolPage /> : view === 'routes' ? <MerchantPoolRoutesPage /> : view === 'workspace' ? <MerchantWorkspacePage /> : view === 'admin' ? <MerchantAdminPage /> : <ApiKeyForm initialRouteId={21} onCancel={() => setView('routes')} onSaved={() => setView('routes')} onIssued={setIssued} />}{issued ? <output data-testid="issued">issued</output> : null}</main></QueryClientProvider></HeroUIProvider> }
     createRoot(document.getElementById('root')).render(<BrowserRouter><App /></BrowserRouter>);
   `)
   server = spawn(process.execPath, [resolve(directory, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: directory, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -77,7 +78,7 @@ try {
   page = await browser.newPage({ viewport: { width: 1280, height: 1000 }, locale: 'zh-CN', reducedMotion: 'reduce' })
   page.setDefaultTimeout(20000)
   page.on('pageerror', error => errors.push(error.stack || error.message))
-  await page.addInitScript(() => { localStorage.setItem('anyflows.locale', 'zh'); sessionStorage.setItem('anyflows.management.access-token', 'ci-merchant') })
+  await page.addInitScript(() => { localStorage.setItem('anyflows.locale', 'zh'); localStorage.setItem('anyflows.theme', 'dark'); sessionStorage.setItem('anyflows.management.access-token', 'ci-merchant') })
   await page.route(url => url.pathname.startsWith('/api/'), async intercepted => {
     const request = intercepted.request(), path = new URL(request.url()).pathname, method = request.method()
     const respond = (body, status = 200) => intercepted.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
@@ -264,6 +265,13 @@ try {
   assert.equal(noticeRequests.length, 2)
   assert.equal(noticeRequests.at(-1).blocks_requests, true)
   await page.screenshot({ path: resolve(screenshots, 'merchant-maintenance.png'), fullPage: true, animations: 'disabled' })
+  await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.documentElement.classList.add('light') })
+  await page.screenshot({ path: resolve(screenshots, 'merchant-maintenance-light.png'), fullPage: true, animations: 'disabled' })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.screenshot({ path: resolve(screenshots, 'merchant-maintenance-mobile-light.png'), fullPage: true, animations: 'disabled' })
+  await page.evaluate(() => { document.documentElement.classList.remove('light'); document.documentElement.classList.add('dark') })
+  await page.screenshot({ path: resolve(screenshots, 'merchant-maintenance-mobile.png'), fullPage: true, animations: 'disabled' })
+  await page.setViewportSize({ width: 1280, height: 1000 })
   await dialog.getByRole('button', { name: label('close'), exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: label('finance'), exact: true }).click()
@@ -308,6 +316,9 @@ try {
   assert.equal(payoutSubmissions, 1)
   assert.equal(payoutQueries, 1)
   await page.screenshot({ path: resolve(screenshots, 'merchant-payouts.png'), fullPage: true, animations: 'disabled' })
+  await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.documentElement.classList.add('light') })
+  await page.screenshot({ path: resolve(screenshots, 'merchant-payouts-light.png'), fullPage: true, animations: 'disabled' })
+  await page.evaluate(() => { document.documentElement.classList.remove('light'); document.documentElement.classList.add('dark') })
   assert.equal(await page.evaluate(() => [...Object.values(sessionStorage), ...Object.values(localStorage)].some(value => value.includes('ci-private-receiving-token') || value.includes('ci-private-signing-key'))), false)
   await page.getByRole('button', { name: 'key', exact: true }).click()
   await page.getByRole('textbox', { name: commonLabel('apiKeys.fields.name'), exact: true }).fill('CI merchant key')

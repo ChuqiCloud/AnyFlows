@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { Button, Input } from '@heroui/react'
+import { Input } from '@heroui/react'
 import { useTranslation } from 'react-i18next'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { useMerchantRoutePreview } from './merchant-pool-api'
 import { poolRatio, poolTimestamp, merchantProtocols, merchantTextProtocol, type MerchantPoolRouteWrite, type MerchantRoutePreviewRequest } from './merchant-pool-model'
 import { MerchantManagementTable } from './merchant-management-tables'
-import { PoolEmpty, PoolError, PoolField, PoolSelect } from './merchant-pool-ui'
+import { PoolButton as Button, PoolEmpty, PoolError, PoolField, PoolSelect } from './merchant-pool-ui'
 
 export function MerchantRoutePreviewPanel({ getRoute, configurationKey }: { getRoute: () => MerchantPoolRouteWrite | undefined; configurationKey: string }) {
   const { t, i18n } = useTranslation()

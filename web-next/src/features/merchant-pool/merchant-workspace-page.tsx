@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, Input, Textarea } from '@heroui/react'
+import { Input, Textarea } from '@heroui/react'
 import { useTranslation } from 'react-i18next'
 import { useMerchantAction, useMerchantAvailablePools, useMerchantProfile, useMerchantServices } from './merchant-pool-api'
 import type { MerchantOwnedService } from './merchant-pool-model'
@@ -9,7 +9,7 @@ import { MerchantKeyRotation } from './merchant-key-rotation'
 import { MerchantServiceEditor } from './merchant-service-editor'
 import { MerchantStatisticsPanel } from './merchant-statistics-panel'
 import { MerchantFinancePanel } from './merchant-finance-panel'
-import { PoolEmpty, PoolError, PoolField, PoolHeader, PoolLoading, PoolNavigation, PoolPager, PoolStatus } from './merchant-pool-ui'
+import { PoolButton as Button, PoolEmpty, PoolError, PoolField, PoolHeader, PoolLoading, PoolNavigation, PoolPager, PoolStatus } from './merchant-pool-ui'
 
 export function MerchantWorkspacePage() {
   const { t } = useTranslation()

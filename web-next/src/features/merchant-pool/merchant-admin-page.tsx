@@ -1,6 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Button } from '@heroui/react'
 import { useTranslation } from 'react-i18next'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { useMerchantAction, useMerchantPools, useMerchantProfiles, useMerchantServices, useMerchantWithdrawals } from './merchant-pool-api'
@@ -14,7 +13,7 @@ import { MerchantPayoutSettingsPanel } from './merchant-payout-settings'
 import { MerchantPayoutsPanel, MerchantWithdrawalsTable } from './merchant-payout-panels'
 import type { MerchantPool, MerchantOwnedService } from './merchant-pool-model'
 import { MerchantAdminPoolsTable, MerchantAdminProfilesTable, MerchantAdminServicesTable } from './merchant-management-tables'
-import { PoolEmpty, PoolError, PoolHeader, PoolLoading, PoolPager, PoolSelect } from './merchant-pool-ui'
+import { PoolButton as Button, PoolEmpty, PoolError, PoolHeader, PoolLoading, PoolPager, PoolSelect } from './merchant-pool-ui'
 
 export function MerchantAdminPage() {
   const { t } = useTranslation()

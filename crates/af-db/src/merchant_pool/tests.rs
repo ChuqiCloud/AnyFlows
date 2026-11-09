@@ -725,6 +725,8 @@ async fn reviewed_chat_vision_is_routable_and_non_chat_vision_is_rejected()
     write.validate()?;
     let mut invalid = service_write(fixture.shared_pool);
     invalid.protocol = "openai_images".to_owned();
+    invalid.models[0].supports_streaming = false;
+    invalid.models[0].supports_tools = false;
     invalid.models[0].supports_vision = true;
     assert!(matches!(
         invalid.validate(),

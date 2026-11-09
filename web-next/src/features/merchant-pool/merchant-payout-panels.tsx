@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, Input } from '@heroui/react'
+import { Input } from '@heroui/react'
 import { useTranslation } from 'react-i18next'
 import { useMerchantAction } from './merchant-pool-api'
 import { useMerchantPayoutAccount, useMerchantPayouts } from './merchant-extension-api'
@@ -7,7 +7,7 @@ import type { MerchantPayoutAccount } from './merchant-extension-model'
 import type { MerchantWithdrawal } from './merchant-pool-model'
 import { poolTimestamp } from './merchant-pool-model'
 import { MerchantManagementTable } from './merchant-management-tables'
-import { PoolEmpty, PoolError, PoolField, PoolLoading, PoolStatus } from './merchant-pool-ui'
+import { PoolButton as Button, PoolEmpty, PoolError, PoolField, PoolLoading, PoolStatus } from './merchant-pool-ui'
 
 const cell = 'border-b border-[var(--hairline)] px-2 py-2 align-middle whitespace-nowrap'
 export function MerchantPayoutAccountPanel() {

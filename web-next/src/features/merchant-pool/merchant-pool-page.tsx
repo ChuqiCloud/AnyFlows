@@ -1,13 +1,13 @@
 import { merchantProtocols, merchantTextProtocol } from './merchant-pool-model'
 import { useEffect, useState } from 'react'
-import { Button, Input, Modal, ModalBody, ModalContent, ModalHeader } from '@heroui/react'
+import { Input, Modal, ModalBody, ModalContent, ModalHeader } from '@heroui/react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useMerchantCatalog, useMerchantPools, useMerchantStatistics, useMerchantTimeline } from './merchant-pool-api'
 import { MerchantHealth, MerchantModelPrice } from './merchant-catalog-card'
 import { MerchantCatalogTable } from './merchant-catalog-table'
 import { parsePoolRatio, poolTimestamp, positiveInteger } from './merchant-pool-model'
-import { PoolEmpty, PoolError, PoolField, PoolHeader, PoolLoading, PoolNavigation, PoolPager, PoolSelect } from './merchant-pool-ui'
+import { PoolButton as Button, PoolEmpty, PoolError, PoolField, PoolHeader, PoolLoading, PoolNavigation, PoolPager, PoolSelect } from './merchant-pool-ui'
 
 export function MerchantPoolPage() {
   const { t, i18n } = useTranslation()
@@ -53,6 +53,6 @@ export function MerchantPoolPage() {
     {pools.isPending ? <PoolLoading /> : !poolId ? <PoolEmpty>{t('merchantPool.noAccessiblePool')}</PoolEmpty> : catalog.isPending ? <PoolLoading /> : catalog.isError ? <PoolError onRetry={() => void catalog.refetch()} /> : items.length === 0 ? <PoolEmpty /> : <MerchantCatalogTable services={items} model={model} statistics={statByService} timelines={timelineByService} compared={compared} onCompare={(serviceId) => setCompared((current) => current.includes(serviceId) ? current.filter((id) => id !== serviceId) : current.length < 4 ? [...current, serviceId] : current)} />}
     {catalog.data ? <PoolPager page={page} hasMore={(page + 1) * catalog.data.page_size < catalog.data.total} loading={catalog.isFetching} onChange={setPage} /> : null}
     <details className="text-xs leading-5 text-muted-foreground"><summary className="w-fit cursor-pointer">{t('merchantPool.statisticsAndBilling')}</summary><p className="mt-1">{t('merchantPool.statisticsHint')}</p><p>{t('merchantPool.meteringHint')}</p></details>
-    <Modal isOpen={comparisonOpen} onOpenChange={setComparisonOpen} size="5xl" scrollBehavior="inside"><ModalContent><ModalHeader>{t('merchantPool.compareTitle', { model })}</ModalHeader><ModalBody className="pb-5"><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{selected.map((service) => { const offer = service.models.find((item) => item.model === model); return <article key={service.id} className="grid content-start gap-4 rounded-lg border border-[var(--hairline)] p-3"><div><h3 className="text-sm font-semibold">{service.merchant_name}</h3><p className="mt-1 text-xs text-muted-foreground">{service.name}</p></div>{offer ? <MerchantModelPrice offer={offer} /> : null}<MerchantHealth ttftApplicable={merchantTextProtocol(service.protocol) && Boolean(offer?.supports_streaming) && streaming !== 'false'} stats={statByService.get(service.id)} /><Link className="text-xs text-primary hover:underline" to={`/console/merchant-pool/routes?pool=${poolId}&merchant=${service.merchant_id}`}>{t('merchantPool.addToRoute')}</Link></article> })}</div></ModalBody></ModalContent></Modal>
+    <Modal isOpen={comparisonOpen} onOpenChange={setComparisonOpen} size="5xl" scrollBehavior="inside"><ModalContent className="min-w-0 bg-surface-1 text-foreground"><ModalHeader>{t('merchantPool.compareTitle', { model })}</ModalHeader><ModalBody className="pb-5"><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{selected.map((service) => { const offer = service.models.find((item) => item.model === model); return <article key={service.id} className="grid content-start gap-4 rounded-lg border border-[var(--hairline)] p-3"><div><h3 className="text-sm font-semibold">{service.merchant_name}</h3><p className="mt-1 text-xs text-muted-foreground">{service.name}</p></div>{offer ? <MerchantModelPrice offer={offer} /> : null}<MerchantHealth ttftApplicable={merchantTextProtocol(service.protocol) && Boolean(offer?.supports_streaming) && streaming !== 'false'} stats={statByService.get(service.id)} /><Link className="text-xs text-primary hover:underline" to={`/console/merchant-pool/routes?pool=${poolId}&merchant=${service.merchant_id}`}>{t('merchantPool.addToRoute')}</Link></article> })}</div></ModalBody></ModalContent></Modal>
   </div>
 }
