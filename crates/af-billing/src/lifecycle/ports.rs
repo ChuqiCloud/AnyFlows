@@ -60,6 +60,8 @@ pub enum BillingPrechargeError {
     /// 预扣时用户或有限令牌额度不足。
     #[error("预扣额度不足")]
     InsufficientQuota,
+    #[error("商户共享池可结算充值额度不足")]
+    MerchantFundingInsufficient,
     /// 当前令牌或分组额度窗口已满，可在指定秒数后重试。
     #[error("预扣额度窗口已达上限")]
     RateLimited {
@@ -154,6 +156,10 @@ impl BillingPrechargePort for QuotaRepository {
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum BillingSettlementError {
+    #[error("商户上报用量超过已授权预扣上限，已退还预扣")]
+    MerchantUsageExceedsAuthorization,
+    #[error("商户共享池可结算充值额度不足")]
+    MerchantFundingInsufficient,
     /// 结算补扣时用户或有限令牌额度不足，持久化记录保持待结算。
     #[error("结算补扣额度不足")]
     InsufficientQuota,
@@ -195,6 +201,12 @@ impl BillingSettlementPort for QuotaRepository {
 #[allow(unreachable_patterns)]
 const fn map_quota_repository_error(error: QuotaRepositoryError) -> BillingSettlementError {
     match error {
+        QuotaRepositoryError::MerchantUsageExceedsAuthorization => {
+            BillingSettlementError::MerchantUsageExceedsAuthorization
+        }
+        QuotaRepositoryError::MerchantFundingInsufficient => {
+            BillingSettlementError::MerchantFundingInsufficient
+        }
         QuotaRepositoryError::UserQuotaInsufficient
         | QuotaRepositoryError::OrganizationQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient
@@ -222,6 +234,9 @@ const fn map_quota_repository_precharge_error(
     error: QuotaRepositoryError,
 ) -> BillingPrechargeError {
     match error {
+        QuotaRepositoryError::MerchantFundingInsufficient => {
+            BillingPrechargeError::MerchantFundingInsufficient
+        }
         QuotaRepositoryError::UserQuotaInsufficient
         | QuotaRepositoryError::OrganizationQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient => BillingPrechargeError::InsufficientQuota,

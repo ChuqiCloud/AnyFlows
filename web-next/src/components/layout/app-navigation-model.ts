@@ -6,6 +6,9 @@ export type NavKey =
   | 'imagePlaza'
   | 'apiKeys'
   | 'userRoutes'
+  | 'merchantPool'
+  | 'merchantWorkspace'
+  | 'merchantPoolAdmin'
   | 'announcements'
   | 'wallet'
   | 'subscriptions'
@@ -52,6 +55,8 @@ export const userWorkspaceItems = [
   'usage',
   'apiKeys',
   'userRoutes',
+  'merchantPool',
+  'merchantWorkspace',
   'wallet',
   'invitations',
   'accountVerification',
@@ -67,6 +72,8 @@ export const adminWorkspaceItems = [
   'usage',
   'apiKeys',
   'userRoutes',
+  'merchantPool',
+  'merchantWorkspace',
   'wallet',
   'invitations',
   'accountVerification',
@@ -87,6 +94,7 @@ export const systemSectionItems = [
   'modelProviders',
   'groupSettings',
   'channels',
+  'merchantPoolAdmin',
   'clientProfiles',
   'credentials',
   'credentialProxies',
@@ -111,7 +119,7 @@ export const systemPinnedItems = ['keys', 'runtimeStatus', 'debugTraces'] as con
 
 export const systemNavigationGroups = {
   users: ['users', 'accountVerificationReviews', 'invitationSettings'],
-  gateway: ['channels', 'routes', 'modelSettings', 'modelProviders', 'groupSettings', 'clientProfiles', 'credentials', 'credentialProxies'],
+  gateway: ['channels', 'merchantPoolAdmin', 'routes', 'modelSettings', 'modelProviders', 'groupSettings', 'clientProfiles', 'credentials', 'credentialProxies'],
   commerce: ['subscriptionManagement', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings'],
   site: ['siteSettings', 'about', 'siteNavigation', 'announcements', 'emailSettings', 'authenticationSettings', 'accountVerificationSettings', 'networkSettings'],
 } as const satisfies Record<SystemNavigationGroupKey, readonly NavKey[]>

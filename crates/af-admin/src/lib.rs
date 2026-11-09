@@ -13,6 +13,11 @@ pub use verification_settings::{
 };
 mod announcement;
 mod api_key;
+mod merchant_finance;
+pub use merchant_finance::{
+    DatabaseMerchantFinanceService, MerchantFinanceBalance, MerchantFinanceEntry,
+    MerchantFinanceError, MerchantFinancePage, MerchantFinanceService, MerchantWithdrawal,
+};
 mod auth_challenge_security;
 mod balance_alert_settings;
 mod balance_alert_task;
@@ -20,6 +25,8 @@ mod balance_alert_task;
 mod balance_alert_tests;
 mod channel_read;
 mod channel_write;
+mod merchant_pool;
+pub use merchant_pool::{DatabaseMerchantPoolService, MerchantFuture, MerchantPoolService};
 mod client_profiles;
 pub use client_profiles::{
     AdminClientProfileError, ClientProfilePage, ClientProfileQuery, ClientProfileRecord,
@@ -488,6 +495,7 @@ mod playground_share_tests;
 mod token_auth_tests;
 
 mod account_verification;
+mod merchant_routes;
 pub use account_verification::{
     AccountVerificationError, AccountVerificationMaterial, AccountVerificationProvider,
     AccountVerificationProviderError, AccountVerificationRecord, AccountVerificationService,
@@ -495,3 +503,9 @@ pub use account_verification::{
     validate_verification_material,
 };
 pub use alipay_verification::{AlipayAccountVerificationProvider, AlipayProviderConfigError};
+pub use merchant_routes::{
+    DatabaseMerchantRouteService, MerchantConsumerAttempt, MerchantRouteFuture,
+    MerchantRoutePreview, MerchantRoutePreviewItem, MerchantRoutePreviewRequest,
+    MerchantRouteRecord, MerchantRouteService, MerchantRouteWrite, MerchantServiceStatistics,
+    MerchantServiceTimeline,
+};

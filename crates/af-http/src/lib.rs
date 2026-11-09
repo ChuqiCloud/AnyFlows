@@ -68,6 +68,8 @@ mod management_usage_logs;
 mod management_user_security;
 mod management_users;
 mod management_wallet;
+mod merchant_pool;
+pub use merchant_pool::build_merchant_pool_router;
 mod middleware;
 mod model_catalog;
 mod model_provider_catalog;
@@ -110,6 +112,7 @@ pub use software_updates::{
     SoftwareUpdateErrorBody, SoftwareUpdateFuture, SoftwareUpdateService,
     build_software_update_router,
 };
+mod merchant_routes;
 mod speech_service;
 mod streaming;
 mod subscriptions;
@@ -117,8 +120,11 @@ mod turnstile;
 mod user_notifications;
 mod user_profile;
 mod user_routes;
+pub use merchant_routes::build_merchant_route_router;
 mod user_tokens;
 pub use user_routes::build_user_route_router;
+mod merchant_finance;
+pub use merchant_finance::build_merchant_finance_router;
 mod user_topups;
 mod user_wallet;
 mod video_task_service;

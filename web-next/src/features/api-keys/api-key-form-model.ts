@@ -81,7 +81,7 @@ export function toApiKeyRequest(values: ApiKeyFormValues): UserTokenWriteRequest
 export function toCreateApiKeyRequest(
   values: ApiKeyFormValues,
   groups: SelectableTokenGroup[],
-  routes?: UserRoute[],
+  routes?: Array<Pick<UserRoute, 'id' | 'enabled'>>,
 ): UserTokenWriteRequest & { group_id: number | null; user_route_id?: number | null } {
   if (values.routingMode === 'route') {
     if (!isSelectableUserRoute(values.userRouteId, routes)) throw new Error('所选智能路由不可用')

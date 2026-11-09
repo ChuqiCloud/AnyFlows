@@ -58,6 +58,8 @@ pub enum TokenAuthLookupError {
 
 /// 完成持久化校验后的令牌鉴权结果。
 #[derive(Clone, Debug, Eq, PartialEq)]
+// Keep the owned authorization snapshot inline on the successful request path.
+#[allow(clippy::large_enum_variant)]
 pub enum TokenAuthLookupOutcome {
     /// 令牌、用户、有效分组和客户端 IP 均已通过校验，并携带本次请求的策略快照。
     Authenticated {
@@ -424,6 +426,17 @@ impl TokenAuthRepository {
         let outcome = row
             .validate(client_ip, self.organization_validator.as_deref())
             .await?;
+        if let TokenAuthLookupOutcome::Authenticated { principal, .. } = &outcome
+            && principal.user_route_id().is_none()
+            && crate::MerchantPoolRepository::new(self.pool.clone(), self.lookup_timeout)
+                .pool_for_group(principal.group_id())
+                .await
+                .map_err(|_| record_internal_error(TokenAuthRepositoryError::Query))?
+                .is_some()
+        {
+            // Merchant pool execution requires a scoped route and its immutable quote.
+            return Ok(TokenAuthLookupOutcome::Rejected);
+        }
         if let TokenAuthLookupOutcome::Authenticated { principal, .. } = &outcome
             && let Some(route_id) = principal.user_route_id()
         {

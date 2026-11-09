@@ -23,7 +23,13 @@ use crate::{
     token_owner_guard::lock_non_deleted_owner,
 };
 
+mod merchant;
 mod runtime;
+pub use merchant::{
+    MerchantAttemptWrite, MerchantConsumerAttempt, MerchantRouteMember, MerchantRouteRecord,
+    MerchantRouteScope, MerchantRouteWrite, MerchantServiceStatistics, MerchantServiceTimeline,
+    MerchantTimelineBucket,
+};
 pub use runtime::UserRouteModelHealth;
 
 /// 已验证的用户路由成员，不包含渠道或凭据详情。
@@ -145,6 +151,12 @@ impl UserRouteRepository {
             }
             let mut result = Vec::with_capacity(rows.len());
             for row in rows {
+                if merchant::route_scope(self.pool.connection(), row.id)
+                    .await?
+                    .is_some()
+                {
+                    continue;
+                }
                 result.push(snapshot(self.pool.connection(), row).await?);
             }
             Ok(result)
@@ -219,6 +231,9 @@ impl UserRouteRepository {
             let default_group = lock_owner(&txn, owner).await?;
             let row = owned_route(&txn, owner, id).await?;
             let row = lock_route(&txn, row.id).await?;
+            if merchant::route_scope(&txn, id).await?.is_some() {
+                return Err(UserRouteError::NotFound);
+            }
             if row.owner_user_id != owner.get() {
                 return Err(UserRouteError::NotFound);
             }

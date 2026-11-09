@@ -124,6 +124,13 @@ impl IndexedRoutePlan {
         &self.candidates
     }
 
+    /// 将供给限定到单一已授权商户渠道；空计划不可执行。
+    pub fn restrict_to_channel(&mut self, channel_id: ChannelId) -> bool {
+        self.candidates
+            .retain(|candidate| candidate.channel_id() == channel_id);
+        !self.candidates.is_empty()
+    }
+
     /// 为当前快照中的所有候选设置普通回退等待边界。
     pub fn configure_wait_policy(&mut self, policy: StickyWaitPolicy) {
         for candidate in &mut self.candidates {

@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Button, Input, Select, SelectItem } from '@heroui/react'
+import { Button, Input } from '@heroui/react'
 import { Controller, useForm } from 'react-hook-form'
 import { LoaderCircle, Route, UsersRound } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -21,18 +21,20 @@ import { isSelectableTokenGroup } from './api-key-group-model'
 import { ApiKeyGroupSelector } from './api-key-group-selector'
 import { isSelectableUserRoute, tokenUserRouteId } from '@/features/user-routes/user-route-model'
 import { useUserRoutes } from '../user-routes/user-route-api'
+import { useMerchantPoolRoutes } from '../merchant-pool/merchant-pool-api'
 import { ApiKeyIpEditor } from './api-key-ip-editor'
 import { ApiKeyModelSelector } from './api-key-model-selector'
 
 type ApiKeyFormProps = {
   token?: UserToken
+  initialRouteId?: number
   portalContainer?: HTMLElement | null
   onCancel: () => void
   onIssued: (issued: IssuedUserToken) => void
   onSaved: () => void
 }
 
-export function ApiKeyForm({ token, portalContainer, onCancel, onIssued, onSaved }: ApiKeyFormProps) {
+export function ApiKeyForm({ token, initialRouteId, portalContainer, onCancel, onIssued, onSaved }: ApiKeyFormProps) {
   const { t } = useTranslation()
   const groupsQuery = useUserTokenGroups(!token)
   const createMutation = useCreateApiKey()
@@ -47,18 +49,25 @@ export function ApiKeyForm({ token, portalContainer, onCancel, onIssued, onSaved
     })),
   })
 
-  useEffect(() => form.reset(defaultApiKeyValues(token)), [form, token])
+  useEffect(() => {
+    const values = defaultApiKeyValues(token)
+    form.reset(!token && initialRouteId ? { ...values, routingMode: 'route', userRouteId: String(initialRouteId) } : values)
+  }, [form, token, initialRouteId])
 
   const groupId = form.watch('groupId')
   const routingMode = form.watch('routingMode')
   const userRouteId = form.watch('userRouteId')
   const boundRouteId = token ? tokenUserRouteId(token) : undefined
   const routesQuery = useUserRoutes((!token && routingMode === 'route') || boundRouteId !== undefined)
+  const merchantRoutesQuery = useMerchantPoolRoutes((!token && routingMode === 'route') || boundRouteId !== undefined)
+  const selectableRoutes = [...(routesQuery.data?.items ?? []), ...(merchantRoutesQuery.data?.items ?? [])]
+  const routesReady = routesQuery.isSuccess || merchantRoutesQuery.isSuccess
+  const routesFetching = routesQuery.isFetching && merchantRoutesQuery.isFetching
   const unlimitedQuota = form.watch('unlimitedQuota')
   const groupSelectionReady = token
     ? true
     : routingMode === 'route'
-      ? routesQuery.isSuccess && !routesQuery.isFetching && isSelectableUserRoute(userRouteId, routesQuery.data?.items)
+      ? routesReady && !routesFetching && isSelectableUserRoute(userRouteId, selectableRoutes)
       : groupsQuery.isSuccess && !groupsQuery.isFetching && isSelectableTokenGroup(groupId, groupsQuery.data)
   const pending = createMutation.isPending || updateMutation.isPending
   const submitError = createMutation.error ?? updateMutation.error
@@ -73,7 +82,7 @@ export function ApiKeyForm({ token, portalContainer, onCancel, onIssued, onSaved
   const onSubmit = form.handleSubmit(async (values) => {
     if (!token) {
       if (values.routingMode === 'route') {
-        if (!routesQuery.isSuccess || routesQuery.isFetching || !isSelectableUserRoute(values.userRouteId, routesQuery.data?.items)) {
+        if (!routesReady || routesFetching || !isSelectableUserRoute(values.userRouteId, selectableRoutes)) {
           form.setError('userRouteId', { message: t('apiKeys.routing.invalidRoute') })
           return
         }
@@ -87,7 +96,7 @@ export function ApiKeyForm({ token, portalContainer, onCancel, onIssued, onSaved
         await updateMutation.mutateAsync({ id: token.id, body: toApiKeyRequest(values) })
         onSaved()
       } else {
-        const issued = await createMutation.mutateAsync(toCreateApiKeyRequest(values, groupsQuery.data ?? [], routesQuery.data?.items))
+        const issued = await createMutation.mutateAsync(toCreateApiKeyRequest(values, groupsQuery.data ?? [], selectableRoutes))
         createMutation.reset()
         onIssued(issued)
       }
@@ -96,6 +105,7 @@ export function ApiKeyForm({ token, portalContainer, onCancel, onIssued, onSaved
         if (values.routingMode === 'route') {
           form.setError('userRouteId', { message: t('apiKeys.routing.unavailable') })
           void routesQuery.refetch()
+            void merchantRoutesQuery.refetch()
         } else {
           form.setError('groupId', { message: t('apiKeys.group.unavailable') })
           void groupsQuery.refetch()
@@ -104,6 +114,7 @@ export function ApiKeyForm({ token, portalContainer, onCancel, onIssued, onSaved
       if (!token && (hasManagementErrorCode(error, 'user_route_unavailable') || hasManagementErrorCode(error, 'user_route_not_found'))) {
         form.setError('userRouteId', { message: t('apiKeys.routing.unavailable') })
         void routesQuery.refetch()
+        void merchantRoutesQuery.refetch()
       }
       // 保留表单输入；一次性密钥只有成功结果会交给临时展示面板。
     }
@@ -120,9 +131,9 @@ export function ApiKeyForm({ token, portalContainer, onCancel, onIssued, onSaved
           {token && boundRouteId !== undefined ? (
             <ApiKeyField id="api-key-route-binding" label={t('apiKeys.routing.label')} hint={t('apiKeys.routing.immutable')}>
               <p id="api-key-route-binding" className="rounded-lg border border-[var(--hairline)] px-3 py-2 text-sm">
-                {routesQuery.data?.items.find((route) => route.id === boundRouteId)?.name ?? `#${boundRouteId}`}
+                {selectableRoutes.find((route) => route.id === boundRouteId)?.name ?? `#${boundRouteId}`}
               </p>
-              <Link className="text-xs text-primary hover:underline" to="/console/user-routes">{t('apiKeys.routing.manage')}</Link>
+              <Link className="text-xs text-primary hover:underline" to={merchantRoutesQuery.data?.items.some((route) => route.id === boundRouteId) ? '/console/merchant-pool/routes' : '/console/user-routes'}>{t('apiKeys.routing.manage')}</Link>
             </ApiKeyField>
           ) : null}
           {!token ? (
@@ -139,23 +150,23 @@ export function ApiKeyForm({ token, portalContainer, onCancel, onIssued, onSaved
             </section>
           ) : null}
           {!token && routingMode === 'route' ? (
-            <ApiKeyField id="api-key-user-route" label={t('apiKeys.routing.routeLabel')} error={form.formState.errors.userRouteId?.message ?? (!isSelectableUserRoute(userRouteId, routesQuery.data?.items) && routesQuery.isSuccess ? t('apiKeys.routing.invalidRoute') : undefined)} hint={t('apiKeys.routing.routeHint')}>
-              <Select
+            <ApiKeyField id="api-key-user-route" label={t('apiKeys.routing.routeLabel')} error={form.formState.errors.userRouteId?.message ?? (!isSelectableUserRoute(userRouteId, selectableRoutes) && routesReady ? t('apiKeys.routing.invalidRoute') : undefined)} hint={t('apiKeys.routing.routeHint')}>
+              <select
                 id="api-key-user-route"
                 aria-label={t('apiKeys.routing.routeLabel')}
-                placeholder={t('apiKeys.routing.routePlaceholder')}
-                size="sm"
-                selectedKeys={isSelectableUserRoute(userRouteId, routesQuery.data?.items) ? [userRouteId] : []}
-                isDisabled={routesQuery.isFetching || routesQuery.isError || !routesQuery.data}
-                isInvalid={!!form.formState.errors.userRouteId || (routesQuery.isSuccess && !isSelectableUserRoute(userRouteId, routesQuery.data.items))}
-                popoverProps={portalContainer ? { portalContainer } : undefined}
-                onSelectionChange={(keys) => { const value = Array.from(keys)[0]; if (value !== undefined) { form.setValue('userRouteId', String(value)); form.clearErrors('userRouteId') } }}
+                className="min-h-9 w-full rounded-lg border border-[var(--hairline)] bg-background px-3 text-sm disabled:opacity-50"
+                value={isSelectableUserRoute(userRouteId, selectableRoutes) ? userRouteId : ''}
+                disabled={routesFetching || !routesReady}
+                aria-invalid={!!form.formState.errors.userRouteId || (routesReady && !isSelectableUserRoute(userRouteId, selectableRoutes))}
+                onChange={(event) => { form.setValue('userRouteId', event.target.value); form.clearErrors('userRouteId') }}
               >
-                {(routesQuery.data?.items ?? []).filter((route) => route.enabled).map((route) => <SelectItem key={String(route.id)} textValue={route.name}>{route.name}</SelectItem>)}
-              </Select>
-              {routesQuery.isPending ? <p role="status" className="text-xs text-muted-foreground">{t('apiKeys.routing.loading')}</p> : null}
-              {routesQuery.isError ? <div role="alert" className="flex items-center justify-between gap-2 text-xs text-destructive"><span>{t('apiKeys.routing.loadError')}</span><Button type="button" size="sm" variant="flat" isDisabled={routesQuery.isFetching} onPress={() => void routesQuery.refetch()}>{t('apiKeys.actions.retry')}</Button></div> : null}
-              {routesQuery.isSuccess && routesQuery.data.items.filter((route) => route.enabled).length === 0 ? <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground"><span>{t('apiKeys.routing.empty')}</span><Link className="shrink-0 text-primary hover:underline" to="/console/user-routes">{t('apiKeys.routing.manage')}</Link></div> : <Link className="justify-self-start text-xs text-primary hover:underline" to="/console/user-routes">{t('apiKeys.routing.manage')}</Link>}
+                <option value="" disabled>{t('apiKeys.routing.routePlaceholder')}</option>
+                {selectableRoutes.filter((route) => route.enabled).map((route) => <option key={route.id} value={String(route.id)}>{route.name}{'pool_id' in route ? ` · ${t('merchantPool.title')}` : ''}</option>)}
+              </select>
+              {routesQuery.isPending || merchantRoutesQuery.isPending ? <p role="status" className="text-xs text-muted-foreground">{t('apiKeys.routing.loading')}</p> : null}
+              {routesQuery.isError || merchantRoutesQuery.isError ? <div role="alert" className="flex items-center justify-between gap-2 text-xs text-destructive"><span>{t('apiKeys.routing.loadError')}</span><Button type="button" size="sm" variant="flat" isDisabled={routesFetching} onPress={() => void Promise.all([routesQuery.refetch(), merchantRoutesQuery.refetch()])}>{t('apiKeys.actions.retry')}</Button></div> : null}
+              {routesReady && selectableRoutes.filter((route) => route.enabled).length === 0 ? <p className="text-xs text-muted-foreground">{t('apiKeys.routing.empty')}</p> : null}
+              <div className="flex gap-3"><Link className="text-xs text-primary hover:underline" to="/console/user-routes">{t('apiKeys.routing.manage')}</Link><Link className="text-xs text-primary hover:underline" to="/console/merchant-pool/routes">{t('merchantPool.routes')}</Link></div>
             </ApiKeyField>
           ) : null}
           {!token && routingMode === 'group' ? (

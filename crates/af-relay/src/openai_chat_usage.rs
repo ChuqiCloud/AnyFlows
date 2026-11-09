@@ -75,6 +75,7 @@ pub(crate) struct OpenAiChatUsageEstimator {
     input_tokens: Result<TokenCount, UsageResolutionError>,
     output: OutputAccumulator,
     upstream_usage: Option<Usage>,
+    local_usage_only: bool,
 }
 
 /// 按请求边界估算一次 Chat 调用的最大规范化 usage。
@@ -144,7 +145,19 @@ impl OpenAiChatUsageEstimator {
             input_tokens,
             output: OutputAccumulator::default(),
             upstream_usage: None,
+            local_usage_only: false,
         }
+    }
+
+    /// Merchant suppliers cannot author the billable usage of their own sale.
+    pub(crate) fn with_local_usage_only(mut self) -> Self {
+        self.local_usage_only = true;
+        self.upstream_usage = None;
+        self
+    }
+
+    pub(crate) const fn uses_local_usage_only(&self) -> bool {
+        self.local_usage_only
     }
 
     pub(crate) const fn has_upstream_usage(&self) -> bool {
@@ -197,6 +210,9 @@ impl OpenAiChatUsageEstimator {
                 .output
                 .push_tool_arguments(*choice_index, *tool_index, partial_json),
             CanonicalStreamEvent::Usage(usage) => {
+                if self.local_usage_only {
+                    return;
+                }
                 if self.upstream_usage.is_some() {
                     self.output.fail(UsageResolutionError::InvalidSequence);
                 } else {
@@ -238,7 +254,9 @@ impl OpenAiChatUsageEstimator {
         mut self,
         response: &CanonicalResponse,
     ) -> Result<Usage, UsageResolutionError> {
-        if let Some(usage) = response.usage {
+        if let Some(usage) = response.usage
+            && !self.local_usage_only
+        {
             return Ok(usage);
         }
         for choice in &response.choices {

@@ -52,7 +52,7 @@ pub use attempt_gate::{
 };
 pub use chat_response::ChatResponse;
 pub use cohere_rerank::build_cohere_rerank_candidate_request;
-pub use conversation::relay_conversation_with_report;
+pub use conversation::{relay_conversation_with_report, relay_merchant_conversation_with_report};
 pub use diagnostic::{
     RelayAttemptDiagnostic, RelayDiagnosticInput, RelayDiagnosticPolicy, RelayDiagnosticSnapshot,
 };

@@ -99,6 +99,10 @@ try {
       await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: routes, capacity: 32 }) })
       return
     }
+    if (path === '/api/merchant-pool/routes' && request.method() === 'GET') {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [], capacity: 32 }) })
+      return
+    }
     if (path === '/api/user-routes' && request.method() === 'POST') {
       const body = request.postDataJSON()
       assert.equal(body.members.length, 2)
@@ -175,10 +179,9 @@ try {
   await page.getByRole('button', { name: 'key', exact: true }).click()
   await page.getByRole('textbox', { name: label('apiKeys.fields.name'), exact: true }).fill('CI routed key')
   await page.getByRole('button', { name: label('apiKeys.routing.routeMode'), exact: true }).click()
-  const routeSelect = selectTrigger(label('apiKeys.routing.routeLabel'))
+  const routeSelect = page.getByRole('combobox', { name: label('apiKeys.routing.routeLabel'), exact: true })
   await routeSelect.waitFor()
-  await routeSelect.click()
-  await page.getByRole('option', { name: 'CI route edited', exact: true }).click()
+  await routeSelect.selectOption(String(routeId))
   const issue = page.getByRole('button', { name: label('apiKeys.actions.create'), exact: true })
   await issue.click()
   await page.getByText(label('apiKeys.routing.unavailable'), { exact: true }).waitFor()

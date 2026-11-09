@@ -23,6 +23,9 @@ use af_domain::{
 };
 use af_protocol::Usage;
 use af_scheduler::InMemoryChannelIndex;
+mod merchant;
+#[cfg(test)]
+mod merchant_tests;
 
 #[derive(Clone)]
 pub(crate) struct UserRouteRuntime {
@@ -30,6 +33,7 @@ pub(crate) struct UserRouteRuntime {
     group_model_policy: Option<GroupModelPolicyRepository>,
     channel_index: Option<InMemoryChannelIndex>,
     group_admission: Option<GroupAdmission>,
+    merchant_pools: Option<af_db::MerchantPoolRepository>,
 }
 
 #[derive(Clone)]
@@ -43,11 +47,13 @@ pub(crate) struct UserRouteRequestPlan {
     pub(crate) route: UserRouteRecord,
     model: String,
     health: Vec<UserRouteModelHealth>,
+    merchant_scope: Option<af_db::MerchantRouteScope>,
 }
 
 pub(crate) struct UserRouteCandidate {
     pub(crate) group_id: GroupId,
     pub(crate) snapshot: RequestPricingSnapshot,
+    pub(crate) merchant: Option<af_domain::MerchantRuntimeCandidate>,
     member: UserRouteMemberRecord,
     quoted_quota: i64,
     health: Option<UserRouteModelHealth>,
@@ -62,12 +68,20 @@ struct QuotedGroup {
 
 trait CandidateOrdering {
     fn group_id(&self) -> GroupId;
+    fn identity(&self) -> i64 {
+        self.group_id().get()
+    }
     fn member(&self) -> &UserRouteMemberRecord;
     fn quote(&self) -> i64;
     fn health(&self) -> Option<&UserRouteModelHealth>;
 }
 
 impl CandidateOrdering for UserRouteCandidate {
+    fn identity(&self) -> i64 {
+        self.merchant
+            .as_ref()
+            .map_or(self.group_id.get(), |m| m.merchant_id)
+    }
     fn group_id(&self) -> GroupId {
         self.group_id
     }
@@ -104,7 +118,13 @@ impl UserRouteRuntime {
             group_model_policy: None,
             channel_index: None,
             group_admission: None,
+            merchant_pools: None,
         }
+    }
+
+    pub(crate) fn with_merchant_pools(mut self, pools: af_db::MerchantPoolRepository) -> Self {
+        self.merchant_pools = Some(pools);
+        self
     }
 
     pub(crate) fn with_channel_index(mut self, index: InMemoryChannelIndex) -> Self {
@@ -185,6 +205,11 @@ impl UserRouteRuntime {
         if Some(route.id) != principal.user_route_id() {
             return Err(AfError::InvalidApiKey);
         }
+        let merchant_scope = self
+            .repository
+            .merchant_scope(route.id)
+            .await
+            .map_err(map_repository_error)?;
         let health = self
             .repository
             .load_model_health(route.id, model)
@@ -194,6 +219,7 @@ impl UserRouteRuntime {
             route,
             model: model.to_owned(),
             health,
+            merchant_scope,
         }))
     }
 
@@ -293,12 +319,35 @@ impl UserRouteRuntime {
         pricing: &dyn RequestPricingSnapshotSource,
         protocol: Protocol,
         operation: Option<Operation>,
+        merchant_features: Option<crate::user_route_execution::MerchantRequestFeatures>,
     ) -> Result<Vec<UserRouteCandidate>, AfError> {
+        if plan.merchant_scope.is_some() {
+            return self
+                .merchant_candidates(
+                    plan,
+                    principal,
+                    upper_bound,
+                    pricing,
+                    protocol,
+                    operation,
+                    merchant_features,
+                )
+                .await;
+        }
         let time = crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?;
         let now = now_millis()?;
         let mut candidates = Vec::with_capacity(plan.route.members.len());
         let mut permitted = false;
         for member in &plan.route.members {
+            if let Some(pools) = &self.merchant_pools
+                && pools
+                    .pool_for_group(member.group_id)
+                    .await
+                    .map_err(|_| AfError::Internal)?
+                    .is_some()
+            {
+                continue;
+            }
             if !self
                 .check_access(principal, member.group_id, &plan.model)
                 .await?
@@ -348,6 +397,7 @@ impl UserRouteRuntime {
             candidates.push(UserRouteCandidate {
                 group_id: member.group_id,
                 snapshot,
+                merchant: None,
                 member: member.clone(),
                 quoted_quota,
                 health,
@@ -389,10 +439,22 @@ impl UserRouteRuntime {
         plan: &UserRouteRequestPlan,
         quoted: Vec<(GroupId, i64)>,
     ) -> Result<Vec<GroupId>, AfError> {
+        if plan.merchant_scope.is_some() {
+            return Err(AfError::ModelNotAllowed);
+        }
         let now = now_millis()?;
         let mut seen = std::collections::BTreeSet::new();
         let mut candidates = Vec::with_capacity(quoted.len());
         for (group_id, quoted_quota) in quoted {
+            if let Some(pools) = &self.merchant_pools
+                && pools
+                    .pool_for_group(group_id)
+                    .await
+                    .map_err(|_| AfError::Internal)?
+                    .is_some()
+            {
+                continue;
+            }
             if quoted_quota < 0 || !seen.insert(group_id) {
                 return Err(AfError::Internal);
             }
@@ -568,26 +630,26 @@ fn order_candidates<T: CandidateOrdering>(
 ) -> Result<(), AfError> {
     match strategy {
         UserRouteStrategy::Ordered => {
-            candidates.sort_by_key(|candidate| (candidate.member().priority, candidate.group_id()))
+            candidates.sort_by_key(|candidate| (candidate.member().priority, candidate.identity()))
         }
         UserRouteStrategy::RoundRobin => candidates.sort_by_key(|candidate| {
             (
                 candidate.member().last_selected_at_millis,
                 candidate.member().priority,
-                candidate.group_id(),
+                candidate.identity(),
             )
         }),
         UserRouteStrategy::PriceFirst => candidates.sort_by_key(|candidate| {
             (
                 candidate.quote(),
                 candidate.member().priority,
-                candidate.group_id(),
+                candidate.identity(),
             )
         }),
         UserRouteStrategy::StableFirst => candidates.sort_by(|left, right| {
             compare_health(left.health(), right.health())
                 .then_with(|| left.member().priority.cmp(&right.member().priority))
-                .then_with(|| left.group_id().cmp(&right.group_id()))
+                .then_with(|| left.identity().cmp(&right.identity()))
         }),
         UserRouteStrategy::Weighted => {
             let mut remaining = std::mem::take(candidates);
