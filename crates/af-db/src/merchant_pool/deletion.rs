@@ -5,7 +5,7 @@ use crate::entity::{
     async_task_submission_claims, async_tasks, channel_groups, channel_models,
     merchant_maintenance, merchant_service_prices,
 };
-use sea_orm::sea_query::{Alias, ExprTrait, Query};
+use sea_orm::sea_query::{Alias, Query};
 
 impl MerchantPoolRepository {
     pub async fn delete_pool(&self, actor: UserId, id: i64) -> Result<(), MerchantPoolError> {
