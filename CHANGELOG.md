@@ -1,3 +1,34 @@
+## 0.3.0-beta.8 - 2026-11-09
+
+本版本基于 `v0.3.0-beta.7`，增加实名认证准入和商户共享池，完善 OAuth 邀请奖励、发行包说明及商户市场体验。
+
+### 新增
+
+- 管理员可分别配置完成实名认证后才能充值、完成实名认证后才能调用 API；个人或企业认证通过均可满足准入条件。([#97](https://github.com/ChuqiCloud/AnyFlows/pull/97))
+- OAuth 首次创建账号时可绑定有效邀请码，并自动发放邀请双方奖励；已有账号登录不会重复建立邀请关系或重复奖励。([#99](https://github.com/ChuqiCloud/AnyFlows/pull/99))
+- 增加审核制商户共享池和商户工作台；用户可按价格、稳定性、顺序、轮询或权重创建商户路由 Key，并指定或排除商户。([#102](https://github.com/ChuqiCloud/AnyFlows/pull/102))
+- 商户供给扩展到视觉、图像、音频和异步视频；支持统一模型基准价、商户倍率、成功请求分账及可配置的通用 HTTPS 出款网关。([#103](https://github.com/ChuqiCloud/AnyFlows/pull/103))
+
+### 改进
+
+- 发行包改为只内置 web-next；Classic 源码保留，外部模板和后端 API 行为不变。([#98](https://github.com/ChuqiCloud/AnyFlows/pull/98))
+- README 和部署指南列出 Linux、Windows、macOS 的 amd64 与 arm64 发行包，并补充 Linux ARM64 包名示例。([#100](https://github.com/ChuqiCloud/AnyFlows/pull/100))
+- Codex OAuth 额度面板展开时每分钟刷新，浏览器后台暂停刷新，并提供手动刷新入口。([#101](https://github.com/ChuqiCloud/AnyFlows/pull/101))
+- 商户市场调整筛选、搜索和信息层级，常驻显示服务简介、报价及状态信息，并改善移动端横向滚动和明暗主题。([#104](https://github.com/ChuqiCloud/AnyFlows/pull/104))
+
+### 安全更新
+
+- 抑制商户池鉴权附加查询的 SQL 日志，避免关联标识进入认证日志。([#103](https://github.com/ChuqiCloud/AnyFlows/pull/103))
+
+### 升级与兼容
+
+- 本版本包含实名认证准入、商户供给、路由、分账、出款和异步任务相关数据库迁移；升级前备份数据库、配置和计费 WAL，首次启动时自动执行迁移。([#97](https://github.com/ChuqiCloud/AnyFlows/pull/97)、[#102](https://github.com/ChuqiCloud/AnyFlows/pull/102)、[#103](https://github.com/ChuqiCloud/AnyFlows/pull/103))
+- 实名准入开关升级后默认关闭；自动出款需管理员配置 HTTPS 网关并显式启用，未配置时保留人工提现流程。([#97](https://github.com/ChuqiCloud/AnyFlows/pull/97)、[#103](https://github.com/ChuqiCloud/AnyFlows/pull/103))
+
+本版本为社区版 Beta 预发布。
+
+完整变更：[v0.3.0-beta.7...v0.3.0-beta.8](https://github.com/ChuqiCloud/AnyFlows/compare/v0.3.0-beta.7...v0.3.0-beta.8)。
+
 ## 0.3.0-beta.7 - 2026-11-07
 
 本版本基于 `v0.3.0-beta.6`，增加个人智能路由和管理员账号安全管理，完善分组授权与计费倍率，修复 Relay 安全拦截、支付回跳和认证流程。

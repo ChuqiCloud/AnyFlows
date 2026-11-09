@@ -196,7 +196,7 @@ try {
       case '/api/admin/groups/1/model-policy': data = { group_id: 1, allowed_models: null, ratio_overrides: [{ source_group_id: 1, model: '*', ratio_micros: 1000000 }] }; break
       case '/api/admin/models': data = { models: [], next_cursor: null }; break
       case '/api/admin/software':
-        data = { edition: 'community', version: '0.3.0-beta.7', core_version: '0.3.0-beta.7', target: 'x86_64-unknown-linux-gnu', deployment: 'binary', node_id: 'ci-navigation', launch_mode: 'launcher', launcher_protocol: 1, launcher_version: '0.3.0-beta.7', update_phase: 'idle', check_enabled: true, install_enabled: true, restart_required: false, update_available: false }
+        data = { edition: 'community', version: '0.3.0-beta.8', core_version: '0.3.0-beta.8', target: 'x86_64-unknown-linux-gnu', deployment: 'binary', node_id: 'ci-navigation', launch_mode: 'launcher', launcher_protocol: 1, launcher_version: '0.3.0-beta.8', update_phase: 'idle', check_enabled: true, install_enabled: true, restart_required: false, update_available: false }
         break
       default:
         errors.push(`Unexpected API: ${path} (${role})`)
