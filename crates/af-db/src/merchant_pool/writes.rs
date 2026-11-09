@@ -8,7 +8,7 @@ impl MerchantPoolRepository {
         write: MerchantApplication,
     ) -> Result<MerchantProfile, MerchantPoolError> {
         if !af_domain::validate_merchant_text(&write.name, 128, false)
-            || !af_domain::validate_merchant_text(&write.description, 2048, true)
+            || !af_domain::validate_merchant_description(&write.description, 2048, true)
         {
             return Err(MerchantPoolError::InvalidInput);
         }
