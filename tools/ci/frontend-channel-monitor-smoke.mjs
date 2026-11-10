@@ -29,7 +29,7 @@ const target = {
   daily_used: 0, last_attempt_epoch_seconds: now - 600, last_success_epoch_seconds: now - 900,
   failure_since_epoch_seconds: null, alert_active: false, muted_until_epoch_seconds: null,
 }
-const channels = [{ id: 11, name: 'CI channel', status: 'enabled', protocol: 'openai_chat', models: ['chat-fixture'] }]
+const channels = [{ id: 11, name: 'CI channel', type: 'openai', status: 'enabled', protocol: 'openai_chat', models: ['chat-fixture'] }]
 const credentials = [{ id: 12, kind: 'api_key', status: 'enabled', schedulable: true, oauth_token_pending: false }]
 const events = [
   { id: 101, target_id: 71, kind: 'down', latency_ms: null, occurred_epoch_seconds: now - 1200 },
