@@ -60,10 +60,10 @@ impl PublicServiceStatusReader for DatabasePublicServiceStatusReader {
     fn read(&self) -> PublicStatusFuture<'_> {
         Box::pin(async move {
             let mut cache = self.cache.lock().await;
-            if let Some((sampled, report)) = cache.as_ref() {
-                if sampled.elapsed() < std::time::Duration::from_secs(30) {
-                    return Ok(report.clone());
-                }
+            if let Some((sampled, report)) = cache.as_ref()
+                && sampled.elapsed() < std::time::Duration::from_secs(30)
+            {
+                return Ok(report.clone());
             }
             let sampled_at = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
