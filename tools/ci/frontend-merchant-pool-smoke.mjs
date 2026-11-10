@@ -601,7 +601,7 @@ try {
   assert.equal(csv.headers()['content-type'], 'text/csv; charset=utf-8')
   assert.deepEqual(financeReportExportRequests.at(-1), { from_date: reportTestFrom, to_date: reportTestTo, granularity: 'month' })
   assert.equal(downloadedReport.suggestedFilename(), `merchant-finance-${reportTestFrom}-${reportTestTo}-month.csv`)
-  const csvBody = (await csv.body()).toString('utf8')
+  const csvBody = (await readFile(await downloadedReport.path())).toString('utf8')
   assert.ok(csvBody.includes('period,service_id,service_name,model,'), 'The download preserves the CSV header')
   assert.ok(csvBody.includes(`"${reportTestFrom.slice(0, 7)}",88,"'=2+2"`), 'The download preserves the server’s spreadsheet-safe CSV cell')
   services[0] = { ...services[0], status: 'published', published: { ...services[0].draft, status: 'published' }, draft: null }

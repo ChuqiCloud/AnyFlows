@@ -130,7 +130,7 @@ try {
   })
 
   assert.deepEqual(errors, [])
-  assert.ok(requests.every(({ path }) => path.startsWith('/api/admin/channel-monitor/') || path.startsWith('/api/admin/channels/')))
+  assert.ok(requests.every(({ path }) => path.startsWith('/api/admin/channel-monitor/') || path === '/api/admin/channels' || path.startsWith('/api/admin/channels/')))
   console.log('Channel monitor browser regression passed; all API calls were mocked')
 } catch (error) {
   if (page) await page.screenshot({ path: resolve(process.env.RUNNER_TEMP, 'channel-monitor-failure.png'), fullPage: true }).catch(() => {})
