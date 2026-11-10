@@ -24,7 +24,7 @@ export function PublicStatusPage() {
   const maxCount = Math.max(1, ...(data?.hourly ?? []).map(point => point.successful_request_count + point.failed_request_count + point.unknown_request_count))
   const points = data?.hourly ?? []
   return <div className="min-h-screen bg-background text-foreground">
-    <PublicSiteHeader logoUrl={site.data?.logo_url} siteName={site.data?.site_name ?? 'AnyFlows'} navigation={site.data?.navigation} />
+    <PublicSiteHeader logoUrl={site.data?.brand.logo_url} siteName={site.data?.site_name ?? 'AnyFlows'} navigation={site.data?.navigation} />
     <main className="mx-auto grid w-full max-w-5xl gap-8 px-4 pb-16 pt-24 sm:px-6">
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--hairline)] pb-5">
         <div><div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><Activity className="size-4" aria-hidden="true" />{t('publicStatus.eyebrow')}</div><h1 className="mt-2 text-2xl font-semibold">{t('publicStatus.title')}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{t('publicStatus.subtitle')}</p></div>
