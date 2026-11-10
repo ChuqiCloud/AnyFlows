@@ -1831,6 +1831,13 @@ export type MerchantApplicationRequest = {
 export type MerchantAttemptList = {
     items: Array<MerchantConsumerAttempt>;
 };
+export type MerchantCatalogProvider = {
+    model_count: number;
+    name: string | null;
+};
+export type MerchantCatalogProviderSummary = {
+    providers: Array<MerchantCatalogProvider>;
+};
 export type MerchantCatalogService = {
     description: string;
     id: number;
@@ -1924,6 +1931,7 @@ export type MerchantModelOffer = {
     max_output_tokens: number | null;
     model: string;
     prices: MerchantModelPrices | null;
+    provider: string | null;
     sales_ratio_micros: number;
     supports_streaming: boolean;
     supports_tools: boolean;
@@ -5413,6 +5421,39 @@ export type ListMerchantPoolsResponses = {
     200: MerchantPoolPage;
 };
 export type ListMerchantPoolsResponse = ListMerchantPoolsResponses[keyof ListMerchantPoolsResponses];
+export type ListMerchantPoolModelProvidersData = {
+    body?: never;
+    path: {
+        pool: number;
+    };
+    query?: never;
+    url: '/api/merchant-pools/{pool}/model-providers';
+};
+export type ListMerchantPoolModelProvidersErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ListMerchantPoolModelProvidersError = ListMerchantPoolModelProvidersErrors[keyof ListMerchantPoolModelProvidersErrors];
+export type ListMerchantPoolModelProvidersResponses = {
+    200: MerchantCatalogProviderSummary;
+};
+export type ListMerchantPoolModelProvidersResponse = ListMerchantPoolModelProvidersResponses[keyof ListMerchantPoolModelProvidersResponses];
 export type ListMerchantPoolServicesData = {
     body?: never;
     path: {
@@ -5431,6 +5472,7 @@ export type ListMerchantPoolServicesData = {
         max_ratio_micros?: number;
         window_seconds?: 900 | 3600 | 86400 | 604800;
         streaming?: boolean;
+        provider?: string;
     };
     url: '/api/merchant-pools/{pool}/services';
 };

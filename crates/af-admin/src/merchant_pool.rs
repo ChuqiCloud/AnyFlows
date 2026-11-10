@@ -3,9 +3,9 @@ use crate::{SessionPrincipal, SessionRole};
 use af_account::{CredentialDecryptor, CredentialEncryptor, PlainCredentialSecret};
 use af_db::MerchantPoolRepository;
 use af_domain::{
-    MerchantApplication, MerchantCatalogService, MerchantListQuery, MerchantOwnedService,
-    MerchantPage, MerchantPool, MerchantPoolError, MerchantPoolSettings, MerchantPoolTerms,
-    MerchantPoolWrite, MerchantProfile, MerchantReview, MerchantServiceWrite,
+    MerchantApplication, MerchantCatalogProviderSummary, MerchantCatalogService, MerchantListQuery,
+    MerchantOwnedService, MerchantPage, MerchantPool, MerchantPoolError, MerchantPoolSettings,
+    MerchantPoolTerms, MerchantPoolWrite, MerchantProfile, MerchantReview, MerchantServiceWrite,
 };
 use std::{future::Future, net::IpAddr, pin::Pin};
 
@@ -30,6 +30,11 @@ pub trait MerchantPoolService: Send + Sync {
         pool: i64,
         id: i64,
     ) -> MerchantFuture<'_, MerchantCatalogService>;
+    fn catalog_providers(
+        &self,
+        principal: SessionPrincipal,
+        pool: i64,
+    ) -> MerchantFuture<'_, MerchantCatalogProviderSummary>;
     fn profile(&self, principal: SessionPrincipal) -> MerchantFuture<'_, Option<MerchantProfile>>;
     fn quote(
         &self,
@@ -253,6 +258,13 @@ impl MerchantPoolService for DatabaseMerchantPoolService {
         id: i64,
     ) -> MerchantFuture<'_, MerchantCatalogService> {
         Box::pin(async move { self.repository.catalog_service(p.user_id(), pool, id).await })
+    }
+    fn catalog_providers(
+        &self,
+        p: SessionPrincipal,
+        pool: i64,
+    ) -> MerchantFuture<'_, MerchantCatalogProviderSummary> {
+        Box::pin(async move { self.repository.catalog_providers(p.user_id(), pool).await })
     }
     fn profile(&self, p: SessionPrincipal) -> MerchantFuture<'_, Option<MerchantProfile>> {
         Box::pin(async move { self.repository.owner_merchant(p.user_id()).await })

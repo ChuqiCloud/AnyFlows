@@ -1,10 +1,12 @@
 import { Checkbox } from '@heroui/react'
-import { ArrowUpRight, AudioLines, Bot, Braces, Film, Image, Mic, Plus, Store } from 'lucide-react'
+import { ArrowUpRight, AudioLines, Bot, Boxes, Braces, Film, Image, Mic, Plus, Store } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { useModelProviderOptions } from '@/components/brand/provider-catalog-api'
 import type { MerchantCatalogService, MerchantStatistics, MerchantTimeline } from './merchant-pool-model'
 import { poolRatio, poolTimestamp, merchantProtocolLabel, merchantTextProtocol } from './merchant-pool-model'
 import { MerchantTimelineStrip, MerchantPriceBreakdown } from './merchant-catalog-card'
+import { MerchantModelProviderBadge, merchantProviderIdentity } from './merchant-model-provider'
 import { PoolStatus } from './merchant-pool-ui'
 
 const cell = 'border-b border-[var(--hairline)] px-3 py-3 align-middle'
@@ -13,6 +15,7 @@ const protocolIcons = { openai_chat: Bot, openai_responses: Braces, openai_image
 
 export function MerchantCatalogTable({ services, model, statistics, timelines, compared, onCompare }: { services: MerchantCatalogService[]; model: string; statistics: Map<number, MerchantStatistics>; timelines: Map<number, MerchantTimeline>; compared: number[]; onCompare: (id: number) => void }) {
   const { t, i18n } = useTranslation()
+  const { options } = useModelProviderOptions()
   const milliseconds = (value: number | null | undefined) => value == null ? '—' : `${Math.round(value).toLocaleString(i18n.language)} ms`
   return <div className="min-w-0 overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1">
     <div className="overflow-x-auto overscroll-x-contain focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary" tabIndex={0} role="region" aria-label={t('merchantPool.catalogTable')}>
@@ -32,9 +35,13 @@ export function MerchantCatalogTable({ services, model, statistics, timelines, c
           const stats = statistics.get(service.id)
           const successRate = stats && stats.sample_count > 0 ? stats.success_rate : null
           const timeline = timelines.get(service.id)
-          const Icon = protocolIcons[service.protocol] ?? Bot
+          const ProtocolIcon = protocolIcons[service.protocol] ?? Bot
           const details = `/console/merchant-pool/merchants/${service.merchant_id}?pool=${service.pool_id}&service=${service.id}`
-          const rowTitle = model || service.models[0]?.model || service.name
+          const identityOffer = offer ?? (service.models.length === 1 ? service.models[0] : undefined)
+          const identity = merchantProviderIdentity(identityOffer?.provider, options, t('merchantPool.market.unclassified'))
+          const IdentityIcon = identityOffer ? identity.Icon : Boxes
+          const providers = [...new Set((identityOffer ? [identityOffer] : service.models).map((item) => item.provider ?? null))]
+          const rowTitle = model || identityOffer?.model || service.name
           const ttftApplicable = merchantTextProtocol(service.protocol) && Boolean(offer?.supports_streaming)
           const description = service.description.trim()
           return <tr key={service.id} className="group transition-colors hover:bg-surface-2/35 last:[&>td]:border-b-0">
@@ -42,10 +49,10 @@ export function MerchantCatalogTable({ services, model, statistics, timelines, c
               <div className="flex min-w-0 items-start gap-2.5">
                 <Checkbox className="mt-1 shrink-0" size="sm" aria-label={t('merchantPool.compareService', { name: service.name })} isSelected={compared.includes(service.id)} isDisabled={compared.length >= 4 && !compared.includes(service.id)} onValueChange={() => onCompare(service.id)} />
                 <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 items-start gap-1.5"><span className="mt-px inline-flex size-5 shrink-0 items-center justify-center rounded-md border border-primary/15 bg-primary/7 text-primary" title={merchantProtocolLabel(service.protocol)}><Icon className="size-3" aria-hidden="true" /></span><Link className="min-w-0 truncate font-semibold leading-5 text-foreground hover:text-primary" title={model || service.models.map((item) => item.model).join(', ')} to={details}>{rowTitle}</Link></div>
-                  <div className="mt-1 flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground"><Store className="size-3 shrink-0" aria-hidden="true" /><Link className="truncate hover:text-primary" title={`${service.merchant_name} · ${service.name}`} to={details}>{service.merchant_name}<span className="mx-1 opacity-50">/</span>{service.name}</Link></div>
+                  <div className="flex min-w-0 items-start gap-1.5"><span className="mt-px inline-flex size-5 shrink-0 items-center justify-center rounded-md border border-[var(--hairline)] bg-surface-2 text-foreground" title={identityOffer ? identity.name : t('merchantPool.modelCount', { count: service.models.length })}><IdentityIcon className="size-3.5" aria-hidden="true" /></span><Link className="min-w-0 truncate font-semibold leading-5 text-foreground hover:text-primary" title={model || service.models.map((item) => item.model).join(', ')} to={details}>{rowTitle}</Link></div>
+                  <div className="mt-1 flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground"><Store className="size-3 shrink-0" aria-hidden="true" /><Link className="truncate hover:text-primary" title={`${service.merchant_name} · ${service.name}`} to={details}>{service.merchant_name}<span className="mx-1 opacity-50">/</span>{service.name}</Link><span title={merchantProtocolLabel(service.protocol)} aria-label={merchantProtocolLabel(service.protocol)}><ProtocolIcon className="size-3 shrink-0" aria-hidden="true" /></span></div>
                   {description ? <p className="mt-1.5 line-clamp-2 break-words text-[11px] leading-4 text-muted-foreground" title={description}>{description}</p> : null}
-                  {!model ? <span className="mt-1 inline-block rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-muted-foreground">{t('merchantPool.modelCount', { count: service.models.length })}</span> : null}
+                  <div className="mt-1.5 flex min-w-0 flex-wrap gap-1">{!model ? <span className="inline-block rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-muted-foreground">{t('merchantPool.modelCount', { count: service.models.length })}</span> : null}{providers.map((provider) => <MerchantModelProviderBadge key={JSON.stringify(provider)} provider={provider} options={options} />)}</div>
                 </div>
               </div>
             </td>

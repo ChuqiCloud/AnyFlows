@@ -5,6 +5,8 @@ use std::error::Error;
 
 #[path = "deletion_tests.rs"]
 mod deletion_tests;
+#[path = "provider_tests.rs"]
+mod provider_tests;
 
 struct Fixture {
     repository: MerchantPoolRepository,
@@ -567,6 +569,13 @@ async fn revoked_pool_access_hides_catalog_and_repricing_removes_runtime_supply(
                 fixture.shared_pool,
                 MerchantListQuery::default()
             )
+            .await,
+        Err(MerchantPoolError::NotFound)
+    ));
+    assert!(matches!(
+        fixture
+            .repository
+            .catalog_providers(UserId::new(2)?, fixture.shared_pool)
             .await,
         Err(MerchantPoolError::NotFound)
     ));
