@@ -2,7 +2,9 @@ use std::{error::Error, time::Duration};
 
 use sea_orm::{ActiveModelTrait, Set, entity::prelude::TimeDateTimeWithTimeZone};
 
-use super::{DatabaseOptions, MigrationOptions, PublicServiceStatusError, PublicServiceStatusRepository};
+use super::{
+    DatabaseOptions, MigrationOptions, PublicServiceStatusError, PublicServiceStatusRepository,
+};
 use crate::entity::request_outcome_logs;
 
 #[tokio::test]
