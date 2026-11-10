@@ -32,6 +32,58 @@ pub(super) async fn merchant(
         ])
         .to_owned();
     connection.execute(backend.build(&profile)).await?;
+    let pool = Query::insert()
+        .into_table(Alias::new("merchant_pools"))
+        .columns(
+            [
+                "id",
+                "group_id",
+                "name",
+                "description",
+                "enabled",
+                "commission_bps",
+                "min_ratio_micros",
+                "max_ratio_micros",
+                "settlement_delay_secs",
+            ]
+            .map(Alias::new),
+        )
+        .values_panic([
+            1_i64.into(),
+            fixture.principal.group_id().get().into(),
+            "Finance pool".into(),
+            "".into(),
+            true.into(),
+            500_i32.into(),
+            1_i64.into(),
+            100_000_000_i64.into(),
+            i64::from(delay).into(),
+        ])
+        .to_owned();
+    connection.execute(backend.build(&pool)).await?;
+    let service = Query::insert()
+        .into_table(Alias::new("merchant_services"))
+        .columns(
+            [
+                "id",
+                "merchant_id",
+                "pool_id",
+                "name",
+                "description",
+                "status",
+            ]
+            .map(Alias::new),
+        )
+        .values_panic([
+            1_i64.into(),
+            77_i64.into(),
+            1_i64.into(),
+            "Finance service".into(),
+            "".into(),
+            "published".into(),
+        ])
+        .to_owned();
+    connection.execute(backend.build(&service)).await?;
     if cash > 0 {
         let order = Query::insert()
             .into_table(Alias::new("topup_orders"))
@@ -109,6 +161,28 @@ async fn promotional_wallet_credit_cannot_fund_merchant_proceeds() -> Result<(),
     assert_eq!(
         account_snapshot(&fixture.pool, fixture.principal).await?,
         before
+    );
+    assert_eq!(reservation_count(&fixture.pool).await?, 0);
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn deleted_supply_rejects_a_previously_selected_billing_snapshot()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture(config()).await?;
+    let principal = merchant(&fixture, 1000, 0).await?;
+    fixture
+        .pool
+        .connection()
+        .execute_unprepared("UPDATE merchant_services SET deleted_at=CURRENT_TIMESTAMP WHERE id=1")
+        .await?;
+    assert_eq!(
+        fixture
+            .repository
+            .precharge(reservation_id(0xe9), principal, quota(100))
+            .await,
+        Err(QuotaRepositoryError::Conflict)
     );
     assert_eq!(reservation_count(&fixture.pool).await?, 0);
     fixture.close().await?;

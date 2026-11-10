@@ -5,7 +5,7 @@ use axum::{
     extract::{Extension, State},
     response::{IntoResponse, Response},
 };
-use http::{HeaderValue, header::CACHE_CONTROL};
+use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -172,6 +172,14 @@ fn current_timestamp() -> u64 {
 
 pub(crate) fn no_store_json(value: impl Serialize) -> Response {
     let mut response = Json(value).into_response();
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+pub(crate) fn no_store_empty(status: StatusCode) -> Response {
+    let mut response = status.into_response();
     response
         .headers_mut()
         .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));

@@ -1104,6 +1104,41 @@ pub(crate) async fn reserve_merchant_billing(
     if principal.organization_principal().is_some() {
         return Err(QuotaRepositoryError::Conflict);
     }
+    // A candidate may have been selected just before retirement. Serialize its
+    // admission with tombstones so deletion cannot race a new in-flight hold.
+    for (table, id) in [
+        ("merchant_pools", snapshot.pool_id()),
+        ("merchant_profiles", snapshot.merchant_id()),
+        ("merchant_services", snapshot.service_id()),
+    ] {
+        let lock = Query::update()
+            .table(Alias::new(table))
+            .value(Alias::new("id"), Expr::col(Alias::new("id")))
+            .and_where(Expr::col(Alias::new("id")).eq(id))
+            .to_owned();
+        tx.execute(tx.get_database_backend().build(&lock))
+            .await
+            .map_err(|_| QuotaRepositoryError::Query)?;
+        let mut query = Query::select()
+            .column(Alias::new("deleted_at"))
+            .from(Alias::new(table))
+            .and_where(Expr::col(Alias::new("id")).eq(id))
+            .to_owned();
+        if tx.get_database_backend() != sea_orm::DbBackend::Sqlite {
+            query.lock(LockType::Update);
+        }
+        let row = tx
+            .query_one(tx.get_database_backend().build(&query))
+            .await
+            .map_err(|_| QuotaRepositoryError::Query)?
+            .ok_or(QuotaRepositoryError::Conflict)?;
+        if get::<Option<TimeDateTimeWithTimeZone>>(&row, "deleted_at")
+            .map_err(quota_error)?
+            .is_some()
+        {
+            return Err(QuotaRepositoryError::Conflict);
+        }
+    }
     if cash_backed_quota(tx, principal.user_id().get(), used, frozen).await? < amount.units() {
         return Err(QuotaRepositoryError::MerchantFundingInsufficient);
     }

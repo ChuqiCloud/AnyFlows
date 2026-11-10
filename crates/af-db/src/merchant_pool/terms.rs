@@ -56,6 +56,7 @@ impl MerchantPoolRepository {
         self.bounded(async {
             find_pool(self.pool.connection(), pool_id).await?;
             if profiles::Entity::find_by_id(merchant_id)
+                .filter(profiles::Column::DeletedAt.is_null())
                 .one(self.pool.connection())
                 .await
                 .map_err(internal)?
@@ -89,6 +90,9 @@ impl MerchantPoolRepository {
         self.terms(pool_id, merchant_id).await?;
         self.bounded(async {
             let txn=self.pool.connection().begin().await.map_err(internal)?;
+            super::deletion::lock_live_pool(&txn,pool_id).await?;
+            if profiles::Entity::find_by_id(merchant_id).filter(profiles::Column::DeletedAt.is_null())
+                .one(&txn).await.map_err(internal)?.is_none() { return Err(MerchantPoolError::NotFound); }
             terms::Entity::insert(terms::ActiveModel{pool_id:Set(pool_id),merchant_id:Set(merchant_id),
                 commission_bps:Set(write.commission_bps.map(i32::from)),updated_at:Set(DatabaseTimestamp::now_utc())})
                 .on_conflict(OnConflict::columns([terms::Column::PoolId,terms::Column::MerchantId])

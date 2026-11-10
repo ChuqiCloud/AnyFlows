@@ -3,17 +3,18 @@ use std::{error::Error, time::Duration};
 use af_domain::{GroupId, GroupPeakSchedule, GroupPeakWindow};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, PaginatorTrait, QueryFilter, Statement,
-    sea_query::Expr,
+    TransactionTrait, sea_query::Expr,
 };
 
 use super::{
     AdminGroupDeleteOutcome, AdminGroupMutationOutcome, AdminGroupPeakWriteRecord,
     AdminGroupRepository, AdminGroupRepositoryError, AdminGroupWriteRecord, DatabaseOptions,
-    MigrationOptions,
+    MigrationOptions, PoolOptions,
 };
 use crate::entity::{
-    abilities, channel_groups, group_group_grants, group_model_ratio_overrides, group_model_ratios,
-    groups, scheduler_outbox_events,
+    abilities, authentication_settings, channel_groups, group_group_grants,
+    group_model_ratio_overrides, group_model_ratios, groups, scheduler_outbox_events, tokens,
+    users,
 };
 
 #[tokio::test]
@@ -330,6 +331,405 @@ async fn delete_clears_safe_runtime_relationships_atomically() -> Result<(), Box
     );
 
     fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn explicit_group_replacement_moves_disabled_users_and_revokes_direct_keys()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let source = fixture
+        .repository
+        .create(write_record("retired", "Retired", None, false))
+        .await?
+        .group_id();
+    insert_user(
+        fixture.pool.connection(),
+        701,
+        "disabled-owner",
+        source.get(),
+        false,
+    )
+    .await?;
+    insert_token(fixture.pool.connection(), 701, source.get()).await?;
+    fixture
+        .pool
+        .connection()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO tokens (user_id, key_hash, key_prefix, name, status, group_id) VALUES (701, ?, 'sk-af-inherited', 'inherited', 1, NULL)",
+            ["22".repeat(32).into()],
+        ))
+        .await?;
+    fixture
+        .pool
+        .connection()
+        .execute(Statement::from_string(
+            DbBackend::Sqlite,
+            "UPDATE users SET status = 2 WHERE id = 701;".to_owned(),
+        ))
+        .await?;
+    fixture
+        .pool
+        .connection()
+        .execute(Statement::from_string(
+            DbBackend::Sqlite,
+            "UPDATE tokens SET status = 2 WHERE user_id = 701 AND group_id IS NOT NULL;".to_owned(),
+        ))
+        .await?;
+    fixture
+        .pool
+        .connection()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE authentication_settings SET registration_default_group_id = ? WHERE id = 1",
+            [source.get().into()],
+        ))
+        .await?;
+    let settings_before = authentication_settings::Entity::find_by_id(1_i16)
+        .one(fixture.pool.connection())
+        .await?
+        .unwrap();
+    assert_eq!(
+        fixture.repository.delete(source).await.unwrap_err(),
+        AdminGroupRepositoryError::InUse
+    );
+    assert_eq!(
+        fixture
+            .repository
+            .delete_with_replacement(source, Some(fixture.default_id))
+            .await?,
+        AdminGroupDeleteOutcome::Deleted
+    );
+    let owner = users::Entity::find_by_id(701)
+        .one(fixture.pool.connection())
+        .await?
+        .unwrap();
+    assert_eq!(owner.default_group_id, fixture.default_id.get());
+    assert_eq!(owner.status, 2);
+    assert!(owner.deleted_at.is_none());
+    let key = tokens::Entity::find()
+        .filter(tokens::Column::UserId.eq(701_i64))
+        .filter(tokens::Column::GroupId.eq(source.get()))
+        .one(fixture.pool.connection())
+        .await?
+        .unwrap();
+    assert_eq!(key.group_id, Some(source.get()));
+    assert_eq!(key.status, 2);
+    assert!(
+        key.deleted_at.is_some(),
+        "direct keys cannot fall back to the new default group"
+    );
+    let inherited_key = tokens::Entity::find()
+        .filter(tokens::Column::UserId.eq(701_i64))
+        .filter(tokens::Column::GroupId.is_null())
+        .one(fixture.pool.connection())
+        .await?
+        .unwrap();
+    assert!(inherited_key.deleted_at.is_none());
+    assert_eq!(inherited_key.status, 1);
+    let settings = authentication_settings::Entity::find_by_id(1_i16)
+        .one(fixture.pool.connection())
+        .await?
+        .unwrap();
+    assert_eq!(
+        settings.registration_default_group_id,
+        Some(fixture.default_id.get())
+    );
+    assert_eq!(settings.version, settings_before.version + 1);
+    fixture
+        .pool
+        .connection()
+        .execute(Statement::from_string(
+            DbBackend::Sqlite,
+            "UPDATE users SET status = 1 WHERE id = 701;".to_owned(),
+        ))
+        .await?;
+    let auth = crate::TokenAuthRepository::new(fixture.pool.clone(), Duration::from_secs(2))?;
+    let client_ip = af_domain::TrustedClientIp::new("192.0.2.10".parse()?);
+    assert_eq!(
+        auth.lookup(&crate::TokenAuthLookup::new(&"11".repeat(32))?, client_ip)
+            .await?,
+        crate::TokenAuthLookupOutcome::Rejected
+    );
+    let inherited = auth
+        .lookup(&crate::TokenAuthLookup::new(&"22".repeat(32))?, client_ip)
+        .await?;
+    let crate::TokenAuthLookupOutcome::Authenticated { principal, .. } = inherited else {
+        panic!("inherited keys should use the explicitly selected replacement group")
+    };
+    assert_eq!(principal.group_id(), fixture.default_id);
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn invalid_group_replacements_roll_back_the_source_and_key_state()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let source = fixture
+        .repository
+        .create(write_record("source", "Source", None, false))
+        .await?
+        .group_id();
+    let deleted = fixture
+        .repository
+        .create(write_record(
+            "deleted-target",
+            "Deleted target",
+            None,
+            false,
+        ))
+        .await?
+        .group_id();
+    fixture.repository.delete(deleted).await?;
+    let merchant_group = fixture
+        .repository
+        .create(write_record(
+            "merchant-target",
+            "Merchant target",
+            None,
+            false,
+        ))
+        .await?
+        .group_id();
+    insert_pool(fixture.pool.connection(), merchant_group.get()).await?;
+    insert_user(
+        fixture.pool.connection(),
+        702,
+        "source-owner",
+        source.get(),
+        false,
+    )
+    .await?;
+    insert_token(fixture.pool.connection(), 702, source.get()).await?;
+    for target in [source, GroupId::new(999_999)?, deleted, merchant_group] {
+        assert_eq!(
+            fixture
+                .repository
+                .delete_with_replacement(source, Some(target))
+                .await
+                .unwrap_err(),
+            AdminGroupRepositoryError::InvalidReference
+        );
+        let source_row = groups::Entity::find_by_id(source.get())
+            .one(fixture.pool.connection())
+            .await?
+            .unwrap();
+        assert!(source_row.deleted_at.is_none());
+        let owner = users::Entity::find_by_id(702)
+            .one(fixture.pool.connection())
+            .await?
+            .unwrap();
+        assert_eq!(owner.default_group_id, source.get());
+        let key = tokens::Entity::find()
+            .filter(tokens::Column::UserId.eq(702_i64))
+            .one(fixture.pool.connection())
+            .await?
+            .unwrap();
+        assert!(key.deleted_at.is_none());
+    }
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn merchant_pool_group_requires_pool_deletion_first() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let group = fixture
+        .repository
+        .create(write_record(
+            "merchant-source",
+            "Merchant source",
+            None,
+            false,
+        ))
+        .await?
+        .group_id();
+    insert_pool(fixture.pool.connection(), group.get()).await?;
+    for replacement in [None, Some(fixture.default_id)] {
+        assert_eq!(
+            fixture
+                .repository
+                .delete_with_replacement(group, replacement)
+                .await
+                .unwrap_err(),
+            AdminGroupRepositoryError::InUse
+        );
+    }
+    fixture
+        .pool
+        .connection()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE merchant_pools SET deleted_at = CURRENT_TIMESTAMP WHERE group_id = ?",
+            [group.get().into()],
+        ))
+        .await?;
+    assert_eq!(
+        fixture.repository.delete(group).await?,
+        AdminGroupDeleteOutcome::Deleted
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn reciprocal_group_replacements_preserve_one_live_target_and_all_users()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let first = fixture
+        .repository
+        .create(write_record("first-source", "First source", None, false))
+        .await?
+        .group_id();
+    let second = fixture
+        .repository
+        .create(write_record("second-source", "Second source", None, false))
+        .await?
+        .group_id();
+    insert_user(
+        fixture.pool.connection(),
+        711,
+        "first-owner",
+        first.get(),
+        false,
+    )
+    .await?;
+    insert_user(
+        fixture.pool.connection(),
+        712,
+        "second-owner",
+        second.get(),
+        false,
+    )
+    .await?;
+    let (first_result, second_result) = tokio::join!(
+        fixture
+            .repository
+            .delete_with_replacement(first, Some(second)),
+        fixture
+            .repository
+            .delete_with_replacement(second, Some(first)),
+    );
+    let surviving = match (first_result, second_result) {
+        (
+            Ok(AdminGroupDeleteOutcome::Deleted),
+            Err(AdminGroupRepositoryError::InvalidReference),
+        ) => second,
+        (
+            Err(AdminGroupRepositoryError::InvalidReference),
+            Ok(AdminGroupDeleteOutcome::Deleted),
+        ) => first,
+        other => panic!("reciprocal deletion must retain one valid target: {other:?}"),
+    };
+    assert!(
+        groups::Entity::find_by_id(surviving.get())
+            .one(fixture.pool.connection())
+            .await?
+            .unwrap()
+            .deleted_at
+            .is_none()
+    );
+    for id in [711_i64, 712] {
+        let user = users::Entity::find_by_id(id)
+            .one(fixture.pool.connection())
+            .await?
+            .unwrap();
+        assert_eq!(user.default_group_id, surviving.get());
+        assert!(user.deleted_at.is_none());
+    }
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn group_binding_write_guard_serializes_deletion_without_partial_migration()
+-> Result<(), Box<dyn Error>> {
+    let file = std::env::temp_dir().join(format!(
+        "anyflows-group-deletion-{}-{}.db",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos()
+    ));
+    let mut sqlite_path = file.to_string_lossy().replace('\\', "/");
+    if !sqlite_path.starts_with('/') {
+        sqlite_path.insert(0, '/');
+    }
+    let options = DatabaseOptions::new(format!("sqlite://{sqlite_path}?mode=rwc"))?
+        .with_pool_options(PoolOptions {
+            max_connections: 2,
+            min_connections: 2,
+            ..PoolOptions::default()
+        });
+    let pool = crate::connect_and_migrate(&options, MigrationOptions::default()).await?;
+    let repository = AdminGroupRepository::new(pool.clone(), Duration::from_secs(2))?;
+    let source = repository
+        .create(write_record(
+            "concurrent-source",
+            "Concurrent source",
+            None,
+            false,
+        ))
+        .await?
+        .group_id();
+    let replacement = repository
+        .create(write_record(
+            "concurrent-target",
+            "Concurrent target",
+            None,
+            false,
+        ))
+        .await?
+        .group_id();
+    let transaction = pool.connection().begin().await?;
+    assert!(crate::group_key_access::lock_active_group(&transaction, source).await?);
+    transaction
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO users (id, username, role, status, default_group_id, aff_code, settings) VALUES (703, 'concurrent-owner', 0, 1, ?, 'concurrent-aff', '{}')",
+            [source.get().into()],
+        ))
+        .await?;
+    let bounded = AdminGroupRepository::new(pool.clone(), Duration::from_millis(200))?;
+    let outcome = bounded
+        .delete_with_replacement(source, Some(replacement))
+        .await;
+    assert!(matches!(
+        outcome,
+        Err(AdminGroupRepositoryError::Timeout | AdminGroupRepositoryError::Query)
+    ));
+    transaction.commit().await?;
+    let source_row = groups::Entity::find_by_id(source.get())
+        .one(pool.connection())
+        .await?
+        .unwrap();
+    assert!(source_row.deleted_at.is_none());
+    repository
+        .delete_with_replacement(source, Some(replacement))
+        .await?;
+    let owner = users::Entity::find_by_id(703)
+        .one(pool.connection())
+        .await?
+        .unwrap();
+    assert_eq!(owner.default_group_id, replacement.get());
+    pool.close().await?;
+    std::fs::remove_file(file)?;
+    Ok(())
+}
+
+async fn insert_pool(
+    connection: &sea_orm::DatabaseConnection,
+    group_id: i64,
+) -> Result<(), sea_orm::DbErr> {
+    connection
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO merchant_pools (group_id, name, description, commission_bps, min_ratio_micros, max_ratio_micros, settlement_delay_secs) VALUES (?, 'Group deletion fixture', '', 0, 100000, 10000000, 86400)",
+            [group_id.into()],
+        ))
+        .await?;
     Ok(())
 }
 

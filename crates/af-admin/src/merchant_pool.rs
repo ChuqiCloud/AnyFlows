@@ -90,6 +90,8 @@ pub trait MerchantPoolService: Send + Sync {
         id: Option<i64>,
         write: MerchantPoolWrite,
     ) -> MerchantFuture<'_, MerchantPool>;
+    fn delete_pool(&self, principal: SessionPrincipal, id: i64) -> MerchantFuture<'_, ()>;
+    fn delete_merchant(&self, principal: SessionPrincipal, id: i64) -> MerchantFuture<'_, ()>;
     fn admin_merchants(
         &self,
         principal: SessionPrincipal,
@@ -411,6 +413,18 @@ impl MerchantPoolService for DatabaseMerchantPoolService {
             self.repository.write_pool(p.user_id(), id, write).await
         })
     }
+    fn delete_pool(&self, p: SessionPrincipal, id: i64) -> MerchantFuture<'_, ()> {
+        Box::pin(async move {
+            admin(p)?;
+            self.repository.delete_pool(p.user_id(), id).await
+        })
+    }
+    fn delete_merchant(&self, p: SessionPrincipal, id: i64) -> MerchantFuture<'_, ()> {
+        Box::pin(async move {
+            admin(p)?;
+            self.repository.delete_merchant(p.user_id(), id).await
+        })
+    }
     fn admin_merchants(
         &self,
         p: SessionPrincipal,
@@ -568,6 +582,37 @@ fn public_ip(ip: IpAddr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::public_ip;
+
+    #[tokio::test]
+    async fn merchant_deletion_requires_admin_before_repository_access() {
+        use super::*;
+        let pool = af_db::connect_and_migrate(
+            &af_db::DatabaseOptions::new("sqlite::memory:").unwrap(),
+            af_db::MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let settings = serde_json::from_value(serde_json::json!({
+            "key_id": "merchant-delete-test",
+            "key": "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI"
+        }))
+        .unwrap();
+        let service = DatabaseMerchantPoolService::new(
+            MerchantPoolRepository::new(pool, std::time::Duration::from_secs(5)),
+            CredentialEncryptor::new(&settings).unwrap(),
+            CredentialDecryptor::new(&settings).unwrap(),
+        );
+        let user = SessionPrincipal::new(af_domain::UserId::new(1).unwrap(), SessionRole::User);
+        assert_eq!(
+            service.delete_pool(user, 1).await,
+            Err(MerchantPoolError::Forbidden)
+        );
+        assert_eq!(
+            service.delete_merchant(user, 1).await,
+            Err(MerchantPoolError::Forbidden)
+        );
+    }
+
     #[test]
     fn merchant_endpoint_rejects_private_and_special_addresses() {
         for address in [

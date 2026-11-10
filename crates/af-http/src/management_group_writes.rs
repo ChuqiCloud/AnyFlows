@@ -4,7 +4,10 @@ use af_admin::{
 use af_domain::{GroupId, GroupPeakSchedule, GroupPeakWindow};
 use axum::{
     Json,
-    extract::{Extension, Path, State, rejection::JsonRejection},
+    extract::{
+        Extension, Path, Query, State,
+        rejection::{JsonRejection, QueryRejection},
+    },
     response::{IntoResponse, Response},
 };
 use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
@@ -94,16 +97,25 @@ pub(crate) async fn update_admin_group(
     Ok(no_store_json(AdminGroupResponse::from_group(&group)))
 }
 
-/// 安全软删除分组；仍被有效用户或有效令牌引用时返回冲突。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct AdminGroupDeleteQuery {
+    replacement_group_id: Option<i64>,
+}
+
+/// 软删除分组；显式提供替代分组时迁移用户并撤销直接绑定的 Key。
 pub(crate) async fn delete_admin_group(
     State(state): State<HttpState>,
     Path(group_id): Path<String>,
     Extension(authentication): Extension<af_admin::SessionAuthentication>,
+    query: Result<Query<AdminGroupDeleteQuery>, QueryRejection>,
 ) -> Result<Response, ManagementError> {
     let group_id = parse_group_id(&group_id)?;
+    let Query(query) = query.map_err(|_| ManagementError::InvalidRequest)?;
+    let replacement_group_id = parse_optional_group_id(query.replacement_group_id)?;
     state
         .admin_group_writer
-        .delete(authentication.principal(), group_id)
+        .delete_with_replacement(authentication.principal(), group_id, replacement_group_id)
         .await
         .map_err(map_write_error)?;
     Ok(no_store_empty(StatusCode::NO_CONTENT))

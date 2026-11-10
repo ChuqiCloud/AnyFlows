@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { useMerchantAction, useMerchantPools, useMerchantProfiles, useMerchantServices, useMerchantWithdrawals } from './merchant-pool-api'
 import { MerchantAdminReview, type MerchantReviewTarget } from './merchant-admin-review'
+import { MerchantAdminDelete, type MerchantDeleteTarget } from './merchant-admin-delete'
 import { MerchantAdminFinance } from './merchant-admin-finance'
 import { MerchantPoolAdminEditor } from './merchant-pool-admin-editor'
 import { MerchantCommissionSettings, MerchantSettlementReversal, MerchantTermsEditor } from './merchant-commission-settings'
@@ -32,6 +33,7 @@ export function MerchantAdminPage() {
   const withdrawals = useMerchantWithdrawals(true, status, true, withdrawalCursor)
   const [poolEditor, setPoolEditor] = useState<MerchantPool | 'create'>()
   const [review, setReview] = useState<MerchantReviewTarget>()
+  const [deleting, setDeleting] = useState<MerchantDeleteTarget>()
   const [termsMerchant, setTermsMerchant] = useState<number>()
   const [financeMerchant, setFinanceMerchant] = useState<number>()
   const [lifecycle, setLifecycle] = useState<MerchantOwnedService>()
@@ -52,8 +54,8 @@ export function MerchantAdminPage() {
     </div>
     {restore.isError ? <PoolError message={t('merchantPool.saveError')} /> : null}
     {panel === 'payoutSettings' ? <MerchantPayoutSettingsPanel /> : panel === 'payouts' ? <MerchantPayoutsPanel admin /> : query.isPending ? <PoolLoading /> : query.isError ? <PoolError onRetry={() => void query.refetch()} /> : <>
-      {panel === 'pools' ? pools.data?.items.length ? <MerchantAdminPoolsTable pools={pools.data.items} onEdit={setPoolEditor} /> : <PoolEmpty /> : null}
-      {panel === 'merchants' ? merchants.data?.items.length ? <MerchantAdminProfilesTable merchants={merchants.data.items} onFinance={setFinanceMerchant} onTerms={setTermsMerchant} onReview={(merchant) => setReview({ kind: 'merchant', item: merchant })} /> : <PoolEmpty /> : null}
+      {panel === 'pools' ? pools.data?.items.length ? <MerchantAdminPoolsTable pools={pools.data.items} onEdit={setPoolEditor} onDelete={(pool) => setDeleting({ kind: 'pool', item: pool })} /> : <PoolEmpty /> : null}
+      {panel === 'merchants' ? merchants.data?.items.length ? <MerchantAdminProfilesTable merchants={merchants.data.items} onFinance={setFinanceMerchant} onTerms={setTermsMerchant} onReview={(merchant) => setReview({ kind: 'merchant', item: merchant })} onDelete={(merchant) => setDeleting({ kind: 'merchant', item: merchant })} /> : <PoolEmpty /> : null}
       {panel === 'services' ? services.data?.items.length ? <MerchantAdminServicesTable services={services.data.items} restoring={restore.isPending} onLifecycle={setLifecycle} onResume={(id) => void resumeService(id)} onReview={(service) => setReview({ kind: 'service', item: service })} /> : <PoolEmpty /> : null}
       {panel === 'withdrawals' ? withdrawals.data?.items.length ? <MerchantWithdrawalsTable admin payoutEnabled={payoutSettings.data?.enabled ?? false} withdrawals={withdrawals.data.items} formatQuota={formatQuota} onReview={(withdrawal) => setReview({ kind: 'withdrawal', item: withdrawal })} /> : <PoolEmpty /> : null}
       {panel === 'withdrawals' ? <div className="flex justify-end gap-2"><Button size="sm" variant="flat" isDisabled={withdrawalPrevious.length === 0 || withdrawals.isFetching} onPress={() => { setWithdrawalCursor(withdrawalPrevious.at(-1)); setWithdrawalPrevious((current) => current.slice(0, -1)) }}>{t('merchantPool.previous')}</Button><Button size="sm" variant="flat" isDisabled={!withdrawals.data?.next_cursor || withdrawals.isFetching} onPress={() => { setWithdrawalPrevious((current) => [...current, withdrawalCursor]); setWithdrawalCursor(withdrawals.data?.next_cursor ?? undefined) }}>{t('merchantPool.next')}</Button></div> : null}
@@ -65,5 +67,6 @@ export function MerchantAdminPage() {
     {termsMerchant !== undefined && termsPools.data ? <MerchantTermsEditor merchantId={termsMerchant} pools={termsPools.data.items} onClose={() => setTermsMerchant(undefined)} /> : null}
     {reversalOpen ? <MerchantSettlementReversal onClose={() => setReversalOpen(false)} /> : null}
     {review ? <MerchantAdminReview key={`${review.kind}-${review.item.id}`} target={review} onClose={() => setReview(undefined)} /> : null}
+    {deleting ? <MerchantAdminDelete key={`${deleting.kind}-${deleting.item.id}`} target={deleting} onClose={() => setDeleting(undefined)} /> : null}
   </div>
 }

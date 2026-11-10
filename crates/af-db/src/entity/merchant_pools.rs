@@ -15,6 +15,7 @@ pub struct Model {
     pub settlement_delay_secs: i64,
     pub created_at: TimeDateTimeWithTimeZone,
     pub updated_at: TimeDateTimeWithTimeZone,
+    pub deleted_at: Option<TimeDateTimeWithTimeZone>,
 }
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}

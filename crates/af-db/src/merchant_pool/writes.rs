@@ -22,7 +22,7 @@ impl MerchantPoolRepository {
                 .map_err(internal)?;
             let now = DatabaseTimestamp::now_utc();
             let row = if let Some(existing) = existing {
-                if existing.status != "rejected" {
+                if existing.deleted_at.is_some() || existing.status != "rejected" {
                     return Err(MerchantPoolError::Conflict);
                 }
                 let mut active = existing.into_active_model();
@@ -68,7 +68,7 @@ impl MerchantPoolRepository {
             if group_query.one(&txn).await.map_err(internal)?.is_none() { return Err(MerchantPoolError::InvalidInput); }
             let now=DatabaseTimestamp::now_utc();
             let mut active=if let Some(id)=id {
-                let current=find_pool(&txn,id).await?;
+                let current=deletion::lock_live_pool(&txn,id).await?;
                 if current.group_id!=write.group_id { return Err(MerchantPoolError::Conflict); }
                 current.into_active_model()
             } else {
@@ -102,16 +102,13 @@ impl MerchantPoolRepository {
         self.bounded(async {
             let txn = self.pool.connection().begin().await.map_err(internal)?;
             let row = profiles::Entity::find_by_id(id)
+                .filter(profiles::Column::DeletedAt.is_null())
                 .one(&txn)
                 .await
                 .map_err(internal)?
                 .ok_or(MerchantPoolError::NotFound)?;
             lock_owner(&txn, UserId::new(row.owner_user_id).map_err(internal)?).await?;
-            let row = profiles::Entity::find_by_id(id)
-                .one(&txn)
-                .await
-                .map_err(internal)?
-                .ok_or(MerchantPoolError::NotFound)?;
+            let row = deletion::lock_live_merchant(&txn, id).await?;
             let before = row.status.clone();
             let now = DatabaseTimestamp::now_utc();
             if review.decision == "reject" && row.status != "pending" {
@@ -188,7 +185,7 @@ impl MerchantPoolRepository {
             let txn=self.pool.connection().begin().await.map_err(internal)?;
             lock_owner(&txn,owner).await?;
             let merchant=require_merchant(&txn,owner,true).await?;
-            let pool=find_pool(&txn,write.pool_id).await?;
+            let pool=deletion::lock_live_pool(&txn,write.pool_id).await?;
             if !pool.enabled { return Err(MerchantPoolError::InvalidInput); }
             validate_ratios(&pool,write.default_ratio_micros,&write.models)?;
             for model in &write.models {
@@ -210,7 +207,7 @@ impl MerchantPoolRepository {
                 }
                 service
             } else {
-                let count=services::Entity::find().filter(services::Column::MerchantId.eq(merchant.id)).count(&txn).await.map_err(internal)?;
+                let count=services::Entity::find().filter(services::Column::MerchantId.eq(merchant.id)).filter(services::Column::DeletedAt.is_null()).count(&txn).await.map_err(internal)?;
                 if count>=32 { return Err(MerchantPoolError::LimitReached); }
                 services::ActiveModel{merchant_id:Set(merchant.id),pool_id:Set(write.pool_id),name:Set(write.name.clone()),
                     description:Set(write.description.clone()),status:Set("draft".to_owned()),published_revision_id:Set(None),pending_revision_id:Set(None),
@@ -417,12 +414,14 @@ impl MerchantPoolRepository {
             let txn = self.pool.connection().begin().await.map_err(internal)?;
             let initial = find_service(&txn, id).await?;
             let merchant = profiles::Entity::find_by_id(initial.merchant_id)
+                .filter(profiles::Column::DeletedAt.is_null())
                 .one(&txn)
                 .await
                 .map_err(internal)?
                 .ok_or(MerchantPoolError::NotFound)?;
             lock_owner(&txn, UserId::new(merchant.owner_user_id).map_err(internal)?).await?;
             let merchant = profiles::Entity::find_by_id(initial.merchant_id)
+                .filter(profiles::Column::DeletedAt.is_null())
                 .one(&txn)
                 .await
                 .map_err(internal)?
@@ -540,9 +539,9 @@ impl MerchantPoolRepository {
         self.bounded(async {
             let txn=self.pool.connection().begin().await.map_err(internal)?;
             let initial=find_service(&txn,id).await?;
-            let merchant=profiles::Entity::find_by_id(initial.merchant_id).one(&txn).await.map_err(internal)?.ok_or(MerchantPoolError::NotFound)?;
+            let merchant=profiles::Entity::find_by_id(initial.merchant_id).filter(profiles::Column::DeletedAt.is_null()).one(&txn).await.map_err(internal)?.ok_or(MerchantPoolError::NotFound)?;
             lock_owner(&txn,UserId::new(merchant.owner_user_id).map_err(internal)?).await?;
-            let merchant=profiles::Entity::find_by_id(initial.merchant_id).one(&txn).await.map_err(internal)?.ok_or(MerchantPoolError::NotFound)?;
+            let merchant=profiles::Entity::find_by_id(initial.merchant_id).filter(profiles::Column::DeletedAt.is_null()).one(&txn).await.map_err(internal)?.ok_or(MerchantPoolError::NotFound)?;
             let service=lock_service(&txn,id).await?;
             let now=DatabaseTimestamp::now_utc();
             if review.decision=="suspend" {

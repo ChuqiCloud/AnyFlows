@@ -2261,7 +2261,7 @@
     },
     "errors": {
       "group_conflict": "稳定名称已被其他有效分组使用。",
-      "group_in_use": "该分组仍被有效用户或 API Key 使用，暂时不能删除。",
+      "group_in_use": "该分组仍有用户、API Key 或共享池关联。请选择接收用户的分组；共享池须先删除。",
       "invalid_request": "分组字段无效，请检查后重试。",
       "internal_error": "数据可能已提交，但页面刷新暂时失败。请刷新列表确认后重试。",
       "unknown": "分组操作失败，请刷新列表确认当前状态。"
@@ -2277,7 +2277,12 @@
     },
     "delete": {
       "title": "删除分组",
-      "description": "删除 {{name}} 后，与该分组关联且可安全解除的渠道、能力与回退关系会被清理。此操作不可撤销。"
+      "description": "删除 {{name}} 后，会清理相关渠道、能力与回退关系，历史调用和账务记录保留。此操作不可撤销。",
+      "replacement": "用户迁移到",
+      "noReplacement": "不迁移，仅删除无用户或 Key 关联的分组",
+      "replacementHint": "存在用户或 API Key 关联时，请选择接收用户的分组。共享池专用分组不能作为迁移目标。",
+      "transferHint": "删除后，原组用户迁移到“{{name}}”，直接绑定原组的 API Key 将撤销；用户账户和历史记录保留。",
+      "targetsError": "迁移目标加载失败，请重试。"
     }
   },
   "modelManagement": {
