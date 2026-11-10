@@ -1,7 +1,10 @@
 //! Admin configuration for explicitly opted-in channel health monitors.
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::sync::Arc;
 
-use af_admin::{SessionAuthentication, SessionAuthenticator};
+use af_admin::{
+    ActiveChannelMonitorService, ActiveChannelMonitorServiceError,
+    SessionAuthentication, SessionAuthenticator,
+};
 use af_db::{
     ActiveChannelMonitorConfig, ActiveChannelMonitorEvent, ActiveChannelMonitorEventKind,
     ActiveChannelMonitorTarget, ActiveChannelMonitorTargetInput,
@@ -23,20 +26,6 @@ use crate::{
     management_error::ManagementError,
     management_session::no_store_json,
 };
-
-pub type ActiveChannelMonitorServiceFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, ActiveChannelMonitorServiceError>> + Send + 'a>>;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ActiveChannelMonitorServiceError { InvalidInput, NotFound, Unavailable }
-
-pub trait ActiveChannelMonitorService: Send + Sync {
-    fn config(&self) -> ActiveChannelMonitorServiceFuture<'_, ActiveChannelMonitorConfig>;
-    fn set_config(&self, config: ActiveChannelMonitorConfig) -> ActiveChannelMonitorServiceFuture<'_, ActiveChannelMonitorConfig>;
-    fn list_targets(&self) -> ActiveChannelMonitorServiceFuture<'_, Vec<ActiveChannelMonitorTarget>>;
-    fn upsert_target(&self, input: ActiveChannelMonitorTargetInput) -> ActiveChannelMonitorServiceFuture<'_, ActiveChannelMonitorTarget>;
-    fn delete_target(&self, id: i64) -> ActiveChannelMonitorServiceFuture<'_, ()>;
-    fn events(&self, id: i64) -> ActiveChannelMonitorServiceFuture<'_, Vec<ActiveChannelMonitorEvent>>;
-}
 
 #[derive(Clone)]
 struct ActiveChannelMonitorState { service: Arc<dyn ActiveChannelMonitorService> }

@@ -2,9 +2,9 @@
 use std::{future::Future, pin::Pin, sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use af_db::{
-    ActiveChannelMonitorConfig, ActiveChannelMonitorEvent,
+    ActiveChannelMonitorConfig, ActiveChannelMonitorError as RepositoryError, ActiveChannelMonitorEvent,
     ActiveChannelMonitorRepository, ActiveChannelMonitorTarget,
-    ActiveChannelMonitorTargetInput, ActiveChannelProbeLease, ActiveChannelProbeOutcome,
+    ActiveChannelMonitorTargetInput, ActiveChannelProbeOutcome,
     MAX_ACTIVE_CHANNEL_MONITOR_BATCH,
 };
 use af_domain::{ChannelId, CredentialId};
@@ -31,6 +31,27 @@ pub enum ActiveChannelMonitorServiceError {
     NotFound,
     #[error("active channel monitor persistence failed")]
     Unavailable,
+}
+
+pub type ActiveChannelMonitorServiceFuture<'a, T> =
+    Pin<Box<dyn Future<Output = Result<T, ActiveChannelMonitorServiceError>> + Send + 'a>>;
+
+pub trait ActiveChannelMonitorService: Send + Sync {
+    fn config(&self) -> ActiveChannelMonitorServiceFuture<'_, ActiveChannelMonitorConfig>;
+    fn set_config(
+        &self,
+        config: ActiveChannelMonitorConfig,
+    ) -> ActiveChannelMonitorServiceFuture<'_, ActiveChannelMonitorConfig>;
+    fn list_targets(&self) -> ActiveChannelMonitorServiceFuture<'_, Vec<ActiveChannelMonitorTarget>>;
+    fn upsert_target(
+        &self,
+        input: ActiveChannelMonitorTargetInput,
+    ) -> ActiveChannelMonitorServiceFuture<'_, ActiveChannelMonitorTarget>;
+    fn delete_target(&self, id: i64) -> ActiveChannelMonitorServiceFuture<'_, ()>;
+    fn events(
+        &self,
+        id: i64,
+    ) -> ActiveChannelMonitorServiceFuture<'_, Vec<ActiveChannelMonitorEvent>>;
 }
 
 #[derive(Clone)]
@@ -69,37 +90,29 @@ impl DatabaseActiveChannelMonitorService {
     }
 }
 
-impl af_http::ActiveChannelMonitorService for DatabaseActiveChannelMonitorService {
-    fn config(&self) -> af_http::ActiveChannelMonitorServiceFuture<'_, ActiveChannelMonitorConfig> {
-        Box::pin(async move { DatabaseActiveChannelMonitorService::config(self).await.map_err(http_error) })
+impl ActiveChannelMonitorService for DatabaseActiveChannelMonitorService {
+    fn config(&self) -> ActiveChannelMonitorServiceFuture<'_, ActiveChannelMonitorConfig> {
+        Box::pin(async move { DatabaseActiveChannelMonitorService::config(self).await })
     }
 
-    fn set_config(&self, config: ActiveChannelMonitorConfig) -> af_http::ActiveChannelMonitorServiceFuture<'_, ActiveChannelMonitorConfig> {
-        Box::pin(async move { DatabaseActiveChannelMonitorService::set_config(self, config).await.map_err(http_error) })
+    fn set_config(&self, config: ActiveChannelMonitorConfig) -> ActiveChannelMonitorServiceFuture<'_, ActiveChannelMonitorConfig> {
+        Box::pin(async move { DatabaseActiveChannelMonitorService::set_config(self, config).await })
     }
 
-    fn list_targets(&self) -> af_http::ActiveChannelMonitorServiceFuture<'_, Vec<ActiveChannelMonitorTarget>> {
-        Box::pin(async move { DatabaseActiveChannelMonitorService::list_targets(self).await.map_err(http_error) })
+    fn list_targets(&self) -> ActiveChannelMonitorServiceFuture<'_, Vec<ActiveChannelMonitorTarget>> {
+        Box::pin(async move { DatabaseActiveChannelMonitorService::list_targets(self).await })
     }
 
-    fn upsert_target(&self, input: ActiveChannelMonitorTargetInput) -> af_http::ActiveChannelMonitorServiceFuture<'_, ActiveChannelMonitorTarget> {
-        Box::pin(async move { DatabaseActiveChannelMonitorService::upsert_target(self, input).await.map_err(http_error) })
+    fn upsert_target(&self, input: ActiveChannelMonitorTargetInput) -> ActiveChannelMonitorServiceFuture<'_, ActiveChannelMonitorTarget> {
+        Box::pin(async move { DatabaseActiveChannelMonitorService::upsert_target(self, input).await })
     }
 
-    fn delete_target(&self, id: i64) -> af_http::ActiveChannelMonitorServiceFuture<'_, ()> {
-        Box::pin(async move { DatabaseActiveChannelMonitorService::delete_target(self, id).await.map_err(http_error) })
+    fn delete_target(&self, id: i64) -> ActiveChannelMonitorServiceFuture<'_, ()> {
+        Box::pin(async move { DatabaseActiveChannelMonitorService::delete_target(self, id).await })
     }
 
-    fn events(&self, id: i64) -> af_http::ActiveChannelMonitorServiceFuture<'_, Vec<ActiveChannelMonitorEvent>> {
-        Box::pin(async move { DatabaseActiveChannelMonitorService::events(self, id).await.map_err(http_error) })
-    }
-}
-
-fn http_error(error: ActiveChannelMonitorServiceError) -> af_http::ActiveChannelMonitorServiceError {
-    match error {
-        ActiveChannelMonitorServiceError::InvalidInput => af_http::ActiveChannelMonitorServiceError::InvalidInput,
-        ActiveChannelMonitorServiceError::NotFound => af_http::ActiveChannelMonitorServiceError::NotFound,
-        ActiveChannelMonitorServiceError::Unavailable => af_http::ActiveChannelMonitorServiceError::Unavailable,
+    fn events(&self, id: i64) -> ActiveChannelMonitorServiceFuture<'_, Vec<ActiveChannelMonitorEvent>> {
+        Box::pin(async move { DatabaseActiveChannelMonitorService::events(self, id).await })
     }
 }
 
@@ -147,6 +160,6 @@ impl<P: ActiveChannelProbe + ?Sized + 'static> ActiveChannelMonitorWorker<P> {
     }
 }
 
-fn map_service_error(error: ActiveChannelMonitorError) -> ActiveChannelMonitorServiceError {
-    match error { af_db::ActiveChannelMonitorError::InvalidConfiguration=>ActiveChannelMonitorServiceError::InvalidInput,af_db::ActiveChannelMonitorError::NotEligible=>ActiveChannelMonitorServiceError::NotFound,af_db::ActiveChannelMonitorError::Invariant=>ActiveChannelMonitorServiceError::Unavailable,af_db::ActiveChannelMonitorError::Query|af_db::ActiveChannelMonitorError::Timeout=>ActiveChannelMonitorServiceError::Unavailable }
+fn map_service_error(error: RepositoryError) -> ActiveChannelMonitorServiceError {
+    match error { RepositoryError::InvalidConfiguration=>ActiveChannelMonitorServiceError::InvalidInput,RepositoryError::NotEligible=>ActiveChannelMonitorServiceError::NotFound,RepositoryError::Invariant=>ActiveChannelMonitorServiceError::Unavailable,RepositoryError::Query|RepositoryError::Timeout=>ActiveChannelMonitorServiceError::Unavailable }
 }

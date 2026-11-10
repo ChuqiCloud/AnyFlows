@@ -5,7 +5,7 @@
 
 mod announcements;
 mod active_channel_monitor;
-pub use active_channel_monitor::{ActiveChannelMonitorService, ActiveChannelMonitorServiceError, ActiveChannelMonitorServiceFuture, build_active_channel_monitor_router, active_channel_monitor_openapi_document};
+pub use active_channel_monitor::{build_active_channel_monitor_router, active_channel_monitor_openapi_document};
 mod anthropic_messages;
 mod api_explorer;
 mod audio_service;

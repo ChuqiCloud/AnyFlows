@@ -41,7 +41,8 @@ mod active_channel_monitor;
 #[cfg(test)]
 mod active_channel_monitor_tests;
 pub use active_channel_monitor::{
-    ActiveChannelMonitorServiceError, ActiveChannelProbe, ActiveChannelProbeFuture,
+    ActiveChannelMonitorService, ActiveChannelMonitorServiceError,
+    ActiveChannelMonitorServiceFuture, ActiveChannelProbe, ActiveChannelProbeFuture,
     ActiveChannelProbeResult, ActiveChannelMonitorWorker,
     DatabaseActiveChannelMonitorService,
 };

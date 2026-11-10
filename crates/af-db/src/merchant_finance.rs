@@ -270,8 +270,7 @@ impl MerchantFinanceRepository {
                 .order_by(Alias::new("period"), Order::Asc)
                 .order_by(Alias::new("service_id"), Order::Asc)
                 .order_by(Alias::new("model"), Order::Asc)
-                .limit(20_001)
-                .to_owned();
+                .limit(20_001);
             let rows = all(self.pool.connection(), query).await?;
             if rows.len() > 20_000 {
                 return Err(MerchantFinanceError::LimitReached);

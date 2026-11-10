@@ -1,8 +1,7 @@
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
-use af_db::{
-    MerchantPoolError, MerchantPoolRepository, MerchantServiceWatch, MerchantServiceWatchPage,
-};
+use af_db::{MerchantPoolRepository, MerchantServiceWatch, MerchantServiceWatchPage};
+use af_domain::MerchantPoolError;
 use thiserror::Error;
 
 use crate::SessionPrincipal;
