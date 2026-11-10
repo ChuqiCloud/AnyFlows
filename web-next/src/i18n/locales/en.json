@@ -8763,6 +8763,8 @@
     "headers": "Identity headers",
     "headersHint": "Identity fields only. Do not enter API keys, cookies or authentication material. Values must be printable ASCII, up to 512 bytes.",
     "addHeader": "Add identity field",
+    "customHeaderName": "Custom field name",
+    "addCustomHeader": "Add",
     "remove": "Remove",
     "protected": "Built-in profiles are protected. Copy one to create a custom profile.",
     "valid": "Configuration is valid. Channel binding also checks protocol and header conflicts.",
