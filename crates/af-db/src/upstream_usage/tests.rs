@@ -49,7 +49,7 @@ async fn upstream_usage_shared_profiles_reuse_source_identity_but_keep_key_pause
     let key2 = CredentialId::new(2).unwrap();
     let config = UpstreamUsageConfig {
         provider: UpstreamUsageProvider::NewApi,
-        scope: UpstreamUsageScope::Account,
+        scope: af_domain::UpstreamUsageScope::Account,
         profile_id: Some(profile.id),
         pause_when_exhausted: true,
         ..Default::default()
@@ -227,7 +227,7 @@ async fn upstream_usage_profile_revision_rejects_old_shared_lease_and_preserves_
         .unwrap();
     let config = UpstreamUsageConfig {
         provider: UpstreamUsageProvider::NewApi,
-        scope: UpstreamUsageScope::Account,
+        scope: af_domain::UpstreamUsageScope::Account,
         profile_id: Some(profile.id),
         pause_when_exhausted: true,
         ..Default::default()
