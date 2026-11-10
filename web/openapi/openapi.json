@@ -44102,6 +44102,10 @@
             "type": "integer",
             "format": "int64"
           },
+          "merchant_id": {
+            "type": "integer",
+            "format": "int64"
+          },
           "merchant_name": {
             "type": "string"
           },
@@ -44113,10 +44117,6 @@
             "type": "string"
           },
           "service_id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "merchant_id": {
             "type": "integer",
             "format": "int64"
           },

@@ -2308,11 +2308,11 @@ export type MerchantServiceTimeline = {
 export type MerchantServiceWatch = {
     active: boolean;
     created_at: number;
+    merchant_id: number;
     merchant_name: string;
     pool_id: number;
     pool_name: string;
     service_id: number;
-    merchant_id: number;
     service_name: string;
 };
 export type MerchantServiceWatchChangeResponse = {
