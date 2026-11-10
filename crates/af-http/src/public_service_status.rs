@@ -163,7 +163,8 @@ fn status_name(status: PublicStatusKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use af_admin::{PublicStatusPoint, PublicStatusReport};
+    use af_admin::PublicStatusReport;
+    use af_db::PublicStatusPoint;
 
     fn report() -> PublicStatusReport {
         PublicStatusReport {

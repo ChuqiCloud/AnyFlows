@@ -569,7 +569,7 @@ impl IntoResponse for FinanceHttpError {
 
 #[cfg(test)]
 mod finance_report_tests {
-    use super::csv_text;
+    use super::{csv_text, finance_report_csv};
 
     #[test]
     fn report_csv_quotes_cells_and_neutralizes_spreadsheet_formulas() {
@@ -617,7 +617,8 @@ mod finance_report_tests {
 
     #[test]
     fn merchant_finance_report_contract_uses_exact_utc_date_inputs() {
-        let format = time::format_description::parse("[year]-[month]-[day]").unwrap();
+        let format =
+            time::format_description::parse_borrowed::<2>("[year]-[month]-[day]").unwrap();
         assert!(time::Date::parse("2026-11-10", &format).is_ok());
         assert!(time::Date::parse("2026-02-30", &format).is_err());
     }
