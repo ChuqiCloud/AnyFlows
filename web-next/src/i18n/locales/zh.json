@@ -8761,6 +8761,8 @@
     "headers": "身份请求头",
     "headersHint": "仅允许身份字段，不保存 API Key、Cookie 或其他认证信息。值须为可打印 ASCII 字符，长度不超过 512 字节。",
     "addHeader": "添加身份字段",
+    "customHeaderName": "自定义字段名",
+    "addCustomHeader": "添加",
     "remove": "移除",
     "protected": "内置档案受保护。如需调整，请复制后创建自定义档案。",
     "valid": "配置校验通过。渠道绑定时仍会检查协议及请求头冲突。",
