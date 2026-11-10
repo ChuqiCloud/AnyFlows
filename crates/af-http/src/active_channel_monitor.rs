@@ -46,16 +46,18 @@ pub struct ActiveChannelMonitorTargetRequest {
     pub muted_until_epoch_seconds: Option<i64>,
 }
 
-impl TryFrom<ActiveChannelMonitorTargetRequest> for ActiveChannelMonitorTargetInput {
-    type Error=ManagementError;
-    fn try_from(value: ActiveChannelMonitorTargetRequest) -> Result<Self,Self::Error> {
-        Ok(Self {
-            channel_id: ChannelId::new(value.channel_id).map_err(|_|ManagementError::InvalidRequest)?,
-            credential_id: CredentialId::new(value.credential_id).map_err(|_|ManagementError::InvalidRequest)?,
-            model:value.model,enabled:value.enabled,interval_secs:value.interval_secs,daily_budget:value.daily_budget,
-            timeout_secs:value.timeout_secs,alert_after_secs:value.alert_after_secs,muted_until_epoch_seconds:value.muted_until_epoch_seconds,
-        })
-    }
+fn target_input(value: ActiveChannelMonitorTargetRequest) -> Result<ActiveChannelMonitorTargetInput, ManagementError> {
+    Ok(ActiveChannelMonitorTargetInput {
+        channel_id: ChannelId::new(value.channel_id).map_err(|_| ManagementError::InvalidRequest)?,
+        credential_id: CredentialId::new(value.credential_id).map_err(|_| ManagementError::InvalidRequest)?,
+        model: value.model,
+        enabled: value.enabled,
+        interval_secs: value.interval_secs,
+        daily_budget: value.daily_budget,
+        timeout_secs: value.timeout_secs,
+        alert_after_secs: value.alert_after_secs,
+        muted_until_epoch_seconds: value.muted_until_epoch_seconds,
+    })
 }
 
 #[derive(Serialize, ToSchema)]
@@ -113,7 +115,7 @@ async fn set_settings(State(s):State<ActiveChannelMonitorState>,Extension(_):Ext
 async fn list_targets(State(s):State<ActiveChannelMonitorState>,Extension(_):Extension<SessionAuthentication>)->Result<Response,ManagementError>{let rows=s.service.list_targets().await.map_err(map_error)?.into_iter().map(Into::into).collect::<Vec<ActiveChannelMonitorTargetResponse>>();Ok(no_store_json(rows))}
 
 #[utoipa::path(post,path="/api/admin/channel-monitor/targets",request_body=ActiveChannelMonitorTargetRequest,responses((status=200,body=ActiveChannelMonitorTargetResponse)),security(("bearerAuth" = [])))]
-async fn upsert_target(State(s):State<ActiveChannelMonitorState>,Extension(_):Extension<SessionAuthentication>,request:Result<Json<ActiveChannelMonitorTargetRequest>,JsonRejection>)->Result<Response,ManagementError>{let Json(v)=request.map_err(|_|ManagementError::InvalidRequest)?;let input=v.try_into()?;Ok(no_store_json(ActiveChannelMonitorTargetResponse::from(s.service.upsert_target(input).await.map_err(map_error)?)))}
+async fn upsert_target(State(s):State<ActiveChannelMonitorState>,Extension(_):Extension<SessionAuthentication>,request:Result<Json<ActiveChannelMonitorTargetRequest>,JsonRejection>)->Result<Response,ManagementError>{let Json(v)=request.map_err(|_|ManagementError::InvalidRequest)?;let input=target_input(v)?;Ok(no_store_json(ActiveChannelMonitorTargetResponse::from(s.service.upsert_target(input).await.map_err(map_error)?)))}
 
 #[utoipa::path(delete,path="/api/admin/channel-monitor/targets/{id}",params(("id"=i64,Path,minimum=1)),responses((status=204)),security(("bearerAuth" = [])))]
 async fn delete_target(State(s):State<ActiveChannelMonitorState>,Path(id):Path<i64>,Extension(_):Extension<SessionAuthentication>)->Result<Response,ManagementError>{if id<=0{return Err(ManagementError::InvalidRequest)}s.service.delete_target(id).await.map_err(map_error)?;Ok(http::StatusCode::NO_CONTENT.into_response())}
