@@ -63,11 +63,11 @@ try {
     const request = intercepted.request(), path = new URL(request.url()).pathname, method = request.method()
     const respond = (body, status = 200) => intercepted.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     if (path === '/api/site') return respond({ balance_display: { mode: 'quota', unit_name: '积分', unit_symbol: '积分', quota_units_per_display_unit: '10000', symbol_position: 'suffix', fraction_digits: 0 } })
+    if (path === '/api/merchant-pools/1/model-providers') return respond({ providers: [{ name: 'DeepSeek', model_count: 1 }] })
     assert.equal(request.headers().authorization, 'Bearer ci-merchant-watch')
     if (path === '/api/merchant-pools' && method === 'GET') return respond({ items: [pool], total: 1, page: 1, page_size: 20 })
     if (path === '/api/merchant-pools/1/services' && method === 'GET') return respond({ items: [service], total: 1, page: 1, page_size: 20 })
     if (path === '/api/merchant-pools/1/services/51' && method === 'GET') return respond(service)
-    if (path === '/api/merchant-pools/1/model-providers') return respond({ providers: [{ name: 'DeepSeek', model_count: 1 }] })
     if (path === '/api/merchant-pool/watches' && method === 'GET') return respond({ items: watches, total: watches.length })
     if (path === '/api/merchant-pools/1/services/51/watch' && method === 'PUT') {
       watchWrites.push('put')

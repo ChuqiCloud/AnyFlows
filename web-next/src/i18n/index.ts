@@ -24,8 +24,8 @@ void i18n.use(initReactI18next).init({
   fallbackLng: 'zh',
   lng: getInitialLanguage(),
   resources: {
-    en: { translation: { ...en, merchantPool: merchantPool.en, merchantServiceWatch: merchantServiceWatch.en, keyCapabilities: keyCapabilities.en, publicStatus: publicStatus.en } },
-    zh: { translation: { ...zh, merchantPool: merchantPool.zh, merchantServiceWatch: merchantServiceWatch.zh, keyCapabilities: keyCapabilities.zh, publicStatus: publicStatus.zh } },
+    en: { translation: { ...en, merchantPool: merchantPool.en, merchantServiceWatch: merchantServiceWatch.en, keyCapabilities: keyCapabilities.en, publicStatus: publicStatus.en.publicStatus } },
+    zh: { translation: { ...zh, merchantPool: merchantPool.zh, merchantServiceWatch: merchantServiceWatch.zh, keyCapabilities: keyCapabilities.zh, publicStatus: publicStatus.zh.publicStatus } },
   },
   interpolation: {
     escapeValue: false,

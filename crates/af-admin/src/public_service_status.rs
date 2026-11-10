@@ -162,6 +162,10 @@ mod tests {
             PublicStatusKind::Operational
         );
         assert_eq!(
+            public_report(record(100, 95, 5, 0)).status,
+            PublicStatusKind::Operational
+        );
+        assert_eq!(
             public_report(record(100, 90, 10, 0)).status,
             PublicStatusKind::Degraded
         );

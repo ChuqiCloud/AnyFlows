@@ -94,13 +94,13 @@ try {
 
   await page.goto(`${origin}/.channel-monitor-smoke.html`)
   await page.getByText(label('channels.activeMonitor.title'), { exact: true }).waitFor()
+  const details = page.locator('details').filter({ hasText: label('channels.activeMonitor.title') })
+  await details.locator('summary').click()
   await page.getByText(label('channels.activeMonitor.alerting'), { exact: true }).waitFor({ state: 'detached' })
   await page.getByText(label('channels.activeMonitor.targetDisabledStatus'), { exact: true }).waitFor()
   await page.getByText(new RegExp(label('channels.activeMonitor.lastProbe').split('{{value}}')[0])).waitFor()
   await page.getByText(new RegExp(label('channels.activeMonitor.lastSuccess').split('{{value}}')[0])).waitFor()
 
-  const details = page.locator('details').filter({ hasText: label('channels.activeMonitor.title') })
-  await details.locator('summary').click()
   const globalSwitch = page.getByRole('switch', { name: label('channels.activeMonitor.globalEnabled') })
   await globalSwitch.waitFor()
   assert.equal(await globalSwitch.getAttribute('aria-checked'), 'false', 'Global monitoring starts disabled')

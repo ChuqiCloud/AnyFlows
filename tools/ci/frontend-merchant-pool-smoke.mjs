@@ -277,8 +277,14 @@ try {
     if (path === '/api/tokens' && method === 'POST') { const body = request.postDataJSON(); assert.equal(body.user_route_id, 21); assert.equal(body.group_id, null); return respond({ token: { id: 5, name: body.name } }, 201) }
     return respond({ error: { code: 'not_found' } }, 404)
   })
+  const initialCatalog = page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return url.pathname === '/api/merchant-pools/1/services' && response.request().method() === 'GET' && url.searchParams.get('page') === '1' && !url.searchParams.has('provider')
+  })
   await page.goto(`${origin}/.merchant-pool-smoke.html`)
   await page.getByRole('heading', { name: label('market.title'), exact: true }).waitFor()
+  await initialCatalog
+  await page.getByRole('region', { name: label('catalogTable'), exact: true }).getByRole('link', { name: publicService.name, exact: true }).waitFor()
   const providerFilter = page.getByRole('group', { name: label('market.providers'), exact: true })
   const deepseek = providerFilter.getByRole('button', { name: 'DeepSeek', exact: true })
   const anthropic = providerFilter.getByRole('button', { name: 'Anthropic', exact: true })
@@ -311,7 +317,9 @@ try {
   await page.reload()
   await page.getByRole('region', { name: label('catalogTable'), exact: true }).getByText('claude-fixture', { exact: true }).waitFor()
   assert.equal(await deepseek.getAttribute('aria-pressed'), 'true', 'Manufacturer selection survives URL reload')
+  filtered = providerResponse(['DeepSeek'])
   await page.getByRole('button', { name: label('market.removeFilter').replace('{{value}}', 'Anthropic'), exact: true }).click()
+  await filtered
   await page.getByRole('region', { name: label('catalogTable'), exact: true }).getByText('claude-fixture', { exact: true }).waitFor({ state: 'hidden' })
   assert.deepEqual(JSON.parse(new URL(page.url()).searchParams.get('provider')), ['DeepSeek'], 'A manufacturer chip removes only its own value')
   await providerFilter.getByRole('button', { name: label('market.allProviders'), exact: true }).click()
