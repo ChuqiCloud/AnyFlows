@@ -351,29 +351,27 @@ impl MerchantPoolRepository {
                 .await
                 .map_err(internal)?
                 .is_some();
-            let status = if merchant.status != "approved"
-                || !merchant_active
-                || row.platform_suspended
-            {
-                "suspended".to_owned()
-            } else if row.merchant_paused {
-                "paused".to_owned()
-            } else if row.status != "published" {
-                row.status
-            } else if maintenance.iter().any(|notice| notice.blocks_requests) {
-                "maintenance".to_owned()
-            } else if !channel_active
-                || revision.status != "published"
-                || models.iter().any(|m| {
-                    m.prices.is_none()
-                        || !(pool.min_ratio_micros..=pool.max_ratio_micros)
-                            .contains(&m.sales_ratio_micros)
-                })
-            {
-                "unavailable".to_owned()
-            } else {
-                "published".to_owned()
-            };
+            let status =
+                if merchant.status != "approved" || !merchant_active || row.platform_suspended {
+                    "suspended".to_owned()
+                } else if row.merchant_paused {
+                    "paused".to_owned()
+                } else if row.status != "published" {
+                    row.status
+                } else if maintenance.iter().any(|notice| notice.blocks_requests) {
+                    "maintenance".to_owned()
+                } else if !channel_active
+                    || revision.status != "published"
+                    || models.iter().any(|m| {
+                        m.prices.is_none()
+                            || !(pool.min_ratio_micros..=pool.max_ratio_micros)
+                                .contains(&m.sales_ratio_micros)
+                    })
+                {
+                    "unavailable".to_owned()
+                } else {
+                    "published".to_owned()
+                };
             if query
                 .status
                 .as_ref()
@@ -473,10 +471,10 @@ impl MerchantPoolRepository {
                     (Some(l), Some(r)) => {
                         if query.sort.as_deref() == Some("success_rate") {
                             // Compare a smoothed estimate with integer arithmetic; low samples never lead.
-                            let lv = u128::from(l.success_count + 1)
-                                * u128::from(r.sample_count + 2);
-                            let rv = u128::from(r.success_count + 1)
-                                * u128::from(l.sample_count + 2);
+                            let lv =
+                                u128::from(l.success_count + 1) * u128::from(r.sample_count + 2);
+                            let rv =
+                                u128::from(r.success_count + 1) * u128::from(l.sample_count + 2);
                             rv.cmp(&lv)
                         } else {
                             let delay = |row: &crate::MerchantServiceStatistics| {

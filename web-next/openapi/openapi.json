@@ -7568,6 +7568,103 @@
         ]
       }
     },
+    "/api/merchant-pools/{pool}/model-providers": {
+      "get": {
+        "tags": [
+          "商户共享池"
+        ],
+        "operationId": "listMerchantPoolModelProviders",
+        "parameters": [
+          {
+            "name": "pool",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Merchant pool operation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantCatalogProviderSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/merchant-pools/{pool}/services": {
       "get": {
         "tags": [
@@ -7693,6 +7790,17 @@
             "schema": {
               "type": "boolean"
             }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "JSON array of up to 32 distinct exact model provider names (1–64 bytes each); null selects models without provider metadata. Filters offers before service pagination.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 16384
+            },
+            "example": "[\"DeepSeek\",\"Anthropic\",null]"
           }
         ],
         "responses": {
@@ -41013,6 +41121,45 @@
         },
         "additionalProperties": false
       },
+      "MerchantCatalogProvider": {
+        "type": "object",
+        "required": [
+          "name",
+          "model_count"
+        ],
+        "properties": {
+          "model_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "MerchantCatalogProviderSummary": {
+        "type": "object",
+        "required": [
+          "providers"
+        ],
+        "properties": {
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MerchantCatalogProvider"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "MerchantCatalogService": {
         "type": "object",
         "required": [
@@ -41453,6 +41600,7 @@
           "supports_streaming",
           "supports_tools",
           "supports_vision",
+          "provider",
           "sales_ratio_micros",
           "prices"
         ],
@@ -41486,6 +41634,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/MerchantModelPrices"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
               },
               {
                 "type": "null"

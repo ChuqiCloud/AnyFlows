@@ -266,8 +266,8 @@ try {
   await page.getByText(label('page').replace('{{page}}', '2'), { exact: true }).waitFor()
   const mixedRow = page.getByRole('region', { name: label('catalogTable'), exact: true }).getByRole('row').filter({ hasText: mixedProviderService.name })
   await mixedRow.getByRole('link', { name: mixedProviderService.name, exact: true }).waitFor()
-  assert.equal(await mixedRow.getByText('DeepSeek', { exact: true }).isVisible(), true, 'A mixed service displays every model manufacturer')
-  assert.equal(await mixedRow.getByText('Anthropic', { exact: true }).isVisible(), true)
+  assert.equal(await mixedRow.locator('span.truncate').filter({ hasText: /^DeepSeek$/ }).isVisible(), true, 'A mixed service displays every model manufacturer')
+  assert.equal(await mixedRow.locator('span.truncate').filter({ hasText: /^Anthropic$/ }).isVisible(), true)
   const providerResponse = value => page.waitForResponse(response => {
     const url = new URL(response.url())
     return url.pathname === '/api/merchant-pools/1/services' && url.searchParams.get('provider') === JSON.stringify(value) && url.searchParams.get('page') === '1'

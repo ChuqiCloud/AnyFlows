@@ -96,10 +96,8 @@ async fn provider_facets_count_canonical_models_and_filter_before_pagination()
     )
     .await?;
     let service =
-        publish_catalog_models(&fixture, "B DeepSeek", &["gpt-test", "deepseek-second"])
-            .await?;
-    publish_catalog_models(&fixture, "C DeepSeek", &["gpt-test", "deepseek-second"])
-        .await?;
+        publish_catalog_models(&fixture, "B DeepSeek", &["gpt-test", "deepseek-second"]).await?;
+    publish_catalog_models(&fixture, "C DeepSeek", &["gpt-test", "deepseek-second"]).await?;
     let mut draft = service_write(fixture.shared_pool);
     draft.models[0].model = "draft-only".to_owned();
     fixture
@@ -172,8 +170,7 @@ async fn provider_facets_count_canonical_models_and_filter_before_pagination()
 }
 
 #[tokio::test]
-async fn provider_names_with_commas_and_sentinel_text_remain_exact()
--> Result<(), Box<dyn Error>> {
+async fn provider_names_with_commas_and_sentinel_text_remain_exact() -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
     add_catalog_model(&fixture, "gpt-test", Some("__unclassified__")).await?;
     add_catalog_model(&fixture, "comma-provider", Some("A,B")).await?;
@@ -221,8 +218,7 @@ async fn provider_names_with_commas_and_sentinel_text_remain_exact()
 }
 
 #[tokio::test]
-async fn provider_filter_cannot_hide_an_unavailable_sibling_offer()
--> Result<(), Box<dyn Error>> {
+async fn provider_filter_cannot_hide_an_unavailable_sibling_offer() -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
     add_catalog_model(&fixture, "gpt-test", Some("DeepSeek")).await?;
     add_catalog_model(&fixture, "unpriced-sibling", Some("Anthropic")).await?;

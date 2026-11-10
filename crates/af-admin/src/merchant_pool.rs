@@ -3,10 +3,9 @@ use crate::{SessionPrincipal, SessionRole};
 use af_account::{CredentialDecryptor, CredentialEncryptor, PlainCredentialSecret};
 use af_db::MerchantPoolRepository;
 use af_domain::{
-    MerchantApplication, MerchantCatalogProviderSummary, MerchantCatalogService,
-    MerchantListQuery, MerchantOwnedService, MerchantPage, MerchantPool, MerchantPoolError,
-    MerchantPoolSettings, MerchantPoolTerms, MerchantPoolWrite, MerchantProfile, MerchantReview,
-    MerchantServiceWrite,
+    MerchantApplication, MerchantCatalogProviderSummary, MerchantCatalogService, MerchantListQuery,
+    MerchantOwnedService, MerchantPage, MerchantPool, MerchantPoolError, MerchantPoolSettings,
+    MerchantPoolTerms, MerchantPoolWrite, MerchantProfile, MerchantReview, MerchantServiceWrite,
 };
 use std::{future::Future, net::IpAddr, pin::Pin};
 
