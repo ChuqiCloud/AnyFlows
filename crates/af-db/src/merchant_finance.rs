@@ -188,7 +188,7 @@ impl MerchantFinanceRepository {
         if merchant_id <= 0 || !["day", "month"].contains(&granularity) {
             return Err(MerchantFinanceError::InvalidInput);
         }
-        let format = format_description::parse("[year]-[month]-[day]")
+        let format = format_description::parse_borrowed::<2>("[year]-[month]-[day]")
             .map_err(|_| MerchantFinanceError::Invariant)?;
         let from = parse_report_date(from_date, &format)?;
         let to = parse_report_date(to_date, &format)?;
@@ -267,7 +267,7 @@ impl MerchantFinanceRepository {
                     Expr::cust("COALESCE(merchant_services.name, '未关联')").into(),
                     Expr::cust("COALESCE(usage_logs.model, '未关联')").into(),
                 ])
-                .order_by(Expr::cust(bucket), Order::Asc)
+                .order_by(Alias::new("period"), Order::Asc)
                 .order_by(Alias::new("service_id"), Order::Asc)
                 .order_by(Alias::new("model"), Order::Asc)
                 .limit(20_001)
