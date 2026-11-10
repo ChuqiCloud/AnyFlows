@@ -298,7 +298,7 @@ try {
   await page.setViewportSize({ width: 1280, height: 960 })
   assert.ok(!requests.some(request => request.role === 'public' && request.path.startsWith('/api/models')), 'Landing never fetches the model catalog')
 
-  await page.getByRole('link', { name: publicStatusCopy.history, exact: true }).click()
+  await page.getByText(publicStatusCopy.history, { exact: true }).click()
   await page.getByRole('heading', { name: publicStatusCopy.title, exact: true }).waitFor()
   await page.getByText(publicStatusCopy.historyHint, { exact: true }).waitFor()
   assert.equal(await page.getByText('98.75%', { exact: true }).count(), 1)

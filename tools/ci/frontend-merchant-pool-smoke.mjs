@@ -284,7 +284,8 @@ try {
   await page.goto(`${origin}/.merchant-pool-smoke.html`)
   await page.getByRole('heading', { name: label('market.title'), exact: true }).waitFor()
   await initialCatalog
-  await page.getByRole('region', { name: label('catalogTable'), exact: true }).getByRole('link', { name: publicService.models[0].model, exact: true }).waitFor()
+  const initialRow = page.getByRole('region', { name: label('catalogTable'), exact: true }).getByRole('row').filter({ hasText: publicService.name })
+  await initialRow.getByRole('link', { name: publicService.models[0].model, exact: true }).waitFor()
   const providerFilter = page.getByRole('group', { name: label('market.providers'), exact: true })
   const deepseek = providerFilter.getByRole('button', { name: 'DeepSeek', exact: true })
   const anthropic = providerFilter.getByRole('button', { name: 'Anthropic', exact: true })

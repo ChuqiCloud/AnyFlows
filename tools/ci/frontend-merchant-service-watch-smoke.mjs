@@ -89,7 +89,7 @@ try {
   await page.goto(`${origin}/.merchant-service-watch-smoke.html`)
   await page.getByRole('heading', { name: label('market.title'), exact: true }).waitFor()
   const serviceRow = page.getByRole('region', { name: label('market.catalogTable'), exact: true }).getByRole('row').filter({ hasText: service.name })
-  await serviceRow.getByRole('link', { name: service.name, exact: true }).click()
+  await serviceRow.getByRole('link', { name: service.models[0].model, exact: true }).click()
   await page.getByRole('heading', { name: service.name, exact: true }).waitFor()
   const watch = page.getByRole('button', { name: label('market.watch'), exact: true })
   await watch.waitFor()

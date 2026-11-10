@@ -106,8 +106,9 @@ try {
   assert.equal(await globalSwitch.isChecked(), false, 'Global monitoring starts disabled')
 
   await page.getByRole('button', { name: label('channels.activeMonitor.showEvents') }).click()
-  await page.getByText(label('channels.activeMonitor.events.down'), { exact: false }).waitFor()
-  await page.getByText(label('channels.activeMonitor.events.recovered'), { exact: false }).waitFor()
+  const eventEntries = details.locator('div.mt-2.flex.flex-wrap.gap-2 > span')
+  await eventEntries.filter({ hasText: label('channels.activeMonitor.events.down') }).waitFor()
+  await eventEntries.filter({ hasText: label('channels.activeMonitor.events.recovered') }).waitFor()
 
   await page.getByLabel(label('channels.activeMonitor.channel'), { exact: true }).selectOption('11')
   await page.getByLabel(label('channels.activeMonitor.credential'), { exact: true }).selectOption('12')
