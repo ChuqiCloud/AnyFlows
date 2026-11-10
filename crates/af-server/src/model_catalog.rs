@@ -515,20 +515,24 @@ fn available_protocols(
     model: &str,
 ) -> Result<Vec<Protocol>, ModelCatalogReadError> {
     // 同一个 runtime 快照里可能有多个渠道候选，目录只暴露去重后的协议能力集合。
-    let protocols = runtime
+    let mut protocols = BTreeSet::new();
+    let quota_dimension = af_domain::CredentialQuotaDimension::for_canonical_model(model);
+    for candidate in runtime
         .candidates(group_id, model)
         .map_err(|_| ModelCatalogReadError::Internal)?
-        .iter()
-        .map(|candidate| {
-            runtime
-                .runtime_target(candidate.channel_id())
-                .map(|target| target.protocol())
-                .ok_or(ModelCatalogReadError::Internal)
-        })
-        .collect::<Result<BTreeSet<_>, _>>()?
-        .into_iter()
-        .collect();
-    Ok(protocols)
+    {
+        let target = runtime
+            .runtime_target(candidate.channel_id())
+            .ok_or(ModelCatalogReadError::Internal)?;
+        let upstream_model = target.mapped_model(model).unwrap_or(model);
+        if target.credentials().iter().any(|credential| {
+            credential.quota_dimension() == quota_dimension
+                && target.allows_credential_model(credential, upstream_model)
+        }) {
+            protocols.insert(target.protocol());
+        }
+    }
+    Ok(protocols.into_iter().collect())
 }
 
 fn contains_search(model: &str, search: &str) -> bool {
@@ -565,6 +569,73 @@ mod tests {
     #[derive(Clone)]
     struct StaticModelPriceSource {
         records: Vec<ModelPriceSourceRecord>,
+    }
+
+    struct CredentialPolicySource(Vec<af_scheduler::ChannelIndexSourceRecord>);
+
+    impl ChannelIndexSource for CredentialPolicySource {
+        fn load<'a>(&'a self) -> ChannelIndexSourceFuture<'a> {
+            Box::pin(async move { Ok(self.0.clone()) })
+        }
+    }
+
+    #[tokio::test]
+    async fn credential_model_policy_hides_protocol_when_every_key_is_excluded() {
+        let credential = af_db::SchedulerRuntimeCredentialRecord::new(
+            101,
+            af_domain::CredentialKind::ApiKey,
+            af_db::EncryptedCredentialEnvelope::new("catalog-test", [0x31; 24], vec![0x41; 16])
+                .unwrap(),
+            false,
+        )
+        .unwrap();
+        let target = af_db::SchedulerRuntimeTargetRecord::new(
+            af_domain::ChannelId::new(1).unwrap(),
+            af_domain::ChannelType::OpenAi,
+            Protocol::OpenAiChat,
+            Some("https://catalog.example".to_owned()),
+            credential,
+            Vec::new(),
+        )
+        .unwrap()
+        .with_model_policies(
+            af_domain::UpstreamModelPolicy::default(),
+            std::collections::BTreeMap::from([(
+                101,
+                af_domain::UpstreamModelPolicy {
+                    mode: af_domain::UpstreamModelPolicyMode::Allowlist,
+                    models: vec!["model-allowed".to_owned()],
+                    disabled_models: Vec::new(),
+                },
+            )]),
+        )
+        .unwrap();
+        let records = ["model-allowed", "model-excluded"]
+            .into_iter()
+            .map(|model| {
+                af_scheduler::ChannelIndexSourceRecord::with_runtime_target(
+                    GroupId::new(1).unwrap(),
+                    model,
+                    0,
+                    1,
+                    Arc::new(target.clone()),
+                )
+                .unwrap()
+            })
+            .collect();
+        let index = InMemoryChannelIndex::load(Arc::new(CredentialPolicySource(records)))
+            .await
+            .unwrap();
+        let snapshot = index.snapshot().unwrap();
+        assert_eq!(
+            available_protocols(&snapshot, GroupId::new(1).unwrap(), "model-allowed").unwrap(),
+            vec![Protocol::OpenAiChat]
+        );
+        assert!(
+            available_protocols(&snapshot, GroupId::new(1).unwrap(), "model-excluded")
+                .unwrap()
+                .is_empty()
+        );
     }
 
     impl ModelPriceSource for StaticModelPriceSource {

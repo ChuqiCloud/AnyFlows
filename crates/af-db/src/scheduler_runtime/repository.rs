@@ -375,7 +375,61 @@ impl SchedulerRuntimeRepository {
                             .transpose()?;
                         collect_credential_source(sources, credential, parent, proxy, &now)
                     })?;
-            let targets = select_supported_targets(&channels, credentials)?;
+            let channel_ids = channels.keys().map(|id| id.get()).collect::<Vec<_>>();
+            let policies =
+                crate::credential_models::load_model_policies(self.pool.connection(), &channel_ids)
+                    .await
+                    .map_err(|_| SchedulerRuntimeRepositoryError::Invariant)?;
+            let mut targets = select_supported_targets(&channels, credentials)?;
+            let credential_ids = targets
+                .values()
+                .flat_map(|target| {
+                    target
+                        .credentials()
+                        .iter()
+                        .flat_map(|key| [key.credential_id(), key.secret_owner_id().get()])
+                })
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            let mut pauses = BTreeMap::new();
+            for batch in credential_ids.chunks(400) {
+                pauses.extend(
+                    crate::upstream_usage::load_usage_pauses(self.pool.connection(), batch)
+                        .await
+                        .map_err(|_| SchedulerRuntimeRepositoryError::Invariant)?,
+                );
+            }
+            for (channel_id, target) in &mut targets {
+                let channel_policy = policies
+                    .get(&("channel".to_owned(), channel_id.get()))
+                    .cloned()
+                    .unwrap_or_default();
+                let credential_policies = target
+                    .credentials()
+                    .iter()
+                    .flat_map(|key| [key.credential_id(), key.secret_owner_id().get()])
+                    .filter_map(|id| {
+                        policies
+                            .get(&("credential".to_owned(), id))
+                            .cloned()
+                            .map(|policy| (id, policy))
+                    })
+                    .collect();
+                let target_pauses = target
+                    .credentials()
+                    .iter()
+                    .flat_map(|key| [key.credential_id(), key.secret_owner_id().get()])
+                    .filter_map(|id| pauses.get(&id).copied().map(|until| (id, until)))
+                    .collect();
+                let updated = target
+                    .as_ref()
+                    .clone()
+                    .with_usage_pauses(target_pauses)
+                    .with_model_policies(channel_policy, credential_policies)
+                    .map_err(|_| SchedulerRuntimeRepositoryError::Invariant)?;
+                *target = Arc::new(updated);
+            }
             Ok(abilities
                 .into_iter()
                 .filter_map(|ability| {

@@ -333,6 +333,8 @@ pub struct Supervised {
     admin_oauth_connection_service: Arc<dyn AdminOAuthConnectionService>,
     oauth_login_service: Arc<dyn OAuthLoginService>,
     admin_channel_probe: Arc<dyn AdminChannelProbe>,
+    credential_model_service: Arc<af_admin::DatabaseCredentialModelService>,
+    upstream_usage_service: Arc<crate::credential_usage::UpstreamCredentialUsageProbe>,
     upstream_clients: HttpClientProvider,
     debug_trace_repository: DebugTraceRepository,
     debug_trace_runtime: DebugTraceRuntime,
@@ -2201,6 +2203,48 @@ impl Bootstrap<BillingReady> {
             debug_trace_worker,
             analytics_export_repository,
         } = stage;
+        let capability_decryptor = CredentialDecryptor::new(config.credential_encryption())
+            .expect("已校验的上游凭据配置必须包含有效解密密钥");
+        let credential_model_service = Arc::new(af_admin::DatabaseCredentialModelService::new(
+            af_db::CredentialModelsRepository::new(
+                infrastructure.infrastructure.database.clone(),
+                Duration::from_secs(config.auth().lookup_timeout_secs()),
+            ),
+            Arc::new(
+                DatabaseUpstreamModelDiscoverer::new(
+                    ModelSyncRepository::new(infrastructure.infrastructure.database.clone()),
+                    capability_decryptor.clone(),
+                    upstream_clients.clone(),
+                )
+                .with_proxy_pools(infrastructure.admin_credential_proxy_service.proxy_pools()),
+            ),
+        ));
+        let upstream_usage_service =
+            Arc::new(crate::credential_usage::UpstreamCredentialUsageProbe::new(
+                infrastructure.infrastructure.database.clone(),
+                capability_decryptor,
+                infrastructure.system_secret_cipher.clone(),
+                upstream_clients.clone(),
+                infrastructure.admin_credential_proxy_service.proxy_pools(),
+            ));
+        supervisor.spawn("upstream-usage-refresh", {
+            let service = Arc::clone(&upstream_usage_service);
+            move |task_shutdown| {
+                let service = Arc::clone(&service);
+                async move {
+                    service.run_periodic_until(task_shutdown.cancelled()).await;
+                }
+            }
+        });
+        supervisor.spawn("credential-model-refresh", {
+            let service = Arc::clone(&credential_model_service);
+            move |task_shutdown| {
+                let service = Arc::clone(&service);
+                async move {
+                    service.run_periodic_until(task_shutdown.cancelled()).await;
+                }
+            }
+        });
         let merchant_repository = af_db::MerchantPoolRepository::new(
             infrastructure.infrastructure.database.clone(),
             Duration::from_secs(config.auth().lookup_timeout_secs()),
@@ -2423,6 +2467,8 @@ impl Bootstrap<BillingReady> {
                 admin_oauth_connection_service,
                 oauth_login_service,
                 admin_channel_probe,
+                credential_model_service,
+                upstream_usage_service,
                 upstream_clients,
                 debug_trace_repository,
                 debug_trace_runtime,
@@ -2799,12 +2845,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.admin_channel_reader),
             Arc::clone(&self.stage.infrastructure.admin_channel_writer),
             Some(Arc::clone(&self.stage.admin_channel_probe)),
-            Some(Arc::new(
-                crate::credential_usage::CodexCredentialUsageProbe::new(
-                    Arc::clone(&self.stage.infrastructure.admin_channel_writer),
-                    self.stage.upstream_clients.clone(),
-                ),
-            )),
+            Some(self.stage.upstream_usage_service.clone()),
             Arc::clone(&self.stage.infrastructure.admin_group_reader),
             Arc::clone(&self.stage.infrastructure.admin_group_writer),
             Some(Arc::clone(&self.stage.infrastructure.admin_model_reader)),
@@ -2827,6 +2868,15 @@ impl Bootstrap<Supervised> {
             Some(http_extensions),
             Some(payment_webhook_routes),
         );
+        let router = router.merge(af_http::build_credential_models_router(
+            self.stage.credential_model_service.clone(),
+            Arc::clone(&self.stage.infrastructure.session_authenticator),
+        ));
+        let router = router.merge(af_http::build_upstream_usage_router(
+            self.stage.upstream_usage_service.clone(),
+            self.stage.upstream_usage_service.clone(),
+            Arc::clone(&self.stage.infrastructure.session_authenticator),
+        ));
         let router = if host_manages_software {
             router
         } else {
@@ -3113,6 +3163,8 @@ impl Bootstrap<ListenerReady> {
             admin_oauth_connection_service: _,
             oauth_login_service: _,
             admin_channel_probe: _,
+            credential_model_service: _,
+            upstream_usage_service: _,
             upstream_clients: _,
             debug_trace_repository: _,
             debug_trace_runtime: _,
@@ -3787,8 +3839,8 @@ mod tests {
             .unwrap();
         // Codex 使用固定的 1455 回调端口；端口被并行测试占用时，启动器会
         // 保留手动回调路径并跳过对应监听任务，因此这里只把实际注册的监听任务计入基线。
-        // 固定任务包含商户自动出款和定时价格两个后台任务。
-        let expected_task_count = 13 + supervised.stage.oauth_loopback_servers.len();
+        // 固定任务包含商户出款、定时价格、Key 模型发现与上游额度刷新。
+        let expected_task_count = 15 + supervised.stage.oauth_loopback_servers.len();
         let supervised = supervised.start_supervisor();
         assert_eq!(
             supervised.stage.supervisor.task_count(),

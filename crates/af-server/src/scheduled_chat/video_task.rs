@@ -505,6 +505,13 @@ impl ScheduledChatService {
             let upstream_model = target
                 .mapped_model(request.model().as_str())
                 .unwrap_or(request.model().as_str());
+            if !super::credential_models::has_eligible_credentials(
+                target,
+                request.model().as_str(),
+                upstream_model,
+            ) {
+                continue;
+            }
             let upstream_model =
                 VideoModel::new(upstream_model.to_owned()).map_err(|_| AfError::Internal)?;
             if pricing.rate_microusd(upstream_model.as_str()).is_err() {
@@ -521,14 +528,20 @@ impl ScheduledChatService {
                 .map_err(|_| AfError::Internal)?;
             let headers = header_overrides(target)?;
             let wait_plan = candidate.wait_plan();
+            let eligible_credentials = super::eligible_credentials(
+                target,
+                request.model().as_str(),
+                upstream_model.as_str(),
+            );
             let ordered = ordered_credentials(
                 request_id,
                 target,
+                &eligible_credentials,
                 wait_plan.kind(),
                 account_loads,
                 credential_health,
             );
-            health_filtered |= !target.credentials().is_empty() && ordered.is_empty();
+            health_filtered |= !eligible_credentials.is_empty() && ordered.is_empty();
 
             for runtime_credential in ordered {
                 if candidates.len() == RelayStateMachine::MAX_CANDIDATES {
@@ -851,6 +864,7 @@ impl ScheduledChatService {
 fn ordered_credentials<'a>(
     request_id: &str,
     target: &'a SchedulerRuntimeTargetRecord,
+    credentials: &'a [SchedulerRuntimeCredentialRecord],
     wait_kind: RouteWaitKind,
     account_loads: Option<&std::collections::BTreeMap<i64, CredentialLoad>>,
     credential_health: Option<&std::collections::BTreeMap<i64, RuntimeHealthState>>,
@@ -860,21 +874,18 @@ fn ordered_credentials<'a>(
             order_credentials_by_load_and_health(
                 request_id,
                 target.channel_id(),
-                target.credentials(),
+                credentials,
                 loads,
                 health,
             )
         }
         (RouteWaitKind::Fallback, Some(loads), None) => {
-            order_credentials_by_load(request_id, target.channel_id(), target.credentials(), loads)
+            order_credentials_by_load(request_id, target.channel_id(), credentials, loads)
         }
-        (_, _, Some(health)) => order_credentials_with_health(
-            request_id,
-            target.channel_id(),
-            target.credentials(),
-            health,
-        ),
-        _ => order_credentials(request_id, target.channel_id(), target.credentials()),
+        (_, _, Some(health)) => {
+            order_credentials_with_health(request_id, target.channel_id(), credentials, health)
+        }
+        _ => order_credentials(request_id, target.channel_id(), credentials),
     }
 }
 
@@ -1234,6 +1245,50 @@ mod tests {
             Arc::new(target),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn credential_model_changes_stop_new_video_requests_without_rebinding_accepted_tasks() {
+        let credential = runtime_credential(
+            "127.0.0.1:19001".parse().unwrap(),
+            SECOND_CREDENTIAL_ID,
+            0x32,
+            "private-key-second",
+            10,
+        );
+        let target = SchedulerRuntimeTargetRecord::new_pool_with_request_policy(
+            ChannelId::new(CHANNEL_ID).unwrap(),
+            ChannelType::Xai,
+            Protocol::XaiVideo,
+            Some("http://upstream.example".to_owned()),
+            vec![credential],
+            ChannelModelMappings::parse(&json!({"video-public":UPSTREAM_MODEL})).unwrap(),
+            ChannelParameterOverrides::default(),
+            Vec::new(),
+        )
+        .unwrap();
+        let accepted = BoundVideoTargetSnapshot::new(
+            &target,
+            &target.credentials()[0],
+            VideoModel::new(REQUESTED_MODEL).unwrap(),
+            VideoModel::new(UPSTREAM_MODEL).unwrap(),
+            Duration::from_secs(5),
+        );
+        let restricted = target
+            .with_model_policies(
+                af_domain::UpstreamModelPolicy {
+                    mode: af_domain::UpstreamModelPolicyMode::Allowlist,
+                    models: Vec::new(),
+                    disabled_models: Vec::new(),
+                },
+                Default::default(),
+            )
+            .unwrap();
+        assert!(
+            super::super::eligible_credentials(&restricted, REQUESTED_MODEL, UPSTREAM_MODEL)
+                .is_empty()
+        );
+        assert!(accepted.resolve_credential(&restricted).is_some());
     }
 
     fn runtime_credential(

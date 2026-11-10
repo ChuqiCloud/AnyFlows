@@ -126,10 +126,20 @@ mod compact_probe_state;
 #[cfg(test)]
 mod compact_probe_state_tests;
 mod connection;
+mod credential_models;
 mod credential_probe;
 #[cfg(test)]
 mod credential_probe_tests;
 mod credential_proxy;
+mod upstream_usage;
+pub use credential_models::{
+    CredentialModelError, CredentialModelItem, CredentialModelRefreshLease,
+    CredentialModelsRepository, CredentialModelsSnapshot, UpstreamModelPolicySettings,
+};
+pub use upstream_usage::{
+    UpstreamUsageLease, UpstreamUsageRepository, UpstreamUsageStoredSnapshot, UpstreamUsageTarget,
+    upstream_usage_now_epoch,
+};
 mod proxy_pool;
 pub use proxy_pool::{
     ProxyCleanupMode, ProxyCleanupRequest, ProxyCleanupResult, ProxyCleanupTarget,

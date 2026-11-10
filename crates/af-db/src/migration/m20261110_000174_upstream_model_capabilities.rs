@@ -1,0 +1,136 @@
+use sea_orm_migration::prelude::*;
+
+#[derive(DeriveMigrationName)]
+pub(super) struct Migration;
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .create_table(
+                Table::create()
+                    .table(Alias::new("upstream_model_policies"))
+                    .col(
+                        ColumnDef::new(Alias::new("owner_kind"))
+                            .string_len(16)
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Alias::new("owner_id"))
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Alias::new("channel_id"))
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Alias::new("policy"))
+                            .json_binary()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Alias::new("version"))
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Alias::new("auto_add_discovered"))
+                            .boolean()
+                            .not_null()
+                            .default(false),
+                    )
+                    .col(ColumnDef::new(Alias::new("refresh_interval_secs")).big_integer())
+                    .col(
+                        ColumnDef::new(Alias::new("updated_at"))
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .primary_key(
+                        Index::create()
+                            .col(Alias::new("owner_kind"))
+                            .col(Alias::new("owner_id")),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .from(
+                                Alias::new("upstream_model_policies"),
+                                Alias::new("channel_id"),
+                            )
+                            .to(Alias::new("channels"), Alias::new("id"))
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_upstream_model_policy_channel")
+                    .table(Alias::new("upstream_model_policies"))
+                    .col(Alias::new("channel_id"))
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_table(
+                Table::create()
+                    .table(Alias::new("credential_model_observations"))
+                    .col(
+                        ColumnDef::new(Alias::new("credential_id"))
+                            .big_integer()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(Alias::new("channel_id"))
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Alias::new("identity_fingerprint"))
+                            .string_len(64)
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(Alias::new("items")).json_binary().not_null())
+                    .col(
+                        ColumnDef::new(Alias::new("status"))
+                            .string_len(32)
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(Alias::new("error_code")).string_len(64))
+                    .col(ColumnDef::new(Alias::new("last_success_at")).big_integer())
+                    .col(ColumnDef::new(Alias::new("last_checked_at")).big_integer())
+                    .col(ColumnDef::new(Alias::new("lease_token")).string_len(64))
+                    .col(ColumnDef::new(Alias::new("lease_until")).big_integer())
+                    .col(
+                        ColumnDef::new(Alias::new("next_refresh_at"))
+                            .big_integer()
+                            .not_null()
+                            .default(0),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .from(
+                                Alias::new("credential_model_observations"),
+                                Alias::new("credential_id"),
+                            )
+                            .to(Alias::new("credentials"), Alias::new("id"))
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        for table in ["credential_model_observations", "upstream_model_policies"] {
+            manager
+                .drop_table(Table::drop().table(Alias::new(table)).to_owned())
+                .await?;
+        }
+        Ok(())
+    }
+}
