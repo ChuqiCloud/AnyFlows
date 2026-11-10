@@ -174,7 +174,7 @@ impl CredentialModelsRepository {
                 indexed.entry(upstream.clone()).or_insert_with(|| model_item(upstream.clone(), "channel"))
                     .canonical_models.push(entry.model.clone());
                 let compact = crate::channel_settings::responses_compact_model_mapping(&channel_row.settings.clone().into_inner())
-                    .map_err(internal)?;
+                    .map_err(|_| CredentialModelError::Internal)?;
                 if let Some(compact_model) = compact.resolve(&upstream) {
                     indexed.entry(compact_model.to_owned()).or_insert_with(|| model_item(compact_model.to_owned(), "channel"))
                         .canonical_models.push(entry.model);

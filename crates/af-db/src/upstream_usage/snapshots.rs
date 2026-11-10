@@ -155,7 +155,7 @@ impl UpstreamUsageRepository {
                 .from_as(credentials::Entity,Alias::new("c"))
                 .left_join(Alias::new("credential_usage_pauses"),Expr::col((Alias::new("credential_usage_pauses"),Alias::new("credential_id"))).equals((Alias::new("c"),Alias::new("id"))))
                 .and_where(Expr::col((Alias::new("c"),Alias::new("deleted_at"))).is_null())
-                .and_where(sea_orm::Condition::any().add(Expr::col(Alias::new("next_refresh_at")).is_null()).add(Expr::col(Alias::new("next_refresh_at")).lte(now)))
+                .and_where(Expr::col(Alias::new("next_refresh_at")).is_null().or(Expr::col(Alias::new("next_refresh_at")).lte(now)))
                 .order_by(Alias::new("next_refresh_at"), sea_orm::Order::Asc).limit(limit.min(64)).to_owned();
             let rows = self.pool.connection().query_all(self.pool.connection().get_database_backend().build(&query)).await.map_err(internal)?;
             let mut result = Vec::new();
