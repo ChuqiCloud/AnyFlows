@@ -130,6 +130,13 @@ mod credential_probe;
 #[cfg(test)]
 mod credential_probe_tests;
 mod credential_proxy;
+mod credential_models;
+mod upstream_usage;
+pub use upstream_usage::{
+    UpstreamUsageLease, UpstreamUsageRepository, UpstreamUsageStoredSnapshot,
+    UpstreamUsageTarget, upstream_usage_now_epoch,
+};
+pub use credential_models::{CredentialModelError, CredentialModelItem, CredentialModelRefreshLease, CredentialModelsRepository, CredentialModelsSnapshot, UpstreamModelPolicySettings};
 mod proxy_pool;
 pub use proxy_pool::{
     ProxyCleanupMode, ProxyCleanupRequest, ProxyCleanupResult, ProxyCleanupTarget,
