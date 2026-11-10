@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode } from 'react'
+import { lazy, type ReactNode } from 'react'
 import { Navigate, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom'
 import type { RouteObject } from 'react-router-dom'
 
@@ -8,15 +8,6 @@ import { ConsoleLayout, useConsoleSession } from '@/routes/console-layout'
 import { ConsoleExtensionPage } from '@/extensions/extension-page'
 import { consoleExtensionRoutes } from '@/extensions/registry'
 import { ManagementGate } from '@/routes/management-gate'
-
-// 页面加载组件
-function PageLoader() {
-  return (
-    <div className="flex min-h-[400px] items-center justify-center">
-      <div className="size-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-    </div>
-  )
-}
 
 // 懒加载页面组件
 const LandingPage = lazy(() => import('@/features/landing/landing-page').then(m => ({ default: m.LandingPage })))
