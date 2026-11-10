@@ -582,29 +582,60 @@ mod tests {
     #[tokio::test]
     async fn credential_model_policy_hides_protocol_when_every_key_is_excluded() {
         let credential = af_db::SchedulerRuntimeCredentialRecord::new(
-            101, af_domain::CredentialKind::ApiKey,
-            af_db::EncryptedCredentialEnvelope::new("catalog-test", [0x31; 24], vec![0x41; 16]).unwrap(),
+            101,
+            af_domain::CredentialKind::ApiKey,
+            af_db::EncryptedCredentialEnvelope::new("catalog-test", [0x31; 24], vec![0x41; 16])
+                .unwrap(),
             false,
-        ).unwrap();
+        )
+        .unwrap();
         let target = af_db::SchedulerRuntimeTargetRecord::new(
-            af_domain::ChannelId::new(1).unwrap(), af_domain::ChannelType::OpenAi,
-            Protocol::OpenAiChat, Some("https://catalog.example".to_owned()), credential, Vec::new(),
-        ).unwrap().with_model_policies(
+            af_domain::ChannelId::new(1).unwrap(),
+            af_domain::ChannelType::OpenAi,
+            Protocol::OpenAiChat,
+            Some("https://catalog.example".to_owned()),
+            credential,
+            Vec::new(),
+        )
+        .unwrap()
+        .with_model_policies(
             af_domain::UpstreamModelPolicy::default(),
-            std::collections::BTreeMap::from([(101, af_domain::UpstreamModelPolicy {
-                mode: af_domain::UpstreamModelPolicyMode::Allowlist,
-                models: vec!["model-allowed".to_owned()], disabled_models: Vec::new(),
-            })]),
-        ).unwrap();
-        let records = ["model-allowed", "model-excluded"].into_iter().map(|model| {
-            af_scheduler::ChannelIndexSourceRecord::with_runtime_target(
-                GroupId::new(1).unwrap(), model, 0, 1, Arc::new(target.clone()),
-            ).unwrap()
-        }).collect();
-        let index = InMemoryChannelIndex::load(Arc::new(CredentialPolicySource(records))).await.unwrap();
+            std::collections::BTreeMap::from([(
+                101,
+                af_domain::UpstreamModelPolicy {
+                    mode: af_domain::UpstreamModelPolicyMode::Allowlist,
+                    models: vec!["model-allowed".to_owned()],
+                    disabled_models: Vec::new(),
+                },
+            )]),
+        )
+        .unwrap();
+        let records = ["model-allowed", "model-excluded"]
+            .into_iter()
+            .map(|model| {
+                af_scheduler::ChannelIndexSourceRecord::with_runtime_target(
+                    GroupId::new(1).unwrap(),
+                    model,
+                    0,
+                    1,
+                    Arc::new(target.clone()),
+                )
+                .unwrap()
+            })
+            .collect();
+        let index = InMemoryChannelIndex::load(Arc::new(CredentialPolicySource(records)))
+            .await
+            .unwrap();
         let snapshot = index.snapshot().unwrap();
-        assert_eq!(available_protocols(&snapshot, GroupId::new(1).unwrap(), "model-allowed").unwrap(), vec![Protocol::OpenAiChat]);
-        assert!(available_protocols(&snapshot, GroupId::new(1).unwrap(), "model-excluded").unwrap().is_empty());
+        assert_eq!(
+            available_protocols(&snapshot, GroupId::new(1).unwrap(), "model-allowed").unwrap(),
+            vec![Protocol::OpenAiChat]
+        );
+        assert!(
+            available_protocols(&snapshot, GroupId::new(1).unwrap(), "model-excluded")
+                .unwrap()
+                .is_empty()
+        );
     }
 
     impl ModelPriceSource for StaticModelPriceSource {

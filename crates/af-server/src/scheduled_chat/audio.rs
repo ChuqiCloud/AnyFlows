@@ -95,7 +95,8 @@ impl ScheduledChatService {
                 continue;
             }
             let upstream_model = target.mapped_model(&model).unwrap_or(&model).to_owned();
-            if !super::credential_models::has_eligible_credentials(target, &model, &upstream_model) {
+            if !super::credential_models::has_eligible_credentials(target, &model, &upstream_model)
+            {
                 continue;
             }
             let candidate_request =
@@ -319,12 +320,9 @@ fn ordered_credentials<'a>(
         (RouteWaitKind::Fallback, Some(loads), None) => {
             order_credentials_by_load(request_id, target.channel_id(), credentials, loads)
         }
-        (_, _, Some(health)) => order_credentials_with_health(
-            request_id,
-            target.channel_id(),
-            credentials,
-            health,
-        ),
+        (_, _, Some(health)) => {
+            order_credentials_with_health(request_id, target.channel_id(), credentials, health)
+        }
         _ => order_credentials(request_id, target.channel_id(), credentials),
     }
 }

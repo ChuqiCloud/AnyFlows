@@ -2210,31 +2210,39 @@ impl Bootstrap<BillingReady> {
                 infrastructure.infrastructure.database.clone(),
                 Duration::from_secs(config.auth().lookup_timeout_secs()),
             ),
-            Arc::new(DatabaseUpstreamModelDiscoverer::new(
-                ModelSyncRepository::new(infrastructure.infrastructure.database.clone()),
-                capability_decryptor.clone(),
+            Arc::new(
+                DatabaseUpstreamModelDiscoverer::new(
+                    ModelSyncRepository::new(infrastructure.infrastructure.database.clone()),
+                    capability_decryptor.clone(),
+                    upstream_clients.clone(),
+                )
+                .with_proxy_pools(infrastructure.admin_credential_proxy_service.proxy_pools()),
+            ),
+        ));
+        let upstream_usage_service =
+            Arc::new(crate::credential_usage::UpstreamCredentialUsageProbe::new(
+                infrastructure.infrastructure.database.clone(),
+                capability_decryptor,
+                infrastructure.system_secret_cipher.clone(),
                 upstream_clients.clone(),
-            ).with_proxy_pools(infrastructure.admin_credential_proxy_service.proxy_pools())),
-        ));
-        let upstream_usage_service = Arc::new(crate::credential_usage::UpstreamCredentialUsageProbe::new(
-            infrastructure.infrastructure.database.clone(),
-            capability_decryptor,
-            infrastructure.system_secret_cipher.clone(),
-            upstream_clients.clone(),
-            infrastructure.admin_credential_proxy_service.proxy_pools(),
-        ));
+                infrastructure.admin_credential_proxy_service.proxy_pools(),
+            ));
         supervisor.spawn("upstream-usage-refresh", {
             let service = Arc::clone(&upstream_usage_service);
             move |task_shutdown| {
                 let service = Arc::clone(&service);
-                async move { service.run_periodic_until(task_shutdown.cancelled()).await; }
+                async move {
+                    service.run_periodic_until(task_shutdown.cancelled()).await;
+                }
             }
         });
         supervisor.spawn("credential-model-refresh", {
             let service = Arc::clone(&credential_model_service);
             move |task_shutdown| {
                 let service = Arc::clone(&service);
-                async move { service.run_periodic_until(task_shutdown.cancelled()).await; }
+                async move {
+                    service.run_periodic_until(task_shutdown.cancelled()).await;
+                }
             }
         });
         let merchant_repository = af_db::MerchantPoolRepository::new(

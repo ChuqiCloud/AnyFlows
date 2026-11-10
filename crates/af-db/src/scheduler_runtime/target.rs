@@ -675,13 +675,20 @@ impl SchedulerRuntimeTargetRecord {
 
     /// Compile channel, key and shared-parent restrictions without changing secret identity.
     pub fn with_model_policies(
-        mut self, channel: af_domain::UpstreamModelPolicy,
+        mut self,
+        channel: af_domain::UpstreamModelPolicy,
         credentials: BTreeMap<i64, af_domain::UpstreamModelPolicy>,
     ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
-        channel.validate().map_err(|_| SchedulerRuntimeTargetRecordError)?;
+        channel
+            .validate()
+            .map_err(|_| SchedulerRuntimeTargetRecordError)?;
         for (id, policy) in &credentials {
-            if *id <= 0 { return Err(SchedulerRuntimeTargetRecordError); }
-            policy.validate().map_err(|_| SchedulerRuntimeTargetRecordError)?;
+            if *id <= 0 {
+                return Err(SchedulerRuntimeTargetRecordError);
+            }
+            policy
+                .validate()
+                .map_err(|_| SchedulerRuntimeTargetRecordError)?;
         }
         self.channel_model_policy = channel;
         self.credential_model_policies = credentials;
@@ -695,25 +702,51 @@ impl SchedulerRuntimeTargetRecord {
     }
 
     #[must_use]
-    pub fn allows_credential_model(&self, credential: &SchedulerRuntimeCredentialRecord, upstream_model: &str) -> bool {
+    pub fn allows_credential_model(
+        &self,
+        credential: &SchedulerRuntimeCredentialRecord,
+        upstream_model: &str,
+    ) -> bool {
         let now = sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc().unix_timestamp();
         let routing = credential.credential_id();
         let parent = credential.secret_owner_id().get();
-        !self.credential_usage_pauses.get(&routing).is_some_and(|until| *until > now)
+        !self
+            .credential_usage_pauses
+            .get(&routing)
+            .is_some_and(|until| *until > now)
             && self.channel_model_policy.allows(upstream_model)
-            && self.credential_model_policies.get(&routing).is_none_or(|policy| policy.allows(upstream_model))
-            && self.credential_model_policies.get(&parent).is_none_or(|policy| policy.allows(upstream_model))
+            && self
+                .credential_model_policies
+                .get(&routing)
+                .is_none_or(|policy| policy.allows(upstream_model))
+            && self
+                .credential_model_policies
+                .get(&parent)
+                .is_none_or(|policy| policy.allows(upstream_model))
     }
 
     #[must_use]
-    pub fn has_credential_for_model(&self, upstream_model: &str, dimension: CredentialQuotaDimension) -> bool {
-        self.credentials.iter().any(|key| key.quota_dimension() == dimension && self.allows_credential_model(key, upstream_model))
+    pub fn has_credential_for_model(
+        &self,
+        upstream_model: &str,
+        dimension: CredentialQuotaDimension,
+    ) -> bool {
+        self.credentials.iter().any(|key| {
+            key.quota_dimension() == dimension && self.allows_credential_model(key, upstream_model)
+        })
     }
 
-    pub(crate) fn model_policies(&self) -> (&af_domain::UpstreamModelPolicy, &BTreeMap<i64, af_domain::UpstreamModelPolicy>) {
+    pub(crate) fn model_policies(
+        &self,
+    ) -> (
+        &af_domain::UpstreamModelPolicy,
+        &BTreeMap<i64, af_domain::UpstreamModelPolicy>,
+    ) {
         (&self.channel_model_policy, &self.credential_model_policies)
     }
-    pub(crate) fn usage_pauses(&self) -> &BTreeMap<i64, i64> { &self.credential_usage_pauses }
+    pub(crate) fn usage_pauses(&self) -> &BTreeMap<i64, i64> {
+        &self.credential_usage_pauses
+    }
 
     /// 返回目标渠道标识。
     #[must_use]

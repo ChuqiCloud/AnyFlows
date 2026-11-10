@@ -94,7 +94,11 @@ impl CredentialUsageSnapshot {
 
     #[must_use]
     pub fn unsupported() -> Self {
-        Self { status: CredentialUsageStatus::Unsupported, stale: false, ..Self::unavailable() }
+        Self {
+            status: CredentialUsageStatus::Unsupported,
+            stale: false,
+            ..Self::unavailable()
+        }
     }
 }
 
@@ -109,7 +113,12 @@ pub trait AdminCredentialUsageProbe: Send + Sync {
         credential_id: CredentialId,
     ) -> AdminCredentialUsageFuture<'a>;
 
-    fn refresh<'a>(&'a self, principal: SessionPrincipal, channel_id: ChannelId, credential_id: CredentialId) -> AdminCredentialUsageFuture<'a> {
+    fn refresh<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        channel_id: ChannelId,
+        credential_id: CredentialId,
+    ) -> AdminCredentialUsageFuture<'a> {
         self.probe(principal, channel_id, credential_id)
     }
 }

@@ -421,7 +421,8 @@ impl ScheduledChatService {
                 .mapped_model(&routed_model)
                 .unwrap_or(&routed_model)
                 .to_owned();
-            if !credential_models::has_eligible_credentials(target, &routed_model, &upstream_model) {
+            if !credential_models::has_eligible_credentials(target, &routed_model, &upstream_model)
+            {
                 continue;
             }
             let candidate_request =
@@ -1208,15 +1209,19 @@ impl ScheduledChatService {
                         unhealthy_route_seen = true;
                         break;
                     };
-                    let upstream_protocol =
-                        match select_upstream_protocol_for_model(&route, request, response_protocol, rule.routed_model()) {
-                            Ok(protocol) => protocol,
-                            Err(AfError::InvalidRequest) => {
-                                unhealthy_route_seen = true;
-                                break;
-                            }
-                            Err(error) => return Err(error),
-                        };
+                    let upstream_protocol = match select_upstream_protocol_for_model(
+                        &route,
+                        request,
+                        response_protocol,
+                        rule.routed_model(),
+                    ) {
+                        Ok(protocol) => protocol,
+                        Err(AfError::InvalidRequest) => {
+                            unhealthy_route_seen = true;
+                            break;
+                        }
+                        Err(error) => return Err(error),
+                    };
                     route.configure_wait_policy(self.sticky_wait_policy);
                     self.apply_sticky_binding(&mut route, upstream_protocol, session_scope)
                         .await;
@@ -1827,11 +1832,8 @@ fn route_availability(
             continue;
         }
         matching_protocol = true;
-        let eligible_credentials = eligible_credentials(
-            target,
-            model,
-            target.mapped_model(model).unwrap_or(model),
-        );
+        let eligible_credentials =
+            eligible_credentials(target, model, target.mapped_model(model).unwrap_or(model));
         if eligible_credentials.is_empty() {
             continue;
         }
@@ -1918,11 +1920,8 @@ fn route_client_simulation_body_profile(
         if !target_matches_protocol(target, upstream_protocol) {
             continue;
         }
-        let credentials = eligible_credentials(
-            target,
-            model,
-            target.mapped_model(model).unwrap_or(model),
-        );
+        let credentials =
+            eligible_credentials(target, model, target.mapped_model(model).unwrap_or(model));
         if credentials.is_empty() {
             continue;
         }
@@ -2066,7 +2065,12 @@ fn select_upstream_protocol(
     request: &CanonicalRequestEnvelope,
     response_protocol: Protocol,
 ) -> Result<Protocol, AfError> {
-    select_upstream_protocol_for_model(route, request, response_protocol, &request.canonical().model)
+    select_upstream_protocol_for_model(
+        route,
+        request,
+        response_protocol,
+        &request.canonical().model,
+    )
 }
 
 fn select_upstream_protocol_for_model(
@@ -2094,18 +2098,15 @@ fn select_upstream_protocol_for_model(
         Protocol::Anthropic,
         Protocol::Gemini,
     ] {
-        let has_candidate = route
-            .candidates()
-            .iter()
-            .any(|candidate| {
-                let target = candidate.runtime_target();
-                target_matches_protocol(target, protocol)
-                    && credential_models::has_eligible_credentials(
-                        target,
-                        model,
-                        target.mapped_model(model).unwrap_or(model),
-                    )
-            });
+        let has_candidate = route.candidates().iter().any(|candidate| {
+            let target = candidate.runtime_target();
+            target_matches_protocol(target, protocol)
+                && credential_models::has_eligible_credentials(
+                    target,
+                    model,
+                    target.mapped_model(model).unwrap_or(model),
+                )
+        });
         if !has_candidate {
             continue;
         }
@@ -2734,7 +2735,8 @@ mod tests {
                 false,
                 100,
                 10,
-            ).unwrap(),
+            )
+            .unwrap(),
             SchedulerRuntimeCredentialRecord::with_scheduling(
                 allowed_id,
                 CredentialKind::ApiKey,
@@ -2742,7 +2744,8 @@ mod tests {
                 false,
                 0,
                 10,
-            ).unwrap(),
+            )
+            .unwrap(),
         ];
         let target = SchedulerRuntimeTargetRecord::new_pool_with_request_policy(
             ChannelId::new(CHANNEL_ID).unwrap(),
@@ -2753,59 +2756,121 @@ mod tests {
             ChannelModelMappings::parse(&json!({"gpt-scheduled":"vendor/real-model"})).unwrap(),
             ChannelParameterOverrides::default(),
             Vec::new(),
-        ).unwrap().with_model_policies(
+        )
+        .unwrap()
+        .with_model_policies(
             af_domain::UpstreamModelPolicy::default(),
             BTreeMap::from([
-                (forbidden_id, af_domain::UpstreamModelPolicy {
-                    mode: af_domain::UpstreamModelPolicyMode::Allowlist,
-                    models: vec!["gpt-scheduled".to_owned()],
-                    disabled_models: Vec::new(),
-                }),
-                (allowed_id, af_domain::UpstreamModelPolicy {
-                    mode: af_domain::UpstreamModelPolicyMode::Allowlist,
-                    models: vec!["vendor/real-model".to_owned()],
-                    disabled_models: Vec::new(),
-                }),
+                (
+                    forbidden_id,
+                    af_domain::UpstreamModelPolicy {
+                        mode: af_domain::UpstreamModelPolicyMode::Allowlist,
+                        models: vec!["gpt-scheduled".to_owned()],
+                        disabled_models: Vec::new(),
+                    },
+                ),
+                (
+                    allowed_id,
+                    af_domain::UpstreamModelPolicy {
+                        mode: af_domain::UpstreamModelPolicyMode::Allowlist,
+                        models: vec!["vendor/real-model".to_owned()],
+                        disabled_models: Vec::new(),
+                    },
+                ),
             ]),
-        ).unwrap();
+        )
+        .unwrap();
         let source = ChannelIndexSourceRecord::with_runtime_target(
-            GroupId::new(7).unwrap(), "gpt-scheduled", 10, 0, Arc::new(target),
-        ).unwrap();
+            GroupId::new(7).unwrap(),
+            "gpt-scheduled",
+            10,
+            0,
+            Arc::new(target),
+        )
+        .unwrap();
         let service = service(vec![source]).await;
-        let route = service.scheduler.route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
-            .unwrap().unwrap();
-        assert_eq!(collect_route_credentials(&route, Protocol::OpenAiChat, "gpt-scheduled").unwrap().len(), 1);
-        let execution = service.build_plan(
-            prepared_execution_route(route, Protocol::OpenAiChat), request(), Protocol::OpenAiChat,
-            "credential-model-policy-alias", None, PreparedConcurrencyPlan::disabled(),
-        ).await.unwrap();
+        let route = service
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            collect_route_credentials(&route, Protocol::OpenAiChat, "gpt-scheduled")
+                .unwrap()
+                .len(),
+            1
+        );
+        let execution = service
+            .build_plan(
+                prepared_execution_route(route, Protocol::OpenAiChat),
+                request(),
+                Protocol::OpenAiChat,
+                "credential-model-policy-alias",
+                None,
+                PreparedConcurrencyPlan::disabled(),
+            )
+            .await
+            .unwrap();
         assert_eq!(execution.attempt_targets.len(), 1);
-        assert_eq!(execution.attempt_targets[0].credential_id().get(), allowed_id);
+        assert_eq!(
+            execution.attempt_targets[0].credential_id().get(),
+            allowed_id
+        );
     }
 
     #[tokio::test]
     async fn credential_model_policy_protocol_selection_uses_administrator_routed_model() {
         let credential = SchedulerRuntimeCredentialRecord::new(
-            CREDENTIAL_ID, CredentialKind::ApiKey, valid_envelope(), false,
-        ).unwrap();
+            CREDENTIAL_ID,
+            CredentialKind::ApiKey,
+            valid_envelope(),
+            false,
+        )
+        .unwrap();
         let target = SchedulerRuntimeTargetRecord::new_pool_with_request_policy(
-            ChannelId::new(CHANNEL_ID).unwrap(), ChannelType::OpenAi, Protocol::OpenAiChat,
-            Some("https://scheduled-chat.example".to_owned()), vec![credential],
+            ChannelId::new(CHANNEL_ID).unwrap(),
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat,
+            Some("https://scheduled-chat.example".to_owned()),
+            vec![credential],
             ChannelModelMappings::parse(&json!({"admin-routed":"vendor/real-model"})).unwrap(),
-            ChannelParameterOverrides::default(), Vec::new(),
-        ).unwrap().with_model_policies(af_domain::UpstreamModelPolicy {
-            mode: af_domain::UpstreamModelPolicyMode::Allowlist,
-            models: vec!["vendor/real-model".to_owned()], disabled_models: Vec::new(),
-        }, BTreeMap::new()).unwrap();
+            ChannelParameterOverrides::default(),
+            Vec::new(),
+        )
+        .unwrap()
+        .with_model_policies(
+            af_domain::UpstreamModelPolicy {
+                mode: af_domain::UpstreamModelPolicyMode::Allowlist,
+                models: vec!["vendor/real-model".to_owned()],
+                disabled_models: Vec::new(),
+            },
+            BTreeMap::new(),
+        )
+        .unwrap();
         let source = ChannelIndexSourceRecord::with_runtime_target(
-            GroupId::new(7).unwrap(), "admin-routed", 10, 0, Arc::new(target),
-        ).unwrap();
+            GroupId::new(7).unwrap(),
+            "admin-routed",
+            10,
+            0,
+            Arc::new(target),
+        )
+        .unwrap();
         let service = service(vec![source]).await;
-        let route = service.scheduler.route_plan(GroupId::new(7).unwrap(), "admin-routed")
-            .unwrap().unwrap();
-        assert_eq!(select_upstream_protocol_for_model(
-            &route, &request(), Protocol::Anthropic, "admin-routed",
-        ).unwrap(), Protocol::OpenAiChat);
+        let route = service
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "admin-routed")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            select_upstream_protocol_for_model(
+                &route,
+                &request(),
+                Protocol::Anthropic,
+                "admin-routed",
+            )
+            .unwrap(),
+            Protocol::OpenAiChat
+        );
     }
 
     #[tokio::test]

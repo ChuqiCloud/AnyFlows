@@ -1714,12 +1714,52 @@ export type CredentialHealthSnapshot = {
     cooling: boolean;
     weight_multiplier_micros: number;
 };
+export type CredentialModelItem = {
+    blocked_reason: string | null;
+    canonical_models: Array<string>;
+    enabled: boolean;
+    source: string;
+    upstream_model: string;
+};
+export type CredentialModelsSnapshot = {
+    auto_add_discovered: boolean;
+    error_code: string | null;
+    items: Array<CredentialModelItem>;
+    last_checked_at: number | null;
+    last_success_at: number | null;
+    policy: UpstreamModelPolicy;
+    refresh_interval_secs: number | null;
+    status: 'unknown' | 'available' | 'empty' | 'unavailable';
+    version: number;
+    [key: string]: unknown;
+};
 export type CredentialSelectionStrategy = 'weighted' | 'round_robin' | 'priority';
 export type CredentialUsageSnapshot = {
     status: CredentialUsageStatus;
     windows: Array<CredentialUsageWindow>;
     credits_balance?: string | null;
     fetched_at?: number | null;
+    scope?: string | null;
+    provider?: string | null;
+    currency?: string | null;
+    unit?: string | null;
+    total?: string | null;
+    used?: string | null;
+    remaining?: string | null;
+    unlimited?: boolean;
+    expires_at?: number | null;
+    reset_at?: number | null;
+    last_success_at?: number | null;
+    last_checked_at?: number | null;
+    stale?: boolean;
+    error_code?: string | null;
+    account_ref?: string | null;
+    source?: string | null;
+    pause_until?: number | null;
+    alert?: string | null;
+    subscription?: {
+        [key: string]: unknown;
+    } | null;
 };
 export type CredentialUsageStatus = 'available' | 'unsupported' | 'unavailable';
 export type CredentialUsageWindow = {
@@ -2775,6 +2815,52 @@ export type SubscriptionPaymentResponse = {
     redirect_url: string | null;
 };
 export type SubscriptionPlanStatus = 'active' | 'disabled';
+export type UpstreamModelPolicy = {
+    disabled_models: Array<string>;
+    mode: 'inherit' | 'allowlist' | 'denylist';
+    models: Array<string>;
+};
+export type UpstreamModelPolicySettings = {
+    auto_add_discovered: boolean;
+    policy: UpstreamModelPolicy;
+    refresh_interval_secs: number | null;
+    version: number;
+};
+export type UpstreamUsageConfig = {
+    currency?: string | null;
+    inherited?: boolean;
+    low_balance_threshold?: string | null;
+    pause_when_exhausted: boolean;
+    profile_id?: number | null;
+    provider: 'auto' | 'codex' | 'new_api' | 'one_api' | 'sub2api' | 'none';
+    quota_per_unit?: string | null;
+    refresh_interval_secs?: number | null;
+    scope: 'key' | 'account';
+    version: number;
+};
+export type UpstreamUsageProfile = {
+    base_url: string;
+    currency?: string | null;
+    has_secret: boolean;
+    id: number;
+    name: string;
+    platform_user_id?: string | null;
+    provider: 'new_api' | 'one_api' | 'sub2api';
+    quota_per_unit?: string | null;
+    version: number;
+};
+export type UpstreamUsageProfilePage = {
+    items: Array<UpstreamUsageProfile>;
+};
+export type UpstreamUsageProfileWrite = {
+    base_url: string;
+    currency?: string | null;
+    name: string;
+    platform_user_id?: string | null;
+    provider: 'new_api' | 'one_api' | 'sub2api';
+    quota_per_unit?: string | null;
+    version: number;
+};
 export type UsageLogOperation = 'chat' | 'responses' | 'responses_compact' | 'embedding' | 'image' | 'image_edit' | 'audio' | 'rerank' | 'video' | 'count_tokens';
 export type UsageLogProtocol = 'open_ai_chat' | 'open_ai_responses' | 'open_ai_embeddings' | 'open_ai_images' | 'open_ai_audio' | 'open_ai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
 export type UsageLogReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'extra_high' | 'max';
@@ -3468,6 +3554,16 @@ export type ResponsesCompactItemWritable = unknown;
 export type SetupRequestWritable = {
     username: string;
     password: string;
+};
+export type UpstreamUsageProfileWriteWritable = {
+    base_url: string;
+    currency?: string | null;
+    name: string;
+    platform_user_id?: string | null;
+    provider: 'new_api' | 'one_api' | 'sub2api';
+    quota_per_unit?: string | null;
+    secret?: string | null;
+    version: number;
 };
 export type UserEmailBindingConfirmRequestWritable = {
     email: string;
@@ -5774,6 +5870,330 @@ export type SubmitMerchantServiceResponses = {
     200: MerchantOwnedService;
 };
 export type SubmitMerchantServiceResponse = SubmitMerchantServiceResponses[keyof SubmitMerchantServiceResponses];
+export type GetAdminCredentialModelPolicyData = {
+    body?: never;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/model-policy';
+};
+export type GetAdminCredentialModelPolicyErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type GetAdminCredentialModelPolicyResponses = {
+    200: UpstreamModelPolicySettings;
+};
+export type GetAdminCredentialModelPolicyResponse = GetAdminCredentialModelPolicyResponses[keyof GetAdminCredentialModelPolicyResponses];
+export type UpdateAdminCredentialModelPolicyData = {
+    body: UpstreamModelPolicySettings;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/model-policy';
+};
+export type UpdateAdminCredentialModelPolicyErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type UpdateAdminCredentialModelPolicyResponses = {
+    200: UpstreamModelPolicySettings;
+};
+export type UpdateAdminCredentialModelPolicyResponse = UpdateAdminCredentialModelPolicyResponses[keyof UpdateAdminCredentialModelPolicyResponses];
+export type ListAdminCredentialModelsData = {
+    body?: never;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/models';
+};
+export type ListAdminCredentialModelsErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type ListAdminCredentialModelsResponses = {
+    200: CredentialModelsSnapshot;
+};
+export type ListAdminCredentialModelsResponse = ListAdminCredentialModelsResponses[keyof ListAdminCredentialModelsResponses];
+export type RefreshAdminCredentialModelsData = {
+    body?: never;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/models/refresh';
+};
+export type RefreshAdminCredentialModelsErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type RefreshAdminCredentialModelsResponses = {
+    200: CredentialModelsSnapshot;
+};
+export type RefreshAdminCredentialModelsResponse = RefreshAdminCredentialModelsResponses[keyof RefreshAdminCredentialModelsResponses];
+export type GetAdminChannelModelPolicyData = {
+    body?: never;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/model-policy';
+};
+export type GetAdminChannelModelPolicyErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type GetAdminChannelModelPolicyResponses = {
+    200: UpstreamModelPolicySettings;
+};
+export type GetAdminChannelModelPolicyResponse = GetAdminChannelModelPolicyResponses[keyof GetAdminChannelModelPolicyResponses];
+export type UpdateAdminChannelModelPolicyData = {
+    body: UpstreamModelPolicySettings;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/model-policy';
+};
+export type UpdateAdminChannelModelPolicyErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type UpdateAdminChannelModelPolicyResponses = {
+    200: UpstreamModelPolicySettings;
+};
+export type UpdateAdminChannelModelPolicyResponse = UpdateAdminChannelModelPolicyResponses[keyof UpdateAdminChannelModelPolicyResponses];
+export type ResetAdminCredentialUsageConfigData = {
+    body?: never;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/usage-config';
+};
+export type ResetAdminCredentialUsageConfigErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type ResetAdminCredentialUsageConfigResponses = {
+    204: void;
+};
+export type ResetAdminCredentialUsageConfigResponse = ResetAdminCredentialUsageConfigResponses[keyof ResetAdminCredentialUsageConfigResponses];
+export type GetAdminCredentialUsageConfigData = {
+    body?: never;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/usage-config';
+};
+export type GetAdminCredentialUsageConfigErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type GetAdminCredentialUsageConfigResponses = {
+    200: UpstreamUsageConfig;
+};
+export type GetAdminCredentialUsageConfigResponse = GetAdminCredentialUsageConfigResponses[keyof GetAdminCredentialUsageConfigResponses];
+export type UpdateAdminCredentialUsageConfigData = {
+    body: UpstreamUsageConfig;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/usage-config';
+};
+export type UpdateAdminCredentialUsageConfigErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type UpdateAdminCredentialUsageConfigResponses = {
+    200: UpstreamUsageConfig;
+};
+export type UpdateAdminCredentialUsageConfigResponse = UpdateAdminCredentialUsageConfigResponses[keyof UpdateAdminCredentialUsageConfigResponses];
+export type RefreshAdminCredentialUsageData = {
+    body?: never;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/usage/refresh';
+};
+export type RefreshAdminCredentialUsageErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type RefreshAdminCredentialUsageResponses = {
+    200: CredentialUsageSnapshot;
+};
+export type RefreshAdminCredentialUsageResponse = RefreshAdminCredentialUsageResponses[keyof RefreshAdminCredentialUsageResponses];
+export type GetAdminChannelUsageConfigData = {
+    body?: never;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/usage-config';
+};
+export type GetAdminChannelUsageConfigErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type GetAdminChannelUsageConfigResponses = {
+    200: UpstreamUsageConfig;
+};
+export type GetAdminChannelUsageConfigResponse = GetAdminChannelUsageConfigResponses[keyof GetAdminChannelUsageConfigResponses];
+export type UpdateAdminChannelUsageConfigData = {
+    body: UpstreamUsageConfig;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/usage-config';
+};
+export type UpdateAdminChannelUsageConfigErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type UpdateAdminChannelUsageConfigResponses = {
+    200: UpstreamUsageConfig;
+};
+export type UpdateAdminChannelUsageConfigResponse = UpdateAdminChannelUsageConfigResponses[keyof UpdateAdminChannelUsageConfigResponses];
+export type ListAdminUpstreamUsageProfilesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/upstream-usage-profiles';
+};
+export type ListAdminUpstreamUsageProfilesErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type ListAdminUpstreamUsageProfilesResponses = {
+    200: UpstreamUsageProfilePage;
+};
+export type ListAdminUpstreamUsageProfilesResponse = ListAdminUpstreamUsageProfilesResponses[keyof ListAdminUpstreamUsageProfilesResponses];
+export type CreateAdminUpstreamUsageProfileData = {
+    body: UpstreamUsageProfileWriteWritable;
+    path?: never;
+    query?: never;
+    url: '/api/admin/upstream-usage-profiles';
+};
+export type CreateAdminUpstreamUsageProfileErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type CreateAdminUpstreamUsageProfileResponses = {
+    201: UpstreamUsageProfile;
+};
+export type CreateAdminUpstreamUsageProfileResponse = CreateAdminUpstreamUsageProfileResponses[keyof CreateAdminUpstreamUsageProfileResponses];
+export type DeleteAdminUpstreamUsageProfileData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/upstream-usage-profiles/{id}';
+};
+export type DeleteAdminUpstreamUsageProfileErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type DeleteAdminUpstreamUsageProfileResponses = {
+    204: void;
+};
+export type DeleteAdminUpstreamUsageProfileResponse = DeleteAdminUpstreamUsageProfileResponses[keyof DeleteAdminUpstreamUsageProfileResponses];
+export type UpdateAdminUpstreamUsageProfileData = {
+    body: UpstreamUsageProfileWriteWritable;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/upstream-usage-profiles/{id}';
+};
+export type UpdateAdminUpstreamUsageProfileErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type UpdateAdminUpstreamUsageProfileResponses = {
+    200: UpstreamUsageProfile;
+};
+export type UpdateAdminUpstreamUsageProfileResponse = UpdateAdminUpstreamUsageProfileResponses[keyof UpdateAdminUpstreamUsageProfileResponses];
 export type ListServiceMaintenanceAdminData = {
     body?: never;
     path: {

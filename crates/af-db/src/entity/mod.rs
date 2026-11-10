@@ -7,8 +7,8 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-pub(crate) mod upstream_model_policies;
 pub(crate) mod credential_model_observations;
+pub(crate) mod upstream_model_policies;
 
 use rust_decimal::Decimal;
 use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};

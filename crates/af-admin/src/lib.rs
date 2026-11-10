@@ -15,8 +15,11 @@ mod announcement;
 mod api_key;
 mod credential_models;
 mod upstream_usage;
+pub use credential_models::{
+    CredentialModelError, CredentialModelFuture, CredentialModelItem, CredentialModelService,
+    CredentialModelsSnapshot, DatabaseCredentialModelService, UpstreamModelPolicySettings,
+};
 pub use upstream_usage::{AdminUpstreamUsageService, UpstreamUsageFuture};
-pub use credential_models::{CredentialModelError, CredentialModelFuture, CredentialModelItem, CredentialModelService, CredentialModelsSnapshot, DatabaseCredentialModelService, UpstreamModelPolicySettings};
 mod merchant_payout;
 mod merchant_payout_gateway;
 pub use merchant_payout::{

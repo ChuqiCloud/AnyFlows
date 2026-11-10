@@ -21,11 +21,11 @@ pub use credential_models::build_credential_models_router;
 mod credential_proxies;
 mod credential_usage;
 mod upstream_usage;
-pub use upstream_usage::build_upstream_usage_router;
 pub use credential_health::{
     AdminCredentialHealthReader, CredentialHealthFuture, CredentialHealthSnapshot,
     build_credential_health_router,
 };
+pub use upstream_usage::build_upstream_usage_router;
 mod credentials;
 mod custom_oauth2;
 mod debug_traces;

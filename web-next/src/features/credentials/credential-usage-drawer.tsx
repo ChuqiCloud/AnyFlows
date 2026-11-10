@@ -1,5 +1,5 @@
 import { Button, Drawer, DrawerBody, DrawerContent, DrawerHeader } from '@heroui/react'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { capabilityError, useRefreshUpstreamUsage, useUpstreamUsage } from './key-capability-api'
 import { CapabilityError, CapabilityTime } from './key-capability-fields'
@@ -13,7 +13,7 @@ export function CredentialUsageDrawer({ channelId, credentialId, onClose }: { ch
   const scope = snapshot?.scope ?? (snapshot?.windows.length ? 'window' : 'key')
   const unit = snapshot?.unit ?? snapshot?.currency ?? ''
   const forceRefresh = async () => { try { await refresh.mutateAsync() } catch { /* Cached values remain visible with their timestamp. */ } }
-  return <Drawer isOpen size="2xl" onOpenChange={(open) => { if (!open) onClose() }}><DrawerContent className="min-w-0 bg-surface-1 text-foreground"><DrawerHeader className="flex flex-wrap items-center justify-between gap-3 pr-12"><h2 className="text-base font-semibold">{t('keyCapabilities.usageTitle', { id: credentialId })}</h2><Button type="button" size="sm" variant="bordered" isLoading={refresh.isPending} onPress={() => void forceRefresh()}><RefreshCw className="size-3.5" />{t('keyCapabilities.refreshUsage')}</Button></DrawerHeader><DrawerBody className="gap-4 pb-6">
+  return <Drawer isOpen size="2xl" onOpenChange={(open) => { if (!open) onClose() }}><DrawerContent className="min-w-0 bg-surface-1 text-foreground"><DrawerHeader className="flex flex-wrap items-center justify-between gap-3 pr-12"><h2 className="text-base font-semibold">{t('keyCapabilities.usageTitle', { id: credentialId })}</h2><div className="flex items-center gap-2"><Button type="button" size="sm" variant="bordered" isLoading={refresh.isPending} onPress={() => void forceRefresh()}><RefreshCw className="size-3.5" />{t('keyCapabilities.refreshUsage')}</Button><Button type="button" isIconOnly size="sm" variant="light" aria-label={t('keyCapabilities.close')} onPress={onClose}><X className="size-4" /></Button></div></DrawerHeader><DrawerBody className="gap-4 pb-6">
     {query.isPending ? <p role="status" className="text-xs">{t('keyCapabilities.loading')}</p> : query.isError ? <CapabilityError onRetry={() => void query.refetch()} /> : snapshot ? <section className="grid gap-3" aria-label={t('keyCapabilities.usageSnapshot')}><div className="flex flex-wrap items-center gap-2 text-xs"><strong>{t(`keyCapabilities.scope.${scope}`)}</strong>{snapshot.provider ? <span className="text-muted-foreground">{t(`keyCapabilities.providers.${snapshot.provider}`, { defaultValue: snapshot.provider })}</span> : null}{snapshot.stale ? <span className="text-warning">{t('keyCapabilities.stale')}</span> : null}</div>
       {scope === 'account' ? <p className="text-[11px] leading-5 text-muted-foreground">{t('keyCapabilities.sharedHint')}{snapshot.account_ref ? ` · ${snapshot.account_ref}` : ''}</p> : null}
       {snapshot.status !== 'available' ? <p role="status" className="text-xs text-warning">{t(snapshot.status === 'unsupported' ? 'keyCapabilities.unsupportedUsage' : 'keyCapabilities.failedUsage')}</p> : null}

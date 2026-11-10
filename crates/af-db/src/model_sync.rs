@@ -208,7 +208,9 @@ pub struct ModelDiscoveryTargetRecord {
 
 impl ModelDiscoveryTargetRecord {
     #[must_use]
-    pub fn identity_fingerprint(&self) -> String { self.identity_fingerprint.clone() }
+    pub fn identity_fingerprint(&self) -> String {
+        self.identity_fingerprint.clone()
+    }
 
     pub fn client_profile(&self) -> Option<&af_domain::ClientProfileSnapshot> {
         self.client_profile.as_ref()
@@ -383,7 +385,9 @@ pub struct DiscoveredModelRecord {
 
 impl DiscoveredModelRecord {
     #[must_use]
-    pub fn upstream_model(&self) -> &str { &self.upstream_model }
+    pub fn upstream_model(&self) -> &str {
+        &self.upstream_model
+    }
 
     #[allow(
         clippy::too_many_arguments,

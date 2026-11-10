@@ -78,7 +78,11 @@ impl ScheduledChatService {
             .take(af_relay::RelayStateMachine::MAX_CANDIDATES)
             .map(|credential| (credential.concurrency_owner_id(), credential.concurrency()))
             .collect::<Vec<_>>();
-        concurrency.account_loads(&accounts).await.map(Some).map_err(|_| AfError::Internal)
+        concurrency
+            .account_loads(&accounts)
+            .await
+            .map(Some)
+            .map_err(|_| AfError::Internal)
     }
 
     pub(super) async fn load_compact_credential_health(
@@ -92,7 +96,8 @@ impl ScheduledChatService {
         let mut seen = BTreeSet::new();
         let mut identities = Vec::new();
         for credential in compact_credentials(route, model) {
-            let id = CredentialId::new(credential.credential_id()).map_err(|_| AfError::Internal)?;
+            let id =
+                CredentialId::new(credential.credential_id()).map_err(|_| AfError::Internal)?;
             if !seen.insert(id) {
                 return Err(AfError::Internal);
             }

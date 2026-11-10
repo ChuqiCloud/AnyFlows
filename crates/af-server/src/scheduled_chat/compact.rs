@@ -1,10 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use af_adapter::{RelayContext, get_adaptor};
-use af_domain::{
-    AfError, ConcurrencyLimit, CredentialId, GatewayPrincipal, GroupId,
-    Protocol,
-};
+use af_domain::{AfError, ConcurrencyLimit, CredentialId, GatewayPrincipal, GroupId, Protocol};
 use af_protocol::{CanonicalResponsesCompactionRequest, openai_responses_compact};
 use af_relay::{
     RelayCandidate, RelayCandidateRequest, RelayStateMachine,
@@ -138,7 +135,8 @@ impl ScheduledChatService {
                 continue;
             };
             let upstream_model = upstream_model.to_owned();
-            if !super::credential_models::has_eligible_credentials(target, &model, &upstream_model) {
+            if !super::credential_models::has_eligible_credentials(target, &model, &upstream_model)
+            {
                 continue;
             }
             let candidate_request = compact_candidate_request(&request, &model, &upstream_model)?;

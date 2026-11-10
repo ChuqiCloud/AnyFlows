@@ -32,8 +32,11 @@ impl UpstreamModelPolicy {
             }
             for name in list {
                 bytes = bytes.saturating_add(name.len());
-                if name.is_empty() || name.len() > 255 || name.trim() != name
-                    || name.chars().any(char::is_control) || bytes > 256 * 1024
+                if name.is_empty()
+                    || name.len() > 255
+                    || name.trim() != name
+                    || name.chars().any(char::is_control)
+                    || bytes > 256 * 1024
                 {
                     return Err(UpstreamModelPolicyError);
                 }
@@ -44,13 +47,21 @@ impl UpstreamModelPolicy {
 
     #[must_use]
     pub fn allows(&self, upstream_model: &str) -> bool {
-        if self.disabled_models.iter().any(|model| model == upstream_model) {
+        if self
+            .disabled_models
+            .iter()
+            .any(|model| model == upstream_model)
+        {
             return false;
         }
         match self.mode {
             UpstreamModelPolicyMode::Inherit => true,
-            UpstreamModelPolicyMode::Allowlist => self.models.iter().any(|model| model == upstream_model),
-            UpstreamModelPolicyMode::Denylist => !self.models.iter().any(|model| model == upstream_model),
+            UpstreamModelPolicyMode::Allowlist => {
+                self.models.iter().any(|model| model == upstream_model)
+            }
+            UpstreamModelPolicyMode::Denylist => {
+                !self.models.iter().any(|model| model == upstream_model)
+            }
         }
     }
 }
@@ -62,7 +73,10 @@ mod tests {
     #[test]
     fn inherited_empty_and_explicit_denials_are_distinct() {
         assert!(UpstreamModelPolicy::default().allows("vendor/Model"));
-        let mut policy = UpstreamModelPolicy { mode: UpstreamModelPolicyMode::Allowlist, ..Default::default() };
+        let mut policy = UpstreamModelPolicy {
+            mode: UpstreamModelPolicyMode::Allowlist,
+            ..Default::default()
+        };
         assert!(!policy.allows("vendor/Model"));
         policy.models.push("vendor/Model".to_owned());
         assert!(policy.allows("vendor/Model"));

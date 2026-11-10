@@ -62,7 +62,9 @@ impl UpstreamUsageConfig {
             || self.profile_id.is_some_and(|id| id <= 0)
             || (self.scope == UpstreamUsageScope::Account && self.profile_id.is_none())
             || (self.scope == UpstreamUsageScope::Key && self.profile_id.is_some())
-            || self.refresh_interval_secs.is_some_and(|value| !(60..=604_800).contains(&value))
+            || self
+                .refresh_interval_secs
+                .is_some_and(|value| !(60..=604_800).contains(&value))
         {
             return Err(UpstreamUsageError::InvalidInput);
         }
@@ -116,11 +118,19 @@ pub enum UpstreamUsageError {
     Unavailable,
 }
 
-pub fn validate_upstream_usage_amount(value: Option<&str>, positive: bool) -> Result<(), UpstreamUsageError> {
+pub fn validate_upstream_usage_amount(
+    value: Option<&str>,
+    positive: bool,
+) -> Result<(), UpstreamUsageError> {
     if let Some(value) = value {
-        let parsed = value.parse::<Decimal>().map_err(|_| UpstreamUsageError::InvalidInput)?;
-        if value.len() > 64 || value.trim() != value || parsed.is_sign_negative()
-            || (positive && parsed.is_zero()) || parsed.scale() > 12
+        let parsed = value
+            .parse::<Decimal>()
+            .map_err(|_| UpstreamUsageError::InvalidInput)?;
+        if value.len() > 64
+            || value.trim() != value
+            || parsed.is_sign_negative()
+            || (positive && parsed.is_zero())
+            || parsed.scale() > 12
         {
             return Err(UpstreamUsageError::InvalidInput);
         }
@@ -129,9 +139,13 @@ pub fn validate_upstream_usage_amount(value: Option<&str>, positive: bool) -> Re
 }
 
 pub fn validate_upstream_usage_currency(value: Option<&str>) -> Result<(), UpstreamUsageError> {
-    if value.is_some_and(|value| value.is_empty() || value.len() > 16
-        || !value.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'))
-    {
+    if value.is_some_and(|value| {
+        value.is_empty()
+            || value.len() > 16
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    }) {
         return Err(UpstreamUsageError::InvalidInput);
     }
     Ok(())
