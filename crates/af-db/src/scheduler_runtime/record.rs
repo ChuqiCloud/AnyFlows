@@ -14,7 +14,7 @@ pub struct SchedulerRuntimeRecord {
 impl SchedulerRuntimeRecord {
     /// 在仓储层配对已验证能力和共享运行时目标。
     #[must_use]
-    pub(super) fn new(
+    pub(crate) fn new(
         ability: SchedulerAbilityRecord,
         target: Arc<SchedulerRuntimeTargetRecord>,
     ) -> Self {

@@ -42,6 +42,16 @@ mod subscription;
 mod subscription_window;
 mod task;
 mod token_policy;
+mod upstream_model_policy;
+mod upstream_usage;
+pub use upstream_model_policy::{
+    UpstreamModelPolicy, UpstreamModelPolicyError, UpstreamModelPolicyMode,
+};
+pub use upstream_usage::{
+    UpstreamUsageConfig, UpstreamUsageError, UpstreamUsageProfile, UpstreamUsageProfileWrite,
+    UpstreamUsageProvider, UpstreamUsageScope, validate_upstream_usage_amount,
+    validate_upstream_usage_currency,
+};
 mod user_routing;
 pub use service_model_policy::{ServiceModelPolicy, ServiceModelPolicyError};
 pub use user_routing::{

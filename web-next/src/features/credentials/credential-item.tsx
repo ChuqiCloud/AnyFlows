@@ -1,6 +1,6 @@
 import type { ComponentProps } from 'react'
 import { useEffect, useState } from 'react'
-import { Gauge, GitFork, KeyRound, Link2, LoaderCircle, Pencil, Power, RefreshCw, Trash2 } from 'lucide-react'
+import { GitFork, KeyRound, Link2, LoaderCircle, Pencil, Power, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button, Checkbox, Chip } from '@heroui/react'
@@ -9,7 +9,7 @@ import type { CredentialHealthSnapshot } from './credential-api'
 import { cn } from '@/lib/utils'
 import { SiteTooltip } from '@/shared/components/site-tooltip'
 import { updateCredentialStatusRequest } from './credential-form-model'
-import { useAdminCredentialUsage } from './credential-api'
+import { CredentialCapabilityActions } from './credential-capability-actions'
 import { credentialKindIcons } from './credential-kind-picker'
 import {
   asWritableCredentialKind,
@@ -50,7 +50,6 @@ type CredentialItemProps = {
 export function CredentialItem({ selected, onSelect, health, channelType, credential, parent, language, pending, active, onToggle, onEdit, onDelete, onRefresh }: CredentialItemProps) {
   const { t } = useTranslation()
   const [oauthOpen, setOAuthOpen] = useState(false)
-  const [usageOpen, setUsageOpen] = useState(false)
   const writableKind = asWritableCredentialKind(credential.kind)
   const Icon = writableKind ? credentialKindIcons[writableKind] : KeyRound
   const runtimeState = credentialRuntimeState(credential)
@@ -58,8 +57,6 @@ export function CredentialItem({ selected, onSelect, health, channelType, creden
   const shadow = isSparkShadowCredential(credential)
   const parentBlocked = shadow && sparkShadowParentBlocked(parent)
   const isOAuth = credential.kind === 'oauth' && !shadow
-  const canQueryUsage = channelType === 'openai' && isOAuth && credential.oauth_provider === 'codex' && !credential.oauth_token_pending
-  const usageExpanded = usageOpen && active && canQueryUsage
   const canToggle = !credential.oauth_token_pending
     && updateCredentialStatusRequest(credential, 'enabled') !== undefined
 
@@ -67,14 +64,7 @@ export function CredentialItem({ selected, onSelect, health, channelType, creden
     if (!active) {
       setOAuthOpen(false)
     }
-    if (!active || !canQueryUsage) {
-      setUsageOpen(false)
-    }
-  }, [active, canQueryUsage])
-
-  function toggleUsage() {
-    setUsageOpen((current) => !current)
-  }
+  }, [active])
 
   return (
     <article className="py-3.5">
@@ -112,36 +102,17 @@ export function CredentialItem({ selected, onSelect, health, channelType, creden
                 : t('credentials.item.lastUsed', { value: formatTimestamp(credential.last_used_at, language) })}
           </p>
         </div>
-        <div className="col-start-2 flex items-center justify-end gap-1 sm:col-start-3">
-          {canQueryUsage ? <IconAction label={t('credentials.usage.action')} aria-expanded={usageExpanded} onClick={toggleUsage}><Gauge className="size-3.5" aria-hidden="true" /></IconAction> : null}
+        <div className="col-start-2 flex flex-wrap items-center justify-end gap-1 sm:col-start-3">
+          <CredentialCapabilityActions channelId={credential.channel_id} credentialId={credential.id} active={active} disabled={pending || oauthOpen || credential.oauth_token_pending} />
           {isOAuth ? <IconAction label={t(credential.oauth_token_pending ? 'credentials.actions.connect' : credential.oauth_provider ? 'credentials.actions.reauthorize' : 'credentials.actions.connect')} aria-expanded={oauthOpen} onClick={() => setOAuthOpen((current) => !current)}><Link2 className="size-3.5" aria-hidden="true" /></IconAction> : null}
           <IconAction label={t(credential.status === 'enabled' ? 'credentials.actions.disable' : 'credentials.actions.enable')} disabled={pending || oauthOpen || !canToggle} onClick={() => onToggle(credential)}>{pending ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : <Power className="size-3.5" aria-hidden="true" />}</IconAction>
           <IconAction label={t('credentials.actions.edit')} disabled={pending || oauthOpen || !writableKind} onClick={() => onEdit(credential)}><Pencil className="size-3.5" aria-hidden="true" /></IconAction>
           <IconAction label={t('credentials.actions.delete')} className="hover:text-destructive" disabled={oauthOpen} onClick={() => onDelete(credential)}><Trash2 className="size-3.5" aria-hidden="true" /></IconAction>
         </div>
       </div>
-      {usageExpanded ? <CredentialUsagePanel channelId={credential.channel_id} credentialId={credential.id} language={language} /> : null}
       {isOAuth && oauthOpen ? <CredentialOAuthConnection active={active && oauthOpen} channelType={channelType} channelId={credential.channel_id} credential={credential} onDelete={onDelete} onRefresh={onRefresh} /> : null}
     </article>
   )
-}
-
-function CredentialUsagePanel({ channelId, credentialId, language }: { channelId: number; credentialId: number; language: string }) {
-  const { t } = useTranslation()
-  const usageQuery = useAdminCredentialUsage(channelId, credentialId)
-
-  return <div className="mt-2 flex items-start justify-between gap-2 border-t border-border pt-2 text-xs text-muted-foreground">
-    <div className="min-w-0 flex-1" role="status" aria-live="polite">
-      {usageQuery.isPending && !usageQuery.data ? t('credentials.usage.loading') : usageQuery.data?.status === 'available' ? <div className="flex flex-wrap gap-x-5 gap-y-1">
-        {usageQuery.data.windows.map((window, index) => <span key={`${window.window_seconds}-${index}`}>{t('credentials.usage.window', { hours: window.window_seconds / 3600, percent: window.used_percent.toFixed(1) })}{window.reset_at ? ` · ${t('credentials.usage.reset', { value: formatTimestamp(window.reset_at, language) })}` : ''}</span>)}
-        {usageQuery.data.credits_balance !== null ? <span>{t('credentials.usage.credits', { value: usageQuery.data.credits_balance })}</span> : null}
-        {usageQuery.data.fetched_at ? <span>{t('credentials.usage.fetched', { value: formatTimestamp(usageQuery.data.fetched_at, language) })}</span> : null}
-      </div> : t(`credentials.usage.${usageQuery.data?.status ?? 'unavailable'}`)}
-    </div>
-    <IconAction label={t('credentials.actions.refresh')} disabled={usageQuery.isFetching} onClick={() => void usageQuery.refetch()}>
-      <RefreshCw className={`size-3.5 ${usageQuery.isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
-    </IconAction>
-  </div>
 }
 
 function IconAction({ label, className, children, ...props }: ComponentProps<typeof Button> & { label: string }) {
