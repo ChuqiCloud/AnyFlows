@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, future::Future, time::Duration};
 
 use af_domain::{
     ChannelId, CredentialId, CredentialKind, ProxyId, UpstreamUsageConfig, UpstreamUsageError,
-    UpstreamUsageProfile, UpstreamUsageProvider, UpstreamUsageScope, UserId,
+    UpstreamUsageProfile, UpstreamUsageProvider, UserId,
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryResult,
