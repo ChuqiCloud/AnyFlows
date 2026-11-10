@@ -491,7 +491,7 @@ async fn monitor_event_history_keeps_only_the_newest_hundred_per_target()
         .upsert_target(target_input(channel, credential, "chat"))
         .await?;
     for offset in 0..(MAX_ACTIVE_CHANNEL_MONITOR_EVENTS_PER_TARGET + 7) {
-        super::insert_event(
+        crate::channel_monitor::insert_event(
             pool.connection(),
             target.id,
             "down",
