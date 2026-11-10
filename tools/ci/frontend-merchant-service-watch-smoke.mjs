@@ -62,26 +62,28 @@ try {
   await page.route(url => url.pathname.startsWith('/api/'), async intercepted => {
     const request = intercepted.request(), path = new URL(request.url()).pathname, method = request.method()
     const respond = (body, status = 200) => intercepted.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
+    const assertAuthenticated = () => assert.equal(request.headers().authorization, 'Bearer ci-merchant-watch')
     if (path === '/api/site') return respond({ balance_display: { mode: 'quota', unit_name: '积分', unit_symbol: '积分', quota_units_per_display_unit: '10000', symbol_position: 'suffix', fraction_digits: 0 } })
     if (path === '/api/merchant-pools/1/model-providers') return respond({ providers: [{ name: 'DeepSeek', model_count: 1 }] })
-    assert.equal(request.headers().authorization, 'Bearer ci-merchant-watch')
     if (path === '/api/merchant-pools' && method === 'GET') return respond({ items: [pool], total: 1, page: 1, page_size: 20 })
     if (path === '/api/merchant-pools/1/services' && method === 'GET') return respond({ items: [service], total: 1, page: 1, page_size: 20 })
     if (path === '/api/merchant-pools/1/services/51' && method === 'GET') return respond(service)
-    if (path === '/api/merchant-pool/watches' && method === 'GET') return respond({ items: watches, total: watches.length })
+    if (path === '/api/merchant-pool/watches' && method === 'GET') { assertAuthenticated(); return respond({ items: watches, total: watches.length }) }
     if (path === '/api/merchant-pools/1/services/51/watch' && method === 'PUT') {
+      assertAuthenticated()
       watchWrites.push('put')
       watches = [{ pool_id: 1, pool_name: pool.name, service_id: 51, merchant_id: 6, service_name: service.name, merchant_name: service.merchant_name, active: true, created_at: now }]
       return respond(watches[0])
     }
     if (path === '/api/merchant-pools/1/services/51/watch' && method === 'DELETE') {
+      assertAuthenticated()
       watchWrites.push('delete')
       watches = []
       return respond({ changed: true })
     }
     if (path === '/api/merchant-pools/1/statistics') return respond({ items: [], as_of: now, window_seconds: 86400 })
     if (path === '/api/merchant-pools/1/timeline') return respond({ items: [], as_of: now, window_seconds: 86400 })
-    if (path === '/api/account/notifications' && method === 'GET') return respond({ entries: [{ id: 901, kind: 'product_update', channel: 'in_app', template_version: 'v1', occurred_at: now, delivery_state: 'available', delivery_attempts: 0, read_at: null, merchant_service_event_id: 77, merchant_service_event_kind: 'price_changed', merchant_service_pool_id: 1, merchant_service_id: 51, merchant_service_merchant_id: 6, merchant_service_name: service.name }], next_cursor: null, unread_count: 1 })
+    if (path === '/api/account/notifications' && method === 'GET') { assertAuthenticated(); return respond({ entries: [{ id: 901, kind: 'product_update', channel: 'in_app', template_version: 'v1', occurred_at: now, delivery_state: 'available', delivery_attempts: 0, read_at: null, merchant_service_event_id: 77, merchant_service_event_kind: 'price_changed', merchant_service_pool_id: 1, merchant_service_id: 51, merchant_service_merchant_id: 6, merchant_service_name: service.name }], next_cursor: null, unread_count: 1 }) }
     return respond({ error: { code: 'not_found' } }, 404)
   })
   await page.goto(`${origin}/.merchant-service-watch-smoke.html`)

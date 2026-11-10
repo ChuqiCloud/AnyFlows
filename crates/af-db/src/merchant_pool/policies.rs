@@ -213,19 +213,18 @@ impl MerchantPoolRepository {
         let txn = self.pool.connection().begin().await.map_err(internal)?;
         let service = lock_service(&txn, service).await?;
         let processed = apply_due_in_transaction(&txn, &service, now).await?;
-        if processed > 0 {
-            if let Some(active) =
+        if processed > 0
+            && let Some(active) =
                 active_price(&txn, service.id, service.published_revision_id).await?
-            {
-                record_service_event(
-                    &txn,
-                    &service,
-                    "price_changed",
-                    &format!("price:{}", active.id),
-                    now,
-                )
-                .await?;
-            }
+        {
+            record_service_event(
+                &txn,
+                &service,
+                "price_changed",
+                &format!("price:{}", active.id),
+                now,
+            )
+            .await?;
         }
         super::service_watch::record_elapsed_maintenance_events(&txn, &service, now).await?;
         txn.commit().await.map_err(internal)?;

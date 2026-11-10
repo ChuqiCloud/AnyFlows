@@ -274,7 +274,7 @@ try {
   await page.getByRole('table').getByText(featuredModel, { exact: true }).waitFor()
   await page.getByText('"https://gateway.example.test/v1"', { exact: true }).waitFor()
   await page.getByText(publicStatusCopy.states.operational, { exact: true }).waitFor()
-  assert.equal(await page.getByText('98.75%', { exact: true }).count(), 1, 'Landing uses the real public status aggregate rather than fixture marketing data')
+  assert.equal(await page.getByText(`${publicStatusCopy.availability}: 98.75%`, { exact: true }).count(), 1, 'Landing uses the real public status aggregate rather than fixture marketing data')
   const landingText = await page.locator('main').innerText()
   assert.equal(landingText.includes('99.98%'), false, 'Landing does not claim a static availability guarantee')
   assert.equal(landingText.includes('82ms'), false, 'Landing does not display fabricated latency measurements')

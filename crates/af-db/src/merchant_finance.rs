@@ -193,7 +193,7 @@ impl MerchantFinanceRepository {
         let from = parse_report_date(from_date, &format)?;
         let to = parse_report_date(to_date, &format)?;
         let span_days = (to - from).whole_days();
-        if span_days < 0 || span_days >= REPORT_MAX_DAYS {
+        if !(0..REPORT_MAX_DAYS).contains(&span_days) {
             return Err(MerchantFinanceError::InvalidInput);
         }
         let start = PrimitiveDateTime::new(from, time::Time::MIDNIGHT)
@@ -265,10 +265,10 @@ impl MerchantFinanceRepository {
                 .and_where(Expr::col((Alias::new("e"), Alias::new("created_at"))).lt(end))
                 .and_where(Expr::col((Alias::new("e"), Alias::new("kind"))).is_in(["income_pending", "sale_reversed"]))
                 .add_group_by([
-                    Expr::cust(bucket.clone()).into(),
-                    Expr::cust("merchant_billing_reservations.service_id").into(),
-                    Expr::cust("COALESCE(merchant_services.name, '未关联')").into(),
-                    Expr::cust("COALESCE(usage_logs.model, '未关联')").into(),
+                    Expr::cust(bucket.clone()),
+                    Expr::cust("merchant_billing_reservations.service_id"),
+                    Expr::cust("COALESCE(merchant_services.name, '未关联')"),
+                    Expr::cust("COALESCE(usage_logs.model, '未关联')"),
                 ])
                 .order_by(Alias::new("period"), Order::Asc)
                 .order_by(Alias::new("service_id"), Order::Asc)

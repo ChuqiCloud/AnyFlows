@@ -103,7 +103,7 @@ try {
 
   const globalSwitch = page.getByRole('switch', { name: label('channels.activeMonitor.globalEnabled') })
   await globalSwitch.waitFor()
-  assert.equal(await globalSwitch.getAttribute('aria-checked'), 'false', 'Global monitoring starts disabled')
+  assert.equal(await globalSwitch.isChecked(), false, 'Global monitoring starts disabled')
 
   await page.getByRole('button', { name: label('channels.activeMonitor.showEvents') }).click()
   await page.getByText(label('channels.activeMonitor.events.down'), { exact: false }).waitFor()
