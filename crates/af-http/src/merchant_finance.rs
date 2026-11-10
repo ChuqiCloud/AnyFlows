@@ -617,8 +617,7 @@ mod finance_report_tests {
 
     #[test]
     fn merchant_finance_report_contract_uses_exact_utc_date_inputs() {
-        let format =
-            time::format_description::parse_borrowed::<2>("[year]-[month]-[day]").unwrap();
+        let format = time::format_description::parse_borrowed::<2>("[year]-[month]-[day]").unwrap();
         assert!(time::Date::parse("2026-11-10", &format).is_ok());
         assert!(time::Date::parse("2026-02-30", &format).is_err());
     }
