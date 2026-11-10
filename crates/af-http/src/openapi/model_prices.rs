@@ -6,6 +6,7 @@ use utoipa::OpenApi;
 
 use crate::{
     management_error::ManagementErrorBody,
+    management_group_writes::AdminGroupPeakWindow,
     management_model_prices::{
         AdminModelPriceBatchRequest, AdminModelPriceBatchResponse, AdminModelPriceBillingModeValue,
         AdminModelPriceExpressionPreviewRequest, AdminModelPriceExpressionPreviewResponse,
@@ -138,6 +139,7 @@ fn apply_admin_model_prices() {}
         AdminModelPriceExpressionVariablesResponse,
         AdminModelPriceExpressionPreviewResponse,
         AdminModelPriceWriteItemRequest,
+        AdminGroupPeakWindow,
         AdminModelPriceBatchRequest,
         AdminModelPriceBatchResponse,
         ManagementErrorBody

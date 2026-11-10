@@ -60,6 +60,56 @@ fn stream_path_sets_canonical_mode_without_losing_source_proof() {
 }
 
 #[test]
+fn preserves_agent_dynamic_thinking_and_large_output_budget() {
+    let body = json!({
+        "systemInstruction": {
+            "role": "user",
+            "parts": [{"text": "Use the declared tools when needed"}]
+        },
+        "contents": [{
+            "role": "user",
+            "parts": [{"text": "Remember this marker"}]
+        }],
+        "tools": [{
+            "functionDeclarations": [{
+                "name": "read",
+                "description": "Read a local file",
+                "parametersJsonSchema": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"]
+                }
+            }]
+        }],
+        "generationConfig": {
+            "maxOutputTokens": 384_000,
+            "thinkingConfig": {
+                "includeThoughts": true,
+                "thinkingBudget": -1
+            }
+        }
+    });
+    let encoded = Bytes::from(serde_json::to_vec(&body).unwrap());
+    let envelope = parse_stream_request_envelope("models/deepseek-flash", encoded.clone()).unwrap();
+    let request = envelope.canonical();
+    assert_eq!(request.sampling.max_output_tokens().unwrap().get(), 384_000);
+    assert_eq!(request.messages[0].role, Role::System);
+    assert_eq!(request.tools[0].name, "read");
+    let reasoning = request.reasoning.unwrap();
+    assert_eq!(reasoning.effort(), None);
+    assert_eq!(reasoning.budget_tokens(), None);
+    assert!(reasoning.dynamic_budget());
+    assert!(reasoning.include_thinking());
+
+    let crate::SameProtocolDecision::Passthrough(source) =
+        envelope.into_same_protocol(af_domain::Protocol::Gemini)
+    else {
+        panic!("原生 Gemini 动态思考请求必须保留同协议正文");
+    };
+    assert_eq!(source.body(), &encoded);
+}
+
+#[test]
 fn parses_system_media_tools_structured_results_and_thinking() {
     let thought_signature = STANDARD.encode("thought-signature");
     let tool_signature = STANDARD.encode("tool-signature");
@@ -362,6 +412,65 @@ fn rejects_duplicate_keys_at_any_depth() {
 }
 
 #[test]
+fn parses_parallel_results_across_consecutive_user_contents() {
+    let request = parse(json!({
+        "contents": [
+            {"role": "model", "parts": [
+                {"functionCall": {"id": "call_a", "name": "lookup", "args": {}}},
+                {"functionCall": {"id": "call_b", "name": "lookup", "args": {}}}
+            ]},
+            {"role": "user", "parts": [
+                {"functionResponse": {"id": "call_b", "name": "lookup", "response": {"result": "b"}}}
+            ]},
+            {"role": "user", "parts": [
+                {"functionResponse": {"id": "call_a", "name": "lookup", "response": {"result": "a"}}},
+                {"text": "continue"}
+            ]}
+        ]
+    }))
+    .unwrap();
+    assert_eq!(request.messages.len(), 4);
+    for (message, expected) in request.messages[1..3].iter().zip(["call_b", "call_a"]) {
+        assert_eq!(message.role, Role::Tool);
+        assert!(matches!(message.content.as_slice(),
+            [ContentBlock::ToolResult { tool_use_id, .. }] if tool_use_id == expected));
+    }
+    assert_eq!(request.messages[3].role, Role::User);
+    assert!(matches!(request.messages[3].content.as_slice(),
+        [ContentBlock::Text(text)] if text == "continue"));
+}
+
+#[test]
+fn split_parallel_results_still_require_completion_before_content_or_turn_end() {
+    let base = json!({
+        "contents": [
+            {"role": "model", "parts": [
+                {"functionCall": {"id": "call_a", "name": "lookup", "args": {}}},
+                {"functionCall": {"id": "call_b", "name": "lookup", "args": {}}}
+            ]},
+            {"role": "user", "parts": [
+                {"functionResponse": {"id": "call_a", "name": "lookup", "response": {"result": "a"}}}
+            ]}
+        ]
+    });
+    assert_eq!(parse(base.clone()), Err(ParseRequestError::InvalidValue));
+    for interruption in [
+        json!({"role": "user", "parts": [{"text": "continue"}]}),
+        json!({"role": "model", "parts": [{"text": "continue"}]}),
+    ] {
+        let mut body = base.clone();
+        body["contents"].as_array_mut().unwrap().push(interruption);
+        assert_eq!(parse(body), Err(ParseRequestError::InvalidValue));
+    }
+    let mut mixed = base;
+    mixed["contents"][1]["parts"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"text": "continue"}));
+    assert_eq!(parse(mixed), Err(ParseRequestError::InvalidValue));
+}
+
+#[test]
 fn validates_model_resource_and_rejects_body_model() {
     let body = serde_json::to_vec(&minimal_body()).unwrap();
     for invalid in [
@@ -547,6 +656,7 @@ fn validates_sampling_and_thinking_boundaries() {
     let dynamic = parse(dynamic).unwrap().reasoning.unwrap();
     assert_eq!(dynamic.effort(), None);
     assert_eq!(dynamic.budget_tokens(), None);
+    assert!(dynamic.dynamic_budget());
     assert!(dynamic.include_thinking());
 }
 

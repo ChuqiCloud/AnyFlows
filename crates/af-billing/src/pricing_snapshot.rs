@@ -93,6 +93,34 @@ pub struct RequestPricingSnapshot {
 }
 
 impl RequestPricingSnapshot {
+    /// Merchant pools sell the platform base price at their published sales ratio.
+    /// Group, peak and contract multipliers must never leak into this quote.
+    pub fn with_merchant_sales_ratio(
+        mut self,
+        ratio_micros: i64,
+    ) -> Result<Self, RequestPricingSnapshotError> {
+        if ratio_micros <= 0
+            || self.contract_price.is_some()
+            || !matches!(
+                self.model_mode,
+                ModelPriceMode::PerToken | ModelPriceMode::Free
+            )
+        {
+            return Err(RequestPricingSnapshotError::MerchantPricingUnavailable);
+        }
+        let ratio = PricingRatio::new(ratio_micros)
+            .map_err(|_| RequestPricingSnapshotError::MerchantPricingUnavailable)?;
+        let ratios = PricingRatios::new(ratio, PricingRatio::ONE, PricingRatio::ONE);
+        let resolver = self
+            .ratio_resolver
+            .ok_or(RequestPricingSnapshotError::MerchantPricingUnavailable)?
+            .with_ratios(ratios);
+        self.ratios = ratios;
+        self.ratio_resolver = Some(resolver);
+        self.resolver = Arc::new(resolver);
+        Ok(self)
+    }
+
     /// 返回快照模型的显式计费模式。
     #[must_use]
     pub const fn billing_mode(&self) -> BillingMode {
@@ -165,6 +193,9 @@ impl fmt::Debug for RequestPricingSnapshot {
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum RequestPricingSnapshotError {
+    /// A merchant quote must use a positive sales ratio and platform fixed prices.
+    #[error("商户模型报价不可用")]
+    MerchantPricingUnavailable,
     /// 模型价格缓存状态不可用。
     #[error(transparent)]
     ModelCache(#[from] ModelPriceCacheError),
@@ -189,6 +220,9 @@ pub enum RequestPricingSnapshotError {
     /// 当前计费时间无效。
     #[error("请求计费时间无效")]
     InvalidCurrentTime,
+    /// 已校验的模型级倍率在构造计费快照时违反非负边界。
+    #[error("模型级时段倍率无效")]
+    InvalidModelPeakRatio,
     /// 表达式定义无法构造请求级执行快照。
     #[error("请求模型的表达式定价不可用")]
     ExpressionPricingUnavailable,
@@ -264,9 +298,14 @@ impl RequestPricingSnapshotSource for CachedRequestPricingSnapshotSource {
         let model_price = model_snapshot
             .get(model)
             .ok_or(RequestPricingSnapshotError::ModelNotFound)?;
-        let ratios = group_snapshot
+        let mut ratios = group_snapshot
             .ratios_for_model_at(source_group_id, target_group_id, model, time)
             .map_err(map_lookup_error)?;
+        if let Some(micros) = model_price.peak_ratio_at(time) {
+            let peak = PricingRatio::new(micros)
+                .map_err(|_| RequestPricingSnapshotError::InvalidModelPeakRatio)?;
+            ratios = ratios.with_applied_peak(peak);
+        }
         let model_mode = model_price.mode();
         // Expression 与固定五价同属需预扣和结算的按量请求，但保留独立目录模式供展示边界判断。
         let billing_mode = match model_mode {

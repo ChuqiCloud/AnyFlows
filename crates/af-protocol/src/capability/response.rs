@@ -42,7 +42,10 @@ pub enum ResponseCapability {
     ToolResults,
     /// 提示缓存断点。
     CacheControl(CacheHint),
+    /// OpenAI Responses 原生不透明压缩状态。
     Compaction,
+    /// Anthropic Messages 原生压缩块。
+    AnthropicCompaction,
     /// 候选结束原因。
     FinishReason(FinishReason),
     /// 实际命中的停止序列。
@@ -71,6 +74,7 @@ impl ResponseCapability {
         Self::Operation(Operation::ResponsesCompact),
         Self::Operation(Operation::Embedding),
         Self::Operation(Operation::Image),
+        Self::Operation(Operation::ImageEdit),
         Self::Operation(Operation::Audio),
         Self::Operation(Operation::Rerank),
         Self::Operation(Operation::Video),
@@ -92,10 +96,12 @@ impl ResponseCapability {
         Self::CacheControl(CacheHint::Ephemeral5Minutes),
         Self::CacheControl(CacheHint::Ephemeral1Hour),
         Self::Compaction,
+        Self::AnthropicCompaction,
         Self::FinishReason(FinishReason::Stop),
         Self::FinishReason(FinishReason::Length),
         Self::FinishReason(FinishReason::ToolCalls),
         Self::FinishReason(FinishReason::ContentFilter),
+        Self::FinishReason(FinishReason::Compaction),
         Self::StopSequence,
         Self::Usage,
         Self::UsageCacheRead,
@@ -133,6 +139,7 @@ impl fmt::Display for ResponseCapability {
                 formatter.write_str("content.cache_control.1h")
             }
             Self::Compaction => formatter.write_str("responses.compaction"),
+            Self::AnthropicCompaction => formatter.write_str("anthropic.compaction"),
             Self::FinishReason(reason) => {
                 write!(formatter, "finish.{}", finish_reason_name(*reason))
             }
@@ -162,10 +169,14 @@ const COMMON_FINISH: &[ResponseCapability] = &[
 
 pub(super) const OPENAI_CHAT: &[ResponseCapability] = &[
     ResponseCapability::Operation(Operation::Chat),
+    ResponseCapability::Operation(Operation::Image),
+    ResponseCapability::Operation(Operation::ImageEdit),
     ResponseCapability::MultipleChoices,
     ResponseCapability::ArbitraryChoiceIndex,
     ResponseCapability::Logprobs,
     ResponseCapability::Text,
+    ResponseCapability::ImageUrl,
+    ResponseCapability::ImageBase64,
     ResponseCapability::Thinking,
     ResponseCapability::ToolCalls,
     COMMON_FINISH[0],
@@ -178,6 +189,14 @@ pub(super) const OPENAI_CHAT: &[ResponseCapability] = &[
     ResponseCapability::UsageAudioInput,
     ResponseCapability::UsageAudioOutput,
     ResponseCapability::SameProtocolRaw,
+];
+
+pub(super) const OPENAI_IMAGES: &[ResponseCapability] = &[
+    ResponseCapability::Operation(Operation::Image),
+    ResponseCapability::Operation(Operation::ImageEdit),
+    ResponseCapability::ImageUrl,
+    ResponseCapability::ImageBase64,
+    ResponseCapability::Usage,
 ];
 
 pub(super) const OPENAI_RESPONSES: &[ResponseCapability] = &[
@@ -213,6 +232,8 @@ pub(super) const ANTHROPIC: &[ResponseCapability] = &[
     ResponseCapability::UsageCacheCreation(CacheHint::Ephemeral5Minutes),
     ResponseCapability::UsageCacheCreation(CacheHint::Ephemeral1Hour),
     ResponseCapability::UsageReasoning,
+    ResponseCapability::AnthropicCompaction,
+    ResponseCapability::FinishReason(FinishReason::Compaction),
     ResponseCapability::SameProtocolRaw,
 ];
 
@@ -311,6 +332,9 @@ fn validate_content(
                 require(protocol, ResponseCapability::CacheControl(*hint))?;
             }
             ContentBlock::Compaction(_) => require(protocol, ResponseCapability::Compaction)?,
+            ContentBlock::AnthropicCompaction(_) => {
+                require(protocol, ResponseCapability::AnthropicCompaction)?;
+            }
         }
     }
     Ok(())
@@ -376,5 +400,6 @@ const fn finish_reason_name(reason: FinishReason) -> &'static str {
         FinishReason::Length => "length",
         FinishReason::ToolCalls => "tool_calls",
         FinishReason::ContentFilter => "content_filter",
+        FinishReason::Compaction => "compaction",
     }
 }

@@ -27,7 +27,7 @@ import {
   parsePreviewRatioMicros,
 } from '../src/features/model-management/model-price-expression-preview-model.ts'
 
-const messages = { decimal: 'decimal', free: 'free', expression: 'expression', expressionTooLong: 'expression too long', expressionValues: 'expression values' }
+const messages = { decimal: 'decimal', free: 'free', expression: 'expression', expressionTooLong: 'expression too long', expressionValues: 'expression values', ratio: 'ratio', peakWindow: 'window', weekdays: 'weekdays', timezone: 'timezone', rules: 'rules', overlap: 'overlap' }
 
 test('价格草稿只接受普通非负十进制字符串', () => {
   const schema = buildModelPriceDraftSchema(messages)

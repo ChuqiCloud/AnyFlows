@@ -65,6 +65,7 @@ pub(crate) struct HttpState {
     pub(crate) admin_usage_log_reader: Option<Arc<dyn AdminUsageLogReader>>,
     pub(crate) admin_user_reader: Arc<dyn AdminUserReader>,
     pub(crate) admin_user_writer: Arc<dyn AdminUserWriter>,
+    pub(crate) admin_user_security_service: Option<Arc<dyn af_admin::AdminUserSecurityService>>,
     pub(crate) admin_wallet_service: Option<Arc<dyn AdminWalletService>>,
     pub(crate) admin_refund_service: Option<Arc<dyn af_admin::AdminRefundService>>,
     pub(crate) platform_audit_service: Option<Arc<dyn PlatformAuditService>>,
@@ -114,11 +115,21 @@ impl HttpState {
             admin_usage_log_reader: None,
             admin_user_reader,
             admin_user_writer,
+            admin_user_security_service: None,
             admin_wallet_service: None,
             admin_refund_service: None,
             platform_audit_service: None,
             stream_delivery: StreamDeliveryPolicy::default(),
         }
+    }
+
+    /// 注入管理员用户安全设置服务；未注入时相关端点失败关闭。
+    pub(crate) fn with_admin_user_security_service(
+        mut self,
+        service: Option<Arc<dyn af_admin::AdminUserSecurityService>>,
+    ) -> Self {
+        self.admin_user_security_service = service;
+        self
     }
 
     /// 注入独立 Audio 转录生产服务；未注入时公开端点失败关闭。

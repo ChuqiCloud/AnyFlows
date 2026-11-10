@@ -137,6 +137,14 @@ fn build_bound_route_plan(
         let available_credentials = target
             .credentials()
             .iter()
+            .filter(|credential| {
+                credential.quota_dimension()
+                    == af_domain::CredentialQuotaDimension::for_canonical_model(model)
+                    && target.allows_credential_model(
+                        credential,
+                        target.mapped_model(model).unwrap_or(model),
+                    )
+            })
             .map(|credential| credential.credential_id())
             .collect::<BTreeSet<_>>();
         let retained = channel_bindings
@@ -144,7 +152,9 @@ fn build_bound_route_plan(
             .filter(|binding| {
                 binding
                     .credential_id
-                    .is_none_or(|id| available_credentials.contains(&id.get()))
+                    .map_or(!available_credentials.is_empty(), |id| {
+                        available_credentials.contains(&id.get())
+                    })
             })
             .collect::<Vec<_>>();
         let Some(effective_priority) = retained.iter().map(|binding| binding.priority).max() else {
@@ -159,9 +169,10 @@ fn build_bound_route_plan(
         let mut route_bindings = BTreeMap::new();
         for binding in &retained {
             for credential in target.credentials().iter().filter(|credential| {
-                binding
-                    .credential_id
-                    .is_none_or(|id| id.get() == credential.credential_id())
+                available_credentials.contains(&credential.credential_id())
+                    && binding
+                        .credential_id
+                        .is_none_or(|id| id.get() == credential.credential_id())
             }) {
                 let scheduling_values = if binding.credential_id.is_some() {
                     (binding.priority, binding.weight)
@@ -357,6 +368,52 @@ mod tests {
         .unwrap();
 
         assert_eq!(channel_ids(&plan), [2, 3, 1]);
+    }
+
+    #[test]
+    fn credential_model_policy_excludes_bound_key_before_aggregating_channel_priority() {
+        let target = runtime_target(1, &[101, 102])
+            .with_model_policies(
+                af_domain::UpstreamModelPolicy::default(),
+                BTreeMap::from([(
+                    101,
+                    af_domain::UpstreamModelPolicy {
+                        mode: af_domain::UpstreamModelPolicyMode::Allowlist,
+                        models: Vec::new(),
+                        disabled_models: Vec::new(),
+                    },
+                )]),
+            )
+            .unwrap();
+        let record = ChannelIndexSourceRecord::with_runtime_target(
+            group_id(),
+            "gpt-routed",
+            0,
+            1,
+            Arc::new(target),
+        )
+        .unwrap();
+        let snapshot = ChannelIndexSnapshot::from_records(vec![record], 1).unwrap();
+        let plan = build_bound_route_plan(
+            &snapshot,
+            group_id(),
+            "gpt-routed",
+            RouteStrategy::Weighted,
+            &[
+                binding(11, 1, 101, 100, 1_000, None),
+                binding(12, 1, 102, 1, 2, None),
+            ],
+            &BTreeMap::new(),
+        )
+        .unwrap()
+        .unwrap();
+        let candidate = &plan.candidates()[0];
+        assert_eq!(candidate.runtime_target().credentials().len(), 1);
+        assert_eq!(
+            candidate.runtime_target().credentials()[0].credential_id(),
+            102
+        );
+        assert_eq!(candidate.selection().candidate().priority(), 1);
     }
 
     #[test]

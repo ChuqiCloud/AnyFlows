@@ -10,11 +10,15 @@ import {
   UserRoundPlus,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
 import { establishManagementSession } from '@/features/auth/session-query'
 import { TurnstileWidget } from '@/features/auth/turnstile-widget'
+import { beginOAuthLogin, type OAuthLoginProvider } from '@/features/auth/oauth-login-api'
+import { OAuthLoginButtons } from '@/features/auth/oauth-login-buttons'
+import { invitationAuthLink } from '@/features/auth/invitation-context'
 import { ApiError } from '@/lib/api'
 import {
   useRegisterUser,
@@ -31,6 +35,9 @@ type RegistrationFormProps = {
   emailRequired: boolean
   turnstileSiteKey: string | null
   initialInviteCode?: string
+  passwordLoginEnabled?: boolean
+  oauthProviders?: ReadonlyArray<{ id: string; display_name: string }>
+  onInviteCodeChange?: (code: string) => void
   onAuthenticated: () => void
 }
 
@@ -64,6 +71,9 @@ export function RegistrationForm({
   emailRequired,
   turnstileSiteKey,
   initialInviteCode,
+  passwordLoginEnabled = true,
+  oauthProviders = [],
+  onInviteCodeChange,
   onAuthenticated,
 }: RegistrationFormProps) {
   const { t } = useTranslation()
@@ -94,6 +104,10 @@ export function RegistrationForm({
     })),
   })
   const email = form.watch('email')
+  const inviteCode = form.watch('inviteCode')
+  const oauthMutation = useMutation({
+    mutationFn: (provider: OAuthLoginProvider) => beginOAuthLogin(provider, form.getValues('inviteCode') || undefined),
+  })
   const cooldownSeconds = Math.max(0, nextSendAt - now)
   const hasEmail = email.trim().length > 0
 
@@ -112,10 +126,23 @@ export function RegistrationForm({
   }, [cooldownSeconds, nextSendAt])
 
   useEffect(() => {
-    if (initialInviteCode) {
-      form.setValue('inviteCode', initialInviteCode, { shouldValidate: true })
-    }
+    form.setValue('inviteCode', initialInviteCode ?? '', { shouldValidate: true })
   }, [form, initialInviteCode])
+
+  useEffect(() => {
+    onInviteCodeChange?.(inviteCode)
+  }, [inviteCode, onInviteCodeChange])
+
+  const onOAuthLogin = async (provider: OAuthLoginProvider) => {
+    setSubmitError(undefined)
+    if (!(await form.trigger('inviteCode'))) return
+    try {
+      const response = await oauthMutation.mutateAsync(provider)
+      window.location.assign(response.authorization_url)
+    } catch (error) {
+      setSubmitError(classifyRegistrationError(error))
+    }
+  }
 
   const onSendVerification = async () => {
     setVerificationError(undefined)
@@ -192,7 +219,8 @@ export function RegistrationForm({
       </CardHeader>
 
       <CardBody className="px-6 pb-6 sm:px-7 sm:pb-7">
-        <form className="grid gap-4" onSubmit={onSubmit} noValidate>
+        <form className="grid gap-4" onSubmit={passwordLoginEnabled ? onSubmit : (event) => event.preventDefault()} noValidate>
+          {passwordLoginEnabled ? <>
           <div className="grid gap-1.5">
             <label htmlFor="registration-username" className="text-sm font-medium">
               {t('registration.form.username')}
@@ -317,12 +345,14 @@ export function RegistrationForm({
             </div>
           ) : null}
 
+          </> : null}
+
           <div className="grid gap-1.5">
             <div className="flex items-center justify-between gap-3">
               <label htmlFor="registration-invite-code" className="text-sm font-medium">
                 {t('registration.form.inviteCode')}
               </label>
-              {initialInviteCode ? (
+              {initialInviteCode && inviteCode === initialInviteCode ? (
                 <Chip className="border-success/25 bg-success/10 text-success" size="sm" variant="flat">
                   {t('registration.form.inviteApplied')}
                 </Chip>
@@ -358,6 +388,14 @@ export function RegistrationForm({
             )}
           </div>
 
+          <OAuthLoginButtons
+            providers={oauthProviders}
+            pendingProvider={oauthMutation.isPending ? oauthMutation.variables : undefined}
+            disabled={mutation.isPending || sendVerificationMutation.isPending}
+            onSelect={(provider) => void onOAuthLogin(provider)}
+          />
+
+          {passwordLoginEnabled ? <>
           <div className="grid gap-1.5">
             <label htmlFor="registration-password" className="text-sm font-medium">
               {t('registration.form.password')}
@@ -421,6 +459,8 @@ export function RegistrationForm({
             ) : null}
           </div>
 
+          </> : null}
+
           {submitError ? (
             <div
               role="alert"
@@ -432,14 +472,14 @@ export function RegistrationForm({
             </div>
           ) : null}
 
-          <Button type="submit" color="primary" size="lg" className="mt-1 w-full" isDisabled={mutation.isPending}>
+          {passwordLoginEnabled ? <Button type="submit" color="primary" size="lg" className="mt-1 w-full" isDisabled={mutation.isPending || oauthMutation.isPending}>
             {mutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}
             {t(mutation.isPending ? 'registration.form.submitting' : 'registration.form.submit')}
-          </Button>
+          </Button> : null}
 
           <p className="text-center text-sm text-muted-foreground">
             {t('registration.form.hasAccount')}{' '}
-            <a href="/login" className="font-medium text-info underline-offset-4 hover:underline">
+            <a href={invitationAuthLink('/login', inviteCode)} className="font-medium text-info underline-offset-4 hover:underline">
               {t('registration.actions.login')}
             </a>
           </p>

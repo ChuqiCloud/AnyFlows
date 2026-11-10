@@ -68,6 +68,7 @@ pub struct BillingSpeechService {
     settlement: Option<Arc<dyn BillingSettlementPort>>,
     usage: Arc<dyn UsageRecordPort>,
     request_outcomes: Option<crate::RequestOutcomeRuntime>,
+    user_routes: Option<crate::user_route_runtime::UserRouteRuntime>,
 }
 
 impl BillingSpeechService {
@@ -89,6 +90,7 @@ impl BillingSpeechService {
             settlement,
             usage,
             request_outcomes: None,
+            user_routes: None,
         }
     }
 
@@ -122,6 +124,16 @@ impl BillingSpeechService {
             .await
     }
 
+    /// 使用统一的用户分组策略包裹单组计费执行。
+    #[must_use]
+    pub(crate) fn with_user_route_runtime(
+        mut self,
+        runtime: crate::user_route_runtime::UserRouteRuntime,
+    ) -> Self {
+        self.user_routes = Some(runtime);
+        self
+    }
+
     async fn call_billed(
         &self,
         principal: &GatewayPrincipal,
@@ -129,40 +141,127 @@ impl BillingSpeechService {
         request: CanonicalAudioSpeechRequest,
         request_id: &str,
     ) -> Result<crate::RoutedExecution<SpeechResponse>, AfError> {
+        if principal.user_route_id().is_none() {
+            return self
+                .call_billed_single(principal, user_concurrency, request, request_id, None, None)
+                .await
+                .map_err(|failure| failure.error);
+        }
+        let model = request.model().to_owned();
+        let upper_bound = speech_usage_upper_bound(&request)?;
+        crate::user_route_execution::UserRouteExecution {
+            principal: *principal,
+            request_id,
+            model: &model,
+            protocol: af_domain::Protocol::OpenAiSpeech,
+            operation: af_domain::Operation::Audio,
+            upper_bound: &upper_bound,
+            pricing: self.pricing_source.as_ref(),
+            defer_success_feedback: false,
+            merchant_features: None,
+        }
+        .run(
+            self.user_routes.as_ref(),
+            request,
+            |principal, request, snapshot, maximum| async move {
+                self.call_billed_single(
+                    &principal,
+                    user_concurrency,
+                    request,
+                    request_id,
+                    snapshot,
+                    maximum,
+                )
+                .await
+            },
+        )
+        .await
+    }
+
+    async fn call_billed_single(
+        &self,
+        principal: &GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
+        request: CanonicalAudioSpeechRequest,
+        request_id: &str,
+        frozen_snapshot: Option<af_billing::RequestPricingSnapshot>,
+        max_price_ratio_micros: Option<i64>,
+    ) -> Result<
+        crate::RoutedExecution<SpeechResponse>,
+        crate::user_route_execution::UserRouteAttemptError,
+    > {
         let upper_bound = speech_usage_upper_bound(&request)?;
         let model = request.model().to_owned();
         let billing_request = request.clone();
         let planned = self
             .inner
             .plan(principal, user_concurrency, request, request_id)
-            .await?;
-        let snapshot = self
-            .pricing_source
-            .capture_for_request_at(
-                &model,
-                principal.group_id(),
-                planned.target_group_id(),
-                principal
-                    .organization_principal()
-                    .map(|organization| organization.organization_id()),
-                af_domain::Protocol::OpenAiSpeech,
-                crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?,
-            )
             .await
-            .map_err(map_snapshot_error)?;
+            .map_err(crate::user_route_execution::UserRouteAttemptError::candidate_plan)?;
+        let snapshot = match frozen_snapshot {
+            Some(snapshot) => {
+                if planned.target_group_id() != principal.group_id() {
+                    return Err(AfError::Internal.into());
+                }
+                snapshot
+            }
+            None => self
+                .pricing_source
+                .capture_for_request_at(
+                    &model,
+                    principal.billing_source_group_id(),
+                    planned.target_group_id(),
+                    principal
+                        .organization_principal()
+                        .map(|organization| organization.organization_id()),
+                    af_domain::Protocol::OpenAiSpeech,
+                    crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?,
+                )
+                .await
+                .map_err(map_snapshot_error)?,
+        };
+        if !crate::user_route_runtime::price_ratio_allowed(&snapshot, max_price_ratio_micros)? {
+            return Err(
+                crate::user_route_execution::UserRouteAttemptError::candidate_plan(
+                    AfError::ModelNotAllowed,
+                ),
+            );
+        }
         let plan = BillingRequestPlan::prepare(snapshot.resolver(), &upper_bound)
             .map_err(map_lifecycle_error)?
             .with_contract_price(snapshot.contract_price());
         let reservation_id = new_reservation_id()?;
         let mut lifecycle = start_lifecycle(self, plan, *principal, reservation_id).await?;
 
-        let routed = planned.execute().await?;
+        let routed = match planned.execute().await {
+            Ok(routed) => routed,
+            Err(error) => {
+                if principal.user_route_id().is_some() {
+                    crate::user_route_execution::cancel_before_failover(
+                        &mut lifecycle,
+                        self.precharge.as_deref(),
+                    )
+                    .await?;
+                }
+                return Err(
+                    crate::user_route_execution::UserRouteAttemptError::before_delivery(error),
+                );
+            }
+        };
         let channel_id = routed.channel_id();
         let response = routed.into_value();
         let (body, output_format) = response.into_parts();
         let duration = match probe_speech_duration(&body, output_format).await {
             Ok(duration) => duration,
             Err(error) => {
+                if principal.merchant_billing_snapshot().is_some() {
+                    crate::user_route_execution::cancel_before_failover(
+                        &mut lifecycle,
+                        self.precharge.as_deref(),
+                    )
+                    .await?;
+                    return Err(error.into());
+                }
                 // 上游已经成功产生成本但时长不可信，保留冻结上界且不伪造审计时长。
                 let _ = complete_with_dimensions_retries(
                     &mut lifecycle,
@@ -171,16 +270,24 @@ impl BillingSpeechService {
                 )
                 .await
                 .map_err(map_lifecycle_error)?;
-                return Err(error);
+                return Err(error.into());
             }
         };
         let actual = speech_usage(&billing_request, duration, UsageSource::Estimated)?;
         if !usage_within_upper_bound(&actual, &upper_bound)? {
+            if principal.merchant_billing_snapshot().is_some() {
+                crate::user_route_execution::cancel_before_failover(
+                    &mut lifecycle,
+                    self.precharge.as_deref(),
+                )
+                .await?;
+                return Err(AfError::Internal.into());
+            }
             let dimensions = BillingUsageDimensions::with_audio_duration(duration);
             let _ = complete_with_dimensions_retries(&mut lifecycle, upper_bound, dimensions)
                 .await
                 .map_err(map_lifecycle_error)?;
-            return Err(AfError::Internal);
+            return Err(AfError::Internal.into());
         }
         let dimensions = BillingUsageDimensions::with_audio_duration(duration);
         let _ = complete_with_dimensions_retries(&mut lifecycle, actual, dimensions)

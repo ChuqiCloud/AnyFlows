@@ -1,19 +1,20 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{future::Future, pin::Pin, sync::Arc, time::Instant};
 
 use af_billing::{
     BillingPrechargePort, BillingRequestLifecycle, BillingRequestPlan, BillingSettlementPort,
+    BillingUsageContext, BillingUsageDimensions, BillingUsageObservation, BillingUsageTiming,
     RefundSignalPort, RequestPricingSnapshotSource, UsageRecordPort,
 };
-use af_domain::{AfError, ConcurrencyLimit, GatewayPrincipal, GroupId};
-use af_http::{ImageService, ImageServiceFuture};
+use af_domain::{AfError, ConcurrencyLimit, GatewayPrincipal, GroupId, Protocol};
+use af_http::{ImageRequest, ImageService, ImageServiceFuture};
 use af_protocol::{
-    CanonicalImageGenerationRequest, ImageQuality, ImageSize, MAX_IMAGE_PIXELS, TokenCount, Usage,
-    UsageDetails, UsageSemantics, UsageSource,
+    CanonicalImageEditRequest, CanonicalImageGenerationRequest, ImageQuality, ImageSize,
+    MAX_IMAGE_PIXELS, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
 };
 use af_relay::ImageResponse;
 
 use crate::billing_chat::{
-    complete_with_retries, map_lifecycle_error, map_snapshot_error, new_reservation_id,
+    complete_with_observation_retries, map_lifecycle_error, map_snapshot_error, new_reservation_id,
     precharge_with_retries,
 };
 
@@ -46,7 +47,7 @@ pub trait ImageRoutePlanner: Send + Sync {
         &'a self,
         principal: &'a GatewayPrincipal,
         user_concurrency: Option<ConcurrencyLimit>,
-        request: CanonicalImageGenerationRequest,
+        request: ImageRequest,
         request_id: &'a str,
     ) -> ImageRoutePlanFuture<'a>;
 }
@@ -64,6 +65,7 @@ pub struct BillingImageService {
     settlement: Option<Arc<dyn BillingSettlementPort>>,
     usage: Arc<dyn UsageRecordPort>,
     request_outcomes: Option<crate::RequestOutcomeRuntime>,
+    user_routes: Option<crate::user_route_runtime::UserRouteRuntime>,
 }
 
 impl BillingImageService {
@@ -85,6 +87,7 @@ impl BillingImageService {
             settlement,
             usage,
             request_outcomes: None,
+            user_routes: None,
         }
     }
 
@@ -99,13 +102,13 @@ impl BillingImageService {
         &self,
         principal: &GatewayPrincipal,
         user_concurrency: Option<ConcurrencyLimit>,
-        request: CanonicalImageGenerationRequest,
+        request: ImageRequest,
         request_id: &str,
     ) -> Result<ImageResponse, AfError> {
         let outcome = crate::RequestOutcomeContext::for_principal(
             request_id,
             af_domain::Protocol::OpenAiImages,
-            af_domain::Operation::Image,
+            request.operation(),
             request.model(),
             *principal,
         );
@@ -118,56 +121,203 @@ impl BillingImageService {
             .await
     }
 
+    /// 使用统一的用户分组策略包裹单组计费执行。
+    #[must_use]
+    pub(crate) fn with_user_route_runtime(
+        mut self,
+        runtime: crate::user_route_runtime::UserRouteRuntime,
+    ) -> Self {
+        self.user_routes = Some(runtime);
+        self
+    }
+
     async fn call_billed(
         &self,
         principal: &GatewayPrincipal,
         user_concurrency: Option<ConcurrencyLimit>,
-        request: CanonicalImageGenerationRequest,
+        request: ImageRequest,
         request_id: &str,
     ) -> Result<crate::RoutedExecution<ImageResponse>, AfError> {
-        let upper_bound = image_usage_upper_bound(&request)?;
+        if principal.user_route_id().is_none() {
+            return self
+                .call_billed_single(principal, user_concurrency, request, request_id, None, None)
+                .await
+                .map_err(|failure| failure.error);
+        }
         let model = request.model().to_owned();
+        let upper_bound = match &request {
+            ImageRequest::Generation(request) => image_usage_upper_bound(request)?,
+            ImageRequest::Edit(request) => image_edit_usage_upper_bound(request)?,
+        };
+        crate::user_route_execution::UserRouteExecution {
+            principal: *principal,
+            request_id,
+            model: &model,
+            protocol: af_domain::Protocol::OpenAiImages,
+            operation: match &request {
+                ImageRequest::Generation(_) => af_domain::Operation::Image,
+                ImageRequest::Edit(_) => af_domain::Operation::ImageEdit,
+            },
+            upper_bound: &upper_bound,
+            pricing: self.pricing_source.as_ref(),
+            defer_success_feedback: false,
+            merchant_features: None,
+        }
+        .run(
+            self.user_routes.as_ref(),
+            request,
+            |principal, request, snapshot, maximum| async move {
+                self.call_billed_single(
+                    &principal,
+                    user_concurrency,
+                    request,
+                    request_id,
+                    snapshot,
+                    maximum,
+                )
+                .await
+            },
+        )
+        .await
+    }
+
+    async fn call_billed_single(
+        &self,
+        principal: &GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
+        request: ImageRequest,
+        request_id: &str,
+        frozen_snapshot: Option<af_billing::RequestPricingSnapshot>,
+        max_price_ratio_micros: Option<i64>,
+    ) -> Result<
+        crate::RoutedExecution<ImageResponse>,
+        crate::user_route_execution::UserRouteAttemptError,
+    > {
+        let upper_bound = match &request {
+            ImageRequest::Generation(request) => image_usage_upper_bound(request)?,
+            ImageRequest::Edit(request) => image_edit_usage_upper_bound(request)?,
+        };
+        let model = request.model().to_owned();
+        let observation_context = BillingUsageContext::new(
+            request_id,
+            &model,
+            Protocol::OpenAiImages,
+            request.operation(),
+            false,
+            None,
+            None,
+        )
+        .map_err(|_| AfError::Internal)?;
+        let started_at = Instant::now();
         let planned = self
             .inner
             .plan(principal, user_concurrency, request, request_id)
-            .await?;
-        let snapshot = self
-            .pricing_source
-            .capture_for_request_at(
-                &model,
-                principal.group_id(),
-                planned.target_group_id(),
-                principal
-                    .organization_principal()
-                    .map(|organization| organization.organization_id()),
-                af_domain::Protocol::OpenAiImages,
-                crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?,
-            )
             .await
-            .map_err(map_snapshot_error)?;
+            .map_err(crate::user_route_execution::UserRouteAttemptError::candidate_plan)?;
+        let snapshot = match frozen_snapshot {
+            Some(snapshot) => {
+                if planned.target_group_id() != principal.group_id() {
+                    return Err(AfError::Internal.into());
+                }
+                snapshot
+            }
+            None => self
+                .pricing_source
+                .capture_for_request_at(
+                    &model,
+                    principal.billing_source_group_id(),
+                    planned.target_group_id(),
+                    principal
+                        .organization_principal()
+                        .map(|organization| organization.organization_id()),
+                    af_domain::Protocol::OpenAiImages,
+                    crate::utc_time::current_pricing_time().ok_or(AfError::Internal)?,
+                )
+                .await
+                .map_err(map_snapshot_error)?,
+        };
+        if !crate::user_route_runtime::price_ratio_allowed(&snapshot, max_price_ratio_micros)? {
+            return Err(
+                crate::user_route_execution::UserRouteAttemptError::candidate_plan(
+                    AfError::ModelNotAllowed,
+                ),
+            );
+        }
         let plan = BillingRequestPlan::prepare(snapshot.resolver(), &upper_bound)
             .map_err(map_lifecycle_error)?
             .with_contract_price(snapshot.contract_price());
         let reservation_id = new_reservation_id()?;
         let mut lifecycle = start_lifecycle(self, plan, *principal, reservation_id).await?;
 
-        let routed = planned.execute().await?;
+        let routed = match planned.execute().await {
+            Ok(routed) => routed,
+            Err(error) => {
+                if principal.user_route_id().is_some() {
+                    crate::user_route_execution::cancel_before_failover(
+                        &mut lifecycle,
+                        self.precharge.as_deref(),
+                    )
+                    .await?;
+                }
+                return Err(
+                    crate::user_route_execution::UserRouteAttemptError::before_delivery(error),
+                );
+            }
+        };
         let channel_id = routed.channel_id();
         let response = routed.into_value();
-        let (body, upstream_usage) = response.into_parts();
+        let (mut body, mut upstream_usage) = response.into_parts();
+        if principal.merchant_billing_snapshot().is_some() {
+            // The validated response has exactly the requested image count. Its published
+            // request tariff, rather than supplier usage, determines the invoice.
+            upstream_usage = Some(upper_bound);
+            body = match crate::merchant_media::normalized_json_usage(body, upper_bound) {
+                Ok(body) => body,
+                Err(error) => {
+                    crate::user_route_execution::cancel_before_failover(
+                        &mut lifecycle,
+                        self.precharge.as_deref(),
+                    )
+                    .await?;
+                    return Err(error.into());
+                }
+            };
+        }
         let settlement_usage = match upstream_usage {
             Some(usage) if usage_within_upper_bound(&usage, &upper_bound)? => usage,
-            Some(_) => return Err(AfError::Internal),
+            Some(_) => return Err(AfError::Internal.into()),
             // 上游缺失 usage 时保留公开响应事实，但不能把已经产生的图片成本退款。
             None => upper_bound,
         };
-        let _ = complete_with_retries(&mut lifecycle, settlement_usage)
-            .await
-            .map_err(map_lifecycle_error)?;
+        let observation = image_call_observation(observation_context, started_at.elapsed());
+        let _ = complete_with_observation_retries(
+            &mut lifecycle,
+            settlement_usage,
+            BillingUsageDimensions::empty(),
+            observation,
+        )
+        .await
+        .map_err(map_lifecycle_error)?;
         Ok(crate::RoutedExecution::new(
             ImageResponse::new(body, upstream_usage),
             channel_id,
         ))
+    }
+}
+
+fn image_call_observation(
+    context: BillingUsageContext,
+    duration: std::time::Duration,
+) -> BillingUsageObservation {
+    match BillingUsageTiming::new(None, duration) {
+        Ok(timing) => BillingUsageObservation::new(context, timing),
+        Err(_) => {
+            tracing::error!(
+                error_kind = "billing_usage_timing_overflow",
+                "Images 调用耗时无法安全持久化，本次计费继续完成"
+            );
+            BillingUsageObservation::default()
+        }
     }
 }
 
@@ -179,7 +329,27 @@ impl ImageService for BillingImageService {
         request: CanonicalImageGenerationRequest,
         request_id: &'a str,
     ) -> ImageServiceFuture<'a> {
-        Box::pin(self.call(principal, user_concurrency, request, request_id))
+        Box::pin(self.call(
+            principal,
+            user_concurrency,
+            ImageRequest::Generation(request),
+            request_id,
+        ))
+    }
+
+    fn edit<'a>(
+        &'a self,
+        principal: &'a GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
+        request: CanonicalImageEditRequest,
+        request_id: &'a str,
+    ) -> ImageServiceFuture<'a> {
+        Box::pin(self.call(
+            principal,
+            user_concurrency,
+            ImageRequest::Edit(request),
+            request_id,
+        ))
     }
 }
 
@@ -228,8 +398,10 @@ fn image_usage_upper_bound(request: &CanonicalImageGenerationRequest) -> Result<
     };
     let pixels_per_token = match options.quality() {
         Some(ImageQuality::Low) => LOW_QUALITY_PIXELS_PER_TOKEN,
-        Some(ImageQuality::Medium) => MEDIUM_QUALITY_PIXELS_PER_TOKEN,
-        Some(ImageQuality::High | ImageQuality::Auto) | None => HIGH_QUALITY_PIXELS_PER_TOKEN,
+        Some(ImageQuality::Medium | ImageQuality::Standard) => MEDIUM_QUALITY_PIXELS_PER_TOKEN,
+        Some(ImageQuality::High | ImageQuality::Hd | ImageQuality::Auto) | None => {
+            HIGH_QUALITY_PIXELS_PER_TOKEN
+        }
     };
     let output_per_image = pixels.div_ceil(pixels_per_token);
     let output_tokens = output_per_image
@@ -237,6 +409,27 @@ fn image_usage_upper_bound(request: &CanonicalImageGenerationRequest) -> Result<
         .and_then(|value| i64::try_from(value).ok())
         .ok_or(AfError::Internal)?;
     usage(input_tokens, output_tokens, UsageSource::Estimated)
+}
+
+fn image_edit_usage_upper_bound(request: &CanonicalImageEditRequest) -> Result<Usage, AfError> {
+    let image_tokens = request.total_image_pixels().div_ceil(128);
+    let input_tokens = image_tokens
+        .checked_add(u64::try_from(request.prompt_bytes()).map_err(|_| AfError::Internal)?)
+        .and_then(|value| i64::try_from(value).ok())
+        .ok_or(AfError::Internal)?;
+    let output_bound = image_usage_upper_bound(
+        &CanonicalImageGenerationRequest::new(
+            request.model().to_owned(),
+            request.prompt().to_owned(),
+            request.options(),
+        )
+        .map_err(|_| AfError::Internal)?,
+    )?;
+    usage(
+        input_tokens,
+        output_bound.output_tokens().get(),
+        UsageSource::Estimated,
+    )
 }
 
 fn usage_within_upper_bound(actual: &Usage, upper_bound: &Usage) -> Result<bool, AfError> {
@@ -279,7 +472,7 @@ mod tests {
         ModelPriceCache, ModelPriceSource, ModelPriceSourceFuture, ModelPriceSourceRecord,
         PricingRatio, RefundSignalOutcome, SettlementRequest, TokenPrices, UsageRecordOutcome,
     };
-    use af_domain::{BillingReservationId, Quota, TokenId, UserId};
+    use af_domain::{BillingReservationId, Operation, Protocol, Quota, TokenId, UserId};
     use af_protocol::openai_images;
     use rust_decimal::Decimal;
 
@@ -333,6 +526,14 @@ mod tests {
         let records = fixture.usage.records.lock().unwrap();
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].usage().output_tokens().get(), 272);
+        let observation = records[0].observation();
+        let context = observation.context().unwrap();
+        assert_eq!(context.request_id(), "image-request-success");
+        assert_eq!(context.model(), "image-test");
+        assert_eq!(context.protocol(), Protocol::OpenAiImages);
+        assert_eq!(context.operation(), Operation::Image);
+        assert!(!context.stream());
+        assert!(observation.timing().is_some());
         assert!(fixture.refund.calls.lock().unwrap().is_empty());
     }
 
@@ -394,10 +595,43 @@ mod tests {
         assert!(fixture.usage.records.lock().unwrap().is_empty());
     }
 
+    #[tokio::test]
+    async fn merchant_normalization_failure_cancels_before_return_even_when_refund_queue_is_full() {
+        let mut fixture = billing_fixture(None, true).await;
+        fixture.service.inner = Arc::new(PlannerStub {
+            target_group_id: GroupId::new(3).unwrap(),
+            response_usage: None,
+            succeed: true,
+            body: Bytes::from_static(b"{invalid-json"),
+        });
+        let refund = Arc::new(SaturatedRefund::default());
+        fixture.service.refund = Some(refund.clone());
+        let merchant = principal().with_merchant_target(
+            af_domain::MerchantBillingSnapshot::new(1, 1, 1, 1, 1_000_000, 500, 0).unwrap(),
+            af_domain::ChannelId::new(1).unwrap(),
+        );
+        let error = fixture
+            .service
+            .generate(&merchant, None, request(), "merchant-invalid-image")
+            .await
+            .unwrap_err();
+        assert_eq!(error, AfError::Internal);
+        let precharged = fixture.precharge.calls.lock().unwrap();
+        assert_eq!(precharged.len(), 1);
+        assert_eq!(
+            *fixture.precharge.cancellations.lock().unwrap(),
+            vec![precharged[0].0]
+        );
+        assert!(refund.calls.lock().unwrap().is_empty());
+        assert!(fixture.settlement.calls.lock().unwrap().is_empty());
+        assert!(fixture.usage.records.lock().unwrap().is_empty());
+    }
+
     struct PlannerStub {
         target_group_id: GroupId,
         response_usage: Option<Usage>,
         succeed: bool,
+        body: Bytes,
     }
 
     impl ImageRoutePlanner for PlannerStub {
@@ -405,17 +639,19 @@ mod tests {
             &'a self,
             _principal: &'a GatewayPrincipal,
             _user_concurrency: Option<ConcurrencyLimit>,
-            _request: CanonicalImageGenerationRequest,
+            _request: ImageRequest,
             _request_id: &'a str,
         ) -> ImageRoutePlanFuture<'a> {
             let target_group_id = self.target_group_id;
             let response_usage = self.response_usage;
             let succeed = self.succeed;
+            let body = self.body.clone();
             Box::pin(async move {
                 Ok(Box::new(ExecutionStub {
                     target_group_id,
                     response_usage,
                     succeed,
+                    body,
                 }) as Box<dyn PlannedImageExecution>)
             })
         }
@@ -425,6 +661,7 @@ mod tests {
         target_group_id: GroupId,
         response_usage: Option<Usage>,
         succeed: bool,
+        body: Bytes,
     }
 
     impl PlannedImageExecution for ExecutionStub {
@@ -438,7 +675,7 @@ mod tests {
                     return Err(AfError::Internal);
                 }
                 Ok(crate::RoutedExecution::new(
-                    ImageResponse::new(Bytes::from_static(b"{}"), self.response_usage),
+                    ImageResponse::new(self.body, self.response_usage),
                     af_domain::ChannelId::new(1).unwrap(),
                 ))
             })
@@ -448,9 +685,19 @@ mod tests {
     #[derive(Default)]
     struct PrechargeStub {
         calls: Mutex<Vec<(BillingReservationId, Quota)>>,
+        cancellations: Mutex<Vec<BillingReservationId>>,
     }
 
     impl BillingPrechargePort for PrechargeStub {
+        fn cancel<'a>(
+            &'a self,
+            reservation_id: BillingReservationId,
+        ) -> BillingPrechargeFuture<'a> {
+            Box::pin(async move {
+                self.cancellations.lock().unwrap().push(reservation_id);
+                Ok(())
+            })
+        }
         fn precharge<'a>(
             &'a self,
             reservation_id: BillingReservationId,
@@ -473,6 +720,18 @@ mod tests {
         fn try_signal_refund(&self, reservation_id: BillingReservationId) -> RefundSignalOutcome {
             self.calls.lock().unwrap().push(reservation_id);
             RefundSignalOutcome::Accepted
+        }
+    }
+
+    #[derive(Default)]
+    struct SaturatedRefund {
+        calls: Mutex<Vec<BillingReservationId>>,
+    }
+
+    impl RefundSignalPort for SaturatedRefund {
+        fn try_signal_refund(&self, reservation_id: BillingReservationId) -> RefundSignalOutcome {
+            self.calls.lock().unwrap().push(reservation_id);
+            RefundSignalOutcome::Saturated
         }
     }
 
@@ -520,6 +779,7 @@ mod tests {
                 target_group_id: GroupId::new(3).unwrap(),
                 response_usage,
                 succeed,
+                body: Bytes::from_static(b"{}"),
             }),
             Arc::new(metered_snapshot_source().await),
             Some(precharge.clone()),

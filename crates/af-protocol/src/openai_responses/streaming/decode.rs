@@ -114,6 +114,9 @@ impl OpenAiResponsesStreamDecoder {
         output: &mut Vec<CanonicalStreamEvent>,
     ) -> Result<(), ParseStreamError> {
         if self.done {
+            if frame.is_comment() {
+                return Ok(());
+            }
             if !self.compatibility_done_seen && is_done_sentinel(&frame) {
                 self.compatibility_done_seen = true;
                 return Ok(());
@@ -277,8 +280,12 @@ impl OpenAiResponsesStreamDecoder {
                 ..
             } => {
                 self.require_in_progress()?;
-                self.outputs
-                    .function_arguments_done(&item_id, output_index, &arguments, &name)
+                self.outputs.function_arguments_done(
+                    &item_id,
+                    output_index,
+                    &arguments,
+                    name.as_deref(),
+                )
             }
             StreamEventWire::ReasoningSummaryPartAdded {
                 item_id,

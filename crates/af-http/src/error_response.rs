@@ -182,6 +182,7 @@ impl MappedError {
         match self.code {
             PublicErrorCode::InvalidRequest => StatusCode::BAD_REQUEST,
             PublicErrorCode::InvalidApiKey => StatusCode::UNAUTHORIZED,
+            PublicErrorCode::AccountVerificationRequired => StatusCode::FORBIDDEN,
             PublicErrorCode::InsufficientQuota | PublicErrorCode::RateLimited => {
                 StatusCode::TOO_MANY_REQUESTS
             }
@@ -198,6 +199,9 @@ impl MappedError {
         match self.code {
             PublicErrorCode::InvalidRequest => "Invalid request.",
             PublicErrorCode::InvalidApiKey => "Invalid API key.",
+            PublicErrorCode::AccountVerificationRequired => {
+                "Complete account identity verification before calling the API."
+            }
             PublicErrorCode::InsufficientQuota => "Insufficient quota.",
             PublicErrorCode::ModelNotFound => {
                 "The requested model was not found or is unavailable."
@@ -227,8 +231,15 @@ fn classify_error(error: AfError) -> MappedError {
         AfError::InvalidApiKey => {
             MappedError::new(PublicErrorCode::InvalidApiKey, "invalid_api_key")
         }
+        AfError::AccountVerificationRequired => MappedError::new(
+            PublicErrorCode::AccountVerificationRequired,
+            "account_verification_required",
+        ),
         AfError::ModelNotAllowed => {
             MappedError::new(PublicErrorCode::ModelNotFound, "token_model_not_allowed")
+        }
+        AfError::ModelUnavailable => {
+            MappedError::new(PublicErrorCode::ModelNotFound, "model_not_found")
         }
         AfError::TaskNotFound => MappedError::new(PublicErrorCode::TaskNotFound, "task_not_found"),
         AfError::IdempotencyConflict => {

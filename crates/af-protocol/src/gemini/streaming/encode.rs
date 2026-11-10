@@ -115,7 +115,11 @@ impl GeminiGenerateContentStreamEncoder {
                 tool_index,
             } => self.encode_tool_end(choice_index, tool_index),
             CanonicalStreamEvent::CompactionStart { .. }
-            | CanonicalStreamEvent::CompactionEnd { .. } => {
+            | CanonicalStreamEvent::CompactionEnd { .. }
+            | CanonicalStreamEvent::AnthropicCompactionStart { .. }
+            | CanonicalStreamEvent::AnthropicCompactionDelta { .. }
+            | CanonicalStreamEvent::AnthropicCompactionEnd { .. }
+            | CanonicalStreamEvent::AnthropicUsageMetadata { .. } => {
                 Err(EncodeStreamError::UnsupportedEvent)
             }
             CanonicalStreamEvent::Finish {
@@ -357,7 +361,7 @@ impl GeminiGenerateContentStreamEncoder {
         output.extend(encode_candidate_finish(
             &self.identity,
             choice_index,
-            finish_reason(reason),
+            finish_reason(reason)?,
         )?);
         choice.finished = true;
         Ok(output)
@@ -687,12 +691,13 @@ fn encode_sse(value: Value) -> Result<Vec<u8>, EncodeStreamError> {
     Ok(output)
 }
 
-const fn finish_reason(reason: FinishReason) -> &'static str {
-    match reason {
+const fn finish_reason(reason: FinishReason) -> Result<&'static str, EncodeStreamError> {
+    Ok(match reason {
         FinishReason::Stop | FinishReason::ToolCalls => "STOP",
         FinishReason::Length => "MAX_TOKENS",
         FinishReason::ContentFilter => "SAFETY",
-    }
+        FinishReason::Compaction => return Err(EncodeStreamError::UnsupportedEvent),
+    })
 }
 
 fn object_value<const N: usize>(fields: [(&str, Value); N]) -> Value {

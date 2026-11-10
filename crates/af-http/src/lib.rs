@@ -16,12 +16,16 @@ mod client_ip;
 mod client_profiles;
 pub use client_profiles::build_client_profile_router;
 mod credential_health;
+mod credential_models;
+pub use credential_models::build_credential_models_router;
 mod credential_proxies;
 mod credential_usage;
+mod upstream_usage;
 pub use credential_health::{
     AdminCredentialHealthReader, CredentialHealthFuture, CredentialHealthSnapshot,
     build_credential_health_router,
 };
+pub use upstream_usage::build_upstream_usage_router;
 mod credentials;
 mod custom_oauth2;
 mod debug_traces;
@@ -31,6 +35,8 @@ mod error_response;
 mod frontend_assets;
 mod frontend_templates;
 mod gemini_generate_content;
+mod group_key_access;
+mod group_model_policy;
 mod http_extensions;
 mod image_service;
 mod invitations;
@@ -48,6 +54,8 @@ mod management_dashboard;
 mod management_error;
 mod management_group_writes;
 mod management_groups;
+pub use group_key_access::build_group_key_access_router;
+pub use group_model_policy::build_group_model_policy_router;
 mod management_model_prices;
 mod management_model_sync;
 mod management_model_writes;
@@ -61,8 +69,13 @@ mod management_setup;
 mod management_token_writes;
 mod management_tokens;
 mod management_usage_logs;
+mod management_user_security;
 mod management_users;
 mod management_wallet;
+mod merchant_pool;
+pub use merchant_pool::build_merchant_pool_router;
+mod merchant_service_policy;
+pub use merchant_service_policy::build_merchant_service_policy_router;
 mod middleware;
 mod model_catalog;
 mod model_provider_catalog;
@@ -87,6 +100,7 @@ pub use verification_settings::build_verification_settings_router;
 mod payment_webhook;
 mod platform_audit;
 mod playground_conversations;
+mod playground_image_history;
 mod playground_shares;
 mod redemption;
 mod refund_webhook;
@@ -98,13 +112,27 @@ mod router;
 mod runtime_status;
 mod serve;
 mod site_settings;
+mod software_updates;
+pub use software_updates::{
+    InstallSoftwareUpdate, SoftwareRelease, SoftwareStatus, SoftwareUpdateError,
+    SoftwareUpdateErrorBody, SoftwareUpdateFuture, SoftwareUpdateService,
+    build_software_update_router,
+};
+mod merchant_routes;
 mod speech_service;
 mod streaming;
 mod subscriptions;
 mod turnstile;
 mod user_notifications;
 mod user_profile;
+mod user_routes;
+pub use merchant_routes::build_merchant_route_router;
 mod user_tokens;
+pub use user_routes::build_user_route_router;
+mod merchant_payout;
+pub use merchant_payout::build_merchant_payout_router;
+mod merchant_finance;
+pub use merchant_finance::build_merchant_finance_router;
 mod user_topups;
 mod user_wallet;
 mod video_task_service;
@@ -137,7 +165,7 @@ pub use http_extensions::{
     HttpExtension, HttpExtensionDescriptor, HttpExtensionRoutes, HttpExtensions,
     build_extension_catalog_router,
 };
-pub use image_service::{ImageService, ImageServiceFuture};
+pub use image_service::{ImageRequest, ImageService, ImageServiceFuture};
 pub use middleware::REQUEST_ID_HEADER_NAME;
 pub use oauth_connections::{
     AdminOAuthAuthorizationStart, AdminOAuthBeginFuture, AdminOAuthCompleteFuture,
@@ -215,6 +243,8 @@ mod payment_settings_tests;
 mod payment_webhook_tests;
 #[cfg(test)]
 mod playground_conversations_tests;
+#[cfg(test)]
+mod playground_image_history_tests;
 #[cfg(test)]
 mod playground_shares_tests;
 #[cfg(test)]

@@ -14,7 +14,8 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     AdminTokenRecord, AdminTokenRepository, MAX_USER_TOKENS_PER_USER,
     admin_token::detail_query,
-    entity::{TokenHash, TokenIpAllowlist, TokenModelAllowlist, groups, tokens},
+    entity::{TokenHash, TokenIpAllowlist, TokenModelAllowlist, tokens},
+    group_key_access::lock_active_group,
     token_owner_guard::{TokenOwnerGuardError, lock_non_deleted_owner, non_deleted_token_count},
 };
 
@@ -566,17 +567,10 @@ async fn active_group_exists(
     transaction: &DatabaseTransaction,
     group_id: GroupId,
 ) -> Result<bool, AdminTokenWriteRepositoryError> {
-    let query = Query::select()
-        .expr_as(
-            Expr::col((groups::Entity, groups::Column::Id)),
-            Alias::new("id"),
-        )
-        .from(groups::Entity)
-        .and_where(Expr::col((groups::Entity, groups::Column::Id)).eq(group_id.get()))
-        .and_where(Expr::col((groups::Entity, groups::Column::DeletedAt)).is_null())
-        .limit(1)
-        .to_owned();
-    Ok(!query_all(transaction, query).await?.is_empty())
+    lock_active_group(transaction, group_id)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(|_| record_internal_error(AdminTokenWriteRepositoryError::Query))
 }
 
 async fn query_all(

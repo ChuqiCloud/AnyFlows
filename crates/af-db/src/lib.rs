@@ -20,6 +20,8 @@ pub use account_verification_settings::{
 pub type DatabaseTimestamp = sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 
 mod ability_write;
+mod merchant_pool;
+pub use merchant_pool::{MerchantCredentialMaterial, MerchantPoolRepository};
 #[cfg(test)]
 mod ability_write_tests;
 mod admin_channel;
@@ -67,6 +69,13 @@ mod admin_user_tests;
 mod admin_user_write;
 mod external_account;
 pub use external_account::provision_external_account_in_transaction;
+mod image_history;
+pub use image_history::{
+    ImageHistoryRecord, ImageHistoryRecordParts, ImageHistoryRepository,
+    ImageHistoryRepositoryConfigError, ImageHistoryRepositoryError, ImageHistoryWrite,
+    MAX_IMAGE_HISTORY_ENTRIES_PER_PAGE, MAX_IMAGE_HISTORY_IMAGE_BYTES,
+    MAX_IMAGE_HISTORY_THUMBNAIL_BYTES,
+};
 mod analytics_export;
 #[cfg(test)]
 mod analytics_export_tests;
@@ -82,7 +91,17 @@ mod auth_tests;
 mod balance_alert;
 mod billing_batch;
 mod billing_contract;
+mod merchant_payout;
+pub use merchant_payout::{
+    MerchantPayout, MerchantPayoutAccount, MerchantPayoutClaim, MerchantPayoutConfig,
+    MerchantPayoutRepository, MerchantPayoutSettings, decode_payout_secret, encode_payout_secret,
+};
+mod merchant_finance;
 pub use billing_contract::{BillingContractPriceSnapshotError, OrganizationContractPriceSnapshot};
+pub use merchant_finance::{
+    MerchantFinanceBalance, MerchantFinanceEntry, MerchantFinanceError, MerchantFinancePage,
+    MerchantFinanceRepository, MerchantWithdrawal,
+};
 #[cfg(test)]
 mod billing_batch_tests;
 mod channel_settings;
@@ -107,10 +126,20 @@ mod compact_probe_state;
 #[cfg(test)]
 mod compact_probe_state_tests;
 mod connection;
+mod credential_models;
 mod credential_probe;
 #[cfg(test)]
 mod credential_probe_tests;
 mod credential_proxy;
+mod upstream_usage;
+pub use credential_models::{
+    CredentialModelError, CredentialModelItem, CredentialModelRefreshLease,
+    CredentialModelsRepository, CredentialModelsSnapshot, UpstreamModelPolicySettings,
+};
+pub use upstream_usage::{
+    UpstreamUsageLease, UpstreamUsageRepository, UpstreamUsageStoredSnapshot, UpstreamUsageTarget,
+    upstream_usage_now_epoch,
+};
 mod proxy_pool;
 pub use proxy_pool::{
     ProxyCleanupMode, ProxyCleanupRequest, ProxyCleanupResult, ProxyCleanupTarget,
@@ -135,7 +164,17 @@ mod email_settings;
 mod email_settings_tests;
 mod entity;
 mod error;
+mod group_key_access;
+#[cfg(test)]
+mod group_key_access_tests;
+mod group_model_policy;
 mod group_pricing;
+pub use group_key_access::{
+    GroupKeyAccessError, GroupKeyAccessRepository, GroupKeyPolicyRecord,
+    GroupKeyPolicyUpdateRecord, GroupKeySelectionMode, MAX_GROUP_KEY_ALLOWED_GROUPS,
+    MAX_GROUP_KEY_ALLOWED_USERS, MAX_USER_TOKEN_GROUP_PAGE_SIZE, UserTokenGroupPageRecord,
+    UserTokenGroupRecord,
+};
 #[cfg(test)]
 mod group_pricing_tests;
 mod identity_secret;
@@ -147,7 +186,9 @@ mod invitation;
 mod invitation_tests;
 mod invite_rebate;
 mod migration;
+mod model_call_admission;
 mod model_catalog_metadata;
+mod model_observability;
 mod model_price;
 mod model_price_admin;
 #[cfg(test)]
@@ -225,10 +266,17 @@ mod usage_log;
 #[cfg(test)]
 mod usage_log_tests;
 mod user_profile;
+mod user_route;
 mod user_session;
 #[cfg(test)]
 mod user_session_tests;
 mod user_token;
+pub use user_route::{
+    MerchantAttemptWrite, MerchantConsumerAttempt, MerchantRouteMember, MerchantRouteRecord,
+    MerchantRouteScope, MerchantRouteWrite, MerchantServiceStatistics, MerchantServiceTimeline,
+    MerchantTimelineBucket, UserRouteError, UserRouteMemberRecord, UserRouteMemberWrite,
+    UserRouteModelHealth, UserRouteRecord, UserRouteRepository, UserRouteWrite,
+};
 #[cfg(test)]
 mod user_token_tests;
 mod wallet_ledger;
@@ -425,10 +473,14 @@ pub use email_settings::{
     EmailTlsMode,
 };
 pub use error::{DatabaseError, DatabaseOptionsError};
+pub use group_model_policy::{
+    GroupModelPolicyRecord, GroupModelPolicyRepository, GroupModelPolicyRepositoryError,
+    GroupModelRatioOverridePolicyRecord, MAX_GROUP_MODEL_RATIO_OVERRIDES,
+};
 pub use group_pricing::{
-    GroupModelRatioRecord, GroupPeakPricingRecord, GroupPricingCatalog, GroupPricingRecord,
-    GroupPricingRepository, GroupPricingRepositoryError, MAX_GROUP_MODEL_RATIO_ENTRIES,
-    MAX_GROUP_PRICING_ENTRIES,
+    GroupModelRatioOverrideRecord, GroupModelRatioRecord, GroupPeakPricingRecord,
+    GroupPricingCatalog, GroupPricingRecord, GroupPricingRepository, GroupPricingRepositoryError,
+    MAX_GROUP_MODEL_RATIO_ENTRIES, MAX_GROUP_PRICING_ENTRIES,
 };
 pub use initial_setup::{
     InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
@@ -449,7 +501,7 @@ pub use migration::{
     MigrationOptions, MigratorExtension, PUBLIC_MIGRATION_TABLE_NAME, run_pending_migrations,
     run_pending_migrations_with,
 };
-pub use model_catalog_metadata::ModelCatalogMetadataPageRecord;
+pub use model_catalog_metadata::{ModelCatalogAudience, ModelCatalogMetadataPageRecord};
 pub use model_price::{
     MAX_MODEL_PRICE_ENTRIES, MAX_MODEL_PRICE_EXPRESSION_BYTES, ModelPriceBillingMode,
     ModelPriceRecord, ModelPriceRepository, ModelPriceRepositoryError,
@@ -503,9 +555,9 @@ pub use oauth_login::{
 };
 pub use options::{DatabaseDialect, DatabaseOptions, PoolOptions};
 pub use passkey::{
-    PasskeyAuthenticationChallenge, PasskeyAuthenticationOutcome, PasskeyAuthenticationTarget,
-    PasskeyRecord, PasskeyRegistrationChallenge, PasskeyRepository, PasskeyRepositoryError,
-    PasskeyRevokeOutcome, PasskeySecurityFactors,
+    PasskeyAdminRevokeOutcome, PasskeyAuthenticationChallenge, PasskeyAuthenticationOutcome,
+    PasskeyAuthenticationTarget, PasskeyRecord, PasskeyRegistrationChallenge, PasskeyRepository,
+    PasskeyRepositoryError, PasskeyRevokeOutcome, PasskeySecurityFactors,
 };
 pub use password_reset::{
     PasswordResetOutcome, PasswordResetRepository, PasswordResetRepositoryConfigError,
@@ -648,6 +700,7 @@ pub use user_profile::{
     MAX_USER_PROFILE_USERNAME_BYTES, UserNotificationPreferencesRecord, UserPasswordChangeOutcome,
     UserProfileLookupOutcome, UserProfileMutationOutcome, UserProfileRecord, UserProfileRepository,
     UserProfileRepositoryConfigError, UserProfileRepositoryError, UserTwoFactorMutationOutcome,
+    UserTwoFactorStateRecord,
 };
 pub use user_session::{
     UserSessionLookupByIdOutcome, UserSessionLookupOutcome, UserSessionRepository,

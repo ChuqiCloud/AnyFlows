@@ -762,6 +762,90 @@ fn decodes_reasoning_signature_and_function_call() {
 }
 
 #[test]
+fn recovers_omitted_function_done_name_and_rejects_conflicts() {
+    let arguments = r#"{"city":"Paris"}"#;
+    for name in [
+        None,
+        Some(Value::Null),
+        Some(json!("")),
+        Some(json!("weather")),
+        Some(json!("other")),
+    ] {
+        let item = json!({
+            "id": "fc_compatible", "type": "function_call", "status": "completed",
+            "call_id": "call_compatible", "name": "weather", "arguments": arguments,
+        });
+        let mut initial = item.clone();
+        initial["status"] = json!("in_progress");
+        initial["arguments"] = json!("");
+        let mut done =
+            json!({"item_id": "fc_compatible", "output_index": 0, "arguments": arguments});
+        if let Some(value) = &name {
+            done["name"] = value.clone();
+        }
+        let bytes = join([
+            frame(
+                "response.created",
+                0,
+                json!({"response": initial_response()}),
+            ),
+            frame(
+                "response.in_progress",
+                1,
+                json!({"response": initial_response()}),
+            ),
+            frame(
+                "response.output_item.added",
+                2,
+                json!({"output_index": 0, "item": initial}),
+            ),
+            frame(
+                "response.function_call_arguments.delta",
+                3,
+                json!({"item_id": "fc_compatible", "output_index": 0, "delta": arguments}),
+            ),
+            frame("response.function_call_arguments.done", 4, done),
+            frame(
+                "response.output_item.done",
+                5,
+                json!({"output_index": 0, "item": item.clone()}),
+            ),
+            frame(
+                "response.completed",
+                6,
+                json!({"response": response("completed", vec![item], Some(usage_value(8, 3, 0, 0)), None, None)}),
+            ),
+        ]);
+        let mut decoder = OpenAiResponsesStreamDecoder::new();
+        if name == Some(json!("other")) {
+            assert_eq!(decoder.push(&bytes), Err(ParseStreamError::InvalidSequence));
+            continue;
+        }
+        let mut events = Vec::new();
+        for chunk in bytes.chunks(37) {
+            events.extend(decoder.push(chunk).unwrap());
+        }
+        decoder.finish().unwrap();
+        assert!(events.contains(&CanonicalStreamEvent::ToolCallStart {
+            choice_index: 0,
+            tool_index: 0,
+            id: "call_compatible".to_owned(),
+            name: "weather".to_owned(),
+        }));
+        assert!(events.contains(&CanonicalStreamEvent::ToolCallArgsDelta {
+            choice_index: 0,
+            tool_index: 0,
+            partial_json: arguments.to_owned(),
+        }));
+        assert!(events.contains(&CanonicalStreamEvent::ToolCallEnd {
+            choice_index: 0,
+            tool_index: 0
+        }));
+        assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
+    }
+}
+
+#[test]
 fn accepts_optional_done_only_after_terminal_event() {
     let terminal = response("completed", Vec::new(), None, None, None);
     let bytes = join([
@@ -782,6 +866,92 @@ fn accepts_optional_done_only_after_terminal_event() {
     let events = decoder.push(&bytes).unwrap();
     decoder.finish().unwrap();
     assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
+}
+
+#[test]
+fn ignores_only_comments_after_terminal_without_consuming_optional_done() {
+    let terminal = join([
+        frame(
+            "response.created",
+            0,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.in_progress",
+            1,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.completed",
+            2,
+            json!({"response": response("completed", Vec::new(), None, None, None)}),
+        ),
+    ]);
+    let mut reference = OpenAiResponsesStreamDecoder::new();
+    let expected = reference.push(&terminal).unwrap();
+    reference.finish().unwrap();
+    assert_eq!(expected.last(), Some(&CanonicalStreamEvent::StreamEnd));
+
+    for include_done in [false, true] {
+        let mut tail = b": keep-alive\r\n\r\n: still-alive\n\n".to_vec();
+        if include_done {
+            tail.extend_from_slice(b"data: [DONE]\n\n: final-heartbeat\n\n");
+        }
+        let bytes = join([terminal.clone(), tail]);
+        for size in [bytes.len(), 1, 7] {
+            let mut decoder = OpenAiResponsesStreamDecoder::new();
+            let mut events = Vec::new();
+            for chunk in bytes.chunks(size) {
+                events.extend(decoder.push(chunk).unwrap());
+            }
+            decoder.finish().unwrap();
+            assert_eq!(events, expected);
+        }
+    }
+}
+
+#[test]
+fn rejects_data_and_repeated_done_after_terminal_comments() {
+    let terminal_response = response("completed", Vec::new(), None, None, None);
+    let terminal = join([
+        frame(
+            "response.created",
+            0,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.in_progress",
+            1,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.completed",
+            2,
+            json!({"response": terminal_response.clone()}),
+        ),
+    ]);
+    let extra = frame(
+        "response.completed",
+        3,
+        json!({"response": terminal_response}),
+    );
+    let tails = [
+        extra.clone(),
+        join([b": same-frame-comment\n".to_vec(), extra.clone()]),
+        join([b": keep-alive\n\n".to_vec(), extra]),
+        b": empty-data-is-not-a-comment\ndata:\n\n".to_vec(),
+        b"data: [DONE]\n\n: keep-alive\n\ndata: [DONE]\n\n".to_vec(),
+    ];
+    for tail in tails {
+        let bytes = join([terminal.clone(), tail]);
+        for size in [bytes.len(), 1, 7] {
+            let mut decoder = OpenAiResponsesStreamDecoder::new();
+            let error = bytes
+                .chunks(size)
+                .find_map(|chunk| decoder.push(chunk).err());
+            assert_eq!(error, Some(ParseStreamError::DataAfterDone));
+        }
+    }
 }
 
 #[test]

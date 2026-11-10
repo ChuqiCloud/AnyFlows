@@ -3,9 +3,8 @@ use std::fmt;
 use af_adapter::Bytes;
 use af_domain::{AfError, MAX_MODEL_NAME_BYTES, Protocol};
 use af_protocol::{
-    CanonicalRequest, CanonicalRequestEnvelope, SameProtocolDecision, Sampling, StreamOptions,
-    TokenCount,
-    openai_chat::{MAX_OUTPUT_TOKENS, MAX_STOP_BYTES, MAX_STOP_SEQUENCES, build_request},
+    CanonicalRequest, CanonicalRequestEnvelope, Sampling, TokenCount,
+    openai_chat::{MAX_OUTPUT_TOKENS, MAX_STOP_BYTES, MAX_STOP_SEQUENCES},
 };
 use thiserror::Error;
 
@@ -61,20 +60,18 @@ impl OpenAiChatRequestOverrides {
         })
     }
 
-    /// 消费请求信封、永久丢弃直通资格，并构造候选级 OpenAI Chat 正文。
+    /// 应用渠道模型与采样策略，再由统一转换计划生成候选正文。
     pub fn prepare(
         &self,
         request: CanonicalRequestEnvelope,
     ) -> Result<RelayCandidateRequest, OpenAiChatRequestOverrideError> {
-        let mut canonical = request.into_canonical();
-        canonical.model.clone_from(&self.model);
-        let current = &canonical.sampling;
+        let current = &request.canonical().sampling;
         let max_output_tokens = match (current.max_output_tokens(), self.max_output_tokens) {
             (Some(requested), Some(limit)) => Some(requested.min(limit)),
             (requested, None) => requested,
             (None, limit) => limit,
         };
-        canonical.sampling = Sampling::new(
+        let sampling = Sampling::new(
             self.temperature.or(current.temperature()),
             self.top_p.or(current.top_p()),
             max_output_tokens,
@@ -83,14 +80,11 @@ impl OpenAiChatRequestOverrides {
                 .unwrap_or_else(|| current.stop_sequences().to_vec()),
         )
         .map_err(|_| OpenAiChatRequestOverrideError)?;
-        if canonical.stream {
-            // 候选级重构仍必须保留内部结算所需的流末 usage。
-            canonical.stream_options = StreamOptions::new(true);
-        }
-        let value = build_request(&canonical).map_err(|_| OpenAiChatRequestOverrideError)?;
-        let body = serde_json::to_vec(&value)
-            .map(Bytes::from)
-            .map_err(|_| OpenAiChatRequestOverrideError)?;
+        let (_, body) = request
+            .with_routed_parameters(self.model.clone(), sampling)
+            .plan_conversation(Protocol::OpenAiChat)
+            .ok_or(OpenAiChatRequestOverrideError)?
+            .into_parts();
         RelayCandidateRequest::new(self.model.clone(), Some(body))
             .map_err(map_candidate_request_error)
     }
@@ -122,50 +116,18 @@ pub(crate) struct PreparedOpenAiChatRequest {
     pub(crate) client_model: String,
 }
 
-/// 在不削弱协议校验的前提下选择原字节直通或 Canonical 重构。
+/// 使用统一目标转换计划，保留客户端 usage 可见性和原生扩展。
 pub(crate) fn prepare_openai_chat_request(
     request: CanonicalRequestEnvelope,
 ) -> Result<PreparedOpenAiChatRequest, AfError> {
     let include_usage = request.canonical().stream_options.include_usage();
-    let requires_usage_injection = request.canonical().stream && !include_usage;
     let client_model = request.requested_model().to_owned();
-
-    if !requires_usage_injection {
-        match request.into_same_protocol(Protocol::OpenAiChat) {
-            SameProtocolDecision::Passthrough(passthrough) => {
-                let (canonical, body) = passthrough.into_parts();
-                return Ok(PreparedOpenAiChatRequest {
-                    canonical,
-                    body,
-                    include_usage,
-                    client_model,
-                });
-            }
-            SameProtocolDecision::Rebuild(request) => {
-                return rebuild_request(request, include_usage, client_model);
-            }
-        }
-    }
-
-    rebuild_request(request, include_usage, client_model)
-}
-
-fn rebuild_request(
-    request: CanonicalRequestEnvelope,
-    include_usage: bool,
-    client_model: String,
-) -> Result<PreparedOpenAiChatRequest, AfError> {
-    let mut canonical = request.into_canonical();
-    if canonical.stream {
-        // 内部结算始终需要上游 usage；客户端可见性仍使用原始 include_usage。
-        canonical.stream_options = StreamOptions::new(true);
-    }
-    let value = build_request(&canonical).map_err(|_| AfError::InvalidRequest)?;
-    let body = serde_json::to_vec(&value)
-        .map(Bytes::from)
-        .map_err(|_| AfError::Internal)?;
+    let (request, body) = request
+        .plan_conversation(Protocol::OpenAiChat)
+        .ok_or(AfError::InvalidRequest)?
+        .into_parts();
     Ok(PreparedOpenAiChatRequest {
-        canonical,
+        canonical: request.into_canonical(),
         body,
         include_usage,
         client_model,
@@ -222,7 +184,7 @@ mod tests {
     }
 
     #[test]
-    fn stream_without_client_usage_is_rebuilt_for_internal_settlement() {
+    fn stream_without_client_usage_injects_only_settlement_fields() {
         let body = Bytes::from_static(
             br#"{"model":"gpt-test","messages":[{"role":"user","content":"hello"}],"stream":true}"#,
         );
@@ -233,6 +195,7 @@ mod tests {
 
         assert_ne!(prepared.body, body);
         assert!(!prepared.include_usage);
+        assert!(!prepared.canonical.stream_options.include_usage());
         assert_eq!(value["stream_options"]["include_usage"], true);
     }
 
@@ -374,5 +337,41 @@ mod tests {
         assert_eq!(prepared.client_model, "gpt-5-high");
         assert_eq!(value["model"], "gpt-5");
         assert_eq!(value["reasoning_effort"], "high");
+    }
+
+    #[test]
+    fn native_extensions_survive_defaults_usage_injection_and_candidate_overrides() {
+        let original = json!({
+            "model": "public-model",
+            "messages": [{"role": "user", "content": "hello", "x_message": {"keep": [1, 2]}}],
+            "stream": true,
+            "stream_options": {"include_usage": false, "x_vendor_option": {"keep": true}},
+            "x_vendor": {"keep": {"enabled": true}}
+        });
+        let request = openai_chat::parse_request_envelope(Bytes::from(
+            serde_json::to_vec(&original).unwrap(),
+        ))
+        .unwrap()
+        .with_default_max_output_tokens(TokenCount::new(256).unwrap());
+        let prepared = prepare_openai_chat_request(request.clone()).unwrap();
+        assert!(!prepared.include_usage);
+        assert!(!prepared.canonical.stream_options.include_usage());
+        assert_eq!(prepared.client_model, "public-model");
+        let (_, candidate) =
+            OpenAiChatRequestOverrides::new("upstream-model", Some(0.25), None, Some(128), None)
+                .unwrap()
+                .prepare(request)
+                .unwrap()
+                .into_parts();
+        for body in [prepared.body, candidate.unwrap()] {
+            let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(value["messages"], original["messages"]);
+            assert_eq!(value["x_vendor"], original["x_vendor"]);
+            assert_eq!(value["stream_options"]["include_usage"], true);
+            assert_eq!(
+                value["stream_options"]["x_vendor_option"],
+                original["stream_options"]["x_vendor_option"]
+            );
+        }
     }
 }

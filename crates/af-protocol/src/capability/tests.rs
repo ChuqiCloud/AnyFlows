@@ -6,11 +6,12 @@ use serde_json::json;
 use super::{
     ProtocolCapability, RequestCapability, ResponseCapability, StreamCapability,
     protocol_capabilities, supports_request_capability, supports_response_capability,
-    supports_stream_capability, validate_stream_event_capabilities,
+    supports_stream_capability, validate_request_capabilities, validate_stream_event_capabilities,
 };
 use crate::{
-    CanonicalRequest, CanonicalResponse, CanonicalStreamEvent, ContentBlock, FinishReason, Message,
-    ResponseChoice, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource, anthropic,
+    AnthropicCompactionItem, CanonicalRequest, CanonicalResponse, CanonicalStreamEvent,
+    ContentBlock, FinishReason, Message, ResponseChoice, TokenCount, Usage, UsageDetails,
+    UsageSemantics, UsageSource, anthropic, gemini, openai_chat, openai_responses,
 };
 
 #[test]
@@ -46,6 +47,27 @@ fn capability_declarations_are_closed_and_unique() {
 #[test]
 fn matrix_exposes_protocol_specific_differences() {
     assert!(supports_request_capability(
+        Protocol::OpenAiImages,
+        RequestCapability::Operation(Operation::ImageEdit)
+    ));
+    assert!(supports_request_capability(
+        Protocol::OpenAiChat,
+        RequestCapability::Operation(Operation::ImageEdit)
+    ));
+    assert!(supports_response_capability(
+        Protocol::OpenAiChat,
+        ResponseCapability::Operation(Operation::Image)
+    ));
+    assert!(supports_response_capability(
+        Protocol::OpenAiImages,
+        ResponseCapability::Operation(Operation::ImageEdit)
+    ));
+    assert!(!supports_request_capability(
+        Protocol::Gemini,
+        RequestCapability::Operation(Operation::ImageEdit)
+    ));
+
+    assert!(supports_request_capability(
         Protocol::OpenAiChat,
         RequestCapability::MessageRole(Role::Developer)
     ));
@@ -76,6 +98,20 @@ fn matrix_exposes_protocol_specific_differences() {
     assert!(!supports_request_capability(
         Protocol::OpenAiChat,
         RequestCapability::ThinkingSignatures
+    ));
+    for protocol in [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Gemini,
+    ] {
+        assert!(supports_request_capability(
+            protocol,
+            RequestCapability::UnsignedThinking
+        ));
+    }
+    assert!(!supports_request_capability(
+        Protocol::Anthropic,
+        RequestCapability::UnsignedThinking
     ));
 
     assert!(supports_response_capability(
@@ -94,6 +130,370 @@ fn matrix_exposes_protocol_specific_differences() {
         Protocol::OpenAiResponses,
         StreamCapability::Error
     ));
+}
+
+#[test]
+fn anthropic_compaction_capabilities_are_native_only() {
+    for protocol in Protocol::ALL {
+        assert_eq!(
+            supports_request_capability(*protocol, RequestCapability::AnthropicCompaction),
+            *protocol == Protocol::Anthropic
+        );
+        assert_eq!(
+            supports_response_capability(*protocol, ResponseCapability::AnthropicCompaction),
+            *protocol == Protocol::Anthropic
+        );
+        assert_eq!(
+            supports_stream_capability(*protocol, StreamCapability::AnthropicCompaction),
+            *protocol == Protocol::Anthropic
+        );
+        assert_eq!(
+            supports_stream_capability(*protocol, StreamCapability::AnthropicUsageMetadata),
+            *protocol == Protocol::Anthropic
+        );
+        assert_eq!(
+            supports_response_capability(
+                *protocol,
+                ResponseCapability::FinishReason(FinishReason::Compaction)
+            ),
+            *protocol == Protocol::Anthropic
+        );
+        assert_eq!(
+            supports_stream_capability(
+                *protocol,
+                StreamCapability::FinishReason(FinishReason::Compaction)
+            ),
+            *protocol == Protocol::Anthropic
+        );
+    }
+
+    let item = AnthropicCompactionItem::from_value(json!({
+        "type":"compaction",
+        "content":"readable summary",
+        "signature":"opaque signature"
+    }))
+    .unwrap();
+    let request = CanonicalRequest::new(
+        Operation::Chat,
+        "model".to_owned(),
+        vec![Message::new(
+            Role::Assistant,
+            vec![ContentBlock::AnthropicCompaction(item.clone())],
+        )],
+        true,
+    );
+    assert!(validate_request_capabilities(Protocol::Anthropic, &request).is_ok());
+    for protocol in [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Gemini,
+    ] {
+        let mut request = request.clone();
+        if protocol == Protocol::OpenAiResponses {
+            request.operation = Operation::Responses;
+        }
+        let error = validate_request_capabilities(protocol, &request)
+            .expect_err("Anthropic compaction content cannot be converted to another protocol");
+        assert_eq!(
+            error.capability(),
+            ProtocolCapability::Request(RequestCapability::AnthropicCompaction)
+        );
+    }
+
+    let response = CanonicalResponse::new(
+        Operation::Chat,
+        "response".to_owned(),
+        "model".to_owned(),
+        Some(1),
+        vec![ResponseChoice::new(
+            0,
+            Message::new(
+                Role::Assistant,
+                vec![ContentBlock::AnthropicCompaction(item.clone())],
+            ),
+            FinishReason::Compaction,
+        )],
+        None,
+    );
+    assert!(super::validate_response_capabilities(Protocol::Anthropic, &response).is_ok());
+    for protocol in [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Gemini,
+    ] {
+        let mut response = response.clone();
+        if protocol == Protocol::OpenAiResponses {
+            response.operation = Operation::Responses;
+        }
+        let error = super::validate_response_capabilities(protocol, &response)
+            .expect_err("Anthropic compaction response cannot be converted to another protocol");
+        assert_eq!(
+            error.capability(),
+            ProtocolCapability::Response(ResponseCapability::AnthropicCompaction)
+        );
+    }
+    let finish_only = CanonicalResponse::new(
+        Operation::Chat,
+        "response".to_owned(),
+        "model".to_owned(),
+        Some(1),
+        vec![ResponseChoice::new(
+            0,
+            Message::new(Role::Assistant, vec![ContentBlock::Text("done".to_owned())]),
+            FinishReason::Compaction,
+        )],
+        None,
+    );
+    assert!(super::validate_response_capabilities(Protocol::Anthropic, &finish_only).is_ok());
+    for protocol in [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Gemini,
+    ] {
+        let mut response = finish_only.clone();
+        if protocol == Protocol::OpenAiResponses {
+            response.operation = Operation::Responses;
+        }
+        let error = super::validate_response_capabilities(protocol, &response)
+            .expect_err("compaction finish reason is Anthropic-only");
+        assert_eq!(
+            error.capability(),
+            ProtocolCapability::Response(ResponseCapability::FinishReason(
+                FinishReason::Compaction
+            ))
+        );
+    }
+
+    for event in [
+        CanonicalStreamEvent::AnthropicCompactionStart {
+            choice_index: 0,
+            content_index: 0,
+            item: item.clone(),
+        },
+        CanonicalStreamEvent::AnthropicCompactionDelta {
+            choice_index: 0,
+            content_index: 0,
+            text: "summary".to_owned(),
+        },
+        CanonicalStreamEvent::AnthropicCompactionEnd {
+            choice_index: 0,
+            content_index: 0,
+            item,
+        },
+    ] {
+        assert!(validate_stream_event_capabilities(Protocol::Anthropic, &event).is_ok());
+        for protocol in [
+            Protocol::OpenAiChat,
+            Protocol::OpenAiResponses,
+            Protocol::Gemini,
+        ] {
+            let error = validate_stream_event_capabilities(protocol, &event)
+                .expect_err("Anthropic compaction stream cannot be converted to another protocol");
+            assert_eq!(
+                error.capability(),
+                ProtocolCapability::Stream(StreamCapability::AnthropicCompaction)
+            );
+        }
+    }
+    let metadata = CanonicalStreamEvent::AnthropicUsageMetadata {
+        raw: json!({"iterations": []}),
+    };
+    assert!(validate_stream_event_capabilities(Protocol::Anthropic, &metadata).is_ok());
+    for protocol in [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Gemini,
+    ] {
+        let error = validate_stream_event_capabilities(protocol, &metadata)
+            .expect_err("Anthropic usage metadata is protocol-specific");
+        assert_eq!(
+            error.capability(),
+            ProtocolCapability::Stream(StreamCapability::AnthropicUsageMetadata)
+        );
+    }
+    let finish = CanonicalStreamEvent::Finish {
+        choice_index: 0,
+        reason: FinishReason::Compaction,
+        stop_sequence: None,
+    };
+    assert!(validate_stream_event_capabilities(Protocol::Anthropic, &finish).is_ok());
+    for protocol in [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Gemini,
+    ] {
+        let error = validate_stream_event_capabilities(protocol, &finish)
+            .expect_err("compaction finish event is Anthropic-only");
+        assert_eq!(
+            error.capability(),
+            ProtocolCapability::Stream(StreamCapability::FinishReason(FinishReason::Compaction))
+        );
+    }
+}
+
+#[test]
+fn unsigned_thinking_capability_matches_request_builders() {
+    let mut request = CanonicalRequest::new(
+        Operation::Chat,
+        "test-model".to_owned(),
+        vec![
+            Message::new(Role::User, vec![ContentBlock::Text("hello".to_owned())]),
+            Message::new(
+                Role::Assistant,
+                vec![
+                    ContentBlock::Thinking {
+                        text: "plain summary".to_owned(),
+                        signature: None,
+                    },
+                    ContentBlock::Text("answer".to_owned()),
+                ],
+            ),
+            Message::new(Role::User, vec![ContentBlock::Text("continue".to_owned())]),
+        ],
+        false,
+    );
+
+    let error = validate_request_capabilities(Protocol::Anthropic, &request)
+        .expect_err("Anthropic requires a signature to replay thinking");
+    assert_eq!(
+        error.capability(),
+        ProtocolCapability::Request(RequestCapability::UnsignedThinking)
+    );
+    assert_eq!(
+        anthropic::build_request(&request),
+        Err(anthropic::BuildRequestError::UnsupportedCapability(error))
+    );
+
+    assert!(validate_request_capabilities(Protocol::OpenAiChat, &request).is_ok());
+    let chat = openai_chat::build_request(&request).unwrap();
+    assert_eq!(chat["messages"][1]["reasoning_content"], "plain summary");
+
+    assert!(validate_request_capabilities(Protocol::Gemini, &request).is_ok());
+    let gemini = gemini::build_request(&request).unwrap();
+    assert_eq!(
+        gemini["contents"][1]["parts"][0],
+        json!({"text": "plain summary", "thought": true})
+    );
+
+    request.operation = Operation::Responses;
+    assert!(validate_request_capabilities(Protocol::OpenAiResponses, &request).is_ok());
+    let responses = openai_responses::build_request(&request).unwrap();
+    assert_eq!(
+        responses["input"][1],
+        json!({"type": "reasoning", "summary": [
+            {"type": "summary_text", "text": "plain summary"}
+        ]})
+    );
+}
+
+#[test]
+fn effort_only_protocols_approximate_fixed_reasoning_budget() {
+    for (budget, effort) in [
+        (1024, "minimal"),
+        (2048, "low"),
+        (8192, "medium"),
+        (16384, "high"),
+    ] {
+        let mut request = CanonicalRequest::new(
+            Operation::Chat,
+            "test-model".to_owned(),
+            vec![Message::new(
+                Role::User,
+                vec![ContentBlock::Text("hello".to_owned())],
+            )],
+            false,
+        );
+        request.reasoning = Some(
+            crate::ReasoningConfig::new(None, Some(TokenCount::new(budget).unwrap()), true)
+                .unwrap(),
+        );
+        assert!(validate_request_capabilities(Protocol::OpenAiChat, &request).is_ok());
+        assert_eq!(
+            openai_chat::build_request(&request).unwrap()["reasoning_effort"],
+            effort
+        );
+        request.operation = Operation::Responses;
+        assert!(validate_request_capabilities(Protocol::OpenAiResponses, &request).is_ok());
+        assert_eq!(
+            openai_responses::build_request(&request).unwrap()["reasoning"]["effort"],
+            effort
+        );
+    }
+}
+
+#[test]
+fn budget_conversion_preserves_native_source_and_exact_budget() {
+    let gemini_body = bytes::Bytes::from_static(
+        br#"{"contents":[{"role":"user","parts":[{"text":"hello"}]}],"generationConfig":{"maxOutputTokens":20000,"thinkingConfig":{"thinkingBudget":8192,"includeThoughts":true}}}"#,
+    );
+    let anthropic_body = bytes::Bytes::from_static(
+        br#"{"model":"test-model","max_tokens":20000,"messages":[{"role":"user","content":"hello"}],"thinking":{"type":"enabled","budget_tokens":8192}}"#,
+    );
+    let gemini = gemini::parse_request_envelope("models/test-model", gemini_body.clone()).unwrap();
+    let anthropic = anthropic::parse_request_envelope(anthropic_body.clone()).unwrap();
+    for (source, protocol, body) in [
+        (gemini, Protocol::Gemini, gemini_body),
+        (anthropic, Protocol::Anthropic, anthropic_body),
+    ] {
+        let chat = source
+            .clone()
+            .for_conversation_protocol(Protocol::OpenAiChat)
+            .unwrap();
+        assert_eq!(
+            openai_chat::build_request(chat.canonical()).unwrap()["reasoning_effort"],
+            "medium"
+        );
+        assert_eq!(
+            source.canonical().reasoning.unwrap().budget_tokens(),
+            Some(TokenCount::new(8192).unwrap())
+        );
+        let native = match protocol {
+            Protocol::Gemini => gemini::build_request(source.canonical()).unwrap(),
+            Protocol::Anthropic => anthropic::build_request(source.canonical()).unwrap(),
+            _ => unreachable!(),
+        };
+        let budget = match protocol {
+            Protocol::Gemini => &native["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            Protocol::Anthropic => &native["thinking"]["budget_tokens"],
+            _ => unreachable!(),
+        };
+        assert_eq!(budget.as_i64(), Some(8192));
+        if protocol == Protocol::Gemini {
+            assert_eq!(
+                native["generationConfig"]["thinkingConfig"]["includeThoughts"],
+                true
+            );
+        }
+        let crate::SameProtocolDecision::Passthrough(native) = source.into_same_protocol(protocol)
+        else {
+            panic!("跨协议候选不能改动原生源正文");
+        };
+        assert_eq!(native.body(), &body);
+    }
+}
+
+#[test]
+fn signed_thinking_still_uses_signature_capability() {
+    let request = CanonicalRequest::new(
+        Operation::Chat,
+        "test-model".to_owned(),
+        vec![Message::new(
+            Role::Assistant,
+            vec![ContentBlock::Thinking {
+                text: "signed thinking".to_owned(),
+                signature: Some("opaque-signature".to_owned()),
+            }],
+        )],
+        false,
+    );
+
+    assert!(validate_request_capabilities(Protocol::Anthropic, &request).is_ok());
+    let error = validate_request_capabilities(Protocol::OpenAiChat, &request)
+        .expect_err("OpenAI Chat cannot preserve thinking signatures");
+    assert_eq!(
+        error.capability(),
+        ProtocolCapability::Request(RequestCapability::ThinkingSignatures)
+    );
 }
 
 #[test]

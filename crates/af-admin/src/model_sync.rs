@@ -85,6 +85,11 @@ pub struct UpstreamModelDiscovery {
 
 impl UpstreamModelDiscovery {
     #[must_use]
+    pub fn into_models(self) -> Vec<DiscoveredModelRecord> {
+        self.models
+    }
+
+    #[must_use]
     pub fn new(
         channel_id: ChannelId,
         channel_type: ChannelType,
@@ -144,6 +149,14 @@ pub type UpstreamModelDiscoveryFuture<'a> = Pin<
 /// 只负责受控网络枚举的上游模型发现端口。
 pub trait UpstreamModelDiscoverer: Send + Sync {
     fn discover<'a>(&'a self, channel_id: ChannelId) -> UpstreamModelDiscoveryFuture<'a>;
+    fn discover_credential<'a>(
+        &'a self,
+        _channel_id: ChannelId,
+        _credential_id: af_domain::CredentialId,
+        _manual: bool,
+    ) -> UpstreamModelDiscoveryFuture<'a> {
+        Box::pin(async { Err(UpstreamModelDiscoveryError::UnsupportedChannel) })
+    }
 }
 
 /// 管理员为一个预览候选补齐的结构化权威元数据。

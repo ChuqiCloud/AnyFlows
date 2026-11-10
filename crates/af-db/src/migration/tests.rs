@@ -8,6 +8,7 @@ use crate::{DatabaseOptions, PoolOptions, connect};
 
 const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
+const LEGACY_PRICING_MODEL: &str = "migration-legacy-model-price";
 
 #[test]
 fn legacy_enterprise_history_allowlist_is_exact_and_unique() {
@@ -99,7 +100,60 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         .to_owned();
     pool.connection().execute(backend.build(&insert)).await?;
 
+    prepare_legacy_async_claim(&pool).await?;
+    prepare_legacy_model_price(&pool).await?;
+
     Migrator::up(pool.connection(), None).await?;
+    for (table, columns) in [
+        (
+            "upstream_model_policies",
+            vec!["owner_id", "policy", "version"],
+        ),
+        (
+            "credential_model_observations",
+            vec!["credential_id", "items", "identity_fingerprint"],
+        ),
+        (
+            "upstream_usage_profiles",
+            vec!["id", "secret_json", "version"],
+        ),
+        (
+            "credential_usage_configs",
+            vec!["credential_id", "profile_id", "version"],
+        ),
+        (
+            "channel_usage_configs",
+            vec!["channel_id", "profile_id", "version"],
+        ),
+        (
+            "credential_usage_pauses",
+            vec!["credential_id", "pause_until", "pause_identity"],
+        ),
+        (
+            "upstream_usage_snapshots",
+            vec!["cache_key", "identity", "lease_until"],
+        ),
+    ] {
+        assert!(
+            SchemaManager::new(pool.connection())
+                .has_table(table)
+                .await?
+        );
+        for column in columns {
+            assert!(
+                SchemaManager::new(pool.connection())
+                    .has_column(table, column)
+                    .await?
+            );
+        }
+    }
+    for table in ["merchant_pools", "merchant_profiles", "merchant_services"] {
+        assert!(
+            SchemaManager::new(pool.connection())
+                .has_column(table, "deleted_at")
+                .await?
+        );
+    }
     assert!(
         Migrator::get_pending_migrations(pool.connection())
             .await?
@@ -118,6 +172,14 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         .await?
         .ok_or("authentication settings must survive the upgrade")?;
     assert_eq!(row.try_get::<i64>("", "invitation_invitee_quota")?, 0);
+    let verification_settings = crate::AccountVerificationSettingsRepository::new(
+        pool.clone(),
+        std::time::Duration::from_secs(10),
+    )
+    .settings()
+    .await?;
+    assert!(!verification_settings.require_verification_for_topup);
+    assert!(!verification_settings.require_verification_for_api);
     let sql = match backend {
         DbBackend::MySql => {
             "SELECT `ratio_micros`, `peak_ratio_micros`, `peak_start`, `peak_end`, `peak_windows` FROM `groups` WHERE `id` = 1"
@@ -166,6 +228,533 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         );
     }
     crate::smart_route_runtime_tests::check_admin_route_crud(&pool).await?;
+    check_key_group_access_schema(&pool).await?;
+    check_async_billing_source_upgrade(&pool).await?;
+    check_model_group_controls_upgrade(&pool).await?;
+    check_two_factor_enrollment_schema(&pool).await?;
     pool.close().await?;
+    Ok(())
+}
+
+async fn prepare_legacy_model_price(pool: &crate::DatabasePool) -> Result<(), Box<dyn Error>> {
+    use super::iden::{model_prices, models};
+    use sea_orm::ConnectionTrait;
+
+    let backend = pool.connection().get_database_backend();
+    let insert_model = Query::insert()
+        .into_table(models::Entity)
+        .columns([
+            models::Column::Model,
+            models::Column::DisplayName,
+            models::Column::Provider,
+            models::Column::Tags,
+            models::Column::SupportsTextInput,
+            models::Column::SupportsTextOutput,
+            models::Column::Visibility,
+            models::Column::Lifecycle,
+        ])
+        .values_panic([
+            LEGACY_PRICING_MODEL.into(),
+            "Legacy model price".into(),
+            "migration".into(),
+            serde_json::json!([]).into(),
+            true.into(),
+            true.into(),
+            1_i16.into(),
+            1_i16.into(),
+        ])
+        .to_owned();
+    pool.connection()
+        .execute(backend.build(&insert_model))
+        .await?;
+    // 使用历史列写入，确保新增的可空计划列不会破坏已有价格和版本。
+    let insert_price = Query::insert()
+        .into_table(model_prices::Entity)
+        .columns([
+            model_prices::Column::Model,
+            model_prices::Column::BillingMode,
+            model_prices::Column::InputPrice,
+            model_prices::Column::Version,
+        ])
+        .values_panic([
+            LEGACY_PRICING_MODEL.into(),
+            1_i16.into(),
+            3_i64.into(),
+            7_i64.into(),
+        ])
+        .to_owned();
+    pool.connection()
+        .execute(backend.build(&insert_price))
+        .await?;
+    Ok(())
+}
+
+async fn check_model_group_controls_upgrade(
+    pool: &crate::DatabasePool,
+) -> Result<(), Box<dyn Error>> {
+    use std::time::Duration;
+
+    use af_domain::{GroupId, GroupPeakWindow, ModelPeakSchedule, PricingWeekTime};
+    use rust_decimal::Decimal;
+    use sea_orm::{ConnectionTrait, Statement, TransactionTrait};
+
+    use crate::{
+        GroupModelPolicyRepository, GroupModelPolicyRepositoryError, ModelPriceBillingMode,
+        ModelPriceRepository, ModelPriceWriteRecord,
+    };
+
+    let connection = pool.connection();
+    let backend = connection.get_database_backend();
+    let price_query = Query::select()
+        .columns([Alias::new("peak_windows"), Alias::new("version")])
+        .from(Alias::new("model_prices"))
+        .and_where(Expr::col(Alias::new("model")).eq(LEGACY_PRICING_MODEL))
+        .to_owned();
+    let row = connection
+        .query_one(backend.build(&price_query))
+        .await?
+        .ok_or("legacy model price must survive the upgrade")?;
+    assert!(
+        row.try_get::<Option<serde_json::Value>>("", "peak_windows")?
+            .is_none()
+    );
+    assert_eq!(row.try_get::<i64>("", "version")?, 7);
+
+    let prices = ModelPriceRepository::new(pool.clone());
+    let legacy = prices
+        .load_all()
+        .await?
+        .into_iter()
+        .find(|price| price.model() == LEGACY_PRICING_MODEL)
+        .ok_or("upgraded model price must remain readable")?;
+    assert_eq!(legacy.billing_mode(), ModelPriceBillingMode::PerToken);
+    assert_eq!(legacy.prices()[0], Decimal::from(3));
+    assert!(legacy.peak_schedule().is_none());
+
+    let group_id = GroupId::new(1)?;
+    let policies = GroupModelPolicyRepository::new(pool.clone(), Duration::from_secs(5))?;
+    assert!(policies.get(group_id).await?.allowed_models.is_none());
+    assert!(
+        policies
+            .policy_for_group(group_id)
+            .await?
+            .allows("any-model")
+    );
+    let allowed_models = vec![LEGACY_PRICING_MODEL.to_owned()];
+    policies
+        .replace(group_id, Some(allowed_models.clone()))
+        .await?;
+    assert_eq!(
+        policies.get(group_id).await?.allowed_models,
+        Some(allowed_models)
+    );
+    let policy = policies.policy_for_group(group_id).await?;
+    assert!(policy.allows(LEGACY_PRICING_MODEL));
+    assert!(!policy.allows("another-model"));
+    assert_eq!(
+        policies.replace(group_id, Some(vec![])).await,
+        Err(GroupModelPolicyRepositoryError::InvalidInput)
+    );
+
+    // 主键、外键和非空约束必须在三种数据库上保留，失败语句各自使用自动提交。
+    let insert_policy = |id: i64| {
+        Query::insert()
+            .into_table(Alias::new("group_model_policies"))
+            .columns([Alias::new("group_id"), Alias::new("allowed_models")])
+            .values_panic([id.into(), serde_json::json!([LEGACY_PRICING_MODEL]).into()])
+            .to_owned()
+    };
+    assert!(
+        connection
+            .execute(backend.build(&insert_policy(1)))
+            .await
+            .is_err()
+    );
+    assert!(
+        connection
+            .execute(backend.build(&insert_policy(i64::MAX)))
+            .await
+            .is_err()
+    );
+    let null_policy = Query::update()
+        .table(Alias::new("group_model_policies"))
+        .value(
+            Alias::new("allowed_models"),
+            Option::<serde_json::Value>::None,
+        )
+        .and_where(Expr::col(Alias::new("group_id")).eq(1_i64))
+        .to_owned();
+    assert!(
+        connection
+            .execute(backend.build(&null_policy))
+            .await
+            .is_err()
+    );
+    assert!(
+        policies
+            .policy_for_group(group_id)
+            .await?
+            .allows(LEGACY_PRICING_MODEL)
+    );
+
+    let transaction = connection.begin().await?;
+    let temporary_group_id = 9_900_160_i64;
+    let insert_group = Query::insert()
+        .into_table(super::iden::groups::Entity)
+        .columns([
+            super::iden::groups::Column::Id,
+            super::iden::groups::Column::Name,
+            super::iden::groups::Column::DisplayName,
+            super::iden::groups::Column::Flags,
+        ])
+        .values_panic([
+            temporary_group_id.into(),
+            "model-policy-migration".into(),
+            "Model policy migration".into(),
+            serde_json::json!({}).into(),
+        ])
+        .to_owned();
+    transaction.execute(backend.build(&insert_group)).await?;
+    transaction
+        .execute(backend.build(&insert_policy(temporary_group_id)))
+        .await?;
+    let delete_group = Query::delete()
+        .from_table(super::iden::groups::Entity)
+        .and_where(Expr::col(super::iden::groups::Column::Id).eq(temporary_group_id))
+        .to_owned();
+    transaction.execute(backend.build(&delete_group)).await?;
+    let remaining_policy = Query::select()
+        .column(Alias::new("group_id"))
+        .from(Alias::new("group_model_policies"))
+        .and_where(Expr::col(Alias::new("group_id")).eq(temporary_group_id))
+        .to_owned();
+    assert!(
+        transaction
+            .query_one(backend.build(&remaining_policy))
+            .await?
+            .is_none()
+    );
+    transaction.rollback().await?;
+
+    policies.replace(group_id, None).await?;
+    assert!(policies.get(group_id).await?.allowed_models.is_none());
+    let row = connection
+        .query_one(Statement::from_string(
+            backend,
+            "SELECT COUNT(*) AS policy_count FROM group_model_policies".to_owned(),
+        ))
+        .await?
+        .ok_or("group model policy table must exist")?;
+    assert_eq!(row.try_get::<i64>("", "policy_count")?, 0);
+
+    let schedule = ModelPeakSchedule::new(vec![GroupPeakWindow::new(
+        vec![7],
+        23 * 3_600,
+        2 * 3_600,
+        500_000,
+        vec![],
+        480,
+    )?])?;
+    let write = ModelPriceWriteRecord::new_with_schedule_patch(
+        LEGACY_PRICING_MODEL.to_owned(),
+        Some(7),
+        None,
+        legacy.billing_mode(),
+        legacy.prices(),
+        None,
+        Some(Some(schedule.clone())),
+    )?;
+    prices.apply_batch(vec![write]).await?;
+    let restored = prices
+        .load_all()
+        .await?
+        .into_iter()
+        .find(|price| price.model() == LEGACY_PRICING_MODEL)
+        .ok_or("model peak schedule must remain readable")?;
+    assert_eq!(restored.version(), 8);
+    assert_eq!(restored.prices(), legacy.prices());
+    assert_eq!(restored.peak_schedule(), Some(&schedule));
+    assert_eq!(
+        restored
+            .peak_schedule()
+            .unwrap()
+            .ratio_at(PricingWeekTime::new(7, 16 * 3_600)?),
+        Some(500_000)
+    );
+    assert_eq!(
+        restored
+            .peak_schedule()
+            .unwrap()
+            .ratio_at(PricingWeekTime::new(7, 18 * 3_600)?),
+        None
+    );
+    // 旧版价格客户端省略计划字段时保留规则；显式清除后恢复可空状态。
+    let unchanged = ModelPriceWriteRecord::new(
+        LEGACY_PRICING_MODEL.to_owned(),
+        Some(8),
+        restored.billing_mode(),
+        restored.prices(),
+    )?;
+    let saved = prices.apply_batch(vec![unchanged]).await?;
+    assert_eq!(saved[0].version(), 9);
+    assert_eq!(saved[0].peak_schedule(), Some(&schedule));
+    let clear = ModelPriceWriteRecord::new_with_schedule_patch(
+        LEGACY_PRICING_MODEL.to_owned(),
+        Some(9),
+        None,
+        restored.billing_mode(),
+        restored.prices(),
+        None,
+        Some(None),
+    )?;
+    let saved = prices.apply_batch(vec![clear]).await?;
+    assert_eq!(saved[0].version(), 10);
+    assert!(saved[0].peak_schedule().is_none());
+    let row = connection
+        .query_one(backend.build(&price_query))
+        .await?
+        .ok_or("cleared model schedule must remain readable")?;
+    assert!(
+        row.try_get::<Option<serde_json::Value>>("", "peak_windows")?
+            .is_none()
+    );
+    Ok(())
+}
+
+async fn prepare_legacy_async_claim(pool: &crate::DatabasePool) -> Result<(), Box<dyn Error>> {
+    use super::iden::{async_task_submission_claims, tokens, users};
+    use sea_orm::ConnectionTrait;
+
+    let backend = pool.connection().get_database_backend();
+    let insert_user = Query::insert()
+        .into_table(users::Entity)
+        .columns([
+            users::Column::Id,
+            users::Column::Username,
+            users::Column::DefaultGroupId,
+            users::Column::AffCode,
+            users::Column::Settings,
+        ])
+        .values_panic([
+            9_900_159_i64.into(),
+            "async-source-migration".into(),
+            1_i64.into(),
+            "async-source-migration".into(),
+            serde_json::json!({}).into(),
+        ])
+        .to_owned();
+    pool.connection()
+        .execute(backend.build(&insert_user))
+        .await?;
+    let insert_token = Query::insert()
+        .into_table(tokens::Entity)
+        .columns([
+            tokens::Column::Id,
+            tokens::Column::UserId,
+            tokens::Column::KeyHash,
+            tokens::Column::KeyPrefix,
+            tokens::Column::Name,
+        ])
+        .values_panic([
+            9_900_159_i64.into(),
+            9_900_159_i64.into(),
+            "ac".repeat(32).into(),
+            "sk-af-legacy-source".into(),
+            "async-source-migration".into(),
+        ])
+        .to_owned();
+    pool.connection()
+        .execute(backend.build(&insert_token))
+        .await?;
+    let insert_claim = Query::insert()
+        .into_table(async_task_submission_claims::Entity)
+        .columns([
+            async_task_submission_claims::Column::TaskKey,
+            async_task_submission_claims::Column::UserId,
+            async_task_submission_claims::Column::TokenId,
+            async_task_submission_claims::Column::GroupId,
+            async_task_submission_claims::Column::IdempotencyKey,
+            async_task_submission_claims::Column::Protocol,
+            async_task_submission_claims::Column::RequestedModel,
+            async_task_submission_claims::Column::RequestFingerprint,
+        ])
+        .values_panic([
+            "a1".repeat(16).into(),
+            9_900_159_i64.into(),
+            9_900_159_i64.into(),
+            1_i64.into(),
+            "b1".repeat(16).into(),
+            "xai_video".into(),
+            "grok-video".into(),
+            "c1".repeat(32).into(),
+        ])
+        .to_owned();
+    pool.connection()
+        .execute(backend.build(&insert_claim))
+        .await?;
+    Ok(())
+}
+
+async fn check_async_billing_source_upgrade(
+    pool: &crate::DatabasePool,
+) -> Result<(), Box<dyn Error>> {
+    use sea_orm::{ConnectionTrait, Statement};
+    let backend = pool.connection().get_database_backend();
+    let row = pool.connection().query_one(Statement::from_string(backend, "SELECT group_id, billing_source_group_id FROM async_task_submission_claims WHERE user_id = 9900159".to_owned())).await?.ok_or("legacy async claim must survive upgrade")?;
+    assert_eq!(row.try_get::<i64>("", "group_id")?, 1);
+    assert_eq!(
+        row.try_get::<Option<i64>>("", "billing_source_group_id")?,
+        None
+    );
+    let repository =
+        crate::AsyncTaskSubmissionRepository::new(pool.clone(), std::time::Duration::from_secs(5))?;
+    let request_id = af_domain::AsyncTaskRequestId::from_persistence_key(&"b1".repeat(16))?;
+    let restored = repository
+        .find_by_request(af_domain::UserId::new(9_900_159)?, request_id)
+        .await?
+        .ok_or("legacy async billing source must remain readable")?;
+    assert_eq!(
+        restored.principal().billing_source_group_id(),
+        restored.principal().group_id()
+    );
+    Ok(())
+}
+
+async fn check_key_group_access_schema(pool: &crate::DatabasePool) -> Result<(), Box<dyn Error>> {
+    use sea_orm::{ConnectionTrait, Statement, TransactionTrait};
+
+    use super::iden::users;
+
+    let connection = pool.connection();
+    let backend = connection.get_database_backend();
+    // 旧分组升级后不自动开放；缺少策略行保持仅默认组用户可选。
+    let row = connection
+        .query_one(Statement::from_string(
+            backend,
+            "SELECT COUNT(*) AS policy_count FROM group_key_policies".to_owned(),
+        ))
+        .await?
+        .ok_or("key group policy table must exist")?;
+    assert_eq!(row.try_get::<i64>("", "policy_count")?, 0);
+
+    let transaction = connection.begin().await?;
+    let user_id = 9_900_158_i64;
+    let insert_user = Query::insert()
+        .into_table(users::Entity)
+        .columns([
+            users::Column::Id,
+            users::Column::Username,
+            users::Column::DefaultGroupId,
+            users::Column::AffCode,
+            users::Column::Settings,
+        ])
+        .values_panic([
+            user_id.into(),
+            "key-group-migration".into(),
+            1_i64.into(),
+            "key-group-migration".into(),
+            serde_json::json!({}).into(),
+        ])
+        .to_owned();
+    transaction.execute(backend.build(&insert_user)).await?;
+    let insert_policy = Query::insert()
+        .into_table(Alias::new("group_key_policies"))
+        .columns([Alias::new("group_id"), Alias::new("selection_mode")])
+        .values_panic([1_i64.into(), "selected_users".into()])
+        .to_owned();
+    transaction.execute(backend.build(&insert_policy)).await?;
+    let insert_grant = Query::insert()
+        .into_table(Alias::new("user_group_grants"))
+        .columns([Alias::new("group_id"), Alias::new("user_id")])
+        .values_panic([1_i64.into(), user_id.into()])
+        .to_owned();
+    transaction.execute(backend.build(&insert_grant)).await?;
+    let row = transaction
+        .query_one(Statement::from_string(
+            backend,
+            "SELECT COUNT(*) AS grant_count FROM user_group_grants".to_owned(),
+        ))
+        .await?
+        .ok_or("key group grant table must exist")?;
+    assert_eq!(row.try_get::<i64>("", "grant_count")?, 1);
+
+    let delete_user = Query::delete()
+        .from_table(users::Entity)
+        .and_where(Expr::col(users::Column::Id).eq(user_id))
+        .to_owned();
+    transaction.execute(backend.build(&delete_user)).await?;
+    let row = transaction
+        .query_one(Statement::from_string(
+            backend,
+            "SELECT COUNT(*) AS grant_count FROM user_group_grants".to_owned(),
+        ))
+        .await?
+        .ok_or("key group grant count must be readable")?;
+    assert_eq!(row.try_get::<i64>("", "grant_count")?, 0);
+    transaction.rollback().await?;
+    Ok(())
+}
+
+async fn check_two_factor_enrollment_schema(
+    pool: &crate::DatabasePool,
+) -> Result<(), Box<dyn Error>> {
+    use crate::entity::{EncryptedJson, user_two_factor_enrollments as enrollment};
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use sea_orm::{
+        ActiveModelTrait, EntityTrait, IntoActiveModel, Set,
+        entity::prelude::TimeDateTimeWithTimeZone,
+    };
+
+    // 历史账户不能在升级时获得推测的绑定时间或最近验证时间。
+    let user_id = 9_900_159_i64;
+    assert!(
+        enrollment::Entity::find_by_id(user_id)
+            .one(pool.connection())
+            .await?
+            .is_none()
+    );
+    let now = TimeDateTimeWithTimeZone::from_unix_timestamp(1_793_334_000)?;
+    let configuration = EncryptedJson::from_envelope(serde_json::json!({
+        "version": 1,
+        "algorithm": "xchacha20poly1305",
+        "key_id": "migration-totp-test",
+        "nonce": URL_SAFE_NO_PAD.encode([1_u8; 24]),
+        "ciphertext": URL_SAFE_NO_PAD.encode([2_u8; 32]),
+    }))?;
+    // user_id 使用账户 ID，三种数据库都不能将其当成新自增 ID。
+    let pending = enrollment::ActiveModel {
+        user_id: Set(user_id),
+        pending_configuration: Set(Some(configuration)),
+        pending_created_at: Set(Some(now)),
+        pending_expires_at: Set(Some(now + time::Duration::minutes(10))),
+        bound_at: Set(None),
+        last_verified_at: Set(None),
+        pending_session_version: Set(Some(1)),
+        pending_attempts: Set(0),
+    }
+    .insert(pool.connection())
+    .await?;
+    assert_eq!(pending.user_id, user_id);
+    assert_eq!(pending.pending_attempts, 0);
+    assert!(pending.bound_at.is_none());
+    assert!(pending.last_verified_at.is_none());
+    let mut confirmed = pending.into_active_model();
+    confirmed.pending_configuration = Set(None);
+    confirmed.pending_created_at = Set(None);
+    confirmed.pending_expires_at = Set(None);
+    confirmed.pending_session_version = Set(None);
+    confirmed.bound_at = Set(Some(now));
+    confirmed.last_verified_at = Set(Some(now + time::Duration::seconds(1)));
+    confirmed.update(pool.connection()).await?;
+    let row = enrollment::Entity::find_by_id(user_id)
+        .one(pool.connection())
+        .await?
+        .unwrap();
+    assert_eq!(row.bound_at, Some(now));
+    assert_eq!(row.last_verified_at, Some(now + time::Duration::seconds(1)));
+    assert!(row.pending_configuration.is_none());
+    enrollment::Entity::delete_by_id(user_id)
+        .exec(pool.connection())
+        .await?;
     Ok(())
 }

@@ -1,4 +1,17 @@
 {
+  "verificationAccess": {
+    "topup": "Complete individual or business identity verification before starting an online or redemption-code top-up.",
+    "api": "Complete individual or business identity verification before using a personal key or the playground to call APIs.",
+    "action": "Verify identity",
+    "settings": {
+      "title": "Identity requirements",
+      "description": "Approved individual or business verification meets the requirement. Enable either switch independently or enable both.",
+      "topup": "Require verification before top-ups",
+      "topupHint": "Applies to new online and redemption-code top-ups. Existing payment notifications, statements, and balance queries remain available.",
+      "api": "Require verification before API calls",
+      "apiHint": "Applies to personal keys and the playground. Users can still sign in, manage keys, and complete identity verification."
+    }
+  },
   "runtimeStatus": {
     "eyebrow": "SYSTEM MONITOR",
     "title": "Runtime status",
@@ -39,7 +52,7 @@
     "positiveRequests": "Requests with cache usage",
     "upstreamRequests": "Upstream usage requests",
     "estimatedRequests": "Estimated usage requests",
-    "cacheHint": "Public usage ledger for the last 24 hours, refreshed every minute. Cache tokens include upstream-confirmed usage only. Missing reporting does not mean a cache miss; total input includes cache tokens. Redis storage, provider cache capacity, and extension-owned service-account ledgers are excluded.",
+    "cacheHint": "Public usage ledger for the last 24 hours, refreshed every minute. Cache tokens include upstream-confirmed usage only. Missing reporting does not mean a cache miss; total input includes cache tokens. Redis storage and provider cache capacity are excluded.",
     "states": {
       "starting": "Collecting",
       "healthy": "Healthy",
@@ -64,7 +77,9 @@
     "allTags": "All categories",
     "count": "{{count}} APIs",
     "loadMore": "Load more",
-    "actions": { "retry": "Retry" },
+    "actions": {
+      "retry": "Retry"
+    },
     "loading": "Loading API catalog…",
     "empty": "No matching APIs",
     "required": "Required",
@@ -115,6 +130,7 @@
       "personal": "Personal"
     },
     "sections": {
+      "billing": "Billing",
       "personal": "Personal account",
       "organization": "Organization",
       "enterprise": "Enterprise management",
@@ -122,7 +138,10 @@
       "system": "System administration",
       "operations": "Users & commerce",
       "gateway": "Models & gateway",
-      "platform": "Platform settings"
+      "platform": "Platform settings",
+      "site": "Site settings",
+      "commerce": "Commerce",
+      "users": "User management"
     },
     "console": "Console",
     "theme": "Theme",
@@ -139,7 +158,12 @@
     "models": "Models",
     "playground": "Multimodal playground",
     "videoTasks": "Video tasks",
+    "imagePlaza": "Image studio",
     "apiKeys": "My API keys",
+    "userRoutes": "My smart routes",
+    "merchantPool": "Merchant pool",
+    "merchantWorkspace": "Merchant workspace",
+    "merchantPoolAdmin": "Merchant pool management",
     "organizationApiKeys": "Organization API keys",
     "organizationServiceAccounts": "Service accounts",
     "organizationBudgets": "Organization budgets",
@@ -166,6 +190,7 @@
     "redemptionCodes": "Redemption codes",
     "refunds": "Refund approvals",
     "siteSettings": "Site settings",
+    "about": "About AnyFlows",
     "siteNavigation": "Navigation",
     "authenticationSettings": "Authentication",
     "announcements": "Announcements",
@@ -615,6 +640,7 @@
       "showApiKey": "Show upstream API key",
       "hideApiKey": "Hide upstream API key",
       "credentials": "Manage credentials",
+      "models": "Manage models",
       "refreshCredentials": "Refresh credentials",
       "removeModel": "Remove model {{model}}",
       "removeGroup": "Remove group {{group}}",
@@ -1037,6 +1063,58 @@
       "description": "“{{name}}” and its candidate configuration will be permanently deleted. This cannot be undone."
     }
   },
+  "channelModels": {
+    "title": "Channel models",
+    "summary": {
+      "models_one": "{{count}} connected model",
+      "models_other": "{{count}} connected models",
+      "groups_one": "{{count}} routing group",
+      "groups_other": "{{count}} routing groups",
+      "mapping_one": "{{count}} mapping",
+      "mapping_other": "{{count}} mappings"
+    },
+    "sections": {
+      "connected": "Connected models",
+      "connectedHint": "This page controls which models this channel may serve. Maintain model metadata, capabilities, and prices in the model catalog.",
+      "mapping": "Model mapping",
+      "mappingHint": "The left side is the public model name and the right side is the upstream model name. Same-name models need no mapping.",
+      "groups": "Routing groups",
+      "groupsHint": "Models and groups must be configured together before this channel can enter routing.",
+      "discovery": "Discover upstream models",
+      "discoveryHint": "Uses the current channel credentials to read the upstream list. This is a preview and never overwrites existing configuration."
+    },
+    "actions": {
+      "back": "Back to channels",
+      "credentials": "Manage credentials",
+      "refresh": "Refresh",
+      "discover": "Get upstream models",
+      "discovering": "Loading…",
+      "addSelected": "Add selected ({{count}})",
+      "close": "Close preview",
+      "save": "Save model configuration",
+      "saving": "Saving…",
+      "cancel": "Back",
+      "models": "Manage models"
+    },
+    "discovery": {
+      "candidates": "Models available to add ({{count}})",
+      "empty": "The upstream did not return any new models.",
+      "unsupported": "Automatic discovery is not supported for this protocol. You can still add models manually.",
+      "upstream": "Upstream model"
+    },
+    "mapping": { "empty": "No model mappings configured." },
+    "feedback": { "saved": "Channel model configuration saved." },
+    "validation": {
+      "routing": "Models and routing groups must both be empty or both be configured.",
+      "limit": "The model or group limit was exceeded. Remove some entries and try again.",
+      "configuration": "Model names and mappings must be unique, non-empty, and within the allowed length."
+    },
+    "errors": {
+      "load": "Channel model configuration could not be loaded.",
+      "save": "Channel model configuration could not be saved.",
+      "discovery": "Upstream model discovery failed. Check the credential and channel connectivity."
+    }
+  },
   "credentials": {
     "health": {
       "degraded": "Reduced health weight",
@@ -1046,6 +1124,7 @@
     },
     "batch": {
       "importTitle": "Batch import",
+      "importHint": "Paste one key per line or choose .json / .jsonl / .txt files to import into the selected channel.",
       "kind": "Credential type",
       "input": "One Key per line or JSON",
       "placeholder": "Enter one Key per line, a JSON array, or an object with keys / credentials.",
@@ -1309,6 +1388,7 @@
       "refresh": "Refresh",
       "retry": "Try again",
       "add": "Add credential",
+      "models": "Manage models",
       "create": "Create credential",
       "save": "Save changes",
       "edit": "Edit credential",
@@ -1351,6 +1431,37 @@
     }
   },
   "apiKeys": {
+    "routing": {
+      "label": "Routing",
+      "groupMode": "Single group",
+      "routeMode": "Smart route",
+      "routeLabel": "Choose a smart route",
+      "routePlaceholder": "Select an enabled smart route",
+      "routeHint": "The route strategy selects a group and switches after retryable failures. Billing uses the selected group. The binding cannot be changed after the key is issued.",
+      "invalidRoute": "Choose an enabled smart route that is currently available.",
+      "unavailable": "The selected smart route is disabled or unavailable. Choose another route.",
+      "loading": "Loading smart routes",
+      "loadError": "Smart routes could not be loaded. Retry before issuing a key.",
+      "empty": "No enabled smart routes yet.",
+      "manage": "Manage smart routes",
+      "immutable": "This key is bound to this route. Route changes apply to future requests. Disabling or deleting the route stops calls through this key; it does not follow the default group.",
+      "bound": "Smart route · {{name}}"
+    },
+    "group": {
+      "label": "Billing group",
+      "option": "{{name}} · base {{ratio}}×",
+      "followDefault": "Follow user default group",
+      "followOption": "Follow user default group ({{group}})",
+      "following": "Follow user default · {{name}}",
+      "bound": "Group · {{name}}",
+      "loading": "Loading available groups",
+      "loadError": "Available groups could not be loaded. Retry before creating a key.",
+      "invalid": "Choose a group you are currently allowed to use.",
+      "unavailable": "The selected group is no longer available. Choose an available group.",
+      "createHint": "Following the default tracks changes to your account group. Choosing a specific group fixes the binding when the key is issued.",
+      "immutable": "The group binding is set when issued and cannot be edited. Create a new key to use another group.",
+      "pricingHint": "The base group multiplier is shown. User-group overrides, model multipliers, and scheduled multipliers may also affect the actual cost."
+    },
     "title": "API Keys",
     "subtitle": "The keys you use to call the API. Each key can have its own quota, allowed models, and source IPs.",
     "count_one": "{{count}} key, {{active}} available",
@@ -1422,7 +1533,7 @@
       "expiryHint": "Leave blank for no expiry. Times use this device's time zone.",
       "unlimitedHint": "Do not apply an additional quota limit to this key.",
       "quotaHint": "Used only when unlimited quota is off.",
-      "modelsHint": "Leave empty to allow every model available to your group.",
+      "modelsHint": "Leave empty to allow every model available to the bound group or smart route.",
       "ipsHint": "Add IP or CIDR entries individually. Leave empty for any source.",
       "submitError": "The key could not be saved. Check the fields and try again.",
       "limitError": "This account has reached its API key limit."
@@ -1443,6 +1554,11 @@
       "date": "Enter a valid date and time."
     },
     "modelSelector": {
+      "routeHint": "The picker shows your account's current group catalog. You can add exact model names supported by other route members. Leave empty to allow all models available through the route; each request still checks member support.",
+      "customLabel": "Add model name",
+      "customPlaceholder": "Enter an exact model name supported by route members",
+      "addCustom": "Add model",
+      "customInvalid": "Enter a model name without control characters, up to 256 bytes and 512 entries.",
       "title": "Select available models",
       "description": "Leave the selection empty to allow every available model.",
       "search": "Search models",
@@ -1480,6 +1596,90 @@
       "description": "Deleting {{name}} immediately revokes requests that use this key. This action cannot be undone.",
       "failed": "Deletion failed. The key is still valid. Try again shortly."
     }
+  },
+  "userRoutes": {
+    "title": "My smart routes",
+    "subtitle": "Combine groups you can use and choose a price, stability, or rotation strategy for your keys. Billing uses the group selected for each request.",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "fields": {
+      "name": "Route name",
+      "strategy": "Selection strategy",
+      "status": "Route status",
+      "members": "Candidate groups",
+      "priority": "Priority",
+      "weight": "Weight",
+      "attempts": "Maximum group attempts",
+      "maxPrice": "Effective multiplier limit"
+    },
+    "strategies": {
+      "price_first": "Price first",
+      "stable_first": "Stability first",
+      "ordered": "Priority order",
+      "round_robin": "Round robin",
+      "weighted": "Weighted distribution"
+    },
+    "strategyHints": {
+      "price_first": "Try groups from the lowest effective billing multiplier for this model request. Retryable failures advance to the next group.",
+      "stable_first": "Prefer groups with recent successful requests and lower latency. Priority is used when there is not enough history.",
+      "ordered": "Lower priority numbers are tried first. Retryable failures advance to the next group.",
+      "round_robin": "Rotate requests between available groups and switch after retryable failures.",
+      "weighted": "Distribute requests by weight. Higher weights receive more requests, with switching after retryable failures."
+    },
+    "membersHint": "Choose up to 16 groups you are allowed to use. Options show base multipliers; actual ordering and charges also use model, user-specific, and scheduled multipliers. Lower priority numbers come first.",
+    "groupLoadError": "Available groups could not be loaded. Try again.",
+    "loadingGroups": "Loading available groups",
+    "unavailableGroup": "Group #{{id}} (unavailable)",
+    "memberNumber": "Candidate group {{number}}",
+    "memberGroup": "Group for candidate {{number}}",
+    "memberPriority": "Priority for candidate {{number}}",
+    "memberWeight": "Weight for candidate {{number}}",
+    "noGroups": "There are no groups you can add to a route.",
+    "attemptsHint": "1–16, including the first attempt. Groups switch only after retryable failures.",
+    "priceHint": "Leave blank for no limit. Up to six decimal places; 0 allows only zero-multiplier groups. Applied to the request's effective billing multiplier.",
+    "unlimitedPrice": "No multiplier limit",
+    "attemptsValue": "Up to {{count}} groups",
+    "priceValue": "Multiplier limit {{value}}×",
+    "actions": {
+      "retry": "Retry",
+      "moveUp": "Move group up",
+      "moveDown": "Move group down",
+      "removeMember": "Remove group",
+      "addMember": "Add group",
+      "cancel": "Cancel",
+      "save": "Save changes",
+      "create": "Create route",
+      "edit": "Edit route",
+      "delete": "Delete route",
+      "refresh": "Refresh"
+    },
+    "editor": {
+      "create": "Create smart route",
+      "edit": "Edit smart route",
+      "description": "Bind this route when issuing a key. Changes affect future requests from bound keys. Disabling the route stops their calls."
+    },
+    "validation": {
+      "name": "Enter a name without control characters, up to 128 bytes.",
+      "strategy": "Choose a valid routing strategy.",
+      "groups": "Load the group directory and replace any groups you can no longer use.",
+      "members": "Choose between 1 and 16 candidate groups.",
+      "duplicate": "Candidate groups must be unique.",
+      "memberValues": "Priority must be an integer from 0 to 2147483647; weight must be an integer from 1 to 10000.",
+      "attempts": "Maximum group attempts must be an integer from 1 to 16.",
+      "price": "Enter an in-range non-negative multiplier with up to six decimal places, or leave blank for no limit."
+    },
+    "errors": {
+      "unknown": "The operation failed. Check the configuration and try again.",
+      "group_unavailable": "A candidate group is no longer available. Choose another group.",
+      "user_route_unavailable": "This route is no longer available. Refresh and try again.",
+      "user_route_not_found": "This route was deleted or does not exist. Refresh the list.",
+      "user_route_limit_reached": "The smart route limit has been reached."
+    },
+    "columns": { "route": "Route", "strategy": "Strategy and multiplier", "members": "Candidate groups", "actions": "Actions" },
+    "empty": { "title": "No smart routes yet", "body": "Choose available groups and a strategy, then issue an API key for your route." },
+    "delete": { "title": "Delete smart route", "body": "Deleting {{name}} stops calls through its bound keys. They do not switch to the default group. Create a new route and key to continue." },
+    "summary": { "loaded": "{{count}} routes", "capacity": "Capacity {{count}} / {{capacity}}" },
+    "error": { "title": "Smart routes could not be loaded", "body": "The route list is temporarily unavailable. Try again shortly." }
   },
   "platformOrganizations": {
     "eyebrow": "Platform organization operations",
@@ -1689,6 +1889,7 @@
       "account": "Account information",
       "access": "Role and ownership",
       "limits": "Resource limits",
+    "security": "Personal security",
       "emailHint": "Email is optional and can be used for notifications and password recovery.",
       "createPasswordHint": "An initial password is required and is never shown again after saving.",
       "updatePasswordHint": "Leave blank to keep the current password, or enter a value to reset it.",
@@ -1702,6 +1903,32 @@
       "conflict": "The username or email is already used by another account.",
       "submitError": "The user could not be saved. Check the fields and try again."
     },
+  "security": {
+    "loading": "Loading security measures",
+    "loadError": "The user's security measures could not be loaded.",
+    "twoFactor": "Two-factor authentication",
+    "states": {
+      "disabled": "Disabled",
+      "pending": "Awaiting confirmation",
+      "enabled": "Enabled"
+    },
+    "boundAt": "Bound: {{value}}",
+    "lastVerifiedAt": "Last verified: {{value}}",
+    "pendingAt": "Binding started: {{value}}",
+    "expiresAt": "Expires: {{value}}",
+    "notRecorded": "Not recorded",
+    "resetTwoFactor": "Disable 2FA",
+    "resetTwoFactorConfirm": "Disable two-factor authentication for this user? The current binding and any pending enrollment will be cleared, and the user will need to sign in again.",
+    "passkeys": "Passkeys",
+    "passkeyCount": "{{count}}",
+    "noPasskeys": "This user has no passkeys.",
+    "passkeyCreatedAt": "Created {{value}}",
+    "passkeyLastUsedAt": "Last used {{value}}",
+    "revokePasskey": "Revoke",
+    "revokePasskeyConfirm": "Revoke this passkey? It cannot be restored afterward.",
+    "revoked": "Revoked",
+    "actionError": "The security measure could not be updated. Refresh and try again."
+  },
     "fields": {
       "username": "Username",
       "email": "Email",
@@ -1830,6 +2057,95 @@
     }
   },
   "groups": {
+    "modelPolicy": {
+      "tab": "Model access",
+      "title": "Allowed models",
+      "description": "Choose which models this group can call. Leave the list empty for unrestricted access. Saving applies to new requests from existing keys and the signed-in model catalog immediately.",
+      "loading": "Loading model access",
+      "loadError": "Model access could not be loaded. Please retry.",
+      "unrestricted": "All models allowed",
+      "selectedCount": "{{count}} models selected",
+      "clear": "Clear restriction",
+      "catalogLabel": "Choose from the model catalog",
+      "searchPlaceholder": "Filter loaded models by name or provider",
+      "loadingModels": "Loading model catalog",
+      "catalogError": "The model catalog could not be loaded. You can still enter model names below and save.",
+      "noModels": "No matching models in the loaded catalog.",
+      "loadingMore": "Loading",
+      "loadMore": "Load more models",
+      "customLabel": "Model allowlist",
+      "customPlaceholder": "One model name per line, such as gpt-5",
+      "customHint": "{{count}} / {{maximum}} models selected. Names are case-sensitive. You may also enter model names that are not in the catalog yet.",
+      "priorityHint": "Intersected with each key’s model restriction; saved separately",
+      "save": "Save model access",
+      "saving": "Saving",
+      "saved": "Model access saved.",
+      "saveError": "Model access could not be saved. Check your list and retry.",
+      "invalidName": "Model names cannot contain surrounding whitespace or control characters, and each name is limited to 256 bytes.",
+      "tooMany": "Select no more than 512 models.",
+      "tooMuchText": "The combined model names cannot exceed 32 KiB.",
+      "ratioTitle": "Source group ratio overrides",
+      "ratioDescription": "Override this group's multiplier by source group and model. Leave the model empty to cover every model from that source group.",
+      "ratioSource": "Source group",
+      "ratioModel": "Model",
+      "ratioModelAll": "Empty means all models",
+      "ratioValue": "Multiplier",
+      "ratioAdd": "Add ratio rule",
+      "ratioRemove": "Remove ratio rule",
+      "ratioEmpty": "No override is configured. The global group ratio will be used.",
+      "ratioInvalid": "Enter a valid source group, model name, and non-negative multiplier.",
+      "ratioDuplicate": "The same model can only be configured once per source group.",
+      "ratioTooMany": "Too many ratio rules.",
+      "ratioGroupHint": "Group #{{id}}",
+      "ratioGroupError": "The group catalog could not be loaded, so new ratio rules cannot be added. Existing rules can still be saved."
+    },
+    "keyPolicy": {
+      "detailsTab": "Group settings",
+      "keyPolicyTab": "Key group access",
+      "sectionLabel": "Group settings sections",
+      "title": "Key group access",
+      "description": "Choose who can select this group when creating a key. This does not change their default group.",
+      "modeLabel": "Who can select this group",
+      "modes": {
+        "default_only": "Default-group users only",
+        "all_users": "All users",
+        "selected_groups": "Selected default groups"
+      },
+      "defaultAccess": "Users whose default group is this group always retain access, regardless of this setting.",
+      "independentSave": "Saved separately from group settings",
+      "save": "Save group access",
+      "saving": "Saving",
+      "saved": "Group access saved.",
+      "loading": "Loading group access",
+      "loadError": "Group access could not be loaded. Please retry.",
+      "saveError": "Group access could not be saved. Check your selection and retry.",
+      "errorForbiddenTitle": "Not allowed to change key group access",
+      "errorForbiddenHint": "The API returned 403: only administrator accounts can change a group key policy. If your account should be an admin, the session role is likely not admin — sign in again with that admin account.",
+      "errorInvalidTitle": "Invalid key group policy",
+      "errorInvalidHint": "The API returned 422: check that the allowed user list has at most 1000 unique, valid user IDs.",
+      "errorRetryHint": "The API rejected the request or is temporarily unavailable. Reload the group and try again.",
+      "revokeHint": "By default, this policy affects only newly created personal keys. Select the option above to disable existing personal keys that lose access because of this policy change. Default-group users' keys and organization keys are unaffected.",
+      "disableExistingTitle": "Also disable existing personal keys that lose access",
+      "disableExistingDescription": "Saving will disable active personal keys that lose access because of this group policy change in the same database transaction. Default-group users' keys and organization keys are unaffected. New requests will be rejected; requests already admitted may finish.",
+      "disabledCount": "Disabled {{count}} existing personal key(s).",
+      "disabledUserCount": "Affected {{count}} user(s).",
+      "confirmDisableTitle": "Confirm disabling personal keys",
+      "confirmDisableDescription": "Saving will immediately disable existing personal keys that lose access because of this group policy change. New requests using those keys will be rejected. Default-group users' keys and organization keys are unaffected; requests already admitted may finish.",
+      "confirmDisableAction": "Disable and save",
+      "searchLabel": "Find default groups",
+      "searchPlaceholder": "Filter loaded groups by name or ID",
+      "loadedScope": "{{count}} groups loaded. The filter only covers these groups.",
+      "selectedGroups": "Authorized default groups",
+      "selectedCount": "{{count}} / 1000 groups selected",
+      "availableGroups": "Groups available to add",
+      "groupFallback": "Group #{{id}}",
+      "removeGroup": "Remove group {{group}}",
+      "addGroup": "Add group {{group}}",
+      "remove": "Remove",
+      "noGroups": "No matching groups available in the loaded list.",
+      "loadingGroups": "Loading groups",
+      "groupsError": "The group directory could not be loaded. Existing access is preserved."
+    },
     "title": "Group management",
     "subtitle": "Manage base and peak pricing ratios, resource limits, and runtime fallback policies for user groups.",
     "loading": "Loading groups",
@@ -1945,7 +2261,7 @@
     },
     "errors": {
       "group_conflict": "The stable name is already used by another active group.",
-      "group_in_use": "Active users or API keys still use this group, so it cannot be deleted.",
+      "group_in_use": "Users, API keys or a shared pool still reference this group. Select a destination for users; delete an associated shared pool first.",
       "invalid_request": "The group fields are invalid. Check them and try again.",
       "internal_error": "The data may have committed, but runtime refresh or storage failed. Refresh the list before retrying.",
       "unknown": "The group operation failed. Refresh the list to confirm its current state."
@@ -1961,7 +2277,12 @@
     },
     "delete": {
       "title": "Delete group",
-      "description": "Deleting {{name}} also clears channel, ability, and fallback relationships that can be safely detached. This action cannot be undone."
+      "description": "Deleting {{name}} clears its channel, ability and fallback relationships. Historical requests and financial records remain. This action cannot be undone.",
+      "replacement": "Move users to",
+      "noReplacement": "No transfer; delete only if no users or keys reference it",
+      "replacementHint": "Choose a destination if users or API keys reference this group. Shared-pool groups cannot receive transferred users.",
+      "transferHint": "Users move to “{{name}}” and API keys directly bound to the original group are revoked. User accounts and historical records remain.",
+      "targetsError": "Unable to load transfer destinations. Try again."
     }
   },
   "modelManagement": {
@@ -2025,7 +2346,7 @@
       "tagsHint": "Press Enter to add. Comma-separated and line-separated pasted lists are supported.",
       "contextHint": "Leave empty when there is no verified value. The service never guesses from the model name.",
       "capabilitiesHint": "Select at least one modality in each direction and record only verified capabilities.",
-      "visibilityHint": "Controls which audience may see this product in a future composed model catalog.",
+      "visibilityHint": "Choose whether the public, signed-in, or admin catalog can show this model.",
       "lifecycleHint": "Draft, active, deprecated, and retired are explicit operational stages.",
       "conflict": "This Canonical model identifier already exists. Edit the existing record or choose another identifier.",
       "submitError": "The model could not be saved. Check the fields and try again."
@@ -2072,7 +2393,7 @@
     "visibility": {
       "public": "Public",
       "authenticated": "Signed-in users",
-      "hidden": "Management only"
+      "hidden": "Admin only"
     },
     "lifecycle": {
       "draft": "Draft",
@@ -2122,7 +2443,7 @@
         "displayNameFor": "Display name for {{model}}",
         "shared": "Shared batch fields",
         "sharedHint": "Provider and capabilities apply to the entire batch. Nothing is inferred from model names.",
-        "boundary": "Models are always created as management-only drafts. Pricing, public visibility, and channel mappings are not changed. Any conflict fails the whole batch.",
+        "boundary": "Models are always created as admin-only drafts. Pricing, public visibility, and channel mappings are not changed. Any conflict fails the whole batch.",
         "submit": "Confirm import",
         "importing": "Importing",
         "success_one": "Created {{count}} hidden model draft. Continue its review in the model catalog.",
@@ -2311,12 +2632,31 @@
         "versionChanged": "This draft expects {{expected}}, while the current formal price is v{{current}}. Review it before updating the precondition.",
         "newVersion": "a new-price precondition"
       },
+      "peak": {
+        "title": "Model scheduled pricing",
+        "description": "Set weekly days, a time zone and special time slot ratios for this model. A matching rule replaces the active group time slot ratio; otherwise group pricing applies. Base and source-to-target group ratios still apply.",
+        "enabled": "Enable model time slot ratios",
+        "inherit": "Turn off or remove all rules to inherit group pricing. Set a time slot ratio of 1 to bypass a group peak surcharge.",
+        "ratio": "Time slot ratio",
+        "timezone": "Time zone",
+        "start": "Start time",
+        "end": "End time",
+        "weekdays": "Weekly active days",
+        "add": "Add time slot",
+        "remove": "Remove time slot"
+      },
       "validation": {
         "decimal": "Enter a non-negative plain decimal without a sign or exponent, with up to 10 integer and 28 fractional digits.",
         "free": "All five values must be zero in explicitly free mode.",
         "expression": "Enter a billing expression.",
         "expressionTooLong": "The expression cannot exceed 8192 UTF-8 bytes.",
-        "expressionValues": "Fixed price columns must all be zero in expression mode."
+        "expressionValues": "Fixed price columns must all be zero in expression mode.",
+        "ratio": "Enter a non-negative ratio with up to 6 decimal places.",
+        "peakWindow": "Enter valid, distinct times. The end time may be 24:00.",
+        "weekdays": "Select at least one day without duplicates.",
+        "timezone": "Select a valid UTC time zone.",
+        "rules": "Configure no more than 32 model time slot rules.",
+        "overlap": "Model time slots overlap. Adjust their days, time zones or times."
       },
       "actions": {
         "preview": "Get reference prices",
@@ -2602,8 +2942,8 @@
   },
   "usageLogs": {
     "title": "Request logs",
-    "subtitle": "Review your settled model requests, response speed, token usage, and billed quota.",
-    "adminSubtitle": "Review settled requests across the site with response speed, token usage, and billed quota.",
+    "subtitle": "Review your model calls, failures, response times, and charges.",
+    "adminSubtitle": "Review site-wide model calls, request users, failures, and charges.",
     "count": "{{count}} records on this page",
     "filteredCount": "Showing {{visible}} of {{count}}",
     "page": "Page {{page}}",
@@ -2615,9 +2955,18 @@
       "call": "Model request",
       "latency": "Response speed",
       "tokens": "Token usage",
-      "billing": "Billing result"
+      "billing": "Billing result",
+      "request": "Request",
+      "channel": "Channel",
+      "user": "User",
+      "token": "Token",
+      "model": "Model",
+      "stream": "Mode",
+      "cost": "Cost",
+      "timing": "Timing",
+      "details": "Details"
     },
-    "listLabel": "Settled request list",
+    "listLabel": "Request logs",
     "status": {
       "settled": "Settled",
       "settledOnly": "Settled only",
@@ -2628,7 +2977,11 @@
       "requests": "Settled requests",
       "tokens": "Total tokens",
       "averageFirstToken": "Average first token",
-      "quota": "Total quota"
+      "quota": "Total quota",
+      "usage": "Quota",
+      "rpm": "RPM",
+      "tpm": "TPM",
+      "range": "Time range"
     },
     "filters": {
       "label": "Filter this page",
@@ -2637,7 +2990,19 @@
       "protocol": "Protocol",
       "allProtocols": "All protocols",
       "mode": "Response mode",
-      "allModes": "All modes"
+      "allModes": "All modes",
+      "anyTime": "Any time",
+      "group": "Group",
+      "start": "Start",
+      "end": "End",
+      "pickRange": "Pick a time range",
+      "tokenName": "Token",
+      "username": "Username",
+      "channelId": "Channel ID",
+      "requestId": "Request ID",
+      "upstreamRequestId": "Upstream request ID",
+      "more": "More filters",
+      "less": "Fewer filters"
     },
     "protocol": {
       "open_ai_chat": "Chat",
@@ -2658,6 +3023,7 @@
       "responses_compact": "Context compaction",
       "embedding": "Embedding",
       "image": "Image",
+      "image_edit": "Image edit",
       "audio": "Audio",
       "rerank": "Rerank",
       "video": "Video",
@@ -2757,17 +3123,23 @@
       "copyRequestIdFailed": "Copy failed. Select the request ID in details.",
       "retry": "Retry",
       "previous": "Previous",
-      "next": "Next"
+      "next": "Next",
+      "copyValue": "Copy value",
+      "copiedValue": "Value copied",
+      "copyValueFailed": "Copy failed. Select and copy the value manually.",
+      "search": "Search",
+      "hideSummary": "Hide overview",
+      "showSummary": "Show overview"
     },
     "empty": {
       "title": "No request logs yet",
-      "body": "Settled requests appear after your first model request is billed.",
+      "body": "Settled requests and failure summaries will appear here.",
       "filteredTitle": "No matches on this page",
-      "filteredBody": "Adjust the model or protocol filter, or browse another page."
+      "filteredBody": "Adjust the model or protocol filters, or check another page."
     },
     "error": {
       "title": "Unable to load request logs",
-      "body": "Couldn't load settled requests. Try again shortly."
+      "body": "The server did not return request logs. Please try again later."
     },
     "userSheet": {
       "title": "User profile",
@@ -2797,7 +3169,15 @@
         "internal": "Internal details",
         "request": "Request ID",
         "channel": "Channel"
-      }
+      },
+      "details": "Error details",
+      "errorCode": "Error code",
+      "errorMessage": "Error message",
+      "errorKind": "Internal category",
+      "principal": "Request principal",
+      "unknownUser": "User not recorded",
+      "organization": "Organization",
+      "team": "Team"
     }
   },
   "debugTraces": {
@@ -3119,7 +3499,7 @@
       "filteredTitle": "No matching models",
       "filteredBody": "Adjust the search term or filters.",
       "admin": {
-        "visibility": "The guest catalog requires public visibility. Signed-in catalogs also accept authenticated visibility.",
+        "visibility": "The guest catalog accepts public models. Regular signed-in catalogs also accept authenticated models; admin catalogs additionally accept admin-only models.",
         "lifecycle": "Lifecycle must be active or deprecated. Hidden drafts are never published automatically.",
         "pricing": "A valid price is required. Signed-in catalogs also require a callable channel for the current group.",
         "action": "Open model management"
@@ -3217,6 +3597,7 @@
     "error": {
       "title": "The task request could not be completed",
       "codes": {
+        "account_verification_required": "Complete individual or business identity verification before calling APIs.",
         "invalid_api_key": "The API key is invalid, expired, or disabled.",
         "task_not_found": "The task does not exist within the current user scope.",
         "idempotency_conflict": "These settings were already used for another submission. Start a new task.",
@@ -3237,6 +3618,34 @@
       "openVideo": "Open video",
       "copied": "Copied"
     }
+  },
+  "imagePlaza": {
+    "title": "Image studio",
+    "subtitle": "Generate and edit images with models available to your account.",
+    "mode": { "label": "Image mode", "generate": "Generate", "edit": "Edit" },
+    "controls": {
+      "title": "Image controls",
+      "subtitle": "Changes apply to the next request.",
+      "model": "Image model",
+      "prompt": "Prompt",
+      "promptPlaceholder": "Describe the subject, composition, lighting, and style",
+      "editPromptPlaceholder": "Describe the changes to make to the original image",
+      "original": "Original image",
+      "mask": "Mask (optional)",
+      "maskHint": "Transparent areas mark the region to edit. PNG only.",
+      "chooseFile": "Choose an image file",
+      "size": "Size",
+      "quality": "Quality",
+      "count": "Images"
+    },
+    "models": { "loading": "Loading image models", "empty": "No image models available", "error": "Model catalog unavailable", "count": "{{count}} image models", "loadMore": "Load more" },
+    "quality": { "standard": "Standard", "hd": "High definition" },
+    "gallery": { "title": "History", "historyCount": "{{count}} images", "emptyTitle": "Your studio is ready", "emptyBody": "Generated images are saved to your account history for later viewing and editing.", "select": "Select image: {{prompt}}" },
+    "history": { "confirmClear": "Clear all image history saved for this account?", "confirmDelete": "Delete this image from history?" },
+    "detail": { "title": "Selected image", "empty": "Select an image to view its prompt and actions.", "requestId": "Request ID: {{id}}" },
+    "actions": { "generate": "Generate image", "edit": "Apply edits", "submitting": "Creating image", "download": "Download", "copyPrompt": "Copy prompt", "copied": "Copied", "continueEdit": "Continue editing", "deleteImage": "Delete this image", "clearHistory": "Clear image history", "settings": "Image controls", "close": "Close controls", "removeFile": "Remove file", "retry": "Retry", "refreshModels": "Refresh models" },
+    "status": { "generated": "Image added to history.", "savingHistory": "Image created. Saving history.", "historySaveFailed": "Image created, but it could not be saved to history.", "historyLoadFailed": "Could not load image history.", "imageDeleted": "Image history deleted.", "imageDeleteFailed": "Unable to delete this image.", "downloaded": "Download started.", "downloadFailed": "Unable to download this image.", "copyFailed": "Unable to copy the prompt.", "historyCleared": "Image history cleared.", "historyClearFailed": "Unable to clear image history." },
+    "errors": { "session_missing": "Your session is unavailable. Sign in again before making this request.", "request_failed": "The image request failed. Check the settings and try again.", "network_error": "Could not reach the image service.", "invalid_response": "The image service returned an unreadable response.", "continueFailed": "This image could not be loaded for editing. Download it and choose it as the original image.", "modelRequired": "Select an image model.", "promptRequired": "Enter a prompt.", "originalRequired": "Choose an original image before editing.", "invalidImage": "Choose a supported image file.", "maskPngOnly": "The mask must be a PNG image." }
   },
   "playground": {
     "title": "Multimodal playground",
@@ -3364,6 +3773,7 @@
     },
     "errors": {
       "invalid_key": "The API key is invalid, disabled, or unavailable from this source.",
+      "account_verification_required": "Complete individual or business identity verification before calling APIs.",
       "insufficient_quota": "The API key does not have enough quota for this request.",
       "rate_limited": "The API key has reached a request limit. Try again later.",
       "model_unavailable": "This key cannot use the selected model, or the model is unavailable.",
@@ -3566,6 +3976,74 @@
       "logout": "Sign out"
     }
   },
+  "about": {
+    "companyName": "云上极致（深圳）互联网有限公司",
+    "companySubtitle": "Infrastructure for every connection.",
+    "partnersTitle": "Partners behind AnyFlows",
+    "partnersDescription": "Community partners who support the development and operation of AnyFlows. Brand marks belong to their respective owners.",
+    "sponsors": {
+      "chuqiCloud": "Provides cloud computing services and dependable infrastructure resources for AnyFlows, supporting the project's ongoing development, deployment, and operation.",
+      "meFrp": "A free tunneling service for remote access, multiplayer gaming, and development."
+    }
+  },
+  "softwareUpdate": {
+    "inlineUnavailable": "In-app updates are unavailable in this environment. See the release page for details.",
+    "currentVersion": "Current version",
+    "versionDetails": "Version details",
+    "viewRelease": "Release page",
+    "checkComplete": "Check complete. No newer release found.",
+    "checkAvailable": "Version {{version}} is available. See what changed below.",
+    "editions": {
+      "community": "Community",
+      "enterprise": "Enterprise"
+    },
+    "title": "System version & updates",
+    "check": "Check for updates",
+    "checking": "Checking…",
+    "loading": "Loading version information…",
+    "loadError": "Unable to read version information.",
+    "retry": "Retry",
+    "fields": {
+      "edition": "Product version",
+      "core": "Core version",
+      "deployment": "Deployment",
+      "launchMode": "Launch mode",
+      "launcher": "Launcher managed (automatic restart)",
+      "standalone": "Direct launch (manual restart)",
+      "node": "Current node",
+      "commit": "Source commit",
+      "buildTime": "Build time",
+      "notProvided": "Not provided"
+    },
+    "nodeScope": "Updates apply to this node only. Update each node separately. Rolling back a binary does not downgrade the database.",
+    "blocked": {
+      "container": "Container deployments can check versions only. Deploy again with a newer image tag.",
+      "not_enabled": "Online installation is disabled by configuration. Enable it before installing.",
+      "unsupported_target": "No package is available for this platform. Upgrade manually using the deployment guide.",
+      "restart_required": "The package is installed. Restart this node to run the new version.",
+      "executable_unavailable": "The running program could not be located. Upgrade manually.",
+      "host_managed": "Online installation is unavailable for this deployment.",
+      "launcher_unavailable": "The launcher control channel is unavailable. Check the managed process.",
+      "managed_restart": "The launcher accepted the update and will restart this node when it completes.",
+      "default": "Online installation is unavailable for this deployment."
+    },
+    "managedBusy": "The launcher is updating and will restart this node when complete. The service may be briefly unavailable while requests drain.",
+    "completed": "The launcher updated the main program to {{version}}.",
+    "refreshPage": "Refresh page",
+    "launcherError": "The launcher did not complete the update: {{error}}. Check the process logs; automatic rollback does not cover database migrations.",
+    "restartRequired": "Installation is complete and takes effect after restart. The previous program is kept as anyflows-backup-* in the program directory.",
+    "checkedAt": "Last checked: {{time}}",
+    "latestAvailable": "New version available",
+    "latestRelease": "Latest release",
+    "releaseNotes": "What’s new",
+    "noReleaseNotes": "No release notes provided.",
+    "confirmLauncher": "I have backed up the database, configuration, and WAL. I understand this updates only the current node, may briefly interrupt service, and restarts through the launcher.",
+    "confirmStandalone": "I have backed up the database, configuration, and WAL. I understand this replaces only the current node's program and requires a manual restart.",
+    "installing": "Preparing update…",
+    "install": "Update now",
+    "installError": "Installation did not complete. Check the version, program directory permissions, and network, then retry.",
+    "checkError": "Unable to check for updates. Check your connection or try again later."
+  },
   "siteSettings": {
     "title": "Site settings",
     "subtitle": "Configure the public site name, external base URL, and brand content. Guest pages only read the filtered public details.",
@@ -3661,7 +4139,7 @@
     },
     "templates": {
       "title": "Frontend templates",
-      "description": "Choose between Classic, Next and external templates. Preview first; activation changes the frontend for the entire site immediately.",
+      "description": "Choose between the built-in Next frontend and external templates. Preview first; activation changes the frontend for the entire site immediately.",
       "selector": "Active template",
       "embedded": "Embedded frontend",
       "embeddedOption": "Embedded frontend (default)",
@@ -3688,7 +4166,6 @@
       "enabled": "Active",
       "loading": "Loading template catalog",
       "empty": "No matching templates",
-      "classicDescription": "The classic console with a compact layout and clear data tables. Built in and always available as a fallback.",
       "nextDescription": "The new HeroUI console with redesigned navigation, cards and interactions. Built into the server.",
       "externalDescription": "An independent frontend loaded from the runtime template directory.",
       "installHint": "Place template.json and built assets in the configured template directory (public/templates by default), then rescan. Set a preview image in the metadata to display a thumbnail.",
@@ -4404,14 +4881,14 @@
       "models": "Browse models"
     },
     "enterprise": {
-      "title": "Opening an organization account",
-      "body": "Organization access starts with a personal account and a reviewed request. The platform creates the organization only after approval.",
+      "title": "Individual and business verification",
+      "body": "Sign in to submit individual or business identity documents and review verification progress and results.",
       "steps": {
-        "account": "Create a personal account and sign in",
-        "apply": "Submit an organization access request",
-        "setup": "After approval, complete Owner onboarding"
+        "account": "Create an account and sign in",
+        "apply": "Submit identity details and documents",
+        "setup": "Review progress and results"
       },
-      "login": "Go to organization sign-in"
+      "login": "Go to sign-in"
     }
   },
   "invitations": {
@@ -4707,7 +5184,7 @@
       "newOrder": "Start new order",
       "paymentResumeHint": "You can resume this order with the same payment details.",
       "resumePayment": "Resume payment",
-      "orderRecoveryPending": "The order ID is saved so you can resume later; payment details are never stored."
+      "orderRecoveryPending": "The order ID is saved so you can resume later; payment secrets are never stored."
     },
     "fields": {
       "name": "Plan name",
@@ -7391,9 +7868,15 @@
           "rejected": "The verification code is invalid or expired.",
           "conflict": "That email is already linked to another account.",
           "generic": "The email could not be linked. Try again shortly."
-        }
+        },
+        "bind": "Link email",
+        "bindTitle": "Link email",
+        "change": "Change email",
+        "changeTitle": "Change email",
+        "sameHint": "This is already your current email."
       },
-      "saved": "Profile saved."
+      "saved": "Profile saved.",
+      "editUsername": "Edit username"
     },
     "password": {
       "title": "Change password",
@@ -7406,26 +7889,48 @@
     },
     "twoFactor": {
       "title": "Two-factor authentication (TOTP)",
-      "subtitle": "Add an authenticator challenge to password sign-in.",
+      "subtitle": "Protect password sign-in with an authenticator.",
       "enabled": "Enabled",
       "disabled": "Not enabled",
-      "enable": "Enable two-factor",
+      "pending": "Awaiting confirmation",
+      "expired": "Setup expired",
+      "enable": "Generate setup QR code",
       "disable": "Disable two-factor",
       "working": "Updating",
       "currentPassword": "Current password",
-      "enableHint": "After enabling, password sign-in requires an authenticator or backup code; older sessions are revoked immediately.",
-      "disableHint": "Disabling removes the second challenge from password sign-in and revokes older sessions immediately.",
-      "materialsTitle": "Save your two-factor materials",
-      "materialsHint": "The secret, import URI, and backup codes are returned only in this enrollment response. Save them now; backup codes cannot be viewed again after leaving this page.",
-      "secret": "TOTP secret",
-      "uri": "Authenticator import URI",
+      "enableHint": "Generate a QR code, add the account to your authenticator, and enter a code to enable two-factor authentication. This session stays active; your next password sign-in will require a second factor.",
+      "pendingHint": "Scan the QR code below, add the account to your authenticator, and enter its current six-digit code to confirm setup.",
+      "resumeHint": "Setup is not complete. If you already added the account to your authenticator, enter a code to confirm. Generate a new QR code if you need to scan it again.",
+      "expiredHint": "This setup has expired and two-factor authentication is not enabled. Enter your current password to generate a new QR code.",
+      "enabledHint": "Two-factor authentication is enabled. Your next password sign-in will require an authenticator or backup code. This session stays active.",
+      "confirmCode": "Authenticator code",
+      "confirm": "Confirm setup",
+      "confirmPasswordHint": "Enter your current password again to confirm setup. After generating a new QR code, use that code to add the account.",
+      "regenerate": "Generate a new QR code",
+      "qrCode": "Authenticator setup QR code",
+      "qrLoading": "Generating QR code…",
+      "qrError": "The QR code could not be loaded. Try again.",
+      "pendingAt": "Setup started: {{value}}",
+      "expiresAt": "Expires: {{value}}",
+      "boundAt": "Setup confirmed: {{value}}",
+      "lastVerifiedAt": "Last sign-in verification: {{value}}",
+      "notRecorded": "No record",
+      "disableHint": "Disabling removes the second challenge from password sign-in and revokes existing sessions.",
+      "materialsTitle": "Add to your authenticator",
+      "materialsHint": "Scan the QR code or enter the secret below manually. Two-factor authentication stays off and no backup codes are generated until you confirm a code.",
+      "secret": "Manual setup secret",
+      "uri": "Authenticator import link",
+      "completed": "Two-factor setup complete",
       "backupCodes": "One-time backup codes",
+      "backupHint": "Backup codes are shown only once. Save them securely. Each code can be used once to sign in when your authenticator is unavailable.",
+      "savedBackup": "I saved my backup codes",
       "copy": "Copy",
       "copyBackup": "Copy all backup codes",
       "copied": "Copied",
       "copyFailed": "Copy failed. Select and copy the value manually.",
       "loadError": "Two-factor status could not be loaded. Try again shortly.",
-      "alreadyEnabled": "Two-factor authentication is already enabled. Refresh the page.",
+      "alreadyEnabled": "Two-factor authentication is already enabled. Refresh to see the current status.",
+      "enrollmentInvalid": "The code is incorrect or setup has expired. Check the current code in your authenticator, or generate a new QR code.",
       "mutationError": "Two-factor settings could not be updated. Try again shortly."
     },
     "passkeys": {
@@ -7496,6 +8001,9 @@
       "thresholdInvalid": "The personal threshold must be a positive safe integer.",
       "effectiveThreshold": "Current effective threshold",
       "quotaUnit": "quota",
+      "groupEmail": "Email notifications",
+      "groupAlert": "Alert settings",
+      "groupSystem": "System status",
       "securityTitle": "Security notifications",
       "securityDescription": "Password, session, and account security notices are always enabled.",
       "alwaysOn": "Always on",
@@ -7575,7 +8083,8 @@
       "retry": "Try again",
       "saveProfile": "Save profile",
       "changePassword": "Change password",
-      "saveNotifications": "Save preferences"
+      "saveNotifications": "Save preferences",
+      "cancel": "Cancel"
     },
     "errors": {
       "loadTitle": "Profile is temporarily unavailable",
@@ -7591,9 +8100,13 @@
     "nav": {
       "label": "Main navigation",
       "models": "Models",
-      "console": "Open console"
+      "console": "Open console",
+      "api": "API reference"
     },
     "hero": {
+      "headline": "One gateway for",
+      "headlineAccent": "AI models and developer tools",
+      "siteDescription": "Use one base URL and access key, configure channel routing, and inspect model prices, usage, and request records.",
       "eyebrow": "LLM API aggregation gateway",
       "heading": "Make every call flow smoothly",
       "subtitle": "Unified access, intelligent routing, precise billing. Collapse scattered model channels into a single observable flow.",
@@ -7606,25 +8119,76 @@
     },
     "providers": "Providers already supported",
     "journey": {
-      "healthy": { "label": "Healthy route", "route": "OpenAI · preferred channel" },
-      "failover": { "label": "Failover", "route": "AnyFlows · fallback channel" },
-      "streaming": { "label": "Streaming", "route": "Gemini · streaming path" }
+      "healthy": {
+        "label": "Healthy route",
+        "route": "OpenAI · preferred channel"
+      },
+      "failover": {
+        "label": "Failover",
+        "route": "AnyFlows · fallback channel"
+      },
+      "streaming": {
+        "label": "Streaming",
+        "route": "Gemini · streaming path"
+      }
     },
     "home": {
-      "heroChecks": { "compatible": "OpenAI compatible", "health": "Channel health checks", "logs": "Request level logs" },
-      "preview": {
-        "eyebrow": "REQUEST FLOW", "statusHealthy": "HEALTHY", "statusRecovering": "RECOVERING", "entry": "Single entry point", "title": "Every request finds its path",
-        "healthy": "Preferred channel responding", "failover": "Fallback channel 2 / 3", "streaming": "Streaming response ready",
-        "stats": { "latency": "Time to first token", "availability": "Availability", "channels": "Candidate channels", "channelUnit": "" }
+      "heroChecks": {
+        "compatible": "OpenAI compatible",
+        "health": "Channel health checks",
+        "logs": "Request level logs"
       },
-      "journey": { "heading": "From request in to response out", "weight": "Weight", "health": "Health", "failover": "Automatic failover" },
-      "status": { "eyebrow": "LIVE STATUS DEMO", "heading": "Make failover easy to see", "description": "Choose a scenario and see how the same request stays clear through healthy routing, failover, and streaming.", "tablist": "Request scenarios", "ok": "200 OK", "route": "Route result", "stable": "stable" },
-      "cta": { "heading": "One endpoint for every model channel" }
+      "preview": {
+        "eyebrow": "REQUEST FLOW",
+        "statusHealthy": "HEALTHY",
+        "statusRecovering": "RECOVERING",
+        "entry": "Single entry point",
+        "title": "Every request finds its path",
+        "healthy": "Preferred channel responding",
+        "failover": "Fallback channel 2 / 3",
+        "streaming": "Streaming response ready",
+        "stats": {
+          "latency": "Time to first token",
+          "availability": "Availability",
+          "channels": "Candidate channels",
+          "channelUnit": ""
+        }
+      },
+      "journey": {
+        "heading": "From request in to response out",
+        "weight": "Weight",
+        "health": "Health",
+        "failover": "Automatic failover"
+      },
+      "status": {
+        "eyebrow": "LIVE STATUS DEMO",
+        "heading": "Make failover easy to see",
+        "description": "Choose a scenario and see how the same request stays clear through healthy routing, failover, and streaming.",
+        "tablist": "Request scenarios",
+        "ok": "200 OK",
+        "route": "Route result",
+        "stable": "stable"
+      },
+      "cta": {
+        "heading": "One endpoint for every model channel"
+      },
+      "terminal": {
+        "prompt": "zsh — quick setup & call",
+        "commentEnv": "# Point to the unified gateway & API key",
+        "commentCall": "# Call mainstream models without SDK changes",
+        "copied": "Copied",
+        "copy": "Copy snippet"
+      },
+      "ecosystem": {
+        "models": "Mainstream models",
+        "tools": "Coding tools & agents",
+        "platforms": "Cross-platform"
+      }
     },
     "feature": {
       "eyebrow": "Core capabilities",
       "heading": "Complexity stays inside the gateway",
-      "subheading": "AnyFlows absorbs upstream differences, failures and pricing rules, so your application only ever talks to one stable interface.",
+      "subheading": "From routing and pricing to observability, the gateway absorbs upstream differences so your application only talks to one stable entry.",
       "routing": {
         "title": "Routing",
         "body": "Selects channels by weight, priority and live health, with automatic failover and retry."
@@ -7641,9 +8205,9 @@
         "title": "Streaming",
         "body": "End-to-end SSE passthrough with per-request TTFT and throughput visibility."
       },
-      "pool": {
-        "title": "Account pool",
-        "body": "Typed credential management, one proxy per account, shadow accounts for rollout."
+      "enterprise": {
+        "title": "Enterprise modules",
+        "body": "Members and departments per organization, with shared budgets, approvals and wallet so team usage and cost stay visible."
       },
       "observability": {
         "title": "Observability",
@@ -7659,15 +8223,21 @@
         "title": "Official & compatible keys",
         "body": "Aggregate official or compatible endpoints, then normalize protocols, meter by group, and resell."
       },
-      "sub2api": {
-        "label": "Subscription to API",
-        "title": "Pooled subscription quota",
-        "body": "Turn Claude Code, Codex, and Gemini CLI OAuth quota into a standard API through an account pool."
-      },
       "metapi": {
         "label": "Meta aggregation",
         "title": "A gateway above gateways",
         "body": "Treat existing relays as upstreams and collapse them into one entry with failover and best-route selection."
+      },
+      "enterprise": {
+        "label": "Enterprise",
+        "title": "Teams managed by organization",
+        "body": "Organize members and departments, share budgets, approvals and the corporate wallet, and keep every call inside one quota and audit trail."
+      },
+      "memberTags": {
+        "members": "Members & teams",
+        "budget": "Team budgets",
+        "approval": "Approvals",
+        "wallet": "Corporate wallet"
       }
     },
     "protocol": {
@@ -7702,8 +8272,8 @@
       "subheading": "Understand the deployment, protocol, routing, and billing boundaries before choosing an entry point.",
       "items": {
         "whatIsAnyFlows": {
-          "question": "What is AnyFlows?",
-          "answer": "AnyFlows is a self-hostable large-model API aggregation gateway that turns different providers and relay channels into one observable entry point."
+          "question": "What is this platform?",
+          "answer": "It is one entry point for large-model APIs: providers and relay channels are wired up for you, so you only need a base URL and a key, with every call traceable."
         },
         "whichProtocols": {
           "question": "Which protocols and model capabilities are supported?",
@@ -7718,17 +8288,178 @@
           "answer": "Billing is reserved and settled at request scope, with per-token, per-call, and free modes. Multipliers and prices are fixed in a request snapshot so configuration changes cannot shift an in-flight ledger entry."
         },
         "canSelfHost": {
-          "question": "Can I deploy it on my own server?",
-          "answer": "Yes. AnyFlows ships as a single binary with the frontend embedded; the database, cache, and upstreams are configured for the deployment environment. Production deployments should still use HTTPS, strong secrets, and least-privilege access."
+          "question": "Can it be self-hosted?",
+          "answer": "Yes. It ships as a single binary with the frontend embedded; database, cache and upstream channels follow your environment. Use HTTPS, strong keys and least-privilege credentials in production."
         },
         "whereToStart": {
           "question": "Where should I start?",
-          "answer": "Browse models and pricing, then register and sign in. Create an API key and configure your application to use the AnyFlows endpoint. Administrators configure upstream channels. If public registration is disabled, an invitation is required."
+          "answer": "Check available models and prices in the catalog first. Sign up, create an API key and point your application at the platform endpoint. Admins manage upstream channels; when open registration is off, you need an invite."
         }
       }
     },
     "footer": {
       "copyright": "AnyFlows · Open-source LLM gateway"
+    },
+    "pageUi": {
+      "badges": {
+        "billing": "Usage billing",
+        "health": "Health probes",
+        "observability": "Request traces",
+        "streaming": "SSE streaming",
+        "pool": "Credential proxies"
+      },
+      "protocolTitle": "One interface, multiple protocols",
+      "protocolDescription": "Connect clients that support OpenAI or Anthropic APIs.",
+      "routingTitle": "Configure channel routing",
+      "routingDescription": "Use health probes, weights, and configured retry strategies.",
+      "billingTitle": "Prices and usage records",
+      "billingDescription": "Inspect catalog prices and request-level usage and charges.",
+      "protocolLabel": "Protocol",
+      "routingLabel": "Smart routing",
+      "billingLabel": "Audit trail",
+      "openAiKey": "OpenAI key",
+      "anthropicKey": "Anthropic key",
+      "groupMultipliers": "Group multipliers",
+      "crossProviderFallback": "Cross-provider fallback",
+      "routingPolicies": "Routing policies",
+      "retryStrategies": "Configured retry strategies",
+      "featuresTitle": "Why choose this platform",
+      "weightedRouting": "Weighted routing",
+      "healthProbes": "Health probes",
+      "configuredFallback": "Configured fallback",
+      "ctaTitle": "Ready to connect your AI tools?",
+      "ctaDescription": "Connect models and developer tools through one endpoint. Choose the models, keys, and routing policies configured for this site.",
+      "clientExamples": "✓ Client configuration examples",
+      "sdkCompatibility": "✓ Compatible SDKs and agents",
+      "routingRetries": "✓ Routing and retry policies",
+      "exampleLabel": "Request scenario",
+      "requestTrace": "Request trace",
+      "requestTraceValue": "Recorded per request",
+      "ctaBadge": "Start building now"
+    },
+    "transparency": {
+      "eyebrow": "TRANSPARENCY & OBSERVABILITY",
+      "heading": "Routing, request traces, and usage",
+      "description": "Inspect permitted channel status and request records in the console. These cards describe the gateway's operations and billing features.",
+      "statusEyebrow": "Channel monitoring",
+      "statusBadge": "In the console",
+      "statusTitle": "Channel health and probes",
+      "statusDescription": "Administrators can inspect probe results and configure credential strategies, retry conditions, and routing candidates.",
+      "statusFootnote": "Refer to actual probe results",
+      "statusPolicy": "Uses configured policies",
+      "billingEyebrow": "Usage and billing",
+      "billingTitle": "Request records and billing",
+      "billingDescription": "Request records preserve the billing rate used for each call, so later configuration changes do not rewrite previous charges.",
+      "fieldDescription": "Field description",
+      "billingAccess": "Subject to account permissions",
+      "billingRecord": "Request-level records",
+      "protocolEyebrow": "Protocol adapters",
+      "protocolTitle": "Canonical IR protocol adapters",
+      "protocolDescription": "A common intermediate representation adapts supported protocols. Reasoning and tool support depend on the interface and model catalog.",
+      "client": "Client",
+      "clientExamples": "OpenAI / Anthropic compatible clients",
+      "canonical": "Canonical intermediate representation",
+      "upstream": "Upstream",
+      "providerTargets": "Configured model channels",
+      "protocolReasoning": "Reasoning streams",
+      "protocolStreaming": "Streaming protocol adapters",
+      "probesName": "Channel probes",
+      "probesDetail": "Inspect probe results and failure reasons",
+      "credentialsName": "Credential routing",
+      "credentialsDetail": "Select available credentials by policy",
+      "retryName": "Retry policies",
+      "retryDetail": "Switch candidates using routing rules",
+      "tracesName": "Request traces",
+      "tracesDetail": "Link requests and upstream attempts",
+      "requestIdDescription": "Locate a request",
+      "modelDescription": "Record the requested model",
+      "usageDescription": "Read upstream usage",
+      "costDescription": "Inspect billed charges"
+    },
+    "catalog": {
+      "eyebrow": "MODELS & PRICING",
+      "heading": "Models and current pricing",
+      "viewAll": "View all models",
+      "context": "Context",
+      "billing": "Billing",
+      "modelId": "Model ID",
+      "copy": "Copy model {{model}}",
+      "empty": "No models are currently listed.",
+      "note": "A preview of the model catalog. See the catalog for current prices and availability.",
+      "example": "Configuration example"
+    },
+    "testimonials": {
+      "eyebrow": "USE CASES",
+      "heading": "From developer tools to application services",
+      "subheading": "Choose an integration that fits your workflow and manage model calls in one console.",
+      "items": [
+        {
+          "quote": "Configure compatible OpenAI or Anthropic tools with this site's endpoint and an access key.",
+          "author": "Developer tools",
+          "role": "IDE & CLI",
+          "avatar": "01"
+        },
+        {
+          "quote": "Use an SDK to call models and select the capabilities listed in the model catalog.",
+          "author": "AI applications",
+          "role": "API & SDK",
+          "avatar": "02"
+        },
+        {
+          "quote": "Configure channel credentials, model routing, and inspect permitted usage and request records.",
+          "author": "Operations",
+          "role": "ROUTING & USAGE",
+          "avatar": "03"
+        }
+      ]
+    },
+    "terminalUi": {
+      "configure": "1. Set the shared Base URL and API key",
+      "unifiedCall": "2. Call supported models through one endpoint",
+      "claudeEnv": "Set the Anthropic environment variables for Claude Code",
+      "claudeStart": "Start Claude Code and select a model supported by your channel",
+      "claudeReady": "Example connection configuration for Claude Code.",
+      "cursorSettings": "Cursor Settings > Models > OpenAI API Key",
+      "cursorEnable": "1. Enable:",
+      "cursorBaseUrl": "2. Base URL:",
+      "cursorApiKey": "3. API Key:",
+      "cursorModel": "4. Add {{model}} to the Model List",
+      "cursorModelHint": "Enter the model ID in the Model List:",
+      "officialSdk": "Connect using the official OpenAI SDK",
+      "vercelSdk": "Connect using the Vercel AI SDK",
+      "protocols": "OpenAI / Anthropic compatible",
+      "retry": "Configurable failure retries",
+      "streaming": "Streaming SSE responses",
+      "example": "API connection configuration example"
+    },
+    "quickStart": {
+      "eyebrow": "Quick start",
+      "title": "Set up your first API call",
+      "description": "Choose a model, create an API key, and configure your client to make your first call.",
+      "apiDocs": "View the full API specification",
+      "step": "STEP {{number}}",
+      "models": {
+        "title": "Choose a model and route",
+        "description": "Browse the model catalog for available models, protocols, context limits, and pricing.",
+        "catalog": "Model catalog",
+        "details": "Model details",
+        "pricing": "Your current group pricing applies",
+        "browse": "Browse models"
+      },
+      "key": {
+        "title": "Create an API key",
+        "description": "Create an API key in the console and configure its model group, quota, and IP allowlist as needed.",
+        "ready": "Example API key configuration",
+        "billing": "Access by key permissions · Usage-based billing"
+      },
+      "client": {
+        "title": "Choose your client",
+        "description": "Use a compatible client or SDK in your IDE, command line, or backend service."
+      },
+      "endpoint": {
+        "title": "Configure your endpoint and call",
+        "description": "Set this site's Base URL and your API key, then select a model and protocol supported by the catalog."
+      }
     }
   },
   "theme": {
@@ -7762,13 +8493,16 @@
     "title": "Account verification",
     "settingsTitle": "Verification settings",
     "adminTitle": "Identity verification reviews",
-    "description": "Verify your personal or business identity and review submitted documents and decisions. Approved business accounts can apply for an organization workspace.",
-    "adminDescription": "Review individual and business account identities. Workspace applications are handled separately in enterprise management.",
+    "description": "Submit individual or business identity documents and review verification progress and application records.",
+    "adminDescription": "Review individual and business identity documents and record decisions.",
     "individual": "Personal",
     "enterprise": "Business",
     "kind": "Verification type",
     "provider": "Verification method",
-    "providers": { "manual": "Manual review", "alipay": "Alipay verification" },
+    "providers": {
+      "manual": "Manual review",
+      "alipay": "Alipay verification"
+    },
     "noProvider": "No verification method is currently available. Contact an administrator.",
     "alipayHint": "After submitting, scan with your own Alipay account before the code expires. On mobile, this page will try to open Alipay.",
     "alipayCallbackHint": "The verification result updates automatically after Alipay authorization.",
@@ -7780,15 +8514,38 @@
     "documentType": "Document type",
     "documentNumber": "Document number",
     "documentNumberHint": "Only a masked number is stored. Chinese resident IDs are checksum validated.",
-    "documentTypes": { "national_id": "National ID", "passport": "Passport", "residence_permit": "Residence permit", "foreign_passport": "Foreign passport", "hkm_macao_pass": "Mainland travel permit for Hong Kong or Macao residents", "taiwan_pass": "Mainland travel permit for Taiwan residents", "business_registration": "Business registration", "other": "Other document" },
-    "countries": { "CN": "Mainland China", "HK": "Hong Kong", "MO": "Macao", "TW": "Taiwan", "US": "United States", "CA": "Canada", "GB": "United Kingdom", "JP": "Japan", "KR": "South Korea", "SG": "Singapore", "AU": "Australia", "DE": "Germany", "FR": "France" },
+    "documentTypes": {
+      "national_id": "National ID",
+      "passport": "Passport",
+      "residence_permit": "Residence permit",
+      "foreign_passport": "Foreign passport",
+      "hkm_macao_pass": "Mainland travel permit for Hong Kong or Macao residents",
+      "taiwan_pass": "Mainland travel permit for Taiwan residents",
+      "business_registration": "Business registration",
+      "other": "Other document"
+    },
+    "countries": {
+      "CN": "Mainland China",
+      "HK": "Hong Kong",
+      "MO": "Macao",
+      "TW": "Taiwan",
+      "US": "United States",
+      "CA": "Canada",
+      "GB": "United Kingdom",
+      "JP": "Japan",
+      "KR": "South Korea",
+      "SG": "Singapore",
+      "AU": "Australia",
+      "DE": "Germany",
+      "FR": "France"
+    },
     "summary": "Verification details",
     "materials": "Supporting documents",
     "fileHint": "PNG, JPEG, WebP or PDF. Up to 5 files, 10 MB per file and 25 MB total.",
     "fileError": "Select at least one supported document and check file sizes and count.",
     "submit": "Submit verification",
     "history": "Verification history",
-    "workspaceHistory": "Workspace application history",
+    "workspaceHistory": "Application history",
     "status": {
       "1": "Pending review",
       "2": "In review",
@@ -7831,14 +8588,14 @@
     "supplement": "Request information",
     "reject": "Reject",
     "updated": "Updated",
-    "enterpriseGranted": "Business verification approved. You can now apply for a workspace.",
-    "applyWorkspace": "Apply for a workspace",
-    "enterWorkspace": "Open workspace",
-    "verifyFirst": "Verify your business first",
-    "verifyFirstHint": "Business verification confirms the account identity. Once approved, you can request a workspace with capabilities approved by a platform administrator.",
+    "enterpriseGranted": "Business identity verification approved.",
+    "applyWorkspace": "Continue",
+    "enterWorkspace": "Open console",
+    "verifyFirst": "Verify your business identity first",
+    "verifyFirstHint": "Business verification confirms the account holder. Submit the business details and supporting documents.",
     "openCenter": "Open account verification",
     "accounts": "Account reviews",
-    "organizations": "Workspace verification records",
+    "organizations": "Business verification records",
     "pdfHint": "If your browser cannot display the PDF inline, download it to view.",
     "legacyMissing": "This legacy record has no stored file content.",
     "legacyHistoryHint": "Submission and review versions are retained from this upgrade onward. Older history is shown only where records actually exist.",
@@ -7861,7 +8618,63 @@
       "qrError": "Could not load the QR code. Please retry.",
       "completed": "Identity verified",
       "completedHint": "Your verification result has been saved. No further scan is needed."
-    }
+    },
+    "kindPickerTitle": "Choose a verification type",
+    "kindPickerHint": "Pick either personal or business verification. The platform reviews every submission.",
+    "privacyPolicy": "Privacy policy",
+    "notVerifiedTitle": "Not verified yet",
+    "notVerifiedHint": "Complete identity verification to unlock all features.",
+    "kindFeatures": {
+      "security": "Identity data encrypted",
+      "privilege": "Unlock all platform features",
+      "support": "Dedicated priority support"
+    },
+    "kindBenefits": {
+      "fast": "Faster review",
+      "safe": "Safer verification",
+      "support": "Human support",
+      "discount": "Exclusive discounts",
+      "invoice": "Invoices supported",
+      "enterpriseDiscount": "Enterprise discounts"
+    },
+    "kindTips": {
+      "individual": "Best for individual developers and freelancers.",
+      "enterprise": "Best for businesses and teams; verified businesses can request a workspace."
+    },
+    "kindDetails": {
+      "individual": "Personal",
+      "enterprise": "Business"
+    },
+    "kindSelected": "Selected",
+    "kindStart": "Start verification",
+    "personalCertification": "Personal verification",
+    "enterpriseCertification": "Business verification",
+    "kindHints": {
+      "individual": "Best for individual developers and freelancers.",
+      "enterprise": "Best for businesses and teams; verified businesses can request a workspace."
+    },
+    "steps": [
+      "Enter details",
+      "Submit",
+      "Under review"
+    ],
+    "providerHints": {
+      "manual": "Platform staff review your documents manually.",
+      "alipay": "Verify your identity by scanning with your own Alipay account."
+    },
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "nextPage": "Next page",
+    "pagination": "Verification history pagination",
+    "perPage": "Per page",
+    "totalItems": "{{total}} total",
+    "progress": "Review progress",
+    "infoTitle": "Application",
+    "infoKind": "Verification type",
+    "infoCaseId": "Application ID",
+    "supplementAction": "Add materials",
+    "stepsLabel": "Verification steps"
   },
   "enterpriseEntitlement": {
     "title": "Organization entitlements",
@@ -7994,6 +8807,13 @@
       "claude_utc_date_v1": "Claude Code UTC date",
       "codex_v1": "Codex v1",
       "open_code_v1": "OpenCode v1"
+    },
+    "columns": {
+      "profile": "Client profile",
+      "service": "Service",
+      "revision": "Revision",
+      "status": "Status",
+      "actions": "Actions"
     }
   },
   "proxyPools": {
@@ -8004,6 +8824,9 @@
     "global": "Global",
     "binding": "Proxy pool",
     "inherit": "Inherit default route",
+    "groupRouting": "Channel assignment",
+    "groupRoutingHint": "Choose which pool each channel uses; channels without one fall back to the global pool.",
+    "groupPools": "Pools",
     "channelError": "Could not load channels. Refresh to retry.",
     "loading": "Loading proxy pools…",
     "loadError": "Could not load proxy pools. Refresh to retry.",

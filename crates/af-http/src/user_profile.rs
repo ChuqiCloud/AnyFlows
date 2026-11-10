@@ -5,7 +5,8 @@ use af_admin::{
     SessionAuthenticator, UserEmailBindingConfirmCommand, UserEmailBindingStartCommand,
     UserNotificationPreferences, UserNotificationPreferencesCommand, UserPasskey,
     UserPasswordChangeCommand, UserProfile, UserProfileError, UserProfileService,
-    UserProfileUpdateCommand, UserTwoFactorDisableCommand, UserTwoFactorEnableCommand,
+    UserProfileUpdateCommand, UserTwoFactorConfirmCommand, UserTwoFactorDisableCommand,
+    UserTwoFactorEnableCommand,
 };
 use af_domain::Quota;
 use axum::{
@@ -167,6 +168,15 @@ pub(crate) struct UserPasswordChangeRequest {
 #[schema(as = UserTwoFactorStatusResponse)]
 pub(crate) struct UserTwoFactorStatusResponse {
     enabled: bool,
+    state: &'static str,
+    #[schema(required = true)]
+    pending_created_at: Option<u64>,
+    #[schema(required = true)]
+    pending_expires_at: Option<u64>,
+    #[schema(required = true)]
+    bound_at: Option<u64>,
+    #[schema(required = true)]
+    last_verified_at: Option<u64>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -175,6 +185,9 @@ pub(crate) struct UserTwoFactorStatusResponse {
 pub(crate) struct UserTwoFactorPasswordRequest {
     #[schema(min_length = 1, max_length = 4096, format = Password, write_only)]
     current_password: String,
+    #[schema(min_length = 6, max_length = 128, write_only)]
+    #[serde(default)]
+    totp_code: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -182,10 +195,19 @@ pub(crate) struct UserTwoFactorPasswordRequest {
 #[schema(as = UserTwoFactorEnrollmentResponse)]
 pub(crate) struct UserTwoFactorEnrollmentResponse {
     enabled: bool,
+    state: &'static str,
+    #[schema(required = true)]
+    pending_created_at: Option<u64>,
+    #[schema(required = true)]
+    pending_expires_at: Option<u64>,
+    #[schema(required = true)]
+    bound_at: Option<u64>,
+    #[schema(required = true)]
+    last_verified_at: Option<u64>,
     #[schema(min_length = 32, max_length = 64)]
     secret: String,
     otpauth_uri: String,
-    #[schema(min_items = 1, max_items = 10)]
+    #[schema(min_items = 0, max_items = 10)]
     backup_codes: Vec<String>,
 }
 
@@ -433,28 +455,56 @@ pub(crate) async fn get_two_factor(
         .map_err(map_profile_error)?;
     Ok(no_store_json(UserTwoFactorStatusResponse {
         enabled: status.enabled(),
+        state: two_factor_state_name(status),
+        pending_created_at: status.pending_created_at(),
+        pending_expires_at: status.pending_expires_at(),
+        bound_at: status.bound_at(),
+        last_verified_at: status.last_verified_at(),
     }))
 }
 
-/// 校验当前密码并启用 TOTP；secret 和备份码只在本次响应返回。
+/// 准备或确认 TOTP 绑定；备用码只在当前验证码确认成功后返回。
 pub(crate) async fn enable_two_factor(
     State(state): State<UserProfileHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
     request: Result<Json<UserTwoFactorPasswordRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
-    let command =
-        UserTwoFactorEnableCommand::new(request.current_password).map_err(map_profile_error)?;
-    let enrollment = state
-        .service
-        .enable_two_factor(authentication.principal(), command)
-        .await
-        .map_err(map_profile_error)?;
+    let current_password = request.current_password;
+    let (status, enrollment) = if let Some(totp_code) = request.totp_code {
+        let command = UserTwoFactorConfirmCommand::new(current_password, totp_code)
+            .map_err(map_profile_error)?;
+        state
+            .service
+            .confirm_two_factor(authentication.principal(), command)
+            .await
+            .map_err(|error| match error {
+                UserProfileError::TwoFactorInvalid => ManagementError::TwoFactorEnrollmentInvalid,
+                other => map_profile_error(other),
+            })?
+    } else {
+        let command =
+            UserTwoFactorEnableCommand::new(current_password).map_err(map_profile_error)?;
+        state
+            .service
+            .enable_two_factor(authentication.principal(), command)
+            .await
+            .map_err(map_profile_error)?
+    };
     Ok(no_store_json(UserTwoFactorEnrollmentResponse {
-        enabled: true,
+        enabled: status.enabled(),
+        state: two_factor_state_name(status),
+        pending_created_at: status.pending_created_at(),
+        pending_expires_at: status.pending_expires_at(),
+        bound_at: status.bound_at(),
+        last_verified_at: status.last_verified_at(),
         secret: enrollment.secret().to_owned(),
         otpauth_uri: enrollment.otpauth_uri().to_owned(),
-        backup_codes: enrollment.backup_codes().to_vec(),
+        backup_codes: if status.enabled() {
+            enrollment.backup_codes().to_vec()
+        } else {
+            Vec::new()
+        },
     }))
 }
 
@@ -567,10 +617,135 @@ fn map_profile_error(error: UserProfileError) -> ManagementError {
     }
 }
 
+fn two_factor_state_name(status: af_admin::UserTwoFactorStatus) -> &'static str {
+    if status.enabled() {
+        "enabled"
+    } else if status.pending() {
+        "pending"
+    } else {
+        "disabled"
+    }
+}
+
 fn no_store_empty(status: StatusCode) -> Response {
     let mut response = status.into_response();
     response
         .headers_mut()
         .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use af_admin::{SessionPrincipal, SessionRole, UserTwoFactorStatus};
+    use af_domain::{GroupId, UserId};
+    use axum::body::to_bytes;
+    use serde_json::{Value, json};
+
+    struct EnrollmentService;
+
+    impl UserProfileService for EnrollmentService {
+        fn get<'a>(&'a self, _: SessionPrincipal) -> af_admin::UserProfileReadFuture<'a> {
+            Box::pin(async { Err(UserProfileError::Internal) })
+        }
+
+        fn update_profile<'a>(
+            &'a self,
+            _: SessionPrincipal,
+            _: UserProfileUpdateCommand,
+        ) -> af_admin::UserProfileUpdateFuture<'a> {
+            Box::pin(async { Err(UserProfileError::Internal) })
+        }
+
+        fn change_password<'a>(
+            &'a self,
+            _: SessionPrincipal,
+            _: UserPasswordChangeCommand,
+        ) -> af_admin::UserPasswordChangeFuture<'a> {
+            Box::pin(async { Err(UserProfileError::Internal) })
+        }
+
+        fn update_notifications<'a>(
+            &'a self,
+            _: SessionPrincipal,
+            _: UserNotificationPreferencesCommand,
+        ) -> af_admin::UserNotificationUpdateFuture<'a> {
+            Box::pin(async { Err(UserProfileError::Internal) })
+        }
+
+        fn get_two_factor<'a>(
+            &'a self,
+            _: SessionPrincipal,
+        ) -> af_admin::UserTwoFactorReadFuture<'a> {
+            Box::pin(async {
+                Ok(UserTwoFactorStatus::new(
+                    false,
+                    Some(1_793_334_000),
+                    Some(1_793_334_600),
+                    None,
+                    None,
+                ))
+            })
+        }
+
+        fn confirm_two_factor<'a>(
+            &'a self,
+            _: SessionPrincipal,
+            _: UserTwoFactorConfirmCommand,
+        ) -> af_admin::UserTwoFactorConfirmFuture<'a> {
+            Box::pin(async { Err(UserProfileError::TwoFactorInvalid) })
+        }
+    }
+
+    fn authentication() -> SessionAuthentication {
+        SessionAuthentication::new(
+            SessionPrincipal::new(UserId::new(1).unwrap(), SessionRole::User),
+            GroupId::new(1).unwrap(),
+            1_793_337_600,
+        )
+    }
+
+    #[tokio::test]
+    async fn two_factor_enrollment_failure_does_not_invalidate_the_session() {
+        let response = enable_two_factor(
+            State(UserProfileHttpState::new(Arc::new(EnrollmentService))),
+            Extension(authentication()),
+            Ok(Json(UserTwoFactorPasswordRequest {
+                current_password: "current password".to_owned(),
+                totp_code: Some("000000".to_owned()),
+            })),
+        )
+        .await
+        .unwrap_err()
+        .into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
+        let body = to_bytes(response.into_body(), 4096).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["code"], "two_factor_enrollment_invalid");
+    }
+
+    #[tokio::test]
+    async fn two_factor_status_only_exposes_state_and_timestamps() {
+        let response = get_two_factor(
+            State(UserProfileHttpState::new(Arc::new(EnrollmentService))),
+            Extension(authentication()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
+        let body = to_bytes(response.into_body(), 4096).await.unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap(),
+            json!({
+                "enabled": false,
+                "state": "pending",
+                "pending_created_at": 1_793_334_000_u64,
+                "pending_expires_at": 1_793_334_600_u64,
+                "bound_at": null,
+                "last_verified_at": null,
+            })
+        );
+    }
 }

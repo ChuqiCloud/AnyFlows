@@ -1,3 +1,4 @@
+import { Select, SelectItem } from '@heroui/react'
 import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2 } from 'lucide-react'
 import { useState, type ComponentType } from 'react'
 
@@ -135,8 +136,39 @@ export function SidebarNavigationEditor({ links, onChange, icons, en }: {
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold text-foreground">{group ? words.group : words.link}</span>
-            {position.path.length === 1 && <select className="rounded border border-[var(--hairline)] bg-background px-2 py-1 text-xs" aria-label={words.placement} value={group ? 'group' : 'link'} onChange={(event) => changeKind(position, event.target.value as 'link' | 'group')}><option value="link">{words.link}</option><option value="group" disabled={!group && links.length >= 48}>{words.group}</option></select>}
-            {!group && <select className="max-w-full rounded border border-[var(--hairline)] bg-background px-2 py-1 text-xs" aria-label={words.placement} value={position.path.length === 1 ? 'top' : String(position.path[0])} onChange={(event) => relocate(position, { parentPath: event.target.value === 'top' ? [] : [Number(event.target.value)], index: event.target.value === 'top' ? nodes.length : nodes[Number(event.target.value)].children.length })}><option value="top">{words.top}</option>{nodes.map((root, index) => root.link.kind === 'group' && (position.path.length > 1 || position.path[0] !== index) ? <option key={index} value={index}>{root.link.label || words.group}</option> : null)}</select>}
+            {position.path.length === 1 && <Select
+              aria-label={words.placement}
+              className="w-24"
+              items={[
+                { key: 'link', label: words.link },
+                { key: 'group', label: words.group },
+              ]}
+              selectedKeys={[group ? 'group' : 'link']}
+              size="sm"
+              variant="bordered"
+              onSelectionChange={(keys) => changeKind(position, String(Array.from(keys)[0] ?? 'link') as 'link' | 'group')}
+            >
+              {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
+            </Select>}
+            {!group && <Select
+              aria-label={words.placement}
+              className="w-32"
+              items={[
+                { key: 'top', label: words.top },
+                ...nodes.flatMap((root, index) => root.link.kind === 'group' && (position.path.length > 1 || position.path[0] !== index)
+                  ? [{ key: String(index), label: root.link.label || words.group }]
+                  : []),
+              ]}
+              selectedKeys={[position.path.length === 1 ? 'top' : String(position.path[0])]}
+              size="sm"
+              variant="bordered"
+              onSelectionChange={(keys) => {
+                const value = String(Array.from(keys)[0] ?? 'top')
+                relocate(position, { parentPath: value === 'top' ? [] : [Number(value)], index: value === 'top' ? nodes.length : nodes[Number(value)].children.length })
+              }}
+            >
+              {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
+            </Select>}
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             <input className={fieldClass} aria-label={words.name} placeholder={words.name} maxLength={64} value={link.label} onChange={(event) => update(position, { label: event.target.value })} />
@@ -144,7 +176,20 @@ export function SidebarNavigationEditor({ links, onChange, icons, en }: {
           </div>
           {!group && <input className={fieldClass} aria-label={words.url} placeholder={words.url} maxLength={2048} value={link.url} onChange={(event) => update(position, { url: event.target.value })} />}
           <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">{words.visibility}<select className="rounded border border-[var(--hairline)] bg-background px-2 py-1.5 text-xs text-foreground" value={link.audience} onChange={(event) => update(position, { audience: event.target.value })}><option value="all">{words.all}</option><option value="admin">{words.admin}</option></select></label>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">{words.visibility}<Select
+              aria-label={words.visibility}
+              className="w-24"
+              items={[
+                { key: 'all', label: words.all },
+                { key: 'admin', label: words.admin },
+              ]}
+              selectedKeys={[link.audience]}
+              size="sm"
+              variant="bordered"
+              onSelectionChange={(keys) => update(position, { audience: String(Array.from(keys)[0] ?? 'all') as SiteSidebarLink['audience'] })}
+            >
+              {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
+            </Select></div>
             <details className="relative"><summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">{words.icon}</summary><div className="absolute z-20 mt-2 grid max-h-44 w-64 grid-cols-8 gap-1 overflow-y-auto rounded-md border border-[var(--hairline)] bg-background p-2 shadow-lg">{icons.map(({ key, Icon }) => <button key={key} type="button" title={key} aria-label={`${words.icon}: ${key}`} aria-pressed={link.icon === key} className={`grid size-7 place-items-center rounded ${link.icon === key ? 'bg-primary/15 text-primary' : 'hover:bg-primary/10'}`} onClick={(event) => { update(position, { icon: key }); event.currentTarget.closest('details')?.removeAttribute('open') }}><Icon className="size-4" /></button>)}</div></details>
           </div>
         </div>

@@ -94,6 +94,72 @@ fn reasoning_rejects_disabled_configs_with_active_options() {
 }
 
 #[test]
+fn reasoning_tracks_dynamic_budget_and_rejects_conflicts() {
+    let dynamic = ReasoningConfig::new(None, None, true)
+        .unwrap()
+        .with_dynamic_budget(true)
+        .unwrap();
+    assert!(dynamic.dynamic_budget());
+    assert_eq!(dynamic.effort(), None);
+    assert_eq!(dynamic.budget_tokens(), None);
+
+    assert_eq!(
+        ReasoningConfig::new(Some(ReasoningEffort::Low), None, false)
+            .unwrap()
+            .with_dynamic_budget(true),
+        Err(ReasoningConfigError::ConflictingDynamicBudget)
+    );
+    assert_eq!(
+        ReasoningConfig::new(None, Some(TokenCount::new(128).unwrap()), false)
+            .unwrap()
+            .with_dynamic_budget(true),
+        Err(ReasoningConfigError::ConflictingDynamicBudget)
+    );
+}
+
+#[test]
+fn effort_only_conversion_uses_bounded_compatibility_bands_without_mutating_budget() {
+    for (tokens, expected) in [
+        (1, ReasoningEffort::Minimal),
+        (1024, ReasoningEffort::Minimal),
+        (1025, ReasoningEffort::Low),
+        (2048, ReasoningEffort::Low),
+        (2049, ReasoningEffort::Medium),
+        (8192, ReasoningEffort::Medium),
+        (8193, ReasoningEffort::High),
+        (16_384, ReasoningEffort::High),
+        (i64::MAX, ReasoningEffort::High),
+    ] {
+        let budget = TokenCount::new(tokens).unwrap();
+        let reasoning = ReasoningConfig::new(None, Some(budget), true).unwrap();
+        assert_eq!(reasoning.effort_for_effort_only_protocol(), Some(expected));
+        assert_eq!(reasoning.budget_tokens(), Some(budget));
+        assert_eq!(reasoning.effort(), None);
+    }
+
+    let explicit = ReasoningConfig::new(
+        Some(ReasoningEffort::ExtraHigh),
+        Some(TokenCount::new(1024).unwrap()),
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        explicit.effort_for_effort_only_protocol(),
+        Some(ReasoningEffort::ExtraHigh)
+    );
+    let dynamic = ReasoningConfig::new(None, None, true)
+        .unwrap()
+        .with_dynamic_budget(true)
+        .unwrap();
+    assert_eq!(dynamic.effort_for_effort_only_protocol(), None);
+    assert!(dynamic.dynamic_budget());
+    assert_eq!(
+        ReasoningConfig::new(None, Some(TokenCount::ZERO), true),
+        Err(ReasoningConfigError::InvalidBudget)
+    );
+}
+
+#[test]
 fn request_parameter_debug_redacts_external_content() {
     let canaries = [
         "tool-name-secret-canary",

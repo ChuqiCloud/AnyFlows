@@ -38,6 +38,7 @@ fn get_user_topup_configuration() {}
         (status = 200, description = "相同幂等事实的订单已恢复并返回同一支付动作", body = UserTopupOrderResponse),
         (status = 400, description = "幂等键、支付方式或金额无效", body = ManagementErrorBody),
         (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "当前用户须先完成实名认证才能充值", body = ManagementErrorBody),
         (status = 409, description = "幂等键已经绑定不同充值事实", body = ManagementErrorBody),
         (status = 502, description = "支付 Provider 确定拒绝服务端请求", body = ManagementErrorBody),
         (status = 503, description = "支付方式未配置、数据库暂不可用或提交结果未知", body = ManagementErrorBody),

@@ -119,7 +119,7 @@ export const TwoFactorAuthModalContent = ({
 
           {/* 验证内容区域 */}
           {isSuccess ? (
-            /* 验证成功状态 */
+            // 验证成功状态
             <div className="flex flex-col items-center py-4">
               <div className="w-14 h-14 rounded-full bg-success/10 flex items-center justify-center mb-3">
                 <IconifyIcon
@@ -131,7 +131,7 @@ export const TwoFactorAuthModalContent = ({
               <p className="text-sm font-medium text-success">验证成功</p>
             </div>
           ) : selectedMethod === "wechat" ? (
-            /* 微信扫码 */
+            // 微信扫码
             <div className="flex flex-col items-center py-2">
               {qrCodeUrl ? (
                 <>
@@ -155,7 +155,7 @@ export const TwoFactorAuthModalContent = ({
               )}
             </div>
           ) : (
-            /* 验证码输入 */
+            // 验证码输入
             <div className="space-y-4">
               {/* 发送验证码按钮（短信/邮箱需要） */}
               {needsSendCode && (

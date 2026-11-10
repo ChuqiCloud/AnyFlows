@@ -1,12 +1,18 @@
 //! 协议纯净的规范请求、响应与流式转换。
 
 pub mod anthropic;
+mod anthropic_beta;
+mod anthropic_compaction;
 mod audio;
 mod bounded_json;
 mod canonical;
 mod capability;
 mod client_simulation_body_patch;
 pub mod cohere_rerank_v2;
+mod conversation_content;
+mod conversation_features;
+mod conversation_history;
+mod conversation_plan;
 mod embedding;
 mod error_evidence;
 pub mod gemini;
@@ -20,6 +26,7 @@ pub mod openai_responses;
 pub mod openai_responses_compact;
 mod reasoning_suffix;
 mod request;
+mod request_compat;
 mod request_envelope;
 mod rerank;
 pub mod rerank_v1;
@@ -31,6 +38,11 @@ mod usage;
 mod video_task;
 pub mod xai_video;
 
+pub use anthropic_beta::{
+    AnthropicBetaError, MAX_ANTHROPIC_BETA_BYTES, normalize_anthropic_beta,
+    normalize_anthropic_beta_values,
+};
+pub use anthropic_compaction::{AnthropicCompactionError, AnthropicCompactionItem};
 pub use audio::{
     AudioDuration, AudioDurationError, AudioFile, AudioFileError, AudioFileFormat,
     AudioInputTokenDetails, AudioLanguageCode, AudioLanguageCodeError, AudioLanguageHints,
@@ -64,6 +76,7 @@ pub use capability::{
 pub use client_simulation_body_patch::{
     ClientSimulationBodyPatch, ClientSimulationBodyPatchError, UtcDate,
 };
+pub use conversation_plan::{ConversationConversionError, ConversationConversionPlan};
 pub use embedding::{
     CanonicalEmbeddingRequest, CanonicalEmbeddingRequestError, CanonicalEmbeddingResponse,
     CanonicalEmbeddingResponseError, EmbeddingDimensions, EmbeddingDimensionsError, EmbeddingInput,
@@ -72,12 +85,16 @@ pub use embedding::{
 };
 pub use error_evidence::{StructuredErrorEvidence, extract_structured_error_evidence};
 pub use image::{
-    CanonicalImageGenerationRequest, CanonicalImageGenerationRequestError,
-    CanonicalImageGenerationResponse, CanonicalImageGenerationResponseError, GeneratedImage,
-    GeneratedImageError, ImageBackground, ImageCompression, ImageCompressionError, ImageCount,
-    ImageCountError, ImageDimensions, ImageDimensionsError, ImageGenerationOptions,
-    ImageGenerationUsage, ImageGenerationUsageError, ImageModeration, ImageOutputFormat,
-    ImageQuality, ImageSize, ImageTokenBreakdown, MAX_GENERATED_IMAGE_BYTES, MAX_IMAGE_EDGE,
+    CanonicalImageEditRequest, CanonicalImageEditRequestError, CanonicalImageGenerationRequest,
+    CanonicalImageGenerationRequestError, CanonicalImageGenerationResponse,
+    CanonicalImageGenerationResponseError, GeneratedImage, GeneratedImageError, ImageBackground,
+    ImageCompression, ImageCompressionError, ImageCount, ImageCountError, ImageDimensions,
+    ImageDimensionsError, ImageEditFile, ImageEditFileError, ImageGenerationOptions,
+    ImageGenerationUsage, ImageGenerationUsageError, ImageInputFidelity, ImageModeration,
+    ImageOutputFormat, ImageQuality, ImageResponseFormat, ImageSize, ImageStyle,
+    ImageTokenBreakdown, MAX_GENERATED_IMAGE_BYTES, MAX_GENERATED_IMAGE_URL_BYTES, MAX_IMAGE_EDGE,
+    MAX_IMAGE_EDIT_EDGE, MAX_IMAGE_EDIT_FILE_BYTES, MAX_IMAGE_EDIT_FILES,
+    MAX_IMAGE_EDIT_MASK_BYTES, MAX_IMAGE_EDIT_PIXELS, MAX_IMAGE_EDIT_TOTAL_BYTES,
     MAX_IMAGE_GENERATION_COUNT, MAX_IMAGE_PIXELS, MAX_IMAGE_PROMPT_BYTES, MAX_IMAGE_PROMPT_CHARS,
     MAX_TOTAL_GENERATED_IMAGE_BYTES, MIN_IMAGE_PIXELS,
 };

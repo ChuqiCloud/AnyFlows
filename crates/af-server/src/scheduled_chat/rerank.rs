@@ -38,25 +38,34 @@ impl RerankRoutePlanner for ScheduledChatService {
         request_id: &'a str,
     ) -> RerankRoutePlanFuture<'a> {
         Box::pin(async move {
+            self.ensure_non_merchant_group(principal.group_id()).await?;
             let route = if self.health.is_some() {
                 let (channel_ids, channel_health) = self
                     .load_channel_health(principal.group_id(), request.model())
                     .await?;
-                self.scheduler
+                let route = self
+                    .scheduler
                     .route_plan_with_health(principal.group_id(), request.model(), &channel_health)
-                    .map_err(map_scheduler_error)?
-                    .ok_or_else(|| {
-                        AfError::from(if channel_ids.is_empty() {
-                            af_domain::UpstreamError::ModelUnsupported
+                    .map_err(map_scheduler_error)?;
+                match route {
+                    Some(route) => route,
+                    None => {
+                        return Err(if channel_ids.is_empty() {
+                            self.missing_model_route_error(request.model()).await
                         } else {
-                            af_domain::UpstreamError::overloaded()
-                        })
-                    })?
+                            AfError::from(af_domain::UpstreamError::overloaded())
+                        });
+                    }
+                }
             } else {
-                self.scheduler
+                let route = self
+                    .scheduler
                     .route_plan(principal.group_id(), request.model())
-                    .map_err(map_scheduler_error)?
-                    .ok_or_else(|| AfError::from(af_domain::UpstreamError::ModelUnsupported))?
+                    .map_err(map_scheduler_error)?;
+                match route {
+                    Some(route) => route,
+                    None => return Err(self.missing_model_route_error(request.model()).await),
+                }
             };
             let (jina_health, cohere_health) = tokio::join!(
                 self.load_credential_health(&route, Protocol::JinaRerank, request.model()),
@@ -121,25 +130,31 @@ impl ScheduledChatService {
                 continue;
             }
             let upstream_model = target.mapped_model(&model).unwrap_or(&model).to_owned();
+            if !super::credential_models::has_eligible_credentials(target, &model, &upstream_model)
+            {
+                continue;
+            }
             let candidate_request =
                 rerank_candidate_request(target, &request, &model, &upstream_model)?;
             let adaptor = get_adaptor(
                 target.channel_type(),
-                adaptor_settings(target, upstream_model)?,
+                adaptor_settings(target, upstream_model.clone())?,
             )
             .map_err(|_| AfError::Internal)?;
             if adaptor.default_protocol() != protocol {
                 return Err(AfError::Internal);
             }
             let headers = header_overrides(target)?;
+            let eligible_credentials = super::eligible_credentials(target, &model, &upstream_model);
             let ordered_credentials = ordered_credentials(
                 request_id,
                 target,
+                &eligible_credentials,
                 wait_plan.kind(),
                 account_loads,
                 credential_health,
             );
-            health_filtered |= !target.credentials().is_empty() && ordered_credentials.is_empty();
+            health_filtered |= !eligible_credentials.is_empty() && ordered_credentials.is_empty();
             for runtime_credential in ordered_credentials {
                 if relay_candidates.len() == RelayStateMachine::MAX_CANDIDATES {
                     break 'channels;
@@ -209,7 +224,7 @@ impl ScheduledChatService {
             return Err(if health_filtered {
                 af_domain::UpstreamError::overloaded().into()
             } else {
-                af_domain::UpstreamError::ModelUnsupported.into()
+                self.missing_model_route_error(&model).await
             });
         }
         let machine = RelayStateMachine::new(relay_candidates)
@@ -342,6 +357,7 @@ fn merge_optional_maps<T>(
 fn ordered_credentials<'a>(
     request_id: &str,
     target: &'a af_db::SchedulerRuntimeTargetRecord,
+    credentials: &'a [af_db::SchedulerRuntimeCredentialRecord],
     wait_kind: RouteWaitKind,
     account_loads: Option<&BTreeMap<i64, CredentialLoad>>,
     credential_health: Option<&BTreeMap<i64, RuntimeHealthState>>,
@@ -351,20 +367,17 @@ fn ordered_credentials<'a>(
             order_credentials_by_load_and_health(
                 request_id,
                 target.channel_id(),
-                target.credentials(),
+                credentials,
                 loads,
                 health,
             )
         }
         (RouteWaitKind::Fallback, Some(loads), None) => {
-            order_credentials_by_load(request_id, target.channel_id(), target.credentials(), loads)
+            order_credentials_by_load(request_id, target.channel_id(), credentials, loads)
         }
-        (_, _, Some(health)) => order_credentials_with_health(
-            request_id,
-            target.channel_id(),
-            target.credentials(),
-            health,
-        ),
-        _ => order_credentials(request_id, target.channel_id(), target.credentials()),
+        (_, _, Some(health)) => {
+            order_credentials_with_health(request_id, target.channel_id(), credentials, health)
+        }
+        _ => order_credentials(request_id, target.channel_id(), credentials),
     }
 }

@@ -1,6 +1,5 @@
-import { Button, Card, CardBody, Skeleton, Tab, Tabs } from '@heroui/react'
-import { Activity, BarChart3, RefreshCw } from 'lucide-react'
-import { useState } from 'react'
+import { Button, Card, CardBody, Skeleton } from '@heroui/react'
+import { Activity, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
@@ -44,7 +43,6 @@ export function AdminDashboardView() {
   const { formatQuota } = useBalanceDisplay()
   const dashboard = dashboardQuery.data
   const locale = i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US'
-  const [analysisTab, setAnalysisTab] = useState<'composition' | 'outcomes'>('composition')
   const formatNumber = (value: number) => new Intl.NumberFormat(locale).format(value)
   const formatPercent = (value: number) => new Intl.NumberFormat(locale, {
     style: 'percent',
@@ -128,36 +126,11 @@ export function AdminDashboardView() {
             <DashboardPerformance dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
           </section>
           <DashboardSla />
-          <section>
-            <Tabs
-              fullWidth
-              size="sm"
-              variant="underlined"
-              classNames={{ base: 'border-b border-[var(--hairline)]', tabList: 'px-5', panel: 'p-5' }}
-              selectedKey={analysisTab}
-              onSelectionChange={(key) => setAnalysisTab(key as typeof analysisTab)}
-            >
-              <Tab key="composition" title={
-                <span className="flex items-center gap-2">
-                  <BarChart3 className="size-3.5" aria-hidden="true" />
-                  {t('dashboard.analysis.composition')}
-                </span>
-              }>
-                <div className="grid gap-3 xl:grid-cols-[minmax(0,1.55fr)_minmax(15rem,0.75fr)]">
-                  <DashboardComposition dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
-                  <DashboardAvailability dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
-                </div>
-              </Tab>
-              <Tab key="outcomes" title={
-                <span className="flex items-center gap-2">
-                  <Activity className="size-3.5" aria-hidden="true" />
-                  {t('dashboard.analysis.outcomes')}
-                </span>
-              }>
-                <DashboardOutcomes dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} formatQuota={formatQuota} />
-              </Tab>
-            </Tabs>
+          <section className="grid gap-3 xl:grid-cols-[minmax(0,1.55fr)_minmax(15rem,0.75fr)]">
+            <DashboardComposition dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
+            <DashboardAvailability dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
           </section>
+          <DashboardOutcomes dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} formatQuota={formatQuota} />
         </>
       ) : null}
     </div>

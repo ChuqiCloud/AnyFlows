@@ -1,12 +1,15 @@
 use af_domain::{GroupId, PLAYGROUND_TOKEN_NAME, TokenId, UserId};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter,
-    QuerySelect, Set, TransactionTrait, entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
+    QueryFilter, QuerySelect, Set, TransactionTrait,
+    entity::prelude::TimeDateTimeWithTimeZone,
+    sea_query::{Expr, LockType},
 };
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    entity::{TokenHash, TokenIpAllowlist, TokenModelAllowlist, groups, tokens},
+    entity::{TokenHash, TokenIpAllowlist, TokenModelAllowlist, merchant_pools, tokens},
+    group_key_access::user_can_select_key_group,
     token_owner_guard::{TokenOwnerGuardError, lock_non_deleted_owner, non_deleted_token_count},
 };
 
@@ -30,6 +33,11 @@ pub(super) async fn create(
     repository: &UserTokenRepository,
     record: UserTokenCreateRecord,
 ) -> Result<UserTokenRecord, UserTokenRepositoryError> {
+    if record.user_route_id.is_some_and(|id| id <= 0)
+        || (record.user_route_id.is_some() && record.group_id.is_some())
+    {
+        return Err(UserTokenRepositoryError::InvalidInput);
+    }
     let fields = validate_fields(record.fields)?;
     let key_hash =
         TokenHash::parse(&record.key_hash).map_err(|_| UserTokenRepositoryError::InvalidInput)?;
@@ -49,9 +57,46 @@ pub(super) async fn create(
         return Err(UserTokenRepositoryError::OwnerUnavailable);
     }
     let default_group_id = owner.default_group_id();
-    if !active_group_exists(&transaction, default_group_id).await? {
+    if let Some(route_id) = record.user_route_id {
+        crate::user_route::validate_token_route(
+            &transaction,
+            record.owner_user_id,
+            default_group_id,
+            route_id,
+        )
+        .await
+        .map_err(map_user_route_error)?;
+    }
+    let effective_group_id = record.group_id.unwrap_or(default_group_id);
+    if record.user_route_id.is_none()
+        && !user_can_select_key_group(
+            &transaction,
+            record.owner_user_id,
+            default_group_id,
+            effective_group_id,
+        )
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(|_| record_internal_error(UserTokenRepositoryError::Query))?
+    {
         rollback(transaction).await?;
-        return Err(record_internal_error(UserTokenRepositoryError::Invariant));
+        return Err(if record.group_id.is_some() {
+            UserTokenRepositoryError::GroupUnavailable
+        } else {
+            record_internal_error(UserTokenRepositoryError::Invariant)
+        });
+    }
+    // Pool groups require a merchant route quote and revenue attribution, even for default-group Keys.
+    if record.user_route_id.is_none()
+        && merchant_pools::Entity::find()
+            .filter(merchant_pools::Column::GroupId.eq(effective_group_id.get()))
+            .one(&transaction)
+            .await
+            .map_err(|_| record_internal_error(UserTokenRepositoryError::Query))?
+            .is_some()
+    {
+        rollback(transaction).await?;
+        return Err(UserTokenRepositoryError::GroupUnavailable);
     }
     if non_deleted_token_count(&transaction, record.owner_user_id)
         .await
@@ -69,7 +114,8 @@ pub(super) async fn create(
         key_prefix: Set(record.key_prefix),
         name: Set(fields.name),
         status: Set(fields.status),
-        group_id: Set(None),
+        group_id: Set(record.group_id.map(|group_id| group_id.get())),
+        user_route_id: Set(record.user_route_id),
         organization_id: Set(None),
         organization_membership_id: Set(None),
         organization_team_id: Set(None),
@@ -103,13 +149,83 @@ pub(super) async fn update(
 ) -> Result<UserTokenMutationOutcome, UserTokenRepositoryError> {
     let fields = validate_fields(record)?;
     let transaction = begin_transaction(repository).await?;
-    if lock_non_deleted_owner(&transaction, owner_user_id)
+    let Some(owner) = lock_non_deleted_owner(&transaction, owner_user_id)
         .await
         .map_err(map_owner_guard_error)?
-        .is_none_or(|owner| owner.status() != 1)
-    {
+    else {
         rollback(transaction).await?;
         return Err(UserTokenRepositoryError::OwnerUnavailable);
+    };
+    if owner.status() != 1 {
+        rollback(transaction).await?;
+        return Err(UserTokenRepositoryError::OwnerUnavailable);
+    }
+    if fields.status == 1 {
+        let query = tokens::Entity::find_by_id(token_id.get())
+            .filter(tokens::Column::UserId.eq(owner_user_id.get()))
+            .filter(tokens::Column::OrganizationId.is_null())
+            .filter(tokens::Column::Name.ne(PLAYGROUND_TOKEN_NAME))
+            .filter(tokens::Column::DeletedAt.is_null());
+        let Some(token) = query
+            .clone()
+            .one(&transaction)
+            .await
+            .map_err(|_| record_internal_error(UserTokenRepositoryError::Query))?
+        else {
+            rollback(transaction).await?;
+            return Ok(UserTokenMutationOutcome::NotFound);
+        };
+        let group_id = token
+            .group_id
+            .map(GroupId::new)
+            .transpose()
+            .map_err(|_| record_internal_error(UserTokenRepositoryError::Invariant))?
+            .unwrap_or(owner.default_group_id());
+        // 与授权撤销共享 group 行锁，避免同时保存时重新启用刚被停用的 Key。
+        let allowed = if let Some(route_id) = token.user_route_id {
+            match crate::user_route::validate_token_route(
+                &transaction,
+                owner_user_id,
+                owner.default_group_id(),
+                route_id,
+            )
+            .await
+            {
+                Ok(()) => true,
+                Err(crate::UserRouteError::Unavailable | crate::UserRouteError::NotFound) => false,
+                Err(error) => return Err(map_user_route_error(error)),
+            }
+        } else {
+            user_can_select_key_group(
+                &transaction,
+                owner_user_id,
+                owner.default_group_id(),
+                group_id,
+            )
+            .await
+            .map_err(|_| record_internal_error(UserTokenRepositoryError::Query))?
+        };
+        let query = if transaction.get_database_backend() == DbBackend::Sqlite {
+            query
+        } else {
+            query.lock(LockType::Update)
+        };
+        let Some(token) = query
+            .one(&transaction)
+            .await
+            .map_err(|_| record_internal_error(UserTokenRepositoryError::Query))?
+        else {
+            rollback(transaction).await?;
+            return Ok(UserTokenMutationOutcome::NotFound);
+        };
+        if !allowed && (token.user_route_id.is_some() || token.status != 1) {
+            rollback(transaction).await?;
+            return Err(if token.user_route_id.is_some() {
+                UserTokenRepositoryError::UserRouteUnavailable
+            } else {
+                UserTokenRepositoryError::GroupUnavailable
+            });
+        }
     }
     // 只更新普通用户可控列，管理员绑定的分组、重试和窗口字段保持原值。
     let result = tokens::Entity::update_many()
@@ -238,22 +354,6 @@ fn validate_fields(
     })
 }
 
-async fn active_group_exists(
-    transaction: &DatabaseTransaction,
-    group_id: GroupId,
-) -> Result<bool, UserTokenRepositoryError> {
-    groups::Entity::find()
-        .select_only()
-        .column(groups::Column::Id)
-        .filter(groups::Column::Id.eq(group_id.get()))
-        .filter(groups::Column::DeletedAt.is_null())
-        .into_tuple::<i64>()
-        .one(transaction)
-        .await
-        .map(|row| row.is_some())
-        .map_err(|_| record_internal_error(UserTokenRepositoryError::Query))
-}
-
 async fn fetch_snapshot(
     transaction: &DatabaseTransaction,
     owner_user_id: UserId,
@@ -326,5 +426,14 @@ fn map_owner_guard_error(error: TokenOwnerGuardError) -> UserTokenRepositoryErro
         TokenOwnerGuardError::Invariant => {
             record_internal_error(UserTokenRepositoryError::Invariant)
         }
+    }
+}
+
+fn map_user_route_error(error: crate::UserRouteError) -> UserTokenRepositoryError {
+    match error {
+        crate::UserRouteError::InvalidInput => UserTokenRepositoryError::InvalidInput,
+        crate::UserRouteError::InvalidSession => UserTokenRepositoryError::OwnerUnavailable,
+        crate::UserRouteError::Internal => record_internal_error(UserTokenRepositoryError::Query),
+        _ => UserTokenRepositoryError::UserRouteUnavailable,
     }
 }

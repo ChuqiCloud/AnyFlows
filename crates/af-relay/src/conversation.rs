@@ -4,6 +4,18 @@ use std::time::Duration;
 #[path = "conversation_tests.rs"]
 mod tests;
 
+#[cfg(test)]
+#[path = "conversation_matrix_contract.rs"]
+mod matrix_contract;
+
+#[cfg(test)]
+#[path = "compaction_contract.rs"]
+mod compaction_contract;
+
+#[cfg(test)]
+#[path = "merchant_usage_contract.rs"]
+mod merchant_usage_contract;
+
 use af_adapter::{Bytes, Method, ResponseMode, StatusCode};
 use af_domain::{AfError, Operation, Protocol, UpstreamError};
 use af_protocol::{
@@ -35,27 +47,63 @@ pub async fn relay_conversation_with_report(
     response_protocol: Protocol,
     request_id: &str,
 ) -> (Result<ChatResponse, AfError>, RelayAttemptReport) {
+    relay_conversation_with_usage_policy(
+        machine,
+        request,
+        upstream_protocol,
+        response_protocol,
+        request_id,
+        false,
+    )
+    .await
+}
+
+/// Approved merchant supply is billed only from platform-observed text and tools.
+/// This entry point is selected by trusted gateway context, never by wire headers.
+pub async fn relay_merchant_conversation_with_report(
+    machine: &RelayStateMachine,
+    request: CanonicalRequestEnvelope,
+    upstream_protocol: Protocol,
+    response_protocol: Protocol,
+    request_id: &str,
+) -> (Result<ChatResponse, AfError>, RelayAttemptReport) {
+    relay_conversation_with_usage_policy(
+        machine,
+        request,
+        upstream_protocol,
+        response_protocol,
+        request_id,
+        true,
+    )
+    .await
+}
+
+async fn relay_conversation_with_usage_policy(
+    machine: &RelayStateMachine,
+    request: CanonicalRequestEnvelope,
+    upstream_protocol: Protocol,
+    response_protocol: Protocol,
+    request_id: &str,
+    local_usage_only: bool,
+) -> (Result<ChatResponse, AfError>, RelayAttemptReport) {
+    let anthropic_beta = request.anthropic_beta().map(str::to_owned);
     let client_model = request.requested_model().to_owned();
     let include_usage = request.canonical().stream_options.include_usage();
     let (canonical, body) = match prepare_request(request, upstream_protocol) {
         Ok(prepared) => prepared,
         Err(error) => return (Err(error), RelayAttemptReport::default()),
     };
-    // 跨协议响应不能补造 Anthropic thinking 签名，派发前保留该能力边界。
-    if response_protocol == Protocol::Anthropic
-        && upstream_protocol != Protocol::Anthropic
-        && canonical
-            .reasoning
-            .is_some_and(|reasoning| reasoning.include_thinking())
-    {
-        return (Err(AfError::InvalidRequest), RelayAttemptReport::default());
-    }
     let created_at = match unix_timestamp() {
         Ok(value) => value,
         Err(error) => return (Err(error), RelayAttemptReport::default()),
     };
     let encoder = if canonical.stream {
-        match ChatStreamEncoder::new(
+        let make_encoder = if local_usage_only {
+            ChatStreamEncoder::merchant
+        } else {
+            ChatStreamEncoder::new
+        };
+        match make_encoder(
             response_protocol,
             request_id,
             &client_model,
@@ -63,7 +111,7 @@ pub async fn relay_conversation_with_report(
             &canonical,
             include_usage,
         ) {
-            Ok(encoder) => Some(encoder),
+            Ok(encoder) => Some(encoder.with_upstream_protocol(upstream_protocol)),
             Err(error) => return (Err(error), RelayAttemptReport::default()),
         }
     } else {
@@ -79,7 +127,9 @@ pub async fn relay_conversation_with_report(
         canonical.operation,
         Method::POST,
         Some(body),
-    ) {
+    )
+    .and_then(|request| request.with_anthropic_beta(anthropic_beta.as_deref()))
+    {
         Ok(request) => request.with_response_mode(mode),
         Err(_) => return (Err(AfError::Internal), RelayAttemptReport::default()),
     };
@@ -97,7 +147,11 @@ pub async fn relay_conversation_with_report(
     };
     let status = response.status();
     let retry_after = parse_retry_after(response.headers());
-    let estimator = OpenAiChatUsageEstimator::new(&canonical);
+    let estimator = if local_usage_only {
+        OpenAiChatUsageEstimator::merchant(&canonical)
+    } else {
+        OpenAiChatUsageEstimator::new(&canonical)
+    };
     let result = async {
         if status != StatusCode::OK {
             let body = response
@@ -129,7 +183,7 @@ pub async fn relay_conversation_with_report(
                     .next()
                     .is_some_and(|mime| mime.trim().eq_ignore_ascii_case("text/event-stream"))
             });
-        let response = if is_sse {
+        let mut response = if is_sse {
             crate::collect_conversation_response(upstream_protocol, response.into_body()).await?
         } else {
             let body = response
@@ -139,9 +193,38 @@ pub async fn relay_conversation_with_report(
                 .map_err(map_adaptor_error)?;
             parse_response(upstream_protocol, &body)?
         };
-        let usage = estimator
-            .resolve_response(&response)
-            .map_err(|_| UpstreamError::ProtocolError)?;
+        let usage = if local_usage_only {
+            None
+        } else if upstream_protocol == Protocol::Anthropic {
+            anthropic::billing_usage(&response).map_err(|_| UpstreamError::ProtocolError)?
+        } else {
+            None
+        }
+        .map_or_else(
+            || {
+                estimator
+                    .resolve_response(&response)
+                    .map_err(|_| UpstreamError::ProtocolError)
+            },
+            Ok,
+        )?;
+        if local_usage_only {
+            // Native passthrough can carry an independent supplier usage snapshot.
+            // Rebuild the public envelope so the response and invoice share local usage.
+            response = CanonicalResponse::new(
+                response.operation,
+                response.id,
+                response.model,
+                response.created_at,
+                response.choices,
+                Some(usage),
+            );
+        }
+        crate::anthropic_chat_bridge::adapt_response(
+            upstream_protocol,
+            response_protocol,
+            &mut response,
+        )?;
         let body = build_response(
             response_protocol,
             response,
@@ -169,9 +252,11 @@ pub(crate) fn prepare_request(
     request: CanonicalRequestEnvelope,
     protocol: Protocol,
 ) -> Result<(CanonicalRequest, Bytes), AfError> {
-    let request = request
-        .for_conversation_protocol(protocol)
-        .ok_or(AfError::InvalidRequest)?;
+    // 候选选择与实际执行必须使用同一份目标转换计划。
+    let (request, _) = request
+        .plan_conversation(protocol)
+        .ok_or(AfError::InvalidRequest)?
+        .into_parts();
     match protocol {
         Protocol::OpenAiChat => prepare_openai_chat_request(request).map(|r| (r.canonical, r.body)),
         Protocol::OpenAiResponses => {
@@ -203,7 +288,7 @@ pub(crate) fn parse_response(
 
 pub(crate) fn build_response(
     protocol: Protocol,
-    response: CanonicalResponse,
+    mut response: CanonicalResponse,
     usage: Usage,
     request_id: &str,
     model: &str,
@@ -216,14 +301,26 @@ pub(crate) fn build_response(
         Protocol::Gemini => (Operation::Chat, format!("response-{request_id}")),
         _ => return Err(UpstreamError::ProtocolError),
     };
-    let response = CanonicalResponse::new(
-        operation,
-        id,
-        model.to_owned(),
-        Some(response.created_at.unwrap_or(created_at)),
-        response.choices,
-        Some(usage),
-    );
+    // 同源 Anthropic 用量分为顶层 wire 快照和额外压缩迭代；公开响应保留前者。
+    // 跨协议适配已经清除来源 raw，此时使用完成内部结算后的归一用量。
+    let native_anthropic = protocol == Protocol::Anthropic
+        && response
+            .raw_passthrough()
+            .is_some_and(|raw| raw.fields_for_protocol(Protocol::Anthropic).is_ok());
+    response.operation = operation;
+    response.id = id;
+    response.model = model.to_owned();
+    response.created_at = Some(response.created_at.unwrap_or(created_at));
+    if !native_anthropic {
+        response = CanonicalResponse::new(
+            response.operation,
+            response.id,
+            response.model,
+            response.created_at,
+            response.choices,
+            Some(crate::anthropic_chat_bridge::adapt_usage(protocol, usage)?),
+        );
+    }
     let value = match protocol {
         Protocol::OpenAiChat => {
             openai_chat::build_response(&response).map_err(|_| UpstreamError::ProtocolError)?

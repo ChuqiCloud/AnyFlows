@@ -17,6 +17,8 @@ pub(crate) enum ManagementError {
     TwoFactorRequired,
     /// TOTP 或备份码校验失败。
     TwoFactorInvalid,
+    /// 当前登录会话中的 TOTP 绑定验证码无效或已经过期。
+    TwoFactorEnrollmentInvalid,
     /// 用户名密码登录已被运营设置关闭。
     LoginDisabled,
     /// Turnstile token 无效、过期或缺失。
@@ -88,6 +90,8 @@ pub(crate) enum ManagementError {
     /// 当前用户没有企业认证操作权限。
     OrganizationVerificationForbidden,
     AccountVerificationSelfReview,
+    /// 当前用户须先完成实名认证才能充值。
+    AccountVerificationRequired,
     /// 企业认证服务暂不可用。
     OrganizationVerificationUnavailable,
     /// 企业成员或团队 CAS 版本冲突。
@@ -222,6 +226,12 @@ pub(crate) enum ManagementError {
     GroupConflict,
     /// 分组仍被有效用户或有效令牌引用。
     GroupInUse,
+    /// 用户路由规则不存在或不属于当前用户。
+    UserRouteNotFound,
+    /// 用户路由数量已达上限。
+    UserRouteLimitReached,
+    /// 路由或某个成员分组当前不可用或已撤权。
+    UserRouteUnavailable,
     /// 智能路由不存在或已经被软删除。
     RouteNotFound,
     /// 智能路由名称与当前有效路由冲突。
@@ -280,6 +290,8 @@ pub(crate) enum ManagementError {
     TokenNotFound,
     /// 当前用户的未软删除 API Key 已达到容量上限。
     TokenLimitReached,
+    /// 指定分组不可用或未向当前用户开放。
+    GroupUnavailable,
     /// 企业 API Key 写操作提交结果未知，调用方必须查询确认。
     TokenOutcomeUnknown,
     /// 渠道不存在或已经被软删除。
@@ -334,6 +346,12 @@ pub(crate) enum ManagementError {
     PlaygroundConversationLimitReached,
     /// 私有会话 revision 已被其他请求推进。
     PlaygroundConversationConflict,
+    /// 图片历史标识未知或不属于当前用户。
+    ImageHistoryNotFound,
+    /// 当前用户的图片历史空间已经达到上限。
+    ImageHistoryLimitReached,
+    /// 图片历史存储或受控下载服务暂时不可用。
+    ImageHistoryUnavailable,
     /// 管理认证依赖发生内部故障。
     Internal,
 }
@@ -385,6 +403,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "two_factor_invalid",
                     message: "Invalid two-factor authentication code",
+                },
+            ),
+            Self::TwoFactorEnrollmentInvalid => (
+                StatusCode::BAD_REQUEST,
+                ManagementErrorBody {
+                    code: "two_factor_enrollment_invalid",
+                    message: "Invalid or expired authenticator setup code",
                 },
             ),
             Self::LoginDisabled => (
@@ -637,6 +662,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "account_verification_self_review",
                     message: "Administrators cannot review their own verification",
+                },
+            ),
+            Self::AccountVerificationRequired => (
+                StatusCode::FORBIDDEN,
+                ManagementErrorBody {
+                    code: "account_verification_required",
+                    message: "Complete account identity verification before adding wallet funds",
                 },
             ),
             Self::OrganizationVerificationUnavailable => (
@@ -1143,6 +1175,27 @@ impl IntoResponse for ManagementError {
                     message: "Group in use",
                 },
             ),
+            Self::UserRouteNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "user_route_not_found",
+                    message: "User route not found",
+                },
+            ),
+            Self::UserRouteLimitReached => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "user_route_limit_reached",
+                    message: "User route limit reached",
+                },
+            ),
+            Self::UserRouteUnavailable => (
+                StatusCode::FORBIDDEN,
+                ManagementErrorBody {
+                    code: "user_route_unavailable",
+                    message: "User route unavailable",
+                },
+            ),
             Self::RouteNotFound => (
                 StatusCode::NOT_FOUND,
                 ManagementErrorBody {
@@ -1353,6 +1406,13 @@ impl IntoResponse for ManagementError {
                     message: "Token write outcome unknown",
                 },
             ),
+            Self::GroupUnavailable => (
+                StatusCode::FORBIDDEN,
+                ManagementErrorBody {
+                    code: "group_unavailable",
+                    message: "Group unavailable",
+                },
+            ),
             Self::ChannelNotFound => (
                 StatusCode::NOT_FOUND,
                 ManagementErrorBody {
@@ -1540,6 +1600,27 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "playground_conversation_conflict",
                     message: "Playground conversation conflict",
+                },
+            ),
+            Self::ImageHistoryNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "image_history_not_found",
+                    message: "Image history not found",
+                },
+            ),
+            Self::ImageHistoryLimitReached => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "image_history_limit_reached",
+                    message: "Image history limit reached",
+                },
+            ),
+            Self::ImageHistoryUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "image_history_unavailable",
+                    message: "Image history unavailable",
                 },
             ),
             Self::Internal => (

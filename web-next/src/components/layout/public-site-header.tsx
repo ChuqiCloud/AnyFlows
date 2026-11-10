@@ -1,5 +1,5 @@
 import { Button, Popover, PopoverContent, PopoverTrigger } from '@heroui/react'
-import { Boxes, Braces, LayoutDashboard, Menu } from 'lucide-react'
+import { Boxes, Braces, ExternalLink, LayoutDashboard, Link as LinkIcon, Menu } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Link as RouterLink } from 'react-router-dom'
 
@@ -58,14 +58,27 @@ export function PublicSiteHeader({ logoUrl, siteName, navigation }: PublicSiteHe
         </nav>
         <Popover placement="bottom-end">
           <PopoverTrigger><Button isIconOnly className="shrink-0 md:hidden" size="sm" title={t('landing.nav.label')} aria-label={t('landing.nav.label')} variant="light"><Menu className="size-5" /></Button></PopoverTrigger>
-          <PopoverContent className="w-[min(19rem,calc(100vw-1.5rem))] rounded-lg border border-[var(--hairline)] bg-surface-1 p-2">
-            <nav aria-label={t('landing.nav.label')} className="grid gap-1 text-sm">
-              <RouterLink to="/models" className="flex items-center gap-3 rounded-md px-3 py-2 hover:bg-primary/10"><Boxes className="size-4" />{t('landing.nav.models')}</RouterLink>
-              <RouterLink to="/api" className="flex items-center gap-3 rounded-md px-3 py-2 hover:bg-primary/10"><Braces className="size-4" />API</RouterLink>
-              {links.map((link) => link.url.startsWith('/') ? <RouterLink key={`${link.url}:${link.label}`} to={link.url} className="truncate rounded-md px-3 py-2 hover:bg-primary/10">{label(link)}</RouterLink> : <a key={`${link.url}:${link.label}`} href={link.url} target="_blank" rel="noopener noreferrer" className="truncate rounded-md px-3 py-2 hover:bg-primary/10">{label(link)}</a>)}
-              <RouterLink to="/console" className="flex items-center gap-3 rounded-md border-t border-[var(--hairline)] px-3 py-2 font-medium hover:bg-primary/10"><LayoutDashboard className="size-4" />{t('landing.nav.console')}</RouterLink>
+          <PopoverContent className="w-auto min-w-52 rounded-xl border border-[var(--hairline)] bg-surface-1 p-2 shadow-xl">
+            <nav aria-label={t('landing.nav.label')} className="grid w-full gap-0.5">
+              {([
+                { href: '/models', icon: Boxes, label: t('landing.nav.models') },
+                { href: '/api', icon: Braces, label: t('landing.nav.api') },
+              ] as const).map(({ href, icon: Icon, label }) => (
+                <RouterLink key={href} to={href} className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-foreground/90 transition-colors hover:bg-primary/10 hover:text-foreground">
+                  <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <span className="truncate">{label}</span>
+                </RouterLink>
+              ))}
+              {links.map((link) => link.url.startsWith('/')
+                ? <RouterLink key={`${link.url}:${link.label}`} to={link.url} className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-foreground/90 transition-colors hover:bg-primary/10 hover:text-foreground"><LinkIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><span className="truncate">{label(link)}</span></RouterLink>
+                : <a key={`${link.url}:${link.label}`} href={link.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-foreground/90 transition-colors hover:bg-primary/10 hover:text-foreground"><ExternalLink className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><span className="truncate">{label(link)}</span></a>)}
+              <div className="my-1 h-px bg-[var(--hairline)]" aria-hidden="true" />
+              <RouterLink to="/console" className="flex items-center gap-3 rounded-lg bg-primary/10 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/15">
+                <LayoutDashboard className="size-4 shrink-0" aria-hidden="true" />
+                {t('landing.nav.console')}
+              </RouterLink>
             </nav>
-            <div className="mt-2 flex items-center gap-2 border-t border-[var(--hairline)] px-2 pt-2"><LanguageToggle /><MotionToggle /><ThemeToggle /></div>
+            <div className="mt-2 flex items-center justify-center gap-2 border-t border-[var(--hairline)] px-2 pt-2"><LanguageToggle /><MotionToggle /><ThemeToggle /></div>
           </PopoverContent>
         </Popover>
       </div>

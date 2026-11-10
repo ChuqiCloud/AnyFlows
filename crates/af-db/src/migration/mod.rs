@@ -118,6 +118,25 @@ mod m20261019_000153_create_proxy_pools;
 mod m20261019_000154_add_proxy_pool_refresh_attempt;
 mod m20261021_000155_add_group_peak_windows;
 mod m20261021_000156_channel_route_bindings;
+mod m20261029_000157_create_image_history;
+mod m20261029_000158_create_group_key_access;
+mod m20261029_000159_add_async_task_billing_source_group;
+mod m20261029_000160_create_group_model_policies;
+mod m20261029_000161_add_model_peak_windows;
+mod m20261030_000162_create_user_two_factor_enrollments;
+mod m20261031_000163_create_group_group_grants;
+mod m20261031_000164_create_group_model_ratio_overrides;
+mod m20261102_000165_create_user_routes;
+mod m20261108_000166_add_verification_access_policy;
+mod m20261108_000167_create_merchant_pools;
+mod m20261108_000168_create_merchant_finance;
+mod m20261108_000169_create_merchant_pool_routes;
+mod m20261108_000170_merchant_service_policies;
+mod m20261108_000171_create_merchant_payouts;
+mod m20261108_000172_persist_merchant_task_terms;
+mod m20261109_000173_merchant_resource_deletion;
+mod m20261110_000174_upstream_model_capabilities;
+mod m20261110_000175_upstream_usage;
 mod schema;
 
 #[cfg(test)]
@@ -507,6 +526,25 @@ impl MigratorTrait for Migrator {
             Box::new(m20261019_000154_add_proxy_pool_refresh_attempt::Migration),
             Box::new(m20261021_000155_add_group_peak_windows::Migration),
             Box::new(m20261021_000156_channel_route_bindings::Migration),
+            Box::new(m20261029_000157_create_image_history::Migration),
+            Box::new(m20261029_000158_create_group_key_access::Migration),
+            Box::new(m20261029_000159_add_async_task_billing_source_group::Migration),
+            Box::new(m20261029_000160_create_group_model_policies::Migration),
+            Box::new(m20261029_000161_add_model_peak_windows::Migration),
+            Box::new(m20261030_000162_create_user_two_factor_enrollments::Migration),
+            Box::new(m20261031_000163_create_group_group_grants::Migration),
+            Box::new(m20261031_000164_create_group_model_ratio_overrides::Migration),
+            Box::new(m20261102_000165_create_user_routes::Migration),
+            Box::new(m20261108_000166_add_verification_access_policy::Migration),
+            Box::new(m20261108_000167_create_merchant_pools::Migration),
+            Box::new(m20261108_000168_create_merchant_finance::Migration),
+            Box::new(m20261108_000169_create_merchant_pool_routes::Migration),
+            Box::new(m20261108_000170_merchant_service_policies::Migration),
+            Box::new(m20261108_000171_create_merchant_payouts::Migration),
+            Box::new(m20261108_000172_persist_merchant_task_terms::Migration),
+            Box::new(m20261109_000173_merchant_resource_deletion::Migration),
+            Box::new(m20261110_000174_upstream_model_capabilities::Migration),
+            Box::new(m20261110_000175_upstream_usage::Migration),
         ]
     }
 }

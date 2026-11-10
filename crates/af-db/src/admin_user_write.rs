@@ -17,9 +17,11 @@ use crate::{
     InviteRebateGrant, InviteRebateGrantOutcome, InviteRebateRepositoryError,
     admin_user::{detail_query, record_internal_error},
     auth_challenge::consume_in_transaction,
-    entity::{groups, tokens, users},
+    entity::{tokens, users},
+    group_key_access::lock_active_group,
     identity_secret::{IdentitySecretError, generate_aff_code, hash_password},
     invite_rebate::grant_in_transaction,
+    token_owner_guard::lock_non_deleted_owner,
 };
 
 const ENABLED_USER_STATUS: i16 = 1;
@@ -317,7 +319,7 @@ impl AdminUserRepository {
 
     async fn create_registration_inner(
         &self,
-        mut record: AdminUserCreateRecord,
+        record: AdminUserCreateRecord,
         challenge: Option<AuthChallengeConsume>,
         invite_code: Option<&str>,
         rebate_quota: Quota,
@@ -341,39 +343,18 @@ impl AdminUserRepository {
             }
         }
 
-        record.inviter_id = match invite_code {
-            Some(code) => match lock_inviter_by_code(&transaction, code).await? {
-                Some(user_id) => Some(user_id),
-                None => {
-                    rollback_transaction(transaction).await?;
-                    return Ok(AdminUserRegistrationCreateOutcome::InvitationRejected);
-                }
-            },
-            None => None,
+        let Some(snapshot) = create_registration_user_in_transaction(
+            &transaction,
+            record,
+            invite_code,
+            rebate_quota,
+            credited_at,
+        )
+        .await?
+        else {
+            rollback_transaction(transaction).await?;
+            return Ok(AdminUserRegistrationCreateOutcome::InvitationRejected);
         };
-
-        let snapshot = create_user_in_transaction(&transaction, record).await?;
-        if let Some(inviter_id) = record_inviter(&transaction, snapshot.user_id()).await?
-            && !rebate_quota.is_zero()
-        {
-            let grant = InviteRebateGrant::new(
-                registration_rebate_event_id(snapshot.user_id())?,
-                snapshot.user_id(),
-                rebate_quota,
-                credited_at,
-            )
-            .map_err(|_| record_internal_error(AdminUserRepositoryError::Invariant))?;
-            match grant_in_transaction(&transaction, &grant)
-                .await
-                .map_err(map_invite_rebate_error)?
-            {
-                InviteRebateGrantOutcome::Applied(record)
-                    if record.inviter_user_id() == inviter_id => {}
-                _ => {
-                    return Err(record_internal_error(AdminUserRepositoryError::Invariant));
-                }
-            }
-        }
         commit_transaction(transaction).await?;
         Ok(AdminUserRegistrationCreateOutcome::Created(snapshot))
     }
@@ -384,7 +365,12 @@ impl AdminUserRepository {
         record: AdminUserUpdateRecord,
     ) -> Result<AdminUserMutationOutcome, AdminUserRepositoryError> {
         let transaction = begin_transaction(self).await?;
-        if !active_user_exists(&transaction, user_id).await? {
+        if lock_non_deleted_owner(&transaction, user_id)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(AdminUserRepositoryError::Query))?
+            .is_none()
+        {
             return Ok(AdminUserMutationOutcome::NotFound);
         }
         ensure_group_exists(&transaction, record.default_group_id).await?;
@@ -478,6 +464,45 @@ async fn begin_transaction(
         .with_subscriber(NoSubscriber::default())
         .await
         .map_err(|_| record_internal_error(AdminUserRepositoryError::Query))
+}
+
+/// 在调用方事务中绑定有效邀请关系、创建用户并发放一次邀请人奖励。
+/// 新用户的注册赠送与受邀奖励已由调用方合入创建记录。
+pub(crate) async fn create_registration_user_in_transaction(
+    transaction: &DatabaseTransaction,
+    mut record: AdminUserCreateRecord,
+    invite_code: Option<&str>,
+    rebate_quota: Quota,
+    credited_at: u64,
+) -> Result<Option<AdminUserRecord>, AdminUserRepositoryError> {
+    record.inviter_id = match invite_code {
+        Some(code) => match lock_inviter_by_code(transaction, code).await? {
+            Some(user_id) => Some(user_id),
+            None => return Ok(None),
+        },
+        None => None,
+    };
+    let snapshot = create_user_in_transaction(transaction, record).await?;
+    if let Some(inviter_id) = record_inviter(transaction, snapshot.user_id()).await?
+        && !rebate_quota.is_zero()
+    {
+        let grant = InviteRebateGrant::new(
+            registration_rebate_event_id(snapshot.user_id())?,
+            snapshot.user_id(),
+            rebate_quota,
+            credited_at,
+        )
+        .map_err(|_| record_internal_error(AdminUserRepositoryError::Invariant))?;
+        match grant_in_transaction(transaction, &grant)
+            .await
+            .map_err(map_invite_rebate_error)?
+        {
+            InviteRebateGrantOutcome::Applied(record) if record.inviter_user_id() == inviter_id => {
+            }
+            _ => return Err(record_internal_error(AdminUserRepositoryError::Invariant)),
+        }
+    }
+    Ok(Some(snapshot))
 }
 
 pub(crate) async fn create_user_in_transaction(
@@ -625,18 +650,15 @@ async fn fetch_user_snapshot(
     }
 }
 
-async fn active_user_exists(
-    transaction: &DatabaseTransaction,
-    user_id: UserId,
-) -> Result<bool, AdminUserRepositoryError> {
-    query_exists(transaction, active_user_exists_query(user_id)).await
-}
-
 async fn ensure_group_exists(
     transaction: &DatabaseTransaction,
     group_id: GroupId,
 ) -> Result<(), AdminUserRepositoryError> {
-    if query_exists(transaction, active_group_exists_query(group_id)).await? {
+    if lock_active_group(transaction, group_id)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(|_| record_internal_error(AdminUserRepositoryError::Query))?
+    {
         Ok(())
     } else {
         Err(AdminUserRepositoryError::InvalidReference)
@@ -672,32 +694,6 @@ async fn query_exists(
         .await
         .map_err(|_| record_internal_error(AdminUserRepositoryError::Query))?;
     Ok(!results.is_empty())
-}
-
-fn active_user_exists_query(user_id: UserId) -> SelectStatement {
-    Query::select()
-        .expr_as(
-            Expr::col((users::Entity, users::Column::Id)),
-            Alias::new("id"),
-        )
-        .from(users::Entity)
-        .and_where(Expr::col((users::Entity, users::Column::Id)).eq(user_id.get()))
-        .and_where(Expr::col((users::Entity, users::Column::DeletedAt)).is_null())
-        .limit(1)
-        .to_owned()
-}
-
-fn active_group_exists_query(group_id: GroupId) -> SelectStatement {
-    Query::select()
-        .expr_as(
-            Expr::col((groups::Entity, groups::Column::Id)),
-            Alias::new("id"),
-        )
-        .from(groups::Entity)
-        .and_where(Expr::col((groups::Entity, groups::Column::Id)).eq(group_id.get()))
-        .and_where(Expr::col((groups::Entity, groups::Column::DeletedAt)).is_null())
-        .limit(1)
-        .to_owned()
 }
 
 fn identity_conflict_query(

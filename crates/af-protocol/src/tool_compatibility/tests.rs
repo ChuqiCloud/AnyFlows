@@ -33,6 +33,67 @@ fn session() -> ToolCompatibilitySession {
     ToolCompatibilitySession::prepare(request(), vec![tool("read")]).unwrap()
 }
 
+#[test]
+fn native_empty_catalog_defaults_can_use_injected_tools_but_explicit_none_stays_disabled() {
+    for explicit_none in [false, true] {
+        for protocol in [
+            Protocol::OpenAiChat,
+            Protocol::OpenAiResponses,
+            Protocol::Anthropic,
+            Protocol::Gemini,
+        ] {
+            let mut wire = match protocol {
+                Protocol::OpenAiChat => {
+                    json!({"model":"model","messages":[{"role":"user","content":"question"}],"max_completion_tokens":128})
+                }
+                Protocol::OpenAiResponses => {
+                    json!({"model":"model","input":"question","max_output_tokens":128})
+                }
+                Protocol::Anthropic => {
+                    json!({"model":"model","messages":[{"role":"user","content":"question"}],"max_tokens":128})
+                }
+                Protocol::Gemini => {
+                    json!({"contents":[{"role":"user","parts":[{"text":"question"}]}],"generationConfig":{"maxOutputTokens":128}})
+                }
+                _ => unreachable!(),
+            };
+            if explicit_none {
+                match protocol {
+                    Protocol::Gemini => {
+                        wire["toolConfig"] = json!({"functionCallingConfig":{"mode":"NONE"}})
+                    }
+                    Protocol::Anthropic => wire["tool_choice"] = json!({"type":"none"}),
+                    _ => wire["tool_choice"] = json!("none"),
+                }
+            }
+            let body = Bytes::from(serde_json::to_vec(&wire).unwrap());
+            let request = match protocol {
+                Protocol::OpenAiChat => crate::openai_chat::parse_request_envelope(body).unwrap(),
+                Protocol::OpenAiResponses => {
+                    crate::openai_responses::parse_request_envelope(body).unwrap()
+                }
+                Protocol::Anthropic => crate::anthropic::parse_request_envelope(body).unwrap(),
+                Protocol::Gemini => {
+                    crate::gemini::parse_request_envelope("models/model", body).unwrap()
+                }
+                _ => unreachable!(),
+            }
+            .for_conversation_protocol(Protocol::OpenAiChat)
+            .unwrap();
+            let session = ToolCompatibilitySession::prepare(request, vec![tool("read")]).unwrap();
+            assert_eq!(
+                session.request().canonical().tool_choice,
+                if explicit_none {
+                    ToolChoice::None
+                } else {
+                    ToolChoice::Auto
+                },
+                "{protocol:?}"
+            );
+        }
+    }
+}
+
 fn usage(output: i64) -> Usage {
     Usage::new(
         TokenCount::new(100).unwrap(),
@@ -206,6 +267,7 @@ fn rewriting_removes_source_passthrough_and_preserves_requested_model() {
     let envelope = CanonicalRequestEnvelope::from_normalized_model(
         source.canonical().clone(),
         "public-alias".to_owned(),
+        source.origin_protocol(),
     );
     for request in [source, envelope] {
         let session = ToolCompatibilitySession::prepare(request, vec![tool("read")]).unwrap();
@@ -222,15 +284,20 @@ fn rewriting_removes_source_passthrough_and_preserves_requested_model() {
 }
 
 #[test]
-fn private_fields_opaque_state_and_signed_collisions_fail_without_data_loss() {
+fn source_owned_preferences_survive_while_opaque_state_and_signed_collisions_are_rejected() {
     let raw = crate::openai_chat::parse_request_envelope(Bytes::from_static(
         br#"{"model":"m","messages":[{"role":"user","content":"hi"}],"max_tokens":100,"seed":42}"#,
     ))
     .unwrap();
-    assert_eq!(
-        ToolCompatibilitySession::prepare(raw, vec![tool("read")]).unwrap_err(),
-        ToolCompatibilityError::UnsupportedRequest
-    );
+    let session = ToolCompatibilitySession::prepare(raw, vec![tool("read")]).unwrap();
+    let planned = session
+        .request()
+        .clone()
+        .plan_conversation(Protocol::OpenAiChat)
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(planned.body()).unwrap();
+    assert_eq!(body["seed"], 42);
+    assert_eq!(body["tools"][0]["function"]["name"], "read");
     let mut opaque = request().into_canonical();
     opaque.continuation = RequestContinuation::new(Some("private-response".to_owned()), None, None);
     assert_eq!(
@@ -464,6 +531,117 @@ fn another_hidden_tool_in_the_second_round_fails_and_keeps_first_round_usage() {
         ToolCompatibilityError::RepeatedUnavailableTool
     );
     assert_eq!(session.observed_usage(), &[Some(usage(20)), None]);
+}
+
+#[test]
+fn anthropic_usage_metadata_does_not_interrupt_the_two_tool_rounds() {
+    let mut session = session();
+    for event in [start(), call(0, "hidden-id", "read"), args(0, "{}"), end(0)] {
+        assert!(forward(&mut session, event).is_empty());
+    }
+    assert!(
+        forward(
+            &mut session,
+            Event::AnthropicUsageMetadata {
+                raw: json!({"service_tier":"priority"}),
+            },
+        )
+        .is_empty()
+    );
+    forward(&mut session, finish(FinishReason::ToolCalls));
+    forward(&mut session, Event::Usage(usage(20)));
+    assert!(matches!(
+        session.push(Event::StreamEnd).unwrap(),
+        ToolCompatibilityStep::Continue { .. }
+    ));
+    forward(&mut session, start());
+    forward(&mut session, text("answer"));
+    forward(
+        &mut session,
+        Event::AnthropicUsageMetadata {
+            raw: json!({"service_tier":"standard", "iterations":[{"type":"compaction", "input_tokens":10,"output_tokens":2}]}),
+        },
+    );
+    forward(&mut session, finish(FinishReason::Stop));
+    forward(&mut session, Event::Usage(usage(10)));
+    let ToolCompatibilityStep::Complete {
+        events,
+        usage: Some(total),
+    } = session.push(Event::StreamEnd).unwrap()
+    else {
+        panic!("expected completion")
+    };
+    assert_eq!(total.output_tokens().get(), 30);
+    assert!(
+        matches!(events.as_slice(), [Event::AnthropicUsageMetadata { raw }, Event::Finish { reason: FinishReason::Stop, .. }, Event::Usage(_), Event::StreamEnd] if raw == &json!({"service_tier":"standard"}))
+    );
+}
+
+#[test]
+fn native_anthropic_compaction_cannot_be_rewritten_or_lost_in_a_hidden_tool_round() {
+    for controls in [
+        json!({"compaction":{"type":"summarize"}}),
+        json!({"context_management":{"edits":[{"type":"compact_20260112"}]}}),
+    ] {
+        let mut body = json!({"model":"claude-test","max_tokens":128,"messages":[{"role":"user","content":"question"}]});
+        body.as_object_mut()
+            .unwrap()
+            .extend(controls.as_object().unwrap().clone());
+        let request = crate::anthropic::parse_request_envelope(Bytes::from(
+            serde_json::to_vec(&body).unwrap(),
+        ))
+        .unwrap();
+        assert_eq!(
+            ToolCompatibilitySession::prepare(request, vec![tool("read")]).unwrap_err(),
+            ToolCompatibilityError::UnsupportedRequest
+        );
+    }
+    let item = crate::AnthropicCompactionItem::from_value(json!({
+        "type":"compaction", "content":"summary", "signature":"signed-state",
+        "encrypted_content":"opaque-state", "tool_changes":[{"type":"tool_removal","name":"read"}]
+    }))
+    .unwrap();
+    let mut canonical = request().into_canonical();
+    canonical.messages.insert(
+        0,
+        Message::new(
+            Role::Assistant,
+            vec![ContentBlock::AnthropicCompaction(item.clone())],
+        ),
+    );
+    assert_eq!(
+        ToolCompatibilitySession::prepare(canonical.into(), vec![tool("read")]).unwrap_err(),
+        ToolCompatibilityError::UnsupportedRequest
+    );
+    for event in [
+        Event::AnthropicCompactionStart {
+            choice_index: 0,
+            content_index: 0,
+            item: item.clone(),
+        },
+        Event::AnthropicCompactionDelta {
+            choice_index: 0,
+            content_index: 0,
+            text: "summary".to_owned(),
+        },
+        Event::AnthropicCompactionEnd {
+            choice_index: 0,
+            content_index: 0,
+            item,
+        },
+    ] {
+        let mut session = session();
+        forward(&mut session, start());
+        forward(&mut session, call(0, "hidden", "read"));
+        assert_eq!(
+            session.push(event).unwrap_err(),
+            ToolCompatibilityError::InvalidOutput
+        );
+        assert_eq!(
+            session.push(Event::StreamEnd).unwrap_err(),
+            ToolCompatibilityError::Closed
+        );
+    }
 }
 
 #[test]

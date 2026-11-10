@@ -148,6 +148,196 @@ fn plan(stream: bool, protocol: Protocol) -> ToolConversationPlan {
     .unwrap()
 }
 
+#[tokio::test]
+async fn anthropic_compaction_iteration_usage_is_billed_once_before_tool_continuation() {
+    let frames = [
+        json!({"type":"message_start", "message":{"id":"msg_tool_compact", "type":"message", "role":"assistant", "model":"claude-test", "content":[], "stop_reason":null, "stop_sequence":null, "usage":{"input_tokens":100,"output_tokens":0}}}),
+        json!({"type":"content_block_start", "index":0, "content_block":{"type":"tool_use", "id":"call_read", "name":"read", "input":{"path":"private-file"}}}),
+        json!({"type":"content_block_stop", "index":0}),
+        json!({"type":"message_delta", "delta":{"stop_reason":"tool_use","stop_sequence":null}, "usage":{"input_tokens":100,"output_tokens":4,"service_tier":"standard", "iterations":[{"type":"message","input_tokens":100,"output_tokens":4},{"type":"compaction","input_tokens":12,"output_tokens":3}]}}),
+        json!({"type":"message_stop"}),
+    ];
+    let mut bytes = Vec::new();
+    for frame in frames {
+        let kind = frame["type"].as_str().unwrap();
+        bytes.extend_from_slice(format!("event: {kind}\ndata: {frame}\n\n").as_bytes());
+    }
+    let mut decoder = ConversationDecoder::new(Protocol::Anthropic).unwrap();
+    decoder.push(&bytes).unwrap();
+    decoder.finish().unwrap();
+    let billed = decoder.billing_usage().unwrap();
+    assert_eq!(billed.input_tokens().get(), 112);
+    assert_eq!(billed.output_tokens().get(), 7);
+
+    for stream in [false, true] {
+        let server = MockServer::start().await;
+        let round = Arc::new(AtomicUsize::new(0));
+        let first_round = bytes.clone();
+        Mock::given(method("POST"))
+            .respond_with(move |_request: &Request| {
+                let bytes = if round.fetch_add(1, Ordering::SeqCst) == 0 {
+                    first_round.clone()
+                } else {
+                    sse(Protocol::Anthropic, false, false)
+                };
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_bytes(bytes)
+            })
+            .expect(2)
+            .mount(&server)
+            .await;
+        let machine = RelayStateMachine::new(vec![candidate(
+            &server,
+            Protocol::Anthropic,
+            Arc::new(Permits::default()),
+            Credential::public(),
+        )])
+        .unwrap();
+        let (response, report) = relay_tool_conversation(
+            &machine,
+            plan(stream, Protocol::Anthropic),
+            Protocol::OpenAiChat,
+            "compaction-tool-billing",
+        )
+        .await;
+        let total = match response.unwrap() {
+            ChatResponse::Full { usage, .. } => usage.unwrap(),
+            ChatResponse::Stream { mut body, usage } => {
+                while let Some(chunk) =
+                    std::future::poll_fn(|cx| Pin::new(&mut body).poll_next(cx)).await
+                {
+                    chunk.unwrap();
+                }
+                usage.resolve().await.unwrap()
+            }
+        };
+        assert_eq!(total.input_tokens().get(), 152);
+        assert_eq!(total.output_tokens().get(), 12);
+        let snapshot = report.snapshot();
+        assert_eq!(snapshot.observed_usage[0], Some(billed));
+        assert_eq!(snapshot.sent_rounds, 2);
+        assert_eq!(snapshot.state, ToolConversationState::Completed);
+        let sent = server.received_requests().await.unwrap();
+        let continuation: Value = serde_json::from_slice(&sent[1].body).unwrap();
+        assert_eq!(continuation["max_tokens"], 121);
+    }
+}
+
+#[test]
+fn injected_tool_round_keeps_default_auto_and_real_continuation_history() {
+    for protocol in [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Anthropic,
+    ] {
+        let mut plan = plan(false, protocol);
+        assert_eq!(
+            plan.request().canonical().tool_choice,
+            af_protocol::ToolChoice::Auto
+        );
+        let first: Value =
+            serde_json::from_slice(&encode_tool_request(plan.request().clone(), protocol).unwrap())
+                .unwrap();
+        assert_eq!(first["stream"], true);
+        assert!(!plan.request().canonical().stream);
+        let mut continuation = None;
+        for event in events(true, false)
+            .into_iter()
+            .chain([Event::Usage(usage(40, 10)), Event::StreamEnd])
+        {
+            if let af_protocol::ToolCompatibilityStep::Continue { request, .. } =
+                plan.session.push(event).unwrap()
+            {
+                continuation = Some(request);
+            }
+        }
+        let continuation = continuation.expect("默认 Auto 允许注入工具进入受控续答");
+        assert_eq!(
+            continuation
+                .canonical()
+                .sampling
+                .max_output_tokens()
+                .unwrap()
+                .get(),
+            118
+        );
+        let second = encode_tool_request(*continuation, protocol).unwrap();
+        let rendered = std::str::from_utf8(&second).unwrap();
+        assert!(rendered.contains("call_read"));
+        assert!(rendered.contains("private-file"));
+        assert!(rendered.contains("Tool unavailable"));
+        assert!(!rendered.contains("Historical tool call"));
+        assert_eq!(plan.session.observed_usage()[0], Some(usage(40, 10)));
+    }
+}
+
+#[test]
+fn controlled_transport_streaming_keeps_output_format_on_both_tool_rounds() {
+    let schema = json!({"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false});
+    let body = json!({
+        "model":"free-model",
+        "messages":[{"role":"user","content":"Reply violet"}],
+        "tool_choice":"auto",
+        "max_completion_tokens":128,
+        "stream":false,
+        "response_format":{"type":"json_schema","json_schema":{"name":"answer_format","schema":schema,"strict":true}}
+    });
+    for protocol in [
+        Protocol::OpenAiChat,
+        Protocol::OpenAiResponses,
+        Protocol::Anthropic,
+    ] {
+        let request = af_protocol::openai_chat::parse_request_envelope(Bytes::from(
+            serde_json::to_vec(&body).unwrap(),
+        ))
+        .unwrap();
+        let mut plan = ToolConversationPlan::prepare(
+            request,
+            protocol,
+            tools(),
+            TokenCount::new(4096).unwrap(),
+            Duration::from_secs(3),
+        )
+        .unwrap();
+        let first = encode_tool_request(plan.request().clone(), protocol).unwrap();
+        let mut second = None;
+        for event in events(true, false)
+            .into_iter()
+            .chain([Event::Usage(usage(40, 10)), Event::StreamEnd])
+        {
+            if let af_protocol::ToolCompatibilityStep::Continue { request, .. } =
+                plan.session.push(event).unwrap()
+            {
+                second = Some(encode_tool_request(*request, protocol).unwrap());
+            }
+        }
+        for body in [first, second.expect("隐藏工具第一轮必须产生一次续答")] {
+            let value: Value = serde_json::from_slice(&body).unwrap();
+            let actual = match protocol {
+                Protocol::OpenAiChat => &value["response_format"]["json_schema"]["schema"],
+                Protocol::OpenAiResponses => &value["text"]["format"]["schema"],
+                Protocol::Anthropic => &value["output_config"]["format"]["schema"],
+                _ => unreachable!(),
+            };
+            assert_eq!(actual, &schema, "{protocol:?}");
+            assert_eq!(value["stream"], true);
+            if protocol == Protocol::OpenAiChat {
+                assert_eq!(value["stream_options"]["include_usage"], true);
+            }
+        }
+        assert!(!plan.request().canonical().stream);
+    }
+}
+
+#[test]
+fn controlled_transport_streaming_retains_native_content_guards() {
+    let request = af_protocol::openai_chat::parse_request_envelope(Bytes::from_static(
+        br#"{"model":"free-model","messages":[{"role":"user","content":[{"type":"future_video","url":"https://media.example/video"}]}],"max_completion_tokens":128}"#,
+    )).unwrap();
+    assert!(encode_tool_request(request, Protocol::Anthropic).is_err());
+}
+
 fn usage(input: i64, output: i64) -> Usage {
     Usage::new(
         TokenCount::new(input).unwrap(),
@@ -357,6 +547,44 @@ async fn frozen_client_profile_overrides_adapter_identity_on_both_rounds() {
                 }
             );
         }
+    }
+}
+
+#[tokio::test]
+async fn frozen_anthropic_beta_is_preserved_on_both_tool_rounds() {
+    let server = fixture(Protocol::Anthropic, false).await;
+    let gate = Arc::new(Permits::default());
+    let mut overrides = HeaderMap::new();
+    overrides.insert(
+        "anthropic-beta",
+        af_adapter::HeaderValue::from_static("channel-beta,shared-beta"),
+    );
+    let machine = RelayStateMachine::new(vec![
+        candidate(&server, Protocol::Anthropic, gate, Credential::public())
+            .with_header_overrides(overrides),
+    ])
+    .unwrap();
+    let plan = ToolConversationPlan::prepare(
+        request(false)
+            .with_anthropic_beta(Some("compact-2026-09-04,shared-beta"))
+            .unwrap(),
+        Protocol::Anthropic,
+        tools(),
+        TokenCount::new(4096).unwrap(),
+        Duration::from_secs(3),
+    )
+    .unwrap();
+    let (result, report) =
+        relay_tool_conversation(&machine, plan, Protocol::Anthropic, "beta-headers").await;
+    assert!(result.is_ok());
+    assert_eq!(report.snapshot().state, ToolConversationState::Completed);
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 2);
+    for request in requests {
+        assert_eq!(
+            request.headers["anthropic-beta"],
+            "channel-beta,shared-beta,compact-2026-09-04"
+        );
     }
 }
 

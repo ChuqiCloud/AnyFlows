@@ -2,10 +2,7 @@ use std::fmt;
 
 use af_adapter::Bytes;
 use af_domain::{AfError, MAX_MODEL_NAME_BYTES, Protocol};
-use af_protocol::{
-    CanonicalRequest, CanonicalRequestEnvelope, SameProtocolDecision, Sampling, StreamOptions,
-    TokenCount, gemini::build_request,
-};
+use af_protocol::{CanonicalRequest, CanonicalRequestEnvelope, Sampling, TokenCount};
 use thiserror::Error;
 
 use crate::{RelayCandidateRequest, RelayError};
@@ -64,21 +61,23 @@ impl GeminiRequestOverrides {
         })
     }
 
-    /// 消费请求信封、永久丢弃直通资格，并构造候选级 Gemini 正文。
+    /// 应用渠道模型与采样策略，再由统一转换计划生成候选正文。
     pub fn prepare(
         &self,
         request: CanonicalRequestEnvelope,
     ) -> Result<RelayCandidateRequest, GeminiRequestOverrideError> {
-        let mut canonical = request.into_canonical();
-        canonical.model.clone_from(&self.model);
-        apply_sampling(
-            &mut canonical,
+        let sampling = apply_sampling(
+            &request.canonical().sampling,
             self.temperature,
             self.top_p,
             self.max_output_tokens,
             self.stop_sequences.as_deref(),
         )?;
-        let body = build_body(&canonical).map_err(|_| GeminiRequestOverrideError)?;
+        let (_, body) = request
+            .with_routed_parameters(self.model.clone(), sampling)
+            .plan_conversation(Protocol::Gemini)
+            .ok_or(GeminiRequestOverrideError)?
+            .into_parts();
         RelayCandidateRequest::new(self.model.clone(), Some(body))
             .map_err(map_candidate_request_error)
     }
@@ -109,46 +108,35 @@ pub(crate) struct PreparedGeminiRequest {
     pub(crate) client_model: String,
 }
 
-/// 在不削弱协议校验的前提下选择原字节直通或 Canonical 重构。
+/// 使用统一目标转换计划，保留同源扩展并执行跨协议归一。
 pub(crate) fn prepare_gemini_request(
     request: CanonicalRequestEnvelope,
 ) -> Result<PreparedGeminiRequest, AfError> {
     let client_model = request.requested_model().to_owned();
-    match request.into_same_protocol(Protocol::Gemini) {
-        SameProtocolDecision::Passthrough(passthrough) => {
-            let (canonical, body) = passthrough.into_parts();
-            Ok(PreparedGeminiRequest {
-                canonical,
-                body,
-                client_model,
-            })
-        }
-        SameProtocolDecision::Rebuild(request) => {
-            let canonical = request.into_canonical();
-            let body = build_body(&canonical).map_err(|_| AfError::InvalidRequest)?;
-            Ok(PreparedGeminiRequest {
-                canonical,
-                body,
-                client_model,
-            })
-        }
-    }
+    let (request, body) = request
+        .plan_conversation(Protocol::Gemini)
+        .ok_or(AfError::InvalidRequest)?
+        .into_parts();
+    Ok(PreparedGeminiRequest {
+        canonical: request.into_canonical(),
+        body,
+        client_model,
+    })
 }
 
 fn apply_sampling(
-    request: &mut CanonicalRequest,
+    current: &Sampling,
     temperature: Option<f64>,
     top_p: Option<f64>,
     max_output_tokens: Option<TokenCount>,
     stop_sequences: Option<&[String]>,
-) -> Result<(), GeminiRequestOverrideError> {
-    let current = &request.sampling;
+) -> Result<Sampling, GeminiRequestOverrideError> {
     let max_output_tokens = match (current.max_output_tokens(), max_output_tokens) {
         (Some(requested), Some(limit)) => Some(requested.min(limit)),
         (requested, None) => requested,
         (None, limit) => limit,
     };
-    request.sampling = Sampling::new(
+    Sampling::new(
         temperature.or(current.temperature()),
         top_p.or(current.top_p()),
         max_output_tokens,
@@ -156,17 +144,7 @@ fn apply_sampling(
             .map(<[String]>::to_vec)
             .unwrap_or_else(|| current.stop_sequences().to_vec()),
     )
-    .map_err(|_| GeminiRequestOverrideError)?;
-    Ok(())
-}
-
-fn build_body(request: &CanonicalRequest) -> Result<Bytes, ()> {
-    let mut body_request = request.clone();
-    // Gemini 的流式模式由 URL 上的 streamGenerateContent 表达，正文仍沿用 generateContent 结构。
-    body_request.stream = false;
-    body_request.stream_options = StreamOptions::EMPTY;
-    let value = build_request(&body_request).map_err(|_| ())?;
-    serde_json::to_vec(&value).map(Bytes::from).map_err(|_| ())
+    .map_err(|_| GeminiRequestOverrideError)
 }
 
 fn valid_model(model: &str) -> bool {
@@ -265,5 +243,44 @@ mod tests {
             GeminiRequestOverrides::new("gemini", None, None, None, Some(vec![String::new()]),)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn native_extensions_survive_defaults_and_candidate_overrides() {
+        let original = json!({
+            "contents": [{
+                "role": "user",
+                "parts": [{"text": "hello", "x_part": {"keep": true}}],
+                "x_message": {"keep": [1, 2]}
+            }],
+            "generationConfig": {"x_vendor_option": {"keep": true}},
+            "x_vendor": {"keep": {"enabled": true}}
+        });
+        let request = gemini::parse_stream_request_envelope(
+            "models/public-model",
+            Bytes::from(serde_json::to_vec(&original).unwrap()),
+        )
+        .unwrap()
+        .with_default_max_output_tokens(TokenCount::new(256).unwrap());
+        let prepared = prepare_gemini_request(request.clone()).unwrap();
+        assert!(prepared.canonical.stream);
+        assert_eq!(prepared.client_model, "public-model");
+        let (_, candidate) =
+            GeminiRequestOverrides::new("upstream-model", Some(0.25), None, Some(128), None)
+                .unwrap()
+                .prepare(request)
+                .unwrap()
+                .into_parts();
+        for body in [prepared.body, candidate.unwrap()] {
+            let value: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(value["contents"], original["contents"]);
+            assert_eq!(value["x_vendor"], original["x_vendor"]);
+            assert_eq!(
+                value["generationConfig"]["x_vendor_option"],
+                original["generationConfig"]["x_vendor_option"]
+            );
+            assert!(value.get("model").is_none());
+            assert!(value.get("stream").is_none());
+        }
     }
 }

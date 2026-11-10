@@ -13,6 +13,9 @@ export type AccountVerificationDetailResponse = {
     materials: Array<AccountVerificationMaterialResponse>;
 };
 export type AccountVerificationEligibilityResponse = {
+    verified: boolean;
+    require_verification_for_topup: boolean;
+    require_verification_for_api: boolean;
     enterprise_verified: boolean;
     can_apply_for_organization: boolean;
     providers: Array<string>;
@@ -635,9 +638,43 @@ export type AdminGroup = {
         [key: string]: unknown;
     };
 };
+export type AdminGroupKeyPolicy = {
+    group_id: number;
+    selection_mode: GroupKeySelectionMode;
+    allowed_user_ids: Array<number>;
+    allowed_group_ids: Array<number>;
+};
+export type AdminGroupKeyPolicyUpdateResult = {
+    group_id: number;
+    selection_mode: GroupKeySelectionMode;
+    allowed_user_ids: Array<number>;
+    allowed_group_ids: Array<number>;
+    disabled_key_count: number;
+    disabled_user_count: number;
+};
+export type AdminGroupKeyPolicyWriteRequest = {
+    selection_mode: GroupKeySelectionMode;
+    allowed_user_ids?: Array<number>;
+    allowed_group_ids?: Array<number>;
+    disable_keys_losing_access?: boolean;
+};
 export type AdminGroupListResponse = {
     groups: Array<AdminGroup>;
     next_cursor: number | null;
+};
+export type AdminGroupModelPolicy = {
+    group_id: number;
+    allowed_models: Array<string> | null;
+    ratio_overrides: Array<AdminGroupModelRatioOverride>;
+};
+export type AdminGroupModelPolicyWriteRequest = {
+    allowed_models: Array<string> | null;
+    ratio_overrides?: Array<AdminGroupModelRatioOverride> | null;
+};
+export type AdminGroupModelRatioOverride = {
+    source_group_id: number;
+    model: string;
+    ratio_micros: number;
 };
 export type AdminGroupPeakWindow = {
     weekdays: Array<number>;
@@ -746,6 +783,7 @@ export type AdminModelPrice = {
     billing_mode: AdminModelPriceBillingMode;
     prices: AdminModelPriceValues;
     billing_expression: string | null;
+    peak_windows: Array<AdminGroupPeakWindow> | null;
     version: number;
 };
 export type AdminModelPriceBatchRequest = {
@@ -834,6 +872,7 @@ export type AdminModelPriceWriteItem = {
     billing_mode: AdminModelPriceBillingMode;
     prices: AdminModelPriceValues;
     billing_expression?: string | null;
+    peak_windows?: Array<AdminGroupPeakWindow> | null;
 };
 export type AdminModelSyncApplyItemRequest = {
     item_id: number;
@@ -1383,6 +1422,26 @@ export type AdminUserListResponse = {
     users: Array<AdminUser>;
     next_cursor: number | null;
 };
+export type AdminUserSecurityPasskeyResponse = {
+    id: number;
+    display_name: string;
+    created_at: number;
+    last_used_at: number | null;
+    revoked_at: number | null;
+};
+export type AdminUserSecurityResponse = {
+    user_id: number;
+    two_factor: AdminUserSecurityTwoFactorResponse;
+    passkeys: Array<AdminUserSecurityPasskeyResponse>;
+};
+export type AdminUserSecurityTwoFactorResponse = {
+    enabled: boolean;
+    state: string;
+    pending_created_at: number | null;
+    pending_expires_at: number | null;
+    bound_at: number | null;
+    last_verified_at: number | null;
+};
 export type AdminUserStatus = 'enabled' | 'disabled';
 export type AdminUserSubscriptionBindRequest = {
     plan_id: string;
@@ -1413,6 +1472,8 @@ export type AdminVerificationSettings = {
     enterprise_manual_enabled: boolean;
     individual_reason_required: boolean;
     enterprise_reason_required: boolean;
+    require_verification_for_topup: boolean;
+    require_verification_for_api: boolean;
     enabled: boolean;
     app_id?: string | null;
     private_key_configured: boolean;
@@ -1429,6 +1490,8 @@ export type AdminVerificationSettingsRequest = {
     enterprise_manual_enabled?: boolean | null;
     individual_reason_required?: boolean | null;
     enterprise_reason_required?: boolean | null;
+    require_verification_for_topup?: boolean | null;
+    require_verification_for_api?: boolean | null;
     enabled: boolean;
     app_id?: string | null;
     gateway_url: string;
@@ -1651,12 +1714,52 @@ export type CredentialHealthSnapshot = {
     cooling: boolean;
     weight_multiplier_micros: number;
 };
+export type CredentialModelItem = {
+    blocked_reason: string | null;
+    canonical_models: Array<string>;
+    enabled: boolean;
+    source: string;
+    upstream_model: string;
+};
+export type CredentialModelsSnapshot = {
+    auto_add_discovered: boolean;
+    error_code: string | null;
+    items: Array<CredentialModelItem>;
+    last_checked_at: number | null;
+    last_success_at: number | null;
+    policy: UpstreamModelPolicy;
+    refresh_interval_secs: number | null;
+    status: 'unknown' | 'available' | 'empty' | 'unavailable';
+    version: number;
+    [key: string]: unknown;
+};
 export type CredentialSelectionStrategy = 'weighted' | 'round_robin' | 'priority';
 export type CredentialUsageSnapshot = {
     status: CredentialUsageStatus;
     windows: Array<CredentialUsageWindow>;
     credits_balance?: string | null;
     fetched_at?: number | null;
+    scope?: string | null;
+    provider?: string | null;
+    currency?: string | null;
+    unit?: string | null;
+    total?: string | null;
+    used?: string | null;
+    remaining?: string | null;
+    unlimited?: boolean;
+    expires_at?: number | null;
+    reset_at?: number | null;
+    last_success_at?: number | null;
+    last_checked_at?: number | null;
+    stale?: boolean;
+    error_code?: string | null;
+    account_ref?: string | null;
+    source?: string | null;
+    pause_until?: number | null;
+    alert?: string | null;
+    subscription?: {
+        [key: string]: unknown;
+    } | null;
 };
 export type CredentialUsageStatus = 'available' | 'unsupported' | 'unavailable';
 export type CredentialUsageWindow = {
@@ -1684,10 +1787,15 @@ export type FrontendTemplateSummary = {
     valid: boolean;
     error?: string | null;
 };
+export type GroupKeySelectionMode = 'default_only' | 'all_users' | 'selected_users' | 'selected_groups';
 export type HttpExtensionDescriptor = {
     id: string;
     name: string;
     capabilities: Array<string>;
+};
+export type InstallSoftwareUpdate = {
+    tag: string;
+    expected_node_id: string;
 };
 export type IssuedAdminRedemptionBatch = {
     batch: AdminRedemptionBatch;
@@ -1713,8 +1821,468 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'turnstile_rejected' | 'turnstile_unavailable' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'site_settings_conflict' | 'announcement_invalid_request' | 'announcement_not_found' | 'announcement_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'custom_oauth2_provider_not_found' | 'custom_oauth2_provider_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'organization_not_found' | 'organization_credit_invalid_request' | 'organization_credit_not_found' | 'organization_credit_interval_conflict' | 'organization_credit_conflict' | 'organization_credit_transition_invalid' | 'organization_approval_not_found' | 'organization_approval_conflict' | 'organization_approval_expired' | 'organization_contract_price_not_found' | 'organization_contract_price_interval_conflict' | 'organization_contract_price_conflict' | 'organization_contract_price_transition_invalid' | 'organization_plan_not_found' | 'organization_plan_conflict' | 'organization_sso_provider_not_found' | 'organization_sso_provider_conflict' | 'organization_sso_provider_transition_invalid' | 'organization_sso_identity_binding_rejected' | 'organization_sso_identity_binding_conflict' | 'organization_sso_recovery_rejected' | 'organization_sso_recovery_conflict' | 'organization_sso_recovery_unavailable' | 'organization_sso_domain_not_found' | 'organization_sso_domain_conflict' | 'organization_sso_domain_transition_invalid' | 'organization_sso_domain_verification_failed' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'refund_not_found' | 'refund_conflict' | 'refund_unavailable' | 'refund_auto_submit_failed' | 'refund_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'turnstile_rejected' | 'turnstile_unavailable' | 'invalid_session' | 'forbidden' | 'account_verification_required' | 'setup_conflict' | 'site_settings_conflict' | 'announcement_invalid_request' | 'announcement_not_found' | 'announcement_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'group_unavailable' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'custom_oauth2_provider_not_found' | 'custom_oauth2_provider_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'image_history_not_found' | 'image_history_limit_reached' | 'image_history_unavailable' | 'user_conflict' | 'organization_not_found' | 'organization_credit_invalid_request' | 'organization_credit_not_found' | 'organization_credit_interval_conflict' | 'organization_credit_conflict' | 'organization_credit_transition_invalid' | 'organization_approval_not_found' | 'organization_approval_conflict' | 'organization_approval_expired' | 'organization_contract_price_not_found' | 'organization_contract_price_interval_conflict' | 'organization_contract_price_conflict' | 'organization_contract_price_transition_invalid' | 'organization_plan_not_found' | 'organization_plan_conflict' | 'organization_sso_provider_not_found' | 'organization_sso_provider_conflict' | 'organization_sso_provider_transition_invalid' | 'organization_sso_identity_binding_rejected' | 'organization_sso_identity_binding_conflict' | 'organization_sso_recovery_rejected' | 'organization_sso_recovery_conflict' | 'organization_sso_recovery_unavailable' | 'organization_sso_domain_not_found' | 'organization_sso_domain_conflict' | 'organization_sso_domain_transition_invalid' | 'organization_sso_domain_verification_failed' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'refund_not_found' | 'refund_conflict' | 'refund_unavailable' | 'refund_auto_submit_failed' | 'refund_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
+};
+export type MerchantApplicationRequest = {
+    description: string;
+    name: string;
+};
+export type MerchantAttemptList = {
+    items: Array<MerchantConsumerAttempt>;
+};
+export type MerchantCatalogService = {
+    description: string;
+    id: number;
+    maintenance: Array<MerchantMaintenance>;
+    merchant_id: number;
+    merchant_name: string;
+    models: Array<MerchantModelOffer>;
+    name: string;
+    pool_id: number;
+    price_version: number;
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'xai_video';
+    revision: number;
+    status: string;
+    updated_at: number;
+};
+export type MerchantCatalogServicePage = {
+    items: Array<MerchantCatalogService>;
+    page: number;
+    page_size: number;
+    total: number;
+};
+export type MerchantConsumerAttempt = {
+    completed_at: number;
+    latency_ms: number;
+    merchant_id: number;
+    merchant_name: string;
+    outcome: 'success' | 'failure' | 'ignored';
+    request_id: string;
+    service_id: number;
+    service_name: string;
+};
+export type MerchantFinanceBalance = {
+    merchant_id: number;
+    pending_quota: number;
+    available_quota: number;
+    withdrawing_quota: number;
+    frozen_quota: number;
+    debt_quota: number;
+    total_gross_quota: number;
+    total_commission_quota: number;
+    total_paid_quota: number;
+    quota_per_usd: number;
+};
+export type MerchantFinanceEntry = {
+    id: number;
+    kind: string;
+    reference: string;
+    gross_quota: number;
+    commission_quota: number;
+    net_quota: number;
+    created_at: number;
+};
+export type MerchantFinanceEntryPage = {
+    items: Array<MerchantFinanceEntry>;
+    next_cursor?: number | null;
+};
+export type MerchantFinanceHold = {
+    event_key: string;
+    amount_quota: number;
+    freeze: boolean;
+    reason: string;
+};
+export type MerchantKeyRotationRequest = {
+    api_key: string;
+};
+export type MerchantMaintenance = {
+    blocks_requests: boolean;
+    created_at: number;
+    ends_at: number;
+    id: number;
+    message: string;
+    service_id: number;
+    starts_at: number;
+    status: 'scheduled' | 'active' | 'completed' | 'cancelled';
+    updated_at: number;
+};
+export type MerchantMaintenancePage = {
+    items: Array<MerchantMaintenance>;
+    page: number;
+    page_size: number;
+    total: number;
+};
+export type MerchantMaintenanceWrite = {
+    blocks_requests: boolean;
+    ends_at: number;
+    message: string;
+    starts_at: number;
+};
+export type MerchantModelOffer = {
+    context_window: number | null;
+    max_output_tokens: number | null;
+    model: string;
+    prices: MerchantModelPrices | null;
+    sales_ratio_micros: number;
+    supports_streaming: boolean;
+    supports_tools: boolean;
+    supports_vision: boolean;
+};
+export type MerchantModelPrices = {
+    billing_mode: 'token' | 'free' | 'video';
+    cache_read: string;
+    cache_write_1h: string;
+    cache_write_5m: string;
+    currency: string;
+    input: string;
+    output: string;
+    unit: string;
+    version: number;
+    video_per_second: {
+        p1080: string | null;
+        p480: string;
+        p720: string;
+    } | null;
+};
+export type MerchantModelRatio = {
+    model: string;
+    ratio_micros?: number | null;
+};
+export type MerchantModelWrite = {
+    context_window?: number | null;
+    max_output_tokens?: number | null;
+    model: string;
+    ratio_micros?: number | null;
+    supports_streaming: boolean;
+    supports_tools: boolean;
+    supports_vision: boolean;
+    upstream_model: string;
+};
+export type MerchantOwnedService = {
+    active_price: MerchantServicePrice | null;
+    created_at: number;
+    description: string;
+    draft: MerchantRevision | null;
+    id: number;
+    maintenance: Array<MerchantMaintenance>;
+    merchant_id: number;
+    name: string;
+    pool_id: number;
+    published: MerchantRevision | null;
+    status: 'draft' | 'pending' | 'published' | 'paused' | 'suspended' | 'rejected';
+    updated_at: number;
+};
+export type MerchantOwnedServicePage = {
+    items: Array<MerchantOwnedService>;
+    page: number;
+    page_size: number;
+    total: number;
+};
+export type MerchantPauseRequest = {
+    paused: boolean;
+};
+export type MerchantPayout = {
+    withdrawal_id: number;
+    merchant_id: number;
+    event_key: string;
+    status: string;
+    amount_minor: number;
+    currency: string;
+    reference: string;
+    reason?: string | null;
+    created_at: number;
+    updated_at: number;
+};
+export type MerchantPayoutAccount = {
+    configured: boolean;
+    label: string;
+    version: number;
+};
+export type MerchantPayoutAccountCommand = {
+    expected_version: number;
+    label: string;
+    clear?: boolean | null;
+};
+export type MerchantPayoutPage = {
+    items: Array<MerchantPayout>;
+    next_cursor?: number | null;
+};
+export type MerchantPayoutSettings = {
+    version: number;
+    enabled: boolean;
+    auto_approve_enabled: boolean;
+    gateway_url: string;
+    currency: string;
+    quota_per_unit: number;
+    min_amount_minor: number;
+    max_amount_minor: number;
+    daily_limit_minor: number;
+    signing_key_configured: boolean;
+};
+export type MerchantPayoutSettingsCommand = {
+    expected_version: number;
+    enabled: boolean;
+    auto_approve_enabled: boolean;
+    gateway_url: string;
+    currency: string;
+    quota_per_unit: number;
+    min_amount_minor: number;
+    max_amount_minor: number;
+    daily_limit_minor: number;
+    clear_signing_key?: boolean | null;
+};
+export type MerchantPool = {
+    commission_bps: number;
+    commission_inherit_global: boolean;
+    created_at: number;
+    description: string;
+    effective_commission_bps: number;
+    enabled: boolean;
+    group_id: number;
+    id: number;
+    max_ratio_micros: number;
+    min_ratio_micros: number;
+    name: string;
+    settlement_delay_secs: number;
+    updated_at: number;
+};
+export type MerchantPoolPage = {
+    items: Array<MerchantPool>;
+    page: number;
+    page_size: number;
+    total: number;
+};
+export type MerchantPoolSettings = {
+    commission_bps: number;
+};
+export type MerchantPoolTerms = {
+    commission_bps: number | null;
+};
+export type MerchantPoolWriteRequest = {
+    commission_bps: number;
+    commission_inherit_global?: boolean;
+    description: string;
+    enabled: boolean;
+    group_id: number;
+    max_ratio_micros: number;
+    min_ratio_micros: number;
+    name: string;
+    settlement_delay_secs: number;
+};
+export type MerchantProfile = {
+    created_at: number;
+    description: string;
+    id: number;
+    name: string;
+    owner_user_id: number;
+    review_reason: string | null;
+    status: 'pending' | 'approved' | 'rejected' | 'suspended';
+    updated_at: number;
+};
+export type MerchantProfilePage = {
+    items: Array<MerchantProfile>;
+    page: number;
+    page_size: number;
+    total: number;
+};
+export type MerchantQuote = {
+    effective_commission_bps: number;
+    models: Array<MerchantQuoteModel>;
+};
+export type MerchantQuoteModel = {
+    base_prices: MerchantModelPrices;
+    model: string;
+    net_prices: MerchantModelPrices;
+    prices: MerchantModelPrices;
+    sales_ratio_micros: number;
+};
+export type MerchantQuoteRequest = {
+    default_ratio_micros: number;
+    models: Array<MerchantModelWrite>;
+    pool_id: number;
+};
+export type MerchantReviewRequest = {
+    decision: 'approve' | 'reject' | 'suspend';
+    expected_revision?: number | null;
+    reason: string;
+};
+export type MerchantRevision = {
+    base_url: string;
+    concurrency: number | null;
+    created_at: number;
+    default_ratio_micros: number;
+    description: string;
+    has_api_key: boolean;
+    id: number;
+    models: Array<MerchantModelWrite>;
+    name: string;
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'xai_video';
+    review_reason: string | null;
+    revision: number;
+    status: 'draft' | 'pending' | 'published' | 'rejected' | 'superseded';
+    timeout_secs: number;
+    updated_at: number;
+};
+export type MerchantRoute = {
+    accept_new_merchants: boolean;
+    allow_pool_fallback: boolean;
+    enabled: boolean;
+    excluded_merchant_ids: Array<number>;
+    id: number;
+    max_merchant_attempts: number;
+    max_price_ratio_micros: number | null;
+    members: Array<MerchantRouteMember>;
+    name: string;
+    pool_id: number;
+    strategy: 'price_first' | 'stable_first' | 'ordered' | 'round_robin' | 'weighted';
+};
+export type MerchantRouteList = {
+    capacity: number;
+    items: Array<MerchantRoute>;
+};
+export type MerchantRouteMember = {
+    merchant_id: number;
+    priority: number;
+    weight: number;
+};
+export type MerchantRoutePreview = {
+    as_of: number;
+    items: Array<MerchantRoutePreviewItem>;
+    quota_per_usd: number;
+};
+export type MerchantRoutePreviewItem = {
+    eligible: boolean;
+    estimated_quota: number | null;
+    merchant_id: number;
+    merchant_name: string;
+    reason: string | null;
+    sales_ratio_micros: number;
+    service_id: number;
+    service_name: string;
+};
+export type MerchantRoutePreviewRequest = {
+    duration_seconds?: number | null;
+    input_tokens: number;
+    model: string;
+    output_tokens: number;
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'xai_video';
+    resolution?: '480p' | '720p' | '1080p' | null;
+    route: MerchantRouteWriteRequest;
+    streaming: boolean;
+};
+export type MerchantRouteWriteRequest = {
+    accept_new_merchants: boolean;
+    allow_pool_fallback: boolean;
+    enabled: boolean;
+    excluded_merchant_ids: Array<number>;
+    max_merchant_attempts: number;
+    max_price_ratio_micros: number | null;
+    members: Array<MerchantRouteMember>;
+    name: string;
+    pool_id: number;
+    strategy: 'price_first' | 'stable_first' | 'ordered' | 'round_robin' | 'weighted';
+};
+export type MerchantServicePrice = {
+    created_at: number;
+    default_ratio_micros: number;
+    effective_at: number;
+    id: number;
+    model_ratios: Array<MerchantModelRatio>;
+    reason: string | null;
+    revision_id: number;
+    service_id: number;
+    status: 'scheduled' | 'active' | 'superseded' | 'cancelled' | 'invalidated';
+    updated_at: number;
+};
+export type MerchantServicePricePage = {
+    items: Array<MerchantServicePrice>;
+    page: number;
+    page_size: number;
+    total: number;
+};
+export type MerchantServicePriceWrite = {
+    default_ratio_micros: number;
+    effective_at: number;
+    expected_revision_id: number;
+    model_ratios: Array<MerchantModelRatio>;
+};
+export type MerchantServiceStatistics = {
+    failure_count: number;
+    latency_p50_ms: number | null;
+    latency_p95_ms: number | null;
+    merchant_id: number;
+    sample_count: number;
+    service_id: number;
+    status: string;
+    success_count: number;
+    success_rate: number | null;
+    ttft_p50_ms: number | null;
+    ttft_p95_ms: number | null;
+    updated_at: number;
+};
+export type MerchantServiceTimeline = {
+    buckets: Array<MerchantTimelineBucket>;
+    merchant_id: number;
+    service_id: number;
+};
+export type MerchantServiceWriteRequest = {
+    api_key?: null;
+    base_url: string;
+    concurrency?: number | null;
+    default_ratio_micros: number;
+    description: string;
+    models: Array<MerchantModelWrite>;
+    name: string;
+    pool_id: number;
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'xai_video';
+    timeout_secs: number;
+};
+export type MerchantSettlementReversal = {
+    reason: string;
+};
+export type MerchantStatisticsResponse = {
+    as_of: number;
+    items: Array<MerchantServiceStatistics>;
+    window_seconds: number;
+};
+export type MerchantTimelineBucket = {
+    ended_at: number;
+    failure_count: number;
+    sample_count: number;
+    started_at: number;
+    status: string;
+    success_count: number;
+};
+export type MerchantTimelineResponse = {
+    as_of: number;
+    items: Array<MerchantServiceTimeline>;
+    window_seconds: number;
+};
+export type MerchantWithdrawal = {
+    id: number;
+    event_key: string;
+    merchant_id: number;
+    amount_quota: number;
+    status: string;
+    reference: string;
+    reason?: string | null;
+    created_at: number;
+    updated_at: number;
+    payout?: null | MerchantPayout;
+};
+export type MerchantWithdrawalDecision = {
+    status: string;
+    reference: string;
+    reason?: string | null;
+};
+export type MerchantWithdrawalPage = {
+    items: Array<MerchantWithdrawal>;
+    next_cursor?: number | null;
+};
+export type MerchantWithdrawalRequest = {
+    event_key: string;
+    amount_quota: number;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
 export type ModelCatalogCapability = 'reasoning' | 'tool_calls' | 'responses_compact';
@@ -1865,6 +2433,30 @@ export type PlaygroundConversationSummary = {
     revision: number;
     created_at: number;
     updated_at: number;
+};
+export type PlaygroundImageHistoryItem = {
+    id: string;
+    model: string;
+    prompt: string;
+    revised_prompt?: string | null;
+    request_id?: string | null;
+    format: string;
+    byte_size: number;
+    thumbnail_format?: string | null;
+    thumbnail_byte_size?: number | null;
+    created_at: number;
+};
+export type PlaygroundImageHistoryListResponse = {
+    images: Array<PlaygroundImageHistoryItem>;
+};
+export type PlaygroundImageHistoryUploadRequest = {
+    model: string;
+    prompt: string;
+    revised_prompt?: string | null;
+    request_id?: string | null;
+    image?: Blob | File | null;
+    image_url?: string | null;
+    thumbnail?: Blob | File | null;
 };
 export type PlaygroundShareCreateRequest = {
     ttl_days: 1 | 7 | 30;
@@ -2137,6 +2729,40 @@ export type SiteSidebarLink = {
     style?: string;
     audience: string;
 };
+export type SoftwareRelease = {
+    version: string;
+    tag: string;
+    url: string;
+    notes: string;
+    published_at?: string | null;
+    package_name?: string | null;
+    package_url?: string | null;
+};
+export type SoftwareStatus = {
+    edition: string;
+    version: string;
+    core_version: string;
+    commit?: string | null;
+    build_time?: string | null;
+    target: string;
+    deployment: string;
+    node_id: string;
+    launch_mode: string;
+    launcher_protocol?: number | null;
+    launcher_version?: string | null;
+    update_phase: string;
+    launcher_error?: string | null;
+    check_enabled: boolean;
+    install_enabled: boolean;
+    install_blocked_reason?: string | null;
+    restart_required: boolean;
+    checked_at?: number | null;
+    latest?: null | SoftwareRelease;
+    update_available: boolean;
+};
+export type SoftwareUpdateErrorBody = {
+    code: string;
+};
 export type SubscriptionCatalogPlan = {
     plan_id: string;
     name: string;
@@ -2189,7 +2815,53 @@ export type SubscriptionPaymentResponse = {
     redirect_url: string | null;
 };
 export type SubscriptionPlanStatus = 'active' | 'disabled';
-export type UsageLogOperation = 'chat' | 'responses' | 'responses_compact' | 'embedding' | 'image' | 'audio' | 'rerank' | 'video' | 'count_tokens';
+export type UpstreamModelPolicy = {
+    disabled_models: Array<string>;
+    mode: 'inherit' | 'allowlist' | 'denylist';
+    models: Array<string>;
+};
+export type UpstreamModelPolicySettings = {
+    auto_add_discovered: boolean;
+    policy: UpstreamModelPolicy;
+    refresh_interval_secs: number | null;
+    version: number;
+};
+export type UpstreamUsageConfig = {
+    currency?: string | null;
+    inherited?: boolean;
+    low_balance_threshold?: string | null;
+    pause_when_exhausted: boolean;
+    profile_id?: number | null;
+    provider: 'auto' | 'codex' | 'new_api' | 'one_api' | 'sub2api' | 'none';
+    quota_per_unit?: string | null;
+    refresh_interval_secs?: number | null;
+    scope: 'key' | 'account';
+    version: number;
+};
+export type UpstreamUsageProfile = {
+    base_url: string;
+    currency?: string | null;
+    has_secret: boolean;
+    id: number;
+    name: string;
+    platform_user_id?: string | null;
+    provider: 'new_api' | 'one_api' | 'sub2api';
+    quota_per_unit?: string | null;
+    version: number;
+};
+export type UpstreamUsageProfilePage = {
+    items: Array<UpstreamUsageProfile>;
+};
+export type UpstreamUsageProfileWrite = {
+    base_url: string;
+    currency?: string | null;
+    name: string;
+    platform_user_id?: string | null;
+    provider: 'new_api' | 'one_api' | 'sub2api';
+    quota_per_unit?: string | null;
+    version: number;
+};
+export type UsageLogOperation = 'chat' | 'responses' | 'responses_compact' | 'embedding' | 'image' | 'image_edit' | 'audio' | 'rerank' | 'video' | 'count_tokens';
 export type UsageLogProtocol = 'open_ai_chat' | 'open_ai_responses' | 'open_ai_embeddings' | 'open_ai_images' | 'open_ai_audio' | 'open_ai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
 export type UsageLogReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'extra_high' | 'max';
 export type UserEmailBindingConfirmRequest = {
@@ -2328,6 +3000,33 @@ export type UserRedemptionResult = {
     redeemed_at: number;
     replayed: boolean;
 };
+export type UserRoute = {
+    id: number;
+    name: string;
+    strategy: UserRouteStrategySchema;
+    enabled: boolean;
+    max_group_attempts: number;
+    max_price_ratio_micros: number | null;
+    members: Array<UserRouteMember>;
+};
+export type UserRouteListResponse = {
+    items: Array<UserRoute>;
+    capacity: number;
+};
+export type UserRouteMember = {
+    group_id: number;
+    priority: number;
+    weight: number;
+};
+export type UserRouteStrategySchema = 'price_first' | 'stable_first' | 'ordered' | 'round_robin' | 'weighted';
+export type UserRouteWriteRequest = {
+    name: string;
+    strategy: UserRouteStrategySchema;
+    enabled: boolean;
+    max_group_attempts: number;
+    max_price_ratio_micros: number | null;
+    members: Array<UserRouteMember>;
+};
 export type UserSubscription = {
     subscription_id: string;
     user_id: number;
@@ -2352,6 +3051,10 @@ export type UserSubscriptionListResponse = {
 export type UserSubscriptionStatus = 'active' | 'suspended' | 'canceled' | 'expired';
 export type UserToken = {
     id: number;
+    group_id: number | null;
+    user_route_id: number | null;
+    effective_group_id: number;
+    group_display_name: string;
     key_prefix: string;
     name: string;
     status: UserTokenStatus;
@@ -2364,6 +3067,16 @@ export type UserToken = {
     created_at: number;
     updated_at: number;
 };
+export type UserTokenGroup = {
+    id: number;
+    display_name: string;
+    ratio_micros: number;
+    is_default: boolean;
+};
+export type UserTokenGroupListResponse = {
+    groups: Array<UserTokenGroup>;
+    next_cursor: number | null;
+};
 export type UserTokenListResponse = {
     tokens: Array<UserToken>;
     next_cursor: number | null;
@@ -2371,6 +3084,8 @@ export type UserTokenListResponse = {
 };
 export type UserTokenStatus = 'enabled' | 'disabled';
 export type UserTokenWriteRequest = {
+    group_id?: number | null;
+    user_route_id?: number | null;
     name: string;
     status: UserTokenStatus;
     remain_quota: number;
@@ -2421,15 +3136,26 @@ export type UserTopupPaymentSession = {
 };
 export type UserTwoFactorEnrollmentResponse = {
     enabled: boolean;
+    state: string;
+    pending_created_at: number | null;
+    pending_expires_at: number | null;
+    bound_at: number | null;
+    last_verified_at: number | null;
     secret: string;
     otpauth_uri: string;
     backup_codes: Array<string>;
 };
 export type UserTwoFactorPasswordRequest = {
     current_password: string;
+    totp_code?: string | null;
 };
 export type UserTwoFactorStatusResponse = {
     enabled: boolean;
+    state: string;
+    pending_created_at: number | null;
+    pending_expires_at: number | null;
+    bound_at: number | null;
+    last_verified_at: number | null;
 };
 export type UserUsageLog = {
     id: number;
@@ -2764,6 +3490,8 @@ export type AdminVerificationSettingsRequestWritable = {
     enterprise_manual_enabled?: boolean | null;
     individual_reason_required?: boolean | null;
     enterprise_reason_required?: boolean | null;
+    require_verification_for_topup?: boolean | null;
+    require_verification_for_api?: boolean | null;
     enabled: boolean;
     app_id?: string | null;
     private_key?: string | null;
@@ -2777,6 +3505,37 @@ export type LoginRequestWritable = {
     password: string;
     totp_code?: string | null;
     turnstile_token?: string | null;
+};
+export type MerchantPayoutAccountCommandWritable = {
+    expected_version: number;
+    label: string;
+    account?: string | null;
+    clear?: boolean | null;
+};
+export type MerchantPayoutSettingsCommandWritable = {
+    expected_version: number;
+    enabled: boolean;
+    auto_approve_enabled: boolean;
+    gateway_url: string;
+    currency: string;
+    quota_per_unit: number;
+    min_amount_minor: number;
+    max_amount_minor: number;
+    daily_limit_minor: number;
+    signing_key?: string | null;
+    clear_signing_key?: boolean | null;
+};
+export type MerchantServiceWriteRequestWritable = {
+    api_key?: string | null;
+    base_url: string;
+    concurrency?: number | null;
+    default_ratio_micros: number;
+    description: string;
+    models: Array<MerchantModelWrite>;
+    name: string;
+    pool_id: number;
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'xai_video';
+    timeout_secs: number;
 };
 export type RegistrationEmailVerificationRequestWritable = {
     email: string;
@@ -2795,6 +3554,16 @@ export type ResponsesCompactItemWritable = unknown;
 export type SetupRequestWritable = {
     username: string;
     password: string;
+};
+export type UpstreamUsageProfileWriteWritable = {
+    base_url: string;
+    currency?: string | null;
+    name: string;
+    platform_user_id?: string | null;
+    provider: 'new_api' | 'one_api' | 'sub2api';
+    quota_per_unit?: string | null;
+    secret?: string | null;
+    version: number;
 };
 export type UserEmailBindingConfirmRequestWritable = {
     email: string;
@@ -3289,6 +4058,7 @@ export type RedeemUserRedemptionCodeData = {
 export type RedeemUserRedemptionCodeErrors = {
     400: ManagementError;
     401: ManagementError;
+    403: ManagementError;
     409: ManagementError;
     410: ManagementError;
     500: ManagementError;
@@ -4048,6 +4818,7 @@ export type CreateUserTopupOrderData = {
 export type CreateUserTopupOrderErrors = {
     400: ManagementError;
     401: ManagementError;
+    403: ManagementError;
     409: ManagementError;
     500: ManagementError;
     502: ManagementError;
@@ -4074,6 +4845,1835 @@ export type GetUserInvitationsResponses = {
     200: UserInvitationSummaryResponse;
 };
 export type GetUserInvitationsResponse = GetUserInvitationsResponses[keyof GetUserInvitationsResponses];
+export type GetAdminMerchantPoolSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/merchant-pool-settings';
+};
+export type GetAdminMerchantPoolSettingsErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type GetAdminMerchantPoolSettingsError = GetAdminMerchantPoolSettingsErrors[keyof GetAdminMerchantPoolSettingsErrors];
+export type GetAdminMerchantPoolSettingsResponses = {
+    200: MerchantPoolSettings;
+};
+export type GetAdminMerchantPoolSettingsResponse = GetAdminMerchantPoolSettingsResponses[keyof GetAdminMerchantPoolSettingsResponses];
+export type UpdateAdminMerchantPoolSettingsData = {
+    body: MerchantPoolSettings;
+    path?: never;
+    query?: never;
+    url: '/api/admin/merchant-pool-settings';
+};
+export type UpdateAdminMerchantPoolSettingsErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type UpdateAdminMerchantPoolSettingsError = UpdateAdminMerchantPoolSettingsErrors[keyof UpdateAdminMerchantPoolSettingsErrors];
+export type UpdateAdminMerchantPoolSettingsResponses = {
+    200: MerchantPoolSettings;
+};
+export type UpdateAdminMerchantPoolSettingsResponse = UpdateAdminMerchantPoolSettingsResponses[keyof UpdateAdminMerchantPoolSettingsResponses];
+export type ListAdminMerchantPoolsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        page?: number;
+        page_size?: number;
+        model?: string;
+        protocol?: string;
+        capability?: string;
+        search?: string;
+        status?: string;
+        sort?: string;
+        min_ratio_micros?: number;
+        max_ratio_micros?: number;
+        window_seconds?: 900 | 3600 | 86400 | 604800;
+        streaming?: boolean;
+    };
+    url: '/api/admin/merchant-pools';
+};
+export type ListAdminMerchantPoolsErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ListAdminMerchantPoolsError = ListAdminMerchantPoolsErrors[keyof ListAdminMerchantPoolsErrors];
+export type ListAdminMerchantPoolsResponses = {
+    200: MerchantPoolPage;
+};
+export type ListAdminMerchantPoolsResponse = ListAdminMerchantPoolsResponses[keyof ListAdminMerchantPoolsResponses];
+export type CreateAdminMerchantPoolData = {
+    body: MerchantPoolWriteRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/merchant-pools';
+};
+export type CreateAdminMerchantPoolErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type CreateAdminMerchantPoolError = CreateAdminMerchantPoolErrors[keyof CreateAdminMerchantPoolErrors];
+export type CreateAdminMerchantPoolResponses = {
+    201: MerchantPool;
+};
+export type CreateAdminMerchantPoolResponse = CreateAdminMerchantPoolResponses[keyof CreateAdminMerchantPoolResponses];
+export type DeleteAdminMerchantPoolData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-pools/{id}';
+};
+export type DeleteAdminMerchantPoolErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type DeleteAdminMerchantPoolError = DeleteAdminMerchantPoolErrors[keyof DeleteAdminMerchantPoolErrors];
+export type DeleteAdminMerchantPoolResponses = {
+    204: void;
+};
+export type DeleteAdminMerchantPoolResponse = DeleteAdminMerchantPoolResponses[keyof DeleteAdminMerchantPoolResponses];
+export type UpdateAdminMerchantPoolData = {
+    body: MerchantPoolWriteRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-pools/{id}';
+};
+export type UpdateAdminMerchantPoolErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type UpdateAdminMerchantPoolError = UpdateAdminMerchantPoolErrors[keyof UpdateAdminMerchantPoolErrors];
+export type UpdateAdminMerchantPoolResponses = {
+    200: MerchantPool;
+};
+export type UpdateAdminMerchantPoolResponse = UpdateAdminMerchantPoolResponses[keyof UpdateAdminMerchantPoolResponses];
+export type GetAdminMerchantPoolTermsData = {
+    body?: never;
+    path: {
+        pool: number;
+        merchant: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-pools/{pool}/merchants/{merchant}/terms';
+};
+export type GetAdminMerchantPoolTermsErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type GetAdminMerchantPoolTermsError = GetAdminMerchantPoolTermsErrors[keyof GetAdminMerchantPoolTermsErrors];
+export type GetAdminMerchantPoolTermsResponses = {
+    200: MerchantPoolTerms;
+};
+export type GetAdminMerchantPoolTermsResponse = GetAdminMerchantPoolTermsResponses[keyof GetAdminMerchantPoolTermsResponses];
+export type UpdateAdminMerchantPoolTermsData = {
+    body: MerchantPoolTerms;
+    path: {
+        pool: number;
+        merchant: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-pools/{pool}/merchants/{merchant}/terms';
+};
+export type UpdateAdminMerchantPoolTermsErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type UpdateAdminMerchantPoolTermsError = UpdateAdminMerchantPoolTermsErrors[keyof UpdateAdminMerchantPoolTermsErrors];
+export type UpdateAdminMerchantPoolTermsResponses = {
+    200: MerchantPoolTerms;
+};
+export type UpdateAdminMerchantPoolTermsResponse = UpdateAdminMerchantPoolTermsResponses[keyof UpdateAdminMerchantPoolTermsResponses];
+export type ListAdminMerchantServicesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        page?: number;
+        page_size?: number;
+        model?: string;
+        protocol?: string;
+        capability?: string;
+        search?: string;
+        status?: string;
+        sort?: string;
+        min_ratio_micros?: number;
+        max_ratio_micros?: number;
+        window_seconds?: 900 | 3600 | 86400 | 604800;
+        streaming?: boolean;
+    };
+    url: '/api/admin/merchant-services';
+};
+export type ListAdminMerchantServicesErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ListAdminMerchantServicesError = ListAdminMerchantServicesErrors[keyof ListAdminMerchantServicesErrors];
+export type ListAdminMerchantServicesResponses = {
+    200: MerchantOwnedServicePage;
+};
+export type ListAdminMerchantServicesResponse = ListAdminMerchantServicesResponses[keyof ListAdminMerchantServicesResponses];
+export type GetAdminMerchantServiceData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-services/{id}';
+};
+export type GetAdminMerchantServiceErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type GetAdminMerchantServiceError = GetAdminMerchantServiceErrors[keyof GetAdminMerchantServiceErrors];
+export type GetAdminMerchantServiceResponses = {
+    200: MerchantOwnedService;
+};
+export type GetAdminMerchantServiceResponse = GetAdminMerchantServiceResponses[keyof GetAdminMerchantServiceResponses];
+export type ResumeAdminMerchantServiceData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-services/{id}/resume';
+};
+export type ResumeAdminMerchantServiceErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ResumeAdminMerchantServiceError = ResumeAdminMerchantServiceErrors[keyof ResumeAdminMerchantServiceErrors];
+export type ResumeAdminMerchantServiceResponses = {
+    200: MerchantOwnedService;
+};
+export type ResumeAdminMerchantServiceResponse = ResumeAdminMerchantServiceResponses[keyof ResumeAdminMerchantServiceResponses];
+export type ReviewAdminMerchantServiceData = {
+    body: MerchantReviewRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-services/{id}/review';
+};
+export type ReviewAdminMerchantServiceErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ReviewAdminMerchantServiceError = ReviewAdminMerchantServiceErrors[keyof ReviewAdminMerchantServiceErrors];
+export type ReviewAdminMerchantServiceResponses = {
+    200: MerchantOwnedService;
+};
+export type ReviewAdminMerchantServiceResponse = ReviewAdminMerchantServiceResponses[keyof ReviewAdminMerchantServiceResponses];
+export type ListAdminMerchantsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        page?: number;
+        page_size?: number;
+        model?: string;
+        protocol?: string;
+        capability?: string;
+        search?: string;
+        status?: string;
+        sort?: string;
+        min_ratio_micros?: number;
+        max_ratio_micros?: number;
+        window_seconds?: 900 | 3600 | 86400 | 604800;
+        streaming?: boolean;
+    };
+    url: '/api/admin/merchants';
+};
+export type ListAdminMerchantsErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ListAdminMerchantsError = ListAdminMerchantsErrors[keyof ListAdminMerchantsErrors];
+export type ListAdminMerchantsResponses = {
+    200: MerchantProfilePage;
+};
+export type ListAdminMerchantsResponse = ListAdminMerchantsResponses[keyof ListAdminMerchantsResponses];
+export type DeleteAdminMerchantData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchants/{id}';
+};
+export type DeleteAdminMerchantErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type DeleteAdminMerchantError = DeleteAdminMerchantErrors[keyof DeleteAdminMerchantErrors];
+export type DeleteAdminMerchantResponses = {
+    204: void;
+};
+export type DeleteAdminMerchantResponse = DeleteAdminMerchantResponses[keyof DeleteAdminMerchantResponses];
+export type ReviewAdminMerchantData = {
+    body: MerchantReviewRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchants/{id}/review';
+};
+export type ReviewAdminMerchantErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ReviewAdminMerchantError = ReviewAdminMerchantErrors[keyof ReviewAdminMerchantErrors];
+export type ReviewAdminMerchantResponses = {
+    200: MerchantProfile;
+};
+export type ReviewAdminMerchantResponse = ReviewAdminMerchantResponses[keyof ReviewAdminMerchantResponses];
+export type ListMerchantPoolsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        page?: number;
+        page_size?: number;
+        model?: string;
+        protocol?: string;
+        capability?: string;
+        search?: string;
+        status?: string;
+        sort?: string;
+        min_ratio_micros?: number;
+        max_ratio_micros?: number;
+        window_seconds?: 900 | 3600 | 86400 | 604800;
+        streaming?: boolean;
+    };
+    url: '/api/merchant-pools';
+};
+export type ListMerchantPoolsErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ListMerchantPoolsError = ListMerchantPoolsErrors[keyof ListMerchantPoolsErrors];
+export type ListMerchantPoolsResponses = {
+    200: MerchantPoolPage;
+};
+export type ListMerchantPoolsResponse = ListMerchantPoolsResponses[keyof ListMerchantPoolsResponses];
+export type ListMerchantPoolServicesData = {
+    body?: never;
+    path: {
+        pool: number;
+    };
+    query?: {
+        page?: number;
+        page_size?: number;
+        model?: string;
+        protocol?: string;
+        capability?: string;
+        search?: string;
+        status?: string;
+        sort?: string;
+        min_ratio_micros?: number;
+        max_ratio_micros?: number;
+        window_seconds?: 900 | 3600 | 86400 | 604800;
+        streaming?: boolean;
+    };
+    url: '/api/merchant-pools/{pool}/services';
+};
+export type ListMerchantPoolServicesErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ListMerchantPoolServicesError = ListMerchantPoolServicesErrors[keyof ListMerchantPoolServicesErrors];
+export type ListMerchantPoolServicesResponses = {
+    200: MerchantCatalogServicePage;
+};
+export type ListMerchantPoolServicesResponse = ListMerchantPoolServicesResponses[keyof ListMerchantPoolServicesResponses];
+export type GetMerchantPoolServiceData = {
+    body?: never;
+    path: {
+        pool: number;
+        id: number;
+    };
+    query?: never;
+    url: '/api/merchant-pools/{pool}/services/{id}';
+};
+export type GetMerchantPoolServiceErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type GetMerchantPoolServiceError = GetMerchantPoolServiceErrors[keyof GetMerchantPoolServiceErrors];
+export type GetMerchantPoolServiceResponses = {
+    200: MerchantCatalogService;
+};
+export type GetMerchantPoolServiceResponse = GetMerchantPoolServiceResponses[keyof GetMerchantPoolServiceResponses];
+export type ApplyMerchantData = {
+    body: MerchantApplicationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/merchant/apply';
+};
+export type ApplyMerchantErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ApplyMerchantError = ApplyMerchantErrors[keyof ApplyMerchantErrors];
+export type ApplyMerchantResponses = {
+    201: MerchantProfile;
+};
+export type ApplyMerchantResponse = ApplyMerchantResponses[keyof ApplyMerchantResponses];
+export type ListMerchantAvailablePoolsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        page?: number;
+        page_size?: number;
+        model?: string;
+        protocol?: string;
+        capability?: string;
+        search?: string;
+        status?: string;
+        sort?: string;
+        min_ratio_micros?: number;
+        max_ratio_micros?: number;
+        window_seconds?: 900 | 3600 | 86400 | 604800;
+        streaming?: boolean;
+    };
+    url: '/api/merchant/available-pools';
+};
+export type ListMerchantAvailablePoolsErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ListMerchantAvailablePoolsError = ListMerchantAvailablePoolsErrors[keyof ListMerchantAvailablePoolsErrors];
+export type ListMerchantAvailablePoolsResponses = {
+    200: MerchantPoolPage;
+};
+export type ListMerchantAvailablePoolsResponse = ListMerchantAvailablePoolsResponses[keyof ListMerchantAvailablePoolsResponses];
+export type GetMerchantProfileData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/merchant/profile';
+};
+export type GetMerchantProfileErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type GetMerchantProfileError = GetMerchantProfileErrors[keyof GetMerchantProfileErrors];
+export type GetMerchantProfileResponses = {
+    200: MerchantProfile | null;
+};
+export type GetMerchantProfileResponse = GetMerchantProfileResponses[keyof GetMerchantProfileResponses];
+export type QuoteMerchantServiceData = {
+    body: MerchantQuoteRequest;
+    path?: never;
+    query?: never;
+    url: '/api/merchant/quote';
+};
+export type QuoteMerchantServiceErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type QuoteMerchantServiceError = QuoteMerchantServiceErrors[keyof QuoteMerchantServiceErrors];
+export type QuoteMerchantServiceResponses = {
+    200: MerchantQuote;
+};
+export type QuoteMerchantServiceResponse = QuoteMerchantServiceResponses[keyof QuoteMerchantServiceResponses];
+export type ListOwnedMerchantServicesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        page?: number;
+        page_size?: number;
+        model?: string;
+        protocol?: string;
+        capability?: string;
+        search?: string;
+        status?: string;
+        sort?: string;
+        min_ratio_micros?: number;
+        max_ratio_micros?: number;
+        window_seconds?: 900 | 3600 | 86400 | 604800;
+        streaming?: boolean;
+    };
+    url: '/api/merchant/services';
+};
+export type ListOwnedMerchantServicesErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ListOwnedMerchantServicesError = ListOwnedMerchantServicesErrors[keyof ListOwnedMerchantServicesErrors];
+export type ListOwnedMerchantServicesResponses = {
+    200: MerchantOwnedServicePage;
+};
+export type ListOwnedMerchantServicesResponse = ListOwnedMerchantServicesResponses[keyof ListOwnedMerchantServicesResponses];
+export type CreateMerchantServiceData = {
+    body: MerchantServiceWriteRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/api/merchant/services';
+};
+export type CreateMerchantServiceErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type CreateMerchantServiceError = CreateMerchantServiceErrors[keyof CreateMerchantServiceErrors];
+export type CreateMerchantServiceResponses = {
+    201: MerchantOwnedService;
+};
+export type CreateMerchantServiceResponse = CreateMerchantServiceResponses[keyof CreateMerchantServiceResponses];
+export type GetOwnedMerchantServiceData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}';
+};
+export type GetOwnedMerchantServiceErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type GetOwnedMerchantServiceError = GetOwnedMerchantServiceErrors[keyof GetOwnedMerchantServiceErrors];
+export type GetOwnedMerchantServiceResponses = {
+    200: MerchantOwnedService;
+};
+export type GetOwnedMerchantServiceResponse = GetOwnedMerchantServiceResponses[keyof GetOwnedMerchantServiceResponses];
+export type UpdateMerchantServiceData = {
+    body: MerchantServiceWriteRequestWritable;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}';
+};
+export type UpdateMerchantServiceErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type UpdateMerchantServiceError = UpdateMerchantServiceErrors[keyof UpdateMerchantServiceErrors];
+export type UpdateMerchantServiceResponses = {
+    200: MerchantOwnedService;
+};
+export type UpdateMerchantServiceResponse = UpdateMerchantServiceResponses[keyof UpdateMerchantServiceResponses];
+export type RotateMerchantServiceKeyData = {
+    body: MerchantKeyRotationRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}/key';
+};
+export type RotateMerchantServiceKeyErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type RotateMerchantServiceKeyError = RotateMerchantServiceKeyErrors[keyof RotateMerchantServiceKeyErrors];
+export type RotateMerchantServiceKeyResponses = {
+    200: MerchantOwnedService;
+};
+export type RotateMerchantServiceKeyResponse = RotateMerchantServiceKeyResponses[keyof RotateMerchantServiceKeyResponses];
+export type PauseMerchantServiceData = {
+    body: MerchantPauseRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}/pause';
+};
+export type PauseMerchantServiceErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type PauseMerchantServiceError = PauseMerchantServiceErrors[keyof PauseMerchantServiceErrors];
+export type PauseMerchantServiceResponses = {
+    200: MerchantOwnedService;
+};
+export type PauseMerchantServiceResponse = PauseMerchantServiceResponses[keyof PauseMerchantServiceResponses];
+export type SubmitMerchantServiceData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}/submit';
+};
+export type SubmitMerchantServiceErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type SubmitMerchantServiceError = SubmitMerchantServiceErrors[keyof SubmitMerchantServiceErrors];
+export type SubmitMerchantServiceResponses = {
+    200: MerchantOwnedService;
+};
+export type SubmitMerchantServiceResponse = SubmitMerchantServiceResponses[keyof SubmitMerchantServiceResponses];
+export type GetAdminCredentialModelPolicyData = {
+    body?: never;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/model-policy';
+};
+export type GetAdminCredentialModelPolicyErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type GetAdminCredentialModelPolicyResponses = {
+    200: UpstreamModelPolicySettings;
+};
+export type GetAdminCredentialModelPolicyResponse = GetAdminCredentialModelPolicyResponses[keyof GetAdminCredentialModelPolicyResponses];
+export type UpdateAdminCredentialModelPolicyData = {
+    body: UpstreamModelPolicySettings;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/model-policy';
+};
+export type UpdateAdminCredentialModelPolicyErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type UpdateAdminCredentialModelPolicyResponses = {
+    200: UpstreamModelPolicySettings;
+};
+export type UpdateAdminCredentialModelPolicyResponse = UpdateAdminCredentialModelPolicyResponses[keyof UpdateAdminCredentialModelPolicyResponses];
+export type ListAdminCredentialModelsData = {
+    body?: never;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/models';
+};
+export type ListAdminCredentialModelsErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type ListAdminCredentialModelsResponses = {
+    200: CredentialModelsSnapshot;
+};
+export type ListAdminCredentialModelsResponse = ListAdminCredentialModelsResponses[keyof ListAdminCredentialModelsResponses];
+export type RefreshAdminCredentialModelsData = {
+    body?: never;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/models/refresh';
+};
+export type RefreshAdminCredentialModelsErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type RefreshAdminCredentialModelsResponses = {
+    200: CredentialModelsSnapshot;
+};
+export type RefreshAdminCredentialModelsResponse = RefreshAdminCredentialModelsResponses[keyof RefreshAdminCredentialModelsResponses];
+export type GetAdminChannelModelPolicyData = {
+    body?: never;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/model-policy';
+};
+export type GetAdminChannelModelPolicyErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type GetAdminChannelModelPolicyResponses = {
+    200: UpstreamModelPolicySettings;
+};
+export type GetAdminChannelModelPolicyResponse = GetAdminChannelModelPolicyResponses[keyof GetAdminChannelModelPolicyResponses];
+export type UpdateAdminChannelModelPolicyData = {
+    body: UpstreamModelPolicySettings;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/model-policy';
+};
+export type UpdateAdminChannelModelPolicyErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type UpdateAdminChannelModelPolicyResponses = {
+    200: UpstreamModelPolicySettings;
+};
+export type UpdateAdminChannelModelPolicyResponse = UpdateAdminChannelModelPolicyResponses[keyof UpdateAdminChannelModelPolicyResponses];
+export type ResetAdminCredentialUsageConfigData = {
+    body?: never;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/usage-config';
+};
+export type ResetAdminCredentialUsageConfigErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type ResetAdminCredentialUsageConfigResponses = {
+    204: void;
+};
+export type ResetAdminCredentialUsageConfigResponse = ResetAdminCredentialUsageConfigResponses[keyof ResetAdminCredentialUsageConfigResponses];
+export type GetAdminCredentialUsageConfigData = {
+    body?: never;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/usage-config';
+};
+export type GetAdminCredentialUsageConfigErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type GetAdminCredentialUsageConfigResponses = {
+    200: UpstreamUsageConfig;
+};
+export type GetAdminCredentialUsageConfigResponse = GetAdminCredentialUsageConfigResponses[keyof GetAdminCredentialUsageConfigResponses];
+export type UpdateAdminCredentialUsageConfigData = {
+    body: UpstreamUsageConfig;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/usage-config';
+};
+export type UpdateAdminCredentialUsageConfigErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type UpdateAdminCredentialUsageConfigResponses = {
+    200: UpstreamUsageConfig;
+};
+export type UpdateAdminCredentialUsageConfigResponse = UpdateAdminCredentialUsageConfigResponses[keyof UpdateAdminCredentialUsageConfigResponses];
+export type RefreshAdminCredentialUsageData = {
+    body?: never;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/usage/refresh';
+};
+export type RefreshAdminCredentialUsageErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type RefreshAdminCredentialUsageResponses = {
+    200: CredentialUsageSnapshot;
+};
+export type RefreshAdminCredentialUsageResponse = RefreshAdminCredentialUsageResponses[keyof RefreshAdminCredentialUsageResponses];
+export type GetAdminChannelUsageConfigData = {
+    body?: never;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/usage-config';
+};
+export type GetAdminChannelUsageConfigErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type GetAdminChannelUsageConfigResponses = {
+    200: UpstreamUsageConfig;
+};
+export type GetAdminChannelUsageConfigResponse = GetAdminChannelUsageConfigResponses[keyof GetAdminChannelUsageConfigResponses];
+export type UpdateAdminChannelUsageConfigData = {
+    body: UpstreamUsageConfig;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/usage-config';
+};
+export type UpdateAdminChannelUsageConfigErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type UpdateAdminChannelUsageConfigResponses = {
+    200: UpstreamUsageConfig;
+};
+export type UpdateAdminChannelUsageConfigResponse = UpdateAdminChannelUsageConfigResponses[keyof UpdateAdminChannelUsageConfigResponses];
+export type ListAdminUpstreamUsageProfilesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/upstream-usage-profiles';
+};
+export type ListAdminUpstreamUsageProfilesErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type ListAdminUpstreamUsageProfilesResponses = {
+    200: UpstreamUsageProfilePage;
+};
+export type ListAdminUpstreamUsageProfilesResponse = ListAdminUpstreamUsageProfilesResponses[keyof ListAdminUpstreamUsageProfilesResponses];
+export type CreateAdminUpstreamUsageProfileData = {
+    body: UpstreamUsageProfileWriteWritable;
+    path?: never;
+    query?: never;
+    url: '/api/admin/upstream-usage-profiles';
+};
+export type CreateAdminUpstreamUsageProfileErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type CreateAdminUpstreamUsageProfileResponses = {
+    201: UpstreamUsageProfile;
+};
+export type CreateAdminUpstreamUsageProfileResponse = CreateAdminUpstreamUsageProfileResponses[keyof CreateAdminUpstreamUsageProfileResponses];
+export type DeleteAdminUpstreamUsageProfileData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/upstream-usage-profiles/{id}';
+};
+export type DeleteAdminUpstreamUsageProfileErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type DeleteAdminUpstreamUsageProfileResponses = {
+    204: void;
+};
+export type DeleteAdminUpstreamUsageProfileResponse = DeleteAdminUpstreamUsageProfileResponses[keyof DeleteAdminUpstreamUsageProfileResponses];
+export type UpdateAdminUpstreamUsageProfileData = {
+    body: UpstreamUsageProfileWriteWritable;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/upstream-usage-profiles/{id}';
+};
+export type UpdateAdminUpstreamUsageProfileErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    409: unknown;
+    503: unknown;
+};
+export type UpdateAdminUpstreamUsageProfileResponses = {
+    200: UpstreamUsageProfile;
+};
+export type UpdateAdminUpstreamUsageProfileResponse = UpdateAdminUpstreamUsageProfileResponses[keyof UpdateAdminUpstreamUsageProfileResponses];
+export type ListServiceMaintenanceAdminData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+    url: '/api/admin/merchant-services/{id}/maintenance';
+};
+export type ListServiceMaintenanceAdminErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ListServiceMaintenanceAdminError = ListServiceMaintenanceAdminErrors[keyof ListServiceMaintenanceAdminErrors];
+export type ListServiceMaintenanceAdminResponses = {
+    200: MerchantMaintenancePage;
+};
+export type ListServiceMaintenanceAdminResponse = ListServiceMaintenanceAdminResponses[keyof ListServiceMaintenanceAdminResponses];
+export type CreateServiceMaintenanceAdminData = {
+    body: MerchantMaintenanceWrite;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-services/{id}/maintenance';
+};
+export type CreateServiceMaintenanceAdminErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type CreateServiceMaintenanceAdminError = CreateServiceMaintenanceAdminErrors[keyof CreateServiceMaintenanceAdminErrors];
+export type CreateServiceMaintenanceAdminResponses = {
+    201: MerchantMaintenance;
+};
+export type CreateServiceMaintenanceAdminResponse = CreateServiceMaintenanceAdminResponses[keyof CreateServiceMaintenanceAdminResponses];
+export type UpdateServiceMaintenanceAdminData = {
+    body: MerchantMaintenanceWrite;
+    path: {
+        id: number;
+        notice: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-services/{id}/maintenance/{notice}';
+};
+export type UpdateServiceMaintenanceAdminErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type UpdateServiceMaintenanceAdminError = UpdateServiceMaintenanceAdminErrors[keyof UpdateServiceMaintenanceAdminErrors];
+export type UpdateServiceMaintenanceAdminResponses = {
+    200: MerchantMaintenance;
+};
+export type UpdateServiceMaintenanceAdminResponse = UpdateServiceMaintenanceAdminResponses[keyof UpdateServiceMaintenanceAdminResponses];
+export type CancelServiceMaintenanceAdminData = {
+    body?: never;
+    path: {
+        id: number;
+        notice: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-services/{id}/maintenance/{notice}/cancel';
+};
+export type CancelServiceMaintenanceAdminErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type CancelServiceMaintenanceAdminError = CancelServiceMaintenanceAdminErrors[keyof CancelServiceMaintenanceAdminErrors];
+export type CancelServiceMaintenanceAdminResponses = {
+    200: MerchantMaintenance;
+};
+export type CancelServiceMaintenanceAdminResponse = CancelServiceMaintenanceAdminResponses[keyof CancelServiceMaintenanceAdminResponses];
+export type ListServicePricesAdminData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+    url: '/api/admin/merchant-services/{id}/prices';
+};
+export type ListServicePricesAdminErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ListServicePricesAdminError = ListServicePricesAdminErrors[keyof ListServicePricesAdminErrors];
+export type ListServicePricesAdminResponses = {
+    200: MerchantServicePricePage;
+};
+export type ListServicePricesAdminResponse = ListServicePricesAdminResponses[keyof ListServicePricesAdminResponses];
+export type ScheduleServicePriceAdminData = {
+    body: MerchantServicePriceWrite;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-services/{id}/prices';
+};
+export type ScheduleServicePriceAdminErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ScheduleServicePriceAdminError = ScheduleServicePriceAdminErrors[keyof ScheduleServicePriceAdminErrors];
+export type ScheduleServicePriceAdminResponses = {
+    201: MerchantServicePrice;
+};
+export type ScheduleServicePriceAdminResponse = ScheduleServicePriceAdminResponses[keyof ScheduleServicePriceAdminResponses];
+export type CancelServicePriceAdminData = {
+    body?: never;
+    path: {
+        id: number;
+        price: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-services/{id}/prices/{price}/cancel';
+};
+export type CancelServicePriceAdminErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type CancelServicePriceAdminError = CancelServicePriceAdminErrors[keyof CancelServicePriceAdminErrors];
+export type CancelServicePriceAdminResponses = {
+    200: MerchantServicePrice;
+};
+export type CancelServicePriceAdminResponse = CancelServicePriceAdminResponses[keyof CancelServicePriceAdminResponses];
+export type ListServiceMaintenanceOwnedData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+    url: '/api/merchant/services/{id}/maintenance';
+};
+export type ListServiceMaintenanceOwnedErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ListServiceMaintenanceOwnedError = ListServiceMaintenanceOwnedErrors[keyof ListServiceMaintenanceOwnedErrors];
+export type ListServiceMaintenanceOwnedResponses = {
+    200: MerchantMaintenancePage;
+};
+export type ListServiceMaintenanceOwnedResponse = ListServiceMaintenanceOwnedResponses[keyof ListServiceMaintenanceOwnedResponses];
+export type CreateServiceMaintenanceOwnedData = {
+    body: MerchantMaintenanceWrite;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}/maintenance';
+};
+export type CreateServiceMaintenanceOwnedErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type CreateServiceMaintenanceOwnedError = CreateServiceMaintenanceOwnedErrors[keyof CreateServiceMaintenanceOwnedErrors];
+export type CreateServiceMaintenanceOwnedResponses = {
+    201: MerchantMaintenance;
+};
+export type CreateServiceMaintenanceOwnedResponse = CreateServiceMaintenanceOwnedResponses[keyof CreateServiceMaintenanceOwnedResponses];
+export type UpdateServiceMaintenanceOwnedData = {
+    body: MerchantMaintenanceWrite;
+    path: {
+        id: number;
+        notice: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}/maintenance/{notice}';
+};
+export type UpdateServiceMaintenanceOwnedErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type UpdateServiceMaintenanceOwnedError = UpdateServiceMaintenanceOwnedErrors[keyof UpdateServiceMaintenanceOwnedErrors];
+export type UpdateServiceMaintenanceOwnedResponses = {
+    200: MerchantMaintenance;
+};
+export type UpdateServiceMaintenanceOwnedResponse = UpdateServiceMaintenanceOwnedResponses[keyof UpdateServiceMaintenanceOwnedResponses];
+export type CancelServiceMaintenanceOwnedData = {
+    body?: never;
+    path: {
+        id: number;
+        notice: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}/maintenance/{notice}/cancel';
+};
+export type CancelServiceMaintenanceOwnedErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type CancelServiceMaintenanceOwnedError = CancelServiceMaintenanceOwnedErrors[keyof CancelServiceMaintenanceOwnedErrors];
+export type CancelServiceMaintenanceOwnedResponses = {
+    200: MerchantMaintenance;
+};
+export type CancelServiceMaintenanceOwnedResponse = CancelServiceMaintenanceOwnedResponses[keyof CancelServiceMaintenanceOwnedResponses];
+export type ListServicePricesOwnedData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+    url: '/api/merchant/services/{id}/prices';
+};
+export type ListServicePricesOwnedErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ListServicePricesOwnedError = ListServicePricesOwnedErrors[keyof ListServicePricesOwnedErrors];
+export type ListServicePricesOwnedResponses = {
+    200: MerchantServicePricePage;
+};
+export type ListServicePricesOwnedResponse = ListServicePricesOwnedResponses[keyof ListServicePricesOwnedResponses];
+export type ScheduleServicePriceOwnedData = {
+    body: MerchantServicePriceWrite;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}/prices';
+};
+export type ScheduleServicePriceOwnedErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ScheduleServicePriceOwnedError = ScheduleServicePriceOwnedErrors[keyof ScheduleServicePriceOwnedErrors];
+export type ScheduleServicePriceOwnedResponses = {
+    201: MerchantServicePrice;
+};
+export type ScheduleServicePriceOwnedResponse = ScheduleServicePriceOwnedResponses[keyof ScheduleServicePriceOwnedResponses];
+export type CancelServicePriceOwnedData = {
+    body?: never;
+    path: {
+        id: number;
+        price: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}/prices/{price}/cancel';
+};
+export type CancelServicePriceOwnedErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type CancelServicePriceOwnedError = CancelServicePriceOwnedErrors[keyof CancelServicePriceOwnedErrors];
+export type CancelServicePriceOwnedResponses = {
+    200: MerchantServicePrice;
+};
+export type CancelServicePriceOwnedResponse = CancelServicePriceOwnedResponses[keyof CancelServicePriceOwnedResponses];
 export type GetAdminEmailSettingsData = {
     body?: never;
     path?: never;
@@ -4267,10 +6867,13 @@ export type CompleteAdminOAuthManualCallbackResponse = CompleteAdminOAuthManualC
 export type StartGitHubOAuthLoginData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        invite_code?: string;
+    };
     url: '/api/auth/oauth/github/start';
 };
 export type StartGitHubOAuthLoginErrors = {
+    400: ManagementError;
     409: ManagementError;
     500: ManagementError;
 };
@@ -4282,10 +6885,13 @@ export type StartGitHubOAuthLoginResponse = StartGitHubOAuthLoginResponses[keyof
 export type StartDiscordOAuthLoginData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        invite_code?: string;
+    };
     url: '/api/auth/oauth/discord/start';
 };
 export type StartDiscordOAuthLoginErrors = {
+    400: ManagementError;
     409: ManagementError;
     500: ManagementError;
 };
@@ -4744,6 +7350,67 @@ export type UpdateAdminUserResponses = {
     200: AdminUser;
 };
 export type UpdateAdminUserResponse = UpdateAdminUserResponses[keyof UpdateAdminUserResponses];
+export type GetAdminUserSecurityData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/users/{id}/security';
+};
+export type GetAdminUserSecurityErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminUserSecurityError = GetAdminUserSecurityErrors[keyof GetAdminUserSecurityErrors];
+export type GetAdminUserSecurityResponses = {
+    200: AdminUserSecurityResponse;
+};
+export type GetAdminUserSecurityResponse = GetAdminUserSecurityResponses[keyof GetAdminUserSecurityResponses];
+export type ResetAdminUserTwoFactorData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/users/{id}/security/two-factor/reset';
+};
+export type ResetAdminUserTwoFactorErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ResetAdminUserTwoFactorError = ResetAdminUserTwoFactorErrors[keyof ResetAdminUserTwoFactorErrors];
+export type ResetAdminUserTwoFactorResponses = {
+    200: AdminUserSecurityResponse;
+};
+export type ResetAdminUserTwoFactorResponse = ResetAdminUserTwoFactorResponses[keyof ResetAdminUserTwoFactorResponses];
+export type RevokeAdminUserPasskeyData = {
+    body?: never;
+    path: {
+        id: number;
+        passkey_id: number;
+    };
+    query?: never;
+    url: '/api/admin/users/{id}/security/passkeys/{passkey_id}';
+};
+export type RevokeAdminUserPasskeyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type RevokeAdminUserPasskeyError = RevokeAdminUserPasskeyErrors[keyof RevokeAdminUserPasskeyErrors];
+export type RevokeAdminUserPasskeyResponses = {
+    204: void;
+};
+export type RevokeAdminUserPasskeyResponse = RevokeAdminUserPasskeyResponses[keyof RevokeAdminUserPasskeyResponses];
 export type ListAdminWalletEntriesData = {
     body?: never;
     path: {
@@ -4833,7 +7500,9 @@ export type DeleteAdminGroupData = {
     path: {
         id: number;
     };
-    query?: never;
+    query?: {
+        replacement_group_id?: number;
+    };
     url: '/api/admin/groups/{id}';
 };
 export type DeleteAdminGroupErrors = {
@@ -4890,6 +7559,104 @@ export type UpdateAdminGroupResponses = {
     200: AdminGroup;
 };
 export type UpdateAdminGroupResponse = UpdateAdminGroupResponses[keyof UpdateAdminGroupResponses];
+export type ListUserTokenGroupsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/token-groups';
+};
+export type ListUserTokenGroupsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListUserTokenGroupsError = ListUserTokenGroupsErrors[keyof ListUserTokenGroupsErrors];
+export type ListUserTokenGroupsResponses = {
+    200: UserTokenGroupListResponse;
+};
+export type ListUserTokenGroupsResponse = ListUserTokenGroupsResponses[keyof ListUserTokenGroupsResponses];
+export type GetAdminGroupKeyPolicyData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/groups/{id}/key-policy';
+};
+export type GetAdminGroupKeyPolicyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminGroupKeyPolicyError = GetAdminGroupKeyPolicyErrors[keyof GetAdminGroupKeyPolicyErrors];
+export type GetAdminGroupKeyPolicyResponses = {
+    200: AdminGroupKeyPolicy;
+};
+export type GetAdminGroupKeyPolicyResponse = GetAdminGroupKeyPolicyResponses[keyof GetAdminGroupKeyPolicyResponses];
+export type UpdateAdminGroupKeyPolicyData = {
+    body: AdminGroupKeyPolicyWriteRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/groups/{id}/key-policy';
+};
+export type UpdateAdminGroupKeyPolicyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminGroupKeyPolicyError = UpdateAdminGroupKeyPolicyErrors[keyof UpdateAdminGroupKeyPolicyErrors];
+export type UpdateAdminGroupKeyPolicyResponses = {
+    200: AdminGroupKeyPolicyUpdateResult;
+};
+export type UpdateAdminGroupKeyPolicyResponse = UpdateAdminGroupKeyPolicyResponses[keyof UpdateAdminGroupKeyPolicyResponses];
+export type GetAdminGroupModelPolicyData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/groups/{id}/model-policy';
+};
+export type GetAdminGroupModelPolicyErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminGroupModelPolicyError = GetAdminGroupModelPolicyErrors[keyof GetAdminGroupModelPolicyErrors];
+export type GetAdminGroupModelPolicyResponses = {
+    200: AdminGroupModelPolicy;
+};
+export type GetAdminGroupModelPolicyResponse = GetAdminGroupModelPolicyResponses[keyof GetAdminGroupModelPolicyResponses];
+export type UpdateAdminGroupModelPolicyData = {
+    body: AdminGroupModelPolicyWriteRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/groups/{id}/model-policy';
+};
+export type UpdateAdminGroupModelPolicyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminGroupModelPolicyError = UpdateAdminGroupModelPolicyErrors[keyof UpdateAdminGroupModelPolicyErrors];
+export type UpdateAdminGroupModelPolicyResponses = {
+    200: AdminGroupModelPolicy;
+};
+export type UpdateAdminGroupModelPolicyResponse = UpdateAdminGroupModelPolicyResponses[keyof UpdateAdminGroupModelPolicyResponses];
 export type ListAdminRoutesData = {
     body?: never;
     path?: never;
@@ -5442,6 +8209,92 @@ export type SavePlaygroundConversationResponses = {
     200: PlaygroundConversationResponse;
 };
 export type SavePlaygroundConversationResponse = SavePlaygroundConversationResponses[keyof SavePlaygroundConversationResponses];
+export type ClearPlaygroundImageHistoryData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/playground/image-history';
+};
+export type ClearPlaygroundImageHistoryResponses = {
+    204: void;
+};
+export type ClearPlaygroundImageHistoryResponse = ClearPlaygroundImageHistoryResponses[keyof ClearPlaygroundImageHistoryResponses];
+export type ListPlaygroundImageHistoryData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/playground/image-history';
+};
+export type ListPlaygroundImageHistoryErrors = {
+    401: ManagementError;
+};
+export type ListPlaygroundImageHistoryError = ListPlaygroundImageHistoryErrors[keyof ListPlaygroundImageHistoryErrors];
+export type ListPlaygroundImageHistoryResponses = {
+    200: PlaygroundImageHistoryListResponse;
+};
+export type ListPlaygroundImageHistoryResponse = ListPlaygroundImageHistoryResponses[keyof ListPlaygroundImageHistoryResponses];
+export type SavePlaygroundImageHistoryData = {
+    body: PlaygroundImageHistoryUploadRequest;
+    path?: never;
+    query?: never;
+    url: '/api/playground/image-history';
+};
+export type SavePlaygroundImageHistoryErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    409: ManagementError;
+};
+export type SavePlaygroundImageHistoryError = SavePlaygroundImageHistoryErrors[keyof SavePlaygroundImageHistoryErrors];
+export type SavePlaygroundImageHistoryResponses = {
+    200: PlaygroundImageHistoryItem;
+};
+export type SavePlaygroundImageHistoryResponse = SavePlaygroundImageHistoryResponses[keyof SavePlaygroundImageHistoryResponses];
+export type ReadPlaygroundHistoryImageData = {
+    body?: never;
+    path: {
+        image_id: string;
+    };
+    query?: never;
+    url: '/api/playground/image-history/{image_id}/image';
+};
+export type ReadPlaygroundHistoryImageErrors = {
+    404: ManagementError;
+};
+export type ReadPlaygroundHistoryImageError = ReadPlaygroundHistoryImageErrors[keyof ReadPlaygroundHistoryImageErrors];
+export type ReadPlaygroundHistoryImageResponses = {
+    200: unknown;
+};
+export type ReadPlaygroundHistoryImageThumbnailData = {
+    body?: never;
+    path: {
+        image_id: string;
+    };
+    query?: never;
+    url: '/api/playground/image-history/{image_id}/thumbnail';
+};
+export type ReadPlaygroundHistoryImageThumbnailErrors = {
+    404: ManagementError;
+};
+export type ReadPlaygroundHistoryImageThumbnailError = ReadPlaygroundHistoryImageThumbnailErrors[keyof ReadPlaygroundHistoryImageThumbnailErrors];
+export type ReadPlaygroundHistoryImageThumbnailResponses = {
+    200: unknown;
+};
+export type DeletePlaygroundImageHistoryData = {
+    body?: never;
+    path: {
+        image_id: string;
+    };
+    query?: never;
+    url: '/api/playground/image-history/{image_id}';
+};
+export type DeletePlaygroundImageHistoryErrors = {
+    404: ManagementError;
+};
+export type DeletePlaygroundImageHistoryError = DeletePlaygroundImageHistoryErrors[keyof DeletePlaygroundImageHistoryErrors];
+export type DeletePlaygroundImageHistoryResponses = {
+    204: void;
+};
+export type DeletePlaygroundImageHistoryResponse = DeletePlaygroundImageHistoryResponses[keyof DeletePlaygroundImageHistoryResponses];
 export type ListUserTokensData = {
     body?: never;
     path?: never;
@@ -5470,6 +8323,7 @@ export type CreateUserTokenData = {
 export type CreateUserTokenErrors = {
     400: ManagementError;
     401: ManagementError;
+    403: ManagementError;
     409: ManagementError;
     500: ManagementError;
 };
@@ -5535,6 +8389,506 @@ export type UpdateUserTokenResponses = {
     200: UserToken;
 };
 export type UpdateUserTokenResponse = UpdateUserTokenResponses[keyof UpdateUserTokenResponses];
+export type ListUserRoutesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/user-routes';
+};
+export type ListUserRoutesErrors = {
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListUserRoutesError = ListUserRoutesErrors[keyof ListUserRoutesErrors];
+export type ListUserRoutesResponses = {
+    200: UserRouteListResponse;
+};
+export type ListUserRoutesResponse = ListUserRoutesResponses[keyof ListUserRoutesResponses];
+export type CreateUserRouteData = {
+    body: UserRouteWriteRequest;
+    path?: never;
+    query?: never;
+    url: '/api/user-routes';
+};
+export type CreateUserRouteErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateUserRouteError = CreateUserRouteErrors[keyof CreateUserRouteErrors];
+export type CreateUserRouteResponses = {
+    201: UserRoute;
+};
+export type CreateUserRouteResponse = CreateUserRouteResponses[keyof CreateUserRouteResponses];
+export type DeleteUserRouteData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/user-routes/{id}';
+};
+export type DeleteUserRouteErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type DeleteUserRouteError = DeleteUserRouteErrors[keyof DeleteUserRouteErrors];
+export type DeleteUserRouteResponses = {
+    204: void;
+};
+export type DeleteUserRouteResponse = DeleteUserRouteResponses[keyof DeleteUserRouteResponses];
+export type GetUserRouteData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/user-routes/{id}';
+};
+export type GetUserRouteErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetUserRouteError = GetUserRouteErrors[keyof GetUserRouteErrors];
+export type GetUserRouteResponses = {
+    200: UserRoute;
+};
+export type GetUserRouteResponse = GetUserRouteResponses[keyof GetUserRouteResponses];
+export type UpdateUserRouteData = {
+    body: UserRouteWriteRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/user-routes/{id}';
+};
+export type UpdateUserRouteErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type UpdateUserRouteError = UpdateUserRouteErrors[keyof UpdateUserRouteErrors];
+export type UpdateUserRouteResponses = {
+    200: UserRoute;
+};
+export type UpdateUserRouteResponse = UpdateUserRouteResponses[keyof UpdateUserRouteResponses];
+export type GetMerchantAttemptsData = {
+    body?: never;
+    path?: never;
+    query: {
+        request_id: string;
+    };
+    url: '/api/merchant-pool/attempts';
+};
+export type GetMerchantAttemptsErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    500: unknown;
+};
+export type GetMerchantAttemptsResponses = {
+    200: MerchantAttemptList;
+};
+export type GetMerchantAttemptsResponse = GetMerchantAttemptsResponses[keyof GetMerchantAttemptsResponses];
+export type ListMerchantRoutesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/merchant-pool/routes';
+};
+export type ListMerchantRoutesErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    500: unknown;
+};
+export type ListMerchantRoutesResponses = {
+    200: MerchantRouteList;
+};
+export type ListMerchantRoutesResponse = ListMerchantRoutesResponses[keyof ListMerchantRoutesResponses];
+export type CreateMerchantRouteData = {
+    body: MerchantRouteWriteRequest;
+    path?: never;
+    query?: never;
+    url: '/api/merchant-pool/routes';
+};
+export type CreateMerchantRouteErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    500: unknown;
+};
+export type CreateMerchantRouteResponses = {
+    201: MerchantRoute;
+};
+export type CreateMerchantRouteResponse = CreateMerchantRouteResponses[keyof CreateMerchantRouteResponses];
+export type PreviewMerchantRouteData = {
+    body: MerchantRoutePreviewRequest;
+    path?: never;
+    query?: never;
+    url: '/api/merchant-pool/routes/preview';
+};
+export type PreviewMerchantRouteErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    500: unknown;
+};
+export type PreviewMerchantRouteResponses = {
+    200: MerchantRoutePreview;
+};
+export type PreviewMerchantRouteResponse = PreviewMerchantRouteResponses[keyof PreviewMerchantRouteResponses];
+export type DeleteMerchantRouteData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/merchant-pool/routes/{id}';
+};
+export type DeleteMerchantRouteErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    500: unknown;
+};
+export type DeleteMerchantRouteResponses = {
+    204: void;
+};
+export type DeleteMerchantRouteResponse = DeleteMerchantRouteResponses[keyof DeleteMerchantRouteResponses];
+export type GetMerchantRouteData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/merchant-pool/routes/{id}';
+};
+export type GetMerchantRouteErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    500: unknown;
+};
+export type GetMerchantRouteResponses = {
+    200: MerchantRoute;
+};
+export type GetMerchantRouteResponse = GetMerchantRouteResponses[keyof GetMerchantRouteResponses];
+export type UpdateMerchantRouteData = {
+    body: MerchantRouteWriteRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/merchant-pool/routes/{id}';
+};
+export type UpdateMerchantRouteErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    500: unknown;
+};
+export type UpdateMerchantRouteResponses = {
+    200: MerchantRoute;
+};
+export type UpdateMerchantRouteResponse = UpdateMerchantRouteResponses[keyof UpdateMerchantRouteResponses];
+export type GetMerchantPoolStatisticsData = {
+    body?: never;
+    path: {
+        pool_id: number;
+    };
+    query?: {
+        model?: string;
+        window_seconds?: 900 | 3600 | 86400 | 604800;
+        protocol?: 'openai_chat' | 'openai_responses' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'xai_video';
+        streaming?: boolean;
+    };
+    url: '/api/merchant-pools/{pool_id}/statistics';
+};
+export type GetMerchantPoolStatisticsErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    500: unknown;
+};
+export type GetMerchantPoolStatisticsResponses = {
+    200: MerchantStatisticsResponse;
+};
+export type GetMerchantPoolStatisticsResponse = GetMerchantPoolStatisticsResponses[keyof GetMerchantPoolStatisticsResponses];
+export type GetMerchantPoolTimelineData = {
+    body?: never;
+    path: {
+        pool_id: number;
+    };
+    query?: {
+        model?: string;
+        window_seconds?: 900 | 3600 | 86400 | 604800;
+        protocol?: 'openai_chat' | 'openai_responses' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'xai_video';
+        streaming?: boolean;
+    };
+    url: '/api/merchant-pools/{pool_id}/timeline';
+};
+export type GetMerchantPoolTimelineErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    500: unknown;
+};
+export type GetMerchantPoolTimelineResponses = {
+    200: MerchantTimelineResponse;
+};
+export type GetMerchantPoolTimelineResponse = GetMerchantPoolTimelineResponses[keyof GetMerchantPoolTimelineResponses];
+export type GetOwnMerchantStatisticsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        model?: string;
+        window_seconds?: 900 | 3600 | 86400 | 604800;
+        protocol?: 'openai_chat' | 'openai_responses' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'xai_video';
+        streaming?: boolean;
+    };
+    url: '/api/merchant/statistics';
+};
+export type GetOwnMerchantStatisticsErrors = {
+    400: unknown;
+    401: unknown;
+    403: unknown;
+    404: unknown;
+    500: unknown;
+};
+export type GetOwnMerchantStatisticsResponses = {
+    200: MerchantStatisticsResponse;
+};
+export type GetOwnMerchantStatisticsResponse = GetOwnMerchantStatisticsResponses[keyof GetOwnMerchantStatisticsResponses];
+export type GetMerchantFinanceData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/merchant/finance';
+};
+export type GetMerchantFinanceResponses = {
+    200: MerchantFinanceBalance;
+};
+export type GetMerchantFinanceResponse = GetMerchantFinanceResponses[keyof GetMerchantFinanceResponses];
+export type ListMerchantFinanceEntriesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        limit?: number;
+        before_id?: number;
+    };
+    url: '/api/merchant/finance/entries';
+};
+export type ListMerchantFinanceEntriesResponses = {
+    200: MerchantFinanceEntryPage;
+};
+export type ListMerchantFinanceEntriesResponse = ListMerchantFinanceEntriesResponses[keyof ListMerchantFinanceEntriesResponses];
+export type ListMerchantWithdrawalsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        limit?: number;
+        before_id?: number;
+    };
+    url: '/api/merchant/withdrawals';
+};
+export type ListMerchantWithdrawalsResponses = {
+    200: MerchantWithdrawalPage;
+};
+export type ListMerchantWithdrawalsResponse = ListMerchantWithdrawalsResponses[keyof ListMerchantWithdrawalsResponses];
+export type CreateMerchantWithdrawalData = {
+    body: MerchantWithdrawalRequest;
+    path?: never;
+    query?: never;
+    url: '/api/merchant/withdrawals';
+};
+export type CreateMerchantWithdrawalResponses = {
+    200: MerchantWithdrawal;
+};
+export type CreateMerchantWithdrawalResponse = CreateMerchantWithdrawalResponses[keyof CreateMerchantWithdrawalResponses];
+export type ListAdminMerchantWithdrawalsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        limit?: number;
+        before_id?: number;
+        status?: string;
+    };
+    url: '/api/admin/merchant-withdrawals';
+};
+export type ListAdminMerchantWithdrawalsResponses = {
+    200: MerchantWithdrawalPage;
+};
+export type ListAdminMerchantWithdrawalsResponse = ListAdminMerchantWithdrawalsResponses[keyof ListAdminMerchantWithdrawalsResponses];
+export type DecideAdminMerchantWithdrawalData = {
+    body: MerchantWithdrawalDecision;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-withdrawals/{id}/decision';
+};
+export type DecideAdminMerchantWithdrawalResponses = {
+    200: MerchantWithdrawal;
+};
+export type DecideAdminMerchantWithdrawalResponse = DecideAdminMerchantWithdrawalResponses[keyof DecideAdminMerchantWithdrawalResponses];
+export type ReverseAdminMerchantSettlementData = {
+    body: MerchantSettlementReversal;
+    path: {
+        key: string;
+    };
+    query?: never;
+    url: '/api/admin/merchant-settlements/{key}/reverse';
+};
+export type ReverseAdminMerchantSettlementResponses = {
+    200: unknown;
+};
+export type HoldAdminMerchantFinanceData = {
+    body: MerchantFinanceHold;
+    path: {
+        merchant_id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-finance/{merchant_id}/hold';
+};
+export type HoldAdminMerchantFinanceResponses = {
+    200: MerchantFinanceBalance;
+};
+export type HoldAdminMerchantFinanceResponse = HoldAdminMerchantFinanceResponses[keyof HoldAdminMerchantFinanceResponses];
+export type GetAdminMerchantFinanceData = {
+    body?: never;
+    path: {
+        merchant_id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-finance/{merchant_id}';
+};
+export type GetAdminMerchantFinanceResponses = {
+    200: MerchantFinanceBalance;
+};
+export type GetAdminMerchantFinanceResponse = GetAdminMerchantFinanceResponses[keyof GetAdminMerchantFinanceResponses];
+export type ListAdminMerchantFinanceEntriesData = {
+    body?: never;
+    path: {
+        merchant_id: number;
+    };
+    query?: {
+        limit?: number;
+        before_id?: number;
+    };
+    url: '/api/admin/merchant-finance/{merchant_id}/entries';
+};
+export type ListAdminMerchantFinanceEntriesResponses = {
+    200: MerchantFinanceEntryPage;
+};
+export type ListAdminMerchantFinanceEntriesResponse = ListAdminMerchantFinanceEntriesResponses[keyof ListAdminMerchantFinanceEntriesResponses];
+export type GetMerchantPayoutSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/merchant-payout-settings';
+};
+export type GetMerchantPayoutSettingsResponses = {
+    200: MerchantPayoutSettings;
+};
+export type GetMerchantPayoutSettingsResponse = GetMerchantPayoutSettingsResponses[keyof GetMerchantPayoutSettingsResponses];
+export type SaveMerchantPayoutSettingsData = {
+    body: MerchantPayoutSettingsCommandWritable;
+    path?: never;
+    query?: never;
+    url: '/api/admin/merchant-payout-settings';
+};
+export type SaveMerchantPayoutSettingsResponses = {
+    200: MerchantPayoutSettings;
+};
+export type SaveMerchantPayoutSettingsResponse = SaveMerchantPayoutSettingsResponses[keyof SaveMerchantPayoutSettingsResponses];
+export type GetMerchantPayoutAccountData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/merchant/payout-account';
+};
+export type GetMerchantPayoutAccountResponses = {
+    200: MerchantPayoutAccount;
+};
+export type GetMerchantPayoutAccountResponse = GetMerchantPayoutAccountResponses[keyof GetMerchantPayoutAccountResponses];
+export type SaveMerchantPayoutAccountData = {
+    body: MerchantPayoutAccountCommandWritable;
+    path?: never;
+    query?: never;
+    url: '/api/merchant/payout-account';
+};
+export type SaveMerchantPayoutAccountResponses = {
+    200: MerchantPayoutAccount;
+};
+export type SaveMerchantPayoutAccountResponse = SaveMerchantPayoutAccountResponses[keyof SaveMerchantPayoutAccountResponses];
+export type ListMerchantPayoutsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        limit?: number;
+        before_id?: number;
+    };
+    url: '/api/merchant/payouts';
+};
+export type ListMerchantPayoutsResponses = {
+    200: MerchantPayoutPage;
+};
+export type ListMerchantPayoutsResponse = ListMerchantPayoutsResponses[keyof ListMerchantPayoutsResponses];
+export type ListAdminMerchantPayoutsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        limit?: number;
+        before_id?: number;
+        merchant_id?: number;
+    };
+    url: '/api/admin/merchant-payouts';
+};
+export type ListAdminMerchantPayoutsResponses = {
+    200: MerchantPayoutPage;
+};
+export type ListAdminMerchantPayoutsResponse = ListAdminMerchantPayoutsResponses[keyof ListAdminMerchantPayoutsResponses];
+export type SubmitMerchantPayoutData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-withdrawals/{id}/payout';
+};
+export type SubmitMerchantPayoutResponses = {
+    200: MerchantPayout;
+};
+export type SubmitMerchantPayoutResponse = SubmitMerchantPayoutResponses[keyof SubmitMerchantPayoutResponses];
+export type ReconcileMerchantPayoutData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/merchant-withdrawals/{id}/reconcile';
+};
+export type ReconcileMerchantPayoutResponses = {
+    200: unknown;
+};
 export type ListAdminTokensData = {
     body?: never;
     path?: never;
@@ -7078,6 +10432,50 @@ export type GetAdminRuntimeStatusResponses = {
     200: RuntimeStatus;
 };
 export type GetAdminRuntimeStatusResponse = GetAdminRuntimeStatusResponses[keyof GetAdminRuntimeStatusResponses];
+export type GetAdminSoftwareData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/software';
+};
+export type GetAdminSoftwareResponses = {
+    200: SoftwareStatus;
+};
+export type GetAdminSoftwareResponse = GetAdminSoftwareResponses[keyof GetAdminSoftwareResponses];
+export type CheckAdminSoftwareUpdateData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/software/check';
+};
+export type CheckAdminSoftwareUpdateErrors = {
+    403: SoftwareUpdateErrorBody;
+    409: SoftwareUpdateErrorBody;
+    502: SoftwareUpdateErrorBody;
+};
+export type CheckAdminSoftwareUpdateError = CheckAdminSoftwareUpdateErrors[keyof CheckAdminSoftwareUpdateErrors];
+export type CheckAdminSoftwareUpdateResponses = {
+    200: SoftwareStatus;
+};
+export type CheckAdminSoftwareUpdateResponse = CheckAdminSoftwareUpdateResponses[keyof CheckAdminSoftwareUpdateResponses];
+export type InstallAdminSoftwareUpdateData = {
+    body: InstallSoftwareUpdate;
+    path?: never;
+    query?: never;
+    url: '/api/admin/software/install';
+};
+export type InstallAdminSoftwareUpdateErrors = {
+    403: SoftwareUpdateErrorBody;
+    409: SoftwareUpdateErrorBody;
+    422: SoftwareUpdateErrorBody;
+    500: SoftwareUpdateErrorBody;
+    502: SoftwareUpdateErrorBody;
+};
+export type InstallAdminSoftwareUpdateError = InstallAdminSoftwareUpdateErrors[keyof InstallAdminSoftwareUpdateErrors];
+export type InstallAdminSoftwareUpdateResponses = {
+    200: SoftwareStatus;
+};
+export type InstallAdminSoftwareUpdateResponse = InstallAdminSoftwareUpdateResponses[keyof InstallAdminSoftwareUpdateResponses];
 export type GetVersionData = {
     body?: never;
     path?: never;
@@ -7091,10 +10489,13 @@ export type GetVersionResponse = GetVersionResponses[keyof GetVersionResponses];
 export type StartOidcLoginData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        invite_code?: string;
+    };
     url: '/api/auth/oauth/oidc/start';
 };
 export type StartOidcLoginErrors = {
+    400: ManagementError;
     409: ManagementError;
     500: ManagementError;
 };
@@ -7106,10 +10507,13 @@ export type StartOidcLoginResponse = StartOidcLoginResponses[keyof StartOidcLogi
 export type StartLinuxDoLoginData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        invite_code?: string;
+    };
     url: '/api/auth/oauth/linuxdo/start';
 };
 export type StartLinuxDoLoginErrors = {
+    400: ManagementError;
     409: ManagementError;
     500: ManagementError;
 };
@@ -7121,10 +10525,13 @@ export type StartLinuxDoLoginResponse = StartLinuxDoLoginResponses[keyof StartLi
 export type StartWeChatOAuthLoginData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        invite_code?: string;
+    };
     url: '/api/auth/oauth/wechat/start';
 };
 export type StartWeChatOAuthLoginErrors = {
+    400: ManagementError;
     409: ManagementError;
     500: ManagementError;
 };
@@ -7136,10 +10543,13 @@ export type StartWeChatOAuthLoginResponse = StartWeChatOAuthLoginResponses[keyof
 export type StartTelegramLoginData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        invite_code?: string;
+    };
     url: '/api/auth/oauth/telegram/start';
 };
 export type StartTelegramLoginErrors = {
+    400: ManagementError;
     409: ManagementError;
     500: ManagementError;
 };
@@ -7151,10 +10561,13 @@ export type StartTelegramLoginResponse = StartTelegramLoginResponses[keyof Start
 export type StartGoogleLoginData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        invite_code?: string;
+    };
     url: '/api/auth/oauth/google/start';
 };
 export type StartGoogleLoginErrors = {
+    400: ManagementError;
     409: ManagementError;
     500: ManagementError;
 };
@@ -7168,7 +10581,9 @@ export type StartCustomOAuth2LoginData = {
     path: {
         provider_key: string;
     };
-    query?: never;
+    query?: {
+        invite_code?: string;
+    };
     url: '/api/auth/oauth/custom/{provider_key}/start';
 };
 export type StartCustomOAuth2LoginErrors = {

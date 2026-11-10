@@ -69,6 +69,7 @@ impl SessionAuthenticator for FakeSessionAuthenticator {
 struct FakeUserTokenService {
     calls: AtomicUsize,
     last_user_id: AtomicI64,
+    last_group_id: AtomicI64,
 }
 
 impl FakeUserTokenService {
@@ -76,6 +77,7 @@ impl FakeUserTokenService {
         Self {
             calls: AtomicUsize::new(0),
             last_user_id: AtomicI64::new(0),
+            last_group_id: AtomicI64::new(-1),
         }
     }
 
@@ -118,16 +120,22 @@ impl UserTokenService for FakeUserTokenService {
     fn create(
         &self,
         principal: SessionPrincipal,
-        _command: UserTokenWriteCommand,
+        command: UserTokenWriteCommand,
     ) -> UserTokenCreateFuture<'_> {
         self.record(principal);
+        let group_id = command.group_id();
+        self.last_group_id
+            .store(group_id.map_or(0, GroupId::get), Ordering::Relaxed);
         Box::pin(async move {
             if principal.user_id().get() == 3 {
                 return Err(UserTokenError::LimitReached);
             }
+            if group_id.map(GroupId::get) == Some(403) {
+                return Err(UserTokenError::GroupUnavailable);
+            }
             let api_key = IssuedApiKey::generate().map_err(|_| UserTokenError::Internal)?;
             Ok(IssuedUserToken::from_parts(
-                sample_token(20, "created"),
+                sample_token_with_group(20, "created", group_id),
                 api_key,
             ))
         })
@@ -176,10 +184,12 @@ async fn authenticated_user_can_manage_only_principal_scoped_keys() {
     let list_body = response_json(listed).await;
     assert_eq!(list_body["capacity"], 32);
     assert_eq!(list_body["tokens"][0]["id"], 10);
+    assert_eq!(list_body["tokens"][0]["group_id"], Value::Null);
+    assert_eq!(list_body["tokens"][0]["effective_group_id"], 1);
+    assert_eq!(list_body["tokens"][0]["group_display_name"], "Default");
     let rendered = list_body.to_string();
     for hidden in [
         "user_id",
-        "group_id",
         "cross_group_retry",
         "rate_limit_5h",
         "max_requests",
@@ -231,6 +241,75 @@ async fn authenticated_user_can_manage_only_principal_scoped_keys() {
         .unwrap();
     assert_eq!(admin.status(), StatusCode::OK);
     assert_eq!(service.last_user_id.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
+async fn create_accepts_group_selection_and_update_cannot_change_it() {
+    let service = Arc::new(FakeUserTokenService::new());
+    let app = router(service.clone());
+
+    for group_id in [None, Some(Value::Null), Some(json!(2))] {
+        let mut body = valid_body();
+        if let Some(value) = group_id.clone() {
+            body["group_id"] = value;
+        }
+        let response = app
+            .clone()
+            .oneshot(request("POST", "/api/tokens", USER_SESSION, Some(body)))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let response = response_json(response).await;
+        let expected = group_id.as_ref().and_then(Value::as_i64).unwrap_or(0);
+        assert_eq!(service.last_group_id.load(Ordering::Relaxed), expected);
+        assert_eq!(
+            response["token"]["group_id"],
+            group_id.unwrap_or(Value::Null)
+        );
+        assert_eq!(response["token"]["effective_group_id"], expected.max(1));
+    }
+
+    for value in [json!(0), json!(-1), json!("2")] {
+        let mut body = valid_body();
+        body["group_id"] = value;
+        let response = app
+            .clone()
+            .oneshot(request("POST", "/api/tokens", USER_SESSION, Some(body)))
+            .await
+            .unwrap();
+        assert_error(response, StatusCode::BAD_REQUEST, "invalid_request").await;
+    }
+
+    let calls = service.calls.load(Ordering::Relaxed);
+    let mut body = valid_body();
+    body["group_id"] = json!(2);
+    let response = app
+        .clone()
+        .oneshot(request("PUT", "/api/tokens/10", USER_SESSION, Some(body)))
+        .await
+        .unwrap();
+    assert_error(response, StatusCode::BAD_REQUEST, "invalid_request").await;
+    assert_eq!(service.calls.load(Ordering::Relaxed), calls);
+
+    let mut body = valid_body();
+    body["group_id"] = Value::Null;
+    let response = app
+        .oneshot(request("PUT", "/api/tokens/10", USER_SESSION, Some(body)))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn unavailable_group_uses_stable_business_error() {
+    let app = router(Arc::new(FakeUserTokenService::new()));
+    let mut body = valid_body();
+    body["group_id"] = json!(403);
+    let response = app
+        .oneshot(request("POST", "/api/tokens", USER_SESSION, Some(body)))
+        .await
+        .unwrap();
+    assert_error(response, StatusCode::FORBIDDEN, "group_unavailable").await;
 }
 
 #[tokio::test]
@@ -337,8 +416,15 @@ fn router(service: Arc<FakeUserTokenService>) -> axum::Router {
 }
 
 fn sample_token(id: i64, name: &str) -> UserToken {
+    sample_token_with_group(id, name, None)
+}
+
+fn sample_token_with_group(id: i64, name: &str, group_id: Option<GroupId>) -> UserToken {
     UserToken::from_parts(
         TokenId::new(id).unwrap(),
+        group_id,
+        group_id.unwrap_or(GroupId::new(1).unwrap()),
+        if group_id.is_some() { "VIP" } else { "Default" }.to_owned(),
         "sk-af-public000001".to_owned(),
         name.to_owned(),
         UserTokenStatus::Enabled,

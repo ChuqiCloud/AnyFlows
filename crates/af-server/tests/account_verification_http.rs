@@ -231,6 +231,7 @@ async fn alipay_auth_code_callback_saves_result_without_browser_session()
     assert!(html.contains("支付宝实名认证已完成"));
     assert!(!html.contains("test-auth-code"));
     let detail = app
+        .clone()
         .oneshot(request(
             Method::GET,
             &format!("/api/account/verifications/{id}"),
@@ -242,6 +243,21 @@ async fn alipay_auth_code_callback_saves_result_without_browser_session()
     let detail: Value = serde_json::from_slice(&to_bytes(detail.into_body(), 65_536).await?)?;
     assert_eq!(detail["case"]["status"], 4);
     assert_eq!(detail["case"]["provider_status"], "approved");
+    let eligibility = app
+        .oneshot(request(
+            Method::GET,
+            "/api/account/verifications/eligibility",
+            "applicant",
+            "application/json",
+            String::new(),
+        ))
+        .await?;
+    assert_eq!(eligibility.status(), StatusCode::OK);
+    let eligibility: Value =
+        serde_json::from_slice(&to_bytes(eligibility.into_body(), 65_536).await?)?;
+    assert_eq!(eligibility["verified"], true);
+    assert_eq!(eligibility["enterprise_verified"], false);
+    assert_eq!(eligibility["can_apply_for_organization"], false);
     pool.close().await?;
     Ok(())
 }
@@ -268,6 +284,92 @@ fn upload(content_type: &str, bytes: &str) -> String {
     format!(
         "--verification-boundary\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n{metadata}\r\n--verification-boundary\r\nContent-Disposition: form-data; name=\"file:0\"; filename=\"license.pdf\"\r\nContent-Type: {content_type}\r\n\r\n{bytes}\r\n--verification-boundary--\r\n"
     )
+}
+
+#[tokio::test]
+async fn independent_verification_access_switches_round_trip_into_user_eligibility()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (app, pool) = fixture().await?;
+    let path = "/api/admin/account-verification-settings";
+    let response = app
+        .clone()
+        .oneshot(request(
+            Method::GET,
+            path,
+            "admin",
+            "application/json",
+            String::new(),
+        ))
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let initial: Value = serde_json::from_slice(&to_bytes(response.into_body(), 65_536).await?)?;
+    assert_eq!(initial["require_verification_for_topup"], false);
+    assert_eq!(initial["require_verification_for_api"], false);
+    let mut version = initial["version"].as_i64().expect("settings version");
+
+    for (topup, api) in [(false, false), (true, false), (false, true), (true, true)] {
+        let body = json!({
+            "expected_version": version,
+            "manual_enabled": true,
+            "enabled": false,
+            "app_id": null,
+            "gateway_url": "https://openapi.alipay.com/gateway.do",
+            "biz_code": "FACE",
+            "timeout_secs": 10,
+            "require_verification_for_topup": topup,
+            "require_verification_for_api": api
+        })
+        .to_string();
+        let forbidden = app
+            .clone()
+            .oneshot(request(
+                Method::PUT,
+                path,
+                "applicant",
+                "application/json",
+                body.clone(),
+            ))
+            .await?;
+        assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+        let response = app
+            .clone()
+            .oneshot(request(
+                Method::PUT,
+                path,
+                "admin",
+                "application/json",
+                body,
+            ))
+            .await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let saved: Value = serde_json::from_slice(&to_bytes(response.into_body(), 65_536).await?)?;
+        assert_eq!(saved["require_verification_for_topup"], topup);
+        assert_eq!(saved["require_verification_for_api"], api);
+        assert_eq!(saved["version"], version + 1);
+        version = saved["version"].as_i64().expect("saved version");
+
+        let response = app
+            .clone()
+            .oneshot(request(
+                Method::GET,
+                "/api/account/verifications/eligibility",
+                "applicant",
+                "application/json",
+                String::new(),
+            ))
+            .await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        let eligibility: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 65_536).await?)?;
+        assert_eq!(eligibility["require_verification_for_topup"], topup);
+        assert_eq!(eligibility["require_verification_for_api"], api);
+        assert_eq!(eligibility["verified"], false);
+        assert_eq!(eligibility["enterprise_verified"], false);
+    }
+
+    pool.close().await?;
+    Ok(())
 }
 
 #[tokio::test]

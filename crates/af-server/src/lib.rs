@@ -42,6 +42,10 @@ mod runtime_status;
 mod scheduled_chat;
 mod scheduler_invalidation;
 mod shutdown;
+mod software_updates;
+pub use software_updates::software_update_command;
+mod merchant_media;
+mod merchant_payout_worker;
 mod smtp_delivery;
 mod sticky_session;
 mod stripe_payment_intent;
@@ -51,6 +55,8 @@ mod supervisor;
 mod test_database;
 mod token_request_admission;
 mod turnstile;
+mod user_route_execution;
+mod user_route_runtime;
 mod utc_time;
 mod video_task_service;
 
@@ -66,7 +72,7 @@ pub use billing_audio::{
 };
 pub use billing_chat::{
     BillingChatService, ChatRoutePlanFuture, ChatRoutePlanner, PlannedChatExecution,
-    PlannedChatExecutionFuture,
+    PlannedChatExecutionFuture, PlannedExecutionFailure,
 };
 pub use billing_compact::{
     BillingResponsesCompactService, PlannedResponsesCompactExecution,

@@ -3,6 +3,12 @@ name: Conversation compatibility
 on:
   # 历史专项保留手动复测入口，日常检查由 CI 工作流承担。
   workflow_dispatch:
+    inputs:
+      scope:
+        description: 'full or protocol-relay; full includes scheduling, billing and runtime checks'
+        required: false
+        default: full
+        type: string
 
 permissions:
   contents: read
@@ -29,20 +35,26 @@ jobs:
       - name: Check out repository
         shell: bash
         env:
-          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL || github.server_url }}/${{ github.repository }}.git
           CHECKOUT_SHA: ${{ github.sha }}
           CHECKOUT_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           repository_url="$CHECKOUT_REPOSITORY_URL"
-          if [[ "$repository_url" == http://gitea_cps3:* ]]; then
-            repository_url="https://gitea.acmecloud.cn/${{ github.repository }}.git"
-          fi
           auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
           git init .
           git remote add origin "$repository_url"
           git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
           git checkout --detach FETCH_HEAD
+
+      - name: Validate check scope
+        env:
+          CHECK_SCOPE: ${{ inputs.scope || 'full' }}
+        run: |
+          case "$CHECK_SCOPE" in
+            full|protocol-relay) ;;
+            *) echo 'Unsupported check scope' >&2; exit 1 ;;
+          esac
 
       - name: Install Rust toolchain
         shell: bash
@@ -64,40 +76,65 @@ jobs:
           rustup toolchain install "$toolchain" --profile minimal --component rustfmt --component clippy
 
       - name: Cache Rust build artifacts
+        if: github.server_url == 'https://github.com'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: conversation
+
+      - name: Install runtime test tool
+        if: ${{ inputs.scope != 'protocol-relay' }}
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: cargo-nextest@0.9.140
+          fallback: none
 
       - name: Check formatting
         run: cargo fmt --all -- --check
 
       - name: Check affected crates
-        run: cargo clippy -p af-protocol -p af-relay -p af-server --all-targets --all-features --locked -- -D warnings
+        run: cargo clippy -p af-protocol -p af-adapter -p af-relay -p af-http -p af-server --all-targets --all-features --locked -- -D warnings
 
       - name: Test channel capability catalog and adapter assembly
         run: |
           cargo test --quiet -p af-domain --lib --locked channel_capability::
           cargo test --quiet -p af-adapter --lib --locked factory::
+          cargo test --quiet -p af-adapter --test anthropic_compaction_headers --locked
 
       - name: Test protocol parsing and relay lifecycle
-        run: cargo test --quiet -p af-protocol -p af-relay --all-features --locked
+        if: ${{ !cancelled() }}
+        run: |
+          status=0
+          cargo test --quiet -p af-protocol --all-features --locked || status=1
+          cargo test --quiet -p af-relay --all-features --locked || status=1
+          exit "$status"
 
       - name: Test public operational endpoints
+        if: ${{ !cancelled() && inputs.scope != 'protocol-relay' }}
         run: |
           cargo test --quiet -p af-http --lib --locked operations_tests::
+          cargo test --quiet -p af-http --lib --locked gemini_generate_content::tests::
+          cargo test --quiet -p af-http --lib --locked anthropic_messages::tests::
+          cargo test --quiet -p af-http --lib --locked streaming::tests::
+
+      - name: Test native compaction runtime and billing
+        if: ${{ !cancelled() && inputs.scope != 'protocol-relay' }}
+        run: cargo nextest run -p af-server --test anthropic_runtime_chain --all-features --locked --no-fail-fast --test-threads 2
 
       - name: Test conversation scheduling
+        if: ${{ !cancelled() && inputs.scope != 'protocol-relay' }}
         run: |
           cargo test --quiet -p af-server --lib --all-features --locked scheduled_chat::
           cargo test --quiet -p af-server --lib --all-features --locked billing_chat::
           cargo test --quiet -p af-server --lib --all-features --locked debug_trace_runtime::
 
       - name: Test shared client session creation
+        if: ${{ !cancelled() && inputs.scope != 'protocol-relay' }}
         run: |
           cargo test --quiet -p af-cache --lib --locked sticky::
           bash tools/ci/run-cache-redis-test.sh
 
       - name: Test client profile configuration and runtime snapshots
+        if: ${{ !cancelled() && inputs.scope != 'protocol-relay' }}
         run: |
           cargo test --quiet -p af-domain --lib --locked enums_tests::
           cargo test --quiet -p af-account --lib --locked credential_

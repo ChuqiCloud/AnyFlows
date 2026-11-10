@@ -4,6 +4,8 @@ mod auto_ban;
 mod billing;
 mod billing_contract;
 mod billing_runtime;
+mod merchant_billing;
+pub use merchant_billing::{MerchantBillingSnapshot, MerchantBillingSnapshotError};
 mod channel;
 mod channel_capability;
 mod client_profile;
@@ -13,13 +15,17 @@ pub use client_profile::{
     built_in_client_profiles, validate_client_identity_header, validate_client_profile_key,
 };
 mod concurrency;
+mod merchant_pool;
+pub use merchant_pool::*;
+mod merchant_service_policy;
+pub use merchant_service_policy::*;
 mod enums;
 mod error;
 mod gateway_identity;
 mod group_peak_pricing;
 pub use group_peak_pricing::{
     GroupPeakSchedule, GroupPeakScheduleError, GroupPeakWindow, MAX_GROUP_PEAK_MODELS,
-    MAX_GROUP_PEAK_WINDOWS, PricingWeekTime,
+    MAX_GROUP_PEAK_WINDOWS, ModelPeakSchedule, PricingWeekTime,
 };
 mod network;
 mod opencode;
@@ -36,7 +42,21 @@ mod subscription;
 mod subscription_window;
 mod task;
 mod token_policy;
+mod upstream_model_policy;
+mod upstream_usage;
+pub use upstream_model_policy::{
+    UpstreamModelPolicy, UpstreamModelPolicyError, UpstreamModelPolicyMode,
+};
+pub use upstream_usage::{
+    UpstreamUsageConfig, UpstreamUsageError, UpstreamUsageProfile, UpstreamUsageProfileWrite,
+    UpstreamUsageProvider, UpstreamUsageScope, validate_upstream_usage_amount,
+    validate_upstream_usage_currency,
+};
+mod user_routing;
 pub use service_model_policy::{ServiceModelPolicy, ServiceModelPolicyError};
+pub use user_routing::{
+    MAX_USER_ROUTE_MEMBERS, MAX_USER_ROUTE_WEIGHT, MAX_USER_ROUTES, UserRouteStrategy,
+};
 mod wallet;
 
 /// 试炼场自动申请的内部 Token 名称；普通用户不能通过界面主动复用该名称。
@@ -122,6 +142,8 @@ mod billing_tests;
 mod enums_tests;
 #[cfg(test)]
 mod error_tests;
+#[cfg(test)]
+mod merchant_pool_tests;
 #[cfg(test)]
 mod network_tests;
 #[cfg(test)]

@@ -22,6 +22,95 @@ use tokio::{
 const PRIVATE_KEY: &str = include_str!("fixtures/alipay_verification_test_private.pem");
 const TIMEOUT: Duration = Duration::from_secs(10);
 
+fn verification_settings_command(
+    settings: &AdminVerificationSettings,
+) -> VerificationSettingsCommand {
+    VerificationSettingsCommand {
+        expected_version: settings.version,
+        manual_enabled: settings.manual_enabled,
+        individual_manual_enabled: Some(settings.individual_manual_enabled),
+        enterprise_manual_enabled: Some(settings.enterprise_manual_enabled),
+        individual_reason_required: Some(settings.individual_reason_required),
+        enterprise_reason_required: Some(settings.enterprise_reason_required),
+        require_verification_for_topup: None,
+        require_verification_for_api: None,
+        enabled: settings.enabled,
+        app_id: settings.app_id.clone(),
+        private_key: None,
+        public_key: None,
+        gateway_url: settings.gateway_url.clone(),
+        biz_code: settings.biz_code.clone(),
+        timeout_secs: settings.timeout_secs,
+    }
+}
+
+#[tokio::test]
+async fn verification_access_switches_are_independent_and_legacy_updates_preserve_them() {
+    let pool = af_db::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:").unwrap(),
+        MigrationOptions::default(),
+    )
+    .await
+    .unwrap();
+    let repository = AccountVerificationSettingsRepository::new(pool.clone(), TIMEOUT);
+    let encryption = serde_json::from_value(json!({
+        "key_id": "verification-access-test", "key": URL_SAFE_NO_PAD.encode([0x37; 32])
+    }))
+    .unwrap();
+    let clients = HttpClientProvider::new(
+        HttpClientConfig::new(ProxyConfig::direct(), HttpTimeouts::default()),
+        1,
+    )
+    .unwrap();
+    let service = DatabaseVerificationSettingsService::new(
+        repository.clone(),
+        SystemSecretCipher::new(&encryption).unwrap(),
+        AlipayVerificationSettings::default(),
+        clients,
+    );
+    let principal = SessionPrincipal::new(af_domain::UserId::new(1).unwrap(), SessionRole::Admin);
+    let mut settings = service.settings(principal).await.unwrap();
+    assert_eq!(settings.source, "environment");
+    assert!(!settings.require_verification_for_topup);
+    assert!(!settings.require_verification_for_api);
+
+    for (topup, api) in [(true, false), (false, true), (true, true), (false, false)] {
+        let mut command = verification_settings_command(&settings);
+        command.require_verification_for_topup = Some(topup);
+        command.require_verification_for_api = Some(api);
+        settings = service.update(principal, command).await.unwrap();
+        assert_eq!(settings.source, "database");
+        assert_eq!(settings.require_verification_for_topup, topup);
+        assert_eq!(settings.require_verification_for_api, api);
+
+        let stored = repository.settings().await.unwrap();
+        assert_eq!(stored.require_verification_for_topup, topup);
+        assert_eq!(stored.require_verification_for_api, api);
+        let policy = service.policy().await.unwrap();
+        assert_eq!(policy.require_verification_for_topup, topup);
+        assert_eq!(policy.require_verification_for_api, api);
+
+        // A client unaware of the new fields must not reset an active gate.
+        settings = service
+            .update(principal, verification_settings_command(&settings))
+            .await
+            .unwrap();
+        assert_eq!(settings.require_verification_for_topup, topup);
+        assert_eq!(settings.require_verification_for_api, api);
+    }
+
+    // Updating either switch alone also preserves the other switch.
+    let mut command = verification_settings_command(&settings);
+    command.require_verification_for_api = Some(true);
+    settings = service.update(principal, command).await.unwrap();
+    let mut command = verification_settings_command(&settings);
+    command.require_verification_for_topup = Some(true);
+    settings = service.update(principal, command).await.unwrap();
+    assert!(settings.require_verification_for_topup);
+    assert!(settings.require_verification_for_api);
+    pool.close().await.unwrap();
+}
+
 async fn read_form(stream: &mut TcpStream) -> BTreeMap<String, String> {
     let mut bytes = Vec::new();
     let mut buffer = [0; 4096];

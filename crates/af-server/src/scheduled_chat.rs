@@ -8,6 +8,7 @@ use std::{
 use crate::model_subject::ModelSubject;
 use crate::{
     ChatRoutePlanFuture, ChatRoutePlanner, PlannedChatExecution, PlannedChatExecutionFuture,
+    PlannedExecutionFailure,
     adaptor_credential::build_adaptor_credential,
     auto_ban_feedback::{ChannelAutoBanAttemptTarget, persist_channel_auto_ban_feedback},
     concurrency_runtime::{
@@ -38,7 +39,7 @@ use af_adapter::{
 };
 use af_config::RelaySettings;
 use af_db::{
-    AdminGroupLookupOutcome, AdminGroupRepository, ChannelStateRepository,
+    AdminGroupLookupOutcome, AdminGroupRepository, AdminModelRepository, ChannelStateRepository,
     CredentialStateRepository, SmartRouteRuntimeRepository,
 };
 use af_domain::{
@@ -67,6 +68,7 @@ use af_telemetry::{
 mod audio;
 mod compact;
 mod completion;
+mod credential_models;
 mod embedding;
 mod image;
 mod opencode;
@@ -75,6 +77,8 @@ mod smart_route;
 mod speech;
 mod video_task;
 mod video_task_persistence;
+
+use credential_models::eligible_credentials;
 
 const MAX_PLAYGROUND_GROUP_DEPTH: usize = 4;
 
@@ -151,6 +155,8 @@ pub(crate) struct ScheduledChatService {
     channel_states: Option<ChannelStateRepository>,
     debug_trace: Option<DebugTraceRuntime>,
     groups: Option<AdminGroupRepository>,
+    merchant_pools: Option<af_db::MerchantPoolRepository>,
+    model_call_admission: Option<AdminModelRepository>,
     smart_routes: Option<Arc<dyn SmartRouteResolver>>,
     smart_route_feedback: Option<SmartRouteRuntimeRepository>,
     utc_date_clock: Arc<UtcDateClock>,
@@ -183,6 +189,8 @@ impl ScheduledChatService {
             channel_states: None,
             debug_trace: None,
             groups: None,
+            merchant_pools: None,
+            model_call_admission: None,
             smart_routes: None,
             smart_route_feedback: None,
             utc_date_clock: Arc::new(crate::utc_time::current_utc_date),
@@ -200,6 +208,61 @@ impl ScheduledChatService {
     pub(crate) fn with_relay_settings(mut self, settings: RelaySettings) -> Self {
         self.relay_settings = settings;
         self
+    }
+
+    pub(crate) fn with_merchant_pools(mut self, pools: af_db::MerchantPoolRepository) -> Self {
+        self.merchant_pools = Some(pools);
+        self
+    }
+
+    /// Text-only merchant supply must never enter a planner without a merchant quote.
+    async fn ensure_non_merchant_group(&self, group_id: GroupId) -> Result<(), AfError> {
+        if let Some(pools) = &self.merchant_pools
+            && pools
+                .pool_for_group(group_id)
+                .await
+                .map_err(|_| AfError::Internal)?
+                .is_some()
+        {
+            return Err(AfError::ModelNotAllowed);
+        }
+        Ok(())
+    }
+
+    async fn scoped_media_route(
+        &self,
+        principal: &GatewayPrincipal,
+        model: &str,
+    ) -> Result<af_scheduler::IndexedRoutePlan, AfError> {
+        if principal.merchant_channel_id().is_none() {
+            self.ensure_non_merchant_group(principal.group_id()).await?;
+        }
+        let mut route = self
+            .scheduler
+            .route_plan(principal.group_id(), model)
+            .map_err(map_scheduler_error)?
+            .ok_or(self.missing_model_route_error(model).await)?;
+        if let Some(channel) = principal.merchant_channel_id()
+            && !route.restrict_to_channel(channel)
+        {
+            return Err(AfError::ModelUnavailable);
+        }
+        if self.health.is_some() {
+            let (_, health) = self
+                .load_channel_health(principal.group_id(), model)
+                .await?;
+            route = self
+                .scheduler
+                .route_plan_with_health(principal.group_id(), model, &health)
+                .map_err(map_scheduler_error)?
+                .ok_or_else(|| AfError::from(af_domain::UpstreamError::overloaded()))?;
+            if let Some(channel) = principal.merchant_channel_id()
+                && !route.restrict_to_channel(channel)
+            {
+                return Err(af_domain::UpstreamError::overloaded().into());
+            }
+        }
+        Ok(route)
     }
 
     pub(crate) fn relay_execution_policy(&self) -> af_relay::RelayExecutionPolicy {
@@ -262,6 +325,23 @@ impl ScheduledChatService {
         self
     }
 
+    /// 注入模型目录仓储，以区分无效目录模型和合法模型的无路由状态。
+    pub(crate) fn with_model_call_admission(mut self, repository: AdminModelRepository) -> Self {
+        self.model_call_admission = Some(repository);
+        self
+    }
+
+    pub(super) async fn missing_model_route_error(&self, model: &str) -> AfError {
+        let Some(repository) = &self.model_call_admission else {
+            return af_domain::UpstreamError::ModelUnsupported.into();
+        };
+        match repository.is_model_in_call_catalog(model).await {
+            Ok(true) => af_domain::UpstreamError::ModelUnsupported.into(),
+            Ok(false) => AfError::ModelUnavailable,
+            Err(_) => AfError::Internal,
+        }
+    }
+
     /// 注入管理员智能路由运行时仓储；普通 API Key 不消费该额外规则源。
     pub(crate) fn with_smart_route_repository(
         mut self,
@@ -298,7 +378,6 @@ impl ScheduledChatService {
             user_permit,
         } = concurrency;
         let requested_model = request.canonical().model.clone();
-        let quota_dimension = CredentialQuotaDimension::for_canonical_model(&routed_model);
         let responses_websocket_session = session_scope.as_ref().map(StableSessionScope::as_str);
         let target_group_id = route.target_group_id();
         let mut relay_candidates = Vec::with_capacity(
@@ -314,7 +393,14 @@ impl ScheduledChatService {
             .candidates()
             .iter()
             .map(|candidate| candidate.runtime_target())
-            .find(|target| target_matches_protocol(target, upstream_protocol))
+            .find(|target| {
+                target_matches_protocol(target, upstream_protocol)
+                    && credential_models::has_eligible_credentials(
+                        target,
+                        &routed_model,
+                        target.mapped_model(&routed_model).unwrap_or(&routed_model),
+                    )
+            })
             .filter(|target| target.opencode_full_compatibility())
             .map(|target| target.channel_id());
         let mut tool_plan = None;
@@ -335,6 +421,10 @@ impl ScheduledChatService {
                 .mapped_model(&routed_model)
                 .unwrap_or(&routed_model)
                 .to_owned();
+            if !credential_models::has_eligible_credentials(target, &routed_model, &upstream_model)
+            {
+                continue;
+            }
             let candidate_request =
                 candidate_request(target, &request, &requested_model, &upstream_model)?;
             let candidate_request = if compatibility_channel.is_some() {
@@ -352,7 +442,7 @@ impl ScheduledChatService {
             };
             let adaptor = get_adaptor(
                 target.channel_type(),
-                adaptor_settings(target, upstream_model)?,
+                adaptor_settings(target, upstream_model.clone())?,
             )
             .map_err(|_| AfError::Internal)?;
             if adaptor.default_protocol() != target.protocol() {
@@ -360,12 +450,7 @@ impl ScheduledChatService {
             }
 
             let headers = header_overrides(target)?;
-            let eligible_credentials = target
-                .credentials()
-                .iter()
-                .filter(|credential| credential.quota_dimension() == quota_dimension)
-                .cloned()
-                .collect::<Vec<_>>();
+            let eligible_credentials = eligible_credentials(target, &routed_model, &upstream_model);
             let client_scope = session_scope
                 .as_ref()
                 .filter(|scope| {
@@ -602,13 +687,14 @@ impl ScheduledChatService {
             return Err(if health_filtered {
                 af_domain::UpstreamError::overloaded().into()
             } else {
-                af_domain::UpstreamError::ModelUnsupported.into()
+                self.missing_model_route_error(&routed_model).await
             });
         }
         let machine = RelayStateMachine::new(relay_candidates)
             .map_err(|_| AfError::Internal)?
             .with_execution_policy(self.relay_execution_policy());
         Ok(ScheduledChatExecution {
+            merchant_local_usage: false,
             target_group_id,
             pricing_model: routed_model,
             tool_plan,
@@ -796,6 +882,23 @@ impl ScheduledChatService {
             .map_err(|_| AfError::Internal)
     }
 
+    async fn load_account_concurrency_for_protocols(
+        &self,
+        route: &IndexedRoutePlan,
+        upstream_protocols: &[Protocol],
+        model: &str,
+    ) -> Result<Option<BTreeMap<i64, CredentialLoad>>, AfError> {
+        let Some(concurrency) = &self.concurrency else {
+            return Ok(None);
+        };
+        let accounts = collect_route_accounts_for_protocols(route, upstream_protocols, model)?;
+        concurrency
+            .account_loads(&accounts)
+            .await
+            .map(Some)
+            .map_err(|_| AfError::Internal)
+    }
+
     async fn load_channel_health(
         &self,
         group_id: GroupId,
@@ -830,6 +933,23 @@ impl ScheduledChatService {
             return Ok(None);
         };
         let credential_ids = collect_route_credentials(route, upstream_protocol, model)?;
+        load_credential_health(store, &credential_ids)
+            .await
+            .map(Some)
+            .map_err(|_| AfError::Internal)
+    }
+
+    async fn load_credential_health_for_protocols(
+        &self,
+        route: &IndexedRoutePlan,
+        upstream_protocols: &[Protocol],
+        model: &str,
+    ) -> Result<Option<BTreeMap<i64, RuntimeHealthState>>, AfError> {
+        let Some(store) = &self.health else {
+            return Ok(None);
+        };
+        let credential_ids =
+            collect_route_credentials_for_protocols(route, upstream_protocols, model)?;
         load_credential_health(store, &credential_ids)
             .await
             .map(Some)
@@ -885,8 +1005,35 @@ impl ScheduledChatService {
         request_id: &str,
         session_scope: Option<&StableSessionScope>,
     ) -> Result<PreparedRouteSelection, AfError> {
+        if principal.merchant_channel_id().is_none()
+            && let Some(pools) = &self.merchant_pools
+            && pools
+                .pool_for_group(principal.group_id())
+                .await
+                .map_err(|_| AfError::Internal)?
+                .is_some()
+        {
+            return Err(AfError::ModelNotAllowed);
+        }
         let mut unhealthy_route_seen = false;
-        let group_chain = self.route_group_chain(principal).await?;
+        let mut incompatible_route_seen = false;
+        let mut group_chain = self.route_group_chain(principal).await?;
+        if principal.merchant_channel_id().is_none()
+            && let Some(pools) = &self.merchant_pools
+        {
+            let mut ordinary = Vec::with_capacity(group_chain.len());
+            for group in group_chain {
+                if pools
+                    .pool_for_group(group)
+                    .await
+                    .map_err(|_| AfError::Internal)?
+                    .is_none()
+                {
+                    ordinary.push(group);
+                }
+            }
+            group_chain = ordinary;
+        }
         let rules = if principal.is_playground() {
             match &self.smart_routes {
                 Some(resolver) => resolver
@@ -900,15 +1047,27 @@ impl ScheduledChatService {
         };
         if rules.is_empty() {
             for group_id in group_chain.iter().copied() {
-                let Some(unfiltered_route) = self
+                let Some(mut unfiltered_route) = self
                     .scheduler
                     .route_plan(group_id, &request.canonical().model)
                     .map_err(map_scheduler_error)?
                 else {
                     continue;
                 };
+                if let Some(channel_id) = principal.merchant_channel_id()
+                    && !unfiltered_route.restrict_to_channel(channel_id)
+                {
+                    continue;
+                }
                 let unfiltered_protocol =
-                    select_upstream_protocol(&unfiltered_route, request, response_protocol)?;
+                    match select_upstream_protocol(&unfiltered_route, request, response_protocol) {
+                        Ok(protocol) => protocol,
+                        Err(AfError::InvalidRequest) => {
+                            incompatible_route_seen = true;
+                            continue;
+                        }
+                        Err(error) => return Err(error),
+                    };
                 if route_availability(
                     &unfiltered_route,
                     unfiltered_protocol,
@@ -943,8 +1102,21 @@ impl ScheduledChatService {
                 let Some(mut route) = route else {
                     continue;
                 };
+                if let Some(channel_id) = principal.merchant_channel_id()
+                    && !route.restrict_to_channel(channel_id)
+                {
+                    continue;
+                }
                 let upstream_protocol =
-                    select_upstream_protocol(&route, request, response_protocol)?;
+                    match select_upstream_protocol(&route, request, response_protocol) {
+                        Ok(protocol) => protocol,
+                        Err(AfError::InvalidRequest) => {
+                            // 未过滤计划已经确认兼容；过滤后失去兼容协议属于健康故障。
+                            unhealthy_route_seen = true;
+                            continue;
+                        }
+                        Err(error) => return Err(error),
+                    };
                 route.configure_wait_policy(self.sticky_wait_policy);
                 self.apply_sticky_binding(&mut route, upstream_protocol, session_scope)
                     .await;
@@ -993,8 +1165,19 @@ impl ScheduledChatService {
                     else {
                         continue;
                     };
-                    let unfiltered_protocol =
-                        select_upstream_protocol(&unfiltered_route, request, response_protocol)?;
+                    let unfiltered_protocol = match select_upstream_protocol_for_model(
+                        &unfiltered_route,
+                        request,
+                        response_protocol,
+                        rule.routed_model(),
+                    ) {
+                        Ok(protocol) => protocol,
+                        Err(AfError::InvalidRequest) => {
+                            incompatible_route_seen = true;
+                            continue;
+                        }
+                        Err(error) => return Err(error),
+                    };
                     if route_availability(
                         &unfiltered_route,
                         unfiltered_protocol,
@@ -1026,8 +1209,19 @@ impl ScheduledChatService {
                         unhealthy_route_seen = true;
                         break;
                     };
-                    let upstream_protocol =
-                        select_upstream_protocol(&route, request, response_protocol)?;
+                    let upstream_protocol = match select_upstream_protocol_for_model(
+                        &route,
+                        request,
+                        response_protocol,
+                        rule.routed_model(),
+                    ) {
+                        Ok(protocol) => protocol,
+                        Err(AfError::InvalidRequest) => {
+                            unhealthy_route_seen = true;
+                            break;
+                        }
+                        Err(error) => return Err(error),
+                    };
                     route.configure_wait_policy(self.sticky_wait_policy);
                     self.apply_sticky_binding(&mut route, upstream_protocol, session_scope)
                         .await;
@@ -1063,11 +1257,15 @@ impl ScheduledChatService {
                 }
             }
         }
-        Err(if unhealthy_route_seen {
-            af_domain::UpstreamError::overloaded().into()
+        if unhealthy_route_seen {
+            Err(af_domain::UpstreamError::overloaded().into())
+        } else if incompatible_route_seen {
+            Err(AfError::InvalidRequest)
         } else {
-            af_domain::UpstreamError::ModelUnsupported.into()
-        })
+            Err(self
+                .missing_model_route_error(&request.canonical().model)
+                .await)
+        }
     }
 }
 
@@ -1082,6 +1280,17 @@ impl ScheduledChatService {
         diagnostic: RelayDiagnosticInput,
     ) -> ChatRoutePlanFuture<'a> {
         Box::pin(async move {
+            if principal.merchant_channel_id().is_some()
+                && (request
+                    .canonical()
+                    .continuation
+                    .previous_response_id()
+                    .is_some()
+                    || request.canonical().continuation.conversation_id().is_some())
+            {
+                // 首版不把供应商私有会话标识发送给可能不同的供应商。
+                return Err(AfError::InvalidRequest);
+            }
             let mut session_scope =
                 stable_identity_session_scope(principal.identity(), request.canonical());
             let PreparedRouteSelection {
@@ -1221,12 +1430,36 @@ impl ScheduledChatService {
                 )
                 .await?;
             plan.debug_trace = debug_trace;
+            plan.merchant_local_usage = principal.merchant_channel_id().is_some();
             Ok(Box::new(plan) as Box<dyn PlannedChatExecution>)
         })
     }
 }
 
 impl ChatRoutePlanner for ScheduledChatService {
+    fn supports_request(
+        &self,
+        group_id: GroupId,
+        request: &CanonicalRequestEnvelope,
+        response_protocol: Protocol,
+    ) -> Result<bool, AfError> {
+        let Some(route) = self
+            .scheduler
+            .route_plan(group_id, &request.canonical().model)
+            .map_err(map_scheduler_error)?
+        else {
+            return Ok(false);
+        };
+        match select_upstream_protocol(&route, request, response_protocol) {
+            Ok(protocol) => Ok(route
+                .candidates()
+                .iter()
+                .any(|candidate| target_matches_protocol(candidate.runtime_target(), protocol))),
+            Err(AfError::InvalidRequest) => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
     fn plan<'a>(
         &'a self,
         principal: &'a GatewayPrincipal,
@@ -1292,6 +1525,7 @@ impl fmt::Debug for ScheduledChatService {
 }
 
 struct ScheduledChatExecution {
+    merchant_local_usage: bool,
     target_group_id: GroupId,
     pricing_model: String,
     machine: RelayStateMachine,
@@ -1328,6 +1562,9 @@ impl PlannedChatExecution for ScheduledChatExecution {
     }
 
     fn usage_upper_bound(&self) -> Result<af_protocol::Usage, af_relay::UsageResolutionError> {
+        if self.merchant_local_usage {
+            return af_relay::estimate_merchant_request_upper_bound(self.request.canonical());
+        }
         match &self.tool_plan {
             Some(plan) => Ok(plan.upper_bound()),
             None => af_relay::estimate_openai_request_upper_bound(self.request.canonical()),
@@ -1336,9 +1573,13 @@ impl PlannedChatExecution for ScheduledChatExecution {
 
     fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {
         if self.tool_plan.is_some() {
+            if self.merchant_local_usage {
+                return Box::pin(async { Err(AfError::ModelNotAllowed.into()) });
+            }
             return Box::pin(opencode::execute(*self));
         }
         let Self {
+            merchant_local_usage,
             target_group_id: _,
             pricing_model: _,
             tool_plan: _,
@@ -1367,7 +1608,16 @@ impl PlannedChatExecution for ScheduledChatExecution {
             };
             let operation = request.canonical().operation;
             let routing_started_at = Instant::now();
-            let (result, report) = if upstream_protocol != response_protocol
+            let (result, report) = if merchant_local_usage {
+                af_relay::relay_merchant_conversation_with_report(
+                    &machine,
+                    request,
+                    upstream_protocol,
+                    response_protocol,
+                    &request_id,
+                )
+                .await
+            } else if upstream_protocol != response_protocol
                 || machine.requires_conversation_decoder()
             {
                 relay_conversation_with_report(
@@ -1403,7 +1653,7 @@ impl PlannedChatExecution for ScheduledChatExecution {
                             .await
                             .into_parts()
                     }
-                    _ => return Err(AfError::InvalidRequest),
+                    _ => return Err(AfError::InvalidRequest.into()),
                 }
             };
             let successful_channel_id = report
@@ -1438,7 +1688,7 @@ impl PlannedChatExecution for ScheduledChatExecution {
                                 channel_id,
                             )
                         })
-                        .ok_or(AfError::Internal)
+                        .ok_or(AfError::Internal.into())
                 }
                 Ok(ChatResponse::Stream { body, usage }) => {
                     let body = af_relay::with_delivery_completion(
@@ -1458,14 +1708,16 @@ impl PlannedChatExecution for ScheduledChatExecution {
                                 channel_id,
                             )
                         })
-                        .ok_or(AfError::Internal)
+                        .ok_or(AfError::Internal.into())
                 }
                 Err(error) => {
+                    let failure =
+                        PlannedExecutionFailure::from_relay_report(error, &feedback.report);
                     feedback.finish(false, false).await;
                     if let Some(permit) = user_permit {
                         permit.release().await;
                     }
-                    Err(error)
+                    Err(failure)
                 }
             }
         })
@@ -1525,16 +1777,32 @@ fn collect_route_accounts(
     upstream_protocol: Protocol,
     model: &str,
 ) -> Result<Vec<(CredentialId, Option<ConcurrencyLimit>)>, AfError> {
+    collect_route_accounts_for_protocols(route, &[upstream_protocol], model)
+}
+
+fn collect_route_accounts_for_protocols(
+    route: &IndexedRoutePlan,
+    upstream_protocols: &[Protocol],
+    model: &str,
+) -> Result<Vec<(CredentialId, Option<ConcurrencyLimit>)>, AfError> {
     let mut accounts = Vec::with_capacity(RelayStateMachine::MAX_CANDIDATES);
     let mut unique = BTreeSet::new();
     let quota_dimension = CredentialQuotaDimension::for_canonical_model(model);
     'channels: for candidate in route.candidates() {
         let target = candidate.runtime_target();
-        if !target_matches_protocol(target, upstream_protocol) {
+        if !upstream_protocols
+            .iter()
+            .any(|protocol| target_matches_protocol(target, *protocol))
+        {
             continue;
         }
         for credential in target.credentials() {
-            if credential.quota_dimension() != quota_dimension {
+            if credential.quota_dimension() != quota_dimension
+                || !target.allows_credential_model(
+                    credential,
+                    target.mapped_model(model).unwrap_or(model),
+                )
+            {
                 continue;
             }
             if accounts.len() == RelayStateMachine::MAX_CANDIDATES {
@@ -1556,7 +1824,6 @@ fn route_availability(
     order_scope: &str,
     credential_health: Option<&BTreeMap<i64, RuntimeHealthState>>,
 ) -> RouteAvailability {
-    let quota_dimension = CredentialQuotaDimension::for_canonical_model(model);
     let mut matching_protocol = false;
     let mut static_credentials = false;
     for candidate in route.candidates() {
@@ -1565,12 +1832,8 @@ fn route_availability(
             continue;
         }
         matching_protocol = true;
-        let eligible_credentials = target
-            .credentials()
-            .iter()
-            .filter(|credential| credential.quota_dimension() == quota_dimension)
-            .cloned()
-            .collect::<Vec<_>>();
+        let eligible_credentials =
+            eligible_credentials(target, model, target.mapped_model(model).unwrap_or(model));
         if eligible_credentials.is_empty() {
             continue;
         }
@@ -1601,16 +1864,32 @@ fn collect_route_credentials(
     upstream_protocol: Protocol,
     model: &str,
 ) -> Result<Vec<(CredentialId, CredentialId)>, AfError> {
+    collect_route_credentials_for_protocols(route, &[upstream_protocol], model)
+}
+
+fn collect_route_credentials_for_protocols(
+    route: &IndexedRoutePlan,
+    upstream_protocols: &[Protocol],
+    model: &str,
+) -> Result<Vec<(CredentialId, CredentialId)>, AfError> {
     let mut credential_ids = Vec::with_capacity(RelayStateMachine::MAX_CANDIDATES);
     let mut unique = BTreeSet::new();
     let quota_dimension = CredentialQuotaDimension::for_canonical_model(model);
     'channels: for candidate in route.candidates() {
         let target = candidate.runtime_target();
-        if !target_matches_protocol(target, upstream_protocol) {
+        if !upstream_protocols
+            .iter()
+            .any(|protocol| target_matches_protocol(target, *protocol))
+        {
             continue;
         }
         for credential in target.credentials() {
-            if credential.quota_dimension() != quota_dimension {
+            if credential.quota_dimension() != quota_dimension
+                || !target.allows_credential_model(
+                    credential,
+                    target.mapped_model(model).unwrap_or(model),
+                )
+            {
                 continue;
             }
             if credential_ids.len() == RelayStateMachine::MAX_CANDIDATES {
@@ -1635,19 +1914,14 @@ fn route_client_simulation_body_profile(
     order_scope: &str,
     credential_health: Option<&BTreeMap<i64, RuntimeHealthState>>,
 ) -> Result<Option<ClientSimulationBodyProfile>, AfError> {
-    let quota_dimension = CredentialQuotaDimension::for_canonical_model(model);
     let mut resolved = None;
     for candidate in route.candidates() {
         let target = candidate.runtime_target();
         if !target_matches_protocol(target, upstream_protocol) {
             continue;
         }
-        let credentials = target
-            .credentials()
-            .iter()
-            .filter(|credential| credential.quota_dimension() == quota_dimension)
-            .cloned()
-            .collect::<Vec<_>>();
+        let credentials =
+            eligible_credentials(target, model, target.mapped_model(model).unwrap_or(model));
         if credentials.is_empty() {
             continue;
         }
@@ -1791,6 +2065,20 @@ fn select_upstream_protocol(
     request: &CanonicalRequestEnvelope,
     response_protocol: Protocol,
 ) -> Result<Protocol, AfError> {
+    select_upstream_protocol_for_model(
+        route,
+        request,
+        response_protocol,
+        &request.canonical().model,
+    )
+}
+
+fn select_upstream_protocol_for_model(
+    route: &IndexedRoutePlan,
+    request: &CanonicalRequestEnvelope,
+    response_protocol: Protocol,
+    model: &str,
+) -> Result<Protocol, AfError> {
     if !matches!(
         (request.canonical().operation, response_protocol),
         (
@@ -1802,6 +2090,7 @@ fn select_upstream_protocol(
     }
     // 优先使用原生渠道，其次选择可表达该请求的对话协议。
     // 不把 Embeddings、音视频等不同能力的端点纳入对话转换。
+    let mut has_conversation_candidate = false;
     for protocol in [
         response_protocol,
         Protocol::OpenAiChat,
@@ -1809,19 +2098,28 @@ fn select_upstream_protocol(
         Protocol::Anthropic,
         Protocol::Gemini,
     ] {
-        if route
-            .candidates()
-            .iter()
-            .any(|candidate| target_matches_protocol(candidate.runtime_target(), protocol))
-            && request
-                .clone()
-                .for_conversation_protocol(protocol)
-                .is_some()
-        {
+        let has_candidate = route.candidates().iter().any(|candidate| {
+            let target = candidate.runtime_target();
+            target_matches_protocol(target, protocol)
+                && credential_models::has_eligible_credentials(
+                    target,
+                    model,
+                    target.mapped_model(model).unwrap_or(model),
+                )
+        });
+        if !has_candidate {
+            continue;
+        }
+        has_conversation_candidate = true;
+        if request.clone().plan_conversation(protocol).is_some() {
             return Ok(protocol);
         }
     }
-    Ok(response_protocol)
+    if has_conversation_candidate {
+        Err(AfError::InvalidRequest)
+    } else {
+        Ok(response_protocol)
+    }
 }
 
 fn map_scheduler_error(error: IndexedWeightedSchedulerError) -> AfError {
@@ -1863,7 +2161,10 @@ mod tests {
         RouteStrategy, UpstreamError,
     };
     use af_httpclient::{HttpClientConfig, HttpClientProvider};
-    use af_protocol::{CanonicalRequest, RequestContinuation, RequestMetadata, openai_chat};
+    use af_protocol::{
+        CanonicalRequest, ContentBlock, Message, ReasoningConfig, RequestContinuation,
+        RequestMetadata, TokenCount, openai_chat,
+    };
     use af_scheduler::{
         ChannelIndexSource, ChannelIndexSourceFuture, ChannelIndexSourceRecord,
         InMemoryChannelIndex,
@@ -1888,6 +2189,81 @@ mod tests {
             &HeaderMap::new(),
             &Bytes::new(),
         )
+    }
+
+    #[tokio::test]
+    async fn non_text_planners_reject_merchant_pool_groups_even_when_pool_is_disabled() {
+        use sea_orm::{
+            ConnectionTrait,
+            sea_query::{Alias, Query},
+        };
+        let database = crate::test_database::SqliteTestDatabase::new("merchant-text-only").await;
+        let pool = database.pool();
+        let groups = AdminGroupRepository::new(pool.clone(), Duration::from_secs(1)).unwrap();
+        let pool_group = groups
+            .create(group_record("merchant-text-only", None))
+            .await
+            .unwrap()
+            .group_id();
+        let normal_group = groups
+            .create(group_record("ordinary", None))
+            .await
+            .unwrap()
+            .group_id();
+        let insert = Query::insert()
+            .into_table(Alias::new("merchant_pools"))
+            .columns(
+                [
+                    "group_id",
+                    "name",
+                    "description",
+                    "enabled",
+                    "commission_bps",
+                    "min_ratio_micros",
+                    "max_ratio_micros",
+                    "settlement_delay_secs",
+                ]
+                .map(Alias::new),
+            )
+            .values_panic([
+                pool_group.get().into(),
+                "Text pool".into(),
+                "".into(),
+                false.into(),
+                500_i32.into(),
+                1_i64.into(),
+                100_000_000_i64.into(),
+                0_i64.into(),
+            ])
+            .to_owned();
+        database
+            .seed()
+            .execute(database.seed().get_database_backend().build(&insert))
+            .await
+            .unwrap();
+        let service =
+            service(Vec::new())
+                .await
+                .with_merchant_pools(af_db::MerchantPoolRepository::new(
+                    pool.clone(),
+                    Duration::from_secs(1),
+                ));
+        assert_eq!(
+            service.ensure_non_merchant_group(pool_group).await,
+            Err(AfError::ModelNotAllowed)
+        );
+        assert_eq!(
+            service.ensure_non_merchant_group(normal_group).await,
+            Ok(())
+        );
+        assert_eq!(
+            service
+                .video_route(pool_group, "unavailable-model")
+                .await
+                .err(),
+            Some(AfError::ModelNotAllowed)
+        );
+        database.close().await;
     }
 
     #[test]
@@ -1949,6 +2325,124 @@ mod tests {
             .unwrap();
 
         assert_eq!(plan.target_group_id(), GroupId::new(7).unwrap());
+    }
+
+    #[tokio::test]
+    async fn missing_routes_distinguish_call_catalog_models_for_every_subject() {
+        use af_db::{
+            AdminModelCreateRecord, AdminModelLifecycleRecord, AdminModelModalitiesRecord,
+            AdminModelVisibilityRecord, AdminModelWriteRecord,
+        };
+        use af_domain::{
+            OrganizationId, OrganizationServiceAccountId, OrganizationServiceAccountKey,
+            OrganizationServiceAccountLocator, OrganizationServiceAccountRuntimeIdentity,
+        };
+
+        let pool = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let catalog = AdminModelRepository::new(pool.clone(), Duration::from_secs(2)).unwrap();
+        for (model, lifecycle) in [
+            ("active-model", AdminModelLifecycleRecord::Active),
+            ("deprecated-model", AdminModelLifecycleRecord::Deprecated),
+            ("hidden-active-model", AdminModelLifecycleRecord::Active),
+            ("draft-model", AdminModelLifecycleRecord::Draft),
+            ("retired-model", AdminModelLifecycleRecord::Retired),
+            ("deleted-model", AdminModelLifecycleRecord::Active),
+        ] {
+            let record = catalog
+                .create(AdminModelCreateRecord::new(
+                    model.to_owned(),
+                    AdminModelWriteRecord::new(
+                        model.to_owned(),
+                        "provider".to_owned(),
+                        None,
+                        None,
+                        Vec::new(),
+                        None,
+                        AdminModelModalitiesRecord::new(true, false, false, false),
+                        AdminModelModalitiesRecord::new(true, false, false, false),
+                        false,
+                        false,
+                        if model == "hidden-active-model" {
+                            AdminModelVisibilityRecord::Hidden
+                        } else {
+                            AdminModelVisibilityRecord::Public
+                        },
+                        lifecycle,
+                    ),
+                ))
+                .await
+                .unwrap();
+            if model == "deleted-model" {
+                catalog.delete(record.model_id()).await.unwrap();
+            }
+        }
+        let groups = AdminGroupRepository::new(pool.clone(), Duration::from_secs(2)).unwrap();
+        let group = groups
+            .create(group_record("model-call-admission", None))
+            .await
+            .unwrap();
+        let group_id = group.group_id();
+        let service = service(Vec::new())
+            .await
+            .with_group_repository(groups)
+            .with_model_call_admission(catalog);
+        let user = principal(group_id.get());
+        let playground = GatewayPrincipal::playground(user.token_id(), user.user_id(), group_id);
+        let identity = OrganizationServiceAccountRuntimeIdentity::new(
+            OrganizationServiceAccountLocator::new(
+                OrganizationId::new(11).unwrap(),
+                OrganizationServiceAccountId::new(12).unwrap(),
+            ),
+            OrganizationServiceAccountKey::new([13; 16]).unwrap(),
+            OrganizationServiceAccountKey::new([14; 16]).unwrap(),
+        );
+        for subject in [
+            ModelSubject::User(user),
+            ModelSubject::User(playground),
+            ModelSubject::ServiceAccount {
+                identity,
+                group_id,
+                concurrency: ConcurrencyLimit::new(1).unwrap(),
+            },
+        ] {
+            for (model, callable) in [
+                ("active-model", true),
+                ("deprecated-model", true),
+                ("hidden-active-model", true),
+                ("draft-model", false),
+                ("retired-model", false),
+                ("deleted-model", false),
+                ("unknown-model", false),
+                ("ACTIVE-MODEL", false),
+            ] {
+                let error = service
+                    .prepare_route_selection(
+                        subject,
+                        &request_for_model(model),
+                        Protocol::OpenAiChat,
+                        "request-model-call-admission",
+                        None,
+                    )
+                    .await
+                    .err()
+                    .unwrap();
+                assert_eq!(
+                    error,
+                    if callable {
+                        AfError::Upstream(UpstreamError::ModelUnsupported)
+                    } else {
+                        AfError::ModelUnavailable
+                    },
+                    "unexpected missing route classification for {model}",
+                );
+            }
+        }
+        pool.close().await.unwrap();
     }
 
     #[tokio::test]
@@ -2226,6 +2720,157 @@ mod tests {
             .unwrap();
 
         assert_eq!(execution.attempt_targets.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn credential_model_policy_filters_before_decryption_and_checks_final_alias() {
+        let forbidden_id = CREDENTIAL_ID;
+        let allowed_id = CREDENTIAL_ID + 1;
+        let credentials = vec![
+            SchedulerRuntimeCredentialRecord::with_scheduling(
+                forbidden_id,
+                CredentialKind::ApiKey,
+                // An ineligible key must never reach credential decryption.
+                EncryptedCredentialEnvelope::new(KEY_ID, [0x31; 24], vec![0x41; 32]).unwrap(),
+                false,
+                100,
+                10,
+            )
+            .unwrap(),
+            SchedulerRuntimeCredentialRecord::with_scheduling(
+                allowed_id,
+                CredentialKind::ApiKey,
+                valid_envelope_for(allowed_id, 0x35),
+                false,
+                0,
+                10,
+            )
+            .unwrap(),
+        ];
+        let target = SchedulerRuntimeTargetRecord::new_pool_with_request_policy(
+            ChannelId::new(CHANNEL_ID).unwrap(),
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat,
+            Some("https://scheduled-chat.example".to_owned()),
+            credentials,
+            ChannelModelMappings::parse(&json!({"gpt-scheduled":"vendor/real-model"})).unwrap(),
+            ChannelParameterOverrides::default(),
+            Vec::new(),
+        )
+        .unwrap()
+        .with_model_policies(
+            af_domain::UpstreamModelPolicy::default(),
+            BTreeMap::from([
+                (
+                    forbidden_id,
+                    af_domain::UpstreamModelPolicy {
+                        mode: af_domain::UpstreamModelPolicyMode::Allowlist,
+                        models: vec!["gpt-scheduled".to_owned()],
+                        disabled_models: Vec::new(),
+                    },
+                ),
+                (
+                    allowed_id,
+                    af_domain::UpstreamModelPolicy {
+                        mode: af_domain::UpstreamModelPolicyMode::Allowlist,
+                        models: vec!["vendor/real-model".to_owned()],
+                        disabled_models: Vec::new(),
+                    },
+                ),
+            ]),
+        )
+        .unwrap();
+        let source = ChannelIndexSourceRecord::with_runtime_target(
+            GroupId::new(7).unwrap(),
+            "gpt-scheduled",
+            10,
+            0,
+            Arc::new(target),
+        )
+        .unwrap();
+        let service = service(vec![source]).await;
+        let route = service
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            collect_route_credentials(&route, Protocol::OpenAiChat, "gpt-scheduled")
+                .unwrap()
+                .len(),
+            1
+        );
+        let execution = service
+            .build_plan(
+                prepared_execution_route(route, Protocol::OpenAiChat),
+                request(),
+                Protocol::OpenAiChat,
+                "credential-model-policy-alias",
+                None,
+                PreparedConcurrencyPlan::disabled(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(execution.attempt_targets.len(), 1);
+        assert_eq!(
+            execution.attempt_targets[0].credential_id().get(),
+            allowed_id
+        );
+    }
+
+    #[tokio::test]
+    async fn credential_model_policy_protocol_selection_uses_administrator_routed_model() {
+        let credential = SchedulerRuntimeCredentialRecord::new(
+            CREDENTIAL_ID,
+            CredentialKind::ApiKey,
+            valid_envelope(),
+            false,
+        )
+        .unwrap();
+        let target = SchedulerRuntimeTargetRecord::new_pool_with_request_policy(
+            ChannelId::new(CHANNEL_ID).unwrap(),
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat,
+            Some("https://scheduled-chat.example".to_owned()),
+            vec![credential],
+            ChannelModelMappings::parse(&json!({"admin-routed":"vendor/real-model"})).unwrap(),
+            ChannelParameterOverrides::default(),
+            Vec::new(),
+        )
+        .unwrap()
+        .with_model_policies(
+            af_domain::UpstreamModelPolicy {
+                mode: af_domain::UpstreamModelPolicyMode::Allowlist,
+                models: vec!["vendor/real-model".to_owned()],
+                disabled_models: Vec::new(),
+            },
+            BTreeMap::new(),
+        )
+        .unwrap();
+        let source = ChannelIndexSourceRecord::with_runtime_target(
+            GroupId::new(7).unwrap(),
+            "admin-routed",
+            10,
+            0,
+            Arc::new(target),
+        )
+        .unwrap();
+        let service = service(vec![source]).await;
+        let route = service
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "admin-routed")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            select_upstream_protocol_for_model(
+                &route,
+                &request(),
+                Protocol::Anthropic,
+                "admin-routed",
+            )
+            .unwrap(),
+            Protocol::OpenAiChat
+        );
     }
 
     #[tokio::test]
@@ -2600,6 +3245,579 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn native_anthropic_signed_tool_history_can_reserve_usage() {
+        let service = service(vec![anthropic_record(valid_envelope())]).await;
+        for stream in [false, true] {
+            let request = af_protocol::anthropic::parse_request_envelope(Bytes::from(
+                serde_json::to_vec(&json!({
+                    "model": "gpt-scheduled",
+                    "max_tokens": 2048,
+                    "stream": stream,
+                    "thinking": {"type": "enabled", "budget_tokens": 1024},
+                    "system": [{
+                        "type": "text",
+                        "text": "Check the service before answering.",
+                        "cache_control": {"type": "ephemeral", "ttl": "1h"}
+                    }],
+                    "tools": [{
+                        "name": "lookup",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {"query": {"type": "string"}}
+                        }
+                    }],
+                    "messages": [
+                        {"role": "user", "content": [{
+                            "type": "text",
+                            "text": "Check the service status.",
+                            "cache_control": {"type": "ephemeral"}
+                        }]},
+                        {"role": "assistant", "content": [
+                            {
+                                "type": "thinking",
+                                "thinking": "I should check the current status.",
+                                "signature": "anthropic-signed-history-canary"
+                            },
+                            {
+                                "type": "tool_use",
+                                "id": "toolu_status",
+                                "name": "lookup",
+                                "input": {"query": "status"}
+                            }
+                        ]},
+                        {"role": "user", "content": [{
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_status",
+                            "content": "The service is ready.",
+                            "cache_control": {"type": "ephemeral"}
+                        }]},
+                        {"role": "assistant", "content": "The service is ready."},
+                        {"role": "user", "content": "Check it again."}
+                    ]
+                }))
+                .unwrap(),
+            ))
+            .unwrap();
+            let route = service
+                .scheduler
+                .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+                .unwrap()
+                .unwrap();
+            let selected = select_upstream_protocol(&route, &request, Protocol::Anthropic).unwrap();
+            assert_eq!(selected, Protocol::Anthropic);
+            let execution = service
+                .build_plan(
+                    prepared_execution_route(route, selected),
+                    request,
+                    Protocol::Anthropic,
+                    "request-anthropic-signed-history",
+                    None,
+                    PreparedConcurrencyPlan::disabled(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(execution.upstream_protocol, Protocol::Anthropic);
+            assert_eq!(execution.response_protocol, Protocol::Anthropic);
+            assert_eq!(execution.attempt_targets.len(), 1);
+            let upper_bound = execution.usage_upper_bound().unwrap();
+            assert!(upper_bound.input_tokens() > TokenCount::ZERO);
+            assert_eq!(upper_bound.output_tokens().get(), 2048);
+        }
+    }
+
+    #[tokio::test]
+    async fn native_gemini_signed_tool_history_can_reserve_usage() {
+        let service = service(vec![gemini_record(valid_envelope_for(
+            CREDENTIAL_ID + 1,
+            0x25,
+        ))])
+        .await;
+        for stream in [false, true] {
+            let body = Bytes::from(
+                serde_json::to_vec(&json!({
+                    "generationConfig": {"maxOutputTokens": 128},
+                    "tools": [{"functionDeclarations": [{
+                        "name": "lookup",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"query": {"type": "string"}}
+                        }
+                    }]}],
+                    "contents": [
+                        {"role": "user", "parts": [{"text": "Check the service status."}]},
+                        {"role": "model", "parts": [
+                            {
+                                "text": "I should check the current status.",
+                                "thought": true,
+                                "thoughtSignature": "dGhvdWdodC1zaWduYXR1cmU="
+                            },
+                            {
+                                "functionCall": {
+                                    "id": "call_status",
+                                    "name": "lookup",
+                                    "args": {"query": "status"}
+                                },
+                                "thoughtSignature": "dG9vbC1zaWduYXR1cmU="
+                            }
+                        ]},
+                        {"role": "user", "parts": [{
+                            "functionResponse": {
+                                "id": "call_status",
+                                "name": "lookup",
+                                "response": {
+                                    "result": {"ok": true, "checks": ["database", "cache"]},
+                                    "nullable": null
+                                }
+                            }
+                        }]},
+                        {"role": "model", "parts": [{"text": "The service is ready."}]},
+                        {"role": "user", "parts": [{"text": "Check it again."}]}
+                    ]
+                }))
+                .unwrap(),
+            );
+            let request = if stream {
+                af_protocol::gemini::parse_stream_request_envelope("models/gpt-scheduled", body)
+            } else {
+                af_protocol::gemini::parse_request_envelope("models/gpt-scheduled", body)
+            }
+            .unwrap();
+            let route = service
+                .scheduler
+                .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+                .unwrap()
+                .unwrap();
+            let selected = select_upstream_protocol(&route, &request, Protocol::Gemini).unwrap();
+            assert_eq!(selected, Protocol::Gemini);
+            let execution = service
+                .build_plan(
+                    prepared_execution_route(route, selected),
+                    request,
+                    Protocol::Gemini,
+                    "request-gemini-signed-history",
+                    None,
+                    PreparedConcurrencyPlan::disabled(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(execution.upstream_protocol, Protocol::Gemini);
+            assert_eq!(execution.response_protocol, Protocol::Gemini);
+            assert_eq!(execution.attempt_targets.len(), 1);
+            let upper_bound = execution.usage_upper_bound().unwrap();
+            assert!(upper_bound.input_tokens() > TokenCount::ZERO);
+            assert_eq!(upper_bound.output_tokens().get(), 128);
+        }
+    }
+
+    #[tokio::test]
+    async fn protocol_selection_maps_fixed_budget_for_effort_only_channels() {
+        let group_id = GroupId::new(7).unwrap();
+        let record_for = |channel_id, channel_type, protocol| {
+            let credential_id = channel_id + 100;
+            let credential = SchedulerRuntimeCredentialRecord::new(
+                credential_id,
+                CredentialKind::ApiKey,
+                valid_envelope_for(credential_id, 0x29),
+                false,
+            )
+            .unwrap();
+            let target = SchedulerRuntimeTargetRecord::new_pool(
+                ChannelId::new(channel_id).unwrap(),
+                channel_type,
+                protocol,
+                Some("https://scheduled-chat.example".to_owned()),
+                vec![credential],
+                Vec::new(),
+            )
+            .unwrap();
+            ChannelIndexSourceRecord::with_runtime_target(
+                group_id,
+                "gpt-scheduled",
+                10,
+                0,
+                Arc::new(target),
+            )
+            .unwrap()
+        };
+        let index = InMemoryChannelIndex::load(Arc::new(StaticSource {
+            records: vec![
+                record_for(CHANNEL_ID, ChannelType::OpenAi, Protocol::OpenAiChat),
+                record_for(CHANNEL_ID + 1, ChannelType::Gemini, Protocol::Gemini),
+            ],
+        }))
+        .await
+        .unwrap();
+        let route = IndexedWeightedScheduler::new(index)
+            .route_plan(group_id, "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        let mut canonical = CanonicalRequest::new(
+            Operation::Chat,
+            "gpt-scheduled".to_owned(),
+            vec![Message::new(
+                af_domain::Role::User,
+                vec![ContentBlock::Text("hello".to_owned())],
+            )],
+            false,
+        );
+        canonical.reasoning =
+            Some(ReasoningConfig::new(None, Some(TokenCount::new(128).unwrap()), false).unwrap());
+
+        let envelope = canonical.into();
+        let selected = select_upstream_protocol(&route, &envelope, Protocol::Anthropic).unwrap();
+        assert_eq!(selected, Protocol::OpenAiChat);
+        let converted = envelope
+            .for_conversation_protocol(selected)
+            .unwrap()
+            .into_canonical();
+        assert_eq!(
+            converted.reasoning.unwrap().budget_tokens().unwrap().get(),
+            128
+        );
+        let body = af_protocol::openai_chat::build_request(&converted).unwrap();
+        assert_eq!(body["reasoning_effort"], "minimal");
+    }
+
+    #[tokio::test]
+    async fn protocol_selection_preserves_foreign_thinking_as_readable_history() {
+        let service = service(vec![record(false, valid_envelope())]).await;
+        let route = service
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        let mut canonical = CanonicalRequest::new(
+            Operation::Chat,
+            "gpt-scheduled".to_owned(),
+            Vec::new(),
+            false,
+        );
+        canonical.messages.push(Message::new(
+            af_domain::Role::Assistant,
+            vec![ContentBlock::Thinking {
+                text: "signed history".to_owned(),
+                signature: Some("opaque-provider-signature".to_owned()),
+            }],
+        ));
+
+        let request: CanonicalRequestEnvelope = canonical.into();
+        let selected = select_upstream_protocol(&route, &request, Protocol::Anthropic).unwrap();
+        assert_eq!(selected, Protocol::OpenAiChat);
+        let body = request.plan_conversation(selected).unwrap().body().clone();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["messages"][0]["reasoning_content"], "signed history");
+        assert!(!body.to_string().contains("opaque-provider-signature"));
+    }
+
+    #[tokio::test]
+    async fn protocol_selection_allows_anthropic_thinking_on_gemini_channels() {
+        let service = service(vec![gemini_record(valid_envelope_for(
+            CREDENTIAL_ID + 1,
+            0x25,
+        ))])
+        .await;
+        let route = service
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        let request = af_protocol::anthropic::parse_request_envelope(Bytes::from_static(
+            br#"{"model":"gpt-scheduled","max_tokens":2048,"thinking":{"type":"enabled","budget_tokens":1024},"messages":[{"role":"user","content":"hello"}]}"#,
+        ))
+        .unwrap();
+        let selected = select_upstream_protocol(&route, &request, Protocol::Anthropic).unwrap();
+        assert_eq!(selected, Protocol::Gemini);
+        let plan = request.plan_conversation(selected).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(plan.body()).unwrap();
+        assert_eq!(
+            body["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            1024
+        );
+        assert_eq!(body["generationConfig"]["maxOutputTokens"], 2048);
+        assert_eq!(body["contents"][0]["parts"][0]["text"], "hello");
+    }
+
+    #[tokio::test]
+    async fn gemini_signed_readable_history_can_use_chat_without_replaying_provider_signature() {
+        let service = service(vec![record(false, valid_envelope())]).await;
+        let route = service
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        let request = af_protocol::gemini::parse_request_envelope(
+            "models/gpt-scheduled",
+            Bytes::from_static(
+                br#"{"generationConfig":{"maxOutputTokens":256},"contents":[{"role":"user","parts":[{"text":"hello"}]},{"role":"model","parts":[{"text":"considered hello","thought":true,"thoughtSignature":"dGhvdWdodC1zaWduYXR1cmU="},{"text":"answer"}]},{"role":"user","parts":[{"text":"continue"}]}]}"#,
+            ),
+        )
+        .unwrap();
+        let selected = select_upstream_protocol(&route, &request, Protocol::Gemini).unwrap();
+        assert_eq!(selected, Protocol::OpenAiChat);
+        let plan = request.plan_conversation(selected).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(plan.body()).unwrap();
+        assert_eq!(body["messages"][1]["reasoning_content"], "considered hello");
+        assert_eq!(body["messages"][1]["content"], "answer");
+        assert_eq!(body["messages"][2]["content"], "continue");
+        assert!(!body.to_string().contains("dGhvdWdodC1zaWduYXR1cmU="));
+        assert!(!body.to_string().contains("thoughtSignature"));
+    }
+
+    #[tokio::test]
+    async fn pi_reasoning_requests_can_schedule_chat_and_reserve_usage() {
+        let service = service(vec![record(false, valid_envelope())]).await;
+        for stream in [false, true] {
+            let anthropic = af_protocol::anthropic::parse_request_envelope(Bytes::from(
+                serde_json::to_vec(&json!({
+                    "model": "gpt-scheduled", "max_tokens": 384000, "stream": stream,
+                    "thinking": {"type": "enabled", "budget_tokens": 8192, "display": "summarized"},
+                    "messages": [{"role": "user", "content": [{
+                        "type": "text", "text": "hello",
+                        "cache_control": {"type": "ephemeral"}
+                    }]}]
+                }))
+                .unwrap(),
+            ))
+            .unwrap();
+            let gemini_body = Bytes::from(
+                serde_json::to_vec(&json!({
+                    "generationConfig": {"maxOutputTokens": 384000,
+                        "thinkingConfig": {"thinkingBudget": -1, "includeThoughts": true}},
+                    "contents": [{"role": "user", "parts": [{"text": "hello"}]}]
+                }))
+                .unwrap(),
+            );
+            let gemini = if stream {
+                af_protocol::gemini::parse_stream_request_envelope(
+                    "models/gpt-scheduled",
+                    gemini_body,
+                )
+            } else {
+                af_protocol::gemini::parse_request_envelope("models/gpt-scheduled", gemini_body)
+            }
+            .unwrap();
+            for (client, request) in [(Protocol::Anthropic, anthropic), (Protocol::Gemini, gemini)]
+            {
+                let route = service
+                    .scheduler
+                    .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+                    .unwrap()
+                    .unwrap();
+                let selected = select_upstream_protocol(&route, &request, client).unwrap();
+                assert_eq!(selected, Protocol::OpenAiChat);
+                let converted = request.clone().for_conversation_protocol(selected).unwrap();
+                let body = af_protocol::openai_chat::build_request(converted.canonical()).unwrap();
+                assert_eq!(body["max_completion_tokens"], 384000);
+                if client == Protocol::Anthropic {
+                    assert_eq!(body["reasoning_effort"], "medium");
+                } else {
+                    assert!(body.get("reasoning_effort").is_none());
+                    assert!(converted.canonical().reasoning.unwrap().dynamic_budget());
+                }
+                let execution = service
+                    .build_plan(
+                        prepared_execution_route(route, selected),
+                        request,
+                        client,
+                        "pi-thinking-compat",
+                        None,
+                        PreparedConcurrencyPlan::disabled(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(execution.upstream_protocol, Protocol::OpenAiChat);
+                assert_eq!(execution.response_protocol, client);
+                assert_eq!(execution.attempt_targets.len(), 1);
+                assert_eq!(
+                    execution.usage_upper_bound().unwrap().output_tokens().get(),
+                    384000
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn responses_summary_history_is_readable_on_anthropic_channels() {
+        let group_id = GroupId::new(7).unwrap();
+        let service = service(vec![
+            protocol_record(group_id, "gpt-scheduled", CHANNEL_ID, Protocol::Anthropic),
+            protocol_record(group_id, "gpt-scheduled", CHANNEL_ID + 1, Protocol::Gemini),
+        ])
+        .await;
+        let route = service
+            .scheduler
+            .route_plan(group_id, "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        let request = af_protocol::openai_responses::parse_request_envelope(
+            Bytes::from_static(
+                br#"{"model":"gpt-scheduled","input":[{"role":"user","content":"hello"},{"type":"reasoning","summary":[{"type":"summary_text","text":"considered the question"}]},{"role":"assistant","content":[{"type":"output_text","text":"answer"}]},{"role":"user","content":"continue"}]}"#,
+            ),
+        )
+        .unwrap();
+        let selected =
+            select_upstream_protocol(&route, &request, Protocol::OpenAiResponses).unwrap();
+        assert_eq!(selected, Protocol::Anthropic);
+        let plan = request.plan_conversation(selected).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(plan.body()).unwrap();
+        let rendered = body.to_string();
+        for text in ["considered the question", "answer", "continue"] {
+            assert!(rendered.contains(text));
+        }
+        assert!(!rendered.contains("signature"));
+    }
+
+    #[tokio::test]
+    async fn capability_mismatch_continues_to_the_configured_fallback_group() {
+        let (mut service, source_group, fallback_group) =
+            service_with_group_fallback(valid_envelope()).await;
+        let index = InMemoryChannelIndex::load(Arc::new(StaticSource {
+            records: vec![
+                protocol_record(
+                    source_group,
+                    "gpt-scheduled",
+                    CHANNEL_ID,
+                    Protocol::OpenAiChat,
+                ),
+                protocol_record(
+                    fallback_group,
+                    "gpt-scheduled",
+                    CHANNEL_ID + 1,
+                    Protocol::Gemini,
+                ),
+            ],
+        }))
+        .await
+        .unwrap();
+        service.scheduler = IndexedWeightedScheduler::new(index);
+        let playground = GatewayPrincipal::playground(
+            af_domain::TokenId::new(1).unwrap(),
+            af_domain::UserId::new(1).unwrap(),
+            source_group,
+        );
+        let request = gemini_native_media_request("gpt-scheduled");
+        let selection = service
+            .prepare_route_selection(
+                playground.into(),
+                &request,
+                Protocol::Gemini,
+                "group-capability-fallback",
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(selection.route.target_group_id(), fallback_group);
+        assert_eq!(selection.upstream_protocol, Protocol::Gemini);
+
+        let regular = GatewayPrincipal::new(
+            af_domain::TokenId::new(2).unwrap(),
+            af_domain::UserId::new(1).unwrap(),
+            source_group,
+        );
+        assert!(matches!(
+            service
+                .prepare_route_selection(
+                    regular.into(),
+                    &request,
+                    Protocol::Gemini,
+                    "group-capability-exhausted",
+                    None
+                )
+                .await,
+            Err(AfError::InvalidRequest)
+        ));
+    }
+
+    #[tokio::test]
+    async fn capability_mismatch_continues_to_the_next_smart_route_rule() {
+        let (mut service, group_id) = service_with_smart_route(valid_envelope()).await;
+        let index = InMemoryChannelIndex::load(Arc::new(StaticSource {
+            records: vec![
+                protocol_record(group_id, "gpt-routed", CHANNEL_ID, Protocol::OpenAiChat),
+                protocol_record(group_id, "gpt-routed", CHANNEL_ID + 1, Protocol::Gemini),
+            ],
+        }))
+        .await
+        .unwrap();
+        service.scheduler = IndexedWeightedScheduler::new(index);
+        service = service.with_smart_route_resolver(Arc::new(ProtocolSmartRouteResolver {
+            rules: vec![vec![CHANNEL_ID], vec![CHANNEL_ID + 1]],
+        }));
+        let playground = GatewayPrincipal::playground(
+            af_domain::TokenId::new(1).unwrap(),
+            af_domain::UserId::new(1).unwrap(),
+            group_id,
+        );
+        let selection = service
+            .prepare_route_selection(
+                playground.into(),
+                &gemini_native_media_request("smart-thinking"),
+                Protocol::Gemini,
+                "smart-rule-capability-fallback",
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(selection.route.target_group_id(), group_id);
+        assert_eq!(selection.upstream_protocol, Protocol::Gemini);
+        assert_eq!(selection.routed_model, "gpt-routed");
+    }
+
+    #[tokio::test]
+    async fn health_filtering_of_the_only_compatible_protocol_stays_overloaded() {
+        for smart_route in [false, true] {
+            let (mut service, group_id) = service_with_smart_route(valid_envelope()).await;
+            let routed_model = if smart_route {
+                "gpt-routed"
+            } else {
+                "gpt-scheduled"
+            };
+            let index = InMemoryChannelIndex::load(Arc::new(StaticSource {
+                records: vec![
+                    protocol_record(group_id, routed_model, CHANNEL_ID, Protocol::OpenAiChat),
+                    protocol_record(group_id, routed_model, CHANNEL_ID + 1, Protocol::Gemini),
+                ],
+            }))
+            .await
+            .unwrap();
+            service.scheduler = IndexedWeightedScheduler::new(index);
+            service = service.with_scheduler_health(Arc::new(CoolingChannelHealth {
+                channel_id: ChannelId::new(CHANNEL_ID + 1).unwrap(),
+            }));
+            if smart_route {
+                service = service.with_smart_route_resolver(Arc::new(ProtocolSmartRouteResolver {
+                    rules: vec![vec![CHANNEL_ID, CHANNEL_ID + 1]],
+                }));
+            }
+            let playground = GatewayPrincipal::playground(
+                af_domain::TokenId::new(1).unwrap(),
+                af_domain::UserId::new(1).unwrap(),
+                group_id,
+            );
+            let request_model = if smart_route {
+                "smart-thinking"
+            } else {
+                "gpt-scheduled"
+            };
+            assert!(
+                matches!(
+                    service
+                        .prepare_route_selection(
+                            playground.into(),
+                            &gemini_native_media_request(request_model),
+                            Protocol::Gemini,
+                            "health-capability-gap",
+                            None
+                        )
+                        .await,
+                    Err(AfError::Upstream(UpstreamError::Overloaded { .. }))
+                ),
+                "smart route: {smart_route}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn missing_candidates_proxy_binding_and_decryption_fail_closed() {
         let principal = principal(7);
         let empty = service(Vec::new()).await;
@@ -2902,6 +4120,66 @@ mod tests {
         record_pool(vec![credential])
     }
 
+    fn protocol_record(
+        group_id: GroupId,
+        model: &str,
+        channel_id: i64,
+        protocol: Protocol,
+    ) -> ChannelIndexSourceRecord {
+        let channel_type = match protocol {
+            Protocol::OpenAiChat => ChannelType::OpenAi,
+            Protocol::Anthropic => ChannelType::Anthropic,
+            Protocol::Gemini => ChannelType::Gemini,
+            _ => unreachable!(),
+        };
+        let credential_id = channel_id + 10;
+        let credential = SchedulerRuntimeCredentialRecord::new(
+            credential_id,
+            CredentialKind::ApiKey,
+            valid_envelope_for(credential_id, 0x29),
+            false,
+        )
+        .unwrap();
+        let target = SchedulerRuntimeTargetRecord::new(
+            ChannelId::new(channel_id).unwrap(),
+            channel_type,
+            protocol,
+            Some("https://scheduled-chat.example".to_owned()),
+            credential,
+            Vec::new(),
+        )
+        .unwrap();
+        ChannelIndexSourceRecord::with_runtime_target(group_id, model, 10, 0, Arc::new(target))
+            .unwrap()
+    }
+
+    fn gemini_native_media_request(model: &str) -> CanonicalRequestEnvelope {
+        let body = json!({
+            "generationConfig":{"maxOutputTokens":256},
+            "contents":[{"role":"user","parts":[
+                {"text":"Describe the video"},
+                {"fileData":{"mimeType":"video/mp4","fileUri":"gs://fixture/video"}}
+            ]}],
+            "x_vendor":{"keep":[1,2]}
+        });
+        let request = af_protocol::gemini::parse_request_envelope(
+            &format!("models/{model}"),
+            Bytes::from(serde_json::to_vec(&body).unwrap()),
+        )
+        .unwrap();
+        let native = request.clone().plan_conversation(Protocol::Gemini).unwrap();
+        let preserved: serde_json::Value = serde_json::from_slice(native.body()).unwrap();
+        assert_eq!(preserved["contents"], body["contents"]);
+        assert_eq!(preserved["x_vendor"], body["x_vendor"]);
+        assert!(
+            request
+                .clone()
+                .plan_conversation(Protocol::OpenAiChat)
+                .is_none()
+        );
+        request
+    }
+
     fn record_pool(credentials: Vec<SchedulerRuntimeCredentialRecord>) -> ChannelIndexSourceRecord {
         record_pool_with_protocol(credentials, Protocol::OpenAiChat)
     }
@@ -3003,7 +4281,8 @@ mod tests {
     }
 
     fn request_for_model(model: &str) -> CanonicalRequestEnvelope {
-        CanonicalRequest::new(Operation::Chat, model.to_owned(), Vec::new(), false).into()
+        // 路由现在验证实际出站正文；调度夹具也必须是入口可接受的完整请求。
+        valid_request_for_model(model)
     }
 
     fn valid_request_for_model(model: &str) -> CanonicalRequestEnvelope {
@@ -3018,13 +4297,10 @@ mod tests {
     }
 
     fn responses_request() -> CanonicalRequestEnvelope {
-        CanonicalRequest::new(
-            Operation::Responses,
-            "gpt-scheduled".to_owned(),
-            Vec::new(),
-            false,
-        )
-        .into()
+        af_protocol::openai_responses::parse_request_envelope(Bytes::from_static(
+            br#"{"model":"gpt-scheduled","input":[{"role":"user","content":"hello"}],"stream":false}"#,
+        ))
+        .unwrap()
     }
 
     fn principal(group_id: i64) -> GatewayPrincipal {
@@ -3107,6 +4383,79 @@ mod tests {
     }
 
     struct StaticSmartRouteResolver;
+
+    struct ProtocolSmartRouteResolver {
+        rules: Vec<Vec<i64>>,
+    }
+
+    impl SmartRouteResolver for ProtocolSmartRouteResolver {
+        fn matching_rules<'a>(&'a self, requested_model: &'a str) -> SmartRouteRulesFuture<'a> {
+            Box::pin(async move {
+                if requested_model != "smart-thinking" {
+                    return Ok(Vec::new());
+                }
+                self.rules
+                    .iter()
+                    .enumerate()
+                    .map(|(index, channel_ids)| {
+                        let candidates = channel_ids
+                            .iter()
+                            .map(|channel_id| {
+                                SmartRouteRuntimeCandidate::new(
+                                    RouteChannelId::new(*channel_id).unwrap(),
+                                    ChannelId::new(*channel_id).unwrap(),
+                                    CredentialId::new(*channel_id + 10).unwrap(),
+                                    10,
+                                    10,
+                                    None,
+                                )
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        SmartRouteRuntimeRule::new(
+                            RouteId::new(i64::try_from(index + 1).unwrap()).unwrap(),
+                            RouteMode::ExplicitGroup,
+                            RouteStrategy::Weighted,
+                            "gpt-routed".to_owned(),
+                            candidates,
+                        )
+                    })
+                    .collect()
+            })
+        }
+    }
+
+    struct CoolingChannelHealth {
+        channel_id: ChannelId,
+    }
+
+    impl SchedulerHealthStore for CoolingChannelHealth {
+        fn states<'a>(
+            &'a self,
+            targets: &'a [af_cache::RedisHealthTarget],
+        ) -> crate::health_runtime::SchedulerHealthStoreFuture<'a, Vec<RuntimeHealthState>>
+        {
+            Box::pin(async move {
+                Ok(targets
+                    .iter()
+                    .copied()
+                    .map(|target| {
+                        RuntimeHealthState::new(
+                            target,
+                            0,
+                            target == af_cache::RedisHealthTarget::Channel(self.channel_id),
+                        )
+                    })
+                    .collect())
+            })
+        }
+
+        fn apply<'a>(
+            &'a self,
+            _events: &'a [af_cache::RedisHealthEvent],
+        ) -> crate::health_runtime::SchedulerHealthStoreFuture<'a, ()> {
+            Box::pin(async { Ok(()) })
+        }
+    }
 
     impl SmartRouteResolver for StaticSmartRouteResolver {
         fn matching_rules<'a>(&'a self, requested_model: &'a str) -> SmartRouteRulesFuture<'a> {

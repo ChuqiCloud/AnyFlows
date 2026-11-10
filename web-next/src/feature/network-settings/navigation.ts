@@ -8,7 +8,7 @@ export const networkSettingsNavNodes = defineNavigation(
       href: "/console/system-settings/network",
       order: 65,
       section: "platform",
-      sectionTitle: "nav.sections.platform",
+      sectionTitle: "nav.sections.site",
     },
   ],
   { group: "module", module: "networkSettings" },

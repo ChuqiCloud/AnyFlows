@@ -7,11 +7,11 @@ use af_admin::{
     AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsService,
     AdminPaymentSettingsService, AdminRouteReader, AdminRouteWriter, AdminTokenReader,
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
-    InitialSetup, ModelCatalogReader, OAuthLoginService, PasskeyAuthenticationService,
-    PasswordResetService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
-    RegistrationService, SessionAuthenticator, SiteSettingsService, SubscriptionService,
-    TokenAuthenticator, UserInvitationService, UserNotificationService, UserTopupService,
-    UserWalletService,
+    ImageHistoryService, InitialSetup, ModelCatalogReader, OAuthLoginService,
+    PasskeyAuthenticationService, PasswordResetService, PlaygroundConversationService,
+    PlaygroundShareService, RedemptionService, RegistrationService, SessionAuthenticator,
+    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
+    UserNotificationService, UserTopupService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -21,7 +21,7 @@ use axum::{
     Router,
     extract::DefaultBodyLimit,
     middleware,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use http::{
     HeaderName, HeaderValue, Method,
@@ -87,6 +87,9 @@ use crate::management_setup::{initialize_setup, setup_status};
 use crate::management_token_writes::{create_admin_token, delete_admin_token, update_admin_token};
 use crate::management_tokens::{get_admin_token, list_admin_tokens};
 use crate::management_usage_logs::{list_admin_usage_logs, list_user_usage_logs};
+use crate::management_user_security::{
+    get_admin_user_security, reset_admin_user_two_factor, revoke_admin_user_passkey,
+};
 use crate::management_users::{
     create_admin_user, delete_admin_user, get_admin_user, list_admin_users, update_admin_user,
 };
@@ -105,6 +108,7 @@ use crate::oauth_connections::{AdminOAuthConnectionService, build_admin_oauth_co
 use crate::oauth_login::build_oauth_login_router;
 use crate::openai_audio::openai_audio_transcription;
 use crate::openai_embeddings::openai_embeddings;
+use crate::openai_images::openai_image_edit;
 use crate::openai_images::openai_images;
 use crate::openai_responses::openai_responses;
 use crate::openai_responses_compact::openai_responses_compact;
@@ -115,6 +119,7 @@ use crate::password_reset::build_password_reset_router;
 use crate::payment_settings::build_payment_settings_router;
 use crate::platform_audit::build_platform_audit_router;
 use crate::playground_conversations::build_playground_conversation_router;
+use crate::playground_image_history::build_playground_image_history_router;
 use crate::playground_shares::build_playground_share_router;
 use crate::redemption::build_redemption_router;
 use crate::registration::build_registration_router;
@@ -181,12 +186,14 @@ pub fn build_router(
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
     playground_share_service: Arc<dyn PlaygroundShareService>,
     playground_conversation_service: Arc<dyn PlaygroundConversationService>,
+    image_history_service: Arc<dyn ImageHistoryService>,
     user_token_service: Arc<dyn af_admin::UserTokenService>,
     initial_setup: Arc<dyn InitialSetup>,
     registration_service: Arc<dyn RegistrationService>,
     passkey_authentication_service: Option<Arc<dyn PasskeyAuthenticationService>>,
     password_reset_service: Arc<dyn PasswordResetService>,
     user_profile_service: Arc<dyn af_admin::UserProfileService>,
+    admin_user_security_service: Option<Arc<dyn af_admin::AdminUserSecurityService>>,
     user_wallet_service: Arc<dyn UserWalletService>,
     user_notification_service: Arc<dyn UserNotificationService>,
     platform_audit_service: Option<Arc<dyn af_admin::PlatformAuditService>>,
@@ -335,7 +342,8 @@ pub fn build_router(
     .with_admin_usage_log_reader(admin_usage_log_reader)
     .with_admin_wallet_service(admin_wallet_service)
     .with_admin_refund_service(admin_refund_service)
-    .with_platform_audit_service(platform_audit_service.clone());
+    .with_platform_audit_service(platform_audit_service.clone())
+    .with_admin_user_security_service(admin_user_security_service);
     let platform_audit_routes = platform_audit_service
         .map(|service| {
             build_platform_audit_router(service, Arc::clone(&http_state.session_authenticator))
@@ -365,6 +373,11 @@ pub fn build_router(
             "/v1/images/generations",
             // Images 共用 OpenAI 错误 wire，但使用独立的大响应非流式业务端口。
             post(openai_images).route_layer(openai_authentication.clone()),
+        )
+        .route(
+            "/v1/images/edits",
+            // 编辑请求使用独立 multipart 解析与同一图片计费/选路端口。
+            post(openai_image_edit).route_layer(openai_authentication.clone()),
         )
         .route(
             "/v1/rerank",
@@ -424,7 +437,15 @@ pub fn build_router(
     let playground_routes = Router::new()
         .route(
             "/api/playground/v1/chat/completions",
-            post(chat_completions).route_layer(playground_openai_authentication),
+            post(chat_completions).route_layer(playground_openai_authentication.clone()),
+        )
+        .route(
+            "/api/playground/v1/images/generations",
+            post(openai_images).route_layer(playground_openai_authentication.clone()),
+        )
+        .route(
+            "/api/playground/v1/images/edits",
+            post(openai_image_edit).route_layer(playground_openai_authentication),
         )
         .route(
             "/api/playground/v1/responses",
@@ -539,6 +560,10 @@ pub fn build_router(
     );
     let playground_conversation_routes = build_playground_conversation_router(
         playground_conversation_service,
+        Arc::clone(&http_state.session_authenticator),
+    );
+    let playground_image_history_routes = build_playground_image_history_router(
+        image_history_service,
         Arc::clone(&http_state.session_authenticator),
     );
     let user_token_routes = build_user_token_router(
@@ -679,6 +704,24 @@ pub fn build_router(
             get(get_admin_user)
                 .put(update_admin_user)
                 .delete(delete_admin_user)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(user_item_authentication.clone()),
+        )
+        .route(
+            "/api/admin/users/{id}/security",
+            get(get_admin_user_security)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(user_item_authentication.clone()),
+        )
+        .route(
+            "/api/admin/users/{id}/security/two-factor/reset",
+            post(reset_admin_user_two_factor)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(user_item_authentication.clone()),
+        )
+        .route(
+            "/api/admin/users/{id}/security/passkeys/{passkey_id}",
+            delete(revoke_admin_user_passkey)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(user_item_authentication),
         )
@@ -941,6 +984,7 @@ pub fn build_router(
         .with_state(http_state.clone())
         .merge(playground_share_routes)
         .merge(playground_conversation_routes)
+        .merge(playground_image_history_routes)
         .merge(user_token_routes)
         .merge(registration_routes)
         .merge(passkey_authentication_routes)

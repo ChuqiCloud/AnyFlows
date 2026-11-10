@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Drawer, DrawerBody, DrawerContent, DrawerHeader } from '@heroui/react'
 import { useTranslation } from 'react-i18next'
 
@@ -6,6 +7,7 @@ import { ApiKeyForm } from './api-key-form'
 
 type ApiKeyEditorSheetProps = {
   token?: UserToken
+  initialRouteId?: number
   open: boolean
   onOpenChange: (open: boolean) => void
   onIssued: (issued: IssuedUserToken) => void
@@ -13,6 +15,7 @@ type ApiKeyEditorSheetProps = {
 
 export function ApiKeyEditorSheet(props: ApiKeyEditorSheetProps) {
   const { t } = useTranslation()
+  const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null)
   return (
     <Drawer
       aria-describedby="api-key-editor-description"
@@ -25,7 +28,7 @@ export function ApiKeyEditorSheet(props: ApiKeyEditorSheetProps) {
     >
       <DrawerContent>
         {() => (
-          <>
+          <div ref={setPortalContainer} className="relative flex h-full min-h-0 flex-col">
             <DrawerHeader className="flex flex-col gap-0.5 border-b border-[var(--hairline)] p-4 pr-12">
               <h2 className="text-base font-medium text-foreground">{t(props.token ? 'apiKeys.editor.editTitle' : 'apiKeys.editor.createTitle')}</h2>
               <p className="text-sm text-muted-foreground" id="api-key-editor-description">
@@ -36,12 +39,14 @@ export function ApiKeyEditorSheet(props: ApiKeyEditorSheetProps) {
             <DrawerBody className="min-h-0 flex-1 gap-0 overflow-hidden p-0">
               <ApiKeyForm
                 token={props.token}
+                initialRouteId={props.initialRouteId}
+                portalContainer={portalContainer}
                 onCancel={() => props.onOpenChange(false)}
                 onIssued={(issued) => { props.onOpenChange(false); props.onIssued(issued) }}
                 onSaved={() => props.onOpenChange(false)}
               />
             </DrawerBody>
-          </>
+          </div>
         )}
       </DrawerContent>
     </Drawer>

@@ -74,6 +74,15 @@ impl DatabaseUpstreamModelDiscoverer {
             }
             ModelDiscoveryTargetLookup::Found(target) => target,
         };
+        self.discover_target(target, false).await
+    }
+
+    async fn discover_target(
+        &self,
+        target: ModelDiscoveryTargetRecord,
+        raw_names: bool,
+    ) -> Result<UpstreamModelDiscovery, UpstreamModelDiscoveryError> {
+        let channel_id = target.channel_id();
         if target.proxy_required() && self.proxy_pools.is_none() {
             // 模型同步链尚未装配专属代理快照，禁止为同步请求回退直连。
             return Err(UpstreamModelDiscoveryError::ChannelUnavailable);
@@ -145,7 +154,11 @@ impl DatabaseUpstreamModelDiscoverer {
             )
             .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?;
         }
-        let reverse_mappings = reverse_mappings(&target)?;
+        let reverse_mappings = if raw_names {
+            BTreeMap::new()
+        } else {
+            reverse_mappings(&target)?
+        };
         let models = match target.channel_type() {
             ChannelType::OpenAi | ChannelType::Nvidia => {
                 discover_openai(&*adaptor, &context, &headers, &reverse_mappings).await?
@@ -210,6 +223,32 @@ impl DatabaseUpstreamModelDiscoverer {
 }
 
 impl UpstreamModelDiscoverer for DatabaseUpstreamModelDiscoverer {
+    fn discover_credential<'a>(
+        &'a self,
+        channel: ChannelId,
+        credential: af_domain::CredentialId,
+        manual: bool,
+    ) -> UpstreamModelDiscoveryFuture<'a> {
+        Box::pin(async move {
+            let target = self
+                .targets
+                .load_discovery_target_for_credential(channel, credential, manual)
+                .await
+                .map_err(|_| UpstreamModelDiscoveryError::Internal)?;
+            match target {
+                ModelDiscoveryTargetLookup::Found(target) => {
+                    self.discover_target(target, true).await
+                }
+                ModelDiscoveryTargetLookup::NotFound => {
+                    Err(UpstreamModelDiscoveryError::ChannelNotFound)
+                }
+                ModelDiscoveryTargetLookup::Unavailable => {
+                    Err(UpstreamModelDiscoveryError::ChannelUnavailable)
+                }
+            }
+        })
+    }
+
     fn discover<'a>(&'a self, channel_id: ChannelId) -> UpstreamModelDiscoveryFuture<'a> {
         Box::pin(async move {
             let result = self.discover_inner(channel_id).await;

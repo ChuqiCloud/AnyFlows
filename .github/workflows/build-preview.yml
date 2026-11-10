@@ -25,15 +25,12 @@ jobs:
     steps:
       - name: Check out selected revision
         env:
-          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL || github.server_url }}/${{ github.repository }}.git
           CHECKOUT_SHA: ${{ github.sha }}
           CHECKOUT_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           repository_url="$CHECKOUT_REPOSITORY_URL"
-          if [[ "$repository_url" == http://gitea_cps3:* ]]; then
-            repository_url="https://gitea.acmecloud.cn/${{ github.repository }}.git"
-          fi
           auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
           git init .
           git remote add origin "$repository_url"
@@ -51,6 +48,7 @@ jobs:
           rustup toolchain install "$toolchain" --profile minimal
 
       - name: Cache Rust release artifacts
+        if: github.server_url == 'https://github.com'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: preview-package
@@ -59,27 +57,20 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Build both embedded frontends
+      - name: Build embedded frontend
         run: |
           set -euo pipefail
           build_frontend() {
             npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir "$1" install --frozen-lockfile
             npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir "$1" build
           }
-          build_frontend web &
-          classic_pid=$!
-          build_frontend web-next &
-          next_pid=$!
-          result=0
-          wait "$classic_pid" || result=1
-          wait "$next_pid" || result=1
-          exit "$result"
+          build_frontend web-next
 
       - name: Build release binary
         run: |
           export AF_BUILD_COMMIT="$(git rev-parse HEAD)"
           export AF_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          cargo build --release --locked --package af-server
+          cargo build --release --locked --package af-server --package af-launcher
 
       - name: Package and start the archive
         run: |

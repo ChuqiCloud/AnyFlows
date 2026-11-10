@@ -19,7 +19,8 @@ use crate::{
     DatabasePool,
     entity::{
         MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES,
-        TokenHash, TokenIpAllowlist, TokenModelAllowlist, groups, tokens, users,
+        TokenHash, TokenIpAllowlist, TokenModelAllowlist, group_model_policies, groups, tokens,
+        users,
     },
     token_owner_guard::{TokenOwnerGuardError, lock_non_deleted_owner},
 };
@@ -57,6 +58,8 @@ pub enum TokenAuthLookupError {
 
 /// 完成持久化校验后的令牌鉴权结果。
 #[derive(Clone, Debug, Eq, PartialEq)]
+// Keep the owned authorization snapshot inline on the successful request path.
+#[allow(clippy::large_enum_variant)]
 pub enum TokenAuthLookupOutcome {
     /// 令牌、用户、有效分组和客户端 IP 均已通过校验，并携带本次请求的策略快照。
     Authenticated {
@@ -226,6 +229,7 @@ impl TokenAuthRepository {
         if group_deleted_at.is_some() {
             return Ok(TokenAuthLookupOutcome::Rejected);
         }
+        let group_model_limits = read_group_model_policy(&transaction, group_id).await?;
 
         let candidates = tokens::Entity::find()
             .filter(tokens::Column::UserId.eq(user_id.get()))
@@ -267,6 +271,10 @@ impl TokenAuthRepository {
                 )
                 .col_expr(tokens::Column::Status, Expr::value(1_i16))
                 .col_expr(tokens::Column::GroupId, Expr::value(Option::<i64>::None))
+                .col_expr(
+                    tokens::Column::UserRouteId,
+                    Expr::value(Option::<i64>::None),
+                )
                 .col_expr(
                     tokens::Column::OrganizationId,
                     Expr::value(Option::<i64>::None),
@@ -335,6 +343,7 @@ impl TokenAuthRepository {
                 name: Set(PLAYGROUND_TOKEN_NAME.to_owned()),
                 status: Set(1),
                 group_id: Set(None),
+                user_route_id: Set(None),
                 organization_id: Set(None),
                 organization_membership_id: Set(None),
                 organization_team_id: Set(None),
@@ -380,7 +389,10 @@ impl TokenAuthRepository {
 
         Ok(TokenAuthLookupOutcome::Authenticated {
             principal: GatewayPrincipal::playground(token_id, user_id, group_id),
-            model_policy: TokenModelPolicy::unrestricted(),
+            model_policy: group_model_limits.map_or_else(
+                TokenModelPolicy::unrestricted,
+                TokenModelAllowlist::into_policy,
+            ),
             user_concurrency: normalize_concurrency(owner.concurrency())?,
             user_rpm_limit: normalize_rpm_limit(owner.rpm_limit())?,
             group_rpm_limit: normalize_rpm_limit(group_rpm_limit)?,
@@ -411,8 +423,39 @@ impl TokenAuthRepository {
         };
         let row = TokenAuthRow::try_from_query_result(&result)
             .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
-        row.validate(client_ip, self.organization_validator.as_deref())
-            .await
+        let outcome = row
+            .validate(client_ip, self.organization_validator.as_deref())
+            .await?;
+        if let TokenAuthLookupOutcome::Authenticated { principal, .. } = &outcome
+            && principal.user_route_id().is_none()
+            && crate::MerchantPoolRepository::new(self.pool.clone(), self.lookup_timeout)
+                .pool_for_group(principal.group_id())
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| record_internal_error(TokenAuthRepositoryError::Query))?
+                .is_some()
+        {
+            // Merchant pool execution requires a scoped route and its immutable quote.
+            return Ok(TokenAuthLookupOutcome::Rejected);
+        }
+        if let TokenAuthLookupOutcome::Authenticated { principal, .. } = &outcome
+            && let Some(route_id) = principal.user_route_id()
+        {
+            let repository =
+                crate::UserRouteRepository::new(self.pool.clone(), self.lookup_timeout)
+                    .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+            match repository
+                .lookup_for_token(principal.user_id(), principal.token_id())
+                .await
+            {
+                Ok(Some(route)) if route.id == route_id => {}
+                Ok(_) | Err(crate::UserRouteError::Unavailable) => {
+                    return Ok(TokenAuthLookupOutcome::Rejected);
+                }
+                Err(_) => return Err(record_internal_error(TokenAuthRepositoryError::Query)),
+            }
+        }
+        Ok(outcome)
     }
 }
 
@@ -430,6 +473,14 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
     let model_limits_length =
         token_json_serialized_length(database_backend, tokens::Column::ModelLimits);
     let allow_ips_length = token_json_serialized_length(database_backend, tokens::Column::AllowIps);
+    let group_model_limits_column = || {
+        Expr::col((
+            group_model_policies::Entity,
+            group_model_policies::Column::AllowedModels,
+        ))
+    };
+    let group_model_limits_length =
+        json_serialized_length(database_backend, group_model_limits_column());
     let model_limits_column = || Expr::col((tokens::Entity, tokens::Column::ModelLimits));
     let allow_ips_column = || Expr::col((tokens::Entity, tokens::Column::AllowIps));
 
@@ -441,6 +492,14 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
         .expr_as(
             Expr::col((tokens::Entity, tokens::Column::Status)),
             Alias::new("token_status"),
+        )
+        .expr_as(
+            Expr::col((tokens::Entity, tokens::Column::UserRouteId)),
+            Alias::new("token_user_route_id"),
+        )
+        .expr_as(
+            Expr::col((tokens::Entity, tokens::Column::GroupId)),
+            Alias::new("token_group_id"),
         )
         .expr_as(
             Expr::col((tokens::Entity, tokens::Column::ExpiredAt)),
@@ -507,6 +566,26 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
             Alias::new("token_allow_ips_oversized"),
         )
         .expr_as(
+            Expr::case(
+                group_model_limits_length
+                    .clone()
+                    .lte(MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES),
+                group_model_limits_column(),
+            )
+            .finally(Expr::value(Option::<sea_orm::JsonValue>::None)),
+            Alias::new("group_model_limits"),
+        )
+        .expr_as(
+            Expr::case(
+                group_model_limits_column()
+                    .is_not_null()
+                    .and(group_model_limits_length.gt(MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES)),
+                true,
+            )
+            .finally(false),
+            Alias::new("group_model_limits_oversized"),
+        )
+        .expr_as(
             Expr::col((users::Entity, users::Column::Id)),
             Alias::new("user_id"),
         )
@@ -525,6 +604,10 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
         .expr_as(
             Expr::col((users::Entity, users::Column::RpmLimit)),
             Alias::new("user_rpm_limit"),
+        )
+        .expr_as(
+            Expr::col((users::Entity, users::Column::DefaultGroupId)),
+            Alias::new("billing_source_group_id"),
         )
         .expr_as(
             Expr::col((groups::Entity, groups::Column::Id)),
@@ -551,6 +634,11 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
                 Expr::col((users::Entity, users::Column::DefaultGroupId)).into(),
             ])),
         )
+        .left_join(
+            group_model_policies::Entity,
+            Expr::col((groups::Entity, groups::Column::Id))
+                .equals((group_model_policies::Entity, group_model_policies::Column::GroupId)),
+        )
         .and_where(Expr::col((tokens::Entity, tokens::Column::KeyHash)).eq(lookup.0.clone()))
         // 保留名称只允许由会话试炼场入口解析，绝不接受外部 API Key 鉴权。
         .and_where(Expr::col((tokens::Entity, tokens::Column::Name)).ne(PLAYGROUND_TOKEN_NAME))
@@ -564,6 +652,10 @@ pub(crate) fn token_json_serialized_length(
     column: tokens::Column,
 ) -> SimpleExpr {
     let value = Expr::col((tokens::Entity, column));
+    json_serialized_length(database_backend, value)
+}
+
+fn json_serialized_length(database_backend: DbBackend, value: Expr) -> SimpleExpr {
     match database_backend {
         DbBackend::Postgres => Func::cust(Alias::new("OCTET_LENGTH"))
             .arg(value.cast_as(Alias::new("TEXT")))
@@ -580,6 +672,8 @@ pub(crate) fn token_json_serialized_length(
 
 struct TokenAuthRow {
     token_id: i64,
+    token_user_route_id: Option<i64>,
+    token_group_id: Option<i64>,
     token_status: i16,
     token_expired_at: Option<TimeDateTimeWithTimeZone>,
     token_deleted_at: Option<TimeDateTimeWithTimeZone>,
@@ -591,11 +685,14 @@ struct TokenAuthRow {
     token_model_limits_oversized: bool,
     token_allow_ips: Option<TokenIpAllowlist>,
     token_allow_ips_oversized: bool,
+    group_model_limits: Option<TokenModelAllowlist>,
+    group_model_limits_oversized: bool,
     user_id: Option<i64>,
     user_status: Option<i16>,
     user_deleted_at: Option<TimeDateTimeWithTimeZone>,
     user_concurrency: Option<i32>,
     user_rpm_limit: Option<i32>,
+    billing_source_group_id: Option<i64>,
     group_id: Option<i64>,
     group_deleted_at: Option<TimeDateTimeWithTimeZone>,
     group_rpm_limit: Option<i32>,
@@ -605,6 +702,8 @@ impl TokenAuthRow {
     fn try_from_query_result(result: &QueryResult) -> Result<Self, DbErr> {
         Ok(Self {
             token_id: result.try_get("", "token_id")?,
+            token_user_route_id: result.try_get("", "token_user_route_id")?,
+            token_group_id: result.try_get("", "token_group_id")?,
             token_status: result.try_get("", "token_status")?,
             token_expired_at: result.try_get("", "token_expired_at")?,
             token_deleted_at: result.try_get("", "token_deleted_at")?,
@@ -618,11 +717,14 @@ impl TokenAuthRow {
             token_model_limits_oversized: result.try_get("", "token_model_limits_oversized")?,
             token_allow_ips: result.try_get("", "token_allow_ips")?,
             token_allow_ips_oversized: result.try_get("", "token_allow_ips_oversized")?,
+            group_model_limits: result.try_get("", "group_model_limits")?,
+            group_model_limits_oversized: result.try_get("", "group_model_limits_oversized")?,
             user_id: result.try_get("", "user_id")?,
             user_status: result.try_get("", "user_status")?,
             user_deleted_at: result.try_get("", "user_deleted_at")?,
             user_concurrency: result.try_get("", "user_concurrency")?,
             user_rpm_limit: result.try_get("", "user_rpm_limit")?,
+            billing_source_group_id: result.try_get("", "billing_source_group_id")?,
             group_id: result.try_get("", "group_id")?,
             group_deleted_at: result.try_get("", "group_deleted_at")?,
             group_rpm_limit: result.try_get("", "group_rpm_limit")?,
@@ -634,7 +736,10 @@ impl TokenAuthRow {
         client_ip: TrustedClientIp,
         organization_validator: Option<&dyn OrganizationTokenAuthValidator>,
     ) -> Result<TokenAuthLookupOutcome, TokenAuthRepositoryError> {
-        if self.token_model_limits_oversized || self.token_allow_ips_oversized {
+        if self.token_model_limits_oversized
+            || self.token_allow_ips_oversized
+            || (self.token_user_route_id.is_none() && self.group_model_limits_oversized)
+        {
             return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
         }
         let token_enabled = enabled_or_rejected(self.token_status)?;
@@ -654,18 +759,41 @@ impl TokenAuthRow {
         let Some(group_id) = self.group_id else {
             return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
         };
-        let group_rpm_limit = normalize_rpm_limit(self.group_rpm_limit)?;
+        let group_rpm_limit = if self.token_user_route_id.is_some() {
+            None
+        } else {
+            normalize_rpm_limit(self.group_rpm_limit)?
+        };
         let token_id = TokenId::new(self.token_id)
             .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
         let user_id = UserId::new(user_id)
             .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
         let group_id = GroupId::new(group_id)
             .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+        let billing_source_group_id = self
+            .billing_source_group_id
+            .and_then(|value| GroupId::new(value).ok())
+            .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant))?;
         let organization_context = self.organization_context(token_id, user_id)?;
-        let model_policy = self.token_model_limits.map_or_else(
+        if self.token_user_route_id.is_some_and(|id| id <= 0)
+            || (self.token_user_route_id.is_some()
+                && (self.token_group_id.is_some() || organization_context.is_some()))
+        {
+            return Ok(TokenAuthLookupOutcome::Rejected);
+        }
+        let token_model_policy = self.token_model_limits.map_or_else(
             TokenModelPolicy::unrestricted,
             TokenModelAllowlist::into_policy,
         );
+        let group_model_policy = self.group_model_limits.map_or_else(
+            TokenModelPolicy::unrestricted,
+            TokenModelAllowlist::into_policy,
+        );
+        let model_policy = if self.token_user_route_id.is_some() {
+            token_model_policy
+        } else {
+            token_model_policy.intersect(&group_model_policy)
+        };
         if !token_enabled
             || self.token_deleted_at.is_some()
             || self
@@ -707,7 +835,9 @@ impl TokenAuthRow {
             None => GatewayPrincipal::new(token_id, user_id, group_id),
         };
         Ok(TokenAuthLookupOutcome::Authenticated {
-            principal,
+            principal: principal
+                .with_billing_source_group_id(billing_source_group_id)
+                .with_user_route_id(self.token_user_route_id),
             model_policy,
             user_concurrency,
             user_rpm_limit,
@@ -780,6 +910,18 @@ fn normalize_rpm_limit(value: Option<i32>) -> Result<Option<NonZeroU32>, TokenAu
         .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant)),
         Some(_) => Err(record_internal_error(TokenAuthRepositoryError::Invariant)),
     }
+}
+
+async fn read_group_model_policy<C: ConnectionTrait>(
+    connection: &C,
+    group_id: GroupId,
+) -> Result<Option<TokenModelAllowlist>, TokenAuthRepositoryError> {
+    group_model_policies::Entity::find_by_id(group_id.get())
+        .one(connection)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map(|policy| policy.map(|policy| policy.allowed_models))
+        .map_err(|_| record_internal_error(TokenAuthRepositoryError::Query))
 }
 
 /// 用户和令牌状态只有 1/2 属于已知持久化契约，其他值表示数据损坏。
@@ -860,6 +1002,8 @@ mod tests {
     fn auth_row(organization: bool) -> TokenAuthRow {
         TokenAuthRow {
             token_id: 1,
+            token_user_route_id: None,
+            token_group_id: None,
             token_status: 1,
             token_expired_at: None,
             token_deleted_at: None,
@@ -869,6 +1013,8 @@ mod tests {
             token_organization_department_id: None,
             token_model_limits: None,
             token_model_limits_oversized: false,
+            group_model_limits: None,
+            group_model_limits_oversized: false,
             token_allow_ips: None,
             token_allow_ips_oversized: false,
             user_id: Some(2),
@@ -876,6 +1022,7 @@ mod tests {
             user_deleted_at: None,
             user_concurrency: None,
             user_rpm_limit: None,
+            billing_source_group_id: Some(3),
             group_id: Some(3),
             group_deleted_at: None,
             group_rpm_limit: None,
@@ -892,6 +1039,52 @@ mod tests {
             OrganizationMembershipId::new(11).expect("test membership ID must be valid"),
             None,
         )
+    }
+
+    #[tokio::test]
+    async fn user_route_key_preserves_token_policy_without_default_group_intersection() {
+        let mut row = auth_row(false);
+        row.token_user_route_id = Some(7);
+        row.token_model_limits =
+            Some(TokenModelAllowlist::validate(serde_json::json!(["alternate-model"])).unwrap());
+        row.group_model_limits =
+            Some(TokenModelAllowlist::validate(serde_json::json!(["default-model"])).unwrap());
+        row.group_rpm_limit = Some(1);
+        let outcome = row.validate(client_ip(), None).await.unwrap();
+        let TokenAuthLookupOutcome::Authenticated {
+            principal,
+            model_policy,
+            group_rpm_limit,
+            ..
+        } = outcome
+        else {
+            panic!("personal route key should preserve its own model policy");
+        };
+        assert_eq!(principal.user_route_id(), Some(7));
+        assert!(model_policy.allows("alternate-model"));
+        assert!(!model_policy.allows("default-model"));
+        assert_eq!(group_rpm_limit, None);
+    }
+
+    #[tokio::test]
+    async fn corrupt_user_route_bindings_fail_closed_before_organization_validation() {
+        for organization in [false, true] {
+            let mut row = auth_row(organization);
+            row.token_user_route_id = Some(7);
+            if !organization {
+                row.token_group_id = Some(3);
+            }
+            assert_eq!(
+                row.validate(client_ip(), None).await,
+                Ok(TokenAuthLookupOutcome::Rejected)
+            );
+        }
+        let mut row = auth_row(false);
+        row.token_user_route_id = Some(0);
+        assert_eq!(
+            row.validate(client_ip(), None).await,
+            Ok(TokenAuthLookupOutcome::Rejected)
+        );
     }
 
     #[tokio::test]
@@ -1012,14 +1205,27 @@ mod tests {
             assert_eq!(statement.sql.matches(length_expression).count(), 2);
             let model_length_expression = length_expression.replace("allow_ips", "model_limits");
             assert_eq!(statement.sql.matches(&model_length_expression).count(), 2);
+            let group_model_length_expression = length_expression
+                .replace("tokens", "group_model_policies")
+                .replace("allow_ips", "allowed_models");
+            assert_eq!(
+                statement
+                    .sql
+                    .matches(&group_model_length_expression)
+                    .count(),
+                2,
+                "group model allowlists need both the bounded projection and oversized guard: {rendered}"
+            );
             assert!(rendered.contains("<= 4352"), "{rendered}");
             assert!(rendered.contains("> 4352"), "{rendered}");
-            assert!(rendered.contains("<= 69632"), "{rendered}");
-            assert!(rendered.contains("> 69632"), "{rendered}");
-            assert_eq!(rendered.matches("ELSE NULL END)").count(), 2);
-            assert_eq!(rendered.matches("ELSE FALSE END)").count(), 2);
+            // Token and group model allowlists share the same serialized byte bound.
+            assert_eq!(rendered.matches("<= 69632").count(), 2, "{rendered}");
+            assert_eq!(rendered.matches("> 69632").count(), 2, "{rendered}");
+            assert_eq!(rendered.matches("ELSE NULL END)").count(), 3);
+            assert_eq!(rendered.matches("ELSE FALSE END)").count(), 3);
             assert!(statement.sql.contains("token_model_limits_oversized"));
             assert!(statement.sql.contains("token_allow_ips_oversized"));
+            assert!(statement.sql.contains("group_model_limits_oversized"));
         }
     }
 }

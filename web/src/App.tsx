@@ -1,4 +1,5 @@
 import { ClientProfilePage } from '@/features/client-profiles/client-profile-page'
+import { AboutPage } from '@/features/about/about-page'
 import { AccountVerificationPage } from '@/features/account-verification/account-verification-page'
 import { VerificationSettingsPanel } from '@/features/account-verification/verification-settings-panel'
 import { useCallback, useEffect, useState } from 'react'
@@ -20,6 +21,7 @@ import { BillingSettingsPage } from '@/features/billing-settings/billing-setting
 import { AnnouncementPage } from '@/features/announcements/announcement-page'
 import { ApiExplorerPage } from '@/features/api-explorer/api-explorer-page'
 import { ChannelPage } from '@/features/channels/channel-page'
+import { ChannelModelPage } from '@/features/channels/channel-model-page'
 import { CredentialPage } from '@/features/credentials/credential-page'
 import { CredentialProxyPage } from '@/features/credential-proxies/credential-proxy-page'
 import { DashboardPage } from '@/features/dashboard/dashboard-page'
@@ -36,6 +38,7 @@ import { NetworkSettingsPage } from '@/features/network-settings/network-setting
 import { PaymentSettingsPage } from '@/features/payment-settings/payment-settings-page'
 import { PublicModelPage } from '@/features/models/public-model-page'
 import { PlaygroundPage } from '@/features/playground/playground-page'
+import { ImagePlazaPage } from '@/features/image-plaza/image-plaza-page'
 import { PublicPlaygroundSharePage } from '@/features/playground/public-playground-share-page'
 import { ProfilePage } from '@/features/profile/profile-page'
 import { RegistrationPage } from '@/features/registration/registration-page'
@@ -136,6 +139,8 @@ function ManagementEntry({
   const extensionRoute = extensionPath ? findConsoleExtensionRoute(extensionPath) : undefined
   const titleKey = extensionRoute?.titleKey ?? (view === 'channels'
     ? 'channels.title'
+    : view === 'channel-models'
+      ? 'channels.models.title'
     : view === 'client-profiles'
       ? 'clientProfiles.title'
     : view === 'announcements'
@@ -146,6 +151,8 @@ function ManagementEntry({
       ? 'credentialProxies.title'
     : view === 'site-settings'
       ? 'siteSettings.title'
+    : view === 'about'
+      ? 'nav.about'
     : view === 'site-navigation'
       ? 'nav.siteNavigation'
       : view === 'authentication-settings'
@@ -192,6 +199,8 @@ function ManagementEntry({
                 ? 'models.title'
                 : view === 'playground'
                   ? 'playground.title'
+                  : view === 'image-plaza'
+                    ? 'imagePlaza.title'
                   : view === 'video-tasks'
                     ? 'videoTasks.title'
                   : view === 'account-verification'
@@ -211,6 +220,8 @@ function ManagementEntry({
     ? <ConsoleExtensionPage path={extensionPath ?? ''} />
     : view === 'channels'
     ? <ChannelPage />
+    : view === 'channel-models'
+      ? <ChannelModelPage channelId={credentialChannelId} />
     : view === 'client-profiles'
       ? <ClientProfilePage />
     : view === 'announcements'
@@ -221,6 +232,8 @@ function ManagementEntry({
       ? <CredentialProxyPage />
     : view === 'site-settings'
       ? <SiteSettingsPage />
+    : view === 'about'
+      ? <AboutPage />
     : view === 'site-navigation'
       ? <SiteNavigationPage />
       : view === 'authentication-settings'
@@ -267,6 +280,8 @@ function ManagementEntry({
                 ? <ModelPage authenticated admin={admin} />
                 : view === 'playground'
                   ? <PlaygroundPage />
+                  : view === 'image-plaza'
+                    ? <ImagePlazaPage />
                   : view === 'video-tasks'
                     ? <VideoTaskPage />
                   : view === 'account-verification'
@@ -289,6 +304,7 @@ function ManagementEntry({
     && view !== 'invitations'
     && view !== 'models'
     && view !== 'playground'
+    && view !== 'image-plaza'
     && view !== 'video-tasks'
     && view !== 'usage-logs'
     && view !== 'account-verification'

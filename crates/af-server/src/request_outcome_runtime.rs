@@ -11,13 +11,25 @@ use af_domain::{AfError, ChannelId, GatewayPrincipal, Operation, Protocol, Upstr
 pub struct RoutedExecution<T> {
     value: T,
     channel_id: ChannelId,
+    target_group_id: Option<af_domain::GroupId>,
 }
 
 impl<T> RoutedExecution<T> {
     /// 绑定已经由候选报告确认的最终成功渠道。
     #[must_use]
     pub const fn new(value: T, channel_id: ChannelId) -> Self {
-        Self { value, channel_id }
+        Self {
+            value,
+            channel_id,
+            target_group_id: None,
+        }
+    }
+
+    /// 保留跨分组调度最终选中的计费分组，供请求终态观测使用。
+    #[must_use]
+    pub fn with_target_group_id(mut self, group_id: af_domain::GroupId) -> Self {
+        self.target_group_id = Some(group_id);
+        self
     }
 
     /// 返回最终成功渠道。
@@ -48,6 +60,21 @@ pub struct RequestOutcomeContext {
 }
 
 impl RequestOutcomeContext {
+    /// 使用实际执行组记录跨分组请求，不改变原始用户及 Key 归属。
+    #[must_use]
+    pub fn with_target_group_id(mut self, group_id: af_domain::GroupId) -> Self {
+        if let Some(subject) = self.subject {
+            self.subject = Some(RequestOutcomeSubject::new(
+                subject.user_id(),
+                subject.token_id(),
+                group_id,
+                subject.organization_id(),
+                subject.organization_team_id(),
+            ));
+        }
+        self
+    }
+
     /// 固化请求标识和低基数路由维度，不接收主体、凭据或原始协议内容。
     #[must_use]
     pub fn new(request_id: &str, protocol: Protocol, operation: Operation, model: &str) -> Self {
@@ -106,12 +133,21 @@ impl RequestOutcomeContext {
 
     /// 持久化服务调用终态并剥离内部渠道包装。
     pub async fn finish<T>(
-        self,
+        mut self,
         runtime: Option<&RequestOutcomeRuntime>,
         result: Result<RoutedExecution<T>, AfError>,
     ) -> Result<T, AfError> {
         match result {
             Ok(routed) => {
+                if let (Some(group_id), Some(subject)) = (routed.target_group_id, self.subject) {
+                    self.subject = Some(RequestOutcomeSubject::new(
+                        subject.user_id(),
+                        subject.token_id(),
+                        group_id,
+                        subject.organization_id(),
+                        subject.organization_team_id(),
+                    ));
+                }
                 let channel_id = routed.channel_id();
                 let value = routed.into_value();
                 self.record_success(runtime, channel_id).await;
@@ -159,13 +195,16 @@ impl RequestOutcomeContext {
         runtime.record(write).await;
     }
 
-    /// 记录失败终态，原始错误只在内存中映射为闭合分类。
+    /// 记录失败终态；不存在或退役模型不属于实际调用日志。
     pub async fn record_failure(
         &self,
         runtime: Option<&RequestOutcomeRuntime>,
         error: &AfError,
         channel_id: Option<ChannelId>,
     ) {
+        if matches!(error, AfError::ModelUnavailable) {
+            return;
+        }
         let Some(runtime) = runtime else {
             return;
         };
@@ -296,8 +335,10 @@ impl std::fmt::Debug for RequestOutcomeRuntime {
 
 fn classify_error(error: &AfError) -> RequestFailureKind {
     match error {
-        AfError::InvalidRequest | AfError::InvalidApiKey => RequestFailureKind::InvalidRequest,
-        AfError::ModelNotAllowed => RequestFailureKind::ModelNotAllowed,
+        AfError::InvalidRequest | AfError::InvalidApiKey | AfError::AccountVerificationRequired => {
+            RequestFailureKind::InvalidRequest
+        }
+        AfError::ModelNotAllowed | AfError::ModelUnavailable => RequestFailureKind::ModelNotAllowed,
         AfError::InsufficientQuota => RequestFailureKind::InsufficientQuota,
         AfError::QuotaWindowLimited { .. } => RequestFailureKind::QuotaLimited,
         AfError::ConcurrencyLimited => RequestFailureKind::ConcurrencyLimited,
@@ -373,5 +414,180 @@ mod tests {
         let routed = RoutedExecution::new("ok", channel_id);
         assert_eq!(routed.channel_id(), channel_id);
         assert_eq!(routed.into_value(), "ok");
+    }
+
+    #[tokio::test]
+    async fn unavailable_models_skip_personal_playground_and_service_outcomes()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use af_db::{
+            AdminGroupRepository, AdminGroupWriteRecord, AdminModelCreateRecord,
+            AdminModelLifecycleRecord, AdminModelModalitiesRecord, AdminModelRepository,
+            AdminModelVisibilityRecord, AdminModelWriteRecord, AdminUserCreateRecord,
+            AdminUserRepository, DatabaseOptions, MigrationOptions, connect_and_migrate,
+        };
+        use af_domain::{
+            OrganizationId, OrganizationServiceAccountId, OrganizationServiceAccountKey,
+            OrganizationServiceAccountLocator, OrganizationServiceAccountRuntimeIdentity, TokenId,
+        };
+        use std::time::Duration;
+
+        #[derive(Default)]
+        struct Outcomes(std::sync::Mutex<Vec<ServiceAccountRequestOutcome>>);
+
+        impl ServiceAccountOutcomeSink for Outcomes {
+            fn persist<'a>(
+                &'a self,
+                fact: ServiceAccountRequestOutcome,
+            ) -> af_db::ServiceAccountOutcomeFuture<'a> {
+                Box::pin(async move {
+                    self.0.lock().unwrap().push(fact);
+                    Ok(())
+                })
+            }
+        }
+
+        let pool = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:")?,
+            MigrationOptions::default(),
+        )
+        .await?;
+        let timeout = Duration::from_secs(2);
+        let group = AdminGroupRepository::new(pool.clone(), timeout)?
+            .create(AdminGroupWriteRecord::new(
+                "outcome-call-admission".to_owned(),
+                "Outcome call admission".to_owned(),
+                1_000_000,
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                serde_json::json!({}),
+            ))
+            .await?;
+        let group_id = group.group_id();
+        let user = AdminUserRepository::new(pool.clone(), timeout)?
+            .create(AdminUserCreateRecord::new(
+                "outcome-call-admission".to_owned(),
+                None,
+                None,
+                1,
+                1,
+                group_id,
+                10_000,
+                None,
+                None,
+            ))
+            .await?;
+        let user_id = user.user_id();
+        AdminModelRepository::new(pool.clone(), timeout)?
+            .create(AdminModelCreateRecord::new(
+                "test-model".to_owned(),
+                AdminModelWriteRecord::new(
+                    "Test model".to_owned(),
+                    "test".to_owned(),
+                    None,
+                    None,
+                    Vec::new(),
+                    None,
+                    AdminModelModalitiesRecord::new(true, false, false, false),
+                    AdminModelModalitiesRecord::new(true, false, false, false),
+                    false,
+                    false,
+                    AdminModelVisibilityRecord::Public,
+                    AdminModelLifecycleRecord::Active,
+                ),
+            ))
+            .await?;
+        let token_id = TokenId::new(1)?;
+        let service_outcomes = Arc::new(Outcomes::default());
+        let runtime = RequestOutcomeRuntime::new(RequestOutcomeRepository::new(pool.clone()))
+            .with_service_accounts(Some(service_outcomes.clone()));
+        let failures = [
+            ("unavailable", AfError::ModelUnavailable),
+            ("policy-denied", AfError::ModelNotAllowed),
+            (
+                "upstream-model",
+                AfError::Upstream(UpstreamError::ModelUnsupported),
+            ),
+        ];
+        for (scope, principal) in [
+            (
+                "personal",
+                GatewayPrincipal::new(token_id, user_id, group_id),
+            ),
+            (
+                "playground",
+                GatewayPrincipal::playground(token_id, user_id, group_id),
+            ),
+        ] {
+            for (name, error) in &failures {
+                RequestOutcomeContext::for_principal(
+                    &format!("{scope}-{name}"),
+                    Protocol::OpenAiChat,
+                    Operation::Chat,
+                    "test-model",
+                    principal,
+                )
+                .record_failure(Some(&runtime), error, None)
+                .await;
+            }
+        }
+        let identity = OrganizationServiceAccountRuntimeIdentity::new(
+            OrganizationServiceAccountLocator::new(
+                OrganizationId::new(11)?,
+                OrganizationServiceAccountId::new(12)?,
+            ),
+            OrganizationServiceAccountKey::new([13; 16]).unwrap(),
+            OrganizationServiceAccountKey::new([14; 16]).unwrap(),
+        );
+        for (name, error) in &failures {
+            RequestOutcomeContext::for_service_account(
+                &format!("service-{name}"),
+                Protocol::OpenAiChat,
+                Operation::Chat,
+                "test-model",
+                identity,
+                group_id,
+            )
+            .record_failure(Some(&runtime), error, None)
+            .await;
+        }
+
+        let (personal_rows, cursor) = runtime.repository.list_failed(None, 10).await?.into_parts();
+        assert_eq!(cursor, None);
+        assert_eq!(personal_rows.len(), 4);
+        for scope in ["personal", "playground"] {
+            for (name, expected_kind) in [
+                ("policy-denied", RequestFailureKind::ModelNotAllowed),
+                ("upstream-model", RequestFailureKind::UpstreamModel),
+            ] {
+                let request_id = format!("{scope}-{name}");
+                let row = personal_rows
+                    .iter()
+                    .find(|row| row.request_id() == request_id)
+                    .unwrap();
+                assert_eq!(row.failure_kind(), expected_kind);
+                assert_eq!(row.user_id(), Some(user_id));
+            }
+        }
+        {
+            let service_rows = service_outcomes.0.lock().unwrap();
+            assert_eq!(service_rows.len(), 2);
+            assert_eq!(service_rows[0].request_id(), "service-policy-denied");
+            assert_eq!(
+                service_rows[0].failure_kind(),
+                Some(RequestFailureKind::ModelNotAllowed)
+            );
+            assert_eq!(service_rows[1].request_id(), "service-upstream-model");
+            assert_eq!(
+                service_rows[1].failure_kind(),
+                Some(RequestFailureKind::UpstreamModel)
+            );
+        }
+        pool.close().await?;
+        Ok(())
     }
 }

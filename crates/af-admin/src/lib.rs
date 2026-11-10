@@ -1,6 +1,10 @@
 //! 登录用户与管理域应用服务。
 
 mod alipay_verification;
+mod verification_access;
+pub use verification_access::{
+    VerificationAccessError, VerificationAccessService, VerificationAccessStatus,
+};
 mod verification_settings;
 pub use verification_settings::{
     AdminVerificationSettings, DatabaseManualAccountVerificationProvider,
@@ -9,6 +13,24 @@ pub use verification_settings::{
 };
 mod announcement;
 mod api_key;
+mod credential_models;
+mod upstream_usage;
+pub use credential_models::{
+    CredentialModelError, CredentialModelFuture, CredentialModelItem, CredentialModelService,
+    CredentialModelsSnapshot, DatabaseCredentialModelService, UpstreamModelPolicySettings,
+};
+pub use upstream_usage::{AdminUpstreamUsageService, UpstreamUsageFuture};
+mod merchant_payout;
+mod merchant_payout_gateway;
+pub use merchant_payout::{
+    AdminMerchantPayoutSettings, DatabaseMerchantPayoutService, MerchantPayoutAccountCommand,
+    MerchantPayoutSettingsCommand,
+};
+mod merchant_finance;
+pub use merchant_finance::{
+    DatabaseMerchantFinanceService, MerchantFinanceBalance, MerchantFinanceEntry,
+    MerchantFinanceError, MerchantFinancePage, MerchantFinanceService, MerchantWithdrawal,
+};
 mod auth_challenge_security;
 mod balance_alert_settings;
 mod balance_alert_task;
@@ -16,6 +38,10 @@ mod balance_alert_task;
 mod balance_alert_tests;
 mod channel_read;
 mod channel_write;
+mod merchant_pool;
+pub use merchant_pool::{DatabaseMerchantPoolService, MerchantFuture, MerchantPoolService};
+mod merchant_service_policy;
+pub use merchant_service_policy::{DatabaseMerchantServicePolicy, MerchantServicePolicy};
 mod client_profiles;
 pub use client_profiles::{
     AdminClientProfileError, ClientProfilePage, ClientProfileQuery, ClientProfileRecord,
@@ -36,8 +62,23 @@ mod email_settings;
 #[cfg(test)]
 mod email_settings_tests;
 mod gateway_model_auth;
+mod group_key_access;
+mod group_model_policy;
 mod group_read;
+pub use af_db::GroupModelPolicyRecord;
+pub use af_db::GroupModelRatioOverridePolicyRecord;
+pub use group_key_access::{
+    DatabaseGroupKeyAccessService, GroupKeyAccessService, GroupKeyPolicy, GroupKeyPolicyCommand,
+    GroupKeyPolicyError, GroupKeyPolicyFuture, GroupKeyPolicyUpdate, GroupKeyPolicyUpdateFuture,
+    GroupKeySelectionMode, UserTokenGroup, UserTokenGroupListFuture, UserTokenGroupListQuery,
+    UserTokenGroupPage,
+};
+pub use group_model_policy::{
+    DatabaseGroupModelPolicyService, GroupModelPolicyError, GroupModelPolicyFuture,
+    GroupModelPolicyService, RuntimeRefreshingGroupModelPolicyService,
+};
 mod group_write;
+mod image_history;
 mod initial_setup;
 mod invitation;
 mod model_catalog;
@@ -86,7 +127,14 @@ mod usage_log_read;
 mod user_notifications;
 mod user_profile;
 mod user_read;
+mod user_route;
+mod user_security;
 mod user_token;
+pub use user_route::{
+    DatabaseUserRouteService, UserRouteDeleteFuture, UserRouteError, UserRouteFuture,
+    UserRouteListFuture, UserRouteMemberRecord, UserRouteMemberWrite, UserRouteRecord,
+    UserRouteService, UserRouteWrite,
+};
 mod user_topup;
 mod user_wallet;
 mod user_write;
@@ -173,6 +221,12 @@ pub use group_write::{
     AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError, AdminGroupWriter,
     DatabaseAdminGroupWriter, GroupPricingRuntimeRefreshError, GroupPricingRuntimeRefreshFuture,
     GroupPricingRuntimeRefresher, RuntimeRefreshingAdminGroupWriter,
+};
+pub use image_history::{
+    ImageHistoryContent, ImageHistoryEntry, ImageHistoryEntryParts, ImageHistoryError,
+    ImageHistoryFuture, ImageHistoryService, ImageHistoryServiceConfigError, ImageHistoryUpload,
+    LocalImageHistoryService, MAX_IMAGE_HISTORY_BYTES_PER_USER, MAX_IMAGE_HISTORY_IMAGE_BYTES,
+    MAX_IMAGE_HISTORY_PER_USER, MAX_IMAGE_HISTORY_THUMBNAIL_BYTES,
 };
 pub use initial_setup::{
     DatabaseInitialSetup, InitialSetup, InitialSetupCommand, InitialSetupError, InitialSetupFuture,
@@ -402,13 +456,18 @@ pub use user_profile::{
     UserPasskeyRevokeFuture, UserPasswordChangeCommand, UserPasswordChangeFuture, UserProfile,
     UserProfileError, UserProfileReadFuture, UserProfileService, UserProfileUpdateCommand,
     UserProfileUpdateFuture, UserSecurityStepUpCommand, UserSecurityStepUpFuture,
-    UserTwoFactorDisableCommand, UserTwoFactorDisableFuture, UserTwoFactorEnableCommand,
-    UserTwoFactorEnableFuture, UserTwoFactorReadFuture, UserTwoFactorStatus,
+    UserTwoFactorConfirmCommand, UserTwoFactorConfirmFuture, UserTwoFactorDisableCommand,
+    UserTwoFactorDisableFuture, UserTwoFactorEnableCommand, UserTwoFactorEnableFuture,
+    UserTwoFactorReadFuture, UserTwoFactorStatus,
 };
 pub use user_read::{
     AdminUser, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserPage,
     AdminUserReadError, AdminUserReader, AdminUserStatus, DEFAULT_ADMIN_USER_PAGE_SIZE,
     DatabaseAdminUserReader,
+};
+pub use user_security::{
+    AdminUserSecurityError, AdminUserSecurityReadFuture, AdminUserSecurityService,
+    AdminUserSecuritySnapshot, AdminUserSecurityWriteFuture, DatabaseAdminUserSecurityService,
 };
 pub use user_token::{
     DEFAULT_USER_TOKEN_PAGE_SIZE, DatabaseUserTokenService, IssuedUserToken,
@@ -451,6 +510,7 @@ mod playground_share_tests;
 mod token_auth_tests;
 
 mod account_verification;
+mod merchant_routes;
 pub use account_verification::{
     AccountVerificationError, AccountVerificationMaterial, AccountVerificationProvider,
     AccountVerificationProviderError, AccountVerificationRecord, AccountVerificationService,
@@ -458,3 +518,9 @@ pub use account_verification::{
     validate_verification_material,
 };
 pub use alipay_verification::{AlipayAccountVerificationProvider, AlipayProviderConfigError};
+pub use merchant_routes::{
+    DatabaseMerchantRouteService, MerchantConsumerAttempt, MerchantRouteFuture,
+    MerchantRoutePreview, MerchantRoutePreviewItem, MerchantRoutePreviewRequest,
+    MerchantRouteRecord, MerchantRouteService, MerchantRouteWrite, MerchantServiceStatistics,
+    MerchantServiceTimeline,
+};

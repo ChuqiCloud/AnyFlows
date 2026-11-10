@@ -88,6 +88,38 @@ pub fn build_response(response: &CanonicalResponse) -> Result<Value, BuildRespon
     Ok(Value::Object(root))
 }
 
+/// Rebuild a validated prompt-blocked response with public identity fields.
+///
+/// Gemini represents a prompt block with no candidates and a protocol-specific
+/// `promptFeedback` field. Keep that validated same-protocol metadata while
+/// replacing upstream response identity and preserving normalized usage.
+pub fn rebuild_prompt_blocked_response(
+    response: &CanonicalResponse,
+    public_response_id: String,
+    client_model: String,
+    usage: Usage,
+) -> Result<Value, BuildResponseError> {
+    if response.operation != Operation::Chat || !response.choices.is_empty() {
+        return Err(BuildResponseError::InvalidValue);
+    }
+    let raw = response
+        .raw_passthrough()
+        .ok_or(BuildResponseError::InvalidValue)?
+        .fields_for_protocol(Protocol::Gemini)
+        .map_err(|_| BuildResponseError::RawProtocolMismatch)?
+        .clone();
+    let public_response = CanonicalResponse::new(
+        Operation::Chat,
+        public_response_id,
+        client_model,
+        response.created_at,
+        Vec::new(),
+        Some(usage),
+    )
+    .with_validated_raw_passthrough(Some((Protocol::Gemini, raw)));
+    build_response(&public_response)
+}
+
 fn build_candidates(
     response: &CanonicalResponse,
     raw: &mut ValidatedRawResponse,
@@ -182,6 +214,7 @@ fn build_finish_reason(
         FinishReason::Stop | FinishReason::Length | FinishReason::ToolCalls => {
             Err(BuildResponseError::InvalidValue)
         }
+        FinishReason::Compaction => Err(BuildResponseError::UnsupportedFeature),
     }
 }
 
@@ -235,7 +268,8 @@ fn build_content_block(
         } => build_tool_use_part(id, name, input, signature.as_deref(), state, seen_call_ids),
         ContentBlock::ToolResult { .. }
         | ContentBlock::CacheControl(_)
-        | ContentBlock::Compaction(_) => Err(BuildResponseError::UnsupportedFeature),
+        | ContentBlock::Compaction(_)
+        | ContentBlock::AnthropicCompaction(_) => Err(BuildResponseError::UnsupportedFeature),
     }
 }
 

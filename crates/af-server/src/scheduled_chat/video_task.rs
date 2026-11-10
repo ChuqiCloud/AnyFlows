@@ -1,4 +1,4 @@
-use std::{fmt, future::Future, pin::Pin, time::Duration};
+use std::{fmt, future::Future, pin::Pin, sync::Arc, time::Duration};
 
 use af_adapter::{RelayContext, get_task_adaptor};
 use af_billing::{PricingRatio, PricingRatios, XaiVideoPricingSnapshot};
@@ -8,7 +8,7 @@ use af_db::{
 };
 use af_domain::{
     AfError, AsyncTaskBindingFingerprint, ChannelAutoBanRules, ChannelId, ChannelTimeout,
-    CredentialId, GroupId, Protocol, TaskSubmission, UpstreamTaskId,
+    CredentialId, GatewayPrincipal, GroupId, Protocol, TaskSubmission, UpstreamTaskId,
 };
 use af_protocol::{CanonicalTaskPoll, CanonicalVideoGenerationRequest, VideoModel};
 use af_relay::{
@@ -130,6 +130,7 @@ pub struct VideoTaskBinding {
     expected_model: VideoModel,
     binding_fingerprint: AsyncTaskBindingFingerprint,
     target_snapshot: BoundVideoTargetSnapshot,
+    retired_target: Option<Arc<SchedulerRuntimeTargetRecord>>,
 }
 
 impl VideoTaskBinding {
@@ -341,6 +342,7 @@ impl SubmissionBindingTarget {
             expected_model: self.snapshot.expected_model.clone(),
             binding_fingerprint,
             target_snapshot: self.snapshot,
+            retired_target: None,
         }
     }
 
@@ -391,29 +393,54 @@ impl VideoTaskRuntime for ScheduledChatService {
 }
 
 impl ScheduledChatService {
+    pub(super) async fn submit_merchant_video(
+        &self,
+        principal: GatewayPrincipal,
+        expected_target_group_id: GroupId,
+        request: CanonicalVideoGenerationRequest,
+        request_id: &str,
+    ) -> Result<BoundVideoTaskSubmission, VideoTaskSubmissionRuntimeError> {
+        let route = self
+            .scoped_media_route(&principal, request.model().as_str())
+            .await?;
+        if route.target_group_id() != expected_target_group_id {
+            return Err(AfError::Internal.into());
+        }
+        let health = self
+            .load_credential_health(&route, Protocol::XaiVideo, request.model().as_str())
+            .await?;
+        let loads = self
+            .load_account_concurrency(&route, Protocol::XaiVideo, request.model().as_str())
+            .await?;
+        self.execute_video_submission(route, request, request_id, loads.as_ref(), health.as_ref())
+            .await
+    }
     pub(super) async fn video_route(
         &self,
         group_id: GroupId,
         model: &str,
     ) -> Result<IndexedRoutePlan, AfError> {
+        self.ensure_non_merchant_group(group_id).await?;
         if self.health.is_some() {
             let (channel_ids, channel_health) = self.load_channel_health(group_id, model).await?;
-            return self
+            let route = self
                 .scheduler
                 .route_plan_with_health(group_id, model, &channel_health)
-                .map_err(map_scheduler_error)?
-                .ok_or_else(|| {
-                    AfError::from(if channel_ids.is_empty() {
-                        af_domain::UpstreamError::ModelUnsupported
-                    } else {
-                        af_domain::UpstreamError::overloaded()
-                    })
-                });
+                .map_err(map_scheduler_error)?;
+            return match route {
+                Some(route) => Ok(route),
+                None if channel_ids.is_empty() => Err(self.missing_model_route_error(model).await),
+                None => Err(af_domain::UpstreamError::overloaded().into()),
+            };
         }
-        self.scheduler
+        let route = self
+            .scheduler
             .route_plan(group_id, model)
-            .map_err(map_scheduler_error)?
-            .ok_or_else(|| af_domain::UpstreamError::ModelUnsupported.into())
+            .map_err(map_scheduler_error)?;
+        match route {
+            Some(route) => Ok(route),
+            None => Err(self.missing_model_route_error(model).await),
+        }
     }
 
     /// 只在当前路由仍命中冻结目标分组时提交视频任务。
@@ -478,6 +505,13 @@ impl ScheduledChatService {
             let upstream_model = target
                 .mapped_model(request.model().as_str())
                 .unwrap_or(request.model().as_str());
+            if !super::credential_models::has_eligible_credentials(
+                target,
+                request.model().as_str(),
+                upstream_model,
+            ) {
+                continue;
+            }
             let upstream_model =
                 VideoModel::new(upstream_model.to_owned()).map_err(|_| AfError::Internal)?;
             if pricing.rate_microusd(upstream_model.as_str()).is_err() {
@@ -494,14 +528,20 @@ impl ScheduledChatService {
                 .map_err(|_| AfError::Internal)?;
             let headers = header_overrides(target)?;
             let wait_plan = candidate.wait_plan();
+            let eligible_credentials = super::eligible_credentials(
+                target,
+                request.model().as_str(),
+                upstream_model.as_str(),
+            );
             let ordered = ordered_credentials(
                 request_id,
                 target,
+                &eligible_credentials,
                 wait_plan.kind(),
                 account_loads,
                 credential_health,
             );
-            health_filtered |= !target.credentials().is_empty() && ordered.is_empty();
+            health_filtered |= !eligible_credentials.is_empty() && ordered.is_empty();
 
             for runtime_credential in ordered {
                 if candidates.len() == RelayStateMachine::MAX_CANDIDATES {
@@ -582,11 +622,12 @@ impl ScheduledChatService {
             }
         }
         if candidates.is_empty() {
-            return Err(AfError::from(if health_filtered {
-                af_domain::UpstreamError::overloaded()
+            return Err(if health_filtered {
+                AfError::from(af_domain::UpstreamError::overloaded())
             } else {
-                af_domain::UpstreamError::ModelUnsupported
-            })
+                self.missing_model_route_error(request.model().as_str())
+                    .await
+            }
             .into());
         }
 
@@ -631,6 +672,7 @@ impl ScheduledChatService {
             .scheduler
             .runtime_target(binding.channel_id)
             .map_err(map_scheduler_error)?
+            .or_else(|| binding.retired_target.clone())
             .ok_or(AfError::Internal)?;
         let runtime_credential = binding
             .target_snapshot
@@ -715,7 +757,7 @@ impl ScheduledChatService {
     }
 
     /// 从数据库绑定事实恢复当前运行时目标；任一配置漂移都失败关闭。
-    pub(super) fn restore_video_task_binding(
+    pub(super) async fn restore_video_task_binding(
         &self,
         task: &AsyncTaskRecord,
         claim: &AsyncTaskSubmissionRecord,
@@ -726,10 +768,32 @@ impl ScheduledChatService {
         let target_group_id = claim.target_group_id().ok_or(AfError::Internal)?;
         let attempt_timeout = claim.attempt_timeout().ok_or(AfError::Internal)?;
         let expected_fingerprint = claim.binding_fingerprint().ok_or(AfError::Internal)?;
-        let target = self
+        let current_target = self
             .scheduler
             .runtime_target(task.channel_id())
-            .map_err(map_scheduler_error)?
+            .map_err(map_scheduler_error)?;
+        let retired_target = if current_target.is_none()
+            && task.status() == &af_domain::TaskStatus::Succeeded
+            && task.terminal_at().is_some()
+        {
+            let principal = claim.principal();
+            let terms = principal
+                .merchant_billing_snapshot()
+                .ok_or(AfError::Internal)?;
+            if principal.merchant_channel_id() != Some(task.channel_id()) {
+                return Err(AfError::Internal);
+            }
+            self.merchant_pools
+                .as_ref()
+                .ok_or(AfError::Internal)?
+                .retired_video_target(terms, task.channel_id(), task.credential_id())
+                .await
+                .map_err(|_| AfError::Internal)?
+        } else {
+            None
+        };
+        let target = current_target
+            .or_else(|| retired_target.clone())
             .ok_or(AfError::Internal)?;
         if !target_matches_protocol(&target, Protocol::XaiVideo)
             || !target.parameter_overrides().is_empty()
@@ -767,7 +831,10 @@ impl ScheduledChatService {
         if binding_target.fingerprint(target_group_id) != expected_fingerprint {
             return Err(AfError::Internal);
         }
-        Ok(binding_target.into_binding(target_group_id, task.upstream_task_id().clone()))
+        let mut binding =
+            binding_target.into_binding(target_group_id, task.upstream_task_id().clone());
+        binding.retired_target = retired_target;
+        Ok(binding)
     }
 
     async fn persist_video_feedback(
@@ -797,6 +864,7 @@ impl ScheduledChatService {
 fn ordered_credentials<'a>(
     request_id: &str,
     target: &'a SchedulerRuntimeTargetRecord,
+    credentials: &'a [SchedulerRuntimeCredentialRecord],
     wait_kind: RouteWaitKind,
     account_loads: Option<&std::collections::BTreeMap<i64, CredentialLoad>>,
     credential_health: Option<&std::collections::BTreeMap<i64, RuntimeHealthState>>,
@@ -806,21 +874,18 @@ fn ordered_credentials<'a>(
             order_credentials_by_load_and_health(
                 request_id,
                 target.channel_id(),
-                target.credentials(),
+                credentials,
                 loads,
                 health,
             )
         }
         (RouteWaitKind::Fallback, Some(loads), None) => {
-            order_credentials_by_load(request_id, target.channel_id(), target.credentials(), loads)
+            order_credentials_by_load(request_id, target.channel_id(), credentials, loads)
         }
-        (_, _, Some(health)) => order_credentials_with_health(
-            request_id,
-            target.channel_id(),
-            target.credentials(),
-            health,
-        ),
-        _ => order_credentials(request_id, target.channel_id(), target.credentials()),
+        (_, _, Some(health)) => {
+            order_credentials_with_health(request_id, target.channel_id(), credentials, health)
+        }
+        _ => order_credentials(request_id, target.channel_id(), credentials),
     }
 }
 
@@ -836,6 +901,8 @@ const fn map_relay_error(error: RelayError) -> AfError {
 
 #[cfg(test)]
 mod tests {
+    mod retired_tests;
+
     use std::{
         io::{Read, Write},
         net::{SocketAddr, TcpListener, TcpStream},
@@ -845,7 +912,7 @@ mod tests {
     };
 
     use af_account::{CredentialDecryptor, SystemSecretCipher, credential_plaintext_aad};
-    use af_billing::{DatabaseUsageRecordSink, GroupPricingCache};
+    use af_billing::{DatabaseUsageRecordSink, GroupPricingCache, ModelPriceCache};
     use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
     use af_db::{
         AsyncTaskBillingRepository, AsyncTaskRepository, AsyncTaskSubmissionRepository,
@@ -921,6 +988,9 @@ mod tests {
         let group_pricing = GroupPricingCache::load_from_database(database.pool().clone())
             .await
             .unwrap();
+        let model_prices = ModelPriceCache::load_from_database(database.pool().clone())
+            .await
+            .unwrap();
         let quota = Arc::new(QuotaRepository::new(database.pool().clone()));
         let usage = Arc::new(DatabaseUsageRecordSink::new(UsageLogRepository::new(
             database.pool().clone(),
@@ -939,6 +1009,7 @@ mod tests {
                 submissions.clone(),
                 billings,
                 group_pricing,
+                model_prices,
                 billing_ports,
             );
         let request_id = AsyncTaskRequestId::new([0x61; 16]).unwrap();
@@ -1174,6 +1245,50 @@ mod tests {
             Arc::new(target),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn credential_model_changes_stop_new_video_requests_without_rebinding_accepted_tasks() {
+        let credential = runtime_credential(
+            "127.0.0.1:19001".parse().unwrap(),
+            SECOND_CREDENTIAL_ID,
+            0x32,
+            "private-key-second",
+            10,
+        );
+        let target = SchedulerRuntimeTargetRecord::new_pool_with_request_policy(
+            ChannelId::new(CHANNEL_ID).unwrap(),
+            ChannelType::Xai,
+            Protocol::XaiVideo,
+            Some("http://upstream.example".to_owned()),
+            vec![credential],
+            ChannelModelMappings::parse(&json!({"video-public":UPSTREAM_MODEL})).unwrap(),
+            ChannelParameterOverrides::default(),
+            Vec::new(),
+        )
+        .unwrap();
+        let accepted = BoundVideoTargetSnapshot::new(
+            &target,
+            &target.credentials()[0],
+            VideoModel::new(REQUESTED_MODEL).unwrap(),
+            VideoModel::new(UPSTREAM_MODEL).unwrap(),
+            Duration::from_secs(5),
+        );
+        let restricted = target
+            .with_model_policies(
+                af_domain::UpstreamModelPolicy {
+                    mode: af_domain::UpstreamModelPolicyMode::Allowlist,
+                    models: Vec::new(),
+                    disabled_models: Vec::new(),
+                },
+                Default::default(),
+            )
+            .unwrap();
+        assert!(
+            super::super::eligible_credentials(&restricted, REQUESTED_MODEL, UPSTREAM_MODEL)
+                .is_empty()
+        );
+        assert!(accepted.resolve_credential(&restricted).is_some());
     }
 
     fn runtime_credential(

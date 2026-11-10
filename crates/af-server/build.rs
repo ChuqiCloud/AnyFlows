@@ -7,6 +7,14 @@ use std::{
 const TEST_INDEX: &str = "<!doctype html><html lang=\"zh-CN\"><meta charset=\"UTF-8\"><title>AnyFlows</title><body data-anyflows-build-fixture></body></html>";
 
 fn main() {
+    println!(
+        "cargo:rustc-env=AF_BUILD_TARGET={}",
+        env::var("TARGET").expect("Cargo TARGET")
+    );
+    println!("cargo:rerun-if-env-changed=AF_BUILD_DEPLOYMENT");
+    if let Ok(deployment) = env::var("AF_BUILD_DEPLOYMENT") {
+        println!("cargo:rustc-env=AF_BUILD_DEPLOYMENT={deployment}");
+    }
     let manifest_directory = PathBuf::from(
         env::var_os("CARGO_MANIFEST_DIR").expect("Cargo 必须提供 CARGO_MANIFEST_DIR"),
     );
@@ -15,19 +23,18 @@ fn main() {
         .and_then(Path::parent)
         .expect("af-server 必须位于工作区 crates 目录下");
     println!("cargo:rerun-if-env-changed=PROFILE");
-    for frontend in ["web", "web-next"] {
-        let source = workspace_directory.join(frontend).join("dist");
-        let destination = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo 必须提供 OUT_DIR"))
-            .join(format!("{frontend}-dist"));
-        println!("cargo:rerun-if-changed={}", source.display());
-        prepare_destination(&destination).expect("无法准备前端内嵌目录");
-        if source.join("index.html").is_file() {
-            copy_directory(&source, &destination).expect("无法复制前端构建产物");
-        } else if env::var("PROFILE").as_deref() == Ok("release") {
-            panic!("release 构建缺少 {frontend}/dist/index.html，请先构建两套内置前端");
-        } else {
-            fs::write(destination.join("index.html"), TEST_INDEX).expect("无法写入前端测试夹具");
-        }
+    let frontend = "web-next";
+    let source = workspace_directory.join(frontend).join("dist");
+    let destination = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo 必须提供 OUT_DIR"))
+        .join(format!("{frontend}-dist"));
+    println!("cargo:rerun-if-changed={}", source.display());
+    prepare_destination(&destination).expect("无法准备前端内嵌目录");
+    if source.join("index.html").is_file() {
+        copy_directory(&source, &destination).expect("无法复制前端构建产物");
+    } else if env::var("PROFILE").as_deref() == Ok("release") {
+        panic!("release 构建缺少 {frontend}/dist/index.html，请先构建内置前端");
+    } else {
+        fs::write(destination.join("index.html"), TEST_INDEX).expect("无法写入前端测试夹具");
     }
 }
 

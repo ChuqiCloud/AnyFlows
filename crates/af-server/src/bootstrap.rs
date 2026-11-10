@@ -29,7 +29,8 @@ use af_admin::{
     DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
     DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
     DatabaseUserTokenService, DatabaseUserWalletService, EmailBindingService, EmailDelivery,
-    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    ImageHistoryService, ImageHistoryServiceConfigError, InitialSetup, LocalImageHistoryService,
+    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
     OAuthLoginService, PasskeyAuthenticationService, PasskeyAuthenticationServiceConfigError,
     PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
     PlaygroundShareService, RedemptionService, RegistrationService, RegistrationServiceConfigError,
@@ -75,7 +76,8 @@ use af_db::{
     DatabaseMigrationExtension, DatabaseOptions, DatabaseOptionsError, DatabasePool,
     DebugTraceRepository, DebugTraceRepositoryConfigError, DebugTraceRepositoryError,
     DebugTraceSnapshotCipherError, EmailSettingsRepository, EmailSettingsRepositoryConfigError,
-    InitialSetupRepository, InitialSetupRepositoryConfigError, MigrationOptions,
+    ImageHistoryRepository, ImageHistoryRepositoryConfigError, InitialSetupRepository,
+    InitialSetupRepositoryConfigError, InitialSetupRepositoryError, MigrationOptions,
     ModelPriceRepository, ModelProviderCatalogRepository, ModelProviderCatalogRepositoryError,
     ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
     NetworkSettingsRepositoryConfigError, OAuthLoginRepository, OAuthLoginRepositoryError,
@@ -136,7 +138,7 @@ use crate::{
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
     concurrency_runtime::{ConcurrencyCleanupWorker, ConcurrencyReleaseWorker, ConcurrencyRuntime},
     debug_trace_runtime::{AdminDebugTraceRuntimeApplier, DebugTraceRuntime, DebugTraceWorker},
-    frontend::{EmbeddedFrontendAssets, EmbeddedNextFrontendAssets},
+    frontend::EmbeddedNextFrontendAssets,
     group_pricing_refresh::RuntimeGroupPricingRefresher,
     model_catalog::RuntimeModelCatalogReader,
     model_discovery::DatabaseUpstreamModelDiscoverer,
@@ -166,6 +168,7 @@ const BILLING_QUEUE_RETRY_DELAY: Duration = Duration::from_millis(100);
 const CHANNEL_PROBE_HARD_TIMEOUT_PADDING: Duration = Duration::from_secs(10);
 /// OAuth 一次性授权会话的固定清理周期；会话自身 TTL 仍由配置约束。
 const OAUTH_SESSION_CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
+const NEW_INSTALL_FRONTEND_TEMPLATE_ID: &str = "embedded-next";
 
 /// 已加载并校验静态配置。
 pub struct Configured;
@@ -183,6 +186,7 @@ pub struct TelemetryReady {
 pub struct DatabaseReady {
     _telemetry: TelemetryReady,
     database: DatabasePool,
+    initial_setup_repository: InitialSetupRepository,
     passkey_public_base_url: Option<String>,
     frontend_template_id: Option<String>,
 }
@@ -197,9 +201,11 @@ pub struct AuthenticationReady {
     passkey_authentication_service: Option<Arc<dyn PasskeyAuthenticationService>>,
     password_reset_service: Arc<dyn PasswordResetService>,
     user_profile_service: Arc<dyn UserProfileService>,
+    admin_user_security_service: Arc<dyn af_admin::AdminUserSecurityService>,
     user_wallet_service: Arc<dyn UserWalletService>,
     account_verification_provider: Arc<dyn af_admin::AccountVerificationProvider>,
     verification_settings_service: Option<Arc<af_admin::DatabaseVerificationSettingsService>>,
+    verification_access: Arc<af_admin::VerificationAccessService>,
     user_notification_service: Arc<dyn af_admin::UserNotificationService>,
     extensions: RuntimeExtensions,
     platform_audit_service: Arc<dyn af_admin::PlatformAuditService>,
@@ -221,6 +227,8 @@ pub struct AuthenticationReady {
     balance_alert_task: BalanceAlertTask,
     playground_share_service: Arc<dyn PlaygroundShareService>,
     playground_conversation_service: Arc<dyn PlaygroundConversationService>,
+    image_history_repository: ImageHistoryRepository,
+    image_history_service: Option<Arc<dyn ImageHistoryService>>,
     user_token_service: Arc<dyn UserTokenService>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
@@ -228,6 +236,10 @@ pub struct AuthenticationReady {
     admin_dashboard_channel_storage: Arc<dyn AdminDashboardChannelStorage>,
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
+    group_key_access_service: Arc<dyn af_admin::GroupKeyAccessService>,
+    group_model_policy_repository: af_db::GroupModelPolicyRepository,
+    user_route_repository: af_db::UserRouteRepository,
+    group_model_policy_service: Arc<dyn af_admin::GroupModelPolicyService>,
     admin_route_reader: Arc<dyn AdminRouteReader>,
     admin_route_writer: Arc<dyn AdminRouteWriter>,
     admin_model_reader: Arc<dyn AdminModelReader>,
@@ -321,6 +333,8 @@ pub struct Supervised {
     admin_oauth_connection_service: Arc<dyn AdminOAuthConnectionService>,
     oauth_login_service: Arc<dyn OAuthLoginService>,
     admin_channel_probe: Arc<dyn AdminChannelProbe>,
+    credential_model_service: Arc<af_admin::DatabaseCredentialModelService>,
+    upstream_usage_service: Arc<crate::credential_usage::UpstreamCredentialUsageProbe>,
     upstream_clients: HttpClientProvider,
     debug_trace_repository: DebugTraceRepository,
     debug_trace_runtime: DebugTraceRuntime,
@@ -421,6 +435,9 @@ pub enum BootstrapError {
     /// 首次安装仓储的启动参数无效。
     #[error("首次安装仓储启动参数无效")]
     InitialSetupRepository(#[source] InitialSetupRepositoryConfigError),
+    /// 启动期读取首次安装状态失败。
+    #[error("读取首次安装状态失败")]
+    InitialSetupStatus(#[source] InitialSetupRepositoryError),
     /// 注册策略与限流仓储的启动参数无效。
     #[error("注册策略仓储启动参数无效")]
     RegistrationRepository(#[source] RegistrationRepositoryConfigError),
@@ -448,6 +465,9 @@ pub enum BootstrapError {
     /// 启动期读取站点公开地址失败。
     #[error("读取站点公开地址失败")]
     SiteSettingsRead(#[source] SiteSettingsRepositoryError),
+    /// 启动期设置新数据库默认前端失败。
+    #[error("设置新数据库默认前端失败")]
+    SiteSettingsWrite(#[source] SiteSettingsRepositoryError),
     /// Passkey 登录的限流派生密钥缺失或无效。
     #[error("Passkey 登录服务启动配置无效")]
     PasskeyAuthenticationService(#[source] PasskeyAuthenticationServiceConfigError),
@@ -493,6 +513,12 @@ pub enum BootstrapError {
     /// Playground 私有会话仓储的启动参数无效。
     #[error("Playground 会话历史仓储启动参数无效")]
     PlaygroundConversationRepository(#[source] PlaygroundConversationRepositoryConfigError),
+    /// 图片历史元数据仓储的启动参数无效。
+    #[error("图片历史仓储启动参数无效")]
+    ImageHistoryRepository(#[source] ImageHistoryRepositoryConfigError),
+    /// 图片历史文件服务无法安全装配。
+    #[error("图片历史文件服务启动参数无效")]
+    ImageHistoryService(#[source] ImageHistoryServiceConfigError),
     /// 普通用户 API Key 仓储的启动参数无效。
     #[error("用户 API Key 仓储启动参数无效")]
     UserTokenRepository(#[source] UserTokenRepositoryConfigError),
@@ -520,6 +546,15 @@ pub enum BootstrapError {
     /// 管理员分组仓储的启动参数无效。
     #[error("管理员分组仓储启动参数无效")]
     AdminGroupRepository(#[source] AdminGroupRepositoryConfigError),
+    /// 个人 Key 自选分组仓储的启动参数无效。
+    #[error("个人 Key 自选分组仓储启动参数无效")]
+    GroupKeyAccessRepository(#[source] af_db::GroupKeyAccessError),
+    /// 分组模型策略仓储启动参数无效。
+    #[error("分组模型策略仓储启动参数无效")]
+    GroupModelPolicyRepository(#[source] af_db::GroupModelPolicyRepositoryError),
+    /// 用户路由仓储的启动参数无效。
+    #[error("用户路由仓储启动参数无效")]
+    UserRouteRepository(#[source] af_db::UserRouteError),
     /// 管理员智能路由仓储的启动参数无效。
     #[error("管理员智能路由仓储启动参数无效")]
     AdminRouteRepository(#[source] AdminRouteRepositoryConfigError),
@@ -753,6 +788,8 @@ impl Bootstrap<Configured> {
 
 impl Bootstrap<TelemetryReady> {
     /// 创建数据库连接池并在开始监听前执行 pending migrations。
+    ///
+    /// 为未指定模板的数据库设置 web-next 默认值，并将旧 Classic 选择迁移到 Next。
     pub async fn connect_database(self) -> Result<Bootstrap<DatabaseReady>, BootstrapError> {
         let database_options = database_options(&self.config)?;
         let migration_options = migration_options(&self.config)?;
@@ -763,11 +800,17 @@ impl Bootstrap<TelemetryReady> {
         )
         .await
         .map_err(BootstrapError::Database)?;
+        let initial_setup_repository = InitialSetupRepository::new(
+            database.clone(),
+            Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::InitialSetupRepository)?;
         let site_settings_repository = SiteSettingsRepository::new(
             database.clone(),
             Duration::from_secs(self.config.auth().lookup_timeout_secs()),
         )
         .map_err(BootstrapError::SiteSettingsRepository)?;
+        ensure_next_frontend_default(&site_settings_repository).await?;
         let site_settings = site_settings_repository
             .settings()
             .await
@@ -791,11 +834,32 @@ impl Bootstrap<TelemetryReady> {
             stage: DatabaseReady {
                 _telemetry: stage,
                 database,
+                initial_setup_repository,
                 passkey_public_base_url,
                 frontend_template_id,
             },
         })
     }
+}
+
+async fn ensure_next_frontend_default(
+    site_settings_repository: &SiteSettingsRepository,
+) -> Result<(), BootstrapError> {
+    let site_settings = site_settings_repository
+        .settings()
+        .await
+        .map_err(BootstrapError::SiteSettingsRead)?;
+    // Empty and Classic selections from older installations now resolve to Next.
+    if matches!(
+        site_settings.frontend_template_id(),
+        None | Some("embedded")
+    ) {
+        site_settings_repository
+            .set_frontend_template_id(Some(NEW_INSTALL_FRONTEND_TEMPLATE_ID.to_owned()))
+            .await
+            .map_err(BootstrapError::SiteSettingsWrite)?;
+    }
+    Ok(())
 }
 
 impl Bootstrap<DatabaseReady> {
@@ -816,6 +880,21 @@ impl Bootstrap<DatabaseReady> {
         F: FnOnce(RuntimeExtensionContext<'_>) -> Result<RuntimeExtensions, BootstrapError>,
     {
         let auth = self.config.auth();
+        let group_key_access_repository = af_db::GroupKeyAccessRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::GroupKeyAccessRepository)?;
+        let group_model_policy_repository = af_db::GroupModelPolicyRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::GroupModelPolicyRepository)?;
+        let user_route_repository = af_db::UserRouteRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::UserRouteRepository)?;
         let repository = TokenAuthRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -837,11 +916,7 @@ impl Bootstrap<DatabaseReady> {
             auth.session_ttl_secs(),
         )
         .map_err(BootstrapError::SessionAuthentication)?;
-        let initial_setup_repository = InitialSetupRepository::new(
-            self.stage.database.clone(),
-            Duration::from_secs(auth.lookup_timeout_secs()),
-        )
-        .map_err(BootstrapError::InitialSetupRepository)?;
+        let initial_setup_repository = self.stage.initial_setup_repository.clone();
         let registration_repository = RegistrationRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -929,6 +1004,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::PlaygroundConversationRepository)?;
+        let image_history_repository = ImageHistoryRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::ImageHistoryRepository)?;
         let user_token_repository = UserTokenRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -1128,12 +1208,17 @@ impl Bootstrap<DatabaseReady> {
         } = self;
         let user_profile_service: Arc<dyn UserProfileService> =
             Arc::new(build_user_profile_service(
-                user_profile_repository,
+                user_profile_repository.clone(),
                 balance_alert_settings_repository,
-                passkey_repository,
+                passkey_repository.clone(),
                 system_secret_cipher.clone(),
                 stage.passkey_public_base_url.as_deref(),
                 email_binding_service,
+            ));
+        let admin_user_security_service: Arc<dyn af_admin::AdminUserSecurityService> =
+            Arc::new(af_admin::DatabaseAdminUserSecurityService::new(
+                user_profile_repository,
+                passkey_repository,
             ));
         let session_authenticator: Arc<dyn SessionAuthenticator> = Arc::new(session_authenticator);
         let extensions = build_extensions(RuntimeExtensionContext {
@@ -1150,8 +1235,17 @@ impl Bootstrap<DatabaseReady> {
             Some(validator) => repository.with_organization_validator(Arc::clone(validator)),
             None => repository,
         };
-        let database_authenticator: Arc<dyn TokenAuthenticator> =
-            Arc::new(DatabaseTokenAuthenticator::new(repository));
+        let verification_access = Arc::new(af_admin::VerificationAccessService::new(
+            af_db::AccountVerificationSettingsRepository::new(
+                stage.database.clone(),
+                Duration::from_secs(config.auth().lookup_timeout_secs()),
+            ),
+            af_db::AccountVerificationRepository::new(stage.database.clone()),
+        ));
+        let database_authenticator: Arc<dyn TokenAuthenticator> = Arc::new(
+            DatabaseTokenAuthenticator::new(repository)
+                .with_verification_access(verification_access.clone()),
+        );
         let platform_audit_service = Arc::new(af_admin::DatabasePlatformAuditService::new(
             af_db::PlatformAuditRepository::new(stage.database.clone()),
         ));
@@ -1173,6 +1267,7 @@ impl Bootstrap<DatabaseReady> {
                 passkey_authentication_service,
                 password_reset_service: Arc::new(password_reset_service),
                 user_profile_service,
+                admin_user_security_service,
                 user_wallet_service: Arc::new(DatabaseUserWalletService::new(
                     wallet_ledger_repository.clone(),
                 )),
@@ -1180,12 +1275,16 @@ impl Bootstrap<DatabaseReady> {
                     af_admin::ManualAccountVerificationProvider,
                 ),
                 verification_settings_service: None,
+                verification_access: verification_access.clone(),
                 user_notification_service: Arc::new(DatabaseUserNotificationService::new(
                     user_notification_repository,
                 )),
                 extensions,
                 platform_audit_service,
-                redemption_service: Arc::new(DatabaseRedemptionService::new(redemption_repository)),
+                redemption_service: Arc::new(
+                    DatabaseRedemptionService::new(redemption_repository)
+                        .with_verification_access(verification_access),
+                ),
                 subscription_service: Arc::new(DatabaseSubscriptionService::new(
                     subscription_repository.clone(),
                 )),
@@ -1217,6 +1316,8 @@ impl Bootstrap<DatabaseReady> {
                 playground_conversation_service: Arc::new(
                     DatabasePlaygroundConversationService::new(playground_conversation_repository),
                 ),
+                image_history_repository,
+                image_history_service: None,
                 user_token_service: Arc::new(DatabaseUserTokenService::new(user_token_repository)),
                 admin_channel_reader: Arc::new(DatabaseAdminChannelReader::new(
                     admin_channel_repository.clone(),
@@ -1242,6 +1343,14 @@ impl Bootstrap<DatabaseReady> {
                     admin_group_repository.clone(),
                 )),
                 admin_group_writer: Arc::new(DatabaseAdminGroupWriter::new(admin_group_repository)),
+                group_key_access_service: Arc::new(af_admin::DatabaseGroupKeyAccessService::new(
+                    group_key_access_repository,
+                )),
+                group_model_policy_repository: group_model_policy_repository.clone(),
+                user_route_repository,
+                group_model_policy_service: Arc::new(
+                    af_admin::DatabaseGroupModelPolicyService::new(group_model_policy_repository),
+                ),
                 admin_route_reader: Arc::new(DatabaseAdminRouteReader::new(
                     admin_route_repository.clone(),
                 )),
@@ -1286,6 +1395,17 @@ impl Bootstrap<AuthenticationReady> {
         let (startup_config, max_cached_clients) = build_http_client_parts(&config)?;
         let upstream_clients = HttpClientProvider::new(startup_config.clone(), max_cached_clients)
             .map_err(BootstrapError::HttpClient)?;
+        let image_http_client = upstream_clients
+            .get(Some(Duration::from_secs(60)))
+            .map_err(BootstrapError::HttpClient)?;
+        authentication.image_history_service = Some(Arc::new(
+            LocalImageHistoryService::new(
+                authentication.image_history_repository.clone(),
+                config.image_storage().directory().to_path_buf(),
+                image_http_client,
+            )
+            .map_err(BootstrapError::ImageHistoryService)?,
+        ));
         if let Some(pools) = authentication.admin_credential_proxy_service.proxy_pools() {
             pools.configure_clients(upstream_clients.clone());
         }
@@ -1484,7 +1604,8 @@ impl Bootstrap<RelayReady> {
                 self.stage.upstream_clients.clone(),
                 request_timeout,
             )
-            .with_order_extension(self.stage.infrastructure.extensions.payment_orders.clone()),
+            .with_order_extension(self.stage.infrastructure.extensions.payment_orders.clone())
+            .with_verification_access(self.stage.infrastructure.verification_access.clone()),
         );
         let admin_refund_service: Arc<dyn AdminRefundService> = Arc::new(
             DatabaseAdminRefundService::new(admin_refund_repository, Some(payment_runtime.clone())),
@@ -1650,6 +1771,10 @@ impl Bootstrap<RelayReady> {
                 self.stage.infrastructure.infrastructure.database.clone(),
             ),
         )
+        .with_merchant_pools(af_db::MerchantPoolRepository::new(
+            self.stage.infrastructure.infrastructure.database.clone(),
+            Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+        ))
         .with_relay_settings(*self.config.relay())
         .with_proxy_cipher(self.stage.infrastructure.system_secret_cipher.clone())
         .with_proxy_pools(
@@ -1665,6 +1790,7 @@ impl Bootstrap<RelayReady> {
             )
             .map_err(BootstrapError::AdminGroupRepository)?,
         )
+        .with_model_call_admission(model_catalog_metadata.clone())
         .with_smart_route_repository(
             SmartRouteRuntimeRepository::new(
                 self.stage.infrastructure.infrastructure.database.clone(),
@@ -1711,13 +1837,41 @@ impl Bootstrap<RelayReady> {
             None => pricing_source,
         };
         let pricing_source = Arc::new(pricing_source);
-        let model_catalog_reader: Arc<dyn ModelCatalogReader> =
-            Arc::new(RuntimeModelCatalogReader::new(
+        let user_route_runtime = crate::user_route_runtime::UserRouteRuntime::new(
+            self.stage.infrastructure.user_route_repository.clone(),
+        )
+        .with_merchant_pools(af_db::MerchantPoolRepository::new(
+            self.stage.infrastructure.infrastructure.database.clone(),
+            Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+        ))
+        .with_group_model_policy(
+            self.stage
+                .infrastructure
+                .group_model_policy_repository
+                .clone(),
+        )
+        .with_channel_index(channel_index.clone())
+        .with_group_admission(
+            AdminGroupRepository::new(
+                self.stage.infrastructure.infrastructure.database.clone(),
+                Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::AdminGroupRepository)?,
+            request_rate_limit_store.clone(),
+        );
+        let model_catalog_reader: Arc<dyn ModelCatalogReader> = Arc::new(
+            RuntimeModelCatalogReader::new(
                 channel_index.clone(),
-                model_prices,
+                model_prices.clone(),
                 pricing_source.clone(),
                 model_catalog_metadata,
-            ));
+                self.stage
+                    .infrastructure
+                    .group_model_policy_repository
+                    .clone(),
+            )
+            .with_user_routes(self.stage.infrastructure.user_route_repository.clone()),
+        );
         let quota_repository =
             QuotaRepository::new(self.stage.infrastructure.infrastructure.database.clone());
         let quota_repository = match self.stage.infrastructure.extensions.quota.as_ref() {
@@ -1814,13 +1968,15 @@ impl Bootstrap<RelayReady> {
                 AsyncTaskBillingRepository::new(task_database, task_operation_timeout)
                     .expect("认证查询超时已校验为正数，异步任务计费仓储必须可装配"),
                 group_pricing,
+                model_prices.clone(),
                 crate::scheduled_chat::PersistentVideoTaskBillingPorts::new(
                     task_reserve_port,
                     task_settlement_port,
                     task_release_sink,
                     usage_record_sink,
                 ),
-            ),
+            )
+            .with_user_route_runtime(user_route_runtime.clone()),
         ));
         let embedding: Arc<dyn EmbeddingService> = Arc::new(
             BillingEmbeddingService::new(
@@ -1831,7 +1987,8 @@ impl Bootstrap<RelayReady> {
                 Some(settlement_port.clone()),
                 usage_port.clone(),
             )
-            .with_request_outcomes(request_outcomes.clone()),
+            .with_request_outcomes(request_outcomes.clone())
+            .with_user_route_runtime(user_route_runtime.clone()),
         );
         let image: Arc<dyn ImageService> = Arc::new(
             BillingImageService::new(
@@ -1842,7 +1999,8 @@ impl Bootstrap<RelayReady> {
                 Some(settlement_port.clone()),
                 usage_port.clone(),
             )
-            .with_request_outcomes(request_outcomes.clone()),
+            .with_request_outcomes(request_outcomes.clone())
+            .with_user_route_runtime(user_route_runtime.clone()),
         );
         let rerank: Arc<dyn RerankService> = Arc::new(
             BillingRerankService::new(
@@ -1853,7 +2011,8 @@ impl Bootstrap<RelayReady> {
                 Some(settlement_port.clone()),
                 usage_port.clone(),
             )
-            .with_request_outcomes(request_outcomes.clone()),
+            .with_request_outcomes(request_outcomes.clone())
+            .with_user_route_runtime(user_route_runtime.clone()),
         );
         let audio: Arc<dyn AudioService> = Arc::new(
             BillingAudioService::new(
@@ -1864,7 +2023,8 @@ impl Bootstrap<RelayReady> {
                 Some(settlement_port.clone()),
                 usage_port.clone(),
             )
-            .with_request_outcomes(request_outcomes.clone()),
+            .with_request_outcomes(request_outcomes.clone())
+            .with_user_route_runtime(user_route_runtime.clone()),
         );
         let speech: Arc<dyn SpeechService> = Arc::new(
             BillingSpeechService::new(
@@ -1875,7 +2035,8 @@ impl Bootstrap<RelayReady> {
                 Some(settlement_port.clone()),
                 usage_port.clone(),
             )
-            .with_request_outcomes(request_outcomes.clone()),
+            .with_request_outcomes(request_outcomes.clone())
+            .with_user_route_runtime(user_route_runtime.clone()),
         );
         let responses_compact: Arc<dyn ResponsesCompactService> = Arc::new(
             BillingResponsesCompactService::new(
@@ -1886,7 +2047,8 @@ impl Bootstrap<RelayReady> {
                 Some(settlement_port.clone()),
                 usage_port.clone(),
             )
-            .with_request_outcomes(request_outcomes.clone()),
+            .with_request_outcomes(request_outcomes.clone())
+            .with_user_route_runtime(user_route_runtime.clone()),
         );
         let chat: Arc<dyn ChatService> = Arc::new(
             BillingChatService::new(
@@ -1898,6 +2060,7 @@ impl Bootstrap<RelayReady> {
                 usage_port,
             )
             .with_request_outcomes(request_outcomes)
+            .with_user_route_runtime(user_route_runtime.clone())
             .with_service_account_billing(
                 self.stage
                     .infrastructure
@@ -1916,6 +2079,11 @@ impl Bootstrap<RelayReady> {
         } = self;
         let mut infrastructure = stage.infrastructure;
         infrastructure.admin_group_writer = admin_group_writer;
+        infrastructure.group_model_policy_service =
+            Arc::new(af_admin::RuntimeRefreshingGroupModelPolicyService::new(
+                Arc::clone(&infrastructure.group_model_policy_service),
+                Arc::clone(&group_pricing_refresher),
+            ));
         infrastructure.initial_setup = Arc::new(RuntimeRefreshingInitialSetup::new(
             infrastructure.initial_setup,
             group_pricing_refresher,
@@ -1926,7 +2094,8 @@ impl Bootstrap<RelayReady> {
                 crate::request_rate_limit::RuntimeServiceModelAuthenticator::new(
                     authenticator,
                     request_rate_limit_store.clone(),
-                ),
+                )
+                .with_group_model_policy(infrastructure.group_model_policy_repository.clone()),
             ));
         }
         infrastructure.authenticator = Arc::new(RuntimeTokenAuthenticator::new(
@@ -2034,6 +2203,81 @@ impl Bootstrap<BillingReady> {
             debug_trace_worker,
             analytics_export_repository,
         } = stage;
+        let capability_decryptor = CredentialDecryptor::new(config.credential_encryption())
+            .expect("已校验的上游凭据配置必须包含有效解密密钥");
+        let credential_model_service = Arc::new(af_admin::DatabaseCredentialModelService::new(
+            af_db::CredentialModelsRepository::new(
+                infrastructure.infrastructure.database.clone(),
+                Duration::from_secs(config.auth().lookup_timeout_secs()),
+            ),
+            Arc::new(
+                DatabaseUpstreamModelDiscoverer::new(
+                    ModelSyncRepository::new(infrastructure.infrastructure.database.clone()),
+                    capability_decryptor.clone(),
+                    upstream_clients.clone(),
+                )
+                .with_proxy_pools(infrastructure.admin_credential_proxy_service.proxy_pools()),
+            ),
+        ));
+        let upstream_usage_service =
+            Arc::new(crate::credential_usage::UpstreamCredentialUsageProbe::new(
+                infrastructure.infrastructure.database.clone(),
+                capability_decryptor,
+                infrastructure.system_secret_cipher.clone(),
+                upstream_clients.clone(),
+                infrastructure.admin_credential_proxy_service.proxy_pools(),
+            ));
+        supervisor.spawn("upstream-usage-refresh", {
+            let service = Arc::clone(&upstream_usage_service);
+            move |task_shutdown| {
+                let service = Arc::clone(&service);
+                async move {
+                    service.run_periodic_until(task_shutdown.cancelled()).await;
+                }
+            }
+        });
+        supervisor.spawn("credential-model-refresh", {
+            let service = Arc::clone(&credential_model_service);
+            move |task_shutdown| {
+                let service = Arc::clone(&service);
+                async move {
+                    service.run_periodic_until(task_shutdown.cancelled()).await;
+                }
+            }
+        });
+        let merchant_repository = af_db::MerchantPoolRepository::new(
+            infrastructure.infrastructure.database.clone(),
+            Duration::from_secs(config.auth().lookup_timeout_secs()),
+        );
+        let payout_service = Arc::new(af_admin::DatabaseMerchantPayoutService::new(
+            af_db::MerchantPayoutRepository::new(
+                infrastructure.infrastructure.database.clone(),
+                Duration::from_secs(config.auth().lookup_timeout_secs()),
+            ),
+            merchant_repository.clone(),
+            infrastructure.system_secret_cipher.clone(),
+            upstream_clients.clone(),
+        ));
+        supervisor.spawn("merchant-payout", move |task_shutdown| {
+            let payout_service = Arc::clone(&payout_service);
+            async move {
+                crate::merchant_payout_worker::run_until(payout_service, task_shutdown.cancelled())
+                    .await;
+            }
+        });
+        supervisor.spawn("merchant-price-schedule", move |task_shutdown| {
+            let merchant_repository = merchant_repository.clone();
+            async move {
+                let mut tick = tokio::time::interval(Duration::from_secs(5));
+                tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    tokio::select! {biased;()=task_shutdown.cancelled()=>return,_=tick.tick()=>{}}
+                    if merchant_repository.process_due_pricing(100).await.is_err() {
+                        tracing::warn!("商户定时价格暂不可用，稍后重试");
+                    }
+                }
+            }
+        });
         let analytics_export_control = analytics_export_repository.as_ref().map(|repository| {
             Arc::new(crate::analytics_export::ClickHouseExportControl::new(
                 repository.clone(),
@@ -2223,6 +2467,8 @@ impl Bootstrap<BillingReady> {
                 admin_oauth_connection_service,
                 oauth_login_service,
                 admin_channel_probe,
+                credential_model_service,
+                upstream_usage_service,
                 upstream_clients,
                 debug_trace_repository,
                 debug_trace_runtime,
@@ -2494,13 +2740,11 @@ impl Bootstrap<Supervised> {
             self.stage.payment_runtime.clone();
         let payment_webhook_routes = build_payment_webhook_router(payment_webhook_registry)
             .merge(build_refund_receipt_webhook_router(refund_receipt_registry));
-        let embedded_frontend: Arc<dyn FrontendAssetSource> = Arc::new(EmbeddedFrontendAssets);
         let frontend_template_manager = FrontendTemplateManager::new(
             self.config
                 .server()
                 .frontend_template_directory()
                 .to_path_buf(),
-            Arc::clone(&embedded_frontend),
             Arc::new(EmbeddedNextFrontendAssets),
             self.stage.infrastructure.site_settings_repository.clone(),
             self.stage
@@ -2529,6 +2773,12 @@ impl Bootstrap<Supervised> {
             http_extensions =
                 http_extensions.with_service_account_models(Arc::clone(authenticator));
         }
+        let host_manages_software = http_extensions.descriptors().iter().any(|descriptor| {
+            descriptor
+                .capabilities
+                .iter()
+                .any(|capability| capability == "software.updates")
+        });
         let router = build_router(
             self.config.server(),
             self.stage.chat.clone(),
@@ -2545,6 +2795,13 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.model_catalog_reader),
             Arc::clone(&self.stage.infrastructure.playground_share_service),
             Arc::clone(&self.stage.infrastructure.playground_conversation_service),
+            Arc::clone(
+                self.stage
+                    .infrastructure
+                    .image_history_service
+                    .as_ref()
+                    .expect("图片历史服务已在 init_relay 阶段装配"),
+            ),
             Arc::clone(&self.stage.infrastructure.user_token_service),
             Arc::clone(&self.stage.infrastructure.initial_setup),
             Arc::clone(&self.stage.infrastructure.registration_service),
@@ -2554,6 +2811,9 @@ impl Bootstrap<Supervised> {
                 .clone(),
             Arc::clone(&self.stage.infrastructure.password_reset_service),
             Arc::clone(&self.stage.infrastructure.user_profile_service),
+            Some(Arc::clone(
+                &self.stage.infrastructure.admin_user_security_service,
+            )),
             Arc::clone(&self.stage.infrastructure.user_wallet_service),
             Arc::clone(&self.stage.infrastructure.user_notification_service),
             Some(Arc::clone(
@@ -2585,12 +2845,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.admin_channel_reader),
             Arc::clone(&self.stage.infrastructure.admin_channel_writer),
             Some(Arc::clone(&self.stage.admin_channel_probe)),
-            Some(Arc::new(
-                crate::credential_usage::CodexCredentialUsageProbe::new(
-                    Arc::clone(&self.stage.infrastructure.admin_channel_writer),
-                    self.stage.upstream_clients.clone(),
-                ),
-            )),
+            Some(self.stage.upstream_usage_service.clone()),
             Arc::clone(&self.stage.infrastructure.admin_group_reader),
             Arc::clone(&self.stage.infrastructure.admin_group_writer),
             Some(Arc::clone(&self.stage.infrastructure.admin_model_reader)),
@@ -2613,7 +2868,111 @@ impl Bootstrap<Supervised> {
             Some(http_extensions),
             Some(payment_webhook_routes),
         );
+        let router = router.merge(af_http::build_credential_models_router(
+            self.stage.credential_model_service.clone(),
+            Arc::clone(&self.stage.infrastructure.session_authenticator),
+        ));
+        let router = router.merge(af_http::build_upstream_usage_router(
+            self.stage.upstream_usage_service.clone(),
+            self.stage.upstream_usage_service.clone(),
+            Arc::clone(&self.stage.infrastructure.session_authenticator),
+        ));
+        let router = if host_manages_software {
+            router
+        } else {
+            router.merge(af_http::build_software_update_router(
+                Arc::new(crate::software_updates::CommunitySoftwareUpdates::new(
+                    self.stage.upstream_clients.clone(),
+                    crate::software_updates::web_updates_enabled(
+                        std::env::var("ANYFLOWS_ENABLE_BINARY_UPDATE")
+                            .ok()
+                            .as_deref(),
+                    ),
+                )),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+        };
+        let merchant_repository = af_db::MerchantPoolRepository::new(
+            self.stage.infrastructure.infrastructure.database.clone(),
+            Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+        );
         let router = router
+            .merge(af_http::build_merchant_service_policy_router(
+                Arc::new(af_admin::DatabaseMerchantServicePolicy::new(
+                    merchant_repository.clone(),
+                )),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+            .merge(af_http::build_merchant_payout_router(
+                Arc::new(af_admin::DatabaseMerchantPayoutService::new(
+                    af_db::MerchantPayoutRepository::new(
+                        self.stage.infrastructure.infrastructure.database.clone(),
+                        Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+                    ),
+                    merchant_repository.clone(),
+                    self.stage.infrastructure.system_secret_cipher.clone(),
+                    self.stage.upstream_clients.clone(),
+                )),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+            .merge(af_http::build_merchant_pool_router(
+                Arc::new(
+                    af_admin::DatabaseMerchantPoolService::new(
+                        merchant_repository.clone(),
+                        CredentialEncryptor::new(self.config.credential_encryption())
+                            .expect("凭据加密配置已在基础设施初始化时校验"),
+                        CredentialDecryptor::new(self.config.credential_encryption())
+                            .expect("凭据解密配置已在基础设施初始化时校验"),
+                    )
+                    .with_blocked_hosts(
+                        self.config
+                            .server()
+                            .cors_allowed_origins()
+                            .iter()
+                            .filter_map(|origin| {
+                                url::Url::parse(origin.as_str())
+                                    .ok()
+                                    .and_then(|url| url.host_str().map(str::to_owned))
+                            })
+                            .collect(),
+                    ),
+                ),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+            .merge(af_http::build_merchant_route_router(
+                Arc::new(af_admin::DatabaseMerchantRouteService::new(
+                    self.stage.infrastructure.user_route_repository.clone(),
+                    merchant_repository.clone(),
+                )),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+            .merge(af_http::build_merchant_finance_router(
+                Arc::new(af_admin::DatabaseMerchantFinanceService::new(
+                    merchant_repository.clone(),
+                    af_db::MerchantFinanceRepository::new(
+                        self.stage.infrastructure.infrastructure.database.clone(),
+                        Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+                    ),
+                )),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+            .merge(af_http::build_user_route_router(
+                Arc::new(af_admin::DatabaseUserRouteService::new(
+                    self.stage.infrastructure.user_route_repository.clone(),
+                )),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+            .merge(af_http::build_group_key_access_router(
+                Arc::clone(&self.stage.infrastructure.group_key_access_service),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+                Arc::clone(&self.stage.infrastructure.platform_audit_service),
+                self.config.server(),
+            ))
+            .merge(af_http::build_group_model_policy_router(
+                Arc::clone(&self.stage.infrastructure.group_model_policy_service),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+                self.config.server(),
+            ))
             .merge(af_http::build_credential_health_router(
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
                 Arc::clone(&self.stage.infrastructure.admin_channel_reader),
@@ -2721,6 +3080,17 @@ impl Bootstrap<RouterReady> {
             readiness,
         } = stage;
         readiness.mark_ready();
+        if matches!(af_launcher::ManagedContext::from_env(), Ok(Some(_))) {
+            let ready = readiness.clone();
+            tokio::spawn(async move {
+                while !ready.is_draining() {
+                    if ready.check().await && af_launcher::notify_ready().await.is_ok() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            });
+        }
         Ok(Bootstrap {
             config,
             shutdown_timeout,
@@ -2793,6 +3163,8 @@ impl Bootstrap<ListenerReady> {
             admin_oauth_connection_service: _,
             oauth_login_service: _,
             admin_channel_probe: _,
+            credential_model_service: _,
+            upstream_usage_service: _,
             upstream_clients: _,
             debug_trace_repository: _,
             debug_trace_runtime: _,
@@ -3159,7 +3531,10 @@ mod tests {
         UsageRecordQueue, UsageRecordSink, UsageRecordSinkFuture, UserBillingDelta,
     };
     use af_config::CREDENTIAL_ENCRYPTION_KEY_BYTES;
-    use af_db::connect_and_migrate;
+    use af_db::{
+        DatabaseOptions, InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
+        InitialSetupStatus, MigrationOptions, SiteSettingsRepository, connect_and_migrate,
+    };
     use af_domain::{BillingReservationId, GatewayPrincipal, GroupId, QuotaDelta, TokenId, UserId};
     use af_http::{ReadinessFuture, ReadinessProbe};
     use af_protocol::{TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource};
@@ -3338,6 +3713,110 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn first_setup_defaults_an_empty_database_to_next_frontend() {
+        let database = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let setup_repository =
+            InitialSetupRepository::new(database.clone(), Duration::from_secs(5)).unwrap();
+        let site_settings_repository =
+            SiteSettingsRepository::new(database.clone(), Duration::from_secs(5)).unwrap();
+
+        ensure_next_frontend_default(&site_settings_repository)
+            .await
+            .unwrap();
+        assert_eq!(
+            setup_repository.status().await.unwrap(),
+            InitialSetupStatus::Required
+        );
+        assert_eq!(
+            site_settings_repository
+                .settings()
+                .await
+                .unwrap()
+                .frontend_template_id(),
+            Some(NEW_INSTALL_FRONTEND_TEMPLATE_ID)
+        );
+        assert!(matches!(
+            setup_repository
+                .initialize(InitialSetupRecord::new(
+                    "owner".to_owned(),
+                    "a secure setup password".to_owned(),
+                ))
+                .await
+                .unwrap(),
+            InitialSetupOutcome::Initialized { .. }
+        ));
+        assert_eq!(
+            site_settings_repository
+                .settings()
+                .await
+                .unwrap()
+                .frontend_template_id(),
+            Some(NEW_INSTALL_FRONTEND_TEMPLATE_ID)
+        );
+        database.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn legacy_classic_frontend_settings_migrate_to_next() {
+        let database = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let setup_repository =
+            InitialSetupRepository::new(database.clone(), Duration::from_secs(5)).unwrap();
+        let site_settings_repository =
+            SiteSettingsRepository::new(database.clone(), Duration::from_secs(5)).unwrap();
+
+        ensure_next_frontend_default(&site_settings_repository)
+            .await
+            .unwrap();
+        setup_repository
+            .initialize(InitialSetupRecord::new(
+                "owner".to_owned(),
+                "a secure setup password".to_owned(),
+            ))
+            .await
+            .unwrap();
+        for legacy_id in [None, Some("embedded".to_owned())] {
+            site_settings_repository
+                .set_frontend_template_id(legacy_id)
+                .await
+                .unwrap();
+            ensure_next_frontend_default(&site_settings_repository)
+                .await
+                .unwrap();
+            assert_eq!(
+                site_settings_repository
+                    .settings()
+                    .await
+                    .unwrap()
+                    .frontend_template_id(),
+                Some(NEW_INSTALL_FRONTEND_TEMPLATE_ID)
+            );
+        }
+        assert_eq!(
+            setup_repository.status().await.unwrap(),
+            InitialSetupStatus::Complete
+        );
+        assert_eq!(
+            site_settings_repository
+                .settings()
+                .await
+                .unwrap()
+                .frontend_template_id(),
+            Some(NEW_INSTALL_FRONTEND_TEMPLATE_ID)
+        );
+        database.close().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn current_stages_start_and_shutdown_in_order() {
         let path = config_file("sqlite::memory:");
         let config = af_config::load_from(&path).unwrap();
@@ -3360,7 +3839,8 @@ mod tests {
             .unwrap();
         // Codex 使用固定的 1455 回调端口；端口被并行测试占用时，启动器会
         // 保留手动回调路径并跳过对应监听任务，因此这里只把实际注册的监听任务计入基线。
-        let expected_task_count = 11 + supervised.stage.oauth_loopback_servers.len();
+        // 固定任务包含商户出款、定时价格、Key 模型发现与上游额度刷新。
+        let expected_task_count = 15 + supervised.stage.oauth_loopback_servers.len();
         let supervised = supervised.start_supervisor();
         assert_eq!(
             supervised.stage.supervisor.task_count(),

@@ -6,6 +6,7 @@ mod announcements;
 mod balance_alert_settings;
 mod channels;
 mod client_profiles;
+mod credential_models;
 mod credential_proxies;
 mod credentials;
 mod custom_oauth2;
@@ -15,8 +16,13 @@ mod email_settings;
 mod extensions;
 mod frontend_templates;
 mod gateway_models;
+mod group_key_access;
+mod group_model_policy;
 mod groups;
 mod invitations;
+mod merchant_pool;
+mod merchant_routes;
+mod merchant_service_policy;
 mod model_metadata;
 mod model_prices;
 mod model_sync;
@@ -30,6 +36,7 @@ mod payment_settings;
 mod payment_webhook;
 mod platform_audit;
 mod playground_conversations;
+mod playground_image_history;
 mod playground_shares;
 mod proxy_pools;
 mod redemptions;
@@ -44,12 +51,15 @@ pub(crate) mod schema;
 mod session;
 mod setup;
 mod site_settings;
+mod software_updates;
 mod speech;
 mod subscriptions;
 mod tokens;
+mod upstream_usage;
 mod usage_logs;
 mod user_notifications;
 mod user_profile;
+mod user_routes;
 mod user_tokens;
 mod user_topups;
 mod user_wallet;
@@ -98,6 +108,10 @@ pub fn openapi_document() -> OpenApi {
     document.merge(user_notifications::document());
     document.merge(user_topups::document());
     document.merge(invitations::document());
+    document.merge(merchant_pool::document());
+    document.merge(credential_models::document());
+    document.merge(upstream_usage::document());
+    document.merge(merchant_service_policy::document());
     document.merge(email_settings::document());
     document.merge(extensions::document());
     document.merge(network_settings::document());
@@ -112,6 +126,8 @@ pub fn openapi_document() -> OpenApi {
     document.merge(users::document());
     document.merge(wallet::document());
     document.merge(groups::document());
+    document.merge(group_key_access::document());
+    document.merge(group_model_policy::document());
     document.merge(routes::document());
     document.merge(models::document());
     document.merge(gateway_models::document());
@@ -120,7 +136,12 @@ pub fn openapi_document() -> OpenApi {
     document.merge(model_prices::document());
     document.merge(playground_shares::document());
     document.merge(playground_conversations::document());
+    document.merge(playground_image_history::document());
     document.merge(user_tokens::document());
+    document.merge(user_routes::document());
+    document.merge(merchant_routes::document());
+    document.merge(crate::merchant_finance::document());
+    document.merge(crate::merchant_payout::document());
     document.merge(tokens::document());
     document.merge(usage_logs::document());
     document.merge(channels::document());
@@ -137,6 +158,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(passkey_auth::document());
     document.merge(platform_audit::document());
     document.merge(runtime_status::document());
+    document.merge(software_updates::document());
     document.merge(VersionApi::openapi());
     document.merge(oauth_login::oidc_document());
 
@@ -179,6 +201,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("模型管理"),
         Tag::new("Playground 分享"),
         Tag::new("Playground 历史"),
+        Tag::new("生图广场"),
         Tag::new("我的 API Key"),
         Tag::new("令牌管理"),
         Tag::new("用量日志"),
@@ -335,6 +358,12 @@ mod tests {
             "publishAdminAnnouncement",
             "revokeAdminAnnouncement",
             "compactResponse",
+            "clearPlaygroundImageHistory",
+            "deletePlaygroundImageHistory",
+            "listPlaygroundImageHistory",
+            "readPlaygroundHistoryImage",
+            "readPlaygroundHistoryImageThumbnail",
+            "savePlaygroundImageHistory",
             "rerank",
             "synthesizeSpeech",
             "submitVideoTask",
@@ -604,6 +633,9 @@ mod tests {
             "listUserUsageLogs",
             "listSelfPlatformAuditLogs",
             "listAdminUsers",
+            "getAdminUserSecurity",
+            "resetAdminUserTwoFactor",
+            "revokeAdminUserPasskey",
             "listModels",
             "listGatewayModels",
             "listModelProviders",
@@ -686,9 +718,10 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 595);
+        assert_eq!(schemas.len(), 602);
         assert!(schemas.contains_key("AdminProxyCleanupRequest"));
         assert!(schemas.contains_key("AdminProxyCleanupResult"));
+        assert!(schemas.contains_key("AdminGroupModelRatioOverride"));
         assert!(schemas.contains_key("ServiceLevelPoint"));
         assert!(schemas.contains_key("ServiceLevelRow"));
         assert!(schemas.contains_key("ServiceLevelReport"));
@@ -715,6 +748,54 @@ mod tests {
             schemas["AdminVerificationSettingsRequest"]["properties"]["private_key"]["writeOnly"],
             true
         );
+        for (schema_name, required_fields) in [
+            (
+                "AccountVerificationEligibilityResponse",
+                [
+                    "verified",
+                    "require_verification_for_topup",
+                    "require_verification_for_api",
+                ],
+            ),
+            (
+                "AdminVerificationSettings",
+                [
+                    "require_verification_for_topup",
+                    "require_verification_for_api",
+                    "version",
+                ],
+            ),
+        ] {
+            let required = schemas[schema_name]["required"]
+                .as_array()
+                .expect("required fields must be an array");
+            for field in required_fields {
+                assert!(
+                    required.iter().any(|value| value == field),
+                    "{schema_name}.{field}"
+                );
+            }
+        }
+        assert!(
+            schemas["ManagementErrorCode"]["enum"]
+                .as_array()
+                .is_some_and(|codes| {
+                    codes
+                        .iter()
+                        .any(|value| value == "account_verification_required")
+                })
+        );
+        for path in [
+            "/api/account/wallet/topups",
+            "/api/account/wallet/redemptions",
+        ] {
+            assert!(
+                document["paths"][path]["post"]["responses"]
+                    .get("403")
+                    .is_some(),
+                "{path}"
+            );
+        }
         assert!(schemas.contains_key("OpenAiModel"));
         assert!(schemas.contains_key("OpenAiModelList"));
         assert_eq!(
@@ -1016,6 +1097,9 @@ mod tests {
         assert!(schemas.contains_key("PlatformUserOrganizationListResponse"));
         assert!(schemas.contains_key("AdminUserCreateRequest"));
         assert!(schemas.contains_key("AdminUserUpdateRequest"));
+        assert!(schemas.contains_key("AdminUserSecurityTwoFactorResponse"));
+        assert!(schemas.contains_key("AdminUserSecurityPasskeyResponse"));
+        assert!(schemas.contains_key("AdminUserSecurityResponse"));
         assert!(schemas.contains_key("AdminWalletEntry"));
         assert!(schemas.contains_key("AdminWalletEntryType"));
         assert!(schemas.contains_key("AdminWalletListResponse"));
@@ -1196,6 +1280,9 @@ mod tests {
         assert!(schemas.contains_key("PlaygroundConversationSaveRequest"));
         assert!(schemas.contains_key("PlaygroundConversationListResponse"));
         assert!(schemas.contains_key("PlaygroundConversationResponse"));
+        assert!(schemas.contains_key("PlaygroundImageHistoryItem"));
+        assert!(schemas.contains_key("PlaygroundImageHistoryListResponse"));
+        assert!(schemas.contains_key("PlaygroundImageHistoryUploadRequest"));
         assert!(schemas.contains_key("UserTokenWriteRequest"));
         assert!(schemas.contains_key("IssuedUserToken"));
         assert!(

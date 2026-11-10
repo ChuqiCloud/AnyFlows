@@ -102,7 +102,8 @@ fn build_user_message(
             | ContentBlock::ToolResult { .. }
             | ContentBlock::Thinking { .. }
             | ContentBlock::CacheControl(_)
-            | ContentBlock::Compaction(_) => {
+            | ContentBlock::Compaction(_)
+            | ContentBlock::AnthropicCompaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         });
@@ -157,7 +158,8 @@ fn build_assistant_items(
             | ContentBlock::Audio { .. }
             | ContentBlock::ToolResult { .. }
             | ContentBlock::CacheControl(_)
-            | ContentBlock::Compaction(_) => {
+            | ContentBlock::Compaction(_)
+            | ContentBlock::AnthropicCompaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         }
@@ -179,11 +181,11 @@ fn build_reasoning_item(
     signature: Option<&str>,
     state: &mut InputBuildState,
 ) -> Result<Value, BuildRequestError> {
-    let signature = signature.ok_or(BuildRequestError::UnsupportedFeature)?;
-    if signature.is_empty()
-        || signature.len() > MAX_ENCRYPTED_REASONING_BYTES
-        || signature.chars().any(char::is_control)
-    {
+    if signature.is_some_and(|signature| {
+        signature.is_empty()
+            || signature.len() > MAX_ENCRYPTED_REASONING_BYTES
+            || signature.chars().any(char::is_control)
+    }) {
         return Err(BuildRequestError::InvalidValue);
     }
     state.add_text(text)?;
@@ -195,14 +197,17 @@ fn build_reasoning_item(
             ("text".to_owned(), Value::String(text.to_owned())),
         ]))]
     };
-    Ok(Value::Object(Map::from_iter([
+    let mut item = Map::from_iter([
         ("type".to_owned(), Value::String("reasoning".to_owned())),
-        (
+        ("summary".to_owned(), Value::Array(summary)),
+    ]);
+    if let Some(signature) = signature {
+        item.insert(
             "encrypted_content".to_owned(),
             Value::String(signature.to_owned()),
-        ),
-        ("summary".to_owned(), Value::Array(summary)),
-    ])))
+        );
+    }
+    Ok(Value::Object(item))
 }
 
 fn build_tool_output_items(
@@ -315,7 +320,8 @@ fn build_function_output(
                 | ContentBlock::ToolResult { .. }
                 | ContentBlock::Thinking { .. }
                 | ContentBlock::CacheControl(_)
-                | ContentBlock::Compaction(_) => {
+                | ContentBlock::Compaction(_)
+                | ContentBlock::AnthropicCompaction(_) => {
                     return Err(BuildRequestError::UnsupportedFeature);
                 }
             });

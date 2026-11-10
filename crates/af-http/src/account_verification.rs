@@ -205,6 +205,9 @@ pub(crate) struct AccountVerificationListResponse {
 }
 #[derive(Serialize, ToSchema)]
 pub(crate) struct AccountVerificationEligibilityResponse {
+    verified: bool,
+    require_verification_for_topup: bool,
+    require_verification_for_api: bool,
     enterprise_verified: bool,
     can_apply_for_organization: bool,
     providers: Vec<String>,
@@ -407,6 +410,7 @@ async fn eligibility(
     State(s): State<Arc<AccountVerificationService>>,
     Extension(a): Extension<SessionAuthentication>,
 ) -> Result<Response, ManagementError> {
+    let account_verified = s.verified(a.principal()).await.map_err(map_error)?;
     let verified = s
         .enterprise_verified(a.principal())
         .await
@@ -422,6 +426,9 @@ async fn eligibility(
     }
     providers.sort();
     Ok(no_store_json(AccountVerificationEligibilityResponse {
+        verified: account_verified,
+        require_verification_for_topup: policy.require_verification_for_topup,
+        require_verification_for_api: policy.require_verification_for_api,
         enterprise_verified: verified,
         can_apply_for_organization: verified,
         providers,

@@ -1,10 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use af_adapter::{RelayContext, get_adaptor};
-use af_domain::{
-    AfError, ConcurrencyLimit, CredentialId, CredentialQuotaDimension, GatewayPrincipal, GroupId,
-    Protocol,
-};
+use af_domain::{AfError, ConcurrencyLimit, CredentialId, GatewayPrincipal, GroupId, Protocol};
 use af_protocol::{CanonicalResponsesCompactionRequest, openai_responses_compact};
 use af_relay::{
     RelayCandidate, RelayCandidateRequest, RelayStateMachine,
@@ -13,8 +10,9 @@ use af_relay::{
 use af_scheduler::{IndexedRoutePlan, RouteWaitKind};
 
 use crate::{
-    PlannedResponsesCompactExecution, PlannedResponsesCompactExecutionFuture,
-    ResponsesCompactRoutePlanFuture, ResponsesCompactRoutePlanner,
+    PlannedExecutionFailure, PlannedResponsesCompactExecution,
+    PlannedResponsesCompactExecutionFuture, ResponsesCompactRoutePlanFuture,
+    ResponsesCompactRoutePlanner,
     adaptor_credential::build_adaptor_credential,
     auto_ban_feedback::{ChannelAutoBanAttemptTarget, persist_channel_auto_ban_feedback},
     concurrency_runtime::RuntimeConcurrencyPermit,
@@ -40,6 +38,7 @@ impl ResponsesCompactRoutePlanner for ScheduledChatService {
         request_id: &'a str,
     ) -> ResponsesCompactRoutePlanFuture<'a> {
         Box::pin(async move {
+            self.ensure_non_merchant_group(principal.group_id()).await?;
             let route = if let Some(store) = &self.health {
                 let channel_ids = self
                     .scheduler
@@ -48,35 +47,42 @@ impl ResponsesCompactRoutePlanner for ScheduledChatService {
                 let channel_health = load_channel_health(store, &channel_ids)
                     .await
                     .map_err(|_| AfError::Internal)?;
-                self.scheduler
+                let route = self
+                    .scheduler
                     .responses_compact_route_plan_with_health(
                         principal.group_id(),
                         request.model(),
                         &channel_health,
                     )
-                    .map_err(map_scheduler_error)?
-                    .ok_or_else(|| {
-                        AfError::from(if channel_ids.is_empty() {
-                            af_domain::UpstreamError::ModelUnsupported
+                    .map_err(map_scheduler_error)?;
+                match route {
+                    Some(route) => route,
+                    None => {
+                        return Err(if channel_ids.is_empty() {
+                            self.missing_model_route_error(request.model()).await
                         } else {
-                            af_domain::UpstreamError::overloaded()
-                        })
-                    })?
+                            AfError::from(af_domain::UpstreamError::overloaded())
+                        });
+                    }
+                }
             } else {
-                self.scheduler
+                let route = self
+                    .scheduler
                     .responses_compact_route_plan(principal.group_id(), request.model())
-                    .map_err(map_scheduler_error)?
-                    .ok_or_else(|| AfError::from(af_domain::UpstreamError::ModelUnsupported))?
+                    .map_err(map_scheduler_error)?;
+                match route {
+                    Some(route) => route,
+                    None => return Err(self.missing_model_route_error(request.model()).await),
+                }
             };
-            let protocol = Protocol::OpenAiResponses;
             let credential_health = self
-                .load_credential_health(&route, protocol, request.model())
+                .load_compact_credential_health(&route, request.model())
                 .await?;
             let user_permit = self
                 .acquire_user_permit(*principal, user_concurrency)
                 .await?;
             let account_loads = self
-                .load_account_concurrency(&route, protocol, request.model())
+                .load_compact_account_concurrency(&route, request.model())
                 .await?;
             let plan = self
                 .build_responses_compact_plan(
@@ -129,23 +135,21 @@ impl ScheduledChatService {
                 continue;
             };
             let upstream_model = upstream_model.to_owned();
+            if !super::credential_models::has_eligible_credentials(target, &model, &upstream_model)
+            {
+                continue;
+            }
             let candidate_request = compact_candidate_request(&request, &model, &upstream_model)?;
             let adaptor = get_adaptor(
                 target.channel_type(),
-                adaptor_settings(target, upstream_model)?,
+                adaptor_settings(target, upstream_model.clone())?,
             )
             .map_err(|_| AfError::Internal)?;
             if adaptor.default_protocol() != Protocol::OpenAiResponses {
                 return Err(AfError::Internal);
             }
             let headers = header_overrides(target)?;
-            let quota_dimension = CredentialQuotaDimension::for_canonical_model(&model);
-            let eligible_credentials = target
-                .credentials()
-                .iter()
-                .filter(|credential| credential.quota_dimension() == quota_dimension)
-                .cloned()
-                .collect::<Vec<_>>();
+            let eligible_credentials = super::eligible_credentials(target, &model, &upstream_model);
             let ordered_credentials = ordered_credentials(
                 request_id,
                 target,
@@ -230,7 +234,7 @@ impl ScheduledChatService {
             return Err(if health_filtered {
                 af_domain::UpstreamError::overloaded().into()
             } else {
-                af_domain::UpstreamError::ModelUnsupported.into()
+                self.missing_model_route_error(&model).await
             });
         }
         let machine = RelayStateMachine::new(relay_candidates)
@@ -308,11 +312,12 @@ impl PlannedResponsesCompactExecution for ScheduledResponsesCompactExecution {
             if let Some(permit) = user_permit {
                 permit.release().await;
             }
-            result.and_then(|response| {
-                successful_channel_id
+            match result {
+                Ok(response) => successful_channel_id
                     .map(|channel_id| crate::RoutedExecution::new(response, channel_id))
-                    .ok_or(AfError::Internal)
-            })
+                    .ok_or(AfError::Internal.into()),
+                Err(error) => Err(PlannedExecutionFailure::from_relay_report(error, &report)),
+            }
         })
     }
 }

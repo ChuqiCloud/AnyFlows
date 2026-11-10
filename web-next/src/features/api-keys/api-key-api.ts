@@ -7,9 +7,10 @@ import {
   listUserTokens,
   updateUserToken,
 } from '@/lib/api/generated/sdk.gen'
-import type { ManagementError, UserTokenWriteRequest } from '@/lib/api/generated/types.gen'
+import type { UserTokenWriteRequest } from '@/lib/api/generated/types.gen'
 
 export const apiKeysQueryKey = ['user-api-keys'] as const
+type CreateApiKeyRequest = UserTokenWriteRequest & { group_id: number | null; user_route_id?: number | null }
 
 /** 单个用户最多 32 把 Key，一页读取即可获得准确容量状态。 */
 export function useApiKeys() {
@@ -30,7 +31,7 @@ export function useCreateApiKey() {
   const queryClient = useQueryClient()
   return useMutation({
     gcTime: 0,
-    mutationFn: async (body: UserTokenWriteRequest) => {
+    mutationFn: async (body: CreateApiKeyRequest) => {
       const { data } = await createUserToken({ body, client: apiClient })
       return data
     },
@@ -64,7 +65,7 @@ export function useDeleteApiKey() {
   })
 }
 
-export function hasManagementErrorCode(error: unknown, code: ManagementError['code']) {
+export function hasManagementErrorCode(error: unknown, code: string) {
   if (!(error instanceof ApiError) || typeof error.details !== 'object' || error.details === null) {
     return false
   }

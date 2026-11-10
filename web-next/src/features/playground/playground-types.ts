@@ -17,6 +17,7 @@ export type PlaygroundUsage = {
 
 export type PlaygroundErrorKind =
   | 'invalid_key'
+  | 'account_verification_required'
   | 'insufficient_quota'
   | 'rate_limited'
   | 'model_unavailable'

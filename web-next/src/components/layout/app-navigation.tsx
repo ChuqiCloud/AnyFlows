@@ -6,8 +6,9 @@ import { groupExtensionNavigation } from '@/extensions/model'
 import {
   adminWorkspaceItems,
   type NavKey,
-  type NavigationSectionKey,
-  systemSectionItems,
+  type SystemNavigationGroupKey,
+  systemNavigationGroups,
+  systemPinnedItems,
   userWorkspaceItems,
 } from '@/components/layout/app-navigation-model'
 import type { SidebarNode } from '@/shared/app-shell'
@@ -47,7 +48,12 @@ const navItems = {
   models: { key: 'models', icon: 'solar:planet-2-linear', href: '/console/models' },
   playground: { key: 'playground', icon: 'solar:chat-round-dots-linear', href: '/console/playground' },
   videoTasks: { key: 'videoTasks', icon: 'solar:video-frame-linear', href: '/console/video-tasks' },
+  imagePlaza: { key: 'imagePlaza', icon: 'solar:gallery-wide-linear', href: '/console/image-plaza' },
   apiKeys: { key: 'apiKeys', icon: 'solar:key-linear', href: '/console/api-keys' },
+  userRoutes: { key: 'userRoutes', icon: 'solar:routing-2-linear', href: '/console/user-routes' },
+  merchantPool: { key: 'merchantPool', icon: 'solar:shop-2-linear', href: '/console/merchant-pool' },
+  merchantWorkspace: { key: 'merchantWorkspace', icon: 'solar:case-linear', href: '/console/merchant' },
+  merchantPoolAdmin: { key: 'merchantPoolAdmin', icon: 'solar:shop-linear', href: '/console/system-settings/merchant-pool' },
   accountVerification: { key: 'accountVerification', icon: 'solar:verified-check-linear', href: '/console/account-verification' },
   accountVerificationReviews: { key: 'accountVerificationReviews', icon: 'solar:clipboard-check-linear', href: '/console/account-verification-reviews' },
   invitationSettings: { key: 'invitationSettings', icon: 'solar:gift-linear', href: '/console/system-settings/invitations' },
@@ -61,6 +67,7 @@ const navItems = {
   redemptionCodes: { key: 'redemptionCodes', icon: 'solar:ticket-linear', href: '/console/redemption-codes' },
   refunds: { key: 'refunds', icon: 'solar:check-circle-linear', href: '/console/refunds' },
   siteSettings: { key: 'siteSettings', icon: 'solar:monitor-linear', href: '/console/system-settings/site' },
+  about: { key: 'about', icon: 'solar:info-circle-linear', href: '/console/system-settings/about' },
   siteNavigation: { key: 'siteNavigation', icon: 'solar:menu-dots-linear', href: '/console/system-settings/navigation' },
   announcements: { key: 'announcements', icon: 'solar:notes-linear', href: '/console/system-settings/announcements' },
   authenticationSettings: { key: 'authenticationSettings', icon: 'solar:password-linear', href: '/console/system-settings/authentication' },
@@ -142,32 +149,28 @@ export function useAppNavigationItems(role: 'admin' | 'user'): SidebarNode[] {
   const customLinks = siteQuery.data?.navigation.sidebar_links
 
   return useMemo(() => {
-    const sections: Array<{ key: NavigationSectionKey; items: readonly NavKey[] }> = [
-      { key: 'workspace', items: role === 'admin' ? adminWorkspaceItems : userWorkspaceItems },
-    ]
+    const sectionNodes = [groupNode('workspace', t('nav.sections.workspace'), [
+      ...(role === 'admin' ? adminWorkspaceItems : userWorkspaceItems).map((key) => navNode(key, t)),
+      ...customNavigationTree(customLinks ?? [], i18n.resolvedLanguage?.startsWith('en') ?? false, role),
+    ])]
+
     if (role === 'admin') {
-      sections.push({ key: 'system', items: systemSectionItems })
+      sectionNodes.push(groupNode('system', t('nav.sections.system'), [
+        ...systemPinnedItems.map((key) => navNode(key, t)),
+        ...(Object.keys(systemNavigationGroups) as SystemNavigationGroupKey[]).map((key) => groupNode(
+          key,
+          t(`nav.sections.${key}`),
+          systemNavigationGroups[key].map((itemKey) => navNode(itemKey, t)),
+        )),
+      ]))
     }
 
-    return sections
-      .filter((section) => section.items.length > 0)
-      .map((section) => groupNode(
-        section.key,
-        t(`nav.sections.${section.key}`),
-        [
-          ...section.items.map((itemKey) => navNode(itemKey, t)),
-          ...(section.key === 'workspace' ? customNavigationTree(
-            customLinks ?? [],
-            i18n.resolvedLanguage?.startsWith('en') ?? false,
-            role,
-          ) : []),
-        ],
-      )).concat(groupExtensionNavigation(extensionRoutes).map((group) => groupNode(
-        `extension:${group.id}`, group.titleKey ? t(group.titleKey) : '',
-        group.routes.map((route): SidebarNode => ({
-          key: `extension:${route.path}`, title: t(route.titleKey), href: route.path,
-          icon: ({ building: 'solar:buildings-2-linear', package: 'solar:box-linear', clipboard: 'solar:clipboard-check-linear', shield: 'solar:shield-check-linear', settings: 'solar:settings-linear' })[route.navigation?.icon ?? 'building'],
-        })),
-      )))
+    return sectionNodes.concat(groupExtensionNavigation(extensionRoutes).map((group) => groupNode(
+      `extension:${group.id}`, group.titleKey ? t(group.titleKey) : '',
+      group.routes.map((route): SidebarNode => ({
+        key: `extension:${route.path}`, title: t(route.titleKey), href: route.path,
+        icon: ({ building: 'solar:buildings-2-linear', package: 'solar:box-linear', clipboard: 'solar:clipboard-check-linear', shield: 'solar:shield-check-linear', settings: 'solar:settings-linear' })[route.navigation?.icon ?? 'building'],
+      })),
+    )))
   }, [customLinks, extensionRoutes, i18n.resolvedLanguage, role, t])
 }

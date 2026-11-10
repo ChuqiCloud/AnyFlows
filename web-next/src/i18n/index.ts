@@ -3,6 +3,8 @@ import { initReactI18next } from 'react-i18next'
 
 import en from './locales/en.json'
 import zh from './locales/zh.json'
+import merchantPool from './merchant-pool.json'
+import keyCapabilities from './key-capabilities.json'
 
 const localeKey = 'anyflows.locale'
 
@@ -20,8 +22,8 @@ void i18n.use(initReactI18next).init({
   fallbackLng: 'zh',
   lng: getInitialLanguage(),
   resources: {
-    en: { translation: en },
-    zh: { translation: zh },
+    en: { translation: { ...en, merchantPool: merchantPool.en, keyCapabilities: keyCapabilities.en } },
+    zh: { translation: { ...zh, merchantPool: merchantPool.zh, keyCapabilities: keyCapabilities.zh } },
   },
   interpolation: {
     escapeValue: false,

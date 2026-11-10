@@ -1,6 +1,7 @@
 //! 端到端转发生命周期与故障转移编排。
 
 mod anthropic;
+mod anthropic_chat_bridge;
 mod anthropic_request;
 mod anthropic_stream;
 mod attempt_gate;
@@ -51,7 +52,7 @@ pub use attempt_gate::{
 };
 pub use chat_response::ChatResponse;
 pub use cohere_rerank::build_cohere_rerank_candidate_request;
-pub use conversation::relay_conversation_with_report;
+pub use conversation::{relay_conversation_with_report, relay_merchant_conversation_with_report};
 pub use diagnostic::{
     RelayAttemptDiagnostic, RelayDiagnosticInput, RelayDiagnosticPolicy, RelayDiagnosticSnapshot,
 };
@@ -76,15 +77,17 @@ pub use openai_chat::{
 pub use openai_chat_request::{OpenAiChatRequestOverrideError, OpenAiChatRequestOverrides};
 pub use openai_chat_stream::OpenAiChatStream;
 pub use openai_chat_usage::{
-    OpenAiChatUsageHandle, UsageResolutionError, estimate_openai_chat_request_upper_bound,
-    estimate_openai_request_upper_bound, estimate_openai_text_tokens,
+    OpenAiChatUsageHandle, UsageResolutionError, estimate_merchant_request_upper_bound,
+    estimate_openai_chat_request_upper_bound, estimate_openai_request_upper_bound,
+    estimate_openai_text_tokens,
 };
 pub use openai_embeddings::{
     EmbeddingResponse, RelayOpenAiEmbeddingsOutcome, relay_openai_embeddings,
     relay_openai_embeddings_with_report,
 };
 pub use openai_images::{
-    ImageResponse, RelayOpenAiImagesOutcome, relay_openai_images, relay_openai_images_with_report,
+    ImageResponse, RelayOpenAiImagesOutcome, relay_openai_image_edit,
+    relay_openai_image_edit_with_report, relay_openai_images, relay_openai_images_with_report,
 };
 pub use openai_responses::{
     RelayOpenAiResponsesOutcome, relay_openai_responses, relay_openai_responses_with_report,

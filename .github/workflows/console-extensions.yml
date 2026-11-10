@@ -3,6 +3,16 @@ name: Console extensions
 on:
   # 历史专项保留手动复测入口，日常检查由 CI 工作流承担。
   workflow_dispatch:
+    inputs:
+      scenario:
+        description: 浏览器检查范围
+        required: true
+        default: extensions
+        type: choice
+        options:
+          - extensions
+          - usage-logs
+          - software-updates
 
 permissions:
   contents: read
@@ -18,20 +28,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        frontend: [web, web-next]
+        frontend: [web-next]
     steps:
       - name: Check out repository
         shell: bash
         env:
-          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL || github.server_url }}/${{ github.repository }}.git
           CHECKOUT_SHA: ${{ github.sha }}
           CHECKOUT_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           repository_url="$CHECKOUT_REPOSITORY_URL"
-          if [[ "$repository_url" == http://gitea_cps3:* ]]; then
-            repository_url="https://gitea.acmecloud.cn/${{ github.repository }}.git"
-          fi
           auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
           git init .
           git remote add origin "$repository_url"
@@ -55,12 +62,14 @@ jobs:
           npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} install --frozen-lockfile
       - name: Check scripts and community contracts
         run: |
-          node tools/ci/check-frontend-parity.mjs
           npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} lint
       - name: Build community frontend
         run: npx --yes --package=corepack@0.34.0 corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build
-      - name: Check client profile drawers in Chromium
+      - name: Check selected console scenario in Chromium
+        env:
+          SCENARIO: ${{ github.event.inputs.scenario || 'extensions' }}
         run: |
+          set -euo pipefail
           browser_tools="$RUNNER_TEMP/anyflows-playwright"
           npm install --prefix "$browser_tools" --no-save --ignore-scripts playwright@1.56.1
           # GitHub-hosted Ubuntu already includes Chromium runtime libraries; --with-deps
@@ -70,5 +79,19 @@ jobs:
           else
             "$browser_tools/node_modules/.bin/playwright" install --with-deps chromium
           fi
-          PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-client-profiles-smoke.mjs '${{ matrix.frontend }}'
-          PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-proxy-pools-smoke.mjs '${{ matrix.frontend }}'
+          case "$SCENARIO" in
+            extensions)
+              PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-client-profiles-smoke.mjs '${{ matrix.frontend }}'
+              PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-proxy-pools-smoke.mjs '${{ matrix.frontend }}'
+              ;;
+            software-updates)
+              PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-verification-smoke.mjs '${{ matrix.frontend }}'
+              ;;
+            usage-logs)
+              PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-usage-logs-smoke.mjs '${{ matrix.frontend }}'
+              ;;
+            *)
+              printf 'Unsupported console scenario: %s\n' "$SCENARIO" >&2
+              exit 1
+              ;;
+          esac

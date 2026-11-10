@@ -7,6 +7,9 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+pub(crate) mod credential_model_observations;
+pub(crate) mod upstream_model_policies;
+
 use rust_decimal::Decimal;
 use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
@@ -50,9 +53,22 @@ pub(crate) mod debug_trace_snapshot_access_audits;
 pub(crate) mod debug_trace_snapshots;
 pub(crate) mod debug_traces;
 pub(crate) mod email_settings;
+pub(crate) mod group_group_grants;
+pub(crate) mod group_key_policies;
+pub(crate) mod group_model_policies;
+pub(crate) mod group_model_ratio_overrides;
 pub(crate) mod group_model_ratios;
 pub(crate) mod groups;
+pub(crate) mod image_history;
 pub(crate) mod invite_rebate_events;
+pub(crate) mod merchant_maintenance;
+pub(crate) mod merchant_pool_settings;
+pub(crate) mod merchant_pool_terms;
+pub(crate) mod merchant_pools;
+pub(crate) mod merchant_profiles;
+pub(crate) mod merchant_service_prices;
+pub(crate) mod merchant_service_revisions;
+pub(crate) mod merchant_services;
 pub(crate) mod model_prices;
 pub(crate) mod model_provider_catalog;
 pub(crate) mod model_sync_items;
@@ -94,10 +110,15 @@ pub(crate) mod tokens;
 pub(crate) mod topup_orders;
 pub(crate) mod topup_payment_events;
 pub(crate) mod usage_logs;
+pub(crate) mod user_group_grants;
 pub(crate) mod user_notification_events;
 pub(crate) mod user_notification_receipts;
 pub(crate) mod user_oauth_identities;
+pub(crate) mod user_route_health;
+pub(crate) mod user_route_members;
+pub(crate) mod user_routes;
 pub(crate) mod user_subscriptions;
+pub(crate) mod user_two_factor_enrollments;
 pub(crate) mod users;
 pub(crate) mod wallet_ledger_entries;
 
@@ -105,10 +126,10 @@ mod sensitive;
 
 pub(crate) use sensitive::{
     AuthChallengeHash, BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey,
-    ChannelBaseUrl, EncryptedJson, HeaderOverrides, MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES,
-    MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES, PasswordHash, PlaygroundConversationKey,
-    SensitiveDecimal, SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist,
-    TokenModelAllowlist, WalletLedgerKey,
+    ChannelBaseUrl, EncryptedJson, HeaderOverrides, ImageHistoryKey,
+    MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES,
+    PasswordHash, PlaygroundConversationKey, SensitiveDecimal, SensitiveJson, SensitiveString,
+    TokenHash, TokenIpAllowlist, TokenModelAllowlist, WalletLedgerKey,
 };
 
 macro_rules! impl_updated_at_behavior {
@@ -454,6 +475,29 @@ where
         .is_some_and(|ratio| *ratio < 0)
     {
         return Err(DbErr::Custom("分组附加倍率不能为负数".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_group_model_ratio_override<C>(
+    model: &group_model_ratio_overrides::ActiveModel,
+    _database: &C,
+    _insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let valid_model = model
+        .model
+        .try_as_ref()
+        .is_some_and(|value| crate::model_price::is_valid_model_ratio_override_name(value));
+    if !valid_model
+        || model
+            .ratio_micros
+            .try_as_ref()
+            .is_some_and(|ratio| *ratio < 0)
+    {
+        return Err(DbErr::Custom("分组模型倍率覆盖字段无效".to_owned()));
     }
     Ok(())
 }
@@ -1671,6 +1715,7 @@ impl_updated_at_behavior!(
     debug_trace_settings::ActiveModel => validate_default,
     email_settings::ActiveModel => validate_default,
     group_model_ratios::ActiveModel => validate_group_model_ratio,
+    group_model_ratio_overrides::ActiveModel => validate_group_model_ratio_override,
     model_prices::ActiveModel => validate_model_price,
     models::ActiveModel => validate_default,
     network_settings::ActiveModel => validate_default,

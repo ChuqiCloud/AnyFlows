@@ -1,3 +1,4 @@
+import { Select, SelectItem } from '@heroui/react'
 import { ChevronLeft, ChevronRight, RefreshCw, Search, ShieldCheck } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
@@ -48,8 +49,28 @@ export function DashboardSla() {
           {(['model', 'channel'] as const).map(value => <button key={value} type="button" aria-pressed={dimension === value} onClick={() => { setDimension(value); setPage(1) }}>{t(`dashboard.sla.${value}`)}</button>)}
         </div>
         <label className="report-search"><Search size={15} aria-hidden="true" /><input maxLength={128} aria-label={t('dashboard.sla.search')} placeholder={t('dashboard.sla.search')} value={search} onChange={event => setSearch(event.target.value)} /></label>
-        <label className="report-filter"><span>{t('dashboard.sla.sort')}</span><select value={sort} onChange={event => { setSort(event.target.value as typeof sort); setPage(1) }}>{(['requests', 'failures'] as const).map(value => <option key={value} value={value}>{t(`dashboard.sla.sorts.${value}`)}</option>)}</select></label>
-        <label className="report-filter"><span>{t('dashboard.sla.target')}</span><select value={target} onChange={event => setTarget(Number(event.target.value))}>{[0.99, 0.999, 0.9995, 0.9999].map(value => <option key={value} value={value}>{percent.format(value)}</option>)}</select></label>
+        <div className="report-filter"><span>{t('dashboard.sla.sort')}</span><Select
+          aria-label={t('dashboard.sla.sort')}
+          className="w-28"
+          items={(['requests', 'failures'] as const).map(value => ({ key: value, label: t(`dashboard.sla.sorts.${value}`) }))}
+          selectedKeys={[sort]}
+          size="sm"
+          variant="bordered"
+          onSelectionChange={(keys) => { setSort(String(Array.from(keys)[0] ?? sort) as typeof sort); setPage(1) }}
+        >
+          {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
+        </Select></div>
+        <div className="report-filter"><span>{t('dashboard.sla.target')}</span><Select
+          aria-label={t('dashboard.sla.target')}
+          className="w-24"
+          items={[0.99, 0.999, 0.9995, 0.9999].map(value => ({ key: String(value), label: percent.format(value) }))}
+          selectedKeys={[String(target)]}
+          size="sm"
+          variant="bordered"
+          onSelectionChange={(keys) => setTarget(Number(Array.from(keys)[0] ?? target))}
+        >
+          {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
+        </Select></div>
       </div>
       <div className="report-sla-table" aria-busy={report.isFetching}>
         <div className="report-sla-head" aria-hidden="true"><span>{t(`dashboard.sla.${dimension}`)}</span><span>{t('dashboard.sla.rate')}</span><span>{t('dashboard.sla.requests')}</span><span>{t('dashboard.sla.duration')}</span><span>{t('dashboard.sla.history')}</span></div>
@@ -61,7 +82,17 @@ export function DashboardSla() {
       <footer className="report-sla-footer">
         <div className="report-legend">{(['healthy', 'degraded', 'critical', 'unknown', 'empty'] as const).map(value => <span key={value}><i className={`report-health-${value}`} aria-hidden="true" />{t(`dashboard.sla.states.${value}`)}</span>)}</div>
         <div className="report-pagination">
-          <label>{t('dashboard.sla.perPage')}<select value={size} onChange={event => { setSize(Number(event.target.value)); setPage(1) }}>{[5, 10, 20].map(value => <option key={value}>{value}</option>)}</select></label>
+          <div className="flex items-center gap-2">{t('dashboard.sla.perPage')}<Select
+            aria-label={t('dashboard.sla.perPage')}
+            className="w-20"
+            items={[5, 10, 20].map(value => ({ key: String(value), label: String(value) }))}
+            selectedKeys={[String(size)]}
+            size="sm"
+            variant="bordered"
+            onSelectionChange={(keys) => { setSize(Number(Array.from(keys)[0] ?? size)); setPage(1) }}
+          >
+            {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
+          </Select></div>
           <span>{t('dashboard.sla.page', { page, pages, total: number.format(report.data?.total ?? 0) })}</span>
           <button type="button" className="report-icon-button" disabled={page === 1 || report.isFetching} onClick={() => setPage(page - 1)} aria-label={t('dashboard.sla.previous')} title={t('dashboard.sla.previous')}><ChevronLeft size={16} /></button>
           <button type="button" className="report-icon-button" disabled={page >= pages || report.isFetching} onClick={() => setPage(page + 1)} aria-label={t('dashboard.sla.next')} title={t('dashboard.sla.next')}><ChevronRight size={16} /></button>

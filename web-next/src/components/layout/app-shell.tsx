@@ -9,7 +9,7 @@ import { NavigationSectionSwitcher } from '@/components/layout/navigation-sectio
 import { AnnouncementStrip } from '@/features/announcements/announcement-strip'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import type { SessionUser } from '@/lib/api/generated/types.gen'
-import { findSidebarSectionKeyByPath, ModuleShell, ModuleSidebarLayoutContainer } from '@/shared/app-shell'
+import { findSidebarFirstHref, findSidebarParentKeysByPath, findSidebarSectionKeyByPath, ModuleShell, ModuleSidebarLayoutContainer } from '@/shared/app-shell'
 import { Navbar } from '@/shared/nav'
 
 /** 站点名取不到时的兜底品牌名。 */
@@ -50,9 +50,11 @@ export function AppShell({ children, currentUser, onLogout }: AppShellProps) {
    * 侧栏内容完全由路由派生，不额外存状态：选板块直接进那个板块的首个页面，
    * 侧栏与正文不会出现“看着是 A 板块、内容却是 B 页面”的错位。
    */
-  const activeSectionKey = findSidebarSectionKeyByPath(items, pathname)
+  const navigationPath = pathname === '/console/channel-models' ? '/console/channels' : pathname
+  const activeSectionKey = findSidebarSectionKeyByPath(items, navigationPath)
+  const expandedKeys = findSidebarParentKeysByPath(items, navigationPath)
   const openSection = (key: string) => {
-    const href = items.find((item) => item.key === key)?.children?.[0]?.href
+    const href = findSidebarFirstHref(items, key)
 
     if (href) {
       navigate(href)
@@ -64,6 +66,8 @@ export function AppShell({ children, currentUser, onLogout }: AppShellProps) {
     <ModuleSidebarLayoutContainer
       containerClassName={mobile ? 'flex h-full w-full flex-col bg-background' : SIDEBAR_CONTAINER_CLASS}
       defaultSelectedKey="overview"
+      defaultExpandedKeys={expandedKeys}
+      selectionPath={navigationPath}
       headerAction={(
         <div className="flex items-center gap-1">
           <NavigationSectionSwitcher
@@ -84,22 +88,19 @@ export function AppShell({ children, currentUser, onLogout }: AppShellProps) {
 
   return (
     <>
+      {/* 内容区铺满可用宽度，内边距留在滚动容器上，滚动时留白不跟着跳。 */}
       <ModuleShell
-        /*
-         * 内容区限宽 960px 居中，与旧站一致：
-         * 控制台页面是按窄栏排版设计的，不设限宽时表格和表单会被拉到整个视口宽。
-         * 内边距留在滚动容器上，限宽只作用于正文，这样滚动时留白不会跟着跳。
-         */
         contentClassName="min-w-0 flex-1 overflow-auto px-4 py-4 md:px-5"
         navbar={<Navbar currentUser={currentUser} onLogout={onLogout} onOpenNavigation={() => setNavigationOpen(true)} />}
-        sidebarClassName="hidden shrink-0 sm:block"
+        sidebarClassName="hidden shrink-0 md:block"
         sidebar={sidebar()}
       >
         <AnnouncementStrip />
-        <div className="mx-auto w-full max-w-[960px]">{children}</div>
+        <div className="w-full">{children}</div>
       </ModuleShell>
+      {/* 手机端沿用 acmeidc 的抽屉导航：整屏高度、底部留出安全区，抽屉宽度不超过视口。 */}
       <Drawer hideCloseButton isOpen={navigationOpen} placement="left" size="xs" onClose={() => setNavigationOpen(false)}>
-        <DrawerContent className="max-w-[calc(100vw-2rem)]" aria-label={t('nav.label')}>
+        <DrawerContent className="h-dvh max-w-[min(20rem,calc(100vw-2rem))] pb-[env(safe-area-inset-bottom)]" aria-label={t('nav.label')}>
           {sidebar(true)}
         </DrawerContent>
       </Drawer>

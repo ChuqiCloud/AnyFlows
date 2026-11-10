@@ -39,6 +39,9 @@ impl OpenAiAdaptor {
     /// Audio multipart 使用的固定高熵边界；编码器会拒绝正文中的碰撞。
     pub const AUDIO_MULTIPART_BOUNDARY: &'static str =
         "anyflows-audio-6f4d2e1c9b8a7350d4e6f1a2c3b5d798";
+    /// Images edits multipart 使用的固定边界；协议编码器会拒绝正文碰撞。
+    pub const IMAGE_EDIT_MULTIPART_BOUNDARY: &'static str =
+        "anyflows-image-edit-8d1c4b7a2e9f6350a4c6d8e1f3b5a709";
 
     /// 创建不携带内建模型清单的适配器。
     #[must_use]
@@ -97,10 +100,13 @@ impl OpenAiAdaptor {
     ) -> AdaptorResult<&'static str> {
         let endpoint = match (self.protocol, operation) {
             (Protocol::OpenAiChat, Operation::Chat) => "chat/completions",
+            (Protocol::OpenAiChat, Operation::Image) => "images/generations",
+            (Protocol::OpenAiChat, Operation::ImageEdit) => "images/edits",
             (Protocol::OpenAiResponses, Operation::Responses) => "responses",
             (Protocol::OpenAiResponses, Operation::ResponsesCompact) => "responses/compact",
             (Protocol::OpenAiEmbeddings, Operation::Embedding) => "embeddings",
             (Protocol::OpenAiImages, Operation::Image) => "images/generations",
+            (Protocol::OpenAiImages, Operation::ImageEdit) => "images/edits",
             (Protocol::OpenAiAudio, Operation::Audio) => "audio/transcriptions",
             (Protocol::OpenAiSpeech, Operation::Audio) => "audio/speech",
             (_, operation) => return Err(AdaptorError::UnsupportedOperation { operation }),
@@ -119,6 +125,7 @@ impl OpenAiAdaptor {
                 "responses/compact" => "v1/responses/compact",
                 "embeddings" => "v1/embeddings",
                 "images/generations" => "v1/images/generations",
+                "images/edits" => "v1/images/edits",
                 "audio/transcriptions" => "v1/audio/transcriptions",
                 "audio/speech" => "v1/audio/speech",
                 _ => unreachable!("OpenAI 端点集合保持闭合"),
@@ -231,6 +238,29 @@ impl Adaptor for OpenAiAdaptor {
             let value =
                 HeaderValue::from_str(request_id).map_err(|_| AdaptorError::InvalidHeader)?;
             headers.insert(HeaderName::from_static("x-request-id"), value);
+        }
+        Ok(())
+    }
+
+    fn setup_headers_for_target(
+        &self,
+        headers: &mut HeaderMap,
+        credential: &Credential,
+        context: &RelayContext,
+        target: AdaptorTarget<'_>,
+    ) -> AdaptorResult<()> {
+        self.setup_headers(headers, credential, context)?;
+        if matches!(self.protocol, Protocol::OpenAiChat | Protocol::OpenAiImages)
+            && target.operation() == Operation::ImageEdit
+        {
+            headers.insert(
+                HeaderName::from_static("content-type"),
+                HeaderValue::from_str(&format!(
+                    "multipart/form-data; boundary={}",
+                    Self::IMAGE_EDIT_MULTIPART_BOUNDARY
+                ))
+                .map_err(|_| AdaptorError::InvalidHeader)?,
+            );
         }
         Ok(())
     }
@@ -669,6 +699,73 @@ mod tests {
             AdaptorError::UnsupportedOperation {
                 operation: Operation::Chat
             }
+        );
+    }
+
+    #[test]
+    fn images_edit_uses_native_edits_endpoint_and_matching_multipart_boundary() {
+        let adaptor = OpenAiAdaptor::with_protocol_and_supported_models(
+            Protocol::OpenAiImages,
+            ["gpt-image-test"],
+        )
+        .unwrap();
+        assert_eq!(
+            adaptor
+                .build_url(&context(), target(Operation::ImageEdit))
+                .unwrap(),
+            "https://api.openai.com/v1/images/edits"
+        );
+
+        let mut headers = HeaderMap::new();
+        adaptor
+            .setup_headers_for_target(
+                &mut headers,
+                &Credential::api_key("image-key").unwrap(),
+                &context(),
+                target(Operation::ImageEdit),
+            )
+            .unwrap();
+        assert_eq!(
+            headers["content-type"],
+            format!(
+                "multipart/form-data; boundary={}",
+                OpenAiAdaptor::IMAGE_EDIT_MULTIPART_BOUNDARY
+            )
+        );
+        assert_eq!(headers["accept"], "application/json");
+    }
+
+    #[test]
+    fn chat_compatible_channels_can_receive_images_requests() {
+        let adaptor = OpenAiAdaptor::with_supported_models(["mixed-model"]);
+        assert_eq!(
+            adaptor
+                .build_url(&context(), target(Operation::Image))
+                .unwrap(),
+            "https://api.openai.com/v1/images/generations"
+        );
+        assert_eq!(
+            adaptor
+                .build_url(&context(), target(Operation::ImageEdit))
+                .unwrap(),
+            "https://api.openai.com/v1/images/edits"
+        );
+
+        let mut headers = HeaderMap::new();
+        adaptor
+            .setup_headers_for_target(
+                &mut headers,
+                &Credential::api_key("image-key").unwrap(),
+                &context(),
+                target(Operation::ImageEdit),
+            )
+            .unwrap();
+        assert_eq!(
+            headers["content-type"],
+            format!(
+                "multipart/form-data; boundary={}",
+                OpenAiAdaptor::IMAGE_EDIT_MULTIPART_BOUNDARY
+            )
         );
     }
 

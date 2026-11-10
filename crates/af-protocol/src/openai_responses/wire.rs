@@ -1,13 +1,13 @@
 use serde::{Deserialize, Deserializer, de::Error as _};
 use serde_json::{Map, Value};
 
-/// 区分字段缺失与显式提供；协议边界统一拒绝 `null`。
+/// 区分字段缺失与显式提供；字段专属反序列化器决定 `null` 的语义。
 #[derive(Default)]
 pub(super) enum Field<T> {
     /// 请求未提供该字段。
     #[default]
     Missing,
-    /// 请求提供了非空字段值。
+    /// 请求显式提供的字段值。
     Value(T),
 }
 
@@ -19,6 +19,29 @@ where
     Option::<T>::deserialize(deserializer)?
         .map(Field::Value)
         .ok_or_else(|| D::Error::custom("字段不得为 null"))
+}
+
+/// Responses reasoning schema permits `encrypted_content: null`; treat it as absent.
+fn deserialize_nullable_field<'de, D, T>(deserializer: D) -> Result<Field<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(|value| match value {
+        Some(value) => Field::Value(value),
+        None => Field::Missing,
+    })
+}
+
+/// 保留可选字段的显式 null，与未提供字段分别回放。
+fn deserialize_present_nullable_field<'de, D, T>(
+    deserializer: D,
+) -> Result<Field<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Field::Value)
 }
 
 /// OpenAI Responses 入站请求。
@@ -79,7 +102,8 @@ pub(super) struct ResponsesRequestWire {
 pub(super) struct ContextManagementWire {
     #[serde(rename = "type")]
     pub(super) kind: ContextManagementTypeWire,
-    pub(super) compact_threshold: i64,
+    #[serde(default, deserialize_with = "deserialize_present_nullable_field")]
+    pub(super) compact_threshold: Field<Option<i64>>,
 }
 
 /// 自动压缩策略类型。
@@ -123,7 +147,7 @@ pub(super) enum InputWire {
 pub(super) enum InputItemWire {
     /// 系统、开发者、用户或助手消息。
     Message(InputMessageWire),
-    /// 无状态续传使用的加密推理 Item。
+    /// 可带不透明签名的推理 Item；部分客户端只回放摘要。
     Reasoning(ReasoningInputItemWire),
     /// 先前的函数调用。
     FunctionCall(FunctionCallItemWire),
@@ -161,8 +185,8 @@ pub(super) struct ReasoningInputItemWire {
     /// 上游或前一跳分配的可选 Item 标识。
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) id: Field<String>,
-    /// 无状态续传所需的不透明加密推理内容。
-    #[serde(default, deserialize_with = "deserialize_field")]
+    /// 无状态续传使用的不透明加密推理内容；摘要回放时可以缺失。
+    #[serde(default, deserialize_with = "deserialize_nullable_field")]
     pub(super) encrypted_content: Field<String>,
     /// 可选的人类可读推理摘要。
     #[serde(default, deserialize_with = "deserialize_field")]
@@ -210,10 +234,13 @@ pub(super) struct InputMessageWire {
     /// 可选的固定 Item 类型。
     #[serde(rename = "type", default, deserialize_with = "deserialize_field")]
     pub(super) kind: Field<MessageTypeWire>,
-    /// 助手输出阶段当前尚未进入 Canonical。
+    /// 回放输出消息或持久输入消息的对象标识。
     #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) id: Field<String>,
+    /// 助手输出阶段；null 等同于未指定。
+    #[serde(default, deserialize_with = "deserialize_nullable_field")]
     pub(super) phase: Field<MessagePhaseWire>,
-    /// 返回 Item 的生命周期状态当前尚未进入 Canonical。
+    /// 已提供内容的生命周期元数据，不改变历史消息的角色或正文。
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) status: Field<ItemStatusWire>,
 }
@@ -415,6 +442,9 @@ pub(super) struct FunctionCallOutputItemWire {
     /// 调用来源当前尚未进入 Canonical。
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) caller: Field<Value>,
+    /// 函数调用结果的可选完成状态。
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) status: Field<ItemStatusWire>,
 }
 
 /// 固定函数调用结果 Item 类型。

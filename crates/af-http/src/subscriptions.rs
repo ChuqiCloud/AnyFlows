@@ -933,6 +933,7 @@ fn map_topup_provider_error(error: UserTopupError) -> ManagementError {
         UserTopupError::Conflict => ManagementError::SubscriptionConflict,
         UserTopupError::OutcomeUnknown => ManagementError::SubscriptionOutcomeUnknown,
         UserTopupError::ProviderRejected => ManagementError::TopupProviderRejected,
+        UserTopupError::VerificationRequired => ManagementError::AccountVerificationRequired,
         UserTopupError::InvalidInput
         | UserTopupError::InvalidSession
         | UserTopupError::Internal => ManagementError::Internal,

@@ -30,6 +30,7 @@ import type {
   UserPasskeyRenameRequest,
   UserPasskeyRevokeRequest,
   UserTwoFactorPasswordRequest,
+  UserTwoFactorStatusResponse,
 } from '@/lib/api/generated/types.gen'
 
 export const userProfileQueryKey = ['user-profile'] as const
@@ -91,37 +92,58 @@ export function useChangeUserPassword() {
   })
 }
 
-/** 读取当前用户的 TOTP 开关状态；响应不包含任何密钥材料。 */
+/** 只将不含密钥和备用码的状态写入查询缓存。 */
+function twoFactorStatus(status: UserTwoFactorStatusResponse): UserTwoFactorStatusResponse {
+  return {
+    enabled: status.enabled,
+    state: status.state,
+    pending_created_at: status.pending_created_at,
+    pending_expires_at: status.pending_expires_at,
+    bound_at: status.bound_at,
+    last_verified_at: status.last_verified_at,
+  }
+}
+
+/** 读取绑定状态与时间，不缓存任何绑定材料。 */
 export function useUserTwoFactor() {
   return useQuery({
     queryKey: userTwoFactorQueryKey,
     queryFn: async ({ signal }) => {
       const { data } = await getUserTwoFactor({ client: apiClient, signal })
-      return data
+      return twoFactorStatus(data)
     },
   })
 }
 
-/** 校验当前密码并启用 TOTP，入网材料只由本次 mutation 返回。 */
+/** 生成待绑定二维码，或用当前验证码确认绑定。 */
 export function useEnableUserTwoFactor() {
   const queryClient = useQueryClient()
   return useMutation({
+    gcTime: 0,
     mutationFn: async (body: UserTwoFactorPasswordRequest) => {
       const { data } = await enableUserTwoFactor({ body, client: apiClient })
       return data
     },
-    onSuccess: (status) => queryClient.setQueryData(userTwoFactorQueryKey, { enabled: status.enabled }),
+    onSuccess: (status) => queryClient.setQueryData(userTwoFactorQueryKey, twoFactorStatus(status)),
   })
 }
 
-/** 校验当前密码并停用 TOTP，同时清除旧的状态缓存。 */
+/** 停用二次验证并清除已缓存的绑定时间。 */
 export function useDisableUserTwoFactor() {
   const queryClient = useQueryClient()
   return useMutation({
+    gcTime: 0,
     mutationFn: async (body: UserTwoFactorPasswordRequest) => {
       await disableUserTwoFactor({ body, client: apiClient })
     },
-    onSuccess: () => queryClient.setQueryData(userTwoFactorQueryKey, { enabled: false }),
+    onSuccess: () => queryClient.setQueryData<UserTwoFactorStatusResponse>(userTwoFactorQueryKey, {
+      enabled: false,
+      state: 'disabled',
+      pending_created_at: null,
+      pending_expires_at: null,
+      bound_at: null,
+      last_verified_at: null,
+    }),
   })
 }
 

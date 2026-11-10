@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use af_domain::{ChannelId, ProxyId, Status};
+use af_domain::{ChannelId, CredentialId, MerchantBillingSnapshot, ProxyId, Status};
 use sea_orm::{
     ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
     entity::prelude::TimeDateTimeWithTimeZone,
@@ -17,11 +17,14 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     DatabasePool, SchedulerAbilityRecord, SchedulerAbilityRepository,
     SchedulerAbilityRepositoryError, SchedulerCatalogSubject,
-    entity::{channels, credentials, proxies},
+    entity::{
+        channels, credentials, merchant_service_prices, merchant_service_revisions,
+        merchant_services, proxies,
+    },
 };
 
 use super::{
-    SchedulerRuntimeRecord,
+    SchedulerRuntimeRecord, SchedulerRuntimeTargetRecord,
     selection::{SchedulerRuntimeSelectionError, select_supported_targets},
     source::{
         SchedulerRuntimeChannelSource, SchedulerRuntimeCredentialSource,
@@ -147,6 +150,110 @@ impl SchedulerRuntimeRepository {
         Ok(records)
     }
 
+    /// 只恢复已删除商户服务中与原计费版本完全绑定的目标，供历史视频结果读取。
+    /// 返回值不包含能力记录，不能重新进入新请求的调度目录。
+    pub async fn load_retired_merchant_target(
+        &self,
+        terms: MerchantBillingSnapshot,
+        channel_id: ChannelId,
+        credential_id: CredentialId,
+    ) -> Result<Option<Arc<SchedulerRuntimeTargetRecord>>, SchedulerRuntimeRepositoryError> {
+        let operation = async {
+            let Some(service) = merchant_services::Entity::find_by_id(terms.service_id())
+                .filter(merchant_services::Column::PoolId.eq(terms.pool_id()))
+                .filter(merchant_services::Column::MerchantId.eq(terms.merchant_id()))
+                .filter(merchant_services::Column::DeletedAt.is_not_null())
+                .one(self.pool.connection())
+                .await
+                .map_err(|_| SchedulerRuntimeRepositoryError::Query)?
+            else {
+                return Ok(None);
+            };
+            let Some(price) = merchant_service_prices::Entity::find_by_id(terms.pricing_version())
+                .filter(merchant_service_prices::Column::ServiceId.eq(service.id))
+                .one(self.pool.connection())
+                .await
+                .map_err(|_| SchedulerRuntimeRepositoryError::Query)?
+            else {
+                return Ok(None);
+            };
+            if merchant_service_revisions::Entity::find_by_id(price.revision_id)
+                .filter(merchant_service_revisions::Column::ServiceId.eq(service.id))
+                .filter(merchant_service_revisions::Column::ChannelId.eq(channel_id.get()))
+                .filter(merchant_service_revisions::Column::CredentialId.eq(credential_id.get()))
+                .filter(
+                    merchant_service_revisions::Column::Status.is_in(["published", "superseded"]),
+                )
+                .filter(merchant_service_revisions::Column::Protocol.eq("xai_video"))
+                .one(self.pool.connection())
+                .await
+                .map_err(|_| SchedulerRuntimeRepositoryError::Query)?
+                .is_none()
+            {
+                return Ok(None);
+            }
+            let Some(channel) = channels::Entity::find_by_id(channel_id.get())
+                .one(self.pool.connection())
+                .await
+                .map_err(|_| SchedulerRuntimeRepositoryError::Query)?
+            else {
+                return Ok(None);
+            };
+            let Some(mut channel) =
+                SchedulerRuntimeChannelSource::from_retired_merchant_entity(channel)?
+            else {
+                return Ok(None);
+            };
+            let mut profiles = crate::client_profiles::runtime_profiles(
+                self.pool.connection(),
+                &[channel_id.get()],
+            )
+            .await
+            .map_err(|_| SchedulerRuntimeRepositoryError::Invariant)?;
+            if let Some(profile) = profiles.remove(&channel_id.get()) {
+                let Some(profile) = profile else {
+                    return Ok(None);
+                };
+                channel = channel.with_client_profile(profile)?;
+            }
+            let Some(credential) = credentials::Entity::find_by_id(credential_id.get())
+                .filter(credentials::Column::ChannelId.eq(channel_id.get()))
+                .one(self.pool.connection())
+                .await
+                .map_err(|_| SchedulerRuntimeRepositoryError::Query)?
+            else {
+                return Ok(None);
+            };
+            let proxy = match credential.proxy_id {
+                Some(id) => {
+                    let Some(proxy) = proxies::Entity::find_by_id(id)
+                        .one(self.pool.connection())
+                        .await
+                        .map_err(|_| SchedulerRuntimeRepositoryError::Query)?
+                    else {
+                        return Ok(None);
+                    };
+                    Some(proxy_from_entity(proxy)?)
+                }
+                None => None,
+            };
+            let Some(credential) =
+                SchedulerRuntimeCredentialSource::from_retired_merchant_entity(credential, proxy)?
+            else {
+                return Ok(None);
+            };
+            let channels = BTreeMap::from([(channel_id, channel)]);
+            Ok(select_supported_targets(&channels, vec![credential])?.remove(&channel_id))
+        }
+        .with_subscriber(NoSubscriber::default());
+        match timeout(self.load_timeout, operation).await {
+            Ok(result) => result.map_err(record_internal_error),
+            Err(_) => Err(record_internal_error(
+                SchedulerRuntimeRepositoryError::Timeout,
+            )),
+        }
+    }
+
     async fn load_records(
         &self,
         abilities: Vec<SchedulerAbilityRecord>,
@@ -268,7 +375,61 @@ impl SchedulerRuntimeRepository {
                             .transpose()?;
                         collect_credential_source(sources, credential, parent, proxy, &now)
                     })?;
-            let targets = select_supported_targets(&channels, credentials)?;
+            let channel_ids = channels.keys().map(|id| id.get()).collect::<Vec<_>>();
+            let policies =
+                crate::credential_models::load_model_policies(self.pool.connection(), &channel_ids)
+                    .await
+                    .map_err(|_| SchedulerRuntimeRepositoryError::Invariant)?;
+            let mut targets = select_supported_targets(&channels, credentials)?;
+            let credential_ids = targets
+                .values()
+                .flat_map(|target| {
+                    target
+                        .credentials()
+                        .iter()
+                        .flat_map(|key| [key.credential_id(), key.secret_owner_id().get()])
+                })
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            let mut pauses = BTreeMap::new();
+            for batch in credential_ids.chunks(400) {
+                pauses.extend(
+                    crate::upstream_usage::load_usage_pauses(self.pool.connection(), batch)
+                        .await
+                        .map_err(|_| SchedulerRuntimeRepositoryError::Invariant)?,
+                );
+            }
+            for (channel_id, target) in &mut targets {
+                let channel_policy = policies
+                    .get(&("channel".to_owned(), channel_id.get()))
+                    .cloned()
+                    .unwrap_or_default();
+                let credential_policies = target
+                    .credentials()
+                    .iter()
+                    .flat_map(|key| [key.credential_id(), key.secret_owner_id().get()])
+                    .filter_map(|id| {
+                        policies
+                            .get(&("credential".to_owned(), id))
+                            .cloned()
+                            .map(|policy| (id, policy))
+                    })
+                    .collect();
+                let target_pauses = target
+                    .credentials()
+                    .iter()
+                    .flat_map(|key| [key.credential_id(), key.secret_owner_id().get()])
+                    .filter_map(|id| pauses.get(&id).copied().map(|until| (id, until)))
+                    .collect();
+                let updated = target
+                    .as_ref()
+                    .clone()
+                    .with_usage_pauses(target_pauses)
+                    .with_model_policies(channel_policy, credential_policies)
+                    .map_err(|_| SchedulerRuntimeRepositoryError::Invariant)?;
+                *target = Arc::new(updated);
+            }
             Ok(abilities
                 .into_iter()
                 .filter_map(|ability| {

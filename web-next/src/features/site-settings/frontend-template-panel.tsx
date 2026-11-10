@@ -21,7 +21,7 @@ export function FrontendTemplatePanel() {
   const [search, setSearch] = useState('')
   const [preview, setPreview] = useState<FrontendTemplateSummary>()
   const [pending, setPending] = useState<FrontendTemplateSummary>()
-  const activeId = catalogQuery.data?.active_id ?? 'embedded'
+  const activeId = catalogQuery.data?.active_id ?? 'embedded-next'
   const busy = scanMutation.isPending || activateMutation.isPending
   const templates = catalogQuery.data?.templates ?? []
   const active = templates.find((template) => template.id === activeId)
@@ -29,7 +29,7 @@ export function FrontendTemplatePanel() {
   const visible = pagination.items
   const apply = () => {
     if (!pending || busy) return
-    activateMutation.mutate(pending.id === 'embedded' ? null : pending.id, {
+    activateMutation.mutate(pending.id, {
       onSuccess: () => window.location.reload(),
     })
   }
@@ -95,7 +95,7 @@ function TemplateCard({ template, active, busy, onPreview, onActivate }: {
   onActivate: () => void
 }) {
   const { t } = useTranslation()
-  const description = template.description ?? (template.builtin ? t(template.id === 'embedded-next' ? 'siteSettings.templates.nextDescription' : 'siteSettings.templates.classicDescription') : t('siteSettings.templates.externalDescription'))
+  const description = template.description ?? (template.builtin ? t('siteSettings.templates.nextDescription') : t('siteSettings.templates.externalDescription'))
   return (
     <Card as="article" shadow="sm" className={'flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-content1 transition-shadow hover:shadow-lg ' + (active ? 'border-brand ring-1 ring-brand/20' : 'border-[var(--hairline)]')}>
       <Button size="sm" variant="bordered" type="button" className="relative block h-auto min-w-0 rounded-none p-0 aspect-[16/10] w-full overflow-hidden border-b border-[var(--hairline)] bg-surface-2/40" isDisabled={!template.preview_url} onClick={onPreview} aria-label={t('siteSettings.templates.previewAlt', { name: template.name || template.id })}>

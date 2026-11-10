@@ -90,7 +90,8 @@ pub(super) enum StreamEventWire {
         item_id: String,
         output_index: u32,
         arguments: String,
-        name: String,
+        #[serde(default)]
+        name: Option<String>,
         #[serde(default)]
         sequence_number: Option<u64>,
     },

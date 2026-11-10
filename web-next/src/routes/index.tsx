@@ -1,65 +1,69 @@
-import { lazy, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
+import { createElement } from 'react'
 import { Navigate, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom'
 import type { RouteObject } from 'react-router-dom'
 
-import { applyRouteGuards } from '@/shared/router'
+// 路由表只保留控制台/引导页这类体积小、首次交互必需的模块做同步导入；
+// 公开页（首页、模型广场、API 文档、登录注册、广场分享）全部走 lazyRoute，
+// 否则首屏会把这些页面的依赖（图标集、Markdown、支付 SDK）一并下载。
+import { PublicPlaygroundSharePage } from '@/features/playground/public-playground-share-page'
+import { applyRouteGuards, lazyComponent, lazyRoute } from '@/shared/router'
 import { forgeRoutes } from '@/feature/routes'
 import { ConsoleLayout, useConsoleSession } from '@/routes/console-layout'
 import { ConsoleExtensionPage } from '@/extensions/extension-page'
 import { consoleExtensionRoutes } from '@/extensions/registry'
+import { readInvitationContext } from '@/features/auth/invitation-context'
 import { ManagementGate } from '@/routes/management-gate'
-
-// 懒加载页面组件
-const LandingPage = lazy(() => import('@/features/landing/landing-page').then(m => ({ default: m.LandingPage })))
-const PublicModelPage = lazy(() => import('@/features/models/public-model-page').then(m => ({ default: m.PublicModelPage })))
-const ApiExplorerPage = lazy(() => import('@/features/api-explorer/api-explorer-page').then(m => ({ default: m.ApiExplorerPage })))
-const RegistrationPage = lazy(() => import('@/features/registration/registration-page').then(m => ({ default: m.RegistrationPage })))
-const SetupPage = lazy(() => import('@/features/setup/setup-page').then(m => ({ default: m.SetupPage })))
-const ProfilePage = lazy(() => import('@/features/profile/profile-page').then(m => ({ default: m.ProfilePage })))
-const PlaygroundPage = lazy(() => import('@/features/playground/playground-page').then(m => ({ default: m.PlaygroundPage })))
-const PublicPlaygroundSharePage = lazy(() => import('@/features/playground/public-playground-share-page').then(m => ({ default: m.PublicPlaygroundSharePage })))
-const RedemptionPage = lazy(() => import('@/features/redemptions/redemption-page').then(m => ({ default: m.RedemptionPage })))
-const RefundPage = lazy(() => import('@/features/refunds/refund-page').then(m => ({ default: m.RefundPage })))
-const RoutePage = lazy(() => import('@/features/routes/route-page').then(m => ({ default: m.RoutePage })))
-const MySubscriptionsPage = lazy(() => import('@/features/subscriptions/my-subscriptions-page').then(m => ({ default: m.MySubscriptionsPage })))
-const SubscriptionManagementPage = lazy(() => import('@/features/subscriptions/subscription-management-page').then(m => ({ default: m.SubscriptionManagementPage })))
-const SiteSettingsPage = lazy(() => import('@/features/site-settings/site-settings-page').then(m => ({ default: m.SiteSettingsPage })))
-const SiteNavigationPage = lazy(() => import('@/features/site-settings/site-settings-page').then(m => ({ default: m.SiteNavigationPage })))
-const PaymentSettingsPage = lazy(() => import('@/features/payment-settings/payment-settings-page').then(m => ({ default: m.PaymentSettingsPage })))
-const UserPage = lazy(() => import('@/features/users/user-page').then(m => ({ default: m.UserPage })))
-const WalletPage = lazy(() => import('@/features/wallet/wallet-page').then(m => ({ default: m.WalletPage })))
-const VideoTaskPage = lazy(() => import('@/features/video-tasks/video-task-page').then(m => ({ default: m.VideoTaskPage })))
-const AccountVerificationPage = lazy(() => import('@/features/account-verification/account-verification-page').then(m => ({ default: m.AccountVerificationPage })))
-const AuthenticationSettingsPage = lazy(() => import('@/features/authentication-settings/authentication-settings-page').then(m => ({ default: m.AuthenticationSettingsPage })))
-const VerificationSettingsPanel = lazy(() => import('@/features/account-verification/verification-settings-panel').then(m => ({ default: m.VerificationSettingsPanel })))
-const TokenPage = lazy(() => import('@/features/tokens/token-page').then(m => ({ default: m.TokenPage })))
-const UsageLogPage = lazy(() => import('@/features/usage-logs/usage-log-page').then(m => ({ default: m.UsageLogPage })))
 
 type ConsoleOutletContext = {
   onPasswordChanged: () => void
 }
 
+/* 公开页与控制台旧页都按需加载：首屏只跑控制台骨架，页面代码随访问路径拉取。 */
+const lazyLandingPage = lazyRoute(() => import('@/features/landing/landing-page'), 'LandingPage')
+const lazyPublicModelPage = lazyRoute(() => import('@/features/models/public-model-page'), 'PublicModelPage')
+const lazyApiExplorerPage = lazyRoute(() => import('@/features/api-explorer/api-explorer-page'), 'ApiExplorerPage')
+const lazySetupPage = lazyComponent(() => import('@/features/setup/setup-page'), 'SetupPage')
+const lazyRegistrationPage = lazyComponent(() => import('@/features/registration/registration-page'), 'RegistrationPage')
+const lazyProfilePage = lazyComponent(() => import('@/features/profile/profile-page'), 'ProfilePage')
+const lazyUsageLogPage = lazyComponent(() => import('@/features/usage-logs/usage-log-page'), 'UsageLogPage')
+const lazyRedemptionPage = lazyRoute(() => import('@/features/redemptions/redemption-page'), 'RedemptionPage')
+const lazyRefundPage = lazyRoute(() => import('@/features/refunds/refund-page'), 'RefundPage')
+const lazyRoutePage = lazyRoute(() => import('@/features/routes/route-page'), 'RoutePage')
+const lazyPaymentSettingsPage = lazyRoute(() => import('@/features/payment-settings/payment-settings-page'), 'PaymentSettingsPage')
+const lazyUserPage = lazyRoute(() => import('@/features/users/user-page'), 'UserPage')
+const lazyWalletPage = lazyRoute(() => import('@/features/wallet/wallet-page'), 'WalletPage')
+const lazyPlaygroundPage = lazyRoute(() => import('@/features/playground/playground-page'), 'PlaygroundPage')
+const lazyVideoTaskPage = lazyRoute(() => import('@/features/video-tasks/video-task-page'), 'VideoTaskPage')
+const lazyTokenPage = lazyRoute(() => import('@/features/tokens/token-page'), 'TokenPage')
+const AccountVerificationPage = lazyComponent(() => import('@/features/account-verification/account-verification-page'), 'AccountVerificationPage')
+const VerificationSettingsPanel = lazyRoute(() => import('@/features/account-verification/verification-settings-panel'), 'VerificationSettingsPanel')
+const AboutPage = lazyRoute(() => import('@/features/about/about-page'), 'AboutPage')
+const lazyAuthenticationSettingsPage = lazyComponent(() => import('@/features/authentication-settings/authentication-settings-page'), 'AuthenticationSettingsPage')
+const lazySubscriptionManagementPage = lazyRoute(() => import('@/features/subscriptions/subscription-management-page'), 'SubscriptionManagementPage')
+const SiteSettingsPage = lazyRoute(() => import('@/features/site-settings/site-settings-page'), 'SiteSettingsPage')
+const SiteNavigationPage = lazyRoute(() => import('@/features/site-settings/site-settings-page'), 'SiteNavigationPage')
+
 function SetupRoute() {
   const navigate = useNavigate()
 
-  return (
-    <SetupPage
-      onAuthenticated={() => navigate('/console', { replace: true })}
-      onConflict={() => navigate('/login', { replace: true, state: { notice: 'setupComplete' } })}
-    />
-  )
+  // 需要传递 props 的页面用 createElement 挂载，模块本身仍按需加载。
+  return createElement(lazySetupPage, {
+    onAuthenticated: () => navigate('/console', { replace: true }),
+    onConflict: () => navigate('/login', { replace: true, state: { notice: 'setupComplete' } }),
+  })
 }
 
 function RegistrationRoute() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
+  const invitation = readInvitationContext(params)
 
-  return (
-    <RegistrationPage
-      inviteCode={params.get('invite') ?? undefined}
-      onAuthenticated={() => navigate('/console/models', { replace: true })}
-    />
-  )
+  return createElement(lazyRegistrationPage, {
+    inviteCode: invitation.kind === 'valid' ? invitation.code : undefined,
+    invitationInvalid: invitation.kind === 'invalid',
+    onAuthenticated: () => navigate('/console', { replace: true }),
+  })
 }
 
 function PlaygroundShareRoute() {
@@ -73,21 +77,19 @@ function ProfileRoute() {
   const { onPasswordChanged } = useOutletContext<ConsoleOutletContext>()
   const [params] = useSearchParams()
 
-  return (
-    <ProfilePage
-      section={params.get('section') === 'notifications' ? 'notifications' : undefined}
-      onPasswordChanged={() => {
-        onPasswordChanged()
-        navigate('/login', { replace: true, state: { notice: 'passwordChanged' } })
-      }}
-    />
-  )
+  return createElement(lazyProfilePage, {
+    section: params.get('section') === 'notifications' ? 'notifications' : undefined,
+    onPasswordChanged: () => {
+      onPasswordChanged()
+      navigate('/login', { replace: true, state: { notice: 'passwordChanged' } })
+    },
+  })
 }
 
 function UsageLogRoute() {
   const session = useConsoleSession()
 
-  return <UsageLogPage admin={session.user.role === 'admin'} />
+  return createElement(lazyUsageLogPage, { admin: session.user.role === 'admin' })
 }
 
 type ConsoleRouteDefinition = {
@@ -97,27 +99,28 @@ type ConsoleRouteDefinition = {
 
 /** 控制台路由表：路径即真实 URL。 */
 const consoleRoutes: ConsoleRouteDefinition[] = [
-  { path: 'redemption-codes', element: <RedemptionPage /> },
-  { path: 'refunds', element: <RefundPage /> },
-  { path: 'routes', element: <RoutePage /> },
-  { path: 'subscriptions', element: <MySubscriptionsPage /> },
+  { path: 'redemption-codes', element: lazyRedemptionPage },
+  { path: 'refunds', element: lazyRefundPage },
+  { path: 'routes', element: lazyRoutePage },
+  { path: 'subscriptions', element: <Navigate to="/console/wallet" replace /> },
   {
     path: 'subscription-management',
-    element: <SubscriptionManagementPage />,
+    element: lazySubscriptionManagementPage,
   },
-  { path: 'system-settings/site', element: <SiteSettingsPage /> },
-  { path: 'system-settings/navigation', element: <SiteNavigationPage /> },
-  { path: 'system-settings/payment', element: <PaymentSettingsPage /> },
-  { path: 'users', element: <UserPage /> },
-  { path: 'wallet', element: <WalletPage /> },
-  { path: 'playground', element: <PlaygroundPage /> },
-  { path: 'video-tasks', element: <VideoTaskPage /> },
-  { path: 'account-verification-reviews', element: <AccountVerificationPage admin /> },
-  { path: 'system-settings/invitations', element: <AuthenticationSettingsPage rewardsOnly /> },
-  { path: 'account-verification', element: <AccountVerificationPage /> },
-  { path: 'system-settings/account-verification', element: <VerificationSettingsPanel /> },
+  { path: 'system-settings/site', element: SiteSettingsPage },
+  { path: 'system-settings/about', element: AboutPage },
+  { path: 'system-settings/navigation', element: SiteNavigationPage },
+  { path: 'system-settings/payment', element: lazyPaymentSettingsPage },
+  { path: 'users', element: lazyUserPage },
+  { path: 'wallet', element: lazyWalletPage },
+  { path: 'playground', element: lazyPlaygroundPage },
+  { path: 'video-tasks', element: lazyVideoTaskPage },
+  { path: 'account-verification-reviews', element: createElement(AccountVerificationPage, { admin: true }) },
+  { path: 'system-settings/invitations', element: createElement(lazyAuthenticationSettingsPage, { rewardsOnly: true }) },
+  { path: 'account-verification', element: createElement(AccountVerificationPage) },
+  { path: 'system-settings/account-verification', element: VerificationSettingsPanel },
   { path: 'profile', element: <ProfileRoute /> },
-  { path: 'tokens', element: <TokenPage /> },
+  { path: 'tokens', element: lazyTokenPage },
   { path: 'usage-logs', element: <UsageLogRoute /> },
 ]
 
@@ -143,9 +146,9 @@ const gateModuleRoutes = moduleRoutes.filter(
 )
 
 export const routes: RouteObject[] = [
-  { index: true, element: <LandingPage /> },
-  { path: 'models', element: <PublicModelPage /> },
-  { path: 'api', element: <ApiExplorerPage /> },
+  { index: true, element: lazyLandingPage },
+  { path: 'models', element: lazyPublicModelPage },
+  { path: 'api', element: lazyApiExplorerPage },
   { path: 'register', element: <RegistrationRoute /> },
   { path: 'share/:token', element: <PlaygroundShareRoute /> },
   {

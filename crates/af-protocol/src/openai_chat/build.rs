@@ -158,10 +158,7 @@ fn insert_reasoning(
     let Some(reasoning) = request.reasoning else {
         return Ok(());
     };
-    if reasoning.budget_tokens().is_some() {
-        return Err(BuildRequestError::UnsupportedFeature);
-    }
-    let Some(effort) = reasoning.effort() else {
+    let Some(effort) = reasoning.effort_for_effort_only_protocol() else {
         return Ok(());
     };
     let value = match effort {
@@ -434,7 +431,8 @@ fn build_user_message(
             | ContentBlock::ToolResult { .. }
             | ContentBlock::Thinking { .. }
             | ContentBlock::CacheControl(_)
-            | ContentBlock::Compaction(_) => {
+            | ContentBlock::Compaction(_)
+            | ContentBlock::AnthropicCompaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         });
@@ -487,7 +485,8 @@ fn build_assistant_message(
             | ContentBlock::ToolResult { .. }
             | ContentBlock::Thinking { .. }
             | ContentBlock::CacheControl(_)
-            | ContentBlock::Compaction(_) => {
+            | ContentBlock::Compaction(_)
+            | ContentBlock::AnthropicCompaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         }

@@ -197,6 +197,58 @@ fn round_trips_compaction_context_and_item() {
 }
 
 #[test]
+fn optional_compaction_threshold_preserves_missing_null_and_explicit_values() {
+    for control in [
+        json!({"type":"compaction"}),
+        json!({"type":"compaction","compact_threshold":null}),
+        json!({"type":"compaction","compact_threshold":1}),
+        json!({"type":"compaction","compact_threshold":1_000_000}),
+    ] {
+        for stream in [false, true] {
+            let wire = json!({
+                "model":"gpt-test", "input":"hello", "stream":stream, "store":false,
+                "context_management":[control.clone()]
+            });
+            let canonical = parsed_request(wire.clone());
+            let rebuilt = build_request(&canonical).unwrap();
+            assert_eq!(rebuilt["context_management"], wire["context_management"]);
+            assert_eq!(parsed_request(rebuilt), canonical);
+
+            let envelope = super::parse_request_envelope(bytes::Bytes::from(
+                serde_json::to_vec(&wire).unwrap(),
+            ))
+            .unwrap();
+            let native = envelope
+                .clone()
+                .plan_conversation(Protocol::OpenAiResponses)
+                .unwrap();
+            assert_eq!(
+                serde_json::from_slice::<Value>(native.body()).unwrap(),
+                wire
+            );
+            let routed = envelope
+                .clone()
+                .with_routed_parameters(
+                    "routed-model".to_owned(),
+                    envelope.canonical().sampling.clone(),
+                )
+                .plan_conversation(Protocol::OpenAiResponses)
+                .unwrap();
+            let routed: Value = serde_json::from_slice(routed.body()).unwrap();
+            assert_eq!(routed["model"], "routed-model");
+            assert_eq!(routed["context_management"], wire["context_management"]);
+            for target in [Protocol::OpenAiChat, Protocol::Anthropic, Protocol::Gemini] {
+                assert_eq!(
+                    crate::ConversationConversionPlan::prepare(envelope.clone(), target)
+                        .unwrap_err(),
+                    crate::ConversationConversionError::NativeContentRequired,
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn round_trips_messages_tools_sampling_continuation_and_raw_fields() {
     let request = parsed_request(json!({
         "model": "gpt-test",
@@ -444,7 +496,28 @@ fn rejects_wrong_operation_and_unmodeled_request_features() {
         )
         .unwrap(),
     );
-    assert_unsupported_capability(&reasoning, RequestCapability::ReasoningBudget);
+    assert_eq!(
+        build_request(&reasoning).unwrap()["reasoning"]["effort"],
+        "high"
+    );
+
+    let mut fixed_budget = minimal_request();
+    fixed_budget.reasoning =
+        Some(ReasoningConfig::new(None, Some(TokenCount::new(8192).unwrap()), true).unwrap());
+    assert_eq!(
+        build_request(&fixed_budget).unwrap()["reasoning"]["effort"],
+        "medium"
+    );
+    let mut dynamic_budget = minimal_request();
+    dynamic_budget.reasoning = Some(
+        ReasoningConfig::new(None, None, true)
+            .unwrap()
+            .with_dynamic_budget(true)
+            .unwrap(),
+    );
+    let dynamic = build_request(&dynamic_budget).unwrap();
+    assert!(dynamic["reasoning"].get("effort").is_none());
+    assert_eq!(dynamic["reasoning"]["summary"], "auto");
 }
 
 #[test]
@@ -472,7 +545,7 @@ fn rejects_unrepresentable_content_and_media() {
         assert_unsupported_capability(&request, capability);
     }
 
-    let missing_reasoning_signature = CanonicalRequest::new(
+    let unsigned_reasoning_summary = CanonicalRequest::new(
         Operation::Responses,
         "gpt-test".to_owned(),
         vec![Message::new(
@@ -484,9 +557,13 @@ fn rejects_unrepresentable_content_and_media() {
         )],
         false,
     );
+    let rebuilt = build_request(&unsigned_reasoning_summary).unwrap();
     assert_eq!(
-        build_request(&missing_reasoning_signature),
-        Err(BuildRequestError::UnsupportedFeature)
+        rebuilt["input"][0],
+        json!({
+            "type": "reasoning",
+            "summary": [{"type": "summary_text", "text": "secret"}]
+        })
     );
 
     let misplaced_reasoning = CanonicalRequest::new(

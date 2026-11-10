@@ -23,7 +23,7 @@ use super::{
     SchedulerRuntimeProxyRecord, SchedulerRuntimeRecord, SchedulerRuntimeTargetRecord,
 };
 
-const PROJECTION_WIRE_VERSION: u8 = 1;
+const PROJECTION_WIRE_VERSION: u8 = 2;
 /// 单个主体投影允许写入 Redis 的最大字节数。
 pub const MAX_SCHEDULER_RUNTIME_PROJECTION_BYTES: usize = 16 * 1024 * 1024;
 
@@ -165,6 +165,9 @@ struct ProjectionAbilityWire {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ProjectionTargetWire {
+    channel_model_policy: af_domain::UpstreamModelPolicy,
+    credential_model_policies: BTreeMap<i64, af_domain::UpstreamModelPolicy>,
+    credential_usage_pauses: BTreeMap<i64, i64>,
     channel_id: i64,
     channel_type: String,
     protocol: String,
@@ -385,6 +388,9 @@ impl ProjectionSubjectWire {
 impl ProjectionTargetWire {
     fn from_target(target: &SchedulerRuntimeTargetRecord) -> Self {
         Self {
+            channel_model_policy: target.model_policies().0.clone(),
+            credential_model_policies: target.model_policies().1.clone(),
+            credential_usage_pauses: target.usage_pauses().clone(),
             channel_id: target.channel_id().get(),
             channel_type: target.channel_type().to_string(),
             protocol: target.protocol().to_string(),
@@ -513,6 +519,9 @@ impl ProjectionTargetWire {
             headers,
         )
         .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?
+        .with_model_policies(self.channel_model_policy, self.credential_model_policies)
+        .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?
+        .with_usage_pauses(self.credential_usage_pauses)
         .with_timeout(timeout)
         .with_auto_ban_rules(auto_ban_rules)
         .with_pool_mode(self.pool_mode)

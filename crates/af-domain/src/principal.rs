@@ -208,6 +208,10 @@ pub struct GatewayPrincipal {
     token_id: TokenId,
     user_id: UserId,
     group_id: GroupId,
+    billing_source_group_id: GroupId,
+    user_route_id: Option<i64>,
+    merchant_billing_snapshot: Option<crate::MerchantBillingSnapshot>,
+    merchant_channel_id: Option<ChannelId>,
     organization: Option<OrganizationGatewayPrincipal>,
     playground: bool,
 }
@@ -292,6 +296,10 @@ impl GatewayPrincipal {
             token_id,
             user_id,
             group_id,
+            billing_source_group_id: group_id,
+            user_route_id: None,
+            merchant_billing_snapshot: None,
+            merchant_channel_id: None,
             organization: None,
             playground: false,
         }
@@ -304,6 +312,10 @@ impl GatewayPrincipal {
             token_id,
             user_id,
             group_id,
+            billing_source_group_id: group_id,
+            user_route_id: None,
+            merchant_billing_snapshot: None,
+            merchant_channel_id: None,
             organization: None,
             playground: true,
         }
@@ -321,6 +333,10 @@ impl GatewayPrincipal {
             token_id,
             user_id,
             group_id,
+            billing_source_group_id: group_id,
+            user_route_id: None,
+            merchant_billing_snapshot: None,
+            merchant_channel_id: None,
             organization: Some(organization),
             playground: false,
         }
@@ -342,6 +358,63 @@ impl GatewayPrincipal {
     #[must_use]
     pub const fn group_id(self) -> GroupId {
         self.group_id
+    }
+
+    /// 为已复验授权的一次分组尝试固定目标组，保留签发用户、Key 与计费来源组。
+    #[must_use]
+    pub const fn with_routing_group_id(mut self, group_id: GroupId) -> Self {
+        self.group_id = group_id;
+        self
+    }
+
+    /// 绑定鉴权时核实的个人路由组；组织和试炼场请求不应携带此字段。
+    #[must_use]
+    pub const fn with_user_route_id(mut self, user_route_id: Option<i64>) -> Self {
+        self.user_route_id = user_route_id;
+        self
+    }
+
+    /// 返回个人 Key 绑定的用户路由组标识，普通单分组 Key 返回空。
+    #[must_use]
+    pub const fn user_route_id(self) -> Option<i64> {
+        self.user_route_id
+    }
+
+    /// 固定已复验的商户供给，不能由下游请求直接指定内部渠道。
+    #[must_use]
+    pub const fn with_merchant_target(
+        mut self,
+        snapshot: crate::MerchantBillingSnapshot,
+        channel_id: ChannelId,
+    ) -> Self {
+        self.merchant_billing_snapshot = Some(snapshot);
+        self.merchant_channel_id = Some(channel_id);
+        self
+    }
+
+    /// 返回本次商户尝试不可变的分账归属。
+    #[must_use]
+    pub const fn merchant_billing_snapshot(self) -> Option<crate::MerchantBillingSnapshot> {
+        self.merchant_billing_snapshot
+    }
+
+    /// 商户尝试只能在这一已审核渠道内调度凭据。
+    #[must_use]
+    pub const fn merchant_channel_id(self) -> Option<ChannelId> {
+        self.merchant_channel_id
+    }
+
+    /// 固定鉴权时读取的用户默认组，用于来源组到目标组的附加倍率。
+    #[must_use]
+    pub const fn with_billing_source_group_id(mut self, group_id: GroupId) -> Self {
+        self.billing_source_group_id = group_id;
+        self
+    }
+
+    /// 返回计费来源组；路由仍使用 [`Self::group_id`]。
+    #[must_use]
+    pub const fn billing_source_group_id(self) -> GroupId {
+        self.billing_source_group_id
     }
 
     /// 返回企业 API Key 的已验证组织主体；个人 Key 返回空。

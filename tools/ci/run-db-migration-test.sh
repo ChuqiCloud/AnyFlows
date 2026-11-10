@@ -10,14 +10,14 @@ readonly TEST_USER="anyflows"
 readonly TEST_PASSWORD="anyflows_ci"
 readonly TEST_DATABASE="anyflows_migration_test_ci"
 readonly SMOKE_TEST_NAME="migration::tests::migration_runner_smoke"
+readonly instance_id="${BASHPID}-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
 
 container_name=""
-network_name=""
 runner_name=""
 
 cleanup() {
     local status=$?
-    trap - EXIT
+    trap - EXIT INT TERM
     if [[ -n "${runner_name}" ]]; then
         docker rm --force "${runner_name}" >/dev/null 2>&1 || true
     fi
@@ -27,12 +27,11 @@ cleanup() {
         fi
         docker rm --force "${container_name}" >/dev/null 2>&1 || true
     fi
-    if [[ -n "${network_name}" ]]; then
-        docker network rm "${network_name}" >/dev/null 2>&1 || true
-    fi
     exit "${status}"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 wait_for_postgres() {
     # 首次拉起镜像时初始化耗时不稳定，使用有限轮询避免流水线永久等待。
@@ -70,10 +69,11 @@ run_smoke_test() {
         return 1
     fi
 
-    if [[ -n "${network_name}" ]]; then
+    if [[ -n "${container_name}" ]]; then
         test_binary="$(ci_build_test_binary af-db lib)"
-        runner_name="anyflows-db-test-${BASHPID}"
-        ci_run_test_binary "${network_name}" "${runner_name}" "${test_binary}" \
+        runner_name="anyflows-db-test-${instance_id}"
+        # Share only this database's loopback namespace; no bridge subnet is allocated.
+        ci_run_test_binary "container:${container_name}" "${runner_name}" "${test_binary}" \
             "AF_TEST_DATABASE_URL=${database_url}" \
             "AF_REQUIRE_LIVE_DATABASE=1" \
             "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST=1" \
@@ -95,31 +95,25 @@ if [[ -z "${database_url}" ]]; then
             database_url="sqlite::memory:"
             ;;
         postgres)
-            network_name="anyflows-postgres-network-${BASHPID}"
-            container_name="anyflows-postgres-${BASHPID}"
-            docker network create "${network_name}" >/dev/null
-            docker run --detach --name "${container_name}" --network "${network_name}" \
-                --network-alias postgres \
+            container_name="anyflows-postgres-${instance_id}"
+            docker run --detach --name "${container_name}" --network none \
                 --env POSTGRES_USER="${TEST_USER}" \
                 --env POSTGRES_PASSWORD="${TEST_PASSWORD}" \
                 --env POSTGRES_DB="${TEST_DATABASE}" \
                 "${POSTGRES_IMAGE}" >/dev/null
             wait_for_postgres
-            database_url="postgres://${TEST_USER}:${TEST_PASSWORD}@postgres:5432/${TEST_DATABASE}"
+            database_url="postgres://${TEST_USER}:${TEST_PASSWORD}@127.0.0.1:5432/${TEST_DATABASE}"
             ;;
         mysql)
-            network_name="anyflows-mysql-network-${BASHPID}"
-            container_name="anyflows-mysql-${BASHPID}"
-            docker network create "${network_name}" >/dev/null
-            docker run --detach --name "${container_name}" --network "${network_name}" \
-                --network-alias mysql \
+            container_name="anyflows-mysql-${instance_id}"
+            docker run --detach --name "${container_name}" --network none \
                 --env MYSQL_USER="${TEST_USER}" \
                 --env MYSQL_PASSWORD="${TEST_PASSWORD}" \
                 --env MYSQL_ROOT_PASSWORD="root_ci" \
                 --env MYSQL_DATABASE="${TEST_DATABASE}" \
                 "${MYSQL_IMAGE}" --log-bin-trust-function-creators=1 >/dev/null
             wait_for_mysql
-            database_url="mysql://${TEST_USER}:${TEST_PASSWORD}@mysql:3306/${TEST_DATABASE}?timezone=%2B08:00"
+            database_url="mysql://${TEST_USER}:${TEST_PASSWORD}@127.0.0.1:3306/${TEST_DATABASE}?timezone=%2B08:00"
             ;;
         *)
             echo "用法：$0 <sqlite|postgres|mysql>" >&2

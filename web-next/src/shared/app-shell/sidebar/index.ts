@@ -6,5 +6,5 @@ export { SidebarPresentation } from "./sidebar-presentation";
 export { SidebarContainer } from "./sidebar-container";
 export type { SidebarContainerProps } from "./sidebar-container";
 export { SidebarIcon } from "./sidebar-icon";
-export { findSidebarSectionKeyByPath } from "./tree";
+export { findSidebarFirstHref, findSidebarParentKeysByPath, findSidebarSectionKeyByPath } from "./tree";
 export type { SidebarNode, SidebarProps, IconSvgProps } from "./types";

@@ -58,6 +58,7 @@ impl PaymentRuntimeSnapshot {
 /// 支付 Provider 的稳定运行时门面；新配置只影响切换后的新请求。
 pub(crate) struct PaymentRuntime {
     order_extension: Option<Arc<dyn af_billing::PaymentOrderExtension>>,
+    verification_access: Option<Arc<af_admin::VerificationAccessService>>,
     snapshot: RwLock<Arc<PaymentRuntimeSnapshot>>,
     topup_repository: TopupRepository,
     refund_repository: RefundRepository,
@@ -79,6 +80,7 @@ impl PaymentRuntime {
     ) -> Self {
         Self {
             order_extension: None,
+            verification_access: None,
             snapshot: RwLock::new(Arc::new(PaymentRuntimeSnapshot::disabled())),
             topup_repository,
             refund_repository,
@@ -94,6 +96,14 @@ impl PaymentRuntime {
         extension: Option<Arc<dyn af_billing::PaymentOrderExtension>>,
     ) -> Self {
         self.order_extension = extension;
+        self
+    }
+
+    pub(crate) fn with_verification_access(
+        mut self,
+        access: Arc<af_admin::VerificationAccessService>,
+    ) -> Self {
+        self.verification_access = Some(access);
         self
     }
 
@@ -129,6 +139,10 @@ impl PaymentRuntime {
         } else {
             let service = DatabaseUserTopupService::new(self.topup_repository.clone(), routes)
                 .map_err(|_| runtime_failed("topup_service"))?;
+            let service = match &self.verification_access {
+                Some(access) => service.with_verification_access(access.clone()),
+                None => service,
+            };
             Some(Arc::new(service) as Arc<dyn UserTopupService>)
         };
         Ok(PaymentRuntimeSnapshot {
@@ -504,8 +518,9 @@ fn epay_callback_urls(
     let prefix = base.path().trim_end_matches('/').to_owned();
     base.set_path(&format!("{prefix}/api/payment/webhook/epay"));
     let notify_url = base.to_string();
-    base.set_path(&format!("{prefix}/"));
-    base.set_fragment(Some("/console/wallet?epay_return=1"));
+    base.set_path(&format!("{prefix}/console/wallet"));
+    base.set_query(Some("epay_return=1"));
+    base.set_fragment(None);
     Ok((notify_url, base.to_string()))
 }
 
@@ -540,7 +555,7 @@ mod tests {
         );
         assert_eq!(
             returning,
-            "https://example.com/gateway/#/console/wallet?epay_return=1"
+            "https://example.com/gateway/console/wallet?epay_return=1"
         );
     }
 }

@@ -85,6 +85,8 @@ export async function streamPlaygroundChat(
     maxOutputTokens: request.maxOutputTokens,
     maxRetries: 0,
     abortSignal: request.signal,
+    // 浏览器不启用 SDK 的 Node 诊断通道，避免取消时遗留遥测完成 Promise 拒绝。
+    telemetry: { isEnabled: false },
     // AnyFlows 当前只允许无状态 Responses；显式关闭 SDK 默认的 store=true。
     providerOptions: request.protocol === 'openai_responses'
       ? { openai: { store: false } }

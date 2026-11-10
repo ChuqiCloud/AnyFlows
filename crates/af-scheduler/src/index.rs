@@ -366,7 +366,7 @@ impl ChannelIndexSnapshot {
                     .runtime_targets
                     .get(&candidate.channel_id())
                     .ok_or(ChannelIndexSnapshotError::Invariant)?;
-                if target.schedulable_responses_compact_model(model).is_some() {
+                if target_has_compact_credentials(target, model) {
                     return Ok(true);
                 }
             }
@@ -385,7 +385,7 @@ impl ChannelIndexSnapshot {
                 .runtime_targets
                 .get(&candidate.channel_id())
                 .ok_or(ChannelIndexSnapshotError::Invariant)?;
-            if target.schedulable_responses_compact_model(model).is_some() {
+            if target_has_compact_credentials(target, model) {
                 return Ok(true);
             }
         }
@@ -569,7 +569,10 @@ impl IndexedWeightedScheduler {
     ) -> Result<Option<WeightedSelection>, IndexedWeightedSchedulerError> {
         let snapshot = self.index.snapshot()?;
         self.strategy
-            .select_at_priority_rank(snapshot.candidates(group_id, model)?, priority_rank)
+            .select_at_priority_rank(
+                &standard_candidates(&snapshot, group_id, model)?,
+                priority_rank,
+            )
             .map_err(Into::into)
     }
 
@@ -580,7 +583,7 @@ impl IndexedWeightedScheduler {
         model: &str,
     ) -> Result<WeightedRetryPlan, IndexedWeightedSchedulerError> {
         let snapshot = self.index.snapshot()?;
-        WeightedRetryPlan::new(snapshot.candidates(group_id, model)?.to_vec()).map_err(Into::into)
+        WeightedRetryPlan::new(standard_candidates(&snapshot, group_id, model)?).map_err(Into::into)
     }
 
     /// 从同一代快照生成可直接交给生产转发装配层的固定路由计划。
@@ -601,8 +604,7 @@ impl IndexedWeightedScheduler {
         model: &str,
     ) -> Result<Vec<ChannelId>, IndexedWeightedSchedulerError> {
         let snapshot = self.index.snapshot()?;
-        Ok(snapshot
-            .candidates(group_id, model)?
+        Ok(standard_candidates(&snapshot, group_id, model)?
             .iter()
             .map(|candidate| candidate.channel_id())
             .collect())
@@ -653,10 +655,48 @@ impl IndexedWeightedScheduler {
         let snapshot = self.index.snapshot()?;
         build_route_plan(
             &snapshot,
-            snapshot.candidates(group_id, model)?.to_vec(),
+            standard_candidates(&snapshot, group_id, model)?,
             health,
         )
     }
+}
+
+fn standard_candidates(
+    snapshot: &ChannelIndexSnapshot,
+    group_id: GroupId,
+    model: &str,
+) -> Result<Vec<SchedulerCandidate>, IndexedWeightedSchedulerError> {
+    let dimension = af_domain::CredentialQuotaDimension::for_canonical_model(model);
+    Ok(snapshot
+        .candidates(group_id, model)?
+        .iter()
+        .filter(|candidate| {
+            // Pure selection sources may omit targets; route construction still rejects
+            // missing targets rather than silently inventing upstream configuration.
+            snapshot
+                .runtime_targets
+                .get(&candidate.channel_id())
+                .is_none_or(|target| {
+                    let upstream = target.mapped_model(model).unwrap_or(model);
+                    target.credentials().iter().any(|credential| {
+                        credential.quota_dimension() == dimension
+                            && target.allows_credential_model(credential, upstream)
+                    })
+                })
+        })
+        .copied()
+        .collect())
+}
+
+fn target_has_compact_credentials(target: &SchedulerRuntimeTargetRecord, model: &str) -> bool {
+    let Some(upstream_model) = target.schedulable_responses_compact_model(model) else {
+        return false;
+    };
+    let dimension = af_domain::CredentialQuotaDimension::for_canonical_model(model);
+    target.credentials().iter().any(|credential| {
+        credential.quota_dimension() == dimension
+            && target.allows_credential_model(credential, upstream_model)
+    })
 }
 
 fn compact_candidates(
@@ -672,7 +712,7 @@ fn compact_candidates(
             .ok_or(IndexedWeightedSchedulerError::Cache(
                 ChannelIndexCacheError::Snapshot(ChannelIndexSnapshotError::Invariant),
             ))?;
-        if target.schedulable_responses_compact_model(model).is_some() {
+        if target_has_compact_credentials(target, model) {
             eligible.push(*candidate);
         }
     }
@@ -1064,6 +1104,83 @@ mod tests {
                 .is_some()
         );
         assert!(!format!("{snapshot:?}").contains("gpt-secret"));
+    }
+
+    #[test]
+    fn credential_model_policy_removes_disallowed_channels_before_weighted_selection() {
+        let blocked = runtime_target(1)
+            .with_model_policies(
+                af_domain::UpstreamModelPolicy {
+                    mode: af_domain::UpstreamModelPolicyMode::Allowlist,
+                    models: Vec::new(),
+                    disabled_models: Vec::new(),
+                },
+                BTreeMap::new(),
+            )
+            .unwrap();
+        let blocked_record = ChannelIndexSourceRecord::with_runtime_target(
+            GroupId::new(1).unwrap(),
+            "gpt-policy",
+            100,
+            1_000_000,
+            Arc::new(blocked),
+        )
+        .unwrap();
+        let snapshot = ChannelIndexSnapshot::from_records(
+            vec![blocked_record, record(1, "gpt-policy", 2, 0, 1)],
+            1,
+        )
+        .unwrap();
+        let candidates =
+            standard_candidates(&snapshot, GroupId::new(1).unwrap(), "gpt-policy").unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].channel_id().get(), 2);
+    }
+
+    #[test]
+    fn credential_model_policy_also_gates_compact_on_its_final_upstream_model() {
+        let source = compact_record(
+            1,
+            "gpt-policy",
+            1,
+            10,
+            ResponsesCompactMode::ForceOn,
+            ResponsesCompactProbeResult::Supported,
+        );
+        let target = source
+            .runtime_target
+            .unwrap()
+            .as_ref()
+            .clone()
+            .with_model_policies(
+                af_domain::UpstreamModelPolicy {
+                    mode: af_domain::UpstreamModelPolicyMode::Denylist,
+                    models: vec!["gpt-policy".to_owned()],
+                    disabled_models: Vec::new(),
+                },
+                BTreeMap::new(),
+            )
+            .unwrap();
+        assert!(!target_has_compact_credentials(&target, "gpt-policy"));
+        let source = ChannelIndexSourceRecord::with_runtime_target(
+            GroupId::new(1).unwrap(),
+            "gpt-policy",
+            1,
+            10,
+            Arc::new(target),
+        )
+        .unwrap();
+        let snapshot = ChannelIndexSnapshot::from_records(vec![source], 1).unwrap();
+        assert!(
+            !snapshot
+                .responses_compact_available(GroupId::new(1).unwrap(), "gpt-policy")
+                .unwrap()
+        );
+        assert!(
+            compact_candidates(&snapshot, GroupId::new(1).unwrap(), "gpt-policy")
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

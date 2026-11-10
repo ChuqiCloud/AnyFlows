@@ -10,6 +10,7 @@ export type AppView =
   | 'authentication-settings'
   | 'billing-settings'
   | 'channels'
+  | 'channel-models'
   | 'client-profiles'
   | 'credentials'
   | 'credential-proxies'
@@ -26,6 +27,7 @@ export type AppView =
   | 'oauth-callback'
   | 'payment-settings'
   | 'playground'
+  | 'image-plaza'
   | 'profile'
   | 'public-models'
   | 'register'
@@ -34,6 +36,7 @@ export type AppView =
   | 'routes'
   | 'reset-password'
   | 'site-settings'
+  | 'about'
   | 'site-navigation'
   | 'share'
   | 'subscription-management'
@@ -105,6 +108,9 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash === '#/console/credentials' || hash.startsWith('#/console/credentials?')) {
     return { view: 'credentials', channelId: positiveIntegerQuery(hash, 'channel') }
   }
+  if (hash === '#/console/channels/models' || hash.startsWith('#/console/channels/models?')) {
+    return { view: 'channel-models', channelId: positiveIntegerQuery(hash, 'channel') }
+  }
   if (hash === '#/console/client-profiles' || hash.startsWith('#/console/client-profiles?')) return { view: 'client-profiles' }
   if (hash.startsWith('#/console/channels')) return { view: 'channels' }
   if (hash.startsWith('#/console/proxies')) return { view: 'credential-proxies' }
@@ -116,6 +122,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/subscriptions')) return { view: 'subscriptions' }
   if (hash.startsWith('#/console/routes')) return { view: 'routes' }
   if (hash.startsWith('#/console/system-settings/navigation')) return { view: 'site-navigation' }
+  if (hash.startsWith('#/console/system-settings/about')) return { view: 'about' }
   if (hash.startsWith('#/console/system-settings/site')) return { view: 'site-settings' }
   if (hash.startsWith('#/console/system-settings/announcements')) return { view: 'announcements' }
   if (hash.startsWith('#/console/system-settings/invitations')) return { view: 'invitation-settings' }
@@ -132,6 +139,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/wallet')) return { view: 'wallet' }
   if (hash.startsWith('#/console/models')) return { view: 'models' }
   if (hash.startsWith('#/console/playground')) return { view: 'playground' }
+  if (hash.startsWith('#/console/image-plaza')) return { view: 'image-plaza' }
   if (hash.startsWith('#/console/video-tasks')) return { view: 'video-tasks' }
   if (hash.startsWith('#/console/invitations')) return { view: 'invitations' }
   if (hash.startsWith('#/console/profile')) {

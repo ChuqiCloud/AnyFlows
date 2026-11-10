@@ -44,7 +44,7 @@ pub struct FrontendTemplateSummary {
 #[serde(deny_unknown_fields)]
 #[schema(as = FrontendTemplateCatalog)]
 pub struct FrontendTemplateCatalog {
-    /// None 表示默认经典前端；embedded-next 表示新版内置前端。
+    /// 当前启用模板 ID；内置 Next 使用 `embedded-next`，外部模板使用其目录 ID。
     pub active_id: Option<String>,
     pub templates: Vec<FrontendTemplateSummary>,
 }
@@ -88,7 +88,7 @@ struct FrontendTemplateHttpState {
 #[serde(deny_unknown_fields)]
 #[schema(as = FrontendTemplateActivationRequest)]
 pub(crate) struct FrontendTemplateActivationRequest {
-    /// None 或空字符串表示恢复内嵌前端。
+    /// None 或空字符串表示选择默认内置 Next 前端。
     template_id: Option<String>,
 }
 

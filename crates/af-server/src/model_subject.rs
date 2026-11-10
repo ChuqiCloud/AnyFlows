@@ -15,9 +15,23 @@ pub(crate) enum ModelSubject {
 }
 
 impl ModelSubject {
+    pub(crate) const fn merchant_channel_id(self) -> Option<af_domain::ChannelId> {
+        match self {
+            Self::User(value) => value.merchant_channel_id(),
+            Self::ServiceAccount { .. } => None,
+        }
+    }
+
     pub(crate) const fn group_id(self) -> GroupId {
         match self {
             Self::User(value) => value.group_id(),
+            Self::ServiceAccount { group_id, .. } => group_id,
+        }
+    }
+
+    pub(crate) const fn billing_source_group_id(self) -> GroupId {
+        match self {
+            Self::User(value) => value.billing_source_group_id(),
             Self::ServiceAccount { group_id, .. } => group_id,
         }
     }

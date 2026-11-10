@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, btree_map::Entry};
+use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
 
 use af_adapter::{MAX_UPSTREAM_RESPONSE_BODY_BYTES, UpstreamBody};
 use af_domain::{Operation, Role, UpstreamError};
@@ -21,14 +21,17 @@ pub(crate) async fn collect_conversation(
     body: UpstreamBody,
     mut decoder: ConversationDecoder,
 ) -> Result<CanonicalResponse, UpstreamError> {
-    let mut aggregate = Aggregate::default();
+    // Responses 原生终态已完整保留不透明压缩 Item，不能再次按通用内容重建。
+    let mut aggregate =
+        (!matches!(decoder, ConversationDecoder::Responses(_))).then(Aggregate::default);
+    let mut done = false;
     let mut bytes = 0_usize;
     match body {
         UpstreamBody::Full(body) => {
             if body.len() > MAX_UPSTREAM_RESPONSE_BODY_BYTES {
                 return Err(UpstreamError::ProtocolError);
             }
-            aggregate.push(decoder.push(&body)?)?;
+            push_collected_events(&mut aggregate, &mut done, decoder.push(&body)?)?;
         }
         UpstreamBody::Stream(mut source) => {
             while let Some(chunk) = source.next_chunk().await {
@@ -37,21 +40,50 @@ pub(crate) async fn collect_conversation(
                     .checked_add(chunk.len())
                     .filter(|size| *size <= MAX_UPSTREAM_RESPONSE_BODY_BYTES)
                     .ok_or(UpstreamError::ProtocolError)?;
-                aggregate.push(decoder.push(&chunk)?)?;
-                if aggregate.done {
+                push_collected_events(&mut aggregate, &mut done, decoder.push(&chunk)?)?;
+                if done {
                     break;
                 }
             }
         }
     }
-    aggregate.push(decoder.finish()?)?;
-    aggregate.finish()
+    push_collected_events(&mut aggregate, &mut done, decoder.finish()?)?;
+    match aggregate {
+        Some(aggregate) => aggregate.finish(),
+        None => decoder
+            .take_terminal_response()
+            .ok_or(UpstreamError::ProtocolError),
+    }
+}
+
+fn push_collected_events(
+    aggregate: &mut Option<Aggregate>,
+    done: &mut bool,
+    events: Vec<Event>,
+) -> Result<(), UpstreamError> {
+    if let Some(aggregate) = aggregate {
+        aggregate.push(events)?;
+        *done = aggregate.done;
+        return Ok(());
+    }
+    for event in events {
+        if *done {
+            return Err(UpstreamError::ProtocolError);
+        }
+        match event {
+            Event::Error(error) => return Err(error),
+            Event::StreamEnd => *done = true,
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 #[derive(Default)]
 pub(crate) struct Aggregate {
     choices: BTreeMap<u32, Choice>,
     usage: Option<Usage>,
+    anthropic_usage_metadata: Option<serde_json::Value>,
     logprobs_bytes: usize,
     done: bool,
 }
@@ -59,6 +91,7 @@ pub(crate) struct Aggregate {
 #[derive(Default)]
 struct Choice {
     content: BTreeMap<u32, ContentBlock>,
+    open_compactions: BTreeSet<u32>,
     tools: BTreeMap<u32, Tool>,
     order: Vec<Part>,
     finish: Option<(FinishReason, Option<String>)>,
@@ -157,6 +190,59 @@ impl Aggregate {
                             }
                         }
                         _ => return Err(UpstreamError::ProtocolError),
+                    }
+                }
+                Event::AnthropicCompactionStart {
+                    choice_index,
+                    content_index,
+                    item,
+                } => {
+                    let choice = self.choice(choice_index)?;
+                    if choice
+                        .content
+                        .insert(content_index, ContentBlock::AnthropicCompaction(item))
+                        .is_some()
+                    {
+                        return Err(UpstreamError::ProtocolError);
+                    }
+                    choice.order.push(Part::Content(content_index));
+                    choice.open_compactions.insert(content_index);
+                }
+                Event::AnthropicCompactionDelta {
+                    choice_index,
+                    content_index,
+                    ..
+                } => {
+                    // End carries the validated complete native block, including opaque fields.
+                    if !self
+                        .choice(choice_index)?
+                        .open_compactions
+                        .contains(&content_index)
+                    {
+                        return Err(UpstreamError::ProtocolError);
+                    }
+                }
+                Event::AnthropicCompactionEnd {
+                    choice_index,
+                    content_index,
+                    item,
+                } => {
+                    let choice = self.choice(choice_index)?;
+                    if !choice.open_compactions.remove(&content_index) {
+                        return Err(UpstreamError::ProtocolError);
+                    }
+                    let block = choice
+                        .content
+                        .get_mut(&content_index)
+                        .ok_or(UpstreamError::ProtocolError)?;
+                    if !matches!(block, ContentBlock::AnthropicCompaction(_)) {
+                        return Err(UpstreamError::ProtocolError);
+                    }
+                    *block = ContentBlock::AnthropicCompaction(item);
+                }
+                Event::AnthropicUsageMetadata { raw } => {
+                    if self.anthropic_usage_metadata.replace(raw).is_some() {
+                        return Err(UpstreamError::ProtocolError);
                     }
                 }
                 Event::LogprobsDelta {
@@ -266,6 +352,9 @@ impl Aggregate {
             .choices
             .into_iter()
             .map(|(index, mut choice)| {
+                if !choice.open_compactions.is_empty() {
+                    return Err(UpstreamError::ProtocolError);
+                }
                 let (reason, stop) = choice.finish.ok_or(UpstreamError::ProtocolError)?;
                 let mut content = Vec::with_capacity(choice.order.len());
                 for part in choice.order {
@@ -302,14 +391,19 @@ impl Aggregate {
                 )
             })
             .collect::<Result<Vec<_>, UpstreamError>>()?;
-        Ok(CanonicalResponse::new(
+        let response = CanonicalResponse::new(
             Operation::Chat,
             "aggregated".to_owned(),
             "aggregated".to_owned(),
             None,
             choices,
             self.usage,
-        ))
+        );
+        match self.anthropic_usage_metadata {
+            Some(raw) => af_protocol::anthropic::with_usage_metadata(response, raw)
+                .map_err(|_| UpstreamError::ProtocolError),
+            None => Ok(response),
+        }
     }
 }
 
@@ -354,7 +448,133 @@ fn merge_logprobs(
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        collections::VecDeque,
+        pin::Pin,
+        task::{Context, Poll},
+    };
+
+    use af_adapter::{AdaptorResult, Bytes, UpstreamBodyStream};
+    use af_domain::Protocol;
+    use futures_core::Stream;
+    use serde_json::{Value, json};
+
     use super::*;
+
+    struct ResponseChunks(VecDeque<AdaptorResult<Bytes>>);
+
+    impl Stream for ResponseChunks {
+        type Item = AdaptorResult<Bytes>;
+
+        fn poll_next(
+            mut self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+        ) -> Poll<Option<Self::Item>> {
+            Poll::Ready(self.0.pop_front())
+        }
+    }
+
+    fn responses_compaction_stream(complete: bool) -> (Vec<u8>, Value) {
+        let item = json!({"type":"compaction", "id":"cmp_native_collect", "encrypted_content":"opaque-native-state+/="});
+        let response = json!({
+            "id":"resp_private", "object":"response", "created_at":1_700_000_000,
+            "status":"in_progress", "error":null, "incomplete_details":null,
+            "model":"private-model", "output":[], "usage":null
+        });
+        let mut terminal = response.clone();
+        terminal["status"] = json!("completed");
+        terminal["output"] = json!([item.clone()]);
+        terminal["usage"] = json!({
+            "input_tokens":8, "input_tokens_details":{"cached_tokens":2,"cache_write_tokens":0},
+            "output_tokens":3, "output_tokens_details":{"reasoning_tokens":1}, "total_tokens":11
+        });
+        let mut frames = vec![
+            ("response.created", json!({"response":response.clone()})),
+            ("response.in_progress", json!({"response":response})),
+            (
+                "response.output_item.added",
+                json!({"output_index":0,"item":item.clone()}),
+            ),
+            (
+                "response.output_item.done",
+                json!({"output_index":0,"item":item}),
+            ),
+        ];
+        if complete {
+            frames.push(("response.completed", json!({"response":terminal.clone()})));
+        }
+        let mut bytes = Vec::new();
+        for (sequence, (kind, mut value)) in frames.into_iter().enumerate() {
+            value["type"] = json!(kind);
+            value["sequence_number"] = json!(sequence);
+            bytes.extend(format!("event: {kind}\ndata: {value}\n\n").as_bytes());
+        }
+        (bytes, terminal)
+    }
+
+    #[tokio::test]
+    async fn native_responses_compaction_sse_collects_without_losing_opaque_state() {
+        for streaming_body in [false, true] {
+            let (bytes, terminal) = responses_compaction_stream(true);
+            let body = if streaming_body {
+                let mut chunks = bytes
+                    .chunks(7)
+                    .map(|chunk| Ok(Bytes::copy_from_slice(chunk)))
+                    .collect::<VecDeque<_>>();
+                // A complete logical response must cancel the remaining transport.
+                chunks.push_back(Err(af_adapter::AdaptorError::ResponseBodyTooLarge));
+                UpstreamBody::Stream(UpstreamBodyStream::new(ResponseChunks(chunks)))
+            } else {
+                UpstreamBody::Full(Bytes::from(bytes))
+            };
+            let response = collect_conversation_response(Protocol::OpenAiResponses, body)
+                .await
+                .unwrap();
+            let expected = af_protocol::openai_responses::parse_response(
+                &serde_json::to_vec(&terminal).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(response.choices, expected.choices);
+            assert_eq!(response.usage, expected.usage);
+            for target in [Protocol::OpenAiChat, Protocol::Anthropic, Protocol::Gemini] {
+                assert!(
+                    crate::anthropic_chat_bridge::adapt_response(
+                        Protocol::OpenAiResponses,
+                        target,
+                        &mut response.clone()
+                    )
+                    .is_err()
+                );
+            }
+            let body = crate::conversation::build_response(
+                Protocol::OpenAiResponses,
+                response,
+                expected.usage.unwrap(),
+                "public",
+                "public-model",
+                1_700_000_001,
+            )
+            .unwrap();
+            let body: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(body["id"], "resp_public");
+            assert_eq!(body["model"], "public-model");
+            assert_eq!(body["output"], terminal["output"]);
+            assert_eq!(body["usage"], terminal["usage"]);
+        }
+    }
+
+    #[tokio::test]
+    async fn native_responses_compaction_collection_requires_a_verified_terminal() {
+        let (bytes, _) = responses_compaction_stream(false);
+        assert!(
+            collect_conversation_response(
+                Protocol::OpenAiResponses,
+                UpstreamBody::Full(Bytes::from(bytes))
+            )
+            .await
+            .is_err()
+        );
+    }
 
     #[test]
     fn aggregates_stream_logprobs_arrays_without_losing_fields() {

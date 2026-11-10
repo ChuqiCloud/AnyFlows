@@ -1,11 +1,12 @@
 use std::{error::Error, time::Duration};
 
-use af_domain::{TokenId, UserId};
+use af_domain::{GroupId, TokenId, UserId, UserRouteStrategy};
 use sea_orm::{ConnectionTrait, DbBackend, QueryResult, Statement};
 
 use super::{
     DatabaseOptions, InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
-    MAX_USER_TOKENS_PER_USER, MigrationOptions, UserTokenCreateRecord, UserTokenDeleteOutcome,
+    MAX_USER_TOKENS_PER_USER, MigrationOptions, UserRouteError, UserRouteMemberWrite,
+    UserRouteRepository, UserRouteWrite, UserTokenCreateRecord, UserTokenDeleteOutcome,
     UserTokenLookupOutcome, UserTokenMutationOutcome, UserTokenRepository,
     UserTokenRepositoryError, UserTokenWriteRecord,
 };
@@ -19,6 +20,8 @@ async fn owner_scoped_crud_preserves_admin_fields_and_secret() -> Result<(), Box
         .await?;
     let token_id = created.token_id();
     assert_eq!(created.key_prefix(), "sk-af-000000000001");
+    assert_eq!(created.group_id(), None);
+    assert_eq!(created.effective_group_id(), GroupId::new(1)?);
     assert!(created.created_at() > 0);
 
     let (tokens, next_cursor) = fixture
@@ -86,6 +89,9 @@ async fn owner_scoped_crud_preserves_admin_fields_and_secret() -> Result<(), Box
     assert_eq!(updated.name(), "updated");
     assert_eq!(updated.status(), 2);
     assert_eq!(updated.used_quota(), 7);
+    assert_eq!(updated.group_id(), Some(GroupId::new(2)?));
+    assert_eq!(updated.effective_group_id(), GroupId::new(2)?);
+    assert_eq!(updated.group_display_name(), "VIP");
 
     let row = token_storage_row(&fixture.pool, token_id).await?;
     assert_eq!(row.try_get::<i64>("", "group_id")?, 2);
@@ -111,6 +117,286 @@ async fn owner_scoped_crud_preserves_admin_fields_and_secret() -> Result<(), Box
     assert_eq!(
         fixture.repository.delete(fixture.owner, token_id).await?,
         UserTokenDeleteOutcome::NotFound
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn omitted_group_follows_current_owner_default() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let created = fixture
+        .repository
+        .create(create_record(fixture.owner, 1, 1))
+        .await?;
+    assert_eq!(created.group_id(), None);
+    assert_eq!(created.effective_group_id(), GroupId::new(1)?);
+
+    set_owner_default_group(&fixture, 2).await?;
+    let UserTokenLookupOutcome::Found(updated) = fixture
+        .repository
+        .get(fixture.owner, created.token_id())
+        .await?
+    else {
+        panic!("默认分组变更后 Key 必须可读");
+    };
+    assert_eq!(updated.group_id(), None);
+    assert_eq!(updated.effective_group_id(), GroupId::new(2)?);
+    assert_eq!(updated.group_display_name(), "VIP");
+    let row = token_storage_row(&fixture.pool, created.token_id()).await?;
+    assert_eq!(row.try_get::<Option<i64>>("", "group_id")?, None);
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn fixed_group_requires_authorization_without_rebinding_existing_keys()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let group_id = GroupId::new(2)?;
+    for target in [group_id, GroupId::new(999)?] {
+        assert_eq!(
+            fixture
+                .repository
+                .create(create_record(fixture.owner, 1, 1).with_group_id(Some(target)))
+                .await
+                .unwrap_err(),
+            UserTokenRepositoryError::GroupUnavailable,
+        );
+    }
+
+    // 默认组始终可选，选定后固定绑定，后续默认组调整不修改已有 Key。
+    set_owner_default_group(&fixture, 2).await?;
+    let created = fixture
+        .repository
+        .create(create_record(fixture.owner, 1, 1).with_group_id(Some(group_id)))
+        .await?;
+    assert_eq!(created.group_id(), Some(group_id));
+    assert_eq!(created.effective_group_id(), group_id);
+    set_owner_default_group(&fixture, 1).await?;
+    assert_eq!(
+        fixture
+            .repository
+            .create(create_record(fixture.owner, 2, 1).with_group_id(Some(group_id)))
+            .await
+            .unwrap_err(),
+        UserTokenRepositoryError::GroupUnavailable,
+    );
+    let UserTokenMutationOutcome::Mutated(updated) = fixture
+        .repository
+        .update(
+            fixture.owner,
+            created.token_id(),
+            write_record("preserved", 1, None),
+        )
+        .await?
+    else {
+        panic!("取消新建权限不影响已有 Key 的普通更新");
+    };
+    assert_eq!(updated.group_id(), Some(group_id));
+    assert_eq!(updated.effective_group_id(), group_id);
+
+    fixture
+        .pool
+        .connection()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE groups SET deleted_at = ? WHERE id = ?",
+            [
+                sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc().into(),
+                group_id.get().into(),
+            ],
+        ))
+        .await?;
+    assert_eq!(
+        fixture
+            .repository
+            .create(create_record(fixture.owner, 2, 1).with_group_id(Some(group_id)))
+            .await
+            .unwrap_err(),
+        UserTokenRepositoryError::GroupUnavailable,
+    );
+    let (tokens, _) = fixture
+        .repository
+        .list(fixture.owner, None, 50)
+        .await?
+        .into_parts();
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0].group_id(), Some(group_id));
+    assert_eq!(tokens[0].effective_group_id(), group_id);
+    assert_eq!(tokens[0].group_display_name(), "不可用分组 #2");
+    assert_eq!(
+        fixture
+            .repository
+            .delete(fixture.owner, created.token_id())
+            .await?,
+        UserTokenDeleteOutcome::Deleted
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn user_route_crud_is_owner_scoped_and_delete_keeps_bound_keys_closed()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let routes = UserRouteRepository::new(fixture.pool.clone(), Duration::from_secs(5))?;
+    let route = routes.create(fixture.owner, route_write(true)).await?;
+    assert_eq!(route.members.len(), 1);
+    assert_eq!(route.members[0].group_id, GroupId::new(1)?);
+    assert_eq!(
+        routes.get(fixture.other, route.id).await.unwrap_err(),
+        UserRouteError::NotFound
+    );
+
+    let token = fixture
+        .repository
+        .create(create_record(fixture.owner, 900, 1).with_user_route_id(Some(route.id)))
+        .await?;
+    assert_eq!(token.user_route_id(), Some(route.id));
+
+    routes.delete(fixture.owner, route.id).await?;
+    assert_eq!(
+        routes
+            .lookup_for_token(fixture.owner, token.token_id())
+            .await
+            .unwrap_err(),
+        UserRouteError::Unavailable,
+    );
+    assert!(matches!(
+        fixture
+            .repository
+            .update(
+                fixture.owner,
+                token.token_id(),
+                write_record("still-bound", 1, None),
+            )
+            .await,
+        Err(UserTokenRepositoryError::UserRouteUnavailable),
+    ));
+    assert_eq!(
+        routes.get(fixture.owner, route.id).await.unwrap_err(),
+        UserRouteError::NotFound
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn user_route_rejects_fixed_group_binding_and_invalid_members() -> Result<(), Box<dyn Error>>
+{
+    let fixture = fixture().await?;
+    let routes = UserRouteRepository::new(fixture.pool.clone(), Duration::from_secs(5))?;
+    let route = routes.create(fixture.owner, route_write(true)).await?;
+    assert_eq!(
+        fixture
+            .repository
+            .create(
+                create_record(fixture.owner, 901, 1)
+                    .with_group_id(Some(GroupId::new(1)?))
+                    .with_user_route_id(Some(route.id)),
+            )
+            .await
+            .unwrap_err(),
+        UserTokenRepositoryError::InvalidInput,
+    );
+    let mut invalid = route_write(true);
+    invalid.members.push(invalid.members[0].clone());
+    assert_eq!(
+        routes.create(fixture.owner, invalid).await.unwrap_err(),
+        UserRouteError::InvalidInput
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+async fn set_owner_default_group(fixture: &Fixture, group_id: i64) -> Result<(), Box<dyn Error>> {
+    fixture
+        .pool
+        .connection()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE users SET default_group_id = ? WHERE id = ?",
+            [group_id.into(), fixture.owner.get().into()],
+        ))
+        .await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn selectable_group_policy_is_enforced_only_for_new_keys() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let group_id = GroupId::new(2)?;
+    fixture
+        .pool
+        .connection()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO group_key_policies (group_id, selection_mode) VALUES (?, ?)",
+            [group_id.get().into(), "all_users".into()],
+        ))
+        .await?;
+    let existing = fixture
+        .repository
+        .create(create_record(fixture.other, 1, 1).with_group_id(Some(group_id)))
+        .await?;
+    assert_eq!(existing.group_id(), Some(group_id));
+
+    fixture
+        .pool
+        .connection()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE group_key_policies SET selection_mode = ? WHERE group_id = ?",
+            ["selected_users".into(), group_id.get().into()],
+        ))
+        .await?;
+    fixture
+        .pool
+        .connection()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO user_group_grants (group_id, user_id) VALUES (?, ?)",
+            [group_id.get().into(), fixture.owner.get().into()],
+        ))
+        .await?;
+    fixture
+        .repository
+        .create(create_record(fixture.owner, 2, 1).with_group_id(Some(group_id)))
+        .await?;
+    assert_eq!(
+        fixture
+            .repository
+            .create(create_record(fixture.other, 3, 1).with_group_id(Some(group_id)))
+            .await
+            .unwrap_err(),
+        UserTokenRepositoryError::GroupUnavailable,
+    );
+    let UserTokenLookupOutcome::Found(preserved) = fixture
+        .repository
+        .get(fixture.other, existing.token_id())
+        .await?
+    else {
+        panic!("开放范围收窄后既有 Key 必须保留");
+    };
+    assert_eq!(preserved.group_id(), Some(group_id));
+    assert_eq!(preserved.effective_group_id(), group_id);
+    fixture
+        .pool
+        .connection()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "DELETE FROM user_group_grants WHERE group_id = ? AND user_id = ?",
+            [group_id.get().into(), fixture.owner.get().into()],
+        ))
+        .await?;
+    assert_eq!(
+        fixture
+            .repository
+            .create(create_record(fixture.owner, 4, 1).with_group_id(Some(group_id)))
+            .await
+            .unwrap_err(),
+        UserTokenRepositoryError::GroupUnavailable,
     );
     fixture.pool.close().await?;
     Ok(())
@@ -245,6 +531,21 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
 
 fn create_record(owner: UserId, index: usize, status: i16) -> UserTokenCreateRecord {
     create_record_with_expiration(owner, index, status, None)
+}
+
+fn route_write(enabled: bool) -> UserRouteWrite {
+    UserRouteWrite {
+        name: "test route".to_owned(),
+        strategy: UserRouteStrategy::Ordered,
+        enabled,
+        max_group_attempts: 1,
+        max_price_ratio_micros: None,
+        members: vec![UserRouteMemberWrite {
+            group_id: GroupId::new(1).expect("valid fixture group"),
+            priority: 0,
+            weight: 1,
+        }],
+    }
 }
 
 fn create_record_with_expiration(

@@ -1,20 +1,24 @@
 import { Button } from '@heroui/react'
 import { AlertCircle, ArrowRight, Boxes, Building2, RefreshCw, UserRoundX } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useEffect, useState } from 'react'
 
 import { AuthCapabilityCard, AuthCapabilitySkeleton } from '@/features/auth/auth-capability-card'
 import { AuthPageShell } from '@/features/auth/auth-page-shell'
+import { invitationAuthLink } from '@/features/auth/invitation-context'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import { RegistrationForm } from './registration-form'
 
 type RegistrationPageProps = {
   inviteCode?: string
+  invitationInvalid?: boolean
   onAuthenticated: () => void
 }
 
 /** 根据公开站点能力呈现注册表单，并在未知状态下稳定失败关闭。 */
-export function RegistrationPage({ inviteCode, onAuthenticated }: RegistrationPageProps) {
+export function RegistrationPage({ inviteCode, invitationInvalid, onAuthenticated }: RegistrationPageProps) {
   const { t } = useTranslation()
+  const [currentInviteCode, setCurrentInviteCode] = useState(inviteCode ?? '')
   const siteQuery = usePublicSiteSettings()
   const site = siteQuery.data
   const siteName = site?.site_name ?? t('brand.name')
@@ -22,8 +26,14 @@ export function RegistrationPage({ inviteCode, onAuthenticated }: RegistrationPa
   const heroBody = site?.brand.description ?? t('registration.hero.body')
   const passwordLoginEnabled = site?.authentication.password_login_enabled ?? false
   const registrationEnabled = site?.authentication.registration_enabled ?? false
-  const registrationAvailable = passwordLoginEnabled && registrationEnabled
+  const oauthProviders = site?.authentication.oauth_providers ?? []
+  const registrationAvailable = registrationEnabled && (passwordLoginEnabled || oauthProviders.length > 0)
   const registrationEmailRequired = site?.authentication.registration_email_required ?? false
+  const loginHref = invitationAuthLink('/login', currentInviteCode)
+
+  useEffect(() => {
+    setCurrentInviteCode(inviteCode ?? '')
+  }, [inviteCode])
 
   return (
     <AuthPageShell site={site}>
@@ -48,11 +58,21 @@ export function RegistrationPage({ inviteCode, onAuthenticated }: RegistrationPa
               </Button>
             )}
           />
+        ) : invitationInvalid ? (
+          <AuthCapabilityCard
+            icon={<AlertCircle className="size-5" aria-hidden="true" />}
+            title={t('registration.validation.inviteCode')}
+            body={t('registration.errors.invitationRejected')}
+            action={<Button as="a" color="primary" href="/register">{t('registration.actions.retry')}</Button>}
+          />
         ) : registrationAvailable ? (
           <RegistrationForm
             emailRequired={registrationEmailRequired}
             turnstileSiteKey={site?.authentication.turnstile_site_key ?? null}
             initialInviteCode={inviteCode}
+            passwordLoginEnabled={passwordLoginEnabled}
+            oauthProviders={oauthProviders}
+            onInviteCodeChange={setCurrentInviteCode}
             onAuthenticated={onAuthenticated}
           />
         ) : (
@@ -61,9 +81,9 @@ export function RegistrationPage({ inviteCode, onAuthenticated }: RegistrationPa
             title={t('registration.status.disabledTitle')}
             body={t('registration.status.disabledBody')}
             action={(
-              <div className={passwordLoginEnabled ? 'grid gap-2 sm:grid-cols-2' : 'grid gap-2'}>
-                {passwordLoginEnabled ? (
-                  <Button as="a" color="primary" href="/login">{t('registration.actions.login')}</Button>
+              <div className={passwordLoginEnabled || oauthProviders.length > 0 ? 'grid gap-2 sm:grid-cols-2' : 'grid gap-2'}>
+                {passwordLoginEnabled || oauthProviders.length > 0 ? (
+                  <Button as="a" color="primary" href={loginHref}>{t('registration.actions.login')}</Button>
                 ) : null}
                 <Button as="a" href="/models" variant="bordered">
                   <Boxes className="size-4" aria-hidden="true" />{t('registration.actions.models')}
@@ -90,7 +110,7 @@ export function RegistrationPage({ inviteCode, onAuthenticated }: RegistrationPa
                 ))}
               </ol>
             </div>
-            <Button as="a" href="/login" variant="bordered">
+            <Button as="a" href={loginHref} variant="bordered">
               {t('registration.enterprise.login')}
               <ArrowRight className="size-4" aria-hidden="true" />
             </Button>

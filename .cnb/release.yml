@@ -22,21 +22,18 @@
   - Cargo.lock
   - rust-toolchain.toml
   - crates/**
-  - web/**
   - web-next/**
 
 .release-install-stage: &release-install-stage
   name: 安装发布依赖
   timeout: 10m
   script: |
-    corepack pnpm@10.33.0 --dir web install --frozen-lockfile
     corepack pnpm@10.33.0 --dir web-next install --frozen-lockfile
 
 .release-frontend-stage: &release-frontend-stage
   name: 构建内嵌前端
   timeout: 10m
   script: |
-    corepack pnpm@10.33.0 --dir web build
     corepack pnpm@10.33.0 --dir web-next build
 
 .release-binary-stage: &release-binary-stage
@@ -46,7 +43,7 @@
     cargo clean --release --workspace
     export AF_BUILD_COMMIT="$(git rev-parse HEAD)"
     export AF_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    cargo build --release --locked --package af-server
+    cargo build --release --locked --package af-server --package af-launcher
 
 .release-package-stage: &release-package-stage
   name: 归档并校验摘要

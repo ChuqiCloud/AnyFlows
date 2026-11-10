@@ -40,10 +40,15 @@ pub enum RequestCapability {
     ToolResultErrors,
     /// 助手思考内容。
     Thinking,
+    /// 无签名的助手思考内容或明文摘要。
+    UnsignedThinking,
     /// 助手思考签名。
     ThinkingSignatures,
     /// 提示缓存断点。
     CacheControl(CacheHint),
+    /// Anthropic Messages 原生压缩历史块。
+    AnthropicCompaction,
+    /// OpenAI Responses 原生不透明压缩状态。
     Compaction,
     /// 指定推理强度。
     ReasoningEffort(ReasoningEffort),
@@ -87,6 +92,7 @@ impl RequestCapability {
         Self::Operation(Operation::ResponsesCompact),
         Self::Operation(Operation::Embedding),
         Self::Operation(Operation::Image),
+        Self::Operation(Operation::ImageEdit),
         Self::Operation(Operation::Audio),
         Self::Operation(Operation::Rerank),
         Self::Operation(Operation::Video),
@@ -110,10 +116,12 @@ impl RequestCapability {
         Self::StructuredToolResults,
         Self::ToolResultErrors,
         Self::Thinking,
+        Self::UnsignedThinking,
         Self::ThinkingSignatures,
         Self::CacheControl(CacheHint::Ephemeral5Minutes),
         Self::CacheControl(CacheHint::Ephemeral1Hour),
         Self::Compaction,
+        Self::AnthropicCompaction,
         Self::ReasoningEffort(ReasoningEffort::None),
         Self::ReasoningEffort(ReasoningEffort::Minimal),
         Self::ReasoningEffort(ReasoningEffort::Low),
@@ -158,6 +166,7 @@ impl fmt::Display for RequestCapability {
             Self::StructuredToolResults => formatter.write_str("content.tool_result.structured"),
             Self::ToolResultErrors => formatter.write_str("content.tool_result.error"),
             Self::Thinking => formatter.write_str("content.thinking"),
+            Self::UnsignedThinking => formatter.write_str("content.thinking.unsigned"),
             Self::ThinkingSignatures => formatter.write_str("content.thinking.signature"),
             Self::CacheControl(CacheHint::Ephemeral5Minutes) => {
                 formatter.write_str("content.cache_control.5m")
@@ -166,6 +175,7 @@ impl fmt::Display for RequestCapability {
                 formatter.write_str("content.cache_control.1h")
             }
             Self::Compaction => formatter.write_str("responses.compaction"),
+            Self::AnthropicCompaction => formatter.write_str("anthropic.compaction"),
             Self::ReasoningEffort(effort) => {
                 write!(
                     formatter,
@@ -196,6 +206,8 @@ impl fmt::Display for RequestCapability {
 
 pub(super) const OPENAI_CHAT: &[RequestCapability] = &[
     RequestCapability::Operation(Operation::Chat),
+    RequestCapability::Operation(Operation::Image),
+    RequestCapability::Operation(Operation::ImageEdit),
     RequestCapability::MessageRole(Role::System),
     RequestCapability::MessageRole(Role::Developer),
     RequestCapability::MessageRole(Role::User),
@@ -211,6 +223,9 @@ pub(super) const OPENAI_CHAT: &[RequestCapability] = &[
     RequestCapability::ToolCalls,
     RequestCapability::ToolResults,
     RequestCapability::Thinking,
+    RequestCapability::UnsignedThinking,
+    // Chat-compatible upstreams may return reasoning_content without a separate output flag.
+    RequestCapability::ReasoningOutput,
     RequestCapability::ReasoningEffort(ReasoningEffort::None),
     RequestCapability::ReasoningEffort(ReasoningEffort::Minimal),
     RequestCapability::ReasoningEffort(ReasoningEffort::Low),
@@ -226,6 +241,13 @@ pub(super) const OPENAI_CHAT: &[RequestCapability] = &[
     RequestCapability::StreamUsage,
     RequestCapability::UserMetadata,
     RequestCapability::SameProtocolRaw,
+];
+
+pub(super) const OPENAI_IMAGES: &[RequestCapability] = &[
+    RequestCapability::Operation(Operation::Image),
+    RequestCapability::Operation(Operation::ImageEdit),
+    RequestCapability::Text,
+    RequestCapability::ImageBase64,
 ];
 
 pub(super) const OPENAI_RESPONSES: &[RequestCapability] = &[
@@ -245,6 +267,7 @@ pub(super) const OPENAI_RESPONSES: &[RequestCapability] = &[
     RequestCapability::ToolResults,
     RequestCapability::StructuredToolResults,
     RequestCapability::Thinking,
+    RequestCapability::UnsignedThinking,
     RequestCapability::ThinkingSignatures,
     RequestCapability::ReasoningOutput,
     RequestCapability::ReasoningEffort(ReasoningEffort::None),
@@ -284,6 +307,7 @@ pub(super) const ANTHROPIC: &[RequestCapability] = &[
     RequestCapability::ThinkingSignatures,
     RequestCapability::CacheControl(CacheHint::Ephemeral5Minutes),
     RequestCapability::CacheControl(CacheHint::Ephemeral1Hour),
+    RequestCapability::AnthropicCompaction,
     RequestCapability::ReasoningEffort(ReasoningEffort::None),
     RequestCapability::ReasoningEffort(ReasoningEffort::Low),
     RequestCapability::ReasoningEffort(ReasoningEffort::Medium),
@@ -318,6 +342,7 @@ pub(super) const GEMINI: &[RequestCapability] = &[
     RequestCapability::StructuredToolResults,
     RequestCapability::ToolResultErrors,
     RequestCapability::Thinking,
+    RequestCapability::UnsignedThinking,
     RequestCapability::ThinkingSignatures,
     RequestCapability::ReasoningEffort(ReasoningEffort::None),
     RequestCapability::ReasoningEffort(ReasoningEffort::Minimal),
@@ -349,10 +374,16 @@ pub fn validate_request_capabilities(
         require(protocol, RequestCapability::StrictToolDefinitions)?;
     }
     if let Some(reasoning) = request.reasoning {
-        if let Some(effort) = reasoning.effort() {
+        let effort_only = matches!(protocol, Protocol::OpenAiChat | Protocol::OpenAiResponses);
+        let effort = if effort_only {
+            reasoning.effort_for_effort_only_protocol()
+        } else {
+            reasoning.effort()
+        };
+        if let Some(effort) = effort {
             require(protocol, RequestCapability::ReasoningEffort(effort))?;
         }
-        if reasoning.budget_tokens().is_some() {
+        if reasoning.budget_tokens().is_some() && !effort_only {
             require(protocol, RequestCapability::ReasoningBudget)?;
         }
         if reasoning.include_thinking() {
@@ -441,12 +472,17 @@ fn validate_content(
                 require(protocol, RequestCapability::Thinking)?;
                 if signature.is_some() {
                     require(protocol, RequestCapability::ThinkingSignatures)?;
+                } else {
+                    require(protocol, RequestCapability::UnsignedThinking)?;
                 }
             }
             ContentBlock::CacheControl(hint) => {
                 require(protocol, RequestCapability::CacheControl(*hint))?;
             }
             ContentBlock::Compaction(_) => require(protocol, RequestCapability::Compaction)?,
+            ContentBlock::AnthropicCompaction(_) => {
+                require(protocol, RequestCapability::AnthropicCompaction)?;
+            }
         }
     }
     Ok(())

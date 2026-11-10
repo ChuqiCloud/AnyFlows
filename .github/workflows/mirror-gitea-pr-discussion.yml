@@ -27,15 +27,16 @@ concurrency:
 jobs:
   mirror:
     if: >-
-      github.repository == 'acmecloud/AnyFlows' &&
+      github.server_url != 'https://github.com' && vars.SOURCE_REPOSITORY != '' &&
+      github.repository == vars.SOURCE_REPOSITORY &&
       (github.event_name == 'pull_request' ||
        (github.event_name == 'issue_comment' && github.event.issue.pull_request != null) ||
        github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
-      GITEA_API_BASE: ${{ github.server_url }}/api/v1
-      GITEA_REPOSITORY: acmecloud/AnyFlows
+      GITEA_API_BASE: ${{ vars.SOURCE_BASE_URL || github.server_url }}/api/v1
+      GITEA_REPOSITORY: ${{ github.repository }}
       GITEA_API_TOKEN: ${{ github.token }}
       GITHUB_PUBLIC_REPOSITORY: ChuqiCloud/AnyFlows
       GITHUB_API_URL: https://api.github.com
@@ -64,6 +65,16 @@ jobs:
             echo 'eligible=false' >> "$GITHUB_OUTPUT"
             echo 'Source PR is not merged into develop; nothing to mirror.'
           fi
+
+      - name: Configure checkout endpoint
+        if: steps.source.outputs.eligible == 'true' && github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != ''
+        shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out synchronization tools
         if: steps.source.outputs.eligible == 'true'

@@ -8,7 +8,7 @@ export const announcementsNavNodes = defineNavigation(
       href: "/console/system-settings/announcements",
       order: 70,
       section: "platform",
-      sectionTitle: "nav.sections.platform",
+      sectionTitle: "nav.sections.site",
     },
   ],
   { group: "module", module: "announcements" },

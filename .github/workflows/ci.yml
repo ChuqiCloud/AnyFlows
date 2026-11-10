@@ -35,19 +35,28 @@ jobs:
     outputs:
       full: ${{ steps.paths.outputs.full }}
       frontend: ${{ steps.paths.outputs.frontend }}
+      frontend_about: ${{ steps.paths.outputs.frontend_about }}
+      frontend_navigation: ${{ steps.paths.outputs.frontend_navigation }}
+      frontend_verification: ${{ steps.paths.outputs.frontend_verification }}
       rust: ${{ steps.paths.outputs.rust }}
       database: ${{ steps.paths.outputs.database }}
       redis: ${{ steps.paths.outputs.redis }}
       clickhouse: ${{ steps.paths.outputs.clickhouse }}
       deployment: ${{ steps.paths.outputs.deployment }}
       systemd: ${{ steps.paths.outputs.systemd }}
+      release: ${{ steps.paths.outputs.release }}
+      openapi: ${{ steps.paths.outputs.openapi }}
+      release_assets: ${{ steps.paths.outputs.release_assets }}
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Detect changed paths
         id: paths
@@ -74,12 +83,18 @@ jobs:
           emit_all() {
             {
               echo "frontend=true"
+              echo "frontend_about=true"
+              echo "frontend_navigation=true"
+              echo "frontend_verification=true"
               echo "rust=true"
               echo "database=true"
               echo "redis=true"
               echo "clickhouse=true"
               echo "deployment=true"
               echo "systemd=true"
+              echo "release=true"
+              echo "openapi=true"
+              echo "release_assets=true"
             } >> "$GITHUB_OUTPUT"
           }
 
@@ -117,13 +132,19 @@ jobs:
           }
 
           {
-            echo "frontend=$(matches '^(web/|web-next/|tools/ci/check-frontend-parity.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend=$(matches '^(web-next/|tools/ci/(frontend-about-smoke|frontend-navigation-smoke|frontend-user-routes-smoke|frontend-merchant-pool-smoke|frontend-key-capabilities-smoke|frontend-oauth-invitation-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend_about=$(matches '^(web-next/src/features/(about/|site-settings/software-(update-(panel|api)|release-notes)\.tsx?$)|tools/ci/frontend-about-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-(navigation|user-routes|merchant-pool|key-capabilities|oauth-invitation)-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend_verification=$(matches '^(web-next/src/features/(account-verification|wallet|api-keys|playground)/|tools/ci/frontend-verification-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "rust=$(matches '^(crates/|tools/xtask/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$|\.github/workflows/ci\.yml$)')"
             echo "database=$(matches '^(crates/af-db/|tools/ci/(run-db-migration-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
             echo "redis=$(matches '^(crates/af-cache/|tools/ci/(run-cache-redis-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
             echo "clickhouse=$(matches '^(crates/af-server/src/admin_dashboard_storage/clickhouse\.rs$|crates/af-server/tests/admin_dashboard_chain\.rs$|tools/ci/run-clickhouse-integration-test\.sh$)')"
             echo "deployment=$(matches '^(Dockerfile$|docker-compose\.ya?ml$|\.dockerignore$|scripts/deploy/)')"
             echo "systemd=$(matches '^(scripts/systemd/|tools/ci/(package-release|finalize-release|test-release-scripts|verify-release-tag)\.sh$|\.cnb/release\.yml$)')"
+            echo "release=$(matches '^(crates/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|\.github/workflows/(ci|publish-public-release|release-checks)\.yml$|tools/ci/(build-linux-release|package-release|finalize-release|test-release-scripts|verify-release-tag)\.sh$|tools/ci/.*platform\.py$)')"
+            echo "openapi=$(matches '^(web/openapi/openapi\.json$|web-next/openapi/openapi\.json$|tools/xtask/|\.github/workflows/ci\.yml$)')"
+            echo "release_assets=$(matches '^(README\.md$|LICENSE$|\.env\.example$|anyflows\.conf$|CHANGELOG\.md$|docs/online-updates\.md$|scripts/(start\.(sh|cmd)|systemd/)|\.github/workflows/ci\.yml$)')"
           } >> "$GITHUB_OUTPUT"
 
   deployment:
@@ -226,25 +247,29 @@ jobs:
           printf '%s\n' '#!/bin/sh' 'exit 0' \
             | sudo tee /usr/local/libexec/anyflows/anyflows >/dev/null
           sudo chmod 0755 /usr/local/libexec/anyflows/anyflows
+          sudo cp /usr/local/libexec/anyflows/anyflows /usr/local/libexec/anyflows/anyflows-launcher
           systemd-analyze verify scripts/systemd/anyflows.service
 
       - name: Verify release archive includes systemd assets
         shell: bash
         run: bash tools/ci/test-release-scripts.sh
 
-  release-package:
-    name: Linux amd64 release package
+  openapi-contract:
+    name: OpenAPI generated contract
     needs: changes
-    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.rust == 'true' }}
+    if: ${{ needs.changes.outputs.openapi == 'true' && needs.changes.outputs.rust != 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 20
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
@@ -270,40 +295,166 @@ jobs:
           toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal
-          rustc --version --verbose
 
-      - name: Cache release build artifacts
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Check generated OpenAPI contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --locked --package xtask -- openapi check
+
+  release-assets:
+    name: Release assets checks
+    needs: changes
+    if: ${{ needs.changes.outputs.release_assets == 'true' || needs.changes.outputs.release == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
+        shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
+
+      - name: Check out repository
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Check release asset presence and shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in README.md LICENSE .env.example anyflows.conf CHANGELOG.md docs/online-updates.md scripts/start.sh scripts/start.cmd; do
+            test -f "$path"
+          done
+          bash -n scripts/start.sh
+          bash -n scripts/systemd/install.sh
+
+      - name: Verify release archive contents
+        shell: bash
+        run: bash tools/ci/test-release-scripts.sh
+
+  release-package:
+    name: Linux amd64 release package
+    needs: changes
+    if: ${{ needs.changes.outputs.release == 'true' || (needs.changes.outputs.full == 'true' && needs.changes.outputs.rust == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
+        shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
+
+      - name: Check out repository
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Restore Bookworm release artifacts on GitHub
+        id: bookworm-cache-github
+        if: github.server_url == 'https://github.com'
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
-          key: release
+          path: |
+            target/bookworm
+            target/bookworm-cargo
+          key: ci-release-bookworm-x86_64-unknown-linux-gnu-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/ci/build-linux-release.sh') }}-${{ github.sha }}
+          restore-keys: |
+            ci-release-bookworm-x86_64-unknown-linux-gnu-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/ci/build-linux-release.sh') }}-
+            ci-release-bookworm-x86_64-unknown-linux-gnu-
 
       - name: Install frontend dependencies
         shell: bash
         run: |
           corepack enable
-          corepack pnpm@10.33.0 --dir web install --frozen-lockfile
           corepack pnpm@10.33.0 --dir web-next install --frozen-lockfile
 
       - name: Build frontend
         run: |
-          corepack pnpm@10.33.0 --dir web build
           corepack pnpm@10.33.0 --dir web-next build
 
-      - name: Build release binary
+      - name: Build and verify Bookworm release binaries
+        id: bookworm-build
         run: |
           export AF_BUILD_COMMIT="$(git rev-parse HEAD)"
           export AF_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          cargo build --release --locked --package af-server
+          bash tools/ci/build-linux-release.sh x86_64-unknown-linux-gnu
+
+      - name: Verify release binary identities
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import subprocess
+          import tomllib
+
+          with Path('Cargo.toml').open('rb') as manifest:
+              version = tomllib.load(manifest)['workspace']['package']['version']
+          target = 'x86_64-unknown-linux-gnu'
+          directory = Path('target/bookworm') / target / 'release'
+          metadata = json.loads(subprocess.check_output([str((directory / 'af-server').resolve()), '--version'], text=True))
+          launcher = json.loads(subprocess.check_output([str((directory / 'anyflows-launcher').resolve()), '--version'], text=True))
+          if metadata['target'] != target or metadata['version'] != version:
+              raise ValueError('Binary target/version differs from release inputs')
+          if launcher['target'] != target or metadata['launcher_protocol'] != launcher['protocol']:
+              raise ValueError('Launcher target/protocol differs from main program')
+          PY
 
       - name: Package and verify release archive
         shell: bash
         run: |
           export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
-          bash tools/ci/package-release.sh auto amd64
+          if [[ "${{ github.server_url }}" == 'https://github.com' ]]; then
+            version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+            test -n "$version"
+            python3 tools/ci/package-platform.py "v$version" x86_64-unknown-linux-gnu target/bookworm/x86_64-unknown-linux-gnu/release/af-server target/bookworm/x86_64-unknown-linux-gnu/release/anyflows-launcher
+          else
+            bash tools/ci/package-release.sh auto amd64 \
+              target/bookworm/x86_64-unknown-linux-gnu/release/af-server release \
+              target/bookworm/x86_64-unknown-linux-gnu/release/anyflows-launcher
+          fi
           archive="$(find release -maxdepth 1 -type f -name 'anyflows-v*-linux-amd64.tar.gz' -print -quit)"
           test -n "$archive"
           test -s "$archive"
           test -s "$archive.sha256"
+
+      - name: Save completed Bookworm compilation artifacts on GitHub
+        if: ${{ always() && !cancelled() && github.server_url == 'https://github.com' && steps.bookworm-build.outputs.cache-ready == 'true' && steps.bookworm-cache-github.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            target/bookworm
+            target/bookworm-cargo
+          key: ${{ steps.bookworm-cache-github.outputs.cache-primary-key }}
 
   frontend-quality:
     name: Frontend quality gates (${{ matrix.frontend }})
@@ -314,14 +465,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        frontend: [web, web-next]
+        frontend: [web-next]
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
@@ -343,8 +497,8 @@ jobs:
           corepack enable
           corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} install --frozen-lockfile
 
-      - name: Check shared frontend parity
-        run: node tools/ci/check-frontend-parity.mjs
+      - name: Audit frontend dependencies
+        run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} audit --audit-level=low
 
       - name: Lint frontend
         run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} lint
@@ -352,8 +506,9 @@ jobs:
       - name: Build frontend
         run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build
 
-      - name: Browser smoke test gallery and verification workflows
-        if: github.event_name == 'workflow_dispatch'
+      - name: Install browser runtime for frontend checks
+        id: frontend_browser_runtime
+        if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend_about == 'true' || (matrix.frontend == 'web-next' && (needs.changes.outputs.frontend_navigation == 'true' || needs.changes.outputs.frontend_verification == 'true')) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -366,9 +521,92 @@ jobs:
           else
             "$browser_tools/node_modules/.bin/playwright" install --with-deps chromium
           fi
+
+      - name: Browser smoke test about and software updates
+        if: ${{ needs.changes.outputs.frontend_about == 'true' }}
+        shell: bash
+        run: PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-about-smoke.mjs '${{ matrix.frontend }}'
+
+      - name: Browser smoke test landing and console navigation
+        if: ${{ !cancelled() && steps.frontend_browser_runtime.outcome == 'success' && matrix.frontend == 'web-next' && needs.changes.outputs.frontend_navigation == 'true' }}
+        shell: bash
+        run: |
+          failed=0
+          for smoke in navigation user-routes merchant-pool key-capabilities oauth-invitation; do
+            if ! PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node "tools/ci/frontend-${smoke}-smoke.mjs"; then
+              failed=1
+            fi
+          done
+          exit "$failed"
+
+      - name: Browser smoke test gallery and verification workflows
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_tools="$RUNNER_TEMP/anyflows-playwright"
           PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-gallery-smoke.mjs '${{ matrix.frontend }}'
           PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-verification-smoke.mjs '${{ matrix.frontend }}'
           PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-dashboard-smoke.mjs '${{ matrix.frontend }}'
+
+      - name: Browser smoke test verification access policy
+        if: ${{ github.event_name != 'workflow_dispatch' && matrix.frontend == 'web-next' && needs.changes.outputs.frontend_verification == 'true' }}
+        shell: bash
+        run: PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node tools/ci/frontend-verification-smoke.mjs web-next
+
+      - name: Prepare Gitea screenshot uploader
+        if: ${{ always() && (needs.changes.outputs.frontend_about == 'true' || (matrix.frontend == 'web-next' && needs.changes.outputs.frontend_navigation == 'true')) && github.server_url != 'https://github.com' }}
+        run: |
+          set -euo pipefail
+          action_path='.ci-actions/gitea-upload-artifact'
+          action_sha='62ac910c5d3dfa85c7cb2df15afe2e342b2407c2'
+          git init --quiet "$action_path"
+          git -C "$action_path" remote add origin https://gitea.com/actions/gitea-upload-artifact.git
+          git -C "$action_path" fetch --quiet --no-tags --depth=1 origin "$action_sha"
+          git -C "$action_path" checkout --quiet --detach FETCH_HEAD
+          test "$(git -C "$action_path" rev-parse HEAD)" = "$action_sha"
+
+      - name: Upload about screenshots on Gitea
+        if: ${{ always() && needs.changes.outputs.frontend_about == 'true' && github.server_url != 'https://github.com' }}
+        uses: ./.ci-actions/gitea-upload-artifact
+        with:
+          name: about-screenshots-${{ matrix.frontend }}
+          path: ${{ runner.temp }}/about-screenshots-${{ matrix.frontend }}/*.png
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload about screenshots on GitHub
+        if: ${{ always() && needs.changes.outputs.frontend_about == 'true' && github.server_url == 'https://github.com' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: about-screenshots-${{ matrix.frontend }}
+          path: ${{ runner.temp }}/about-screenshots-${{ matrix.frontend }}/*.png
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload navigation screenshots on Gitea
+        if: ${{ always() && matrix.frontend == 'web-next' && needs.changes.outputs.frontend_navigation == 'true' && github.server_url != 'https://github.com' }}
+        uses: ./.ci-actions/gitea-upload-artifact
+        with:
+          name: navigation-screenshots-web-next
+          path: |
+            ${{ runner.temp }}/navigation-screenshots-web-next/*.png
+            ${{ runner.temp }}/merchant-pool-screenshots-web-next/*.png
+            ${{ runner.temp }}/key-capabilities-screenshots-web-next/*.png
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload navigation screenshots on GitHub
+        if: ${{ always() && matrix.frontend == 'web-next' && needs.changes.outputs.frontend_navigation == 'true' && github.server_url == 'https://github.com' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: navigation-screenshots-web-next
+          path: |
+            ${{ runner.temp }}/navigation-screenshots-web-next/*.png
+            ${{ runner.temp }}/merchant-pool-screenshots-web-next/*.png
+            ${{ runner.temp }}/key-capabilities-screenshots-web-next/*.png
+          retention-days: 7
+          if-no-files-found: ignore
 
   rust-quality:
     name: Rust quality gates
@@ -380,12 +618,15 @@ jobs:
       # 多代码生成单元降低大型测试 crate 的编译峰值，链接器按需重读符号表以换取更低内存。
       RUSTFLAGS: "-C link-arg=-Wl,--no-keep-memory"
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
@@ -420,7 +661,10 @@ jobs:
           rustc --version --verbose
 
       - name: Cache Rust build artifacts
+        if: github.server_url == 'https://github.com'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          cache-on-failure: true
 
       - name: Install dependency audit tool
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
@@ -472,9 +716,85 @@ jobs:
           git diff -- web/openapi/openapi.json
           exit 1
 
-      - name: Check development workspace
+      - name: Check development workspace with Clippy
+        id: development_clippy
         if: needs.changes.outputs.full != 'true'
-        run: cargo check --workspace --all-targets --all-features --locked
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+      - name: Run focused upstream credential capability tests
+        if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
+        run: |
+          set -euo pipefail
+          for package in af-domain af-db af-admin af-http af-scheduler af-server; do
+            cargo test --locked -p "$package" --lib credential_model
+            cargo test --locked -p "$package" --lib upstream_usage
+          done
+          cargo test --locked -p af-domain --lib upstream_model_policy
+          cargo test --locked -p af-server --lib credential_usage
+
+      - name: Run focused Passkey compatibility tests
+        if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
+        run: |
+          cargo test --locked -p af-admin --lib passkey
+          cargo test --locked -p af-db --lib passkey
+          cargo test --locked -p af-server --lib passkey_origin
+
+      - name: Run focused Relay regression tests
+        if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
+        run: |
+          cargo test --locked -p af-relay --lib response_readiness
+          cargo test --locked -p af-server --test relay_state_machine
+
+      - name: Run focused OAuth invitation regression tests
+        if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
+        run: |
+          cargo test --locked -p af-db --lib oauth
+          cargo test --locked -p af-db --lib invite_rebate
+          cargo test --locked -p af-admin --lib oauth_login
+          cargo test --locked -p af-admin --lib registration
+          cargo test --locked -p af-http --lib oauth_login
+
+      - name: Run focused personal routing regression tests
+        if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
+        run: |
+          cargo test --locked -p af-db --lib user_route
+          cargo test --locked -p af-server --lib user_route
+          cargo test --locked -p af-server --lib route_video_
+
+      - name: Run focused account verification access tests
+        if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
+        run: |
+          cargo test --locked -p af-db --lib account_verification
+          cargo test --locked -p af-admin --lib verification
+          cargo test --locked -p af-http --lib verification
+          cargo test --locked -p af-http --lib error_response_tests
+          cargo test --locked -p af-server --test account_verification_http
+
+      - name: Run focused merchant pool regression tests
+        if: ${{ !cancelled() && needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true' && steps.development_clippy.outcome == 'success' }}
+        run: |
+          failed=0
+          for package in af-domain af-billing af-db af-admin af-http af-relay af-server; do
+            if ! cargo test --locked -p "$package" --lib merchant; then
+              failed=1
+            fi
+          done
+          if ! cargo test --locked -p af-db --lib admin_group_write_tests; then
+            failed=1
+          fi
+          if ! cargo test --locked -p af-admin --lib group_write::tests; then
+            failed=1
+          fi
+          if ! cargo test --locked -p af-http --lib management_group_writes_tests; then
+            failed=1
+          fi
+          if ! cargo test --locked -p af-db --lib auth_tests::lookup_digest_never_enters_trace_output -- --exact; then
+            failed=1
+          fi
+          if ! cargo test --locked -p af-server --lib bootstrap::tests::current_stages_start_and_shutdown_in_order -- --exact; then
+            failed=1
+          fi
+          exit "$failed"
 
       - name: Run Clippy
         if: needs.changes.outputs.full == 'true'
@@ -507,12 +827,15 @@ jobs:
           --health-timeout 5s
           --health-retries 30
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
@@ -540,6 +863,7 @@ jobs:
           rustup toolchain install "$toolchain" --profile minimal
 
       - name: Cache Rust build artifacts
+        if: github.server_url == 'https://github.com'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Run real ClickHouse integration test on Gitea
@@ -565,12 +889,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
@@ -605,6 +932,7 @@ jobs:
           echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
 
       - name: Cache Rust build artifacts
+        if: github.server_url == 'https://github.com'
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: |
@@ -632,12 +960,15 @@ jobs:
       # 数据库冒烟会链接 af-db 测试二进制，受限 runner 通过按需重读符号表控制链接峰值内存。
       RUSTFLAGS: "-C link-arg=-Wl,--no-keep-memory"
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
@@ -671,6 +1002,7 @@ jobs:
           rustup toolchain install "$toolchain" --profile minimal
 
       - name: Cache database test build artifacts
+        if: github.server_url == 'https://github.com'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: database-smoke
@@ -691,27 +1023,16 @@ jobs:
     env:
       # 数据库冒烟会链接 af-db 测试二进制，受限 runner 通过按需重读符号表控制链接峰值内存。
       RUSTFLAGS: "-C link-arg=-Wl,--no-keep-memory"
-    services:
-      postgres:
-        image: postgres:17.10-bookworm@sha256:67870dc097790edf2bd6726658db995dcc830f799d41bb2b78ef07c9a2d5f010
-        ports:
-          - 15432:5432
-        env:
-          POSTGRES_USER: anyflows
-          POSTGRES_PASSWORD: anyflows_ci
-          POSTGRES_DB: anyflows_migration_test_ci
-        options: >-
-          --health-cmd "pg_isready -U anyflows -d anyflows_migration_test_ci"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 30
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
@@ -745,22 +1066,13 @@ jobs:
           rustup toolchain install "$toolchain" --profile minimal
 
       - name: Cache database test build artifacts
+        if: github.server_url == 'https://github.com'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: database-smoke
 
-      - name: Run PostgreSQL migration smoke test on Gitea
-        if: ${{ github.server_url != 'https://github.com' }}
+      - name: Run PostgreSQL migration smoke test
         env:
-          AF_TEST_DATABASE_URL: postgres://anyflows:anyflows_ci@postgres:5432/anyflows_migration_test_ci
-          AF_REQUIRE_LIVE_DATABASE: "1"
-          AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
-        run: bash tools/ci/run-db-migration-test.sh postgres
-
-      - name: Run PostgreSQL migration smoke test on GitHub
-        if: ${{ github.server_url == 'https://github.com' }}
-        env:
-          AF_TEST_DATABASE_URL: postgres://anyflows:anyflows_ci@127.0.0.1:15432/anyflows_migration_test_ci
           AF_REQUIRE_LIVE_DATABASE: "1"
           AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
         run: bash tools/ci/run-db-migration-test.sh postgres
@@ -774,28 +1086,16 @@ jobs:
     env:
       # 数据库冒烟会链接 af-db 测试二进制，受限 runner 通过按需重读符号表控制链接峰值内存。
       RUSTFLAGS: "-C link-arg=-Wl,--no-keep-memory"
-    services:
-      mysql:
-        image: mysql:8.4.10@sha256:6ec1dc148edc412cce3ae27dd5b78dcd4e026976648424b3d31d9a8c6204db4e
-        ports:
-          - 13306:3306
-        env:
-          MYSQL_USER: anyflows
-          MYSQL_PASSWORD: anyflows_ci
-          MYSQL_ROOT_PASSWORD: root_ci
-          MYSQL_DATABASE: anyflows_migration_test_ci
-        options: >-
-          --health-cmd "mysql --protocol=tcp -h 127.0.0.1 -u root -proot_ci -e 'SET GLOBAL log_bin_trust_function_creators = 1; SELECT 1'"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 30
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
@@ -823,22 +1123,13 @@ jobs:
           rustup toolchain install "$toolchain" --profile minimal
 
       - name: Cache database test build artifacts
+        if: github.server_url == 'https://github.com'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: database-smoke
 
-      - name: Run MySQL migration smoke test on Gitea
-        if: ${{ github.server_url != 'https://github.com' }}
+      - name: Run MySQL migration smoke test
         env:
-          AF_TEST_DATABASE_URL: mysql://anyflows:anyflows_ci@mysql:3306/anyflows_migration_test_ci?timezone=%2B08:00
-          AF_REQUIRE_LIVE_DATABASE: "1"
-          AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
-        run: bash tools/ci/run-db-migration-test.sh mysql
-
-      - name: Run MySQL migration smoke test on GitHub
-        if: ${{ github.server_url == 'https://github.com' }}
-        env:
-          AF_TEST_DATABASE_URL: mysql://anyflows:anyflows_ci@127.0.0.1:13306/anyflows_migration_test_ci?timezone=%2B08:00
           AF_REQUIRE_LIVE_DATABASE: "1"
           AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
         run: bash tools/ci/run-db-migration-test.sh mysql
@@ -850,12 +1141,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+      - name: Configure checkout endpoint
+        if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
         shell: bash
+        env:
+          CHECKOUT_SERVER_URL: ${{ github.server_url }}
+          CHECKOUT_EXTERNAL_URL: ${{ vars.SOURCE_BASE_URL }}
         run: |
           set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global url."${CHECKOUT_EXTERNAL_URL%/}/".insteadOf "${CHECKOUT_SERVER_URL%/}/"
 
       - name: Check out repository
         shell: bash
@@ -883,6 +1177,7 @@ jobs:
           rustup toolchain install "$toolchain" --profile minimal
 
       - name: Cache Redis test build artifacts
+        if: github.server_url == 'https://github.com'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Run isolated Redis cache smoke test

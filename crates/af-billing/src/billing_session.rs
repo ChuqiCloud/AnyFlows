@@ -22,6 +22,8 @@ pub enum BillingSessionState {
     Settled,
     /// 退款信号已经被后台端口接受，不表示数据库已经完成退款。
     RefundQueued,
+    /// 持久化层已经确认全额退款，不再允许结算或重复发送退款信号。
+    Refunded,
 }
 
 /// 后台退款信号端口的非阻塞接收结果。
@@ -101,6 +103,7 @@ enum SessionState {
     SettlementPending { actual_quota: Quota },
     Settled,
     RefundQueued,
+    Refunded,
 }
 
 /// 持有一次持久化预留退款责任的 RAII 计费会话。
@@ -152,6 +155,7 @@ impl BillingSession {
             SessionState::SettlementPending { .. } => BillingSessionState::SettlementPending,
             SessionState::Settled => BillingSessionState::Settled,
             SessionState::RefundQueued => BillingSessionState::RefundQueued,
+            SessionState::Refunded => BillingSessionState::Refunded,
         }
     }
 
@@ -173,7 +177,7 @@ impl BillingSession {
             SessionState::SettlementPending { .. } => {
                 Err(BillingSessionError::SettlementQuotaConflict)
             }
-            SessionState::Settled | SessionState::RefundQueued => {
+            SessionState::Settled | SessionState::RefundQueued | SessionState::Refunded => {
                 Err(BillingSessionError::InvalidTransition)
             }
         }
@@ -186,7 +190,10 @@ impl BillingSession {
             SessionState::SettlementPending { actual_quota } => {
                 Some(self.settlement_request(actual_quota))
             }
-            SessionState::Reserved | SessionState::Settled | SessionState::RefundQueued => None,
+            SessionState::Reserved
+            | SessionState::Settled
+            | SessionState::RefundQueued
+            | SessionState::Refunded => None,
         }
     }
 
@@ -198,7 +205,7 @@ impl BillingSession {
                 Ok(())
             }
             SessionState::Settled => Ok(()),
-            SessionState::Reserved | SessionState::RefundQueued => {
+            SessionState::Reserved | SessionState::RefundQueued | SessionState::Refunded => {
                 Err(BillingSessionError::InvalidTransition)
             }
         }
@@ -214,7 +221,20 @@ impl BillingSession {
                 self.state = SessionState::RefundQueued;
                 Ok(())
             }
-            SessionState::RefundQueued => Ok(()),
+            SessionState::RefundQueued | SessionState::Refunded => Ok(()),
+            SessionState::SettlementPending { .. } | SessionState::Settled => {
+                Err(BillingSessionError::InvalidTransition)
+            }
+        }
+    }
+
+    /// 仅在幂等退款端口明确确认后解除 RAII 补偿责任。
+    pub fn mark_refunded(&mut self) -> Result<(), BillingSessionError> {
+        match self.state {
+            SessionState::Reserved | SessionState::RefundQueued | SessionState::Refunded => {
+                self.state = SessionState::Refunded;
+                Ok(())
+            }
             SessionState::SettlementPending { .. } | SessionState::Settled => {
                 Err(BillingSessionError::InvalidTransition)
             }

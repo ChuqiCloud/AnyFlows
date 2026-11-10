@@ -64,7 +64,12 @@ export function useUpdateAdminChannel() {
       const { data } = await updateAdminChannel({ body, client: apiClient, path: { id } })
       return data
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminChannelsQueryKey }),
+    onSuccess: async (_channel, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: adminChannelsQueryKey }),
+        queryClient.invalidateQueries({ queryKey: adminChannelQueryKey(variables.id) }),
+      ])
+    },
   })
 }
 

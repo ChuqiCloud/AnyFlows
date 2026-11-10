@@ -5,7 +5,7 @@ use af_admin::{
     ModelCatalogLifecycle, ModelCatalogListFuture, ModelCatalogMetadata, ModelCatalogModality,
     ModelCatalogPage, ModelCatalogPricingScope, ModelCatalogQuery, ModelCatalogRatios,
     ModelCatalogReadError, ModelCatalogReader, ModelCatalogRuntimeStatus, ModelCatalogTokenPrices,
-    SessionAuthentication,
+    SessionAuthentication, SessionRole,
 };
 use af_billing::{
     BillingMode, ModelPrice, ModelPriceCache, PricingRatio, PricingRatios, RatioPricingResolver,
@@ -13,7 +13,8 @@ use af_billing::{
 };
 use af_db::{
     AdminModelLifecycleRecord, AdminModelModalitiesRecord, AdminModelRecord, AdminModelRepository,
-    MAX_ADMIN_MODEL_PAGE_SIZE,
+    GroupModelPolicyRepository, GroupModelPolicyRepositoryError, MAX_ADMIN_MODEL_PAGE_SIZE,
+    ModelCatalogAudience,
 };
 use af_domain::{GroupId, PricingWeekTime, Protocol};
 use af_scheduler::{ChannelIndexSnapshot, InMemoryChannelIndex};
@@ -30,6 +31,8 @@ pub(crate) struct RuntimeModelCatalogReader {
     model_prices: ModelPriceCache,
     pricing_source: Arc<dyn RequestPricingSnapshotSource>,
     model_metadata: AdminModelRepository,
+    group_model_policy: GroupModelPolicyRepository,
+    user_routes: Option<af_db::UserRouteRepository>,
     clock: CatalogClock,
 }
 
@@ -40,14 +43,22 @@ impl RuntimeModelCatalogReader {
         model_prices: ModelPriceCache,
         pricing_source: Arc<dyn RequestPricingSnapshotSource>,
         model_metadata: AdminModelRepository,
+        group_model_policy: GroupModelPolicyRepository,
     ) -> Self {
         Self {
             channel_index,
             model_prices,
             pricing_source,
             model_metadata,
+            group_model_policy,
+            user_routes: None,
             clock: Arc::new(crate::utc_time::current_pricing_time),
         }
+    }
+
+    pub(crate) fn with_user_routes(mut self, repository: af_db::UserRouteRepository) -> Self {
+        self.user_routes = Some(repository);
+        self
     }
 
     fn catalog_item_from_pricing(
@@ -238,7 +249,11 @@ impl RuntimeModelCatalogReader {
         for _ in 0..MAX_METADATA_SCAN_PAGES {
             let page = self
                 .model_metadata
-                .list_catalog_metadata(false, cursor.as_deref(), MAX_ADMIN_MODEL_PAGE_SIZE)
+                .list_catalog_metadata(
+                    ModelCatalogAudience::Public,
+                    cursor.as_deref(),
+                    MAX_ADMIN_MODEL_PAGE_SIZE,
+                )
                 .await
                 .map_err(|_| ModelCatalogReadError::Internal)?;
             let (records, next_cursor) = page.into_parts();
@@ -300,6 +315,11 @@ impl RuntimeModelCatalogReader {
             .channel_index
             .snapshot()
             .map_err(|_| ModelCatalogReadError::Internal)?;
+        let model_policy = self
+            .group_model_policy
+            .policy_for_group(authentication.group_id())
+            .await
+            .map_err(map_group_model_policy_error)?;
         let mut cursor = query.after().map(str::to_owned);
         let mut items = Vec::with_capacity(query.limit());
         let mut has_more = false;
@@ -307,11 +327,18 @@ impl RuntimeModelCatalogReader {
         for _ in 0..MAX_METADATA_SCAN_PAGES {
             let page = self
                 .model_metadata
-                .list_catalog_metadata(true, cursor.as_deref(), MAX_ADMIN_MODEL_PAGE_SIZE)
+                .list_catalog_metadata(
+                    session_catalog_audience(authentication),
+                    cursor.as_deref(),
+                    MAX_ADMIN_MODEL_PAGE_SIZE,
+                )
                 .await
                 .map_err(|_| ModelCatalogReadError::Internal)?;
             let (records, next_cursor) = page.into_parts();
             for record in records {
+                if !model_policy.allows(record.model()) {
+                    continue;
+                }
                 if !Self::metadata_matches_search(&record, query.search())
                     || !Self::metadata_matches_filters(&record, query)
                 {
@@ -416,6 +443,13 @@ impl ModelCatalogReader for RuntimeModelCatalogReader {
     }
 }
 
+fn session_catalog_audience(authentication: SessionAuthentication) -> ModelCatalogAudience {
+    match authentication.principal().role() {
+        SessionRole::Admin => ModelCatalogAudience::Admin,
+        SessionRole::User => ModelCatalogAudience::Authenticated,
+    }
+}
+
 fn metadata_from_record(
     record: AdminModelRecord,
 ) -> Result<ModelCatalogMetadata, ModelCatalogReadError> {
@@ -440,6 +474,14 @@ fn metadata_from_record(
         record.supports_tool_calls(),
         lifecycle,
     )
+}
+
+fn map_group_model_policy_error(error: GroupModelPolicyRepositoryError) -> ModelCatalogReadError {
+    match error {
+        GroupModelPolicyRepositoryError::InvalidInput
+        | GroupModelPolicyRepositoryError::NotFound
+        | GroupModelPolicyRepositoryError::Internal => ModelCatalogReadError::Internal,
+    }
 }
 
 const fn modalities(value: AdminModelModalitiesRecord) -> AdminModelModalities {
@@ -473,20 +515,24 @@ fn available_protocols(
     model: &str,
 ) -> Result<Vec<Protocol>, ModelCatalogReadError> {
     // 同一个 runtime 快照里可能有多个渠道候选，目录只暴露去重后的协议能力集合。
-    let protocols = runtime
+    let mut protocols = BTreeSet::new();
+    let quota_dimension = af_domain::CredentialQuotaDimension::for_canonical_model(model);
+    for candidate in runtime
         .candidates(group_id, model)
         .map_err(|_| ModelCatalogReadError::Internal)?
-        .iter()
-        .map(|candidate| {
-            runtime
-                .runtime_target(candidate.channel_id())
-                .map(|target| target.protocol())
-                .ok_or(ModelCatalogReadError::Internal)
-        })
-        .collect::<Result<BTreeSet<_>, _>>()?
-        .into_iter()
-        .collect();
-    Ok(protocols)
+    {
+        let target = runtime
+            .runtime_target(candidate.channel_id())
+            .ok_or(ModelCatalogReadError::Internal)?;
+        let upstream_model = target.mapped_model(model).unwrap_or(model);
+        if target.credentials().iter().any(|credential| {
+            credential.quota_dimension() == quota_dimension
+                && target.allows_credential_model(credential, upstream_model)
+        }) {
+            protocols.insert(target.protocol());
+        }
+    }
+    Ok(protocols.into_iter().collect())
 }
 
 fn contains_search(model: &str, search: &str) -> bool {
@@ -504,6 +550,7 @@ impl fmt::Debug for RuntimeModelCatalogReader {
 
 #[cfg(test)]
 mod tests {
+    use af_admin::SessionPrincipal;
     use af_billing::{
         ModelPriceSource, ModelPriceSourceFuture, ModelPriceSourceRecord, RequestPricingSnapshot,
         RequestPricingSnapshotError, TokenPrices,
@@ -512,6 +559,7 @@ mod tests {
         AdminModelCreateRecord, AdminModelLifecycleRecord, AdminModelModalitiesRecord,
         AdminModelVisibilityRecord, AdminModelWriteRecord, DatabaseOptions, MigrationOptions,
     };
+    use af_domain::UserId;
     use af_scheduler::{ChannelIndexSource, ChannelIndexSourceFuture};
     use rust_decimal::Decimal;
     use std::time::Duration;
@@ -521,6 +569,73 @@ mod tests {
     #[derive(Clone)]
     struct StaticModelPriceSource {
         records: Vec<ModelPriceSourceRecord>,
+    }
+
+    struct CredentialPolicySource(Vec<af_scheduler::ChannelIndexSourceRecord>);
+
+    impl ChannelIndexSource for CredentialPolicySource {
+        fn load<'a>(&'a self) -> ChannelIndexSourceFuture<'a> {
+            Box::pin(async move { Ok(self.0.clone()) })
+        }
+    }
+
+    #[tokio::test]
+    async fn credential_model_policy_hides_protocol_when_every_key_is_excluded() {
+        let credential = af_db::SchedulerRuntimeCredentialRecord::new(
+            101,
+            af_domain::CredentialKind::ApiKey,
+            af_db::EncryptedCredentialEnvelope::new("catalog-test", [0x31; 24], vec![0x41; 16])
+                .unwrap(),
+            false,
+        )
+        .unwrap();
+        let target = af_db::SchedulerRuntimeTargetRecord::new(
+            af_domain::ChannelId::new(1).unwrap(),
+            af_domain::ChannelType::OpenAi,
+            Protocol::OpenAiChat,
+            Some("https://catalog.example".to_owned()),
+            credential,
+            Vec::new(),
+        )
+        .unwrap()
+        .with_model_policies(
+            af_domain::UpstreamModelPolicy::default(),
+            std::collections::BTreeMap::from([(
+                101,
+                af_domain::UpstreamModelPolicy {
+                    mode: af_domain::UpstreamModelPolicyMode::Allowlist,
+                    models: vec!["model-allowed".to_owned()],
+                    disabled_models: Vec::new(),
+                },
+            )]),
+        )
+        .unwrap();
+        let records = ["model-allowed", "model-excluded"]
+            .into_iter()
+            .map(|model| {
+                af_scheduler::ChannelIndexSourceRecord::with_runtime_target(
+                    GroupId::new(1).unwrap(),
+                    model,
+                    0,
+                    1,
+                    Arc::new(target.clone()),
+                )
+                .unwrap()
+            })
+            .collect();
+        let index = InMemoryChannelIndex::load(Arc::new(CredentialPolicySource(records)))
+            .await
+            .unwrap();
+        let snapshot = index.snapshot().unwrap();
+        assert_eq!(
+            available_protocols(&snapshot, GroupId::new(1).unwrap(), "model-allowed").unwrap(),
+            vec![Protocol::OpenAiChat]
+        );
+        assert!(
+            available_protocols(&snapshot, GroupId::new(1).unwrap(), "model-excluded")
+                .unwrap()
+                .is_empty()
+        );
     }
 
     impl ModelPriceSource for StaticModelPriceSource {
@@ -595,6 +710,8 @@ mod tests {
         )
         .await
         .unwrap();
+        let group_model_policy =
+            GroupModelPolicyRepository::new(pool.clone(), Duration::from_secs(2)).unwrap();
         let model_metadata = AdminModelRepository::new(pool, Duration::from_secs(2)).unwrap();
         for (model, display_name, provider) in [
             ("free-test", "Community Free", "community"),
@@ -614,6 +731,7 @@ mod tests {
             model_prices.clone(),
             Arc::new(RejectPricingSource),
             model_metadata,
+            group_model_policy,
         );
         (reader, model_prices)
     }
@@ -793,6 +911,26 @@ mod tests {
             reader.list(None, &ModelCatalogQuery::default()).await,
             Err(ModelCatalogReadError::Internal)
         ));
+    }
+
+    #[test]
+    fn session_catalog_audience_uses_the_authenticated_session_role() {
+        let user = SessionAuthentication::new(
+            SessionPrincipal::new(UserId::new(1).unwrap(), SessionRole::User),
+            GroupId::new(1).unwrap(),
+            1,
+        );
+        let admin = SessionAuthentication::new(
+            SessionPrincipal::new(UserId::new(2).unwrap(), SessionRole::Admin),
+            GroupId::new(1).unwrap(),
+            1,
+        );
+
+        assert_eq!(
+            session_catalog_audience(user),
+            ModelCatalogAudience::Authenticated
+        );
+        assert_eq!(session_catalog_audience(admin), ModelCatalogAudience::Admin);
     }
 
     fn catalog_model(model: &str, display_name: &str, provider: &str) -> AdminModelCreateRecord {

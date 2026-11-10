@@ -19,15 +19,18 @@ use tower::ServiceExt;
 use crate::oauth_login::build_oauth_login_router;
 
 const TICKET: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+const INVITE_CODE: &str = "af-AAAAAAAAAAAAAAAAAAAAAA";
 
 struct FakeOAuthLoginService {
     calls: Mutex<Vec<String>>,
+    invitations: Mutex<Vec<(String, Option<String>)>>,
 }
 
 impl FakeOAuthLoginService {
     fn new() -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
+            invitations: Mutex::new(Vec::new()),
         }
     }
 
@@ -49,6 +52,18 @@ impl OAuthLoginService for FakeOAuthLoginService {
                     .to_owned(),
             ))
         })
+    }
+
+    fn begin_with_invitation<'a>(
+        &'a self,
+        provider: &'a str,
+        invite_code: Option<String>,
+    ) -> OAuthLoginServiceFuture<'a, OAuthLoginStart> {
+        self.invitations
+            .lock()
+            .unwrap()
+            .push((provider.to_owned(), invite_code));
+        self.begin(provider)
     }
 
     fn complete<'a>(
@@ -184,6 +199,110 @@ async fn start_and_exchange_use_no_store_json_and_existing_session_shape() {
     assert_eq!(body["access_token"], "oauth.session.token");
     assert_eq!(body["user"]["id"], 42);
     assert_eq!(body["user"]["role"], "user");
+}
+
+#[tokio::test]
+async fn start_binds_invitation_to_each_builtin_and_custom_login() {
+    let service = Arc::new(FakeOAuthLoginService::new());
+    let app = router(Arc::clone(&service));
+    for provider in [
+        "github",
+        "discord",
+        "oidc",
+        "linuxdo",
+        "wechat",
+        "telegram",
+        "google",
+        "custom_enterprise",
+    ] {
+        let path = if provider.starts_with("custom_") {
+            format!("/api/auth/oauth/custom/{provider}/start")
+        } else {
+            format!("/api/auth/oauth/{provider}/start")
+        };
+        for invite_code in [None, Some(INVITE_CODE)] {
+            let uri = invite_code
+                .map_or_else(|| path.clone(), |code| format!("{path}?invite_code={code}"));
+            let response = app
+                .clone()
+                .oneshot(Request::post(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{provider}");
+            assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
+            assert_eq!(
+                service.invitations.lock().unwrap().last(),
+                Some(&(provider.to_owned(), invite_code.map(str::to_owned)))
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn start_rejects_invalid_and_duplicate_invitation_parameters_without_service_calls() {
+    let service = Arc::new(FakeOAuthLoginService::new());
+    let app = router(Arc::clone(&service));
+    for path in [
+        "/api/auth/oauth/github/start",
+        "/api/auth/oauth/custom/custom_enterprise/start",
+    ] {
+        for query in [
+            "invite_code=",
+            "invite_code=invalid",
+            "invite_code=af-AAAAAAAAAAAAAAAAAAAAA",
+            "invite_code=af-AAAAAAAAAAAAAAAAAAAAAAA",
+            "invite_code=af-AAAAAAAAAAAAAAAAAAAAA%2F",
+            "invite_code=af-AAAAAAAAAAAAAAAAAAAAA%00",
+            "invite_code=af-AAAAAAAAAAAAAAAAAAAAAA&invite_code=af-AAAAAAAAAAAAAAAAAAAAAA",
+            "invite_code=af-AAAAAAAAAAAAAAAAAAAAAA&invite_code=",
+            "invite=af-AAAAAAAAAAAAAAAAAAAAAA",
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::post(format!("{path}?{query}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{query}");
+            assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
+        }
+    }
+    assert!(service.calls.lock().unwrap().is_empty());
+    assert!(service.invitations.lock().unwrap().is_empty());
+}
+
+#[test]
+fn oauth_start_contract_keeps_invitation_optional_and_documents_input_rejection() {
+    let document = serde_json::to_value(crate::openapi_document()).unwrap();
+    for path in [
+        "/api/auth/oauth/github/start",
+        "/api/auth/oauth/discord/start",
+        "/api/auth/oauth/oidc/start",
+        "/api/auth/oauth/linuxdo/start",
+        "/api/auth/oauth/wechat/start",
+        "/api/auth/oauth/telegram/start",
+        "/api/auth/oauth/google/start",
+        "/api/auth/oauth/custom/{provider_key}/start",
+    ] {
+        let operation = &document["paths"][path]["post"];
+        let invitation = operation["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|parameter| parameter["name"] == "invite_code")
+            .unwrap();
+        assert_eq!(invitation["in"], "query", "{path}");
+        assert_eq!(invitation["required"], false, "{path}");
+        assert_eq!(
+            invitation["schema"]["pattern"], "^af-[A-Za-z0-9_-]{22}$",
+            "{path}"
+        );
+        assert!(!operation["responses"]["400"].is_null(), "{path}");
+        assert!(operation["requestBody"].is_null(), "{path}");
+    }
 }
 
 #[tokio::test]
