@@ -155,10 +155,25 @@ pub(super) fn document() -> OpenApi {
     );
     let mut offer = common_model;
     offer.extend([
+        ("provider", nullable(string())),
         ("sales_ratio_micros", integer()),
         ("prices", nullable(reference("MerchantModelPrices"))),
     ]);
     schemas.insert("MerchantModelOffer".to_owned(), object(&offer, &[]));
+    schemas.insert(
+        "MerchantCatalogProvider".to_owned(),
+        object(
+            &[("name", nullable(string())), ("model_count", integer())],
+            &[],
+        ),
+    );
+    schemas.insert(
+        "MerchantCatalogProviderSummary".to_owned(),
+        object(
+            &[("providers", array(reference("MerchantCatalogProvider")))],
+            &[],
+        ),
+    );
     schemas.insert(
         "MerchantQuoteRequest".to_owned(),
         object(
@@ -359,6 +374,14 @@ pub(super) fn document() -> OpenApi {
             "listMerchantPoolServices",
             None,
             "MerchantCatalogServicePage",
+            200,
+        ),
+        (
+            "get",
+            "/api/merchant-pools/{pool}/model-providers",
+            "listMerchantPoolModelProviders",
+            None,
+            "MerchantCatalogProviderSummary",
             200,
         ),
         (
@@ -629,6 +652,16 @@ pub(super) fn document() -> OpenApi {
             parameters.push(json!({"name":"window_seconds","in":"query","required":false,"schema":{"type":"integer","enum":[900,3600,86400,604800]}}));
             parameters.push(json!({"name":"streaming","in":"query","required":false,"schema":{"type":"boolean"}}));
         }
+        if operation == "listMerchantPoolServices" {
+            parameters.push(json!({
+                "name":"provider",
+                "in":"query",
+                "required":false,
+                "description":"JSON array of up to 32 distinct exact model provider names (1–64 bytes each); null selects models without provider metadata. Filters offers before service pagination.",
+                "schema":{"type":"string","maxLength":16384},
+                "example":"[\"DeepSeek\",\"Anthropic\",null]"
+            }));
+        }
         let mut operation = json!({"operationId":operation,"tags":["商户共享池"],"parameters":parameters,"security":[{"bearerAuth":[]}],"responses":responses});
         if let Some(request) = request {
             operation["requestBody"] = json!({"required":true,"content":{"application/json":{"schema":reference(request)}}});
@@ -641,6 +674,39 @@ pub(super) fn document() -> OpenApi {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn merchant_catalog_provider_contract_preserves_exact_names_and_null() {
+        let value = serde_json::to_value(super::document()).unwrap();
+        let schemas = &value["components"]["schemas"];
+        let offer = &schemas["MerchantModelOffer"];
+        assert!(
+            offer["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|name| name == "provider")
+        );
+        assert_eq!(offer["properties"]["provider"]["anyOf"][1]["type"], "null");
+        let list = &value["paths"]["/api/merchant-pools/{pool}/services"]["get"];
+        let provider = list["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|parameter| parameter["name"] == "provider")
+            .expect("provider query");
+        assert_eq!(provider["schema"]["type"], "string");
+        let example: serde_json::Value =
+            serde_json::from_str(provider["example"].as_str().unwrap()).unwrap();
+        assert_eq!(example, serde_json::json!(["DeepSeek", "Anthropic", null]));
+        let facets = &value["paths"]["/api/merchant-pools/{pool}/model-providers"]["get"];
+        assert_eq!(facets["operationId"], "listMerchantPoolModelProviders");
+        assert_eq!(facets["security"], serde_json::json!([{"bearerAuth":[]}]));
+        assert_eq!(
+            schemas["MerchantCatalogProvider"]["properties"]["name"]["anyOf"][1]["type"],
+            "null"
+        );
+    }
+
     #[test]
     fn merchant_delete_contracts_have_no_response_body() {
         let value = serde_json::to_value(super::document()).unwrap();

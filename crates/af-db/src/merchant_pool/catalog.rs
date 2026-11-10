@@ -215,119 +215,144 @@ impl MerchantPoolRepository {
             return Err(MerchantPoolError::NotFound);
         }
         self.bounded(async {
-            pagination(&query)?;
-            let rows = services::Entity::find()
-                .filter(services::Column::PoolId.eq(pool_id))
-                .filter(services::Column::DeletedAt.is_null())
-                .filter(services::Column::PublishedRevisionId.is_not_null())
-                .order_by_asc(services::Column::Id)
-                .limit(10_001)
-                .all(self.pool.connection())
-                .await
-                .map_err(internal)?;
-            if rows.len() > 10_000 {
-                return Err(MerchantPoolError::LimitReached);
-            }
-            let pool = find_pool(self.pool.connection(), pool_id).await?;
-            let mut items = Vec::new();
-            for row in rows {
-                self.apply_due_service_prices(row.id, DatabaseTimestamp::now_utc())
-                    .await?;
-                let merchant = profiles::Entity::find_by_id(row.merchant_id)
-                    .filter(profiles::Column::DeletedAt.is_null())
-                    .one(self.pool.connection())
-                    .await
-                    .map_err(internal)?
-                    .ok_or(MerchantPoolError::Unavailable)?;
-                if let Some(search) = &query.search {
-                    let needle = search.to_lowercase();
-                    if !row.name.to_lowercase().contains(&needle)
-                        && !merchant.name.to_lowercase().contains(&needle)
-                    {
-                        continue;
-                    }
-                }
-                let Some(id) = row.published_revision_id else {
-                    continue;
-                };
-                let revision = load_revision(self.pool.connection(), id, row.id).await?;
-                let Some(price) =
-                    super::policies::active_price(self.pool.connection(), row.id, Some(id)).await?
-                else {
-                    continue;
-                };
-                let maintenance = super::policies::active_maintenance(
-                    self.pool.connection(),
-                    row.id,
-                    DatabaseTimestamp::now_utc().unix_timestamp(),
-                )
+            let items = self.catalog_items(pool_id, &query).await?;
+            page_items(items, &query)
+        })
+        .await
+    }
+
+    pub async fn catalog_providers(
+        &self,
+        owner: UserId,
+        pool_id: i64,
+    ) -> Result<MerchantCatalogProviderSummary, MerchantPoolError> {
+        if !self.check_pool_access(owner, pool_id).await? {
+            return Err(MerchantPoolError::NotFound);
+        }
+        self.bounded(async {
+            let items = self
+                .catalog_items(pool_id, &MerchantListQuery::default())
                 .await?;
-                if query
-                    .protocol
-                    .as_ref()
-                    .is_some_and(|protocol| protocol != &revision.protocol)
-                {
-                    continue;
-                }
-                let mut models = Vec::new();
-                for model in super::policies::price_models(&price)? {
-                    if query
-                        .model
-                        .as_ref()
-                        .is_some_and(|name| name != &model.model)
-                    {
-                        continue;
-                    }
-                    let ratio = model.ratio_micros.unwrap_or(price.default_ratio_micros);
-                    if query.min_ratio_micros.is_some_and(|min| ratio < min)
-                        || query.max_ratio_micros.is_some_and(|max| ratio > max)
-                    {
-                        continue;
-                    }
-                    let capable = match query.capability.as_deref() {
-                        Some("streaming") => model.supports_streaming,
-                        Some("tools") => model.supports_tools,
-                        Some("vision") => model.supports_vision,
-                        _ => true,
-                    };
-                    if !capable {
-                        continue;
-                    }
-                    models.push(MerchantModelOffer {
-                        prices: model_price(self.pool.connection(), &model.model, ratio).await?,
-                        model: model.model,
-                        sales_ratio_micros: ratio,
-                        context_window: model.context_window,
-                        max_output_tokens: model.max_output_tokens,
-                        supports_streaming: model.supports_streaming,
-                        supports_tools: model.supports_tools,
-                        supports_vision: model.supports_vision,
-                    });
-                }
-                if models.is_empty() {
-                    continue;
-                }
-                let merchant_active = match active_owner(
-                    self.pool.connection(),
-                    UserId::new(merchant.owner_user_id).map_err(internal)?,
-                )
+            let mut providers = std::collections::BTreeMap::<
+                Option<String>,
+                std::collections::BTreeSet<String>,
+            >::new();
+            for model in items.into_iter().flat_map(|item| item.models) {
+                providers
+                    .entry(model.provider)
+                    .or_default()
+                    .insert(model.model);
+            }
+            Ok(MerchantCatalogProviderSummary {
+                providers: providers
+                    .into_iter()
+                    .map(|(name, models)| MerchantCatalogProvider {
+                        name,
+                        model_count: models.len() as u64,
+                    })
+                    .collect(),
+            })
+        })
+        .await
+    }
+
+    async fn catalog_items(
+        &self,
+        pool_id: i64,
+        query: &MerchantListQuery,
+    ) -> Result<Vec<MerchantCatalogService>, MerchantPoolError> {
+        pagination(query)?;
+        let providers = provider_filter(query)?;
+        let rows = services::Entity::find()
+            .filter(services::Column::PoolId.eq(pool_id))
+            .filter(services::Column::DeletedAt.is_null())
+            .filter(services::Column::PublishedRevisionId.is_not_null())
+            .order_by_asc(services::Column::Id)
+            .limit(10_001)
+            .all(self.pool.connection())
+            .await
+            .map_err(internal)?;
+        if rows.len() > 10_000 {
+            return Err(MerchantPoolError::LimitReached);
+        }
+        let pool = find_pool(self.pool.connection(), pool_id).await?;
+        let mut items = Vec::new();
+        for row in rows {
+            self.apply_due_service_prices(row.id, DatabaseTimestamp::now_utc())
+                .await?;
+            let merchant = profiles::Entity::find_by_id(row.merchant_id)
+                .filter(profiles::Column::DeletedAt.is_null())
+                .one(self.pool.connection())
                 .await
+                .map_err(internal)?
+                .ok_or(MerchantPoolError::Unavailable)?;
+            if let Some(search) = &query.search {
+                let needle = search.to_lowercase();
+                if !row.name.to_lowercase().contains(&needle)
+                    && !merchant.name.to_lowercase().contains(&needle)
                 {
-                    Ok(_) => true,
-                    Err(MerchantPoolError::Forbidden) => false,
-                    Err(error) => return Err(error),
-                };
-                let channel_active = channels::Entity::find_by_id(revision.channel_id)
-                    .filter(channels::Column::Status.eq(Status::Enabled.code()))
-                    .filter(channels::Column::DeletedAt.is_null())
-                    .one(self.pool.connection())
-                    .await
-                    .map_err(internal)?
-                    .is_some();
-                let status = if merchant.status != "approved"
-                    || !merchant_active
-                    || row.platform_suspended
-                {
+                    continue;
+                }
+            }
+            let Some(id) = row.published_revision_id else {
+                continue;
+            };
+            let revision = load_revision(self.pool.connection(), id, row.id).await?;
+            let Some(price) =
+                super::policies::active_price(self.pool.connection(), row.id, Some(id)).await?
+            else {
+                continue;
+            };
+            let maintenance = super::policies::active_maintenance(
+                self.pool.connection(),
+                row.id,
+                DatabaseTimestamp::now_utc().unix_timestamp(),
+            )
+            .await?;
+            if query
+                .protocol
+                .as_ref()
+                .is_some_and(|protocol| protocol != &revision.protocol)
+            {
+                continue;
+            }
+            let mut models = Vec::new();
+            for model in super::policies::price_models(&price)? {
+                let ratio = model.ratio_micros.unwrap_or(price.default_ratio_micros);
+                models.push(MerchantModelOffer {
+                    prices: model_price(self.pool.connection(), &model.model, ratio).await?,
+                    model: model.model,
+                    provider: None,
+                    sales_ratio_micros: ratio,
+                    context_window: model.context_window,
+                    max_output_tokens: model.max_output_tokens,
+                    supports_streaming: model.supports_streaming,
+                    supports_tools: model.supports_tools,
+                    supports_vision: model.supports_vision,
+                });
+            }
+            if models.is_empty() {
+                continue;
+            }
+            let merchant_active = match active_owner(
+                self.pool.connection(),
+                UserId::new(merchant.owner_user_id).map_err(internal)?,
+            )
+            .await
+            {
+                Ok(_) => true,
+                Err(MerchantPoolError::Forbidden) => false,
+                Err(error) => return Err(error),
+            };
+            let channel_active = channels::Entity::find_by_id(revision.channel_id)
+                .filter(channels::Column::Status.eq(Status::Enabled.code()))
+                .filter(channels::Column::DeletedAt.is_null())
+                .one(self.pool.connection())
+                .await
+                .map_err(internal)?
+                .is_some();
+            let status =
+                if merchant.status != "approved" || !merchant_active || row.platform_suspended {
                     "suspended".to_owned()
                 } else if row.merchant_paused {
                     "paused".to_owned()
@@ -347,107 +372,151 @@ impl MerchantPoolRepository {
                 } else {
                     "published".to_owned()
                 };
-                if query
-                    .status
-                    .as_ref()
-                    .is_some_and(|filter| filter != &status)
-                {
-                    continue;
-                }
-                items.push(MerchantCatalogService {
-                    id: row.id,
-                    pool_id,
-                    merchant_id: merchant.id,
-                    merchant_name: merchant.name,
-                    name: row.name,
-                    description: row.description,
-                    status,
-                    protocol: revision.protocol,
-                    revision: revision.revision,
-                    price_version: price.id,
-                    maintenance,
-                    models,
-                    updated_at: revision
-                        .updated_at
-                        .unix_timestamp()
-                        .max(price.updated_at.unix_timestamp()),
-                });
+            if query
+                .status
+                .as_ref()
+                .is_some_and(|filter| filter != &status)
+            {
+                continue;
             }
-            if matches!(query.sort.as_deref(), Some("success_rate" | "latency")) {
-                let statistics = crate::UserRouteRepository::new(self.pool.clone(), self.timeout)
-                    .map_err(internal)?
-                    .merchant_statistics_filtered(
-                        pool_id,
-                        query.model.as_deref(),
-                        query.window_seconds.unwrap_or(86400),
-                        query.protocol.as_deref(),
-                        query.streaming,
-                    )
-                    .await
-                    .map_err(internal)?;
-                let by_service = statistics
-                    .into_iter()
-                    .map(|row| (row.service_id, row))
-                    .collect::<std::collections::HashMap<_, _>>();
-                items.sort_by(|left, right| {
-                    let l = by_service
-                        .get(&left.id)
-                        .filter(|row| row.sample_count >= 20);
-                    let r = by_service
-                        .get(&right.id)
-                        .filter(|row| row.sample_count >= 20);
-                    let ranked = match (l, r) {
-                        (Some(l), Some(r)) => {
-                            if query.sort.as_deref() == Some("success_rate") {
-                                // Compare a smoothed estimate with integer arithmetic; low samples never lead.
-                                let lv = u128::from(l.success_count + 1)
-                                    * u128::from(r.sample_count + 2);
-                                let rv = u128::from(r.success_count + 1)
-                                    * u128::from(l.sample_count + 2);
-                                rv.cmp(&lv)
-                            } else {
-                                let delay = |row: &crate::MerchantServiceStatistics| {
-                                    if query.streaming == Some(true) {
-                                        row.ttft_p50_ms
-                                    } else {
-                                        row.latency_p50_ms
-                                    }
-                                };
-                                match (delay(l), delay(r)) {
-                                    (Some(l), Some(r)) => l.cmp(&r),
-                                    (Some(_), None) => std::cmp::Ordering::Less,
-                                    (None, Some(_)) => std::cmp::Ordering::Greater,
-                                    _ => std::cmp::Ordering::Equal,
+            items.push(MerchantCatalogService {
+                id: row.id,
+                pool_id,
+                merchant_id: merchant.id,
+                merchant_name: merchant.name,
+                name: row.name,
+                description: row.description,
+                status,
+                protocol: revision.protocol,
+                revision: revision.revision,
+                price_version: price.id,
+                maintenance,
+                models,
+                updated_at: revision
+                    .updated_at
+                    .unix_timestamp()
+                    .max(price.updated_at.unix_timestamp()),
+            });
+        }
+        // Compute intrinsic service state before trimming offers for catalog filters.
+        let names = items
+            .iter()
+            .flat_map(|item| item.models.iter().map(|model| model.model.clone()))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let mut metadata = std::collections::HashMap::new();
+        for names in names.chunks(500) {
+            for model in model_metadata::Entity::find()
+                .filter(model_metadata::Column::DeletedAt.is_null())
+                .filter(model_metadata::Column::Model.is_in(names.iter().cloned()))
+                .all(self.pool.connection())
+                .await
+                .map_err(internal)?
+            {
+                if !model.provider.trim().is_empty() {
+                    metadata.insert(model.model, model.provider);
+                }
+            }
+        }
+        for item in &mut items {
+            for model in &mut item.models {
+                model.provider = metadata.get(&model.model).cloned();
+            }
+            item.models.retain(|model| {
+                let capable = match query.capability.as_deref() {
+                    Some("streaming") => model.supports_streaming,
+                    Some("tools") => model.supports_tools,
+                    Some("vision") => model.supports_vision,
+                    _ => true,
+                };
+                capable
+                    && query.model.as_ref().is_none_or(|name| name == &model.model)
+                    && providers
+                        .as_ref()
+                        .is_none_or(|names| names.contains(&model.provider))
+                    && query
+                        .min_ratio_micros
+                        .is_none_or(|min| model.sales_ratio_micros >= min)
+                    && query
+                        .max_ratio_micros
+                        .is_none_or(|max| model.sales_ratio_micros <= max)
+            });
+        }
+        items.retain(|item| !item.models.is_empty());
+        if matches!(query.sort.as_deref(), Some("success_rate" | "latency")) {
+            let statistics = crate::UserRouteRepository::new(self.pool.clone(), self.timeout)
+                .map_err(internal)?
+                .merchant_statistics_filtered(
+                    pool_id,
+                    query.model.as_deref(),
+                    query.window_seconds.unwrap_or(86400),
+                    query.protocol.as_deref(),
+                    query.streaming,
+                )
+                .await
+                .map_err(internal)?;
+            let by_service = statistics
+                .into_iter()
+                .map(|row| (row.service_id, row))
+                .collect::<std::collections::HashMap<_, _>>();
+            items.sort_by(|left, right| {
+                let l = by_service
+                    .get(&left.id)
+                    .filter(|row| row.sample_count >= 20);
+                let r = by_service
+                    .get(&right.id)
+                    .filter(|row| row.sample_count >= 20);
+                let ranked = match (l, r) {
+                    (Some(l), Some(r)) => {
+                        if query.sort.as_deref() == Some("success_rate") {
+                            // Compare a smoothed estimate with integer arithmetic; low samples never lead.
+                            let lv =
+                                u128::from(l.success_count + 1) * u128::from(r.sample_count + 2);
+                            let rv =
+                                u128::from(r.success_count + 1) * u128::from(l.sample_count + 2);
+                            rv.cmp(&lv)
+                        } else {
+                            let delay = |row: &crate::MerchantServiceStatistics| {
+                                if query.streaming == Some(true) {
+                                    row.ttft_p50_ms
+                                } else {
+                                    row.latency_p50_ms
                                 }
+                            };
+                            match (delay(l), delay(r)) {
+                                (Some(l), Some(r)) => l.cmp(&r),
+                                (Some(_), None) => std::cmp::Ordering::Less,
+                                (None, Some(_)) => std::cmp::Ordering::Greater,
+                                _ => std::cmp::Ordering::Equal,
                             }
                         }
-                        (Some(_), None) => std::cmp::Ordering::Less,
-                        (None, Some(_)) => std::cmp::Ordering::Greater,
-                        _ => std::cmp::Ordering::Equal,
-                    };
-                    ranked.then_with(|| left.id.cmp(&right.id))
-                });
-            } else if query.sort.as_deref() == Some("price") && query.model.is_some() {
-                items.sort_by_key(|row| {
-                    (
-                        row.models
-                            .first()
-                            .map(|m| m.sales_ratio_micros)
-                            .unwrap_or(i64::MAX),
-                        row.id,
-                    )
-                });
-            } else {
-                items.sort_by(|a, b| {
-                    a.merchant_name
-                        .cmp(&b.merchant_name)
-                        .then_with(|| a.name.cmp(&b.name))
-                        .then_with(|| a.id.cmp(&b.id))
-                });
-            }
-            page_items(items, &query)
-        })
-        .await
+                    }
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    _ => std::cmp::Ordering::Equal,
+                };
+                ranked.then_with(|| left.id.cmp(&right.id))
+            });
+        } else if query.sort.as_deref() == Some("price") && query.model.is_some() {
+            items.sort_by_key(|row| {
+                (
+                    row.models
+                        .first()
+                        .map(|m| m.sales_ratio_micros)
+                        .unwrap_or(i64::MAX),
+                    row.id,
+                )
+            });
+        } else {
+            items.sort_by(|a, b| {
+                a.merchant_name
+                    .cmp(&b.merchant_name)
+                    .then_with(|| a.name.cmp(&b.name))
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+        }
+        Ok(items)
     }
 
     pub async fn catalog_service(

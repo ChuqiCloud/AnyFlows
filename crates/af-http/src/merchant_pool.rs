@@ -37,6 +37,10 @@ pub fn build_merchant_pool_router(
         .route("/api/merchant-pools", get(list_pools))
         .route("/api/merchant-pools/{pool}/services", get(catalog))
         .route(
+            "/api/merchant-pools/{pool}/model-providers",
+            get(catalog_providers),
+        )
+        .route(
             "/api/merchant-pools/{pool}/services/{id}",
             get(catalog_service),
         )
@@ -178,6 +182,17 @@ async fn catalog(
 ) -> Result<Response, MerchantHttpError> {
     Ok(no_store_json(
         s.service.catalog(auth.principal(), id(pool)?, q).await?,
+    ))
+}
+async fn catalog_providers(
+    State(s): State<MerchantHttpState>,
+    Extension(auth): Extension<SessionAuthentication>,
+    Path(pool): Path<i64>,
+) -> Result<Response, MerchantHttpError> {
+    Ok(no_store_json(
+        s.service
+            .catalog_providers(auth.principal(), id(pool)?)
+            .await?,
     ))
 }
 async fn catalog_service(

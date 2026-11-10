@@ -24,10 +24,18 @@ const port = 4181
 const origin = `http://127.0.0.1:${port}`
 const now = Math.floor(Date.now() / 1000)
 const pool = { id: 1, group_id: 8, name: 'CI shared pool', description: 'CI pool', enabled: true, commission_bps: 500, effective_commission_bps: 500, commission_inherit_global: false, min_ratio_micros: 100000, max_ratio_micros: 10000000, settlement_delay_secs: 86400, created_at: now, updated_at: now }
-const offer = { model: 'gpt-fixture', sales_ratio_micros: 800000, context_window: 128000, max_output_tokens: 4096, supports_streaming: true, supports_tools: true, supports_vision: false, prices: { currency: 'USD', unit: 'million_tokens', billing_mode: 'token', video_per_second: null, input: '0.80', output: '1.60', cache_read: '0.08', cache_write_5m: '1.00', cache_write_1h: '1.60', version: 1 } }
+const offer = { model: 'gpt-fixture', provider: 'openai', sales_ratio_micros: 800000, context_window: 128000, max_output_tokens: 4096, supports_streaming: true, supports_tools: true, supports_vision: false, prices: { currency: 'USD', unit: 'million_tokens', billing_mode: 'token', video_per_second: null, input: '0.80', output: '1.60', cache_read: '0.08', cache_write_5m: '1.00', cache_write_1h: '1.60', version: 1 } }
 const publicService = { id: 51, pool_id: 1, merchant_id: 6, merchant_name: 'CI merchant', name: 'CI service', description: 'Reviewed service', status: 'published', revision: 1, price_version: 0, protocol: 'openai_chat', maintenance: [], models: [offer], updated_at: now }
 const excludedService = { ...publicService, id: 52, merchant_id: 7, merchant_name: 'CI excluded merchant', name: 'CI excluded service', description: '面向长文本和日常开发的独立渠道，商家公开说明会保留完整内容，但在市场行内收起以保持模型、报价和运行表现易于比较。'.repeat(3) }
 const reserveService = { ...publicService, id: 53, merchant_id: 8, merchant_name: 'CI reserve merchant', name: 'CI reserve service', description: '稳定优先，适合开发与备用切换。' }
+const providerServices = [
+  { ...publicService, id: 54, name: 'CI DeepSeek service', models: [{ ...offer, model: 'opaque-fixture', provider: 'DeepSeek' }] },
+  { ...publicService, id: 55, name: 'CI Anthropic service', models: [{ ...offer, model: 'claude-fixture', provider: 'Anthropic' }] },
+  { ...publicService, id: 56, name: 'CI unclassified service', models: [{ ...offer, model: 'gpt-no-metadata', provider: null }] },
+  { ...publicService, id: 57, name: 'CI comma provider service', models: [{ ...offer, model: 'custom-fixture', provider: 'Acme, Inc.' }] },
+  { ...publicService, id: 58, name: 'CI literal provider service', models: [{ ...offer, model: 'literal-fixture', provider: '__unclassified__' }] },
+]
+const mixedProviderService = { ...publicService, id: 59, name: 'CI mixed manufacturer service', models: [{ ...offer, model: 'mixed-deepseek-fixture', provider: 'DeepSeek' }, { ...offer, model: 'mixed-anthropic-fixture', provider: 'Anthropic' }] }
 const timelineBuckets = Array.from({ length: 24 }, (_, index) => ({ started_at: now - (24 - index) * 3600, ended_at: now - (23 - index) * 3600, success_count: index >= 14 && index !== 20 ? 1 : 0, failure_count: index === 20 ? 1 : 0, sample_count: index >= 14 ? 1 : 0, status: index < 14 ? 'unknown' : index === 20 ? 'degraded' : 'normal' }))
 const profile = { id: 6, owner_user_id: 3, name: 'CI merchant', description: 'CI relay', status: 'approved', review_reason: null, created_at: now, updated_at: now }
 let activeProfile = null
@@ -48,7 +56,7 @@ let payoutAccount = { configured: false, label: '', version: 0 }
 let payoutSettings = { version: 0, enabled: false, auto_approve_enabled: false, gateway_url: '', currency: 'USD', quota_per_unit: 500000, min_amount_minor: 100, max_amount_minor: 100000, daily_limit_minor: 1000000, signing_key_configured: false }
 const priceRequests = [], noticeRequests = [], accountRequests = [], payoutSettingsRequests = []
 let payoutSubmissions = 0, payoutQueries = 0
-const videoService = { ...publicService, id: 61, protocol: 'xai_video', name: 'CI video service', models: [{ ...offer, model: 'grok-imagine-video', supports_streaming: false, supports_tools: false, prices: { ...offer.prices, unit: 'second', billing_mode: 'video', video_per_second: { p480: '0.04', p720: '0.06', p1080: null } } }] }
+const videoService = { ...publicService, id: 61, protocol: 'xai_video', name: 'CI video service', models: [{ ...offer, model: 'grok-imagine-video', provider: 'xai', supports_streaming: false, supports_tools: false, prices: { ...offer.prices, unit: 'second', billing_mode: 'video', video_per_second: { p480: '0.04', p720: '0.06', p1080: null } } }] }
 const routeRequests = []
 const previewRequests = []
 const withdrawalRequests = []
@@ -114,6 +122,7 @@ try {
     const request = intercepted.request(), path = new URL(request.url()).pathname, method = request.method()
     const respond = (body, status = 200) => intercepted.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     if (path === '/api/site') return respond({ balance_display: { mode: 'quota', unit_name: '积分', unit_symbol: '积分', quota_units_per_display_unit: '10000', symbol_position: 'suffix', fraction_digits: 0 } })
+    if (path === '/api/model-provider-catalog') return respond({ providers: [] })
     assert.equal(request.headers().authorization, 'Bearer ci-merchant')
     if ((path === '/api/merchant-pools' || path === '/api/merchant/available-pools') && method === 'GET') return respond(list([pool]))
     if (path === '/api/admin/groups' && method === 'GET') return respond({ groups: [{ id: 8, name: 'CI occupied group' }, { id: 9, name: 'CI dedicated group' }, { id: 10, name: 'CI second dedicated group' }], next_cursor: null })
@@ -143,8 +152,14 @@ try {
       const query = new URL(request.url()).searchParams
       catalogRequests.push(Object.fromEntries(query))
       if (query.get('protocol') === 'xai_video') { assert.equal(query.has('streaming'), false); return respond(list([videoService])) }
-      return respond(list(query.get('model') ? [publicService, excludedService, reserveService] : [publicService, excludedService]))
+      if (query.has('provider')) {
+        const providers = JSON.parse(query.get('provider'))
+        return respond(list([...providerServices, mixedProviderService].map(service => ({ ...service, models: service.models.filter(model => providers.includes(model.provider)) })).filter(service => service.models.length)))
+      }
+      if (query.get('model')) return respond(list([publicService, excludedService, reserveService]))
+      return respond({ ...list(query.get('page') === '2' ? [mixedProviderService] : [publicService, excludedService]), total: 21, page: Number(query.get('page') || 1) })
     }
+    if (path === '/api/merchant-pools/1/model-providers') return respond({ providers: [{ name: 'openai', model_count: 1 }, ...providerServices.map(service => ({ name: service.models[0].provider, model_count: ['DeepSeek', 'Anthropic'].includes(service.models[0].provider) ? 2 : 1 }))] })
     if (path === '/api/merchant-pools/1/statistics') return respond({ items: [{ service_id: 51, merchant_id: 6, sample_count: 10, success_count: 9, failure_count: 1, success_rate: 90, ttft_p50_ms: 123, ttft_p95_ms: 400, latency_p50_ms: 300, latency_p95_ms: 900, status: 'normal', updated_at: now }], as_of: now, window_seconds: 86400 })
     if (path === '/api/merchant-pools/1/timeline') return respond({ items: [{ service_id: 51, merchant_id: 6, buckets: timelineBuckets }], as_of: now, window_seconds: 86400 })
     if (path === '/api/merchant/profile' && method === 'GET') return respond(activeProfile)
@@ -241,6 +256,57 @@ try {
   })
   await page.goto(`${origin}/.merchant-pool-smoke.html`)
   await page.getByRole('heading', { name: label('market.title'), exact: true }).waitFor()
+  const providerFilter = page.getByRole('group', { name: label('market.providers'), exact: true })
+  const deepseek = providerFilter.getByRole('button', { name: 'DeepSeek', exact: true })
+  const anthropic = providerFilter.getByRole('button', { name: 'Anthropic', exact: true })
+  await deepseek.waitFor()
+  assert.equal(await deepseek.locator('svg').count(), 1, 'Manufacturers use the existing brand logos even when absent from the current service page')
+  assert.equal(await anthropic.locator('svg').count(), 1)
+  await page.getByRole('button', { name: label('next'), exact: true }).click()
+  await page.getByText(label('page').replace('{{page}}', '2'), { exact: true }).waitFor()
+  const mixedRow = page.getByRole('region', { name: label('catalogTable'), exact: true }).getByRole('row').filter({ hasText: mixedProviderService.name })
+  await mixedRow.getByRole('link', { name: mixedProviderService.name, exact: true }).waitFor()
+  assert.equal(await mixedRow.locator('span.truncate').filter({ hasText: /^DeepSeek$/ }).isVisible(), true, 'A mixed service displays every model manufacturer')
+  assert.equal(await mixedRow.locator('span.truncate').filter({ hasText: /^Anthropic$/ }).isVisible(), true)
+  const providerResponse = value => page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return url.pathname === '/api/merchant-pools/1/services' && url.searchParams.get('provider') === JSON.stringify(value) && url.searchParams.get('page') === '1'
+  })
+  let filtered = providerResponse(['DeepSeek'])
+  await deepseek.click()
+  await filtered
+  await page.getByRole('region', { name: label('catalogTable'), exact: true }).getByText('opaque-fixture', { exact: true }).waitFor()
+  assert.equal(catalogRequests.at(-1).page, '1', 'Changing manufacturers resets service pagination')
+  assert.deepEqual(JSON.parse(new URL(page.url()).searchParams.get('provider')), ['DeepSeek'], 'The URL retains exact metadata values instead of normalized display aliases')
+  filtered = providerResponse(['Anthropic', 'DeepSeek'])
+  await anthropic.click()
+  await filtered
+  assert.equal(await deepseek.getAttribute('aria-pressed'), 'true')
+  assert.equal(await anthropic.getAttribute('aria-pressed'), 'true')
+  await page.getByRole('region', { name: label('catalogTable'), exact: true }).getByText('claude-fixture', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('region', { name: label('catalogTable'), exact: true }).locator('tbody tr').count(), 3, 'Multiple manufacturers use OR selection')
+  await page.reload()
+  await page.getByRole('region', { name: label('catalogTable'), exact: true }).getByText('claude-fixture', { exact: true }).waitFor()
+  assert.equal(await deepseek.getAttribute('aria-pressed'), 'true', 'Manufacturer selection survives URL reload')
+  await page.getByRole('button', { name: label('market.removeFilter').replace('{{value}}', 'Anthropic'), exact: true }).click()
+  await page.getByRole('region', { name: label('catalogTable'), exact: true }).getByText('claude-fixture', { exact: true }).waitFor({ state: 'hidden' })
+  assert.deepEqual(JSON.parse(new URL(page.url()).searchParams.get('provider')), ['DeepSeek'], 'A manufacturer chip removes only its own value')
+  await providerFilter.getByRole('button', { name: label('market.allProviders'), exact: true }).click()
+  filtered = providerResponse([null])
+  await providerFilter.getByRole('button', { name: label('market.unclassified'), exact: true }).click()
+  await filtered
+  await page.getByRole('region', { name: label('catalogTable'), exact: true }).getByText('gpt-no-metadata', { exact: true }).waitFor()
+  assert.deepEqual(JSON.parse(catalogRequests.at(-1).provider), [null], 'Unclassified models are selected independently of model-name guesses')
+  for (const [name, model] of [['Acme, Inc.', 'custom-fixture'], ['__unclassified__', 'literal-fixture']]) {
+    await providerFilter.getByRole('button', { name: label('market.allProviders'), exact: true }).click()
+    filtered = providerResponse([name])
+    await providerFilter.getByRole('button', { name, exact: true }).click()
+    await filtered
+    await page.getByRole('region', { name: label('catalogTable'), exact: true }).getByText(model, { exact: true }).waitFor()
+    assert.deepEqual(JSON.parse(catalogRequests.at(-1).provider), [name], 'Legal manufacturer names cannot collide with separators or the unclassified choice')
+  }
+  await providerFilter.getByRole('button', { name: label('market.allProviders'), exact: true }).click()
+  assert.equal(new URL(page.url()).searchParams.has('provider'), false, 'All manufacturers clears the URL filter')
   await page.getByRole('textbox', { name: label('model'), exact: true }).fill('gpt-fixture')
   await page.getByText('90.0%', { exact: true }).waitFor()
   await page.getByText(label('lowSamples'), { exact: true }).waitFor()
@@ -587,16 +653,18 @@ try {
   await page.screenshot({ path: resolve(screenshots, 'merchant-video.png'), fullPage: true, animations: 'disabled' })
   await page.getByRole('textbox', { name: label('search'), exact: true }).fill('CI merchant')
   await page.getByRole('textbox', { name: label('minimumRatio'), exact: true }).fill('0.5')
+  await providerFilter.getByRole('button', { name: 'OpenAI', exact: true }).click()
   const resetResponse = page.waitForResponse(response => {
     const url = new URL(response.url())
-    return url.pathname === '/api/merchant-pools/1/services' && !url.searchParams.get('model') && !url.searchParams.get('search') && !url.searchParams.get('protocol') && !url.searchParams.get('min_ratio_micros')
+    return url.pathname === '/api/merchant-pools/1/services' && !url.searchParams.get('model') && !url.searchParams.get('search') && !url.searchParams.get('protocol') && !url.searchParams.get('min_ratio_micros') && !url.searchParams.has('provider')
   })
   await page.getByRole('button', { name: label('market.resetFilters'), exact: true }).click()
   await resetResponse
   assert.equal(await page.getByRole('textbox', { name: label('model'), exact: true }).inputValue(), '')
   assert.equal(await page.getByRole('textbox', { name: label('search'), exact: true }).inputValue(), '')
   const resetQuery = catalogRequests.at(-1)
-  for (const key of ['model', 'search', 'protocol', 'min_ratio_micros']) assert.ok(!resetQuery[key], `Reset clears the ${key} filter from the actual catalog request`)
+  for (const key of ['model', 'search', 'protocol', 'min_ratio_micros', 'provider']) assert.ok(!resetQuery[key], `Reset clears the ${key} filter from the actual catalog request`)
+  assert.equal(new URL(page.url()).searchParams.has('provider'), false)
   assert.equal(resetQuery.sort, 'name')
   assert.equal(resetQuery.page, '1')
   await page.getByRole('button', { name: 'admin', exact: true }).click()
