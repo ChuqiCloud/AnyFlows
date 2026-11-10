@@ -363,7 +363,7 @@ async fn merchant_report_groups_immutable_sales_and_reversals_without_double_cou
         )
         .await?;
     let date = "2026-11-10";
-    let daily = finance.report(77, &date, &date, "day").await?;
+    let daily = finance.report(77, date, date, "day").await?;
     assert_eq!(daily.rows.len(), 1);
     let row = &daily.rows[0];
     assert_eq!(row.period, date);
@@ -378,10 +378,10 @@ async fn merchant_report_groups_immutable_sales_and_reversals_without_double_cou
         daily.totals.sales_gross_quota,
         daily.totals.refunded_gross_quota
     );
-    let monthly = finance.report(77, &date, &date, "month").await?;
+    let monthly = finance.report(77, date, date, "month").await?;
     assert_eq!(&monthly.rows[0].period, &date[..7]);
     assert_eq!(
-        finance.report(77, &date, &date, "week").await,
+        finance.report(77, date, date, "week").await,
         Err(MerchantFinanceError::InvalidInput)
     );
     assert_eq!(
