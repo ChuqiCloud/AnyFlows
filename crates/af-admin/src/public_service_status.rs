@@ -42,7 +42,7 @@ pub struct DatabasePublicServiceStatusReader {
 
 impl DatabasePublicServiceStatusReader {
     #[must_use]
-    pub const fn new(repository: PublicServiceStatusRepository) -> Self {
+    pub fn new(repository: PublicServiceStatusRepository) -> Self {
         Self { repository, cache: Arc::new(tokio::sync::Mutex::new(None)) }
     }
 }
