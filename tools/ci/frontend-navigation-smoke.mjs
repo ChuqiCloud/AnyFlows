@@ -343,7 +343,7 @@ try {
   const chatOperation = page.getByRole('button').filter({ hasText: 'OpenAI Chat Completions' }).first()
   await chatOperation.click()
   const requestBody = page.getByRole('textbox', { name: label('apiExplorer.requestBody'), exact: true })
-  await page.getByText('messages', { exact: false }).waitFor()
+  await page.waitForFunction(() => [...document.querySelectorAll('textarea')].some((element) => element.value.includes('"messages"')))
   const safeBody = JSON.parse(await requestBody.inputValue())
   assert.deepEqual(safeBody.messages, [{ role: 'user', content: 'Hello' }])
   assert.equal(JSON.stringify(safeBody).includes('ci-issued-secret-must-not-appear-in-samples'), false)
