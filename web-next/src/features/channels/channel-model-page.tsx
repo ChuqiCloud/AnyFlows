@@ -13,6 +13,8 @@ import { supportsModelDiscovery } from './channel-capabilities'
 import { navigateTo } from '@/lib/router-navigation'
 import type { AdminModelSyncPreview, AdminModelSyncPreviewItem } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
+import { UpstreamModelPolicyEditor } from '@/features/credentials/upstream-model-policy-editor'
+import { ChannelModelCoverage } from '@/features/credentials/channel-model-coverage'
 
 type ChannelModelPageProps = {
   channelId?: number
@@ -158,6 +160,9 @@ export function ChannelModelPage({ channelId }: ChannelModelPageProps) {
           <Button type="button" size="sm" variant="bordered" isDisabled={channelQuery.isFetching} onPress={() => void channelQuery.refetch()}><RefreshCw className={cn('size-3.5', channelQuery.isFetching && 'animate-spin')} aria-hidden="true" />{t('channelModels.actions.refresh')}</Button>
         </div>
       </header>
+
+      <section className="grid min-w-0 gap-3 border-y border-[var(--hairline)] py-4"><h3 className="text-sm font-semibold">{t('keyCapabilities.channelPolicy')}</h3><UpstreamModelPolicyEditor channelId={channel.id} /></section>
+      <ChannelModelCoverage key={channel.id} channelId={channel.id} models={channel.models} />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.42fr)]">
         <section className="grid gap-4 rounded-xl border border-[var(--hairline)] bg-surface-1 p-4" aria-labelledby="channel-models-heading">

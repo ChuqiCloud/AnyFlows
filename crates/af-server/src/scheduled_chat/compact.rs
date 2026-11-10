@@ -1,10 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use af_adapter::{RelayContext, get_adaptor};
-use af_domain::{
-    AfError, ConcurrencyLimit, CredentialId, CredentialQuotaDimension, GatewayPrincipal, GroupId,
-    Protocol,
-};
+use af_domain::{AfError, ConcurrencyLimit, CredentialId, GatewayPrincipal, GroupId, Protocol};
 use af_protocol::{CanonicalResponsesCompactionRequest, openai_responses_compact};
 use af_relay::{
     RelayCandidate, RelayCandidateRequest, RelayStateMachine,
@@ -78,15 +75,14 @@ impl ResponsesCompactRoutePlanner for ScheduledChatService {
                     None => return Err(self.missing_model_route_error(request.model()).await),
                 }
             };
-            let protocol = Protocol::OpenAiResponses;
             let credential_health = self
-                .load_credential_health(&route, protocol, request.model())
+                .load_compact_credential_health(&route, request.model())
                 .await?;
             let user_permit = self
                 .acquire_user_permit(*principal, user_concurrency)
                 .await?;
             let account_loads = self
-                .load_account_concurrency(&route, protocol, request.model())
+                .load_compact_account_concurrency(&route, request.model())
                 .await?;
             let plan = self
                 .build_responses_compact_plan(
@@ -139,23 +135,21 @@ impl ScheduledChatService {
                 continue;
             };
             let upstream_model = upstream_model.to_owned();
+            if !super::credential_models::has_eligible_credentials(target, &model, &upstream_model)
+            {
+                continue;
+            }
             let candidate_request = compact_candidate_request(&request, &model, &upstream_model)?;
             let adaptor = get_adaptor(
                 target.channel_type(),
-                adaptor_settings(target, upstream_model)?,
+                adaptor_settings(target, upstream_model.clone())?,
             )
             .map_err(|_| AfError::Internal)?;
             if adaptor.default_protocol() != Protocol::OpenAiResponses {
                 return Err(AfError::Internal);
             }
             let headers = header_overrides(target)?;
-            let quota_dimension = CredentialQuotaDimension::for_canonical_model(&model);
-            let eligible_credentials = target
-                .credentials()
-                .iter()
-                .filter(|credential| credential.quota_dimension() == quota_dimension)
-                .cloned()
-                .collect::<Vec<_>>();
+            let eligible_credentials = super::eligible_credentials(target, &model, &upstream_model);
             let ordered_credentials = ordered_credentials(
                 request_id,
                 target,

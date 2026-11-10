@@ -13,6 +13,8 @@ import {
 } from './credential-api'
 import { updateCredentialStatusRequest } from './credential-form-model'
 import { CredentialItem } from './credential-item'
+import { CredentialModelBulk } from './credential-model-bulk'
+import { ChannelUsageSettings } from './channel-usage-settings'
 import { credentialRuntimeState, supportsSparkShadow } from './credential-model'
 
 type CredentialListProps = {
@@ -108,7 +110,7 @@ export function CredentialList(props: CredentialListProps) {
 
 
         <div className="flex flex-wrap items-center gap-3 py-3 text-xs">
-          <Checkbox isSelected={visible.length > 0 && visible.every((item) => selected.includes(item.id))} isDisabled={!bulkReady || visible.length === 0} size="sm" onChange={(checked) => setSelected(checked ? visible.map((item) => item.id) : [])}>{t('credentials.batch.selectFiltered', { defaultValue: '全选筛选结果' })}</Checkbox>
+          <Checkbox isSelected={visible.length > 0 && visible.every((item) => selected.includes(item.id))} isDisabled={!bulkReady || visible.length === 0} size="sm" onValueChange={(checked) => setSelected(checked ? visible.map((item) => item.id) : [])}>{t('credentials.batch.selectFiltered', { defaultValue: '全选筛选结果' })}</Checkbox>
           <Select
             aria-label={t('credentials.batch.status', { defaultValue: '按状态筛选' })}
             className="w-40"
@@ -131,6 +133,8 @@ export function CredentialList(props: CredentialListProps) {
           <Button type="button" size="sm" variant="bordered" isDisabled={!bulkReady || !selectedItems.length || selectedItems.length > 2048} onClick={() => { setBatchError(false); setBatch(selectedItems) }}><Trash2 className="size-4" aria-hidden="true" />{t('credentials.batch.deleteSelected', { defaultValue: '删除所选（{{count}}）', count: selectedItems.length })}</Button>
           {deleteCatalogQuery.isFetching ? <LoaderCircle className="size-4 animate-spin" aria-label={t('credentials.list.loading')} /> : null}
           {deleteCatalogQuery.isError ? <span role="alert" className="text-destructive">{t('credentials.delete.catalogError')}</span> : null}
+          <ChannelUsageSettings channelId={props.channel.id} />
+          <CredentialModelBulk channelId={props.channel.id} credentials={catalog} selectedIds={selected} ready={deleteCatalogQuery.isSuccess && !deleteCatalogQuery.isFetching} />
         </div>
 
         {props.loading ? (

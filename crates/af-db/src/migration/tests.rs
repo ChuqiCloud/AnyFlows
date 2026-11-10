@@ -104,6 +104,49 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     prepare_legacy_model_price(&pool).await?;
 
     Migrator::up(pool.connection(), None).await?;
+    for (table, columns) in [
+        (
+            "upstream_model_policies",
+            vec!["owner_id", "policy", "version"],
+        ),
+        (
+            "credential_model_observations",
+            vec!["credential_id", "items", "identity_fingerprint"],
+        ),
+        (
+            "upstream_usage_profiles",
+            vec!["id", "secret_json", "version"],
+        ),
+        (
+            "credential_usage_configs",
+            vec!["credential_id", "profile_id", "version"],
+        ),
+        (
+            "channel_usage_configs",
+            vec!["channel_id", "profile_id", "version"],
+        ),
+        (
+            "credential_usage_pauses",
+            vec!["credential_id", "pause_until", "pause_identity"],
+        ),
+        (
+            "upstream_usage_snapshots",
+            vec!["cache_key", "identity", "lease_until"],
+        ),
+    ] {
+        assert!(
+            SchemaManager::new(pool.connection())
+                .has_table(table)
+                .await?
+        );
+        for column in columns {
+            assert!(
+                SchemaManager::new(pool.connection())
+                    .has_column(table, column)
+                    .await?
+            );
+        }
+    }
     for table in ["merchant_pools", "merchant_profiles", "merchant_services"] {
         assert!(
             SchemaManager::new(pool.connection())

@@ -16,6 +16,7 @@ mod missing;
 mod missing_import;
 mod preview;
 mod target;
+pub(crate) use target::target_fingerprint;
 mod write;
 
 pub use preview::MODEL_SYNC_PREVIEW_TTL_SECONDS;
@@ -187,6 +188,7 @@ impl fmt::Debug for ModelDiscoveryMappingRecord {
 #[derive(Clone, Eq, PartialEq)]
 pub struct ModelDiscoveryTargetRecord {
     channel_id: ChannelId,
+    identity_fingerprint: String,
     channel_type: ChannelType,
     protocol: Protocol,
     base_url: Option<String>,
@@ -205,6 +207,11 @@ pub struct ModelDiscoveryTargetRecord {
 }
 
 impl ModelDiscoveryTargetRecord {
+    #[must_use]
+    pub fn identity_fingerprint(&self) -> String {
+        self.identity_fingerprint.clone()
+    }
+
     pub fn client_profile(&self) -> Option<&af_domain::ClientProfileSnapshot> {
         self.client_profile.as_ref()
     }
@@ -377,6 +384,11 @@ pub struct DiscoveredModelRecord {
 }
 
 impl DiscoveredModelRecord {
+    #[must_use]
+    pub fn upstream_model(&self) -> &str {
+        &self.upstream_model
+    }
+
     #[allow(
         clippy::too_many_arguments,
         reason = "字段与三种上游的公共证据投影一一对应"

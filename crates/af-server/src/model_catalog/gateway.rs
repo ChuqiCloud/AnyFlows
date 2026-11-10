@@ -85,9 +85,7 @@ impl RuntimeModelCatalogReader {
                 let mut available = false;
                 for (group_id, policy) in &groups {
                     if policy.allows(record.model())
-                        && !runtime
-                            .candidates(*group_id, record.model())
-                            .map_err(|_| ModelCatalogReadError::Internal)?
+                        && !super::available_protocols(&runtime, *group_id, record.model())?
                             .is_empty()
                     {
                         available = true;
