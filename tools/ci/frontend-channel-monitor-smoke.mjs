@@ -110,9 +110,9 @@ try {
   await eventEntries.filter({ hasText: label('channels.activeMonitor.events.down') }).waitFor()
   await eventEntries.filter({ hasText: label('channels.activeMonitor.events.recovered') }).waitFor()
 
-  await page.getByLabel(label('channels.activeMonitor.channel'), { exact: true }).selectOption('11')
-  await page.getByLabel(label('channels.activeMonitor.credential'), { exact: true }).selectOption('12')
-  await page.getByLabel(label('channels.activeMonitor.model'), { exact: true }).selectOption('chat-fixture')
+  await details.locator('fieldset label').filter({ hasText: label('channels.activeMonitor.channel') }).locator('select').selectOption('11')
+  await details.locator('fieldset label').filter({ hasText: label('channels.activeMonitor.credential') }).locator('select').selectOption('12')
+  await details.locator('fieldset label').filter({ hasText: label('channels.activeMonitor.model') }).locator('select').selectOption('chat-fixture')
   await page.getByLabel(label('channels.activeMonitor.interval'), { exact: true }).fill('300')
   await page.getByLabel(label('channels.activeMonitor.budget'), { exact: true }).fill('1')
   await page.getByLabel(label('channels.activeMonitor.timeout'), { exact: true }).fill('1')

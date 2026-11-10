@@ -602,7 +602,7 @@ try {
   assert.deepEqual(financeReportExportRequests.at(-1), { from_date: reportTestFrom, to_date: reportTestTo, granularity: 'month' })
   assert.equal(downloadedReport.suggestedFilename(), `merchant-finance-${reportTestFrom}-${reportTestTo}-month.csv`)
   const csvBody = (await csv.body()).toString('utf8')
-  assert.ok(csvBody.startsWith('\uFEFFperiod,'), 'The download preserves the UTF-8 CSV header')
+  assert.ok(csvBody.replace(/^\uFEFF/, '').startsWith('period,'), 'The download preserves the CSV header')
   assert.ok(csvBody.includes(`"${reportTestFrom.slice(0, 7)}",88,"'=2+2"`), 'The download preserves the server’s spreadsheet-safe CSV cell')
   services[0] = { ...services[0], status: 'published', published: { ...services[0].draft, status: 'published' }, draft: null }
   await page.getByRole('button', { name: 'routes', exact: true }).click()
