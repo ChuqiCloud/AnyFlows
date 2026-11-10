@@ -158,3 +158,20 @@ fn runtime_policy_projection_preserves_shadow_independence_and_secret_identity()
     assert!(!debug.contains("Spark"));
     Ok(())
 }
+
+#[test]
+fn credential_model_observation_insert_conflicts_are_portable_without_overwriting_evidence() {
+    use sea_orm::{QueryTrait, sea_query::{MysqlQueryBuilder, PostgresQueryBuilder, SqliteQueryBuilder}};
+    let insert = observations::Entity::insert(observations::ActiveModel {
+        credential_id: Set(10), channel_id: Set(1), identity_fingerprint: Set("fingerprint".to_owned()),
+        items: Set(serde_json::json!([])), status: Set("unknown".to_owned()), error_code: Set(None),
+        last_success_at: Set(None), last_checked_at: Set(None), lease_token: Set(None), lease_until: Set(None), next_refresh_at: Set(0),
+    }).on_conflict(OnConflict::column(observations::Column::CredentialId).do_nothing_on([observations::Column::CredentialId]).to_owned());
+    let query = insert.as_query();
+    let mysql = query.to_string(MysqlQueryBuilder);
+    assert!(mysql.contains("ON DUPLICATE KEY UPDATE `credential_id` = `credential_id`"));
+    assert!(!mysql.contains("IGNORE"));
+    for sql in [query.to_string(PostgresQueryBuilder), query.to_string(SqliteQueryBuilder)] {
+        assert!(sql.contains("ON CONFLICT (\"credential_id\") DO NOTHING"));
+    }
+}

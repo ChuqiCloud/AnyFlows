@@ -1,5 +1,6 @@
 {
   "zh": {
+    "coverageTitle": "模型与 Key 覆盖情况", "readCoverage": "读取 Key 覆盖情况", "refreshCoverage": "刷新覆盖情况", "coverageHint": "只读取完整 Key 目录和已保存的模型规则，不调用上游。计数结合渠道、Key、母凭据状态及模型权限；不代表推理实测结果或实时健康。", "modelUnion": "有效模型并集 {{count}} 项 · 已读取全部 {{total}} 个 Key", "partialUnion": "已确认模型并集至少 {{count}} 项 · {{failed}} / {{total}} 个 Key 未能读取", "partialCoverage": "{{count}} 个 Key 查询失败，覆盖数暂不完整；未知不会显示为 0，请重试。", "publishedModel": "已发布的公开模型", "supportingKeys": "符合规则的 Key 数", "atLeastKeys": "至少 {{count}} 个", "keyCount": "{{count}} 个", "noPublishedModels": "渠道尚未发布模型。",
     "upstreamSubscriptions": "上游账户订阅", "dailySubscription": "每日额度", "monthlySubscription": "每月额度",
     "profileInvalid": "请填写名称、公开 HTTPS 地址和新账户查询凭证。上游用户 ID 最长 64 字符，数值最多 12 位小数，币种仅接受字母、数字或下划线。",
     "channelTableHint": "渠道规则列表中的本地开关仅编辑渠道权限，Key 的最终有效状态请在各 Key 模型管理中查看。",
@@ -21,6 +22,7 @@
     "createProfile": "新建共享账户", "editProfile": "编辑共享账户", "profileHint": "使用独立的只读查询凭证，可供同一上游账户的多个 Key 复用。凭证加密保存，保存后不回显。", "profileName": "账户配置名称", "baseUrl": "上游平台地址", "platformUserId": "上游用户 ID", "managementSecret": "只读查询凭证", "secretPreserved": "已配置凭证。留空保留原值；填写则替换。", "secretRequired": "新建必须填写只读查询凭证。", "optional": "选填", "saveProfile": "保存共享账户", "deleteProfile": "删除共享账户", "confirmDeleteProfile": "确认删除配置", "deleteProfileHint": "删除后不可继续查询。仍有 Key 引用时服务端会拒绝删除。", "profileInUse": "此配置仍被 Key 使用，请先解除绑定。"
   },
   "en": {
+    "coverageTitle": "Model and Key coverage", "readCoverage": "Read Key coverage", "refreshCoverage": "Refresh coverage", "coverageHint": "Reads the complete Key directory and saved model rules without contacting upstreams. Counts combine channel, Key, parent status and model permissions; they do not verify inference or real-time health.", "modelUnion": "Effective union: {{count}} models · All {{total}} Keys read", "partialUnion": "Confirmed union: at least {{count}} models · {{failed}} / {{total}} Keys could not be read", "partialCoverage": "{{count}} Key queries failed. Counts are incomplete; unknown is never shown as zero. Retry to complete them.", "publishedModel": "Published public model", "supportingKeys": "Keys allowed by rules", "atLeastKeys": "At least {{count}}", "keyCount": "{{count}}", "noPublishedModels": "This channel has no published models.",
     "upstreamSubscriptions": "Upstream account subscriptions", "dailySubscription": "Daily quota", "monthlySubscription": "Monthly quota",
     "profileInvalid": "Enter a name, public HTTPS URL and query credential for a new account. User IDs allow up to 64 characters; amounts up to 12 decimal places; currency accepts letters, numbers and underscores.",
     "channelTableHint": "Local toggles edit channel permissions only. View each Key's model drawer for its effective state.",

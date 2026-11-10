@@ -12,9 +12,9 @@ struct UsageState { service: Arc<dyn AdminUpstreamUsageService>, probe: Arc<dyn 
 
 pub fn build_upstream_usage_router(service: Arc<dyn AdminUpstreamUsageService>, probe: Arc<dyn AdminCredentialUsageProbe>, authenticator: Arc<dyn SessionAuthenticator>) -> Router {
     Router::new()
-        .route("/api/admin/channels/{channel}/usage-config", get(channel_config).put(save_channel_config))
-        .route("/api/admin/channels/{channel}/credentials/{credential}/usage-config", get(config).put(save_config).delete(reset_config))
-        .route("/api/admin/channels/{channel}/credentials/{credential}/usage/refresh", axum::routing::post(refresh))
+        .route("/api/admin/channels/{channel_id}/usage-config", get(channel_config).put(save_channel_config))
+        .route("/api/admin/channels/{channel_id}/credentials/{credential_id}/usage-config", get(config).put(save_config).delete(reset_config))
+        .route("/api/admin/channels/{channel_id}/credentials/{credential_id}/usage/refresh", axum::routing::post(refresh))
         .route("/api/admin/upstream-usage-profiles", get(profiles).post(create_profile))
         .route("/api/admin/upstream-usage-profiles/{id}", axum::routing::put(update_profile).delete(delete_profile))
         .layer(DefaultBodyLimit::max(32 * 1024))

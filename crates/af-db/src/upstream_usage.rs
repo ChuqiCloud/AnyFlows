@@ -259,7 +259,8 @@ async fn load_target<C: ConnectionTrait>(connection: &C, channel: ChannelId, cre
     let envelope = EncryptedCredentialEnvelope::new(key, nonce, ciphertext).map_err(internal)?;
     let mut hash = Sha256::new();
     // Include target and secret revisions, so rotations never reuse an older observation.
-    for value in [channel_row.updated_at.unix_timestamp_nanos().to_string(), row.updated_at.unix_timestamp_nanos().to_string(),
+    for value in [channel.get().to_string(),credential.get().to_string(),secret_owner.id.to_string(),
+        channel_row.updated_at.unix_timestamp_nanos().to_string(), row.updated_at.unix_timestamp_nanos().to_string(),
         secret_owner.updated_at.unix_timestamp_nanos().to_string(), serde_json::to_string(&config).map_err(internal)?,
         profile.as_ref().map(|p| format!("{}:{}", p.id, p.version)).unwrap_or_default(), envelope.key_id().to_owned(), source_version.to_string()] {
         hash.update(value.len().to_le_bytes()); hash.update(value.as_bytes());

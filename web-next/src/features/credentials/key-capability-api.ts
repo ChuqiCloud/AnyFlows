@@ -51,7 +51,7 @@ export function useWriteUpstreamPolicy(channelId: number, credentialId?: number)
   const client = useQueryClient()
   return useMutation({ mutationFn: (body: ModelPolicyConfig) => capabilityWrite<ModelPolicyConfig>(policyUrl(channelId, credentialId), body), onSuccess: async (data) => {
     client.setQueryData([...capabilityKey(channelId, credentialId), 'policy'], data)
-    await Promise.all([client.invalidateQueries({ queryKey: credentialId === undefined ? ['upstream-key-capabilities', channelId] : [...capabilityKey(channelId, credentialId), 'models'] }), client.invalidateQueries({ queryKey: ['model-catalog'] }), client.invalidateQueries({ queryKey: ['admin-channel', channelId] }), client.invalidateQueries({ queryKey: ['admin-channels'] })])
+    await Promise.all([client.invalidateQueries({ queryKey: credentialId === undefined ? ['upstream-key-capabilities', channelId] : [...capabilityKey(channelId, credentialId), 'models'] }), client.invalidateQueries({ queryKey: ['upstream-key-capabilities', channelId, 'coverage'] }), client.invalidateQueries({ queryKey: ['model-catalog'] }), client.invalidateQueries({ queryKey: ['admin-channel', channelId] }), client.invalidateQueries({ queryKey: ['admin-channels'] })])
   } })
 }
 export function useCredentialModels(channelId: number, credentialId: number, enabled = true) {

@@ -221,7 +221,7 @@ pub(super) fn parse_codex(value:&Value)->Result<CredentialUsageSnapshot,UsageFet
     Ok(snapshot)
 }
 
-fn sanitize_subscription(value:&Value)->Option<Value> {
+pub(super) fn sanitize_subscription(value:&Value)->Option<Value> {
     let data=value.get("data").unwrap_or(value);
     let rows=data.get("subscriptions").and_then(Value::as_array).or_else(||data.as_array())?;
     let items:Vec<Value>=rows.iter().take(100).map(|row| {

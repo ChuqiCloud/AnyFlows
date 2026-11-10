@@ -221,7 +221,7 @@ impl CredentialModelsRepository {
                 credential_id: Set(source.get()), channel_id: Set(channel.get()), identity_fingerprint: Set(fingerprint.clone()),
                 items: Set(serde_json::json!([])), status: Set("unknown".to_owned()), error_code: Set(None),
                 last_success_at: Set(None), last_checked_at: Set(None), lease_token: Set(None), lease_until: Set(None), next_refresh_at: Set(0),
-            }).on_conflict(OnConflict::column(observations::Column::CredentialId).do_nothing().to_owned())
+            }).on_conflict(OnConflict::column(observations::Column::CredentialId).do_nothing_on([observations::Column::CredentialId]).to_owned())
                 .exec_without_returning(&txn).await.map_err(internal)?;
             let record = observations::Entity::find_by_id(source.get()).one(&txn).await.map_err(internal)?.ok_or(CredentialModelError::Internal)?;
             if record.identity_fingerprint == fingerprint && (record.lease_until.is_some_and(|until| until > now)

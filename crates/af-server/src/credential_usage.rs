@@ -115,8 +115,9 @@ impl UpstreamCredentialUsageProbe {
                 _ = &mut shutdown => return,
                 _ = ticker.tick() => {
                     let due = self.repository.due(upstream_usage_now_epoch(), 16).await.unwrap_or_default();
-                    let run = stream::iter(due).for_each_concurrent(2, |(channel, credential)| async {
-                        if self.query(channel, credential, true).await.is_err() {
+                    let probe=&self;
+                    let run = stream::iter(due).for_each_concurrent(2, |(channel, credential)| async move {
+                        if probe.query(channel, credential, true).await.is_err() {
                             tracing::debug!(channel_id=channel.get(),credential_id=credential.get(),"上游额度后台刷新失败");
                         }
                     });
@@ -232,6 +233,7 @@ fn is_exhausted(snapshot: &CredentialUsageSnapshot, now: i64) -> bool {
 
 fn derive_snapshot(target:&UpstreamUsageTarget,mut snapshot:CredentialUsageSnapshot,now:i64)->CredentialUsageSnapshot{
     snapshot.alert=None;snapshot.pause_until=None;
+    snapshot.stale|=snapshot.last_success_at.is_some_and(|at|now.saturating_sub(at)>target.config.refresh_interval_secs.unwrap_or(900));
     let fresh=matches!(snapshot.status,CredentialUsageStatus::Available)&&!snapshot.stale
         && snapshot.last_success_at.is_some_and(|at|now.saturating_sub(at)<=target.config.refresh_interval_secs.unwrap_or(900));
     if fresh {

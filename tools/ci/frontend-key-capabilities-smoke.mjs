@@ -61,6 +61,8 @@ let profileFailures = 1
 let model11Failures = 1
 let model13Failures = 1
 let usageRefreshes = 0
+let coverageFailures = 1
+let catalogPages = 0
 let server
 let browser
 let page
@@ -76,10 +78,11 @@ try {
     import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
     import { CredentialList } from './src/features/credentials/credential-list';
     import { UpstreamModelPolicyEditor } from './src/features/credentials/upstream-model-policy-editor';
+    import { ChannelModelCoverage } from './src/features/credentials/channel-model-coverage';
     import './src/index.css'; import './src/i18n';
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false }, mutations: { retry: false } } });
     const credentials = [11, 12, 13].map(id => ({ id, channel_id: 7, kind: 'api_key', status: id === 12 ? 'disabled' : 'enabled', schedulable: true, priority: 0, weight: 10, concurrency: null, oauth_token_pending: false, parent_id: null, quota_dimension: 'global', last_used_at: null, rate_limited_at: null, rate_limit_reset_at: null, overload_until: null, temp_unschedulable_until: null }));
-    function Fixture() { const [view, setView] = useState('keys'); return <HeroUIProvider><QueryClientProvider client={client}><main className="mx-auto max-w-5xl p-4"><nav><button onClick={() => setView('keys')}>keys</button><button onClick={() => setView('channel')}>channel</button></nav>{view === 'keys' ? <CredentialList channel={{id:7,type:'openai',protocol:'openai_chat',provider:'openai',name:'Fixture'}} credentials={credentials} loading={false} loadError={false} refreshing={false} refreshError={false} loadingMore={false} hasNextPage={false} active onRefresh={async () => {}} onLoadMore={async () => {}} onEdit={() => {}} /> : <UpstreamModelPolicyEditor channelId={7} />}</main></QueryClientProvider></HeroUIProvider> }
+    function Fixture() { const [view, setView] = useState('keys'); return <HeroUIProvider><QueryClientProvider client={client}><main className="mx-auto max-w-5xl p-4"><nav><button onClick={() => setView('keys')}>keys</button><button onClick={() => setView('channel')}>channel</button></nav>{view === 'keys' ? <CredentialList channel={{id:7,type:'openai',protocol:'openai_chat',provider:'openai',name:'Fixture'}} credentials={credentials} loading={false} loadError={false} refreshing={false} refreshError={false} loadingMore={false} hasNextPage={false} active onRefresh={async () => {}} onLoadMore={async () => {}} onEdit={() => {}} /> : <><UpstreamModelPolicyEditor channelId={7} /><ChannelModelCoverage channelId={7} models={['public-a','public-b','public-c']} /></>}</main></QueryClientProvider></HeroUIProvider> }
     createRoot(document.getElementById('root')).render(<Fixture />);
   `)
   server = spawn(process.execPath, [resolve(directory, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: directory, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -99,7 +102,11 @@ try {
     const method = request.method()
     assert.equal(request.headers().authorization, 'Bearer ci-key-capabilities')
     const respond = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) })
-    if (path === '/api/admin/channels/7/credentials') return respond({ credentials: [11, 12, 13].map(id => ({ id, channel_id: 7, kind: 'api_key', status: id === 12 ? 'disabled' : 'enabled', schedulable: true, priority: 0, weight: 10, concurrency: null, parent_id: null, quota_dimension: 'global', last_used_at: null, oauth_token_pending: false })), next_cursor: null })
+    if (path === '/api/admin/channels/7/credentials') {
+      const after = new URL(request.url()).searchParams.get('after')
+      catalogPages += 1
+      return respond({ credentials: (after ? [13] : [11, 12]).map(id => ({ id, channel_id: 7, kind: 'api_key', status: id === 12 ? 'disabled' : 'enabled', schedulable: true, priority: 0, weight: 10, concurrency: null, parent_id: null, quota_dimension: 'global', last_used_at: null, oauth_token_pending: false })), next_cursor: after ? null : 12 })
+    }
     if (path.endsWith('/credentials/health')) return respond({ available: true, credentials: [] })
     const target = path.match(/\/credentials\/(\d+)\//)?.[1] ?? 'channel'
     if (path.endsWith('/model-policy')) {
@@ -118,7 +125,10 @@ try {
       observations.set(target, observation)
       return respond(modelSnapshot(target))
     }
-    if (path.endsWith('/models')) return respond(modelSnapshot(target))
+    if (path.endsWith('/models')) {
+      if (target === '13' && coverageFailures-- > 0) return respond({ code: 'internal_error' }, 503)
+      return respond(modelSnapshot(target))
+    }
     if (path.endsWith('/usage-config')) {
       if (method === 'GET') return respond(configs.get(target))
       if (method === 'DELETE') { configs.set(target, usageDefault()); return route.fulfill({ status: 204 }) }
@@ -258,6 +268,18 @@ try {
   assert.equal(policyWrites.at(-1).target, 'channel')
   assert.deepEqual(policyWrites.at(-1).body.policy.models, ['Raw-B'])
   assert.equal(policyWrites.at(-1).body.refresh_interval_secs, 21600)
+  const fetchCountBeforeCoverage = modelFetches.length
+  const pagesBeforeCoverage = catalogPages
+  await page.getByRole('button', { name: label('readCoverage'), exact: true }).click()
+  const coverage = page.getByRole('region', { name: label('coverageTitle'), exact: true })
+  await coverage.getByText(label('partialCoverage', { count: 1 }), { exact: true }).waitFor()
+  await coverage.getByRole('row').filter({ hasText: 'public-a' }).getByText(label('unknown'), { exact: true }).waitFor()
+  assert.ok(catalogPages >= pagesBeforeCoverage + 2, 'Coverage reads every credential page')
+  await coverage.getByRole('button', { name: label('refreshCoverage'), exact: true }).click()
+  await coverage.getByText(label('modelUnion', { count: 1, total: 3 }), { exact: true }).waitFor()
+  await coverage.getByRole('row').filter({ hasText: 'public-a' }).getByText(label('keyCount', { count: 1 }), { exact: true }).waitFor()
+  await coverage.getByRole('row').filter({ hasText: 'public-b' }).getByText(label('keyCount', { count: 0 }), { exact: true }).waitFor()
+  assert.equal(modelFetches.length, fetchCountBeforeCoverage, 'Coverage uses database GETs without querying upstreams')
   await page.getByRole('button', { name: 'keys', exact: true }).click()
   await keyRow(12).getByRole('button', { name: label('manageModels'), exact: true }).click()
   await dialog().getByRole('textbox', { name: label('modelInterval'), exact: true }).waitFor()
