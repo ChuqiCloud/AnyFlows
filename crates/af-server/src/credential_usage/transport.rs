@@ -160,13 +160,12 @@ impl UpstreamCredentialUsageProbe {
             .profile
             .as_ref()
             .and_then(|p| p.platform_user_id.as_deref())
+            && provider == UpstreamUsageProvider::NewApi
         {
-            if provider == UpstreamUsageProvider::NewApi {
-                headers.insert(
-                    HeaderName::from_static("new-api-user"),
-                    HeaderValue::from_str(user).map_err(|_| UsageFetchError::Invalid)?,
-                );
-            }
+            headers.insert(
+                HeaderName::from_static("new-api-user"),
+                HeaderValue::from_str(user).map_err(|_| UsageFetchError::Invalid)?,
+            );
         }
         let mut snapshot = if provider == UpstreamUsageProvider::Codex {
             for (name, value) in [
