@@ -164,7 +164,6 @@ fn status_name(status: PublicStatusKind) -> &'static str {
 mod tests {
     use super::*;
     use af_admin::PublicStatusReport;
-    use af_db::PublicStatusPoint;
 
     fn report() -> PublicStatusReport {
         PublicStatusReport {
@@ -178,12 +177,7 @@ mod tests {
             unknown_request_count: Some(0),
             availability_percent: Some(99.0),
             average_success_duration_ms: Some(42),
-            hourly: vec![PublicStatusPoint {
-                period_start: 3_600,
-                successful_request_count: 99,
-                failed_request_count: 1,
-                unknown_request_count: 0,
-            }],
+            hourly: Vec::new(),
         }
     }
 
