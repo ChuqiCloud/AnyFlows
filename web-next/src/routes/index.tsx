@@ -1,36 +1,48 @@
-import { AccountVerificationPage } from '@/features/account-verification/account-verification-page'
-import { AuthenticationSettingsPage } from '@/features/authentication-settings/authentication-settings-page'
-import { VerificationSettingsPanel } from '@/features/account-verification/verification-settings-panel'
-import type { ReactNode } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import { Navigate, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom'
 import type { RouteObject } from 'react-router-dom'
 
-import { PublicModelPage } from '@/features/models/public-model-page'
-import { ApiExplorerPage } from '@/features/api-explorer/api-explorer-page'
-import { LandingPage } from '@/features/landing/landing-page'
-import { PaymentSettingsPage } from '@/features/payment-settings/payment-settings-page'
-import { PlaygroundPage } from '@/features/playground/playground-page'
-import { PublicPlaygroundSharePage } from '@/features/playground/public-playground-share-page'
-import { ProfilePage } from '@/features/profile/profile-page'
-import { RedemptionPage } from '@/features/redemptions/redemption-page'
-import { RefundPage } from '@/features/refunds/refund-page'
-import { RegistrationPage } from '@/features/registration/registration-page'
-import { RoutePage } from '@/features/routes/route-page'
-import { SetupPage } from '@/features/setup/setup-page'
-import { SiteNavigationPage, SiteSettingsPage } from '@/features/site-settings/site-settings-page'
-import { MySubscriptionsPage } from '@/features/subscriptions/my-subscriptions-page'
-import { SubscriptionManagementPage } from '@/features/subscriptions/subscription-management-page'
-import { TokenPage } from '@/features/tokens/token-page'
-import { UsageLogPage } from '@/features/usage-logs/usage-log-page'
-import { UserPage } from '@/features/users/user-page'
-import { VideoTaskPage } from '@/features/video-tasks/video-task-page'
-import { WalletPage } from '@/features/wallet/wallet-page'
 import { applyRouteGuards } from '@/shared/router'
 import { forgeRoutes } from '@/feature/routes'
 import { ConsoleLayout, useConsoleSession } from '@/routes/console-layout'
 import { ConsoleExtensionPage } from '@/extensions/extension-page'
 import { consoleExtensionRoutes } from '@/extensions/registry'
 import { ManagementGate } from '@/routes/management-gate'
+
+// 页面加载组件
+function PageLoader() {
+  return (
+    <div className="flex min-h-[400px] items-center justify-center">
+      <div className="size-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+    </div>
+  )
+}
+
+// 懒加载页面组件
+const LandingPage = lazy(() => import('@/features/landing/landing-page').then(m => ({ default: m.LandingPage })))
+const PublicModelPage = lazy(() => import('@/features/models/public-model-page').then(m => ({ default: m.PublicModelPage })))
+const ApiExplorerPage = lazy(() => import('@/features/api-explorer/api-explorer-page').then(m => ({ default: m.ApiExplorerPage })))
+const RegistrationPage = lazy(() => import('@/features/registration/registration-page').then(m => ({ default: m.RegistrationPage })))
+const SetupPage = lazy(() => import('@/features/setup/setup-page').then(m => ({ default: m.SetupPage })))
+const ProfilePage = lazy(() => import('@/features/profile/profile-page').then(m => ({ default: m.ProfilePage })))
+const PlaygroundPage = lazy(() => import('@/features/playground/playground-page').then(m => ({ default: m.PlaygroundPage })))
+const PublicPlaygroundSharePage = lazy(() => import('@/features/playground/public-playground-share-page').then(m => ({ default: m.PublicPlaygroundSharePage })))
+const RedemptionPage = lazy(() => import('@/features/redemptions/redemption-page').then(m => ({ default: m.RedemptionPage })))
+const RefundPage = lazy(() => import('@/features/refunds/refund-page').then(m => ({ default: m.RefundPage })))
+const RoutePage = lazy(() => import('@/features/routes/route-page').then(m => ({ default: m.RoutePage })))
+const MySubscriptionsPage = lazy(() => import('@/features/subscriptions/my-subscriptions-page').then(m => ({ default: m.MySubscriptionsPage })))
+const SubscriptionManagementPage = lazy(() => import('@/features/subscriptions/subscription-management-page').then(m => ({ default: m.SubscriptionManagementPage })))
+const SiteSettingsPage = lazy(() => import('@/features/site-settings/site-settings-page').then(m => ({ default: m.SiteSettingsPage })))
+const SiteNavigationPage = lazy(() => import('@/features/site-settings/site-settings-page').then(m => ({ default: m.SiteNavigationPage })))
+const PaymentSettingsPage = lazy(() => import('@/features/payment-settings/payment-settings-page').then(m => ({ default: m.PaymentSettingsPage })))
+const UserPage = lazy(() => import('@/features/users/user-page').then(m => ({ default: m.UserPage })))
+const WalletPage = lazy(() => import('@/features/wallet/wallet-page').then(m => ({ default: m.WalletPage })))
+const VideoTaskPage = lazy(() => import('@/features/video-tasks/video-task-page').then(m => ({ default: m.VideoTaskPage })))
+const AccountVerificationPage = lazy(() => import('@/features/account-verification/account-verification-page').then(m => ({ default: m.AccountVerificationPage })))
+const AuthenticationSettingsPage = lazy(() => import('@/features/authentication-settings/authentication-settings-page').then(m => ({ default: m.AuthenticationSettingsPage })))
+const VerificationSettingsPanel = lazy(() => import('@/features/account-verification/verification-settings-panel').then(m => ({ default: m.VerificationSettingsPanel })))
+const TokenPage = lazy(() => import('@/features/tokens/token-page').then(m => ({ default: m.TokenPage })))
+const UsageLogPage = lazy(() => import('@/features/usage-logs/usage-log-page').then(m => ({ default: m.UsageLogPage })))
 
 type ConsoleOutletContext = {
   onPasswordChanged: () => void

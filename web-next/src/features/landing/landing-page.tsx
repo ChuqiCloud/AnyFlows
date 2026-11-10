@@ -198,13 +198,13 @@ export function LandingPage() {
                 <Sparkles className="size-3.5" aria-hidden="true" />
                 {t('landing.hero.eyebrow')}
               </div>
-              <h1 className="mt-4 max-w-2xl text-[2.5rem] font-semibold leading-[1.08] tracking-normal sm:mt-6 sm:text-6xl lg:text-7xl">
+              <h1 className="mt-6 max-w-2xl text-[2.5rem] font-semibold leading-[1.08] tracking-normal sm:mt-8 sm:text-6xl lg:text-7xl">
                 {t('landing.hero.heading')}
               </h1>
-              <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground sm:mt-6 sm:text-lg sm:leading-7">
+              <p className="mt-6 max-w-xl text-base leading-7 text-foreground/80 sm:mt-8 sm:text-xl sm:leading-8">
                 {t('landing.hero.subtitle')}
               </p>
-              <div className="mt-6 flex flex-wrap gap-2.5 sm:mt-8">
+              <div className="mt-8 flex flex-wrap gap-3 sm:mt-10">
                 <Button as={RouterLink} color="primary" size="lg" to={accountPath} endContent={<ArrowRight className="size-4" aria-hidden="true" />}>
                   {accountCtaLabel}
                 </Button>
@@ -212,10 +212,15 @@ export function LandingPage() {
                   {t('landing.nav.models')}
                 </Button>
               </div>
-              <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground sm:mt-5">
-                <span className="inline-flex items-center gap-1.5"><Check className="size-3.5 text-success" aria-hidden="true" />{t('landing.home.heroChecks.compatible')}</span>
-                <span className="inline-flex items-center gap-1.5"><Check className="size-3.5 text-success" aria-hidden="true" />{t('landing.home.heroChecks.health')}</span>
-                <span className="inline-flex items-center gap-1.5"><Check className="size-3.5 text-success" aria-hidden="true" />{t('landing.home.heroChecks.logs')}</span>
+              <div className="mt-6 flex flex-wrap items-center gap-4 text-sm text-foreground/70 sm:mt-8">
+                <span className="inline-flex items-center gap-2">
+                  <Check className="size-4 text-success" aria-hidden="true" />
+                  {t('landing.home.heroChecks.compatible')}
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <Check className="size-4 text-success" aria-hidden="true" />
+                  {t('landing.home.heroChecks.health')}
+                </span>
               </div>
             </div>
 
