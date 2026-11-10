@@ -2347,7 +2347,7 @@ export type ModelCatalogTokenPrices = {
 };
 export type NotificationChannel = 'email' | 'in_app';
 export type NotificationDeliveryState = 'queued' | 'accepted' | 'failed' | 'canceled' | 'available';
-export type NotificationKind = 'balance_alert' | 'subscription_balance_alert' | 'subscription_purchase' | 'product_update';
+export type NotificationKind = 'balance_alert' | 'subscription_balance_alert' | 'subscription_purchase' | 'product_update' | 'channel_monitor';
 export type OAuthLoginExchangeRequest = {
     ticket: string;
 };
@@ -2933,6 +2933,8 @@ export type UserNotification = {
     announcement_body_en?: string | null;
     announcement_status?: number | null;
     announcement_visible_until?: number | null;
+    channel_monitor_target_id?: number | null;
+    channel_monitor_event_kind?: string | null;
 };
 export type UserNotificationListResponse = {
     entries: Array<UserNotification>;

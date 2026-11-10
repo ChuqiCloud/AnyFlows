@@ -22,6 +22,7 @@ pub type DatabaseTimestamp = sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 mod ability_write;
 mod merchant_pool;
 pub use merchant_pool::{MerchantCredentialMaterial, MerchantPoolRepository};
+pub use merchant_pool::{MerchantServiceWatch, MerchantServiceWatchPage};
 #[cfg(test)]
 mod ability_write_tests;
 mod admin_channel;
@@ -41,6 +42,13 @@ pub use admin_dashboard_sla::{
 };
 mod admin_dashboard_observability;
 mod admin_dashboard_outcomes;
+mod public_service_status;
+#[cfg(test)]
+mod public_service_status_tests;
+pub use public_service_status::{
+    PUBLIC_STATUS_MINIMUM_SAMPLES, PUBLIC_STATUS_PERIOD_SECONDS, PublicServiceStatusError,
+    PublicServiceStatusRecord, PublicServiceStatusRepository, PublicStatusPoint,
+};
 #[cfg(test)]
 mod admin_dashboard_tests;
 mod admin_group;
@@ -100,6 +108,7 @@ mod merchant_finance;
 pub use billing_contract::{BillingContractPriceSnapshotError, OrganizationContractPriceSnapshot};
 pub use merchant_finance::{
     MerchantFinanceBalance, MerchantFinanceEntry, MerchantFinanceError, MerchantFinancePage,
+    MerchantFinanceReport, MerchantFinanceReportRow, MerchantFinanceReportTotals,
     MerchantFinanceRepository, MerchantWithdrawal,
 };
 #[cfg(test)]
@@ -120,6 +129,9 @@ pub use client_profiles::{
     ClientProfileRepositoryError, ClientProfileRevisionPage, ClientProfileWrite,
 };
 mod channel_state;
+mod channel_monitor;
+#[cfg(test)]
+mod channel_monitor_tests;
 #[cfg(test)]
 mod channel_state_tests;
 mod compact_probe_state;
@@ -421,6 +433,13 @@ pub use billing_batch::{
 pub use channel_state::{
     ChannelAutoDisableOutcome, ChannelProbeLease, ChannelProbeRecoveryOutcome,
     ChannelStateRepository, ChannelStateRepositoryError, MAX_CHANNEL_PROBE_BATCH,
+};
+pub use channel_monitor::{
+    ActiveChannelMonitorConfig, ActiveChannelMonitorConfigError, ActiveChannelMonitorError,
+    ActiveChannelMonitorEvent, ActiveChannelMonitorEventKind, ActiveChannelMonitorRepository,
+    ActiveChannelMonitorTarget, ActiveChannelMonitorTargetInput, ActiveChannelProbeLease,
+    ActiveChannelProbeOutcome, MAX_ACTIVE_CHANNEL_MONITOR_BATCH, MAX_ACTIVE_CHANNEL_MONITOR_BUDGET,
+    MAX_ACTIVE_CHANNEL_MONITOR_EVENTS_PER_TARGET,
 };
 pub use compact_probe_state::{
     CompactProbeStateRepository, CompactProbeStateRepositoryError, CompactProbeStateWriteOutcome,

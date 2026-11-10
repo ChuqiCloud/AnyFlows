@@ -20,6 +20,7 @@ mod indexes;
 mod invite_rebate;
 mod model;
 mod model_sync;
+mod merchant_finance_report;
 mod network;
 mod payment;
 mod platform_audit;
@@ -57,6 +58,9 @@ pub(super) use indexes::{
     create_groups_indexes, create_tokens_indexes, create_users_indexes,
 };
 pub(super) use invite_rebate::create_invite_rebate_events;
+pub(super) use merchant_finance_report::{
+    create_merchant_finance_report_index, drop_merchant_finance_report_index,
+};
 pub(super) use platform_audit::{create_platform_audit_storage, drop_platform_audit_storage};
 pub(super) use routes::{create_route_channels, create_routes};
 pub(super) use routing::{

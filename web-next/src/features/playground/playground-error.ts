@@ -35,12 +35,16 @@ export function classifyPlaygroundError(error: unknown): PlaygroundErrorKind {
   if (statusCode === 401 || code === 'invalid_api_key' || code === 'authentication_error') {
     return 'invalid_key'
   }
+  if (statusCode === 403 || code === 'permission_denied' || code === 'ip_not_allowed') {
+    return 'access_restricted'
+  }
+  if (code === 'upstream_rate_limited') return 'upstream_unavailable'
   if (code === 'insufficient_quota') return 'insufficient_quota'
-  if (statusCode === 429 || code === 'rate_limit_exceeded' || code === 'rate_limit_error') {
+  if (statusCode === 429 || code === 'rate_limit_exceeded' || code === 'rate_limit_error' || code === 'quota_window_limited' || code === 'concurrency_limited') {
     return 'rate_limited'
   }
-  if (statusCode === 404 || code === 'model_not_found') return 'model_unavailable'
-  if (statusCode === 400 || statusCode === 413 || code === 'invalid_prompt') {
+  if (statusCode === 404 || code === 'model_not_found' || code === 'token_model_not_allowed') return 'model_unavailable'
+  if (statusCode === 400 || statusCode === 413 || code === 'invalid_prompt' || code === 'invalid_request') {
     return 'invalid_request'
   }
   if (statusCode === 502 || statusCode === 503 || statusCode === 504) {

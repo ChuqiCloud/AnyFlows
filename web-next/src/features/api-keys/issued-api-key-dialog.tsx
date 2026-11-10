@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import type { IssuedUserToken } from '@/lib/api/generated/types.gen'
 import { copyText } from '@/lib/clipboard'
 import { navigateTo } from '@/lib/router-navigation'
+import { IssuedApiKeyOnboarding } from './issued-api-key-onboarding'
 
 type IssuedApiKeyDialogProps = {
   issued?: IssuedUserToken
@@ -66,6 +67,7 @@ export function IssuedApiKeyDialog({ issued, onClose, showPlayground = true }: I
                 <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
                 {t('apiKeys.issued.warning')}
               </p>
+              {issued ? <IssuedApiKeyOnboarding /> : null}
             </ModalBody>
             <ModalFooter>
               {showPlayground ? (

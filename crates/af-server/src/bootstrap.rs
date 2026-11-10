@@ -28,7 +28,8 @@ use af_admin::{
     DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
     DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
     DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
-    DatabaseUserTokenService, DatabaseUserWalletService, EmailBindingService, EmailDelivery,
+    DatabaseUserTokenService, DatabaseUserWalletService, DatabaseActiveChannelMonitorService,
+    ActiveChannelMonitorWorker, EmailBindingService, EmailDelivery,
     ImageHistoryService, ImageHistoryServiceConfigError, InitialSetup, LocalImageHistoryService,
     ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
     OAuthLoginService, PasskeyAuthenticationService, PasskeyAuthenticationServiceConfigError,
@@ -70,7 +71,7 @@ use af_db::{
     AuthChallengeRateLimitRepositoryConfigError, AuthChallengeRepository,
     AuthChallengeRepositoryConfigError, BalanceAlertRepository, BalanceAlertRepositoryConfigError,
     BalanceAlertSettingsRepository, BalanceAlertSettingsRepositoryConfigError,
-    ChannelStateRepository, CredentialProxyRepository, CredentialProxyRepositoryConfigError,
+    ActiveChannelMonitorRepository, ChannelStateRepository, CredentialProxyRepository, CredentialProxyRepositoryConfigError,
     CredentialStateRepository, CustomOAuth2LoginRepository, CustomOAuth2LoginRepositoryError,
     CustomOAuth2ProviderRepository, CustomOAuth2ProviderRepositoryError, DatabaseError,
     DatabaseMigrationExtension, DatabaseOptions, DatabaseOptionsError, DatabasePool,
@@ -2424,6 +2425,18 @@ impl Bootstrap<BillingReady> {
             Duration::from_secs(config.channel_probe().probe_timeout_secs()),
         )
         .with_proxy_pools(infrastructure.admin_credential_proxy_service.proxy_pools());
+        let active_channel_monitor = ActiveChannelMonitorWorker::new(
+            ActiveChannelMonitorRepository::new(
+                infrastructure.infrastructure.database.clone(),
+            ),
+            Arc::new(probe.clone()),
+        );
+        supervisor.spawn("active-channel-monitor", move |task_shutdown| {
+            let worker = active_channel_monitor.clone();
+            async move {
+                worker.run_periodic_until(task_shutdown.cancelled()).await;
+            }
+        });
         let probe_config = channel_probe_config(&config);
         let admin_channel_probe: Arc<dyn AdminChannelProbe> = Arc::new(
             BoundedAdminChannelProbe::new(probe.clone(), probe_config.probe_timeout()),
@@ -2868,6 +2881,15 @@ impl Bootstrap<Supervised> {
             Some(http_extensions),
             Some(payment_webhook_routes),
         );
+        let public_status = af_db::PublicServiceStatusRepository::new(
+            self.stage.infrastructure.infrastructure.database.clone(),
+            Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+        )
+        .expect("公开状态仓储查询超时配置必须有效");
+        let router = router.merge(af_http::build_public_service_status_router(
+            Arc::new(af_admin::DatabasePublicServiceStatusReader::new(public_status)),
+            readiness.clone(),
+        ));
         let router = router.merge(af_http::build_credential_models_router(
             self.stage.credential_model_service.clone(),
             Arc::clone(&self.stage.infrastructure.session_authenticator),
@@ -2900,6 +2922,12 @@ impl Bootstrap<Supervised> {
             .merge(af_http::build_merchant_service_policy_router(
                 Arc::new(af_admin::DatabaseMerchantServicePolicy::new(
                     merchant_repository.clone(),
+                )),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+            .merge(af_http::build_merchant_service_watch_router(
+                Arc::new(af_admin::DatabaseMerchantServiceWatchService::new(
+                    Arc::new(merchant_repository.clone()),
                 )),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))
@@ -2981,6 +3009,14 @@ impl Bootstrap<Supervised> {
                         Arc::clone(store),
                     )) as Arc<dyn af_http::AdminCredentialHealthReader>
                 }),
+            ))
+            .merge(af_http::build_active_channel_monitor_router(
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+                Arc::new(DatabaseActiveChannelMonitorService::new(
+                    ActiveChannelMonitorRepository::new(
+                        self.stage.infrastructure.infrastructure.database.clone(),
+                    ),
+                )),
             ))
             .merge(af_http::build_account_verification_router(
                 Arc::new(

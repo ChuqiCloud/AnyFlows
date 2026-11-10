@@ -4,6 +4,8 @@
 #![allow(dead_code)]
 
 mod announcements;
+mod active_channel_monitor;
+pub use active_channel_monitor::{ActiveChannelMonitorService, ActiveChannelMonitorServiceError, ActiveChannelMonitorServiceFuture, build_active_channel_monitor_router, active_channel_monitor_openapi_document};
 mod anthropic_messages;
 mod api_explorer;
 mod audio_service;
@@ -74,6 +76,8 @@ mod management_users;
 mod management_wallet;
 mod merchant_pool;
 pub use merchant_pool::build_merchant_pool_router;
+mod merchant_service_watch;
+pub use merchant_service_watch::build_merchant_service_watch_router;
 mod merchant_service_policy;
 pub use merchant_service_policy::build_merchant_service_policy_router;
 mod middleware;
@@ -95,6 +99,7 @@ mod passkey_auth;
 mod password_reset;
 mod payment_settings;
 mod proxy_pools;
+mod public_service_status;
 mod verification_settings;
 pub use verification_settings::build_verification_settings_router;
 mod payment_webhook;
@@ -118,6 +123,7 @@ pub use software_updates::{
     SoftwareUpdateErrorBody, SoftwareUpdateFuture, SoftwareUpdateService,
     build_software_update_router,
 };
+pub use public_service_status::{build_public_service_status_router, PublicServiceStatusPoint, PublicServiceStatusResponse};
 mod merchant_routes;
 mod speech_service;
 mod streaming;

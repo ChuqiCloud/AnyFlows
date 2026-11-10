@@ -193,6 +193,36 @@
     "invalidWithdrawal": "提现金额无效或超过可提现余额。",
     "withdrawals": "提现申请",
     "earningsEntries": "收益流水",
+    "financeReport": {
+      "title": "期间结算报表",
+      "utcHint": "日期按 UTC 统计；冲正按其账本发生日期归期，以负数计入净额并单独列示退款，不回写原销售日期。成熟结算不重复计收入。",
+      "from": "开始日期（UTC）",
+      "to": "结束日期（UTC）",
+      "granularity": "汇总粒度",
+      "daily": "按日",
+      "monthly": "按月",
+      "export": "导出 CSV",
+      "exportError": "报表导出失败，请重试。",
+      "dateRequired": "请选择开始和结束日期。",
+      "page": "第 {{page}} / {{pages}} 页",
+      "columns": {
+        "period": "期间（UTC）",
+        "service": "服务",
+        "model": "模型",
+        "gross_quota": "成交额净值",
+        "commission_quota": "平台服务费净值",
+        "net_quota": "商户收入净值",
+        "refunded_net_quota": "冲回商户收入"
+      },
+      "totals": {
+        "sales_gross_quota": "成交额净值",
+        "commission_quota": "服务费净值",
+        "merchant_net_quota": "商户收入净值",
+        "refunded_gross_quota": "冲回成交额",
+        "refunded_commission_quota": "冲回平台服务费",
+        "refunded_net_quota": "冲回商户收入"
+      }
+    },
     "entryType": "类型",
     "gross": "成交额",
     "commission": "平台服务费",
@@ -528,6 +558,9 @@
       "providersLoading": "正在加载模型厂商",
       "providersError": "模型厂商加载失败，仍可使用其他筛选条件。",
       "retryProviders": "重试加载厂商",
+      "watch": "关注服务",
+      "unwatch": "取消关注",
+      "watchUnavailable": "关注服务暂不可用，请稍后重试。",
       "protocolLabels": {
         "openai_chat": "文本对话",
         "openai_responses": "Responses",
@@ -757,6 +790,36 @@
     "invalidWithdrawal": "The amount is invalid or exceeds available funds.",
     "withdrawals": "Withdrawal requests",
     "earningsEntries": "Earnings ledger",
+    "financeReport": {
+      "title": "Settlement report",
+      "utcHint": "Dates use UTC. Reversals are assigned to their ledger posting date, reduce net totals and are also reported separately; they do not rewrite the original sale date. Matured settlements are not counted as new sales.",
+      "from": "From date (UTC)",
+      "to": "To date (UTC)",
+      "granularity": "Granularity",
+      "daily": "Daily",
+      "monthly": "Monthly",
+      "export": "Export CSV",
+      "exportError": "Could not export the report. Try again.",
+      "dateRequired": "Choose both a start date and an end date.",
+      "page": "Page {{page}} of {{pages}}",
+      "columns": {
+        "period": "Period (UTC)",
+        "service": "Service",
+        "model": "Model",
+        "gross_quota": "Net gross sales",
+        "commission_quota": "Net platform commission",
+        "net_quota": "Net merchant proceeds",
+        "refunded_net_quota": "Merchant proceeds reversed"
+      },
+      "totals": {
+        "sales_gross_quota": "Net gross sales",
+        "commission_quota": "Net commission",
+        "merchant_net_quota": "Net proceeds",
+        "refunded_gross_quota": "Gross sales reversed",
+        "refunded_commission_quota": "Commission reversed",
+        "refunded_net_quota": "Merchant proceeds reversed"
+      }
+    },
     "entryType": "Type",
     "gross": "Gross",
     "commission": "Platform commission",
@@ -1092,6 +1155,9 @@
       "providersLoading": "Loading model manufacturers",
       "providersError": "Could not load manufacturers. Other filters are still available.",
       "retryProviders": "Retry manufacturers",
+      "watch": "Follow service",
+      "unwatch": "Unfollow",
+      "watchUnavailable": "Service follows are unavailable. Try again later.",
       "protocolLabels": {
         "openai_chat": "Chat",
         "openai_responses": "Responses",

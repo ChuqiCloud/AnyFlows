@@ -137,6 +137,9 @@ mod m20261108_000172_persist_merchant_task_terms;
 mod m20261109_000173_merchant_resource_deletion;
 mod m20261110_000174_upstream_model_capabilities;
 mod m20261110_000175_upstream_usage;
+mod m20261110_000176_merchant_service_watches;
+mod m20261110_000178_merchant_finance_report;
+mod m20261110_000179_active_channel_monitor;
 mod schema;
 
 #[cfg(test)]
@@ -545,6 +548,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20261109_000173_merchant_resource_deletion::Migration),
             Box::new(m20261110_000174_upstream_model_capabilities::Migration),
             Box::new(m20261110_000175_upstream_usage::Migration),
+            Box::new(m20261110_000176_merchant_service_watches::Migration),
+            Box::new(m20261110_000178_merchant_finance_report::Migration),
+            Box::new(m20261110_000179_active_channel_monitor::Migration),
         ]
     }
 }

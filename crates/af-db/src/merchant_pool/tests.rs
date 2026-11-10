@@ -7,6 +7,8 @@ use std::error::Error;
 mod deletion_tests;
 #[path = "provider_tests.rs"]
 mod provider_tests;
+#[path = "service_watch_tests.rs"]
+mod service_watch_tests;
 
 struct Fixture {
     repository: MerchantPoolRepository,

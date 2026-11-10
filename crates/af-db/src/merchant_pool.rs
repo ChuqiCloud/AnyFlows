@@ -36,10 +36,13 @@ use std::{future::Future, time::Duration};
 mod catalog;
 mod deletion;
 mod policies;
+mod service_watch;
 mod terms;
 #[cfg(test)]
 mod tests;
 mod writes;
+
+pub use service_watch::{MerchantServiceWatch, MerchantServiceWatchPage};
 
 #[derive(Clone)]
 pub struct MerchantPoolRepository {
