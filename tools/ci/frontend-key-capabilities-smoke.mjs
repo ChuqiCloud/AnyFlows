@@ -259,7 +259,7 @@ try {
   await dialog().getByText(label('saved'), { exact: true }).waitFor()
   assert.equal(configWrites.at(-1).target, 'channel')
   assert.equal(configWrites.at(-1).body.refresh_interval_secs, null, 'Background polling stays off by default')
-  await page.keyboard.press('Escape'); await dialog().waitFor({ state: 'hidden' })
+  await dialog().getByRole('button', { name: label('close'), exact: true }).click(); await dialog().waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: 'channel', exact: true }).click()
   await page.getByRole('combobox', { name: label('policyMode'), exact: true }).selectOption('denylist')
   await page.getByRole('textbox', { name: label('exactNames'), exact: true }).fill('Raw-B')
