@@ -239,9 +239,13 @@ impl UserNotification {
         self.record.merchant_service_event_id()
     }
     #[must_use]
-    pub const fn channel_monitor_target_id(&self) -> Option<i64> { self.record.channel_monitor_target_id() }
+    pub const fn channel_monitor_target_id(&self) -> Option<i64> {
+        self.record.channel_monitor_target_id()
+    }
     #[must_use]
-    pub fn channel_monitor_event_kind(&self) -> Option<&str> { self.record.channel_monitor_event_kind() }
+    pub fn channel_monitor_event_kind(&self) -> Option<&str> {
+        self.record.channel_monitor_event_kind()
+    }
     #[must_use]
     pub fn merchant_service_event_kind(&self) -> Option<&str> {
         self.record.merchant_service_event_kind()

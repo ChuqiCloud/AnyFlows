@@ -1631,15 +1631,24 @@ impl IntoResponse for ManagementError {
             ),
             Self::MerchantServiceWatchNotFound => (
                 StatusCode::NOT_FOUND,
-                ManagementErrorBody { code: "merchant_service_watch_not_found", message: "Service not found" },
+                ManagementErrorBody {
+                    code: "merchant_service_watch_not_found",
+                    message: "Service not found",
+                },
             ),
             Self::MerchantServiceWatchLimitReached => (
                 StatusCode::TOO_MANY_REQUESTS,
-                ManagementErrorBody { code: "merchant_service_watch_limit_reached", message: "Service watch limit reached" },
+                ManagementErrorBody {
+                    code: "merchant_service_watch_limit_reached",
+                    message: "Service watch limit reached",
+                },
             ),
             Self::MerchantServiceWatchUnavailable => (
                 StatusCode::SERVICE_UNAVAILABLE,
-                ManagementErrorBody { code: "merchant_service_watch_unavailable", message: "Service watches unavailable" },
+                ManagementErrorBody {
+                    code: "merchant_service_watch_unavailable",
+                    message: "Service watches unavailable",
+                },
             ),
             Self::Internal => (
                 StatusCode::INTERNAL_SERVER_ERROR,

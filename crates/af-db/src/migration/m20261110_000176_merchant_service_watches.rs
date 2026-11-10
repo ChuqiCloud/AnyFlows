@@ -30,9 +30,21 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(Alias::new("user_id")).big_integer().not_null())
-                    .col(ColumnDef::new(Alias::new("pool_id")).big_integer().not_null())
-                    .col(ColumnDef::new(Alias::new("service_id")).big_integer().not_null())
+                    .col(
+                        ColumnDef::new(Alias::new("user_id"))
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Alias::new("pool_id"))
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Alias::new("service_id"))
+                            .big_integer()
+                            .not_null(),
+                    )
                     .col(
                         ColumnDef::new(Alias::new("active"))
                             .boolean()
@@ -52,21 +64,30 @@ impl MigrationTrait for Migration {
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_merchant_service_watches_user")
-                            .from(Alias::new("merchant_service_watches"), Alias::new("user_id"))
+                            .from(
+                                Alias::new("merchant_service_watches"),
+                                Alias::new("user_id"),
+                            )
                             .to(Alias::new("users"), Alias::new("id"))
                             .on_delete(ForeignKeyAction::Cascade),
                     )
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_merchant_service_watches_pool")
-                            .from(Alias::new("merchant_service_watches"), Alias::new("pool_id"))
+                            .from(
+                                Alias::new("merchant_service_watches"),
+                                Alias::new("pool_id"),
+                            )
                             .to(Alias::new("merchant_pools"), Alias::new("id"))
                             .on_delete(ForeignKeyAction::Restrict),
                     )
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_merchant_service_watches_service")
-                            .from(Alias::new("merchant_service_watches"), Alias::new("service_id"))
+                            .from(
+                                Alias::new("merchant_service_watches"),
+                                Alias::new("service_id"),
+                            )
                             .to(Alias::new("merchant_services"), Alias::new("id"))
                             .on_delete(ForeignKeyAction::Restrict),
                     )
@@ -106,9 +127,21 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(Alias::new("pool_id")).big_integer().not_null())
-                    .col(ColumnDef::new(Alias::new("service_id")).big_integer().not_null())
-                    .col(ColumnDef::new(Alias::new("merchant_id")).big_integer().not_null())
+                    .col(
+                        ColumnDef::new(Alias::new("pool_id"))
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Alias::new("service_id"))
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Alias::new("merchant_id"))
+                            .big_integer()
+                            .not_null(),
+                    )
                     .col(
                         ColumnDef::new(Alias::new("event_kind"))
                             .string_len(32)
@@ -132,14 +165,20 @@ impl MigrationTrait for Migration {
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_merchant_service_watch_events_pool")
-                            .from(Alias::new("merchant_service_watch_events"), Alias::new("pool_id"))
+                            .from(
+                                Alias::new("merchant_service_watch_events"),
+                                Alias::new("pool_id"),
+                            )
                             .to(Alias::new("merchant_pools"), Alias::new("id"))
                             .on_delete(ForeignKeyAction::Restrict),
                     )
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_merchant_service_watch_events_service")
-                            .from(Alias::new("merchant_service_watch_events"), Alias::new("service_id"))
+                            .from(
+                                Alias::new("merchant_service_watch_events"),
+                                Alias::new("service_id"),
+                            )
                             .to(Alias::new("merchant_services"), Alias::new("id"))
                             .on_delete(ForeignKeyAction::Restrict),
                     )

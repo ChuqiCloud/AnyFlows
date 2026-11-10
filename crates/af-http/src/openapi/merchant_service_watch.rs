@@ -19,7 +19,7 @@ pub(super) fn document() -> OpenApi {
         }),
     );
     let schemas = json!({
-        "MerchantServiceWatch":{"type":"object","additionalProperties":false,"required":["pool_id","pool_name","service_id","service_name","merchant_name","active","created_at"],"properties":{"pool_id":{"type":"integer","format":"int64"},"pool_name":{"type":"string"},"service_id":{"type":"integer","format":"int64"},"service_name":{"type":"string"},"merchant_name":{"type":"string"},"active":{"type":"boolean"},"created_at":{"type":"integer","format":"int64"}}},
+        "MerchantServiceWatch":{"type":"object","additionalProperties":false,"required":["pool_id","pool_name","service_id","merchant_id","service_name","merchant_name","active","created_at"],"properties":{"pool_id":{"type":"integer","format":"int64"},"pool_name":{"type":"string"},"service_id":{"type":"integer","format":"int64"},"merchant_id":{"type":"integer","format":"int64"},"service_name":{"type":"string"},"merchant_name":{"type":"string"},"active":{"type":"boolean"},"created_at":{"type":"integer","format":"int64"}}},
         "MerchantServiceWatchListResponse":{"type":"object","additionalProperties":false,"required":["items","total"],"properties":{"items":{"type":"array","items":{"$ref":"#/components/schemas/MerchantServiceWatch"}},"total":{"type":"integer","format":"int64"}}},
         "MerchantServiceWatchChangeResponse":{"type":"object","additionalProperties":false,"required":["changed"],"properties":{"changed":{"type":"boolean"}}}
     });

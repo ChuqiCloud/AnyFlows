@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use af_admin::{
-    MerchantFinanceError, MerchantFinanceReport, MerchantFinanceService,
-    SessionAuthentication, SessionAuthenticator,
+    MerchantFinanceError, MerchantFinanceReport, MerchantFinanceService, SessionAuthentication,
+    SessionAuthenticator,
 };
 use axum::{
     Json, Router,
@@ -329,7 +329,9 @@ async fn report_csv(
 }
 
 fn finance_report_csv(report: &MerchantFinanceReport) -> String {
-    let mut output = String::from("\u{feff}period,service_id,service_name,model,gross_quota,commission_quota,net_quota,refunded_gross_quota,refunded_commission_quota,refunded_net_quota\r\n");
+    let mut output = String::from(
+        "\u{feff}period,service_id,service_name,model,gross_quota,commission_quota,net_quota,refunded_gross_quota,refunded_commission_quota,refunded_net_quota\r\n",
+    );
     for row in &report.rows {
         let values = [
             csv_text(&row.period),
@@ -537,8 +539,7 @@ impl IntoResponse for FinanceHttpError {
             MerchantFinanceError::Forbidden => {
                 (StatusCode::FORBIDDEN, "forbidden", "无权访问商户资金")
             }
-            MerchantFinanceError::Unavailable
-            | MerchantFinanceError::Invariant => (
+            MerchantFinanceError::Unavailable | MerchantFinanceError::Invariant => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "merchant_finance_unavailable",
                 "商户资金服务暂不可用",
@@ -580,7 +581,9 @@ mod finance_report_tests {
 
     #[test]
     fn report_csv_includes_signed_rows_and_separate_refund_totals() {
-        use af_admin::{MerchantFinanceReport, MerchantFinanceReportRow, MerchantFinanceReportTotals};
+        use af_admin::{
+            MerchantFinanceReport, MerchantFinanceReportRow, MerchantFinanceReportTotals,
+        };
         let report = MerchantFinanceReport {
             granularity: "day".to_owned(),
             from_date: "2026-11-10".to_owned(),

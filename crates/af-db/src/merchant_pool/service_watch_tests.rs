@@ -20,13 +20,19 @@ async fn published_service_updates_notify_once_and_draft_edits_stay_private()
         .repository
         .write_service(UserId::new(1)?, Some(service.id), draft, envelope)
         .await?;
-    assert_eq!(merchant_service_notification_count(&fixture, owner.get()).await?, 0);
+    assert_eq!(
+        merchant_service_notification_count(&fixture, owner.get()).await?,
+        0
+    );
 
     let submitted = fixture
         .repository
         .submit_service(UserId::new(1)?, service.id)
         .await?;
-    assert_eq!(merchant_service_notification_count(&fixture, owner.get()).await?, 0);
+    assert_eq!(
+        merchant_service_notification_count(&fixture, owner.get()).await?,
+        0
+    );
 
     let expected_revision = submitted
         .draft
@@ -41,14 +47,16 @@ async fn published_service_updates_notify_once_and_draft_edits_stay_private()
             review("approve", Some(expected_revision)),
         )
         .await?;
-    assert_eq!(merchant_service_notification_count(&fixture, owner.get()).await?, 1);
+    assert_eq!(
+        merchant_service_notification_count(&fixture, owner.get()).await?,
+        1
+    );
 
     let txn = fixture.pool.connection().begin().await?;
     let event = crate::entity::merchant_service_watch_events::Entity::find()
         .filter(crate::entity::merchant_service_watch_events::Column::ServiceId.eq(service.id))
         .filter(
-            crate::entity::merchant_service_watch_events::Column::EventKind
-                .eq("service_updated"),
+            crate::entity::merchant_service_watch_events::Column::EventKind.eq("service_updated"),
         )
         .one(&txn)
         .await?
@@ -86,7 +94,10 @@ async fn published_service_updates_notify_once_and_draft_edits_stay_private()
             .try_get::<i64>("", "count")?,
         1
     );
-    assert_eq!(merchant_service_notification_count(&fixture, owner.get()).await?, 1);
+    assert_eq!(
+        merchant_service_notification_count(&fixture, owner.get()).await?,
+        1
+    );
 
     fixture.pool.close().await?;
     Ok(())
@@ -192,18 +203,24 @@ async fn followed_service_updates_are_deduplicated_and_redacted_after_access_rev
         crate::UserNotificationListOutcome::NotFound => unreachable!(),
     };
     assert_eq!(page.entries().len(), 2);
-    assert!(page.entries().iter().any(|entry| {
-        entry.merchant_service_event_kind() == Some("maintenance_ended")
-    }));
+    assert!(
+        page.entries()
+            .iter()
+            .any(|entry| { entry.merchant_service_event_kind() == Some("maintenance_ended") })
+    );
 
-    assert!(fixture
-        .repository
-        .unwatch_service(owner, fixture.shared_pool, service.id)
-        .await?);
-    assert!(!fixture
-        .repository
-        .unwatch_service(owner, fixture.shared_pool, service.id)
-        .await?);
+    assert!(
+        fixture
+            .repository
+            .unwatch_service(owner, fixture.shared_pool, service.id)
+            .await?
+    );
+    assert!(
+        !fixture
+            .repository
+            .unwatch_service(owner, fixture.shared_pool, service.id)
+            .await?
+    );
     let notification_count = fixture
         .pool
         .connection()

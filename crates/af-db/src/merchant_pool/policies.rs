@@ -1,11 +1,11 @@
 //! Sales prices and maintenance are independent of immutable approved credentials.
+use super::service_watch::record_service_event;
 use super::*;
 use crate::entity::{merchant_maintenance as maintenance, merchant_service_prices as prices};
 use af_domain::{
     MerchantMaintenance, MerchantMaintenanceWrite, MerchantModelRatio, MerchantServicePrice,
     MerchantServicePriceWrite,
 };
-use super::service_watch::record_service_event;
 
 impl MerchantPoolRepository {
     pub async fn service_prices(
@@ -214,7 +214,9 @@ impl MerchantPoolRepository {
         let service = lock_service(&txn, service).await?;
         let processed = apply_due_in_transaction(&txn, &service, now).await?;
         if processed > 0 {
-            if let Some(active) = active_price(&txn, service.id, service.published_revision_id).await? {
+            if let Some(active) =
+                active_price(&txn, service.id, service.published_revision_id).await?
+            {
                 record_service_event(
                     &txn,
                     &service,

@@ -79,7 +79,9 @@ async fn list_watches(
         .list(authentication.principal())
         .await
         .map_err(map_error)?;
-    Ok(no_store_json(MerchantServiceWatchListResponse::from_page(page)))
+    Ok(no_store_json(MerchantServiceWatchListResponse::from_page(
+        page,
+    )))
 }
 
 async fn watch_service(
@@ -95,7 +97,9 @@ async fn watch_service(
         .watch(authentication.principal(), pool, service)
         .await
         .map_err(map_error)?;
-    Ok(no_store_json(MerchantServiceWatchResponse::from_watch(watch)))
+    Ok(no_store_json(MerchantServiceWatchResponse::from_watch(
+        watch,
+    )))
 }
 
 async fn unwatch_service(
@@ -111,7 +115,9 @@ async fn unwatch_service(
         .unwatch(authentication.principal(), pool, service)
         .await
         .map_err(map_error)?;
-    Ok(no_store_json(MerchantServiceWatchChangeResponse { changed }))
+    Ok(no_store_json(MerchantServiceWatchChangeResponse {
+        changed,
+    }))
 }
 
 impl MerchantServiceWatchResponse {
@@ -146,7 +152,9 @@ fn map_error(error: MerchantServiceWatchError) -> ManagementError {
     match error {
         MerchantServiceWatchError::InvalidInput => ManagementError::InvalidRequest,
         MerchantServiceWatchError::NotFound => ManagementError::MerchantServiceWatchNotFound,
-        MerchantServiceWatchError::LimitReached => ManagementError::MerchantServiceWatchLimitReached,
+        MerchantServiceWatchError::LimitReached => {
+            ManagementError::MerchantServiceWatchLimitReached
+        }
         MerchantServiceWatchError::Internal => ManagementError::MerchantServiceWatchUnavailable,
     }
 }

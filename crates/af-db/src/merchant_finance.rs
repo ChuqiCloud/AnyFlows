@@ -199,9 +199,12 @@ impl MerchantFinanceRepository {
         let start = PrimitiveDateTime::new(from, time::Time::MIDNIGHT)
             .assume_utc()
             .unix_timestamp();
-        let end = PrimitiveDateTime::new(to.next_day().ok_or(MerchantFinanceError::InvalidInput)?, time::Time::MIDNIGHT)
-            .assume_utc()
-            .unix_timestamp();
+        let end = PrimitiveDateTime::new(
+            to.next_day().ok_or(MerchantFinanceError::InvalidInput)?,
+            time::Time::MIDNIGHT,
+        )
+        .assume_utc()
+        .unix_timestamp();
         timeout(self.timeout, async {
             let backend = self.pool.connection().get_database_backend();
             let bucket = report_bucket_expression(backend, granularity);
@@ -898,16 +901,30 @@ pub(crate) fn select(table: &str) -> SelectStatement {
 fn report_bucket_expression(backend: DbBackend, granularity: &str) -> String {
     match backend {
         DbBackend::Sqlite => {
-            let format = if granularity == "month" { "%Y-%m" } else { "%Y-%m-%d" };
+            let format = if granularity == "month" {
+                "%Y-%m"
+            } else {
+                "%Y-%m-%d"
+            };
             format!("strftime('{format}', e.created_at, 'unixepoch')")
         }
         DbBackend::Postgres => {
-            let format = if granularity == "month" { "YYYY-MM" } else { "YYYY-MM-DD" };
+            let format = if granularity == "month" {
+                "YYYY-MM"
+            } else {
+                "YYYY-MM-DD"
+            };
             format!("to_char(to_timestamp(e.created_at) AT TIME ZONE 'UTC', '{format}')")
         }
         DbBackend::MySql => {
-            let format = if granularity == "month" { "%Y-%m" } else { "%Y-%m-%d" };
-            format!("DATE_FORMAT(TIMESTAMPADD(SECOND, e.created_at, '1970-01-01 00:00:00'), '{format}')")
+            let format = if granularity == "month" {
+                "%Y-%m"
+            } else {
+                "%Y-%m-%d"
+            };
+            format!(
+                "DATE_FORMAT(TIMESTAMPADD(SECOND, e.created_at, '1970-01-01 00:00:00'), '{format}')"
+            )
         }
     }
 }

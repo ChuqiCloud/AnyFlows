@@ -43,15 +43,21 @@ pub enum Relation {
 }
 
 impl Related<super::users::Entity> for Entity {
-    fn to() -> RelationDef { Relation::User.def() }
+    fn to() -> RelationDef {
+        Relation::User.def()
+    }
 }
 
 impl Related<super::merchant_pools::Entity> for Entity {
-    fn to() -> RelationDef { Relation::Pool.def() }
+    fn to() -> RelationDef {
+        Relation::Pool.def()
+    }
 }
 
 impl Related<super::merchant_services::Entity> for Entity {
-    fn to() -> RelationDef { Relation::Service.def() }
+    fn to() -> RelationDef {
+        Relation::Service.def()
+    }
 }
 
 impl ActiveModelBehavior for ActiveModel {}

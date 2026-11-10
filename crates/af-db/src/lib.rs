@@ -128,10 +128,10 @@ pub use client_profiles::{
     ClientProfileReference, ClientProfileReferencePage, ClientProfileRepository,
     ClientProfileRepositoryError, ClientProfileRevisionPage, ClientProfileWrite,
 };
-mod channel_state;
 mod channel_monitor;
 #[cfg(test)]
 mod channel_monitor_tests;
+mod channel_state;
 #[cfg(test)]
 mod channel_state_tests;
 mod compact_probe_state;
@@ -430,16 +430,16 @@ pub use billing_batch::{
     BillingBatchRepository, BillingBatchRepositoryError, BillingBatchWrite, BillingBatchWriteError,
     BillingBatchWriteOutcome, ChannelBillingWrite, TokenBillingWrite, UserBillingWrite,
 };
-pub use channel_state::{
-    ChannelAutoDisableOutcome, ChannelProbeLease, ChannelProbeRecoveryOutcome,
-    ChannelStateRepository, ChannelStateRepositoryError, MAX_CHANNEL_PROBE_BATCH,
-};
 pub use channel_monitor::{
     ActiveChannelMonitorConfig, ActiveChannelMonitorConfigError, ActiveChannelMonitorError,
     ActiveChannelMonitorEvent, ActiveChannelMonitorEventKind, ActiveChannelMonitorRepository,
     ActiveChannelMonitorTarget, ActiveChannelMonitorTargetInput, ActiveChannelProbeLease,
     ActiveChannelProbeOutcome, MAX_ACTIVE_CHANNEL_MONITOR_BATCH, MAX_ACTIVE_CHANNEL_MONITOR_BUDGET,
     MAX_ACTIVE_CHANNEL_MONITOR_EVENTS_PER_TARGET,
+};
+pub use channel_state::{
+    ChannelAutoDisableOutcome, ChannelProbeLease, ChannelProbeRecoveryOutcome,
+    ChannelStateRepository, ChannelStateRepositoryError, MAX_CHANNEL_PROBE_BATCH,
 };
 pub use compact_probe_state::{
     CompactProbeStateRepository, CompactProbeStateRepositoryError, CompactProbeStateWriteOutcome,

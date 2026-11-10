@@ -7,12 +7,13 @@ use af_account::{
     SystemSecretKind,
 };
 use af_admin::{
-    AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
-    AdminCredentialProxyService, AdminCustomOAuth2ProviderService, AdminEmailSettingsService,
-    AdminGroupReader, AdminGroupWriter, AdminModelPriceService, AdminModelProviderCatalogService,
-    AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsError,
-    AdminRefundService, AdminRouteReader, AdminRouteWriter, AdminTokenReader, AdminTokenWriter,
-    AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService, BalanceAlertTask,
+    ActiveChannelMonitorWorker, AdminBalanceAlertSettingsService, AdminChannelReader,
+    AdminChannelWriter, AdminCredentialProxyService, AdminCustomOAuth2ProviderService,
+    AdminEmailSettingsService, AdminGroupReader, AdminGroupWriter, AdminModelPriceService,
+    AdminModelProviderCatalogService, AdminModelReader, AdminModelSyncService, AdminModelWriter,
+    AdminNetworkSettingsError, AdminRefundService, AdminRouteReader, AdminRouteWriter,
+    AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter,
+    AdminWalletService, BalanceAlertTask, DatabaseActiveChannelMonitorService,
     DatabaseAdminBalanceAlertSettingsService, DatabaseAdminChannelReader,
     DatabaseAdminChannelWriter, DatabaseAdminCredentialProxyService,
     DatabaseAdminCustomOAuth2ProviderService, DatabaseAdminEmailSettingsService,
@@ -28,8 +29,7 @@ use af_admin::{
     DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
     DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
     DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
-    DatabaseUserTokenService, DatabaseUserWalletService, DatabaseActiveChannelMonitorService,
-    ActiveChannelMonitorWorker, EmailBindingService, EmailDelivery,
+    DatabaseUserTokenService, DatabaseUserWalletService, EmailBindingService, EmailDelivery,
     ImageHistoryService, ImageHistoryServiceConfigError, InitialSetup, LocalImageHistoryService,
     ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
     OAuthLoginService, PasskeyAuthenticationService, PasskeyAuthenticationServiceConfigError,
@@ -60,27 +60,28 @@ use af_cache::{
 };
 use af_config::{AppConfig, ConfigError};
 use af_db::{
-    AdminChannelRepository, AdminChannelRepositoryConfigError, AdminDashboardRepository,
-    AdminDashboardRepositoryConfigError, AdminGroupRepository, AdminGroupRepositoryConfigError,
-    AdminModelRepository, AdminModelRepositoryConfigError, AdminRouteRepository,
-    AdminRouteRepositoryConfigError, AdminTokenRepository, AdminTokenRepositoryConfigError,
-    AdminUsageLogRepository, AdminUsageLogRepositoryConfigError, AdminUserRepository,
-    AdminUserRepositoryConfigError, AnalyticsExportRepository, AnalyticsExportRepositoryError,
-    AnnouncementRepository, AnnouncementRepositoryConfigError, AsyncTaskBillingRepository,
-    AsyncTaskRepository, AsyncTaskSubmissionRepository, AuthChallengeRateLimitRepository,
-    AuthChallengeRateLimitRepositoryConfigError, AuthChallengeRepository,
-    AuthChallengeRepositoryConfigError, BalanceAlertRepository, BalanceAlertRepositoryConfigError,
-    BalanceAlertSettingsRepository, BalanceAlertSettingsRepositoryConfigError,
-    ActiveChannelMonitorRepository, ChannelStateRepository, CredentialProxyRepository, CredentialProxyRepositoryConfigError,
-    CredentialStateRepository, CustomOAuth2LoginRepository, CustomOAuth2LoginRepositoryError,
-    CustomOAuth2ProviderRepository, CustomOAuth2ProviderRepositoryError, DatabaseError,
-    DatabaseMigrationExtension, DatabaseOptions, DatabaseOptionsError, DatabasePool,
-    DebugTraceRepository, DebugTraceRepositoryConfigError, DebugTraceRepositoryError,
-    DebugTraceSnapshotCipherError, EmailSettingsRepository, EmailSettingsRepositoryConfigError,
-    ImageHistoryRepository, ImageHistoryRepositoryConfigError, InitialSetupRepository,
-    InitialSetupRepositoryConfigError, InitialSetupRepositoryError, MigrationOptions,
-    ModelPriceRepository, ModelProviderCatalogRepository, ModelProviderCatalogRepositoryError,
-    ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
+    ActiveChannelMonitorRepository, AdminChannelRepository, AdminChannelRepositoryConfigError,
+    AdminDashboardRepository, AdminDashboardRepositoryConfigError, AdminGroupRepository,
+    AdminGroupRepositoryConfigError, AdminModelRepository, AdminModelRepositoryConfigError,
+    AdminRouteRepository, AdminRouteRepositoryConfigError, AdminTokenRepository,
+    AdminTokenRepositoryConfigError, AdminUsageLogRepository, AdminUsageLogRepositoryConfigError,
+    AdminUserRepository, AdminUserRepositoryConfigError, AnalyticsExportRepository,
+    AnalyticsExportRepositoryError, AnnouncementRepository, AnnouncementRepositoryConfigError,
+    AsyncTaskBillingRepository, AsyncTaskRepository, AsyncTaskSubmissionRepository,
+    AuthChallengeRateLimitRepository, AuthChallengeRateLimitRepositoryConfigError,
+    AuthChallengeRepository, AuthChallengeRepositoryConfigError, BalanceAlertRepository,
+    BalanceAlertRepositoryConfigError, BalanceAlertSettingsRepository,
+    BalanceAlertSettingsRepositoryConfigError, ChannelStateRepository, CredentialProxyRepository,
+    CredentialProxyRepositoryConfigError, CredentialStateRepository, CustomOAuth2LoginRepository,
+    CustomOAuth2LoginRepositoryError, CustomOAuth2ProviderRepository,
+    CustomOAuth2ProviderRepositoryError, DatabaseError, DatabaseMigrationExtension,
+    DatabaseOptions, DatabaseOptionsError, DatabasePool, DebugTraceRepository,
+    DebugTraceRepositoryConfigError, DebugTraceRepositoryError, DebugTraceSnapshotCipherError,
+    EmailSettingsRepository, EmailSettingsRepositoryConfigError, ImageHistoryRepository,
+    ImageHistoryRepositoryConfigError, InitialSetupRepository, InitialSetupRepositoryConfigError,
+    InitialSetupRepositoryError, MigrationOptions, ModelPriceRepository,
+    ModelProviderCatalogRepository, ModelProviderCatalogRepositoryError, ModelSyncRepository,
+    NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
     NetworkSettingsRepositoryConfigError, OAuthLoginRepository, OAuthLoginRepositoryError,
     PasskeyRepository, PasswordResetRepository, PasswordResetRepositoryConfigError,
     PaymentSecretUpdate, PaymentSettingsRepository, PaymentSettingsRepositoryConfigError,
@@ -2426,9 +2427,7 @@ impl Bootstrap<BillingReady> {
         )
         .with_proxy_pools(infrastructure.admin_credential_proxy_service.proxy_pools());
         let active_channel_monitor = ActiveChannelMonitorWorker::new(
-            ActiveChannelMonitorRepository::new(
-                infrastructure.infrastructure.database.clone(),
-            ),
+            ActiveChannelMonitorRepository::new(infrastructure.infrastructure.database.clone()),
             Arc::new(probe.clone()),
         );
         supervisor.spawn("active-channel-monitor", move |task_shutdown| {
@@ -2887,7 +2886,9 @@ impl Bootstrap<Supervised> {
         )
         .expect("公开状态仓储查询超时配置必须有效");
         let router = router.merge(af_http::build_public_service_status_router(
-            Arc::new(af_admin::DatabasePublicServiceStatusReader::new(public_status)),
+            Arc::new(af_admin::DatabasePublicServiceStatusReader::new(
+                public_status,
+            )),
             readiness.clone(),
         ));
         let router = router.merge(af_http::build_credential_models_router(

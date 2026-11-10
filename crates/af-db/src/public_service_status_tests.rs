@@ -49,14 +49,21 @@ async fn public_status_aggregates_terminal_requests_and_excludes_window_end()
     assert_eq!(report.unknown_request_count, 0);
     assert_eq!(report.average_success_duration_ms, Some(10));
     assert_eq!(report.hourly.len(), 24);
-    assert_eq!(report.hourly.iter().map(|point| point.successful_request_count).sum::<i64>(), 50);
+    assert_eq!(
+        report
+            .hourly
+            .iter()
+            .map(|point| point.successful_request_count)
+            .sum::<i64>(),
+        50
+    );
     pool.close().await?;
     Ok(())
 }
 
 #[tokio::test]
-async fn public_status_rejects_invalid_configuration_and_time_window()
--> Result<(), Box<dyn Error>> {
+async fn public_status_rejects_invalid_configuration_and_time_window() -> Result<(), Box<dyn Error>>
+{
     let pool = crate::connect_and_migrate(
         &DatabaseOptions::new("sqlite::memory:")?,
         MigrationOptions::default(),

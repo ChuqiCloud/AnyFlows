@@ -16,7 +16,10 @@ use crate::public_service_status::{PublicServiceStatusPoint, PublicServiceStatus
 fn get_public_service_status() {}
 
 #[derive(OpenApi)]
-#[openapi(paths(get_public_service_status), components(schemas(PublicServiceStatusResponse, PublicServiceStatusPoint)))]
+#[openapi(
+    paths(get_public_service_status),
+    components(schemas(PublicServiceStatusResponse, PublicServiceStatusPoint))
+)]
 struct PublicServiceStatusApi;
 
 pub(super) fn document() -> utoipa::openapi::OpenApi {

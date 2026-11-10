@@ -361,7 +361,11 @@ impl MerchantPoolRepository {
                 super::service_watch::record_service_event(
                     &txn,
                     &service,
-                    if paused { "service_suspended" } else { "service_restored" },
+                    if paused {
+                        "service_suspended"
+                    } else {
+                        "service_restored"
+                    },
                     &format!("pause:{}:{}", id, now.unix_timestamp_nanos()),
                     now,
                 )

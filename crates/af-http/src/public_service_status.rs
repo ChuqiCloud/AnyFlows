@@ -83,7 +83,10 @@ async fn read(State(state): State<PublicStatusState>) -> Response {
     let Ok(report) = state.reader.read().await else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
-            [(CACHE_CONTROL, "public, max-age=10, stale-while-revalidate=20")],
+            [(
+                CACHE_CONTROL,
+                "public, max-age=10, stale-while-revalidate=20",
+            )],
             axum::Json(PublicServiceStatusResponse {
                 sampled_at: now,
                 period_start: now.saturating_sub(86_400),
@@ -109,13 +112,20 @@ async fn read(State(state): State<PublicStatusState>) -> Response {
     let response = response(report, status, ready);
     (
         StatusCode::OK,
-        [(CACHE_CONTROL, "public, max-age=30, stale-while-revalidate=30")],
+        [(
+            CACHE_CONTROL,
+            "public, max-age=30, stale-while-revalidate=30",
+        )],
         axum::Json(response),
     )
         .into_response()
 }
 
-fn response(report: PublicStatusReport, status: &str, api_ready: bool) -> PublicServiceStatusResponse {
+fn response(
+    report: PublicStatusReport,
+    status: &str,
+    api_ready: bool,
+) -> PublicServiceStatusResponse {
     PublicServiceStatusResponse {
         sampled_at: report.sampled_at,
         period_start: report.period_start,
@@ -128,12 +138,16 @@ fn response(report: PublicStatusReport, status: &str, api_ready: bool) -> Public
         unknown_request_count: report.unknown_request_count,
         availability_percent: report.availability_percent,
         average_success_duration_ms: report.average_success_duration_ms,
-        hourly: report.hourly.into_iter().map(|point| PublicServiceStatusPoint {
-            period_start: point.period_start,
-            successful_request_count: point.successful_request_count,
-            failed_request_count: point.failed_request_count,
-            unknown_request_count: point.unknown_request_count,
-        }).collect(),
+        hourly: report
+            .hourly
+            .into_iter()
+            .map(|point| PublicServiceStatusPoint {
+                period_start: point.period_start,
+                successful_request_count: point.successful_request_count,
+                failed_request_count: point.failed_request_count,
+                unknown_request_count: point.unknown_request_count,
+            })
+            .collect(),
     }
 }
 
@@ -163,7 +177,12 @@ mod tests {
             unknown_request_count: Some(0),
             availability_percent: Some(99.0),
             average_success_duration_ms: Some(42),
-            hourly: vec![PublicStatusPoint { period_start: 3_600, successful_request_count: 99, failed_request_count: 1, unknown_request_count: 0 }],
+            hourly: vec![PublicStatusPoint {
+                period_start: 3_600,
+                successful_request_count: 99,
+                failed_request_count: 1,
+                unknown_request_count: 0,
+            }],
         }
     }
 
@@ -176,6 +195,9 @@ mod tests {
         assert!(value.get("channel_id").is_none());
         assert!(value.get("model").is_none());
         assert!(value.get("user_id").is_none());
-        assert_eq!(status_name(PublicStatusKind::InsufficientData), "insufficient_data");
+        assert_eq!(
+            status_name(PublicStatusKind::InsufficientData),
+            "insufficient_data"
+        );
     }
 }

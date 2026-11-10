@@ -32,24 +32,21 @@ pub use merchant_payout::{
     MerchantPayoutSettingsCommand,
 };
 mod merchant_finance;
+pub use af_db::{MerchantFinanceReport, MerchantFinanceReportRow, MerchantFinanceReportTotals};
 pub use merchant_finance::{
     DatabaseMerchantFinanceService, MerchantFinanceBalance, MerchantFinanceEntry,
     MerchantFinanceError, MerchantFinancePage, MerchantFinanceService, MerchantWithdrawal,
 };
-pub use af_db::{
-    MerchantFinanceReport, MerchantFinanceReportRow, MerchantFinanceReportTotals,
-};
-mod auth_challenge_security;
 mod active_channel_monitor;
 #[cfg(test)]
 mod active_channel_monitor_tests;
+mod auth_challenge_security;
 pub use active_channel_monitor::{
     ActiveChannelMonitorConfig, ActiveChannelMonitorEvent, ActiveChannelMonitorEventKind,
     ActiveChannelMonitorService, ActiveChannelMonitorServiceError,
-    ActiveChannelMonitorServiceFuture, ActiveChannelProbe, ActiveChannelProbeFuture,
-    ActiveChannelMonitorTarget, ActiveChannelMonitorTargetInput, ActiveChannelProbeResult,
-    ActiveChannelMonitorWorker,
-    DatabaseActiveChannelMonitorService,
+    ActiveChannelMonitorServiceFuture, ActiveChannelMonitorTarget, ActiveChannelMonitorTargetInput,
+    ActiveChannelMonitorWorker, ActiveChannelProbe, ActiveChannelProbeFuture,
+    ActiveChannelProbeResult, DatabaseActiveChannelMonitorService,
 };
 mod balance_alert_settings;
 mod balance_alert_task;
@@ -60,11 +57,11 @@ mod channel_write;
 mod merchant_pool;
 pub use merchant_pool::{DatabaseMerchantPoolService, MerchantFuture, MerchantPoolService};
 mod merchant_service_watch;
-pub use merchant_service_watch::{
-    DatabaseMerchantServiceWatchService, MerchantServiceWatchError,
-    MerchantServiceWatchFuture, MerchantServiceWatchService,
-};
 pub use af_db::{MerchantServiceWatch, MerchantServiceWatchPage};
+pub use merchant_service_watch::{
+    DatabaseMerchantServiceWatchService, MerchantServiceWatchError, MerchantServiceWatchFuture,
+    MerchantServiceWatchService,
+};
 mod merchant_service_policy;
 pub use merchant_service_policy::{DatabaseMerchantServicePolicy, MerchantServicePolicy};
 mod client_profiles;

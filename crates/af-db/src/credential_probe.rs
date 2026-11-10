@@ -412,7 +412,8 @@ impl ChannelProbeTargetRepository {
         model: &str,
         credential_id: af_domain::CredentialId,
     ) -> Result<Option<ChannelProbeTargetRecord>, ChannelProbeTargetRepositoryError> {
-        self.load_inner(channel_id, Some((model, credential_id))).await
+        self.load_inner(channel_id, Some((model, credential_id)))
+            .await
     }
 
     async fn load_inner(
@@ -443,7 +444,8 @@ impl ChannelProbeTargetRepository {
             if let Some((model, _)) = selected {
                 model_query = model_query.filter(channel_models::Column::Model.eq(model));
             }
-            let Some(channel_model) = model_query.one(self.pool.connection())
+            let Some(channel_model) = model_query
+                .one(self.pool.connection())
                 .await
                 .map_err(|_| ChannelProbeTargetRepositoryError::Query)?
             else {
@@ -491,9 +493,11 @@ impl ChannelProbeTargetRepository {
                 .order_by_desc(credentials::Column::Priority)
                 .order_by_asc(credentials::Column::Id);
             if let Some((_, credential_id)) = selected {
-                credential_query = credential_query.filter(credentials::Column::Id.eq(credential_id.get()));
+                credential_query =
+                    credential_query.filter(credentials::Column::Id.eq(credential_id.get()));
             }
-            let Some(credential) = credential_query.one(self.pool.connection())
+            let Some(credential) = credential_query
+                .one(self.pool.connection())
                 .await
                 .map_err(|_| ChannelProbeTargetRepositoryError::Query)?
             else {

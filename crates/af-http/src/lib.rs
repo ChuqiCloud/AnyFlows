@@ -3,9 +3,11 @@
 // 公共核心保留部分供发行版扩展的 HTTP 契约；企业发行版会连接这些路由。
 #![allow(dead_code)]
 
-mod announcements;
 mod active_channel_monitor;
-pub use active_channel_monitor::{build_active_channel_monitor_router, active_channel_monitor_openapi_document};
+mod announcements;
+pub use active_channel_monitor::{
+    active_channel_monitor_openapi_document, build_active_channel_monitor_router,
+};
 mod anthropic_messages;
 mod api_explorer;
 mod audio_service;
@@ -118,12 +120,14 @@ mod runtime_status;
 mod serve;
 mod site_settings;
 mod software_updates;
+pub use public_service_status::{
+    PublicServiceStatusPoint, PublicServiceStatusResponse, build_public_service_status_router,
+};
 pub use software_updates::{
     InstallSoftwareUpdate, SoftwareRelease, SoftwareStatus, SoftwareUpdateError,
     SoftwareUpdateErrorBody, SoftwareUpdateFuture, SoftwareUpdateService,
     build_software_update_router,
 };
-pub use public_service_status::{build_public_service_status_router, PublicServiceStatusPoint, PublicServiceStatusResponse};
 mod merchant_routes;
 mod speech_service;
 mod streaming;

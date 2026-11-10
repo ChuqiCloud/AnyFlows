@@ -3,7 +3,8 @@
 use std::time::Duration;
 
 use sea_orm::{
-    ConnectionTrait, entity::prelude::TimeDateTimeWithTimeZone,
+    ConnectionTrait,
+    entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Alias, Condition, Expr, Func, Query},
 };
 use thiserror::Error;
@@ -11,7 +12,7 @@ use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    DatabasePool, AdminDashboardRepositoryError,
+    AdminDashboardRepositoryError, DatabasePool,
     admin_dashboard::{get_count, get_sum, query_one},
     entity::request_outcome_logs as outcomes,
 };
@@ -66,7 +67,10 @@ impl PublicServiceStatusRepository {
         Ok(Self { pool, timeout })
     }
 
-    pub async fn report(&self, now: i64) -> Result<PublicServiceStatusRecord, PublicServiceStatusError> {
+    pub async fn report(
+        &self,
+        now: i64,
+    ) -> Result<PublicServiceStatusRecord, PublicServiceStatusError> {
         let period_end = now;
         let period_start = now
             .checked_sub(PUBLIC_STATUS_PERIOD_SECONDS)
@@ -79,10 +83,18 @@ impl PublicServiceStatusRepository {
             let mut query = Query::select();
             query
                 .from(outcomes::Entity)
-                .and_where(Expr::col((outcomes::Entity, outcomes::Column::CreatedAt)).gte(timestamp(period_start)?))
-                .and_where(Expr::col((outcomes::Entity, outcomes::Column::CreatedAt)).lt(timestamp(period_end)?));
-            query
-                .expr_as(Expr::col((outcomes::Entity, outcomes::Column::Id)).count(), Alias::new("request_count"));
+                .and_where(
+                    Expr::col((outcomes::Entity, outcomes::Column::CreatedAt))
+                        .gte(timestamp(period_start)?),
+                )
+                .and_where(
+                    Expr::col((outcomes::Entity, outcomes::Column::CreatedAt))
+                        .lt(timestamp(period_end)?),
+                );
+            query.expr_as(
+                Expr::col((outcomes::Entity, outcomes::Column::Id)).count(),
+                Alias::new("request_count"),
+            );
             append_counts(&mut query, Condition::all(), "");
             query.expr_as(
                 Func::sum(
@@ -99,7 +111,10 @@ impl PublicServiceStatusRepository {
                     Expr::case(
                         Condition::all()
                             .add(Expr::col((outcomes::Entity, outcomes::Column::Outcome)).eq(1_i16))
-                            .add(Expr::col((outcomes::Entity, outcomes::Column::DurationMs)).is_not_null()),
+                            .add(
+                                Expr::col((outcomes::Entity, outcomes::Column::DurationMs))
+                                    .is_not_null(),
+                            ),
                         1_i64,
                     )
                     .finally(Expr::value(Option::<i64>::None)),
@@ -117,15 +132,24 @@ impl PublicServiceStatusRepository {
             let result = query_one(self.pool.connection(), query.to_owned())
                 .await
                 .map_err(map_dashboard_error)?;
-            let request_count = get_count(&result, "request_count", backend).map_err(map_dashboard_error)?;
-            let successful_request_count = get_count(&result, "successful_request_count", backend).map_err(map_dashboard_error)?;
-            let failed_request_count = get_count(&result, "failed_request_count", backend).map_err(map_dashboard_error)?;
-            let unknown_request_count = get_count(&result, "unknown_request_count", backend).map_err(map_dashboard_error)?;
-            if request_count < 0 || successful_request_count + failed_request_count + unknown_request_count > request_count {
+            let request_count =
+                get_count(&result, "request_count", backend).map_err(map_dashboard_error)?;
+            let successful_request_count = get_count(&result, "successful_request_count", backend)
+                .map_err(map_dashboard_error)?;
+            let failed_request_count =
+                get_count(&result, "failed_request_count", backend).map_err(map_dashboard_error)?;
+            let unknown_request_count = get_count(&result, "unknown_request_count", backend)
+                .map_err(map_dashboard_error)?;
+            if request_count < 0
+                || successful_request_count + failed_request_count + unknown_request_count
+                    > request_count
+            {
                 return Err(PublicServiceStatusError::Invariant);
             }
-            let duration_sum = get_sum(&result, "success_duration_sum", backend).map_err(map_dashboard_error)?;
-            let success_duration_count = get_count(&result, "success_duration_count", backend).map_err(map_dashboard_error)?;
+            let duration_sum =
+                get_sum(&result, "success_duration_sum", backend).map_err(map_dashboard_error)?;
+            let success_duration_count = get_count(&result, "success_duration_count", backend)
+                .map_err(map_dashboard_error)?;
             let average_success_duration_ms = if success_duration_count > 0 {
                 Some(duration_sum / success_duration_count)
             } else {
@@ -135,9 +159,24 @@ impl PublicServiceStatusRepository {
             for hour in 0..24 {
                 let mut point = PublicStatusPoint {
                     period_start: period_start + hour * 3600,
-                    successful_request_count: get_count(&result, &format!("h{hour}_successful_request_count"), backend).map_err(map_dashboard_error)?,
-                    failed_request_count: get_count(&result, &format!("h{hour}_failed_request_count"), backend).map_err(map_dashboard_error)?,
-                    unknown_request_count: get_count(&result, &format!("h{hour}_unknown_request_count"), backend).map_err(map_dashboard_error)?,
+                    successful_request_count: get_count(
+                        &result,
+                        &format!("h{hour}_successful_request_count"),
+                        backend,
+                    )
+                    .map_err(map_dashboard_error)?,
+                    failed_request_count: get_count(
+                        &result,
+                        &format!("h{hour}_failed_request_count"),
+                        backend,
+                    )
+                    .map_err(map_dashboard_error)?,
+                    unknown_request_count: get_count(
+                        &result,
+                        &format!("h{hour}_unknown_request_count"),
+                        backend,
+                    )
+                    .map_err(map_dashboard_error)?,
                 };
                 let point_total = point.successful_request_count
                     + point.failed_request_count
@@ -169,14 +208,21 @@ impl PublicServiceStatusRepository {
     }
 }
 
-fn append_counts(query: &mut sea_orm::sea_query::SelectStatement, interval: Condition, prefix: &str) {
+fn append_counts(
+    query: &mut sea_orm::sea_query::SelectStatement,
+    interval: Condition,
+    prefix: &str,
+) {
     let success = Expr::col((outcomes::Entity, outcomes::Column::Outcome)).eq(1_i16);
     let failure = Condition::all()
         .add(Expr::col((outcomes::Entity, outcomes::Column::Outcome)).eq(2_i16))
         .add(
             Condition::any()
                 .add(Expr::col((outcomes::Entity, outcomes::Column::ErrorKind)).is_null())
-                .add(Expr::col((outcomes::Entity, outcomes::Column::ErrorKind)).ne("outcome_unknown")),
+                .add(
+                    Expr::col((outcomes::Entity, outcomes::Column::ErrorKind))
+                        .ne("outcome_unknown"),
+                ),
         );
     let unknown = Expr::col((outcomes::Entity, outcomes::Column::ErrorKind)).eq("outcome_unknown");
     for (name, outcome) in [
@@ -193,7 +239,8 @@ fn append_counts(query: &mut sea_orm::sea_query::SelectStatement, interval: Cond
 }
 
 fn timestamp(value: i64) -> Result<TimeDateTimeWithTimeZone, PublicServiceStatusError> {
-    TimeDateTimeWithTimeZone::from_unix_timestamp(value).map_err(|_| PublicServiceStatusError::Invariant)
+    TimeDateTimeWithTimeZone::from_unix_timestamp(value)
+        .map_err(|_| PublicServiceStatusError::Invariant)
 }
 
 fn map_dashboard_error(error: AdminDashboardRepositoryError) -> PublicServiceStatusError {

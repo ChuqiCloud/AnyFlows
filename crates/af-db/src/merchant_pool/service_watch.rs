@@ -1,7 +1,5 @@
 use super::*;
-use crate::entity::{
-    merchant_service_watch_events as events, merchant_service_watches as watches,
-};
+use crate::entity::{merchant_service_watch_events as events, merchant_service_watches as watches};
 use sea_orm::sea_query::OnConflict;
 
 pub const MAX_MERCHANT_SERVICE_WATCHES_PER_USER: u64 = 1000;
@@ -324,14 +322,9 @@ pub(super) async fn record_service_event(
         {
             continue;
         }
-        crate::notification::insert_merchant_service_update(
-            txn,
-            owner.get(),
-            row.id,
-            occurred_at,
-        )
-        .await
-        .map_err(internal)?;
+        crate::notification::insert_merchant_service_update(txn, owner.get(), row.id, occurred_at)
+            .await
+            .map_err(internal)?;
     }
     Ok(())
 }

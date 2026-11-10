@@ -313,13 +313,17 @@ impl UserNotificationResponse {
             announcement_status: notification.announcement_status(),
             announcement_visible_until: notification.announcement_visible_until(),
             merchant_service_event_id: notification.merchant_service_event_id(),
-            merchant_service_event_kind: notification.merchant_service_event_kind().map(str::to_owned),
+            merchant_service_event_kind: notification
+                .merchant_service_event_kind()
+                .map(str::to_owned),
             merchant_service_pool_id: notification.merchant_service_pool_id(),
             merchant_service_id: notification.merchant_service_id(),
             merchant_service_merchant_id: notification.merchant_service_merchant_id(),
             merchant_service_name: notification.merchant_service_name().map(str::to_owned),
             channel_monitor_target_id: notification.channel_monitor_target_id(),
-            channel_monitor_event_kind: notification.channel_monitor_event_kind().map(str::to_owned),
+            channel_monitor_event_kind: notification
+                .channel_monitor_event_kind()
+                .map(str::to_owned),
         }
     }
 }

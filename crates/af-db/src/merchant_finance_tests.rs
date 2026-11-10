@@ -354,7 +354,13 @@ async fn merchant_report_groups_immutable_sales_and_reversals_without_double_cou
     fixture
         .pool
         .connection()
-        .execute(fixture.pool.connection().get_database_backend().build(&update))
+        .execute(
+            fixture
+                .pool
+                .connection()
+                .get_database_backend()
+                .build(&update),
+        )
         .await?;
     let date = "2026-11-10";
     let daily = finance.report(77, &date, &date, "day").await?;
@@ -368,7 +374,10 @@ async fn merchant_report_groups_immutable_sales_and_reversals_without_double_cou
     assert_eq!(row.commission_quota, row.refunded_commission_quota);
     assert_eq!(row.net_quota, row.refunded_net_quota);
     assert!(daily.totals.sales_gross_quota > 0);
-    assert_eq!(daily.totals.sales_gross_quota, daily.totals.refunded_gross_quota);
+    assert_eq!(
+        daily.totals.sales_gross_quota,
+        daily.totals.refunded_gross_quota
+    );
     let monthly = finance.report(77, &date, &date, "month").await?;
     assert_eq!(&monthly.rows[0].period, &date[..7]);
     assert_eq!(
