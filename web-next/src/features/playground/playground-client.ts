@@ -35,8 +35,10 @@ function getApiRoot() {
 
 async function isInvalidApiKeyResponse(response: Response) {
   try {
-    const body = await response.clone().json() as { error?: { code?: unknown } }
-    return body.error?.code === 'invalid_api_key' || body.error?.code === 'authentication_error'
+    const body = await response.clone().json() as { error?: { code?: unknown; type?: unknown } }
+    return body.error?.code === 'invalid_api_key'
+      || body.error?.code === 'authentication_error'
+      || body.error?.type === 'authentication_error'
   } catch {
     return false
   }

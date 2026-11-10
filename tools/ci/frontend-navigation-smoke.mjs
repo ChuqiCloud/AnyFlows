@@ -507,6 +507,7 @@ try {
   await send.click()
   const playgroundAlert = page.getByRole('alert').filter({ hasText: label('playground.diagnostics.invalid_key') })
   await playgroundAlert.waitFor()
+  assert.equal(await page.evaluate(() => sessionStorage.getItem('anyflows.management.access-token')), 'ci-user', 'A downstream API Key failure does not invalidate the user session')
   assert.equal((await playgroundAlert.innerText()).includes('ci-admin-trace-must-not-display'), false, 'User diagnostics do not expose backend error details')
   const manageKeysLink = playgroundAlert.getByRole('link', { name: label('playground.diagnostics.manageKeys'), exact: true })
   assert.equal(new URL(await manageKeysLink.getAttribute('href'), page.url()).pathname, '/console/api-keys', 'Invalid-key guidance links to a user-accessible repair action')
