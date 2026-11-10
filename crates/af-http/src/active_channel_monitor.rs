@@ -2,20 +2,18 @@
 use std::sync::Arc;
 
 use af_admin::{
-    ActiveChannelMonitorService, ActiveChannelMonitorServiceError,
-    SessionAuthentication, SessionAuthenticator,
-};
-use af_db::{
     ActiveChannelMonitorConfig, ActiveChannelMonitorEvent, ActiveChannelMonitorEventKind,
+    ActiveChannelMonitorService, ActiveChannelMonitorServiceError,
     ActiveChannelMonitorTarget, ActiveChannelMonitorTargetInput,
+    SessionAuthentication, SessionAuthenticator,
 };
 use af_domain::{ChannelId, CredentialId};
 use axum::{
     Extension, Json, Router,
     extract::{Path, State, rejection::JsonRejection},
     middleware,
-    response::Response,
-    routing::{delete, get, post},
+    response::{IntoResponse, Response},
+    routing::{delete, get},
 };
 use serde::{Deserialize, Serialize};
 use utoipa::{OpenApi, ToSchema};
@@ -111,7 +109,7 @@ async fn get_settings(State(s):State<ActiveChannelMonitorState>,Extension(_):Ext
 #[utoipa::path(patch,path="/api/admin/channel-monitor/settings",request_body=ActiveChannelMonitorSettingsRequest,responses((status=200,body=ActiveChannelMonitorSettingsResponse)),security(("bearerAuth" = [])))]
 async fn set_settings(State(s):State<ActiveChannelMonitorState>,Extension(_):Extension<SessionAuthentication>,request:Result<Json<ActiveChannelMonitorSettingsRequest>,JsonRejection>)->Result<Response,ManagementError>{let Json(v)=request.map_err(|_|ManagementError::InvalidRequest)?;let result=s.service.set_config(ActiveChannelMonitorConfig{enabled:v.enabled,global_daily_budget:v.global_daily_budget}).await.map_err(map_error)?;Ok(no_store_json(ActiveChannelMonitorSettingsResponse::from(result)))}
 
-#[utoipa::path(get,path="/api/admin/channel-monitor/targets",responses((status=200,body=Vec<ActiveChannelMonitorTargetResponse)),security(("bearerAuth" = [])))]
+#[utoipa::path(get,path="/api/admin/channel-monitor/targets",responses((status=200,body=[ActiveChannelMonitorTargetResponse])),security(("bearerAuth" = [])))]
 async fn list_targets(State(s):State<ActiveChannelMonitorState>,Extension(_):Extension<SessionAuthentication>)->Result<Response,ManagementError>{let rows=s.service.list_targets().await.map_err(map_error)?.into_iter().map(Into::into).collect::<Vec<ActiveChannelMonitorTargetResponse>>();Ok(no_store_json(rows))}
 
 #[utoipa::path(post,path="/api/admin/channel-monitor/targets",request_body=ActiveChannelMonitorTargetRequest,responses((status=200,body=ActiveChannelMonitorTargetResponse)),security(("bearerAuth" = [])))]

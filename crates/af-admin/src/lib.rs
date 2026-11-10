@@ -36,14 +36,19 @@ pub use merchant_finance::{
     DatabaseMerchantFinanceService, MerchantFinanceBalance, MerchantFinanceEntry,
     MerchantFinanceError, MerchantFinancePage, MerchantFinanceService, MerchantWithdrawal,
 };
+pub use af_db::{
+    MerchantFinanceReport, MerchantFinanceReportRow, MerchantFinanceReportTotals,
+};
 mod auth_challenge_security;
 mod active_channel_monitor;
 #[cfg(test)]
 mod active_channel_monitor_tests;
 pub use active_channel_monitor::{
+    ActiveChannelMonitorConfig, ActiveChannelMonitorEvent, ActiveChannelMonitorEventKind,
     ActiveChannelMonitorService, ActiveChannelMonitorServiceError,
     ActiveChannelMonitorServiceFuture, ActiveChannelProbe, ActiveChannelProbeFuture,
-    ActiveChannelProbeResult, ActiveChannelMonitorWorker,
+    ActiveChannelMonitorTarget, ActiveChannelMonitorTargetInput, ActiveChannelProbeResult,
+    ActiveChannelMonitorWorker,
     DatabaseActiveChannelMonitorService,
 };
 mod balance_alert_settings;
@@ -59,6 +64,7 @@ pub use merchant_service_watch::{
     DatabaseMerchantServiceWatchService, MerchantServiceWatchError,
     MerchantServiceWatchFuture, MerchantServiceWatchService,
 };
+pub use af_db::{MerchantServiceWatch, MerchantServiceWatchPage};
 mod merchant_service_policy;
 pub use merchant_service_policy::{DatabaseMerchantServicePolicy, MerchantServicePolicy};
 mod client_profiles;

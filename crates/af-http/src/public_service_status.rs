@@ -6,7 +6,7 @@ use af_admin::{PublicServiceStatusReader, PublicStatusKind, PublicStatusReport};
 use axum::{
     Router,
     extract::State,
-    http::{StatusCode, header::{CACHE_CONTROL, CONTENT_TYPE}},
+    http::{StatusCode, header::CACHE_CONTROL},
     response::{IntoResponse, Response},
     routing::get,
 };

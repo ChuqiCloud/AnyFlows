@@ -1,11 +1,13 @@
 //! Explicitly opted-in, budgeted active channel monitoring and alert state worker.
 use std::{future::Future, pin::Pin, sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}};
 
+pub use af_db::{
+    ActiveChannelMonitorConfig, ActiveChannelMonitorEvent, ActiveChannelMonitorEventKind,
+    ActiveChannelMonitorTarget, ActiveChannelMonitorTargetInput,
+};
 use af_db::{
-    ActiveChannelMonitorConfig, ActiveChannelMonitorError as RepositoryError, ActiveChannelMonitorEvent,
-    ActiveChannelMonitorRepository, ActiveChannelMonitorTarget,
-    ActiveChannelMonitorTargetInput, ActiveChannelProbeOutcome,
-    MAX_ACTIVE_CHANNEL_MONITOR_BATCH,
+    ActiveChannelMonitorError as RepositoryError, ActiveChannelMonitorRepository,
+    ActiveChannelProbeOutcome, MAX_ACTIVE_CHANNEL_MONITOR_BATCH,
 };
 use af_domain::{ChannelId, CredentialId};
 use thiserror::Error;
