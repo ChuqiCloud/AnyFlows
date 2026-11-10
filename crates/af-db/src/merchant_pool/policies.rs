@@ -158,7 +158,7 @@ impl MerchantPoolRepository {
                 .map_err(internal)?
                 .into_iter()
                 .collect();
-            let maintenance_services = maintenance::Entity::find()
+            let maintenance_services: Vec<i64> = maintenance::Entity::find()
                 .select_only()
                 .column(maintenance::Column::ServiceId)
                 .filter(maintenance::Column::Cancelled.eq(false))

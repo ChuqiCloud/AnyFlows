@@ -30,3 +30,5 @@ impl Related<super::channel_monitor_targets::Entity> for Entity {
         Relation::Target.def()
     }
 }
+
+impl ActiveModelBehavior for ActiveModel {}

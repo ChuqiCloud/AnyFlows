@@ -261,10 +261,12 @@ impl MerchantFinanceRepository {
                 .and_where(Expr::col((Alias::new("e"), Alias::new("created_at"))).gte(start))
                 .and_where(Expr::col((Alias::new("e"), Alias::new("created_at"))).lt(end))
                 .and_where(Expr::col((Alias::new("e"), Alias::new("kind"))).is_in(["income_pending", "sale_reversed"]))
-                .group_by(Expr::cust(bucket.clone()))
-                .group_by(Expr::cust("merchant_billing_reservations.service_id"))
-                .group_by(Expr::cust("COALESCE(merchant_services.name, '未关联')"))
-                .group_by(Expr::cust("COALESCE(usage_logs.model, '未关联')"))
+                .add_group_by([
+                    Expr::cust(bucket.clone()).into(),
+                    Expr::cust("merchant_billing_reservations.service_id").into(),
+                    Expr::cust("COALESCE(merchant_services.name, '未关联')").into(),
+                    Expr::cust("COALESCE(usage_logs.model, '未关联')").into(),
+                ])
                 .order_by(Expr::cust(bucket), Order::Asc)
                 .order_by(Alias::new("service_id"), Order::Asc)
                 .order_by(Alias::new("model"), Order::Asc)

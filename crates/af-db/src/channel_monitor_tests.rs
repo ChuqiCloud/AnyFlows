@@ -246,4 +246,4 @@ fn encrypted_envelope() -> Json {
     ].into_iter().collect())
 }
 
-fn timestamp(value: i64) -> TimeDateTimeWithTimeZone { TimeDateTimeWithTimeZone::from_timestamp(value, 0).unwrap() }
+fn timestamp(value: i64) -> TimeDateTimeWithTimeZone { TimeDateTimeWithTimeZone::from_unix_timestamp(value).unwrap() }

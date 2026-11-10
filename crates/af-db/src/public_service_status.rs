@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use sea_orm::{
-    ConnectionTrait, DbBackend, DbErr, entity::prelude::TimeDateTimeWithTimeZone,
+    ConnectionTrait, entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Alias, Condition, Expr, Func, Query},
 };
 use thiserror::Error;

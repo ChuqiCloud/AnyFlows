@@ -370,6 +370,7 @@ impl UserNotificationRecord {
             merchant_service_event_kind: None,
             merchant_service_pool_id: None,
             merchant_service_id: None,
+            merchant_service_merchant_id: None,
             merchant_service_name: None,
             channel_monitor_target_id,
             channel_monitor_event_kind,
