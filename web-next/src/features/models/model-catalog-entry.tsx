@@ -36,20 +36,38 @@ function ModelStateBadges({ className, item }: SummaryProps) {
   const { t } = useTranslation()
   const availableProtocols = item.available_protocols ?? []
   return (
-    <div className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
-      <Chip className={cn(
-        'whitespace-nowrap border-transparent',
-        item.billing_mode === 'free' ? 'bg-success/10 text-success' : 'bg-info/10 text-info',
-      )} size="sm" variant="flat">
-        {t(`models.billing.${item.billing_mode}`)}
-      </Chip>
-      <Chip className={cn('whitespace-nowrap', lifecycleStyles[item.lifecycle])} size="sm" variant="flat">{t(`models.lifecycle.${item.lifecycle}`)}</Chip>
-      <Chip className={cn('whitespace-nowrap', runtimeStyles[item.runtime_status])} size="sm" variant="flat">{t(`models.runtime.${item.runtime_status}`)}</Chip>
-      {availableProtocols.map((protocol) => (
-        <Chip key={protocol} className="whitespace-nowrap bg-surface-2 font-mono text-[0.625rem] text-muted-foreground" size="sm" variant="flat">
-          {t(`models.protocols.${protocol}`)}
+    <div className={cn('flex min-w-0 flex-wrap items-center gap-2', className)}>
+      {/* 主要状态组 */}
+      <div className="flex items-center gap-1.5">
+        <Chip className={cn(
+          'whitespace-nowrap border-transparent',
+          item.billing_mode === 'free' ? 'bg-success/10 text-success' : 'bg-info/10 text-info',
+        )} size="sm" variant="flat">
+          {t(`models.billing.${item.billing_mode}`)}
         </Chip>
-      ))}
+        <Chip className={cn('whitespace-nowrap', lifecycleStyles[item.lifecycle])} size="sm" variant="flat">
+          {t(`models.lifecycle.${item.lifecycle}`)}
+        </Chip>
+      </div>
+
+      {/* 运行状态 - 降低视觉权重 */}
+      <Chip className={cn('whitespace-nowrap', runtimeStyles[item.runtime_status])} size="sm" variant="bordered">
+        {t(`models.runtime.${item.runtime_status}`)}
+      </Chip>
+
+      {/* 协议标签 - 桌面端显示，最多2个 */}
+      {availableProtocols.length > 0 && (
+        <div className="hidden items-center gap-1.5 xl:flex">
+          {availableProtocols.slice(0, 2).map((protocol) => (
+            <Chip key={protocol} className="whitespace-nowrap bg-surface-2 font-mono text-[0.6875rem] text-muted-foreground" size="sm" variant="flat">
+              {t(`models.protocols.${protocol}`)}
+            </Chip>
+          ))}
+          {availableProtocols.length > 2 && (
+            <span className="text-xs text-muted-foreground">+{availableProtocols.length - 2}</span>
+          )}
+        </div>
+      )}
     </div>
   )
 }
