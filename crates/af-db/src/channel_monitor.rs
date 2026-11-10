@@ -716,7 +716,7 @@ impl ActiveChannelMonitorRepository {
     }
 }
 
-async fn insert_event<C: ConnectionTrait>(
+pub(super) async fn insert_event<C: ConnectionTrait>(
     db: &C,
     target_id: i64,
     kind: &str,

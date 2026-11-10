@@ -2,10 +2,7 @@ use std::{error::Error, time::Duration};
 
 use sea_orm::{ActiveModelTrait, Set, entity::prelude::TimeDateTimeWithTimeZone};
 
-use super::{
-    DatabaseOptions, MigrationOptions, PublicServiceStatusRepository,
-    PublicServiceStatusRepositoryError,
-};
+use super::{DatabaseOptions, MigrationOptions, PublicServiceStatusError, PublicServiceStatusRepository};
 use crate::entity::request_outcome_logs;
 
 #[tokio::test]
@@ -71,12 +68,12 @@ async fn public_status_rejects_invalid_configuration_and_time_window() -> Result
     .await?;
     assert!(matches!(
         PublicServiceStatusRepository::new(pool.clone(), Duration::ZERO),
-        Err(PublicServiceStatusRepositoryError::InvalidConfiguration)
+        Err(PublicServiceStatusError::InvalidConfiguration)
     ));
     let repository = PublicServiceStatusRepository::new(pool.clone(), Duration::from_secs(1))?;
     assert!(matches!(
         repository.report(10).await,
-        Err(PublicServiceStatusRepositoryError::Invariant)
+        Err(PublicServiceStatusError::Invariant)
     ));
     pool.close().await?;
     Ok(())

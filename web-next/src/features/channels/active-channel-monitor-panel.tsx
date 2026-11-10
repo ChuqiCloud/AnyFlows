@@ -97,7 +97,7 @@ export function ActiveChannelMonitorPanel() {
   const validTarget = Boolean(channel && channel.status === 'enabled' && credential?.status === 'enabled' && credential.schedulable && model && models.includes(model) && Number(interval) >= 300 && Number(interval) <= 86400 && Number(budget) >= 1 && Number(budget) <= 288 && Number(timeoutSecs) >= 1 && Number(timeoutSecs) <= 15 && Number(alertAfter) >= 60 && Number(alertAfter) <= 3600)
 
   const save = (enabled: boolean, global_daily_budget = settings.data?.global_daily_budget ?? 288) => void mutation.settings.mutateAsync({ enabled, global_daily_budget }).catch(() => undefined)
-  const writeTarget = (target: ActiveChannelMonitorTargetWrite) => void mutation.saveTarget.mutateAsync(target).catch(() => undefined)
+  const writeTarget = (target: ActiveMonitorTargetWrite) => void mutation.saveTarget.mutateAsync(target).catch(() => undefined)
 
   return <details className="rounded-lg border border-[var(--hairline)] bg-surface-1">
     <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm font-semibold [&::-webkit-details-marker]:hidden"><span className="inline-flex items-center gap-2"><ShieldAlert className="size-4 text-primary" aria-hidden="true" />{t('channels.activeMonitor.title')}</span><span className="text-[11px] font-normal text-muted-foreground">{t('channels.activeMonitor.summary')}</span></summary>

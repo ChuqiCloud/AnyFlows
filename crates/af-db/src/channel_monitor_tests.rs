@@ -3,7 +3,7 @@ use std::{error::Error, time::Duration};
 use af_domain::{ChannelId, ChannelType, CredentialId, CredentialKind, Protocol, Status};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set,
     entity::prelude::{Json, TimeDateTimeWithTimeZone},
     sea_query::Expr,
 };
