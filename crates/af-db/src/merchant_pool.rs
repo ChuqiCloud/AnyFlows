@@ -9,7 +9,7 @@ use crate::{
         ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, SensitiveString, channels,
         credentials, groups, merchant_pools as pools, merchant_profiles as profiles,
         merchant_service_revisions as revisions, merchant_services as services, model_prices,
-        users,
+        models as model_metadata, users,
     },
     group_key_access::user_can_select_key_group,
     scheduler_outbox::enqueue_scheduler_catalog_change,
@@ -17,10 +17,11 @@ use crate::{
 };
 use af_domain::{ChannelId, CredentialId, GroupId, Status, UserId};
 pub use af_domain::{
-    MerchantApplication, MerchantCatalogService, MerchantListQuery, MerchantModelOffer,
-    MerchantModelPrices, MerchantModelWrite, MerchantOwnedService, MerchantPage, MerchantPool,
-    MerchantPoolError, MerchantPoolWrite, MerchantProfile, MerchantReview, MerchantRevision,
-    MerchantRuntimeCandidate, MerchantServiceWrite,
+    MerchantApplication, MerchantCatalogProvider, MerchantCatalogProviderSummary,
+    MerchantCatalogService, MerchantListQuery, MerchantModelOffer, MerchantModelPrices,
+    MerchantModelWrite, MerchantOwnedService, MerchantPage, MerchantPool, MerchantPoolError,
+    MerchantPoolWrite, MerchantProfile, MerchantReview, MerchantRevision, MerchantRuntimeCandidate,
+    MerchantServiceWrite,
 };
 pub use af_domain::{MerchantPoolSettings, MerchantPoolTerms};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -586,6 +587,32 @@ fn pagination(query: &MerchantListQuery) -> Result<(u32, u32), MerchantPoolError
     }
     Ok((page, size))
 }
+fn provider_filter(
+    query: &MerchantListQuery,
+) -> Result<Option<std::collections::BTreeSet<Option<String>>>, MerchantPoolError> {
+    let Some(encoded) = &query.provider else {
+        return Ok(None);
+    };
+    if encoded.len() > 16_384 {
+        return Err(MerchantPoolError::InvalidInput);
+    }
+    let names: Vec<Option<String>> =
+        serde_json::from_str(encoded).map_err(|_| MerchantPoolError::InvalidInput)?;
+    if names.is_empty()
+        || names
+            .iter()
+            .flatten()
+            .any(|name| !af_domain::validate_merchant_text(name, 64, false))
+    {
+        return Err(MerchantPoolError::InvalidInput);
+    }
+    let names = names.into_iter().collect::<std::collections::BTreeSet<_>>();
+    if names.len() > 32 {
+        return Err(MerchantPoolError::InvalidInput);
+    }
+    Ok(Some(names))
+}
+
 fn page_items<T>(
     items: Vec<T>,
     query: &MerchantListQuery,

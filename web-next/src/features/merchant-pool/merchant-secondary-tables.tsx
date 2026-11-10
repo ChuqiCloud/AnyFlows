@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { useModelProviderOptions } from '@/components/brand/provider-catalog-api'
 import { MerchantPriceBreakdown } from './merchant-catalog-card'
+import { MerchantModelProviderBadge } from './merchant-model-provider'
 import { MerchantManagementTable } from './merchant-management-tables'
 import type { MerchantModelOffer, MerchantOwnedService, MerchantPool, MerchantPoolRoute, MerchantStatistics } from './merchant-pool-model'
 import { poolRatio, poolTimestamp, merchantTextProtocol } from './merchant-pool-model'
@@ -15,7 +17,8 @@ export function MerchantRoutesTable({ routes, pools, onEdit, onDelete }: { route
 
 export function MerchantModelOffersTable({ models }: { models: MerchantModelOffer[] }) {
   const { t } = useTranslation()
-  return <MerchantManagementTable label={t('merchantPool.models')} columns={['model', 'ratio', 'price', 'context', 'maxOutput', 'capabilities']}>{models.map((offer) => <tr key={offer.model} className="hover:bg-surface-2/50"><td className={`${cell} pl-3.5 font-mono`}>{offer.model}</td><td className={`${cell} font-mono`}>{poolRatio(offer.sales_ratio_micros)}×</td><td className={cell}>{offer.prices ? <MerchantPriceBreakdown prices={offer.prices} /> : t('merchantPool.noPrice')}</td><td className={cell}>{offer.context_window?.toLocaleString() ?? '—'}</td><td className={cell}>{offer.max_output_tokens?.toLocaleString() ?? '—'}</td><td className={cell}><div className="flex gap-1">{([['supports_streaming', 'streaming'], ['supports_tools', 'tools'], ['supports_vision', 'vision']] as const).filter(([key]) => offer[key]).map(([, label]) => <span key={label} className="rounded border border-[var(--hairline)] px-1.5 py-0.5 text-[11px]">{t(`merchantPool.${label}`)}</span>)}</div></td></tr>)}</MerchantManagementTable>
+  const { options } = useModelProviderOptions()
+  return <MerchantManagementTable label={t('merchantPool.models')} columns={['model', 'ratio', 'price', 'context', 'maxOutput', 'capabilities']}>{models.map((offer) => <tr key={offer.model} className="hover:bg-surface-2/50"><td className={`${cell} pl-3.5`}><span className="block font-mono">{offer.model}</span><span className="mt-1 inline-flex"><MerchantModelProviderBadge provider={offer.provider} options={options} /></span></td><td className={`${cell} font-mono`}>{poolRatio(offer.sales_ratio_micros)}×</td><td className={cell}>{offer.prices ? <MerchantPriceBreakdown prices={offer.prices} /> : t('merchantPool.noPrice')}</td><td className={cell}>{offer.context_window?.toLocaleString() ?? '—'}</td><td className={cell}>{offer.max_output_tokens?.toLocaleString() ?? '—'}</td><td className={cell}><div className="flex gap-1">{([['supports_streaming', 'streaming'], ['supports_tools', 'tools'], ['supports_vision', 'vision']] as const).filter(([key]) => offer[key]).map(([, label]) => <span key={label} className="rounded border border-[var(--hairline)] px-1.5 py-0.5 text-[11px]">{t(`merchantPool.${label}`)}</span>)}</div></td></tr>)}</MerchantManagementTable>
 }
 
 export function MerchantStatisticsTable({ statistics, services }: { statistics: MerchantStatistics[]; services: Map<number, MerchantOwnedService> }) {

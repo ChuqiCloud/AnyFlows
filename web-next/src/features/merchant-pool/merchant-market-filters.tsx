@@ -1,13 +1,16 @@
 import { Input } from '@heroui/react'
 import { AudioLines, Braces, Clapperboard, Image, Layers3, MessageSquare, Mic, RotateCcw, Search, SlidersHorizontal, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { MerchantPool } from './merchant-pool-model'
+import type { MerchantModelProvider, MerchantPool } from './merchant-pool-model'
 import { merchantProtocols, merchantProtocolLabel } from './merchant-pool-model'
+import { MerchantModelProviderFilter, merchantProviderIdentity, type MerchantProviderSelection } from './merchant-model-provider'
 import { PoolField, PoolSelect } from './merchant-pool-ui'
+import { useModelProviderOptions } from '@/components/brand/provider-catalog-api'
 import { cn } from '@/lib/utils'
 
 export type MerchantMarketFilters = {
   model: string
+  providers: MerchantProviderSelection
   search: string
   status: string
   sort: string
@@ -21,10 +24,14 @@ export type MerchantMarketFilters = {
 const protocolIcons = { openai_chat: MessageSquare, openai_responses: Braces, openai_images: Image, openai_audio: Mic, openai_speech: AudioLines, xai_video: Clapperboard }
 const control = { inputWrapper: 'border border-[var(--hairline)] bg-background shadow-none data-[hover=true]:bg-surface-2/60 group-data-[focus=true]:border-primary/60', input: 'text-xs' }
 
-export function MerchantMarketFiltersPanel({ pools, poolId, loading, filters, invalidPriceRange, onPoolChange, onChange, onReset }: {
+export function MerchantMarketFiltersPanel({ pools, poolId, loading, providers, providersLoading, providersError, onRetryProviders, filters, invalidPriceRange, onPoolChange, onChange, onReset }: {
   pools: MerchantPool[]
   poolId?: number
   loading: boolean
+  providers: MerchantModelProvider[]
+  providersLoading: boolean
+  providersError: boolean
+  onRetryProviders: () => void
   filters: MerchantMarketFilters
   invalidPriceRange: boolean
   onPoolChange: (value: string) => void
@@ -32,6 +39,7 @@ export function MerchantMarketFiltersPanel({ pools, poolId, loading, filters, in
   onReset: () => void
 }) {
   const { t } = useTranslation()
+  const { options } = useModelProviderOptions()
   const active = [
     filters.model && { key: 'model', text: filters.model },
     filters.search && { key: 'search', text: `${t('merchantPool.search')}: ${filters.search}` },
@@ -41,7 +49,7 @@ export function MerchantMarketFiltersPanel({ pools, poolId, loading, filters, in
     filters.capability && { key: 'capability', text: t(`merchantPool.${filters.capability}`) },
     filters.minRatio && { key: 'minRatio', text: `${t('merchantPool.minimumRatio')} ${filters.minRatio}×` },
     filters.maxRatio && { key: 'maxRatio', text: `${t('merchantPool.maximumRatio')} ${filters.maxRatio}×` },
-  ].filter((item): item is { key: string; text: string } => Boolean(item))
+  ].filter((item): item is { key: string; text: string } => Boolean(item)).map(({ key, text }) => ({ key, text, onRemove: () => onChange({ [key]: '' }) })).concat(filters.providers.map((provider) => ({ key: `provider:${JSON.stringify(provider)}`, text: merchantProviderIdentity(provider, options, t('merchantPool.market.unclassified')).name, onRemove: () => onChange({ providers: filters.providers.filter((value) => value !== provider) }) })))
   const advancedCount = [filters.streaming, filters.capability, filters.minRatio, filters.maxRatio].filter(Boolean).length
   return <section aria-label={t('merchantPool.market.filters')} className="min-w-0 rounded-xl border border-[var(--hairline)] bg-surface-1 shadow-[0_1px_2px_rgb(0_0_0/0.025)]">
     <div className="flex min-w-0 flex-col gap-3 p-3 sm:p-4">
@@ -52,6 +60,7 @@ export function MerchantMarketFiltersPanel({ pools, poolId, loading, filters, in
           {merchantProtocols.map(({ value }) => { const Icon = protocolIcons[value]; return <button key={value} type="button" aria-pressed={filters.protocol === value} onClick={() => onChange({ protocol: value })} className={cn('flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary', filters.protocol === value ? 'border-primary/35 bg-primary/10 text-primary' : 'border-[var(--hairline)] bg-background text-muted-foreground hover:bg-surface-2 hover:text-foreground')}><Icon className="size-3.5" aria-hidden="true" />{t(`merchantPool.market.protocolLabels.${value}`)}</button> })}
         </div>
       </div>
+      <MerchantModelProviderFilter providers={providers} selected={filters.providers} loading={providersLoading} error={providersError} onChange={(providers) => onChange({ providers })} onRetry={onRetryProviders} />
       <div className="grid min-w-0 grid-cols-2 gap-2.5 border-t border-[var(--hairline)] pt-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1.7fr)_145px_145px]">
         <PoolField label={t('merchantPool.model')}><Input size="sm" aria-label={t('merchantPool.model')} placeholder={t('merchantPool.modelPlaceholder')} classNames={control} value={filters.model} onValueChange={(model) => onChange({ model })} /></PoolField>
         <PoolField label={t('merchantPool.search')}><Input size="sm" aria-label={t('merchantPool.search')} placeholder={t('merchantPool.market.searchPlaceholder')} classNames={control} startContent={<Search className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />} value={filters.search} onValueChange={(search) => onChange({ search })} /></PoolField>
@@ -70,6 +79,6 @@ export function MerchantMarketFiltersPanel({ pools, poolId, loading, filters, in
       </details>
       {invalidPriceRange ? <p role="alert" className="text-xs text-danger">{t('merchantPool.invalidForm')}</p> : null}
     </div>
-    <div className="flex min-w-0 flex-wrap items-center gap-2 border-t border-[var(--hairline)] bg-surface-2/25 px-3 py-2 text-[11px] sm:px-4"><span className="shrink-0 text-muted-foreground">{t('merchantPool.market.selected')}</span><div className="flex min-w-0 flex-1 flex-wrap gap-1.5">{active.length ? active.map(({ key, text }) => <button key={key} type="button" aria-label={t('merchantPool.market.removeFilter', { value: text })} title={text} onClick={() => onChange({ [key]: '' })} className="flex min-w-0 max-w-56 items-center gap-1 rounded-md border border-primary/15 bg-primary/7 px-1.5 py-0.5 text-primary"><span className="truncate">{text}</span><X className="size-3 shrink-0" aria-hidden="true" /></button>) : <span className="text-muted-foreground">{t('merchantPool.market.noFilters')}</span>}</div><button type="button" disabled={!active.length && filters.sort === 'name'} onClick={onReset} className="flex shrink-0 items-center gap-1 text-muted-foreground transition-colors hover:text-primary disabled:opacity-40"><RotateCcw className="size-3" aria-hidden="true" />{t('merchantPool.market.resetFilters')}</button></div>
+    <div className="flex min-w-0 flex-wrap items-center gap-2 border-t border-[var(--hairline)] bg-surface-2/25 px-3 py-2 text-[11px] sm:px-4"><span className="shrink-0 text-muted-foreground">{t('merchantPool.market.selected')}</span><div className="flex min-w-0 flex-1 flex-wrap gap-1.5">{active.length ? active.map(({ key, text, onRemove }) => <button key={key} type="button" aria-label={t('merchantPool.market.removeFilter', { value: text })} title={text} onClick={onRemove} className="flex min-w-0 max-w-56 items-center gap-1 rounded-md border border-primary/15 bg-primary/7 px-1.5 py-0.5 text-primary"><span className="truncate">{text}</span><X className="size-3 shrink-0" aria-hidden="true" /></button>) : <span className="text-muted-foreground">{t('merchantPool.market.noFilters')}</span>}</div><button type="button" disabled={!active.length && filters.sort === 'name'} onClick={onReset} className="flex shrink-0 items-center gap-1 text-muted-foreground transition-colors hover:text-primary disabled:opacity-40"><RotateCcw className="size-3" aria-hidden="true" />{t('merchantPool.market.resetFilters')}</button></div>
   </section>
 }
