@@ -161,6 +161,7 @@ pub struct MerchantVideoPrices {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MerchantModelOffer {
     pub model: String,
+    pub provider: Option<String>,
     pub sales_ratio_micros: i64,
     pub context_window: Option<u32>,
     pub max_output_tokens: Option<u32>,
@@ -188,6 +189,17 @@ pub struct MerchantCatalogService {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct MerchantCatalogProvider {
+    pub name: Option<String>,
+    pub model_count: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct MerchantCatalogProviderSummary {
+    pub providers: Vec<MerchantCatalogProvider>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MerchantPage<T> {
     pub items: Vec<T>,
     pub total: u64,
@@ -201,6 +213,8 @@ pub struct MerchantListQuery {
     pub page: Option<u32>,
     pub page_size: Option<u32>,
     pub model: Option<String>,
+    /// JSON array of exact provider names; null selects models without provider metadata.
+    pub provider: Option<String>,
     pub protocol: Option<String>,
     pub capability: Option<String>,
     pub min_ratio_micros: Option<i64>,

@@ -3,10 +3,11 @@ import { Modal, ModalBody, ModalContent, ModalHeader } from '@heroui/react'
 import { ArrowUpRight, GitBranch, ShieldCheck, Store } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { useMerchantCatalog, useMerchantPools, useMerchantStatistics, useMerchantTimeline } from './merchant-pool-api'
+import { useMerchantCatalog, useMerchantModelProviders, useMerchantPools, useMerchantStatistics, useMerchantTimeline } from './merchant-pool-api'
 import { MerchantHealth, MerchantModelPrice } from './merchant-catalog-card'
 import { MerchantCatalogTable } from './merchant-catalog-table'
 import { MerchantMarketFiltersPanel, type MerchantMarketFilters } from './merchant-market-filters'
+import { parseMerchantProviders, serializeMerchantProviders } from './merchant-model-provider'
 import { merchantTextProtocol, parsePoolRatio, poolTimestamp, positiveInteger } from './merchant-pool-model'
 import { PoolButton as Button, PoolEmpty, PoolError, PoolHeader, PoolLoading, PoolNavigation, PoolPager, PoolSelect } from './merchant-pool-ui'
 
@@ -18,6 +19,9 @@ export function MerchantPoolPage() {
   const pools = useMerchantPools()
   const poolId = positiveInteger(params.get('pool') ?? '') ?? pools.data?.items[0]?.id
   const model = params.get('model') ?? ''
+  const providers = parseMerchantProviders(params.get('provider'))
+  const provider = serializeMerchantProviders(providers)
+  const providerFacets = useMerchantModelProviders(poolId)
   const [filters, setFilters] = useState(initialFilters)
   const { search, status, sort, protocol, streaming, capability, minRatio, maxRatio } = filters
   const minimum = minRatio === '' ? undefined : parsePoolRatio(minRatio)
@@ -27,7 +31,7 @@ export function MerchantPoolPage() {
   const [windowSeconds, setWindowSeconds] = useState('86400')
   const [compared, setCompared] = useState<number[]>([])
   const [comparisonOpen, setComparisonOpen] = useState(false)
-  const catalog = useMerchantCatalog(poolId, { model, search, status, sort: model ? sort : 'name', page: page + 1, protocol: protocol || undefined, capability: capability || undefined, min_ratio_micros: invalidPriceRange ? undefined : minimum, max_ratio_micros: invalidPriceRange ? undefined : maximum, streaming: streaming === '' ? undefined : streaming === 'true', window_seconds: Number(windowSeconds) })
+  const catalog = useMerchantCatalog(poolId, { model, provider: provider || undefined, search, status, sort: model ? sort : 'name', page: page + 1, protocol: protocol || undefined, capability: capability || undefined, min_ratio_micros: invalidPriceRange ? undefined : minimum, max_ratio_micros: invalidPriceRange ? undefined : maximum, streaming: streaming === '' ? undefined : streaming === 'true', window_seconds: Number(windowSeconds) })
   const stats = useMerchantStatistics(poolId, model, Number(windowSeconds), { protocol: protocol || undefined, streaming: streaming === '' ? undefined : streaming === 'true' })
   const timeline = useMerchantTimeline(poolId, model, Number(windowSeconds), { protocol: protocol || undefined, streaming: streaming === '' ? undefined : streaming === 'true' })
   const items = catalog.data?.items ?? []
@@ -35,21 +39,26 @@ export function MerchantPoolPage() {
   const timelineByService = new Map(timeline.data?.items.map((item) => [item.service_id, item]))
   const selected = items.filter((item) => compared.includes(item.id))
   const routeUrl = `/console/merchant-pool/routes${poolId ? `?pool=${poolId}` : ''}`
-  useEffect(() => { setPage(0); setCompared([]) }, [poolId, model, search, status, sort, protocol, capability, minRatio, maxRatio, streaming, windowSeconds])
+  useEffect(() => { setPage(0); setCompared([]) }, [poolId, model, provider, search, status, sort, protocol, capability, minRatio, maxRatio, streaming, windowSeconds])
   useEffect(() => setCompared([]), [page])
   const setParam = (name: string, value: string) => { const next = new URLSearchParams(params); if (value) next.set(name, value); else next.delete(name); setParams(next, { replace: true }) }
   const changeFilters = (patch: Partial<MerchantMarketFilters>) => {
-    const { model: nextModel, ...rest } = patch
-    if (nextModel !== undefined) setParam('model', nextModel)
+    const { model: nextModel, providers: nextProviders, ...rest } = patch
+    if (nextModel !== undefined || nextProviders !== undefined) {
+      const next = new URLSearchParams(params)
+      if (nextModel !== undefined) { if (nextModel) next.set('model', nextModel); else next.delete('model') }
+      if (nextProviders !== undefined) { const value = serializeMerchantProviders(nextProviders); if (value) next.set('provider', value); else next.delete('provider') }
+      setParams(next, { replace: true })
+    }
     setFilters((current) => ({ ...current, ...rest, ...(rest.protocol && !merchantTextProtocol(rest.protocol) ? { streaming: '' } : {}) }))
   }
-  const resetFilters = () => { setFilters(initialFilters); setParam('model', ''); setPage(0); setCompared([]) }
-  const refresh = () => { void pools.refetch(); if (poolId !== undefined) void Promise.all([catalog.refetch(), stats.refetch(), timeline.refetch()]) }
-  const refreshing = pools.isFetching || catalog.isFetching || stats.isFetching || timeline.isFetching
+  const resetFilters = () => { setFilters(initialFilters); const next = new URLSearchParams(params); next.delete('model'); next.delete('provider'); setParams(next, { replace: true }); setPage(0); setCompared([]) }
+  const refresh = () => { void pools.refetch(); if (poolId !== undefined) void Promise.all([providerFacets.refetch(), catalog.refetch(), stats.refetch(), timeline.refetch()]) }
+  const refreshing = pools.isFetching || providerFacets.isFetching || catalog.isFetching || stats.isFetching || timeline.isFetching
   return <div className="flex min-w-0 flex-col gap-4">
     <PoolHeader title={t('merchantPool.market.title')} description={t('merchantPool.market.subtitle')} refreshing={refreshing} onRefresh={refresh}><Link className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" to={routeUrl}><GitBranch className="size-3.5" aria-hidden="true" />{t('merchantPool.createRoute')}</Link></PoolHeader>
     <PoolNavigation />
-    <MerchantMarketFiltersPanel pools={pools.data?.items ?? []} poolId={poolId} loading={pools.isPending} filters={{ ...filters, model }} invalidPriceRange={invalidPriceRange} onPoolChange={(value) => setParam('pool', value)} onChange={changeFilters} onReset={resetFilters} />
+    <MerchantMarketFiltersPanel pools={pools.data?.items ?? []} poolId={poolId} loading={pools.isPending} providers={providerFacets.data?.providers ?? []} providersLoading={poolId !== undefined && providerFacets.isPending} providersError={providerFacets.isError} onRetryProviders={() => void providerFacets.refetch()} filters={{ ...filters, model, providers }} invalidPriceRange={invalidPriceRange} onPoolChange={(value) => setParam('pool', value)} onChange={changeFilters} onReset={resetFilters} />
     {pools.isError ? <PoolError onRetry={() => void pools.refetch()} /> : null}
     <section aria-label={t('merchantPool.market.routing')} className="flex min-w-0 flex-wrap items-center gap-3 rounded-xl border border-primary/15 bg-primary/4 px-3 py-3 sm:px-4">
       <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/8 text-primary"><GitBranch className="size-4" aria-hidden="true" /></div>
