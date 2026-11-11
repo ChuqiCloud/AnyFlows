@@ -108,8 +108,9 @@ fn map_error(error: MerchantPoolError) -> MerchantServiceWatchError {
             MerchantServiceWatchError::NotFound
         }
         MerchantPoolError::LimitReached => MerchantServiceWatchError::LimitReached,
-        MerchantPoolError::Conflict | MerchantPoolError::InUse | MerchantPoolError::Unavailable => {
-            MerchantServiceWatchError::Internal
-        }
+        MerchantPoolError::Conflict
+        | MerchantPoolError::InUse
+        | MerchantPoolError::ModelPriceUnavailable
+        | MerchantPoolError::Unavailable => MerchantServiceWatchError::Internal,
     }
 }

@@ -44,6 +44,8 @@ const providerServices = [
 const mixedProviderService = { ...publicService, id: 59, name: 'CI mixed manufacturer service', models: [{ ...offer, model: 'mixed-deepseek-fixture', provider: 'DeepSeek' }, { ...offer, model: 'mixed-anthropic-fixture', provider: 'Anthropic' }] }
 const timelineBuckets = Array.from({ length: 24 }, (_, index) => ({ started_at: now - (24 - index) * 3600, ended_at: now - (23 - index) * 3600, success_count: index >= 14 && index !== 20 ? 1 : 0, failure_count: index === 20 ? 1 : 0, sample_count: index >= 14 ? 1 : 0, status: index < 14 ? 'unknown' : index === 20 ? 'degraded' : 'normal' }))
 const profile = { id: 6, owner_user_id: 3, name: 'CI merchant', description: 'CI relay', status: 'approved', review_reason: null, created_at: now, updated_at: now }
+const platformModel = { model: 'gpt-fixture', display_name: 'GPT fixture', provider: 'openai', description: 'Platform-priced text model', icon_url: null, tags: [], context_window: 128000, input_modalities: ['text'], output_modalities: ['text'], supports_reasoning: false, supports_tool_calls: true, supports_responses_compact: false, lifecycle: 'active', runtime_status: 'available', billing_mode: 'per_token', prices: { input: '1.00', output: '2.00', cache_read: '0.10', cache_creation_5m: '1.25', cache_creation_1h: '2.00' }, ratios: { group_micros: '1000000', group_model_micros: '1000000', peak_micros: '1000000' }, price_version: 1, available_protocols: ['openai_chat', 'openai_responses'] }
+const nextPlatformModel = { ...platformModel, model: 'gpt-next-fixture', display_name: 'GPT next fixture' }
 let activeProfile = null
 const list = items => ({ items, total: items.length, page: 1, page_size: 20 })
 let routes = []
@@ -69,6 +71,10 @@ const withdrawalRequests = []
 const catalogRequests = []
 const poolRequests = []
 const serviceRequests = []
+const serviceSubmitRequests = []
+const platformModelRequests = []
+let platformModelFailures = 1
+let serviceSaveFailures = 1
 const quoteRequests = []
 const applicationRequests = []
 const financeReportRequests = [], financeReportExportRequests = []
@@ -195,14 +201,22 @@ try {
       const body = request.postDataJSON()
       serviceRequests.push(body)
       assert.equal(body.api_key, 'ci-upstream-private-key')
-      assert.equal(body.models[0].model, 'gpt-fixture')
+      assert.equal(body.models[0].model, 'manual-unpriced-fixture')
+      if (serviceSaveFailures-- > 0) return respond({ error: { code: 'unavailable' } }, 503)
       const { api_key, pool_id, name, description, ...revision } = body
       assert.ok(api_key)
       services = [{ id: 88, merchant_id: 6, pool_id, name, description, status: 'draft', active_price: null, maintenance: [], published: null, draft: { id: 9, revision: 1, status: 'draft', name, description, ...revision, has_api_key: true, review_reason: null, created_at: now, updated_at: now }, created_at: now, updated_at: now }]
       return respond(services[0], 201)
     }
+    if (path === '/api/merchant/services/88/submit' && method === 'POST') {
+      serviceSubmitRequests.push(request.postDataJSON())
+      assert.equal(services[0].draft.models[0].model, 'manual-unpriced-fixture')
+      services[0] = { ...services[0], status: 'pending', draft: { ...services[0].draft, status: 'pending' } }
+      return respond(services[0])
+    }
     if (path === '/api/merchant/quote' && method === 'POST') {
       const body = request.postDataJSON(); quoteRequests.push(body)
+      if (body.models.some(model => model.model === 'manual-unpriced-fixture')) return respond({ error: { code: 'merchant_pool_model_price_unavailable', message: 'model platform pricing unavailable' } }, 400)
       return respond({ models: [{ model: body.models[0].model, sales_ratio_micros: body.default_ratio_micros, base_prices: offer.prices, prices: offer.prices, net_prices: offer.prices }], effective_commission_bps: 500 })
     }
     if (path === '/api/merchant/finance') return respond({ merchant_id: 6, pending_quota: 0, available_quota: 100000, withdrawing_quota: 0, frozen_quota: 0, debt_quota: 0, total_gross_quota: 110000, total_commission_quota: 10000, total_paid_quota: 0, quota_per_usd: 500000 })
@@ -273,7 +287,17 @@ try {
     if (path === '/api/admin/merchant-withdrawals/5/reconcile') { payoutQueries += 1; return respond(payouts[0]) }
     if (path === '/api/user-routes') return respond({ items: [], capacity: 32 })
     if (path === '/api/token-groups') return respond({ groups: [], next_cursor: null })
-    if (path === '/api/models') return respond({ pricing_scope: 'group', next_cursor: null, models: [] })
+    if (path === '/api/models') {
+      const query = new URL(request.url()).searchParams
+      platformModelRequests.push({ ...Object.fromEntries(query), authorization: request.headers().authorization })
+      if (query.get('q') === 'catalog-unavailable' && platformModelFailures-- > 0) return respond({ error: { code: 'internal_error' } }, 503)
+      const q = (query.get('q') ?? '').toLowerCase()
+      const available = [platformModel, nextPlatformModel].filter(item => !q || `${item.model} ${item.display_name}`.toLowerCase().includes(q) || q === 'catalog-unavailable')
+      const after = query.get('after')
+      const start = after ? Math.max(0, available.findIndex(item => item.model === after) + 1) : 0
+      const models = available.slice(start, start + 1)
+      return respond({ pricing_scope: 'group', models, next_cursor: start + models.length < available.length ? models.at(-1).model : null })
+    }
     if (path === '/api/tokens' && method === 'POST') { const body = request.postDataJSON(); assert.equal(body.user_route_id, 21); assert.equal(body.group_id, null); return respond({ token: { id: 5, name: body.name } }, 201) }
     return respond({ error: { code: 'not_found' } }, 404)
   })
@@ -501,8 +525,77 @@ try {
   await dialog.getByRole('textbox', { name: label('baseUrl'), exact: true }).fill('https://upstream.example.com/v1')
   await dialog.getByLabel(label('upstreamKey'), { exact: true }).fill('ci-upstream-private-key')
   const modelInput = dialog.getByRole('textbox', { name: label('canonicalModel'), exact: true })
+  const upstreamModelInput = dialog.getByRole('textbox', { name: label('upstreamModel'), exact: true })
+  const serviceEditorUrl = page.url()
+  const serviceEditorTabs = page.context().pages().length
+  const picker = dialog.getByRole('region', { name: label('modelPicker.title'), exact: true })
+  const openModelPicker = async () => {
+    if (!await picker.isVisible()) await dialog.getByRole('button', { name: label('platformModelCatalog'), exact: true }).click()
+    await picker.waitFor()
+  }
+  const searchPlatformModels = async value => {
+    const response = page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return url.pathname === '/api/models' && url.searchParams.get('q') === value
+    })
+    await picker.getByRole('searchbox', { name: label('modelPicker.search'), exact: true }).fill(value)
+    const result = await response
+    await picker.getByRole('status', { name: label('modelPicker.loading'), exact: true }).waitFor({ state: 'hidden' })
+    return result
+  }
+  await openModelPicker()
+  await picker.getByRole('option', { name: platformModel.model, exact: true }).waitFor()
+  assert.equal(page.url(), serviceEditorUrl, 'The platform model catalog stays in the service editor')
+  assert.equal(page.context().pages().length, serviceEditorTabs, 'Choosing a model must not open a fresh unauthenticated tab')
+  assert.equal(await dialog.getByRole('textbox', { name: label('name'), exact: true }).inputValue(), 'CI submitted service')
+  assert.equal(await dialog.getByLabel(label('upstreamKey'), { exact: true }).inputValue(), 'ci-upstream-private-key')
+  await searchPlatformModels('gpt')
+  const nextModelsResponse = page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return url.pathname === '/api/models' && url.searchParams.get('q') === 'gpt' && url.searchParams.get('after') === platformModel.model
+  })
+  await picker.getByRole('button', { name: label('modelPicker.more'), exact: true }).click()
+  await nextModelsResponse
+  await picker.getByRole('option', { name: nextPlatformModel.model, exact: true }).waitFor()
+  const pickerGeometry = await picker.evaluate(node => { const rect = node.getBoundingClientRect(); return { left: rect.left, right: rect.right, viewport: innerWidth, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth } })
+  assert.ok(pickerGeometry.left >= 0 && pickerGeometry.right <= pickerGeometry.viewport + 1, 'The expanded model picker remains inside the desktop viewport')
+  assert.ok(pickerGeometry.scrollWidth <= pickerGeometry.clientWidth + 1, 'Model choices do not overflow the service drawer horizontally')
+  await page.screenshot({ path: resolve(screenshots, 'merchant-service-model-picker.png'), fullPage: true, animations: 'disabled' })
+  await picker.getByRole('option', { name: platformModel.model, exact: true }).press('Enter')
+  assert.equal(await modelInput.inputValue(), platformModel.model)
+  assert.equal(await upstreamModelInput.inputValue(), platformModel.model, 'A selected platform model defaults its upstream mapping')
+  await upstreamModelInput.fill('upstream-custom-fixture')
+  await openModelPicker()
+  await picker.getByRole('searchbox', { name: label('modelPicker.search'), exact: true }).fill('gpt-next-fixture')
+  await picker.getByRole('option', { name: nextPlatformModel.model, exact: true }).click()
+  assert.equal(await modelInput.inputValue(), nextPlatformModel.model)
+  assert.equal(await upstreamModelInput.inputValue(), 'upstream-custom-fixture', 'Changing the platform model preserves an explicitly edited upstream mapping')
+  assert.equal(await dialog.getByRole('textbox', { name: label('name'), exact: true }).inputValue(), 'CI submitted service')
+  assert.equal(await dialog.getByLabel(label('upstreamKey'), { exact: true }).inputValue(), 'ci-upstream-private-key')
+  await openModelPicker()
+  const unavailableModelsResponse = await searchPlatformModels('catalog-unavailable')
+  assert.equal(unavailableModelsResponse.status(), 503)
+  await picker.getByRole('alert').waitFor()
+  await modelInput.fill('manual-during-outage-fixture')
+  assert.equal(await modelInput.inputValue(), 'manual-during-outage-fixture', 'A catalog outage does not disable manual model entry')
+  const retryModelsResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/models' && new URL(response.url()).searchParams.get('q') === 'catalog-unavailable' && response.status() === 200)
+  await picker.getByRole('button', { name: label('retry'), exact: true }).click()
+  await retryModelsResponse
+  await picker.getByRole('alert').waitFor({ state: 'hidden' })
+  await searchPlatformModels('manual-unpriced-fixture')
+  await picker.getByText(label('modelPicker.empty'), { exact: true }).waitFor()
+  assert.equal(await picker.getByRole('option').count(), 0, 'An unknown model does not become a fabricated catalog option')
+  await modelInput.fill('manual-unpriced-fixture')
+  assert.equal(await modelInput.inputValue(), 'manual-unpriced-fixture', 'Manual models remain editable when the catalog has no result')
+  assert.ok(platformModelRequests.some(request => request.q === 'gpt' && request.authorization === 'Bearer ci-merchant'), 'Catalog searches use the current merchant session')
+  assert.equal(page.url(), serviceEditorUrl)
+  assert.equal(page.context().pages().length, serviceEditorTabs)
+  await dialog.getByRole('button', { name: label('platformModelCatalog'), exact: true }).click()
+  await picker.waitFor({ state: 'hidden' })
   await modelInput.fill('gpt-fixture')
   assert.equal(await modelInput.evaluate(input => input === document.activeElement), true)
+  await dialog.locator('summary').filter({ hasText: label('connectionOptions') }).click()
+  await dialog.locator('summary').filter({ hasText: label('modelOptions') }).click()
   const serviceConcurrency = dialog.getByRole('spinbutton', { name: label('concurrency'), exact: true })
   const serviceUrl = dialog.getByRole('textbox', { name: label('baseUrl'), exact: true })
   const serviceContext = dialog.getByRole('spinbutton', { name: label('contextWindow'), exact: true })
@@ -535,17 +628,44 @@ try {
   assert.equal(quoteRequests.length, 1)
   assert.equal(quoteRequests[0].models[0].context_window, 4096)
   assert.equal(quoteRequests[0].models[0].max_output_tokens, 4096)
+  await modelInput.fill('manual-unpriced-fixture')
+  await dialog.getByRole('button', { name: label('previewPrices'), exact: true }).click()
+  await dialog.getByText(label('validation.modelPriceUnavailable'), { exact: true }).waitFor()
+  assert.equal(quoteRequests.length, 2)
+  assert.equal(quoteRequests[1].models[0].model, 'manual-unpriced-fixture')
+  assert.equal(await dialog.getByRole('heading', { name: label('quotePreview'), exact: true }).count(), 0, 'Missing platform pricing is not displayed as a free or fabricated quote')
+  const connectionFieldTops = await Promise.all([
+    dialog.getByRole('textbox', { name: label('defaultRatio'), exact: true }),
+    serviceConcurrency,
+    dialog.getByRole('spinbutton', { name: label('timeout'), exact: true }),
+  ].map(field => field.evaluate(input => input.getBoundingClientRect().top)))
+  assert.ok(Math.max(...connectionFieldTops) - Math.min(...connectionFieldTops) <= 2, 'Connection fields align even when only the sales ratio has help text')
+  await page.screenshot({ path: resolve(screenshots, 'merchant-service-unpriced-draft.png'), fullPage: true, animations: 'disabled' })
+  await dialog.getByRole('button', { name: label('saveDraft'), exact: true }).click()
+  await dialog.getByText(label('saveError'), { exact: true }).waitFor()
+  assert.equal(await dialog.getByRole('textbox', { name: label('name'), exact: true }).inputValue(), 'CI submitted service')
+  assert.equal(await modelInput.inputValue(), 'manual-unpriced-fixture')
+  assert.equal(await upstreamModelInput.inputValue(), 'upstream-custom-fixture')
+  assert.equal(await dialog.getByLabel(label('upstreamKey'), { exact: true }).inputValue(), 'ci-upstream-private-key', 'A transient save failure retains the in-memory credential for retry')
+  assert.equal(serviceRequests.length, 1)
   await dialog.getByRole('button', { name: label('saveDraft'), exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
-  assert.equal(serviceRequests.length, 1)
-  assert.equal(serviceRequests[0].concurrency, 10)
-  assert.equal(serviceRequests[0].models[0].context_window, 4096)
-  assert.equal(serviceRequests[0].models[0].max_output_tokens, 4096)
+  assert.equal(serviceRequests.length, 2)
+  assert.deepEqual(serviceRequests[0], serviceRequests[1], 'Retry submits the same draft without silently replacing its mapping or credential')
+  assert.equal(serviceRequests[1].concurrency, 10)
+  assert.equal(serviceRequests[1].models[0].context_window, 4096)
+  assert.equal(serviceRequests[1].models[0].max_output_tokens, 4096)
+  assert.equal(serviceRequests[1].models[0].upstream_model, 'upstream-custom-fixture')
   const ownedServicesTable = page.getByRole('region', { name: label('myServices'), exact: true })
   await ownedServicesTable.getByRole('cell', { name: /CI submitted service/ }).waitFor()
   assert.equal(await ownedServicesTable.locator('tbody tr').count(), 1, 'A created merchant service appears as one table row')
+  const submitUnpricedResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/merchant/services/88/submit' && response.request().method() === 'POST')
+  await ownedServicesTable.getByRole('button', { name: label('submitReview'), exact: true }).click()
+  assert.equal((await submitUnpricedResponse).status(), 200, 'A merchant can submit an unpriced manual model for administrator review')
+  await ownedServicesTable.getByText(label('status.pending'), { exact: true }).waitFor()
+  assert.equal(serviceSubmitRequests.length, 1)
   await page.screenshot({ path: resolve(screenshots, 'merchant-workspace.png'), fullPage: true, animations: 'disabled' })
-  assert.equal(await page.evaluate(() => Object.values(sessionStorage).some(value => value.includes('ci-upstream-private-key'))), false)
+  assert.equal(await page.evaluate(() => [...Object.values(sessionStorage), ...Object.values(localStorage)].some(value => value.includes('ci-upstream-private-key'))), false)
   const workspaceTabs = page.getByRole('group', { name: label('workspace'), exact: true })
   const financeReportRegion = page.getByRole('region', { name: label('financeReport.title'), exact: true })
   let reportResponse = page.waitForResponse(response => {

@@ -33,10 +33,10 @@ impl MerchantPoolRepository {
                 }
                 let base_prices = model_price(self.pool.connection(), &model.model, 1_000_000)
                     .await?
-                    .ok_or(MerchantPoolError::InvalidInput)?;
+                    .ok_or(MerchantPoolError::ModelPriceUnavailable)?;
                 let prices = model_price(self.pool.connection(), &model.model, ratio)
                     .await?
-                    .ok_or(MerchantPoolError::InvalidInput)?;
+                    .ok_or(MerchantPoolError::ModelPriceUnavailable)?;
                 let net_prices = net_prices(&prices, commission)?;
                 models.push(af_domain::MerchantQuoteModel {
                     model: model.model,
