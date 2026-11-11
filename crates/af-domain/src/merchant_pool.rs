@@ -8,6 +8,8 @@ pub const MAX_MERCHANT_SERVICE_MODELS: usize = 128;
 pub enum MerchantPoolError {
     #[error("merchant pool request is invalid")]
     InvalidInput,
+    #[error("merchant model pricing is unavailable")]
+    ModelPriceUnavailable,
     #[error("merchant pool permission denied")]
     Forbidden,
     #[error("merchant pool resource not found")]
