@@ -24,10 +24,18 @@ fn main() {
         .expect("af-server 必须位于工作区 crates 目录下");
     println!("cargo:rerun-if-env-changed=PROFILE");
     let frontend = "web-next";
-    let source = workspace_directory.join(frontend).join("dist");
+    let frontend_directory = workspace_directory.join(frontend);
+    let source = frontend_directory.join("dist");
     let destination = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo 必须提供 OUT_DIR"))
         .join(format!("{frontend}-dist"));
-    println!("cargo:rerun-if-changed={}", source.display());
+    // Watching a missing dist directory invalidates every subsequent Cargo invocation.
+    // Watch its existing parent until assets are generated, then track the assets directly.
+    let watched_source = if source.is_dir() {
+        &source
+    } else {
+        &frontend_directory
+    };
+    println!("cargo:rerun-if-changed={}", watched_source.display());
     prepare_destination(&destination).expect("无法准备前端内嵌目录");
     if source.join("index.html").is_file() {
         copy_directory(&source, &destination).expect("无法复制前端构建产物");
