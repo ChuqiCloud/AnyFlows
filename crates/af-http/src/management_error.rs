@@ -352,6 +352,12 @@ pub(crate) enum ManagementError {
     ImageHistoryLimitReached,
     /// 图片历史存储或受控下载服务暂时不可用。
     ImageHistoryUnavailable,
+    /// Public merchant service watch does not exist or is not visible to this user.
+    MerchantServiceWatchNotFound,
+    /// Current user has reached the service watch limit.
+    MerchantServiceWatchLimitReached,
+    /// Merchant service watch storage is unavailable.
+    MerchantServiceWatchUnavailable,
     /// 管理认证依赖发生内部故障。
     Internal,
 }
@@ -1621,6 +1627,27 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "image_history_unavailable",
                     message: "Image history unavailable",
+                },
+            ),
+            Self::MerchantServiceWatchNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "merchant_service_watch_not_found",
+                    message: "Service not found",
+                },
+            ),
+            Self::MerchantServiceWatchLimitReached => (
+                StatusCode::TOO_MANY_REQUESTS,
+                ManagementErrorBody {
+                    code: "merchant_service_watch_limit_reached",
+                    message: "Service watch limit reached",
+                },
+            ),
+            Self::MerchantServiceWatchUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "merchant_service_watch_unavailable",
+                    message: "Service watches unavailable",
                 },
             ),
             Self::Internal => (

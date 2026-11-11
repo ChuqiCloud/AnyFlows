@@ -15,6 +15,7 @@ const directory = resolve(root, 'web-next')
 const require = createRequire(resolve(process.env.PLAYWRIGHT_PACKAGE_ROOT, 'package.json'))
 const { chromium } = require('playwright')
 const translations = Object.fromEntries(await Promise.all(['zh', 'en'].map(async language => [language, JSON.parse(await readFile(resolve(directory, `src/i18n/locales/${language}.json`), 'utf8'))])))
+const publicStatusCopy = JSON.parse(await readFile(resolve(directory, 'src/i18n/public-status.json'), 'utf8')).zh.publicStatus
 const label = (key, language = 'zh') => {
   const value = key.split('.').reduce((node, part) => node?.[part], translations[language])
   assert.equal(typeof value, 'string', `Missing ${language} translation: ${key}`)
@@ -35,7 +36,7 @@ const model = {
   runtime_status: 'available', billing_mode: 'per_token',
   prices: { input: '1.23004567890123456789', output: '9.87654321', cache_read: '0', cache_creation_5m: '0', cache_creation_1h: '0' },
   ratios: { group_micros: '1000000', group_model_micros: '1000000', peak_micros: '1000000' },
-  price_version: 1, available_protocols: ['openai_chat'],
+  price_version: 1, available_protocols: ['openai_chat', 'openai_responses', 'anthropic'],
 }
 const site = {
   site_name: 'CI AnyFlows', public_base_url: 'https://gateway.example.test/',
@@ -66,11 +67,14 @@ const groupDeleteRequests = []
 let groupTransferFailures = 1
 let terminalSubscriptionOrderStatus = 'failed'
 let modelMode = 'ready'
+let publicStatusMode = 'operational'
+let issuedApiKeyRequests = []
 let server
 let browser
 let page
 let serverOutput = ''
 let releasePlaygroundRequest
+let playgroundFailureMode = false
 
 try {
   await mkdir(screenshots, { recursive: true })
@@ -136,10 +140,33 @@ try {
     }
     if (path === '/api/playground/v1/chat/completions' && request.method() === 'POST' && role === 'user') {
       assert.equal(request.postDataJSON().model, model.model)
+      if (playgroundFailureMode) {
+        playgroundFailureMode = false
+        await route.fulfill({ status: 401, headers: { 'x-request-id': 'ci-playground-request' }, contentType: 'application/json', body: JSON.stringify({ error: { message: 'ci-admin-trace-must-not-display', code: 'invalid_api_key' } }) })
+        return
+      }
       // Hold the response until the real composer has entered its sending state.
       // Clicking Stop must abort the browser request without calling any upstream.
       await new Promise(resolve => { releasePlaygroundRequest = resolve })
       await route.abort('aborted').catch(() => {})
+      return
+    }
+    if (path === '/api/tokens' && request.method() === 'POST' && role === 'user') {
+      const body = request.postDataJSON()
+      issuedApiKeyRequests.push(body)
+      const now = Math.floor(Date.now() / 1000)
+      await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({
+        api_key: 'ci-issued-secret-must-not-appear-in-samples',
+        token: { id: 42, group_id: body.group_id ?? null, user_route_id: body.user_route_id ?? null, effective_group_id: 1, group_display_name: 'CI group', key_prefix: 'sk-ci-', name: body.name, status: body.status, remain_quota: body.remain_quota, unlimited_quota: body.unlimited_quota, used_quota: 0, expired_at: body.expired_at ?? null, model_limits: body.model_limits ?? null, allow_ips: body.allow_ips ?? null, created_at: now, updated_at: now },
+      }) })
+      return
+    }
+    if (path === '/api/explorer/catalog' && request.method() === 'GET') {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ operations: [{ operation_id: 'chatCompletions', method: 'POST', path: '/v1/chat/completions', tag: 'OpenAI Chat', summary: 'OpenAI Chat Completions', auth_mode: 'api_key', access_scope: 'gateway', debuggable: true }], tags: ['OpenAI Chat'], total: 1, page: 1, page_size: 60, has_more: false, viewer: role === 'public' ? 'guest' : role }) })
+      return
+    }
+    if (path === '/api/explorer/catalog/chatCompletions' && request.method() === 'GET') {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ operation: { operation_id: 'chatCompletions', method: 'POST', path: '/v1/chat/completions', tag: 'OpenAI Chat', summary: 'OpenAI Chat Completions', auth_mode: 'api_key', access_scope: 'gateway', debuggable: true }, openapi: { requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { model: { type: 'string' }, messages: { type: 'array', items: { type: 'object', properties: { role: { type: 'string' }, content: { type: 'string' } } } }, max_tokens: { type: 'integer' } } } } } }, responses: { 200: { description: 'success' } } } }) })
       return
     }
     if (path === '/api/account/subscription-orders' && request.method() === 'POST' && role === 'user') {
@@ -173,6 +200,12 @@ try {
       case '/api/site': data = site; break
       case '/api/setup/status': data = { setup_required: false }; break
       case '/api/announcements': data = { entries: [] }; break
+      case '/api/public/service-status': data = publicStatusMode === 'insufficient_data'
+        ? { sampled_at: 1700086400, period_start: 1700000000, period_end: 1700086400, status: 'insufficient_data', api_ready: true, sample_count: null, successful_request_count: null, failed_request_count: null, unknown_request_count: null, availability_percent: null, average_success_duration_ms: null, hourly: [] }
+        : publicStatusMode === 'monitoring'
+          ? { sampled_at: 1700086400, period_start: 1700000000, period_end: 1700086400, status: 'monitoring', api_ready: true, sample_count: 80, successful_request_count: 70, failed_request_count: 2, unknown_request_count: 8, availability_percent: 97.22, average_success_duration_ms: 84, hourly: Array.from({ length: 24 }, (_, index) => ({ period_start: 1700000000 + index * 3600, successful_request_count: 3, failed_request_count: 0, unknown_request_count: index === 11 ? 8 : 0 })) }
+          : { sampled_at: 1700086400, period_start: 1700000000, period_end: 1700086400, status: 'operational', api_ready: true, sample_count: 80, successful_request_count: 79, failed_request_count: 1, unknown_request_count: 0, availability_percent: 98.75, average_success_duration_ms: 84, hourly: Array.from({ length: 24 }, (_, index) => ({ period_start: 1700000000 + index * 3600, successful_request_count: 3, failed_request_count: index === 11 ? 1 : 0, unknown_request_count: 0 })) }
+        ; break
       case '/api/auth/session': data = { user: { id: 1, role }, expires_at: Math.floor(Date.now() / 1000) + 3600 }; break
       case '/api/models':
         if (modelMode === 'error') {
@@ -240,6 +273,11 @@ try {
   await open()
   await page.getByRole('table').getByText(featuredModel, { exact: true }).waitFor()
   await page.getByText('"https://gateway.example.test/v1"', { exact: true }).waitFor()
+  await page.getByText(publicStatusCopy.states.operational, { exact: true }).waitFor()
+  assert.equal(await page.getByText(`${publicStatusCopy.availability}: 98.75%`, { exact: true }).count(), 1, 'Landing uses the real public status aggregate rather than fixture marketing data')
+  const landingText = await page.locator('main').innerText()
+  assert.equal(landingText.includes('99.98%'), false, 'Landing does not claim a static availability guarantee')
+  assert.equal(landingText.includes('82ms'), false, 'Landing does not display fabricated latency measurements')
   const gradientIds = await page.locator('rect.animate-border-beam').evaluateAll(elements => elements.map(element => element.getAttribute('stroke')))
   assert.equal(new Set(gradientIds).size, gradientIds.length, 'SVG gradients have unique IDs')
   await page.getByRole('button', { name: label('language.toggle'), exact: true }).filter({ visible: true }).click()
@@ -260,6 +298,56 @@ try {
   await page.setViewportSize({ width: 1280, height: 960 })
   assert.ok(!requests.some(request => request.role === 'public' && request.path.startsWith('/api/models')), 'Landing never fetches the model catalog')
 
+  await page.getByText(publicStatusCopy.history, { exact: true }).click()
+  await page.getByRole('heading', { name: publicStatusCopy.title, exact: true }).waitFor()
+  await page.getByText(publicStatusCopy.historyHint, { exact: true }).waitFor()
+  assert.equal(await page.getByText('98.75%', { exact: true }).count(), 1)
+  assert.equal((await page.locator('main').innerText()).includes('private-model-name-is-not-in-the-public-report'), false, 'The public status page must not expose model identifiers')
+  publicStatusMode = 'monitoring'
+  await page.getByRole('button', { name: publicStatusCopy.refresh, exact: true }).click()
+  await page.getByText(publicStatusCopy.states.monitoring, { exact: true }).waitFor()
+  await page.getByText(publicStatusCopy.monitoring, { exact: true }).waitFor()
+  publicStatusMode = 'insufficient_data'
+  await page.getByRole('button', { name: publicStatusCopy.refresh, exact: true }).click()
+  await page.getByText(publicStatusCopy.states.insufficient_data, { exact: true }).waitFor()
+  assert.equal(await page.getByText('98.75%', { exact: true }).count(), 0, 'Low sample volume never displays an availability rate')
+  await page.screenshot({ path: resolve(screenshots, 'public-status.png'), fullPage: true, animations: 'disabled' })
+
+  // Issuing a key opens protocol-aware, credential-placeholder code samples.
+  await open('/console/api-keys', 'user')
+  await page.getByRole('button', { name: label('apiKeys.actions.create'), exact: true }).click()
+  const keyEditor = page.getByRole('dialog')
+  await keyEditor.getByRole('textbox', { name: label('apiKeys.fields.name'), exact: true }).fill('CI onboarding key')
+  await keyEditor.getByRole('button', { name: label('apiKeys.actions.create'), exact: true }).click()
+  await page.getByRole('heading', { name: label('apiKeys.issued.title'), exact: true }).waitFor()
+  assert.equal(issuedApiKeyRequests.length, 1)
+  const onboarding = page.getByRole('region', { name: label('apiKeys.issued.onboarding.title'), exact: true })
+  await onboarding.getByRole('combobox', { name: label('apiKeys.issued.onboarding.model'), exact: true }).waitFor()
+  const sample = onboarding.locator('pre')
+  await sample.waitFor()
+  assert.equal((await sample.innerText()).includes('ci-issued-secret-must-not-appear-in-samples'), false, 'One-time key material is never inserted into code samples')
+  assert.ok((await sample.innerText()).includes('<your-api-key>') || (await sample.innerText()).includes('ANYFLOWS_API_KEY'), 'Samples use a placeholder or environment variable')
+  await onboarding.getByRole('combobox', { name: label('apiKeys.issued.onboarding.protocol'), exact: true }).selectOption('anthropic')
+  await page.waitForFunction(() => document.querySelector('pre')?.innerText.includes('/messages'))
+  assert.ok((await sample.innerText()).includes('/messages'))
+  await onboarding.getByRole('button', { name: label('apiKeys.issued.onboarding.languages.javascript'), exact: true }).click()
+  assert.equal((await sample.innerText()).includes('ANYFLOWS_API_KEY'), true)
+  assert.equal((await sample.innerText()).includes('ci-issued-secret-must-not-appear-in-samples'), false)
+  await page.getByRole('button', { name: label('apiKeys.issued.done'), exact: true }).click()
+  await page.getByRole('heading', { name: label('apiKeys.title'), exact: true }).waitFor()
+
+  await open('/api', 'public')
+  await page.getByRole('heading', { name: label('apiExplorer.title'), exact: true }).waitFor()
+  const explorerSearch = page.getByPlaceholder(label('apiExplorer.search'))
+  await explorerSearch.fill('Chat Completions')
+  const chatOperation = page.getByRole('button').filter({ hasText: 'OpenAI Chat Completions' }).first()
+  await chatOperation.click()
+  const requestBody = page.getByRole('textbox', { name: label('apiExplorer.requestBody'), exact: true })
+  await page.waitForFunction(() => [...document.querySelectorAll('textarea')].some((element) => element.value.includes('"messages"')))
+  const safeBody = JSON.parse(await requestBody.inputValue())
+  assert.deepEqual(safeBody.messages, [{ role: 'user', content: 'Hello' }])
+  assert.equal(JSON.stringify(safeBody).includes('ci-issued-secret-must-not-appear-in-samples'), false)
+  assert.equal(JSON.stringify(safeBody).includes('api_key'), false, 'OpenAPI examples omit secret fields')
   // The ordinary-user overview must render and administrator URLs must return to it.
   await open('/console', 'user')
   await page.getByRole('heading', { name: label('dashboard.user.title'), exact: true }).waitFor()
@@ -414,6 +502,16 @@ try {
   releasePlaygroundRequest = undefined
   await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 0)))
   await clearConversation.click()
+  playgroundFailureMode = true
+  await textarea.fill('CI invalid key diagnostic')
+  await send.click()
+  const playgroundAlert = page.getByRole('alert').filter({ hasText: label('playground.diagnostics.invalid_key') })
+  await playgroundAlert.waitFor()
+  assert.equal(await page.evaluate(() => sessionStorage.getItem('anyflows.management.access-token')), 'ci-user', 'A downstream API Key failure does not invalidate the user session')
+  assert.equal((await playgroundAlert.innerText()).includes('ci-admin-trace-must-not-display'), false, 'User diagnostics do not expose backend error details')
+  const manageKeysLink = playgroundAlert.getByRole('link', { name: label('playground.diagnostics.manageKeys'), exact: true })
+  assert.equal(new URL(await manageKeysLink.getAttribute('href'), page.url()).pathname, '/console/api-keys', 'Invalid-key guidance links to a user-accessible repair action')
+  await clearConversation.click()
   await page.setViewportSize({ width: 1280, height: 960 })
 
   // Use actual keyboard events against the real editor. Keeping an element
@@ -503,7 +601,7 @@ try {
   await visibleNav().waitFor({ state: 'hidden' })
   await page.screenshot({ path: resolve(screenshots, 'admin-system-mobile.png'), fullPage: true, animations: 'disabled' })
   assert.deepEqual(errors, [])
-  console.log('Navigation browser checks passed for web-next: landing, language, user overview, subscription create failure and retry, terminal subscription orders after redirect, Playground composer layout and cancellation, group ratio input focus, administrator groups, and mobile drawer.')
+  console.log('Navigation browser checks passed for web-next: live public status and low-sample suppression, landing, language, user overview, subscription create failure and retry, terminal subscription orders after redirect, Playground composer layout and cancellation, group ratio input focus, administrator groups, and mobile drawer.')
 } catch (error) {
   if (page) await page.screenshot({ path: resolve(screenshots, 'failure.png'), fullPage: true, animations: 'disabled' }).catch(() => {})
   console.error(serverOutput)

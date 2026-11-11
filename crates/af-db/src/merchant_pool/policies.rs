@@ -1,4 +1,5 @@
 //! Sales prices and maintenance are independent of immutable approved credentials.
+use super::service_watch::record_service_event;
 use super::*;
 use crate::entity::{merchant_maintenance as maintenance, merchant_service_prices as prices};
 use af_domain::{
@@ -143,7 +144,7 @@ impl MerchantPoolRepository {
         }
         self.bounded(async {
             let now = DatabaseTimestamp::now_utc();
-            let services: Vec<i64> = prices::Entity::find()
+            let mut services: std::collections::BTreeSet<i64> = prices::Entity::find()
                 .select_only()
                 .column(prices::Column::ServiceId)
                 .filter(prices::Column::Status.eq("scheduled"))
@@ -154,12 +155,26 @@ impl MerchantPoolRepository {
                 .into_tuple()
                 .all(self.pool.connection())
                 .await
-                .map_err(internal)?;
-            let mut processed = 0;
-            for service in services
+                .map_err(internal)?
                 .into_iter()
-                .collect::<std::collections::BTreeSet<_>>()
-            {
+                .collect();
+            let maintenance_services: Vec<i64> = maintenance::Entity::find()
+                .select_only()
+                .column(maintenance::Column::ServiceId)
+                .filter(maintenance::Column::Cancelled.eq(false))
+                .filter(maintenance::Column::WatchEventEmittedAt.is_null())
+                .filter(maintenance::Column::EndsAt.lte(now.unix_timestamp()))
+                .order_by_asc(maintenance::Column::EndsAt)
+                .order_by_asc(maintenance::Column::Id)
+                .limit(limit as u64)
+                .into_tuple()
+                .all(self.pool.connection())
+                .await
+                .map_err(internal)?;
+            services.extend(maintenance_services);
+            let services = services.into_iter().take(limit).collect::<Vec<_>>();
+            let mut processed = 0;
+            for service in services {
                 processed += self.apply_due_service_prices(service, now).await?;
             }
             Ok(processed)
@@ -173,20 +188,43 @@ impl MerchantPoolRepository {
         now: DatabaseTimestamp,
     ) -> Result<usize, MerchantPoolError> {
         // Most catalog reads need no write lock.
-        if prices::Entity::find()
+        let price_due = prices::Entity::find()
             .filter(prices::Column::ServiceId.eq(service))
             .filter(prices::Column::Status.eq("scheduled"))
             .filter(prices::Column::EffectiveAt.lte(now.unix_timestamp()))
             .one(self.pool.connection())
             .await
             .map_err(internal)?
-            .is_none()
-        {
+            .is_some();
+        let maintenance_due = maintenance::Entity::find()
+            .filter(maintenance::Column::ServiceId.eq(service))
+            .filter(maintenance::Column::Cancelled.eq(false))
+            .filter(maintenance::Column::WatchEventEmittedAt.is_null())
+            .filter(maintenance::Column::EndsAt.lte(now.unix_timestamp()))
+            .one(self.pool.connection())
+            .await
+            .map_err(internal)?
+            .is_some();
+        if !price_due && !maintenance_due {
             return Ok(0);
         }
         let txn = self.pool.connection().begin().await.map_err(internal)?;
         let service = lock_service(&txn, service).await?;
         let processed = apply_due_in_transaction(&txn, &service, now).await?;
+        if processed > 0
+            && let Some(active) =
+                active_price(&txn, service.id, service.published_revision_id).await?
+        {
+            record_service_event(
+                &txn,
+                &service,
+                "price_changed",
+                &format!("price:{}", active.id),
+                now,
+            )
+            .await?;
+        }
+        super::service_watch::record_elapsed_maintenance_events(&txn, &service, now).await?;
         txn.commit().await.map_err(internal)?;
         Ok(processed)
     }
@@ -256,6 +294,10 @@ impl MerchantPoolRepository {
             active.starts_at = Set(write.starts_at); active.ends_at = Set(write.ends_at); active.message = Set(write.message);
             active.blocks_requests = Set(write.blocks_requests); active.updated_at = Set(now);
             let row = if notice.is_some() { active.update(&txn).await } else { active.insert(&txn).await }.map_err(internal)?;
+            let kind = if notice.is_some() { "maintenance_updated" } else { "maintenance_announced" };
+            if row.blocks_requests {
+                record_service_event(&txn, &service, kind, &format!("notice:{}:{}", row.id, now.unix_timestamp_nanos()), now).await?;
+            }
             audit_control(&txn, actor, "service.maintenance.write", service.id, None,
                 Some(serde_json::json!({"notice_id":row.id,"starts_at":row.starts_at,"ends_at":row.ends_at,"blocks_requests":row.blocks_requests}))).await?;
             txn.commit().await.map_err(internal)?;
@@ -287,6 +329,16 @@ impl MerchantPoolRepository {
             active.cancelled = Set(true);
             active.updated_at = Set(now);
             let row = active.update(&txn).await.map_err(internal)?;
+            if row.blocks_requests {
+                record_service_event(
+                    &txn,
+                    &service,
+                    "maintenance_canceled",
+                    &format!("notice:{}:{}", notice, now.unix_timestamp_nanos()),
+                    now,
+                )
+                .await?;
+            }
             audit_control(
                 &txn,
                 actor,
@@ -522,6 +574,8 @@ pub(super) async fn apply_due_in_transaction(
                 .await
                 .map_err(internal)?;
         }
+        let event_price_id = row.id;
+        let became_active = reason.is_none();
         let mut active = row.into_active_model();
         active.status = Set(if reason.is_some() {
             "invalidated"
@@ -532,6 +586,16 @@ pub(super) async fn apply_due_in_transaction(
         active.reason = Set(reason.map(str::to_owned));
         active.updated_at = Set(now);
         active.update(txn).await.map_err(internal)?;
+        if became_active {
+            record_service_event(
+                txn,
+                service,
+                "price_changed",
+                &format!("price:{event_price_id}"),
+                now,
+            )
+            .await?;
+        }
     }
     Ok(count)
 }

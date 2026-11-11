@@ -8,6 +8,7 @@ import { PlaygroundMessageItem } from './playground-message'
 import { isPlaygroundTranscriptNearBottom } from './playground-scroll'
 import { playgroundStatusClassName } from './playground-status'
 import type { PlaygroundSession } from './playground-types'
+import { PlaygroundErrorHelp } from './playground-error-help'
 
 type PlaygroundSessionColumnProps = {
   session: PlaygroundSession
@@ -135,7 +136,7 @@ export function PlaygroundSessionColumn({
                   </div>
                 ) : session.errorKind ? (
                   <div role="alert" className="playground-notice-enter m-3 flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2.5 text-xs text-destructive">
-                    <p className="min-w-0 flex-1 leading-5">{t(`playground.errors.${session.errorKind}`)}</p>
+                    <div className="min-w-0 flex-1 grid gap-1.5"><p className="leading-5">{t(`playground.errors.${session.errorKind}`)}</p><PlaygroundErrorHelp kind={session.errorKind} /></div>
                     <Button
                       type="button"
                       size="sm"

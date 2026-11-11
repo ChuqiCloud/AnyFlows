@@ -23,6 +23,12 @@ const screenshots = resolve(process.env.RUNNER_TEMP, 'merchant-pool-screenshots-
 const port = 4181
 const origin = `http://127.0.0.1:${port}`
 const now = Math.floor(Date.now() / 1000)
+const reportTestFromDate = new Date(now * 1000)
+reportTestFromDate.setUTCDate(reportTestFromDate.getUTCDate() - 9)
+const reportTestFrom = reportTestFromDate.toISOString().slice(0, 10)
+const reportTestToDate = new Date(now * 1000)
+reportTestToDate.setUTCDate(reportTestToDate.getUTCDate() - 1)
+const reportTestTo = reportTestToDate.toISOString().slice(0, 10)
 const pool = { id: 1, group_id: 8, name: 'CI shared pool', description: 'CI pool', enabled: true, commission_bps: 500, effective_commission_bps: 500, commission_inherit_global: false, min_ratio_micros: 100000, max_ratio_micros: 10000000, settlement_delay_secs: 86400, created_at: now, updated_at: now }
 const offer = { model: 'gpt-fixture', provider: 'openai', sales_ratio_micros: 800000, context_window: 128000, max_output_tokens: 4096, supports_streaming: true, supports_tools: true, supports_vision: false, prices: { currency: 'USD', unit: 'million_tokens', billing_mode: 'token', video_per_second: null, input: '0.80', output: '1.60', cache_read: '0.08', cache_write_5m: '1.00', cache_write_1h: '1.60', version: 1 } }
 const publicService = { id: 51, pool_id: 1, merchant_id: 6, merchant_name: 'CI merchant', name: 'CI service', description: 'Reviewed service', status: 'published', revision: 1, price_version: 0, protocol: 'openai_chat', maintenance: [], models: [offer], updated_at: now }
@@ -65,6 +71,7 @@ const poolRequests = []
 const serviceRequests = []
 const quoteRequests = []
 const applicationRequests = []
+const financeReportRequests = [], financeReportExportRequests = []
 const errors = []
 let server, browser, page
 let serverOutput = ''
@@ -200,6 +207,22 @@ try {
     }
     if (path === '/api/merchant/finance') return respond({ merchant_id: 6, pending_quota: 0, available_quota: 100000, withdrawing_quota: 0, frozen_quota: 0, debt_quota: 0, total_gross_quota: 110000, total_commission_quota: 10000, total_paid_quota: 0, quota_per_usd: 500000 })
     if (path === '/api/merchant/finance/entries') return respond({ items: [], next_cursor: null })
+    if (path === '/api/merchant/finance/report' && method === 'GET') {
+      const query = new URL(request.url()).searchParams
+      financeReportRequests.push(Object.fromEntries(query))
+      const period = query.get('granularity') === 'month' ? query.get('from_date')?.slice(0, 7) : query.get('from_date')
+      return respond({
+        granularity: query.get('granularity'), from_date: query.get('from_date'), to_date: query.get('to_date'),
+        totals: { sales_gross_quota: 5100, commission_quota: 255, merchant_net_quota: 4845, refunded_gross_quota: 100, refunded_commission_quota: 5, refunded_net_quota: 95 },
+        rows: Array.from({ length: 51 }, (_, index) => ({ period, service_id: 88, service_name: 'CI submitted service', model: `gpt-fixture-${index}`, gross_quota: 100, commission_quota: 5, net_quota: 95, refunded_gross_quota: index === 0 ? 100 : 0, refunded_commission_quota: index === 0 ? 5 : 0, refunded_net_quota: index === 0 ? 95 : 0 })),
+      })
+    }
+    if (path === '/api/merchant/finance/report.csv' && method === 'GET') {
+      const query = new URL(request.url()).searchParams
+      financeReportExportRequests.push(Object.fromEntries(query))
+      const csvPeriod = query.get('from_date')?.slice(0, 7)
+      return intercepted.fulfill({ status: 200, contentType: 'text/csv; charset=utf-8', headers: { 'content-disposition': 'attachment; filename=merchant-finance-report.csv' }, body: `\uFEFFperiod,service_id,service_name,model,gross_quota,commission_quota,net_quota,refunded_gross_quota,refunded_commission_quota,refunded_net_quota\r\n"${csvPeriod}",88,"'=2+2","gpt-fixture",0,0,0,100,5,95\r\n"TOTAL",,,,0,0,0,100,5,95\r\n` })
+    }
     if ((path === '/api/merchant/withdrawals' || path === '/api/admin/merchant-withdrawals') && method === 'GET') return respond({ items: withdrawals, next_cursor: null })
     if (path === '/api/merchant/withdrawals' && method === 'POST') {
       const body = request.postDataJSON(); withdrawalRequests.push(body)
@@ -254,8 +277,15 @@ try {
     if (path === '/api/tokens' && method === 'POST') { const body = request.postDataJSON(); assert.equal(body.user_route_id, 21); assert.equal(body.group_id, null); return respond({ token: { id: 5, name: body.name } }, 201) }
     return respond({ error: { code: 'not_found' } }, 404)
   })
+  const initialCatalog = page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return url.pathname === '/api/merchant-pools/1/services' && response.request().method() === 'GET' && url.searchParams.get('page') === '1' && !url.searchParams.has('provider')
+  })
   await page.goto(`${origin}/.merchant-pool-smoke.html`)
   await page.getByRole('heading', { name: label('market.title'), exact: true }).waitFor()
+  await initialCatalog
+  const initialRow = page.getByRole('region', { name: label('catalogTable'), exact: true }).getByRole('row').filter({ hasText: publicService.name })
+  await initialRow.getByRole('link', { name: publicService.models[0].model, exact: true }).waitFor()
   const providerFilter = page.getByRole('group', { name: label('market.providers'), exact: true })
   const deepseek = providerFilter.getByRole('button', { name: 'DeepSeek', exact: true })
   const anthropic = providerFilter.getByRole('button', { name: 'Anthropic', exact: true })
@@ -288,7 +318,9 @@ try {
   await page.reload()
   await page.getByRole('region', { name: label('catalogTable'), exact: true }).getByText('claude-fixture', { exact: true }).waitFor()
   assert.equal(await deepseek.getAttribute('aria-pressed'), 'true', 'Manufacturer selection survives URL reload')
+  filtered = providerResponse(['DeepSeek'])
   await page.getByRole('button', { name: label('market.removeFilter').replace('{{value}}', 'Anthropic'), exact: true }).click()
+  await filtered
   await page.getByRole('region', { name: label('catalogTable'), exact: true }).getByText('claude-fixture', { exact: true }).waitFor({ state: 'hidden' })
   assert.deepEqual(JSON.parse(new URL(page.url()).searchParams.get('provider')), ['DeepSeek'], 'A manufacturer chip removes only its own value')
   await providerFilter.getByRole('button', { name: label('market.allProviders'), exact: true }).click()
@@ -514,6 +546,64 @@ try {
   assert.equal(await ownedServicesTable.locator('tbody tr').count(), 1, 'A created merchant service appears as one table row')
   await page.screenshot({ path: resolve(screenshots, 'merchant-workspace.png'), fullPage: true, animations: 'disabled' })
   assert.equal(await page.evaluate(() => Object.values(sessionStorage).some(value => value.includes('ci-upstream-private-key'))), false)
+  const workspaceTabs = page.getByRole('group', { name: label('workspace'), exact: true })
+  const financeReportRegion = page.getByRole('region', { name: label('financeReport.title'), exact: true })
+  let reportResponse = page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return url.pathname === '/api/merchant/finance/report' && url.searchParams.get('granularity') === 'day'
+  })
+  await workspaceTabs.getByRole('button', { name: label('finance'), exact: true }).click()
+  await reportResponse
+  await financeReportRegion.locator('tbody tr').first().waitFor()
+  const reportFrom = financeReportRegion.getByLabel(label('financeReport.from'), { exact: true })
+  const reportTo = financeReportRegion.getByLabel(label('financeReport.to'), { exact: true })
+  const reportGranularity = financeReportRegion.getByRole('combobox', { name: label('financeReport.granularity'), exact: true })
+  const reportDayRequest = financeReportRequests.at(-1)
+  assert.equal(await reportFrom.inputValue(), reportDayRequest.from_date, 'The default report range is sent to the UTC report API')
+  assert.equal(await reportTo.inputValue(), reportDayRequest.to_date)
+  assert.equal(reportDayRequest.granularity, 'day', 'The finance report defaults to daily aggregation')
+  assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(reportDayRequest.from_date))
+  assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(reportDayRequest.to_date))
+  assert.equal(await financeReportRegion.locator('tbody tr').count(), 50, 'The report shows at most 50 detail rows per page')
+  const reportPageLabel = page.getByText(label('financeReport.page').replace('{{page}}', '1').replace('{{pages}}', '2'), { exact: true })
+  await reportPageLabel.waitFor()
+  await financeReportRegion.getByRole('button', { name: label('next'), exact: true }).click()
+  await page.getByText(label('financeReport.page').replace('{{page}}', '2').replace('{{pages}}', '2'), { exact: true }).waitFor()
+  assert.equal(await financeReportRegion.locator('tbody tr').count(), 1, 'The report pager exposes the remaining row on page two')
+  await financeReportRegion.getByRole('button', { name: label('previous'), exact: true }).click()
+  await reportPageLabel.waitFor()
+  assert.equal(await financeReportRegion.locator('tbody tr').count(), 50)
+  reportResponse = page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return url.pathname === '/api/merchant/finance/report' && url.searchParams.get('from_date') === reportTestFrom
+  })
+  await reportFrom.fill(reportTestFrom)
+  await reportResponse
+  reportResponse = page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return url.pathname === '/api/merchant/finance/report' && url.searchParams.get('to_date') === reportTestTo
+  })
+  await reportTo.fill(reportTestTo)
+  await reportResponse
+  reportResponse = page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return url.pathname === '/api/merchant/finance/report' && url.searchParams.get('granularity') === 'month' && url.searchParams.get('from_date') === reportTestFrom && url.searchParams.get('to_date') === reportTestTo
+  })
+  await reportGranularity.selectOption('month')
+  await reportResponse
+  assert.deepEqual(financeReportRequests.at(-1), { from_date: reportTestFrom, to_date: reportTestTo, granularity: 'month' }, 'Date changes and monthly aggregation reach the report endpoint')
+  assert.equal(await financeReportRegion.locator('tbody tr').first().locator('td').first().innerText(), reportTestFrom.slice(0, 7), 'Monthly aggregation renders a UTC year-month bucket')
+  const csvResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/merchant/finance/report.csv')
+  const reportDownload = page.waitForEvent('download')
+  await financeReportRegion.getByRole('button', { name: label('financeReport.export'), exact: true }).click()
+  const [csv, downloadedReport] = await Promise.all([csvResponse, reportDownload])
+  assert.equal(csv.status(), 200)
+  assert.equal(csv.headers()['content-type'], 'text/csv; charset=utf-8')
+  assert.deepEqual(financeReportExportRequests.at(-1), { from_date: reportTestFrom, to_date: reportTestTo, granularity: 'month' })
+  assert.equal(downloadedReport.suggestedFilename(), `merchant-finance-${reportTestFrom}-${reportTestTo}-month.csv`)
+  const csvBody = (await readFile(await downloadedReport.path())).toString('utf8')
+  assert.ok(csvBody.includes('period,service_id,service_name,model,'), 'The download preserves the CSV header')
+  assert.ok(csvBody.includes(`"${reportTestFrom.slice(0, 7)}",88,"'=2+2"`), 'The download preserves the server’s spreadsheet-safe CSV cell')
   services[0] = { ...services[0], status: 'published', published: { ...services[0].draft, status: 'published' }, draft: null }
   await page.getByRole('button', { name: 'routes', exact: true }).click()
   await page.getByRole('button', { name: 'workspace', exact: true }).click()

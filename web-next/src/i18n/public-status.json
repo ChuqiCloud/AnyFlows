@@ -1,0 +1,78 @@
+{
+  "zh": {
+    "publicStatus": {
+      "eyebrow": "平台运行状态",
+      "title": "服务状态",
+      "subtitle": "显示最近 24 小时全平台请求的聚合情况。数据不足时不会推算可用率。",
+      "home": "返回首页",
+      "refresh": "刷新",
+      "loading": "正在读取服务状态",
+      "error": "状态数据暂时不可用。",
+      "retry": "重试",
+      "api": "API 就绪情况",
+      "availability": "请求成功率",
+      "averageLatency": "成功请求平均耗时",
+      "period": "统计窗口：{{start}} 至 {{end}}",
+      "updated": "采样时间：{{time}}",
+      "states": {
+        "unavailable": "暂不可用",
+        "unknown": "未知",
+        "insufficient_data": "样本不足",
+        "operational": "运行正常",
+        "degraded": "性能下降",
+        "monitoring": "正在观察"
+      },
+      "insufficientData": "最近 24 小时有效请求样本不足，暂不公布成功率或耗时统计。",
+      "monitoring": "部分请求未能确认终态，平台正在观察；当前统计不视为可用率保证。",
+      "history": "请求趋势",
+      "historyHint": "每列代表一个小时，仅显示全平台聚合样本。",
+      "requests": "{{count}} 个请求",
+      "requestsLabel": "个请求",
+      "hourlyHistory": "最近 24 小时请求趋势",
+      "noHistory": "当前没有足够数据绘制趋势。",
+      "success": "成功",
+      "failure": "失败",
+      "unknown": "未知结果",
+      "scopeTitle": "统计范围",
+      "scope": "数据按整个平台汇总，不包含渠道、模型、商户、用户或 Key 标识。成功率和平均耗时只在样本量达到公开门槛后显示。"
+    }
+  },
+  "en": {
+    "publicStatus": {
+      "eyebrow": "Platform operations",
+      "title": "Service status",
+      "subtitle": "Aggregated platform request activity over the last 24 hours. Availability is not estimated when sample volume is low.",
+      "home": "Home",
+      "refresh": "Refresh",
+      "loading": "Loading service status",
+      "error": "Status data is temporarily unavailable.",
+      "retry": "Retry",
+      "api": "API readiness",
+      "availability": "Successful requests",
+      "averageLatency": "Average successful request duration",
+      "period": "Window: {{start}} to {{end}}",
+      "updated": "Sampled: {{time}}",
+      "states": {
+        "unavailable": "Unavailable",
+        "unknown": "Unknown",
+        "insufficient_data": "Insufficient samples",
+        "operational": "Operational",
+        "degraded": "Degraded",
+        "monitoring": "Monitoring"
+      },
+      "insufficientData": "There are not enough valid request samples in the last 24 hours to publish availability or duration statistics.",
+      "monitoring": "Some requests have no confirmed terminal outcome. The platform is monitoring this period; these statistics are not an availability guarantee.",
+      "history": "Request activity",
+      "historyHint": "Each column represents one hour and includes only platform-wide aggregate samples.",
+      "requests": "{{count}} requests",
+      "requestsLabel": "requests",
+      "hourlyHistory": "Request activity for the last 24 hours",
+      "noHistory": "There is not enough data to draw a trend.",
+      "success": "Successful",
+      "failure": "Failed",
+      "unknown": "Unknown outcome",
+      "scopeTitle": "Data scope",
+      "scope": "Data is aggregated across the installation and excludes channel, model, merchant, user, and API key identifiers. Availability and average duration appear only after the public sample threshold is met."
+    }
+  }
+}

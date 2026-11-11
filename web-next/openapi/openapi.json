@@ -12199,6 +12199,289 @@
         ]
       }
     },
+    "/api/merchant-pool/watches": {
+      "get": {
+        "tags": [
+          "商户共享池"
+        ],
+        "operationId": "listMerchantServiceWatches",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Watched public services",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantServiceWatchListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/merchant-pools/{pool}/services/{service}/watch": {
+      "parameters": [
+        {
+          "name": "pool",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        {
+          "name": "service",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      ],
+      "put": {
+        "tags": [
+          "商户共享池"
+        ],
+        "operationId": "watchMerchantService",
+        "responses": {
+          "200": {
+            "description": "Watched public service",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantServiceWatch"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Service not found or not accessible"
+          },
+          "429": {
+            "description": "Watch limit reached"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "商户共享池"
+        ],
+        "operationId": "unwatchMerchantService",
+        "responses": {
+          "200": {
+            "description": "Watch removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantServiceWatchChangeResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Service watch not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/channel-monitor/settings": {
+      "get": {
+        "tags": [],
+        "operationId": "get_settings",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveChannelMonitorSettingsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [],
+        "operationId": "set_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActiveChannelMonitorSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveChannelMonitorSettingsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/channel-monitor/targets": {
+      "get": {
+        "tags": [],
+        "operationId": "list_targets",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ActiveChannelMonitorTargetResponse"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [],
+        "operationId": "upsert_target",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActiveChannelMonitorTargetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveChannelMonitorTargetResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/channel-monitor/targets/{id}": {
+      "delete": {
+        "tags": [],
+        "operationId": "delete_target",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/channel-monitor/targets/{id}/events": {
+      "get": {
+        "tags": [],
+        "operationId": "list_events",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ActiveChannelMonitorEventResponse"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/email-settings": {
       "get": {
         "tags": [
@@ -20632,6 +20915,114 @@
         ]
       }
     },
+    "/api/merchant/finance/report": {
+      "get": {
+        "tags": [
+          "Merchant pool"
+        ],
+        "operationId": "getMerchantFinanceReport",
+        "parameters": [
+          {
+            "name": "from_date",
+            "in": "query",
+            "description": "Inclusive UTC date (YYYY-MM-DD)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "description": "Inclusive UTC date (YYYY-MM-DD)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "granularity",
+            "in": "query",
+            "description": "day or month",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantFinanceReport"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/merchant/finance/report.csv": {
+      "get": {
+        "tags": [
+          "Merchant pool"
+        ],
+        "operationId": "exportMerchantFinanceReportCsv",
+        "parameters": [
+          {
+            "name": "from_date",
+            "in": "query",
+            "description": "Inclusive UTC date (YYYY-MM-DD)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "description": "Inclusive UTC date (YYYY-MM-DD)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "granularity",
+            "in": "query",
+            "description": "day or month",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "RFC 4180 CSV report",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/merchant/withdrawals": {
       "get": {
         "tags": [
@@ -28345,6 +28736,37 @@
         ]
       }
     },
+    "/api/public/service-status": {
+      "get": {
+        "tags": [
+          "运行状态"
+        ],
+        "summary": "读取脱敏的平台级请求状态",
+        "operationId": "getPublicServiceStatus",
+        "responses": {
+          "200": {
+            "description": "最近24小时的聚合状态；低于样本门槛时省略计数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicServiceStatusResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "状态数据暂不可用，响应不包含内部错误详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicServiceStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/software": {
       "get": {
         "tags": [
@@ -30226,6 +30648,230 @@
           },
           "updated_at": {
             "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ActiveChannelMonitorEventKindResponse": {
+        "type": "string",
+        "enum": [
+          "down",
+          "recovered"
+        ]
+      },
+      "ActiveChannelMonitorEventResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "target_id",
+          "kind",
+          "occurred_epoch_seconds"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "target_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ActiveChannelMonitorEventKindResponse"
+          },
+          "latency_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "occurred_epoch_seconds": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ActiveChannelMonitorSettingsRequest": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "global_daily_budget"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "global_daily_budget": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActiveChannelMonitorSettingsResponse": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "global_daily_budget"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "global_daily_budget": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ActiveChannelMonitorTargetRequest": {
+        "type": "object",
+        "required": [
+          "channel_id",
+          "credential_id",
+          "model",
+          "enabled",
+          "interval_secs",
+          "daily_budget",
+          "timeout_secs",
+          "alert_after_secs"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "credential_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "model": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "interval_secs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "daily_budget": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "timeout_secs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "alert_after_secs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "muted_until_epoch_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActiveChannelMonitorTargetResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "channel_id",
+          "credential_id",
+          "model",
+          "enabled",
+          "interval_secs",
+          "daily_budget",
+          "timeout_secs",
+          "alert_after_secs",
+          "daily_used",
+          "alert_active"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "channel_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "credential_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "model": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "interval_secs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "daily_budget": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "timeout_secs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "alert_after_secs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "daily_used": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "last_attempt_epoch_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "last_success_epoch_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "failure_since_epoch_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "alert_active": {
+            "type": "boolean"
+          },
+          "muted_until_epoch_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           }
         }
@@ -40989,6 +41635,9 @@
               "image_history_not_found",
               "image_history_limit_reached",
               "image_history_unavailable",
+              "merchant_service_watch_not_found",
+              "merchant_service_watch_limit_reached",
+              "merchant_service_watch_unavailable",
               "user_conflict",
               "organization_not_found",
               "organization_credit_invalid_request",
@@ -41461,6 +42110,129 @@
           }
         },
         "additionalProperties": false
+      },
+      "MerchantFinanceReport": {
+        "type": "object",
+        "required": [
+          "granularity",
+          "from_date",
+          "to_date",
+          "totals",
+          "rows"
+        ],
+        "properties": {
+          "granularity": {
+            "type": "string"
+          },
+          "from_date": {
+            "type": "string"
+          },
+          "to_date": {
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/MerchantFinanceReportTotals"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MerchantFinanceReportRow"
+            }
+          }
+        }
+      },
+      "MerchantFinanceReportRow": {
+        "type": "object",
+        "required": [
+          "period",
+          "service_name",
+          "model",
+          "gross_quota",
+          "commission_quota",
+          "net_quota",
+          "refunded_gross_quota",
+          "refunded_commission_quota",
+          "refunded_net_quota"
+        ],
+        "properties": {
+          "period": {
+            "type": "string"
+          },
+          "service_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "service_name": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "gross_quota": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "commission_quota": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "net_quota": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "refunded_gross_quota": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "refunded_commission_quota": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "refunded_net_quota": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "MerchantFinanceReportTotals": {
+        "type": "object",
+        "required": [
+          "sales_gross_quota",
+          "commission_quota",
+          "merchant_net_quota",
+          "refunded_gross_quota",
+          "refunded_commission_quota",
+          "refunded_net_quota"
+        ],
+        "properties": {
+          "sales_gross_quota": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "commission_quota": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "merchant_net_quota": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "refunded_gross_quota": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "refunded_commission_quota": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "refunded_net_quota": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
       },
       "MerchantKeyRotationRequest": {
         "type": "object",
@@ -43310,6 +44082,82 @@
         },
         "additionalProperties": false
       },
+      "MerchantServiceWatch": {
+        "type": "object",
+        "required": [
+          "pool_id",
+          "pool_name",
+          "service_id",
+          "merchant_id",
+          "service_name",
+          "merchant_name",
+          "active",
+          "created_at"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "merchant_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "merchant_name": {
+            "type": "string"
+          },
+          "pool_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pool_name": {
+            "type": "string"
+          },
+          "service_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "service_name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MerchantServiceWatchChangeResponse": {
+        "type": "object",
+        "required": [
+          "changed"
+        ],
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MerchantServiceWatchListResponse": {
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MerchantServiceWatch"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
       "MerchantServiceWriteRequest": {
         "type": "object",
         "required": [
@@ -43964,7 +44812,8 @@
           "balance_alert",
           "subscription_balance_alert",
           "subscription_purchase",
-          "product_update"
+          "product_update",
+          "channel_monitor"
         ]
       },
       "OAuthLoginExchangeRequest": {
@@ -44771,6 +45620,112 @@
           }
         },
         "additionalProperties": false
+      },
+      "PublicServiceStatusPoint": {
+        "type": "object",
+        "required": [
+          "period_start",
+          "successful_request_count",
+          "failed_request_count",
+          "unknown_request_count"
+        ],
+        "properties": {
+          "period_start": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "successful_request_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "failed_request_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unknown_request_count": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "PublicServiceStatusResponse": {
+        "type": "object",
+        "required": [
+          "sampled_at",
+          "period_start",
+          "period_end",
+          "status",
+          "api_ready",
+          "hourly"
+        ],
+        "properties": {
+          "sampled_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "period_start": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "period_end": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string"
+          },
+          "api_ready": {
+            "type": "boolean"
+          },
+          "sample_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "successful_request_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "failed_request_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "unknown_request_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "availability_percent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "average_success_duration_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "hourly": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicServiceStatusPoint"
+            }
+          }
+        }
       },
       "PublicSiteSettings": {
         "type": "object",
@@ -47164,6 +48119,59 @@
               "null"
             ],
             "format": "int64"
+          },
+          "merchant_service_event_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "merchant_service_event_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "merchant_service_pool_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "merchant_service_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "merchant_service_merchant_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "merchant_service_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channel_monitor_target_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "channel_monitor_event_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "additionalProperties": false

@@ -33,6 +33,17 @@ function getApiRoot() {
   return apiBaseUrl || window.location.origin
 }
 
+async function isInvalidApiKeyResponse(response: Response) {
+  try {
+    const body = await response.clone().json() as { error?: { code?: unknown; type?: unknown } }
+    return body.error?.code === 'invalid_api_key'
+      || body.error?.code === 'authentication_error'
+      || body.error?.type === 'authentication_error'
+  } catch {
+    return false
+  }
+}
+
 /** 使用登录会话进入试炼场鉴权、计费与调度链，并逐段回传文本。 */
 export async function streamPlaygroundChat(
   request: PlaygroundStreamRequest,
@@ -43,8 +54,8 @@ export async function streamPlaygroundChat(
     headers.delete('x-api-key')
     headers.delete('x-goog-api-key')
     if (sessionToken) headers.set('Authorization', `Bearer ${sessionToken}`)
-    return fetch(input, { ...init, headers, credentials: 'same-origin' }).then((response) => {
-      if (response.status === 401) invalidateManagementSession()
+    return fetch(input, { ...init, headers, credentials: 'same-origin' }).then(async (response) => {
+      if (response.status === 401 && !(await isInvalidApiKeyResponse(response))) invalidateManagementSession()
       return response
     })
   }
