@@ -111,8 +111,6 @@ fn map_error(error: MerchantPoolError) -> MerchantServiceWatchError {
         MerchantPoolError::Conflict
         | MerchantPoolError::InUse
         | MerchantPoolError::ModelPriceUnavailable
-        | MerchantPoolError::Unavailable => {
-            MerchantServiceWatchError::Internal
-        }
+        | MerchantPoolError::Unavailable => MerchantServiceWatchError::Internal,
     }
 }

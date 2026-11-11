@@ -58,7 +58,10 @@ async fn unpriced_model_can_be_submitted_but_only_publishes_after_platform_prici
             .await,
         Err(MerchantPoolError::ModelPriceUnavailable)
     ));
-    let still_pending = fixture.repository.get_service(Some(owner), draft.id).await?;
+    let still_pending = fixture
+        .repository
+        .get_service(Some(owner), draft.id)
+        .await?;
     assert_eq!(still_pending.status, "pending");
     assert!(still_pending.published.is_none());
     assert!(still_pending.active_price.is_none());
@@ -143,7 +146,10 @@ async fn unpriced_draft_update_preserves_the_previously_approved_supply()
             .await,
         Err(MerchantPoolError::ModelPriceUnavailable)
     ));
-    let unchanged = fixture.repository.get_service(Some(owner), draft.id).await?;
+    let unchanged = fixture
+        .repository
+        .get_service(Some(owner), draft.id)
+        .await?;
     assert_eq!(unchanged.status, "published");
     assert_eq!(
         unchanged.published.as_ref().expect("live revision").id,

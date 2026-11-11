@@ -5,10 +5,10 @@ use std::error::Error;
 
 #[path = "deletion_tests.rs"]
 mod deletion_tests;
-#[path = "provider_tests.rs"]
-mod provider_tests;
 #[path = "pricing_validation_tests.rs"]
 mod pricing_validation_tests;
+#[path = "provider_tests.rs"]
+mod provider_tests;
 #[path = "service_watch_tests.rs"]
 mod service_watch_tests;
 
