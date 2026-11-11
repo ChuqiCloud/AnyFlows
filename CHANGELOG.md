@@ -1,3 +1,42 @@
+## 0.3.0-beta.9 - 2026-11-11
+
+本版本基于 `v0.3.0-beta.8`，增加上游 Key 级模型管理、额度查询和真实服务状态，补齐渠道主动拨测、商户结算报表及服务关注通知。
+
+### 新增
+
+- 上游 Key 支持独立获取模型、继承渠道规则、模型黑白名单、单模型启停和批量管理；实际调用同时受渠道模型范围和 Key 规则约束。([#108](https://github.com/ChuqiCloud/AnyFlows/pull/108))
+- 统一上游额度查询入口，支持 Codex 官方用量窗口以及 New API、One API、Sub2API 查询；区分 Key 配额与账户共享余额，提供后台刷新、低额度提醒和可选的耗尽暂停。([#108](https://github.com/ChuqiCloud/AnyFlows/pull/108))
+- 增加共享池和商户删除入口；分组删除时可选择替代分组，迁移关联用户和默认设置，并撤销原分组直接绑定的 Key。([#107](https://github.com/ChuqiCloud/AnyFlows/pull/107))
+- 增加真实公开状态页，展示脱敏的请求聚合状态、成功率、平均耗时和近 24 小时请求趋势；样本不足时显示未知，可用率低于 95% 时标记性能下降。([#113](https://github.com/ChuqiCloud/AnyFlows/pull/113))
+- 管理员可配置启用渠道的主动拨测，设置模型、间隔和每日拨测次数预算；故障与恢复事件支持持续窗口、去重和通知。([#113](https://github.com/ChuqiCloud/AnyFlows/pull/113))
+- Key 签发后提供 cURL、Python 和 JavaScript 接入示例，模型体验增加常见错误诊断及对应修复入口。([#113](https://github.com/ChuqiCloud/AnyFlows/pull/113))
+- 商户可按 UTC 时间范围查看日、月结算报表，核对服务与模型维度的收入、佣金和退款，并导出 CSV。([#113](https://github.com/ChuqiCloud/AnyFlows/pull/113))
+- 用户可关注公开商户服务，接收已生效的价格、维护、暂停和恢复通知；重复事件不会重复发送，草稿变化不触发通知。([#113](https://github.com/ChuqiCloud/AnyFlows/pull/113))
+
+### 改进
+
+- 商户公开模型池支持按模型厂商多选筛选，显示厂商 Logo 和模型数量，并在服务、模型详情及分享链接中保留厂商信息。([#112](https://github.com/ChuqiCloud/AnyFlows/pull/112))
+- 客户端档案的身份请求头支持自由输入字段名，保留预设选项，阻止重复添加，并改善移动端折行。([#111](https://github.com/ChuqiCloud/AnyFlows/pull/111))
+- 调整模型目录的状态和协议徽章布局，统一部分管理表单的编辑组件。([#110](https://github.com/ChuqiCloud/AnyFlows/pull/110))
+
+### 修复
+
+- 修复商户池、申请、服务、路由及出款表单的校验和提交问题，支持介绍换行、字段错误提示和失败后保留可重试草稿。([#106](https://github.com/ChuqiCloud/AnyFlows/pull/106))
+- 修复模型体验使用无效 API Key 时误清除管理会话的问题，保留会话并展示 Key 错误诊断。([#113](https://github.com/ChuqiCloud/AnyFlows/pull/113))
+- 修复非阻断维护窗口结束后遗漏服务关注通知的问题。([#113](https://github.com/ChuqiCloud/AnyFlows/pull/113))
+
+### 升级与兼容
+
+- 本版本包含商户资源删除、Key 模型能力、上游额度、服务关注、结算报表和主动拨测相关数据库迁移；升级前备份数据库、配置和计费 WAL，首次启动时自动执行迁移。([#107](https://github.com/ChuqiCloud/AnyFlows/pull/107)、[#108](https://github.com/ChuqiCloud/AnyFlows/pull/108)、[#113](https://github.com/ChuqiCloud/AnyFlows/pull/113))
+- 已有 Key 默认继承渠道规则；显式空白名单表示禁止全部模型，模型名单按最终上游名称精确匹配并区分大小写。([#108](https://github.com/ChuqiCloud/AnyFlows/pull/108))
+- 上游额度后台刷新和耗尽暂停需配置后启用，查询失败、未知或陈旧结果不会被当作零余额停用 Key；上游额度不改变本站钱包与计费。([#108](https://github.com/ChuqiCloud/AnyFlows/pull/108))
+- 主动拨测及目标规则默认关闭，管理员配置后启用；拨测可能产生上游调用消耗，并受每日次数预算约束。([#113](https://github.com/ChuqiCloud/AnyFlows/pull/113))
+- 有未清资金、提现或在途任务的商户无法删除；删除资源后保留历史账务和已受理视频任务的绑定信息。([#107](https://github.com/ChuqiCloud/AnyFlows/pull/107))
+
+本版本为社区版 Beta 预发布。
+
+完整变更：[v0.3.0-beta.8...v0.3.0-beta.9](https://github.com/ChuqiCloud/AnyFlows/compare/v0.3.0-beta.8...v0.3.0-beta.9)。
+
 ## 0.3.0-beta.8 - 2026-11-09
 
 本版本基于 `v0.3.0-beta.7`，增加实名认证准入和商户共享池，完善 OAuth 邀请奖励、发行包说明及商户市场体验。
