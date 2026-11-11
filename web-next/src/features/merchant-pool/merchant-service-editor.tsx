@@ -104,7 +104,7 @@ export function MerchantServiceEditor({ service, pools, onClose }: { service?: M
         </div>
         <details className="text-xs" open={connectionOptionsOpen} onToggle={(event) => setConnectionOptionsOpen(event.currentTarget.open)}>
           <summary className="w-fit cursor-pointer font-medium text-muted-foreground">{t('merchantPool.connectionOptions')}</summary>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className="mt-3 grid items-start gap-3 sm:grid-cols-3">
             <PoolField label={t('merchantPool.defaultRatio')} hint={selectedPool ? t('merchantPool.ratioRange', { min: poolRatio(selectedPool.min_ratio_micros), max: poolRatio(selectedPool.max_ratio_micros) }) : undefined}><Input size="sm" aria-label={t('merchantPool.defaultRatio')} inputMode="decimal" value={ratio} onValueChange={editText(setRatio)} {...inputError('ratio')} /></PoolField>
             <PoolField label={t('merchantPool.concurrency')}><Input size="sm" aria-label={t('merchantPool.concurrency')} type="number" min="1" max="10000" value={concurrency} onValueChange={editText(setConcurrency)} placeholder={t('merchantPool.noLimit')} {...inputError('concurrency')} /></PoolField>
             <PoolField label={t('merchantPool.timeout')}><Input size="sm" aria-label={t('merchantPool.timeout')} type="number" min="1" max="300" value={timeout} onValueChange={editText(setTimeout)} {...inputError('timeout')} /></PoolField>

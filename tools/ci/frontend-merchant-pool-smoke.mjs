@@ -634,6 +634,12 @@ try {
   assert.equal(quoteRequests.length, 2)
   assert.equal(quoteRequests[1].models[0].model, 'manual-unpriced-fixture')
   assert.equal(await dialog.getByRole('heading', { name: label('quotePreview'), exact: true }).count(), 0, 'Missing platform pricing is not displayed as a free or fabricated quote')
+  const connectionFieldTops = await Promise.all([
+    dialog.getByRole('textbox', { name: label('defaultRatio'), exact: true }),
+    serviceConcurrency,
+    dialog.getByRole('spinbutton', { name: label('timeout'), exact: true }),
+  ].map(field => field.evaluate(input => input.getBoundingClientRect().top)))
+  assert.ok(Math.max(...connectionFieldTops) - Math.min(...connectionFieldTops) <= 2, 'Connection fields align even when only the sales ratio has help text')
   await page.screenshot({ path: resolve(screenshots, 'merchant-service-unpriced-draft.png'), fullPage: true, animations: 'disabled' })
   await dialog.getByRole('button', { name: label('saveDraft'), exact: true }).click()
   await dialog.getByText(label('saveError'), { exact: true }).waitFor()
