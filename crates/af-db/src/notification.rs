@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt, time::Duration};
 
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect, Set,
+    QuerySelect, Set, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, OnConflict},
 };
@@ -107,6 +107,13 @@ pub enum UserNotificationSnapshot {
         announcement_id: i64,
         announcement_version: i64,
     },
+    /// Merchant catalog updates reference a public event snapshot by ID.
+    MerchantService { event_id: i64 },
+    ChannelMonitor {
+        target_id: i64,
+        event_id: i64,
+        event_kind: String,
+    },
 }
 
 /// 与业务事实事务一起写入的通知事实。
@@ -210,6 +217,45 @@ impl UserNotificationWrite {
             },
         }
     }
+
+    /// Construct an in-app catalog update tied to an immutable service event.
+    #[must_use]
+    pub fn merchant_service_update(
+        user_id: i64,
+        event_id: i64,
+        occurred_at: TimeDateTimeWithTimeZone,
+    ) -> Self {
+        Self {
+            user_id,
+            // Keep the established in-app notification code and delivery state.
+            kind: NotificationKind::ProductUpdate,
+            occurred_at,
+            source_key: format!("merchant-service:{user_id}:{event_id}"),
+            snapshot: UserNotificationSnapshot::MerchantService { event_id },
+        }
+    }
+
+    /// Construct an in-app channel monitor transition with a recipient-scoped idempotency key.
+    #[must_use]
+    pub fn channel_monitor_update(
+        user_id: i64,
+        target_id: i64,
+        event_id: i64,
+        event_kind: String,
+        occurred_at: TimeDateTimeWithTimeZone,
+    ) -> Self {
+        Self {
+            user_id,
+            kind: NotificationKind::ProductUpdate,
+            occurred_at,
+            source_key: format!("channel-monitor:{user_id}:{target_id}:{event_id}:{event_kind}"),
+            snapshot: UserNotificationSnapshot::ChannelMonitor {
+                target_id,
+                event_id,
+                event_kind,
+            },
+        }
+    }
 }
 
 /// 用户通知事实记录，已移除邮箱、正文和 Provider 响应。
@@ -240,6 +286,14 @@ pub struct UserNotificationRecord {
     announcement_body_en: Option<String>,
     announcement_status: Option<i16>,
     announcement_visible_until: Option<i64>,
+    merchant_service_event_id: Option<i64>,
+    merchant_service_event_kind: Option<String>,
+    merchant_service_pool_id: Option<i64>,
+    merchant_service_id: Option<i64>,
+    merchant_service_merchant_id: Option<i64>,
+    merchant_service_name: Option<String>,
+    channel_monitor_target_id: Option<i64>,
+    channel_monitor_event_kind: Option<String>,
 }
 
 impl UserNotificationRecord {
@@ -253,15 +307,58 @@ impl UserNotificationRecord {
             return Err(UserNotificationRepositoryError::Invariant);
         }
         let product_update = product_update_kind;
-        let (announcement_id, announcement_version) = if product_update {
-            let (source_user_id, id, version) = parse_announcement_source_key(&model.source_key)?;
-            if source_user_id != model.user_id {
-                return Err(UserNotificationRepositoryError::Invariant);
-            }
-            (Some(id), Some(version))
+        let announcement = if product_update {
+            parse_announcement_source_key(&model.source_key).ok()
         } else {
-            (None, None)
+            None
         };
+        let merchant_service = if product_update && announcement.is_none() {
+            parse_merchant_service_source_key(&model.source_key).ok()
+        } else {
+            None
+        };
+        let channel_monitor =
+            if product_update && announcement.is_none() && merchant_service.is_none() {
+                parse_channel_monitor_source_key(&model.source_key).ok()
+            } else {
+                None
+            };
+        if product_update
+            && announcement.is_none()
+            && merchant_service.is_none()
+            && channel_monitor.is_none()
+        {
+            return Err(UserNotificationRepositoryError::Invariant);
+        }
+        let (announcement_id, announcement_version) = announcement
+            .map(|(source_user_id, id, version)| {
+                if source_user_id == model.user_id {
+                    Ok((Some(id), Some(version)))
+                } else {
+                    Err(UserNotificationRepositoryError::Invariant)
+                }
+            })
+            .transpose()?
+            .unwrap_or((None, None));
+        let merchant_service_event_id = merchant_service
+            .map(|(source_user_id, event_id)| {
+                if source_user_id == model.user_id {
+                    Ok(event_id)
+                } else {
+                    Err(UserNotificationRepositoryError::Invariant)
+                }
+            })
+            .transpose()?;
+        let (channel_monitor_target_id, channel_monitor_event_kind) = channel_monitor
+            .map(|(source_user_id, target_id, _event_id, event_kind)| {
+                if source_user_id == model.user_id {
+                    Ok((Some(target_id), Some(event_kind)))
+                } else {
+                    Err(UserNotificationRepositoryError::Invariant)
+                }
+            })
+            .transpose()?
+            .unwrap_or((None, None));
         if product_update
             && (model.channel != NotificationChannel::InApp as i16
                 || model.delivery_state != NotificationDeliveryState::Available as i16)
@@ -297,6 +394,14 @@ impl UserNotificationRecord {
             announcement_body_en: None,
             announcement_status: None,
             announcement_visible_until: None,
+            merchant_service_event_id,
+            merchant_service_event_kind: None,
+            merchant_service_pool_id: None,
+            merchant_service_id: None,
+            merchant_service_merchant_id: None,
+            merchant_service_name: None,
+            channel_monitor_target_id,
+            channel_monitor_event_kind,
         })
     }
 
@@ -316,6 +421,46 @@ impl UserNotificationRecord {
     #[must_use]
     pub const fn is_product_update(&self) -> bool {
         self.product_update
+    }
+    #[must_use]
+    pub const fn is_merchant_service_update(&self) -> bool {
+        self.merchant_service_event_id.is_some()
+    }
+    #[must_use]
+    pub const fn is_channel_monitor_update(&self) -> bool {
+        self.channel_monitor_target_id.is_some()
+    }
+    #[must_use]
+    pub const fn merchant_service_event_id(&self) -> Option<i64> {
+        self.merchant_service_event_id
+    }
+    #[must_use]
+    pub const fn channel_monitor_target_id(&self) -> Option<i64> {
+        self.channel_monitor_target_id
+    }
+    #[must_use]
+    pub fn channel_monitor_event_kind(&self) -> Option<&str> {
+        self.channel_monitor_event_kind.as_deref()
+    }
+    #[must_use]
+    pub fn merchant_service_event_kind(&self) -> Option<&str> {
+        self.merchant_service_event_kind.as_deref()
+    }
+    #[must_use]
+    pub const fn merchant_service_pool_id(&self) -> Option<i64> {
+        self.merchant_service_pool_id
+    }
+    #[must_use]
+    pub const fn merchant_service_id(&self) -> Option<i64> {
+        self.merchant_service_id
+    }
+    #[must_use]
+    pub const fn merchant_service_merchant_id(&self) -> Option<i64> {
+        self.merchant_service_merchant_id
+    }
+    #[must_use]
+    pub fn merchant_service_name(&self) -> Option<&str> {
+        self.merchant_service_name.as_deref()
     }
     #[must_use]
     pub const fn announcement_id(&self) -> Option<i64> {
@@ -359,6 +504,25 @@ impl UserNotificationRecord {
         self.announcement_visible_until = announcement
             .visible_until
             .map(|value| value.unix_timestamp());
+    }
+
+    fn attach_merchant_service_event(
+        &mut self,
+        event: &crate::entity::merchant_service_watch_events::Model,
+    ) {
+        self.merchant_service_event_kind = Some(event.event_kind.clone());
+        self.merchant_service_pool_id = Some(event.pool_id);
+        self.merchant_service_id = Some(event.service_id);
+        self.merchant_service_merchant_id = Some(event.merchant_id);
+        self.merchant_service_name = Some(event.service_name.clone());
+    }
+
+    fn clear_merchant_service_event(&mut self) {
+        self.merchant_service_event_kind = None;
+        self.merchant_service_pool_id = None;
+        self.merchant_service_id = None;
+        self.merchant_service_merchant_id = None;
+        self.merchant_service_name = None;
     }
     #[must_use]
     pub const fn channel(&self) -> NotificationChannel {
@@ -763,6 +927,36 @@ impl UserNotificationRepository {
                 .map(|announcement| (announcement.id, announcement))
                 .collect::<HashMap<_, _>>()
         };
+        let service_event_ids = models
+            .iter()
+            .filter_map(|model| {
+                (model.kind == NotificationKind::ProductUpdate as i16)
+                    .then(|| parse_merchant_service_source_key(&model.source_key).ok())
+                    .flatten()
+                    .and_then(|(source_user_id, event_id)| {
+                        (source_user_id == user_id).then_some(event_id)
+                    })
+            })
+            .collect::<Vec<_>>();
+        let service_events = if service_event_ids.is_empty() {
+            HashMap::new()
+        } else {
+            crate::entity::merchant_service_watch_events::Entity::find()
+                .filter(
+                    crate::entity::merchant_service_watch_events::Column::Id
+                        .is_in(service_event_ids),
+                )
+                .all(self.pool.connection())
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| UserNotificationRepositoryError::Query)?
+                .into_iter()
+                .map(|event| (event.id, event))
+                .collect::<HashMap<_, _>>()
+        };
+        let visible_service_events = self
+            .visible_merchant_service_events(user_id, &service_events)
+            .await?;
         let entries = models
             .into_iter()
             .map(|model| {
@@ -772,6 +966,13 @@ impl UserNotificationRepository {
                     && let Some(announcement) = announcements_by_id.get(&id)
                 {
                     record.attach_announcement(announcement);
+                }
+                if let Some(event_id) = record.merchant_service_event_id
+                    && let Some(event) = visible_service_events.get(&event_id)
+                {
+                    record.attach_merchant_service_event(event);
+                } else if record.merchant_service_event_id.is_some() {
+                    record.clear_merchant_service_event();
                 }
                 Ok(record)
             })
@@ -818,6 +1019,96 @@ impl UserNotificationRepository {
             .map_err(|_| UserNotificationRepositoryError::Query)?;
         }
         Ok(())
+    }
+
+    async fn visible_merchant_service_events(
+        &self,
+        user_id: i64,
+        events: &HashMap<i64, crate::entity::merchant_service_watch_events::Model>,
+    ) -> Result<
+        HashMap<i64, crate::entity::merchant_service_watch_events::Model>,
+        UserNotificationRepositoryError,
+    > {
+        use crate::entity::{merchant_pools, merchant_services, users};
+        if events.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let txn = self
+            .pool
+            .connection()
+            .begin()
+            .await
+            .map_err(|_| UserNotificationRepositoryError::Query)?;
+        let user = users::Entity::find_by_id(user_id)
+            .filter(users::Column::DeletedAt.is_null())
+            .filter(users::Column::Status.eq(af_domain::Status::Enabled.code()))
+            .one(&txn)
+            .await
+            .map_err(|_| UserNotificationRepositoryError::Query)?;
+        let Some(user) = user else {
+            txn.commit()
+                .await
+                .map_err(|_| UserNotificationRepositoryError::Query)?;
+            return Ok(HashMap::new());
+        };
+        let owner = af_domain::UserId::new(user_id)
+            .map_err(|_| UserNotificationRepositoryError::Invariant)?;
+        let default_group = af_domain::GroupId::new(user.default_group_id)
+            .map_err(|_| UserNotificationRepositoryError::Invariant)?;
+        let pool_ids = events
+            .values()
+            .map(|event| event.pool_id)
+            .collect::<Vec<_>>();
+        let pools = merchant_pools::Entity::find()
+            .filter(merchant_pools::Column::Id.is_in(pool_ids))
+            .filter(merchant_pools::Column::Enabled.eq(true))
+            .filter(merchant_pools::Column::DeletedAt.is_null())
+            .all(&txn)
+            .await
+            .map_err(|_| UserNotificationRepositoryError::Query)?
+            .into_iter()
+            .map(|pool| (pool.id, pool))
+            .collect::<HashMap<_, _>>();
+        let service_ids = events
+            .values()
+            .map(|event| event.service_id)
+            .collect::<Vec<_>>();
+        let service_identity = merchant_services::Entity::find()
+            .filter(merchant_services::Column::Id.is_in(service_ids))
+            .filter(merchant_services::Column::DeletedAt.is_null())
+            .all(&txn)
+            .await
+            .map_err(|_| UserNotificationRepositoryError::Query)?
+            .into_iter()
+            .map(|service| (service.id, (service.pool_id, service.merchant_id)))
+            .collect::<HashMap<_, _>>();
+        let mut visible = HashMap::new();
+        for (event_id, event) in events {
+            let Some(pool) = pools.get(&event.pool_id) else {
+                continue;
+            };
+            if service_identity.get(&event.service_id) != Some(&(event.pool_id, event.merchant_id))
+            {
+                continue;
+            }
+            let target_group = af_domain::GroupId::new(pool.group_id)
+                .map_err(|_| UserNotificationRepositoryError::Invariant)?;
+            let allowed = crate::group_key_access::user_can_select_key_group(
+                &txn,
+                owner,
+                default_group,
+                target_group,
+            )
+            .await
+            .map_err(|_| UserNotificationRepositoryError::Query)?;
+            if allowed {
+                visible.insert(*event_id, event.clone());
+            }
+        }
+        txn.commit()
+            .await
+            .map_err(|_| UserNotificationRepositoryError::Query)?;
+        Ok(visible)
     }
 
     async fn mark_read_inner(
@@ -936,6 +1227,12 @@ pub(crate) async fn insert_queued<C: ConnectionTrait>(
             (None, None, None, None, None, None, None)
         }
         UserNotificationSnapshot::Announcement { .. } => (None, None, None, None, None, None, None),
+        UserNotificationSnapshot::MerchantService { .. } => {
+            (None, None, None, None, None, None, None)
+        }
+        UserNotificationSnapshot::ChannelMonitor { .. } => {
+            (None, None, None, None, None, None, None)
+        }
     };
     let (channel, delivery_state) = if write.kind == NotificationKind::ProductUpdate {
         (
@@ -1003,6 +1300,56 @@ pub(crate) async fn insert_product_update<C: ConnectionTrait>(
     insert_queued(connection, write).await
 }
 
+pub(crate) async fn insert_merchant_service_update<C: ConnectionTrait>(
+    connection: &C,
+    user_id: i64,
+    event_id: i64,
+    occurred_at: TimeDateTimeWithTimeZone,
+) -> Result<(), sea_orm::DbErr> {
+    if user_id <= 0 || event_id <= 0 {
+        return Err(sea_orm::DbErr::Custom(
+            "商户服务通知事实参数无效".to_owned(),
+        ));
+    }
+    let write = UserNotificationWrite::merchant_service_update(user_id, event_id, occurred_at);
+    if write.kind != NotificationKind::ProductUpdate
+        || !matches!(write.snapshot, UserNotificationSnapshot::MerchantService { event_id: value } if value == event_id)
+    {
+        return Err(sea_orm::DbErr::Custom("商户服务通知快照无效".to_owned()));
+    }
+    insert_queued(connection, &write).await
+}
+
+pub(crate) async fn insert_channel_monitor_update<C: ConnectionTrait>(
+    connection: &C,
+    user_id: i64,
+    target_id: i64,
+    event_id: i64,
+    event_kind: &str,
+    occurred_at: TimeDateTimeWithTimeZone,
+) -> Result<(), sea_orm::DbErr> {
+    if user_id <= 0
+        || target_id <= 0
+        || event_id <= 0
+        || !matches!(event_kind, "down" | "recovered")
+    {
+        return Err(sea_orm::DbErr::Custom("渠道拨测通知参数无效".to_owned()));
+    }
+    let write = UserNotificationWrite::channel_monitor_update(
+        user_id,
+        target_id,
+        event_id,
+        event_kind.to_owned(),
+        occurred_at,
+    );
+    if write.source_key.len() > 128
+        || !matches!(write.snapshot, UserNotificationSnapshot::ChannelMonitor { target_id: value, event_id: event, .. } if value == target_id && event == event_id)
+    {
+        return Err(sea_orm::DbErr::Custom("渠道拨测通知快照无效".to_owned()));
+    }
+    insert_queued(connection, &write).await
+}
+
 fn parse_announcement_source_key(
     source_key: &str,
 ) -> Result<(i64, i64, i64), UserNotificationRepositoryError> {
@@ -1029,6 +1376,62 @@ fn parse_announcement_source_key(
         return Err(UserNotificationRepositoryError::Invariant);
     }
     Ok((user_id, id, version))
+}
+
+fn parse_merchant_service_source_key(
+    source_key: &str,
+) -> Result<(i64, i64), UserNotificationRepositoryError> {
+    let Some(rest) = source_key.strip_prefix("merchant-service:") else {
+        return Err(UserNotificationRepositoryError::Invariant);
+    };
+    let mut parts = rest.split(':');
+    let user_id = parts
+        .next()
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|value| *value > 0)
+        .ok_or(UserNotificationRepositoryError::Invariant)?;
+    let event_id = parts
+        .next()
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|value| *value > 0)
+        .ok_or(UserNotificationRepositoryError::Invariant)?;
+    if parts.next().is_some() {
+        return Err(UserNotificationRepositoryError::Invariant);
+    }
+    Ok((user_id, event_id))
+}
+
+fn parse_channel_monitor_source_key(
+    source_key: &str,
+) -> Result<(i64, i64, i64, String), UserNotificationRepositoryError> {
+    let Some(rest) = source_key.strip_prefix("channel-monitor:") else {
+        return Err(UserNotificationRepositoryError::Invariant);
+    };
+    let mut parts = rest.split(':');
+    let user_id = parts
+        .next()
+        .and_then(|v| v.parse::<i64>().ok())
+        .filter(|v| *v > 0)
+        .ok_or(UserNotificationRepositoryError::Invariant)?;
+    let target_id = parts
+        .next()
+        .and_then(|v| v.parse::<i64>().ok())
+        .filter(|v| *v > 0)
+        .ok_or(UserNotificationRepositoryError::Invariant)?;
+    let event_id = parts
+        .next()
+        .and_then(|v| v.parse::<i64>().ok())
+        .filter(|v| *v > 0)
+        .ok_or(UserNotificationRepositoryError::Invariant)?;
+    let event_kind = parts
+        .next()
+        .filter(|v| matches!(*v, "down" | "recovered"))
+        .ok_or(UserNotificationRepositoryError::Invariant)?
+        .to_owned();
+    if parts.next().is_some() {
+        return Err(UserNotificationRepositoryError::Invariant);
+    }
+    Ok((user_id, target_id, event_id, event_kind))
 }
 
 /// 在预警队列状态事务中同步用户可见投递事实；旧队列事件没有账本行时允许零更新。

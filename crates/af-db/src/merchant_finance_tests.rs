@@ -320,6 +320,83 @@ async fn merchant_snapshot_cannot_be_changed_on_precharge_replay() -> Result<(),
 }
 
 #[tokio::test]
+async fn merchant_report_groups_immutable_sales_and_reversals_without_double_counting_maturity()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture(config()).await?;
+    let principal = merchant(&fixture, 1_000, 0).await?;
+    let reversed = reservation_id(0xe0);
+    let retained = reservation_id(0xe1);
+    for id in [reversed, retained] {
+        fixture
+            .repository
+            .precharge(id, principal, quota(100))
+            .await?;
+        fixture.repository.settle(id, quota(100)).await?;
+    }
+    let finance = MerchantFinanceRepository::new(fixture.pool.clone(), VALID_OPERATION_TIMEOUT);
+    finance.balance(77).await?;
+    finance
+        .reverse_settlement(
+            &reversed.persistence_key(),
+            fixture.principal.user_id(),
+            "Report regression",
+        )
+        .await?;
+    let report_date = time::Date::from_calendar_date(2026, time::Month::November, 10)?;
+    let report_at = time::PrimitiveDateTime::new(report_date, time::Time::from_hms(12, 0, 0)?)
+        .assume_utc()
+        .unix_timestamp();
+    let update = Query::update()
+        .table(Alias::new("merchant_finance_entries"))
+        .value(Alias::new("created_at"), report_at)
+        .and_where(Expr::col(Alias::new("merchant_id")).eq(77))
+        .to_owned();
+    fixture
+        .pool
+        .connection()
+        .execute(
+            fixture
+                .pool
+                .connection()
+                .get_database_backend()
+                .build(&update),
+        )
+        .await?;
+    let date = "2026-11-10";
+    let daily = finance.report(77, date, date, "day").await?;
+    assert_eq!(daily.rows.len(), 1);
+    let row = &daily.rows[0];
+    assert_eq!(row.period, date);
+    assert_eq!(row.service_id, Some(1));
+    assert_eq!(row.service_name, "Finance service");
+    assert_eq!(row.model, "未关联");
+    assert_eq!(row.gross_quota, row.refunded_gross_quota);
+    assert_eq!(row.commission_quota, row.refunded_commission_quota);
+    assert_eq!(row.net_quota, row.refunded_net_quota);
+    assert!(daily.totals.sales_gross_quota > 0);
+    assert_eq!(
+        daily.totals.sales_gross_quota,
+        daily.totals.refunded_gross_quota
+    );
+    let monthly = finance.report(77, date, date, "month").await?;
+    assert_eq!(&monthly.rows[0].period, &date[..7]);
+    assert_eq!(
+        finance.report(77, date, date, "week").await,
+        Err(MerchantFinanceError::InvalidInput)
+    );
+    assert_eq!(
+        finance.report(77, "2026-2-10", "2026-02-10", "day").await,
+        Err(MerchantFinanceError::InvalidInput)
+    );
+    assert_eq!(
+        finance.report(77, "2025-11-09", "2026-11-10", "day").await,
+        Err(MerchantFinanceError::InvalidInput)
+    );
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn merchant_cannot_turn_oversized_usage_into_additional_wallet_debits()
 -> Result<(), Box<dyn Error>> {
     let fixture = fixture(config()).await?;

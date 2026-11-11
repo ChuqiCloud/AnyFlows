@@ -12,6 +12,11 @@ pub use verification_settings::{
     VerificationSettingsError,
 };
 mod announcement;
+mod public_service_status;
+pub use public_service_status::{
+    DatabasePublicServiceStatusReader, PublicServiceStatusReader, PublicStatusFuture,
+    PublicStatusKind, PublicStatusReport,
+};
 mod api_key;
 mod credential_models;
 mod upstream_usage;
@@ -27,11 +32,22 @@ pub use merchant_payout::{
     MerchantPayoutSettingsCommand,
 };
 mod merchant_finance;
+pub use af_db::{MerchantFinanceReport, MerchantFinanceReportRow, MerchantFinanceReportTotals};
 pub use merchant_finance::{
     DatabaseMerchantFinanceService, MerchantFinanceBalance, MerchantFinanceEntry,
     MerchantFinanceError, MerchantFinancePage, MerchantFinanceService, MerchantWithdrawal,
 };
+mod active_channel_monitor;
+#[cfg(test)]
+mod active_channel_monitor_tests;
 mod auth_challenge_security;
+pub use active_channel_monitor::{
+    ActiveChannelMonitorConfig, ActiveChannelMonitorEvent, ActiveChannelMonitorEventKind,
+    ActiveChannelMonitorService, ActiveChannelMonitorServiceError,
+    ActiveChannelMonitorServiceFuture, ActiveChannelMonitorTarget, ActiveChannelMonitorTargetInput,
+    ActiveChannelMonitorWorker, ActiveChannelProbe, ActiveChannelProbeFuture,
+    ActiveChannelProbeResult, DatabaseActiveChannelMonitorService,
+};
 mod balance_alert_settings;
 mod balance_alert_task;
 #[cfg(test)]
@@ -40,6 +56,12 @@ mod channel_read;
 mod channel_write;
 mod merchant_pool;
 pub use merchant_pool::{DatabaseMerchantPoolService, MerchantFuture, MerchantPoolService};
+mod merchant_service_watch;
+pub use af_db::{MerchantServiceWatch, MerchantServiceWatchPage};
+pub use merchant_service_watch::{
+    DatabaseMerchantServiceWatchService, MerchantServiceWatchError, MerchantServiceWatchFuture,
+    MerchantServiceWatchService,
+};
 mod merchant_service_policy;
 pub use merchant_service_policy::{DatabaseMerchantServicePolicy, MerchantServicePolicy};
 mod client_profiles;

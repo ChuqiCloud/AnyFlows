@@ -54,6 +54,7 @@ pub(crate) enum NotificationKindResponse {
     SubscriptionBalanceAlert,
     SubscriptionPurchase,
     ProductUpdate,
+    ChannelMonitor,
 }
 
 #[derive(Clone, Copy, Serialize, ToSchema)]
@@ -103,6 +104,14 @@ pub(crate) struct UserNotificationResponse {
     announcement_body_en: Option<String>,
     announcement_status: Option<i16>,
     announcement_visible_until: Option<i64>,
+    merchant_service_event_id: Option<i64>,
+    merchant_service_event_kind: Option<String>,
+    merchant_service_pool_id: Option<i64>,
+    merchant_service_id: Option<i64>,
+    merchant_service_merchant_id: Option<i64>,
+    merchant_service_name: Option<String>,
+    channel_monitor_target_id: Option<i64>,
+    channel_monitor_event_kind: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -265,6 +274,7 @@ impl UserNotificationResponse {
                     NotificationKindResponse::SubscriptionPurchase
                 }
                 UserNotificationKind::ProductUpdate => NotificationKindResponse::ProductUpdate,
+                UserNotificationKind::ChannelMonitor => NotificationKindResponse::ChannelMonitor,
             },
             channel: match notification.channel() {
                 UserNotificationChannel::Email => NotificationChannelResponse::Email,
@@ -302,6 +312,18 @@ impl UserNotificationResponse {
             announcement_body_en: notification.announcement_body_en().map(str::to_owned),
             announcement_status: notification.announcement_status(),
             announcement_visible_until: notification.announcement_visible_until(),
+            merchant_service_event_id: notification.merchant_service_event_id(),
+            merchant_service_event_kind: notification
+                .merchant_service_event_kind()
+                .map(str::to_owned),
+            merchant_service_pool_id: notification.merchant_service_pool_id(),
+            merchant_service_id: notification.merchant_service_id(),
+            merchant_service_merchant_id: notification.merchant_service_merchant_id(),
+            merchant_service_name: notification.merchant_service_name().map(str::to_owned),
+            channel_monitor_target_id: notification.channel_monitor_target_id(),
+            channel_monitor_event_kind: notification
+                .channel_monitor_event_kind()
+                .map(str::to_owned),
         }
     }
 }

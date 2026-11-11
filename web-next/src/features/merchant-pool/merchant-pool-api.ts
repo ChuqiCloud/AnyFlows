@@ -1,6 +1,9 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api'
-import type { MerchantCatalogService, MerchantCursorList, MerchantFinance, MerchantFinanceEntry, MerchantModelProvider, MerchantOwnedService, MerchantPool, MerchantPoolRoute, MerchantProfile, MerchantQuote, MerchantRoutePreview, MerchantRoutePreviewRequest, MerchantServiceWrite, MerchantStatisticsResponse, MerchantTimelineResponse, MerchantWithdrawal, PoolPage } from './merchant-pool-model'
+import { apiUrl } from '@/lib/api/endpoint'
+import { apiFetch } from '@/lib/api/transport'
+import { getManagementSessionToken } from '@/lib/api/session-token'
+import type { MerchantCatalogService, MerchantCursorList, MerchantFinance, MerchantFinanceEntry, MerchantFinanceReport, MerchantModelProvider, MerchantOwnedService, MerchantPool, MerchantPoolRoute, MerchantProfile, MerchantQuote, MerchantRoutePreview, MerchantRoutePreviewRequest, MerchantServiceWrite, MerchantStatisticsResponse, MerchantTimelineResponse, MerchantWithdrawal, PoolPage } from './merchant-pool-model'
 
 const security = [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }] as const
 const key = ['merchant-pool'] as const
@@ -15,6 +18,8 @@ export function useMerchantCatalog(poolId: number | undefined, filters: Merchant
 }
 export function useMerchantCatalogDetail(poolId?: number, serviceId?: number) { return useQuery({ queryKey: [...key, 'catalog-detail', poolId, serviceId], enabled: poolId !== undefined && serviceId !== undefined, queryFn: ({ signal }) => merchantGet<MerchantCatalogService>(`/api/merchant-pools/${poolId}/services/${serviceId}`, signal) }) }
 export function useMerchantModelProviders(poolId?: number) { return useQuery({ queryKey: [...key, 'model-providers', poolId], enabled: poolId !== undefined, queryFn: ({ signal }) => merchantGet<{ providers: MerchantModelProvider[] }>(`/api/merchant-pools/${poolId}/model-providers`, signal), staleTime: 60_000 }) }
+export type MerchantServiceWatch = { pool_id: number; pool_name: string; service_id: number; service_name: string; merchant_name: string; active: boolean; created_at: number }
+export function useMerchantServiceWatches(enabled = true) { return useQuery({ queryKey: [...key, 'service-watches'], enabled, queryFn: ({ signal }) => merchantGet<{ items: MerchantServiceWatch[]; total: number }>('/api/merchant-pool/watches', signal), staleTime: 30_000 }) }
 export function useMerchantRouteCatalog(poolId?: number) { return useInfiniteQuery({ queryKey: [...key, 'route-catalog', poolId], enabled: poolId !== undefined, initialPageParam: 1, queryFn: ({ pageParam, signal }) => merchantGet<PoolPage<MerchantCatalogService>>(`/api/merchant-pools/${poolId}/services`, signal, { page: pageParam, page_size: 100, sort: 'name' }), getNextPageParam: (last) => last.page * last.page_size < last.total ? last.page + 1 : undefined }) }
 export function useMerchantStatistics(poolId: number | undefined, model: string, windowSeconds: number, filters: { protocol?: string; streaming?: boolean } = {}) { return useQuery({ queryKey: [...key, 'statistics', poolId, model, windowSeconds, filters], enabled: poolId !== undefined, queryFn: ({ signal }) => merchantGet<MerchantStatisticsResponse>(`/api/merchant-pools/${poolId}/statistics`, signal, { model: model || undefined, window_seconds: windowSeconds, ...filters }), staleTime: 15_000, refetchInterval: 60_000, refetchIntervalInBackground: false }) }
 export function useOwnedMerchantStatistics(model: string, windowSeconds: number, filters: { protocol?: string; streaming?: boolean }) { return useQuery({ queryKey: [...key, 'owner-statistics', model, windowSeconds, filters], queryFn: ({ signal }) => merchantGet<MerchantStatisticsResponse>('/api/merchant/statistics', signal, { model: model || undefined, window_seconds: windowSeconds, ...filters }), staleTime: 15_000, refetchInterval: 60_000, refetchIntervalInBackground: false }) }
@@ -33,6 +38,14 @@ export function useMerchantFinance(enabled = true) { return useQuery({ queryKey:
 export function useAdminMerchantFinance(merchantId: number) { return useQuery({ queryKey: [...key, 'admin-finance', merchantId], queryFn: ({ signal }) => merchantGet<MerchantFinance>(`/api/admin/merchant-finance/${merchantId}`, signal) }) }
 export function useAdminMerchantEntries(merchantId: number, beforeId?: string) { return useQuery({ queryKey: [...key, 'admin-entries', merchantId, beforeId], queryFn: ({ signal }) => merchantGet<MerchantCursorList<MerchantFinanceEntry>>(`/api/admin/merchant-finance/${merchantId}/entries`, signal, { limit: 20, before_id: beforeId }) }) }
 export function useMerchantEntries(beforeId?: string, enabled = true) { return useQuery({ queryKey: [...key, 'entries', beforeId], enabled, queryFn: ({ signal }) => merchantGet<MerchantCursorList<MerchantFinanceEntry>>('/api/merchant/finance/entries', signal, { limit: 20, before_id: beforeId }) }) }
+export function useMerchantFinanceReport(fromDate: string, toDate: string, granularity: 'day' | 'month') { return useQuery({ queryKey: [...key, 'finance-report', fromDate, toDate, granularity], enabled: Boolean(fromDate && toDate), queryFn: ({ signal }) => merchantGet<MerchantFinanceReport>('/api/merchant/finance/report', signal, { from_date: fromDate, to_date: toDate, granularity }), staleTime: 30_000 }) }
+export async function downloadMerchantFinanceReport(fromDate: string, toDate: string, granularity: 'day' | 'month') {
+  const token = getManagementSessionToken()
+  if (!token) throw new Error('The management session has expired')
+  const query = new URLSearchParams({ from_date: fromDate, to_date: toDate, granularity })
+  const response = await apiFetch(apiUrl(`/api/merchant/finance/report.csv?${query.toString()}`), { headers: { Authorization: `Bearer ${token}`, Accept: 'text/csv' } })
+  return response.blob()
+}
 export function useMerchantWithdrawals(admin = false, status = '', enabled = true, beforeId?: string) { return useQuery({ queryKey: [...key, 'withdrawals', admin, status, beforeId], enabled, queryFn: ({ signal }) => merchantGet<MerchantCursorList<MerchantWithdrawal>>(admin ? '/api/admin/merchant-withdrawals' : '/api/merchant/withdrawals', signal, { limit: 20, status: status || undefined, before_id: beforeId }), refetchInterval: 30_000, refetchIntervalInBackground: false }) }
 export function useMerchantAction<T = unknown>() {
   const client = useQueryClient()

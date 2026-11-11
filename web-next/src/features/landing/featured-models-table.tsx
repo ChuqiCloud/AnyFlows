@@ -20,7 +20,6 @@ interface FeaturedModel {
   groupType: 'primary' | 'ultra' | 'reasoning' | 'eco'
   inputPrice: string
   outputPrice: string
-  latency: string
   Icon: ComponentType<{ className?: string }>
 }
 
@@ -34,7 +33,6 @@ const featuredModels: FeaturedModel[] = [
     groupType: 'ultra',
     inputPrice: '¥18.00',
     outputPrice: '¥90.00',
-    latency: '86ms',
     Icon: Anthropic,
   },
   {
@@ -46,7 +44,6 @@ const featuredModels: FeaturedModel[] = [
     groupType: 'ultra',
     inputPrice: '¥12.00',
     outputPrice: '¥60.00',
-    latency: '71ms',
     Icon: OpenAI,
   },
   {
@@ -58,7 +55,6 @@ const featuredModels: FeaturedModel[] = [
     groupType: 'primary',
     inputPrice: '¥3.60',
     outputPrice: '¥18.00',
-    latency: '64ms',
     Icon: Anthropic,
   },
   {
@@ -70,7 +66,6 @@ const featuredModels: FeaturedModel[] = [
     groupType: 'reasoning',
     inputPrice: '¥0.38',
     outputPrice: '¥1.52',
-    latency: '92ms',
     Icon: DeepSeek,
   },
   {
@@ -82,7 +77,6 @@ const featuredModels: FeaturedModel[] = [
     groupType: 'primary',
     inputPrice: '¥0.07',
     outputPrice: '¥0.28',
-    latency: '58ms',
     Icon: Gemini,
   },
   {
@@ -94,7 +88,6 @@ const featuredModels: FeaturedModel[] = [
     groupType: 'eco',
     inputPrice: '¥0.25',
     outputPrice: '¥0.75',
-    latency: '68ms',
     Icon: Grok,
   },
 ]
@@ -138,14 +131,13 @@ export function FeaturedModelsTable() {
 
       {/* Pricing Matrix Table */}
       <div className="mt-8 overflow-x-auto rounded-2xl border border-[var(--hairline)] bg-surface-1/70 shadow-xs backdrop-blur-sm">
-        <table className="w-full min-w-[760px] text-left border-collapse">
+        <table className="w-full min-w-[680px] text-left border-collapse">
           <thead>
             <tr className="border-b border-[var(--hairline)] bg-surface-sunken/60 text-[0.6875rem] font-mono uppercase tracking-[0.12em] text-muted-foreground">
               <th className="py-3.5 px-6 font-semibold">模型与架构</th>
               <th className="py-3.5 px-5 font-semibold">推荐线路分组</th>
               <th className="py-3.5 px-5 font-semibold">输入价格 (1M)</th>
               <th className="py-3.5 px-5 font-semibold">输出价格 (1M)</th>
-              <th className="py-3.5 px-5 font-semibold">首字延迟</th>
               <th className="py-3.5 px-6 font-semibold text-right">模型标识</th>
             </tr>
           </thead>
@@ -207,14 +199,6 @@ export function FeaturedModelsTable() {
                     {item.outputPrice}
                   </td>
 
-                  {/* Latency */}
-                  <td className="py-4 px-5 font-mono text-xs text-success">
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="size-1.5 rounded-full bg-success animate-pulse" />
-                      {item.latency}
-                    </span>
-                  </td>
-
                   {/* Copy Action */}
                   <td className="py-4 px-6 text-right">
                     <button
@@ -245,7 +229,7 @@ export function FeaturedModelsTable() {
 
       {/* Micro-notes */}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground px-1">
-        <span>* 线路均提供心跳探活与 99.98% SLA 保障，单请求异常时自动秒级降级。</span>
+        <span>线路表现以真实请求统计为准，不构成可用率保证。</span>
         <RouterLink to="/models" className="hover:text-foreground inline-flex items-center gap-1 font-medium">
           查看倍率与完整 80+ 款模型 <ExternalLink className="size-3" />
         </RouterLink>

@@ -1,0 +1,44 @@
+{
+  "zh": {
+    "profile": {
+      "notificationHistory": {
+        "kind": { "merchant_service_update": "关注服务动态" },
+        "unknownService": "关注的服务",
+        "merchantServiceDetail": "服务 {{service}} 有价格、维护或状态更新。",
+        "openService": "查看服务",
+        "merchantServiceEvent": {
+          "price_changed": "{{service}} 的价格已更新。",
+          "maintenance_announced": "{{service}} 发布了维护安排。",
+          "maintenance_updated": "{{service}} 的维护安排已更新。",
+          "maintenance_canceled": "{{service}} 已取消维护安排。",
+          "maintenance_ended": "{{service}} 已结束维护并恢复服务。",
+          "service_updated": "{{service}} 已更新供给信息。",
+          "service_published": "{{service}} 已开放服务。",
+          "service_suspended": "{{service}} 已暂停服务。",
+          "service_restored": "{{service}} 已恢复服务。"
+        }
+      }
+    }
+  },
+  "en": {
+    "profile": {
+      "notificationHistory": {
+        "kind": { "merchant_service_update": "Followed service update" },
+        "unknownService": "A followed service",
+        "merchantServiceDetail": "{{service}} has a price, maintenance, or status update.",
+        "openService": "View service",
+        "merchantServiceEvent": {
+          "price_changed": "{{service}} pricing was updated.",
+          "maintenance_announced": "{{service}} announced maintenance.",
+          "maintenance_updated": "{{service}} maintenance was updated.",
+          "maintenance_canceled": "{{service}} maintenance was canceled.",
+          "maintenance_ended": "{{service}} maintenance ended and the service recovered.",
+          "service_updated": "{{service}} supply details were updated.",
+          "service_published": "{{service}} is now available.",
+          "service_suspended": "{{service}} has been suspended.",
+          "service_restored": "{{service}} has been restored."
+        }
+      }
+    }
+  }
+}

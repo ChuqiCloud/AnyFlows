@@ -4,12 +4,13 @@ use std::time::Duration;
 
 use af_domain::{GatewayPrincipal, MerchantBillingSnapshot, Quota, UserId};
 use sea_orm::{
-    ConnectionTrait, DatabaseTransaction, DbErr, QueryResult, TransactionTrait,
+    ConnectionTrait, DatabaseTransaction, DbBackend, DbErr, QueryResult, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Alias, Expr, LockType, OnConflict, Order, Query, SelectStatement},
 };
 use serde::Serialize;
 use thiserror::Error;
+use time::{Date, PrimitiveDateTime, format_description};
 use tokio::time::timeout;
 
 use crate::{DatabasePool, QuotaRepositoryError};
@@ -18,6 +19,7 @@ const ACCOUNTS: &str = "merchant_finance_accounts";
 const RESERVATIONS: &str = "merchant_billing_reservations";
 const ENTRIES: &str = "merchant_finance_entries";
 const WITHDRAWALS: &str = "merchant_withdrawals";
+const REPORT_MAX_DAYS: i64 = 366;
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum MerchantFinanceError {
@@ -33,6 +35,8 @@ pub enum MerchantFinanceError {
     Unavailable,
     #[error("商户资金记录异常")]
     Invariant,
+    #[error("报表结果超过限制")]
+    LimitReached,
     #[error("无权访问商户资金")]
     Forbidden,
 }
@@ -80,6 +84,42 @@ pub struct MerchantWithdrawal {
 pub struct MerchantFinancePage<T> {
     pub items: Vec<T>,
     pub next_cursor: Option<i64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct MerchantFinanceReport {
+    pub granularity: String,
+    pub from_date: String,
+    pub to_date: String,
+    pub totals: MerchantFinanceReportTotals,
+    pub rows: Vec<MerchantFinanceReportRow>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct MerchantFinanceReportTotals {
+    pub sales_gross_quota: i64,
+    pub commission_quota: i64,
+    pub merchant_net_quota: i64,
+    pub refunded_gross_quota: i64,
+    pub refunded_commission_quota: i64,
+    pub refunded_net_quota: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct MerchantFinanceReportRow {
+    /// UTC calendar date, or UTC year-month for monthly reports.
+    pub period: String,
+    pub service_id: Option<i64>,
+    pub service_name: String,
+    pub model: String,
+    /// Signed ledger movement; reversals are negative.
+    pub gross_quota: i64,
+    pub commission_quota: i64,
+    pub net_quota: i64,
+    /// Positive magnitudes of reversed sales and commissions.
+    pub refunded_gross_quota: i64,
+    pub refunded_commission_quota: i64,
+    pub refunded_net_quota: i64,
 }
 
 #[derive(Clone)]
@@ -133,6 +173,157 @@ impl MerchantFinanceRepository {
                 None
             };
             Ok(MerchantFinancePage { items, next_cursor })
+        })
+        .await
+        .map_err(|_| MerchantFinanceError::Unavailable)?
+    }
+
+    pub async fn report(
+        &self,
+        merchant_id: i64,
+        from_date: &str,
+        to_date: &str,
+        granularity: &str,
+    ) -> Result<MerchantFinanceReport, MerchantFinanceError> {
+        if merchant_id <= 0 || !["day", "month"].contains(&granularity) {
+            return Err(MerchantFinanceError::InvalidInput);
+        }
+        let format = format_description::parse_borrowed::<2>("[year]-[month]-[day]")
+            .map_err(|_| MerchantFinanceError::Invariant)?;
+        let from = parse_report_date(from_date, &format)?;
+        let to = parse_report_date(to_date, &format)?;
+        let span_days = (to - from).whole_days();
+        if !(0..REPORT_MAX_DAYS).contains(&span_days) {
+            return Err(MerchantFinanceError::InvalidInput);
+        }
+        let start = PrimitiveDateTime::new(from, time::Time::MIDNIGHT)
+            .assume_utc()
+            .unix_timestamp();
+        let end = PrimitiveDateTime::new(
+            to.next_day().ok_or(MerchantFinanceError::InvalidInput)?,
+            time::Time::MIDNIGHT,
+        )
+        .assume_utc()
+        .unix_timestamp();
+        timeout(self.timeout, async {
+            let backend = self.pool.connection().get_database_backend();
+            let bucket = report_bucket_expression(backend, granularity);
+            let mut query = Query::select();
+            query
+                .expr_as(Expr::cust(bucket.clone()), Alias::new("period"))
+                .expr_as(
+                    Expr::cust("merchant_billing_reservations.service_id"),
+                    Alias::new("service_id"),
+                )
+                .expr_as(
+                    Expr::cust("COALESCE(merchant_services.name, '未关联')"),
+                    Alias::new("service_name"),
+                )
+                .expr_as(
+                    Expr::cust("COALESCE(usage_logs.model, '未关联')"),
+                    Alias::new("model"),
+                )
+                .expr_as(
+                    Expr::cust("SUM(e.gross_quota)"),
+                    Alias::new("gross_quota"),
+                )
+                .expr_as(
+                    Expr::cust("SUM(e.commission_quota)"),
+                    Alias::new("commission_quota"),
+                )
+                .expr_as(Expr::cust("SUM(e.net_quota)"), Alias::new("net_quota"))
+                .expr_as(
+                    Expr::cust("SUM(CASE WHEN e.kind = 'sale_reversed' THEN -e.gross_quota ELSE 0 END)"),
+                    Alias::new("refunded_gross_quota"),
+                )
+                .expr_as(
+                    Expr::cust("SUM(CASE WHEN e.kind = 'sale_reversed' THEN -e.commission_quota ELSE 0 END)"),
+                    Alias::new("refunded_commission_quota"),
+                )
+                .expr_as(
+                    Expr::cust("SUM(CASE WHEN e.kind = 'sale_reversed' THEN -e.net_quota ELSE 0 END)"),
+                    Alias::new("refunded_net_quota"),
+                )
+                .from_as(Alias::new(ENTRIES), Alias::new("e"))
+                .left_join(
+                    Alias::new(RESERVATIONS),
+                    Expr::col((Alias::new("e"), Alias::new("reference")))
+                        .equals((Alias::new("merchant_billing_reservations"), Alias::new("reservation_key"))),
+                )
+                .left_join(
+                    Alias::new("usage_logs"),
+                    Expr::col((Alias::new("merchant_billing_reservations"), Alias::new("reservation_key")))
+                        .equals((Alias::new("usage_logs"), Alias::new("event_id"))),
+                )
+                .left_join(
+                    Alias::new("merchant_services"),
+                    Expr::col((Alias::new("merchant_billing_reservations"), Alias::new("service_id")))
+                        .equals((Alias::new("merchant_services"), Alias::new("id"))),
+                )
+                .and_where(Expr::col((Alias::new("e"), Alias::new("merchant_id"))).eq(merchant_id))
+                .and_where(Expr::col((Alias::new("e"), Alias::new("created_at"))).gte(start))
+                .and_where(Expr::col((Alias::new("e"), Alias::new("created_at"))).lt(end))
+                .and_where(Expr::col((Alias::new("e"), Alias::new("kind"))).is_in(["income_pending", "sale_reversed"]))
+                .add_group_by([
+                    Expr::cust(bucket.clone()),
+                    Expr::cust("merchant_billing_reservations.service_id"),
+                    Expr::cust("COALESCE(merchant_services.name, '未关联')"),
+                    Expr::cust("COALESCE(usage_logs.model, '未关联')"),
+                ])
+                .order_by(Alias::new("period"), Order::Asc)
+                .order_by(Alias::new("service_id"), Order::Asc)
+                .order_by(Alias::new("model"), Order::Asc)
+                .limit(20_001);
+            let rows = all(self.pool.connection(), query).await?;
+            if rows.len() > 20_000 {
+                return Err(MerchantFinanceError::LimitReached);
+            }
+            let rows = rows
+                .iter()
+                .map(|row| {
+                    let gross_quota: i64 = get(row, "gross_quota")?;
+                    let commission_quota: i64 = get(row, "commission_quota")?;
+                    let net_quota: i64 = get(row, "net_quota")?;
+                    Ok(MerchantFinanceReportRow {
+                        period: get(row, "period")?,
+                        service_id: get(row, "service_id")?,
+                        service_name: get(row, "service_name")?,
+                        model: get(row, "model")?,
+                        gross_quota,
+                        commission_quota,
+                        net_quota,
+                        refunded_gross_quota: get(row, "refunded_gross_quota")?,
+                        refunded_commission_quota: get(row, "refunded_commission_quota")?,
+                        refunded_net_quota: get(row, "refunded_net_quota")?,
+                    })
+                })
+                .collect::<Result<Vec<MerchantFinanceReportRow>, MerchantFinanceError>>()?;
+            let totals = rows.iter().try_fold(
+                MerchantFinanceReportTotals {
+                    sales_gross_quota: 0,
+                    commission_quota: 0,
+                    merchant_net_quota: 0,
+                    refunded_gross_quota: 0,
+                    refunded_commission_quota: 0,
+                    refunded_net_quota: 0,
+                },
+                |mut totals, row| {
+                    totals.sales_gross_quota = checked_add(totals.sales_gross_quota, row.gross_quota)?;
+                    totals.commission_quota = checked_add(totals.commission_quota, row.commission_quota)?;
+                    totals.merchant_net_quota = checked_add(totals.merchant_net_quota, row.net_quota)?;
+                    totals.refunded_gross_quota = checked_add(totals.refunded_gross_quota, row.refunded_gross_quota)?;
+                    totals.refunded_commission_quota = checked_add(totals.refunded_commission_quota, row.refunded_commission_quota)?;
+                    totals.refunded_net_quota = checked_add(totals.refunded_net_quota, row.refunded_net_quota)?;
+                    Ok::<_, MerchantFinanceError>(totals)
+                },
+            )?;
+            Ok(MerchantFinanceReport {
+                granularity: granularity.to_owned(),
+                from_date: from_date.to_owned(),
+                to_date: to_date.to_owned(),
+                totals,
+                rows,
+            })
         })
         .await
         .map_err(|_| MerchantFinanceError::Unavailable)?
@@ -705,6 +896,55 @@ pub(crate) fn select(table: &str) -> SelectStatement {
         .column(sea_orm::sea_query::Asterisk)
         .from(Alias::new(table))
         .to_owned()
+}
+
+fn report_bucket_expression(backend: DbBackend, granularity: &str) -> String {
+    match backend {
+        DbBackend::Sqlite => {
+            let format = if granularity == "month" {
+                "%Y-%m"
+            } else {
+                "%Y-%m-%d"
+            };
+            format!("strftime('{format}', e.created_at, 'unixepoch')")
+        }
+        DbBackend::Postgres => {
+            let format = if granularity == "month" {
+                "YYYY-MM"
+            } else {
+                "YYYY-MM-DD"
+            };
+            format!("to_char(to_timestamp(e.created_at) AT TIME ZONE 'UTC', '{format}')")
+        }
+        DbBackend::MySql => {
+            let format = if granularity == "month" {
+                "%Y-%m"
+            } else {
+                "%Y-%m-%d"
+            };
+            format!(
+                "DATE_FORMAT(TIMESTAMPADD(SECOND, e.created_at, '1970-01-01 00:00:00'), '{format}')"
+            )
+        }
+    }
+}
+
+fn parse_report_date(
+    value: &str,
+    format: &[format_description::FormatItem<'_>],
+) -> Result<Date, MerchantFinanceError> {
+    let bytes = value.as_bytes();
+    if bytes.len() != 10
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || !bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit())
+    {
+        return Err(MerchantFinanceError::InvalidInput);
+    }
+    Date::parse(value, format).map_err(|_| MerchantFinanceError::InvalidInput)
 }
 
 pub(crate) async fn all<C: ConnectionTrait>(

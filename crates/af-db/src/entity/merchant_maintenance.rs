@@ -10,6 +10,7 @@ pub struct Model {
     pub message: String,
     pub blocks_requests: bool,
     pub cancelled: bool,
+    pub watch_event_emitted_at: Option<TimeDateTimeWithTimeZone>,
     pub created_at: TimeDateTimeWithTimeZone,
     pub updated_at: TimeDateTimeWithTimeZone,
 }

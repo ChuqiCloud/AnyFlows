@@ -14,7 +14,8 @@ use af_db::{
     DatabasePool,
 };
 use af_domain::{
-    ChannelId, ChannelType, Protocol, ResponsesCompactMode, ResponsesCompactProbeResult, Role,
+    ChannelId, ChannelType, CredentialId, Protocol, ResponsesCompactMode,
+    ResponsesCompactProbeResult, Role,
 };
 use af_http::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 use af_httpclient::HttpClientProvider;
@@ -74,10 +75,22 @@ impl DatabaseChannelProbe {
     }
 
     async fn check_inner(&self, channel_id: ChannelId) -> Result<(), ProbeFailure> {
-        let target = self
-            .targets
-            .load(channel_id)
-            .await
+        self.check_selected_inner(channel_id, None).await
+    }
+
+    async fn check_selected_inner(
+        &self,
+        channel_id: ChannelId,
+        selected: Option<(CredentialId, String)>,
+    ) -> Result<(), ProbeFailure> {
+        let target_result = if let Some((credential_id, model)) = selected {
+            self.targets
+                .load_selected(channel_id, &model, credential_id)
+                .await
+        } else {
+            self.targets.load(channel_id).await
+        };
+        let target = target_result
             .map_err(|_| ProbeFailure::TargetRead)?
             .ok_or(ProbeFailure::TargetUnavailable)?;
         if target.proxy_required() && self.proxy_pools.is_none() {
@@ -433,6 +446,28 @@ impl AdminChannelProbe for BoundedAdminChannelProbe {
                 // 调度层未来新增的状态默认按不健康处理，避免未知结论被误报为成功。
                 Ok(_) => AdminChannelProbeOutcome::Unhealthy,
                 Err(_) => AdminChannelProbeOutcome::TimedOut,
+            }
+        })
+    }
+}
+
+impl af_admin::ActiveChannelProbe for DatabaseChannelProbe {
+    fn probe_target<'a>(
+        &'a self,
+        channel_id: ChannelId,
+        credential_id: CredentialId,
+        model: &'a str,
+    ) -> af_admin::ActiveChannelProbeFuture<'a> {
+        Box::pin(async move {
+            let started = std::time::Instant::now();
+            match self
+                .check_selected_inner(channel_id, Some((credential_id, model.to_owned())))
+                .await
+            {
+                Ok(()) => af_admin::ActiveChannelProbeResult::Healthy {
+                    latency_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                },
+                Err(_) => af_admin::ActiveChannelProbeResult::Unhealthy,
             }
         })
     }

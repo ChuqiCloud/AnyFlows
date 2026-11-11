@@ -1,5 +1,5 @@
 import { Button, Popover, PopoverContent, PopoverTrigger } from '@heroui/react'
-import { Boxes, Braces, ExternalLink, LayoutDashboard, Link as LinkIcon, Menu } from 'lucide-react'
+import { Activity, Boxes, Braces, ExternalLink, LayoutDashboard, Link as LinkIcon, Menu } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Link as RouterLink } from 'react-router-dom'
 
@@ -44,6 +44,7 @@ export function PublicSiteHeader({ logoUrl, siteName, navigation }: PublicSiteHe
             <Braces className="size-4" aria-hidden="true" />
             <span>API</span>
           </Button>
+          <Button as={RouterLink} to="/status" className="!min-w-0 !gap-2 !px-2" size="sm" title={t('publicStatus.title')} variant="light"><Activity className="size-4" aria-hidden="true" /><span>{t('publicStatus.title')}</span></Button>
           {links.slice(0, 2).map((link) => link.url.startsWith('/') ? <Button key={`${link.url}:${link.label}`} as={RouterLink} to={link.url} className="hidden max-w-28 truncate xl:inline-flex" size="sm" variant="light">{label(link)}</Button> : <Button key={`${link.url}:${link.label}`} as="a" href={link.url} target="_blank" rel="noopener noreferrer" className="hidden max-w-28 truncate xl:inline-flex" size="sm" variant="light">{label(link)}</Button>)}
           {links.length > 0 && <Popover placement="bottom-end"><PopoverTrigger><Button isIconOnly size="sm" title={t('nav.customLinks')} aria-label={t('nav.customLinks')} variant="light"><Menu className="size-4" /></Button></PopoverTrigger><PopoverContent className="max-w-[calc(100vw-1rem)] rounded-lg border border-[var(--hairline)] bg-surface-1 p-2"><nav aria-label={t('nav.customLinks')} className="grid min-w-40 gap-1">{links.map((link) => link.url.startsWith('/') ? <RouterLink key={`${link.url}:${link.label}`} to={link.url} className="truncate rounded-md px-3 py-2 text-sm hover:bg-primary/10">{label(link)}</RouterLink> : <a key={`${link.url}:${link.label}`} href={link.url} target="_blank" rel="noopener noreferrer" className="truncate rounded-md px-3 py-2 text-sm hover:bg-primary/10">{label(link)}</a>)}</nav></PopoverContent></Popover>}
           <span className="mx-1 hidden h-5 w-px bg-[var(--hairline)] md:block" aria-hidden="true" />
@@ -63,6 +64,7 @@ export function PublicSiteHeader({ logoUrl, siteName, navigation }: PublicSiteHe
               {([
                 { href: '/models', icon: Boxes, label: t('landing.nav.models') },
                 { href: '/api', icon: Braces, label: t('landing.nav.api') },
+                { href: '/status', icon: Activity, label: t('publicStatus.title') },
               ] as const).map(({ href, icon: Icon, label }) => (
                 <RouterLink key={href} to={href} className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-foreground/90 transition-colors hover:bg-primary/10 hover:text-foreground">
                   <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />

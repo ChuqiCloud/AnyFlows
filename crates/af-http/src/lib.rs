@@ -3,7 +3,11 @@
 // 公共核心保留部分供发行版扩展的 HTTP 契约；企业发行版会连接这些路由。
 #![allow(dead_code)]
 
+mod active_channel_monitor;
 mod announcements;
+pub use active_channel_monitor::{
+    active_channel_monitor_openapi_document, build_active_channel_monitor_router,
+};
 mod anthropic_messages;
 mod api_explorer;
 mod audio_service;
@@ -74,6 +78,8 @@ mod management_users;
 mod management_wallet;
 mod merchant_pool;
 pub use merchant_pool::build_merchant_pool_router;
+mod merchant_service_watch;
+pub use merchant_service_watch::build_merchant_service_watch_router;
 mod merchant_service_policy;
 pub use merchant_service_policy::build_merchant_service_policy_router;
 mod middleware;
@@ -95,6 +101,7 @@ mod passkey_auth;
 mod password_reset;
 mod payment_settings;
 mod proxy_pools;
+mod public_service_status;
 mod verification_settings;
 pub use verification_settings::build_verification_settings_router;
 mod payment_webhook;
@@ -113,6 +120,9 @@ mod runtime_status;
 mod serve;
 mod site_settings;
 mod software_updates;
+pub use public_service_status::{
+    PublicServiceStatusPoint, PublicServiceStatusResponse, build_public_service_status_router,
+};
 pub use software_updates::{
     InstallSoftwareUpdate, SoftwareRelease, SoftwareStatus, SoftwareUpdateError,
     SoftwareUpdateErrorBody, SoftwareUpdateFuture, SoftwareUpdateService,

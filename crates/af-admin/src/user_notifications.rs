@@ -22,6 +22,7 @@ pub enum UserNotificationKind {
     SubscriptionBalanceAlert,
     SubscriptionPurchase,
     ProductUpdate,
+    ChannelMonitor,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -124,6 +125,9 @@ impl UserNotification {
     pub const fn kind(&self) -> UserNotificationKind {
         if self.record.is_subscription_purchase() {
             return UserNotificationKind::SubscriptionPurchase;
+        }
+        if self.record.is_channel_monitor_update() {
+            return UserNotificationKind::ChannelMonitor;
         }
         match self.record.kind() {
             DatabaseNotificationKind::BalanceAlert => UserNotificationKind::BalanceAlert,
@@ -229,6 +233,38 @@ impl UserNotification {
     #[must_use]
     pub const fn announcement_visible_until(&self) -> Option<i64> {
         self.record.announcement_visible_until()
+    }
+    #[must_use]
+    pub const fn merchant_service_event_id(&self) -> Option<i64> {
+        self.record.merchant_service_event_id()
+    }
+    #[must_use]
+    pub const fn channel_monitor_target_id(&self) -> Option<i64> {
+        self.record.channel_monitor_target_id()
+    }
+    #[must_use]
+    pub fn channel_monitor_event_kind(&self) -> Option<&str> {
+        self.record.channel_monitor_event_kind()
+    }
+    #[must_use]
+    pub fn merchant_service_event_kind(&self) -> Option<&str> {
+        self.record.merchant_service_event_kind()
+    }
+    #[must_use]
+    pub const fn merchant_service_pool_id(&self) -> Option<i64> {
+        self.record.merchant_service_pool_id()
+    }
+    #[must_use]
+    pub const fn merchant_service_id(&self) -> Option<i64> {
+        self.record.merchant_service_id()
+    }
+    #[must_use]
+    pub const fn merchant_service_merchant_id(&self) -> Option<i64> {
+        self.record.merchant_service_merchant_id()
+    }
+    #[must_use]
+    pub fn merchant_service_name(&self) -> Option<&str> {
+        self.record.merchant_service_name()
     }
 }
 

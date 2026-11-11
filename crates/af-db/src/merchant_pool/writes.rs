@@ -344,6 +344,7 @@ impl MerchantPoolRepository {
             )
             .await?;
             let now = DatabaseTimestamp::now_utc();
+            let was_paused = service.merchant_paused;
             set_channel_enabled(&txn, revision.channel_id, !paused, now).await?;
             let mut service = service.into_active_model();
             service.merchant_paused = Set(paused);
@@ -351,6 +352,25 @@ impl MerchantPoolRepository {
             service.updated_at = Set(now);
             let result =
                 service_snapshot(&txn, service.update(&txn).await.map_err(internal)?).await?;
+            if was_paused != paused {
+                let service = services::Entity::find_by_id(id)
+                    .one(&txn)
+                    .await
+                    .map_err(internal)?
+                    .ok_or(MerchantPoolError::NotFound)?;
+                super::service_watch::record_service_event(
+                    &txn,
+                    &service,
+                    if paused {
+                        "service_suspended"
+                    } else {
+                        "service_restored"
+                    },
+                    &format!("pause:{}:{}", id, now.unix_timestamp_nanos()),
+                    now,
+                )
+                .await?;
+            }
             txn.commit().await.map_err(internal)?;
             Ok(result)
         })
@@ -545,9 +565,14 @@ impl MerchantPoolRepository {
             let service=lock_service(&txn,id).await?;
             let now=DatabaseTimestamp::now_utc();
             if review.decision=="suspend" {
+                let was_public = !service.platform_suspended;
                 if let Some(id)=service.published_revision_id { let revision=load_revision(&txn,id,service.id).await?;set_channel_enabled(&txn,revision.channel_id,false,now).await?; }
                 let mut service=service.into_active_model();service.status=Set("suspended".to_owned());service.platform_suspended=Set(true);service.updated_at=Set(now);
                 let result=service_snapshot(&txn,service.update(&txn).await.map_err(internal)?).await?;
+                if was_public && result.status == "suspended" {
+                    let service=services::Entity::find_by_id(id).one(&txn).await.map_err(internal)?.ok_or(MerchantPoolError::NotFound)?;
+                    super::service_watch::record_service_event(&txn,&service,"service_suspended",&format!("suspend:{}",now.unix_timestamp_nanos()),now).await?;
+                }
                 audit_control(&txn,actor,"service.suspend",id,None,Some(serde_json::json!({"reason":review.reason}))).await?;
                 txn.commit().await.map_err(internal)?;return Ok(result);
             }
@@ -582,11 +607,21 @@ impl MerchantPoolRepository {
             let revision=revision_active.update(&txn).await.map_err(internal)?;
             if !rejected { super::policies::activate_revision_price(&txn,&revision,now).await?; }
             let was_published=service.published_revision_id.is_some();
+            let previous_published_revision_id=service.published_revision_id;
+            let was_platform_suspended=service.platform_suspended;
+            let previous_service_name=service.name.clone();
             let merchant_paused=service.merchant_paused;
             let mut active=service.into_active_model();active.updated_at=Set(now);
             if !rejected { active.published_revision_id=Set(Some(revision.id));active.pending_revision_id=Set(None);active.platform_suspended=Set(false);active.status=Set(if merchant_paused{"paused"}else{"published"}.to_owned());active.name=Set(revision.name);active.description=Set(revision.description); }
             else if !was_published { active.status=Set("rejected".to_owned()); }
             let result=service_snapshot(&txn,active.update(&txn).await.map_err(internal)?).await?;
+            if !rejected {
+                let service=services::Entity::find_by_id(id).one(&txn).await.map_err(internal)?.ok_or(MerchantPoolError::NotFound)?;
+                let event_kind=if was_platform_suspended { "service_restored" } else if !was_published { "service_published" } else { "service_updated" };
+                if previous_service_name != result.name || !was_published || was_platform_suspended || previous_published_revision_id != Some(revision.id) {
+                    super::service_watch::record_service_event(&txn,&service,event_kind,&format!("review:{}:{}",revision.id,now.unix_timestamp_nanos()),now).await?;
+                }
+            }
             audit_control(&txn,actor,"service.review",id,None,Some(serde_json::json!({"revision":review.expected_revision,"decision":review.decision,"reason":revision.review_reason}))).await?;
             txn.commit().await.map_err(internal)?;Ok(result)
         }).await

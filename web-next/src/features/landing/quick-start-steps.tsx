@@ -73,16 +73,9 @@ export function QuickStartSteps() {
               </p>
             </div>
 
-            <div className="mt-6 rounded-xl border border-[var(--hairline)] bg-surface-sunken p-3 text-xs">
-              <div className="flex items-center justify-between text-muted-foreground text-[0.6875rem]">
-                <span>Claude 3.7 Sonnet</span>
-                <span className="text-success font-mono font-medium">99.98%</span>
-              </div>
-              <div className="mt-2 flex items-center justify-between font-mono text-[0.6875rem]">
-                <span className="text-foreground">主力极速线路</span>
-                <span className="text-primary font-medium">82ms TTFT</span>
-              </div>
-            </div>
+            <RouterLink to="/status" className="mt-6 inline-flex items-center gap-2 text-xs font-medium text-primary hover:underline">
+              查看平台真实运行状态 <ArrowRight className="size-3.5" aria-hidden="true" />
+            </RouterLink>
           </div>
 
           {/* STEP 02 */}

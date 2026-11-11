@@ -7,6 +7,7 @@ import type { MerchantCatalogService, MerchantStatistics, MerchantTimeline } fro
 import { poolRatio, poolTimestamp, merchantProtocolLabel, merchantTextProtocol } from './merchant-pool-model'
 import { MerchantTimelineStrip, MerchantPriceBreakdown } from './merchant-catalog-card'
 import { MerchantModelProviderBadge, merchantProviderIdentity } from './merchant-model-provider'
+import { MerchantServiceWatchButton } from './merchant-service-watch-button'
 import { PoolStatus } from './merchant-pool-ui'
 
 const cell = 'border-b border-[var(--hairline)] px-3 py-3 align-middle'
@@ -52,7 +53,7 @@ export function MerchantCatalogTable({ services, model, statistics, timelines, c
                   <div className="flex min-w-0 items-start gap-1.5"><span className="mt-px inline-flex size-5 shrink-0 items-center justify-center rounded-md border border-[var(--hairline)] bg-surface-2 text-foreground" title={identityOffer ? identity.name : t('merchantPool.modelCount', { count: service.models.length })}><IdentityIcon className="size-3.5" aria-hidden="true" /></span><Link className="min-w-0 truncate font-semibold leading-5 text-foreground hover:text-primary" title={model || service.models.map((item) => item.model).join(', ')} to={details}>{rowTitle}</Link></div>
                   <div className="mt-1 flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground"><Store className="size-3 shrink-0" aria-hidden="true" /><Link className="truncate hover:text-primary" title={`${service.merchant_name} · ${service.name}`} to={details}>{service.merchant_name}<span className="mx-1 opacity-50">/</span>{service.name}</Link><span title={merchantProtocolLabel(service.protocol)} aria-label={merchantProtocolLabel(service.protocol)}><ProtocolIcon className="size-3 shrink-0" aria-hidden="true" /></span></div>
                   {description ? <p className="mt-1.5 line-clamp-2 break-words text-[11px] leading-4 text-muted-foreground" title={description}>{description}</p> : null}
-                  <div className="mt-1.5 flex min-w-0 flex-wrap gap-1">{!model ? <span className="inline-block rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-muted-foreground">{t('merchantPool.modelCount', { count: service.models.length })}</span> : null}{providers.map((provider) => <MerchantModelProviderBadge key={JSON.stringify(provider)} provider={provider} options={options} />)}</div>
+                  <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1">{!model ? <span className="inline-block rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-muted-foreground">{t('merchantPool.modelCount', { count: service.models.length })}</span> : null}{providers.map((provider) => <MerchantModelProviderBadge key={JSON.stringify(provider)} provider={provider} options={options} />)}<MerchantServiceWatchButton poolId={service.pool_id} serviceId={service.id} /></div>
                 </div>
               </div>
             </td>

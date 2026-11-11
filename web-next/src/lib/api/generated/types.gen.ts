@@ -61,6 +61,50 @@ export type AccountVerificationResponse = {
     created_at: number;
     updated_at: number;
 };
+export type ActiveChannelMonitorEventKindResponse = 'down' | 'recovered';
+export type ActiveChannelMonitorEventResponse = {
+    id: number;
+    target_id: number;
+    kind: ActiveChannelMonitorEventKindResponse;
+    latency_ms?: number | null;
+    occurred_epoch_seconds: number;
+};
+export type ActiveChannelMonitorSettingsRequest = {
+    enabled: boolean;
+    global_daily_budget: number;
+};
+export type ActiveChannelMonitorSettingsResponse = {
+    enabled: boolean;
+    global_daily_budget: number;
+};
+export type ActiveChannelMonitorTargetRequest = {
+    channel_id: number;
+    credential_id: number;
+    model: string;
+    enabled: boolean;
+    interval_secs: number;
+    daily_budget: number;
+    timeout_secs: number;
+    alert_after_secs: number;
+    muted_until_epoch_seconds?: number | null;
+};
+export type ActiveChannelMonitorTargetResponse = {
+    id: number;
+    channel_id: number;
+    credential_id: number;
+    model: string;
+    enabled: boolean;
+    interval_secs: number;
+    daily_budget: number;
+    timeout_secs: number;
+    alert_after_secs: number;
+    daily_used: number;
+    last_attempt_epoch_seconds?: number | null;
+    last_success_epoch_seconds?: number | null;
+    failure_since_epoch_seconds?: number | null;
+    alert_active: boolean;
+    muted_until_epoch_seconds?: number | null;
+};
 export type AdminAuthenticationSettings = {
     password_login_enabled: boolean;
     registration_enabled: boolean;
@@ -1821,7 +1865,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'turnstile_rejected' | 'turnstile_unavailable' | 'invalid_session' | 'forbidden' | 'account_verification_required' | 'setup_conflict' | 'site_settings_conflict' | 'announcement_invalid_request' | 'announcement_not_found' | 'announcement_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'group_unavailable' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'custom_oauth2_provider_not_found' | 'custom_oauth2_provider_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'image_history_not_found' | 'image_history_limit_reached' | 'image_history_unavailable' | 'user_conflict' | 'organization_not_found' | 'organization_credit_invalid_request' | 'organization_credit_not_found' | 'organization_credit_interval_conflict' | 'organization_credit_conflict' | 'organization_credit_transition_invalid' | 'organization_approval_not_found' | 'organization_approval_conflict' | 'organization_approval_expired' | 'organization_contract_price_not_found' | 'organization_contract_price_interval_conflict' | 'organization_contract_price_conflict' | 'organization_contract_price_transition_invalid' | 'organization_plan_not_found' | 'organization_plan_conflict' | 'organization_sso_provider_not_found' | 'organization_sso_provider_conflict' | 'organization_sso_provider_transition_invalid' | 'organization_sso_identity_binding_rejected' | 'organization_sso_identity_binding_conflict' | 'organization_sso_recovery_rejected' | 'organization_sso_recovery_conflict' | 'organization_sso_recovery_unavailable' | 'organization_sso_domain_not_found' | 'organization_sso_domain_conflict' | 'organization_sso_domain_transition_invalid' | 'organization_sso_domain_verification_failed' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'refund_not_found' | 'refund_conflict' | 'refund_unavailable' | 'refund_auto_submit_failed' | 'refund_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'turnstile_rejected' | 'turnstile_unavailable' | 'invalid_session' | 'forbidden' | 'account_verification_required' | 'setup_conflict' | 'site_settings_conflict' | 'announcement_invalid_request' | 'announcement_not_found' | 'announcement_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'group_unavailable' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'custom_oauth2_provider_not_found' | 'custom_oauth2_provider_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'image_history_not_found' | 'image_history_limit_reached' | 'image_history_unavailable' | 'merchant_service_watch_not_found' | 'merchant_service_watch_limit_reached' | 'merchant_service_watch_unavailable' | 'user_conflict' | 'organization_not_found' | 'organization_credit_invalid_request' | 'organization_credit_not_found' | 'organization_credit_interval_conflict' | 'organization_credit_conflict' | 'organization_credit_transition_invalid' | 'organization_approval_not_found' | 'organization_approval_conflict' | 'organization_approval_expired' | 'organization_contract_price_not_found' | 'organization_contract_price_interval_conflict' | 'organization_contract_price_conflict' | 'organization_contract_price_transition_invalid' | 'organization_plan_not_found' | 'organization_plan_conflict' | 'organization_sso_provider_not_found' | 'organization_sso_provider_conflict' | 'organization_sso_provider_transition_invalid' | 'organization_sso_identity_binding_rejected' | 'organization_sso_identity_binding_conflict' | 'organization_sso_recovery_rejected' | 'organization_sso_recovery_conflict' | 'organization_sso_recovery_unavailable' | 'organization_sso_domain_not_found' | 'organization_sso_domain_conflict' | 'organization_sso_domain_transition_invalid' | 'organization_sso_domain_verification_failed' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'refund_not_found' | 'refund_conflict' | 'refund_unavailable' | 'refund_auto_submit_failed' | 'refund_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
 };
 export type MerchantApplicationRequest = {
@@ -1899,6 +1943,33 @@ export type MerchantFinanceHold = {
     amount_quota: number;
     freeze: boolean;
     reason: string;
+};
+export type MerchantFinanceReport = {
+    granularity: string;
+    from_date: string;
+    to_date: string;
+    totals: MerchantFinanceReportTotals;
+    rows: Array<MerchantFinanceReportRow>;
+};
+export type MerchantFinanceReportRow = {
+    period: string;
+    service_id?: number | null;
+    service_name: string;
+    model: string;
+    gross_quota: number;
+    commission_quota: number;
+    net_quota: number;
+    refunded_gross_quota: number;
+    refunded_commission_quota: number;
+    refunded_net_quota: number;
+};
+export type MerchantFinanceReportTotals = {
+    sales_gross_quota: number;
+    commission_quota: number;
+    merchant_net_quota: number;
+    refunded_gross_quota: number;
+    refunded_commission_quota: number;
+    refunded_net_quota: number;
 };
 export type MerchantKeyRotationRequest = {
     api_key: string;
@@ -2234,6 +2305,23 @@ export type MerchantServiceTimeline = {
     merchant_id: number;
     service_id: number;
 };
+export type MerchantServiceWatch = {
+    active: boolean;
+    created_at: number;
+    merchant_id: number;
+    merchant_name: string;
+    pool_id: number;
+    pool_name: string;
+    service_id: number;
+    service_name: string;
+};
+export type MerchantServiceWatchChangeResponse = {
+    changed: boolean;
+};
+export type MerchantServiceWatchListResponse = {
+    items: Array<MerchantServiceWatch>;
+    total: number;
+};
 export type MerchantServiceWriteRequest = {
     api_key?: null;
     base_url: string;
@@ -2347,7 +2435,7 @@ export type ModelCatalogTokenPrices = {
 };
 export type NotificationChannel = 'email' | 'in_app';
 export type NotificationDeliveryState = 'queued' | 'accepted' | 'failed' | 'canceled' | 'available';
-export type NotificationKind = 'balance_alert' | 'subscription_balance_alert' | 'subscription_purchase' | 'product_update';
+export type NotificationKind = 'balance_alert' | 'subscription_balance_alert' | 'subscription_purchase' | 'product_update' | 'channel_monitor';
 export type OAuthLoginExchangeRequest = {
     ticket: string;
 };
@@ -2504,6 +2592,26 @@ export type PublicBrandSettings = {
 export type PublicOAuthLoginProvider = {
     id: string;
     display_name: string;
+};
+export type PublicServiceStatusPoint = {
+    period_start: number;
+    successful_request_count: number;
+    failed_request_count: number;
+    unknown_request_count: number;
+};
+export type PublicServiceStatusResponse = {
+    sampled_at: number;
+    period_start: number;
+    period_end: number;
+    status: string;
+    api_ready: boolean;
+    sample_count?: number | null;
+    successful_request_count?: number | null;
+    failed_request_count?: number | null;
+    unknown_request_count?: number | null;
+    availability_percent?: number | null;
+    average_success_duration_ms?: number | null;
+    hourly: Array<PublicServiceStatusPoint>;
 };
 export type PublicSiteSettings = {
     site_name: string;
@@ -2933,6 +3041,14 @@ export type UserNotification = {
     announcement_body_en?: string | null;
     announcement_status?: number | null;
     announcement_visible_until?: number | null;
+    merchant_service_event_id?: number | null;
+    merchant_service_event_kind?: string | null;
+    merchant_service_pool_id?: number | null;
+    merchant_service_id?: number | null;
+    merchant_service_merchant_id?: number | null;
+    merchant_service_name?: string | null;
+    channel_monitor_target_id?: number | null;
+    channel_monitor_event_kind?: string | null;
 };
 export type UserNotificationListResponse = {
     entries: Array<UserNotification>;
@@ -6716,6 +6832,116 @@ export type CancelServicePriceOwnedResponses = {
     200: MerchantServicePrice;
 };
 export type CancelServicePriceOwnedResponse = CancelServicePriceOwnedResponses[keyof CancelServicePriceOwnedResponses];
+export type ListMerchantServiceWatchesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/merchant-pool/watches';
+};
+export type ListMerchantServiceWatchesErrors = {
+    401: unknown;
+};
+export type ListMerchantServiceWatchesResponses = {
+    200: MerchantServiceWatchListResponse;
+};
+export type ListMerchantServiceWatchesResponse = ListMerchantServiceWatchesResponses[keyof ListMerchantServiceWatchesResponses];
+export type UnwatchMerchantServiceData = {
+    body?: never;
+    path: {
+        pool: number;
+        service: number;
+    };
+    query?: never;
+    url: '/api/merchant-pools/{pool}/services/{service}/watch';
+};
+export type UnwatchMerchantServiceErrors = {
+    404: unknown;
+};
+export type UnwatchMerchantServiceResponses = {
+    200: MerchantServiceWatchChangeResponse;
+};
+export type UnwatchMerchantServiceResponse = UnwatchMerchantServiceResponses[keyof UnwatchMerchantServiceResponses];
+export type WatchMerchantServiceData = {
+    body?: never;
+    path: {
+        pool: number;
+        service: number;
+    };
+    query?: never;
+    url: '/api/merchant-pools/{pool}/services/{service}/watch';
+};
+export type WatchMerchantServiceErrors = {
+    404: unknown;
+    429: unknown;
+};
+export type WatchMerchantServiceResponses = {
+    200: MerchantServiceWatch;
+};
+export type WatchMerchantServiceResponse = WatchMerchantServiceResponses[keyof WatchMerchantServiceResponses];
+export type GetSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/channel-monitor/settings';
+};
+export type GetSettingsResponses = {
+    200: ActiveChannelMonitorSettingsResponse;
+};
+export type GetSettingsResponse = GetSettingsResponses[keyof GetSettingsResponses];
+export type SetSettingsData = {
+    body: ActiveChannelMonitorSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/channel-monitor/settings';
+};
+export type SetSettingsResponses = {
+    200: ActiveChannelMonitorSettingsResponse;
+};
+export type SetSettingsResponse = SetSettingsResponses[keyof SetSettingsResponses];
+export type ListTargetsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/channel-monitor/targets';
+};
+export type ListTargetsResponses = {
+    200: Array<ActiveChannelMonitorTargetResponse>;
+};
+export type ListTargetsResponse = ListTargetsResponses[keyof ListTargetsResponses];
+export type UpsertTargetData = {
+    body: ActiveChannelMonitorTargetRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/channel-monitor/targets';
+};
+export type UpsertTargetResponses = {
+    200: ActiveChannelMonitorTargetResponse;
+};
+export type UpsertTargetResponse = UpsertTargetResponses[keyof UpsertTargetResponses];
+export type DeleteTargetData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/channel-monitor/targets/{id}';
+};
+export type DeleteTargetResponses = {
+    204: void;
+};
+export type DeleteTargetResponse = DeleteTargetResponses[keyof DeleteTargetResponses];
+export type ListEventsData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/channel-monitor/targets/{id}/events';
+};
+export type ListEventsResponses = {
+    200: Array<ActiveChannelMonitorEventResponse>;
+};
+export type ListEventsResponse = ListEventsResponses[keyof ListEventsResponses];
 export type GetAdminEmailSettingsData = {
     body?: never;
     path?: never;
@@ -8742,6 +8968,34 @@ export type ListMerchantFinanceEntriesResponses = {
     200: MerchantFinanceEntryPage;
 };
 export type ListMerchantFinanceEntriesResponse = ListMerchantFinanceEntriesResponses[keyof ListMerchantFinanceEntriesResponses];
+export type GetMerchantFinanceReportData = {
+    body?: never;
+    path?: never;
+    query: {
+        from_date: string;
+        to_date: string;
+        granularity: string;
+    };
+    url: '/api/merchant/finance/report';
+};
+export type GetMerchantFinanceReportResponses = {
+    200: MerchantFinanceReport;
+};
+export type GetMerchantFinanceReportResponse = GetMerchantFinanceReportResponses[keyof GetMerchantFinanceReportResponses];
+export type ExportMerchantFinanceReportCsvData = {
+    body?: never;
+    path?: never;
+    query: {
+        from_date: string;
+        to_date: string;
+        granularity: string;
+    };
+    url: '/api/merchant/finance/report.csv';
+};
+export type ExportMerchantFinanceReportCsvResponses = {
+    200: string;
+};
+export type ExportMerchantFinanceReportCsvResponse = ExportMerchantFinanceReportCsvResponses[keyof ExportMerchantFinanceReportCsvResponses];
 export type ListMerchantWithdrawalsData = {
     body?: never;
     path?: never;
@@ -10474,6 +10728,20 @@ export type GetAdminRuntimeStatusResponses = {
     200: RuntimeStatus;
 };
 export type GetAdminRuntimeStatusResponse = GetAdminRuntimeStatusResponses[keyof GetAdminRuntimeStatusResponses];
+export type GetPublicServiceStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/public/service-status';
+};
+export type GetPublicServiceStatusErrors = {
+    503: PublicServiceStatusResponse;
+};
+export type GetPublicServiceStatusError = GetPublicServiceStatusErrors[keyof GetPublicServiceStatusErrors];
+export type GetPublicServiceStatusResponses = {
+    200: PublicServiceStatusResponse;
+};
+export type GetPublicServiceStatusResponse = GetPublicServiceStatusResponses[keyof GetPublicServiceStatusResponses];
 export type GetAdminSoftwareData = {
     body?: never;
     path?: never;

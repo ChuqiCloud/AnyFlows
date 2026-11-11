@@ -132,9 +132,9 @@ jobs:
           }
 
           {
-            echo "frontend=$(matches '^(web-next/|tools/ci/(frontend-about-smoke|frontend-navigation-smoke|frontend-user-routes-smoke|frontend-merchant-pool-smoke|frontend-key-capabilities-smoke|frontend-oauth-invitation-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend=$(matches '^(web-next/|tools/ci/(frontend-about-smoke|frontend-navigation-smoke|frontend-user-routes-smoke|frontend-merchant-pool-smoke|frontend-merchant-service-watch-smoke|frontend-channel-monitor-smoke|frontend-key-capabilities-smoke|frontend-oauth-invitation-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_about=$(matches '^(web-next/src/features/(about/|site-settings/software-(update-(panel|api)|release-notes)\.tsx?$)|tools/ci/frontend-about-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
-            echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-(navigation|user-routes|merchant-pool|key-capabilities|oauth-invitation)-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-(navigation|user-routes|merchant-pool|merchant-service-watch|channel-monitor|key-capabilities|oauth-invitation)-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_verification=$(matches '^(web-next/src/features/(account-verification|wallet|api-keys|playground)/|tools/ci/frontend-verification-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "rust=$(matches '^(crates/|tools/xtask/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$|\.github/workflows/ci\.yml$)')"
             echo "database=$(matches '^(crates/af-db/|tools/ci/(run-db-migration-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
@@ -532,7 +532,7 @@ jobs:
         shell: bash
         run: |
           failed=0
-          for smoke in navigation user-routes merchant-pool key-capabilities oauth-invitation; do
+          for smoke in navigation user-routes merchant-pool merchant-service-watch channel-monitor key-capabilities oauth-invitation; do
             if ! PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node "tools/ci/frontend-${smoke}-smoke.mjs"; then
               failed=1
             fi
