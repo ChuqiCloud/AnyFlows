@@ -132,9 +132,9 @@ jobs:
           }
 
           {
-            echo "frontend=$(matches '^(web-next/|tools/ci/(frontend-about-smoke|frontend-navigation-smoke|frontend-user-routes-smoke|frontend-merchant-pool-smoke|frontend-merchant-service-watch-smoke|frontend-channel-monitor-smoke|frontend-key-capabilities-smoke|frontend-oauth-invitation-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend=$(matches '^(web-next/|tools/ci/(frontend-about-smoke|frontend-navigation-smoke|frontend-user-routes-smoke|frontend-merchant-pool-smoke|frontend-merchant-service-watch-smoke|frontend-channel-monitor-smoke|frontend-key-capabilities-smoke|frontend-oauth-invitation-smoke|frontend-access-tokens-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_about=$(matches '^(web-next/src/features/(about/|site-settings/software-(update-(panel|api)|release-notes)\.tsx?$)|tools/ci/frontend-about-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
-            echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-(navigation|user-routes|merchant-pool|merchant-service-watch|channel-monitor|key-capabilities|oauth-invitation)-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-(navigation|user-routes|merchant-pool|merchant-service-watch|channel-monitor|key-capabilities|oauth-invitation|access-tokens)-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_verification=$(matches '^(web-next/src/features/(account-verification|wallet|api-keys|playground)/|tools/ci/frontend-verification-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "rust=$(matches '^(crates/|tools/xtask/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$|\.github/workflows/ci\.yml$)')"
             echo "database=$(matches '^(crates/af-db/|tools/ci/(run-db-migration-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
@@ -532,7 +532,7 @@ jobs:
         shell: bash
         run: |
           failed=0
-          for smoke in navigation user-routes merchant-pool merchant-service-watch channel-monitor key-capabilities oauth-invitation; do
+          for smoke in navigation user-routes merchant-pool merchant-service-watch channel-monitor key-capabilities oauth-invitation access-tokens; do
             if ! PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node "tools/ci/frontend-${smoke}-smoke.mjs"; then
               failed=1
             fi
@@ -593,6 +593,7 @@ jobs:
             ${{ runner.temp }}/navigation-screenshots-web-next/*.png
             ${{ runner.temp }}/merchant-pool-screenshots-web-next/*.png
             ${{ runner.temp }}/key-capabilities-screenshots-web-next/*.png
+            ${{ runner.temp }}/access-tokens-screenshots-web-next/*.png
           retention-days: 7
           if-no-files-found: ignore
 
@@ -605,6 +606,7 @@ jobs:
             ${{ runner.temp }}/navigation-screenshots-web-next/*.png
             ${{ runner.temp }}/merchant-pool-screenshots-web-next/*.png
             ${{ runner.temp }}/key-capabilities-screenshots-web-next/*.png
+            ${{ runner.temp }}/access-tokens-screenshots-web-next/*.png
           retention-days: 7
           if-no-files-found: ignore
 
@@ -731,6 +733,17 @@ jobs:
           done
           cargo test --locked -p af-domain --lib upstream_model_policy
           cargo test --locked -p af-server --lib credential_usage
+
+      - name: Run focused personal access token regressions
+        if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
+        run: |
+          set -euo pipefail
+          cargo test --locked -p af-db --lib personal_access_token
+          cargo test --locked -p af-admin --lib personal_access_token
+          cargo test --locked -p af-http --lib access_token
+          cargo test --locked -p af-http --lib api_explorer
+          cargo test --locked -p af-admin --lib platform_rbac
+          cargo test --locked -p af-db --lib platform_audit
 
       - name: Run focused Passkey compatibility tests
         if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'

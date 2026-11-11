@@ -10,6 +10,7 @@
 | [配置参考](configuration.md) | 环境变量、密钥和代理 |
 | [升级与备份](migrations-and-release.md) | 数据备份、迁移、升级和回退 |
 | [账号与 API](authentication-and-access.md) | 登录、API Key、主体认证和接口调试 |
+| [系统 API Token](personal-access-tokens.md) | 脚本认证、权限、有效期和应急撤销 |
 | [渠道配置](channels.md) | 客户端档案、代理池和 NVIDIA 上游 |
 | [对话协议](conversation-compatibility.md) | 四类协议转换、历史回放和兼容范围 |
 | [运行状态](runtime-status.md) | 节点、依赖健康和用量统计 |

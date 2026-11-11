@@ -269,3 +269,80 @@ async fn merchant_payout_automatic_approval_requires_opt_in_and_freeze_blocks_su
     fixture.close().await?;
     Ok(())
 }
+
+async fn set_payout_actor_role(fixture: &Fixture, role: i16) -> Result<(), Box<dyn Error>> {
+    let query = Query::update()
+        .table(sea_orm::sea_query::Alias::new("users"))
+        .value(sea_orm::sea_query::Alias::new("role"), role)
+        .and_where(
+            Expr::col(sea_orm::sea_query::Alias::new("id"))
+                .eq(fixture.principal.user_id().get()),
+        )
+        .to_owned();
+    fixture.pool.connection()
+        .execute(fixture.pool.connection().get_database_backend().build(&query))
+        .await?;
+    Ok(())
+}
+
+fn payout_initiator(fixture: &Fixture) -> crate::MerchantPayoutInitiator {
+    crate::MerchantPayoutInitiator::new(
+        fixture.principal.user_id().get(),
+        Some(91),
+        "payout-pat-accepted-request".to_owned(),
+        Some("admin:submit_merchant_payout:execute".to_owned()),
+    ).unwrap()
+}
+
+#[tokio::test]
+async fn merchant_payout_revoked_admin_cancels_only_unsubmitted_and_releases_once()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture(config()).await?;
+    let (finance, payouts) = setup(&fixture).await?;
+    let withdrawal = finance
+        .request_withdrawal(77, "00112233445566778899aabbccddeeff", 200)
+        .await?;
+    set_payout_actor_role(&fixture, 1).await?;
+    payouts.enqueue_with_initiator(withdrawal.id, false, Some(&payout_initiator(&fixture))).await?;
+    set_payout_actor_role(&fixture, 0).await?;
+    assert!(payouts.claim("worker-before-submit").await?.is_none());
+    let after = finance.balance(77).await?;
+    assert_eq!(after.withdrawing_quota, 0);
+    assert_eq!(after.available_quota, 950);
+    assert_eq!(after.total_paid_quota, 0);
+    let page = finance.withdrawals(Some(77), None, 20, None).await?;
+    assert_eq!(page.items[0].status, "rejected");
+    assert_eq!(page.items[0].payout.as_ref().unwrap().status, "failed");
+    assert_eq!(page.items[0].payout.as_ref().unwrap().reason.as_deref(), Some("initiator_permission_revoked"));
+    assert!(payouts.claim("worker-retry").await?.is_none());
+    assert_eq!(finance.balance(77).await?.available_quota, 950);
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn merchant_payout_unknown_keeps_funds_and_reconciles_after_admin_revocation()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture(config()).await?;
+    let (finance, payouts) = setup(&fixture).await?;
+    let withdrawal = finance
+        .request_withdrawal(77, "11223344556677889900aabbccddeeff", 200)
+        .await?;
+    set_payout_actor_role(&fixture, 1).await?;
+    payouts.enqueue_with_initiator(withdrawal.id, false, Some(&payout_initiator(&fixture))).await?;
+    let first = payouts.claim("initial-worker").await?.unwrap();
+    assert!(first.submit);
+    assert_eq!(first.initiator_access_token_id, Some(91));
+    assert_eq!(first.initiator_request_id.as_deref(), Some("payout-pat-accepted-request"));
+    payouts.complete(&first, "unknown", "", Some("gateway_timeout")).await?;
+    set_payout_actor_role(&fixture, 0).await?;
+    due(&fixture, withdrawal.id).await?;
+    let recovery = payouts.claim("reconciliation-worker").await?.unwrap();
+    assert!(!recovery.submit);
+    assert_eq!(finance.balance(77).await?.withdrawing_quota, 200);
+    payouts.complete(&recovery, "paid", "remote-confirmed", None).await?;
+    assert_eq!(finance.balance(77).await?.withdrawing_quota, 0);
+    assert_eq!(finance.balance(77).await?.total_paid_quota, 200);
+    fixture.close().await?;
+    Ok(())
+}

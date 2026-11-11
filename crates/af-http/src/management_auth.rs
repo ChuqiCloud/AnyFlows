@@ -7,6 +7,7 @@ use axum::{
     response::Response,
 };
 use http::header::AUTHORIZATION;
+use sha2::{Digest, Sha256};
 
 use crate::management_error::ManagementError;
 
@@ -53,8 +54,25 @@ async fn authenticate_present_session(
         Ok(token) => token,
         Err(error) => return error.into_response(),
     };
+    if token.as_str().starts_with("af_pat_") {
+        let Some(service) = state.authenticator.personal_access_tokens() else {
+            return crate::access_token_error::AccessTokenHttpError::InvalidToken.into_response();
+        };
+        return crate::access_token_auth::authenticate_personal_access_token(service, token, request, next).await;
+    }
     match state.authenticator.authenticate(token.as_str()).await {
         Ok(authentication) => {
+            let mut digest = Sha256::new();
+            digest.update(b"anyflows:interactive-session-binding:v1\0");
+            digest.update(token.as_str().as_bytes());
+            let session_binding = digest.finalize().iter().map(|byte| format!("{byte:02x}")).collect();
+            drop(token);
+            request.extensions_mut().insert(crate::access_token_auth::InteractiveSessionEvidence {
+                user_id: authentication.principal().user_id(),
+                issued_at: authentication.issued_at(),
+                session_version: authentication.session_version(),
+                session_binding,
+            });
             request.extensions_mut().insert(authentication);
             next.run(request).await
         }

@@ -22,6 +22,11 @@ use af_domain::{
 };
 
 pub(crate) mod abilities;
+pub(crate) mod access_token_audit_logs;
+pub(crate) mod access_token_policies;
+pub(crate) mod access_token_rate_limits;
+pub(crate) mod user_access_tokens;
+pub(crate) mod user_access_token_proofs;
 pub(crate) mod analytics_export_outbox_events;
 pub(crate) mod announcements;
 pub(crate) mod async_task_billings;

@@ -32,6 +32,7 @@ mod network_settings;
 mod oauth_connections;
 mod oauth_login;
 mod passkey_auth;
+mod personal_access_tokens;
 mod password_reset;
 mod payment_settings;
 mod payment_webhook;
@@ -89,6 +90,13 @@ fn get_version() {}
 
 /// 构建可导出、可供客户端生成和 Apifox 导入的完整管理 API 文档。
 pub fn openapi_document() -> OpenApi {
+    let mut document = raw_openapi_document();
+    crate::access_token_routes::annotate_document(&mut document);
+    document
+}
+
+/// Unannotated operation contract used to construct the exact PAT route registry.
+pub(crate) fn raw_openapi_document() -> OpenApi {
     let mut document = OpenApi::new(
         Info::new("AnyFlows 管理 API", env!("CARGO_PKG_VERSION")),
         Paths::new(),
@@ -142,6 +150,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(playground_conversations::document());
     document.merge(playground_image_history::document());
     document.merge(user_tokens::document());
+    document.merge(personal_access_tokens::document());
     document.merge(user_routes::document());
     document.merge(merchant_routes::document());
     document.merge(crate::merchant_finance::document());
@@ -208,6 +217,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("Playground 历史"),
         Tag::new("生图广场"),
         Tag::new("我的 API Key"),
+        Tag::new("个人访问令牌"),
         Tag::new("令牌管理"),
         Tag::new("用量日志"),
         Tag::new("渠道管理"),
@@ -243,6 +253,13 @@ pub fn openapi_document() -> OpenApi {
                     .build(),
             ),
         );
+    document.components.get_or_insert_with(Components::new).add_security_scheme(
+        "personalAccessTokenBearer",
+        SecurityScheme::Http(HttpBuilder::new().scheme(HttpAuthScheme::Bearer)
+            .bearer_format("af_pat_")
+            .description(Some("独立的系统 API 个人访问令牌；按接口 scopes 和当前用户权限授权，不用于模型网关"))
+            .build()),
+    );
     document
 }
 

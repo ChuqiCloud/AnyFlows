@@ -140,10 +140,13 @@ mod m20261110_000175_upstream_usage;
 mod m20261110_000176_merchant_service_watches;
 mod m20261110_000178_merchant_finance_report;
 mod m20261110_000179_active_channel_monitor;
+mod m20261112_000180_create_user_access_tokens;
 mod schema;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod personal_access_token_tests;
 
 const DEFAULT_MIGRATION_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
@@ -551,6 +554,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261110_000176_merchant_service_watches::Migration),
             Box::new(m20261110_000178_merchant_finance_report::Migration),
             Box::new(m20261110_000179_active_channel_monitor::Migration),
+            Box::new(m20261112_000180_create_user_access_tokens::Migration),
         ]
     }
 }

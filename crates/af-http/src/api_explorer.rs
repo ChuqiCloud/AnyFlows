@@ -62,6 +62,9 @@ struct ApiExplorerOperation {
     summary: String,
     description: Option<String>,
     auth_mode: ApiExplorerAuthMode,
+    supports_access_token: bool,
+    required_scopes: Vec<String>,
+    interactive_session_required: bool,
     access_scope: ApiExplorerAccessScope,
     debuggable: bool,
 }
@@ -124,6 +127,7 @@ pub(crate) fn build_api_explorer_router(
 async fn list_catalog(
     RawQuery(raw_query): RawQuery,
     authentication: Option<Extension<af_admin::SessionAuthentication>>,
+    access_token: Option<Extension<af_admin::PersonalAccessTokenAuthentication>>,
 ) -> Result<Response, ManagementError> {
     let query = parse_catalog_query(raw_query.as_deref())?;
     let viewer = viewer(authentication.as_ref());
@@ -134,7 +138,7 @@ async fn list_catalog(
     }
     let query_text = normalize_filter(query.q.as_deref())?;
     let tag_filter = normalize_filter(query.tag.as_deref())?;
-    let mut operations = projected_operations(viewer);
+    let mut operations = projected_for_credential(viewer, access_token.as_ref().map(|Extension(token)| token));
     operations.retain(|item| {
         let matches_query = query_text.as_deref().is_none_or(|query| {
             let haystack = format!(
@@ -243,12 +247,13 @@ fn validate_percent_encoding(raw_query: &str) -> Result<(), ManagementError> {
 async fn get_operation(
     Path(operation_id): Path<String>,
     authentication: Option<Extension<af_admin::SessionAuthentication>>,
+    access_token: Option<Extension<af_admin::PersonalAccessTokenAuthentication>>,
 ) -> Result<Response, ManagementError> {
     if operation_id.is_empty() || operation_id.len() > 128 {
         return Err(ManagementError::InvalidRequest);
     }
     let viewer = viewer(authentication.as_ref());
-    let Some(operation) = projected_operations(viewer)
+    let Some(operation) = projected_for_credential(viewer, access_token.as_ref().map(|Extension(token)| token))
         .into_iter()
         .find(|item| item.metadata.operation_id == operation_id)
     else {
@@ -319,6 +324,7 @@ fn projected_operations(viewer: Viewer) -> Vec<ProjectedOperation> {
             if !is_visible(viewer, scope, auth_mode) {
                 continue;
             }
+            let pat_policy = crate::access_token_routes::policy(method, path);
             let metadata = ApiExplorerOperation {
                 operation_id: operation_id.to_owned(),
                 method: method.to_ascii_uppercase(),
@@ -340,6 +346,10 @@ fn projected_operations(viewer: Viewer) -> Vec<ProjectedOperation> {
                     .and_then(Value::as_str)
                     .map(str::to_owned),
                 auth_mode,
+                supports_access_token: pat_policy.is_some_and(|policy| !policy.session_only),
+                required_scopes: pat_policy.map(|policy| policy.required_scopes.clone()).unwrap_or_default(),
+                interactive_session_required: auth_mode == ApiExplorerAuthMode::Session
+                    && pat_policy.is_none_or(|policy| policy.session_only),
                 access_scope: scope,
                 debuggable: is_debuggable(path, method, scope, auth_mode),
             };
@@ -369,6 +379,16 @@ fn projected_operations(viewer: Viewer) -> Vec<ProjectedOperation> {
             .then_with(|| left.metadata.operation_id.cmp(&right.metadata.operation_id))
     });
     operations
+}
+
+fn projected_for_credential(viewer: Viewer,
+    token: Option<&af_admin::PersonalAccessTokenAuthentication>) -> Vec<ProjectedOperation> {
+    projected_operations(viewer).into_iter().filter(|operation| {
+        let Some(token) = token else { return true; };
+        if operation.metadata.auth_mode != ApiExplorerAuthMode::Session { return true; }
+        operation.metadata.supports_access_token && operation.metadata.required_scopes.iter()
+            .all(|scope| token.scopes().contains(scope))
+    }).collect()
 }
 
 fn gateway_operations() -> Vec<ProjectedOperation> {
@@ -478,6 +498,9 @@ fn gateway_operations() -> Vec<ProjectedOperation> {
                     "兼容模型网关入口，使用 API Key 鉴权。请求正文按对应协议传入 JSON。".to_owned()
                 }),
                 auth_mode: ApiExplorerAuthMode::ApiKey,
+                supports_access_token: false,
+                required_scopes: Vec::new(),
+                interactive_session_required: false,
                 access_scope: ApiExplorerAccessScope::Gateway,
                 debuggable: operation_id != "createImageEdit",
             },
@@ -612,6 +635,22 @@ fn is_debuggable(
 #[cfg(test)]
 mod verification_visibility_tests {
     use super::*;
+
+    #[test]
+    fn access_token_catalog_projects_only_granted_management_operations() {
+        let token = af_admin::PersonalAccessTokenAuthentication {
+            principal: af_admin::SessionPrincipal::new(af_domain::UserId::new(1).unwrap(), af_admin::SessionRole::Admin),
+            group_id: af_domain::GroupId::new(1).unwrap(), token_id: 1,
+            scopes: vec!["api_catalog:read".to_owned(), "billing:read".to_owned()], expires_at: None,
+        };
+        let operations = projected_for_credential(Viewer { authenticated: true, admin: true }, Some(&token));
+        assert!(operations.iter().any(|item| item.metadata.path == "/api/account/wallet"));
+        assert!(operations.iter().any(|item| item.metadata.path == "/v1/chat/completions" && !item.metadata.supports_access_token));
+        assert!(!operations.iter().any(|item| item.metadata.path == "/api/admin/users"));
+        assert!(!operations.iter().any(|item| item.metadata.path == "/api/account/access-tokens"));
+        assert!(operations.iter().filter(|item| item.metadata.auth_mode == ApiExplorerAuthMode::Session)
+            .all(|item| item.metadata.supports_access_token && item.metadata.required_scopes.iter().all(|scope| token.scopes.contains(scope))));
+    }
 
     #[test]
     fn account_verification_operations_follow_viewer_permissions() {

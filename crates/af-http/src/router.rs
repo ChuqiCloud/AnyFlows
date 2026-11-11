@@ -145,11 +145,11 @@ pub const DEFAULT_REQUEST_BODY_LIMIT_BYTES: usize = MAX_BODY_BYTES;
 /// Axum 类型只在 `af-http` 内部流转，服务编排层通过本 crate 提供的监听入口使用它，
 /// 避免框架依赖向 `af-server` 泄漏。
 #[derive(Clone)]
-pub struct HttpRouter(Router);
+pub struct HttpRouter(Router, Option<crate::client_ip::ClientIpResolver>);
 
 impl HttpRouter {
     pub(crate) fn new(router: Router) -> Self {
-        Self(router)
+        Self(router, None)
     }
 
     pub(crate) fn into_router(self) -> Router {
@@ -158,7 +158,20 @@ impl HttpRouter {
 
     /// 在组合根追加一个已经自带认证边界的业务路由。
     pub fn merge(self, router: Router) -> Self {
-        Self(self.0.merge(router))
+        let router = match &self.1 {
+            Some(resolver) => router
+                .layer(middleware::from_fn_with_state(resolver.clone(), crate::access_token_auth::resolve_management_client_ip))
+                .layer(middleware::from_fn(ensure_request_id)),
+            None => router,
+        };
+        Self(self.0.merge(router), self.1)
+    }
+
+    fn with_management_client_ip(mut self, config: &ServerConfig) -> Self {
+        let resolver = crate::client_ip::ClientIpResolver::from_config(config);
+        self.0 = self.0.layer(middleware::from_fn_with_state(resolver.clone(), crate::access_token_auth::resolve_management_client_ip));
+        self.1 = Some(resolver);
+        self
     }
 }
 
@@ -570,6 +583,8 @@ pub fn build_router(
         user_token_service,
         Arc::clone(&http_state.session_authenticator),
     );
+    let personal_access_token_routes = crate::access_tokens::build_access_token_router(
+        Arc::clone(&http_state.session_authenticator));
     let registration_routes = build_registration_router(
         Arc::clone(&registration_service),
         Arc::clone(&http_state.session_authenticator),
@@ -986,6 +1001,7 @@ pub fn build_router(
         .merge(playground_conversation_routes)
         .merge(playground_image_history_routes)
         .merge(user_token_routes)
+        .merge(personal_access_token_routes)
         .merge(registration_routes)
         .merge(passkey_authentication_routes)
         .merge(password_reset_routes)
@@ -1037,7 +1053,7 @@ pub fn build_router(
         config,
         DEFAULT_REQUEST_BODY_LIMIT_BYTES,
         frontend_assets,
-    ))
+    )).with_management_client_ip(config)
 }
 
 #[cfg(test)]
