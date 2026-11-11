@@ -24,7 +24,16 @@ export type ApiExplorerCatalog = {
 }
 
 export type ApiExplorerDetail = { operation: ApiExplorerOperation; openapi: Record<string, unknown> }
-export type ApiExplorerRunResult = { status: number; ok: boolean; duration_ms: number; request_id?: string; body: string }
+export type ApiExplorerRunResult = {
+  status: number
+  ok: boolean
+  duration_ms: number
+  request_id?: string
+  body: string
+  diagnostic?: 'access' | 'verification' | 'quota' | 'model' | 'request' | 'server' | 'unknown'
+  next_step?: string
+  action?: { path: string; label: string }
+}
 
 function headers(): Record<string, string> {
   const token = getManagementSessionToken()
@@ -81,4 +90,66 @@ export function operationParameterNames(detail: ApiExplorerDetail | undefined) {
   const pathParameters = [...(detail?.operation.path.matchAll(/\{([^}]+)\}/g) ?? [])]
     .map((match) => ({ name: match[1], location: 'path' as const, required: true }))
   return [...new Map([...pathParameters, ...parsed].map((item) => [`${item.location}:${item.name}`, item])).values()]
+}
+
+const secretField = /(?:api[_-]?key|access[_-]?token|password|secret|credential|authorization)/i
+
+function sampleValue(schema: unknown, property = '', depth = 0): unknown {
+  if (!schema || typeof schema !== 'object' || depth > 5) return undefined
+  const value = schema as Record<string, unknown>
+  if (Array.isArray(value.enum) && value.enum.length > 0) return value.enum[0]
+  if (value.example !== undefined && !secretField.test(property)) return value.example
+  if (value.default !== undefined && !secretField.test(property)) return value.default
+  if (value.type === 'object' || value.properties) {
+    const properties = value.properties && typeof value.properties === 'object'
+      ? value.properties as Record<string, unknown>
+      : {}
+    const result = Object.fromEntries(Object.entries(properties)
+      .filter(([name]) => !secretField.test(name))
+      .map(([name, child]) => [name, sampleValue(child, name, depth + 1)])
+      .filter(([, child]) => child !== undefined))
+    return Object.keys(result).length ? result : undefined
+  }
+  if (value.type === 'array') {
+    if (property === 'messages') return [{ role: 'user', content: 'Hello' }]
+    const item = sampleValue(value.items, '', depth + 1)
+    return item === undefined ? [] : [item]
+  }
+  if (value.type === 'string' || value.type === undefined) {
+    if (property === 'model') return 'your-model'
+    if (property === 'prompt' || property === 'input' || property === 'content') return 'Hello'
+    if (property === 'role') return 'user'
+    if (property === 'stream') return undefined
+    return 'example'
+  }
+  if (value.type === 'integer' || value.type === 'number') return value.minimum ?? 1
+  if (value.type === 'boolean') return false
+  return undefined
+}
+
+/** Give the request editor a safe example without inserting credentials. */
+export function suggestedRequestBody(detail: ApiExplorerDetail | undefined) {
+  if (!detail) return ''
+  const path = detail.operation.path.toLowerCase()
+  let example: unknown
+  if (path.endsWith('/chat/completions')) {
+    example = { model: 'your-model', messages: [{ role: 'user', content: 'Hello' }] }
+  } else if (path.endsWith('/responses')) {
+    example = { model: 'your-model', input: 'Hello' }
+  } else if (path.endsWith('/messages')) {
+    example = { model: 'your-model', max_tokens: 512, messages: [{ role: 'user', content: 'Hello' }] }
+  } else {
+    const openapi = detail.openapi
+    const body = openapi.requestBody && typeof openapi.requestBody === 'object'
+      ? openapi.requestBody as Record<string, unknown>
+      : undefined
+    const content = body?.content && typeof body.content === 'object'
+      ? body.content as Record<string, unknown>
+      : undefined
+    const json = content?.['application/json'] && typeof content['application/json'] === 'object'
+      ? content['application/json'] as Record<string, unknown>
+      : undefined
+    example = sampleValue(json?.schema)
+  }
+  return example && typeof example === 'object' ? JSON.stringify(example, null, 2) : '{\n  \n}'
 }

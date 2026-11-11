@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use af_admin::{
-    MerchantFinanceError, MerchantFinanceService, SessionAuthentication, SessionAuthenticator,
+    MerchantFinanceError, MerchantFinanceReport, MerchantFinanceService, SessionAuthentication,
+    SessionAuthenticator,
 };
 use axum::{
     Json, Router,
@@ -76,6 +77,42 @@ struct EntryPageSchema {
 }
 #[allow(dead_code)]
 #[derive(ToSchema)]
+#[schema(as=MerchantFinanceReportTotals)]
+struct MerchantFinanceReportTotalsSchema {
+    sales_gross_quota: i64,
+    commission_quota: i64,
+    merchant_net_quota: i64,
+    refunded_gross_quota: i64,
+    refunded_commission_quota: i64,
+    refunded_net_quota: i64,
+}
+#[allow(dead_code)]
+#[derive(ToSchema)]
+#[schema(as=MerchantFinanceReportRow)]
+struct MerchantFinanceReportRowSchema {
+    period: String,
+    service_id: Option<i64>,
+    service_name: String,
+    model: String,
+    gross_quota: i64,
+    commission_quota: i64,
+    net_quota: i64,
+    refunded_gross_quota: i64,
+    refunded_commission_quota: i64,
+    refunded_net_quota: i64,
+}
+#[allow(dead_code)]
+#[derive(ToSchema)]
+#[schema(as=MerchantFinanceReport)]
+struct MerchantFinanceReportSchema {
+    granularity: String,
+    from_date: String,
+    to_date: String,
+    totals: MerchantFinanceReportTotalsSchema,
+    rows: Vec<MerchantFinanceReportRowSchema>,
+}
+#[allow(dead_code)]
+#[derive(ToSchema)]
 #[schema(as=MerchantWithdrawalPage)]
 struct WithdrawalPageSchema {
     items: Vec<WithdrawalSchema>,
@@ -88,6 +125,8 @@ pub(crate) fn document() -> utoipa::openapi::OpenApi {
         paths(
             balance,
             entries,
+            report,
+            report_csv,
             withdrawals,
             request_withdrawal,
             admin_withdrawals,
@@ -102,6 +141,9 @@ pub(crate) fn document() -> utoipa::openapi::OpenApi {
             EntrySchema,
             WithdrawalSchema,
             EntryPageSchema,
+            MerchantFinanceReportSchema,
+            MerchantFinanceReportTotalsSchema,
+            MerchantFinanceReportRowSchema,
             WithdrawalPageSchema,
             MerchantWithdrawalRequest,
             MerchantWithdrawalDecision,
@@ -124,6 +166,8 @@ pub fn build_merchant_finance_router(
     Router::new()
         .route("/api/merchant/finance", get(balance))
         .route("/api/merchant/finance/entries", get(entries))
+        .route("/api/merchant/finance/report", get(report))
+        .route("/api/merchant/finance/report.csv", get(report_csv))
         .route(
             "/api/merchant/withdrawals",
             get(withdrawals).post(request_withdrawal),
@@ -162,6 +206,15 @@ struct PageQuery {
     limit: u32,
     before_id: Option<i64>,
     status: Option<String>,
+}
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+struct FinanceReportQuery {
+    /// Inclusive UTC calendar date, YYYY-MM-DD.
+    from_date: String,
+    /// Inclusive UTC calendar date, YYYY-MM-DD.
+    to_date: String,
+    granularity: String,
 }
 const fn default_limit() -> u32 {
     20
@@ -225,6 +278,106 @@ async fn entries(
             .await
             .map_err(FinanceHttpError)?,
     ))
+}
+
+#[utoipa::path(get,path="/api/merchant/finance/report",operation_id="getMerchantFinanceReport",tag="Merchant pool",params(("from_date"=String,Query,description="Inclusive UTC date (YYYY-MM-DD)"),("to_date"=String,Query,description="Inclusive UTC date (YYYY-MM-DD)"),("granularity"=String,Query,description="day or month")),security(("bearerAuth"=[])),responses((status=200,body=MerchantFinanceReportSchema)))]
+async fn report(
+    State(state): State<FinanceState>,
+    Extension(auth): Extension<SessionAuthentication>,
+    Query(query): Query<FinanceReportQuery>,
+) -> Result<Response, FinanceHttpError> {
+    let report = state
+        .service
+        .report(
+            auth.principal(),
+            query.from_date,
+            query.to_date,
+            query.granularity,
+        )
+        .await
+        .map_err(FinanceHttpError)?;
+    Ok(no_store_json(report))
+}
+
+#[utoipa::path(get,path="/api/merchant/finance/report.csv",operation_id="exportMerchantFinanceReportCsv",tag="Merchant pool",params(("from_date"=String,Query,description="Inclusive UTC date (YYYY-MM-DD)"),("to_date"=String,Query,description="Inclusive UTC date (YYYY-MM-DD)"),("granularity"=String,Query,description="day or month")),security(("bearerAuth"=[])),responses((status=200,description="RFC 4180 CSV report",content_type="text/csv",body=String)))]
+async fn report_csv(
+    State(state): State<FinanceState>,
+    Extension(auth): Extension<SessionAuthentication>,
+    Query(query): Query<FinanceReportQuery>,
+) -> Result<Response, FinanceHttpError> {
+    let report = state
+        .service
+        .report(
+            auth.principal(),
+            query.from_date,
+            query.to_date,
+            query.granularity,
+        )
+        .await
+        .map_err(FinanceHttpError)?;
+    let csv = finance_report_csv(&report);
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(http::header::CONTENT_TYPE, "text/csv; charset=utf-8")
+        .header(
+            http::header::CONTENT_DISPOSITION,
+            "attachment; filename=merchant-finance-report.csv",
+        )
+        .header(http::header::CACHE_CONTROL, "no-store")
+        .body(csv.into())
+        .map_err(|_| FinanceHttpError(MerchantFinanceError::Unavailable))
+}
+
+fn finance_report_csv(report: &MerchantFinanceReport) -> String {
+    let mut output = String::from(
+        "\u{feff}period,service_id,service_name,model,gross_quota,commission_quota,net_quota,refunded_gross_quota,refunded_commission_quota,refunded_net_quota\r\n",
+    );
+    for row in &report.rows {
+        let values = [
+            csv_text(&row.period),
+            row.service_id.map_or_else(String::new, |id| id.to_string()),
+            csv_text(&row.service_name),
+            csv_text(&row.model),
+            row.gross_quota.to_string(),
+            row.commission_quota.to_string(),
+            row.net_quota.to_string(),
+            row.refunded_gross_quota.to_string(),
+            row.refunded_commission_quota.to_string(),
+            row.refunded_net_quota.to_string(),
+        ];
+        output.push_str(&values.join(","));
+        output.push_str("\r\n");
+    }
+    let totals = &report.totals;
+    let values = [
+        csv_text("TOTAL"),
+        String::new(),
+        String::new(),
+        String::new(),
+        totals.sales_gross_quota.to_string(),
+        totals.commission_quota.to_string(),
+        totals.merchant_net_quota.to_string(),
+        totals.refunded_gross_quota.to_string(),
+        totals.refunded_commission_quota.to_string(),
+        totals.refunded_net_quota.to_string(),
+    ];
+    output.push_str(&values.join(","));
+    output.push_str("\r\n");
+    output
+}
+
+fn csv_text(value: &str) -> String {
+    let trimmed = value.trim_start_matches([' ', '\t', '\r', '\n']);
+    let formula = trimmed.starts_with('=')
+        || trimmed.starts_with('+')
+        || trimmed.starts_with('-')
+        || trimmed.starts_with('@');
+    let safe = if formula {
+        format!("'{value}")
+    } else {
+        value.to_owned()
+    };
+    format!("\"{}\"", safe.replace('"', "\"\""))
 }
 #[utoipa::path(get,path="/api/merchant/withdrawals",operation_id="listMerchantWithdrawals",tag="Merchant pool",params(("limit"=Option<u32>,Query,minimum=1,maximum=100),("before_id"=Option<i64>,Query)),security(("bearerAuth"=[])),responses((status=200,body=WithdrawalPageSchema)))]
 async fn withdrawals(
@@ -391,6 +544,11 @@ impl IntoResponse for FinanceHttpError {
                 "merchant_finance_unavailable",
                 "商户资金服务暂不可用",
             ),
+            MerchantFinanceError::LimitReached => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "merchant_finance_report_too_large",
+                "报表明细过多，请缩短日期范围或选择按月汇总",
+            ),
         };
         #[derive(Serialize)]
         struct Body {
@@ -406,5 +564,61 @@ impl IntoResponse for FinanceHttpError {
         });
         *response.status_mut() = status;
         response
+    }
+}
+
+#[cfg(test)]
+mod finance_report_tests {
+    use super::{csv_text, finance_report_csv};
+
+    #[test]
+    fn report_csv_quotes_cells_and_neutralizes_spreadsheet_formulas() {
+        assert_eq!(csv_text("Service, west"), "\"Service, west\"");
+        assert_eq!(csv_text("Model \"A\""), "\"Model \"\"A\"\"\"");
+        assert_eq!(csv_text("  =cmd|calc"), "\"'  =cmd|calc\"");
+        assert_eq!(csv_text("-sales"), "\"'-sales\"");
+    }
+
+    #[test]
+    fn report_csv_includes_signed_rows_and_separate_refund_totals() {
+        use af_admin::{
+            MerchantFinanceReport, MerchantFinanceReportRow, MerchantFinanceReportTotals,
+        };
+        let report = MerchantFinanceReport {
+            granularity: "day".to_owned(),
+            from_date: "2026-11-10".to_owned(),
+            to_date: "2026-11-10".to_owned(),
+            totals: MerchantFinanceReportTotals {
+                sales_gross_quota: 0,
+                commission_quota: 0,
+                merchant_net_quota: 0,
+                refunded_gross_quota: 100,
+                refunded_commission_quota: 5,
+                refunded_net_quota: 95,
+            },
+            rows: vec![MerchantFinanceReportRow {
+                period: "2026-11-10".to_owned(),
+                service_id: Some(7),
+                service_name: "Service".to_owned(),
+                model: "Model".to_owned(),
+                gross_quota: 0,
+                commission_quota: 0,
+                net_quota: 0,
+                refunded_gross_quota: 100,
+                refunded_commission_quota: 5,
+                refunded_net_quota: 95,
+            }],
+        };
+        let csv = finance_report_csv(&report);
+        assert!(csv.starts_with('\u{feff}'));
+        assert!(csv.contains("\"2026-11-10\",7,\"Service\",\"Model\",0,0,0,100,5,95\r\n"));
+        assert!(csv.contains("\"TOTAL\",,,,0,0,0,100,5,95\r\n"));
+    }
+
+    #[test]
+    fn merchant_finance_report_contract_uses_exact_utc_date_inputs() {
+        let format = time::format_description::parse_borrowed::<2>("[year]-[month]-[day]").unwrap();
+        assert!(time::Date::parse("2026-11-10", &format).is_ok());
+        assert!(time::Date::parse("2026-02-30", &format).is_err());
     }
 }

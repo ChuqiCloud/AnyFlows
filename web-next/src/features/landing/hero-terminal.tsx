@@ -123,7 +123,7 @@ claude`,
             <span className="text-primary font-semibold">$ claude</span>
           </div>
           <div className="mt-2 text-xs text-muted-foreground/75">
-            &gt; Claude Code is ready. Connected to AnyFlows Relay (latency: 82ms).
+            &gt; Claude Code is ready. Connected to AnyFlows Relay.
           </div>
         </>
       ),
@@ -336,10 +336,7 @@ const { textStream } = streamText({
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-success/30 bg-success/10 px-2.5 py-0.5 text-[0.6875rem] font-medium text-success">
-              <span className="size-1.5 rounded-full bg-success animate-pulse" />
-              <span>Online · 82ms</span>
-            </span>
+            <span className="rounded-full border border-[var(--hairline)] bg-surface-1 px-2.5 py-0.5 text-[0.6875rem] font-medium text-muted-foreground">Example session</span>
           </div>
         </div>
 

@@ -4,7 +4,7 @@ use std::{future::Future, pin::Pin};
 
 pub use af_db::{
     MerchantFinanceBalance, MerchantFinanceEntry, MerchantFinanceError, MerchantFinancePage,
-    MerchantWithdrawal,
+    MerchantFinanceReport, MerchantWithdrawal,
 };
 use af_db::{MerchantFinanceRepository, MerchantPoolRepository};
 
@@ -24,6 +24,13 @@ pub trait MerchantFinanceService: Send + Sync {
         limit: u32,
         before_id: Option<i64>,
     ) -> MerchantFinanceFuture<'_, MerchantFinancePage<MerchantFinanceEntry>>;
+    fn report(
+        &self,
+        principal: SessionPrincipal,
+        from_date: String,
+        to_date: String,
+        granularity: String,
+    ) -> MerchantFinanceFuture<'_, MerchantFinanceReport>;
     fn withdrawals(
         &self,
         principal: SessionPrincipal,
@@ -135,6 +142,24 @@ impl MerchantFinanceService for DatabaseMerchantFinanceService {
         Box::pin(async move {
             self.finance
                 .entries(self.owner_merchant(principal).await?, limit, before_id)
+                .await
+        })
+    }
+    fn report(
+        &self,
+        principal: SessionPrincipal,
+        from_date: String,
+        to_date: String,
+        granularity: String,
+    ) -> MerchantFinanceFuture<'_, MerchantFinanceReport> {
+        Box::pin(async move {
+            self.finance
+                .report(
+                    self.owner_merchant(principal).await?,
+                    &from_date,
+                    &to_date,
+                    &granularity,
+                )
                 .await
         })
     }

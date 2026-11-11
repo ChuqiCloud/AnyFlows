@@ -402,6 +402,25 @@ impl ChannelProbeTargetRepository {
         &self,
         channel_id: ChannelId,
     ) -> Result<Option<ChannelProbeTargetRecord>, ChannelProbeTargetRepositoryError> {
+        self.load_inner(channel_id, None).await
+    }
+
+    /// Load a specifically allowlisted live target; never substitutes another model or credential.
+    pub async fn load_selected(
+        &self,
+        channel_id: ChannelId,
+        model: &str,
+        credential_id: af_domain::CredentialId,
+    ) -> Result<Option<ChannelProbeTargetRecord>, ChannelProbeTargetRepositoryError> {
+        self.load_inner(channel_id, Some((model, credential_id)))
+            .await
+    }
+
+    async fn load_inner(
+        &self,
+        channel_id: ChannelId,
+        selected: Option<(&str, af_domain::CredentialId)>,
+    ) -> Result<Option<ChannelProbeTargetRecord>, ChannelProbeTargetRepositoryError> {
         let operation = async {
             let Some(channel) = channels::Entity::find_by_id(channel_id.get())
                 .one(self.pool.connection())
@@ -415,10 +434,17 @@ impl ChannelProbeTargetRepository {
             if channel.deleted_at.is_some() {
                 return Ok(None);
             }
+            if selected.is_some() && channel.status != Status::Enabled.code() {
+                return Ok(None);
+            }
 
-            let Some(channel_model) = channel_models::Entity::find()
+            let mut model_query = channel_models::Entity::find()
                 .filter(channel_models::Column::ChannelId.eq(channel_id.get()))
-                .order_by_asc(channel_models::Column::Model)
+                .order_by_asc(channel_models::Column::Model);
+            if let Some((model, _)) = selected {
+                model_query = model_query.filter(channel_models::Column::Model.eq(model));
+            }
+            let Some(channel_model) = model_query
                 .one(self.pool.connection())
                 .await
                 .map_err(|_| ChannelProbeTargetRepositoryError::Query)?
@@ -454,7 +480,7 @@ impl ChannelProbeTargetRepository {
             {
                 return Ok(None);
             }
-            let Some(credential) = credentials::Entity::find()
+            let mut credential_query = credentials::Entity::find()
                 .filter(credentials::Column::ChannelId.eq(channel_id.get()))
                 .filter(credentials::Column::Status.eq(Status::Enabled.code()))
                 .filter(credentials::Column::Schedulable.eq(true))
@@ -465,7 +491,12 @@ impl ChannelProbeTargetRepository {
                     client_profile.as_ref(),
                 ))
                 .order_by_desc(credentials::Column::Priority)
-                .order_by_asc(credentials::Column::Id)
+                .order_by_asc(credentials::Column::Id);
+            if let Some((_, credential_id)) = selected {
+                credential_query =
+                    credential_query.filter(credentials::Column::Id.eq(credential_id.get()));
+            }
+            let Some(credential) = credential_query
                 .one(self.pool.connection())
                 .await
                 .map_err(|_| ChannelProbeTargetRepositoryError::Query)?

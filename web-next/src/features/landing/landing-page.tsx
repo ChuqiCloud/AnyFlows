@@ -601,12 +601,6 @@ export function LandingPage() {
                       {t(`landing.journey.${mode}.route`)}
                     </p>
                   </div>
-                  <div className="rounded-xl bg-success/10 p-3 border border-success/20">
-                    <p className="text-xs text-muted-foreground">{t('landing.console.latency')}</p>
-                    <p className="mt-1 text-sm font-semibold text-success font-mono">
-                      82ms · {t('landing.home.status.stable')}
-                    </p>
-                  </div>
                   <div className="rounded-xl bg-warning/10 p-3 border border-warning/20">
                     <p className="text-xs text-muted-foreground">{t('landing.console.tokens')}</p>
                     <p className="mt-1 text-sm font-semibold text-warning font-mono">

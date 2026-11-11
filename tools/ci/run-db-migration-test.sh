@@ -106,12 +106,13 @@ if [[ -z "${database_url}" ]]; then
             ;;
         mysql)
             container_name="anyflows-mysql-${instance_id}"
+            # CI runners share the host's native AIO quota; use InnoDB's fallback for this temporary database.
             docker run --detach --name "${container_name}" --network none \
                 --env MYSQL_USER="${TEST_USER}" \
                 --env MYSQL_PASSWORD="${TEST_PASSWORD}" \
                 --env MYSQL_ROOT_PASSWORD="root_ci" \
                 --env MYSQL_DATABASE="${TEST_DATABASE}" \
-                "${MYSQL_IMAGE}" --log-bin-trust-function-creators=1 >/dev/null
+                "${MYSQL_IMAGE}" --innodb-use-native-aio=0 --log-bin-trust-function-creators=1 >/dev/null
             wait_for_mysql
             database_url="mysql://${TEST_USER}:${TEST_PASSWORD}@127.0.0.1:3306/${TEST_DATABASE}?timezone=%2B08:00"
             ;;

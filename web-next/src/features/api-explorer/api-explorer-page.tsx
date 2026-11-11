@@ -7,7 +7,7 @@ import { PublicSiteHeader } from '@/components/layout/public-site-header'
 import { SiteFooter } from '@/components/layout/site-footer'
 import { AnnouncementStrip } from '@/features/announcements/announcement-strip'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
-import { fetchApiExplorerCatalog, fetchApiExplorerDetail, operationParameterNames, runApiExplorerOperation, type ApiExplorerCatalog, type ApiExplorerDetail, type ApiExplorerOperation, type ApiExplorerRunResult } from './api-explorer-api'
+import { fetchApiExplorerCatalog, fetchApiExplorerDetail, operationParameterNames, runApiExplorerOperation, suggestedRequestBody, type ApiExplorerCatalog, type ApiExplorerDetail, type ApiExplorerOperation, type ApiExplorerRunResult } from './api-explorer-api'
 
 function methodColor(method: string) {
   return method === 'GET' ? 'success' : method === 'POST' ? 'primary' : method === 'DELETE' ? 'danger' : 'warning'
@@ -15,6 +15,22 @@ function methodColor(method: string) {
 
 function pretty(value: string) {
   try { return JSON.stringify(JSON.parse(value), null, 2) } catch { return value }
+}
+
+function apiExplorerDiagnostic(status: number, body: string): ApiExplorerRunResult['diagnostic'] {
+  let code = ''
+  try {
+    const result = JSON.parse(body) as { error?: { code?: unknown; type?: unknown } }
+    code = typeof result.error?.code === 'string' ? result.error.code : typeof result.error?.type === 'string' ? result.error.type : ''
+  } catch { /* Generic HTTP status remains sufficient for a safe suggestion. */ }
+  if (code === 'account_verification_required') return 'verification'
+  if (code === 'token_model_not_allowed' || code === 'model_not_found') return 'model'
+  if (status >= 500) return 'server'
+  if (status === 401 || status === 403) return 'access'
+  if (status === 402 || status === 429) return 'quota'
+  if (status === 400 || status === 413 || status === 415) return 'request'
+  if (status === 404) return 'model'
+  return 'unknown'
 }
 
 export function ApiExplorerPage() {
@@ -56,7 +72,7 @@ export function ApiExplorerPage() {
     setDetail(undefined)
     setDetailError(false)
     setDetailLoading(true)
-    void fetchApiExplorerDetail(selected.operation_id, controller.signal).then((next) => { setDetail(next); setPathParams({}); setQueryParams({}); setBody(next.operation.method === 'POST' ? '{\n  \n}' : ''); setResult(undefined) }).catch((reason) => { if (reason?.name !== 'AbortError') setDetailError(true) }).finally(() => setDetailLoading(false))
+    void fetchApiExplorerDetail(selected.operation_id, controller.signal).then((next) => { setDetail(next); setPathParams({}); setQueryParams({}); setBody(next.operation.method === 'POST' ? suggestedRequestBody(next) : ''); setResult(undefined) }).catch((reason) => { if (reason?.name !== 'AbortError') setDetailError(true) }).finally(() => setDetailLoading(false))
     return () => controller.abort()
   }, [selected, detailRetry])
 
@@ -64,7 +80,17 @@ export function ApiExplorerPage() {
   const run = async () => {
     if (!selected) return
     setLoading(true); setError(undefined); setResult(undefined)
-    try { setResult(await runApiExplorerOperation(selected, { pathParams, queryParams, body, apiKey })) } catch (reason) { setError(reason instanceof Error ? reason.message : t('apiExplorer.errors.run')) } finally { setLoading(false) }
+    try {
+      const response = await runApiExplorerOperation(selected, { pathParams, queryParams, body, apiKey })
+      const diagnostic = response.ok ? undefined : apiExplorerDiagnostic(response.status, response.body)
+      const action = diagnostic === 'access' ? { path: '/console/api-keys', label: t('apiExplorer.diagnostics.keys') }
+        : diagnostic === 'verification' ? { path: '/console/account-verification', label: t('apiExplorer.diagnostics.verify') }
+        : diagnostic === 'quota' ? { path: '/console/wallet', label: t('apiExplorer.diagnostics.wallet') }
+        : diagnostic === 'model' ? { path: '/console/models', label: t('apiExplorer.diagnostics.models') }
+        : diagnostic === 'server' ? { path: '/console/usage-logs', label: t('apiExplorer.diagnostics.logs') }
+        : undefined
+      setResult({ ...response, diagnostic, next_step: diagnostic ? t(`apiExplorer.diagnostics.${diagnostic}.body`) : undefined, action, body: response.body })
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t('apiExplorer.errors.run')) } finally { setLoading(false) }
   }
 
   const authLabel = selected?.auth_mode === 'api_key' ? t('apiExplorer.auth.apiKey') : selected?.auth_mode === 'session' ? t('apiExplorer.auth.session') : selected?.auth_mode === 'special' ? t('apiExplorer.auth.special') : t('apiExplorer.auth.none')

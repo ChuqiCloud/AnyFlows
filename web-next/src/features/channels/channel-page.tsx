@@ -12,6 +12,7 @@ import { navigateTo } from '@/lib/router-navigation'
 import { useAdminChannels, useProbeAdminChannel } from './channel-api'
 import { ChannelEditorSheet } from './channel-editor-sheet'
 import { ChannelTable, type ProbeDisplay } from './channel-table'
+import { ActiveChannelMonitorPanel } from './active-channel-monitor-panel'
 
 type EditorState = AdminChannel | 'create' | undefined
 
@@ -72,6 +73,8 @@ export function ChannelPage() {
         <span>{t('channels.pageCount', { count: channels.length })}</span>
         <span>{t('channels.scope')}</span>
       </div>
+
+      <ActiveChannelMonitorPanel />
 
       {channelsQuery.isPending ? (
         <div className="grid gap-2" aria-label={t('channels.loading')}>

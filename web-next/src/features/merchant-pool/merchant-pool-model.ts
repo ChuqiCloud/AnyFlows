@@ -25,6 +25,8 @@ export type MerchantTimeline = { service_id: number; merchant_id: number; bucket
 export type MerchantTimelineResponse = { items: MerchantTimeline[]; as_of: number; window_seconds: number }
 export type MerchantFinance = { merchant_id: number; pending_quota: number; available_quota: number; withdrawing_quota: number; frozen_quota: number; debt_quota: number; total_gross_quota: number; total_commission_quota: number; total_paid_quota: number; quota_per_usd: number }
 export type MerchantFinanceEntry = { id: number; kind: string; reference: string; gross_quota: number; commission_quota: number; net_quota: number; created_at: number }
+export type MerchantFinanceReportRow = { period: string; service_id: number | null; service_name: string; model: string; gross_quota: number; commission_quota: number; net_quota: number; refunded_gross_quota: number; refunded_commission_quota: number; refunded_net_quota: number }
+export type MerchantFinanceReport = { granularity: 'day' | 'month'; from_date: string; to_date: string; totals: { sales_gross_quota: number; commission_quota: number; merchant_net_quota: number; refunded_gross_quota: number; refunded_commission_quota: number; refunded_net_quota: number }; rows: MerchantFinanceReportRow[] }
 export type MerchantWithdrawal = { payout: MerchantPayout | null; id: number; event_key: string; merchant_id: number; amount_quota: number; status: 'pending' | 'paid' | 'rejected'; reference: string | null; reason: string | null; created_at: number; updated_at: number }
 export type MerchantCursorList<T> = { items: T[]; next_cursor: string | null }
 

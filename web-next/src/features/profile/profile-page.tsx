@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 
 import { ApiError } from '@/lib/api'
 import { copyText } from '@/lib/clipboard'
@@ -1009,7 +1010,21 @@ function NotificationHistoryCard() {
 function NotificationHistoryRow({ entry, formatTime, onMarkRead, pending }: { entry: UserNotification; formatTime: (value: number) => string; onMarkRead: (id: number) => void; pending: boolean }) {
   const { t, i18n } = useTranslation()
   const isRead = entry.read_at !== undefined && entry.read_at !== null
-  const title = t(`profile.notificationHistory.kind.${entry.kind}`)
+  const serviceEvent = entry as UserNotification & {
+    merchant_service_event_id?: number | null
+    merchant_service_event_kind?: string | null
+    merchant_service_pool_id?: number | null
+    merchant_service_id?: number | null
+    merchant_service_merchant_id?: number | null
+    merchant_service_name?: string | null
+    channel_monitor_target_id?: number | null
+    channel_monitor_event_kind?: string | null
+  }
+  const title = serviceEvent.channel_monitor_target_id
+    ? t('profile.notificationHistory.kind.channel_monitor')
+    : serviceEvent.merchant_service_event_id
+    ? t('merchantServiceWatch.profile.notificationHistory.kind.merchant_service_update')
+    : t(`profile.notificationHistory.kind.${entry.kind}`)
   const state = t(`profile.notificationHistory.state.${entry.delivery_state}`)
   const announcementTitle = i18n.resolvedLanguage?.startsWith('zh')
     ? entry.announcement_title_zh ?? entry.announcement_title_en
@@ -1024,7 +1039,14 @@ function NotificationHistoryRow({ entry, formatTime, onMarkRead, pending }: { en
       && entry.announcement_visible_until <= Math.floor(Date.now() / 1000)
       ? t('profile.notificationHistory.announcementStatus.expired')
       : t('profile.notificationHistory.announcementStatus.published')
-  const detail = entry.kind === 'product_update'
+  const detail = serviceEvent.channel_monitor_target_id
+    ? t(`profile.notificationHistory.channelMonitorEvent.${serviceEvent.channel_monitor_event_kind}`, { target: serviceEvent.channel_monitor_target_id })
+    : serviceEvent.merchant_service_event_id
+    ? t(`merchantServiceWatch.profile.notificationHistory.merchantServiceEvent.${serviceEvent.merchant_service_event_kind}`, {
+      service: serviceEvent.merchant_service_name ?? t('merchantServiceWatch.profile.notificationHistory.unknownService'),
+      defaultValue: t('merchantServiceWatch.profile.notificationHistory.merchantServiceDetail', { service: serviceEvent.merchant_service_name ?? t('merchantServiceWatch.profile.notificationHistory.unknownService') }),
+    })
+    : entry.kind === 'product_update'
     ? `${announcementBody ?? t('profile.notificationHistory.productUpdateDetail')} · ${announcementState}`
     : entry.kind === 'balance_alert'
     ? t('profile.notificationHistory.balanceDetail', { observed: entry.observed_quota ?? '--', threshold: entry.threshold_quota ?? '--' })
@@ -1032,7 +1054,7 @@ function NotificationHistoryRow({ entry, formatTime, onMarkRead, pending }: { en
       ? t('profile.notificationHistory.purchaseDetail')
     : t('profile.notificationHistory.subscriptionDetail', { used: entry.quota_used ?? '--', amount: entry.quota_amount ?? '--', threshold: entry.threshold_percent ?? '--' })
 
-  return <article className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={isRead ? 'text-sm font-medium' : 'text-sm font-semibold'}>{entry.kind === 'product_update' && announcementTitle ? announcementTitle : title}</span><Chip className={isRead ? 'bg-muted text-muted-foreground' : 'bg-brand/10 text-brand'}>{t(`profile.notificationHistory.readState.${isRead ? 'read' : 'unread'}`)}</Chip><Chip className={entry.delivery_state === 'accepted' || entry.delivery_state === 'available' ? 'bg-success/10 text-success' : entry.delivery_state === 'failed' ? 'bg-destructive/10 text-destructive' : 'bg-warning/10 text-warning'}>{state}</Chip></div><p className="mt-1 text-xs text-muted-foreground">{detail}</p><p className="mt-1 text-[0.6875rem] text-muted-foreground/75">{t('profile.notificationHistory.meta', { time: formatTime(entry.occurred_at), attempts: entry.delivery_attempts, id: entry.id })}</p></div><div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end"><span className="text-[0.6875rem] text-muted-foreground">{t(`profile.notificationHistory.channel.${entry.channel}`)}</span>{isRead ? <span className="text-[0.6875rem] text-muted-foreground">{t('profile.notificationHistory.readAt', { time: formatTime(entry.read_at ?? entry.occurred_at) })}</span> : <Button type="button" size="sm" variant="bordered" isDisabled={pending} onClick={() => onMarkRead(entry.id)}>{pending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Check className="size-4" aria-hidden="true" />}{t('profile.notificationHistory.markRead')}</Button>}</div></article>
+  return <article className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={isRead ? 'text-sm font-medium' : 'text-sm font-semibold'}>{entry.kind === 'product_update' && announcementTitle ? announcementTitle : title}</span><Chip className={isRead ? 'bg-muted text-muted-foreground' : 'bg-brand/10 text-brand'}>{t(`profile.notificationHistory.readState.${isRead ? 'read' : 'unread'}`)}</Chip><Chip className={entry.delivery_state === 'accepted' || entry.delivery_state === 'available' ? 'bg-success/10 text-success' : entry.delivery_state === 'failed' ? 'bg-destructive/10 text-destructive' : 'bg-warning/10 text-warning'}>{state}</Chip></div><p className="mt-1 text-xs text-muted-foreground">{detail}</p>{serviceEvent.merchant_service_event_id && serviceEvent.merchant_service_merchant_id && serviceEvent.merchant_service_pool_id && serviceEvent.merchant_service_id ? <Link className="mt-1 inline-block text-xs text-primary hover:underline" to={`/console/merchant-pool/merchants/${serviceEvent.merchant_service_merchant_id}?pool=${serviceEvent.merchant_service_pool_id}&service=${serviceEvent.merchant_service_id}`}>{t('merchantServiceWatch.profile.notificationHistory.openService')}</Link> : null}<p className="mt-1 text-[0.6875rem] text-muted-foreground/75">{t('profile.notificationHistory.meta', { time: formatTime(entry.occurred_at), attempts: entry.delivery_attempts, id: entry.id })}</p></div><div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end"><span className="text-[0.6875rem] text-muted-foreground">{t(`profile.notificationHistory.channel.${entry.channel}`)}</span>{isRead ? <span className="text-[0.6875rem] text-muted-foreground">{t('profile.notificationHistory.readAt', { time: formatTime(entry.read_at ?? entry.occurred_at) })}</span> : <Button type="button" size="sm" variant="bordered" isDisabled={pending} onClick={() => onMarkRead(entry.id)}>{pending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Check className="size-4" aria-hidden="true" />}{t('profile.notificationHistory.markRead')}</Button>}</div></article>
 }
 
 function PreferenceRow({ id, title, description, checked, onCheckedChange }: { id: string; title: string; description: string; checked: boolean; onCheckedChange: (checked: boolean) => void }) {

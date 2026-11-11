@@ -23,6 +23,7 @@ mod invitations;
 mod merchant_pool;
 mod merchant_routes;
 mod merchant_service_policy;
+mod merchant_service_watch;
 mod model_metadata;
 mod model_prices;
 mod model_sync;
@@ -39,6 +40,7 @@ mod playground_conversations;
 mod playground_image_history;
 mod playground_shares;
 mod proxy_pools;
+mod public_service_status;
 mod redemptions;
 mod refund_webhook;
 mod refunds;
@@ -112,6 +114,8 @@ pub fn openapi_document() -> OpenApi {
     document.merge(credential_models::document());
     document.merge(upstream_usage::document());
     document.merge(merchant_service_policy::document());
+    document.merge(merchant_service_watch::document());
+    document.merge(crate::active_channel_monitor_openapi_document());
     document.merge(email_settings::document());
     document.merge(extensions::document());
     document.merge(network_settings::document());
@@ -158,6 +162,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(passkey_auth::document());
     document.merge(platform_audit::document());
     document.merge(runtime_status::document());
+    document.merge(public_service_status::document());
     document.merge(software_updates::document());
     document.merge(VersionApi::openapi());
     document.merge(oauth_login::oidc_document());
@@ -269,7 +274,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 280);
+        assert_eq!(document.paths.paths.len(), 289);
         let operation_count = document
             .paths
             .paths
@@ -291,7 +296,7 @@ mod tests {
             })
             .sum::<usize>();
         // 保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 363);
+        assert_eq!(operation_count, 375);
         assert!(
             document
                 .components
@@ -596,6 +601,7 @@ mod tests {
             "getInitialSetupStatus",
             "getRegistrationStatus",
             "getPublicSiteSettings",
+            "getPublicServiceStatus",
             "initializeAdminSetup",
             "applyAdminModelSyncPreview",
             "applyAdminModelPrices",

@@ -29,13 +29,31 @@ export const useNotifications = () => {
     const language = i18n.resolvedLanguage;
 
     return [...userEntries].sort((left, right) => right.occurred_at - left.occurred_at).map((entry) => {
+      const serviceEvent = entry as typeof entry & {
+        merchant_service_event_id?: number | null
+        merchant_service_event_kind?: string | null
+        merchant_service_name?: string | null
+        channel_monitor_target_id?: number | null
+        channel_monitor_event_kind?: string | null
+      }
       const isRead = entry.read_at !== null && entry.read_at !== undefined;
-      const title = entry.kind === "product_update"
-        ? (language?.startsWith("zh")
+      const title = serviceEvent.channel_monitor_target_id
+        ? t("profile.notificationHistory.kind.channel_monitor")
+        : serviceEvent.merchant_service_event_id
+        ? t("merchantServiceWatch.profile.notificationHistory.kind.merchant_service_update")
+        : entry.kind === "product_update"
+          ? (language?.startsWith("zh")
           ? entry.announcement_title_zh ?? entry.announcement_title_en
           : entry.announcement_title_en ?? entry.announcement_title_zh) ?? t("profile.notificationHistory.kind.product_update")
         : t(`profile.notificationHistory.kind.${entry.kind}`);
-      const description = entry.kind === "balance_alert"
+      const description = serviceEvent.channel_monitor_target_id
+        ? t(`profile.notificationHistory.channelMonitorEvent.${serviceEvent.channel_monitor_event_kind}`, { target: serviceEvent.channel_monitor_target_id })
+        : serviceEvent.merchant_service_event_id
+        ? t(`merchantServiceWatch.profile.notificationHistory.merchantServiceEvent.${serviceEvent.merchant_service_event_kind}`, {
+          service: serviceEvent.merchant_service_name ?? t("merchantServiceWatch.profile.notificationHistory.unknownService"),
+          defaultValue: t("merchantServiceWatch.profile.notificationHistory.merchantServiceDetail", { service: serviceEvent.merchant_service_name ?? t("merchantServiceWatch.profile.notificationHistory.unknownService") }),
+        })
+        : entry.kind === "balance_alert"
         ? t("profile.notificationHistory.balanceDetail", {
           observed: entry.observed_quota ?? "--",
           threshold: entry.threshold_quota ?? "--",
@@ -56,7 +74,7 @@ export const useNotifications = () => {
         title,
         description,
         time: formatTime(entry.occurred_at, language),
-        type: (entry.kind === "product_update" ? "system" : "default") as NotificationItem["type"],
+        type: (entry.kind === "product_update" || entry.kind === "channel_monitor" ? "system" : "default") as NotificationItem["type"],
         isRead,
       };
     });
