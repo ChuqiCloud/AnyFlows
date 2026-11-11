@@ -132,6 +132,10 @@ impl IntoResponse for MerchantHttpError {
             MerchantPoolError::InvalidInput => {
                 (StatusCode::BAD_REQUEST, "merchant_pool_invalid_request")
             }
+            MerchantPoolError::ModelPriceUnavailable => (
+                StatusCode::BAD_REQUEST,
+                "merchant_pool_model_price_unavailable",
+            ),
             MerchantPoolError::Forbidden => (StatusCode::FORBIDDEN, "merchant_pool_forbidden"),
             MerchantPoolError::NotFound => (StatusCode::NOT_FOUND, "merchant_pool_not_found"),
             MerchantPoolError::Conflict => (StatusCode::CONFLICT, "merchant_pool_conflict"),
@@ -473,6 +477,24 @@ async fn write_terms(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn merchant_model_price_unavailable_is_a_distinct_bad_request() {
+        let response = MerchantHttpError(MerchantPoolError::ModelPriceUnavailable).into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.headers()[http::header::CACHE_CONTROL], "no-store");
+        let bytes = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            body,
+            serde_json::json!({"error": {
+                "code": "merchant_pool_model_price_unavailable",
+                "message": "merchant model pricing is unavailable"
+            }}),
+        );
+    }
 
     #[tokio::test]
     async fn merchant_deletion_in_use_is_a_distinct_conflict() {

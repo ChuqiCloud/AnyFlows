@@ -188,11 +188,7 @@ impl MerchantPoolRepository {
             let pool=deletion::lock_live_pool(&txn,write.pool_id).await?;
             if !pool.enabled { return Err(MerchantPoolError::InvalidInput); }
             validate_ratios(&pool,write.default_ratio_micros,&write.models)?;
-            for model in &write.models {
-                if super::catalog::model_price(&txn,&model.model,model.ratio_micros.unwrap_or(write.default_ratio_micros)).await?.is_none() {
-                    return Err(MerchantPoolError::InvalidInput);
-                }
-            }
+            // Draft supply may introduce new models; pricing is required only before approval.
             let now=DatabaseTimestamp::now_utc();
             let service=if let Some(id)=id {
                 let service=lock_service(&txn,id).await?;
@@ -482,7 +478,7 @@ impl MerchantPoolRepository {
                 .await?
                 .is_none()
                 {
-                    return Err(MerchantPoolError::InvalidInput);
+                    return Err(MerchantPoolError::ModelPriceUnavailable);
                 }
             }
             let channel = channels::Entity::find_by_id(revision.channel_id)
@@ -589,7 +585,7 @@ impl MerchantPoolRepository {
                 let (models,default_ratio)=super::policies::effective_price_terms(&txn,&revision).await?;
                 validate_ratios(&pool,default_ratio,&models)?;
                 for model in &models {
-                    if super::catalog::model_price(&txn,&model.model,model.ratio_micros.unwrap_or(default_ratio)).await?.is_none() { return Err(MerchantPoolError::InvalidInput); }
+                    if super::catalog::model_price(&txn,&model.model,model.ratio_micros.unwrap_or(default_ratio)).await?.is_none() { return Err(MerchantPoolError::ModelPriceUnavailable); }
                 }
                 let routing=ValidatedChannelRouting::new(models.into_iter().map(|m|m.model).collect(),vec![GroupId::new(pool.group_id).map_err(internal)?]).map_err(internal)?;
                 let channel=ChannelId::new(revision.channel_id).map_err(internal)?;

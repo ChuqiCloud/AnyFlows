@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
+import { merchantPoolErrorCode } from './merchant-pool-error'
 import { useMerchantAction, useMerchantPools, useMerchantProfiles, useMerchantServices, useMerchantWithdrawals } from './merchant-pool-api'
 import { MerchantAdminReview, type MerchantReviewTarget } from './merchant-admin-review'
 import { MerchantAdminDelete, type MerchantDeleteTarget } from './merchant-admin-delete'
@@ -52,7 +53,7 @@ export function MerchantAdminPage() {
       <div role="group" aria-label={t('merchantPool.adminTitle')} className="flex flex-wrap gap-1">{(['pools', 'merchants', 'services', 'withdrawals', 'payouts', 'payoutSettings'] as const).map((value) => <Button key={value} size="sm" variant={panel === value ? 'flat' : 'light'} onPress={() => { setPanel(value); setPage(0); setStatus(''); setWithdrawalCursor(undefined); setWithdrawalPrevious([]) }}>{t(`merchantPool.adminTabs.${value}`)}</Button>)}</div>
       {['merchants', 'services', 'withdrawals'].includes(panel) ? <div className="w-40"><PoolSelect label={t('merchantPool.statusLabel')} value={status} onChange={(value) => { setStatus(value); setPage(0); setWithdrawalCursor(undefined); setWithdrawalPrevious([]) }} options={(panel === 'merchants' ? ['pending', 'approved', 'rejected', 'suspended'] : panel === 'services' ? ['draft', 'pending', 'published', 'paused', 'suspended', 'rejected'] : ['pending', 'paid', 'rejected']).map((value) => ({ value, label: t(`merchantPool.status.${value}`) }))} /></div> : null}
     </div>
-    {restore.isError ? <PoolError message={t('merchantPool.saveError')} /> : null}
+    {restore.isError ? <PoolError message={t(merchantPoolErrorCode(restore.error) === 'merchant_pool_model_price_unavailable' ? 'merchantPool.reviewPriceUnavailable' : 'merchantPool.saveError')} /> : null}
     {panel === 'payoutSettings' ? <MerchantPayoutSettingsPanel /> : panel === 'payouts' ? <MerchantPayoutsPanel admin /> : query.isPending ? <PoolLoading /> : query.isError ? <PoolError onRetry={() => void query.refetch()} /> : <>
       {panel === 'pools' ? pools.data?.items.length ? <MerchantAdminPoolsTable pools={pools.data.items} onEdit={setPoolEditor} onDelete={(pool) => setDeleting({ kind: 'pool', item: pool })} /> : <PoolEmpty /> : null}
       {panel === 'merchants' ? merchants.data?.items.length ? <MerchantAdminProfilesTable merchants={merchants.data.items} onFinance={setFinanceMerchant} onTerms={setTermsMerchant} onReview={(merchant) => setReview({ kind: 'merchant', item: merchant })} onDelete={(merchant) => setDeleting({ kind: 'merchant', item: merchant })} /> : <PoolEmpty /> : null}
