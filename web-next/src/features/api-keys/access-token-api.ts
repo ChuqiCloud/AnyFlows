@@ -63,37 +63,51 @@ export type AccessTokenPolicy = {
   version: number
 }
 
+export type AccessTokenIdentity = { userId: number; role: string }
+
 export const accessTokensQueryKey = ['user-access-tokens'] as const
 export const accessTokenCatalogQueryKey = ['user-access-token-catalog'] as const
 export const accessTokenPolicyQueryKey = ['admin-access-token-policy'] as const
 const security = [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }] as const
 
+function identityKey(identity: AccessTokenIdentity | undefined) {
+  return [identity?.userId ?? null, identity?.role ?? null] as const
+}
+
 async function get<T>(url: string, signal?: AbortSignal, query?: Record<string, unknown>): Promise<T> {
   return (await apiClient.get<{ 200: T }, unknown, true>({ url, security, signal, query, throwOnError: true })).data
 }
 
-export function useAccessTokens(limit = 50) {
+export function useAccessTokens(identity: AccessTokenIdentity | undefined, limit = 50) {
   return useInfiniteQuery({
-    queryKey: [...accessTokensQueryKey, limit],
+    queryKey: [...accessTokensQueryKey, ...identityKey(identity), limit],
+    enabled: identity !== undefined,
     initialPageParam: undefined as number | undefined,
-    queryFn: ({ signal, pageParam }) => get<AccessTokenPage>('/api/account/access-tokens', signal, { after: pageParam, limit }),
+    queryFn: ({ signal, pageParam }) => identity
+      ? get<AccessTokenPage>('/api/account/access-tokens', signal, { after: pageParam, limit })
+      : Promise.reject(new Error('An authenticated account is required')),
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   })
 }
 
-export function useAccessTokenCatalog() {
+export function useAccessTokenCatalog(identity: AccessTokenIdentity | undefined) {
   return useQuery({
-    queryKey: accessTokenCatalogQueryKey,
-    queryFn: ({ signal }) => get<AccessTokenCatalog>('/api/account/access-tokens/scopes', signal),
+    queryKey: [...accessTokenCatalogQueryKey, ...identityKey(identity)],
+    enabled: identity !== undefined,
+    queryFn: ({ signal }) => identity
+      ? get<AccessTokenCatalog>('/api/account/access-tokens/scopes', signal)
+      : Promise.reject(new Error('An authenticated account is required')),
     staleTime: 60_000,
   })
 }
 
-export function useAccessTokenPolicy(enabled: boolean) {
+export function useAccessTokenPolicy(identity: AccessTokenIdentity | undefined) {
   return useQuery({
-    queryKey: accessTokenPolicyQueryKey,
-    queryFn: ({ signal }) => get<AccessTokenPolicy>('/api/admin/access-tokens/policy', signal),
-    enabled,
+    queryKey: [...accessTokenPolicyQueryKey, ...identityKey(identity)],
+    queryFn: ({ signal }) => identity?.role === 'admin'
+      ? get<AccessTokenPolicy>('/api/admin/access-tokens/policy', signal)
+      : Promise.reject(new Error('An administrator session is required')),
+    enabled: identity?.role === 'admin',
   })
 }
 
@@ -136,13 +150,20 @@ export function useRevokeOwnAccessTokens() {
   })
 }
 
-export function useUpdateAccessTokenPolicy() {
+export function useUpdateAccessTokenPolicy(identity: AccessTokenIdentity | undefined) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ body, version }: { body: Omit<AccessTokenPolicy, 'version'>; version: number }) => (await apiClient.put<
-      { 200: AccessTokenPolicy }, unknown, true
-    >({ url: '/api/admin/access-tokens/policy', body: { ...body, version }, security, headers: { 'Content-Type': 'application/json' }, throwOnError: true })).data,
-    onSuccess: (policy) => queryClient.setQueryData(accessTokenPolicyQueryKey, policy),
+    onMutate: () => identity ? [...accessTokenPolicyQueryKey, ...identityKey(identity)] : undefined,
+    mutationFn: async ({ body, version }: { body: Omit<AccessTokenPolicy, 'version'>; version: number }) => {
+      if (identity?.role !== 'admin') throw new Error('An administrator session is required')
+      return (await apiClient.put<{ 200: AccessTokenPolicy }, unknown, true>({
+        url: '/api/admin/access-tokens/policy', body: { ...body, version }, security,
+        headers: { 'Content-Type': 'application/json' }, throwOnError: true,
+      })).data
+    },
+    onSuccess: (policy, _variables, cacheKey) => {
+      if (cacheKey) queryClient.setQueryData(cacheKey, policy)
+    },
   })
 }
 

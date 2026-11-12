@@ -10,7 +10,7 @@ import {
   useAccessTokenCatalog, useAccessTokenPolicy, useAccessTokens, useCreateAccessToken,
   useRevokeAccessToken, useRevokeAllUserAccessTokens, useUpdateAccessToken,
   useUpdateAccessTokenPolicy, useRevokeOwnAccessTokens, type AccessToken, type AccessTokenScope,
-  type AccessTokenWrite, requestAccessTokenProof,
+  type AccessTokenIdentity, type AccessTokenWrite, requestAccessTokenProof,
 } from './access-token-api'
 import { clearPendingDraft, loadPendingDraft, timestamp, type AccessTokenDraft } from './access-token-model'
 import { AccessTokenEditor } from './access-token-editor'
@@ -20,15 +20,19 @@ import { IssuedAccessTokenDialog, RevokeAccessTokenDialog, RevokeAllAccessTokens
 export function AccessTokenPage() {
   const { i18n, t } = useTranslation()
   const session = useManagementSession(true)
-  const isAdmin = session.data?.user.role === 'admin'
-  const tokensQuery = useAccessTokens()
-  const catalogQuery = useAccessTokenCatalog()
-  const policyQuery = useAccessTokenPolicy(isAdmin)
+  const identity: AccessTokenIdentity | undefined = session.data?.user ? {
+    userId: session.data.user.id,
+    role: session.data.user.role,
+  } : undefined
+  const isAdmin = identity?.role === 'admin'
+  const tokensQuery = useAccessTokens(identity)
+  const catalogQuery = useAccessTokenCatalog(identity)
+  const policyQuery = useAccessTokenPolicy(identity)
   const createMutation = useCreateAccessToken()
   const updateMutation = useUpdateAccessToken()
   const revokeMutation = useRevokeAccessToken()
   const revokeOwnMutation = useRevokeOwnAccessTokens()
-  const updatePolicy = useUpdateAccessTokenPolicy()
+  const updatePolicy = useUpdateAccessTokenPolicy(identity)
   const revokeAll = useRevokeAllUserAccessTokens()
   const [editor, setEditor] = useState<AccessToken | 'create'>()
   const [revoking, setRevoking] = useState<AccessToken>()

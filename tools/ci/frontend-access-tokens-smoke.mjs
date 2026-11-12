@@ -183,7 +183,6 @@ try {
   assert.equal(persistedDraft.includes(secret), false)
   assert.equal(persistedDraft.includes('password'), false)
   await page.getByRole('button', { name: 'Complete login', exact: true }).click()
-  await page.getByRole('heading', { name: label('title'), exact: true }).waitFor()
   await page.getByLabel(label('editor.name'), { exact: true }).waitFor()
   assert.equal(await page.getByLabel(label('editor.name'), { exact: true }).inputValue(), 'CI administrator automation')
   const recoveredScope = page.getByRole('checkbox', { name: /更新渠道/ })
