@@ -45,42 +45,67 @@ mod tests {
     #[test]
     fn proxy_pool_contract_registers_admin_operations_and_hides_import_secrets() {
         let document = serde_json::to_value(super::super::openapi_document()).unwrap();
-        for (path, method, operation_id) in [
-            ("/api/admin/proxy-pools", "get", "listAdminProxyPools"),
+        for (path, method, operation_id, scope) in [
+            (
+                "/api/admin/proxy-pools",
+                "get",
+                "listAdminProxyPools",
+                "admin:list_admin_proxy_pools:execute",
+            ),
             (
                 "/api/admin/proxy-pool-cleanup",
                 "post",
                 "cleanupAdminProxyItems",
+                "admin:cleanup_admin_proxy_items:execute",
             ),
-            ("/api/admin/proxy-pools", "post", "createAdminProxyPool"),
-            ("/api/admin/proxy-pools/{id}", "put", "updateAdminProxyPool"),
+            (
+                "/api/admin/proxy-pools",
+                "post",
+                "createAdminProxyPool",
+                "admin:create_admin_proxy_pool:execute",
+            ),
+            (
+                "/api/admin/proxy-pools/{id}",
+                "put",
+                "updateAdminProxyPool",
+                "admin:update_admin_proxy_pool:execute",
+            ),
             (
                 "/api/admin/proxy-pools/{id}",
                 "delete",
                 "deleteAdminProxyPool",
+                "admin:delete_admin_proxy_pool:execute",
             ),
             (
                 "/api/admin/proxy-pools/{id}/refresh",
                 "post",
                 "refreshAdminProxyPool",
+                "admin:refresh_admin_proxy_pool:execute",
             ),
             (
                 "/api/admin/proxy-pools/{id}/check",
                 "post",
                 "checkAdminProxyPool",
+                "admin:check_admin_proxy_pool:execute",
             ),
             (
                 "/api/admin/proxy-pool-bindings",
                 "put",
                 "bindAdminProxyPool",
+                "admin:bind_admin_proxy_pool:execute",
             ),
         ] {
             let operation = &document["paths"][path][method];
             assert_eq!(operation["operationId"], operation_id);
             assert_eq!(
                 operation["security"],
-                serde_json::json!([{"bearerAuth": []}])
+                serde_json::json!([{"bearerAuth": []}, {"personalAccessTokenBearer": []}])
             );
+            assert_eq!(
+                operation["x-anyflows-pat-scopes"],
+                serde_json::json!([scope])
+            );
+            assert!(operation.get("x-anyflows-pat-session-only").is_none());
             assert!(operation["responses"].get("401").is_some());
             assert!(operation["responses"].get("403").is_some());
         }

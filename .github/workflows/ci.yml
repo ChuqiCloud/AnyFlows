@@ -723,6 +723,13 @@ jobs:
         if: needs.changes.outputs.full != 'true'
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
+      - name: Run focused migration and API contract regressions
+        if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
+        run: |
+          set -euo pipefail
+          cargo test --locked -p af-db --lib channel_monitor_tests
+          cargo test --locked -p af-http --lib openapi::proxy_pools::tests
+
       - name: Run focused upstream credential capability tests
         if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
         run: |
