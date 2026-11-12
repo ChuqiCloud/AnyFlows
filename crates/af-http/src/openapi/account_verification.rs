@@ -63,6 +63,23 @@ fn get_account_verification_eligibility() {}
     responses((status=200, body=AccountVerificationResponse), (status=400,body=ManagementErrorBody),(status=401,body=ManagementErrorBody),(status=403,body=ManagementErrorBody),(status=404,body=ManagementErrorBody),(status=409,body=ManagementErrorBody),(status=503,body=ManagementErrorBody)),
     security(("bearerAuth"=[])))]
 fn decide_account_verification() {}
+#[utoipa::path(
+    get,
+    path = "/api/account/verifications/alipay/callback",
+    operation_id = "completeAlipayVerificationCallback",
+    tag = "账号认证",
+    summary = "处理支付宝账号认证回调",
+    description = "由支付宝浏览器重定向调用；使用一次性高熵 state 绑定待处理认证，不接受登录会话或 PAT。",
+    params(
+        ("auth_code" = Option<String>, Query, description = "支付宝授权码别名"),
+        ("code" = Option<String>, Query, description = "支付宝授权码"),
+        ("state" = Option<String>, Query, description = "一次性授权状态"),
+        ("error" = Option<String>, Query, description = "授权错误")
+    ),
+    responses((status = 200, description = "返回授权结果页面", content_type = "text/html", body = String)),
+    security(())
+)]
+fn complete_alipay_verification_callback() {}
 #[derive(OpenApi)]
 #[openapi(paths(
     list_account_verifications,
@@ -74,7 +91,8 @@ fn decide_account_verification() {}
     download_admin_account_verification_material,
     submit_account_verification,
     get_account_verification_eligibility,
-    decide_account_verification
+    decide_account_verification,
+    complete_alipay_verification_callback
 ))]
 struct AccountVerificationApi;
 pub(super) fn document() -> utoipa::openapi::OpenApi {

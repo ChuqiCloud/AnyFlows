@@ -11,8 +11,8 @@ export const apiKeysRoutes: AppRouteObject[] = [
   {
     path: "/console/api-keys",
     element: lazyRoute(
-      () => import("@/features/api-keys/api-key-page"),
-      "ApiKeyPage",
+      () => import("@/features/api-keys/access-credentials-page"),
+      "AccessCredentialsPage",
     ),
     meta: routeMeta("/console/api-keys"),
   },

@@ -8,6 +8,9 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub operator_user_id: i64,
+    #[sea_orm(column_type = "String(StringLen::N(32))", nullable)]
+    pub actor_credential_kind: Option<String>,
+    pub actor_credential_id: Option<i64>,
     #[sea_orm(column_type = "String(StringLen::N(96))")]
     pub permission_code: String,
     #[sea_orm(column_type = "String(StringLen::N(128))")]

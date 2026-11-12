@@ -41,7 +41,8 @@ test('认证接口契约要求管理会话，生成客户端包含新操作', as
   ]) {
     assert.ok(document.paths[path], path)
     for (const operation of Object.values(document.paths[path])) {
-      assert.deepEqual(operation.security, [{ bearerAuth: [] }], path)
+      assert.ok(operation.security.some((requirement) => 'bearerAuth' in requirement), path)
+      assert.ok(operation.security.some((requirement) => 'personalAccessTokenBearer' in requirement), path)
       assert.match(sdk, new RegExp(`export const ${operation.operationId}\\b`))
     }
   }

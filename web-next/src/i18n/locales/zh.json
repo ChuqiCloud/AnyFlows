@@ -91,12 +91,17 @@
     "auth": {
       "none": "公开",
       "session": "登录会话",
+      "sessionOrPat": "登录会话或系统令牌",
+      "credential": "调用凭据",
+      "pat": "系统 API Token",
+      "scopes": "所需权限",
+      "sessionRequired": "此接口需要交互登录会话，不能使用系统令牌。",
       "apiKey": "API Key",
       "special": "专用凭据"
     },
     "debug": {
       "title": "在线调试",
-      "subtitle": "请求使用当前页面会话或你输入的 API Key；敏感凭据不会保存。",
+      "subtitle": "请求使用当前会话或你输入的模型 Key、系统令牌；敏感凭据仅保留在当前页面内存。",
       "send": "发送请求",
       "running": "请求中…",
       "empty": "选择支持调试的接口后查看响应",
@@ -174,7 +179,8 @@
     "playground": "模型体验",
     "videoTasks": "视频任务",
     "imagePlaza": "生图广场",
-    "apiKeys": "我的 API Key",
+    "apiKeys": "访问凭据",
+    "accessCredentials": "访问凭据",
     "userRoutes": "我的智能路由",
     "merchantPool": "商户共享池",
     "merchantWorkspace": "商户工作台",

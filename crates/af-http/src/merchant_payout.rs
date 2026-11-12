@@ -244,11 +244,21 @@ async fn admin_payouts(
 async fn enqueue(
     State(service): State<Arc<DatabaseMerchantPayoutService>>,
     Extension(auth): Extension<SessionAuthentication>,
+    access: Option<Extension<af_admin::PersonalAccessTokenAuthentication>>,
+    request_id: Option<Extension<af_telemetry::RequestId>>,
     Path(id): Path<i64>,
 ) -> Result<Response, FinanceHttpError> {
+    let request_id = request_id
+        .map(|Extension(value)| value.as_str().to_owned())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
     Ok(no_store_json(
         service
-            .enqueue(auth.principal(), id)
+            .enqueue(
+                auth.principal(),
+                id,
+                access.as_ref().map(|Extension(value)| value.token_id()),
+                &request_id,
+            )
             .await
             .map_err(FinanceHttpError)?,
     ))

@@ -264,11 +264,19 @@ async fn owned_service(
 async fn create_service(
     State(s): State<MerchantHttpState>,
     Extension(auth): Extension<SessionAuthentication>,
+    token: Option<Extension<af_admin::PersonalAccessTokenAuthentication>>,
     request: Result<Json<MerchantServiceWrite>, JsonRejection>,
 ) -> Result<Response, MerchantHttpError> {
+    let request = body(request)?;
+    if request.api_key.is_some() && !can_write_merchant_secret(token.as_ref()) {
+        return Ok(crate::access_token_error::insufficient_scope(&[
+            "merchant:write".to_owned(),
+            "merchant_secrets:write".to_owned(),
+        ]));
+    }
     Ok(created(
         s.service
-            .write_service(auth.principal(), None, body(request)?)
+            .write_service(auth.principal(), None, request)
             .await?,
     ))
 }
@@ -276,13 +284,32 @@ async fn update_service(
     State(s): State<MerchantHttpState>,
     Extension(auth): Extension<SessionAuthentication>,
     Path(service): Path<i64>,
+    token: Option<Extension<af_admin::PersonalAccessTokenAuthentication>>,
     request: Result<Json<MerchantServiceWrite>, JsonRejection>,
 ) -> Result<Response, MerchantHttpError> {
+    let request = body(request)?;
+    if request.api_key.is_some() && !can_write_merchant_secret(token.as_ref()) {
+        return Ok(crate::access_token_error::insufficient_scope(&[
+            "merchant:write".to_owned(),
+            "merchant_secrets:write".to_owned(),
+        ]));
+    }
     Ok(no_store_json(
         s.service
-            .write_service(auth.principal(), Some(id(service)?), body(request)?)
+            .write_service(auth.principal(), Some(id(service)?), request)
             .await?,
     ))
+}
+
+fn can_write_merchant_secret(
+    token: Option<&Extension<af_admin::PersonalAccessTokenAuthentication>>,
+) -> bool {
+    token.is_none_or(|Extension(token)| {
+        token
+            .scopes()
+            .iter()
+            .any(|scope| scope == "merchant_secrets:write")
+    })
 }
 async fn submit(
     State(s): State<MerchantHttpState>,

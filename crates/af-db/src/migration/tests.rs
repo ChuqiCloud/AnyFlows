@@ -232,6 +232,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     check_async_billing_source_upgrade(&pool).await?;
     check_model_group_controls_upgrade(&pool).await?;
     check_two_factor_enrollment_schema(&pool).await?;
+    super::personal_access_token_tests::check_storage(&pool).await?;
     pool.close().await?;
     Ok(())
 }

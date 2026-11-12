@@ -7,6 +7,7 @@ import merchantPool from './merchant-pool.json'
 import keyCapabilities from './key-capabilities.json'
 import publicStatus from './public-status.json'
 import merchantServiceWatch from './merchant-service-watch.json'
+import accessTokens from './access-tokens.json'
 
 const localeKey = 'anyflows.locale'
 
@@ -24,8 +25,8 @@ void i18n.use(initReactI18next).init({
   fallbackLng: 'zh',
   lng: getInitialLanguage(),
   resources: {
-    en: { translation: { ...en, merchantPool: merchantPool.en, merchantServiceWatch: merchantServiceWatch.en, keyCapabilities: keyCapabilities.en, publicStatus: publicStatus.en.publicStatus } },
-    zh: { translation: { ...zh, merchantPool: merchantPool.zh, merchantServiceWatch: merchantServiceWatch.zh, keyCapabilities: keyCapabilities.zh, publicStatus: publicStatus.zh.publicStatus } },
+    en: { translation: { ...en, accessTokens: accessTokens.en, merchantPool: merchantPool.en, merchantServiceWatch: merchantServiceWatch.en, keyCapabilities: keyCapabilities.en, publicStatus: publicStatus.en.publicStatus } },
+    zh: { translation: { ...zh, accessTokens: accessTokens.zh, merchantPool: merchantPool.zh, merchantServiceWatch: merchantServiceWatch.zh, keyCapabilities: keyCapabilities.zh, publicStatus: publicStatus.zh.publicStatus } },
   },
   interpolation: {
     escapeValue: false,
