@@ -64,6 +64,10 @@ pub(crate) struct PlatformAuditLogResponse {
     id: i64,
     #[schema(minimum = 1)]
     operator_user_id: i64,
+    #[schema(value_type = Option<String>, required = true)]
+    actor_credential_kind: Option<String>,
+    #[schema(minimum = 1, required = true)]
+    actor_credential_id: Option<i64>,
     #[schema(min_length = 1, max_length = 64, required = true)]
     operator_username: Option<String>,
     #[schema(min_length = 1, max_length = 96)]
@@ -157,6 +161,8 @@ impl PlatformAuditLogResponse {
         Ok(Self {
             id: log.id(),
             operator_user_id: log.operator_user_id().get(),
+            actor_credential_kind: log.actor_credential_kind().map(str::to_owned),
+            actor_credential_id: log.actor_credential_id(),
             operator_username: log.operator_username().map(str::to_owned),
             permission_code: log.permission_code().to_owned(),
             route: log.route().to_owned(),

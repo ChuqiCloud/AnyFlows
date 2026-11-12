@@ -10,6 +10,39 @@ use thiserror::Error;
 
 use crate::{SessionPrincipal, SessionRole};
 
+tokio::task_local! {
+    static PLATFORM_AUDIT_CREDENTIAL: PlatformAuditCredential;
+}
+
+/// Authentication source retained for audit attribution without storing a secret.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PlatformAuditCredential {
+    kind: &'static str,
+    id: i64,
+}
+
+impl PlatformAuditCredential {
+    /// Bind an already authenticated personal access token identity.
+    pub fn personal_access_token(id: i64) -> Result<Self, PlatformAuditError> {
+        if id <= 0 {
+            return Err(PlatformAuditError::InvalidInput);
+        }
+        Ok(Self {
+            kind: "personal_access_token",
+            id,
+        })
+    }
+}
+
+/// Keep the authentication source scoped to one request across await points.
+/// Spawned tasks must persist or explicitly propagate their own actor context.
+pub async fn with_platform_audit_credential<F: Future>(
+    credential: PlatformAuditCredential,
+    future: F,
+) -> F::Output {
+    PLATFORM_AUDIT_CREDENTIAL.scope(credential, future).await
+}
+
 /// 平台管理审计默认页大小。
 pub const DEFAULT_PLATFORM_AUDIT_PAGE_SIZE: usize = 50;
 
@@ -103,7 +136,7 @@ impl PlatformAuditEntry {
         audit_info: Option<Value>,
         request_id: &str,
     ) -> Result<Self, PlatformAuditError> {
-        let write = PlatformAuditWrite::new(
+        let mut write = PlatformAuditWrite::new(
             principal.user_id(),
             permission.code().to_owned(),
             route.to_owned(),
@@ -117,6 +150,11 @@ impl PlatformAuditEntry {
             request_id.to_owned(),
         )
         .map_err(|_| PlatformAuditError::InvalidInput)?;
+        if let Ok(credential) = PLATFORM_AUDIT_CREDENTIAL.try_with(|credential| *credential) {
+            write = write
+                .with_actor_credential(credential.kind, credential.id)
+                .map_err(|_| PlatformAuditError::InvalidInput)?;
+        }
         Ok(Self { write })
     }
 }
@@ -143,6 +181,16 @@ impl PlatformAuditLog {
     #[must_use]
     pub const fn operator_user_id(&self) -> UserId {
         self.record.operator_user_id()
+    }
+    /// Return the kind of credential used for the request, never its secret.
+    #[must_use]
+    pub fn actor_credential_kind(&self) -> Option<&str> {
+        self.record.actor_credential_kind()
+    }
+    /// Return the credential database identity for source attribution.
+    #[must_use]
+    pub const fn actor_credential_id(&self) -> Option<i64> {
+        self.record.actor_credential_id()
     }
     /// 返回管理员视图中的操作者用户名。
     #[must_use]

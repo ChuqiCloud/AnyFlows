@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { LoginPage, type LoginNotice } from "@/features/auth/login-page";
@@ -6,6 +7,7 @@ import { OAuthCallbackPage } from "@/features/auth/oauth-callback-page";
 import { ResetPasswordPage } from "@/features/auth/reset-password-page";
 import { createModuleRouteMetaResolver } from "@/shared/modules";
 import { lazyRoute, type AppRouteObject } from "@/shared/router";
+import { sanitizeReturnPath } from "@/shared/auth/kernel";
 
 import authModule from "./module";
 
@@ -20,13 +22,24 @@ function LoginRoute() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const invitation = readInvitationContext(params);
+  const returnPath = sanitizeReturnPath(params.get("from"));
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("anyflows.auth.login-return-path", returnPath);
+    } catch {
+      // Browser privacy settings can disable storage; password and passkey login still work.
+    }
+  }, [returnPath]);
 
   return (
     <LoginPage
       notice={notice}
       inviteCode={invitation.kind === "valid" ? invitation.code : undefined}
       invitationInvalid={invitation.kind === "invalid"}
-      onAuthenticated={() => navigate("/console", { replace: true })}
+      onAuthenticated={() => {
+        try { sessionStorage.removeItem("anyflows.auth.login-return-path"); } catch { /* Storage is optional. */ }
+        navigate(returnPath, { replace: true });
+      }}
     />
   );
 }
@@ -50,7 +63,16 @@ function OAuthCallbackRoute() {
 
   return (
     <OAuthCallbackPage
-      onAuthenticated={() => navigate("/console", { replace: true })}
+      onAuthenticated={() => {
+        let returnPath: string | null = null;
+        try {
+          returnPath = sessionStorage.getItem("anyflows.auth.login-return-path");
+          sessionStorage.removeItem("anyflows.auth.login-return-path");
+        } catch {
+          // Fall back to the default console route.
+        }
+        navigate(sanitizeReturnPath(returnPath), { replace: true });
+      }}
     />
   );
 }

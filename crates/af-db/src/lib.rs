@@ -102,7 +102,8 @@ mod billing_contract;
 mod merchant_payout;
 pub use merchant_payout::{
     MerchantPayout, MerchantPayoutAccount, MerchantPayoutClaim, MerchantPayoutConfig,
-    MerchantPayoutRepository, MerchantPayoutSettings, decode_payout_secret, encode_payout_secret,
+    MerchantPayoutInitiator, MerchantPayoutRepository, MerchantPayoutSettings,
+    decode_payout_secret, encode_payout_secret,
 };
 mod merchant_finance;
 pub use billing_contract::{BillingContractPriceSnapshotError, OrganizationContractPriceSnapshot};
@@ -229,6 +230,7 @@ mod password_reset;
 mod payment_settings;
 #[cfg(test)]
 mod payment_settings_tests;
+mod personal_access_token;
 mod platform_audit;
 mod playground_conversation;
 #[cfg(test)]
@@ -280,6 +282,19 @@ mod usage_log_tests;
 mod user_profile;
 mod user_route;
 mod user_session;
+pub use personal_access_token::{
+    MAX_PERSONAL_ACCESS_TOKEN_IPS, MAX_PERSONAL_ACCESS_TOKEN_NAME_BYTES,
+    MAX_PERSONAL_ACCESS_TOKEN_PAGE_SIZE, MAX_PERSONAL_ACCESS_TOKEN_SCOPES,
+    MAX_PERSONAL_ACCESS_TOKENS_PER_USER, PersonalAccessTokenAccessAuditRecord,
+    PersonalAccessTokenAuditCleanupResult, PersonalAccessTokenAuditIdentity,
+    PersonalAccessTokenCreateRecord, PersonalAccessTokenLookup, PersonalAccessTokenMutationContext,
+    PersonalAccessTokenPageRecord, PersonalAccessTokenPolicyRecord,
+    PersonalAccessTokenPolicyUpdateRecord, PersonalAccessTokenProofClaim,
+    PersonalAccessTokenProofRecord, PersonalAccessTokenRecord, PersonalAccessTokenRejectionReason,
+    PersonalAccessTokenRepository, PersonalAccessTokenRepositoryConfigError,
+    PersonalAccessTokenRepositoryError, PersonalAccessTokenUpdateRecord,
+    personal_access_token_payload_digest,
+};
 #[cfg(test)]
 mod user_session_tests;
 mod user_token;

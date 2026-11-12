@@ -49,6 +49,8 @@ impl PlatformAuditOutcome {
 /// 已校验的平台管理审计写入事实。
 pub struct PlatformAuditWrite {
     operator_user_id: UserId,
+    actor_credential_kind: Option<String>,
+    actor_credential_id: Option<i64>,
     permission_code: String,
     route: String,
     operation: String,
@@ -94,6 +96,8 @@ impl PlatformAuditWrite {
         validate_text(&request_id, 128)?;
         Ok(Self {
             operator_user_id,
+            actor_credential_kind: None,
+            actor_credential_id: None,
             permission_code,
             route,
             operation,
@@ -105,6 +109,20 @@ impl PlatformAuditWrite {
             audit_info,
             request_id,
         })
+    }
+
+    /// Add the non-secret credential identity responsible for an API operation.
+    pub fn with_actor_credential(
+        mut self,
+        kind: &str,
+        id: i64,
+    ) -> Result<Self, PlatformAuditWriteError> {
+        if kind != "personal_access_token" || id <= 0 {
+            return Err(PlatformAuditWriteError::InvalidText);
+        }
+        self.actor_credential_kind = Some(kind.to_owned());
+        self.actor_credential_id = Some(id);
+        Ok(self)
     }
 }
 
@@ -157,6 +175,8 @@ impl PlatformAuditQuery {
 pub struct PlatformAuditRecord {
     id: i64,
     operator_user_id: UserId,
+    actor_credential_kind: Option<String>,
+    actor_credential_id: Option<i64>,
     operator_username: String,
     permission_code: String,
     route: String,
@@ -172,6 +192,14 @@ pub struct PlatformAuditRecord {
 }
 
 impl PlatformAuditRecord {
+    #[must_use]
+    pub fn actor_credential_kind(&self) -> Option<&str> {
+        self.actor_credential_kind.as_deref()
+    }
+    #[must_use]
+    pub const fn actor_credential_id(&self) -> Option<i64> {
+        self.actor_credential_id
+    }
     /// 返回审计主键。
     #[must_use]
     pub const fn id(&self) -> i64 {
@@ -341,6 +369,8 @@ impl PlatformAuditRepository {
     ) -> Result<PlatformAuditWriteOutcome, PlatformAuditRepositoryError> {
         let model = platform_audit_logs::ActiveModel {
             operator_user_id: Set(write.operator_user_id.get()),
+            actor_credential_kind: Set(write.actor_credential_kind.clone()),
+            actor_credential_id: Set(write.actor_credential_id),
             permission_code: Set(write.permission_code.clone()),
             route: Set(write.route.clone()),
             operation: Set(write.operation.clone()),
@@ -433,6 +463,13 @@ fn joined_record(
         || model.operator_user_id <= 0
         || operator.id != model.operator_user_id
         || operator.username.is_empty()
+        || !matches!(
+            (
+                model.actor_credential_kind.as_deref(),
+                model.actor_credential_id
+            ),
+            (None, None) | (Some("personal_access_token"), Some(1..))
+        )
         || !valid_code(&model.permission_code, 96)
         || !valid_text(&model.route, 128)
         || !valid_code(&model.operation, 96)
@@ -452,6 +489,8 @@ fn joined_record(
         id: model.id,
         operator_user_id: UserId::new(model.operator_user_id)
             .map_err(|_| internal_error(PlatformAuditRepositoryError::Invariant))?,
+        actor_credential_kind: model.actor_credential_kind,
+        actor_credential_id: model.actor_credential_id,
         operator_username: operator.username,
         permission_code: model.permission_code,
         route: model.route,
@@ -469,6 +508,8 @@ fn joined_record(
 
 fn matches_write(model: &platform_audit_logs::Model, write: &PlatformAuditWrite) -> bool {
     model.operator_user_id == write.operator_user_id.get()
+        && model.actor_credential_kind == write.actor_credential_kind
+        && model.actor_credential_id == write.actor_credential_id
         && model.permission_code == write.permission_code
         && model.route == write.route
         && model.operation == write.operation

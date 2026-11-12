@@ -8,7 +8,10 @@ export type ApiExplorerOperation = {
   tag: string
   summary: string
   description?: string
-  auth_mode: 'none' | 'session' | 'api_key' | 'special'
+  auth_mode: 'none' | 'session' | 'access_token' | 'api_key' | 'special'
+  supports_access_token?: boolean
+  required_scopes?: string[]
+  interactive_session_required?: boolean
   access_scope: 'public' | 'gateway' | 'session' | 'organization' | 'admin'
   debuggable: boolean
 }
@@ -59,7 +62,7 @@ export async function fetchApiExplorerDetail(operationId: string, signal?: Abort
   return readJson<ApiExplorerDetail>(response)
 }
 
-export async function runApiExplorerOperation(operation: ApiExplorerOperation, input: { pathParams: Record<string, string>; queryParams: Record<string, string>; body?: string; apiKey?: string; signal?: AbortSignal }) {
+export async function runApiExplorerOperation(operation: ApiExplorerOperation, input: { pathParams: Record<string, string>; queryParams: Record<string, string>; body?: string; apiKey?: string; accessToken?: string; useAccessToken?: boolean; signal?: AbortSignal }) {
   if (!operation.debuggable) throw new Error('This operation is documentation-only')
   const path = operation.path.replace(/\{([^}]+)\}/g, (_, name: string) => {
     const value = input.pathParams[name]?.trim()
@@ -68,14 +71,20 @@ export async function runApiExplorerOperation(operation: ApiExplorerOperation, i
   })
   const url = new URL(apiUrl(path), window.location.origin)
   Object.entries(input.queryParams).forEach(([key, value]) => { if (value.trim()) url.searchParams.set(key, value.trim()) })
-  const requestHeaders: Record<string, string> = operation.auth_mode === 'api_key'
+  const useAccessToken = operation.auth_mode === 'access_token' || (operation.auth_mode === 'session' && input.useAccessToken === true)
+  if (useAccessToken && (!operation.supports_access_token || !input.accessToken?.trim())) {
+    throw new Error('A personal access token with the required scopes is needed')
+  }
+  const requestHeaders: Record<string, string> = useAccessToken
+    ? { Authorization: `Bearer ${input.accessToken!.trim()}` }
+    : operation.auth_mode === 'api_key'
     ? input.apiKey?.trim() ? { 'x-api-key': input.apiKey.trim() } : (() => { throw new Error('API key is required') })()
     : operation.auth_mode === 'session' ? headers() : {}
   const body = input.body?.trim()
   if (body) requestHeaders['Content-Type'] = 'application/json'
   const started = performance.now()
-  const response = await fetch(url, { method: operation.method, headers: requestHeaders, body: operation.method === 'GET' || operation.method === 'HEAD' ? undefined : body, credentials: 'same-origin', signal: input.signal })
-  if (response.status === 401 && operation.auth_mode === 'session') invalidateManagementSession()
+  const response = await fetch(url, { method: operation.method, headers: requestHeaders, body: operation.method === 'GET' || operation.method === 'HEAD' ? undefined : body, credentials: useAccessToken ? 'omit' : 'same-origin', signal: input.signal })
+  if (response.status === 401 && operation.auth_mode === 'session' && !useAccessToken) invalidateManagementSession()
   const text = await response.text()
   return { status: response.status, ok: response.ok, duration_ms: Math.round(performance.now() - started), request_id: response.headers.get('x-request-id') ?? undefined, body: text.length > 512_000 ? `${text.slice(0, 512_000)}\n…` : text }
 }

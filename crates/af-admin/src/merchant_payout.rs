@@ -210,9 +210,19 @@ impl DatabaseMerchantPayoutService {
         &self,
         principal: SessionPrincipal,
         id: i64,
+        access_token_id: Option<i64>,
+        request_id: &str,
     ) -> Result<MerchantPayout, MerchantFinanceError> {
         admin(principal)?;
-        self.repository.enqueue(id, false).await
+        let initiator = af_db::MerchantPayoutInitiator::new(
+            principal.user_id().get(),
+            access_token_id,
+            request_id.to_owned(),
+            access_token_id.map(|_| "admin:submit_merchant_payout:execute".to_owned()),
+        )?;
+        self.repository
+            .enqueue_with_initiator(id, false, Some(&initiator))
+            .await
     }
     pub async fn reconcile(
         &self,
@@ -251,6 +261,9 @@ impl DatabaseMerchantPayoutService {
             let Some(claim) = self.repository.claim(&owner).await? else {
                 break;
             };
+            if claim.submit && !self.repository.authorize_first_submit(&claim).await? {
+                continue;
+            }
             let result =
                 crate::merchant_payout_gateway::execute(&self.clients, &self.cipher, &claim).await;
             self.repository
