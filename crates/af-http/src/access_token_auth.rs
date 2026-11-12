@@ -20,6 +20,15 @@ pub(crate) async fn resolve_management_client_ip(
     next.run(request).await
 }
 
+pub(crate) async fn attach_access_token_route_overlay(
+    State(overlay): State<crate::access_token_routes::AccessTokenRouteOverlay>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    request.extensions_mut().insert(overlay);
+    next.run(request).await
+}
+
 /// The original JWT is never retained in request extensions.
 #[derive(Clone, Debug)]
 pub(crate) struct InteractiveSessionEvidence {
@@ -58,23 +67,28 @@ pub(crate) async fn authenticate_personal_access_token(
     let authentication = match service.authenticate(&digest, client_ip).await {
         Ok(PersonalAccessTokenLookup::Authenticated(authentication)) => authentication,
         Ok(PersonalAccessTokenLookup::Rejected { audit, .. }) => {
+            let error = if audit.as_ref().is_some_and(|identity| identity.reason == af_admin::PersonalAccessTokenRejectionReason::PolicyDisabled) {
+                AccessTokenHttpError::Disabled
+            } else { AccessTokenHttpError::InvalidToken };
+            let response = error.into_response();
             if let Some(audit) = audit {
                 if service.record_access(PersonalAccessTokenAccessRecord {
                     user_id: Some(audit.user_id), token_id: Some(audit.token_id), request_id,
                     method, route, required_scope: None, resource_id: None,
-                    status_code: StatusCode::UNAUTHORIZED.as_u16(), allowed: false, client_ip,
+                    status_code: response.status().as_u16(), allowed: false, client_ip,
                 }).await.is_err() {
                     tracing::error!(error_kind = "personal_access_token_denial_audit_unavailable", "PAT denial audit could not be recorded");
                 }
             }
-            return AccessTokenHttpError::InvalidToken.into_response();
+            return response;
         }
         Err(error) => return AccessTokenHttpError::from(error).into_response(),
     };
     if let Err(error) = service.admit_authenticated_request(&authentication).await {
         return AccessTokenHttpError::from(error).into_response();
     }
-    let rule = access_token_routes::policy(&method, &route);
+    let overlay = request.extensions().get::<access_token_routes::AccessTokenRouteOverlay>();
+    let rule = access_token_routes::policy_with_overlay(&method, &route, overlay);
     let denial = match rule {
         Some(rule) if rule.session_only => Some(AccessTokenHttpError::InteractiveSessionRequired.into_response()),
         Some(rule) if rule.admin_only && authentication.principal().role() != SessionRole::Admin => Some(AccessTokenHttpError::Forbidden.into_response()),

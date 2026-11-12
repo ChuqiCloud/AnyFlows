@@ -50,8 +50,15 @@ async fn authenticate_present_session(
     mut request: Request,
     next: Next,
 ) -> Response {
+    // Keep legacy JWT failures stable while giving recognizable malformed PAT
+    // requests the OAuth bearer invalid_request response without echoing secrets.
+    let has_personal_access_token = request.headers().get_all(AUTHORIZATION).iter()
+        .any(|value| value.as_bytes().windows(b"af_pat_".len()).any(|part| part == b"af_pat_"));
     let token = match extract_bearer_token(&mut request) {
         Ok(token) => token,
+        Err(_) if has_personal_access_token => {
+            return crate::access_token_error::AccessTokenHttpError::InvalidRequest.into_response();
+        }
         Err(error) => return error.into_response(),
     };
     if token.as_str().starts_with("af_pat_") {
@@ -121,7 +128,7 @@ use axum::response::IntoResponse;
 #[cfg(test)]
 mod tests {
     use af_admin::{LoginCredentials, SessionAuthenticationFuture, SessionLoginFuture};
-    use axum::{Router, body::Body, middleware, routing::get};
+    use axum::{Router, body::{Body, to_bytes}, middleware, routing::get};
     use http::{HeaderValue, Request, StatusCode, header::AUTHORIZATION};
     use tower::ServiceExt;
 
@@ -206,5 +213,26 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(invalid.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn malformed_or_duplicate_pat_bearer_carriers_are_invalid_requests() {
+        let layer = middleware::from_fn_with_state(
+            ManagementAuthenticationState::new(Arc::new(RejectSessionAuthenticator)),
+            authenticate_management_session,
+        );
+        let router = Router::new().route("/", get(|| async { StatusCode::NO_CONTENT })).layer(layer);
+        let requests = [
+            Request::builder().uri("/").header(AUTHORIZATION, "Basic af_pat_secret").body(Body::empty()).unwrap(),
+            Request::builder().uri("/").header(AUTHORIZATION, "Bearer af_pat_secret")
+                .header(AUTHORIZATION, "Bearer other").body(Body::empty()).unwrap(),
+        ];
+        for request in requests {
+            let response = router.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert!(response.headers()[http::header::WWW_AUTHENTICATE].to_str().unwrap().contains("invalid_request"));
+            let body = to_bytes(response.into_body(), 1024).await.unwrap();
+            assert!(!String::from_utf8_lossy(&body).contains("af_pat_secret"));
+        }
     }
 }

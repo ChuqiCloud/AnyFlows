@@ -261,6 +261,9 @@ impl DatabaseMerchantPayoutService {
             let Some(claim) = self.repository.claim(&owner).await? else {
                 break;
             };
+            if claim.submit && !self.repository.authorize_first_submit(&claim).await? {
+                continue;
+            }
             let result =
                 crate::merchant_payout_gateway::execute(&self.clients, &self.cipher, &claim).await;
             self.repository

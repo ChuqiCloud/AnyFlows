@@ -7,7 +7,7 @@ import { endManagementSession } from '@/features/auth/session-query'
 import { navigateTo } from '@/lib/router-navigation'
 import { resolveLoginPath } from '@/shared/auth/kernel'
 import type { AccessToken, AccessTokenScope, AccessTokenWrite } from './access-token-api'
-import { accessTokenDraftKey, dateChoices, dateInputValue, errorCode, expiryTimestamp, ipEntry, needsElevation, type AccessTokenDraft } from './access-token-model'
+import { accessTokenDraftKey, accessTokenErrorKey, dateChoices, dateInputValue, errorCode, expiryTimestamp, ipEntry, needsElevation, type AccessTokenDraft } from './access-token-model'
 
 export function AccessTokenEditor({ token, ownerId, isAdmin, catalog, groupedScopes, initialDraft, isOpen, pending, error, onClose, onSubmit }: {
   token?: AccessToken
@@ -51,6 +51,12 @@ export function AccessTokenEditor({ token, ownerId, isAdmin, catalog, groupedSco
     (!scope.admin_only || isAdmin)
     && (!scopeSearch.trim() || `${scope.scope} ${scope.label} ${scope.description}`.toLowerCase().includes(scopeSearch.trim().toLowerCase())),
   )] as const).filter(([, entries]) => entries.length > 0)
+  const expiryOptions = [
+    ...(token ? [{ id: 'unchanged', label: t('accessTokens.expiryUnchanged') }] : []),
+    ...dateChoices.filter((days) => days <= (catalog?.max_expiry_days ?? 365)).map((days) => ({ id: String(days), label: t('accessTokens.expiryDays', { count: days }) })),
+    { id: 'custom', label: t('accessTokens.expiryCustom') },
+    ...(catalog?.allow_permanent ? [{ id: 'never', label: t('accessTokens.never') }] : []),
+  ]
 
   const applyPreset = (preset: { id: string; scopes: string[] }) => {
     setScopes(preset.scopes)
@@ -75,7 +81,7 @@ export function AccessTokenEditor({ token, ownerId, isAdmin, catalog, groupedSco
         setReauthRequired(true)
         setFormError('')
       } else {
-        setFormError(t(code === 'access_token_conflict' ? 'accessTokens.errors.conflict' : code === 'access_token_scope_denied' ? 'accessTokens.errors.scopeDenied' : 'accessTokens.errors.save'))
+        setFormError(t(accessTokenErrorKey(error)))
       }
     } finally {
       setSubmitting(false)
@@ -103,10 +109,7 @@ export function AccessTokenEditor({ token, ownerId, isAdmin, catalog, groupedSco
           <ModalBody className="grid gap-4">
             <div className="grid gap-1.5"><label htmlFor="access-token-name" className="text-xs font-medium">{t('accessTokens.editor.name')}</label><Input id="access-token-name" autoFocus maxLength={128} size="sm" value={name} isDisabled={isPending} onValueChange={setName} /></div>
             <div className="grid gap-1.5"><label htmlFor="access-token-expiry" className="text-xs font-medium">{t('accessTokens.editor.expiry')}</label><Select id="access-token-expiry" aria-label={t('accessTokens.editor.expiry')} selectedKeys={[String(expiryChoice)]} disallowEmptySelection isDisabled={isPending} size="sm" onSelectionChange={(keys) => { const value = String([...keys][0]); setExpiryChoice(value === 'custom' || value === 'never' || value === 'unchanged' ? value : Number(value)) }}>
-              {token ? <SelectItem key="unchanged">{t('accessTokens.expiryUnchanged')}</SelectItem> : null}
-              {dateChoices.filter((days) => days <= (catalog?.max_expiry_days ?? 365)).map((days) => <SelectItem key={String(days)}>{t('accessTokens.expiryDays', { count: days })}</SelectItem>)}
-              <SelectItem key="custom">{t('accessTokens.expiryCustom')}</SelectItem>
-              {catalog?.allow_permanent ? <SelectItem key="never">{t('accessTokens.never')}</SelectItem> : null}
+              {expiryOptions.map((option) => <SelectItem key={option.id}>{option.label}</SelectItem>)}
             </Select>{expiryChoice === 'custom' ? <Input aria-label={t('accessTokens.editor.customExpiry')} type="datetime-local" size="sm" min={dateInputValue(Math.floor(Date.now() / 1000) + 60)} value={customDate} onValueChange={setCustomDate} /> : null}</div>
             <div className="grid gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-xs font-semibold">{t('accessTokens.editor.permissions')}</h3><span className="text-[11px] text-muted-foreground">{t('accessTokens.editor.selectedCount', { count: scopes.length })}</span></div>
@@ -120,7 +123,7 @@ export function AccessTokenEditor({ token, ownerId, isAdmin, catalog, groupedSco
             {token ? <div className="flex items-center justify-between gap-3 border-t border-[var(--hairline)] pt-3"><div><p className="text-xs font-medium">{t('accessTokens.editor.enabled')}</p><p className="text-[11px] text-muted-foreground">{t('accessTokens.editor.enabledHint')}</p></div><Switch aria-label={t('accessTokens.editor.enabled')} size="sm" isDisabled={isPending} isSelected={enabled} onValueChange={setEnabled} /></div> : null}
             {reauthRequired ? <div className="grid gap-2 border-t border-[var(--hairline)] pt-3"><p role="alert" className="text-xs leading-5 text-warning">{t('accessTokens.errors.recentAuthentication')}</p><Button type="button" size="sm" variant="bordered" className="justify-self-start" onPress={reauthenticate}>{t('accessTokens.actions.reauthenticate')}</Button></div> : null}
             {formError ? <p role="alert" className="text-xs text-destructive">{formError}</p> : null}
-            {error ? <p role="alert" className="text-xs text-destructive">{t(errorCode(error) === 'access_token_scope_denied' ? 'accessTokens.errors.scopeDenied' : 'accessTokens.errors.save')}</p> : null}
+            {error && !formError && !reauthRequired ? <p role="alert" className="text-xs text-destructive">{t(accessTokenErrorKey(error))}</p> : null}
           </ModalBody>
           <ModalFooter><Button type="button" variant="light" isDisabled={isPending} onPress={onClose}>{t('accessTokens.actions.cancel')}</Button><Button type="button" color="primary" isDisabled={!valid || isPending} onPress={() => void submit()}>{isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{t(token ? 'accessTokens.actions.save' : 'accessTokens.actions.create')}</Button></ModalFooter>
         </>}

@@ -233,15 +233,31 @@ impl SessionAuthentication {
     }
 
     #[must_use]
-    pub const fn new_with_session_context(principal: SessionPrincipal, group_id: GroupId, expires_at: u64, issued_at: u64, session_version: i64) -> Self {
-        Self { principal, group_id, expires_at, issued_at, session_version }
+    pub const fn new_with_session_context(
+        principal: SessionPrincipal,
+        group_id: GroupId,
+        expires_at: u64,
+        issued_at: u64,
+        session_version: i64,
+    ) -> Self {
+        Self {
+            principal,
+            group_id,
+            expires_at,
+            issued_at,
+            session_version,
+        }
     }
 
     #[must_use]
-    pub const fn issued_at(self) -> u64 { self.issued_at }
+    pub const fn issued_at(self) -> u64 {
+        self.issued_at
+    }
 
     #[must_use]
-    pub const fn session_version(self) -> i64 { self.session_version }
+    pub const fn session_version(self) -> i64 {
+        self.session_version
+    }
 
     /// 返回请求期间使用的当前主体。
     #[must_use]
@@ -294,7 +310,9 @@ pub type SessionLoginFuture<'a> =
 /// 管理 API 登录和 JWT 回查端口。
 pub trait SessionAuthenticator: Send + Sync {
     /// Independent API credential authority; JWT-only adapters can leave it absent.
-    fn personal_access_tokens(&self) -> Option<Arc<dyn crate::PersonalAccessTokenService>> { None }
+    fn personal_access_tokens(&self) -> Option<Arc<dyn crate::PersonalAccessTokenService>> {
+        None
+    }
     /// 校验用户名密码并签发新会话。
     fn login<'a>(&'a self, credentials: &'a LoginCredentials) -> SessionLoginFuture<'a>;
 
@@ -354,7 +372,10 @@ impl DatabaseSessionAuthenticator {
     }
 
     #[must_use]
-    pub fn with_personal_access_tokens(mut self, service: Arc<dyn crate::PersonalAccessTokenService>) -> Self {
+    pub fn with_personal_access_tokens(
+        mut self,
+        service: Arc<dyn crate::PersonalAccessTokenService>,
+    ) -> Self {
         self.personal_access_tokens = Some(service);
         self
     }
@@ -458,13 +479,15 @@ impl SessionAuthenticator for DatabaseSessionAuthenticator {
                     group_id,
                     session_version,
                     ..
-                } if session_version == claims.session_version => Ok(SessionAuthentication::new_with_session_context(
-                    SessionPrincipal::new(user_id, SessionRole::from_database(role)?),
-                    group_id,
-                    claims.exp,
-                    claims.iat,
-                    claims.session_version,
-                )),
+                } if session_version == claims.session_version => {
+                    Ok(SessionAuthentication::new_with_session_context(
+                        SessionPrincipal::new(user_id, SessionRole::from_database(role)?),
+                        group_id,
+                        claims.exp,
+                        claims.iat,
+                        claims.session_version,
+                    ))
+                }
                 UserSessionLookupByIdOutcome::Authenticated { .. } => {
                     Err(SessionAuthenticationError::InvalidSession)
                 }

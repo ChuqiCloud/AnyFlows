@@ -13,7 +13,7 @@ use crate::{
     access_token_auth::InteractiveSessionEvidence,
     access_token_error::AccessTokenHttpError,
     access_tokens::{PersonalAccessTokenHttpState, PersonalAccessTokenWriteRequest,
-        find_owned_token, mutation_context, update_proof_purpose, validate_write},
+        find_owned_token, mutation_context, update_proof_purpose, validate_write_with_overlay},
     management_session::no_store_json,
 };
 
@@ -42,6 +42,7 @@ pub(crate) async fn verify(
     Extension(evidence): Extension<InteractiveSessionEvidence>,
     Extension(ip): Extension<TrustedClientIp>,
     Extension(request_id): Extension<RequestId>,
+    overlay: Option<Extension<crate::access_token_routes::AccessTokenRouteOverlay>>,
     body: Result<Json<VerifyPersonalAccessTokenRequest>, JsonRejection>,
 ) -> Result<Response, AccessTokenHttpError> {
     let request = body.map_err(|_| AccessTokenHttpError::InvalidRequest)?.0;
@@ -51,7 +52,8 @@ pub(crate) async fn verify(
     if request.payload.proof.is_some() {
         return Err(AccessTokenHttpError::InvalidRequest);
     }
-    validate_write(authentication, &request.payload)?;
+    validate_write_with_overlay(authentication, &request.payload,
+        overlay.as_ref().map(|Extension(value)| value))?;
     let service = state.service()?;
     let purpose = match request.action {
         VerificationAction::Create => {
@@ -75,6 +77,7 @@ pub(crate) async fn verify(
             update_proof_purpose(&old, &request.payload).unwrap_or("enable")
         }
     };
+    service.admit_request_ip(ip).await?;
     let issued = service.issue_step_up_proof(authentication.principal(),
         PersonalAccessTokenStepUpEvidence {
             session_version: evidence.session_version,

@@ -144,9 +144,9 @@ mod m20261112_000180_create_user_access_tokens;
 mod schema;
 
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod personal_access_token_tests;
+#[cfg(test)]
+mod tests;
 
 const DEFAULT_MIGRATION_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 

@@ -134,20 +134,25 @@ async fn list_tokens(State(state): State<PersonalAccessTokenHttpState>,
         next_cursor: page.next_cursor, capacity: page.capacity }))
 }
 
-async fn scope_catalog(Extension(authentication): Extension<SessionAuthentication>) -> Response {
+async fn scope_catalog(
+    Extension(authentication): Extension<SessionAuthentication>,
+    overlay: Option<Extension<crate::access_token_routes::AccessTokenRouteOverlay>>,
+) -> Response {
+    let overlay = overlay.as_ref().map(|Extension(overlay)| overlay);
     no_store_json(PersonalAccessTokenScopeCatalogResponse {
-        scopes: access_token_routes::scope_catalog(authentication.principal().role()),
-        presets: access_token_routes::scope_presets(authentication.principal().role()),
+        scopes: access_token_routes::scope_catalog_with_overlay(authentication.principal().role(), overlay),
+        presets: access_token_routes::scope_presets_with_overlay(authentication.principal().role(), overlay),
         default_expiry_days: 30, max_expiry_days: 365, allow_permanent: true,
     })
 }
 
 async fn create_token(State(state): State<PersonalAccessTokenHttpState>,
     Extension(authentication): Extension<SessionAuthentication>, Extension(evidence): Extension<InteractiveSessionEvidence>,
+    overlay: Option<Extension<crate::access_token_routes::AccessTokenRouteOverlay>>,
     Extension(ip): Extension<TrustedClientIp>, Extension(id): Extension<RequestId>,
     body: Result<Json<PersonalAccessTokenWriteRequest>, JsonRejection>) -> Result<Response, AccessTokenHttpError> {
     let request = body.map_err(|_| AccessTokenHttpError::InvalidRequest)?.0;
-    validate_write(authentication, &request)?;
+    validate_write_with_overlay(authentication, &request, overlay.as_ref().map(|Extension(value)| value))?;
     if request.version.is_some() || request.enabled.is_some_and(|enabled| !enabled) { return Err(AccessTokenHttpError::InvalidRequest); }
     let proof = request.proof_claim(&evidence, "create", None)?.ok_or(AccessTokenHttpError::ProofRequired)?;
     let issued = state.service()?.create(authentication.principal(), CreatePersonalAccessTokenCommand {
@@ -160,10 +165,11 @@ async fn create_token(State(state): State<PersonalAccessTokenHttpState>,
 
 async fn update_token(State(state): State<PersonalAccessTokenHttpState>, Path(token_id): Path<i64>,
     Extension(authentication): Extension<SessionAuthentication>, Extension(evidence): Extension<InteractiveSessionEvidence>,
+    overlay: Option<Extension<crate::access_token_routes::AccessTokenRouteOverlay>>,
     Extension(ip): Extension<TrustedClientIp>, Extension(id): Extension<RequestId>,
     body: Result<Json<PersonalAccessTokenWriteRequest>, JsonRejection>) -> Result<Response, AccessTokenHttpError> {
     let request = body.map_err(|_| AccessTokenHttpError::InvalidRequest)?.0;
-    validate_write(authentication, &request)?;
+    validate_write_with_overlay(authentication, &request, overlay.as_ref().map(|Extension(value)| value))?;
     let service = state.service()?;
     let old = find_owned_token(&*service, authentication.principal(), token_id).await?;
     let proof = match update_proof_purpose(&old, &request) {
@@ -179,8 +185,30 @@ async fn update_token(State(state): State<PersonalAccessTokenHttpState>, Path(to
 }
 
 pub(crate) fn validate_write(authentication: SessionAuthentication, request: &PersonalAccessTokenWriteRequest) -> Result<(), AccessTokenHttpError> {
-    if !access_token_routes::validate_scopes(authentication.principal().role(), &request.scopes) {
+    validate_write_with_overlay(authentication, request, None)
+}
+
+pub(crate) fn validate_write_with_overlay(
+    authentication: SessionAuthentication,
+    request: &PersonalAccessTokenWriteRequest,
+    overlay: Option<&crate::access_token_routes::AccessTokenRouteOverlay>,
+) -> Result<(), AccessTokenHttpError> {
+    if !access_token_routes::validate_scopes_with_overlay(authentication.principal().role(), &request.scopes, overlay) {
         return Err(AccessTokenHttpError::Forbidden);
+    }
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| AccessTokenHttpError::Unavailable)?.as_secs();
+    let now = i64::try_from(now).map_err(|_| AccessTokenHttpError::Unavailable)?;
+    if request.name.is_empty() || request.name.len() > 128 || request.name.trim() != request.name
+        || request.name.chars().any(char::is_control)
+        || request.version.is_some_and(|version| version <= 0)
+        || request.expires_at.is_some_and(|expiry| expiry < 0 || expiry > now.saturating_add(366 * 86_400)
+            || (request.version.is_none() && expiry <= now))
+        || request.allow_ips.as_ref().is_some_and(|ips| ips.is_empty() || ips.len() > 64
+            || ips.iter().any(|ip| ip.parse::<af_domain::IpCidr>().is_err()))
+        || serde_json::to_vec(&request.scopes).map_err(|_| AccessTokenHttpError::InvalidRequest)?.len() > 128 * 1024
+    {
+        return Err(AccessTokenHttpError::InvalidRequest);
     }
     request.payload_digest().map(|_| ())
 }

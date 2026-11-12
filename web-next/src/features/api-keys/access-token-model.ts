@@ -6,6 +6,10 @@ export const dateChoices = [7, 30, 90, 180, 365] as const
 export const ipEntry = z.union([z.ipv4(), z.ipv6(), z.cidrv4(), z.cidrv6()])
 export const accessTokenDraftKey = 'anyflows.access-token.pending-draft'
 
+export function clearPendingDraft() {
+  try { window.sessionStorage.removeItem(accessTokenDraftKey) } catch { /* The temporary draft contains no credential. */ }
+}
+
 export type AccessTokenDraft = {
   owner_id: number
   token_id?: number
@@ -53,6 +57,19 @@ export function errorCode(error: unknown) {
   if ('code' in details && typeof details.code === 'string') return details.code
   if ('error' in details && typeof details.error === 'object' && details.error !== null && 'code' in details.error && typeof details.error.code === 'string') return details.error.code
   return undefined
+}
+
+export function accessTokenErrorKey(error: unknown) {
+  switch (errorCode(error)) {
+    case 'access_token_conflict': return 'accessTokens.errors.conflict'
+    case 'insufficient_scope':
+    case 'access_token_forbidden': return 'accessTokens.errors.scopeDenied'
+    case 'access_token_limit_reached': return 'accessTokens.errors.capacity'
+    case 'access_tokens_disabled': return 'accessTokens.errors.disabled'
+    case 'access_token_issuance_disabled': return 'accessTokens.errors.issuanceDisabled'
+    case 'access_token_rate_limited': return 'accessTokens.errors.rateLimited'
+    default: return 'accessTokens.errors.save'
+  }
 }
 
 export function expiryTimestamp(days: number | 'never' | 'custom', custom: string) {

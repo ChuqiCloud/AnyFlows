@@ -112,7 +112,11 @@ impl PlatformAuditWrite {
     }
 
     /// Add the non-secret credential identity responsible for an API operation.
-    pub fn with_actor_credential(mut self, kind: &str, id: i64) -> Result<Self, PlatformAuditWriteError> {
+    pub fn with_actor_credential(
+        mut self,
+        kind: &str,
+        id: i64,
+    ) -> Result<Self, PlatformAuditWriteError> {
         if kind != "personal_access_token" || id <= 0 {
             return Err(PlatformAuditWriteError::InvalidText);
         }
@@ -189,9 +193,13 @@ pub struct PlatformAuditRecord {
 
 impl PlatformAuditRecord {
     #[must_use]
-    pub fn actor_credential_kind(&self) -> Option<&str> { self.actor_credential_kind.as_deref() }
+    pub fn actor_credential_kind(&self) -> Option<&str> {
+        self.actor_credential_kind.as_deref()
+    }
     #[must_use]
-    pub const fn actor_credential_id(&self) -> Option<i64> { self.actor_credential_id }
+    pub const fn actor_credential_id(&self) -> Option<i64> {
+        self.actor_credential_id
+    }
     /// 返回审计主键。
     #[must_use]
     pub const fn id(&self) -> i64 {
@@ -455,8 +463,13 @@ fn joined_record(
         || model.operator_user_id <= 0
         || operator.id != model.operator_user_id
         || operator.username.is_empty()
-        || !matches!((model.actor_credential_kind.as_deref(), model.actor_credential_id),
-            (None, None) | (Some("personal_access_token"), Some(1..)))
+        || !matches!(
+            (
+                model.actor_credential_kind.as_deref(),
+                model.actor_credential_id
+            ),
+            (None, None) | (Some("personal_access_token"), Some(1..))
+        )
         || !valid_code(&model.permission_code, 96)
         || !valid_text(&model.route, 128)
         || !valid_code(&model.operation, 96)

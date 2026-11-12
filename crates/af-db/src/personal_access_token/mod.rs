@@ -10,23 +10,22 @@ mod mutation;
 mod proof;
 mod rate_limit;
 mod read;
-mod types;
-mod validation;
 #[cfg(test)]
 mod tests;
+mod types;
+mod validation;
 
 pub use types::{
     MAX_PERSONAL_ACCESS_TOKEN_IPS, MAX_PERSONAL_ACCESS_TOKEN_NAME_BYTES,
     MAX_PERSONAL_ACCESS_TOKEN_PAGE_SIZE, MAX_PERSONAL_ACCESS_TOKEN_SCOPES,
     MAX_PERSONAL_ACCESS_TOKENS_PER_USER, PersonalAccessTokenAccessAuditRecord,
     PersonalAccessTokenAuditCleanupResult, PersonalAccessTokenAuditIdentity,
-    PersonalAccessTokenCreateRecord, PersonalAccessTokenLookup,
-    PersonalAccessTokenMutationContext,
+    PersonalAccessTokenCreateRecord, PersonalAccessTokenLookup, PersonalAccessTokenMutationContext,
     PersonalAccessTokenPageRecord, PersonalAccessTokenPolicyRecord,
     PersonalAccessTokenPolicyUpdateRecord, PersonalAccessTokenProofClaim,
-    PersonalAccessTokenProofRecord, PersonalAccessTokenRecord,
-    PersonalAccessTokenRejectionReason, PersonalAccessTokenRepositoryConfigError,
-    PersonalAccessTokenRepositoryError, PersonalAccessTokenUpdateRecord,
+    PersonalAccessTokenProofRecord, PersonalAccessTokenRecord, PersonalAccessTokenRejectionReason,
+    PersonalAccessTokenRepositoryConfigError, PersonalAccessTokenRepositoryError,
+    PersonalAccessTokenUpdateRecord,
 };
 
 #[derive(Clone)]
@@ -43,7 +42,10 @@ impl PersonalAccessTokenRepository {
         if lookup_timeout.is_zero() {
             return Err(PersonalAccessTokenRepositoryConfigError::ZeroLookupTimeout);
         }
-        Ok(Self { pool, lookup_timeout })
+        Ok(Self {
+            pool,
+            lookup_timeout,
+        })
     }
 
     pub async fn list(
@@ -66,7 +68,8 @@ impl PersonalAccessTokenRepository {
         proof: PersonalAccessTokenProofClaim,
         context: PersonalAccessTokenMutationContext,
     ) -> Result<PersonalAccessTokenRecord, PersonalAccessTokenRepositoryError> {
-        self.run(mutation::create(self, record, proof, context)).await
+        self.run(mutation::create(self, record, proof, context))
+            .await
     }
 
     pub async fn update(
@@ -77,7 +80,8 @@ impl PersonalAccessTokenRepository {
         proof: Option<PersonalAccessTokenProofClaim>,
         context: PersonalAccessTokenMutationContext,
     ) -> Result<PersonalAccessTokenRecord, PersonalAccessTokenRepositoryError> {
-        self.run(mutation::update(self, owner, id, record, proof, context)).await
+        self.run(mutation::update(self, owner, id, record, proof, context))
+            .await
     }
 
     pub async fn revoke(
@@ -96,7 +100,8 @@ impl PersonalAccessTokenRepository {
         target: UserId,
         context: PersonalAccessTokenMutationContext,
     ) -> Result<u64, PersonalAccessTokenRepositoryError> {
-        self.run(mutation::revoke_all(self, actor, target, context)).await
+        self.run(mutation::revoke_all(self, actor, target, context))
+            .await
     }
 
     pub async fn lookup_policy(
@@ -111,7 +116,8 @@ impl PersonalAccessTokenRepository {
         update: PersonalAccessTokenPolicyUpdateRecord,
         context: PersonalAccessTokenMutationContext,
     ) -> Result<PersonalAccessTokenPolicyRecord, PersonalAccessTokenRepositoryError> {
-        self.run(mutation::update_policy(self, actor, update, context)).await
+        self.run(mutation::update_policy(self, actor, update, context))
+            .await
     }
 
     pub async fn authenticate(
@@ -125,11 +131,18 @@ impl PersonalAccessTokenRepository {
         self.run(read::authenticate(self, digest, client_ip)).await
     }
 
-    pub async fn admit_request_ip(&self, client_ip: TrustedClientIp) -> Result<(), PersonalAccessTokenRepositoryError> {
+    pub async fn admit_request_ip(
+        &self,
+        client_ip: TrustedClientIp,
+    ) -> Result<(), PersonalAccessTokenRepositoryError> {
         self.run(rate_limit::ip(self, client_ip)).await
     }
 
-    pub async fn admit_authenticated_request(&self, user: UserId, token_id: i64) -> Result<(), PersonalAccessTokenRepositoryError> {
+    pub async fn admit_authenticated_request(
+        &self,
+        user: UserId,
+        token_id: i64,
+    ) -> Result<(), PersonalAccessTokenRepositoryError> {
         self.run(rate_limit::identity(self, user, token_id)).await
     }
 
@@ -141,7 +154,10 @@ impl PersonalAccessTokenRepository {
         self.run(proof::issue(self, record, context)).await
     }
 
-    #[allow(clippy::too_many_arguments, reason = "The proof must bind identity, operation, target and payload atomically")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "The proof must bind identity, operation, target and payload atomically"
+    )]
     pub(crate) async fn consume_proof(
         &self,
         transaction: &sea_orm::DatabaseTransaction,
@@ -152,7 +168,17 @@ impl PersonalAccessTokenRepository {
         expected_payload: &str,
         now: i64,
     ) -> Result<(), PersonalAccessTokenRepositoryError> {
-        proof::consume(self, transaction, owner, claim, expected_action, expected_target, expected_payload, now).await
+        proof::consume(
+            self,
+            transaction,
+            owner,
+            claim,
+            expected_action,
+            expected_target,
+            expected_payload,
+            now,
+        )
+        .await
     }
 
     pub async fn record_access(
@@ -189,7 +215,12 @@ impl PersonalAccessTokenRepository {
         future: impl std::future::Future<Output = Result<T, PersonalAccessTokenRepositoryError>>,
     ) -> Result<T, PersonalAccessTokenRepositoryError> {
         use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
-        match timeout(self.lookup_timeout, future.with_subscriber(NoSubscriber::default())).await {
+        match timeout(
+            self.lookup_timeout,
+            future.with_subscriber(NoSubscriber::default()),
+        )
+        .await
+        {
             Ok(result) => result,
             Err(_) => {
                 tracing::error!(target: "af_db::personal_access_token", error_kind = "timeout", "访问令牌仓储操作超时");
@@ -208,7 +239,10 @@ impl fmt::Debug for PersonalAccessTokenRepository {
 }
 
 pub(crate) fn valid_digest(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
 /// Canonical operation binding shared by HTTP proof issuance and transactional consumption.
@@ -222,4 +256,3 @@ pub fn personal_access_token_payload_digest(
 ) -> Result<String, PersonalAccessTokenRepositoryError> {
     validation::payload_digest(name, scopes, expiry, ips, enabled, version)
 }
-

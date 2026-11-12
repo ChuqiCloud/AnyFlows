@@ -11,6 +11,15 @@ async fn personal_access_token_proof_binding_replay_and_transactional_audit() ->
     let fixture = fixture().await?;
     let record = create(fixture.user, 1, vec!["account:read"]);
     let claim = proof(&fixture.repository, &record, 1).await?;
+    let mut wrong_session = claim.clone(); wrong_session.session_binding = "b".repeat(64);
+    assert!(matches!(fixture.repository.create(record.clone(), wrong_session, context()).await,
+        Err(PersonalAccessTokenRepositoryError::InvalidProof)));
+    let mut stale_session = claim.clone(); stale_session.session_version = 2;
+    assert!(matches!(fixture.repository.create(record.clone(), stale_session, context()).await,
+        Err(PersonalAccessTokenRepositoryError::OwnerUnavailable)));
+    let mut wrong_owner = record.clone(); wrong_owner.user_id = fixture.admin;
+    assert!(matches!(fixture.repository.create(wrong_owner, claim.clone(), context()).await,
+        Err(PersonalAccessTokenRepositoryError::InvalidProof)));
     let mut wrong = record.clone(); wrong.name = "tampered".to_owned();
     assert!(matches!(fixture.repository.create(wrong, claim.clone(), context()).await,
         Err(PersonalAccessTokenRepositoryError::InvalidProof)));
@@ -123,6 +132,99 @@ async fn personal_access_token_shared_request_windows_count_atomically() -> Resu
     Ok(())
 }
 
+#[tokio::test]
+async fn personal_access_token_proof_issuance_budget_is_shared_across_sessions() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    for seed in 50..70 {
+        proof(&fixture.repository, &create(fixture.user, seed, vec!["account:read"]), seed).await?;
+    }
+    assert!(matches!(proof(&fixture.repository, &create(fixture.user, 70, vec!["account:read"]), 70).await,
+        Err(PersonalAccessTokenRepositoryError::RateLimited { retry_after: 1..=300 })));
+    assert!(proof(&fixture.repository, &create(fixture.admin, 71, vec!["account:read"]), 71).await.is_ok());
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn personal_access_token_file_sqlite_admission_waits_for_writer_without_read_upgrade() -> Result<(), Box<dyn Error>> {
+    use sea_orm::TransactionTrait;
+    let database = FileDatabase::new()?;
+    let options = DatabaseOptions::new(database.url.clone())?.with_pool_options(crate::PoolOptions {
+        max_connections: 2, min_connections: 2, ..crate::PoolOptions::default()
+    });
+    let pool = crate::connect_and_migrate(&options, MigrationOptions::default()).await?;
+    let other_pool = crate::connection::connect(&options).await?;
+    let first = PersonalAccessTokenRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let second = PersonalAccessTokenRepository::new(other_pool.clone(), Duration::from_secs(5))?;
+    let writer = pool.connection().begin().await?;
+    writer.execute(Statement::from_string(DbBackend::Sqlite,
+        "INSERT INTO access_token_rate_limits (subject_key,window_started_at,used_requests,expires_at) VALUES ('held-writer',0,0,0)".to_owned())).await?;
+    let user = UserId::new(1)?;
+    let started_at = time::OffsetDateTime::now_utc().unix_timestamp();
+    let mut first_request = tokio::spawn(async move { first.admit_authenticated_request(user, 100).await });
+    let mut second_request = tokio::spawn(async move { second.admit_authenticated_request(user, 100).await });
+    assert!(tokio::time::timeout(Duration::from_millis(50), &mut first_request).await.is_err());
+    assert!(tokio::time::timeout(Duration::from_millis(50), &mut second_request).await.is_err());
+    writer.commit().await?;
+    first_request.await??;
+    second_request.await??;
+    let finished_at = time::OffsetDateTime::now_utc().unix_timestamp();
+    let counts = pool.connection().query_all(Statement::from_string(DbBackend::Sqlite,
+        "SELECT used_requests FROM access_token_rate_limits WHERE subject_key != 'held-writer'".to_owned())).await?;
+    assert_eq!(counts.len(), 2);
+    for count in counts {
+        let used = count.try_get::<i32>("", "used_requests")?;
+        if started_at.div_euclid(60) == finished_at.div_euclid(60) { assert_eq!(used, 2); }
+        else { assert!((1..=2).contains(&used)); }
+    }
+    pool.close().await?;
+    other_pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn personal_access_token_expired_counter_cleanup_preserves_refreshed_candidates() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    fixture.pool.connection().execute(Statement::from_sql_and_values(DbBackend::Sqlite,
+        "INSERT INTO access_token_rate_limits (subject_key,window_started_at,used_requests,expires_at) VALUES ('refreshed',0,119,?),('expired',0,1,?)",
+        [(now - 1).into(), (now - 1).into()])).await?;
+    // These IDs represent a cleanup scan completed before a concurrent request refreshed one row.
+    let candidates = vec!["refreshed".to_owned(), "expired".to_owned()];
+    fixture.pool.connection().execute(Statement::from_sql_and_values(DbBackend::Sqlite,
+        "UPDATE access_token_rate_limits SET used_requests=120,expires_at=? WHERE subject_key='refreshed'",
+        [(now + 120).into()])).await?;
+    super::rate_limit::delete_expired(&fixture.repository, candidates, now).await?;
+    let rows = fixture.pool.connection().query_all(Statement::from_string(DbBackend::Sqlite,
+        "SELECT subject_key,used_requests FROM access_token_rate_limits".to_owned())).await?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].try_get::<String>("", "subject_key")?, "refreshed");
+    assert_eq!(rows[0].try_get::<i32>("", "used_requests")?, 120);
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+struct FileDatabase { path: std::path::PathBuf, url: String }
+
+impl FileDatabase {
+    fn new() -> Result<Self, std::time::SystemTimeError> {
+        let serial = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();
+        let path = std::env::temp_dir().join(format!("anyflows-pat-rate-limit-{}-{serial}.db", std::process::id()));
+        let mut sqlite_path = path.to_string_lossy().replace('\\', "/");
+        if !sqlite_path.starts_with('/') { sqlite_path.insert(0, '/'); }
+        Ok(Self { path, url: format!("sqlite://{sqlite_path}?mode=rwc") })
+    }
+}
+
+impl Drop for FileDatabase {
+    fn drop(&mut self) {
+        for suffix in ["", "-shm", "-wal"] {
+            let candidate = std::path::PathBuf::from(format!("{}{}", self.path.display(), suffix));
+            let _ = std::fs::remove_file(candidate);
+        }
+    }
+}
+
 struct Fixture { pool: crate::DatabasePool, repository: PersonalAccessTokenRepository, admin: UserId, user: UserId }
 
 async fn fixture() -> Result<Fixture, Box<dyn Error>> {
@@ -144,10 +246,10 @@ fn create(owner: UserId, index: i64, scopes: Vec<&str>) -> PersonalAccessTokenCr
         expires_at: Some(time::OffsetDateTime::now_utc().unix_timestamp() + 3600), allow_ips: None }
 }
 
-async fn proof(repository: &PersonalAccessTokenRepository, record: &PersonalAccessTokenCreateRecord, seed: i64) -> Result<PersonalAccessTokenProofClaim, Box<dyn Error>> {
+async fn proof(repository: &PersonalAccessTokenRepository, record: &PersonalAccessTokenCreateRecord, seed: i64) -> Result<PersonalAccessTokenProofClaim, PersonalAccessTokenRepositoryError> {
     let now = time::OffsetDateTime::now_utc().unix_timestamp();
     let claim = PersonalAccessTokenProofClaim { proof_hash: format!("{:064x}", seed + 100), session_version: 1,
-        session_binding: "a".repeat(64), purpose: "create".to_owned(), target_id: None,
+        session_binding: format!("{seed:064x}"), purpose: "create".to_owned(), target_id: None,
         payload_digest: personal_access_token_payload_digest(&record.name, &record.scopes, record.expires_at, record.allow_ips.as_deref(), true, None)? };
     repository.issue_proof(PersonalAccessTokenProofRecord { proof_hash: claim.proof_hash.clone(), user_id: record.user_id,
         session_version: 1, session_binding: claim.session_binding.clone(), purpose: claim.purpose.clone(),

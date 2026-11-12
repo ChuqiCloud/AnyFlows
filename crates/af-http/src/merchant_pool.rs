@@ -269,7 +269,10 @@ async fn create_service(
 ) -> Result<Response, MerchantHttpError> {
     let request = body(request)?;
     if request.api_key.is_some() && !can_write_merchant_secret(token.as_ref()) {
-        return Ok(crate::access_token_error::insufficient_scope(&["merchant:write".to_owned(), "merchant_secrets:write".to_owned()]));
+        return Ok(crate::access_token_error::insufficient_scope(&[
+            "merchant:write".to_owned(),
+            "merchant_secrets:write".to_owned(),
+        ]));
     }
     Ok(created(
         s.service
@@ -286,7 +289,10 @@ async fn update_service(
 ) -> Result<Response, MerchantHttpError> {
     let request = body(request)?;
     if request.api_key.is_some() && !can_write_merchant_secret(token.as_ref()) {
-        return Ok(crate::access_token_error::insufficient_scope(&["merchant:write".to_owned(), "merchant_secrets:write".to_owned()]));
+        return Ok(crate::access_token_error::insufficient_scope(&[
+            "merchant:write".to_owned(),
+            "merchant_secrets:write".to_owned(),
+        ]));
     }
     Ok(no_store_json(
         s.service
@@ -295,8 +301,15 @@ async fn update_service(
     ))
 }
 
-fn can_write_merchant_secret(token: Option<&Extension<af_admin::PersonalAccessTokenAuthentication>>) -> bool {
-    token.is_none_or(|Extension(token)| token.scopes().iter().any(|scope| scope == "merchant_secrets:write"))
+fn can_write_merchant_secret(
+    token: Option<&Extension<af_admin::PersonalAccessTokenAuthentication>>,
+) -> bool {
+    token.is_none_or(|Extension(token)| {
+        token
+            .scopes()
+            .iter()
+            .any(|scope| scope == "merchant_secrets:write")
+    })
 }
 async fn submit(
     State(s): State<MerchantHttpState>,

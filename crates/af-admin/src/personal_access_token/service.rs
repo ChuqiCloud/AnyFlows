@@ -16,7 +16,7 @@ use super::{
     PersonalAccessTokenAccessRecord, PersonalAccessTokenAuthentication,
     PersonalAccessTokenDigest, PersonalAccessTokenError, PersonalAccessTokenLookup,
     PersonalAccessTokenMutationContext, PersonalAccessTokenPage, PersonalAccessTokenPolicy,
-    PersonalAccessTokenStepUpEvidence, PresentedPersonalAccessToken, UpdatePersonalAccessTokenCommand,
+    PersonalAccessTokenStepUpEvidence, UpdatePersonalAccessTokenCommand,
     PersonalAccessTokenSecret, PersonalAccessTokenProofSecret,
     CreatePersonalAccessTokenCommand, digest_personal_access_token_proof, map_error, validate_proof_evidence,
 };
@@ -121,7 +121,7 @@ impl PersonalAccessTokenService for DatabasePersonalAccessTokenService {
                 || target_id.is_some_and(|id| id <= 0) || !is_digest(&payload_digest)
                 || (purpose == "create") != target_id.is_none()
             { return Err(PersonalAccessTokenError::InvalidInput); }
-            let secret = PresentedPersonalAccessToken::generate()?;
+            let secret = PersonalAccessTokenSecret::generate()?;
             let proof = PersonalAccessTokenProofRecord {
                 proof_hash: digest_personal_access_token_proof(secret.expose_secret()), user_id: principal.user_id(),
                 session_version: evidence.session_version, session_binding: evidence.session_binding,

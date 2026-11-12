@@ -28,7 +28,12 @@ pub(super) async fn issue(repository: &Repository, record: PersonalAccessTokenPr
     }
     let recent = proofs::Entity::find().filter(proofs::Column::UserId.eq(record.user_id.get()))
         .filter(proofs::Column::IssuedAt.gt(now - 300)).all(&transaction).await.map_err(|_| Error::Query)?;
-    if recent.len() >= 20 { return Err(Error::LimitReached); }
+    if recent.len() >= 20 {
+        let oldest = recent.iter().map(|proof| proof.issued_at).min().ok_or(Error::Invariant)?;
+        let retry_after = u32::try_from(oldest.saturating_add(300).saturating_sub(now).clamp(1, 330))
+            .map_err(|_| Error::Invariant)?;
+        return Err(Error::RateLimited { retry_after });
+    }
     proofs::ActiveModel {
         proof_hash: Set(record.proof_hash), user_id: Set(record.user_id.get()),
         session_version: Set(record.session_version), session_binding: Set(record.session_binding),

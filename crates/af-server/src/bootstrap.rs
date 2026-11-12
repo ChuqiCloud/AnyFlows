@@ -924,9 +924,12 @@ impl Bootstrap<DatabaseReady> {
         let personal_access_token_repository = af_db::PersonalAccessTokenRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
-        ).map_err(BootstrapError::PersonalAccessTokenRepository)?;
+        )
+        .map_err(BootstrapError::PersonalAccessTokenRepository)?;
         let session_authenticator = session_authenticator.with_personal_access_tokens(Arc::new(
-            af_admin::DatabasePersonalAccessTokenService::new(personal_access_token_repository.clone()),
+            af_admin::DatabasePersonalAccessTokenService::new(
+                personal_access_token_repository.clone(),
+            ),
         ));
         let initial_setup_repository = self.stage.initial_setup_repository.clone();
         let registration_repository = RegistrationRepository::new(
@@ -2216,7 +2219,10 @@ impl Bootstrap<BillingReady> {
             debug_trace_worker,
             analytics_export_repository,
         } = stage;
-        spawn_access_token_cleanup_task(&mut supervisor, infrastructure.personal_access_token_repository.clone());
+        spawn_access_token_cleanup_task(
+            &mut supervisor,
+            infrastructure.personal_access_token_repository.clone(),
+        );
         let capability_decryptor = CredentialDecryptor::new(config.credential_encryption())
             .expect("已校验的上游凭据配置必须包含有效解密密钥");
         let credential_model_service = Arc::new(af_admin::DatabaseCredentialModelService::new(
@@ -2564,8 +2570,10 @@ fn spawn_oauth_session_cleanup_task(
     });
 }
 
-fn spawn_access_token_cleanup_task(supervisor: &mut BackgroundTaskSupervisor,
-    repository: af_db::PersonalAccessTokenRepository) {
+fn spawn_access_token_cleanup_task(
+    supervisor: &mut BackgroundTaskSupervisor,
+    repository: af_db::PersonalAccessTokenRepository,
+) {
     supervisor.spawn("access-token-cleanup", move |task_shutdown| {
         let repository = repository.clone();
         async move {
@@ -2576,16 +2584,28 @@ fn spawn_access_token_cleanup_task(supervisor: &mut BackgroundTaskSupervisor,
                     () = task_shutdown.cancelled() => return,
                     _ = ticks.tick() => {}
                 }
-                let Ok(elapsed) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) else { continue; };
-                let Ok(now) = i64::try_from(elapsed.as_secs()) else { continue; };
+                let Ok(elapsed) =
+                    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                else {
+                    continue;
+                };
+                let Ok(now) = i64::try_from(elapsed.as_secs()) else {
+                    continue;
+                };
                 // Bound each sweep so maintenance cannot monopolize a database connection.
                 let result = async {
                     repository.prune_expired_proofs(now, 10_000).await?;
-                    repository.prune_access_audit(now.saturating_sub(90 * 86400), 10_000).await?;
+                    repository
+                        .prune_access_audit(now.saturating_sub(90 * 86400), 10_000)
+                        .await?;
                     Ok::<_, af_db::PersonalAccessTokenRepositoryError>(())
-                }.await;
+                }
+                .await;
                 if result.is_err() {
-                    tracing::warn!(error_kind = "repository", "系统访问令牌记录清理失败，将在下一周期重试");
+                    tracing::warn!(
+                        error_kind = "repository",
+                        "系统访问令牌记录清理失败，将在下一周期重试"
+                    );
                 }
             }
         }

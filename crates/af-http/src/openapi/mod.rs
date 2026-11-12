@@ -273,13 +273,12 @@ struct VersionApi;
 pub fn openapi_document_with_extensions(
     extensions: Option<&crate::http_extensions::HttpExtensions>,
 ) -> OpenApi {
-    let mut document = openapi_document();
-    if let Some(extensions) = extensions {
-        for extension_document in extensions.openapi_documents() {
-            document.merge(extension_document);
-        }
+    match extensions {
+        Some(extensions) => crate::access_token_routes::AccessTokenRouteOverlay::from_documents(
+            &extensions.openapi_documents(),
+        ).document().clone(),
+        None => openapi_document(),
     }
-    document
 }
 
 #[cfg(all(test, any()))]

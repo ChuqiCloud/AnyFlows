@@ -2,10 +2,15 @@
 
 #![allow(dead_code, reason = "Document endpoints are consumed by utoipa macros")]
 
+use crate::{
+    access_token_error::PersonalAccessTokenErrorBody,
+    access_tokens::{
+        IssuedPersonalAccessTokenResponse, PersonalAccessTokenListResponse,
+        PersonalAccessTokenPolicyRequest, PersonalAccessTokenResponse,
+        PersonalAccessTokenScopeCatalogResponse, PersonalAccessTokenWriteRequest,
+    },
+};
 use utoipa::OpenApi;
-use crate::{access_token_error::PersonalAccessTokenErrorBody, access_tokens::{
-    IssuedPersonalAccessTokenResponse, PersonalAccessTokenListResponse, PersonalAccessTokenPolicyRequest,
-    PersonalAccessTokenResponse, PersonalAccessTokenScopeCatalogResponse, PersonalAccessTokenWriteRequest}};
 
 #[utoipa::path(get,path="/api/account/access-tokens",operation_id="listPersonalAccessTokens",tag="个人访问令牌",
     summary="读取我的系统 API 令牌",params(("after"=Option<i64>,Query,minimum=1),("limit"=Option<i64>,Query,minimum=1,maximum=100)),
@@ -68,4 +73,6 @@ fn revoke_user() {}
         PersonalAccessTokenErrorBody)))]
 struct PersonalAccessTokenApi;
 
-pub(super) fn document() -> utoipa::openapi::OpenApi { PersonalAccessTokenApi::openapi() }
+pub(super) fn document() -> utoipa::openapi::OpenApi {
+    PersonalAccessTokenApi::openapi()
+}

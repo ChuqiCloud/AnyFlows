@@ -8,7 +8,7 @@ export type ApiExplorerOperation = {
   tag: string
   summary: string
   description?: string
-  auth_mode: 'none' | 'session' | 'api_key' | 'special'
+  auth_mode: 'none' | 'session' | 'access_token' | 'api_key' | 'special'
   supports_access_token?: boolean
   required_scopes?: string[]
   interactive_session_required?: boolean
@@ -71,7 +71,7 @@ export async function runApiExplorerOperation(operation: ApiExplorerOperation, i
   })
   const url = new URL(apiUrl(path), window.location.origin)
   Object.entries(input.queryParams).forEach(([key, value]) => { if (value.trim()) url.searchParams.set(key, value.trim()) })
-  const useAccessToken = operation.auth_mode === 'session' && input.useAccessToken === true
+  const useAccessToken = operation.auth_mode === 'access_token' || (operation.auth_mode === 'session' && input.useAccessToken === true)
   if (useAccessToken && (!operation.supports_access_token || !input.accessToken?.trim())) {
     throw new Error('A personal access token with the required scopes is needed')
   }

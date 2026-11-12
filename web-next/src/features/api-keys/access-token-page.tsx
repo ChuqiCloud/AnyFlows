@@ -12,7 +12,7 @@ import {
   useUpdateAccessTokenPolicy, useRevokeOwnAccessTokens, type AccessToken, type AccessTokenScope,
   type AccessTokenWrite, requestAccessTokenProof,
 } from './access-token-api'
-import { accessTokenDraftKey, loadPendingDraft, timestamp, type AccessTokenDraft } from './access-token-model'
+import { clearPendingDraft, loadPendingDraft, timestamp, type AccessTokenDraft } from './access-token-model'
 import { AccessTokenEditor } from './access-token-editor'
 import { AdminTokenControls } from './access-token-admin'
 import { IssuedAccessTokenDialog, RevokeAccessTokenDialog, RevokeAllAccessTokensDialog } from './access-token-dialogs'
@@ -62,16 +62,13 @@ export function AccessTokenPage() {
     setActiveDraft(undefined)
     setEditor(undefined)
   }
-  const clearDraft = () => {
-    try { window.sessionStorage.removeItem(accessTokenDraftKey) } catch { /* The temporary draft contains no credential. */ }
-  }
   useEffect(() => {
     if (!pendingDraft || draftRestored || !tokensQuery.isSuccess || session.data?.user.id !== pendingDraft.owner_id) return
     if (pendingDraft.token_id === undefined) {
       setEditor('create')
       setActiveDraft(pendingDraft)
       setDraftRestored(true)
-      clearDraft()
+      clearPendingDraft()
       return
     }
     const token = tokens.find((item) => item.id === pendingDraft.token_id)
@@ -79,12 +76,12 @@ export function AccessTokenPage() {
       setEditor(token)
       setActiveDraft(pendingDraft)
       setDraftRestored(true)
-      clearDraft()
+      clearPendingDraft()
     } else if (tokensQuery.hasNextPage) {
       void tokensQuery.fetchNextPage()
     } else if (!tokensQuery.isFetching) {
       setDraftRestored(true)
-      clearDraft()
+      clearPendingDraft()
     }
   }, [pendingDraft, draftRestored, session.data?.user.id, tokens, tokensQuery.fetchNextPage, tokensQuery.hasNextPage, tokensQuery.isFetching, tokensQuery.isSuccess])
 
@@ -144,7 +141,7 @@ export function AccessTokenPage() {
           <Button type="button" size="sm" variant="bordered" isDisabled={tokensQuery.isFetching} onPress={() => void tokensQuery.refetch()}>
             <RefreshCw className={cn('size-3.5', tokensQuery.isFetching && 'animate-spin')} aria-hidden="true" />{t('accessTokens.actions.refresh')}
           </Button>
-          <Button type="button" size="sm" color="primary" isDisabled={atCapacity || tokensQuery.isPending || !catalog || policyQuery.data?.issuance_enabled === false} onPress={() => openEditor('create')}>
+          <Button type="button" size="sm" color="primary" isDisabled={atCapacity || tokensQuery.isPending || !catalog || policyQuery.data?.enabled === false || policyQuery.data?.issuance_enabled === false} onPress={() => openEditor('create')}>
             <Plus className="size-3.5" aria-hidden="true" />{t('accessTokens.actions.create')}
           </Button>
         </div>
@@ -218,7 +215,7 @@ function AccessTokenRow({ token, locale, onEdit, onRevoke }: { token: AccessToke
     <article className="grid gap-3 py-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,2fr)_minmax(12rem,auto)] sm:items-center">
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2"><KeyRound className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><h3 className="truncate text-sm font-medium">{token.name}</h3><Chip size="sm" variant="flat" className={status === 'enabled' ? 'bg-success/10 text-success' : status === 'expired' ? 'bg-warning/10 text-warning' : 'bg-surface-2 text-muted-foreground'}>{t(`accessTokens.status.${status}`)}</Chip></div>
-        <p className="mt-1 pl-6 font-mono text-[11px] text-muted-foreground">af_pat_…{token.token_hint}</p>
+        <p className="mt-1 pl-6 font-mono text-[11px] text-muted-foreground">{token.token_hint}</p>
       </div>
       <div className="flex min-w-0 flex-wrap gap-1">{groups.slice(0, 5).map((group) => <Chip key={group} size="sm" variant="flat" className="max-w-full bg-surface-2 text-muted-foreground"><span className="truncate">{t(`accessTokens.scopeGroups.${group}`, { defaultValue: group })}</span></Chip>)}{groups.length > 5 ? <Chip size="sm" variant="flat" className="bg-surface-2 text-muted-foreground">+{groups.length - 5}</Chip> : null}</div>
       <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">

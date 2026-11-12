@@ -126,23 +126,33 @@ pub struct PersonalAccessTokenProofClaim {
 }
 
 impl std::fmt::Debug for PersonalAccessTokenCreateRecord {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str("PersonalAccessTokenCreateRecord(<redacted>)") }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PersonalAccessTokenCreateRecord(<redacted>)")
+    }
 }
 
 impl std::fmt::Debug for PersonalAccessTokenRecord {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str("PersonalAccessTokenRecord(<redacted>)") }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PersonalAccessTokenRecord(<redacted>)")
+    }
 }
 
 impl std::fmt::Debug for PersonalAccessTokenUpdateRecord {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str("PersonalAccessTokenUpdateRecord(<redacted>)") }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PersonalAccessTokenUpdateRecord(<redacted>)")
+    }
 }
 
 impl std::fmt::Debug for PersonalAccessTokenProofRecord {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str("PersonalAccessTokenProofRecord(<redacted>)") }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PersonalAccessTokenProofRecord(<redacted>)")
+    }
 }
 
 impl std::fmt::Debug for PersonalAccessTokenProofClaim {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str("PersonalAccessTokenProofClaim(<redacted>)") }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PersonalAccessTokenProofClaim(<redacted>)")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -212,8 +222,11 @@ pub enum PersonalAccessTokenRepositoryError {
 
 impl PersonalAccessTokenRecord {
     #[must_use]
-    pub const fn id(&self) -> i64 { self.id }
+    pub const fn id(&self) -> i64 {
+        self.id
+    }
     #[must_use]
-    pub const fn user_id(&self) -> UserId { self.user_id }
+    pub const fn user_id(&self) -> UserId {
+        self.user_id
+    }
 }
-

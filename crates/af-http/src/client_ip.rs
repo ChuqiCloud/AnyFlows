@@ -78,7 +78,9 @@ impl ClientIpResolver {
         &self,
         request: &Request<B>,
     ) -> Result<TrustedClientIp, ClientIpResolutionError> {
-        let peer = request.extensions().get::<ConnectInfo<SocketAddr>>()
+        let peer = request
+            .extensions()
+            .get::<ConnectInfo<SocketAddr>>()
             .map(|ConnectInfo(address)| TrustedClientIp::new(address.ip()))
             .ok_or(ClientIpResolutionError::MissingPeer)?;
         self.resolve_with_peer(peer, request.headers())

@@ -26,14 +26,7 @@ async fn admit(repository: &Repository, mut subjects: Vec<(String, i32)>) -> Res
     let window = now - now.rem_euclid(60);
     let retry_after = u32::try_from(window + 60 - now).map_err(|_| Error::Invariant)?;
     let transaction = repository.pool.connection().begin().await.map_err(|_| Error::Query)?;
-    // Small bounded opportunistic cleanup prevents retired IP subjects accumulating forever.
-    let expired = limits::Entity::find().select_only().column(limits::Column::SubjectKey)
-        .filter(limits::Column::ExpiresAt.lt(now)).limit(64)
-        .into_tuple::<String>().all(&transaction).await.map_err(|_| Error::Query)?;
-    if !expired.is_empty() {
-        limits::Entity::delete_many().filter(limits::Column::SubjectKey.is_in(expired))
-            .exec(&transaction).await.map_err(|_| Error::Query)?;
-    }
+    // The first SQLite statement must acquire its writer lock before any read snapshot.
     for (key, cap) in subjects {
         seed(&transaction, &key, window).await?;
         let mut query = limits::Entity::find_by_id(key.clone());
@@ -48,6 +41,26 @@ async fn admit(repository: &Repository, mut subjects: Vec<(String, i32)>) -> Res
         model.update(&transaction).await.map_err(|_| Error::Query)?;
     }
     transaction.commit().await.map_err(|_| Error::Query)?;
+    // Cleanup holds no counter locks, cannot roll back admission, and never delays a
+    // successful request beyond this small best-effort budget.
+    let _ = tokio::time::timeout(std::time::Duration::from_millis(100), cleanup_expired(repository, now)).await;
+    Ok(())
+}
+
+async fn cleanup_expired(repository: &Repository, now: i64) -> Result<(), Error> {
+    let expired = limits::Entity::find().select_only().column(limits::Column::SubjectKey)
+        .filter(limits::Column::ExpiresAt.lt(now)).limit(64)
+        .into_tuple::<String>().all(repository.pool.connection()).await.map_err(|_| Error::Query)?;
+    delete_expired(repository, expired, now).await
+}
+
+pub(super) async fn delete_expired(repository: &Repository, candidates: Vec<String>, now: i64) -> Result<(), Error> {
+    if !candidates.is_empty() {
+        // A request may refresh a selected row before this statement reaches it.
+        limits::Entity::delete_many().filter(limits::Column::SubjectKey.is_in(candidates))
+            .filter(limits::Column::ExpiresAt.lt(now))
+            .exec(repository.pool.connection()).await.map_err(|_| Error::Query)?;
+    }
     Ok(())
 }
 
@@ -55,7 +68,8 @@ async fn seed(transaction: &DatabaseTransaction, key: &str, window: i64) -> Resu
     limits::Entity::insert(limits::ActiveModel {
         subject_key: Set(key.to_owned()), window_started_at: Set(window),
         used_requests: Set(0), expires_at: Set(window + 120),
-    }).on_conflict(OnConflict::column(limits::Column::SubjectKey).do_nothing().to_owned())
+    }).on_conflict(OnConflict::column(limits::Column::SubjectKey)
+        .do_nothing_on([limits::Column::SubjectKey]).to_owned())
         .exec_without_returning(transaction).await.map_err(|_| Error::Query)?;
     if transaction.get_database_backend() == DbBackend::Sqlite {
         limits::Entity::update_many().filter(limits::Column::SubjectKey.eq(key))

@@ -230,6 +230,7 @@ mod password_reset;
 mod payment_settings;
 #[cfg(test)]
 mod payment_settings_tests;
+mod personal_access_token;
 mod platform_audit;
 mod playground_conversation;
 #[cfg(test)]
@@ -281,17 +282,15 @@ mod usage_log_tests;
 mod user_profile;
 mod user_route;
 mod user_session;
-mod personal_access_token;
 pub use personal_access_token::{
     MAX_PERSONAL_ACCESS_TOKEN_IPS, MAX_PERSONAL_ACCESS_TOKEN_NAME_BYTES,
     MAX_PERSONAL_ACCESS_TOKEN_PAGE_SIZE, MAX_PERSONAL_ACCESS_TOKEN_SCOPES,
     MAX_PERSONAL_ACCESS_TOKENS_PER_USER, PersonalAccessTokenAccessAuditRecord,
     PersonalAccessTokenAuditCleanupResult, PersonalAccessTokenAuditIdentity,
-    PersonalAccessTokenCreateRecord, PersonalAccessTokenLookup,
-    PersonalAccessTokenMutationContext, PersonalAccessTokenPageRecord,
-    PersonalAccessTokenPolicyRecord, PersonalAccessTokenPolicyUpdateRecord,
-    PersonalAccessTokenProofClaim, PersonalAccessTokenProofRecord,
-    PersonalAccessTokenRecord, PersonalAccessTokenRejectionReason,
+    PersonalAccessTokenCreateRecord, PersonalAccessTokenLookup, PersonalAccessTokenMutationContext,
+    PersonalAccessTokenPageRecord, PersonalAccessTokenPolicyRecord,
+    PersonalAccessTokenPolicyUpdateRecord, PersonalAccessTokenProofClaim,
+    PersonalAccessTokenProofRecord, PersonalAccessTokenRecord, PersonalAccessTokenRejectionReason,
     PersonalAccessTokenRepository, PersonalAccessTokenRepositoryConfigError,
     PersonalAccessTokenRepositoryError, PersonalAccessTokenUpdateRecord,
     personal_access_token_payload_digest,

@@ -27,7 +27,10 @@ impl PlatformAuditCredential {
         if id <= 0 {
             return Err(PlatformAuditError::InvalidInput);
         }
-        Ok(Self { kind: "personal_access_token", id })
+        Ok(Self {
+            kind: "personal_access_token",
+            id,
+        })
     }
 }
 

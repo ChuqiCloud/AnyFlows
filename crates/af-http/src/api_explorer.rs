@@ -6,7 +6,7 @@
 
 use std::{
     collections::BTreeSet,
-    sync::{Arc, OnceLock},
+    sync::Arc,
 };
 
 use af_admin::SessionAuthenticator;
@@ -37,6 +37,7 @@ const PAGE_MAX: usize = 10_000;
 enum ApiExplorerAuthMode {
     None,
     Session,
+    AccessToken,
     ApiKey,
     Special,
 }
@@ -128,9 +129,11 @@ async fn list_catalog(
     RawQuery(raw_query): RawQuery,
     authentication: Option<Extension<af_admin::SessionAuthentication>>,
     access_token: Option<Extension<af_admin::PersonalAccessTokenAuthentication>>,
+    overlay: Option<Extension<crate::access_token_routes::AccessTokenRouteOverlay>>,
 ) -> Result<Response, ManagementError> {
     let query = parse_catalog_query(raw_query.as_deref())?;
     let viewer = viewer(authentication.as_ref());
+    let overlay = overlay.as_ref().map(|Extension(value)| value);
     let page = query.page.unwrap_or(1);
     let page_size = query.page_size.unwrap_or(PAGE_SIZE_DEFAULT);
     if page == 0 || page > PAGE_MAX || page_size == 0 || page_size > PAGE_SIZE_MAX {
@@ -138,7 +141,7 @@ async fn list_catalog(
     }
     let query_text = normalize_filter(query.q.as_deref())?;
     let tag_filter = normalize_filter(query.tag.as_deref())?;
-    let mut operations = projected_for_credential(viewer, access_token.as_ref().map(|Extension(token)| token));
+    let mut operations = projected_for_credential(viewer, access_token.as_ref().map(|Extension(token)| token), overlay);
     operations.retain(|item| {
         let matches_query = query_text.as_deref().is_none_or(|query| {
             let haystack = format!(
@@ -248,12 +251,14 @@ async fn get_operation(
     Path(operation_id): Path<String>,
     authentication: Option<Extension<af_admin::SessionAuthentication>>,
     access_token: Option<Extension<af_admin::PersonalAccessTokenAuthentication>>,
+    overlay: Option<Extension<crate::access_token_routes::AccessTokenRouteOverlay>>,
 ) -> Result<Response, ManagementError> {
     if operation_id.is_empty() || operation_id.len() > 128 {
         return Err(ManagementError::InvalidRequest);
     }
     let viewer = viewer(authentication.as_ref());
-    let Some(operation) = projected_for_credential(viewer, access_token.as_ref().map(|Extension(token)| token))
+    let overlay = overlay.as_ref().map(|Extension(value)| value);
+    let Some(operation) = projected_for_credential(viewer, access_token.as_ref().map(|Extension(token)| token), overlay)
         .into_iter()
         .find(|item| item.metadata.operation_id == operation_id)
     else {
@@ -303,8 +308,8 @@ const fn viewer_label(viewer: Viewer) -> &'static str {
     }
 }
 
-fn projected_operations(viewer: Viewer) -> Vec<ProjectedOperation> {
-    let document = openapi_value();
+fn projected_operations(viewer: Viewer, overlay: Option<&crate::access_token_routes::AccessTokenRouteOverlay>) -> Vec<ProjectedOperation> {
+    let document = openapi_value(overlay);
     let Some(paths) = document.get("paths").and_then(Value::as_object) else {
         return Vec::new();
     };
@@ -324,7 +329,7 @@ fn projected_operations(viewer: Viewer) -> Vec<ProjectedOperation> {
             if !is_visible(viewer, scope, auth_mode) {
                 continue;
             }
-            let pat_policy = crate::access_token_routes::policy(method, path);
+            let pat_policy = crate::access_token_routes::policy_with_overlay(method, path, overlay);
             let metadata = ApiExplorerOperation {
                 operation_id: operation_id.to_owned(),
                 method: method.to_ascii_uppercase(),
@@ -382,10 +387,11 @@ fn projected_operations(viewer: Viewer) -> Vec<ProjectedOperation> {
 }
 
 fn projected_for_credential(viewer: Viewer,
-    token: Option<&af_admin::PersonalAccessTokenAuthentication>) -> Vec<ProjectedOperation> {
-    projected_operations(viewer).into_iter().filter(|operation| {
+    token: Option<&af_admin::PersonalAccessTokenAuthentication>,
+    overlay: Option<&crate::access_token_routes::AccessTokenRouteOverlay>) -> Vec<ProjectedOperation> {
+    projected_operations(viewer, overlay).into_iter().filter(|operation| {
         let Some(token) = token else { return true; };
-        if operation.metadata.auth_mode != ApiExplorerAuthMode::Session { return true; }
+        if !matches!(operation.metadata.auth_mode, ApiExplorerAuthMode::Session | ApiExplorerAuthMode::AccessToken) { return true; }
         operation.metadata.supports_access_token && operation.metadata.required_scopes.iter()
             .all(|scope| token.scopes().contains(scope))
     }).collect()
@@ -536,10 +542,11 @@ fn gateway_operations() -> Vec<ProjectedOperation> {
     .collect()
 }
 
-fn openapi_value() -> &'static Value {
-    static DOCUMENT: OnceLock<Value> = OnceLock::new();
-    DOCUMENT
-        .get_or_init(|| serde_json::to_value(openapi_document()).expect("OpenAPI 文档必须可序列化"))
+fn openapi_value(overlay: Option<&crate::access_token_routes::AccessTokenRouteOverlay>) -> Value {
+    match overlay {
+        Some(overlay) => serde_json::to_value(overlay.document()),
+        None => serde_json::to_value(openapi_document()),
+    }.expect("OpenAPI 文档必须可序列化")
 }
 
 fn classify_operation(
@@ -558,7 +565,7 @@ fn classify_operation(
         ApiExplorerAccessScope::Organization
     } else if auth_mode == ApiExplorerAuthMode::ApiKey || path.starts_with("/v1/") {
         ApiExplorerAccessScope::Gateway
-    } else if auth_mode == ApiExplorerAuthMode::Session {
+    } else if matches!(auth_mode, ApiExplorerAuthMode::Session | ApiExplorerAuthMode::AccessToken) {
         ApiExplorerAccessScope::Session
     } else {
         ApiExplorerAccessScope::Public
@@ -591,6 +598,9 @@ fn security_mode(operation: &Value) -> ApiExplorerAuthMode {
     {
         return ApiExplorerAuthMode::Session;
     }
+    if requirements.iter().any(|item| item.get("personalAccessTokenBearer").is_some()) {
+        return ApiExplorerAuthMode::AccessToken;
+    }
     ApiExplorerAuthMode::Special
 }
 
@@ -605,7 +615,7 @@ fn is_visible(
     match scope {
         ApiExplorerAccessScope::Public | ApiExplorerAccessScope::Gateway => true,
         ApiExplorerAccessScope::Session | ApiExplorerAccessScope::Organization => {
-            viewer.authenticated && auth_mode == ApiExplorerAuthMode::Session
+            viewer.authenticated && matches!(auth_mode, ApiExplorerAuthMode::Session | ApiExplorerAuthMode::AccessToken)
         }
         ApiExplorerAccessScope::Admin => false,
     }
@@ -643,7 +653,7 @@ mod verification_visibility_tests {
             group_id: af_domain::GroupId::new(1).unwrap(), token_id: 1,
             scopes: vec!["api_catalog:read".to_owned(), "billing:read".to_owned()], expires_at: None,
         };
-        let operations = projected_for_credential(Viewer { authenticated: true, admin: true }, Some(&token));
+        let operations = projected_for_credential(Viewer { authenticated: true, admin: true }, Some(&token), None);
         assert!(operations.iter().any(|item| item.metadata.path == "/api/account/wallet"));
         assert!(operations.iter().any(|item| item.metadata.path == "/v1/chat/completions" && !item.metadata.supports_access_token));
         assert!(!operations.iter().any(|item| item.metadata.path == "/api/admin/users"));
@@ -667,7 +677,7 @@ mod verification_visibility_tests {
             admin: true,
         };
         let contains = |viewer, id: &str| {
-            projected_operations(viewer)
+            projected_operations(viewer, None)
                 .iter()
                 .any(|entry| entry.metadata.operation_id == id)
         };
