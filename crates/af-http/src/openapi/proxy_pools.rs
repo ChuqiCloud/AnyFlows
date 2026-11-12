@@ -101,7 +101,10 @@ mod tests {
                 operation["security"],
                 serde_json::json!([{"bearerAuth": []}, {"personalAccessTokenBearer": []}])
             );
-            assert_eq!(operation["x-anyflows-pat-scopes"], serde_json::json!([scope]));
+            assert_eq!(
+                operation["x-anyflows-pat-scopes"],
+                serde_json::json!([scope])
+            );
             assert!(operation.get("x-anyflows-pat-session-only").is_none());
             assert!(operation["responses"].get("401").is_some());
             assert!(operation["responses"].get("403").is_some());
