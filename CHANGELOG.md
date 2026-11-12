@@ -1,3 +1,23 @@
+## 0.3.0-beta.10 - 2026-11-12
+
+本版本基于 `v0.3.0-beta.9`，新增商户未定价模型审核流程和独立系统 API 个人访问令牌。
+
+### 新增
+
+- 新增系统 API 个人访问令牌（PAT），与模型调用 Key 分开管理；支持按接口操作授权、本人资源隔离、有效期、IP 白名单、单次展示、审计、限流和应急撤销。([#116](https://github.com/ChuqiCloud/AnyFlows/pull/116))
+- 管理员可为获授权的 PAT 开放后台操作权限；普通用户 PAT 仅能管理本人资源。模型调用继续使用模型 Key，PAT 的有效期或撤销不影响已有模型 Key。([#116](https://github.com/ChuqiCloud/AnyFlows/pull/116))
+- 商户可将尚未配置价卡的模型保存为草稿并提交审核；管理员补齐模型和定价后再批准发布，未审核或未定价的模型不会进入调度。([#115](https://github.com/ChuqiCloud/AnyFlows/pull/115))
+
+### 安全与兼容
+
+- 提现异步任务首次向外部出款网关提交前重新核验发起人的管理员权限。授权前失权会取消未提交任务并只释放一次预留款；已授权或状态未知的任务保留预留资金继续对账，避免重复打款或错误释放。([#116](https://github.com/ChuqiCloud/AnyFlows/pull/116))
+- 新增系统 API 令牌、验证证明、共享限流和访问审计相关数据库迁移；升级前备份数据库、配置和计费 WAL，首次启动时自动执行迁移。([#116](https://github.com/ChuqiCloud/AnyFlows/pull/116))
+- PAT 控制操作和登录会话管理仍需交互会话；管理员 PAT 权限按签发时已登记的操作范围展开，不自动继承未来新增接口。([#116](https://github.com/ChuqiCloud/AnyFlows/pull/116))
+
+本版本为社区版 Beta 预发布。
+
+完整变更：[v0.3.0-beta.9...v0.3.0-beta.10](https://github.com/ChuqiCloud/AnyFlows/compare/v0.3.0-beta.9...v0.3.0-beta.10)。
+
 ## 0.3.0-beta.9 - 2026-11-11
 
 本版本基于 `v0.3.0-beta.8`，增加上游 Key 级模型管理、额度查询和真实服务状态，补齐渠道主动拨测、商户结算报表及服务关注通知。
