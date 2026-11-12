@@ -84,7 +84,7 @@ impl PersonalAccessTokenSecret {
             PERSONAL_ACCESS_TOKEN_PREFIX.len() + RANDOM_CHARS,
         ));
         text.push_str(PERSONAL_ACCESS_TOKEN_PREFIX);
-        URL_SAFE_NO_PAD.encode_string(&*bytes, &mut *text);
+        URL_SAFE_NO_PAD.encode_string(*bytes, &mut text);
         Ok(Self(PresentedPersonalAccessToken(text)))
     }
 
