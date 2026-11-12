@@ -32,10 +32,10 @@ mod network_settings;
 mod oauth_connections;
 mod oauth_login;
 mod passkey_auth;
-mod personal_access_tokens;
 mod password_reset;
 mod payment_settings;
 mod payment_webhook;
+mod personal_access_tokens;
 mod platform_audit;
 mod playground_conversations;
 mod playground_image_history;
@@ -253,12 +253,20 @@ pub(crate) fn raw_openapi_document() -> OpenApi {
                     .build(),
             ),
         );
-    document.components.get_or_insert_with(Components::new).add_security_scheme(
+    document
+        .components
+        .get_or_insert_with(Components::new)
+        .add_security_scheme(
         "personalAccessTokenBearer",
-        SecurityScheme::Http(HttpBuilder::new().scheme(HttpAuthScheme::Bearer)
-            .bearer_format("af_pat_")
-            .description(Some("独立的系统 API 个人访问令牌；按接口 scopes 和当前用户权限授权，不用于模型网关"))
-            .build()),
+        SecurityScheme::Http(
+            HttpBuilder::new()
+                .scheme(HttpAuthScheme::Bearer)
+                .bearer_format("af_pat_")
+                .description(Some(
+                    "独立的系统 API 个人访问令牌；按接口 scopes 和当前用户权限授权，不用于模型网关",
+                ))
+                .build(),
+        ),
     );
     document
 }
@@ -276,7 +284,9 @@ pub fn openapi_document_with_extensions(
     match extensions {
         Some(extensions) => crate::access_token_routes::AccessTokenRouteOverlay::from_documents(
             &extensions.openapi_documents(),
-        ).document().clone(),
+        )
+        .document()
+        .clone(),
         None => openapi_document(),
     }
 }

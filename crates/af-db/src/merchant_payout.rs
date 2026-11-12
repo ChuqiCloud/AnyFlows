@@ -87,13 +87,18 @@ impl MerchantPayoutInitiator {
             || request_id.is_empty()
             || request_id.len() > 128
             || request_id.chars().any(char::is_control)
-            || scope
-                .as_deref()
-                .is_some_and(|value| value.is_empty() || value.len() > 128 || value.chars().any(char::is_control))
+            || scope.as_deref().is_some_and(|value| {
+                value.is_empty() || value.len() > 128 || value.chars().any(char::is_control)
+            })
         {
             return Err(MerchantFinanceError::InvalidInput);
         }
-        Ok(Self { user_id, access_token_id, request_id, scope })
+        Ok(Self {
+            user_id,
+            access_token_id,
+            request_id,
+            scope,
+        })
     }
 }
 #[derive(Clone)]
@@ -253,7 +258,8 @@ impl MerchantPayoutRepository {
         withdrawal: i64,
         automatic: bool,
     ) -> Result<MerchantPayout, MerchantFinanceError> {
-        self.enqueue_with_initiator(withdrawal, automatic, None).await
+        self.enqueue_with_initiator(withdrawal, automatic, None)
+            .await
     }
 
     /// Manual API requests retain their accepted actor for execution-time authorization.
@@ -644,7 +650,8 @@ impl MerchantPayoutRepository {
                 .execute(tx.get_database_backend().build(&authorize))
                 .await
                 .map_err(db_error)?
-                .rows_affected() == 1;
+                .rows_affected()
+                == 1;
             tx.commit().await.map_err(db_error)?;
             Ok(authorized)
         })
@@ -816,10 +823,7 @@ async fn cancel_unsubmitted_payout(
     account.withdrawing_quota -= withdrawal.amount_quota;
     let debt = account.debt_quota.min(withdrawal.amount_quota);
     account.debt_quota -= debt;
-    account.available_quota = checked_add(
-        account.available_quota,
-        withdrawal.amount_quota - debt,
-    )?;
+    account.available_quota = checked_add(account.available_quota, withdrawal.amount_quota - debt)?;
     let at = now();
     save_account(tx, &account, at).await?;
     let reject = Query::update()

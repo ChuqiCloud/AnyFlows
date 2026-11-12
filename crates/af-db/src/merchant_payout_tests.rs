@@ -345,14 +345,19 @@ async fn merchant_payout_admin_revoked_after_claim_cancels_before_first_submit_o
     payouts
         .enqueue_with_initiator(withdrawal.id, false, Some(&payout_initiator(&fixture)))
         .await?;
-    let claim = payouts.claim("worker-claimed-before-revocation").await?.unwrap();
+    let claim = payouts
+        .claim("worker-claimed-before-revocation")
+        .await?
+        .unwrap();
     assert!(claim.submit);
     set_payout_actor_role(&fixture, 0).await?;
     assert!(!payouts.authorize_first_submit(&claim).await?);
     assert!(!payouts.authorize_first_submit(&claim).await?);
     assert!(payouts.claim("worker-retry-after-cancel").await?.is_none());
     assert_eq!(
-        payouts.complete(&claim, "paid", "must-not-submit", None).await,
+        payouts
+            .complete(&claim, "paid", "must-not-submit", None)
+            .await,
         Err(MerchantFinanceError::Conflict)
     );
     let balance = finance.balance(77).await?;
@@ -363,9 +368,19 @@ async fn merchant_payout_admin_revoked_after_claim_cancels_before_first_submit_o
     let cancelled = &withdrawals.items[0];
     assert_eq!(cancelled.status, "rejected");
     assert_eq!(cancelled.payout.as_ref().unwrap().status, "failed");
-    assert_eq!(cancelled.reason.as_deref(), Some("initiator_permission_revoked"));
+    assert_eq!(
+        cancelled.reason.as_deref(),
+        Some("initiator_permission_revoked")
+    );
     let entries = finance.entries(77, 100, None).await?;
-    assert_eq!(entries.items.iter().filter(|entry| entry.kind == "withdrawal_rejected").count(), 1);
+    assert_eq!(
+        entries
+            .items
+            .iter()
+            .filter(|entry| entry.kind == "withdrawal_rejected")
+            .count(),
+        1
+    );
     fixture.close().await?;
     Ok(())
 }
@@ -382,7 +397,10 @@ async fn merchant_payout_authorized_first_submit_cannot_cancel_or_authorize_twic
     payouts
         .enqueue_with_initiator(withdrawal.id, false, Some(&payout_initiator(&fixture)))
         .await?;
-    let claim = payouts.claim("first-submit-authorized-worker").await?.unwrap();
+    let claim = payouts
+        .claim("first-submit-authorized-worker")
+        .await?
+        .unwrap();
     assert!(payouts.authorize_first_submit(&claim).await?);
     assert!(!payouts.authorize_first_submit(&claim).await?);
     set_payout_actor_role(&fixture, 0).await?;
@@ -391,11 +409,23 @@ async fn merchant_payout_authorized_first_submit_cannot_cancel_or_authorize_twic
     assert_eq!(balance.available_quota, 750);
     assert_eq!(balance.withdrawing_quota, 200);
     assert_eq!(balance.total_paid_quota, 0);
-    assert!(finance.entries(77, 100, None).await?.items.iter().all(|entry| entry.kind != "withdrawal_rejected"));
+    assert!(
+        finance
+            .entries(77, 100, None)
+            .await?
+            .items
+            .iter()
+            .all(|entry| entry.kind != "withdrawal_rejected")
+    );
     due(&fixture, withdrawal.id).await?;
-    let recovery = payouts.claim("authorized-query-only-worker").await?.unwrap();
+    let recovery = payouts
+        .claim("authorized-query-only-worker")
+        .await?
+        .unwrap();
     assert!(!recovery.submit);
-    payouts.complete(&recovery, "paid", "confirmed-authorized-transfer", None).await?;
+    payouts
+        .complete(&recovery, "paid", "confirmed-authorized-transfer", None)
+        .await?;
     assert_eq!(finance.balance(77).await?.withdrawing_quota, 0);
     assert_eq!(finance.balance(77).await?.total_paid_quota, 200);
     fixture.close().await?;
@@ -430,7 +460,10 @@ async fn merchant_payout_unknown_keeps_funds_and_reconciles_after_admin_revocati
     due(&fixture, withdrawal.id).await?;
     let recovery = payouts.claim("reconciliation-worker").await?.unwrap();
     assert!(!recovery.submit);
-    assert_eq!(payouts.authorize_first_submit(&recovery).await, Err(MerchantFinanceError::InvalidInput));
+    assert_eq!(
+        payouts.authorize_first_submit(&recovery).await,
+        Err(MerchantFinanceError::InvalidInput)
+    );
     assert_eq!(finance.balance(77).await?.withdrawing_quota, 200);
     payouts
         .complete(&recovery, "paid", "remote-confirmed", None)

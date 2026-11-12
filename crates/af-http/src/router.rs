@@ -164,27 +164,45 @@ impl HttpRouter {
     pub fn merge(self, router: Router) -> Self {
         let router = match (&self.1, &self.2) {
             (Some(resolver), Some(overlay)) => router
-                .layer(middleware::from_fn_with_state(resolver.clone(), crate::access_token_auth::resolve_management_client_ip))
-                .layer(middleware::from_fn_with_state(overlay.clone(), crate::access_token_auth::attach_access_token_route_overlay))
+                .layer(middleware::from_fn_with_state(
+                    resolver.clone(),
+                    crate::access_token_auth::resolve_management_client_ip,
+                ))
+                .layer(middleware::from_fn_with_state(
+                    overlay.clone(),
+                    crate::access_token_auth::attach_access_token_route_overlay,
+                ))
                 .layer(middleware::from_fn(ensure_request_id)),
             (Some(resolver), None) => router
-                .layer(middleware::from_fn_with_state(resolver.clone(), crate::access_token_auth::resolve_management_client_ip))
+                .layer(middleware::from_fn_with_state(
+                    resolver.clone(),
+                    crate::access_token_auth::resolve_management_client_ip,
+                ))
                 .layer(middleware::from_fn(ensure_request_id)),
             (None, _) => router,
         };
         Self(self.0.merge(router), self.1, self.2)
     }
 
-    fn with_access_token_overlay(mut self, overlay: Option<crate::access_token_routes::AccessTokenRouteOverlay>) -> Self {
+    fn with_access_token_overlay(
+        mut self,
+        overlay: Option<crate::access_token_routes::AccessTokenRouteOverlay>,
+    ) -> Self {
         self.2 = overlay;
         self
     }
 
     fn with_management_client_ip(mut self, config: &ServerConfig) -> Self {
         let resolver = crate::client_ip::ClientIpResolver::from_config(config);
-        self.0 = self.0.layer(middleware::from_fn_with_state(resolver.clone(), crate::access_token_auth::resolve_management_client_ip));
+        self.0 = self.0.layer(middleware::from_fn_with_state(
+            resolver.clone(),
+            crate::access_token_auth::resolve_management_client_ip,
+        ));
         if let Some(overlay) = &self.2 {
-            self.0 = self.0.layer(middleware::from_fn_with_state(overlay.clone(), crate::access_token_auth::attach_access_token_route_overlay));
+            self.0 = self.0.layer(middleware::from_fn_with_state(
+                overlay.clone(),
+                crate::access_token_auth::attach_access_token_route_overlay,
+            ));
         }
         self.1 = Some(resolver);
         self
@@ -272,8 +290,11 @@ pub fn build_router(
     http_extensions: Option<HttpExtensions>,
     payment_webhook_routes: Option<Router>,
 ) -> HttpRouter {
-    let access_token_overlay = http_extensions.as_ref().map(|extensions|
-        crate::access_token_routes::AccessTokenRouteOverlay::from_documents(&extensions.openapi_documents()));
+    let access_token_overlay = http_extensions.as_ref().map(|extensions| {
+        crate::access_token_routes::AccessTokenRouteOverlay::from_documents(
+            &extensions.openapi_documents(),
+        )
+    });
     let service_authenticator = http_extensions
         .as_ref()
         .and_then(HttpExtensions::model_authenticator);
@@ -601,8 +622,9 @@ pub fn build_router(
         user_token_service,
         Arc::clone(&http_state.session_authenticator),
     );
-    let personal_access_token_routes = crate::access_tokens::build_access_token_router(
-        Arc::clone(&http_state.session_authenticator));
+    let personal_access_token_routes = crate::access_tokens::build_access_token_router(Arc::clone(
+        &http_state.session_authenticator,
+    ));
     let registration_routes = build_registration_router(
         Arc::clone(&registration_service),
         Arc::clone(&http_state.session_authenticator),
@@ -1071,7 +1093,9 @@ pub fn build_router(
         config,
         DEFAULT_REQUEST_BODY_LIMIT_BYTES,
         frontend_assets,
-    )).with_access_token_overlay(access_token_overlay).with_management_client_ip(config)
+    ))
+    .with_access_token_overlay(access_token_overlay)
+    .with_management_client_ip(config)
 }
 
 #[cfg(test)]

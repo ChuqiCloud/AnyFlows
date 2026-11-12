@@ -409,7 +409,11 @@ impl MigrationTrait for Migration {
                     .to_owned(),
             )
             .await?;
-        for column in ["initiated_by_user_id", "initiated_by_access_token_id", "submit_authorized_at"] {
+        for column in [
+            "initiated_by_user_id",
+            "initiated_by_access_token_id",
+            "submit_authorized_at",
+        ] {
             manager
                 .alter_table(
                     Table::alter()

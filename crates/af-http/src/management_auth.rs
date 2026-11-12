@@ -52,8 +52,16 @@ async fn authenticate_present_session(
 ) -> Response {
     // Keep legacy JWT failures stable while giving recognizable malformed PAT
     // requests the OAuth bearer invalid_request response without echoing secrets.
-    let has_personal_access_token = request.headers().get_all(AUTHORIZATION).iter()
-        .any(|value| value.as_bytes().windows(b"af_pat_".len()).any(|part| part == b"af_pat_"));
+    let has_personal_access_token = request
+        .headers()
+        .get_all(AUTHORIZATION)
+        .iter()
+        .any(|value| {
+            value
+                .as_bytes()
+                .windows(b"af_pat_".len())
+                .any(|part| part == b"af_pat_")
+        });
     let token = match extract_bearer_token(&mut request) {
         Ok(token) => token,
         Err(_) if has_personal_access_token => {
@@ -65,21 +73,30 @@ async fn authenticate_present_session(
         let Some(service) = state.authenticator.personal_access_tokens() else {
             return crate::access_token_error::AccessTokenHttpError::InvalidToken.into_response();
         };
-        return crate::access_token_auth::authenticate_personal_access_token(service, token, request, next).await;
+        return crate::access_token_auth::authenticate_personal_access_token(
+            service, token, request, next,
+        )
+        .await;
     }
     match state.authenticator.authenticate(token.as_str()).await {
         Ok(authentication) => {
             let mut digest = Sha256::new();
             digest.update(b"anyflows:interactive-session-binding:v1\0");
             digest.update(token.as_str().as_bytes());
-            let session_binding = digest.finalize().iter().map(|byte| format!("{byte:02x}")).collect();
+            let session_binding = digest
+                .finalize()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
             drop(token);
-            request.extensions_mut().insert(crate::access_token_auth::InteractiveSessionEvidence {
-                user_id: authentication.principal().user_id(),
-                issued_at: authentication.issued_at(),
-                session_version: authentication.session_version(),
-                session_binding,
-            });
+            request
+                .extensions_mut()
+                .insert(crate::access_token_auth::InteractiveSessionEvidence {
+                    user_id: authentication.principal().user_id(),
+                    issued_at: authentication.issued_at(),
+                    session_version: authentication.session_version(),
+                    session_binding,
+                });
             request.extensions_mut().insert(authentication);
             next.run(request).await
         }
@@ -128,7 +145,12 @@ use axum::response::IntoResponse;
 #[cfg(test)]
 mod tests {
     use af_admin::{LoginCredentials, SessionAuthenticationFuture, SessionLoginFuture};
-    use axum::{Router, body::{Body, to_bytes}, middleware, routing::get};
+    use axum::{
+        Router,
+        body::{Body, to_bytes},
+        middleware,
+        routing::get,
+    };
     use http::{HeaderValue, Request, StatusCode, header::AUTHORIZATION};
     use tower::ServiceExt;
 
@@ -221,16 +243,31 @@ mod tests {
             ManagementAuthenticationState::new(Arc::new(RejectSessionAuthenticator)),
             authenticate_management_session,
         );
-        let router = Router::new().route("/", get(|| async { StatusCode::NO_CONTENT })).layer(layer);
+        let router = Router::new()
+            .route("/", get(|| async { StatusCode::NO_CONTENT }))
+            .layer(layer);
         let requests = [
-            Request::builder().uri("/").header(AUTHORIZATION, "Basic af_pat_secret").body(Body::empty()).unwrap(),
-            Request::builder().uri("/").header(AUTHORIZATION, "Bearer af_pat_secret")
-                .header(AUTHORIZATION, "Bearer other").body(Body::empty()).unwrap(),
+            Request::builder()
+                .uri("/")
+                .header(AUTHORIZATION, "Basic af_pat_secret")
+                .body(Body::empty())
+                .unwrap(),
+            Request::builder()
+                .uri("/")
+                .header(AUTHORIZATION, "Bearer af_pat_secret")
+                .header(AUTHORIZATION, "Bearer other")
+                .body(Body::empty())
+                .unwrap(),
         ];
         for request in requests {
             let response = router.clone().oneshot(request).await.unwrap();
             assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-            assert!(response.headers()[http::header::WWW_AUTHENTICATE].to_str().unwrap().contains("invalid_request"));
+            assert!(
+                response.headers()[http::header::WWW_AUTHENTICATE]
+                    .to_str()
+                    .unwrap()
+                    .contains("invalid_request")
+            );
             let body = to_bytes(response.into_body(), 1024).await.unwrap();
             assert!(!String::from_utf8_lossy(&body).contains("af_pat_secret"));
         }
