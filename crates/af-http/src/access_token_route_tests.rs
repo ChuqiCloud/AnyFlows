@@ -141,10 +141,7 @@ fn is_public_or_external_callback(method: &str, path: &str) -> bool {
         (method, path),
         ("GET", "/api/model-provider-catalog")
             | ("GET", "/api/account/verifications/alipay/callback")
-            | (
-                "GET" | "POST",
-                "/api/payment/webhook/{provider}"
-            )
+            | ("GET" | "POST", "/api/payment/webhook/{provider}")
             | ("POST", "/api/refund/webhook/{provider}")
     )
 }
