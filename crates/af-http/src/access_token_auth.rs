@@ -26,10 +26,10 @@ pub(crate) async fn resolve_management_client_ip(
     mut request: Request,
     next: Next,
 ) -> Response {
-    if request.extensions().get::<TrustedClientIp>().is_none() {
-        if let Ok(client_ip) = resolver.resolve_context(&request) {
-            request.extensions_mut().insert(client_ip);
-        }
+    if request.extensions().get::<TrustedClientIp>().is_none()
+        && let Ok(client_ip) = resolver.resolve_context(&request)
+    {
+        request.extensions_mut().insert(client_ip);
     }
     next.run(request).await
 }
@@ -105,8 +105,8 @@ pub(crate) async fn authenticate_personal_access_token(
                 AccessTokenHttpError::InvalidToken
             };
             let response = error.into_response();
-            if let Some(audit) = audit {
-                if service
+            if let Some(audit) = audit
+                && service
                     .record_access(PersonalAccessTokenAccessRecord {
                         user_id: Some(audit.user_id),
                         token_id: Some(audit.token_id),
@@ -121,12 +121,11 @@ pub(crate) async fn authenticate_personal_access_token(
                     })
                     .await
                     .is_err()
-                {
-                    tracing::error!(
-                        error_kind = "personal_access_token_denial_audit_unavailable",
-                        "PAT denial audit could not be recorded"
-                    );
-                }
+            {
+                tracing::error!(
+                    error_kind = "personal_access_token_denial_audit_unavailable",
+                    "PAT denial audit could not be recorded"
+                );
             }
             return response;
         }

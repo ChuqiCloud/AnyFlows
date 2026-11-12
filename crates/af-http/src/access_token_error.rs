@@ -129,10 +129,10 @@ impl IntoResponse for AccessTokenHttpError {
                 .headers_mut()
                 .insert(WWW_AUTHENTICATE, HeaderValue::from_static(challenge));
         }
-        if let Self::RateLimited { retry_after } = self {
-            if let Ok(header) = HeaderValue::from_str(&retry_after.to_string()) {
-                response.headers_mut().insert(RETRY_AFTER, header);
-            }
+        if let Self::RateLimited { retry_after } = self
+            && let Ok(header) = HeaderValue::from_str(&retry_after.to_string())
+        {
+            response.headers_mut().insert(RETRY_AFTER, header);
         }
         response
     }
