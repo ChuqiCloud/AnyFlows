@@ -22,7 +22,10 @@ fn personal_access_token_policies_cover_actual_management_router_registrations()
                 continue;
             }
             if is_interactive_playground_operation(&method, &path) {
-                assert!(policy(&method, &path).is_none(), "PATs must not authorize session playground model calls: {method} {path}");
+                assert!(
+                    policy(&method, &path).is_none(),
+                    "PATs must not authorize session playground model calls: {method} {path}"
+                );
                 playground_operations.insert(format!("{method} {path}"));
                 continue;
             }
@@ -47,15 +50,22 @@ fn personal_access_token_policies_cover_actual_management_router_registrations()
                         .any(|requirement| requirement.get("bearerAuth").is_some())
                 });
             if path == "/api/access-token/self" {
-                assert!(contract.and_then(|operation| operation.get("security")).and_then(Value::as_array)
-                    .is_some_and(|requirements| requirements.iter().any(|requirement|
-                        requirement.get("personalAccessTokenBearer").is_some())),
-                    "PAT self inspection must declare its independent authentication scheme");
+                assert!(
+                    contract
+                        .and_then(|operation| operation.get("security"))
+                        .and_then(Value::as_array)
+                        .is_some_and(|requirements| requirements.iter().any(|requirement| {
+                            requirement.get("personalAccessTokenBearer").is_some()
+                        })),
+                    "PAT self inspection must declare its independent authentication scheme"
+                );
                 assert!(policy(&method, &path).is_some_and(|rule| !rule.session_only));
                 continue;
             }
             if requires_management_bearer(&method, &path) && !bearer {
-                missing.insert(format!("{method} {path}: protected source route missing bearerAuth security"));
+                missing.insert(format!(
+                    "{method} {path}: protected source route missing bearerAuth security"
+                ));
                 continue;
             }
             if bearer {
@@ -64,13 +74,18 @@ fn personal_access_token_policies_cover_actual_management_router_registrations()
                     missing.insert(format!("{method} {path}: no PAT policy"));
                     continue;
                 };
-                if (path.starts_with("/api/admin/") || path.starts_with("/api/platform/")) && !path.contains("/access-tokens") {
+                if (path.starts_with("/api/admin/") || path.starts_with("/api/platform/"))
+                    && !path.contains("/access-tokens")
+                {
                     assert!(rule.admin_only && !rule.session_only, "{method} {path}");
                     assert_eq!(rule.required_scopes.len(), 1, "{method} {path}");
                     assert!(rule.required_scopes[0].starts_with("admin:"));
                 }
                 if path == "/api/auth/session" {
-                    assert!(rule.session_only, "login session inspection must remain interactive");
+                    assert!(
+                        rule.session_only,
+                        "login session inspection must remain interactive"
+                    );
                 }
                 match (method.as_str(), path.as_str()) {
                     ("GET", "/api/account/usage-logs" | "/api/account/audit-logs") => {
@@ -78,7 +93,10 @@ fn personal_access_token_policies_cover_actual_management_router_registrations()
                         assert!(!rule.admin_only && !rule.session_only);
                     }
                     ("POST", "/api/merchant/services/{id}/key") => {
-                        assert_eq!(rule.required_scopes, ["merchant:write", "merchant_secrets:write"]);
+                        assert_eq!(
+                            rule.required_scopes,
+                            ["merchant:write", "merchant_secrets:write"]
+                        );
                         assert!(!rule.admin_only && !rule.session_only);
                     }
                     ("GET", "/api/admin/audit-logs") => {
@@ -91,8 +109,11 @@ fn personal_access_token_policies_cover_actual_management_router_registrations()
             }
         }
     }
-    assert_eq!(playground_operations.len(), 8,
-        "every explicitly allowed session playground model operation must remain registered");
+    assert_eq!(
+        playground_operations.len(),
+        8,
+        "every explicitly allowed session playground model operation must remain registered"
+    );
     assert!(
         checked > 200,
         "the production router scan must not silently become empty"
@@ -105,22 +126,41 @@ fn personal_access_token_policies_cover_actual_management_router_registrations()
 }
 
 fn is_interactive_playground_operation(method: &str, path: &str) -> bool {
-    matches!((method, path),
-        ("POST", "/api/playground/v1/chat/completions"
-            | "/api/playground/v1/images/generations"
-            | "/api/playground/v1/images/edits"
-            | "/api/playground/v1/responses"
-            | "/api/playground/v1/messages"
-            | "/api/playground/v1/videos/generations")
-        | ("GET", "/api/playground/v1/videos" | "/api/playground/v1/videos/{task_id}"))
+    matches!(
+        (method, path),
+        (
+            "POST",
+            "/api/playground/v1/chat/completions"
+                | "/api/playground/v1/images/generations"
+                | "/api/playground/v1/images/edits"
+                | "/api/playground/v1/responses"
+                | "/api/playground/v1/messages"
+                | "/api/playground/v1/videos/generations"
+        ) | (
+            "GET",
+            "/api/playground/v1/videos" | "/api/playground/v1/videos/{task_id}"
+        )
+    )
 }
 
 fn requires_management_bearer(method: &str, path: &str) -> bool {
     path == "/api/auth/session"
-        || ["/api/admin/", "/api/platform/", "/api/account/", "/api/merchant/",
-            "/api/merchant-pool/", "/api/merchant-pools", "/api/user-routes", "/api/tokens"]
-            .iter().any(|prefix| path.starts_with(prefix))
-        || matches!(path, "/api/token-groups" | "/api/models" | "/api/model-providers")
+        || [
+            "/api/admin/",
+            "/api/platform/",
+            "/api/account/",
+            "/api/merchant/",
+            "/api/merchant-pool/",
+            "/api/merchant-pools",
+            "/api/user-routes",
+            "/api/tokens",
+        ]
+        .iter()
+        .any(|prefix| path.starts_with(prefix))
+        || matches!(
+            path,
+            "/api/token-groups" | "/api/models" | "/api/model-providers"
+        )
         || (path.starts_with("/api/playground/")
             && !(method == "GET" && path == "/api/playground/shares/{token}"))
 }

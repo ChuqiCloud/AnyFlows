@@ -55,6 +55,21 @@ const preset = scopes => [
 const collection = () => ({ tokens: issuedTokensByRole[role], next_cursor: null, capacity: 20 })
 const tokenMeta = (id, body) => ({ id, name: body.name, token_hint: `Hint${id}`, scopes: body.scopes, enabled: body.enabled ?? true, expires_at: body.expires_at, allow_ips: body.allow_ips, created_at: 1_800_000_000, updated_at: 1_800_000_000, last_used_at: null, last_used_ip: null, version: 1 })
 
+async function settledDialog(currentPage, title) {
+  const dialog = currentPage.getByRole('dialog').filter({ has: currentPage.getByRole('heading', { name: title, exact: true }) })
+  await dialog.waitFor({ state: 'visible' })
+  await currentPage.waitForFunction(element => {
+    if (!element?.isConnected) return false
+    for (let ancestor = element; ancestor; ancestor = ancestor.parentElement) {
+      if (Number.parseFloat(getComputedStyle(ancestor).opacity) < 0.999) return false
+    }
+    return true
+  }, await dialog.elementHandle())
+  // Framer's transform spring can finish after opacity reaches one.
+  await currentPage.waitForTimeout(250)
+  return dialog
+}
+
 try {
   await mkdir(screenshots, { recursive: true })
   await writeFile(html, '<!doctype html><html lang="zh" class="dark"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/.access-token-smoke.tsx"></script>')
@@ -214,6 +229,7 @@ try {
   assert.equal(modelKeyHeader, 'sk-model-key-fixture', 'Model API requests keep their independent x-api-key credential')
   assert.equal(modelKeyAuthorization, undefined, 'The model API key probe does not carry the browser session or a PAT')
   assert.equal(await page.evaluate(() => sessionStorage.getItem('anyflows.management.access-token')), 'ci-fresh-session')
+  await settledDialog(page, label('issued.title'))
   await page.screenshot({ path: resolve(screenshots, 'access-token-once-issued.png'), fullPage: true, animations: 'disabled' })
   await page.getByRole('button', { name: label('issued.done'), exact: true }).click()
   await page.getByRole('button', { name: label('actions.refresh'), exact: true }).click()
@@ -249,7 +265,34 @@ try {
   await userPage.getByRole('button', { name: label('actions.create'), exact: true }).click()
   assert.equal(await userPage.getByRole('button', { name: label('presets.admin_full'), exact: true }).count(), 0, 'User PATs cannot select administrator scopes')
   assert.equal(await userPage.getByRole('checkbox', { name: /更新渠道/ }).count(), 0, 'Administrator scopes are absent from the user catalog')
+  await settledDialog(userPage, label('editor.createTitle'))
   await userPage.screenshot({ path: resolve(screenshots, 'access-token-user-scopes.png'), fullPage: true, animations: 'disabled' })
+
+  await userPage.setViewportSize({ width: 390, height: 844 })
+  const mobileDialog = await settledDialog(userPage, label('editor.createTitle'))
+  const mobileLayout = await mobileDialog.evaluate(dialog => {
+    const bounds = dialog.getBoundingClientRect()
+    const scrollable = [dialog, ...dialog.querySelectorAll('*')].find(element => {
+      const style = getComputedStyle(element)
+      return /auto|scroll/.test(style.overflowY) && element.clientHeight > 0 && element.scrollHeight > element.clientHeight + 1
+    })
+    let canScroll = false
+    if (scrollable) {
+      const before = scrollable.scrollTop
+      scrollable.scrollTop = 0
+      scrollable.scrollTop = 50
+      canScroll = scrollable.scrollTop > 0
+      scrollable.scrollTop = before
+    }
+    return { pageWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth, viewportHeight: innerHeight,
+      left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom, canScroll }
+  })
+  assert.ok(mobileLayout.pageWidth <= mobileLayout.viewportWidth, 'The mobile editor causes no horizontal document overflow')
+  assert.ok(mobileLayout.left >= -1 && mobileLayout.right <= mobileLayout.viewportWidth + 1, 'The mobile dialog stays inside the viewport width')
+  assert.ok(mobileLayout.top >= -1 && mobileLayout.bottom <= mobileLayout.viewportHeight + 1, 'The mobile dialog stays inside the viewport height')
+  assert.equal(mobileLayout.canScroll, true, 'The mobile dialog body remains vertically scrollable')
+  await settledDialog(userPage, label('editor.createTitle'))
+  await userPage.screenshot({ path: resolve(screenshots, 'access-token-user-scopes-mobile.png'), fullPage: true, animations: 'disabled' })
 
   assert.deepEqual(errors, [])
   console.log('System access token browser regression passed: step-up recovery, one-time secret, admin/user scope isolation, rename, revoke and model-key separation.')

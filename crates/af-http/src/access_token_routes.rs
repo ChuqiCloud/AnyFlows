@@ -342,10 +342,7 @@ pub(crate) fn annotate_document_with_overlay(
             };
             let extensions = operation.extensions.get_or_insert_with(Default::default);
             if policy.session_only {
-                extensions.insert(
-                    "x-anyflows-pat-session-only".to_owned(),
-                    Value::Bool(true),
-                );
+                extensions.insert("x-anyflows-pat-session-only".to_owned(), Value::Bool(true));
                 extensions.remove("x-anyflows-pat-scopes");
             } else {
                 extensions.remove("x-anyflows-pat-session-only");

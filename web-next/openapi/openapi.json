@@ -221,7 +221,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_announcements:execute"
         ]
@@ -304,8 +303,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:create_admin_announcement:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/announcements/{id}": {
@@ -417,7 +415,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_announcement:execute"
         ]
@@ -534,8 +531,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:publish_admin_announcement:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/announcements/{id}/revoke": {
@@ -647,7 +643,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:revoke_admin_announcement:execute"
         ]
@@ -1027,8 +1022,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_authentication_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -1108,8 +1102,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:update_admin_authentication_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/v1/rerank": {
@@ -1826,8 +1819,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_admin_redemption_audit:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/redemption-batches": {
@@ -1922,7 +1914,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_redemption_batches:execute"
         ]
@@ -2025,8 +2016,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:create_admin_redemption_batch:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/redemption-batches/{batch_id}/disable": {
@@ -2149,7 +2139,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:disable_admin_redemption_batch:execute"
         ]
@@ -2264,8 +2253,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "billing:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/account/refund-reconciliations": {
@@ -2349,7 +2337,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "billing:read"
         ]
@@ -2560,8 +2547,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_admin_refund_reconciliations:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/refunds": {
@@ -2662,7 +2648,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_refunds:execute"
         ]
@@ -2798,8 +2783,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:approve_admin_refund:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/refunds/{request_id}/reject": {
@@ -2912,8 +2896,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:reject_admin_refund:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/refunds/{request_id}/submit": {
@@ -3026,8 +3009,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:submit_admin_refund:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/refunds/{request_id}/manual-complete": {
@@ -3140,8 +3122,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:manual_complete_admin_refund:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/subscription-plans": {
@@ -3236,7 +3217,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_subscription_plans:execute"
         ]
@@ -3339,8 +3319,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:create_admin_subscription_plan:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/subscription-plans/{plan_id}/disable": {
@@ -3463,7 +3442,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:disable_admin_subscription_plan:execute"
         ]
@@ -3572,7 +3550,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_user_subscriptions:execute"
         ]
@@ -3696,7 +3673,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:bind_admin_user_subscription:execute"
         ]
@@ -3833,7 +3809,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:transition_admin_user_subscription_lifecycle:execute"
         ]
@@ -3921,7 +3896,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "subscriptions:read"
         ]
@@ -3976,8 +3950,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "subscriptions:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/account/subscription-orders": {
@@ -4089,8 +4062,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "subscriptions:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/account/subscription-orders/{order_id}": {
@@ -4175,8 +4147,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "subscriptions:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/account/subscription-orders/{order_id}/payment": {
@@ -4289,7 +4260,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "subscriptions:write"
         ]
@@ -4467,7 +4437,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "account:read"
         ]
@@ -4548,7 +4517,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "account:write"
         ]
@@ -4653,8 +4621,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "account_security:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/account/profile/email": {
@@ -4734,7 +4701,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "account_security:write"
         ]
@@ -4810,7 +4776,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "account_security:write"
         ]
@@ -4863,7 +4828,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "account_security:read"
         ]
@@ -4944,7 +4908,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "account_security:write"
         ]
@@ -5018,7 +4981,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "account_security:write"
         ]
@@ -5106,8 +5068,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "notifications:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -5175,7 +5136,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "notifications:write"
         ]
@@ -5230,8 +5190,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "account_security:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/account/passkeys/registration/options": {
@@ -5283,8 +5242,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "account_security:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/account/passkeys/registration/verify": {
@@ -5356,8 +5314,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "account_security:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/account/passkeys/{id}": {
@@ -5432,7 +5389,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "account_security:write"
         ]
@@ -5517,8 +5473,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "account_security:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/account/wallet": {
@@ -5568,7 +5523,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "billing:read"
         ]
@@ -5658,8 +5612,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "billing:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/account/notifications/read": {
@@ -5728,7 +5681,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "notifications:write"
         ]
@@ -5771,7 +5723,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "billing:read"
         ]
@@ -5896,8 +5847,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "billing:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/account/invitations": {
@@ -5947,7 +5897,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "invitations:read"
         ]
@@ -6042,8 +5991,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_merchant_pool_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -6141,7 +6089,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_merchant_pool_settings:execute"
         ]
@@ -6345,7 +6292,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_merchant_pools:execute"
         ]
@@ -6448,8 +6394,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:create_admin_merchant_pool:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/merchant-pools/{id}": {
@@ -6560,7 +6505,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_merchant_pool:execute"
         ]
@@ -6655,7 +6599,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:delete_admin_merchant_pool:execute"
         ]
@@ -6769,7 +6712,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_merchant_pool_terms:execute"
         ]
@@ -6893,8 +6835,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:update_admin_merchant_pool_terms:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/merchant-services": {
@@ -7094,7 +7035,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_merchant_services:execute"
         ]
@@ -7198,7 +7138,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_merchant_service:execute"
         ]
@@ -7302,7 +7241,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:resume_admin_merchant_service:execute"
         ]
@@ -7418,8 +7356,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:review_admin_merchant_service:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/merchants": {
@@ -7619,7 +7556,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_merchants:execute"
         ]
@@ -7716,7 +7652,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:delete_admin_merchant:execute"
         ]
@@ -7832,8 +7767,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:review_admin_merchant:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/merchant-pools": {
@@ -8033,7 +7967,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant:read"
         ]
@@ -8139,8 +8072,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "merchant:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/merchant-pools/{pool}/services": {
@@ -8363,8 +8295,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "merchant:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/merchant-pools/{pool}/services/{id}": {
@@ -8477,8 +8408,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "merchant:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/merchant/apply": {
@@ -8578,7 +8508,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant:write"
         ]
@@ -8783,8 +8712,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "merchant:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/merchant/profile": {
@@ -8883,8 +8811,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "merchant:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/merchant/quote": {
@@ -8984,7 +8911,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant:write"
         ]
@@ -9189,8 +9115,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "merchant:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "post": {
         "tags": [
@@ -9288,7 +9213,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant:write"
         ]
@@ -9392,7 +9316,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant:read"
         ]
@@ -9504,7 +9427,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant:write"
         ]
@@ -9618,7 +9540,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant:write",
           "merchant_secrets:write"
@@ -9735,8 +9656,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "merchant:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/merchant/services/{id}/submit": {
@@ -9837,7 +9757,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant:write"
         ]
@@ -9907,7 +9826,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_credential_model_policy:execute"
         ]
@@ -9987,8 +9905,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:update_admin_credential_model_policy:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/channels/{channel_id}/credentials/{credential_id}/models": {
@@ -10055,7 +9972,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_credential_models:execute"
         ]
@@ -10125,7 +10041,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:refresh_admin_credential_models:execute"
         ]
@@ -10188,8 +10103,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_channel_model_policy:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -10255,7 +10169,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_channel_model_policy:execute"
         ]
@@ -10369,7 +10282,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_credential_usage_config:execute"
         ]
@@ -10491,7 +10403,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_credential_usage_config:execute"
         ]
@@ -10596,7 +10507,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:reset_admin_credential_usage_config:execute"
         ]
@@ -10710,7 +10620,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:refresh_admin_credential_usage:execute"
         ]
@@ -10814,7 +10723,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_channel_usage_config:execute"
         ]
@@ -10928,8 +10836,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:update_admin_channel_usage_config:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/upstream-usage-profiles": {
@@ -11021,8 +10928,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_admin_upstream_usage_profiles:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "post": {
         "tags": [
@@ -11120,7 +11026,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:create_admin_upstream_usage_profile:execute"
         ]
@@ -11234,7 +11139,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_upstream_usage_profile:execute"
         ]
@@ -11331,8 +11235,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:delete_admin_upstream_usage_profile:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/merchant-services/{id}/maintenance": {
@@ -11454,8 +11357,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_service_maintenance_admin:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "post": {
         "tags": [
@@ -11564,7 +11466,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:create_service_maintenance_admin:execute"
         ]
@@ -11690,8 +11591,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:update_service_maintenance_admin:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/merchant-services/{id}/maintenance/{notice}/cancel": {
@@ -11804,8 +11704,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:cancel_service_maintenance_admin:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/merchant-services/{id}/prices": {
@@ -11925,7 +11824,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_service_prices_admin:execute"
         ]
@@ -12037,7 +11935,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:schedule_service_price_admin:execute"
         ]
@@ -12151,7 +12048,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:cancel_service_price_admin:execute"
         ]
@@ -12276,8 +12172,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "merchant:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "post": {
         "tags": [
@@ -12388,8 +12283,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "merchant:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/merchant/services/{id}/maintenance/{notice}": {
@@ -12510,7 +12404,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant:write"
         ]
@@ -12626,8 +12519,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "merchant:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/merchant/services/{id}/prices": {
@@ -12747,7 +12639,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant:read"
         ]
@@ -12859,7 +12750,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant:write"
         ]
@@ -12973,7 +12863,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant:write"
         ]
@@ -13011,8 +12900,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "merchant:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/merchant-pools/{pool}/services/{service}/watch": {
@@ -13067,7 +12955,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant:write"
         ]
@@ -13100,7 +12987,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant:write"
         ]
@@ -13132,8 +13018,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "patch": {
         "tags": [],
@@ -13168,7 +13053,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:set_settings:execute"
         ]
@@ -13201,7 +13085,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_targets:execute"
         ]
@@ -13241,8 +13124,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:upsert_target:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/channel-monitor/targets/{id}": {
@@ -13274,7 +13156,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:delete_target:execute"
         ]
@@ -13321,8 +13202,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_events:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/email-settings": {
@@ -13384,8 +13264,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_email_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -13463,7 +13342,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_email_settings:execute"
         ]
@@ -13561,8 +13439,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:send_admin_email_test:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/extensions": {
@@ -13647,8 +13524,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_network_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -13728,8 +13604,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:update_admin_network_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/payment-settings": {
@@ -13789,7 +13664,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_payment_settings:execute"
         ]
@@ -13872,8 +13746,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:update_admin_payment_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/oauth/providers": {
@@ -13935,8 +13808,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_admin_o_auth_providers:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/channels/{channel_id}/credentials/{credential_id}/oauth-authorizations": {
@@ -14072,8 +13944,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:begin_admin_o_auth_authorization:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/oauth/authorizations/manual-callback": {
@@ -14215,8 +14086,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:complete_admin_o_auth_manual_callback:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/auth/oauth/github/start": {
@@ -14571,8 +14441,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_git_hub_o_auth_login_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -14660,7 +14529,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_git_hub_o_auth_login_settings:execute"
         ]
@@ -14725,8 +14593,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_discord_o_auth_login_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -14814,7 +14681,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_discord_o_auth_login_settings:execute"
         ]
@@ -14879,8 +14745,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_balance_alert_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -14960,8 +14825,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:update_admin_balance_alert_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/site": {
@@ -15052,7 +14916,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_site_settings:execute"
         ]
@@ -15143,7 +15006,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_site_settings:execute"
         ]
@@ -15238,8 +15100,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:update_admin_site_navigation:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/frontend-templates": {
@@ -15299,7 +15160,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_frontend_templates:execute"
         ]
@@ -15364,8 +15224,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:scan_admin_frontend_templates:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/frontend-templates/active": {
@@ -15455,7 +15314,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:activate_admin_frontend_template:execute"
         ]
@@ -15547,7 +15405,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_frontend_template_preview:execute"
         ]
@@ -15610,7 +15467,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_dashboard:execute"
         ]
@@ -15736,8 +15592,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_service_levels:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/analytics/export-status": {
@@ -15787,7 +15642,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_analytics_export_status:execute"
         ]
@@ -15870,7 +15724,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:replay_admin_analytics_export:execute"
         ]
@@ -15968,7 +15821,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_users:execute"
         ]
@@ -16061,8 +15913,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:create_admin_user:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/users/{id}": {
@@ -16155,7 +16006,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_user:execute"
         ]
@@ -16269,7 +16119,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_user:execute"
         ]
@@ -16358,8 +16207,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:delete_admin_user:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/users/{id}/security": {
@@ -16452,7 +16300,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_user_security:execute"
         ]
@@ -16550,8 +16397,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:reset_admin_user_two_factor:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/users/{id}/security/passkeys/{passkey_id}": {
@@ -16650,8 +16496,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:revoke_admin_user_passkey:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/users/{id}/wallet/entries": {
@@ -16769,8 +16614,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_admin_wallet_entries:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/users/{id}/wallet/adjustments": {
@@ -16903,7 +16747,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:adjust_admin_wallet:execute"
         ]
@@ -17003,8 +16846,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_admin_groups:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "post": {
         "tags": [
@@ -17092,7 +16934,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:create_admin_group:execute"
         ]
@@ -17190,8 +17031,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_group:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -17302,7 +17142,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_group:execute"
         ]
@@ -17411,7 +17250,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:delete_admin_group:execute"
         ]
@@ -17500,7 +17338,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "api_keys:read"
         ]
@@ -17596,7 +17433,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_group_key_policy:execute"
         ]
@@ -17703,8 +17539,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:update_admin_group_key_policy:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/groups/{id}/model-policy": {
@@ -17787,7 +17622,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_group_model_policy:execute"
         ]
@@ -17894,8 +17728,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:update_admin_group_model_policy:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/routes": {
@@ -17992,8 +17825,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_admin_routes:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "post": {
         "tags": [
@@ -18083,8 +17915,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:create_admin_route:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/routes/{id}": {
@@ -18177,7 +18008,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_route:execute"
         ]
@@ -18293,8 +18123,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:update_admin_route:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "delete": {
         "tags": [
@@ -18380,8 +18209,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:delete_admin_route:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/models": {
@@ -18552,8 +18380,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "models:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/model-providers": {
@@ -18605,7 +18432,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "models:read"
         ]
@@ -18762,8 +18588,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_admin_models:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "post": {
         "tags": [
@@ -18851,7 +18676,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:create_admin_model:execute"
         ]
@@ -18947,7 +18771,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_model:execute"
         ]
@@ -19053,8 +18876,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:update_admin_model:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "delete": {
         "tags": [
@@ -19140,8 +18962,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:delete_admin_model:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/models/missing": {
@@ -19236,8 +19057,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_missing_admin_models:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "post": {
         "tags": [
@@ -19327,8 +19147,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:import_missing_admin_models:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/models/sync-previews": {
@@ -19458,7 +19277,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:create_admin_model_sync_preview:execute"
         ]
@@ -19584,7 +19402,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:apply_admin_model_sync_preview:execute"
         ]
@@ -19680,7 +19497,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_model_prices:execute"
         ]
@@ -19763,7 +19579,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:preview_admin_model_prices:execute"
         ]
@@ -19848,8 +19663,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:preview_admin_lite_llm_model_prices:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/model-prices/expression-preview": {
@@ -19941,8 +19755,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:preview_admin_model_price_expression:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/model-prices/batch": {
@@ -20044,8 +19857,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:apply_admin_model_prices:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/playground/shares": {
@@ -20128,8 +19940,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "playground:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/playground/shares/{token}": {
@@ -20254,8 +20065,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "playground:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/playground/conversations": {
@@ -20306,7 +20116,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "playground:read"
         ]
@@ -20385,8 +20194,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "playground:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -20488,7 +20296,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "playground:write"
         ]
@@ -20558,8 +20365,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "playground:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/playground/image-history": {
@@ -20599,7 +20405,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "playground:read"
         ]
@@ -20670,7 +20475,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "playground:write"
         ]
@@ -20696,8 +20500,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "playground:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/playground/image-history/{image_id}/image": {
@@ -20743,8 +20546,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "playground:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/playground/image-history/{image_id}/thumbnail": {
@@ -20790,8 +20592,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "playground:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/playground/image-history/{image_id}": {
@@ -20837,8 +20638,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "playground:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/tokens": {
@@ -20923,7 +20723,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "api_keys:read"
         ]
@@ -21017,8 +20816,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "api_keys:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/tokens/{id}": {
@@ -21101,7 +20899,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "api_keys:read"
         ]
@@ -21198,8 +20995,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "api_keys:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "delete": {
         "tags": [
@@ -21275,8 +21071,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "api_keys:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/account/access-tokens": {
@@ -21617,8 +21412,7 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-scopes": [],
-        "x-anyflows-pat-session-only": false
+        "x-anyflows-pat-scopes": []
       }
     },
     "/api/admin/access-tokens/policy": {
@@ -21779,7 +21573,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "routes:read"
         ]
@@ -21870,7 +21663,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "routes:write"
         ]
@@ -21958,8 +21750,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "routes:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -22060,7 +21851,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "routes:write"
         ]
@@ -22137,7 +21927,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "routes:write"
         ]
@@ -22197,8 +21986,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "usage:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/merchant-pool/routes": {
@@ -22242,7 +22030,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "routes:read"
         ]
@@ -22297,7 +22084,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "routes:write"
         ]
@@ -22354,7 +22140,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "routes:write"
         ]
@@ -22414,8 +22199,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "routes:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -22480,8 +22264,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "routes:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "delete": {
         "tags": [
@@ -22529,8 +22312,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "routes:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/merchant-pools/{pool_id}/statistics": {
@@ -22632,7 +22414,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "usage:read"
         ]
@@ -22737,7 +22518,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "usage:read"
         ]
@@ -22833,7 +22613,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant_finance:read"
         ]
@@ -22867,8 +22646,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "merchant_finance:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/merchant/finance/entries": {
@@ -22919,7 +22697,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant_finance:read"
         ]
@@ -22980,7 +22757,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant_finance:read"
         ]
@@ -23041,7 +22817,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant_finance:read"
         ]
@@ -23095,7 +22870,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant_finance:read"
         ]
@@ -23135,7 +22909,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant_finance:write"
         ]
@@ -23197,7 +22970,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_merchant_withdrawals:execute"
         ]
@@ -23250,7 +23022,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:decide_admin_merchant_withdrawal:execute"
         ]
@@ -23302,8 +23073,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:reverse_admin_merchant_settlement:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/merchant-finance/{merchant_id}/hold": {
@@ -23353,7 +23123,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:hold_admin_merchant_finance:execute"
         ]
@@ -23398,8 +23167,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_merchant_finance:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/merchant-finance/{merchant_id}/entries": {
@@ -23459,7 +23227,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_merchant_finance_entries:execute"
         ]
@@ -23493,8 +23260,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_merchant_payout_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -23533,8 +23299,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:save_merchant_payout_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/merchant/payout-account": {
@@ -23563,7 +23328,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant_finance:read"
         ]
@@ -23603,7 +23367,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant_finance:write"
         ]
@@ -23656,7 +23419,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "merchant_finance:read"
         ]
@@ -23718,7 +23480,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_merchant_payouts:execute"
         ]
@@ -23761,7 +23522,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:submit_merchant_payout:execute"
         ]
@@ -23804,8 +23564,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:reconcile_merchant_payout:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/tokens": {
@@ -23900,7 +23659,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_tokens:execute"
         ]
@@ -23993,8 +23751,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:create_admin_token:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/tokens/{id}": {
@@ -24087,7 +23844,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_token:execute"
         ]
@@ -24191,7 +23947,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_token:execute"
         ]
@@ -24278,7 +24033,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:delete_admin_token:execute"
         ]
@@ -24387,7 +24141,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_usage_logs:execute"
         ]
@@ -24488,8 +24241,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "usage:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/channels": {
@@ -24583,7 +24335,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_channels:execute"
         ]
@@ -24664,7 +24415,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:create_admin_channel:execute"
         ]
@@ -24762,8 +24512,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_channel:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -24864,7 +24613,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_channel:execute"
         ]
@@ -24953,8 +24701,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:delete_admin_channel:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/channels/{id}/probe": {
@@ -25037,7 +24784,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:probe_admin_channel:execute"
         ]
@@ -25092,8 +24838,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_client_profile_capabilities:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/client-profiles/opencode-settings/{channel_id}": {
@@ -25186,8 +24931,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_client_profile_open_code_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -25298,8 +25042,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:set_admin_client_profile_open_code_entry:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/client-profiles": {
@@ -25461,8 +25204,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_admin_client_profiles:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/client-profiles/validate": {
@@ -25560,7 +25302,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:validate_admin_client_profile:execute"
         ]
@@ -25663,7 +25404,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_client_profile:execute"
         ]
@@ -25774,7 +25514,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:save_admin_client_profile:execute"
         ]
@@ -25889,8 +25628,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:set_admin_client_profile_enabled:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/client-profiles/{key}/revisions": {
@@ -26012,8 +25750,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_admin_client_profile_revisions:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/client-profiles/{key}/revisions/{revision}": {
@@ -26122,7 +25859,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_client_profile_revision:execute"
         ]
@@ -26240,7 +25976,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:delete_admin_client_profile_revision:execute"
         ]
@@ -26363,7 +26098,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_client_profile_references:execute"
         ]
@@ -26476,8 +26210,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_channel_client_profile:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -26586,7 +26319,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:bind_admin_channel_client_profile:execute"
         ]
@@ -26704,7 +26436,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_credentials:execute"
         ]
@@ -26808,7 +26539,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:create_admin_credential:execute"
         ]
@@ -26914,7 +26644,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:import_admin_credentials:execute"
         ]
@@ -27006,7 +26735,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:export_admin_credentials:execute"
         ]
@@ -27115,8 +26843,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_credential:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -27230,8 +26957,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:update_admin_credential:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "delete": {
         "tags": [
@@ -27326,7 +27052,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:delete_admin_credential:execute"
         ]
@@ -27415,8 +27140,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_credential_usage:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/channels/{channel_id}/credentials/batch-delete": {
@@ -27510,8 +27234,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:batch_delete_admin_credentials:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/channels/{channel_id}/credentials/health": {
@@ -27615,8 +27338,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_credential_health:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/proxies": {
@@ -27711,7 +27433,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_credential_proxies:execute"
         ]
@@ -27804,8 +27525,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:create_admin_credential_proxy:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/proxies/{id}": {
@@ -27900,8 +27620,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_credential_proxy:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -28014,8 +27733,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:update_admin_credential_proxy:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "delete": {
         "tags": [
@@ -28109,7 +27827,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:delete_admin_credential_proxy:execute"
         ]
@@ -28204,8 +27921,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_admin_proxy_pools:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "post": {
         "tags": [
@@ -28303,7 +28019,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:create_admin_proxy_pool:execute"
         ]
@@ -28418,7 +28133,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_proxy_pool:execute"
         ]
@@ -28516,8 +28230,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:delete_admin_proxy_pool:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/proxy-pools/{id}/refresh": {
@@ -28621,8 +28334,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:refresh_admin_proxy_pool:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/proxy-pools/{id}/check": {
@@ -28724,7 +28436,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:check_admin_proxy_pool:execute"
         ]
@@ -28822,8 +28533,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:bind_admin_proxy_pool:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/proxy-pool-cleanup": {
@@ -28923,7 +28633,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:cleanup_admin_proxy_items:execute"
         ]
@@ -28988,8 +28697,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_admin_custom_o_auth2_providers:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/authentication-settings/oauth/custom/{provider_key}": {
@@ -29070,7 +28778,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_custom_o_auth2_provider:execute"
         ]
@@ -29172,7 +28879,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_custom_o_auth2_provider:execute"
         ]
@@ -29235,7 +28941,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_debug_trace_settings:execute"
         ]
@@ -29316,7 +29021,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_debug_trace_settings:execute"
         ]
@@ -29443,7 +29147,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_debug_traces:execute"
         ]
@@ -29539,7 +29242,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_debug_trace:execute"
         ]
@@ -29648,8 +29350,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:read_admin_debug_trace_snapshots:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/payment/webhook/{provider}": {
@@ -29882,7 +29583,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "verification:read"
         ]
@@ -29984,8 +29684,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "verification:write"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/account/verifications/{case_id}": {
@@ -30087,8 +29786,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "verification:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/account/verifications/{case_id}/provider-sync": {
@@ -30188,7 +29886,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "verification:write"
         ]
@@ -30302,8 +29999,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "verification:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/account-verifications": {
@@ -30422,7 +30118,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:list_admin_account_verifications:execute"
         ]
@@ -30525,7 +30220,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_account_verification:execute"
         ]
@@ -30639,8 +30333,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:download_admin_account_verification_material:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/account/verifications/eligibility": {
@@ -30729,7 +30422,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "verification:read"
         ]
@@ -30842,7 +30534,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:decide_account_verification:execute"
         ]
@@ -30907,8 +30598,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_verification_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -30996,7 +30686,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_verification_settings:execute"
         ]
@@ -31238,8 +30927,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_admin_platform_audit_logs:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/account/audit-logs": {
@@ -31326,8 +31014,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "usage:read"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/runtime-status": {
@@ -31377,7 +31064,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_runtime_status:execute"
         ]
@@ -31441,7 +31127,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_software:execute"
         ]
@@ -31506,8 +31191,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:check_admin_software_update:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     },
     "/api/admin/software/install": {
@@ -31597,7 +31281,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:install_admin_software_update:execute"
         ]
@@ -32400,8 +32083,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_oidc_login_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -32489,7 +32171,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_oidc_login_settings:execute"
         ]
@@ -32552,7 +32233,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_linux_do_login_settings:execute"
         ]
@@ -32643,7 +32323,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_linux_do_login_settings:execute"
         ]
@@ -32708,8 +32387,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_we_chat_o_auth_login_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -32797,7 +32475,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_we_chat_o_auth_login_settings:execute"
         ]
@@ -32860,7 +32537,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:get_admin_telegram_o_auth_login_settings:execute"
         ]
@@ -32951,7 +32627,6 @@
             "personalAccessTokenBearer": []
           }
         ],
-        "x-anyflows-pat-session-only": false,
         "x-anyflows-pat-scopes": [
           "admin:update_admin_telegram_o_auth_login_settings:execute"
         ]
@@ -33016,8 +32691,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:get_admin_google_o_auth_login_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       },
       "put": {
         "tags": [
@@ -33107,8 +32781,7 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:update_admin_google_o_auth_login_settings:execute"
-        ],
-        "x-anyflows-pat-session-only": false
+        ]
       }
     }
   },
