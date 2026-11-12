@@ -18965,6 +18965,400 @@
         ]
       }
     },
+    "/api/model-provider-catalog": {
+      "get": {
+        "tags": [
+          "模型目录"
+        ],
+        "summary": "读取公开模型厂商目录",
+        "operationId": "listPublicModelProviderCatalog",
+        "responses": {
+          "200": {
+            "description": "已启用的公开厂商目录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProviderCatalogList"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "厂商目录暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/admin/model-provider-catalog": {
+      "get": {
+        "tags": [
+          "模型厂商目录管理"
+        ],
+        "summary": "读取模型厂商目录",
+        "operationId": "listAdminModelProviderCatalog",
+        "responses": {
+          "200": {
+            "description": "厂商目录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProviderCatalogList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要平台管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "厂商目录暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_model_provider_catalog:execute"
+        ]
+      }
+    },
+    "/api/admin/model-provider-catalog/{provider_key}": {
+      "get": {
+        "tags": [
+          "模型厂商目录管理"
+        ],
+        "summary": "读取模型厂商",
+        "operationId": "getAdminModelProvider",
+        "parameters": [
+          {
+            "name": "provider_key",
+            "in": "path",
+            "description": "厂商标识",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "厂商配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProviderCatalogEntry"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要平台管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "厂商不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "厂商目录暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_model_provider:execute"
+        ]
+      },
+      "put": {
+        "tags": [
+          "模型厂商目录管理"
+        ],
+        "summary": "新增或更新模型厂商",
+        "operationId": "updateAdminModelProvider",
+        "parameters": [
+          {
+            "name": "provider_key",
+            "in": "path",
+            "description": "厂商标识",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelProviderCatalogRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "厂商配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProviderCatalogEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "厂商配置无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要平台管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "厂商不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "厂商配置已变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "厂商目录暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_model_provider:execute"
+        ]
+      },
+      "delete": {
+        "tags": [
+          "模型厂商目录管理"
+        ],
+        "summary": "删除模型厂商",
+        "operationId": "deleteAdminModelProvider",
+        "parameters": [
+          {
+            "name": "provider_key",
+            "in": "path",
+            "description": "厂商标识",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteModelProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "厂商已删除"
+          },
+          "400": {
+            "description": "版本号无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要平台管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "厂商不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "厂商配置已变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "厂商目录暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:delete_admin_model_provider:execute"
+        ]
+      }
+    },
     "/api/admin/models/missing": {
       "get": {
         "tags": [
@@ -29354,6 +29748,59 @@
       }
     },
     "/api/payment/webhook/{provider}": {
+      "get": {
+        "tags": [
+          "支付回调"
+        ],
+        "summary": "接收支付 Provider GET webhook",
+        "description": "供使用查询参数发送回调的 Provider 使用；由 Provider 签名或订单状态校验，不使用登录会话或 PAT。",
+        "operationId": "receivePaymentWebhookGet",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "description": "支付 Provider 标识",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "minLength": 1
+            }
+          },
+          {
+            "name": "payload",
+            "in": "query",
+            "description": "Provider 的原始查询参数载荷",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "事件已验签并完成幂等确认"
+          },
+          "400": {
+            "description": "请求正文或签名无效"
+          },
+          "405": {
+            "description": "请求方法不受支持"
+          },
+          "409": {
+            "description": "支付事件与已有记录发生冲突"
+          },
+          "500": {
+            "description": "服务内部状态异常"
+          },
+          "503": {
+            "description": "回调未启用或持久化暂不可用"
+          }
+        },
+        "security": [
+          {}
+        ]
+      },
       "post": {
         "tags": [
           "支付回调"
@@ -30536,6 +30983,69 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:decide_account_verification:execute"
+        ]
+      }
+    },
+    "/api/account/verifications/alipay/callback": {
+      "get": {
+        "tags": [
+          "账号认证"
+        ],
+        "summary": "处理支付宝账号认证回调",
+        "description": "由支付宝浏览器重定向调用；使用一次性高熵 state 绑定待处理认证，不接受登录会话或 PAT。",
+        "operationId": "completeAlipayVerificationCallback",
+        "parameters": [
+          {
+            "name": "auth_code",
+            "in": "query",
+            "description": "支付宝授权码别名",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "description": "支付宝授权码",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "description": "一次性授权状态",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "description": "授权错误",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回授权结果页面",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
         ]
       }
     },
@@ -43747,6 +44257,20 @@
           }
         }
       },
+      "DeleteModelProviderRequest": {
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "FrontendTemplateActivationRequest": {
         "type": "object",
         "properties": {
@@ -47257,6 +47781,117 @@
             "type": "string",
             "maxLength": 64,
             "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ModelProviderCatalogEntry": {
+        "type": "object",
+        "required": [
+          "provider_key",
+          "display_name",
+          "logo",
+          "aliases",
+          "enabled",
+          "sort_order",
+          "version"
+        ],
+        "properties": {
+          "provider_key": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "logo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "ModelProviderCatalogList": {
+        "type": "object",
+        "required": [
+          "providers"
+        ],
+        "properties": {
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelProviderCatalogEntry"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ModelProviderCatalogRequest": {
+        "type": "object",
+        "required": [
+          "expected_version",
+          "display_name",
+          "aliases",
+          "enabled",
+          "sort_order"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "logo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         },
         "additionalProperties": false
@@ -53088,6 +53723,9 @@
     },
     {
       "name": "模型管理"
+    },
+    {
+      "name": "模型厂商目录管理"
     },
     {
       "name": "Playground 分享"

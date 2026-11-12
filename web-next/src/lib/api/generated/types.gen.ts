@@ -1822,6 +1822,9 @@ export type CredentialUsageWindow = {
     used_percent: number;
     reset_at?: number | null;
 };
+export type DeleteModelProviderRequest = {
+    expected_version: number;
+};
 export type FrontendTemplateActivationRequest = {
     template_id?: string | null;
 };
@@ -2447,6 +2450,26 @@ export type ModelCatalogTokenPrices = {
     cache_read: string;
     cache_creation_5m: string;
     cache_creation_1h: string;
+};
+export type ModelProviderCatalogEntry = {
+    provider_key: string;
+    display_name: string;
+    logo: string | null;
+    aliases: Array<string>;
+    enabled: boolean;
+    sort_order: number;
+    version: number;
+};
+export type ModelProviderCatalogList = {
+    providers: Array<ModelProviderCatalogEntry>;
+};
+export type ModelProviderCatalogRequest = {
+    expected_version: number;
+    display_name: string;
+    logo?: string | null;
+    aliases: Array<string>;
+    enabled: boolean;
+    sort_order: number;
 };
 export type NotificationChannel = 'email' | 'in_app';
 export type NotificationDeliveryState = 'queued' | 'accepted' | 'failed' | 'canceled' | 'available';
@@ -8264,6 +8287,97 @@ export type UpdateAdminModelResponses = {
     200: AdminModel;
 };
 export type UpdateAdminModelResponse = UpdateAdminModelResponses[keyof UpdateAdminModelResponses];
+export type ListPublicModelProviderCatalogData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/model-provider-catalog';
+};
+export type ListPublicModelProviderCatalogErrors = {
+    500: ManagementError;
+};
+export type ListPublicModelProviderCatalogError = ListPublicModelProviderCatalogErrors[keyof ListPublicModelProviderCatalogErrors];
+export type ListPublicModelProviderCatalogResponses = {
+    200: ModelProviderCatalogList;
+};
+export type ListPublicModelProviderCatalogResponse = ListPublicModelProviderCatalogResponses[keyof ListPublicModelProviderCatalogResponses];
+export type ListAdminModelProviderCatalogData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/model-provider-catalog';
+};
+export type ListAdminModelProviderCatalogErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminModelProviderCatalogError = ListAdminModelProviderCatalogErrors[keyof ListAdminModelProviderCatalogErrors];
+export type ListAdminModelProviderCatalogResponses = {
+    200: ModelProviderCatalogList;
+};
+export type ListAdminModelProviderCatalogResponse = ListAdminModelProviderCatalogResponses[keyof ListAdminModelProviderCatalogResponses];
+export type DeleteAdminModelProviderData = {
+    body: DeleteModelProviderRequest;
+    path: {
+        provider_key: string;
+    };
+    query?: never;
+    url: '/api/admin/model-provider-catalog/{provider_key}';
+};
+export type DeleteAdminModelProviderErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type DeleteAdminModelProviderError = DeleteAdminModelProviderErrors[keyof DeleteAdminModelProviderErrors];
+export type DeleteAdminModelProviderResponses = {
+    204: void;
+};
+export type DeleteAdminModelProviderResponse = DeleteAdminModelProviderResponses[keyof DeleteAdminModelProviderResponses];
+export type GetAdminModelProviderData = {
+    body?: never;
+    path: {
+        provider_key: string;
+    };
+    query?: never;
+    url: '/api/admin/model-provider-catalog/{provider_key}';
+};
+export type GetAdminModelProviderErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminModelProviderError = GetAdminModelProviderErrors[keyof GetAdminModelProviderErrors];
+export type GetAdminModelProviderResponses = {
+    200: ModelProviderCatalogEntry;
+};
+export type GetAdminModelProviderResponse = GetAdminModelProviderResponses[keyof GetAdminModelProviderResponses];
+export type UpdateAdminModelProviderData = {
+    body: ModelProviderCatalogRequest;
+    path: {
+        provider_key: string;
+    };
+    query?: never;
+    url: '/api/admin/model-provider-catalog/{provider_key}';
+};
+export type UpdateAdminModelProviderErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminModelProviderError = UpdateAdminModelProviderErrors[keyof UpdateAdminModelProviderErrors];
+export type UpdateAdminModelProviderResponses = {
+    200: ModelProviderCatalogEntry;
+};
+export type UpdateAdminModelProviderResponse = UpdateAdminModelProviderResponses[keyof UpdateAdminModelProviderResponses];
 export type ListMissingAdminModelsData = {
     body?: never;
     path?: never;
@@ -10578,6 +10692,26 @@ export type ReadAdminDebugTraceSnapshotsResponses = {
     200: AdminDebugTraceSnapshotsResponse;
 };
 export type ReadAdminDebugTraceSnapshotsResponse = ReadAdminDebugTraceSnapshotsResponses[keyof ReadAdminDebugTraceSnapshotsResponses];
+export type ReceivePaymentWebhookGetData = {
+    body?: never;
+    path: {
+        provider: string;
+    };
+    query?: {
+        payload?: string;
+    };
+    url: '/api/payment/webhook/{provider}';
+};
+export type ReceivePaymentWebhookGetErrors = {
+    400: unknown;
+    405: unknown;
+    409: unknown;
+    500: unknown;
+    503: unknown;
+};
+export type ReceivePaymentWebhookGetResponses = {
+    200: unknown;
+};
 export type ReceivePaymentWebhookData = {
     body?: unknown;
     headers: {
@@ -10832,6 +10966,21 @@ export type DecideAccountVerificationResponses = {
     200: AccountVerificationResponse;
 };
 export type DecideAccountVerificationResponse = DecideAccountVerificationResponses[keyof DecideAccountVerificationResponses];
+export type CompleteAlipayVerificationCallbackData = {
+    body?: never;
+    path?: never;
+    query?: {
+        auth_code?: string;
+        code?: string;
+        state?: string;
+        error?: string;
+    };
+    url: '/api/account/verifications/alipay/callback';
+};
+export type CompleteAlipayVerificationCallbackResponses = {
+    200: string;
+};
+export type CompleteAlipayVerificationCallbackResponse = CompleteAlipayVerificationCallbackResponses[keyof CompleteAlipayVerificationCallbackResponses];
 export type GetAdminVerificationSettingsData = {
     body?: never;
     path?: never;
