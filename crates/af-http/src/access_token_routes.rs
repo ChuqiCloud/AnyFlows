@@ -21,7 +21,7 @@ pub(crate) struct AccessTokenRoutePolicy {
 
 /// Immutable grants owned by one assembled router. Never shared across unrelated
 /// router instances through process-global registration.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct AccessTokenRouteOverlay {
     routes: Arc<BTreeMap<String, AccessTokenRoutePolicy>>,
     document: Arc<utoipa::openapi::OpenApi>,
