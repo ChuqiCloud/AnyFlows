@@ -25,6 +25,7 @@ mod merchant_routes;
 mod merchant_service_policy;
 mod merchant_service_watch;
 mod model_metadata;
+mod model_provider_catalog;
 mod model_prices;
 mod model_sync;
 mod models;
@@ -144,6 +145,7 @@ pub(crate) fn raw_openapi_document() -> OpenApi {
     document.merge(models::document());
     document.merge(gateway_models::document());
     document.merge(model_metadata::document());
+    document.merge(model_provider_catalog::document());
     document.merge(model_sync::document());
     document.merge(model_prices::document());
     document.merge(playground_shares::document());
@@ -213,6 +215,7 @@ pub(crate) fn raw_openapi_document() -> OpenApi {
         Tag::new("智能路由"),
         Tag::new("模型目录"),
         Tag::new("模型管理"),
+        Tag::new("模型厂商目录管理"),
         Tag::new("Playground 分享"),
         Tag::new("Playground 历史"),
         Tag::new("生图广场"),
@@ -362,7 +365,9 @@ mod tests {
             .map(|operation_id| operation_id.as_str().unwrap().to_owned())
             .collect::<BTreeSet<_>>();
         let expected = [
+            "completeAlipayVerificationCallback",
             "decideAccountVerification",
+            "deleteAdminModelProvider",
             "downloadAccountVerificationMaterial",
             "downloadAdminAccountVerificationMaterial",
             "downloadSelfProvisioningMaterial",
@@ -370,17 +375,21 @@ mod tests {
             "getAccountVerification",
             "getAccountVerificationEligibility",
             "getAdminAccountVerification",
+            "getAdminModelProvider",
             "getAdminVerificationHistory",
             "getAdminVerificationSettings",
             "getSelfVerificationHistory",
             "listAccountVerifications",
             "listAdminAccountVerifications",
+            "listAdminModelProviderCatalog",
             "list_extension_catalog",
+            "listPublicModelProviderCatalog",
             "listSelfOrganizationProvisioning",
             "listSelfProvisioningMaterials",
             "submitAccountVerification",
             "syncAccountVerificationProvider",
             "updatePlatformOrganizationEntitlement",
+            "updateAdminModelProvider",
             "updateAdminVerificationSettings",
             "listPublicAnnouncements",
             "listAdminAnnouncements",
@@ -674,6 +683,7 @@ mod tests {
             "listPlaygroundConversations",
             "listUserTokens",
             "receivePaymentWebhook",
+            "receivePaymentWebhookGet",
             "receiveRefundWebhook",
             "listUserWalletEntries",
             "listCurrentUserSubscriptions",

@@ -3936,8 +3936,8 @@ mod tests {
             .unwrap();
         // Codex 使用固定的 1455 回调端口；端口被并行测试占用时，启动器会
         // 保留手动回调路径并跳过对应监听任务，因此这里只把实际注册的监听任务计入基线。
-        // 固定任务包含商户出款、定时价格、Key 模型发现、上游额度刷新与活跃渠道监控。
-        let expected_task_count = 16 + supervised.stage.oauth_loopback_servers.len();
+        // 固定任务包含商户出款、定时价格、Key 模型发现、上游额度刷新、活跃渠道监控和 PAT 审计清理。
+        let expected_task_count = 17 + supervised.stage.oauth_loopback_servers.len();
         let supervised = supervised.start_supervisor();
         assert_eq!(
             supervised.stage.supervisor.task_count(),

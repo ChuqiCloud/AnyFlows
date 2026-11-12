@@ -49,6 +49,17 @@ fn personal_access_token_policies_cover_actual_management_router_registrations()
                         .iter()
                         .any(|requirement| requirement.get("bearerAuth").is_some())
                 });
+            if is_public_or_external_callback(&method, &path) {
+                assert!(
+                    !bearer,
+                    "public routes must not require session Bearer: {method} {path}"
+                );
+                assert!(
+                    policy(&method, &path).is_none(),
+                    "public routes must not receive a PAT policy: {method} {path}"
+                );
+                continue;
+            }
             if path == "/api/access-token/self" {
                 assert!(
                     contract
@@ -123,6 +134,19 @@ fn personal_access_token_policies_cover_actual_management_router_registrations()
         "management operations missing a contract/policy:\n{}",
         missing.into_iter().collect::<Vec<_>>().join("\n")
     );
+}
+
+fn is_public_or_external_callback(method: &str, path: &str) -> bool {
+    matches!(
+        (method, path),
+        ("GET", "/api/model-provider-catalog")
+            | ("GET", "/api/account/verifications/alipay/callback")
+            | (
+                "GET" | "POST",
+                "/api/payment/webhook/{provider}"
+            )
+            | ("POST", "/api/refund/webhook/{provider}")
+    )
 }
 
 fn is_interactive_playground_operation(method: &str, path: &str) -> bool {

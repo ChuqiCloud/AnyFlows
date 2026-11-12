@@ -38,8 +38,31 @@ use utoipa::OpenApi;
 )]
 fn receive_payment_webhook() {}
 
+#[utoipa::path(
+    get,
+    path = "/api/payment/webhook/{provider}",
+    operation_id = "receivePaymentWebhookGet",
+    tag = "支付回调",
+    summary = "接收支付 Provider GET webhook",
+    description = "供使用查询参数发送回调的 Provider 使用；由 Provider 签名或订单状态校验，不使用登录会话或 PAT。",
+    params(
+        ("provider" = String, Path, min_length = 1, max_length = 32, description = "支付 Provider 标识"),
+        ("payload" = Option<String>, Query, description = "Provider 的原始查询参数载荷")
+    ),
+    responses(
+        (status = 200, description = "事件已验签并完成幂等确认"),
+        (status = 400, description = "请求正文或签名无效"),
+        (status = 405, description = "请求方法不受支持"),
+        (status = 409, description = "支付事件与已有记录发生冲突"),
+        (status = 503, description = "回调未启用或持久化暂不可用"),
+        (status = 500, description = "服务内部状态异常")
+    ),
+    security(())
+)]
+fn receive_payment_webhook_get() {}
+
 #[derive(OpenApi)]
-#[openapi(paths(receive_payment_webhook))]
+#[openapi(paths(receive_payment_webhook, receive_payment_webhook_get))]
 struct PaymentWebhookApi;
 
 pub(super) fn document() -> utoipa::openapi::OpenApi {
