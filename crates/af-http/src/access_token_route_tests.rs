@@ -191,14 +191,14 @@ fn route_registrations(source: &str) -> Vec<(String, String)> {
         };
         let block = &remaining[..end];
         let candidate = block.trim_start();
-        if let Some(candidate) = candidate.strip_prefix('"') {
-            if let Some(quote) = candidate.find('"') {
-                let path = &candidate[..quote];
-                let method_source = &candidate[quote + 1..];
-                for method in ["get", "post", "put", "patch", "delete", "head", "options"] {
-                    if has_method_call(method_source, method) {
-                        routes.push((method.to_ascii_uppercase(), path.to_owned()));
-                    }
+        if let Some(candidate) = candidate.strip_prefix('"')
+            && let Some(quote) = candidate.find('"')
+        {
+            let path = &candidate[..quote];
+            let method_source = &candidate[quote + 1..];
+            for method in ["get", "post", "put", "patch", "delete", "head", "options"] {
+                if has_method_call(method_source, method) {
+                    routes.push((method.to_ascii_uppercase(), path.to_owned()));
                 }
             }
         }
