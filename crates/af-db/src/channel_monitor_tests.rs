@@ -461,11 +461,19 @@ async fn down_is_deduplicated_muted_down_is_not_notified_and_recovery_is_notifie
     assert_eq!(notifications[0].channel, 2);
     assert_eq!(notifications[0].delivery_state, 5);
     assert!(notifications[0].source_key.ends_with(":recovered"));
-    assert!(
-        crate::migration::Migrator::down(pool.connection(), Some(1))
-            .await
-            .is_err()
-    );
+    // Target the monitor migration even when later migrations are appended.
+    let migrations = crate::migration::Migrator::migrations();
+    let protected_migration_index = migrations
+        .iter()
+        .position(|migration| migration.name() == "m20261110_000179_active_channel_monitor")
+        .expect("active channel monitor migration must remain registered");
+    let rollback_steps = u32::try_from(migrations.len() - protected_migration_index)?;
+    let rollback = crate::migration::Migrator::down(pool.connection(), Some(rollback_steps)).await;
+    assert!(matches!(
+        rollback,
+        Err(sea_orm_migration::DbErr::Custom(message))
+            if message == "存在渠道拨测通知事实，无法回退主动拨测迁移"
+    ));
     assert!(
         repository.get_config().await.is_ok(),
         "rollback must preserve monitor storage when notification facts exist"
