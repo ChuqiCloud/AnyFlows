@@ -35,13 +35,15 @@ const adminScopes = [
 const userScopes = adminScopes.filter(scope => !scope.admin_only)
 let role = 'admin'
 let issuedTokensByRole = { admin: [], user: [] }
-let policy = { enabled: true, issuance_enabled: true, max_tokens_per_user: 20, version: 0 }
+let policy = { enabled: true, issuance_enabled: true, max_tokens_per_user: 20, version: 1 }
 let rejectFirstProof = true
 let createCalls = 0
 let updateCalls = 0
 let revokeCalls = 0
 let patExplorerAuthorization
 let modelKeyHeader
+let modelKeyAuthorization
+let gatewayRequestCount = 0
 let server, browser, page, userContext
 let serverOutput = ''
 
@@ -51,7 +53,7 @@ const preset = scopes => [
   ...(role === 'admin' ? [{ id: 'admin_full', label: '管理员全权限', scopes: scopes.map(scope => scope.scope) }] : []),
 ]
 const collection = () => ({ tokens: issuedTokensByRole[role], next_cursor: null, capacity: 20 })
-const tokenMeta = (id, body) => ({ id, name: body.name, token_hint: `Hint${id}`, scopes: body.scopes, enabled: body.enabled ?? true, expires_at: body.expires_at, allow_ips: body.allow_ips, created_at: 1_800_000_000, updated_at: 1_800_000_000, last_used_at: null, last_used_ip: null, version: 0 })
+const tokenMeta = (id, body) => ({ id, name: body.name, token_hint: `Hint${id}`, scopes: body.scopes, enabled: body.enabled ?? true, expires_at: body.expires_at, allow_ips: body.allow_ips, created_at: 1_800_000_000, updated_at: 1_800_000_000, last_used_at: null, last_used_ip: null, version: 1 })
 
 try {
   await mkdir(screenshots, { recursive: true })
@@ -96,7 +98,12 @@ try {
     if (path === '/api/account/access-tokens' && method === 'GET') return respond(collection())
     if (path === '/api/account/access-tokens/scopes' && method === 'GET') { const scopes = role === 'admin' ? adminScopes : userScopes; return respond({ scopes, presets: preset(scopes), default_expiry_days: 30, max_expiry_days: 365, allow_permanent: true }) }
     if (path === '/api/admin/access-tokens/policy' && method === 'GET') return role === 'admin' ? respond(policy) : respond({ code: 'forbidden' }, 403)
-    if (path === '/api/admin/access-tokens/policy' && method === 'PUT') { policy = { ...policy, ...request.postDataJSON(), version: policy.version + 1 }; return respond(policy) }
+    if (path === '/api/admin/access-tokens/policy' && method === 'PUT') {
+      const body = request.postDataJSON()
+      assert.equal(body.version, policy.version, 'Policy updates carry the current optimistic-lock version')
+      policy = { ...policy, ...body, version: policy.version + 1 }
+      return respond(policy)
+    }
     if (path === '/api/admin/users/19/access-tokens/revoke-all' && method === 'POST') return respond({ revoked: 2 })
     if (path === '/api/account/access-tokens/verify' && method === 'POST') {
       const body = request.postDataJSON()
@@ -118,9 +125,12 @@ try {
     if (path.match(/^\/api\/account\/access-tokens\/\d+$/) && method === 'PATCH') {
       const id = Number(path.split('/').at(-1))
       const body = request.postDataJSON()
+      const current = issuedTokensByRole[role].find(token => token.id === id)
+      assert.ok(current, 'The token being updated belongs to the current user')
+      assert.equal(body.version, current.version, 'Updates carry the current optimistic-lock version')
       assert.equal(body.proof, undefined, 'Renaming without increasing access does not require proof')
       updateCalls += 1
-      issuedTokensByRole[role] = issuedTokensByRole[role].map(token => token.id === id ? { ...tokenMeta(id, body), version: token.version + 1 } : token)
+      issuedTokensByRole[role] = issuedTokensByRole[role].map(token => token.id === id ? { ...tokenMeta(id, body), version: current.version + 1 } : token)
       return respond(issuedTokensByRole[role].find(token => token.id === id))
     }
     if (path.match(/^\/api\/account\/access-tokens\/\d+$/) && method === 'DELETE') {
@@ -143,7 +153,9 @@ try {
   }
   await page.route(url => url.pathname.startsWith('/api/'), handleApiRoute)
   await page.route(url => url.pathname.startsWith('/v1/'), async route => {
+    gatewayRequestCount += 1
     modelKeyHeader = route.request().headers()['x-api-key']
+    modelKeyAuthorization = route.request().headers().authorization
     await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { code: 'invalid_api_key' } }) })
   })
 
@@ -186,6 +198,7 @@ try {
   assert.equal(createRequest.body.scopes.includes('admin:channel:write'), true)
   assert.equal(createRequest.search.includes(secret), false)
   assert.equal(await page.evaluate(secretValue => [...Object.values(sessionStorage), ...Object.values(localStorage)].some(value => value.includes(secretValue)), secret), false)
+  assert.equal(gatewayRequestCount, 0, 'The credential console does not send PATs or model keys to model gateway APIs')
   const patProbe = await page.evaluate(async () => {
     const { runApiExplorerOperation } = await import('/src/features/api-explorer/api-explorer-api.ts')
     return runApiExplorerOperation({ operation_id: 'getAccountWallet', method: 'GET', path: '/api/account/wallet', tag: 'wallet', summary: 'Wallet', auth_mode: 'session', supports_access_token: true, required_scopes: ['billing:read'], access_scope: 'session', debuggable: true }, { pathParams: {}, queryParams: {}, useAccessToken: true, accessToken: 'af_pat_fixture_unauthorized' })
@@ -198,7 +211,9 @@ try {
     return runApiExplorerOperation({ operation_id: 'createChatCompletion', method: 'POST', path: '/v1/chat/completions', tag: 'models', summary: 'Chat', auth_mode: 'api_key', access_scope: 'gateway', debuggable: true }, { pathParams: {}, queryParams: {}, apiKey: 'sk-model-key-fixture', body: '{"model":"fixture"}' })
   })
   assert.equal(modelKeyProbe.status, 401)
+  assert.equal(gatewayRequestCount, 1, 'Only the explicit model API key probe reaches the gateway')
   assert.equal(modelKeyHeader, 'sk-model-key-fixture', 'Model API requests keep their independent x-api-key credential')
+  assert.equal(modelKeyAuthorization, undefined, 'The model API key probe does not carry the browser session or a PAT')
   assert.equal(await page.evaluate(() => sessionStorage.getItem('anyflows.management.access-token')), 'ci-fresh-session')
   await page.screenshot({ path: resolve(screenshots, 'access-token-once-issued.png'), fullPage: true, animations: 'disabled' })
   await page.getByRole('button', { name: label('issued.done'), exact: true }).click()
@@ -219,7 +234,7 @@ try {
   await page.getByRole('tab', { name: label('tabs.modelKeys'), exact: true }).click()
   await page.getByRole('heading', { name: commonLabel('apiKeys.title'), exact: true }).waitFor()
   assert.ok(requests.some(item => item.path === '/api/tokens' && item.method === 'GET'))
-  assert.ok(requests.every(item => !item.path.startsWith('/v1/')), 'The credential console never sends PAT to model gateway endpoints')
+  assert.equal(gatewayRequestCount, 1, 'Credential editing, revocation and tab changes send no additional gateway requests')
   assert.equal(await page.getByLabel(label('issued.secret'), { exact: true }).count(), 0, 'Switching credential tabs discards the one-time PAT secret')
 
   role = 'user'
