@@ -72,6 +72,20 @@ impl ClientIpResolver {
         result
     }
 
+    /// Read a management request's transport identity without consuming headers
+    /// needed by an independently composed login or model authentication layer.
+    pub(crate) fn resolve_context<B>(
+        &self,
+        request: &Request<B>,
+    ) -> Result<TrustedClientIp, ClientIpResolutionError> {
+        let peer = request
+            .extensions()
+            .get::<ConnectInfo<SocketAddr>>()
+            .map(|ConnectInfo(address)| TrustedClientIp::new(address.ip()))
+            .ok_or(ClientIpResolutionError::MissingPeer)?;
+        self.resolve_with_peer(peer, request.headers())
+    }
+
     fn resolve_with_peer(
         &self,
         peer: TrustedClientIp,

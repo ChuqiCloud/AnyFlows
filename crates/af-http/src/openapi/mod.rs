@@ -26,6 +26,7 @@ mod merchant_service_policy;
 mod merchant_service_watch;
 mod model_metadata;
 mod model_prices;
+mod model_provider_catalog;
 mod model_sync;
 mod models;
 mod network_settings;
@@ -35,6 +36,7 @@ mod passkey_auth;
 mod password_reset;
 mod payment_settings;
 mod payment_webhook;
+mod personal_access_tokens;
 mod platform_audit;
 mod playground_conversations;
 mod playground_image_history;
@@ -89,6 +91,13 @@ fn get_version() {}
 
 /// 构建可导出、可供客户端生成和 Apifox 导入的完整管理 API 文档。
 pub fn openapi_document() -> OpenApi {
+    let mut document = raw_openapi_document();
+    crate::access_token_routes::annotate_document(&mut document);
+    document
+}
+
+/// Unannotated operation contract used to construct the exact PAT route registry.
+pub(crate) fn raw_openapi_document() -> OpenApi {
     let mut document = OpenApi::new(
         Info::new("AnyFlows 管理 API", env!("CARGO_PKG_VERSION")),
         Paths::new(),
@@ -136,12 +145,14 @@ pub fn openapi_document() -> OpenApi {
     document.merge(models::document());
     document.merge(gateway_models::document());
     document.merge(model_metadata::document());
+    document.merge(model_provider_catalog::document());
     document.merge(model_sync::document());
     document.merge(model_prices::document());
     document.merge(playground_shares::document());
     document.merge(playground_conversations::document());
     document.merge(playground_image_history::document());
     document.merge(user_tokens::document());
+    document.merge(personal_access_tokens::document());
     document.merge(user_routes::document());
     document.merge(merchant_routes::document());
     document.merge(crate::merchant_finance::document());
@@ -204,10 +215,12 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("智能路由"),
         Tag::new("模型目录"),
         Tag::new("模型管理"),
+        Tag::new("模型厂商目录管理"),
         Tag::new("Playground 分享"),
         Tag::new("Playground 历史"),
         Tag::new("生图广场"),
         Tag::new("我的 API Key"),
+        Tag::new("个人访问令牌"),
         Tag::new("令牌管理"),
         Tag::new("用量日志"),
         Tag::new("渠道管理"),
@@ -244,6 +257,21 @@ pub fn openapi_document() -> OpenApi {
             ),
         );
     document
+        .components
+        .get_or_insert_with(Components::new)
+        .add_security_scheme(
+        "personalAccessTokenBearer",
+        SecurityScheme::Http(
+            HttpBuilder::new()
+                .scheme(HttpAuthScheme::Bearer)
+                .bearer_format("af_pat_")
+                .description(Some(
+                    "独立的系统 API 个人访问令牌；按接口 scopes 和当前用户权限授权，不用于模型网关",
+                ))
+                .build(),
+        ),
+    );
+    document
 }
 
 #[derive(utoipa::OpenApi)]
@@ -256,13 +284,14 @@ struct VersionApi;
 pub fn openapi_document_with_extensions(
     extensions: Option<&crate::http_extensions::HttpExtensions>,
 ) -> OpenApi {
-    let mut document = openapi_document();
-    if let Some(extensions) = extensions {
-        for extension_document in extensions.openapi_documents() {
-            document.merge(extension_document);
-        }
+    match extensions {
+        Some(extensions) => crate::access_token_routes::AccessTokenRouteOverlay::from_documents(
+            &extensions.openapi_documents(),
+        )
+        .document()
+        .clone(),
+        None => openapi_document(),
     }
-    document
 }
 
 #[cfg(all(test, any()))]
@@ -336,7 +365,9 @@ mod tests {
             .map(|operation_id| operation_id.as_str().unwrap().to_owned())
             .collect::<BTreeSet<_>>();
         let expected = [
+            "completeAlipayVerificationCallback",
             "decideAccountVerification",
+            "deleteAdminModelProvider",
             "downloadAccountVerificationMaterial",
             "downloadAdminAccountVerificationMaterial",
             "downloadSelfProvisioningMaterial",
@@ -344,17 +375,21 @@ mod tests {
             "getAccountVerification",
             "getAccountVerificationEligibility",
             "getAdminAccountVerification",
+            "getAdminModelProvider",
             "getAdminVerificationHistory",
             "getAdminVerificationSettings",
             "getSelfVerificationHistory",
             "listAccountVerifications",
             "listAdminAccountVerifications",
+            "listAdminModelProviderCatalog",
             "list_extension_catalog",
+            "listPublicModelProviderCatalog",
             "listSelfOrganizationProvisioning",
             "listSelfProvisioningMaterials",
             "submitAccountVerification",
             "syncAccountVerificationProvider",
             "updatePlatformOrganizationEntitlement",
+            "updateAdminModelProvider",
             "updateAdminVerificationSettings",
             "listPublicAnnouncements",
             "listAdminAnnouncements",
@@ -648,6 +683,7 @@ mod tests {
             "listPlaygroundConversations",
             "listUserTokens",
             "receivePaymentWebhook",
+            "receivePaymentWebhookGet",
             "receiveRefundWebhook",
             "listUserWalletEntries",
             "listCurrentUserSubscriptions",

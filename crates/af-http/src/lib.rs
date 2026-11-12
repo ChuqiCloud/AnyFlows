@@ -3,6 +3,15 @@
 // 公共核心保留部分供发行版扩展的 HTTP 契约；企业发行版会连接这些路由。
 #![allow(dead_code)]
 
+mod access_token_auth;
+#[cfg(test)]
+mod access_token_auth_tests;
+mod access_token_error;
+mod access_token_proof;
+#[cfg(test)]
+mod access_token_route_tests;
+mod access_token_routes;
+mod access_tokens;
 mod active_channel_monitor;
 mod announcements;
 pub use active_channel_monitor::{

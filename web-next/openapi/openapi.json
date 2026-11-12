@@ -129,7 +129,8 @@
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "x-anyflows-pat-session-only": true
       }
     },
     "/api/announcements": {
@@ -215,7 +216,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_announcements:execute"
         ]
       },
       "post": {
@@ -289,7 +296,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:create_admin_announcement:execute"
         ]
       }
     },
@@ -397,7 +410,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_announcement:execute"
         ]
       }
     },
@@ -505,7 +524,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:publish_admin_announcement:execute"
         ]
       }
     },
@@ -613,7 +638,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:revoke_admin_announcement:execute"
         ]
       }
     },
@@ -984,7 +1015,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_authentication_settings:execute"
         ]
       },
       "put": {
@@ -1058,7 +1095,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_authentication_settings:execute"
         ]
       }
     },
@@ -1769,7 +1812,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_redemption_audit:execute"
         ]
       }
     },
@@ -1860,7 +1909,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_redemption_batches:execute"
         ]
       },
       "post": {
@@ -1954,7 +2009,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:create_admin_redemption_batch:execute"
         ]
       }
     },
@@ -2073,7 +2134,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:disable_admin_redemption_batch:execute"
         ]
       }
     },
@@ -2179,7 +2246,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "billing:write"
         ]
       }
     },
@@ -2259,7 +2332,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "billing:read"
         ]
       }
     },
@@ -2371,7 +2450,8 @@
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "x-anyflows-pat-session-only": true
       }
     },
     "/api/admin/refund-reconciliations": {
@@ -2460,7 +2540,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_refund_reconciliations:execute"
         ]
       }
     },
@@ -2557,7 +2643,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_refunds:execute"
         ]
       }
     },
@@ -2684,7 +2776,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:approve_admin_refund:execute"
         ]
       }
     },
@@ -2791,7 +2889,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:reject_admin_refund:execute"
         ]
       }
     },
@@ -2898,7 +3002,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:submit_admin_refund:execute"
         ]
       }
     },
@@ -3005,7 +3115,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:manual_complete_admin_refund:execute"
         ]
       }
     },
@@ -3096,7 +3212,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_subscription_plans:execute"
         ]
       },
       "post": {
@@ -3190,7 +3312,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:create_admin_subscription_plan:execute"
         ]
       }
     },
@@ -3309,7 +3437,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:disable_admin_subscription_plan:execute"
         ]
       }
     },
@@ -3411,7 +3545,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_user_subscriptions:execute"
         ]
       },
       "post": {
@@ -3528,7 +3668,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:bind_admin_user_subscription:execute"
         ]
       }
     },
@@ -3658,7 +3804,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:transition_admin_user_subscription_lifecycle:execute"
         ]
       }
     },
@@ -3739,7 +3891,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "subscriptions:read"
         ]
       }
     },
@@ -3785,7 +3943,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "subscriptions:read"
         ]
       }
     },
@@ -3891,7 +4055,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "subscriptions:write"
         ]
       }
     },
@@ -3970,7 +4140,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "subscriptions:read"
         ]
       }
     },
@@ -4079,7 +4255,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "subscriptions:write"
         ]
       }
     },
@@ -4250,7 +4432,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "account:read"
         ]
       },
       "put": {
@@ -4324,7 +4512,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "account:write"
         ]
       }
     },
@@ -4420,7 +4614,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "account_security:write"
         ]
       }
     },
@@ -4496,7 +4696,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "account_security:write"
         ]
       }
     },
@@ -4565,7 +4771,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "account_security:write"
         ]
       }
     },
@@ -4611,7 +4823,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "account_security:read"
         ]
       },
       "post": {
@@ -4685,7 +4903,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "account_security:write"
         ]
       },
       "delete": {
@@ -4752,7 +4976,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "account_security:write"
         ]
       }
     },
@@ -4831,7 +5061,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "notifications:read"
         ]
       },
       "put": {
@@ -4895,7 +5131,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "notifications:write"
         ]
       }
     },
@@ -4941,7 +5183,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "account_security:read"
         ]
       }
     },
@@ -4987,7 +5235,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "account_security:write"
         ]
       }
     },
@@ -5053,7 +5307,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "account_security:write"
         ]
       }
     },
@@ -5124,7 +5384,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "account_security:write"
         ]
       },
       "patch": {
@@ -5200,7 +5466,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "account_security:write"
         ]
       }
     },
@@ -5246,7 +5518,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "billing:read"
         ]
       }
     },
@@ -5327,7 +5605,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "billing:read"
         ]
       }
     },
@@ -5392,7 +5676,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "notifications:write"
         ]
       }
     },
@@ -5428,7 +5718,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "billing:read"
         ]
       }
     },
@@ -5544,7 +5840,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "billing:write"
         ]
       }
     },
@@ -5590,7 +5892,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "invitations:read"
         ]
       }
     },
@@ -5676,7 +5984,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_merchant_pool_settings:execute"
         ]
       },
       "put": {
@@ -5770,7 +6084,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_merchant_pool_settings:execute"
         ]
       }
     },
@@ -5967,7 +6287,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_merchant_pools:execute"
         ]
       },
       "post": {
@@ -6061,7 +6387,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:create_admin_merchant_pool:execute"
         ]
       }
     },
@@ -6168,7 +6500,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_merchant_pool:execute"
         ]
       },
       "delete": {
@@ -6256,7 +6594,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:delete_admin_merchant_pool:execute"
         ]
       }
     },
@@ -6363,7 +6707,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_merchant_pool_terms:execute"
         ]
       },
       "put": {
@@ -6478,7 +6828,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_merchant_pool_terms:execute"
         ]
       }
     },
@@ -6674,7 +7030,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_merchant_services:execute"
         ]
       }
     },
@@ -6771,7 +7133,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_merchant_service:execute"
         ]
       }
     },
@@ -6868,7 +7236,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:resume_admin_merchant_service:execute"
         ]
       }
     },
@@ -6975,7 +7349,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:review_admin_merchant_service:execute"
         ]
       }
     },
@@ -7171,7 +7551,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_merchants:execute"
         ]
       }
     },
@@ -7261,7 +7647,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:delete_admin_merchant:execute"
         ]
       }
     },
@@ -7368,7 +7760,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:review_admin_merchant:execute"
         ]
       }
     },
@@ -7564,7 +7962,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:read"
         ]
       }
     },
@@ -7661,7 +8065,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:read"
         ]
       }
     },
@@ -7878,7 +8288,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:read"
         ]
       }
     },
@@ -7985,7 +8401,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:read"
         ]
       }
     },
@@ -8081,7 +8503,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:write"
         ]
       }
     },
@@ -8277,7 +8705,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:read"
         ]
       }
     },
@@ -8370,7 +8804,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:read"
         ]
       }
     },
@@ -8466,7 +8906,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:write"
         ]
       }
     },
@@ -8662,7 +9108,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:read"
         ]
       },
       "post": {
@@ -8756,7 +9208,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:write"
         ]
       }
     },
@@ -8853,7 +9311,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:read"
         ]
       },
       "put": {
@@ -8958,7 +9422,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:write"
         ]
       }
     },
@@ -9065,7 +9535,14 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:write",
+          "merchant_secrets:write"
         ]
       }
     },
@@ -9172,7 +9649,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:write"
         ]
       }
     },
@@ -9269,7 +9752,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:write"
         ]
       }
     },
@@ -9332,7 +9821,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_credential_model_policy:execute"
         ]
       },
       "put": {
@@ -9403,7 +9898,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_credential_model_policy:execute"
         ]
       }
     },
@@ -9466,7 +9967,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_credential_models:execute"
         ]
       }
     },
@@ -9529,7 +10036,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:refresh_admin_credential_models:execute"
         ]
       }
     },
@@ -9583,7 +10096,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_channel_model_policy:execute"
         ]
       },
       "put": {
@@ -9645,7 +10164,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_channel_model_policy:execute"
         ]
       }
     },
@@ -9752,7 +10277,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_credential_usage_config:execute"
         ]
       },
       "put": {
@@ -9867,7 +10398,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_credential_usage_config:execute"
         ]
       },
       "delete": {
@@ -9965,7 +10502,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:reset_admin_credential_usage_config:execute"
         ]
       }
     },
@@ -10072,7 +10615,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:refresh_admin_credential_usage:execute"
         ]
       }
     },
@@ -10169,7 +10718,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_channel_usage_config:execute"
         ]
       },
       "put": {
@@ -10274,7 +10829,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_channel_usage_config:execute"
         ]
       }
     },
@@ -10360,7 +10921,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_upstream_usage_profiles:execute"
         ]
       },
       "post": {
@@ -10454,7 +11021,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:create_admin_upstream_usage_profile:execute"
         ]
       }
     },
@@ -10561,7 +11134,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_upstream_usage_profile:execute"
         ]
       },
       "delete": {
@@ -10649,7 +11228,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:delete_admin_upstream_usage_profile:execute"
         ]
       }
     },
@@ -10765,7 +11350,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_service_maintenance_admin:execute"
         ]
       },
       "post": {
@@ -10870,7 +11461,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:create_service_maintenance_admin:execute"
         ]
       }
     },
@@ -10987,7 +11584,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_service_maintenance_admin:execute"
         ]
       }
     },
@@ -11094,7 +11697,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:cancel_service_maintenance_admin:execute"
         ]
       }
     },
@@ -11210,7 +11819,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_service_prices_admin:execute"
         ]
       },
       "post": {
@@ -11315,7 +11930,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:schedule_service_price_admin:execute"
         ]
       }
     },
@@ -11422,7 +12043,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:cancel_service_price_admin:execute"
         ]
       }
     },
@@ -11538,7 +12165,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:read"
         ]
       },
       "post": {
@@ -11643,7 +12276,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:write"
         ]
       }
     },
@@ -11760,7 +12399,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:write"
         ]
       }
     },
@@ -11867,7 +12512,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:write"
         ]
       }
     },
@@ -11983,7 +12634,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:read"
         ]
       },
       "post": {
@@ -12088,7 +12745,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:write"
         ]
       }
     },
@@ -12195,7 +12858,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:write"
         ]
       }
     },
@@ -12224,7 +12893,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:read"
         ]
       }
     },
@@ -12275,7 +12950,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:write"
         ]
       },
       "delete": {
@@ -12301,7 +12982,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:write"
         ]
       }
     },
@@ -12324,7 +13011,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_settings:execute"
         ]
       },
       "patch": {
@@ -12355,7 +13048,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:set_settings:execute"
         ]
       }
     },
@@ -12381,7 +13080,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_targets:execute"
         ]
       },
       "post": {
@@ -12412,7 +13117,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:upsert_target:execute"
         ]
       }
     },
@@ -12440,7 +13151,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:delete_target:execute"
         ]
       }
     },
@@ -12478,7 +13195,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_events:execute"
         ]
       }
     },
@@ -12534,7 +13257,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_email_settings:execute"
         ]
       },
       "put": {
@@ -12608,7 +13337,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_email_settings:execute"
         ]
       }
     },
@@ -12697,7 +13432,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:send_admin_email_test:execute"
         ]
       }
     },
@@ -12776,7 +13517,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_network_settings:execute"
         ]
       },
       "put": {
@@ -12850,7 +13597,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_network_settings:execute"
         ]
       }
     },
@@ -12906,7 +13659,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_payment_settings:execute"
         ]
       },
       "put": {
@@ -12980,7 +13739,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_payment_settings:execute"
         ]
       }
     },
@@ -13036,7 +13801,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_o_auth_providers:execute"
         ]
       }
     },
@@ -13166,7 +13937,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:begin_admin_o_auth_authorization:execute"
         ]
       }
     },
@@ -13302,7 +14079,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:complete_admin_o_auth_manual_callback:execute"
         ]
       }
     },
@@ -13651,7 +14434,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_git_hub_o_auth_login_settings:execute"
         ]
       },
       "put": {
@@ -13735,7 +14524,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_git_hub_o_auth_login_settings:execute"
         ]
       }
     },
@@ -13791,7 +14586,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_discord_o_auth_login_settings:execute"
         ]
       },
       "put": {
@@ -13875,7 +14676,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_discord_o_auth_login_settings:execute"
         ]
       }
     },
@@ -13931,7 +14738,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_balance_alert_settings:execute"
         ]
       },
       "put": {
@@ -14005,7 +14818,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_balance_alert_settings:execute"
         ]
       }
     },
@@ -14092,7 +14911,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_site_settings:execute"
         ]
       },
       "put": {
@@ -14176,7 +15001,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_site_settings:execute"
         ]
       }
     },
@@ -14262,7 +15093,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_site_navigation:execute"
         ]
       }
     },
@@ -14318,7 +15155,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_frontend_templates:execute"
         ]
       }
     },
@@ -14374,7 +15217,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:scan_admin_frontend_templates:execute"
         ]
       }
     },
@@ -14460,7 +15309,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:activate_admin_frontend_template:execute"
         ]
       }
     },
@@ -14545,7 +15400,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_frontend_template_preview:execute"
         ]
       }
     },
@@ -14601,7 +15462,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_dashboard:execute"
         ]
       }
     },
@@ -14718,7 +15585,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_service_levels:execute"
         ]
       }
     },
@@ -14764,7 +15637,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_analytics_export_status:execute"
         ]
       }
     },
@@ -14840,7 +15719,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:replay_admin_analytics_export:execute"
         ]
       }
     },
@@ -14931,7 +15816,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_users:execute"
         ]
       },
       "post": {
@@ -15015,7 +15906,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:create_admin_user:execute"
         ]
       }
     },
@@ -15104,7 +16001,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_user:execute"
         ]
       },
       "put": {
@@ -15211,7 +16114,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_user:execute"
         ]
       },
       "delete": {
@@ -15291,7 +16200,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:delete_admin_user:execute"
         ]
       }
     },
@@ -15380,7 +16295,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_user_security:execute"
         ]
       }
     },
@@ -15469,7 +16390,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:reset_admin_user_two_factor:execute"
         ]
       }
     },
@@ -15562,7 +16489,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:revoke_admin_user_passkey:execute"
         ]
       }
     },
@@ -15674,7 +16607,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_wallet_entries:execute"
         ]
       }
     },
@@ -15803,7 +16742,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:adjust_admin_wallet:execute"
         ]
       }
     },
@@ -15894,7 +16839,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_groups:execute"
         ]
       },
       "post": {
@@ -15978,7 +16929,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:create_admin_group:execute"
         ]
       }
     },
@@ -16067,7 +17024,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_group:execute"
         ]
       },
       "put": {
@@ -16174,7 +17137,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_group:execute"
         ]
       },
       "delete": {
@@ -16276,7 +17245,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:delete_admin_group:execute"
         ]
       }
     },
@@ -16358,7 +17333,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "api_keys:read"
         ]
       }
     },
@@ -16447,7 +17428,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_group_key_policy:execute"
         ]
       },
       "put": {
@@ -16545,7 +17532,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_group_key_policy:execute"
         ]
       }
     },
@@ -16624,7 +17617,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_group_model_policy:execute"
         ]
       },
       "put": {
@@ -16722,7 +17721,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_group_model_policy:execute"
         ]
       }
     },
@@ -16813,7 +17818,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_routes:execute"
         ]
       },
       "post": {
@@ -16897,7 +17908,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:create_admin_route:execute"
         ]
       }
     },
@@ -16986,7 +18003,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_route:execute"
         ]
       },
       "put": {
@@ -17093,7 +18116,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_route:execute"
         ]
       },
       "delete": {
@@ -17173,7 +18202,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:delete_admin_route:execute"
         ]
       }
     },
@@ -17338,7 +18373,13 @@
           {},
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "models:read"
         ]
       }
     },
@@ -17386,7 +18427,13 @@
           {},
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "models:read"
         ]
       }
     },
@@ -17534,7 +18581,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_models:execute"
         ]
       },
       "post": {
@@ -17618,7 +18671,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:create_admin_model:execute"
         ]
       }
     },
@@ -17707,7 +18766,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_model:execute"
         ]
       },
       "put": {
@@ -17804,7 +18869,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_model:execute"
         ]
       },
       "delete": {
@@ -17884,7 +18955,407 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:delete_admin_model:execute"
+        ]
+      }
+    },
+    "/api/model-provider-catalog": {
+      "get": {
+        "tags": [
+          "模型目录"
+        ],
+        "summary": "读取公开模型厂商目录",
+        "operationId": "listPublicModelProviderCatalog",
+        "responses": {
+          "200": {
+            "description": "已启用的公开厂商目录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProviderCatalogList"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "厂商目录暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/admin/model-provider-catalog": {
+      "get": {
+        "tags": [
+          "模型厂商目录管理"
+        ],
+        "summary": "读取模型厂商目录",
+        "operationId": "listAdminModelProviderCatalog",
+        "responses": {
+          "200": {
+            "description": "厂商目录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProviderCatalogList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要平台管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "厂商目录暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_model_provider_catalog:execute"
+        ]
+      }
+    },
+    "/api/admin/model-provider-catalog/{provider_key}": {
+      "get": {
+        "tags": [
+          "模型厂商目录管理"
+        ],
+        "summary": "读取模型厂商",
+        "operationId": "getAdminModelProvider",
+        "parameters": [
+          {
+            "name": "provider_key",
+            "in": "path",
+            "description": "厂商标识",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "厂商配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProviderCatalogEntry"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要平台管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "厂商不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "厂商目录暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_model_provider:execute"
+        ]
+      },
+      "put": {
+        "tags": [
+          "模型厂商目录管理"
+        ],
+        "summary": "新增或更新模型厂商",
+        "operationId": "updateAdminModelProvider",
+        "parameters": [
+          {
+            "name": "provider_key",
+            "in": "path",
+            "description": "厂商标识",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelProviderCatalogRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "厂商配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProviderCatalogEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "厂商配置无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要平台管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "厂商不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "厂商配置已变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "厂商目录暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_model_provider:execute"
+        ]
+      },
+      "delete": {
+        "tags": [
+          "模型厂商目录管理"
+        ],
+        "summary": "删除模型厂商",
+        "operationId": "deleteAdminModelProvider",
+        "parameters": [
+          {
+            "name": "provider_key",
+            "in": "path",
+            "description": "厂商标识",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteModelProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "厂商已删除"
+          },
+          "400": {
+            "description": "版本号无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要平台管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "厂商不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "厂商配置已变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "厂商目录暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:delete_admin_model_provider:execute"
         ]
       }
     },
@@ -17973,7 +19444,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_missing_admin_models:execute"
         ]
       },
       "post": {
@@ -18057,7 +19534,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:import_missing_admin_models:execute"
         ]
       }
     },
@@ -18183,7 +19666,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:create_admin_model_sync_preview:execute"
         ]
       }
     },
@@ -18302,7 +19791,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:apply_admin_model_sync_preview:execute"
         ]
       }
     },
@@ -18391,7 +19886,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_model_prices:execute"
         ]
       }
     },
@@ -18467,7 +19968,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:preview_admin_model_prices:execute"
         ]
       }
     },
@@ -18543,7 +20050,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:preview_admin_lite_llm_model_prices:execute"
         ]
       }
     },
@@ -18629,7 +20142,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:preview_admin_model_price_expression:execute"
         ]
       }
     },
@@ -18725,7 +20244,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:apply_admin_model_prices:execute"
         ]
       }
     },
@@ -18802,7 +20327,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "playground:write"
         ]
       }
     },
@@ -18921,7 +20452,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "playground:write"
         ]
       }
     },
@@ -18968,7 +20505,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "playground:read"
         ]
       }
     },
@@ -19038,7 +20581,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "playground:read"
         ]
       },
       "put": {
@@ -19136,7 +20685,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "playground:write"
         ]
       },
       "delete": {
@@ -19197,7 +20752,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "playground:write"
         ]
       }
     },
@@ -19233,7 +20794,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "playground:read"
         ]
       },
       "post": {
@@ -19297,7 +20864,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "playground:write"
         ]
       },
       "delete": {
@@ -19314,7 +20887,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "playground:write"
         ]
       }
     },
@@ -19354,7 +20933,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "playground:read"
         ]
       }
     },
@@ -19394,7 +20979,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "playground:read"
         ]
       }
     },
@@ -19434,7 +21025,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "playground:write"
         ]
       }
     },
@@ -19515,7 +21112,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "api_keys:read"
         ]
       },
       "post": {
@@ -19600,7 +21203,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "api_keys:write"
         ]
       }
     },
@@ -19679,7 +21288,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "api_keys:read"
         ]
       },
       "put": {
@@ -19767,7 +21382,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "api_keys:write"
         ]
       },
       "delete": {
@@ -19837,8 +21458,466 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "api_keys:write"
         ]
+      }
+    },
+    "/api/account/access-tokens": {
+      "get": {
+        "tags": [
+          "个人访问令牌"
+        ],
+        "summary": "读取我的系统 API 令牌",
+        "operationId": "listPersonalAccessTokens",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalAccessTokenListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalAccessTokenErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-anyflows-pat-session-only": true
+      },
+      "post": {
+        "tags": [
+          "个人访问令牌"
+        ],
+        "summary": "签发系统 API 令牌",
+        "description": "只接受交互会话和绑定本次授权参数的一次性验证证明。完整明文仅返回一次，不用于模型调用。",
+        "operationId": "createPersonalAccessToken",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalAccessTokenWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedPersonalAccessTokenResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalAccessTokenErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-anyflows-pat-session-only": true
+      }
+    },
+    "/api/account/access-tokens/scopes": {
+      "get": {
+        "tags": [
+          "个人访问令牌"
+        ],
+        "summary": "读取当前账号可授权的系统 API 权限",
+        "operationId": "getPersonalAccessTokenScopes",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalAccessTokenScopeCatalogResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-anyflows-pat-session-only": true
+      }
+    },
+    "/api/account/access-tokens/verify": {
+      "post": {
+        "tags": [
+          "个人访问令牌"
+        ],
+        "summary": "验证本次系统令牌敏感操作",
+        "description": "需五分钟内完成交互登录；返回绑定用途、目标、会话和参数的一次性证明。",
+        "operationId": "verifyPersonalAccessTokenMutation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyPersonalAccessTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalAccessTokenProofResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalAccessTokenErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-anyflows-pat-session-only": true
+      }
+    },
+    "/api/account/access-tokens/{id}": {
+      "delete": {
+        "tags": [
+          "个人访问令牌"
+        ],
+        "summary": "撤销我的系统 API 令牌",
+        "operationId": "revokePersonalAccessToken",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-anyflows-pat-session-only": true
+      },
+      "patch": {
+        "tags": [
+          "个人访问令牌"
+        ],
+        "summary": "更新我的系统 API 令牌",
+        "description": "扩权、放宽来源IP、延期及重新启用要求一次性验证证明。普通退出不撤销令牌。",
+        "operationId": "updatePersonalAccessToken",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalAccessTokenWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalAccessTokenResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalAccessTokenErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalAccessTokenErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-anyflows-pat-session-only": true
+      }
+    },
+    "/api/account/access-tokens/revoke-all": {
+      "post": {
+        "tags": [
+          "个人访问令牌"
+        ],
+        "summary": "撤销我的全部系统 API 令牌",
+        "operationId": "revokeOwnPersonalAccessTokens",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-anyflows-pat-session-only": true
+      }
+    },
+    "/api/access-token/self": {
+      "get": {
+        "tags": [
+          "个人访问令牌"
+        ],
+        "summary": "读取当前系统 API 令牌的权限和期限",
+        "operationId": "getPersonalAccessTokenSelf",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalAccessTokenErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": []
+      }
+    },
+    "/api/admin/access-tokens/policy": {
+      "get": {
+        "tags": [
+          "个人访问令牌"
+        ],
+        "summary": "读取系统 API 令牌全局策略",
+        "operationId": "getPersonalAccessTokenPolicy",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalAccessTokenPolicyRequest"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-anyflows-pat-session-only": true
+      },
+      "put": {
+        "tags": [
+          "个人访问令牌"
+        ],
+        "summary": "更新系统 API 令牌全局策略",
+        "description": "只接受管理员交互会话。可以独立关闭签发或全部 PAT 调用，不影响模型 Key 与浏览器会话。",
+        "operationId": "updatePersonalAccessTokenPolicy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalAccessTokenPolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalAccessTokenPolicyRequest"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalAccessTokenErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-anyflows-pat-session-only": true
+      }
+    },
+    "/api/admin/users/{user_id}/access-tokens/revoke-all": {
+      "post": {
+        "tags": [
+          "个人访问令牌"
+        ],
+        "summary": "应急撤销指定用户的全部系统 API 令牌",
+        "description": "只接受管理员交互会话。撤销 PAT 不会撤销模型 Key。",
+        "operationId": "revokeUserPersonalAccessTokens",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-anyflows-pat-session-only": true
       }
     },
     "/api/user-routes": {
@@ -19883,7 +21962,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "routes:read"
         ]
       },
       "post": {
@@ -19967,7 +22052,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "routes:write"
         ]
       }
     },
@@ -20046,7 +22137,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "routes:read"
         ]
       },
       "put": {
@@ -20143,7 +22240,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "routes:write"
         ]
       },
       "delete": {
@@ -20213,7 +22316,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "routes:write"
         ]
       }
     },
@@ -20264,7 +22373,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "usage:read"
         ]
       }
     },
@@ -20304,7 +22419,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "routes:read"
         ]
       },
       "post": {
@@ -20352,7 +22473,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "routes:write"
         ]
       }
     },
@@ -20402,7 +22529,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "routes:write"
         ]
       }
     },
@@ -20453,7 +22586,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "routes:read"
         ]
       },
       "put": {
@@ -20512,7 +22651,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "routes:write"
         ]
       },
       "delete": {
@@ -20554,7 +22699,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "routes:write"
         ]
       }
     },
@@ -20652,7 +22803,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "usage:read"
         ]
       }
     },
@@ -20750,7 +22907,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "usage:read"
         ]
       }
     },
@@ -20839,7 +23002,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant_finance:read"
         ]
       }
     },
@@ -20864,7 +23033,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant_finance:read"
         ]
       }
     },
@@ -20911,7 +23086,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant_finance:read"
         ]
       }
     },
@@ -20965,7 +23146,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant_finance:read"
         ]
       }
     },
@@ -21019,7 +23206,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant_finance:read"
         ]
       }
     },
@@ -21066,7 +23259,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant_finance:read"
         ]
       },
       "post": {
@@ -21099,7 +23298,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant_finance:write"
         ]
       }
     },
@@ -21154,7 +23359,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_merchant_withdrawals:execute"
         ]
       }
     },
@@ -21200,7 +23411,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:decide_admin_merchant_withdrawal:execute"
         ]
       }
     },
@@ -21243,7 +23460,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:reverse_admin_merchant_settlement:execute"
         ]
       }
     },
@@ -21289,7 +23512,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:hold_admin_merchant_finance:execute"
         ]
       }
     },
@@ -21325,7 +23554,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_merchant_finance:execute"
         ]
       }
     },
@@ -21381,7 +23616,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_merchant_finance_entries:execute"
         ]
       }
     },
@@ -21406,7 +23647,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_merchant_payout_settings:execute"
         ]
       },
       "put": {
@@ -21439,7 +23686,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:save_merchant_payout_settings:execute"
         ]
       }
     },
@@ -21464,7 +23717,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant_finance:read"
         ]
       },
       "put": {
@@ -21497,7 +23756,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant_finance:write"
         ]
       }
     },
@@ -21543,7 +23808,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant_finance:read"
         ]
       }
     },
@@ -21598,7 +23869,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_merchant_payouts:execute"
         ]
       }
     },
@@ -21634,7 +23911,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:submit_merchant_payout:execute"
         ]
       }
     },
@@ -21668,7 +23951,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:reconcile_merchant_payout:execute"
         ]
       }
     },
@@ -21759,7 +24048,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_tokens:execute"
         ]
       },
       "post": {
@@ -21843,7 +24138,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:create_admin_token:execute"
         ]
       }
     },
@@ -21932,7 +24233,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_token:execute"
         ]
       },
       "put": {
@@ -22029,7 +24336,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_token:execute"
         ]
       },
       "delete": {
@@ -22109,7 +24422,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:delete_admin_token:execute"
         ]
       }
     },
@@ -22211,7 +24530,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_usage_logs:execute"
         ]
       }
     },
@@ -22303,7 +24628,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "usage:read"
         ]
       }
     },
@@ -22393,7 +24724,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_channels:execute"
         ]
       },
       "post": {
@@ -22467,7 +24804,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:create_admin_channel:execute"
         ]
       }
     },
@@ -22556,7 +24899,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_channel:execute"
         ]
       },
       "put": {
@@ -22653,7 +25002,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_channel:execute"
         ]
       },
       "delete": {
@@ -22733,7 +25088,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:delete_admin_channel:execute"
         ]
       }
     },
@@ -22812,7 +25173,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:probe_admin_channel:execute"
         ]
       }
     },
@@ -22858,7 +25225,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_client_profile_capabilities:execute"
         ]
       }
     },
@@ -22945,7 +25318,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_client_profile_open_code_settings:execute"
         ]
       },
       "put": {
@@ -23050,7 +25429,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:set_admin_client_profile_open_code_entry:execute"
         ]
       }
     },
@@ -23206,7 +25591,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_client_profiles:execute"
         ]
       }
     },
@@ -23300,7 +25691,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:validate_admin_client_profile:execute"
         ]
       }
     },
@@ -23396,7 +25793,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_client_profile:execute"
         ]
       },
       "put": {
@@ -23500,7 +25903,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:save_admin_client_profile:execute"
         ]
       }
     },
@@ -23606,7 +26015,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:set_admin_client_profile_enabled:execute"
         ]
       }
     },
@@ -23722,7 +26137,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_client_profile_revisions:execute"
         ]
       }
     },
@@ -23827,7 +26248,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_client_profile_revision:execute"
         ]
       },
       "delete": {
@@ -23938,7 +26365,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:delete_admin_client_profile_revision:execute"
         ]
       }
     },
@@ -24054,7 +26487,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_client_profile_references:execute"
         ]
       }
     },
@@ -24158,7 +26597,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_channel_client_profile:execute"
         ]
       },
       "put": {
@@ -24263,7 +26708,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:bind_admin_channel_client_profile:execute"
         ]
       }
     },
@@ -24374,7 +26825,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_credentials:execute"
         ]
       },
       "post": {
@@ -24471,7 +26928,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:create_admin_credential:execute"
         ]
       }
     },
@@ -24570,7 +27033,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:import_admin_credentials:execute"
         ]
       }
     },
@@ -24655,7 +27124,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:export_admin_credentials:execute"
         ]
       }
     },
@@ -24755,7 +27230,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_credential:execute"
         ]
       },
       "put": {
@@ -24863,7 +27344,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_credential:execute"
         ]
       },
       "delete": {
@@ -24954,7 +27441,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:delete_admin_credential:execute"
         ]
       }
     },
@@ -25034,7 +27527,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_credential_usage:execute"
         ]
       }
     },
@@ -25122,7 +27621,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:batch_delete_admin_credentials:execute"
         ]
       }
     },
@@ -25220,7 +27725,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_credential_health:execute"
         ]
       }
     },
@@ -25311,7 +27822,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_credential_proxies:execute"
         ]
       },
       "post": {
@@ -25395,7 +27912,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:create_admin_credential_proxy:execute"
         ]
       }
     },
@@ -25484,7 +28007,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_credential_proxy:execute"
         ]
       },
       "put": {
@@ -25591,7 +28120,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_credential_proxy:execute"
         ]
       },
       "delete": {
@@ -25681,7 +28216,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:delete_admin_credential_proxy:execute"
         ]
       }
     },
@@ -25767,7 +28308,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_proxy_pools:execute"
         ]
       },
       "post": {
@@ -25861,7 +28408,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:create_admin_proxy_pool:execute"
         ]
       }
     },
@@ -25969,7 +28522,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_proxy_pool:execute"
         ]
       },
       "delete": {
@@ -26058,7 +28617,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:delete_admin_proxy_pool:execute"
         ]
       }
     },
@@ -26156,7 +28721,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:refresh_admin_proxy_pool:execute"
         ]
       }
     },
@@ -26254,7 +28825,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:check_admin_proxy_pool:execute"
         ]
       }
     },
@@ -26343,7 +28920,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:bind_admin_proxy_pool:execute"
         ]
       }
     },
@@ -26439,7 +29022,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:cleanup_admin_proxy_items:execute"
         ]
       }
     },
@@ -26495,7 +29084,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_custom_o_auth2_providers:execute"
         ]
       }
     },
@@ -26572,7 +29167,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_custom_o_auth2_provider:execute"
         ]
       },
       "put": {
@@ -26667,7 +29268,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_custom_o_auth2_provider:execute"
         ]
       }
     },
@@ -26723,7 +29330,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_debug_trace_settings:execute"
         ]
       },
       "put": {
@@ -26797,7 +29410,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_debug_trace_settings:execute"
         ]
       }
     },
@@ -26917,7 +29536,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_debug_traces:execute"
         ]
       }
     },
@@ -27006,7 +29631,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_debug_trace:execute"
         ]
       }
     },
@@ -27106,11 +29737,70 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:read_admin_debug_trace_snapshots:execute"
         ]
       }
     },
     "/api/payment/webhook/{provider}": {
+      "get": {
+        "tags": [
+          "支付回调"
+        ],
+        "summary": "接收支付 Provider GET webhook",
+        "description": "供使用查询参数发送回调的 Provider 使用；由 Provider 签名或订单状态校验，不使用登录会话或 PAT。",
+        "operationId": "receivePaymentWebhookGet",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "description": "支付 Provider 标识",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "minLength": 1
+            }
+          },
+          {
+            "name": "payload",
+            "in": "query",
+            "description": "Provider 的原始查询参数载荷",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "事件已验签并完成幂等确认"
+          },
+          "400": {
+            "description": "请求正文或签名无效"
+          },
+          "405": {
+            "description": "请求方法不受支持"
+          },
+          "409": {
+            "description": "支付事件与已有记录发生冲突"
+          },
+          "500": {
+            "description": "服务内部状态异常"
+          },
+          "503": {
+            "description": "回调未启用或持久化暂不可用"
+          }
+        },
+        "security": [
+          {}
+        ]
+      },
       "post": {
         "tags": [
           "支付回调"
@@ -27335,7 +30025,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "verification:read"
         ]
       },
       "post": {
@@ -27428,7 +30124,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "verification:write"
         ]
       }
     },
@@ -27524,7 +30226,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "verification:read"
         ]
       }
     },
@@ -27620,7 +30328,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "verification:write"
         ]
       }
     },
@@ -27725,7 +30439,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "verification:read"
         ]
       }
     },
@@ -27840,7 +30560,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_account_verifications:execute"
         ]
       }
     },
@@ -27936,7 +30662,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_account_verification:execute"
         ]
       }
     },
@@ -28041,7 +30773,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:download_admin_account_verification_material:execute"
         ]
       }
     },
@@ -28126,7 +30864,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "verification:read"
         ]
       }
     },
@@ -28232,7 +30976,76 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:decide_account_verification:execute"
+        ]
+      }
+    },
+    "/api/account/verifications/alipay/callback": {
+      "get": {
+        "tags": [
+          "账号认证"
+        ],
+        "summary": "处理支付宝账号认证回调",
+        "description": "由支付宝浏览器重定向调用；使用一次性高熵 state 绑定待处理认证，不接受登录会话或 PAT。",
+        "operationId": "completeAlipayVerificationCallback",
+        "parameters": [
+          {
+            "name": "auth_code",
+            "in": "query",
+            "description": "支付宝授权码别名",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "description": "支付宝授权码",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "description": "一次性授权状态",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "description": "授权错误",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回授权结果页面",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
         ]
       }
     },
@@ -28288,7 +31101,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_verification_settings:execute"
         ]
       },
       "put": {
@@ -28372,7 +31191,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_verification_settings:execute"
         ]
       }
     },
@@ -28605,7 +31430,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_platform_audit_logs:execute"
         ]
       }
     },
@@ -28686,7 +31517,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "usage:read"
         ]
       }
     },
@@ -28732,7 +31569,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_runtime_status:execute"
         ]
       }
     },
@@ -28789,7 +31632,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_software:execute"
         ]
       }
     },
@@ -28845,7 +31694,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:check_admin_software_update:execute"
         ]
       }
     },
@@ -28931,7 +31786,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:install_admin_software_update:execute"
         ]
       }
     },
@@ -29725,7 +32586,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_oidc_login_settings:execute"
         ]
       },
       "put": {
@@ -29809,7 +32676,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_oidc_login_settings:execute"
         ]
       }
     },
@@ -29865,7 +32738,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_linux_do_login_settings:execute"
         ]
       },
       "put": {
@@ -29949,7 +32828,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_linux_do_login_settings:execute"
         ]
       }
     },
@@ -30005,7 +32890,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_we_chat_o_auth_login_settings:execute"
         ]
       },
       "put": {
@@ -30089,7 +32980,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_we_chat_o_auth_login_settings:execute"
         ]
       }
     },
@@ -30145,7 +33042,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_telegram_o_auth_login_settings:execute"
         ]
       },
       "put": {
@@ -30229,7 +33132,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_telegram_o_auth_login_settings:execute"
         ]
       }
     },
@@ -30285,7 +33194,13 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_google_o_auth_login_settings:execute"
         ]
       },
       "put": {
@@ -30369,13 +33284,64 @@
         "security": [
           {
             "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
           }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:update_admin_google_o_auth_login_settings:execute"
         ]
       }
     }
   },
   "components": {
     "schemas": {
+      "AccessTokenPresetResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "scopes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AccessTokenScopeResponse": {
+        "type": "object",
+        "required": [
+          "scope",
+          "label",
+          "description",
+          "admin_only"
+        ],
+        "properties": {
+          "scope": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "admin_only": {
+            "type": "boolean"
+          }
+        }
+      },
       "AccountVerificationDecisionRequest": {
         "type": "object",
         "required": [
@@ -41291,6 +44257,20 @@
           }
         }
       },
+      "DeleteModelProviderRequest": {
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "FrontendTemplateActivationRequest": {
         "type": "object",
         "properties": {
@@ -41485,6 +44465,22 @@
           }
         },
         "additionalProperties": false
+      },
+      "IssuedPersonalAccessTokenResponse": {
+        "type": "object",
+        "required": [
+          "token",
+          "secret"
+        ],
+        "properties": {
+          "token": {
+            "$ref": "#/components/schemas/PersonalAccessTokenResponse"
+          },
+          "secret": {
+            "type": "string",
+            "description": "Returned only by the successful issuance response."
+          }
+        }
       },
       "IssuedUserToken": {
         "type": "object",
@@ -44789,6 +47785,117 @@
         },
         "additionalProperties": false
       },
+      "ModelProviderCatalogEntry": {
+        "type": "object",
+        "required": [
+          "provider_key",
+          "display_name",
+          "logo",
+          "aliases",
+          "enabled",
+          "sort_order",
+          "version"
+        ],
+        "properties": {
+          "provider_key": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "logo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "ModelProviderCatalogList": {
+        "type": "object",
+        "required": [
+          "providers"
+        ],
+        "properties": {
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelProviderCatalogEntry"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ModelProviderCatalogRequest": {
+        "type": "object",
+        "required": [
+          "expected_version",
+          "display_name",
+          "aliases",
+          "enabled",
+          "sort_order"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "logo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "NotificationChannel": {
         "type": "string",
         "enum": [
@@ -45015,11 +48122,269 @@
         },
         "additionalProperties": false
       },
+      "PersonalAccessTokenErrorBody": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "PersonalAccessTokenListResponse": {
+        "type": "object",
+        "required": [
+          "tokens",
+          "capacity"
+        ],
+        "properties": {
+          "tokens": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonalAccessTokenResponse"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "capacity": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "PersonalAccessTokenPolicyRequest": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "issuance_enabled",
+          "max_tokens_per_user",
+          "version"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "issuance_enabled": {
+            "type": "boolean"
+          },
+          "max_tokens_per_user": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PersonalAccessTokenProofResponse": {
+        "type": "object",
+        "required": [
+          "proof",
+          "expires_at"
+        ],
+        "properties": {
+          "proof": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "PersonalAccessTokenResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "token_hint",
+          "scopes",
+          "enabled",
+          "created_at",
+          "updated_at",
+          "version"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "token_hint": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "allow_ips": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_used_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "last_used_ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "PersonalAccessTokenScopeCatalogResponse": {
+        "type": "object",
+        "required": [
+          "scopes",
+          "presets",
+          "default_expiry_days",
+          "max_expiry_days",
+          "allow_permanent"
+        ],
+        "properties": {
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccessTokenScopeResponse"
+            }
+          },
+          "presets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccessTokenPresetResponse"
+            }
+          },
+          "default_expiry_days": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "max_expiry_days": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "allow_permanent": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PersonalAccessTokenWriteRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "scopes",
+          "expires_at",
+          "allow_ips"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1024,
+            "minItems": 1
+          },
+          "expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "allow_ips": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "proof": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
       "PlatformAuditLog": {
         "type": "object",
         "required": [
           "id",
           "operator_user_id",
+          "actor_credential_kind",
+          "actor_credential_id",
           "operator_username",
           "permission_code",
           "route",
@@ -45041,6 +48406,20 @@
           },
           "operator_user_id": {
             "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "actor_credential_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actor_credential_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
             "minimum": 1
           },
@@ -49872,6 +53251,36 @@
         },
         "additionalProperties": false
       },
+      "VerificationAction": {
+        "type": "string",
+        "enum": [
+          "create",
+          "update"
+        ]
+      },
+      "VerifyPersonalAccessTokenRequest": {
+        "type": "object",
+        "required": [
+          "action",
+          "payload"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/VerificationAction"
+          },
+          "token_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/PersonalAccessTokenWriteRequest"
+          }
+        },
+        "additionalProperties": false
+      },
       "VersionInfo": {
         "type": "object",
         "description": "服务构建身份；不包含运行配置、凭据或节点私有信息。",
@@ -50197,6 +53606,12 @@
         "scheme": "bearer",
         "bearerFormat": "JWT",
         "description": "登录会话 Bearer JWT"
+      },
+      "personalAccessTokenBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "af_pat_",
+        "description": "独立的系统 API 个人访问令牌；按接口 scopes 和当前用户权限授权，不用于模型网关"
       }
     }
   },
@@ -50310,6 +53725,9 @@
       "name": "模型管理"
     },
     {
+      "name": "模型厂商目录管理"
+    },
+    {
       "name": "Playground 分享"
     },
     {
@@ -50320,6 +53738,9 @@
     },
     {
       "name": "我的 API Key"
+    },
+    {
+      "name": "个人访问令牌"
     },
     {
       "name": "令牌管理"

@@ -91,6 +91,11 @@
     "auth": {
       "none": "Public",
       "session": "Session",
+      "sessionOrPat": "Session or personal access token",
+      "credential": "Request credential",
+      "pat": "Personal access token",
+      "scopes": "Required scopes",
+      "sessionRequired": "This operation requires an interactive login session.",
       "apiKey": "API key",
       "special": "Special credential"
     },
@@ -174,7 +179,8 @@
     "playground": "Multimodal playground",
     "videoTasks": "Video tasks",
     "imagePlaza": "Image studio",
-    "apiKeys": "My API keys",
+    "apiKeys": "Access credentials",
+    "accessCredentials": "Access credentials",
     "userRoutes": "My smart routes",
     "merchantPool": "Merchant pool",
     "merchantWorkspace": "Merchant workspace",

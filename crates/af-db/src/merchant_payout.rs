@@ -5,7 +5,8 @@ use crate::merchant_finance::{
 };
 use crate::{DatabasePool, EncryptedCredentialEnvelope, MerchantFinanceError, MerchantFinancePage};
 use sea_orm::{
-    ConnectionTrait, DatabaseTransaction, TransactionTrait,
+    ConnectionTrait, DatabaseTransaction, DbBackend, TransactionTrait,
+    entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Alias, Cond, Expr, LockType, OnConflict, Order, Query},
 };
 use serde::{Deserialize, Serialize};
@@ -55,10 +56,50 @@ pub struct MerchantPayout {
 pub struct MerchantPayoutClaim {
     pub payout: MerchantPayout,
     pub submit: bool,
+    pub initiator_user_id: Option<i64>,
+    pub initiator_access_token_id: Option<i64>,
+    pub initiator_request_id: Option<String>,
+    pub initiator_scope: Option<String>,
     pub gateway_url: String,
     pub gateway_secret: String,
     pub account_secret: String,
     pub lease_owner: String,
+}
+
+/// The administrator identity accepted with a manual payout request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MerchantPayoutInitiator {
+    user_id: i64,
+    access_token_id: Option<i64>,
+    request_id: String,
+    scope: Option<String>,
+}
+
+impl MerchantPayoutInitiator {
+    pub fn new(
+        user_id: i64,
+        access_token_id: Option<i64>,
+        request_id: String,
+        scope: Option<String>,
+    ) -> Result<Self, MerchantFinanceError> {
+        if user_id <= 0
+            || access_token_id.is_some_and(|id| id <= 0)
+            || request_id.is_empty()
+            || request_id.len() > 128
+            || request_id.chars().any(char::is_control)
+            || scope.as_deref().is_some_and(|value| {
+                value.is_empty() || value.len() > 128 || value.chars().any(char::is_control)
+            })
+        {
+            return Err(MerchantFinanceError::InvalidInput);
+        }
+        Ok(Self {
+            user_id,
+            access_token_id,
+            request_id,
+            scope,
+        })
+    }
 }
 #[derive(Clone)]
 pub struct MerchantPayoutRepository {
@@ -217,9 +258,25 @@ impl MerchantPayoutRepository {
         withdrawal: i64,
         automatic: bool,
     ) -> Result<MerchantPayout, MerchantFinanceError> {
+        self.enqueue_with_initiator(withdrawal, automatic, None)
+            .await
+    }
+
+    /// Manual API requests retain their accepted actor for execution-time authorization.
+    pub async fn enqueue_with_initiator(
+        &self,
+        withdrawal: i64,
+        automatic: bool,
+        initiator: Option<&MerchantPayoutInitiator>,
+    ) -> Result<MerchantPayout, MerchantFinanceError> {
         self.bounded(async {
             let tx = self.pool.connection().begin().await.map_err(db_error)?;
             lock_settings(&tx).await?;
+            if let Some(initiator) = initiator
+                && !current_admin(&tx, initiator.user_id).await?
+            {
+                return Err(MerchantFinanceError::Forbidden);
+            }
             let settings = read_settings(&tx).await?;
             let config = &settings.config;
             if !config.enabled || (automatic && !config.auto_approve_enabled) {
@@ -307,6 +364,10 @@ impl MerchantPayoutRepository {
                         "gateway_url",
                         "gateway_secret",
                         "account_secret",
+                        "initiated_by_user_id",
+                        "initiated_by_access_token_id",
+                        "initiated_request_id",
+                        "initiated_scope",
                         "created_at",
                         "updated_at",
                         "next_at",
@@ -323,6 +384,10 @@ impl MerchantPayoutRepository {
                     config.gateway_url.clone().into(),
                     gateway_secret.into(),
                     account_secret.into(),
+                    initiator.map(|actor| actor.user_id).into(),
+                    initiator.and_then(|actor| actor.access_token_id).into(),
+                    initiator.map(|actor| actor.request_id.clone()).into(),
+                    initiator.and_then(|actor| actor.scope.clone()).into(),
                     at.into(),
                     at.into(),
                     at.into(),
@@ -454,6 +519,14 @@ impl MerchantPayoutRepository {
             let payout = payout_from_row(&row)?;
             let submit = payout.status == "pending";
             if submit {
+                let initiator_user_id = get::<Option<i64>>(&row, "initiated_by_user_id")?;
+                if let Some(user_id) = initiator_user_id
+                    && !current_admin(&tx, user_id).await?
+                {
+                    cancel_unsubmitted_payout(&tx, &payout).await?;
+                    tx.commit().await.map_err(db_error)?;
+                    return Ok(None);
+                }
                 let account = load_account(&tx, payout.merchant_id, true).await?;
                 let withdrawal = withdrawal_by_id(&tx, payout.withdrawal_id, true)
                     .await?
@@ -498,6 +571,10 @@ impl MerchantPayoutRepository {
             let claim = MerchantPayoutClaim {
                 payout,
                 submit,
+                initiator_user_id: get(&row, "initiated_by_user_id")?,
+                initiator_access_token_id: get(&row, "initiated_by_access_token_id")?,
+                initiator_request_id: get(&row, "initiated_request_id")?,
+                initiator_scope: get(&row, "initiated_scope")?,
                 gateway_url: get(&row, "gateway_url")?,
                 gateway_secret: get(&row, "gateway_secret")?,
                 account_secret: get(&row, "account_secret")?,
@@ -508,6 +585,79 @@ impl MerchantPayoutRepository {
         })
         .await
     }
+
+    /// Recheck the live actor and lease immediately before the first gateway submission.
+    pub async fn authorize_first_submit(
+        &self,
+        claim: &MerchantPayoutClaim,
+    ) -> Result<bool, MerchantFinanceError> {
+        if !claim.submit {
+            return Err(MerchantFinanceError::InvalidInput);
+        }
+        self.bounded(async {
+            let tx = self.pool.connection().begin().await.map_err(db_error)?;
+            lock_settings(&tx).await?;
+            let mut query = select(PAYOUTS);
+            query.and_where(Expr::col(Alias::new("withdrawal_id")).eq(claim.payout.withdrawal_id));
+            if tx.get_database_backend() != DbBackend::Sqlite {
+                query.lock(LockType::Update);
+            }
+            let Some(row) = tx
+                .query_one(tx.get_database_backend().build(&query.to_owned()))
+                .await
+                .map_err(db_error)?
+            else {
+                tx.commit().await.map_err(db_error)?;
+                return Ok(false);
+            };
+            let payout = payout_from_row(&row)?;
+            if payout.merchant_id != claim.payout.merchant_id
+                || payout.event_key != claim.payout.event_key
+                || payout.amount_minor != claim.payout.amount_minor
+                || payout.currency != claim.payout.currency
+            {
+                return Err(MerchantFinanceError::Conflict);
+            }
+            if payout.status != "processing"
+                || get::<String>(&row, "lease_owner")? != claim.lease_owner
+                || get::<i64>(&row, "lease_until")? <= now()
+                || get::<Option<i64>>(&row, "submit_authorized_at")?.is_some()
+            {
+                tx.commit().await.map_err(db_error)?;
+                return Ok(false);
+            }
+            if let Some(initiator_user_id) = get::<Option<i64>>(&row, "initiated_by_user_id")?
+                && !current_admin(&tx, initiator_user_id).await?
+            {
+                cancel_unsubmitted_payout(&tx, &payout).await?;
+                tx.commit().await.map_err(db_error)?;
+                return Ok(false);
+            }
+            let at = now();
+            let authorize = Query::update()
+                .table(Alias::new(PAYOUTS))
+                .values([
+                    (Alias::new("submit_authorized_at"), at.into()),
+                    (Alias::new("updated_at"), at.into()),
+                ])
+                .and_where(Expr::col(Alias::new("withdrawal_id")).eq(payout.withdrawal_id))
+                .and_where(Expr::col(Alias::new("status")).eq("processing"))
+                .and_where(Expr::col(Alias::new("lease_owner")).eq(claim.lease_owner.clone()))
+                .and_where(Expr::col(Alias::new("lease_until")).gt(at))
+                .and_where(Expr::col(Alias::new("submit_authorized_at")).is_null())
+                .to_owned();
+            let authorized = tx
+                .execute(tx.get_database_backend().build(&authorize))
+                .await
+                .map_err(db_error)?
+                .rows_affected()
+                == 1;
+            tx.commit().await.map_err(db_error)?;
+            Ok(authorized)
+        })
+        .await
+    }
+
     /// A verified external terminal outcome and the finance ledger commit together.
     pub async fn complete(
         &self,
@@ -632,6 +782,104 @@ impl MerchantPayoutRepository {
         })
         .await
     }
+}
+
+async fn current_admin(
+    tx: &DatabaseTransaction,
+    user_id: i64,
+) -> Result<bool, MerchantFinanceError> {
+    let mut query = select("users");
+    query.and_where(Expr::col(Alias::new("id")).eq(user_id));
+    if tx.get_database_backend() != DbBackend::Sqlite {
+        query.lock(LockType::Update);
+    }
+    let Some(row) = tx
+        .query_one(tx.get_database_backend().build(&query.to_owned()))
+        .await
+        .map_err(db_error)?
+    else {
+        return Ok(false);
+    };
+    Ok(get::<i16>(&row, "role")? == 1
+        && get::<i16>(&row, "status")? == 1
+        && get::<Option<TimeDateTimeWithTimeZone>>(&row, "deleted_at")?.is_none())
+}
+
+/// Cancel a payout only before its first external submission and release its reservation atomically.
+async fn cancel_unsubmitted_payout(
+    tx: &DatabaseTransaction,
+    payout: &MerchantPayout,
+) -> Result<(), MerchantFinanceError> {
+    if !["pending", "processing"].contains(&payout.status.as_str()) {
+        return Err(MerchantFinanceError::Conflict);
+    }
+    let mut account = load_account(tx, payout.merchant_id, true).await?;
+    let withdrawal = withdrawal_by_id(tx, payout.withdrawal_id, true)
+        .await?
+        .ok_or(MerchantFinanceError::Invariant)?;
+    if withdrawal.status != "pending" || account.withdrawing_quota < withdrawal.amount_quota {
+        return Err(MerchantFinanceError::Invariant);
+    }
+    account.withdrawing_quota -= withdrawal.amount_quota;
+    let debt = account.debt_quota.min(withdrawal.amount_quota);
+    account.debt_quota -= debt;
+    account.available_quota = checked_add(account.available_quota, withdrawal.amount_quota - debt)?;
+    let at = now();
+    save_account(tx, &account, at).await?;
+    let reject = Query::update()
+        .table(Alias::new("merchant_withdrawals"))
+        .values([
+            (Alias::new("status"), "rejected".into()),
+            (Alias::new("reason"), "initiator_permission_revoked".into()),
+            (Alias::new("updated_at"), at.into()),
+        ])
+        .and_where(Expr::col(Alias::new("id")).eq(withdrawal.id))
+        .and_where(Expr::col(Alias::new("status")).eq("pending"))
+        .to_owned();
+    if tx
+        .execute(tx.get_database_backend().build(&reject))
+        .await
+        .map_err(db_error)?
+        .rows_affected()
+        != 1
+    {
+        return Err(MerchantFinanceError::Conflict);
+    }
+    append_entry(
+        tx,
+        withdrawal.merchant_id,
+        &format!("withdraw-rejected:{}", withdrawal.event_key),
+        "withdrawal_rejected",
+        "initiator_permission_revoked",
+        0,
+        0,
+        withdrawal.amount_quota,
+        at,
+    )
+    .await?;
+    let update = Query::update()
+        .table(Alias::new(PAYOUTS))
+        .values([
+            (Alias::new("status"), "failed".into()),
+            (Alias::new("reason"), "initiator_permission_revoked".into()),
+            (Alias::new("lease_owner"), "".into()),
+            (Alias::new("lease_until"), 0_i64.into()),
+            (Alias::new("updated_at"), at.into()),
+        ])
+        .and_where(Expr::col(Alias::new("withdrawal_id")).eq(payout.withdrawal_id))
+        .and_where(Expr::col(Alias::new("status")).is_in(["pending", "processing"]))
+        .and_where(Expr::col(Alias::new("submit_authorized_at")).is_null())
+        .to_owned();
+    if tx
+        .execute(tx.get_database_backend().build(&update))
+        .await
+        .map_err(db_error)?
+        .rows_affected()
+        != 1
+    {
+        return Err(MerchantFinanceError::Conflict);
+    }
+    Ok(())
 }
 
 async fn lock_settings(tx: &DatabaseTransaction) -> Result<(), MerchantFinanceError> {

@@ -196,6 +196,7 @@ pub struct DatabaseReady {
 /// 已使用数据库连接池装配令牌认证服务。
 pub struct AuthenticationReady {
     infrastructure: DatabaseReady,
+    personal_access_token_repository: af_db::PersonalAccessTokenRepository,
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
     initial_setup: Arc<dyn InitialSetup>,
@@ -425,6 +426,8 @@ pub enum BootstrapError {
     /// 用户会话仓储的启动参数无效。
     #[error("用户会话启动参数无效")]
     SessionRepository(#[source] UserSessionRepositoryConfigError),
+    #[error("系统访问令牌仓储启动参数无效")]
+    PersonalAccessTokenRepository(#[source] af_db::PersonalAccessTokenRepositoryConfigError),
     /// 用户登录 OAuth 仓储的启动参数无效。
     #[error("用户登录 OAuth 仓储启动参数无效")]
     OAuthLoginRepository(#[source] OAuthLoginRepositoryError),
@@ -918,6 +921,16 @@ impl Bootstrap<DatabaseReady> {
             auth.session_ttl_secs(),
         )
         .map_err(BootstrapError::SessionAuthentication)?;
+        let personal_access_token_repository = af_db::PersonalAccessTokenRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::PersonalAccessTokenRepository)?;
+        let session_authenticator = session_authenticator.with_personal_access_tokens(Arc::new(
+            af_admin::DatabasePersonalAccessTokenService::new(
+                personal_access_token_repository.clone(),
+            ),
+        ));
         let initial_setup_repository = self.stage.initial_setup_repository.clone();
         let registration_repository = RegistrationRepository::new(
             self.stage.database.clone(),
@@ -1259,6 +1272,7 @@ impl Bootstrap<DatabaseReady> {
             database_migration_extension: None,
             stage: AuthenticationReady {
                 infrastructure: stage,
+                personal_access_token_repository,
                 authenticator: Arc::new(TokenRequestAdmissionAuthenticator::new(
                     database_authenticator,
                     Arc::new(token_request_admission_repository),
@@ -2205,6 +2219,10 @@ impl Bootstrap<BillingReady> {
             debug_trace_worker,
             analytics_export_repository,
         } = stage;
+        spawn_access_token_cleanup_task(
+            &mut supervisor,
+            infrastructure.personal_access_token_repository.clone(),
+        );
         let capability_decryptor = CredentialDecryptor::new(config.credential_encryption())
             .expect("已校验的上游凭据配置必须包含有效解密密钥");
         let credential_model_service = Arc::new(af_admin::DatabaseCredentialModelService::new(
@@ -2546,6 +2564,48 @@ fn spawn_oauth_session_cleanup_task(
                             }
                         }
                     }
+                }
+            }
+        }
+    });
+}
+
+fn spawn_access_token_cleanup_task(
+    supervisor: &mut BackgroundTaskSupervisor,
+    repository: af_db::PersonalAccessTokenRepository,
+) {
+    supervisor.spawn("access-token-cleanup", move |task_shutdown| {
+        let repository = repository.clone();
+        async move {
+            let mut ticks = tokio::time::interval(Duration::from_secs(3600));
+            ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                tokio::select! {
+                    () = task_shutdown.cancelled() => return,
+                    _ = ticks.tick() => {}
+                }
+                let Ok(elapsed) =
+                    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                else {
+                    continue;
+                };
+                let Ok(now) = i64::try_from(elapsed.as_secs()) else {
+                    continue;
+                };
+                // Bound each sweep so maintenance cannot monopolize a database connection.
+                let result = async {
+                    repository.prune_expired_proofs(now, 10_000).await?;
+                    repository
+                        .prune_access_audit(now.saturating_sub(90 * 86400), 10_000)
+                        .await?;
+                    Ok::<_, af_db::PersonalAccessTokenRepositoryError>(())
+                }
+                .await;
+                if result.is_err() {
+                    tracing::warn!(
+                        error_kind = "repository",
+                        "系统访问令牌记录清理失败，将在下一周期重试"
+                    );
                 }
             }
         }
@@ -3876,8 +3936,8 @@ mod tests {
             .unwrap();
         // Codex 使用固定的 1455 回调端口；端口被并行测试占用时，启动器会
         // 保留手动回调路径并跳过对应监听任务，因此这里只把实际注册的监听任务计入基线。
-        // 固定任务包含商户出款、定时价格、Key 模型发现、上游额度刷新与活跃渠道监控。
-        let expected_task_count = 16 + supervised.stage.oauth_loopback_servers.len();
+        // 固定任务包含商户出款、定时价格、Key 模型发现、上游额度刷新、活跃渠道监控和 PAT 审计清理。
+        let expected_task_count = 17 + supervised.stage.oauth_loopback_servers.len();
         let supervised = supervised.start_supervisor();
         assert_eq!(
             supervised.stage.supervisor.task_count(),

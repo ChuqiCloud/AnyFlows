@@ -3,6 +3,17 @@
 export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
+export type AccessTokenPresetResponse = {
+    id: string;
+    label: string;
+    scopes: Array<string>;
+};
+export type AccessTokenScopeResponse = {
+    scope: string;
+    label: string;
+    description: string;
+    admin_only: boolean;
+};
 export type AccountVerificationDecisionRequest = {
     expected_version: number;
     status: number;
@@ -1811,6 +1822,9 @@ export type CredentialUsageWindow = {
     used_percent: number;
     reset_at?: number | null;
 };
+export type DeleteModelProviderRequest = {
+    expected_version: number;
+};
 export type FrontendTemplateActivationRequest = {
     template_id?: string | null;
 };
@@ -1848,6 +1862,10 @@ export type IssuedAdminRedemptionBatch = {
 export type IssuedAdminToken = {
     api_key: string;
     token: AdminToken;
+};
+export type IssuedPersonalAccessTokenResponse = {
+    token: PersonalAccessTokenResponse;
+    secret: string;
 };
 export type IssuedUserToken = {
     api_key: string;
@@ -2433,6 +2451,26 @@ export type ModelCatalogTokenPrices = {
     cache_creation_5m: string;
     cache_creation_1h: string;
 };
+export type ModelProviderCatalogEntry = {
+    provider_key: string;
+    display_name: string;
+    logo: string | null;
+    aliases: Array<string>;
+    enabled: boolean;
+    sort_order: number;
+    version: number;
+};
+export type ModelProviderCatalogList = {
+    providers: Array<ModelProviderCatalogEntry>;
+};
+export type ModelProviderCatalogRequest = {
+    expected_version: number;
+    display_name: string;
+    logo?: string | null;
+    aliases: Array<string>;
+    enabled: boolean;
+    sort_order: number;
+};
 export type NotificationChannel = 'email' | 'in_app';
 export type NotificationDeliveryState = 'queued' | 'accepted' | 'failed' | 'canceled' | 'available';
 export type NotificationKind = 'balance_alert' | 'subscription_balance_alert' | 'subscription_purchase' | 'product_update' | 'channel_monitor';
@@ -2480,9 +2518,59 @@ export type PasswordResetRequest = {
 export type PasswordResetRequestResponse = {
     accepted: boolean;
 };
+export type PersonalAccessTokenErrorBody = {
+    code: string;
+    message: string;
+};
+export type PersonalAccessTokenListResponse = {
+    tokens: Array<PersonalAccessTokenResponse>;
+    next_cursor?: number | null;
+    capacity: number;
+};
+export type PersonalAccessTokenPolicyRequest = {
+    enabled: boolean;
+    issuance_enabled: boolean;
+    max_tokens_per_user: number;
+    version: number;
+};
+export type PersonalAccessTokenProofResponse = {
+    proof: string;
+    expires_at: number;
+};
+export type PersonalAccessTokenResponse = {
+    id: number;
+    name: string;
+    token_hint: string;
+    scopes: Array<string>;
+    enabled: boolean;
+    expires_at?: number | null;
+    allow_ips?: Array<string> | null;
+    created_at: number;
+    updated_at: number;
+    last_used_at?: number | null;
+    last_used_ip?: string | null;
+    version: number;
+};
+export type PersonalAccessTokenScopeCatalogResponse = {
+    scopes: Array<AccessTokenScopeResponse>;
+    presets: Array<AccessTokenPresetResponse>;
+    default_expiry_days: number;
+    max_expiry_days: number;
+    allow_permanent: boolean;
+};
+export type PersonalAccessTokenWriteRequest = {
+    name: string;
+    scopes: Array<string>;
+    expires_at: number | null;
+    allow_ips: Array<string> | null;
+    enabled?: boolean | null;
+    version?: number | null;
+};
 export type PlatformAuditLog = {
     id: number;
     operator_user_id: number;
+    actor_credential_kind: string | null;
+    actor_credential_id: number | null;
     operator_username: string | null;
     permission_code: string;
     route: string;
@@ -3328,6 +3416,12 @@ export type UserWalletSummary = {
     used_quota: number;
     frozen_quota: number;
 };
+export type VerificationAction = 'create' | 'update';
+export type VerifyPersonalAccessTokenRequest = {
+    action: VerificationAction;
+    token_id?: number | null;
+    payload: PersonalAccessTokenWriteRequest;
+};
 export type VersionInfo = {
     version: string;
     commit?: string | null;
@@ -3661,6 +3755,15 @@ export type MerchantServiceWriteRequestWritable = {
     protocol: 'openai_chat' | 'openai_responses' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'xai_video';
     timeout_secs: number;
 };
+export type PersonalAccessTokenWriteRequestWritable = {
+    name: string;
+    scopes: Array<string>;
+    expires_at: number | null;
+    allow_ips: Array<string> | null;
+    enabled?: boolean | null;
+    version?: number | null;
+    proof?: string | null;
+};
 export type RegistrationEmailVerificationRequestWritable = {
     email: string;
     turnstile_token?: string | null;
@@ -3712,6 +3815,11 @@ export type UserTopupPaymentSessionWritable = {
 } | {
     redirect_url: string;
     kind: 'redirect';
+};
+export type VerifyPersonalAccessTokenRequestWritable = {
+    action: VerificationAction;
+    token_id?: number | null;
+    payload: PersonalAccessTokenWriteRequestWritable;
 };
 export type LoginManagementSessionData = {
     body: LoginRequestWritable;
@@ -8179,6 +8287,97 @@ export type UpdateAdminModelResponses = {
     200: AdminModel;
 };
 export type UpdateAdminModelResponse = UpdateAdminModelResponses[keyof UpdateAdminModelResponses];
+export type ListPublicModelProviderCatalogData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/model-provider-catalog';
+};
+export type ListPublicModelProviderCatalogErrors = {
+    500: ManagementError;
+};
+export type ListPublicModelProviderCatalogError = ListPublicModelProviderCatalogErrors[keyof ListPublicModelProviderCatalogErrors];
+export type ListPublicModelProviderCatalogResponses = {
+    200: ModelProviderCatalogList;
+};
+export type ListPublicModelProviderCatalogResponse = ListPublicModelProviderCatalogResponses[keyof ListPublicModelProviderCatalogResponses];
+export type ListAdminModelProviderCatalogData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/model-provider-catalog';
+};
+export type ListAdminModelProviderCatalogErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminModelProviderCatalogError = ListAdminModelProviderCatalogErrors[keyof ListAdminModelProviderCatalogErrors];
+export type ListAdminModelProviderCatalogResponses = {
+    200: ModelProviderCatalogList;
+};
+export type ListAdminModelProviderCatalogResponse = ListAdminModelProviderCatalogResponses[keyof ListAdminModelProviderCatalogResponses];
+export type DeleteAdminModelProviderData = {
+    body: DeleteModelProviderRequest;
+    path: {
+        provider_key: string;
+    };
+    query?: never;
+    url: '/api/admin/model-provider-catalog/{provider_key}';
+};
+export type DeleteAdminModelProviderErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type DeleteAdminModelProviderError = DeleteAdminModelProviderErrors[keyof DeleteAdminModelProviderErrors];
+export type DeleteAdminModelProviderResponses = {
+    204: void;
+};
+export type DeleteAdminModelProviderResponse = DeleteAdminModelProviderResponses[keyof DeleteAdminModelProviderResponses];
+export type GetAdminModelProviderData = {
+    body?: never;
+    path: {
+        provider_key: string;
+    };
+    query?: never;
+    url: '/api/admin/model-provider-catalog/{provider_key}';
+};
+export type GetAdminModelProviderErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminModelProviderError = GetAdminModelProviderErrors[keyof GetAdminModelProviderErrors];
+export type GetAdminModelProviderResponses = {
+    200: ModelProviderCatalogEntry;
+};
+export type GetAdminModelProviderResponse = GetAdminModelProviderResponses[keyof GetAdminModelProviderResponses];
+export type UpdateAdminModelProviderData = {
+    body: ModelProviderCatalogRequest;
+    path: {
+        provider_key: string;
+    };
+    query?: never;
+    url: '/api/admin/model-provider-catalog/{provider_key}';
+};
+export type UpdateAdminModelProviderErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminModelProviderError = UpdateAdminModelProviderErrors[keyof UpdateAdminModelProviderErrors];
+export type UpdateAdminModelProviderResponses = {
+    200: ModelProviderCatalogEntry;
+};
+export type UpdateAdminModelProviderResponse = UpdateAdminModelProviderResponses[keyof UpdateAdminModelProviderResponses];
 export type ListMissingAdminModelsData = {
     body?: never;
     path?: never;
@@ -8657,6 +8856,147 @@ export type UpdateUserTokenResponses = {
     200: UserToken;
 };
 export type UpdateUserTokenResponse = UpdateUserTokenResponses[keyof UpdateUserTokenResponses];
+export type ListPersonalAccessTokensData = {
+    body?: never;
+    path?: never;
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/account/access-tokens';
+};
+export type ListPersonalAccessTokensErrors = {
+    401: PersonalAccessTokenErrorBody;
+};
+export type ListPersonalAccessTokensError = ListPersonalAccessTokensErrors[keyof ListPersonalAccessTokensErrors];
+export type ListPersonalAccessTokensResponses = {
+    200: PersonalAccessTokenListResponse;
+};
+export type ListPersonalAccessTokensResponse = ListPersonalAccessTokensResponses[keyof ListPersonalAccessTokensResponses];
+export type CreatePersonalAccessTokenData = {
+    body: PersonalAccessTokenWriteRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/api/account/access-tokens';
+};
+export type CreatePersonalAccessTokenErrors = {
+    403: PersonalAccessTokenErrorBody;
+};
+export type CreatePersonalAccessTokenError = CreatePersonalAccessTokenErrors[keyof CreatePersonalAccessTokenErrors];
+export type CreatePersonalAccessTokenResponses = {
+    201: IssuedPersonalAccessTokenResponse;
+};
+export type CreatePersonalAccessTokenResponse = CreatePersonalAccessTokenResponses[keyof CreatePersonalAccessTokenResponses];
+export type GetPersonalAccessTokenScopesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/access-tokens/scopes';
+};
+export type GetPersonalAccessTokenScopesResponses = {
+    200: PersonalAccessTokenScopeCatalogResponse;
+};
+export type GetPersonalAccessTokenScopesResponse = GetPersonalAccessTokenScopesResponses[keyof GetPersonalAccessTokenScopesResponses];
+export type VerifyPersonalAccessTokenMutationData = {
+    body: VerifyPersonalAccessTokenRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/api/account/access-tokens/verify';
+};
+export type VerifyPersonalAccessTokenMutationErrors = {
+    403: PersonalAccessTokenErrorBody;
+};
+export type VerifyPersonalAccessTokenMutationError = VerifyPersonalAccessTokenMutationErrors[keyof VerifyPersonalAccessTokenMutationErrors];
+export type VerifyPersonalAccessTokenMutationResponses = {
+    200: PersonalAccessTokenProofResponse;
+};
+export type VerifyPersonalAccessTokenMutationResponse = VerifyPersonalAccessTokenMutationResponses[keyof VerifyPersonalAccessTokenMutationResponses];
+export type RevokePersonalAccessTokenData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/account/access-tokens/{id}';
+};
+export type RevokePersonalAccessTokenResponses = {
+    204: void;
+};
+export type RevokePersonalAccessTokenResponse = RevokePersonalAccessTokenResponses[keyof RevokePersonalAccessTokenResponses];
+export type UpdatePersonalAccessTokenData = {
+    body: PersonalAccessTokenWriteRequestWritable;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/account/access-tokens/{id}';
+};
+export type UpdatePersonalAccessTokenErrors = {
+    403: PersonalAccessTokenErrorBody;
+    409: PersonalAccessTokenErrorBody;
+};
+export type UpdatePersonalAccessTokenError = UpdatePersonalAccessTokenErrors[keyof UpdatePersonalAccessTokenErrors];
+export type UpdatePersonalAccessTokenResponses = {
+    200: PersonalAccessTokenResponse;
+};
+export type UpdatePersonalAccessTokenResponse = UpdatePersonalAccessTokenResponses[keyof UpdatePersonalAccessTokenResponses];
+export type RevokeOwnPersonalAccessTokensData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/access-tokens/revoke-all';
+};
+export type RevokeOwnPersonalAccessTokensResponses = {
+    200: unknown;
+};
+export type GetPersonalAccessTokenSelfData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/access-token/self';
+};
+export type GetPersonalAccessTokenSelfErrors = {
+    401: PersonalAccessTokenErrorBody;
+};
+export type GetPersonalAccessTokenSelfError = GetPersonalAccessTokenSelfErrors[keyof GetPersonalAccessTokenSelfErrors];
+export type GetPersonalAccessTokenSelfResponses = {
+    200: unknown;
+};
+export type GetPersonalAccessTokenPolicyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/access-tokens/policy';
+};
+export type GetPersonalAccessTokenPolicyResponses = {
+    200: PersonalAccessTokenPolicyRequest;
+};
+export type GetPersonalAccessTokenPolicyResponse = GetPersonalAccessTokenPolicyResponses[keyof GetPersonalAccessTokenPolicyResponses];
+export type UpdatePersonalAccessTokenPolicyData = {
+    body: PersonalAccessTokenPolicyRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/access-tokens/policy';
+};
+export type UpdatePersonalAccessTokenPolicyErrors = {
+    409: PersonalAccessTokenErrorBody;
+};
+export type UpdatePersonalAccessTokenPolicyError = UpdatePersonalAccessTokenPolicyErrors[keyof UpdatePersonalAccessTokenPolicyErrors];
+export type UpdatePersonalAccessTokenPolicyResponses = {
+    200: PersonalAccessTokenPolicyRequest;
+};
+export type UpdatePersonalAccessTokenPolicyResponse = UpdatePersonalAccessTokenPolicyResponses[keyof UpdatePersonalAccessTokenPolicyResponses];
+export type RevokeUserPersonalAccessTokensData = {
+    body?: never;
+    path: {
+        user_id: number;
+    };
+    query?: never;
+    url: '/api/admin/users/{user_id}/access-tokens/revoke-all';
+};
+export type RevokeUserPersonalAccessTokensResponses = {
+    200: unknown;
+};
 export type ListUserRoutesData = {
     body?: never;
     path?: never;
@@ -10352,6 +10692,26 @@ export type ReadAdminDebugTraceSnapshotsResponses = {
     200: AdminDebugTraceSnapshotsResponse;
 };
 export type ReadAdminDebugTraceSnapshotsResponse = ReadAdminDebugTraceSnapshotsResponses[keyof ReadAdminDebugTraceSnapshotsResponses];
+export type ReceivePaymentWebhookGetData = {
+    body?: never;
+    path: {
+        provider: string;
+    };
+    query?: {
+        payload?: string;
+    };
+    url: '/api/payment/webhook/{provider}';
+};
+export type ReceivePaymentWebhookGetErrors = {
+    400: unknown;
+    405: unknown;
+    409: unknown;
+    500: unknown;
+    503: unknown;
+};
+export type ReceivePaymentWebhookGetResponses = {
+    200: unknown;
+};
 export type ReceivePaymentWebhookData = {
     body?: unknown;
     headers: {
@@ -10606,6 +10966,21 @@ export type DecideAccountVerificationResponses = {
     200: AccountVerificationResponse;
 };
 export type DecideAccountVerificationResponse = DecideAccountVerificationResponses[keyof DecideAccountVerificationResponses];
+export type CompleteAlipayVerificationCallbackData = {
+    body?: never;
+    path?: never;
+    query?: {
+        auth_code?: string;
+        code?: string;
+        state?: string;
+        error?: string;
+    };
+    url: '/api/account/verifications/alipay/callback';
+};
+export type CompleteAlipayVerificationCallbackResponses = {
+    200: string;
+};
+export type CompleteAlipayVerificationCallbackResponse = CompleteAlipayVerificationCallbackResponses[keyof CompleteAlipayVerificationCallbackResponses];
 export type GetAdminVerificationSettingsData = {
     body?: never;
     path?: never;
