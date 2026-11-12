@@ -341,11 +341,14 @@ pub(crate) fn annotate_document_with_overlay(
                 continue;
             };
             let extensions = operation.extensions.get_or_insert_with(Default::default);
-            extensions.insert(
-                "x-anyflows-pat-session-only".to_owned(),
-                Value::Bool(policy.session_only),
-            );
-            if !policy.session_only {
+            if policy.session_only {
+                extensions.insert(
+                    "x-anyflows-pat-session-only".to_owned(),
+                    Value::Bool(true),
+                );
+                extensions.remove("x-anyflows-pat-scopes");
+            } else {
+                extensions.remove("x-anyflows-pat-session-only");
                 extensions.insert(
                     "x-anyflows-pat-scopes".to_owned(),
                     serde_json::json!(policy.required_scopes),
@@ -356,8 +359,6 @@ pub(crate) fn annotate_document_with_overlay(
                 if !security.contains(&personal_access_token) {
                     security.push(personal_access_token);
                 }
-            } else {
-                extensions.remove("x-anyflows-pat-scopes");
             }
         }
     }
