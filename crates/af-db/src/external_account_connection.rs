@@ -17,6 +17,7 @@ use crate::{DatabasePool, EncryptedCredentialEnvelope};
 const CONNECTIONS: &str = "external_account_connections";
 const SNAPSHOTS: &str = "external_account_balance_snapshots";
 pub const MAX_EXTERNAL_ACCOUNT_CONNECTIONS: u32 = 32;
+/// Maximum number of balance snapshots retained for a linked account.
 pub const MAX_EXTERNAL_BALANCE_SNAPSHOTS: u32 = 100;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -846,6 +847,29 @@ async fn insert_snapshot_in_transaction(
         )
         .map_err(|_| ExternalAccountRepositoryError::Invariant)?
     };
+    let retained_snapshots = Query::select()
+        .column(Alias::new("id"))
+        .from(Alias::new(SNAPSHOTS))
+        .and_where(Expr::col(Alias::new("connection_id")).eq(connection_id))
+        .order_by(Alias::new("observed_at"), Order::Desc)
+        .order_by(Alias::new("id"), Order::Desc)
+        .limit(u64::from(MAX_EXTERNAL_BALANCE_SNAPSHOTS))
+        .to_owned();
+    let retained_ids = txn
+        .query_all(txn.get_database_backend().build(&retained_snapshots))
+        .await
+        .map_err(map_db)?
+        .iter()
+        .map(|row| row.try_get::<i64>("", "id").map_err(map_db))
+        .collect::<Result<Vec<_>, _>>()?;
+    let prune_snapshots = Query::delete()
+        .from_table(Alias::new(SNAPSHOTS))
+        .and_where(Expr::col(Alias::new("connection_id")).eq(connection_id))
+        .and_where(Expr::col(Alias::new("id")).is_not_in(retained_ids))
+        .to_owned();
+    txn.execute(txn.get_database_backend().build(&prune_snapshots))
+        .await
+        .map_err(map_db)?;
     Ok(ExternalAccountBalanceSnapshotRecord {
         id,
         connection_id,

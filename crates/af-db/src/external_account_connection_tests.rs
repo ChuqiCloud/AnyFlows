@@ -8,7 +8,7 @@ use crate::{
     ExternalAccountBalanceSnapshotRecord, ExternalAccountBalanceSnapshotWrite,
     ExternalAccountConnectionCreate, ExternalAccountConnectionRepository,
     ExternalAccountInitialBalanceSnapshot, ExternalAccountRepositoryError, ExternalBalanceStatus,
-    MigrationOptions,
+    MAX_EXTERNAL_BALANCE_SNAPSHOTS, MigrationOptions,
     entity::{groups, users},
 };
 
@@ -249,6 +249,46 @@ async fn revocation_wipes_credentials_and_keeps_owner_scoped_balance_history()
             7,
         )?)
         .await?;
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn balance_snapshot_history_retains_only_the_most_recent_records()
+-> Result<(), Box<dyn Error>> {
+    let fixture = Fixture::new().await?;
+    let linked = fixture
+        .repository
+        .create_with_snapshot(
+            link(
+                fixture.users[0],
+                "bounded-history-subject",
+                "https://panel.example",
+                10,
+            )?,
+            initial_snapshot(1_800_000_000_001),
+        )
+        .await?;
+
+    for offset in 2..=i64::from(MAX_EXTERNAL_BALANCE_SNAPSHOTS) + 1 {
+        fixture
+            .repository
+            .insert_snapshot(failed_snapshot(
+                fixture.users[0],
+                linked.id,
+                1_800_000_000_000 + offset,
+            ))
+            .await?;
+    }
+
+    let history = fixture
+        .repository
+        .list_snapshots(fixture.users[0], linked.id, MAX_EXTERNAL_BALANCE_SNAPSHOTS)
+        .await?;
+    assert_eq!(history.len(), MAX_EXTERNAL_BALANCE_SNAPSHOTS as usize);
+    assert_eq!(history.first().unwrap().observed_at, 1_800_000_000_101);
+    assert_eq!(history.last().unwrap().observed_at, 1_800_000_000_002);
+
     fixture.close().await?;
     Ok(())
 }

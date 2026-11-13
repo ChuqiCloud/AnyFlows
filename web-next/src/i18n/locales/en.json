@@ -7960,7 +7960,7 @@
     },
     "externalAccounts": {
       "title": "Linked platform accounts",
-      "subtitle": "Verify and view your profile and balance records on other platforms.",
+      "subtitle": "Verify and view your profile and balance records on other platforms. The latest 100 balance snapshots are retained per linked account.",
       "walletHint": "Platform balances are independent snapshots. They are not added to your AnyFlows wallet and do not trigger cross-platform charges or top-ups.",
       "platform": "Platform",
       "baseUrl": "Platform URL",
