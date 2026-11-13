@@ -75,7 +75,7 @@ OpenAI-compatible clients typically use `https://api.example.com/v1` as the base
 
 The documentation is maintained primarily in Chinese:
 
-- [Project strengths and capability boundaries](docs/project-strengths.md): a maintained overview of verified capabilities and their practical limits, with work in progress marked explicitly.
+- [System architecture and capabilities](docs/project-strengths.md): request handling, routing, billing, deployment topology, and the status of unreleased changes.
 - [Binary deployment and first login](docs/deployment-and-configuration.md)
 - [Multi-node deployment](docs/multi-node-deployment.md)
 - [Docker Compose source deployment](docs/docker-compose.md)
