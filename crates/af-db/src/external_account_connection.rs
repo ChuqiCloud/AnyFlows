@@ -210,7 +210,8 @@ impl ExternalAccountConnectionRepository {
         bounded(self.timeout, async {
             let txn = self.pool.connection().begin().await.map_err(map_db)?;
             // Serialize connection-count and per-provider replacement checks for this user.
-            let mut lock_user = Query::select()
+            let mut lock_user = Query::select();
+            lock_user
                 .column(Alias::new("id"))
                 .from(Alias::new("users"))
                 .and_where(Expr::col(Alias::new("id")).eq(input.user_id.get()));
