@@ -129,10 +129,14 @@ impl CapabilityDeclaration {
             .into_iter()
             .flatten()
         {
-            if !schema.is_object() {
+            if !schema.is_object()
+                || serde_json::to_vec(schema)
+                    .map_err(|_| ContractValidationError::InvalidJsonSchema)?
+                    .len()
+                    > 64 * 1024
+            {
                 return Err(ContractValidationError::InvalidJsonSchema);
             }
-            crate::schema::compile_json_schema(schema)?;
         }
         Ok(())
     }

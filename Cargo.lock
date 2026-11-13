@@ -270,7 +270,6 @@ dependencies = [
 name = "af-plugin-contract"
 version = "0.3.0-beta.10"
 dependencies = [
- "jsonschema",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -284,6 +283,8 @@ dependencies = [
  "af-plugin-contract",
  "async-trait",
  "http 1.5.0",
+ "jsonschema",
+ "regex",
  "serde_json",
  "thiserror 2.0.20",
  "tokio",

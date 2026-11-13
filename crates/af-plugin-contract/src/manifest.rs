@@ -3,10 +3,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
-use crate::{
-    CapabilityDeclaration, ContractValidationError, ContractVersionRange, PluginVersion,
-    schema::compile_json_schema,
-};
+use crate::{CapabilityDeclaration, ContractValidationError, ContractVersionRange, PluginVersion};
 
 /// Extensible namespaced plugin ID; never a product platform enum.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
@@ -76,6 +73,10 @@ impl PluginManifest {
         self.plugin_version.validate()?;
         self.contract_range.validate()?;
         if !self.config_schema.is_object()
+            || serde_json::to_vec(&self.config_schema)
+                .map_err(|_| ContractValidationError::InvalidManifest)?
+                .len()
+                > 64 * 1024
             || self.capabilities.is_empty()
             || self.capabilities.len() > 128
             || self.display_name.len() > 128
@@ -104,8 +105,6 @@ impl PluginManifest {
         {
             return Err(ContractValidationError::InvalidManifest);
         }
-        compile_json_schema(&self.config_schema)
-            .map_err(|_| ContractValidationError::InvalidJsonSchema)?;
         self.limits.validate()?;
         let mut ids = BTreeSet::new();
         for capability in &self.capabilities {
@@ -115,12 +114,6 @@ impl PluginManifest {
             }
         }
         Ok(())
-    }
-
-    /// Validate a public connector configuration against this manifest's schema.
-    /// Validation errors intentionally contain no instance values.
-    pub fn validate_config(&self, config: &Value) -> Result<(), ContractValidationError> {
-        crate::schema::validate_json_schema(&self.config_schema, config)
     }
 }
 
@@ -189,51 +182,6 @@ mod tests {
     }
 
     #[test]
-    fn manifest_compiles_config_schema_and_validates_config_instances() {
-        let manifest = manifest(serde_json::json!({
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "object",
-            "properties": {
-                "baseUrl": { "$ref": "#/$defs/url" }
-            },
-            "required": ["baseUrl"],
-            "additionalProperties": false,
-            "$defs": {
-                "url": { "type": "string", "format": "uri", "minLength": 1 }
-            }
-        }));
-
-        assert_eq!(manifest.validate(), Ok(()));
-        assert_eq!(
-            manifest.validate_config(&serde_json::json!({ "baseUrl": "https://example.test" })),
-            Ok(())
-        );
-        assert_eq!(
-            manifest.validate_config(
-                &serde_json::json!({ "baseUrl": 123, "secret": "private-canary" })
-            ),
-            Err(ContractValidationError::InvalidConfiguration)
-        );
-    }
-
-    #[test]
-    fn manifest_rejects_invalid_or_externally_referenced_config_schemas() {
-        assert_eq!(
-            manifest(serde_json::json!({ "type": "invalid-type" })).validate(),
-            Err(ContractValidationError::InvalidJsonSchema)
-        );
-        assert_eq!(
-            manifest(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "baseUrl": { "$dynamicRef": "https://example.invalid/schema" }
-                }
-            }))
-            .validate(),
-            Err(ContractValidationError::InvalidJsonSchema)
-        );
-    }
-
     #[test]
     fn manifest_matches_wire_schema_rules_for_display_name_and_auth_modes() {
         let mut empty_display_name = manifest(serde_json::json!({ "type": "object" }));
@@ -245,6 +193,10 @@ mod tests {
             .push("bearer_token".to_owned());
         assert_eq!(
             duplicate_auth_modes.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+        assert_eq!(
+            manifest(serde_json::json!(true)).validate(),
             Err(ContractValidationError::InvalidManifest)
         );
     }

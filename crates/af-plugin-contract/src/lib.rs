@@ -17,7 +17,7 @@ pub use capability::{
 };
 pub use error::{ConnectorError, ConnectorErrorCode, OperationOutcome};
 pub use manifest::{ConnectorLimits, PluginId, PluginManifest};
-pub use schema::{CompiledJsonSchema, openapi_document, schema_document, validate_json_schema};
+pub use schema::{openapi_document, schema_document};
 pub use value::{
     CapabilityInvocation, CapabilityResult, ConnectorHealth, ConnectorHealthStatus,
     ExternalAccountProfile, ExternalBalanceSnapshot, InvocationMetadata,
@@ -39,7 +39,7 @@ pub enum ContractValidationError {
     InvalidManifest,
     #[error("manifest contains duplicate capabilities")]
     DuplicateCapability,
-    #[error("JSON Schema is invalid or references an external resource")]
+    #[error("JSON Schema has an invalid shape")]
     InvalidJsonSchema,
     #[error("configuration does not match its JSON Schema")]
     InvalidConfiguration,

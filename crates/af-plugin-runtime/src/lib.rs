@@ -16,9 +16,9 @@ use std::{
 use af_httpclient::{HeaderMap, HeaderValue, Method, PooledClient, StatusCode};
 use af_plugin_contract::{
     CapabilityAccess, CapabilityDeclaration, CapabilityId, CapabilityInvocation,
-    CapabilityRequirement, CapabilityResult, CompiledJsonSchema, ConnectorError,
-    ConnectorErrorCode, ContractVersion, ExternalAccountProfile, ExternalBalanceSnapshot,
-    InvocationMetadata, PluginId, PluginManifest, PluginVersion, SideEffectClass,
+    CapabilityRequirement, CapabilityResult, ConnectorError, ConnectorErrorCode, ContractVersion,
+    ExternalAccountProfile, ExternalBalanceSnapshot, InvocationMetadata, PluginId, PluginManifest,
+    PluginVersion, SideEffectClass,
 };
 use async_trait::async_trait;
 use serde_json::Value;
@@ -26,7 +26,10 @@ use tokio::{sync::Semaphore, time::timeout};
 use zeroize::Zeroizing;
 
 mod new_api;
+mod schema;
 mod sub2api;
+
+use crate::schema::CompiledJsonSchema;
 
 pub use new_api::{NewApiConnector, new_api_registration};
 pub use sub2api::{Sub2ApiConnector, sub2api_registration};
