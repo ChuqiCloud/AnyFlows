@@ -182,7 +182,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn manifest_matches_wire_schema_rules_for_display_name_and_auth_modes() {
         let mut empty_display_name = manifest(serde_json::json!({ "type": "object" }));
         empty_display_name.display_name.clear();
