@@ -5489,7 +5489,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserExternalConnectorResponse"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserExternalConnectorResponse"
+                  }
                 }
               }
             }
@@ -5646,8 +5649,8 @@
               }
             }
           },
-          "503": {
-            "description": "外部平台暂时不可用",
+          "500": {
+            "description": "服务内部错误",
             "content": {
               "application/json": {
                 "schema": {
@@ -5656,8 +5659,8 @@
               }
             }
           },
-          "500": {
-            "description": "服务内部错误",
+          "503": {
+            "description": "外部平台暂时不可用",
             "content": {
               "application/json": {
                 "schema": {
@@ -5741,8 +5744,8 @@
               }
             }
           },
-          "503": {
-            "description": "外部平台暂时不可用",
+          "500": {
+            "description": "服务内部错误",
             "content": {
               "application/json": {
                 "schema": {
@@ -5751,8 +5754,8 @@
               }
             }
           },
-          "500": {
-            "description": "服务内部错误",
+          "503": {
+            "description": "外部平台暂时不可用",
             "content": {
               "application/json": {
                 "schema": {
@@ -5882,16 +5885,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UserExternalAccountBalanceHistoryResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "分页参数无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
                 }
               }
             }
@@ -10682,7 +10675,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -10692,7 +10685,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -10702,7 +10695,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -10712,7 +10705,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -10722,7 +10715,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -10732,7 +10725,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -10803,7 +10796,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -10813,7 +10806,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -10823,7 +10816,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -10833,7 +10826,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -10843,7 +10836,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -10853,7 +10846,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -10907,7 +10900,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -10917,7 +10910,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -10927,7 +10920,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -10937,7 +10930,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -10947,7 +10940,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -10957,7 +10950,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11020,7 +11013,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11030,7 +11023,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11040,7 +11033,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11050,7 +11043,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11060,7 +11053,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11070,7 +11063,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11123,7 +11116,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11133,7 +11126,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11143,7 +11136,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11153,7 +11146,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11163,7 +11156,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11173,7 +11166,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11234,7 +11227,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11244,7 +11237,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11254,7 +11247,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11264,7 +11257,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11274,7 +11267,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11284,7 +11277,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11326,7 +11319,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11336,7 +11329,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11346,7 +11339,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11356,7 +11349,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11366,7 +11359,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11376,7 +11369,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11426,7 +11419,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11436,7 +11429,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11446,7 +11439,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11456,7 +11449,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11466,7 +11459,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11476,7 +11469,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11539,7 +11532,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11549,7 +11542,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11559,7 +11552,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11569,7 +11562,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11579,7 +11572,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11589,7 +11582,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11633,7 +11626,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11643,7 +11636,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11653,7 +11646,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11663,7 +11656,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11673,7 +11666,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -11683,7 +11676,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
+                  "$ref": "#/components/schemas/ManagementErrorBody"
                 }
               }
             }
@@ -43960,7 +43953,8 @@
               "integer",
               "null"
             ],
-            "format": "int32"
+            "format": "int32",
+            "minimum": 0
           }
         },
         "additionalProperties": false
@@ -45111,6 +45105,14 @@
               "merchant_service_watch_not_found",
               "merchant_service_watch_limit_reached",
               "merchant_service_watch_unavailable",
+              "external_account_invalid_request",
+              "external_account_unsupported",
+              "external_account_conflict",
+              "external_account_not_found",
+              "external_account_authentication_required",
+              "external_account_unavailable",
+              "external_account_rate_limited",
+              "external_account_limit_reached",
               "user_conflict",
               "organization_not_found",
               "organization_credit_invalid_request",
@@ -45203,9 +45205,7 @@
               "model_price_source_response_too_large",
               "model_price_source_invalid_response",
               "model_price_source_candidate_limit_exceeded",
-              "internal_error",
-              "external_account_rate_limited",
-              "external_account_limit_reached"
+              "internal_error"
             ]
           },
           "message": {
@@ -51708,8 +51708,6 @@
       "UserExternalAccountBalanceResponse": {
         "type": "object",
         "required": [
-          "amount",
-          "unit",
           "status",
           "observedAt"
         ],
@@ -51720,18 +51718,19 @@
               "null"
             ]
           },
-          "observedAt": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "status": {
-            "type": "string"
-          },
           "unit": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "observedAt": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix epoch milliseconds."
           }
         },
         "additionalProperties": false
@@ -51744,22 +51743,21 @@
           "credential"
         ],
         "properties": {
-          "base_url": {
-            "type": "string",
-            "format": "uri",
-            "minLength": 9,
-            "maxLength": 2048
-          },
           "connector_id": {
             "type": "string",
-            "minLength": 3,
-            "maxLength": 128
+            "maxLength": 128,
+            "minLength": 3
+          },
+          "base_url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 9
           },
           "credential": {
             "type": "string",
             "writeOnly": true,
-            "minLength": 1,
-            "maxLength": 8192
+            "maxLength": 8192,
+            "minLength": 1
           }
         },
         "additionalProperties": false
@@ -51785,22 +51783,20 @@
           "id",
           "connectorId",
           "externalSubject",
-          "displayName",
           "baseUrl",
           "createdAt",
-          "updatedAt",
-          "latestBalance"
+          "updatedAt"
         ],
         "properties": {
-          "baseUrl": {
-            "type": "string"
+          "id": {
+            "type": "integer",
+            "format": "int64"
           },
           "connectorId": {
             "type": "string"
           },
-          "createdAt": {
-            "type": "integer",
-            "format": "int64"
+          "externalSubject": {
+            "type": "string"
           },
           "displayName": {
             "type": [
@@ -51808,12 +51804,18 @@
               "null"
             ]
           },
-          "externalSubject": {
+          "baseUrl": {
             "type": "string"
           },
-          "id": {
+          "createdAt": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Unix epoch seconds."
+          },
+          "updatedAt": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix epoch seconds."
           },
           "latestBalance": {
             "oneOf": [
@@ -51824,10 +51826,6 @@
                 "$ref": "#/components/schemas/UserExternalAccountBalanceResponse"
               }
             ]
-          },
-          "updatedAt": {
-            "type": "integer",
-            "format": "int64"
           }
         },
         "additionalProperties": false
@@ -51840,17 +51838,17 @@
           "authenticationModes"
         ],
         "properties": {
+          "id": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
           "authenticationModes": {
             "type": "array",
             "items": {
               "type": "string"
             }
-          },
-          "displayName": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
           }
         },
         "additionalProperties": false
