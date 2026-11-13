@@ -46,7 +46,7 @@ impl CompiledJsonSchema {
 /// validator compiles them, avoiding unbounded backtracking from manifests.
 fn schema_patterns_are_bounded(schema: &Value) -> bool {
     let Some(object) = schema.as_object() else {
-        return false;
+        return schema.is_boolean();
     };
     if object
         .get("pattern")
