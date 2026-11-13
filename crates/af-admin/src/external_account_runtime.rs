@@ -16,7 +16,6 @@ use af_plugin_runtime::{
 };
 use serde_json::json;
 use time::OffsetDateTime;
-use zeroize::Zeroizing;
 
 use crate::{
     ExternalAccount, ExternalAccountBalancePage, ExternalAccountBalanceSnapshot,

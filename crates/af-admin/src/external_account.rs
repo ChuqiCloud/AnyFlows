@@ -2,9 +2,8 @@
 
 use std::{fmt, future::Future, pin::Pin};
 
-use af_domain::UserId;
 use serde::Serialize;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 use crate::SessionPrincipal;
 
