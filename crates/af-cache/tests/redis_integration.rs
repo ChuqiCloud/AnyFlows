@@ -582,6 +582,311 @@ async fn verify_health_contract(redis_url: &str, namespace: &str) {
     tokio::time::sleep(Duration::from_millis(100)).await;
     let decayed = second.states(&[decaying]).await.unwrap()[0].penalty_micros();
     assert!((350_000..=550_000).contains(&decayed));
+
+    // New quality and soft-backoff state is shared across clients and scoped by model.
+    let model_a = af_cache::RedisHealthModel::for_model("health-model-a").unwrap();
+    let model_b = af_cache::RedisHealthModel::for_model("health-model-b").unwrap();
+    let channel_id = af_domain::ChannelId::new(84).unwrap();
+    let scoped_a = RedisHealthTarget::ChannelModel(channel_id, model_a);
+    let scoped_b = RedisHealthTarget::ChannelModel(channel_id, model_b);
+    first
+        .apply(&[RedisHealthEvent::failed_with_latency(
+            scoped_a,
+            RedisHealthFailure::Network,
+            10,
+        )])
+        .await
+        .unwrap();
+    let scoped = second
+        .states(&[scoped_a, scoped_b, RedisHealthTarget::Channel(channel_id)])
+        .await
+        .unwrap();
+    assert!(scoped[0].is_recently_failed());
+    assert!(!scoped[0].is_cooling());
+    assert!((990_000..=1_000_000).contains(&scoped[0].failures_micros()));
+    assert!(
+        scoped[1..]
+            .iter()
+            .all(|state| state.penalty_micros() == 0 && state.failures_micros() == 0)
+    );
+    first
+        .apply(&[RedisHealthEvent::succeeded_with_latency(scoped_a, 10_000)])
+        .await
+        .unwrap();
+    let recovered = second.states(&[scoped_a]).await.unwrap()[0];
+    assert!(!recovered.is_recently_failed());
+    assert!(recovered.successes_micros() >= 990_000);
+    assert!(recovered.failures_micros() >= 990_000);
+    assert!((9_900..=10_000).contains(&recovered.latency_ema_millis()));
+
+    let mut connection = redis::Client::open(redis_url)
+        .unwrap()
+        .get_multiplexed_async_connection()
+        .await
+        .unwrap();
+    let legacy_channel = RedisHealthTarget::Channel(af_domain::ChannelId::new(85).unwrap());
+    let legacy_key = format!("{{{namespace}}}:health:channel:85");
+    let _: () = redis::cmd("EVAL").arg("local t=redis.call('TIME');local n=tonumber(t[1])*1000+math.floor(tonumber(t[2])/1000);redis.call('HSET',KEYS[1],'penalty',900000,'updated_at',n,'streak',0,'last_transient_at',0,'level',0,'cooldown_until',0)").arg(1).arg(&legacy_key).query_async(&mut connection).await.unwrap();
+    let legacy = second.states(&[legacy_channel]).await.unwrap()[0];
+    assert_eq!(legacy.successes_micros(), 0);
+    first
+        .apply(&[RedisHealthEvent::succeeded_with_latency(
+            legacy_channel,
+            2500,
+        )])
+        .await
+        .unwrap();
+    assert!(second.states(&[legacy_channel]).await.unwrap()[0].successes_micros() > 0);
+    let _: () = redis::cmd("DEL")
+        .arg(legacy_key)
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+
+    let backoff_channel = RedisHealthTarget::Channel(af_domain::ChannelId::new(86).unwrap());
+    let backoff_key = format!("{{{namespace}}}:health:channel:86");
+    for (index, expected_seconds) in [15_u64, 15, 30, 45].into_iter().enumerate() {
+        if index > 0 {
+            let _: () = redis::cmd("HSET")
+                .arg(&backoff_key)
+                .arg("soft_until")
+                .arg(0)
+                .arg("cooldown_until")
+                .arg(0)
+                .query_async(&mut connection)
+                .await
+                .unwrap();
+        }
+        first
+            .apply(&[RedisHealthEvent::failed(
+                backoff_channel,
+                RedisHealthFailure::Network,
+            )])
+            .await
+            .unwrap();
+        let state = second.states(&[backoff_channel]).await.unwrap()[0];
+        assert!(state.recent_failure_remaining() <= Duration::from_secs(expected_seconds));
+        assert!(state.recent_failure_remaining() > Duration::from_secs(expected_seconds - 1));
+    }
+    first
+        .apply(&[RedisHealthEvent::succeeded(backoff_channel)])
+        .await
+        .unwrap();
+    assert!(!second.states(&[backoff_channel]).await.unwrap()[0].is_recently_failed());
+
+    // A malformed later key rejects the whole batch before a valid key is mutated.
+    let unchanged = RedisHealthTarget::Channel(af_domain::ChannelId::new(87).unwrap());
+    let corrupt = RedisHealthTarget::Channel(af_domain::ChannelId::new(88).unwrap());
+    let unchanged_key = format!("{{{namespace}}}:health:channel:87");
+    let corrupt_key = format!("{{{namespace}}}:health:channel:88");
+    first
+        .apply(&[RedisHealthEvent::succeeded_with_latency(unchanged, 5_000)])
+        .await
+        .unwrap();
+    let before: std::collections::BTreeMap<String, String> = redis::cmd("HGETALL")
+        .arg(&unchanged_key)
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    let _: () = redis::cmd("HSET")
+        .arg(&corrupt_key)
+        .arg("penalty")
+        .arg("invalid")
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    assert!(second.states(&[unchanged, corrupt]).await.is_err());
+    assert!(
+        first
+            .apply(&[
+                RedisHealthEvent::failed(unchanged, RedisHealthFailure::Network),
+                RedisHealthEvent::failed(corrupt, RedisHealthFailure::Network),
+            ])
+            .await
+            .is_err()
+    );
+    let after: std::collections::BTreeMap<String, String> = redis::cmd("HGETALL")
+        .arg(&unchanged_key)
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(before, after);
+
+    // A hash containing only new soft-backoff fields is partial, not an empty state.
+    let _: () = redis::cmd("DEL")
+        .arg(&corrupt_key)
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    let _: () = redis::cmd("HSET")
+        .arg(&corrupt_key)
+        .arg("soft_until")
+        .arg(0)
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    assert!(second.states(&[corrupt]).await.is_err());
+    assert!(
+        first
+            .apply(&[RedisHealthEvent::succeeded(corrupt)])
+            .await
+            .is_err()
+    );
+
+    // Fractional and non-finite persisted numbers are rejected before any write.
+    for value in ["1.5", "inf", "nan", "4"] {
+        let _: () = redis::cmd("DEL")
+            .arg(&corrupt_key)
+            .query_async(&mut connection)
+            .await
+            .unwrap();
+        let _: () = redis::cmd("HSET")
+            .arg(&corrupt_key)
+            .arg("penalty")
+            .arg("0")
+            .arg("updated_at")
+            .arg("0")
+            .arg("streak")
+            .arg("0")
+            .arg("last_transient_at")
+            .arg("0")
+            .arg("level")
+            .arg(value)
+            .arg("cooldown_until")
+            .arg("0")
+            .query_async(&mut connection)
+            .await
+            .unwrap();
+        assert!(second.states(&[corrupt]).await.is_err());
+        assert!(
+            first
+                .apply(&[
+                    RedisHealthEvent::failed(unchanged, RedisHealthFailure::Network),
+                    RedisHealthEvent::failed(corrupt, RedisHealthFailure::Network)
+                ])
+                .await
+                .is_err()
+        );
+        let after: std::collections::BTreeMap<String, String> = redis::cmd("HGETALL")
+            .arg(&unchanged_key)
+            .query_async(&mut connection)
+            .await
+            .unwrap();
+        assert_eq!(before, after);
+    }
+    let _: () = redis::cmd("DEL")
+        .arg(&corrupt_key)
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    let _: () = redis::cmd("HSET")
+        .arg(&corrupt_key)
+        .arg("penalty")
+        .arg("64000001")
+        .arg("updated_at")
+        .arg("0")
+        .arg("streak")
+        .arg("0")
+        .arg("last_transient_at")
+        .arg("0")
+        .arg("level")
+        .arg("0")
+        .arg("cooldown_until")
+        .arg("0")
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    assert!(second.states(&[corrupt]).await.is_err());
+    assert!(
+        first
+            .apply(&[
+                RedisHealthEvent::failed(unchanged, RedisHealthFailure::Network),
+                RedisHealthEvent::failed(corrupt, RedisHealthFailure::Network)
+            ])
+            .await
+            .is_err()
+    );
+    let after: std::collections::BTreeMap<String, String> = redis::cmd("HGETALL")
+        .arg(&unchanged_key)
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(before, after);
+
+    // Non-transient failures in between transient failures must not preserve a stale Fibonacci count.
+    let stale_soft = RedisHealthTarget::Channel(af_domain::ChannelId::new(91).unwrap());
+    let stale_soft_key = format!("{{{namespace}}}:health:channel:91");
+    let _: () = redis::cmd("EVAL")
+        .arg("local t=redis.call('TIME');local n=tonumber(t[1])*1000+math.floor(tonumber(t[2])/1000);redis.call('HSET',KEYS[1],'penalty',0,'updated_at',n,'streak',0,'last_transient_at',n-10000,'level',0,'cooldown_until',0,'successes',0,'failures',0,'latency_ema',0,'outcomes_updated_at',n,'latency_updated_at',n,'soft_until',0,'soft_failures',10)")
+        .arg(1)
+        .arg(&stale_soft_key)
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    first
+        .apply(&[
+            RedisHealthEvent::failed(stale_soft, RedisHealthFailure::Protocol),
+            RedisHealthEvent::failed(stale_soft, RedisHealthFailure::Network),
+        ])
+        .await
+        .unwrap();
+    let stale_state = second.states(&[stale_soft]).await.unwrap()[0];
+    assert!(stale_state.recent_failure_remaining() <= Duration::from_secs(15));
+    assert!(stale_state.recent_failure_remaining() > Duration::from_secs(14));
+
+    // Prevalidation must preserve sequential outcomes when a key repeats in a batch.
+    let ordered = RedisHealthTarget::Channel(af_domain::ChannelId::new(89).unwrap());
+    let ordered_states = first
+        .apply(&[
+            RedisHealthEvent::failed(ordered, RedisHealthFailure::Network),
+            RedisHealthEvent::succeeded_with_latency(ordered, 5_000),
+        ])
+        .await
+        .unwrap();
+    assert_eq!(ordered_states.len(), 2);
+    assert!(ordered_states[0].is_recently_failed());
+    assert_eq!(ordered_states[1].penalty_micros(), 0);
+    assert!(!ordered_states[1].is_recently_failed());
+    assert_eq!(ordered_states[1].successes_micros(), 1_000_000);
+    assert_eq!(ordered_states[1].failures_micros(), 1_000_000);
+    assert_eq!(ordered_states[1].latency_ema_millis(), 5_000);
+
+    // Reads and feedback share time decay; a failure must not apply the old interval twice.
+    let aging = RedisHealthTarget::Channel(af_domain::ChannelId::new(90).unwrap());
+    let aging_key = format!("{{{namespace}}}:health:channel:90");
+    first
+        .apply(&[RedisHealthEvent::succeeded_with_latency(aging, 32_500)])
+        .await
+        .unwrap();
+    let _: () = redis::cmd("EVAL")
+        .arg("local t=redis.call('TIME');local n=tonumber(t[1])*1000+math.floor(tonumber(t[2])/1000);redis.call('HSET',KEYS[1],'successes',12000000,'failures',12000000,'outcomes_updated_at',n-1800000,'latency_updated_at',n-1800000)")
+        .arg(1)
+        .arg(&aging_key)
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    let aged = second.states(&[aging]).await.unwrap()[0];
+    assert!((5_990_000..=6_000_000).contains(&aged.successes_micros()));
+    assert!((5_990_000..=6_000_000).contains(&aged.failures_micros()));
+    assert!((17_490..=17_500).contains(&aged.latency_ema_millis()));
+    first
+        .apply(&[RedisHealthEvent::failed(
+            aging,
+            RedisHealthFailure::Protocol,
+        )])
+        .await
+        .unwrap();
+    let rebased = second.states(&[aging]).await.unwrap()[0];
+    assert!((17_490..=17_500).contains(&rebased.latency_ema_millis()));
+    let _: () = redis::cmd("DEL")
+        .arg(unchanged_key)
+        .arg(corrupt_key)
+        .arg(aging_key)
+        .arg(stale_soft_key)
+        .arg(format!("{{{namespace}}}:health:channel:89"))
+        .query_async(&mut connection)
+        .await
+        .unwrap();
 }
 
 async fn verify_sticky_session_contract(redis_url: &str, namespace: &str) {

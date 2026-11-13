@@ -18,7 +18,7 @@ use af_protocol::{
 use crate::{
     ChatResponse, GenerationCompletionFuture, GenerationCompletionHook, OpenAiChatStream,
     RelayAttemptDiagnostic, RelayAttemptReport, RelayError, RelayRequest, RelayStateMachine,
-    UsageResolutionError,
+    StreamDeliveryOutcome, UsageResolutionError,
     attempt_gate::permit_completion_hook,
     chat_stream_encoder::ChatStreamEncoder,
     conversation::{build_response, prepare_request},
@@ -166,15 +166,23 @@ impl ToolConversationReportHandle {
         self.0.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
-    /// 消费方取消时关闭尚未完成的报告，避免将初始 HTTP 200 记为成功。
+    /// 消费方取消时关闭尚未完成的报告，保留先前失败且不惩罚当前上游。
     pub fn cancel(&self) {
         self.update(|snapshot| {
             if snapshot.state == ToolConversationState::Pending {
                 snapshot.state = ToolConversationState::Failed;
-                snapshot
-                    .report
-                    .reject_success(UpstreamError::network(NetworkFailureKind::ResponseBody));
+                snapshot.report.discard_pending_success();
             }
+        });
+    }
+
+    /// 下游交付取消时撤回成功反馈，即便上游已到终态也不追加失败。
+    pub fn cancel_delivery(&self) {
+        self.update(|snapshot| {
+            if snapshot.state == ToolConversationState::Pending {
+                snapshot.state = ToolConversationState::Failed;
+            }
+            snapshot.report.discard_pending_success();
         });
     }
 
@@ -222,7 +230,8 @@ async fn execute(
     request_id: &str,
     handle: &ToolConversationReportHandle,
 ) -> Result<ChatResponse, AfError> {
-    let deadline = tokio::time::Instant::now() + plan.total_timeout;
+    let started_at = tokio::time::Instant::now();
+    let deadline = started_at + plan.total_timeout;
     let canonical = plan.request().canonical();
     if response_protocol == Protocol::Anthropic
         && !matches!(
@@ -314,7 +323,12 @@ async fn execute(
         if let Some(permit) = permit {
             stream = stream.with_completion_hook(permit_completion_hook(permit));
         }
-        let stream = stream.prefetch_first(Duration::from_secs(30)).await?;
+        let stream = stream
+            .prefetch_first_with_failure(Duration::from_secs(30), |error| {
+                handle.update(|snapshot| snapshot.report.complete_success(started_at.elapsed()));
+                handle.fail(error);
+            })
+            .await?;
         return Ok(ChatResponse::Stream {
             body: Box::new(stream),
             usage,
@@ -370,6 +384,22 @@ pub(crate) fn encode_tool_request(
 }
 
 impl GenerationCompletionHook for ReportCompletion {
+    fn on_delivery(
+        self: Box<Self>,
+        usage: Result<Usage, UsageResolutionError>,
+        outcome: StreamDeliveryOutcome,
+    ) -> GenerationCompletionFuture {
+        if matches!(
+            outcome,
+            StreamDeliveryOutcome::Completed | StreamDeliveryOutcome::UpstreamFailed
+        ) {
+            self.on_complete(usage)
+        } else {
+            self.0.cancel_delivery();
+            Box::pin(async {})
+        }
+    }
+
     fn on_complete(
         self: Box<Self>,
         usage: Result<Usage, UsageResolutionError>,

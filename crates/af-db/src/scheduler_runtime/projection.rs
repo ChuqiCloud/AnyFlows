@@ -212,6 +212,8 @@ struct ProjectionTargetWire {
     relay_retry_delay_ms: Option<u64>,
     #[serde(default)]
     credential_strategy: Option<crate::CredentialSelectionStrategy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    upstream_routing: Option<Json>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -442,6 +444,7 @@ impl ProjectionTargetWire {
             relay_retry_limit: target.relay_retry_limit(),
             relay_retry_delay_ms: target.relay_retry_delay_ms(),
             credential_strategy: target.credential_strategy(),
+            upstream_routing: target.upstream_routing().to_projection_json(),
         }
     }
 
@@ -507,6 +510,13 @@ impl ProjectionTargetWire {
         let responses_compact_model_mapping =
             ChannelModelMappings::parse(&responses_compact_model_mapping)
                 .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
+        let upstream_routing = self
+            .upstream_routing
+            .as_ref()
+            .map(crate::UpstreamRoutingSettings::parse)
+            .transpose()
+            .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?
+            .unwrap_or_default();
         SchedulerRuntimeTargetRecord::new_pool_with_request_policy_and_compact_mapping(
             channel_id,
             channel_type,
@@ -525,6 +535,7 @@ impl ProjectionTargetWire {
         .with_timeout(timeout)
         .with_auto_ban_rules(auto_ban_rules)
         .with_pool_mode(self.pool_mode)
+        .with_upstream_routing(upstream_routing)
         .with_relay_settings(
             crate::channel_settings::RelayChannelSettings::new(
                 self.relay_race_width,
@@ -907,6 +918,11 @@ mod tests {
                 .unwrap(),
             )
             .with_pool_mode(true)
+            .with_upstream_routing(crate::UpstreamRoutingSettings::from_channel_settings(
+                &serde_json::json!({"upstream_routing": {"models": {
+                    "private-model": {"unit_cost": {"unit": "usd_per_1m_tokens", "value_micros": 123456}}
+                }}}),
+            ).unwrap())
             .with_responses_compact_mode(ResponsesCompactMode::ForceOn)
             .and_then(|target| {
                 target.with_responses_compact_probe_result(ResponsesCompactProbeResult::Supported)
@@ -952,12 +968,29 @@ mod tests {
 
         // 普通账号保持旧 wire 形态；旧投影缺少并发字段时继续解码为不限并发。
         let mut old_wire: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        assert_eq!(
+            decoded.records()[0]
+                .target()
+                .upstream_routing()
+                .for_model("private-model")
+                .unwrap()
+                .unit_cost_micros(),
+            Some(123456)
+        );
+        let mut invalid_wire = old_wire.clone();
+        invalid_wire["targets"][0]["upstream_routing"]["models"]["private-model"]["unit_cost"]["value_micros"] =
+            serde_json::json!(-1);
+        assert!(
+            SchedulerRuntimeProjection::decode(&serde_json::to_vec(&invalid_wire).unwrap())
+                .is_err()
+        );
         assert!(
             old_wire["targets"][0]["credentials"][0]
                 .get("proxy")
                 .is_none()
         );
         for target in old_wire["targets"].as_array_mut().unwrap() {
+            target.as_object_mut().unwrap().remove("upstream_routing");
             target.as_object_mut().unwrap().remove("pool_mode");
             target
                 .as_object_mut()
@@ -982,6 +1015,13 @@ mod tests {
             None
         );
         assert!(!old_decoded.records()[0].target().pool_mode());
+        assert!(
+            old_decoded.records()[0]
+                .target()
+                .upstream_routing()
+                .for_model("private-model")
+                .is_none()
+        );
         assert_eq!(
             old_decoded.records()[0].target().responses_compact_mode(),
             ResponsesCompactMode::Auto

@@ -12,7 +12,6 @@ use af_cache::HEALTH_PENALTY_SCALE;
 
 const ORDER_DOMAIN: &[u8] = b"anyflows-credential-order-v1";
 const ZERO_WEIGHT_DOMAIN: &[u8] = b"anyflows-credential-zero-weight-v1";
-const MIN_HEALTH_MULTIPLIER_MICROS: u64 = 80_000;
 
 #[derive(Clone, Copy)]
 struct WeightedCredential<'a> {
@@ -119,7 +118,14 @@ pub(crate) fn apply_channel_credential_strategy(
             Reverse(credential.priority()),
             health
                 .and_then(|states| states.get(&credential.credential_id()))
-                .map_or(0, |state| state.penalty_micros()),
+                .is_some_and(|state| state.recently_failed()),
+            Reverse(
+                health
+                    .and_then(|states| states.get(&credential.credential_id()))
+                    .map_or(HEALTH_PENALTY_SCALE, |state| {
+                        state.weight_multiplier_micros()
+                    }),
+            ),
         )
     };
     credentials.sort_by_key(|credential| (rank(credential), credential.credential_id()));
@@ -210,12 +216,19 @@ fn order_credentials_by_load_with_optional_health<'a>(
             credential_load(credential, loads).has_session_headroom()
                 && health
                     .and_then(|states| states.get(&credential.credential_id()))
-                    .is_none_or(|state| state.penalty_micros() <= HEALTH_PENALTY_SCALE)
+                    .is_none_or(|state| {
+                        !state.recently_failed()
+                            && state.weight_multiplier_micros() >= HEALTH_PENALTY_SCALE / 2
+                    })
         });
     ordered.sort_by(|left, right| {
-        right.priority().cmp(&left.priority()).then_with(|| {
-            credential_load(left, loads).compare_utilization(credential_load(right, loads))
-        })
+        right
+            .priority()
+            .cmp(&left.priority())
+            .then_with(|| recently_failed(left, health).cmp(&recently_failed(right, health)))
+            .then_with(|| {
+                credential_load(left, loads).compare_utilization(credential_load(right, loads))
+            })
     });
     if let Some(preferred) = preferred
         && let Some(index) = ordered
@@ -296,7 +309,28 @@ fn order_tier<'a>(
             .then_with(|| left.credential_id().cmp(&right.credential_id()))
     });
     ordered.extend(zero_weight);
-    ordered
+    // Each call handles one priority tier. Partitioning here keeps a recent-failure account
+    // available as a fallback without ever allowing it to jump ahead of another priority.
+    let mut preferred = Vec::with_capacity(ordered.len());
+    let mut fallback = Vec::new();
+    for credential in ordered {
+        if recently_failed(credential, health) {
+            fallback.push(credential);
+        } else {
+            preferred.push(credential);
+        }
+    }
+    preferred.extend(fallback);
+    preferred
+}
+
+fn recently_failed(
+    credential: &SchedulerRuntimeCredentialRecord,
+    health: Option<&BTreeMap<i64, RuntimeHealthState>>,
+) -> bool {
+    health
+        .and_then(|states| states.get(&credential.credential_id()))
+        .is_some_and(|state| state.recently_failed())
 }
 
 fn unbiased_ticket(
@@ -340,21 +374,12 @@ fn effective_credential_weight(
     else {
         return configured;
     };
-    let multiplier = health_weight_multiplier(state.penalty_micros());
+    let multiplier = state.weight_multiplier_micros();
     configured
         .checked_mul(multiplier)
         .expect("凭据权重与健康乘数乘积必须可表示")
         .div_ceil(HEALTH_PENALTY_SCALE)
         .max(1)
-}
-
-pub(crate) fn health_weight_multiplier(penalty_micros: u64) -> u64 {
-    let penalty = penalty_micros.min(64 * HEALTH_PENALTY_SCALE);
-    let raw_multiplier = HEALTH_PENALTY_SCALE
-        .checked_mul(HEALTH_PENALTY_SCALE)
-        .expect("健康固定精度平方必须可表示")
-        / (HEALTH_PENALTY_SCALE + penalty);
-    raw_multiplier.max(MIN_HEALTH_MULTIPLIER_MICROS)
 }
 
 fn zero_weight_key(
@@ -646,6 +671,49 @@ mod tests {
             apply_channel_credential_strategy(&mut ordered, strategy, 1, Some(&health));
             assert_eq!(credential_ids(ordered), vec![2, 1, 3]);
         }
+    }
+
+    #[test]
+    fn real_quality_changes_credential_weight_using_the_channel_formula() {
+        let credentials = [credential(1, 0, 100), credential(2, 0, 100)];
+        let id = |value| RedisHealthTarget::Credential(CredentialId::new(value).unwrap());
+        let healthy =
+            RuntimeHealthState::new(id(1), 0, false).with_test_quality(24_000_000, 0, 2000, false);
+        let degraded =
+            RuntimeHealthState::new(id(2), 0, false).with_test_quality(0, 24_000_000, 32000, false);
+        let health = BTreeMap::from([(1, healthy), (2, degraded)]);
+        assert!(
+            effective_credential_weight(&credentials[0], Some(&health))
+                > effective_credential_weight(&credentials[1], Some(&health))
+        );
+        assert!(effective_credential_weight(&credentials[1], Some(&health)) > 0);
+    }
+
+    #[test]
+    fn soft_failed_credentials_remain_fallbacks_without_crossing_priority() {
+        let credentials = [
+            credential(1, 2, u32::MAX),
+            credential(2, 2, 1),
+            credential(3, 1, 1),
+        ];
+        let target = RedisHealthTarget::Credential(CredentialId::new(1).unwrap());
+        let health = BTreeMap::from([(
+            1,
+            RuntimeHealthState::new(target, 0, false).with_test_quality(0, 0, 0, true),
+        )]);
+        let ordered =
+            order_credentials_with_health("soft-avoidance", channel_id(), &credentials, &health);
+        assert_eq!(credential_ids(ordered), vec![2, 1, 3]);
+        let only = &credentials[..1];
+        assert_eq!(
+            credential_ids(order_credentials_with_health(
+                "all-soft",
+                channel_id(),
+                only,
+                &health
+            )),
+            vec![1]
+        );
     }
 
     fn credential_ids(credentials: Vec<&SchedulerRuntimeCredentialRecord>) -> Vec<i64> {
