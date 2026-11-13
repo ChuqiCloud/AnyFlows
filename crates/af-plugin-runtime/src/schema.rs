@@ -59,14 +59,13 @@ fn schema_patterns_are_bounded(schema: &Value) -> bool {
     {
         return false;
     }
-    if let Some(patterns) = object.get("patternProperties").and_then(Value::as_object) {
-        if patterns.keys().any(|pattern| !safe_pattern(pattern))
+    if let Some(patterns) = object.get("patternProperties").and_then(Value::as_object)
+        && (patterns.keys().any(|pattern| !safe_pattern(pattern))
             || patterns
                 .values()
-                .any(|schema| !schema_patterns_are_bounded(schema))
-        {
-            return false;
-        }
+                .any(|schema| !schema_patterns_are_bounded(schema)))
+    {
+        return false;
     }
 
     object
