@@ -450,7 +450,7 @@ impl ConnectorRegistry {
             ) || !manifest
                 .capabilities
                 .iter()
-                .any(|capability| capability.id == *capability_id)
+                .any(|capability| capability.id == capability_id)
             {
                 return Err(ConnectorRegistryError::CapabilityHandlerMismatch {
                     capability: capability_id.clone(),
@@ -1043,7 +1043,7 @@ fn operation_timeout_error(is_write: bool) -> ConnectorOperationError {
 }
 
 /// Result of negotiating the host and adapter contract versions/capabilities.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct NegotiatedConnector {
     registry_identity: Arc<()>,
     plugin_id: PluginId,

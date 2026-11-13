@@ -1,4 +1,4 @@
-use jsonschema::{Draft, PatternOptions, Validator};
+use jsonschema::{Draft, JSONSchema};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -16,7 +16,7 @@ pub fn validate_json_schema(
 
 /// Precompiled, reusable validator for a trusted plugin-declared JSON Schema.
 #[derive(Clone)]
-pub struct CompiledJsonSchema(Arc<Validator>);
+pub struct CompiledJsonSchema(Arc<JSONSchema>);
 
 impl CompiledJsonSchema {
     pub fn compile(schema: &Value) -> Result<Self, crate::ContractValidationError> {
@@ -35,7 +35,7 @@ impl CompiledJsonSchema {
 
 pub(crate) fn compile_json_schema(
     schema: &Value,
-) -> Result<Validator, crate::ContractValidationError> {
+) -> Result<JSONSchema, crate::ContractValidationError> {
     if serde_json::to_vec(schema)
         .map_err(|_| crate::ContractValidationError::InvalidJsonSchema)?
         .len()
@@ -47,15 +47,9 @@ pub(crate) fn compile_json_schema(
     {
         return Err(crate::ContractValidationError::InvalidJsonSchema);
     }
-    jsonschema::options()
+    JSONSchema::options()
         .with_draft(Draft::Draft202012)
-        .with_pattern_options(
-            PatternOptions::fancy_regex()
-                .backtrack_limit(100_000)
-                .size_limit(64 * 1024)
-                .dfa_size_limit(64 * 1024),
-        )
-        .build(schema)
+        .compile(schema)
         .map_err(|_| crate::ContractValidationError::InvalidJsonSchema)
 }
 
