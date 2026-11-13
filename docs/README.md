@@ -4,6 +4,7 @@
 
 | 文档 | 内容 |
 | --- | --- |
+| [项目优势与能力说明](project-strengths.md) | 能力收益、适用边界及持续维护的优势目录 |
 | [二进制部署](deployment-and-configuration.md) | 下载、校验、手动配置、systemd 和初始化 |
 | [Docker Compose](docker-compose.md) | 源码构建容器、配置和数据卷 |
 | [多节点部署](multi-node-deployment.md) | 共享依赖、负载均衡和升级顺序 |
@@ -12,6 +13,7 @@
 | [账号与 API](authentication-and-access.md) | 登录、API Key、主体认证和接口调试 |
 | [系统 API Token](personal-access-tokens.md) | 脚本认证、权限、有效期和应急撤销 |
 | [渠道配置](channels.md) | 客户端档案、代理池和 NVIDIA 上游 |
+| [渠道质量评分](channel-routing.md) | 成功率与延迟、模型隔离、软避让和可选上游价值配置 |
 | [对话协议](conversation-compatibility.md) | 四类协议转换、历史回放和兼容范围 |
 | [运行状态](runtime-status.md) | 节点、依赖健康和用量统计 |
 | [前端开发](frontend-template-development.md) | 静态模板、构建扩展和接口约定 |

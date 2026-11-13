@@ -106,7 +106,7 @@ impl ScheduledChatService {
                 break;
             }
         }
-        crate::health_runtime::load_credential_health(store, &identities)
+        crate::health_runtime::load_credential_model_health(store, &identities, model)
             .await
             .map(Some)
             .map_err(|_| AfError::Internal)

@@ -730,6 +730,17 @@ jobs:
           cargo test --locked -p af-db --lib channel_monitor_tests
           cargo test --locked -p af-http --lib openapi::proxy_pools::tests
 
+      - name: Run routing health and value scoring regressions
+        if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
+        run: |
+          set -euo pipefail
+          cargo test --locked -p af-cache --lib health
+          cargo test --locked -p af-scheduler --lib
+          cargo test --locked -p af-server --lib health_runtime
+          cargo test --locked -p af-db --lib upstream_routing
+          cargo test --locked -p af-relay --lib tool_conversation::tests
+          cargo test --locked -p af-relay --lib local_abort_does_not_mark_prior_upstream_failures_as_aborted
+
       - name: Run focused upstream credential capability tests
         if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
         run: |
@@ -1157,7 +1168,7 @@ jobs:
   cache-redis:
     name: Redis cache smoke test
     needs: changes
-    if: ${{ needs.changes.outputs.full == 'true' && needs.changes.outputs.redis == 'true' }}
+    if: ${{ needs.changes.outputs.redis == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

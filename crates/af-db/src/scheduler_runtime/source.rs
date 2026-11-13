@@ -54,6 +54,7 @@ pub(super) struct SchedulerRuntimeChannelSource {
     responses_compact_probe_result: ResponsesCompactProbeResult,
     responses_compact_model_mapping: ChannelModelMappings,
     relay_settings: crate::channel_settings::RelayChannelSettings,
+    upstream_routing: crate::UpstreamRoutingSettings,
 }
 
 impl SchedulerRuntimeChannelSource {
@@ -161,6 +162,8 @@ impl SchedulerRuntimeChannelSource {
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let relay_settings = relay_execution_settings(&settings)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let upstream_routing = crate::UpstreamRoutingSettings::from_channel_settings(&settings)
+            .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         validate_responses_compact_model_mapping(
             channel_type,
             protocol,
@@ -188,6 +191,7 @@ impl SchedulerRuntimeChannelSource {
             responses_compact_probe_result,
             responses_compact_model_mapping,
             relay_settings,
+            upstream_routing,
         })
     }
 
@@ -324,6 +328,10 @@ impl SchedulerRuntimeChannelSource {
 
     pub(super) const fn relay_settings(&self) -> crate::channel_settings::RelayChannelSettings {
         self.relay_settings
+    }
+
+    pub(super) fn upstream_routing(&self) -> &crate::UpstreamRoutingSettings {
+        &self.upstream_routing
     }
 
     /// 返回渠道配置的 Responses Compact 三态策略。

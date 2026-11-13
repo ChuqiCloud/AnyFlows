@@ -613,7 +613,7 @@ impl ScheduledChatService {
                     runtime_credential.credential_kind(),
                     oauth_has_refresh_token,
                     target.pool_mode(),
-                )?);
+                )?.with_model(request.model().as_str())?);
                 auto_ban_targets.push(ChannelAutoBanAttemptTarget::new(
                     target.channel_id(),
                     target.auto_ban_rules(),
@@ -727,7 +727,7 @@ impl ScheduledChatService {
             runtime_credential.credential_kind(),
             oauth_has_refresh_token,
             target.pool_mode(),
-        )?];
+        )?.with_model(binding.target_snapshot.requested_model.as_str())?];
         let auto_ban_targets = [ChannelAutoBanAttemptTarget::new(
             target.channel_id(),
             target.auto_ban_rules(),

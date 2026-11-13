@@ -1,3 +1,4 @@
+use af_cache::RedisHealthModel;
 use af_db::{
     CredentialStateChange, CredentialStateEvent, CredentialStateRepository,
     CredentialStateRepositoryError,
@@ -19,6 +20,7 @@ pub(crate) struct CredentialAttemptTarget {
     credential_kind: CredentialKind,
     oauth_has_refresh_token: bool,
     pool_mode: bool,
+    model: Option<RedisHealthModel>,
 }
 
 impl CredentialAttemptTarget {
@@ -74,7 +76,18 @@ impl CredentialAttemptTarget {
             oauth_has_refresh_token: matches!(credential_kind, CredentialKind::Oauth)
                 && oauth_has_refresh_token,
             pool_mode,
+            model: None,
         })
+    }
+
+    /// 绑定实际路由的 Canonical 模型摘要；不保留模型正文或上游别名。
+    pub(crate) fn with_model(mut self, model: &str) -> Result<Self, AfError> {
+        self.model = Some(RedisHealthModel::for_model(model).map_err(|_| AfError::Internal)?);
+        Ok(self)
+    }
+
+    pub(crate) const fn model(&self) -> Option<RedisHealthModel> {
+        self.model
     }
 
     /// 返回与 Relay 候选对应的渠道标识，供成功粘性绑定使用。

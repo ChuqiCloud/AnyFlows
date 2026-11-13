@@ -90,13 +90,31 @@ impl OpenAiChatStream {
 
     /// 在 HTTP 成功响应提交前读取并验证首个可交付 SSE 事件。
     pub(crate) async fn prefetch_first(
+        self,
+        first_event_timeout: Duration,
+    ) -> Result<Self, UpstreamError> {
+        self.prefetch_first_with_failure(first_event_timeout, |_| {})
+            .await
+    }
+
+    /// 在释放底层流之前记录预取失败，避免取消兜底覆盖真实上游故障。
+    pub(crate) async fn prefetch_first_with_failure(
         mut self,
         first_event_timeout: Duration,
+        on_failure: impl FnOnce(UpstreamError),
     ) -> Result<Self, UpstreamError> {
         let first = tokio::time::timeout(first_event_timeout, self.next_chunk())
             .await
-            .map_err(|_| UpstreamError::network(af_domain::NetworkFailureKind::ResponseBody))?
-            .ok_or(UpstreamError::ProtocolError)??;
+            .map_err(|_| UpstreamError::network(af_domain::NetworkFailureKind::ResponseBody))
+            .and_then(|chunk| chunk.ok_or(UpstreamError::ProtocolError))
+            .and_then(|chunk| chunk);
+        let first = match first {
+            Ok(first) => first,
+            Err(error) => {
+                on_failure(error);
+                return Err(error);
+            }
+        };
         self.prefetched.push_front(first);
         Ok(self)
     }

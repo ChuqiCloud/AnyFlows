@@ -13,6 +13,7 @@ mod retry;
 mod stable_first;
 mod sticky;
 mod subscription_cycle;
+mod upstream_value;
 mod weighted;
 
 pub use auto_ban::{
