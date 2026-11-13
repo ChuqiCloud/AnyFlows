@@ -1,0 +1,362 @@
+{
+  "$defs": {
+    "CapabilityDeclaration": {
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "sideEffect": {
+                "const": "external_write"
+              }
+            },
+            "required": [
+              "sideEffect"
+            ]
+          },
+          "then": {
+            "properties": {
+              "access": {
+                "const": "write"
+              }
+            },
+            "required": [
+              "writeSemantics"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sideEffect": {
+                "enum": [
+                  "none",
+                  "external_read"
+                ]
+              }
+            },
+            "required": [
+              "sideEffect"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "writeSemantics"
+              ]
+            }
+          }
+        }
+      ],
+      "properties": {
+        "access": {
+          "enum": [
+            "read",
+            "write"
+          ]
+        },
+        "id": {
+          "maxLength": 128,
+          "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+          "type": "string"
+        },
+        "sideEffect": {
+          "enum": [
+            "none",
+            "external_read",
+            "external_write"
+          ]
+        },
+        "version": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "writeSemantics": {
+          "$ref": "#/$defs/ExternalWriteSemantics"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "access",
+        "sideEffect"
+      ],
+      "type": "object"
+    },
+    "ConnectorError": {
+      "additionalProperties": true,
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_configuration",
+            "unsupported",
+            "authentication_required",
+            "forbidden",
+            "rate_limited",
+            "temporarily_unavailable",
+            "conflict",
+            "upstream_failure",
+            "partial_success",
+            "outcome_unknown",
+            "invalid_response"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "not_applied",
+            "applied",
+            "unknown"
+          ]
+        },
+        "retryAfterMs": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "code",
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "ConnectorHealth": {
+      "additionalProperties": true,
+      "properties": {
+        "checkedAtUnixMs": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "errorCode": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "healthy",
+            "degraded",
+            "unavailable"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "checkedAtUnixMs"
+      ],
+      "type": "object"
+    },
+    "ConnectorLimits": {
+      "additionalProperties": true,
+      "properties": {
+        "maxConcurrency": {
+          "maximum": 1024,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "maxPageSize": {
+          "maximum": 10000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "maxResponseBytes": {
+          "maximum": 16777216,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "requestTimeoutMs": {
+          "maximum": 300000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "maxConcurrency",
+        "requestTimeoutMs",
+        "maxResponseBytes",
+        "maxPageSize"
+      ],
+      "type": "object"
+    },
+    "ContractVersion": {
+      "additionalProperties": true,
+      "properties": {
+        "major": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "minor": {
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "major",
+        "minor"
+      ],
+      "type": "object"
+    },
+    "ContractVersionRange": {
+      "additionalProperties": true,
+      "properties": {
+        "maximum": {
+          "$ref": "#/$defs/ContractVersion"
+        },
+        "minimum": {
+          "$ref": "#/$defs/ContractVersion"
+        }
+      },
+      "required": [
+        "minimum",
+        "maximum"
+      ],
+      "type": "object"
+    },
+    "ExternalAccountProfile": {
+      "additionalProperties": true,
+      "properties": {
+        "displayName": {
+          "maxLength": 256,
+          "type": "string"
+        },
+        "subject": {
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "subject"
+      ],
+      "type": "object"
+    },
+    "ExternalBalanceSnapshot": {
+      "additionalProperties": true,
+      "properties": {
+        "amount": {
+          "maxLength": 128,
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "observedAtUnixMs": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "unit": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "amount",
+        "unit",
+        "observedAtUnixMs"
+      ],
+      "type": "object"
+    },
+    "ExternalWriteSemantics": {
+      "additionalProperties": true,
+      "properties": {
+        "nativeIdempotencyKey": {
+          "type": "boolean"
+        },
+        "reconciliation": {
+          "type": "boolean"
+        },
+        "resultLookup": {
+          "enum": [
+            "none",
+            "by_request_id",
+            "by_external_reference"
+          ]
+        }
+      },
+      "required": [
+        "nativeIdempotencyKey",
+        "resultLookup",
+        "reconciliation"
+      ],
+      "type": "object"
+    },
+    "PluginManifest": {
+      "additionalProperties": true,
+      "properties": {
+        "authenticationModes": {
+          "items": {
+            "maxLength": 128,
+            "pattern": "^[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*$",
+            "type": "string"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "capabilities": {
+          "items": {
+            "$ref": "#/$defs/CapabilityDeclaration"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "configSchema": {
+          "type": "object"
+        },
+        "contractRange": {
+          "$ref": "#/$defs/ContractVersionRange"
+        },
+        "displayName": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "limits": {
+          "$ref": "#/$defs/ConnectorLimits"
+        },
+        "pluginId": {
+          "maxLength": 128,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
+          "type": "string"
+        },
+        "pluginVersion": {
+          "maxLength": 128,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pluginId",
+        "pluginVersion",
+        "contractRange",
+        "capabilities",
+        "authenticationModes",
+        "limits",
+        "configSchema"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:anyflows:plugin-contract:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/PluginManifest"
+    },
+    {
+      "$ref": "#/$defs/ExternalAccountProfile"
+    },
+    {
+      "$ref": "#/$defs/ExternalBalanceSnapshot"
+    },
+    {
+      "$ref": "#/$defs/ConnectorHealth"
+    },
+    {
+      "$ref": "#/$defs/ConnectorError"
+    }
+  ],
+  "title": "AnyFlows Plugin Contract v1"
+}

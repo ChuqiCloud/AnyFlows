@@ -1670,6 +1670,9 @@ export type BalanceDisplaySettings = {
     fraction_digits: number;
 };
 export type BalanceDisplaySymbolPosition = 'prefix' | 'suffix';
+export type BalanceHistoryQuery = {
+    limit?: number | null;
+};
 export type ClientProfileBehaviorSchema = 'standard' | 'claude_utc_date_v1' | 'codex_v1' | 'open_code_v1';
 export type ClientProfileBindRequest = {
     binding: ClientProfileBindingSchema;
@@ -1883,7 +1886,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'turnstile_rejected' | 'turnstile_unavailable' | 'invalid_session' | 'forbidden' | 'account_verification_required' | 'setup_conflict' | 'site_settings_conflict' | 'announcement_invalid_request' | 'announcement_not_found' | 'announcement_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'group_unavailable' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'custom_oauth2_provider_not_found' | 'custom_oauth2_provider_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'image_history_not_found' | 'image_history_limit_reached' | 'image_history_unavailable' | 'merchant_service_watch_not_found' | 'merchant_service_watch_limit_reached' | 'merchant_service_watch_unavailable' | 'user_conflict' | 'organization_not_found' | 'organization_credit_invalid_request' | 'organization_credit_not_found' | 'organization_credit_interval_conflict' | 'organization_credit_conflict' | 'organization_credit_transition_invalid' | 'organization_approval_not_found' | 'organization_approval_conflict' | 'organization_approval_expired' | 'organization_contract_price_not_found' | 'organization_contract_price_interval_conflict' | 'organization_contract_price_conflict' | 'organization_contract_price_transition_invalid' | 'organization_plan_not_found' | 'organization_plan_conflict' | 'organization_sso_provider_not_found' | 'organization_sso_provider_conflict' | 'organization_sso_provider_transition_invalid' | 'organization_sso_identity_binding_rejected' | 'organization_sso_identity_binding_conflict' | 'organization_sso_recovery_rejected' | 'organization_sso_recovery_conflict' | 'organization_sso_recovery_unavailable' | 'organization_sso_domain_not_found' | 'organization_sso_domain_conflict' | 'organization_sso_domain_transition_invalid' | 'organization_sso_domain_verification_failed' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'refund_not_found' | 'refund_conflict' | 'refund_unavailable' | 'refund_auto_submit_failed' | 'refund_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'turnstile_rejected' | 'turnstile_unavailable' | 'invalid_session' | 'forbidden' | 'account_verification_required' | 'setup_conflict' | 'site_settings_conflict' | 'announcement_invalid_request' | 'announcement_not_found' | 'announcement_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'group_unavailable' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'custom_oauth2_provider_not_found' | 'custom_oauth2_provider_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'image_history_not_found' | 'image_history_limit_reached' | 'image_history_unavailable' | 'merchant_service_watch_not_found' | 'merchant_service_watch_limit_reached' | 'merchant_service_watch_unavailable' | 'external_account_invalid_request' | 'external_account_unsupported' | 'external_account_conflict' | 'external_account_not_found' | 'external_account_authentication_required' | 'external_account_unavailable' | 'external_account_rate_limited' | 'external_account_limit_reached' | 'user_conflict' | 'organization_not_found' | 'organization_credit_invalid_request' | 'organization_credit_not_found' | 'organization_credit_interval_conflict' | 'organization_credit_conflict' | 'organization_credit_transition_invalid' | 'organization_approval_not_found' | 'organization_approval_conflict' | 'organization_approval_expired' | 'organization_contract_price_not_found' | 'organization_contract_price_interval_conflict' | 'organization_contract_price_conflict' | 'organization_contract_price_transition_invalid' | 'organization_plan_not_found' | 'organization_plan_conflict' | 'organization_sso_provider_not_found' | 'organization_sso_provider_conflict' | 'organization_sso_provider_transition_invalid' | 'organization_sso_identity_binding_rejected' | 'organization_sso_identity_binding_conflict' | 'organization_sso_recovery_rejected' | 'organization_sso_recovery_conflict' | 'organization_sso_recovery_unavailable' | 'organization_sso_domain_not_found' | 'organization_sso_domain_conflict' | 'organization_sso_domain_transition_invalid' | 'organization_sso_domain_verification_failed' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'refund_not_found' | 'refund_conflict' | 'refund_unavailable' | 'refund_auto_submit_failed' | 'refund_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
 };
 export type MerchantApplicationRequest = {
@@ -3078,6 +3081,38 @@ export type UserEmailBindingVerificationResponse = {
     expires_at: number;
     next_send_at: number;
 };
+export type UserExternalAccountBalanceHistoryResponse = {
+    connectionId: number;
+    items: Array<UserExternalAccountBalanceResponse>;
+};
+export type UserExternalAccountBalanceResponse = {
+    amount?: string | null;
+    unit?: string | null;
+    status: string;
+    observedAt: number;
+};
+export type UserExternalAccountLinkRequest = {
+    connector_id: string;
+    base_url: string;
+};
+export type UserExternalAccountListResponse = {
+    items: Array<UserExternalAccountResponse>;
+};
+export type UserExternalAccountResponse = {
+    id: number;
+    connectorId: string;
+    externalSubject: string;
+    displayName?: string | null;
+    baseUrl: string;
+    createdAt: number;
+    updatedAt: number;
+    latestBalance?: null | UserExternalAccountBalanceResponse;
+};
+export type UserExternalConnectorResponse = {
+    id: string;
+    displayName: string;
+    authenticationModes: Array<string>;
+};
 export type UserFailedCallLog = {
     id: number;
     request_id: string;
@@ -3795,6 +3830,11 @@ export type UpstreamUsageProfileWriteWritable = {
 export type UserEmailBindingConfirmRequestWritable = {
     email: string;
     verification_code: string;
+};
+export type UserExternalAccountLinkRequestWritable = {
+    connector_id: string;
+    base_url: string;
+    credential: string;
 };
 export type UserTopupOrderWritable = {
     order_id: string;
@@ -4977,6 +5017,113 @@ export type RenameUserPasskeyResponses = {
     200: UserPasskeyResponse;
 };
 export type RenameUserPasskeyResponse = RenameUserPasskeyResponses[keyof RenameUserPasskeyResponses];
+export type ListUserExternalConnectorsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/external-connectors';
+};
+export type ListUserExternalConnectorsErrors = {
+    401: ManagementError;
+};
+export type ListUserExternalConnectorsError = ListUserExternalConnectorsErrors[keyof ListUserExternalConnectorsErrors];
+export type ListUserExternalConnectorsResponses = {
+    200: Array<UserExternalConnectorResponse>;
+};
+export type ListUserExternalConnectorsResponse = ListUserExternalConnectorsResponses[keyof ListUserExternalConnectorsResponses];
+export type ListUserExternalAccountsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/external-accounts';
+};
+export type ListUserExternalAccountsErrors = {
+    401: ManagementError;
+    503: ManagementError;
+};
+export type ListUserExternalAccountsError = ListUserExternalAccountsErrors[keyof ListUserExternalAccountsErrors];
+export type ListUserExternalAccountsResponses = {
+    200: UserExternalAccountListResponse;
+};
+export type ListUserExternalAccountsResponse = ListUserExternalAccountsResponses[keyof ListUserExternalAccountsResponses];
+export type LinkUserExternalAccountData = {
+    body: UserExternalAccountLinkRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/api/account/external-accounts';
+};
+export type LinkUserExternalAccountErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    409: ManagementError;
+    422: ManagementError;
+    429: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type LinkUserExternalAccountError = LinkUserExternalAccountErrors[keyof LinkUserExternalAccountErrors];
+export type LinkUserExternalAccountResponses = {
+    200: UserExternalAccountResponse;
+};
+export type LinkUserExternalAccountResponse = LinkUserExternalAccountResponses[keyof LinkUserExternalAccountResponses];
+export type RefreshUserExternalAccountData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/account/external-accounts/{id}/refresh';
+};
+export type RefreshUserExternalAccountErrors = {
+    401: ManagementError;
+    404: ManagementError;
+    429: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type RefreshUserExternalAccountError = RefreshUserExternalAccountErrors[keyof RefreshUserExternalAccountErrors];
+export type RefreshUserExternalAccountResponses = {
+    200: UserExternalAccountResponse;
+};
+export type RefreshUserExternalAccountResponse = RefreshUserExternalAccountResponses[keyof RefreshUserExternalAccountResponses];
+export type UnlinkUserExternalAccountData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/account/external-accounts/{id}';
+};
+export type UnlinkUserExternalAccountErrors = {
+    401: ManagementError;
+    404: ManagementError;
+    503: ManagementError;
+};
+export type UnlinkUserExternalAccountError = UnlinkUserExternalAccountErrors[keyof UnlinkUserExternalAccountErrors];
+export type UnlinkUserExternalAccountResponses = {
+    204: void;
+};
+export type UnlinkUserExternalAccountResponse = UnlinkUserExternalAccountResponses[keyof UnlinkUserExternalAccountResponses];
+export type ListUserExternalAccountBalancesData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: {
+        limit?: number;
+    };
+    url: '/api/account/external-accounts/{id}/balances';
+};
+export type ListUserExternalAccountBalancesErrors = {
+    401: ManagementError;
+    404: ManagementError;
+    503: ManagementError;
+};
+export type ListUserExternalAccountBalancesError = ListUserExternalAccountBalancesErrors[keyof ListUserExternalAccountBalancesErrors];
+export type ListUserExternalAccountBalancesResponses = {
+    200: UserExternalAccountBalanceHistoryResponse;
+};
+export type ListUserExternalAccountBalancesResponse = ListUserExternalAccountBalancesResponses[keyof ListUserExternalAccountBalancesResponses];
 export type GetUserWalletData = {
     body?: never;
     path?: never;

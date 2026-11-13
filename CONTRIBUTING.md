@@ -62,7 +62,11 @@ corepack pnpm api:generate
 ```bash
 cargo xtask channel-capabilities export
 cargo xtask channel-capabilities check
+cargo run -p af-plugin-contract --example export_contract -- export
+cargo run -p af-plugin-contract --example export_contract -- check
 ```
+
+插件跨语言契约由 `af-plugin-contract` 的版本化 DTO 定义。更新 DTO 后导出 `contracts/plugins/v1/schema.json` 与 `contracts/plugins/v1/openapi.json`，并运行契约 crate 与 runtime 的测试；它们描述连接器协议，不属于 AnyFlows 面向最终用户的公开 REST API。
 
 ## Pull Request
 
