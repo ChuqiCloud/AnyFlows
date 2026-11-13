@@ -1420,6 +1420,8 @@ fn validate_channel_fields(
     }
     if let Some(settings) = &record.settings {
         validate_json_object(settings, false)?;
+        crate::UpstreamRoutingSettings::from_channel_settings(settings)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         crate::validate_relay_execution_settings(settings)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         crate::channel_opencode_entry(record.channel_type, settings)?;

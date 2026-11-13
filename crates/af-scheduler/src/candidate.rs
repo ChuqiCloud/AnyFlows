@@ -9,6 +9,7 @@ pub struct SchedulerCandidate {
     channel_id: ChannelId,
     priority: i32,
     weight: u32,
+    upstream_value: Option<af_db::UpstreamRoutingSignal>,
 }
 
 impl SchedulerCandidate {
@@ -20,6 +21,7 @@ impl SchedulerCandidate {
             channel_id,
             priority,
             weight,
+            upstream_value: None,
         }
     }
 
@@ -45,6 +47,20 @@ impl SchedulerCandidate {
     #[must_use]
     pub const fn weight(self) -> u32 {
         self.weight
+    }
+
+    /// Attach values from the same immutable model-specific upstream snapshot.
+    #[must_use]
+    pub const fn with_upstream_value(
+        mut self,
+        value: Option<af_db::UpstreamRoutingSignal>,
+    ) -> Self {
+        self.upstream_value = value;
+        self
+    }
+
+    pub(crate) const fn upstream_value(self) -> Option<af_db::UpstreamRoutingSignal> {
+        self.upstream_value
     }
 }
 

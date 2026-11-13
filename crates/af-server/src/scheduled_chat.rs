@@ -23,8 +23,8 @@ use crate::{
     },
     debug_trace_runtime::{DebugTraceCapture, DebugTraceRuntime},
     health_runtime::{
-        RuntimeHealthState, SchedulerHealthStore, load_channel_health, load_credential_health,
-        persist_scheduler_health_feedback,
+        RuntimeHealthState, SchedulerHealthStore, load_channel_health,
+        load_credential_model_health, persist_scheduler_health_feedback,
     },
     responses_websocket_runtime::ResponsesWebSocketRuntime,
     sticky_session::{
@@ -666,15 +666,18 @@ impl ScheduledChatService {
                     relay_candidate = relay_candidate.with_request(candidate_request.clone());
                 }
                 relay_candidates.push(relay_candidate);
-                attempt_targets.push(CredentialAttemptTarget::with_runtime_identity(
-                    target.channel_id(),
-                    credential_id,
-                    secret_owner_id,
-                    runtime_credential.shared_health_id(),
-                    runtime_credential.credential_kind(),
-                    oauth_has_refresh_token,
-                    target.pool_mode(),
-                )?);
+                attempt_targets.push(
+                    CredentialAttemptTarget::with_runtime_identity(
+                        target.channel_id(),
+                        credential_id,
+                        secret_owner_id,
+                        runtime_credential.shared_health_id(),
+                        runtime_credential.credential_kind(),
+                        oauth_has_refresh_token,
+                        target.pool_mode(),
+                    )?
+                    .with_model(&routed_model)?,
+                );
                 auto_ban_targets.push(ChannelAutoBanAttemptTarget::new(
                     target.channel_id(),
                     target.auto_ban_rules(),
@@ -917,7 +920,7 @@ impl ScheduledChatService {
         let Some(store) = &self.health else {
             return Ok((channel_ids, BTreeMap::new()));
         };
-        let health = load_channel_health(store, &channel_ids)
+        let health = load_channel_health(store, &channel_ids, model)
             .await
             .map_err(|_| AfError::Internal)?;
         Ok((channel_ids, health))
@@ -933,7 +936,7 @@ impl ScheduledChatService {
             return Ok(None);
         };
         let credential_ids = collect_route_credentials(route, upstream_protocol, model)?;
-        load_credential_health(store, &credential_ids)
+        load_credential_model_health(store, &credential_ids, model)
             .await
             .map(Some)
             .map_err(|_| AfError::Internal)
@@ -950,7 +953,7 @@ impl ScheduledChatService {
         };
         let credential_ids =
             collect_route_credentials_for_protocols(route, upstream_protocols, model)?;
-        load_credential_health(store, &credential_ids)
+        load_credential_model_health(store, &credential_ids, model)
             .await
             .map(Some)
             .map_err(|_| AfError::Internal)

@@ -128,19 +128,24 @@ fn total_effective_weight(
 ) -> Result<u64, WeightedSelectionError> {
     candidates.iter().try_fold(0_u64, |total, candidate| {
         total
-            .checked_add(effective_weight(*candidate, health))
+            .checked_add(effective_weight(*candidate, candidates, health))
             .ok_or(WeightedSelectionError::WeightOverflow)
     })
 }
 
 fn effective_weight(
     candidate: SchedulerCandidate,
+    tier: &[SchedulerCandidate],
     health: Option<&BTreeMap<ChannelId, ChannelRoutingHealth>>,
 ) -> u64 {
-    effective_candidate_weight(
+    let health_weight = effective_candidate_weight(
         candidate,
         health.and_then(|states| states.get(&candidate.channel_id()).copied()),
-    )
+    );
+    let multiplier = crate::upstream_value::value_multiplier(candidate, tier);
+    u64::try_from((u128::from(health_weight) * u128::from(multiplier)).div_ceil(1_000_000))
+        .expect("validated upstream multiplier and configured weight fit u64")
+        .max(1)
 }
 
 fn random_below(upper_bound: u64) -> Result<u64, WeightedSelectionError> {
@@ -165,7 +170,7 @@ fn select_for_draw(
 ) -> Option<WeightedSelection> {
     let mut cursor = draw;
     for candidate in candidates {
-        let weight = effective_weight(*candidate, health);
+        let weight = effective_weight(*candidate, candidates, health);
         if cursor < weight {
             return Some(WeightedSelection {
                 candidate: *candidate,
@@ -238,6 +243,38 @@ mod tests {
                 .channel_id(),
             ChannelId::new(2).unwrap()
         );
+    }
+
+    #[test]
+    fn upstream_cost_only_changes_same_tier_weight_and_stacks_with_health() {
+        let signal = |cost| {
+            af_db::UpstreamRoutingSettings::from_channel_settings(&serde_json::json!({
+                "upstream_routing": {"models": {"model": {
+                    "unit_cost": {"unit": "usd_per_1m_tokens", "value_micros": cost}
+                }}}
+            }))
+            .unwrap()
+            .for_model("model")
+        };
+        let cheap = candidate(1, 5, 90).with_upstream_value(signal(1));
+        let costly = candidate(2, 5, 90).with_upstream_value(signal(9));
+        let tier = [cheap, costly];
+        assert_eq!(effective_weight(cheap, &tier, None), 120);
+        assert_eq!(effective_weight(costly, &tier, None), 80);
+        assert_eq!(
+            select_for_draw(&tier, 0, 119, None).unwrap().candidate(),
+            cheap
+        );
+        assert_eq!(
+            select_for_draw(&tier, 0, 120, None).unwrap().candidate(),
+            costly
+        );
+        let health = BTreeMap::from([(
+            cheap.channel_id(),
+            ChannelRoutingHealth::new(crate::ROUTING_HEALTH_PENALTY_SCALE, false),
+        )]);
+        assert_eq!(effective_weight(cheap, &tier, Some(&health)), 60);
+        assert_eq!(effective_weight(costly, &tier, Some(&health)), 80);
     }
 
     #[test]

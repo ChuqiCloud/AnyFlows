@@ -143,8 +143,29 @@ try {
           : undefined
     assert.ok(optionLabel, `Missing ${name} option label for value ${value}`)
     const trigger = scope.locator(`button[data-slot="trigger"][aria-label=${JSON.stringify(name)}]`).filter({ visible: true })
+    await trigger.scrollIntoViewIfNeeded()
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     await trigger.click()
-    await page.getByRole('option', { name: optionLabel, exact: true }).click()
+    assert.equal(await trigger.getAttribute('aria-expanded'), 'true', `${name} select should expand`)
+    const listbox = page.getByRole('listbox').filter({ visible: true })
+    const option = listbox.getByRole('option', { name: optionLabel, exact: true })
+    try {
+      await option.waitFor({ timeout: 5_000 })
+    } catch {
+      const state = await trigger.evaluateAll(elements => elements.map(element => ({
+        label: element.getAttribute('aria-label'),
+        expanded: element.getAttribute('aria-expanded'),
+        visible: Boolean(element.getClientRects().length),
+      })))
+      const listboxes = await page.locator('[role="listbox"]').evaluateAll(elements => elements.map(element => ({
+        visible: Boolean(element.getClientRects().length),
+        label: element.getAttribute('aria-label'),
+        expanded: element.getAttribute('aria-expanded'),
+        text: element.textContent?.trim(),
+      }))).catch(() => [])
+      throw new Error(`HeroUI ${name} did not expose option ${JSON.stringify(optionLabel)}; trigger=${JSON.stringify(state)}; listboxes=${JSON.stringify(listboxes)}`)
+    }
+    await option.click()
   }
   await page.goto(`http://127.0.0.1:${port}/.dashboard-smoke.html`)
   await page.locator('.report-sla-row').first().waitFor()

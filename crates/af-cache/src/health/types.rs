@@ -1,15 +1,19 @@
 use std::{fmt, time::Duration};
 
 use af_domain::{ChannelId, CredentialId};
+use sha2::{Digest, Sha256};
 
 use crate::{CacheError, CacheOperation, RedisConfig, RedisFailureKind, config::validate_ttl};
 
 /// 惩罚分使用百万分之一固定精度，避免跨 Redis 与 Rust 边界传播浮点状态。
 pub const HEALTH_PENALTY_SCALE: u64 = 1_000_000;
+/// 成功/失败样本也使用百万分之一固定精度，以便在 Redis Lua 中做半衰减。
+pub const HEALTH_SAMPLE_SCALE: u64 = 1_000_000;
 /// 单次健康读取或反馈批次的硬上限，覆盖 64 个 Relay 候选的渠道与凭据双层状态。
 pub const MAX_HEALTH_BATCH_SIZE: usize = 128;
 
 const DEFAULT_HALF_LIFE: Duration = Duration::from_secs(10 * 60);
+const DEFAULT_OUTCOME_HALF_LIFE: Duration = Duration::from_secs(30 * 60);
 const DEFAULT_TRANSIENT_STREAK_WINDOW: Duration = Duration::from_secs(5 * 60);
 const DEFAULT_STATE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const DEFAULT_BREAKER_THRESHOLD: u32 = 3;
@@ -20,6 +24,38 @@ const DEFAULT_COOLDOWNS: [Duration; 3] = [
 ];
 const MAX_BREAKER_THRESHOLD: u32 = 64;
 
+/// Canonical 模型的脱敏健康键；精确字节区分模型，不把名称写入 Redis。
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+pub struct RedisHealthModel([u8; 32]);
+
+impl RedisHealthModel {
+    pub fn for_model(model: &str) -> Result<Self, CacheError> {
+        if model.is_empty()
+            || model.len() > af_domain::MAX_MODEL_NAME_BYTES
+            || model.trim() != model
+            || model.chars().any(char::is_control)
+        {
+            return Err(CacheError::InvalidHealthBatch);
+        }
+        Ok(Self(Sha256::digest(model.as_bytes()).into()))
+    }
+
+    pub(super) fn key_suffix(self) -> String {
+        let mut output = String::with_capacity(64);
+        use std::fmt::Write;
+        for byte in self.0 {
+            write!(&mut output, "{byte:02x}").expect("写入 String 不会失败");
+        }
+        output
+    }
+}
+
+impl fmt::Debug for RedisHealthModel {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RedisHealthModel(<已脱敏>)")
+    }
+}
+
 /// Redis 健康状态的稳定作用目标，不包含模型、URL 或请求内容。
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum RedisHealthTarget {
@@ -27,6 +63,9 @@ pub enum RedisHealthTarget {
     Credential(CredentialId),
     /// 引用同一密钥的逻辑凭据共享认证、撤销和账号停用健康。
     CredentialShared(CredentialId),
+    /// 仅对该模型生效，不扩大故障到其他模型。
+    ChannelModel(ChannelId, RedisHealthModel),
+    CredentialModel(CredentialId, RedisHealthModel),
 }
 
 /// 已归一化故障对健康分与连续瞬时故障窗口的影响。
@@ -75,15 +114,27 @@ impl RedisHealthFailure {
 pub struct RedisHealthEvent {
     target: RedisHealthTarget,
     failure: Option<RedisHealthFailure>,
+    latency_millis: Option<u64>,
 }
 
 impl RedisHealthEvent {
-    /// 构造成功事件；无历史故障状态时 Redis 脚本不会产生写入。
+    /// 构造成功事件；同时保留衰减成功样本。
     #[must_use]
     pub const fn succeeded(target: RedisHealthTarget) -> Self {
         Self {
             target,
             failure: None,
+            latency_millis: None,
+        }
+    }
+
+    /// 构造带延迟样本的成功事件；延迟只用于健康评分，不进入业务日志。
+    #[must_use]
+    pub const fn succeeded_with_latency(target: RedisHealthTarget, latency_millis: u64) -> Self {
+        Self {
+            target,
+            failure: None,
+            latency_millis: Some(latency_millis),
         }
     }
 
@@ -93,6 +144,21 @@ impl RedisHealthEvent {
         Self {
             target,
             failure: Some(failure),
+            latency_millis: None,
+        }
+    }
+
+    /// 构造带延迟样本的失败事件；失败仍按原有分类更新惩罚和熔断。
+    #[must_use]
+    pub const fn failed_with_latency(
+        target: RedisHealthTarget,
+        failure: RedisHealthFailure,
+        latency_millis: u64,
+    ) -> Self {
+        Self {
+            target,
+            failure: Some(failure),
+            latency_millis: Some(latency_millis),
         }
     }
 
@@ -118,6 +184,13 @@ impl RedisHealthEvent {
             None => false,
         }
     }
+
+    pub(super) const fn latency_millis(self) -> u64 {
+        match self.latency_millis {
+            Some(value) => value,
+            None => 0,
+        }
+    }
 }
 
 /// 以 Redis 服务端当前时间归一化后的单目标健康快照。
@@ -127,6 +200,10 @@ pub struct RedisHealthSnapshot {
     penalty_micros: u64,
     cooldown_remaining: Duration,
     breaker_level: u8,
+    successes_micros: u64,
+    failures_micros: u64,
+    latency_ema_millis: u64,
+    recent_failure_remaining: Duration,
 }
 
 impl RedisHealthSnapshot {
@@ -140,6 +217,10 @@ impl RedisHealthSnapshot {
             cooling,
             cooldown_remaining_millis,
             breaker_level,
+            successes_micros,
+            failures_micros,
+            latency_ema_millis,
+            recent_failure_remaining_millis,
         ] = values
         else {
             return Err(protocol_error(operation));
@@ -148,6 +229,10 @@ impl RedisHealthSnapshot {
             || !matches!(*cooling, 0 | 1)
             || *cooldown_remaining_millis < 0
             || !(0..=3).contains(breaker_level)
+            || *successes_micros < 0
+            || *failures_micros < 0
+            || *latency_ema_millis < 0
+            || *recent_failure_remaining_millis < 0
             || (*cooling == 0 && *cooldown_remaining_millis != 0)
             || (*cooling == 1 && *cooldown_remaining_millis == 0)
         {
@@ -161,6 +246,16 @@ impl RedisHealthSnapshot {
                 u64::try_from(*cooldown_remaining_millis).map_err(|_| protocol_error(operation))?,
             ),
             breaker_level: u8::try_from(*breaker_level).map_err(|_| protocol_error(operation))?,
+            successes_micros: u64::try_from(*successes_micros)
+                .map_err(|_| protocol_error(operation))?,
+            failures_micros: u64::try_from(*failures_micros)
+                .map_err(|_| protocol_error(operation))?,
+            latency_ema_millis: u64::try_from(*latency_ema_millis)
+                .map_err(|_| protocol_error(operation))?,
+            recent_failure_remaining: Duration::from_millis(
+                u64::try_from(*recent_failure_remaining_millis)
+                    .map_err(|_| protocol_error(operation))?,
+            ),
         })
     }
 
@@ -192,6 +287,31 @@ impl RedisHealthSnapshot {
     pub const fn breaker_level(self) -> u8 {
         self.breaker_level
     }
+
+    #[must_use]
+    pub const fn successes_micros(self) -> u64 {
+        self.successes_micros
+    }
+
+    #[must_use]
+    pub const fn failures_micros(self) -> u64 {
+        self.failures_micros
+    }
+
+    #[must_use]
+    pub const fn latency_ema_millis(self) -> u64 {
+        self.latency_ema_millis
+    }
+
+    #[must_use]
+    pub const fn is_recently_failed(self) -> bool {
+        !self.recent_failure_remaining.is_zero()
+    }
+
+    #[must_use]
+    pub const fn recent_failure_remaining(self) -> Duration {
+        self.recent_failure_remaining
+    }
 }
 
 /// Redis 调度健康状态的命名空间和时间策略。
@@ -200,10 +320,13 @@ pub struct RedisHealthConfig {
     redis: RedisConfig,
     namespace: String,
     half_life: Duration,
+    outcome_half_life: Duration,
     transient_streak_window: Duration,
     breaker_threshold: u32,
     cooldowns: [Duration; 3],
     state_ttl: Duration,
+    failure_backoff_base: Duration,
+    failure_backoff_max: Duration,
 }
 
 impl RedisHealthConfig {
@@ -213,10 +336,13 @@ impl RedisHealthConfig {
             redis,
             namespace: namespace.into(),
             half_life: DEFAULT_HALF_LIFE,
+            outcome_half_life: DEFAULT_OUTCOME_HALF_LIFE,
             transient_streak_window: DEFAULT_TRANSIENT_STREAK_WINDOW,
             breaker_threshold: DEFAULT_BREAKER_THRESHOLD,
             cooldowns: DEFAULT_COOLDOWNS,
             state_ttl: DEFAULT_STATE_TTL,
+            failure_backoff_base: Duration::from_secs(15),
+            failure_backoff_max: Duration::from_secs(5 * 60),
         };
         config.validate()?;
         Ok(config)
@@ -245,6 +371,9 @@ impl RedisHealthConfig {
         self.redis.validate()?;
         for duration in [
             self.half_life,
+            self.outcome_half_life,
+            self.failure_backoff_base,
+            self.failure_backoff_max,
             self.transient_streak_window,
             self.state_ttl,
             self.cooldowns[0],
@@ -254,6 +383,7 @@ impl RedisHealthConfig {
             validate_ttl(duration)?;
         }
         if !(1..=MAX_BREAKER_THRESHOLD).contains(&self.breaker_threshold)
+            || self.failure_backoff_base > self.failure_backoff_max
             || self.cooldowns[0] >= self.cooldowns[1]
             || self.cooldowns[1] >= self.cooldowns[2]
             || self.state_ttl <= self.cooldowns[2]
@@ -279,6 +409,10 @@ impl RedisHealthConfig {
         validate_ttl(self.half_life)
     }
 
+    pub(super) fn outcome_half_life_millis(&self) -> Result<i64, CacheError> {
+        validate_ttl(self.outcome_half_life)
+    }
+
     pub(super) fn transient_streak_window_millis(&self) -> Result<i64, CacheError> {
         validate_ttl(self.transient_streak_window)
     }
@@ -294,6 +428,25 @@ impl RedisHealthConfig {
             validate_ttl(self.cooldowns[2])?,
         ])
     }
+
+    /// 调整普通瞬时错误的软避让窗口，硬熔断策略保持独立。
+    pub fn with_failure_backoff(
+        mut self,
+        base: Duration,
+        maximum: Duration,
+    ) -> Result<Self, CacheError> {
+        self.failure_backoff_base = base;
+        self.failure_backoff_max = maximum;
+        self.validate()?;
+        Ok(self)
+    }
+
+    pub(super) fn failure_backoff_millis(&self) -> Result<[i64; 2], CacheError> {
+        Ok([
+            validate_ttl(self.failure_backoff_base)?,
+            validate_ttl(self.failure_backoff_max)?,
+        ])
+    }
 }
 
 impl fmt::Debug for RedisHealthConfig {
@@ -303,6 +456,7 @@ impl fmt::Debug for RedisHealthConfig {
             .field("redis", &self.redis)
             .field("namespace", &"<已脱敏>")
             .field("half_life", &self.half_life)
+            .field("outcome_half_life", &self.outcome_half_life)
             .field("transient_streak_window", &self.transient_streak_window)
             .field("breaker_threshold", &self.breaker_threshold)
             .field("cooldowns", &self.cooldowns)
@@ -318,6 +472,17 @@ fn protocol_error(operation: CacheOperation) -> CacheError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_keys_preserve_identity_and_redact_debug() {
+        let model = RedisHealthModel::for_model("private-model").unwrap();
+        assert_eq!(model, RedisHealthModel::for_model("private-model").unwrap());
+        assert_ne!(model, RedisHealthModel::for_model("Private-model").unwrap());
+        assert!(!format!("{model:?}").contains("private-model"));
+        assert!(RedisHealthModel::for_model("").is_err());
+        assert!(RedisHealthModel::for_model(" model").is_err());
+        assert!(RedisHealthModel::for_model("model\n").is_err());
+    }
 
     #[test]
     fn failure_weights_and_transient_boundary_match_the_closed_policy() {

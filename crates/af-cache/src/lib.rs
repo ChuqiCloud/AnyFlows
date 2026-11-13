@@ -38,8 +38,9 @@ pub use config::{
 };
 pub use error::{CacheError, CacheOperation, RedisFailureKind};
 pub use health::{
-    HEALTH_PENALTY_SCALE, MAX_HEALTH_BATCH_SIZE, RedisHealthConfig, RedisHealthEvent,
-    RedisHealthFailure, RedisHealthSnapshot, RedisHealthStore, RedisHealthTarget,
+    HEALTH_PENALTY_SCALE, HEALTH_SAMPLE_SCALE, MAX_HEALTH_BATCH_SIZE, RedisHealthConfig,
+    RedisHealthEvent, RedisHealthFailure, RedisHealthModel, RedisHealthSnapshot, RedisHealthStore,
+    RedisHealthTarget,
 };
 pub use hybrid::{CacheMode, HybridCache};
 pub use lease::{

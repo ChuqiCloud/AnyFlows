@@ -242,10 +242,7 @@ impl Drop for ToolConversationStream {
     fn drop(&mut self) {
         if !self.terminal {
             self.session.abort();
-            self.report
-                .update(|snapshot| snapshot.report.complete_success(self.started_at.elapsed()));
-            self.report
-                .fail(UpstreamError::network(NetworkFailureKind::ResponseBody));
+            self.report.cancel();
         }
     }
 }

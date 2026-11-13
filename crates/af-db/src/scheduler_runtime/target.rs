@@ -501,6 +501,7 @@ pub struct SchedulerRuntimeTargetRecord {
     responses_compact_probe_result: ResponsesCompactProbeResult,
     responses_compact_model_mapping: ChannelModelMappings,
     relay_settings: RelayChannelSettings,
+    upstream_routing: crate::UpstreamRoutingSettings,
     channel_model_policy: af_domain::UpstreamModelPolicy,
     credential_model_policies: BTreeMap<i64, af_domain::UpstreamModelPolicy>,
     credential_usage_pauses: BTreeMap<i64, i64>,
@@ -667,6 +668,7 @@ impl SchedulerRuntimeTargetRecord {
             responses_compact_probe_result: ResponsesCompactProbeResult::Unknown,
             responses_compact_model_mapping,
             relay_settings: RelayChannelSettings::default(),
+            upstream_routing: crate::UpstreamRoutingSettings::default(),
             channel_model_policy: af_domain::UpstreamModelPolicy::default(),
             credential_model_policies: BTreeMap::new(),
             credential_usage_pauses: BTreeMap::new(),
@@ -789,6 +791,18 @@ impl SchedulerRuntimeTargetRecord {
     pub fn with_relay_settings(mut self, settings: RelayChannelSettings) -> Self {
         self.relay_settings = settings;
         self
+    }
+
+    /// Attach administrator-supplied upstream values without changing billing prices.
+    #[must_use]
+    pub fn with_upstream_routing(mut self, settings: crate::UpstreamRoutingSettings) -> Self {
+        self.upstream_routing = settings;
+        self
+    }
+
+    #[must_use]
+    pub fn upstream_routing(&self) -> &crate::UpstreamRoutingSettings {
+        &self.upstream_routing
     }
 
     /// 显式设置已验证的渠道自动禁用规则。

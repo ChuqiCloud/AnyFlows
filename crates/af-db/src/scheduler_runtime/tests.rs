@@ -53,6 +53,13 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         "stop_sequences": ["runtime-stop-canary"]
     }));
     supported.timeout_secs = Set(Some(60));
+    supported.settings = Set(SensitiveJson::from(
+        serde_json::json!({"upstream_routing": {"models": {
+            "gpt-runtime-canary": {"unit_cost": {"unit": "usd_per_1m_tokens", "value_micros": 500000},
+                "available_balance": {"unit": "usd", "value_micros": 9000000},
+                "recent_usage": {"requests": 12, "window_seconds": 300}}
+        }}}),
+    ));
     let supported = supported.insert(pool.connection()).await?;
     attach(supported.id, group.id, "gpt-runtime-canary")
         .insert(pool.connection())
@@ -300,6 +307,21 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         Some("https://runtime-url-canary.example.com/prefix")
     );
     assert_eq!(record.target().timeout().unwrap().seconds(), 60);
+    let upstream_value = record
+        .target()
+        .upstream_routing()
+        .for_model("gpt-runtime-canary")
+        .unwrap();
+    assert_eq!(upstream_value.unit_cost_micros(), Some(500000));
+    assert_eq!(upstream_value.available_balance_micros(), Some(9000000));
+    assert_eq!(upstream_value.recent_requests(), Some(12));
+    assert!(
+        record
+            .target()
+            .upstream_routing()
+            .for_model("gpt-upstream-canary")
+            .is_none()
+    );
     assert_eq!(record.target().headers().len(), 1);
     assert_eq!(record.target().headers()[0].name(), "x-runtime-header");
     assert_eq!(

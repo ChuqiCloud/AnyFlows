@@ -44,7 +44,7 @@ impl ResponsesCompactRoutePlanner for ScheduledChatService {
                     .scheduler
                     .responses_compact_route_channel_ids(principal.group_id(), request.model())
                     .map_err(map_scheduler_error)?;
-                let channel_health = load_channel_health(store, &channel_ids)
+                let channel_health = load_channel_health(store, &channel_ids, request.model())
                     .await
                     .map_err(|_| AfError::Internal)?;
                 let route = self
@@ -214,15 +214,18 @@ impl ScheduledChatService {
                     relay_candidate = relay_candidate.with_request(candidate_request.clone());
                 }
                 relay_candidates.push(relay_candidate);
-                attempt_targets.push(CredentialAttemptTarget::with_runtime_identity(
-                    target.channel_id(),
-                    credential_id,
-                    secret_owner_id,
-                    runtime_credential.shared_health_id(),
-                    runtime_credential.credential_kind(),
-                    oauth_has_refresh_token,
-                    target.pool_mode(),
-                )?);
+                attempt_targets.push(
+                    CredentialAttemptTarget::with_runtime_identity(
+                        target.channel_id(),
+                        credential_id,
+                        secret_owner_id,
+                        runtime_credential.shared_health_id(),
+                        runtime_credential.credential_kind(),
+                        oauth_has_refresh_token,
+                        target.pool_mode(),
+                    )?
+                    .with_model(&model)?,
+                );
                 auto_ban_targets.push(ChannelAutoBanAttemptTarget::new(
                     target.channel_id(),
                     target.auto_ban_rules(),

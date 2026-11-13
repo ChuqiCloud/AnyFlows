@@ -140,6 +140,7 @@ dependencies = [
  "getrandom 0.4.3",
  "lru",
  "redis",
+ "sha2 0.10.9",
  "thiserror 2.0.20",
  "tokio",
 ]
@@ -303,6 +304,7 @@ dependencies = [
  "aho-corasick",
  "getrandom 0.4.3",
  "sea-orm",
+ "serde_json",
  "thiserror 2.0.20",
  "tokio",
  "tracing",

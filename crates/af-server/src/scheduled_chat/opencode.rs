@@ -116,9 +116,12 @@ pub(super) async fn execute(
                 feedback.finish().await;
                 return Err(AfError::Internal.into());
             };
-            let body = body.with_completion_hook(Box::new(Completion {
-                feedback: Some(feedback),
-            }));
+            let body = af_relay::with_delivery_completion(
+                body,
+                Box::new(Completion {
+                    feedback: Some(feedback),
+                }),
+            );
             Ok(crate::RoutedExecution::new(
                 ChatResponse::Stream { body, usage },
                 channel,
@@ -209,11 +212,27 @@ struct Completion {
     feedback: Option<Feedback>,
 }
 impl GenerationCompletionHook for Completion {
+    fn on_delivery(
+        self: Box<Self>,
+        usage: Result<Usage, UsageResolutionError>,
+        outcome: af_relay::StreamDeliveryOutcome,
+    ) -> GenerationCompletionFuture {
+        if !matches!(
+            outcome,
+            af_relay::StreamDeliveryOutcome::Completed
+                | af_relay::StreamDeliveryOutcome::UpstreamFailed
+        ) && let Some(feedback) = self.feedback.as_ref()
+        {
+            feedback.report.cancel_delivery();
+        }
+        self.on_complete(usage)
+    }
+
     fn on_complete(
         mut self: Box<Self>,
         _usage: Result<Usage, UsageResolutionError>,
     ) -> GenerationCompletionFuture {
-        // Future 开始轮询前仍由 Drop 保底，客户端取消不会漏掉失败反馈。
+        // Future 开始轮询前仍由 Drop 保底，取消时保留先前失败并释放许可。
         Box::pin(async move {
             if let Some(feedback) = self.feedback.take() {
                 feedback.finish().await;
@@ -224,7 +243,7 @@ impl GenerationCompletionHook for Completion {
 impl Drop for Completion {
     fn drop(&mut self) {
         if let Some(feedback) = self.feedback.take() {
-            feedback.report.cancel();
+            feedback.report.cancel_delivery();
             if let Ok(runtime) = tokio::runtime::Handle::try_current() {
                 runtime.spawn(feedback.finish());
             }

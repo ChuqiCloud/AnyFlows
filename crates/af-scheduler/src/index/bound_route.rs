@@ -202,7 +202,8 @@ fn build_bound_route_plan(
                 channel_id,
                 effective_priority,
                 effective_weight,
-            ),
+            )
+            .with_upstream_value(target.upstream_routing().for_model(model)),
             runtime_target: Arc::new(runtime_target),
             route_channel_ids: route_bindings,
             last_selected_at_millis,

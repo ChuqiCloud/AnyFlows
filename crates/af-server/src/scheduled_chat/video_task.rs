@@ -605,15 +605,18 @@ impl ScheduledChatService {
                         wait_plan.timeout(),
                     ),
                 });
-                attempt_targets.push(CredentialAttemptTarget::with_runtime_identity(
-                    target.channel_id(),
-                    credential_id,
-                    secret_owner_id,
-                    runtime_credential.shared_health_id(),
-                    runtime_credential.credential_kind(),
-                    oauth_has_refresh_token,
-                    target.pool_mode(),
-                )?);
+                attempt_targets.push(
+                    CredentialAttemptTarget::with_runtime_identity(
+                        target.channel_id(),
+                        credential_id,
+                        secret_owner_id,
+                        runtime_credential.shared_health_id(),
+                        runtime_credential.credential_kind(),
+                        oauth_has_refresh_token,
+                        target.pool_mode(),
+                    )?
+                    .with_model(request.model().as_str())?,
+                );
                 auto_ban_targets.push(ChannelAutoBanAttemptTarget::new(
                     target.channel_id(),
                     target.auto_ban_rules(),
@@ -727,7 +730,8 @@ impl ScheduledChatService {
             runtime_credential.credential_kind(),
             oauth_has_refresh_token,
             target.pool_mode(),
-        )?];
+        )?
+        .with_model(binding.target_snapshot.requested_model.as_str())?];
         let auto_ban_targets = [ChannelAutoBanAttemptTarget::new(
             target.channel_id(),
             target.auto_ban_rules(),
