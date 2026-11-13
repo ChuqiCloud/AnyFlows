@@ -13,6 +13,8 @@ members = [
     "crates/af-httpclient",
     "crates/af-launcher",
     "crates/af-protocol",
+    "crates/af-plugin-contract",
+    "crates/af-plugin-runtime",
     "crates/af-relay",
     "crates/af-scheduler",
     "crates/af-server",
