@@ -68,10 +68,11 @@ impl ExternalAccountProfile {
         if self.subject.is_empty()
             || self.subject.len() > 512
             || self.subject.trim() != self.subject
+            || self.subject.chars().any(char::is_control)
             || self
                 .display_name
                 .as_ref()
-                .is_some_and(|name| name.len() > 256)
+                .is_some_and(|name| name.len() > 256 || name.chars().any(char::is_control))
         {
             return Err(ContractValidationError::InvalidExternalValue);
         }
@@ -110,6 +111,7 @@ impl ExternalBalanceSnapshot {
             || self.unit.is_empty()
             || self.unit.len() > 64
             || self.unit.trim() != self.unit
+            || self.unit.chars().any(char::is_control)
             || self.observed_at_unix_ms == 0
         {
             return Err(ContractValidationError::InvalidExternalValue);

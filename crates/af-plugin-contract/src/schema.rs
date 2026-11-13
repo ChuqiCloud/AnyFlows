@@ -71,6 +71,7 @@ pub fn schema_document() -> Value {
                 "required": ["pluginId", "pluginVersion", "contractRange", "capabilities", "authenticationModes", "limits", "configSchema"],
                 "properties": {
                     "pluginId": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$", "maxLength": 128 },
+                    "displayName": { "type": "string", "minLength": 1, "maxLength": 128 },
                     "pluginVersion": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$", "maxLength": 128 },
                     "contractRange": { "$ref": "#/$defs/ContractVersionRange" },
                     "capabilities": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/CapabilityDeclaration" } },
@@ -310,6 +311,7 @@ mod tests {
 
         let manifest = PluginManifest {
             plugin_id: PluginId::new("org.example.account-source").unwrap(),
+            display_name: "Example Account Source".to_owned(),
             plugin_version: PluginVersion::new("1.2.0").unwrap(),
             contract_range: ContractVersionRange::new(
                 ContractVersion::new(1, 0),
@@ -347,7 +349,7 @@ mod tests {
         assert_schema_fields(
             &schema,
             "PluginManifest",
-            &serde_json::to_value(manifest).unwrap(),
+            &serde_json::to_value(manifest.clone()).unwrap(),
         );
         assert_schema_fields(
             &schema,
@@ -380,34 +382,35 @@ mod tests {
         assert_openapi_refs_resolve(&openapi, &openapi);
         assert!(account.validate().is_ok());
         assert!(balance.validate().is_ok());
+        assert!(
+            ExternalAccountProfile {
+                subject: "invalid\nsubject".to_owned(),
+                display_name: None,
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            ExternalBalanceSnapshot {
+                amount: "1".to_owned(),
+                unit: "USD\n".to_owned(),
+                observed_at_unix_ms: 1_800_000_000_000,
+            }
+            .validate()
+            .is_err()
+        );
 
-        let mut manifest_value = serde_json::to_value(PluginManifest {
-            plugin_id: PluginId::new("org.example.account-source").unwrap(),
-            plugin_version: PluginVersion::new("1.2.0").unwrap(),
-            contract_range: ContractVersionRange::new(
-                ContractVersion::new(1, 0),
-                ContractVersion::new(1, 2),
-            )
-            .unwrap(),
-            capabilities: vec![CapabilityDeclaration {
-                id: CapabilityId::new("external.account.balance.read").unwrap(),
-                version: 1,
-                access: CapabilityAccess::Read,
-                side_effect: SideEffectClass::ExternalRead,
-                write_semantics: None,
-            }],
-            authentication_modes: vec!["api_key".to_owned()],
-            limits: crate::ConnectorLimits {
-                max_concurrency: 8,
-                request_timeout_ms: 10_000,
-                max_response_bytes: 1_048_576,
-                max_page_size: 100,
-            },
-            config_schema: json!({ "type": "object" }),
-        })
-        .unwrap();
+        let mut manifest_value = serde_json::to_value(manifest.clone()).unwrap();
         manifest_value["futureOptionalField"] = json!("ignored by v1");
         assert!(serde_json::from_value::<PluginManifest>(manifest_value).is_ok());
+        let mut legacy_manifest = serde_json::to_value(manifest).unwrap();
+        legacy_manifest
+            .as_object_mut()
+            .unwrap()
+            .remove("displayName");
+        let legacy: PluginManifest = serde_json::from_value(legacy_manifest).unwrap();
+        assert!(legacy.display_name.is_empty());
+        assert!(legacy.validate().is_ok());
     }
 
     fn assert_schema_fields(schema: &Value, definition: &str, value: &Value) {

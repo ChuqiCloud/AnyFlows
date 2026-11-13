@@ -255,7 +255,13 @@ pub(crate) fn scope_presets_with_overlay(
         (
             "account_read",
             "账户只读",
-            &["account:read", "models:read", "usage:read", "billing:read"][..],
+            &[
+                "account:read",
+                "external_accounts:read",
+                "models:read",
+                "usage:read",
+                "billing:read",
+            ][..],
         ),
         (
             "billing_read",
@@ -486,6 +492,18 @@ fn is_session_only(path: &str) -> bool {
 fn user_scopes(method: &str, path: &str) -> &'static [&'static str] {
     let read = method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD");
     match path {
+        "/api/account/external-connectors" | "/api/account/external-accounts/{id}/balances" => {
+            &["external_accounts:read"]
+        }
+        "/api/account/external-accounts" => {
+            if read {
+                &["external_accounts:read"]
+            } else {
+                &["external_accounts:write"]
+            }
+        }
+        "/api/account/external-accounts/{id}/refresh" => &["external_accounts:write"],
+        "/api/account/external-accounts/{id}" => &["external_accounts:write"],
         "/api/access-token/self" => &["account:read"],
         "/api/models" | "/api/model-providers" => &["models:read"],
         "/api/token-groups" => &["api_keys:read"],
@@ -658,6 +676,8 @@ fn scope_label(scope: &str) -> &str {
     match scope {
         "account:read" => "读取本人账户",
         "account:write" => "更新本人资料",
+        "external_accounts:read" => "读取本人外部平台账户",
+        "external_accounts:write" => "管理本人外部平台账户绑定",
         "api_keys:read" => "读取本人模型 Key",
         "api_keys:write" => "管理本人模型 Key",
         "models:read" => "读取模型目录",
@@ -705,6 +725,40 @@ mod tests {
         assert!(user_catalog.iter().all(|scope| !scope.admin_only));
         assert!(!validate_scopes(SessionRole::User, &rule.required_scopes));
         assert!(validate_scopes(SessionRole::Admin, &rule.required_scopes));
+    }
+
+    #[test]
+    fn external_account_operations_have_separate_user_scopes() {
+        assert_eq!(
+            policy("GET", "/api/account/external-connectors")
+                .unwrap()
+                .required_scopes,
+            ["external_accounts:read"]
+        );
+        assert_eq!(
+            policy("GET", "/api/account/external-accounts")
+                .unwrap()
+                .required_scopes,
+            ["external_accounts:read"]
+        );
+        assert_eq!(
+            policy("POST", "/api/account/external-accounts")
+                .unwrap()
+                .required_scopes,
+            ["external_accounts:write"]
+        );
+        assert_eq!(
+            policy("POST", "/api/account/external-accounts/{id}/refresh")
+                .unwrap()
+                .required_scopes,
+            ["external_accounts:write"]
+        );
+        assert_eq!(
+            policy("DELETE", "/api/account/external-accounts/{id}")
+                .unwrap()
+                .required_scopes,
+            ["external_accounts:write"]
+        );
     }
 
     #[test]

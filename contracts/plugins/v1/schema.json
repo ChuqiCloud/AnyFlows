@@ -308,6 +308,11 @@
         "contractRange": {
           "$ref": "#/$defs/ContractVersionRange"
         },
+        "displayName": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
         "limits": {
           "$ref": "#/$defs/ConnectorLimits"
         },

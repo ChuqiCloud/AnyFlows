@@ -58,6 +58,8 @@ impl<'de> Deserialize<'de> for PluginId {
 #[serde(rename_all = "camelCase")]
 pub struct PluginManifest {
     pub plugin_id: PluginId,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub display_name: String,
     pub plugin_version: PluginVersion,
     pub contract_range: ContractVersionRange,
     pub capabilities: Vec<CapabilityDeclaration>,
@@ -72,6 +74,8 @@ impl PluginManifest {
         self.contract_range.validate()?;
         if !self.config_schema.is_object()
             || self.capabilities.is_empty()
+            || self.display_name.len() > 128
+            || self.display_name.chars().any(char::is_control)
             || self.authentication_modes.is_empty()
             || self.authentication_modes.len() > 16
             || self.authentication_modes.iter().any(|mode| {

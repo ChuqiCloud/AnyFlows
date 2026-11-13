@@ -445,7 +445,7 @@ fn allowed_restricted_external_dependency(dependency: &DeclaredDependency) -> bo
 fn allowed_internal_dependencies(name: &str) -> &'static [&'static str] {
     match name {
         "af-domain" | "af-launcher" | "af-plugin-contract" => &[],
-        "af-plugin-runtime" => &["af-plugin-contract"],
+        "af-plugin-runtime" => &["af-httpclient", "af-plugin-contract"],
         "af-config" => &["af-domain"],
         "af-telemetry" => &["af-config"],
         "af-db" | "af-cache" | "af-httpclient" => &["af-config", "af-domain"],
@@ -471,6 +471,8 @@ fn allowed_internal_dependencies(name: &str) -> &'static [&'static str] {
             "af-domain",
             // 企业 SSO 回调编排只能通过受控 HTTP Client 访问 Provider。
             "af-httpclient",
+            "af-plugin-contract",
+            "af-plugin-runtime",
             "af-scheduler",
         ],
         "af-relay" => &[
