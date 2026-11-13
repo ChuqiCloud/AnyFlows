@@ -4,7 +4,7 @@
 
 | 文档 | 内容 |
 | --- | --- |
-| [项目优势与能力说明](project-strengths.md) | 能力收益、适用边界及持续维护的优势目录 |
+| [系统能力与架构说明](project-strengths.md) | 请求处理、路由、计费、部署架构与功能状态 |
 | [二进制部署](deployment-and-configuration.md) | 下载、校验、手动配置、systemd 和初始化 |
 | [Docker Compose](docker-compose.md) | 源码构建容器、配置和数据卷 |
 | [多节点部署](multi-node-deployment.md) | 共享依赖、负载均衡和升级顺序 |
