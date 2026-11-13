@@ -48,9 +48,9 @@ fn schema_patterns_are_bounded(schema: &Value) -> bool {
     let Some(object) = schema.as_object() else {
         return schema.is_boolean();
     };
-    // Draft 2020-12 removed `dependencies`, but the pinned validator still
-    // executes it as an extension; reject it rather than bypass schema checks.
-    if object.contains_key("dependencies") {
+    // Draft 2020-12 removed these keywords, but the pinned validator still
+    // executes them as extensions; reject them rather than bypass schema checks.
+    if object.contains_key("dependencies") || object.contains_key("additionalItems") {
         return false;
     }
     if object
@@ -105,7 +105,7 @@ fn schema_uses_unsupported_references(schema: &Value) -> bool {
     let Some(object) = schema.as_object() else {
         return false;
     };
-    if object.contains_key("dependencies") {
+    if object.contains_key("dependencies") || object.contains_key("additionalItems") {
         return true;
     }
     // Dynamic references are not implemented by the pinned validator, even
@@ -229,6 +229,15 @@ mod tests {
             CompiledJsonSchema::compile(&json!({
                 "type": "object",
                 "dependencies": { "secret": { "pattern": "(?=secret)" } }
+            }))
+            .err(),
+            Some(ContractValidationError::InvalidJsonSchema)
+        );
+        assert_eq!(
+            CompiledJsonSchema::compile(&json!({
+                "type": "array",
+                "additionalItems": { "$ref": "#/$defs/local" },
+                "$defs": { "local": { "type": "string" } }
             }))
             .err(),
             Some(ContractValidationError::InvalidJsonSchema)
