@@ -1,4 +1,154 @@
+use jsonschema::{Draft, PatternOptions, Validator};
 use serde_json::{Value, json};
+use std::sync::Arc;
+
+/// Compile and apply a JSON Schema Draft 2020-12 schema to an instance.
+///
+/// External references are rejected before compilation so validation never
+/// performs network or filesystem retrieval. Errors are deliberately reduced
+/// to stable contract codes and never include instance data.
+pub fn validate_json_schema(
+    schema: &Value,
+    instance: &Value,
+) -> Result<(), crate::ContractValidationError> {
+    CompiledJsonSchema::compile(schema)?.validate(instance)
+}
+
+/// Precompiled, reusable validator for a trusted plugin-declared JSON Schema.
+#[derive(Clone)]
+pub struct CompiledJsonSchema(Arc<Validator>);
+
+impl CompiledJsonSchema {
+    pub fn compile(schema: &Value) -> Result<Self, crate::ContractValidationError> {
+        compile_json_schema(schema).map(|validator| Self(Arc::new(validator)))
+    }
+
+    /// Validate an instance without exposing values in errors.
+    pub fn validate(&self, instance: &Value) -> Result<(), crate::ContractValidationError> {
+        if self.0.is_valid(instance) {
+            Ok(())
+        } else {
+            Err(crate::ContractValidationError::InvalidConfiguration)
+        }
+    }
+}
+
+pub(crate) fn compile_json_schema(
+    schema: &Value,
+) -> Result<Validator, crate::ContractValidationError> {
+    if serde_json::to_vec(schema)
+        .map_err(|_| crate::ContractValidationError::InvalidJsonSchema)?
+        .len()
+        > 64 * 1024
+        || schema.get("$schema").is_some_and(|draft| {
+            draft.as_str() != Some("https://json-schema.org/draft/2020-12/schema")
+        })
+        || schema_has_external_references(schema)
+    {
+        return Err(crate::ContractValidationError::InvalidJsonSchema);
+    }
+    jsonschema::options()
+        .with_draft(Draft::Draft202012)
+        .with_pattern_options(
+            PatternOptions::fancy_regex()
+                .backtrack_limit(100_000)
+                .size_limit(64 * 1024)
+                .dfa_size_limit(64 * 1024),
+        )
+        .build(schema)
+        .map_err(|_| crate::ContractValidationError::InvalidJsonSchema)
+}
+
+fn schema_has_external_references(schema: &Value) -> bool {
+    let Some(object) = schema.as_object() else {
+        return false;
+    };
+    if ["$ref", "$dynamicRef"].into_iter().any(|keyword| {
+        object
+            .get(keyword)
+            .and_then(Value::as_str)
+            .is_some_and(|reference| !reference.starts_with('#'))
+    }) {
+        return true;
+    }
+
+    object
+        .iter()
+        .any(|(keyword, child)| match keyword.as_str() {
+            "$defs" | "definitions" | "properties" | "patternProperties" | "dependentSchemas" => {
+                child
+                    .as_object()
+                    .is_some_and(|schemas| schemas.values().any(schema_has_external_references))
+            }
+            "allOf" | "anyOf" | "oneOf" | "prefixItems" => child
+                .as_array()
+                .is_some_and(|schemas| schemas.iter().any(schema_has_external_references)),
+            "additionalProperties"
+            | "items"
+            | "contains"
+            | "propertyNames"
+            | "unevaluatedItems"
+            | "unevaluatedProperties"
+            | "not"
+            | "if"
+            | "then"
+            | "else"
+            | "contentSchema" => schema_has_external_references(child),
+            _ => false,
+        })
+}
+
+#[cfg(test)]
+mod json_schema_validation_tests {
+    use super::*;
+    use crate::{ContractValidationError, validate_json_schema};
+
+    #[test]
+    fn validates_draft_2020_12_keywords_and_redacts_invalid_values() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "prefixItems": [{ "type": "integer" }, { "type": "string" }],
+            "items": false
+        });
+        assert_eq!(validate_json_schema(&schema, &json!([7, "safe"])), Ok(()));
+
+        let error = validate_json_schema(&schema, &json!([7, "private-token", true])).unwrap_err();
+        assert_eq!(error, ContractValidationError::InvalidConfiguration);
+        assert!(!error.to_string().contains("private-token"));
+    }
+
+    #[test]
+    fn rejects_invalid_schemas_and_external_references() {
+        assert_eq!(
+            validate_json_schema(&json!({ "type": "not-a-json-schema-type" }), &json!({})),
+            Err(ContractValidationError::InvalidJsonSchema)
+        );
+        assert_eq!(
+            validate_json_schema(
+                &json!({ "$ref": "https://example.invalid/schema" }),
+                &json!({})
+            ),
+            Err(ContractValidationError::InvalidJsonSchema)
+        );
+        assert_eq!(
+            validate_json_schema(
+                &json!({ "$schema": "https://json-schema.org/draft/07/schema#", "type": "string" }),
+                &json!("value")
+            ),
+            Err(ContractValidationError::InvalidJsonSchema)
+        );
+    }
+
+    #[test]
+    fn reference_like_data_values_are_not_treated_as_schema_references() {
+        let schema = json!({ "type": "object", "properties": { "metadata": { "const": { "$ref": "literal data" } } } });
+        assert_eq!(
+            validate_json_schema(&schema, &json!({ "metadata": { "$ref": "literal data" } })),
+            Ok(())
+        );
+    }
+}
 
 /// Generated JSON Schema document for the language-neutral plugin v1 contract.
 #[must_use]
@@ -12,7 +162,9 @@ pub fn schema_document() -> Value {
             { "$ref": "#/$defs/ExternalAccountProfile" },
             { "$ref": "#/$defs/ExternalBalanceSnapshot" },
             { "$ref": "#/$defs/ConnectorHealth" },
-            { "$ref": "#/$defs/ConnectorError" }
+            { "$ref": "#/$defs/ConnectorError" },
+            { "$ref": "#/$defs/CapabilityInvocation" },
+            { "$ref": "#/$defs/CapabilityResult" }
         ],
         "$defs": {
             "ContractVersion": {
@@ -42,7 +194,13 @@ pub fn schema_document() -> Value {
                     "version": { "type": "integer", "minimum": 1, "maximum": 65535 },
                     "access": { "enum": ["read", "write"] },
                     "sideEffect": { "enum": ["none", "external_read", "external_write"] },
-                    "writeSemantics": { "$ref": "#/$defs/ExternalWriteSemantics" }
+                    "writeSemantics": { "$ref": "#/$defs/ExternalWriteSemantics" },
+                    "inputSchema": { "type": "object" },
+                    "outputSchema": { "type": "object" }
+                },
+                "dependentRequired": {
+                    "inputSchema": ["outputSchema"],
+                    "outputSchema": ["inputSchema"]
                 },
                 "allOf": [
                     {
@@ -71,14 +229,29 @@ pub fn schema_document() -> Value {
                 "required": ["pluginId", "pluginVersion", "contractRange", "capabilities", "authenticationModes", "limits", "configSchema"],
                 "properties": {
                     "pluginId": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$", "maxLength": 128 },
-                    "displayName": { "type": "string", "minLength": 1, "maxLength": 128 },
+                    "displayName": { "type": "string", "maxLength": 128 },
                     "pluginVersion": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$", "maxLength": 128 },
                     "contractRange": { "$ref": "#/$defs/ContractVersionRange" },
-                    "capabilities": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/CapabilityDeclaration" } },
+                    "capabilities": { "type": "array", "minItems": 1, "maxItems": 128, "items": { "$ref": "#/$defs/CapabilityDeclaration" } },
                     "authenticationModes": { "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*$", "maxLength": 128 } },
                     "limits": { "$ref": "#/$defs/ConnectorLimits" },
                     "configSchema": { "type": "object" }
                 }
+            },
+            "CapabilityInvocation": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["capabilityVersion", "input"],
+                "properties": {
+                    "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                    "input": {}
+                }
+            },
+            "CapabilityResult": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["output"],
+                "properties": { "output": {} }
             },
             "ConnectorLimits": {
                 "type": "object",
@@ -232,6 +405,27 @@ pub fn openapi_document() -> Value {
                         "default": { "$ref": "#/components/responses/ConnectorError" }
                     }
                 }
+            },
+            "/v1/capabilities/{capabilityId}": {
+                "post": {
+                    "operationId": "invokeReadCapability",
+                    "summary": "Invoke one negotiated read capability using its declared input and output schemas",
+                    "parameters": [
+                        { "name": "capabilityId", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$", "minLength": 1, "maxLength": 128 } },
+                        common_parameters[0].clone(), common_parameters[1].clone(), common_parameters[2].clone()
+                    ],
+                    "requestBody": {
+                        "required": true,
+                        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CapabilityInvocation" } } }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Validated capability result",
+                            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CapabilityResult" } } }
+                        },
+                        "default": { "$ref": "#/components/responses/ConnectorError" }
+                    }
+                }
             }
         },
         "components": {
@@ -287,9 +481,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        CapabilityAccess, CapabilityDeclaration, CapabilityId, ConnectorError, ConnectorErrorCode,
-        ContractVersion, ContractVersionRange, ExternalAccountProfile, ExternalBalanceSnapshot,
-        PluginId, PluginManifest, PluginVersion, SideEffectClass,
+        CapabilityAccess, CapabilityDeclaration, CapabilityId, CapabilityInvocation,
+        CapabilityResult, ConnectorError, ConnectorErrorCode, ContractVersion,
+        ContractVersionRange, ExternalAccountProfile, ExternalBalanceSnapshot, PluginId,
+        PluginManifest, PluginVersion, SideEffectClass,
     };
 
     #[test]
@@ -324,6 +519,8 @@ mod tests {
                 access: CapabilityAccess::Read,
                 side_effect: SideEffectClass::ExternalRead,
                 write_semantics: None,
+                input_schema: None,
+                output_schema: None,
             }],
             authentication_modes: vec!["api_key".to_owned()],
             limits: crate::ConnectorLimits {
@@ -344,6 +541,13 @@ mod tests {
             observed_at_unix_ms: 1_800_000_000_000,
         };
         let error = ConnectorError::rate_limited(250);
+        let invocation = CapabilityInvocation {
+            capability_version: 1,
+            input: json!({ "query": "sample" }),
+        };
+        let result = CapabilityResult {
+            output: json!({ "items": ["sample"] }),
+        };
         let schema = schema_document();
 
         assert_schema_fields(
@@ -366,6 +570,20 @@ mod tests {
             "ConnectorError",
             &serde_json::to_value(error).unwrap(),
         );
+        assert_schema_fields(
+            &schema,
+            "CapabilityInvocation",
+            &serde_json::to_value(invocation).unwrap(),
+        );
+        assert_schema_fields(
+            &schema,
+            "CapabilityResult",
+            &serde_json::to_value(result).unwrap(),
+        );
+        assert_eq!(
+            schema["$defs"]["CapabilityDeclaration"]["dependentRequired"]["inputSchema"],
+            json!(["outputSchema"])
+        );
         assert_eq!(
             serde_json::to_value(ConnectorErrorCode::OutcomeUnknown).unwrap(),
             "outcome_unknown"
@@ -379,6 +597,7 @@ mod tests {
         assert_eq!(openapi["openapi"], "3.1.0");
         assert!(openapi["paths"]["/v1/manifest"]["get"].is_object());
         assert!(openapi["paths"]["/v1/accounts/{subject}/balance"]["get"].is_object());
+        assert!(openapi["paths"]["/v1/capabilities/{capabilityId}"]["post"].is_object());
         assert_openapi_refs_resolve(&openapi, &openapi);
         assert!(account.validate().is_ok());
         assert!(balance.validate().is_ok());
