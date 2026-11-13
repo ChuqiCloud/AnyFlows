@@ -37,7 +37,6 @@ pub struct DatabaseUserExternalAccountService {
 }
 
 impl DatabaseUserExternalAccountService {
-    #[must_use]
     pub fn new(
         repository: ExternalAccountConnectionRepository,
         cipher: SystemSecretCipher,
