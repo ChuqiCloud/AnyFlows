@@ -23,8 +23,8 @@ use crate::{
     },
     debug_trace_runtime::{DebugTraceCapture, DebugTraceRuntime},
     health_runtime::{
-        RuntimeHealthState, SchedulerHealthStore, load_channel_health, load_credential_model_health,
-        persist_scheduler_health_feedback,
+        RuntimeHealthState, SchedulerHealthStore, load_channel_health,
+        load_credential_model_health, persist_scheduler_health_feedback,
     },
     responses_websocket_runtime::ResponsesWebSocketRuntime,
     sticky_session::{
@@ -666,15 +666,18 @@ impl ScheduledChatService {
                     relay_candidate = relay_candidate.with_request(candidate_request.clone());
                 }
                 relay_candidates.push(relay_candidate);
-                attempt_targets.push(CredentialAttemptTarget::with_runtime_identity(
-                    target.channel_id(),
-                    credential_id,
-                    secret_owner_id,
-                    runtime_credential.shared_health_id(),
-                    runtime_credential.credential_kind(),
-                    oauth_has_refresh_token,
-                    target.pool_mode(),
-                )?.with_model(&routed_model)?);
+                attempt_targets.push(
+                    CredentialAttemptTarget::with_runtime_identity(
+                        target.channel_id(),
+                        credential_id,
+                        secret_owner_id,
+                        runtime_credential.shared_health_id(),
+                        runtime_credential.credential_kind(),
+                        oauth_has_refresh_token,
+                        target.pool_mode(),
+                    )?
+                    .with_model(&routed_model)?,
+                );
                 auto_ban_targets.push(ChannelAutoBanAttemptTarget::new(
                     target.channel_id(),
                     target.auto_ban_rules(),

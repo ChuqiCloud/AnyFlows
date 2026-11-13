@@ -143,11 +143,9 @@ fn effective_weight(
         health.and_then(|states| states.get(&candidate.channel_id()).copied()),
     );
     let multiplier = crate::upstream_value::value_multiplier(candidate, tier);
-    u64::try_from(
-        (u128::from(health_weight) * u128::from(multiplier)).div_ceil(1_000_000),
-    )
-    .expect("validated upstream multiplier and configured weight fit u64")
-    .max(1)
+    u64::try_from((u128::from(health_weight) * u128::from(multiplier)).div_ceil(1_000_000))
+        .expect("validated upstream multiplier and configured weight fit u64")
+        .max(1)
 }
 
 fn random_below(upper_bound: u64) -> Result<u64, WeightedSelectionError> {
@@ -254,17 +252,26 @@ mod tests {
                 "upstream_routing": {"models": {"model": {
                     "unit_cost": {"unit": "usd_per_1m_tokens", "value_micros": cost}
                 }}}
-            })).unwrap().for_model("model")
+            }))
+            .unwrap()
+            .for_model("model")
         };
         let cheap = candidate(1, 5, 90).with_upstream_value(signal(1));
         let costly = candidate(2, 5, 90).with_upstream_value(signal(9));
         let tier = [cheap, costly];
         assert_eq!(effective_weight(cheap, &tier, None), 120);
         assert_eq!(effective_weight(costly, &tier, None), 80);
-        assert_eq!(select_for_draw(&tier, 0, 119, None).unwrap().candidate(), cheap);
-        assert_eq!(select_for_draw(&tier, 0, 120, None).unwrap().candidate(), costly);
+        assert_eq!(
+            select_for_draw(&tier, 0, 119, None).unwrap().candidate(),
+            cheap
+        );
+        assert_eq!(
+            select_for_draw(&tier, 0, 120, None).unwrap().candidate(),
+            costly
+        );
         let health = BTreeMap::from([(
-            cheap.channel_id(), ChannelRoutingHealth::new(crate::ROUTING_HEALTH_PENALTY_SCALE, false),
+            cheap.channel_id(),
+            ChannelRoutingHealth::new(crate::ROUTING_HEALTH_PENALTY_SCALE, false),
         )]);
         assert_eq!(effective_weight(cheap, &tier, Some(&health)), 60);
         assert_eq!(effective_weight(costly, &tier, Some(&health)), 80);

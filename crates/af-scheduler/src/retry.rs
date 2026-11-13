@@ -154,11 +154,20 @@ impl WeightedRetryPlan {
         }
         // Short failure backoff is advisory: prefer recovered peers in this tier,
         // but retain a penalized attempt if the whole tier is in soft backoff.
-        let recovered = eligible.iter().copied().filter(|candidate| {
-            self.health.get(&candidate.channel_id())
-                .is_none_or(|state| !state.is_recently_failed())
-        }).collect::<Vec<_>>();
-        let eligible = if recovered.is_empty() { eligible } else { recovered };
+        let recovered = eligible
+            .iter()
+            .copied()
+            .filter(|candidate| {
+                self.health
+                    .get(&candidate.channel_id())
+                    .is_none_or(|state| !state.is_recently_failed())
+            })
+            .collect::<Vec<_>>();
+        let eligible = if recovered.is_empty() {
+            eligible
+        } else {
+            recovered
+        };
 
         let next_attempt = self
             .attempts_started
@@ -356,14 +365,30 @@ mod tests {
         let healthy = candidate(1, 72, 10);
         let hard = candidate(1, 73, 10);
         let health = std::collections::BTreeMap::from([
-            (soft.channel_id(), ChannelRoutingHealth::new(1_200_000, false).with_recent_failure(true)),
-            (hard.channel_id(), ChannelRoutingHealth::new(1_200_000, true)),
+            (
+                soft.channel_id(),
+                ChannelRoutingHealth::new(1_200_000, false).with_recent_failure(true),
+            ),
+            (
+                hard.channel_id(),
+                ChannelRoutingHealth::new(1_200_000, true),
+            ),
         ]);
         let order = WeightedRetryPlan::new_with_health(vec![soft, healthy, hard], &health)
-            .unwrap().into_retry_order().unwrap();
-        assert_eq!(order.iter().map(|selection| selection.candidate().channel_id()).collect::<Vec<_>>(),
-            vec![healthy.channel_id(), soft.channel_id()]);
-        let only = WeightedRetryPlan::new_with_health(vec![soft], &health).unwrap().into_retry_order().unwrap();
+            .unwrap()
+            .into_retry_order()
+            .unwrap();
+        assert_eq!(
+            order
+                .iter()
+                .map(|selection| selection.candidate().channel_id())
+                .collect::<Vec<_>>(),
+            vec![healthy.channel_id(), soft.channel_id()]
+        );
+        let only = WeightedRetryPlan::new_with_health(vec![soft], &health)
+            .unwrap()
+            .into_retry_order()
+            .unwrap();
         assert_eq!(only.len(), 1);
     }
 

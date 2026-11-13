@@ -243,7 +243,8 @@ impl ChannelIndexSnapshot {
                 record.channel_id,
                 record.priority,
                 record.weight,
-            ).with_upstream_value(upstream_value);
+            )
+            .with_upstream_value(upstream_value);
             grouped
                 .entry(record.group_id)
                 .or_default()
@@ -720,7 +721,8 @@ fn compact_candidates(
                 ChannelIndexCacheError::Snapshot(ChannelIndexSnapshotError::Invariant),
             ))?;
         if target_has_compact_credentials(target, model) {
-            eligible.push(candidate.with_upstream_value(target.upstream_routing().for_model(model)));
+            eligible
+                .push(candidate.with_upstream_value(target.upstream_routing().for_model(model)));
         }
     }
     Ok(eligible)
@@ -1121,35 +1123,98 @@ mod tests {
                 "available_balance": {"unit": "usd", "value_micros": 7000000},
                 "recent_usage": {"requests": 4, "window_seconds": 300}
             }}}
-        })).unwrap();
+        }))
+        .unwrap();
         let target = Arc::new(runtime_target(1).with_upstream_routing(settings));
-        let snapshot = ChannelIndexSnapshot::from_records(vec![
-            ChannelIndexSourceRecord::with_runtime_target(GroupId::new(1).unwrap(), "canonical-model", 9, 90, Arc::clone(&target)).unwrap(),
-            ChannelIndexSourceRecord::with_runtime_target(GroupId::new(1).unwrap(), "other-model", 9, 90, target).unwrap(),
-        ], 1).unwrap();
-        let candidate = snapshot.candidates(GroupId::new(1).unwrap(), "canonical-model").unwrap()[0];
-        assert_eq!(candidate.upstream_value().unwrap().unit_cost_micros(), Some(300000));
-        assert!(snapshot.candidates(GroupId::new(1).unwrap(), "other-model").unwrap()[0].upstream_value().is_none());
+        let snapshot = ChannelIndexSnapshot::from_records(
+            vec![
+                ChannelIndexSourceRecord::with_runtime_target(
+                    GroupId::new(1).unwrap(),
+                    "canonical-model",
+                    9,
+                    90,
+                    Arc::clone(&target),
+                )
+                .unwrap(),
+                ChannelIndexSourceRecord::with_runtime_target(
+                    GroupId::new(1).unwrap(),
+                    "other-model",
+                    9,
+                    90,
+                    target,
+                )
+                .unwrap(),
+            ],
+            1,
+        )
+        .unwrap();
+        let candidate = snapshot
+            .candidates(GroupId::new(1).unwrap(), "canonical-model")
+            .unwrap()[0];
+        assert_eq!(
+            candidate.upstream_value().unwrap().unit_cost_micros(),
+            Some(300000)
+        );
+        assert!(
+            snapshot
+                .candidates(GroupId::new(1).unwrap(), "other-model")
+                .unwrap()[0]
+                .upstream_value()
+                .is_none()
+        );
         assert!(!format!("{candidate:?}").contains("300000"));
     }
 
     #[test]
     fn route_candidates_refresh_value_hints_from_the_reconciled_runtime_target() {
-        let settings = |value| af_db::UpstreamRoutingSettings::from_channel_settings(&serde_json::json!({
-            "upstream_routing": {"models": {"canonical-model": {
-                "unit_cost": {"unit": "usd_per_1m_tokens", "value_micros": value}
-            }}}
-        })).unwrap();
-        let mut record = compact_record(1, "canonical-model", 1, 90, ResponsesCompactMode::ForceOn, ResponsesCompactProbeResult::Supported);
+        let settings = |value| {
+            af_db::UpstreamRoutingSettings::from_channel_settings(&serde_json::json!({
+                "upstream_routing": {"models": {"canonical-model": {
+                    "unit_cost": {"unit": "usd_per_1m_tokens", "value_micros": value}
+                }}}
+            }))
+            .unwrap()
+        };
+        let mut record = compact_record(
+            1,
+            "canonical-model",
+            1,
+            90,
+            ResponsesCompactMode::ForceOn,
+            ResponsesCompactProbeResult::Supported,
+        );
         let target = record.runtime_target.take().unwrap().as_ref().clone();
         record.runtime_target = Some(Arc::new(target.clone().with_upstream_routing(settings(1))));
         let mut snapshot = ChannelIndexSnapshot::from_records(vec![record], 1).unwrap();
         // Match cross-subject reconciliation: keep the protected ability while the
         // newer channel target carries an updated administrator observation.
-        snapshot.runtime_targets.insert(ChannelId::new(1).unwrap(), Arc::new(target.with_upstream_routing(settings(9))));
-        assert_eq!(snapshot.candidates(GroupId::new(1).unwrap(), "canonical-model").unwrap()[0].upstream_value().unwrap().unit_cost_micros(), Some(1));
-        assert_eq!(standard_candidates(&snapshot, GroupId::new(1).unwrap(), "canonical-model").unwrap()[0].upstream_value().unwrap().unit_cost_micros(), Some(9));
-        assert_eq!(compact_candidates(&snapshot, GroupId::new(1).unwrap(), "canonical-model").unwrap()[0].upstream_value().unwrap().unit_cost_micros(), Some(9));
+        snapshot.runtime_targets.insert(
+            ChannelId::new(1).unwrap(),
+            Arc::new(target.with_upstream_routing(settings(9))),
+        );
+        assert_eq!(
+            snapshot
+                .candidates(GroupId::new(1).unwrap(), "canonical-model")
+                .unwrap()[0]
+                .upstream_value()
+                .unwrap()
+                .unit_cost_micros(),
+            Some(1)
+        );
+        assert_eq!(
+            standard_candidates(&snapshot, GroupId::new(1).unwrap(), "canonical-model").unwrap()[0]
+                .upstream_value()
+                .unwrap()
+                .unit_cost_micros(),
+            Some(9)
+        );
+        assert_eq!(
+            compact_candidates(&snapshot, GroupId::new(1).unwrap(), "canonical-model").unwrap()[0]
+                .upstream_value()
+                .unwrap()
+                .unit_cost_micros(),
+            Some(9)
+        );
     }
 
     #[test]

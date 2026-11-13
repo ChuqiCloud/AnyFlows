@@ -61,32 +61,51 @@ impl UpstreamRoutingSettings {
     /// Read optional channel settings; observations are supplied by the administrator.
     pub fn from_channel_settings(settings: &Value) -> Result<Self, UpstreamRoutingSettingsError> {
         let object = settings.as_object().ok_or(UpstreamRoutingSettingsError)?;
-        object.get("upstream_routing").map_or(Ok(Self::default()), Self::parse)
+        object
+            .get("upstream_routing")
+            .map_or(Ok(Self::default()), Self::parse)
     }
 
     pub(crate) fn parse(value: &Value) -> Result<Self, UpstreamRoutingSettingsError> {
-        if serde_json::to_vec(value).map_err(|_| UpstreamRoutingSettingsError)?.len() > 64 * 1024 {
+        if serde_json::to_vec(value)
+            .map_err(|_| UpstreamRoutingSettingsError)?
+            .len()
+            > 64 * 1024
+        {
             return Err(UpstreamRoutingSettingsError);
         }
-        let wire: SettingsWire = serde_json::from_value(value.clone())
-            .map_err(|_| UpstreamRoutingSettingsError)?;
-        if wire.models.len() > MAX_MODELS || wire.models.iter().any(|(model, signal)| {
-            model.is_empty()
-                || model.len() > MAX_MODEL_NAME_BYTES
-                || model.trim() != model
-                || model.chars().any(char::is_control)
-                || [&signal.unit_cost, &signal.available_balance].into_iter().flatten().any(|value| {
-                    value.value_micros > MAX_SIGNAL_VALUE
-                        || value.unit.is_empty() || value.unit.len() > 64
-                        || !value.unit.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
-                })
-                || signal.recent_usage.as_ref().is_some_and(|usage| {
-                    usage.requests > MAX_SIGNAL_VALUE || !(1..=604_800).contains(&usage.window_seconds)
-                })
-        }) {
+        let wire: SettingsWire =
+            serde_json::from_value(value.clone()).map_err(|_| UpstreamRoutingSettingsError)?;
+        if wire.models.len() > MAX_MODELS
+            || wire.models.iter().any(|(model, signal)| {
+                model.is_empty()
+                    || model.len() > MAX_MODEL_NAME_BYTES
+                    || model.trim() != model
+                    || model.chars().any(char::is_control)
+                    || [&signal.unit_cost, &signal.available_balance]
+                        .into_iter()
+                        .flatten()
+                        .any(|value| {
+                            value.value_micros > MAX_SIGNAL_VALUE
+                                || value.unit.is_empty()
+                                || value.unit.len() > 64
+                                || !value.unit.bytes().all(|byte| {
+                                    byte.is_ascii_lowercase()
+                                        || byte.is_ascii_digit()
+                                        || byte == b'_'
+                                })
+                        })
+                    || signal.recent_usage.as_ref().is_some_and(|usage| {
+                        usage.requests > MAX_SIGNAL_VALUE
+                            || !(1..=604_800).contains(&usage.window_seconds)
+                    })
+            })
+        {
             return Err(UpstreamRoutingSettingsError);
         }
-        Ok(Self { models: wire.models })
+        Ok(Self {
+            models: wire.models,
+        })
     }
 
     /// Resolve the canonical model, before channel-specific upstream model mapping.
@@ -103,9 +122,20 @@ impl UpstreamRoutingSettings {
             <[u8; 32]>::from(hash.finalize())
         };
         Some(UpstreamRoutingSignal {
-            cost: signal.unit_cost.as_ref().map(|value| (key(b"cost", value.unit.as_bytes()), value.value_micros)),
-            balance: signal.available_balance.as_ref().map(|value| (key(b"balance", value.unit.as_bytes()), value.value_micros)),
-            usage: signal.recent_usage.as_ref().map(|value| (key(b"usage", &value.window_seconds.to_be_bytes()), value.requests)),
+            cost: signal
+                .unit_cost
+                .as_ref()
+                .map(|value| (key(b"cost", value.unit.as_bytes()), value.value_micros)),
+            balance: signal
+                .available_balance
+                .as_ref()
+                .map(|value| (key(b"balance", value.unit.as_bytes()), value.value_micros)),
+            usage: signal.recent_usage.as_ref().map(|value| {
+                (
+                    key(b"usage", &value.window_seconds.to_be_bytes()),
+                    value.requests,
+                )
+            }),
         })
     }
 
@@ -116,22 +146,37 @@ impl UpstreamRoutingSettings {
 
 impl UpstreamRoutingSignal {
     #[must_use]
-    pub const fn cost(self) -> Option<([u8; 32], u64)> { self.cost }
+    pub const fn cost(self) -> Option<([u8; 32], u64)> {
+        self.cost
+    }
     #[must_use]
-    pub const fn balance(self) -> Option<([u8; 32], u64)> { self.balance }
+    pub const fn balance(self) -> Option<([u8; 32], u64)> {
+        self.balance
+    }
     #[must_use]
-    pub const fn usage(self) -> Option<([u8; 32], u64)> { self.usage }
+    pub const fn usage(self) -> Option<([u8; 32], u64)> {
+        self.usage
+    }
     #[must_use]
-    pub fn unit_cost_micros(self) -> Option<u64> { self.cost.map(|(_, value)| value) }
+    pub fn unit_cost_micros(self) -> Option<u64> {
+        self.cost.map(|(_, value)| value)
+    }
     #[must_use]
-    pub fn available_balance_micros(self) -> Option<u64> { self.balance.map(|(_, value)| value) }
+    pub fn available_balance_micros(self) -> Option<u64> {
+        self.balance.map(|(_, value)| value)
+    }
     #[must_use]
-    pub fn recent_requests(self) -> Option<u64> { self.usage.map(|(_, value)| value) }
+    pub fn recent_requests(self) -> Option<u64> {
+        self.usage.map(|(_, value)| value)
+    }
 }
 
 impl fmt::Debug for UpstreamRoutingSettings {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("UpstreamRoutingSettings").field("model_count", &self.models.len()).finish()
+        formatter
+            .debug_struct("UpstreamRoutingSettings")
+            .field("model_count", &self.models.len())
+            .finish()
     }
 }
 
@@ -148,14 +193,26 @@ mod tests {
 
     #[test]
     fn settings_are_optional_and_projection_preserves_model_unit_scope() {
-        assert_eq!(UpstreamRoutingSettings::from_channel_settings(&json!({})).unwrap(), UpstreamRoutingSettings::default());
-        let settings = UpstreamRoutingSettings::from_channel_settings(&json!({"upstream_routing": {"models": {
-            "model-a": {"unit_cost": {"unit": "usd_per_1m_tokens", "value_micros": 0}},
-            "model-b": {"unit_cost": {"unit": "usd_per_1m_tokens", "value_micros": 0}}
-        }}})).unwrap();
-        assert_ne!(settings.for_model("model-a").unwrap().cost(), settings.for_model("model-b").unwrap().cost());
+        assert_eq!(
+            UpstreamRoutingSettings::from_channel_settings(&json!({})).unwrap(),
+            UpstreamRoutingSettings::default()
+        );
+        let settings = UpstreamRoutingSettings::from_channel_settings(
+            &json!({"upstream_routing": {"models": {
+                "model-a": {"unit_cost": {"unit": "usd_per_1m_tokens", "value_micros": 0}},
+                "model-b": {"unit_cost": {"unit": "usd_per_1m_tokens", "value_micros": 0}}
+            }}}),
+        )
+        .unwrap();
+        assert_ne!(
+            settings.for_model("model-a").unwrap().cost(),
+            settings.for_model("model-b").unwrap().cost()
+        );
         assert!(settings.for_model("unknown").is_none());
-        assert_eq!(UpstreamRoutingSettings::parse(&settings.to_projection_json().unwrap()).unwrap(), settings);
+        assert_eq!(
+            UpstreamRoutingSettings::parse(&settings.to_projection_json().unwrap()).unwrap(),
+            settings
+        );
     }
 
     #[test]

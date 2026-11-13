@@ -169,8 +169,8 @@ pub(crate) async fn load_channel_health(
     channel_ids: &[ChannelId],
     model: &str,
 ) -> Result<BTreeMap<ChannelId, ChannelRoutingHealth>, SchedulerHealthRuntimeError> {
-    let model = RedisHealthModel::for_model(model)
-        .map_err(|_| SchedulerHealthRuntimeError::Invariant)?;
+    let model =
+        RedisHealthModel::for_model(model).map_err(|_| SchedulerHealthRuntimeError::Invariant)?;
     let targets = channel_ids
         .iter()
         .copied()
@@ -238,8 +238,8 @@ pub(crate) async fn load_credential_model_health(
     credential_ids: &[(CredentialId, CredentialId)],
     model: &str,
 ) -> Result<BTreeMap<i64, RuntimeHealthState>, SchedulerHealthRuntimeError> {
-    let model = RedisHealthModel::for_model(model)
-        .map_err(|_| SchedulerHealthRuntimeError::Invariant)?;
+    let model =
+        RedisHealthModel::for_model(model).map_err(|_| SchedulerHealthRuntimeError::Invariant)?;
     let targets = credential_ids
         .iter()
         .flat_map(|(routing_id, shared_health_id)| {
@@ -307,7 +307,9 @@ fn feedback_events(
     let mut events = Vec::with_capacity(outcome_count.checked_mul(2)?);
     for failure in report.failures() {
         // A local rejection does not erase earlier real upstream failures in this request.
-        if failure.request_aborted() { continue; }
+        if failure.request_aborted() {
+            continue;
+        }
         append_failure_with_latency(
             &mut events,
             *targets.get(failure.candidate_index())?,
@@ -635,12 +637,18 @@ mod tests {
                 (credential, CredentialId::new(1).unwrap())
             })
             .collect::<Vec<_>>();
-        let states = load_credential_model_health(&reader, &ids, "model-a").await.unwrap();
+        let states = load_credential_model_health(&reader, &ids, "model-a")
+            .await
+            .unwrap();
         assert_eq!(states.len(), 130);
         let requests = store.requests.lock().unwrap();
         assert_eq!(requests.len(), 261_usize.div_ceil(MAX_HEALTH_BATCH_SIZE));
         assert_eq!(requests.iter().map(Vec::len).sum::<usize>(), 261);
-        assert!(requests.iter().all(|batch| batch.len() <= MAX_HEALTH_BATCH_SIZE));
+        assert!(
+            requests
+                .iter()
+                .all(|batch| batch.len() <= MAX_HEALTH_BATCH_SIZE)
+        );
     }
 
     #[tokio::test]
@@ -652,42 +660,82 @@ mod tests {
         let credential_target = RedisHealthTarget::CredentialModel(credential, model);
         let store: Arc<dyn SchedulerHealthStore> = Arc::new(BatchHealthStore {
             states: BTreeMap::from([
-                (channel_target, RuntimeHealthState::new(channel_target, 2_200_000, true)),
-                (credential_target, RuntimeHealthState::new(credential_target, 2_200_000, true)),
+                (
+                    channel_target,
+                    RuntimeHealthState::new(channel_target, 2_200_000, true),
+                ),
+                (
+                    credential_target,
+                    RuntimeHealthState::new(credential_target, 2_200_000, true),
+                ),
             ]),
             ..BatchHealthStore::default()
         });
-        let blocked = load_channel_health(&store, &[channel], "model-a").await.unwrap();
+        let blocked = load_channel_health(&store, &[channel], "model-a")
+            .await
+            .unwrap();
         assert!(blocked[&channel].is_cooling());
-        let sibling = load_channel_health(&store, &[channel], "model-b").await.unwrap();
+        let sibling = load_channel_health(&store, &[channel], "model-b")
+            .await
+            .unwrap();
         assert!(!sibling[&channel].is_cooling());
         let identities = [(credential, credential)];
-        assert!(load_credential_model_health(&store, &identities, "model-a").await.unwrap()[&9].is_cooling());
-        assert!(!load_credential_model_health(&store, &identities, "model-b").await.unwrap()[&9].is_cooling());
+        assert!(
+            load_credential_model_health(&store, &identities, "model-a")
+                .await
+                .unwrap()[&9]
+                .is_cooling()
+        );
+        assert!(
+            !load_credential_model_health(&store, &identities, "model-b")
+                .await
+                .unwrap()[&9]
+                .is_cooling()
+        );
         assert!(!load_credential_health(&store, &identities).await.unwrap()[&9].is_cooling());
     }
 
     #[test]
     fn model_failures_never_write_global_health_and_keep_measured_latency() {
         let target = CredentialAttemptTarget::new(
-            ChannelId::new(7).unwrap(), 9, CredentialKind::ApiKey, false, false,
-        ).unwrap().with_model("model-a").unwrap();
+            ChannelId::new(7).unwrap(),
+            9,
+            CredentialKind::ApiKey,
+            false,
+            false,
+        )
+        .unwrap()
+        .with_model("model-a")
+        .unwrap();
         let model = target.model().unwrap();
         for (error, classification) in [
-            (UpstreamError::ModelUnsupported, RedisHealthFailure::ModelUnsupported),
+            (
+                UpstreamError::ModelUnsupported,
+                RedisHealthFailure::ModelUnsupported,
+            ),
             (UpstreamError::ProtocolError, RedisHealthFailure::Protocol),
-            (UpstreamError::rate_limited(RateLimitScope::Model), RedisHealthFailure::RateLimited),
+            (
+                UpstreamError::rate_limited(RateLimitScope::Model),
+                RedisHealthFailure::RateLimited,
+            ),
         ] {
             let mut events = Vec::new();
             append_failure_with_latency(&mut events, target, error, 4321);
-            assert_eq!(events, vec![
-                RedisHealthEvent::failed_with_latency(
-                    RedisHealthTarget::CredentialModel(CredentialId::new(9).unwrap(), model), classification, 4321,
-                ),
-                RedisHealthEvent::failed_with_latency(
-                    RedisHealthTarget::ChannelModel(ChannelId::new(7).unwrap(), model), classification, 4321,
-                ),
-            ]);
+            assert_eq!(
+                events,
+                vec![
+                    RedisHealthEvent::failed_with_latency(
+                        RedisHealthTarget::CredentialModel(CredentialId::new(9).unwrap(), model),
+                        classification,
+                        4321,
+                    ),
+                    RedisHealthEvent::failed_with_latency(
+                        RedisHealthTarget::ChannelModel(ChannelId::new(7).unwrap(), model),
+                        classification,
+                        4321,
+                    ),
+                ]
+            );
         }
         let mut events = Vec::new();
         append_failure_with_latency(&mut events, target, UpstreamError::BadRequest, 99);
@@ -709,8 +757,12 @@ mod tests {
             failures_micros: 3_000_000,
             latency_ema_millis: 4000,
             ..RuntimeHealthState::new(
-                RedisHealthTarget::ChannelModel(channel, RedisHealthModel::for_model("model-a").unwrap()),
-                1_000_000, false,
+                RedisHealthTarget::ChannelModel(
+                    channel,
+                    RedisHealthModel::for_model("model-a").unwrap(),
+                ),
+                1_000_000,
+                false,
             )
         };
         let combined = global.merge_model(model);
@@ -723,16 +775,32 @@ mod tests {
     #[test]
     fn model_success_recovers_only_current_model_and_respects_pool_mode() {
         let target = CredentialAttemptTarget::new(
-            ChannelId::new(7).unwrap(), 9, CredentialKind::ApiKey, false, true,
-        ).unwrap().with_model("model-a").unwrap();
+            ChannelId::new(7).unwrap(),
+            9,
+            CredentialKind::ApiKey,
+            false,
+            true,
+        )
+        .unwrap()
+        .with_model("model-a")
+        .unwrap();
         let mut events = Vec::new();
         append_success_with_latency(&mut events, target, 5678);
         assert_eq!(events.len(), 3);
-        assert!(events.iter().all(|event| !matches!(event.target(),
-            RedisHealthTarget::Channel(_) | RedisHealthTarget::ChannelModel(_, _))));
-        assert_eq!(events[2], RedisHealthEvent::succeeded_with_latency(
-            RedisHealthTarget::CredentialModel(CredentialId::new(9).unwrap(), target.model().unwrap()), 5678,
-        ));
+        assert!(events.iter().all(|event| !matches!(
+            event.target(),
+            RedisHealthTarget::Channel(_) | RedisHealthTarget::ChannelModel(_, _)
+        )));
+        assert_eq!(
+            events[2],
+            RedisHealthEvent::succeeded_with_latency(
+                RedisHealthTarget::CredentialModel(
+                    CredentialId::new(9).unwrap(),
+                    target.model().unwrap()
+                ),
+                5678,
+            )
+        );
     }
 
     #[test]

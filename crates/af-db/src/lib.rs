@@ -116,12 +116,12 @@ pub use merchant_finance::{
 mod billing_batch_tests;
 mod channel_settings;
 mod upstream_routing;
-pub use upstream_routing::{
-    UpstreamRoutingSettings, UpstreamRoutingSettingsError, UpstreamRoutingSignal,
-};
 pub use channel_settings::{
     CredentialSelectionStrategy, RelayChannelSettings, RelayChannelSettingsPatch,
     RelayExecutionSettingsError, validate_relay_execution_settings,
+};
+pub use upstream_routing::{
+    UpstreamRoutingSettings, UpstreamRoutingSettingsError, UpstreamRoutingSignal,
 };
 mod opencode_settings;
 pub use opencode_settings::{channel_opencode_entry, channel_opencode_full_compatibility};

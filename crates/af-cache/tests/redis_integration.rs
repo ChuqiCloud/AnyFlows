@@ -589,42 +589,89 @@ async fn verify_health_contract(redis_url: &str, namespace: &str) {
     let channel_id = af_domain::ChannelId::new(84).unwrap();
     let scoped_a = RedisHealthTarget::ChannelModel(channel_id, model_a);
     let scoped_b = RedisHealthTarget::ChannelModel(channel_id, model_b);
-    first.apply(&[RedisHealthEvent::failed_with_latency(scoped_a, RedisHealthFailure::Network, 10)]).await.unwrap();
-    let scoped = second.states(&[scoped_a, scoped_b, RedisHealthTarget::Channel(channel_id)]).await.unwrap();
+    first
+        .apply(&[RedisHealthEvent::failed_with_latency(
+            scoped_a,
+            RedisHealthFailure::Network,
+            10,
+        )])
+        .await
+        .unwrap();
+    let scoped = second
+        .states(&[scoped_a, scoped_b, RedisHealthTarget::Channel(channel_id)])
+        .await
+        .unwrap();
     assert!(scoped[0].is_recently_failed());
     assert!(!scoped[0].is_cooling());
     assert!((990_000..=1_000_000).contains(&scoped[0].failures_micros()));
-    assert!(scoped[1..].iter().all(|state| state.penalty_micros() == 0 && state.failures_micros() == 0));
-    first.apply(&[RedisHealthEvent::succeeded_with_latency(scoped_a, 10_000)]).await.unwrap();
+    assert!(
+        scoped[1..]
+            .iter()
+            .all(|state| state.penalty_micros() == 0 && state.failures_micros() == 0)
+    );
+    first
+        .apply(&[RedisHealthEvent::succeeded_with_latency(scoped_a, 10_000)])
+        .await
+        .unwrap();
     let recovered = second.states(&[scoped_a]).await.unwrap()[0];
     assert!(!recovered.is_recently_failed());
     assert!(recovered.successes_micros() >= 990_000);
     assert!(recovered.failures_micros() >= 990_000);
     assert!((9_900..=10_000).contains(&recovered.latency_ema_millis()));
 
-    let mut connection = redis::Client::open(redis_url).unwrap().get_multiplexed_async_connection().await.unwrap();
+    let mut connection = redis::Client::open(redis_url)
+        .unwrap()
+        .get_multiplexed_async_connection()
+        .await
+        .unwrap();
     let legacy_channel = RedisHealthTarget::Channel(af_domain::ChannelId::new(85).unwrap());
     let legacy_key = format!("{{{namespace}}}:health:channel:85");
     let _: () = redis::cmd("EVAL").arg("local t=redis.call('TIME');local n=tonumber(t[1])*1000+math.floor(tonumber(t[2])/1000);redis.call('HSET',KEYS[1],'penalty',900000,'updated_at',n,'streak',0,'last_transient_at',0,'level',0,'cooldown_until',0)").arg(1).arg(&legacy_key).query_async(&mut connection).await.unwrap();
     let legacy = second.states(&[legacy_channel]).await.unwrap()[0];
     assert_eq!(legacy.successes_micros(), 0);
-    first.apply(&[RedisHealthEvent::succeeded_with_latency(legacy_channel, 2500)]).await.unwrap();
+    first
+        .apply(&[RedisHealthEvent::succeeded_with_latency(
+            legacy_channel,
+            2500,
+        )])
+        .await
+        .unwrap();
     assert!(second.states(&[legacy_channel]).await.unwrap()[0].successes_micros() > 0);
-    let _: () = redis::cmd("DEL").arg(legacy_key).query_async(&mut connection).await.unwrap();
+    let _: () = redis::cmd("DEL")
+        .arg(legacy_key)
+        .query_async(&mut connection)
+        .await
+        .unwrap();
 
     let backoff_channel = RedisHealthTarget::Channel(af_domain::ChannelId::new(86).unwrap());
     let backoff_key = format!("{{{namespace}}}:health:channel:86");
     for (index, expected_seconds) in [15_u64, 15, 30, 45].into_iter().enumerate() {
         if index > 0 {
-            let _: () = redis::cmd("HSET").arg(&backoff_key).arg("soft_until").arg(0)
-                .arg("cooldown_until").arg(0).query_async(&mut connection).await.unwrap();
+            let _: () = redis::cmd("HSET")
+                .arg(&backoff_key)
+                .arg("soft_until")
+                .arg(0)
+                .arg("cooldown_until")
+                .arg(0)
+                .query_async(&mut connection)
+                .await
+                .unwrap();
         }
-        first.apply(&[RedisHealthEvent::failed(backoff_channel, RedisHealthFailure::Network)]).await.unwrap();
+        first
+            .apply(&[RedisHealthEvent::failed(
+                backoff_channel,
+                RedisHealthFailure::Network,
+            )])
+            .await
+            .unwrap();
         let state = second.states(&[backoff_channel]).await.unwrap()[0];
         assert!(state.recent_failure_remaining() <= Duration::from_secs(expected_seconds));
         assert!(state.recent_failure_remaining() > Duration::from_secs(expected_seconds - 1));
     }
-    first.apply(&[RedisHealthEvent::succeeded(backoff_channel)]).await.unwrap();
+    first
+        .apply(&[RedisHealthEvent::succeeded(backoff_channel)])
+        .await
+        .unwrap();
     assert!(!second.states(&[backoff_channel]).await.unwrap()[0].is_recently_failed());
 
     // A malformed later key rejects the whole batch before a valid key is mutated.
@@ -713,7 +760,10 @@ async fn verify_health_contract(redis_url: &str, namespace: &str) {
         assert!(second.states(&[corrupt]).await.is_err());
         assert!(
             first
-                .apply(&[RedisHealthEvent::failed(unchanged, RedisHealthFailure::Network), RedisHealthEvent::failed(corrupt, RedisHealthFailure::Network)])
+                .apply(&[
+                    RedisHealthEvent::failed(unchanged, RedisHealthFailure::Network),
+                    RedisHealthEvent::failed(corrupt, RedisHealthFailure::Network)
+                ])
                 .await
                 .is_err()
         );
@@ -749,7 +799,10 @@ async fn verify_health_contract(redis_url: &str, namespace: &str) {
     assert!(second.states(&[corrupt]).await.is_err());
     assert!(
         first
-            .apply(&[RedisHealthEvent::failed(unchanged, RedisHealthFailure::Network), RedisHealthEvent::failed(corrupt, RedisHealthFailure::Network)])
+            .apply(&[
+                RedisHealthEvent::failed(unchanged, RedisHealthFailure::Network),
+                RedisHealthEvent::failed(corrupt, RedisHealthFailure::Network)
+            ])
             .await
             .is_err()
     );
@@ -817,7 +870,10 @@ async fn verify_health_contract(redis_url: &str, namespace: &str) {
     assert!((5_990_000..=6_000_000).contains(&aged.failures_micros()));
     assert!((17_490..=17_500).contains(&aged.latency_ema_millis()));
     first
-        .apply(&[RedisHealthEvent::failed(aging, RedisHealthFailure::Protocol)])
+        .apply(&[RedisHealthEvent::failed(
+            aging,
+            RedisHealthFailure::Protocol,
+        )])
         .await
         .unwrap();
     let rebased = second.states(&[aging]).await.unwrap()[0];

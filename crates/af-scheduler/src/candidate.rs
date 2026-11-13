@@ -51,7 +51,10 @@ impl SchedulerCandidate {
 
     /// Attach values from the same immutable model-specific upstream snapshot.
     #[must_use]
-    pub const fn with_upstream_value(mut self, value: Option<af_db::UpstreamRoutingSignal>) -> Self {
+    pub const fn with_upstream_value(
+        mut self,
+        value: Option<af_db::UpstreamRoutingSignal>,
+    ) -> Self {
         self.upstream_value = value;
         self
     }

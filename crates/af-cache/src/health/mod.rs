@@ -10,8 +10,8 @@ use crate::{
 use scripts::{APPLY_EVENTS_SCRIPT, READ_STATES_SCRIPT};
 
 pub use types::{
-    HEALTH_PENALTY_SCALE, HEALTH_SAMPLE_SCALE, MAX_HEALTH_BATCH_SIZE, RedisHealthConfig, RedisHealthEvent,
-    RedisHealthFailure, RedisHealthModel, RedisHealthSnapshot, RedisHealthTarget,
+    HEALTH_PENALTY_SCALE, HEALTH_SAMPLE_SCALE, MAX_HEALTH_BATCH_SIZE, RedisHealthConfig,
+    RedisHealthEvent, RedisHealthFailure, RedisHealthModel, RedisHealthSnapshot, RedisHealthTarget,
 };
 
 const STATE_FIELDS_PER_RESULT: usize = 8;
@@ -142,10 +142,20 @@ impl RedisHealthStore {
                 )
             }
             RedisHealthTarget::ChannelModel(channel_id, model) => {
-                format!("{}:channel:{}:model:{}", self.key_prefix, channel_id.get(), model.key_suffix())
+                format!(
+                    "{}:channel:{}:model:{}",
+                    self.key_prefix,
+                    channel_id.get(),
+                    model.key_suffix()
+                )
             }
             RedisHealthTarget::CredentialModel(credential_id, model) => {
-                format!("{}:credential:{}:model:{}", self.key_prefix, credential_id.get(), model.key_suffix())
+                format!(
+                    "{}:credential:{}:model:{}",
+                    self.key_prefix,
+                    credential_id.get(),
+                    model.key_suffix()
+                )
             }
         };
         validate_cache_key(&key)?;

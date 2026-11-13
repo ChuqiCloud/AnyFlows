@@ -510,7 +510,8 @@ impl ProjectionTargetWire {
         let responses_compact_model_mapping =
             ChannelModelMappings::parse(&responses_compact_model_mapping)
                 .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
-        let upstream_routing = self.upstream_routing
+        let upstream_routing = self
+            .upstream_routing
             .as_ref()
             .map(crate::UpstreamRoutingSettings::parse)
             .transpose()
@@ -968,12 +969,21 @@ mod tests {
         // 普通账号保持旧 wire 形态；旧投影缺少并发字段时继续解码为不限并发。
         let mut old_wire: serde_json::Value = serde_json::from_slice(&payload).unwrap();
         assert_eq!(
-            decoded.records()[0].target().upstream_routing().for_model("private-model").unwrap().unit_cost_micros(),
+            decoded.records()[0]
+                .target()
+                .upstream_routing()
+                .for_model("private-model")
+                .unwrap()
+                .unit_cost_micros(),
             Some(123456)
         );
         let mut invalid_wire = old_wire.clone();
-        invalid_wire["targets"][0]["upstream_routing"]["models"]["private-model"]["unit_cost"]["value_micros"] = serde_json::json!(-1);
-        assert!(SchedulerRuntimeProjection::decode(&serde_json::to_vec(&invalid_wire).unwrap()).is_err());
+        invalid_wire["targets"][0]["upstream_routing"]["models"]["private-model"]["unit_cost"]["value_micros"] =
+            serde_json::json!(-1);
+        assert!(
+            SchedulerRuntimeProjection::decode(&serde_json::to_vec(&invalid_wire).unwrap())
+                .is_err()
+        );
         assert!(
             old_wire["targets"][0]["credentials"][0]
                 .get("proxy")
@@ -1005,7 +1015,13 @@ mod tests {
             None
         );
         assert!(!old_decoded.records()[0].target().pool_mode());
-        assert!(old_decoded.records()[0].target().upstream_routing().for_model("private-model").is_none());
+        assert!(
+            old_decoded.records()[0]
+                .target()
+                .upstream_routing()
+                .for_model("private-model")
+                .is_none()
+        );
         assert_eq!(
             old_decoded.records()[0].target().responses_compact_mode(),
             ResponsesCompactMode::Auto

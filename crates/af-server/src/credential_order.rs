@@ -119,9 +119,13 @@ pub(crate) fn apply_channel_credential_strategy(
             health
                 .and_then(|states| states.get(&credential.credential_id()))
                 .is_some_and(|state| state.recently_failed()),
-            Reverse(health
-                .and_then(|states| states.get(&credential.credential_id()))
-                .map_or(HEALTH_PENALTY_SCALE, |state| state.weight_multiplier_micros())),
+            Reverse(
+                health
+                    .and_then(|states| states.get(&credential.credential_id()))
+                    .map_or(HEALTH_PENALTY_SCALE, |state| {
+                        state.weight_multiplier_micros()
+                    }),
+            ),
         )
     };
     credentials.sort_by_key(|credential| (rank(credential), credential.credential_id()));
@@ -212,13 +216,19 @@ fn order_credentials_by_load_with_optional_health<'a>(
             credential_load(credential, loads).has_session_headroom()
                 && health
                     .and_then(|states| states.get(&credential.credential_id()))
-                    .is_none_or(|state| !state.recently_failed()
-                        && state.weight_multiplier_micros() >= HEALTH_PENALTY_SCALE / 2)
+                    .is_none_or(|state| {
+                        !state.recently_failed()
+                            && state.weight_multiplier_micros() >= HEALTH_PENALTY_SCALE / 2
+                    })
         });
     ordered.sort_by(|left, right| {
-        right.priority().cmp(&left.priority())
+        right
+            .priority()
+            .cmp(&left.priority())
             .then_with(|| recently_failed(left, health).cmp(&recently_failed(right, health)))
-            .then_with(|| credential_load(left, loads).compare_utilization(credential_load(right, loads)))
+            .then_with(|| {
+                credential_load(left, loads).compare_utilization(credential_load(right, loads))
+            })
     });
     if let Some(preferred) = preferred
         && let Some(index) = ordered
@@ -318,7 +328,8 @@ fn recently_failed(
     credential: &SchedulerRuntimeCredentialRecord,
     health: Option<&BTreeMap<i64, RuntimeHealthState>>,
 ) -> bool {
-    health.and_then(|states| states.get(&credential.credential_id()))
+    health
+        .and_then(|states| states.get(&credential.credential_id()))
         .is_some_and(|state| state.recently_failed())
 }
 
@@ -666,27 +677,43 @@ mod tests {
     fn real_quality_changes_credential_weight_using_the_channel_formula() {
         let credentials = [credential(1, 0, 100), credential(2, 0, 100)];
         let id = |value| RedisHealthTarget::Credential(CredentialId::new(value).unwrap());
-        let healthy = RuntimeHealthState::new(id(1), 0, false)
-            .with_test_quality(24_000_000, 0, 2000, false);
-        let degraded = RuntimeHealthState::new(id(2), 0, false)
-            .with_test_quality(0, 24_000_000, 32000, false);
+        let healthy =
+            RuntimeHealthState::new(id(1), 0, false).with_test_quality(24_000_000, 0, 2000, false);
+        let degraded =
+            RuntimeHealthState::new(id(2), 0, false).with_test_quality(0, 24_000_000, 32000, false);
         let health = BTreeMap::from([(1, healthy), (2, degraded)]);
-        assert!(effective_credential_weight(&credentials[0], Some(&health))
-            > effective_credential_weight(&credentials[1], Some(&health)));
+        assert!(
+            effective_credential_weight(&credentials[0], Some(&health))
+                > effective_credential_weight(&credentials[1], Some(&health))
+        );
         assert!(effective_credential_weight(&credentials[1], Some(&health)) > 0);
     }
 
     #[test]
     fn soft_failed_credentials_remain_fallbacks_without_crossing_priority() {
-        let credentials = [credential(1, 2, u32::MAX), credential(2, 2, 1), credential(3, 1, 1)];
+        let credentials = [
+            credential(1, 2, u32::MAX),
+            credential(2, 2, 1),
+            credential(3, 1, 1),
+        ];
         let target = RedisHealthTarget::Credential(CredentialId::new(1).unwrap());
-        let health = BTreeMap::from([
-            (1, RuntimeHealthState::new(target, 0, false).with_test_quality(0, 0, 0, true)),
-        ]);
-        let ordered = order_credentials_with_health("soft-avoidance", channel_id(), &credentials, &health);
+        let health = BTreeMap::from([(
+            1,
+            RuntimeHealthState::new(target, 0, false).with_test_quality(0, 0, 0, true),
+        )]);
+        let ordered =
+            order_credentials_with_health("soft-avoidance", channel_id(), &credentials, &health);
         assert_eq!(credential_ids(ordered), vec![2, 1, 3]);
         let only = &credentials[..1];
-        assert_eq!(credential_ids(order_credentials_with_health("all-soft", channel_id(), only, &health)), vec![1]);
+        assert_eq!(
+            credential_ids(order_credentials_with_health(
+                "all-soft",
+                channel_id(),
+                only,
+                &health
+            )),
+            vec![1]
+        );
     }
 
     fn credential_ids(credentials: Vec<&SchedulerRuntimeCredentialRecord>) -> Vec<i64> {

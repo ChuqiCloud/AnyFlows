@@ -30,8 +30,10 @@ pub struct RedisHealthModel([u8; 32]);
 
 impl RedisHealthModel {
     pub fn for_model(model: &str) -> Result<Self, CacheError> {
-        if model.is_empty() || model.len() > af_domain::MAX_MODEL_NAME_BYTES
-            || model.trim() != model || model.chars().any(char::is_control)
+        if model.is_empty()
+            || model.len() > af_domain::MAX_MODEL_NAME_BYTES
+            || model.trim() != model
+            || model.chars().any(char::is_control)
         {
             return Err(CacheError::InvalidHealthBatch);
         }
@@ -184,7 +186,10 @@ impl RedisHealthEvent {
     }
 
     pub(super) const fn latency_millis(self) -> u64 {
-        match self.latency_millis { Some(value) => value, None => 0 }
+        match self.latency_millis {
+            Some(value) => value,
+            None => 0,
+        }
     }
 }
 
@@ -248,7 +253,8 @@ impl RedisHealthSnapshot {
             latency_ema_millis: u64::try_from(*latency_ema_millis)
                 .map_err(|_| protocol_error(operation))?,
             recent_failure_remaining: Duration::from_millis(
-                u64::try_from(*recent_failure_remaining_millis).map_err(|_| protocol_error(operation))?,
+                u64::try_from(*recent_failure_remaining_millis)
+                    .map_err(|_| protocol_error(operation))?,
             ),
         })
     }
@@ -424,7 +430,11 @@ impl RedisHealthConfig {
     }
 
     /// 调整普通瞬时错误的软避让窗口，硬熔断策略保持独立。
-    pub fn with_failure_backoff(mut self, base: Duration, maximum: Duration) -> Result<Self, CacheError> {
+    pub fn with_failure_backoff(
+        mut self,
+        base: Duration,
+        maximum: Duration,
+    ) -> Result<Self, CacheError> {
         self.failure_backoff_base = base;
         self.failure_backoff_max = maximum;
         self.validate()?;
@@ -432,7 +442,10 @@ impl RedisHealthConfig {
     }
 
     pub(super) fn failure_backoff_millis(&self) -> Result<[i64; 2], CacheError> {
-        Ok([validate_ttl(self.failure_backoff_base)?, validate_ttl(self.failure_backoff_max)?])
+        Ok([
+            validate_ttl(self.failure_backoff_base)?,
+            validate_ttl(self.failure_backoff_max)?,
+        ])
     }
 }
 
