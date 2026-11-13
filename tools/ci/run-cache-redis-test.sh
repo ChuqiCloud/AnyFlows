@@ -25,12 +25,11 @@ fi
 readonly instance_id="${BASHPID}-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
 
 container_name=""
-network_name=""
 declare -a runner_names=()
 
 cleanup() {
     local status=$?
-    trap - EXIT
+    trap - EXIT INT TERM
     local runner_name=""
     for runner_name in "${runner_names[@]}"; do
         docker rm --force "${runner_name}" >/dev/null 2>&1 || true
@@ -41,12 +40,11 @@ cleanup() {
         fi
         docker rm --force "${container_name}" >/dev/null 2>&1 || true
     fi
-    if [[ -n "${network_name}" ]]; then
-        docker network rm "${network_name}" >/dev/null 2>&1 || true
-    fi
     exit "${status}"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 wait_for_redis() {
     # 镜像首次拉起耗时不稳定，有限轮询可避免流水线永久等待。
@@ -74,12 +72,12 @@ run_cache_smoke_tests() {
         fi
     done
 
-    if [[ -n "${network_name}" ]]; then
+    if [[ -n "${container_name}" ]]; then
         test_binary="$(ci_build_test_binary af-cache test redis_integration)"
         for test_name in "${CACHE_SMOKE_TEST_NAMES[@]}"; do
             runner_name="anyflows-redis-cache-test-${instance_id}-${test_name}"
             runner_names+=("${runner_name}")
-            ci_run_test_binary "${network_name}" "${runner_name}" "${test_binary}" \
+            ci_run_test_binary "container:${container_name}" "${runner_name}" "${test_binary}" \
                 "AF_TEST_REDIS_URL=${redis_url}" \
                 "AF_REQUIRE_LIVE_REDIS=1" \
                 -- "${test_name}" --exact --include-ignored
@@ -106,11 +104,11 @@ run_http_smoke_test() {
         return 1
     fi
 
-    if [[ -n "${network_name}" ]]; then
+    if [[ -n "${container_name}" ]]; then
         test_binary="$(ci_build_test_binary af-server test "${HTTP_SMOKE_TEST_TARGET}")"
         runner_name="anyflows-redis-http-test-${instance_id}"
         runner_names+=("${runner_name}")
-        ci_run_test_binary "${network_name}" "${runner_name}" "${test_binary}" \
+        ci_run_test_binary "container:${container_name}" "${runner_name}" "${test_binary}" \
             "AF_TEST_REDIS_URL=${redis_url}" \
             "AF_REQUIRE_LIVE_REDIS=1" \
             -- "${HTTP_SMOKE_TEST_NAME}" --exact --include-ignored
@@ -125,14 +123,12 @@ run_http_smoke_test() {
 
 redis_url="${AF_TEST_REDIS_URL:-}"
 if [[ -z "${redis_url}" ]]; then
-    network_name="anyflows-redis-network-${instance_id}"
     container_name="anyflows-redis-${instance_id}"
-    docker network create "${network_name}" >/dev/null
-    docker run --detach --name "${container_name}" --network "${network_name}" \
-        --network-alias redis \
+    # Test runners share only this Redis instance's loopback; no bridge subnet is allocated.
+    docker run --detach --name "${container_name}" --network none \
         "${REDIS_IMAGE}" redis-server --save '' --appendonly no >/dev/null
     wait_for_redis
-    redis_url="redis://redis:6379/"
+    redis_url="redis://127.0.0.1:6379/"
 fi
 
 case "${redis_url}" in

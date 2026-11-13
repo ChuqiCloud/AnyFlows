@@ -76,6 +76,8 @@ OpenAI 兼容客户端通常使用 `https://api.example.com/v1` 作为 Base URL�
 
 ## 文档
 
+项目能力、用户收益及适用边界见 [项目优势与能力说明](docs/project-strengths.md)。该文档持续收录已验证的项目优势，并明确区分开发中与已发布能力。
+
 配置和升级见 [配置参考](docs/configuration.md)、[升级与备份](docs/migrations-and-release.md)、[版本检测与手动在线升级](docs/online-updates.md)。账号、渠道及开发参考见 [文档目录](docs/README.md)。
 
 ## 参与开发

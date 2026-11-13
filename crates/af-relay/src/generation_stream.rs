@@ -87,6 +87,19 @@ struct ChainedCompletionHook {
 }
 
 impl GenerationCompletionHook for ChainedCompletionHook {
+    fn on_delivery(
+        self: Box<Self>,
+        usage: Result<Usage, UsageResolutionError>,
+        outcome: crate::StreamDeliveryOutcome,
+    ) -> GenerationCompletionFuture {
+        let Self { first, second } = *self;
+        let first = first.on_delivery(usage, outcome);
+        let second = second.on_delivery(usage, outcome);
+        Box::pin(async move {
+            let ((), ()) = tokio::join!(first, second);
+        })
+    }
+
     fn on_complete(
         self: Box<Self>,
         usage: Result<Usage, UsageResolutionError>,

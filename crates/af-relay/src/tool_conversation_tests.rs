@@ -11,7 +11,9 @@ use af_adapter::{
     Adaptor, AdaptorResult, AdaptorTarget, Credential, HeaderMap, HttpClientConfig, HttpClientPool,
     OpenAiAdaptor, OpenCodeAdaptor, ProxyConfig, RelayContext, RemoteDnsPolicy, UpstreamRequest,
 };
-use af_domain::{ChannelType, OpenCodeEntry, Operation, Protocol, Role};
+use af_domain::{
+    ChannelType, NetworkFailureKind, OpenCodeEntry, Operation, Protocol, Role, UpstreamError,
+};
 use af_protocol::{
     CanonicalRequest, CanonicalStreamEvent as Event, ContentBlock, ContentDelta, FinishReason,
     Message, Sampling, StreamOptions, TokenCount, ToolDef, Usage, UsageDetails, UsageSemantics,
@@ -39,6 +41,154 @@ fn cancellation_preserves_completed_state_and_round_count() {
     handle.cancel();
     assert_eq!(handle.snapshot().state, ToolConversationState::Completed);
     assert_eq!(handle.snapshot().sent_rounds, 2);
+}
+
+#[test]
+fn cancellation_discards_pending_success_without_losing_previous_failures() {
+    let failure = crate::RelayAttemptFailure::new(
+        0,
+        UpstreamError::network(NetworkFailureKind::ResponseBody),
+        Duration::from_millis(10),
+    );
+    let handle = ToolConversationReportHandle::new(RelayAttemptReport::succeeded(
+        1,
+        Duration::from_millis(20),
+        vec![failure.clone()],
+    ));
+    handle.cancel();
+    handle.cancel();
+    let snapshot = handle.snapshot();
+    assert_eq!(snapshot.state, ToolConversationState::Failed);
+    assert_eq!(snapshot.report.successful_candidate_index(), None);
+    assert_eq!(snapshot.report.failures(), &[failure]);
+}
+
+#[tokio::test]
+async fn delivery_cancellation_reaches_chained_hooks_after_upstream_completion() {
+    for outcome in [
+        StreamDeliveryOutcome::ClientClosed,
+        StreamDeliveryOutcome::WriteTimeout,
+        StreamDeliveryOutcome::MaxDuration,
+        StreamDeliveryOutcome::Internal,
+    ] {
+        let failure = crate::RelayAttemptFailure::new(
+            0,
+            UpstreamError::network(NetworkFailureKind::ResponseBody),
+            Duration::from_millis(10),
+        );
+        let make_handle = || {
+            let handle = ToolConversationReportHandle::new(RelayAttemptReport::succeeded(
+                1,
+                Duration::from_millis(20),
+                vec![failure.clone()],
+            ));
+            handle.update(|snapshot| {
+                snapshot.state = ToolConversationState::Completed;
+                snapshot.sent_rounds = 2;
+            });
+            handle
+        };
+        let handles = [make_handle(), make_handle()];
+        let mut hook = None;
+        for handle in &handles {
+            crate::generation_stream::append_completion_hook(
+                &mut hook,
+                Box::new(ReportCompletion(handle.clone())),
+            );
+        }
+        hook.unwrap().on_delivery(Ok(usage(40, 10)), outcome).await;
+        for handle in handles {
+            let snapshot = handle.snapshot();
+            assert_eq!(snapshot.state, ToolConversationState::Completed);
+            assert_eq!(snapshot.sent_rounds, 2);
+            assert_eq!(snapshot.report.successful_candidate_index(), None);
+            assert_eq!(snapshot.report.failures(), std::slice::from_ref(&failure));
+        }
+    }
+}
+
+#[tokio::test]
+async fn upstream_delivery_failure_still_rejects_the_successful_candidate() {
+    let handle = ToolConversationReportHandle::new(RelayAttemptReport::succeeded(
+        0,
+        Duration::from_millis(20),
+        Vec::new(),
+    ));
+    Box::new(ReportCompletion(handle.clone()))
+        .on_delivery(
+            Err(UsageResolutionError::Interrupted),
+            StreamDeliveryOutcome::UpstreamFailed,
+        )
+        .await;
+    let snapshot = handle.snapshot();
+    assert_eq!(snapshot.state, ToolConversationState::Failed);
+    assert_eq!(snapshot.report.successful_candidate_index(), None);
+    assert_eq!(snapshot.report.failures().len(), 1);
+    assert_eq!(
+        snapshot.report.failures()[0].error(),
+        UpstreamError::ProtocolError
+    );
+}
+
+#[tokio::test]
+async fn prefetch_timeout_is_recorded_before_cancellation_cleanup() {
+    struct PendingCancellationStream(ToolConversationReportHandle);
+
+    impl Stream for PendingCancellationStream {
+        type Item = AdaptorResult<af_adapter::Bytes>;
+
+        fn poll_next(
+            self: Pin<&mut Self>,
+            _context: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Option<Self::Item>> {
+            std::task::Poll::Pending
+        }
+    }
+
+    impl Drop for PendingCancellationStream {
+        fn drop(&mut self) {
+            self.0.cancel();
+        }
+    }
+
+    let handle = ToolConversationReportHandle::new(RelayAttemptReport::succeeded(
+        0,
+        Duration::from_millis(20),
+        Vec::new(),
+    ));
+    let response = af_adapter::UpstreamResponse::stream(
+        af_adapter::StatusCode::OK,
+        HeaderMap::new(),
+        PendingCancellationStream(handle.clone()),
+    )
+    .unwrap();
+    let request = request(true);
+    let encoder = ChatStreamEncoder::new(
+        Protocol::OpenAiChat,
+        "prefetch-timeout",
+        "free-model",
+        1_700_000_000,
+        request.canonical(),
+        false,
+    )
+    .unwrap();
+    let (stream, _) = OpenAiChatStream::new(
+        response.into_body(),
+        encoder,
+        OpenAiChatUsageEstimator::new(request.canonical()),
+    );
+    let error = UpstreamError::network(NetworkFailureKind::ResponseBody);
+    assert_eq!(
+        stream
+            .prefetch_first_with_failure(Duration::from_millis(1), |error| handle.fail(error))
+            .await
+            .unwrap_err(),
+        error
+    );
+    let snapshot = handle.snapshot();
+    assert_eq!(snapshot.state, ToolConversationState::Failed);
+    assert_eq!(snapshot.report.failures().len(), 1);
+    assert_eq!(snapshot.report.failures()[0].error(), error);
 }
 
 struct FixtureAdaptor(Protocol);
@@ -922,6 +1072,8 @@ async fn visible_stream_returns_before_terminal_and_drop_cancels_without_a_conti
     );
     assert_eq!(report.snapshot().state, ToolConversationState::Failed);
     assert_eq!(report.snapshot().sent_rounds, 1);
+    assert_eq!(report.snapshot().report.successful_candidate_index(), None);
+    assert!(report.snapshot().report.failures().is_empty());
     assert_eq!(gate.released.load(Ordering::SeqCst), 1);
     finish.notify_one();
     upstream.await.unwrap();
@@ -1173,5 +1325,10 @@ async fn hidden_tool_after_visible_output_ends_the_stream_as_failure() {
     );
     assert_eq!(report.snapshot().state, ToolConversationState::Failed);
     assert_eq!(report.snapshot().sent_rounds, 1);
+    assert_eq!(report.snapshot().report.failures().len(), 1);
+    assert_eq!(
+        report.snapshot().report.failures()[0].error(),
+        UpstreamError::ProtocolError
+    );
     assert_eq!(gate.released.load(Ordering::SeqCst), 1);
 }

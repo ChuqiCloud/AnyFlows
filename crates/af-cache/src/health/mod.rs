@@ -10,11 +10,11 @@ use crate::{
 use scripts::{APPLY_EVENTS_SCRIPT, READ_STATES_SCRIPT};
 
 pub use types::{
-    HEALTH_PENALTY_SCALE, MAX_HEALTH_BATCH_SIZE, RedisHealthConfig, RedisHealthEvent,
-    RedisHealthFailure, RedisHealthSnapshot, RedisHealthTarget,
+    HEALTH_PENALTY_SCALE, HEALTH_SAMPLE_SCALE, MAX_HEALTH_BATCH_SIZE, RedisHealthConfig,
+    RedisHealthEvent, RedisHealthFailure, RedisHealthModel, RedisHealthSnapshot, RedisHealthTarget,
 };
 
-const STATE_FIELDS_PER_RESULT: usize = 4;
+const STATE_FIELDS_PER_RESULT: usize = 8;
 
 /// 使用 Redis 服务端时间原子维护渠道与凭据的共享健康状态。
 #[derive(Clone)]
@@ -22,10 +22,12 @@ pub struct RedisHealthStore {
     backend: Arc<RedisBackend>,
     key_prefix: Arc<str>,
     half_life_millis: i64,
+    outcome_half_life_millis: i64,
     transient_streak_window_millis: i64,
     state_ttl_millis: i64,
     breaker_threshold: u32,
     cooldown_millis: [i64; 3],
+    failure_backoff_millis: [i64; 2],
 }
 
 impl RedisHealthStore {
@@ -38,10 +40,12 @@ impl RedisHealthStore {
             backend: Arc::new(RedisBackend::connect(config.redis()).await?),
             key_prefix: Arc::from(key_prefix),
             half_life_millis: config.half_life_millis()?,
+            outcome_half_life_millis: config.outcome_half_life_millis()?,
             transient_streak_window_millis: config.transient_streak_window_millis()?,
             state_ttl_millis: config.state_ttl_millis()?,
             breaker_threshold: config.breaker_threshold(),
             cooldown_millis: config.cooldown_millis()?,
+            failure_backoff_millis: config.failure_backoff_millis()?,
         })
     }
 
@@ -67,7 +71,9 @@ impl RedisHealthStore {
                     .arg(READ_STATES_SCRIPT)
                     .arg(keys.len())
                     .arg(&keys)
-                    .arg(self.half_life_millis),
+                    .arg(self.half_life_millis)
+                    .arg(self.outcome_half_life_millis)
+                    .arg(2_500),
             )
             .await?;
         decode_snapshots(CacheOperation::HealthRead, targets, &values)
@@ -92,16 +98,22 @@ impl RedisHealthStore {
             .arg(&keys)
             .arg(self.half_life_millis)
             .arg(self.transient_streak_window_millis)
+            .arg(self.outcome_half_life_millis)
             .arg(self.state_ttl_millis)
             .arg(self.breaker_threshold)
             .arg(self.cooldown_millis[0])
             .arg(self.cooldown_millis[1])
-            .arg(self.cooldown_millis[2]);
+            .arg(self.cooldown_millis[2])
+            .arg(2_500)
+            .arg("0.3")
+            .arg(self.failure_backoff_millis[0])
+            .arg(self.failure_backoff_millis[1]);
         for event in events {
             command
                 .arg(if event.is_failure() { 1 } else { 0 })
                 .arg(event.penalty_micros())
-                .arg(if event.is_transient() { 1 } else { 0 });
+                .arg(if event.is_transient() { 1 } else { 0 })
+                .arg(event.latency_millis().min(3_600_000));
         }
         let values: Vec<i64> = self
             .backend
@@ -127,6 +139,22 @@ impl RedisHealthStore {
                     "{}:credential-shared:{}",
                     self.key_prefix,
                     credential_id.get()
+                )
+            }
+            RedisHealthTarget::ChannelModel(channel_id, model) => {
+                format!(
+                    "{}:channel:{}:model:{}",
+                    self.key_prefix,
+                    channel_id.get(),
+                    model.key_suffix()
+                )
+            }
+            RedisHealthTarget::CredentialModel(credential_id, model) => {
+                format!(
+                    "{}:credential:{}:model:{}",
+                    self.key_prefix,
+                    credential_id.get(),
+                    model.key_suffix()
                 )
             }
         };

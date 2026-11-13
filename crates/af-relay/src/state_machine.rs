@@ -337,6 +337,15 @@ impl RelayAttemptFailure {
         self.error
     }
 
+    /// 本次失败由本地策略或仿真保护终止，不应惩罚上游；其他尝试仍独立计分。
+    #[must_use]
+    pub fn request_aborted(&self) -> bool {
+        self.request_aborted
+            || self
+                .client_simulation()
+                .is_some_and(|simulation| simulation.result() == ClientSimulationResult::Failed)
+    }
+
     /// 返回原始 HTTP 响应携带的已校验 5xx 状态；非 HTTP 或非 5xx 故障为空。
     #[must_use]
     pub const fn server_status(&self) -> Option<UpstreamServerStatus> {
@@ -462,12 +471,9 @@ impl RelayAttemptReport {
     /// 本地 fail-closed 配置失败必须终止整个请求，不能退回其他渠道或用户分组。
     #[must_use]
     pub fn request_aborted(&self) -> bool {
-        self.failures.iter().any(|failure| {
-            failure.request_aborted
-                || failure
-                    .client_simulation()
-                    .is_some_and(|simulation| simulation.result() == ClientSimulationResult::Failed)
-        })
+        self.failures
+            .iter()
+            .any(RelayAttemptFailure::request_aborted)
     }
 
     /// 返回最终成功候选的安全诊断快照。
@@ -1767,6 +1773,43 @@ mod tests {
         assert_eq!(
             race_failure_action(&RelayError::ConcurrencyUnavailable, &report),
             FailureAction::RouteToNextCandidate,
+        );
+    }
+
+    #[test]
+    fn local_abort_does_not_mark_prior_upstream_failures_as_aborted() {
+        let prior = RelayAttemptFailure::new(
+            0,
+            UpstreamError::network(af_domain::NetworkFailureKind::ResponseBody),
+            Duration::from_millis(10),
+        );
+        let local = RelayAttemptFailure::new(
+            1,
+            UpstreamError::network(af_domain::NetworkFailureKind::Policy),
+            Duration::from_millis(1),
+        )
+        .abort_request();
+        let simulation =
+            RelayAttemptFailure::new(2, UpstreamError::ProtocolError, Duration::from_millis(1))
+                .with_client_simulation(Some(RelayClientSimulationAttempt::new(
+                    ClientSimulationProfile::AnthropicCliHeadersV1,
+                    ClientSimulationResult::Failed,
+                )));
+        let report = RelayAttemptReport::failed(vec![prior, local, simulation]);
+        assert!(report.request_aborted());
+        assert!(!report.failures()[0].request_aborted());
+        assert!(
+            report.failures()[1..]
+                .iter()
+                .all(RelayAttemptFailure::request_aborted)
+        );
+        assert_eq!(
+            report
+                .failures()
+                .iter()
+                .filter(|failure| !failure.request_aborted())
+                .count(),
+            1
         );
     }
 
