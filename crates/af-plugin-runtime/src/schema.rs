@@ -20,7 +20,7 @@ impl CompiledJsonSchema {
             || schema.get("$schema").is_some_and(|draft| {
                 draft.as_str() != Some("https://json-schema.org/draft/2020-12/schema")
             })
-            || schema_has_external_references(schema)
+            || schema_uses_unsupported_references(schema)
             || !schema_patterns_are_bounded(schema)
         {
             return Err(ContractValidationError::InvalidJsonSchema);
@@ -96,16 +96,18 @@ fn safe_pattern(pattern: &str) -> bool {
         .is_ok()
 }
 
-fn schema_has_external_references(schema: &Value) -> bool {
+fn schema_uses_unsupported_references(schema: &Value) -> bool {
     let Some(object) = schema.as_object() else {
         return false;
     };
-    if ["$ref", "$dynamicRef"].into_iter().any(|keyword| {
-        object
-            .get(keyword)
+    // Dynamic references are not implemented by the pinned validator, even
+    // when fragment-local. All remote references are rejected as well.
+    if object.contains_key("$dynamicRef")
+        || object
+            .get("$ref")
             .and_then(Value::as_str)
             .is_some_and(|reference| !reference.starts_with('#'))
-    }) {
+    {
         return true;
     }
 
@@ -115,11 +117,11 @@ fn schema_has_external_references(schema: &Value) -> bool {
             "$defs" | "definitions" | "properties" | "patternProperties" | "dependentSchemas" => {
                 child
                     .as_object()
-                    .is_some_and(|schemas| schemas.values().any(schema_has_external_references))
+                    .is_some_and(|schemas| schemas.values().any(schema_uses_unsupported_references))
             }
             "allOf" | "anyOf" | "oneOf" | "prefixItems" => child
                 .as_array()
-                .is_some_and(|schemas| schemas.iter().any(schema_has_external_references)),
+                .is_some_and(|schemas| schemas.iter().any(schema_uses_unsupported_references)),
             "additionalProperties"
             | "items"
             | "contains"
@@ -130,7 +132,7 @@ fn schema_has_external_references(schema: &Value) -> bool {
             | "if"
             | "then"
             | "else"
-            | "contentSchema" => schema_has_external_references(child),
+            | "contentSchema" => schema_uses_unsupported_references(child),
             _ => false,
         })
 }
@@ -174,6 +176,10 @@ mod tests {
                 &json!({ "$schema": "https://json-schema.org/draft/07/schema#", "type": "string" })
             )
             .err(),
+            Some(ContractValidationError::InvalidJsonSchema)
+        );
+        assert_eq!(
+            CompiledJsonSchema::compile(&json!({ "$dynamicRef": "#local" })).err(),
             Some(ContractValidationError::InvalidJsonSchema)
         );
         let literal_data = json!({ "type": "object", "properties": { "metadata": { "const": { "$ref": "literal data" } } } });
