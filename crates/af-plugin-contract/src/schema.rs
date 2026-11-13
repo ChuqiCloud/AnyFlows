@@ -12,7 +12,9 @@ pub fn schema_document() -> Value {
             { "$ref": "#/$defs/ExternalAccountProfile" },
             { "$ref": "#/$defs/ExternalBalanceSnapshot" },
             { "$ref": "#/$defs/ConnectorHealth" },
-            { "$ref": "#/$defs/ConnectorError" }
+            { "$ref": "#/$defs/ConnectorError" },
+            { "$ref": "#/$defs/CapabilityInvocation" },
+            { "$ref": "#/$defs/CapabilityResult" }
         ],
         "$defs": {
             "ContractVersion": {
@@ -42,7 +44,13 @@ pub fn schema_document() -> Value {
                     "version": { "type": "integer", "minimum": 1, "maximum": 65535 },
                     "access": { "enum": ["read", "write"] },
                     "sideEffect": { "enum": ["none", "external_read", "external_write"] },
-                    "writeSemantics": { "$ref": "#/$defs/ExternalWriteSemantics" }
+                    "writeSemantics": { "$ref": "#/$defs/ExternalWriteSemantics" },
+                    "inputSchema": { "type": "object" },
+                    "outputSchema": { "type": "object" }
+                },
+                "dependentRequired": {
+                    "inputSchema": ["outputSchema"],
+                    "outputSchema": ["inputSchema"]
                 },
                 "allOf": [
                     {
@@ -71,14 +79,29 @@ pub fn schema_document() -> Value {
                 "required": ["pluginId", "pluginVersion", "contractRange", "capabilities", "authenticationModes", "limits", "configSchema"],
                 "properties": {
                     "pluginId": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$", "maxLength": 128 },
-                    "displayName": { "type": "string", "minLength": 1, "maxLength": 128 },
+                    "displayName": { "type": "string", "maxLength": 128 },
                     "pluginVersion": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$", "maxLength": 128 },
                     "contractRange": { "$ref": "#/$defs/ContractVersionRange" },
-                    "capabilities": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/CapabilityDeclaration" } },
+                    "capabilities": { "type": "array", "minItems": 1, "maxItems": 128, "items": { "$ref": "#/$defs/CapabilityDeclaration" } },
                     "authenticationModes": { "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*$", "maxLength": 128 } },
                     "limits": { "$ref": "#/$defs/ConnectorLimits" },
                     "configSchema": { "type": "object" }
                 }
+            },
+            "CapabilityInvocation": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["capabilityVersion", "input"],
+                "properties": {
+                    "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                    "input": {}
+                }
+            },
+            "CapabilityResult": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["output"],
+                "properties": { "output": {} }
             },
             "ConnectorLimits": {
                 "type": "object",
@@ -232,6 +255,27 @@ pub fn openapi_document() -> Value {
                         "default": { "$ref": "#/components/responses/ConnectorError" }
                     }
                 }
+            },
+            "/v1/capabilities/{capabilityId}": {
+                "post": {
+                    "operationId": "invokeReadCapability",
+                    "summary": "Invoke one negotiated read capability using its declared input and output schemas",
+                    "parameters": [
+                        { "name": "capabilityId", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$", "minLength": 1, "maxLength": 128 } },
+                        common_parameters[0].clone(), common_parameters[1].clone(), common_parameters[2].clone()
+                    ],
+                    "requestBody": {
+                        "required": true,
+                        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CapabilityInvocation" } } }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Validated capability result",
+                            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CapabilityResult" } } }
+                        },
+                        "default": { "$ref": "#/components/responses/ConnectorError" }
+                    }
+                }
             }
         },
         "components": {
@@ -287,9 +331,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        CapabilityAccess, CapabilityDeclaration, CapabilityId, ConnectorError, ConnectorErrorCode,
-        ContractVersion, ContractVersionRange, ExternalAccountProfile, ExternalBalanceSnapshot,
-        PluginId, PluginManifest, PluginVersion, SideEffectClass,
+        CapabilityAccess, CapabilityDeclaration, CapabilityId, CapabilityInvocation,
+        CapabilityResult, ConnectorError, ConnectorErrorCode, ContractVersion,
+        ContractVersionRange, ExternalAccountProfile, ExternalBalanceSnapshot, PluginId,
+        PluginManifest, PluginVersion, SideEffectClass,
     };
 
     #[test]
@@ -324,6 +369,8 @@ mod tests {
                 access: CapabilityAccess::Read,
                 side_effect: SideEffectClass::ExternalRead,
                 write_semantics: None,
+                input_schema: None,
+                output_schema: None,
             }],
             authentication_modes: vec!["api_key".to_owned()],
             limits: crate::ConnectorLimits {
@@ -344,6 +391,13 @@ mod tests {
             observed_at_unix_ms: 1_800_000_000_000,
         };
         let error = ConnectorError::rate_limited(250);
+        let invocation = CapabilityInvocation {
+            capability_version: 1,
+            input: json!({ "query": "sample" }),
+        };
+        let result = CapabilityResult {
+            output: json!({ "items": ["sample"] }),
+        };
         let schema = schema_document();
 
         assert_schema_fields(
@@ -366,6 +420,20 @@ mod tests {
             "ConnectorError",
             &serde_json::to_value(error).unwrap(),
         );
+        assert_schema_fields(
+            &schema,
+            "CapabilityInvocation",
+            &serde_json::to_value(invocation).unwrap(),
+        );
+        assert_schema_fields(
+            &schema,
+            "CapabilityResult",
+            &serde_json::to_value(result).unwrap(),
+        );
+        assert_eq!(
+            schema["$defs"]["CapabilityDeclaration"]["dependentRequired"]["inputSchema"],
+            json!(["outputSchema"])
+        );
         assert_eq!(
             serde_json::to_value(ConnectorErrorCode::OutcomeUnknown).unwrap(),
             "outcome_unknown"
@@ -379,6 +447,7 @@ mod tests {
         assert_eq!(openapi["openapi"], "3.1.0");
         assert!(openapi["paths"]["/v1/manifest"]["get"].is_object());
         assert!(openapi["paths"]["/v1/accounts/{subject}/balance"]["get"].is_object());
+        assert!(openapi["paths"]["/v1/capabilities/{capabilityId}"]["post"].is_object());
         assert_openapi_refs_resolve(&openapi, &openapi);
         assert!(account.validate().is_ok());
         assert!(balance.validate().is_ok());

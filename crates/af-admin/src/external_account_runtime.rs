@@ -535,6 +535,12 @@ fn map_connector_error(error: ConnectorOperationError) -> ExternalAccountError {
     match error {
         ConnectorOperationError::CapabilityNotNegotiated
         | ConnectorOperationError::NotRegistered => ExternalAccountError::Unsupported,
+        ConnectorOperationError::Disabled
+        | ConnectorOperationError::PayloadTooLarge
+        | ConnectorOperationError::CapabilitySchemaMissing
+        | ConnectorOperationError::WriteCapabilityRequiresHostWorkflow => {
+            ExternalAccountError::Unavailable
+        }
         ConnectorOperationError::InvalidInvocation => ExternalAccountError::Internal,
         ConnectorOperationError::InvalidResponse => ExternalAccountError::Unavailable,
         ConnectorOperationError::Connector(error) => match error.code {
@@ -559,7 +565,10 @@ fn map_registry_error(error: ConnectorRegistryError) -> ExternalAccountError {
         ConnectorRegistryError::NotFound | ConnectorRegistryError::MissingCapability { .. } => {
             ExternalAccountError::Unsupported
         }
-        ConnectorRegistryError::Configuration(_) => ExternalAccountError::InvalidInput,
+        ConnectorRegistryError::Disabled => ExternalAccountError::Unavailable,
+        ConnectorRegistryError::Configuration(_) | ConnectorRegistryError::InvalidConfiguration => {
+            ExternalAccountError::InvalidInput
+        }
         _ => ExternalAccountError::Internal,
     }
 }
