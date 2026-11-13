@@ -74,6 +74,8 @@ dependencies = [
  "af-db",
  "af-domain",
  "af-httpclient",
+ "af-plugin-contract",
+ "af-plugin-runtime",
  "async-trait",
  "base64 0.22.1",
  "futures-util",
@@ -230,6 +232,7 @@ dependencies = [
  "url",
  "utoipa",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -261,6 +264,30 @@ dependencies = [
  "sha2 0.10.9",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "af-plugin-contract"
+version = "0.3.0-beta.10"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "af-plugin-runtime"
+version = "0.3.0-beta.10"
+dependencies = [
+ "af-httpclient",
+ "af-plugin-contract",
+ "async-trait",
+ "http 1.5.0",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "url",
+ "zeroize",
 ]
 
 [[package]]

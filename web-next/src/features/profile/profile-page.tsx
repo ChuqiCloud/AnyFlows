@@ -28,6 +28,7 @@ import type {
   UserProfileResponse,
 } from '@/lib/api/generated/types.gen'
 import { isValidProfilePassword, isValidProfileUsername } from './profile-form-model'
+import { ExternalAccountsCard } from './external-accounts-card'
 import {
   useChangeUserPassword,
   useConfirmUserEmailBinding,
@@ -1101,6 +1102,9 @@ export function ProfilePage({ section, onPasswordChanged }: ProfilePageProps) {
       {profileQuery.isPending ? <ProfileLoading /> : profileQuery.isError || !profile ? <ErrorPanel onRetry={() => void profileQuery.refetch()} /> : (
         <div className="flex flex-col gap-8">
           <ProfileCard profile={profile} roleLabel={roleLabel} onPasswordChanged={onPasswordChanged} />
+          <ProfileSection title={t('profile.sections.externalAccounts')}>
+            <ExternalAccountsCard />
+          </ProfileSection>
           <ProfileSection title={t('profile.sections.security')}>
             <div className="grid gap-4 xl:grid-cols-2"><TwoFactorCard /><PasskeyCard onPasswordChanged={onPasswordChanged} /></div>
           </ProfileSection>

@@ -358,6 +358,14 @@ pub(crate) enum ManagementError {
     MerchantServiceWatchLimitReached,
     /// Merchant service watch storage is unavailable.
     MerchantServiceWatchUnavailable,
+    ExternalAccountInvalidRequest,
+    ExternalAccountUnsupported,
+    ExternalAccountConflict,
+    ExternalAccountNotFound,
+    ExternalAccountAuthenticationRequired,
+    ExternalAccountUnavailable,
+    ExternalAccountRateLimited,
+    ExternalAccountLimitReached,
     /// 管理认证依赖发生内部故障。
     Internal,
 }
@@ -1648,6 +1656,62 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "merchant_service_watch_unavailable",
                     message: "Service watches unavailable",
+                },
+            ),
+            Self::ExternalAccountInvalidRequest => (
+                StatusCode::BAD_REQUEST,
+                ManagementErrorBody {
+                    code: "external_account_invalid_request",
+                    message: "External account request is invalid",
+                },
+            ),
+            Self::ExternalAccountUnsupported => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                ManagementErrorBody {
+                    code: "external_account_unsupported",
+                    message: "External account connector is unavailable",
+                },
+            ),
+            Self::ExternalAccountConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "external_account_conflict",
+                    message: "External account is already linked",
+                },
+            ),
+            Self::ExternalAccountNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "external_account_not_found",
+                    message: "External account was not found",
+                },
+            ),
+            Self::ExternalAccountAuthenticationRequired => (
+                StatusCode::UNAUTHORIZED,
+                ManagementErrorBody {
+                    code: "external_account_authentication_required",
+                    message: "External platform credential was rejected",
+                },
+            ),
+            Self::ExternalAccountUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "external_account_unavailable",
+                    message: "External account service is temporarily unavailable",
+                },
+            ),
+            Self::ExternalAccountRateLimited => (
+                StatusCode::TOO_MANY_REQUESTS,
+                ManagementErrorBody {
+                    code: "external_account_rate_limited",
+                    message: "External platform connector is busy",
+                },
+            ),
+            Self::ExternalAccountLimitReached => (
+                StatusCode::TOO_MANY_REQUESTS,
+                ManagementErrorBody {
+                    code: "external_account_limit_reached",
+                    message: "External account connection limit reached",
                 },
             ),
             Self::Internal => (
