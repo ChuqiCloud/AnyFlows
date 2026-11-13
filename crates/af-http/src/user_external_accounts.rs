@@ -60,7 +60,7 @@ pub fn build_user_external_account_router(
 pub(crate) struct LinkRequest {
     #[schema(min_length = 3, max_length = 128)]
     connector_id: String,
-    #[schema(min_length = 9, max_length = 2048, format = Uri)]
+    #[schema(min_length = 9, max_length = 2048)]
     base_url: String,
     #[schema(min_length = 1, max_length = 8192, write_only)]
     credential: String,
@@ -100,7 +100,7 @@ pub(crate) struct BalanceResponse {
     amount: Option<String>,
     unit: Option<String>,
     status: &'static str,
-    #[schema(description = "Unix epoch milliseconds")]
+    /// Unix epoch milliseconds.
     observed_at: i64,
 }
 
@@ -129,9 +129,9 @@ pub(crate) struct AccountResponse {
     external_subject: String,
     display_name: Option<String>,
     base_url: String,
-    #[schema(description = "Unix epoch seconds")]
+    /// Unix epoch seconds.
     created_at: i64,
-    #[schema(description = "Unix epoch seconds")]
+    /// Unix epoch seconds.
     updated_at: i64,
     latest_balance: Option<BalanceResponse>,
 }
@@ -179,7 +179,7 @@ impl From<ExternalAccountBalancePage> for BalanceHistoryResponse {
 
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
-struct BalanceHistoryQuery {
+pub(crate) struct BalanceHistoryQuery {
     limit: Option<u32>,
 }
 
