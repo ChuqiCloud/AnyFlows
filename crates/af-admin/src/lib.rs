@@ -32,6 +32,15 @@ pub use personal_access_token::{
     personal_access_token_payload_digest,
 };
 mod credential_models;
+mod external_account;
+pub use external_account::{
+    ExternalAccount, ExternalAccountBalancePage, ExternalAccountBalanceSnapshot,
+    ExternalAccountBalanceStatus, ExternalAccountCredential, ExternalAccountError,
+    ExternalAccountFuture, ExternalAccountLinkCommand, SupportedExternalConnector,
+    UserExternalAccountService,
+};
+mod external_account_runtime;
+pub use external_account_runtime::DatabaseUserExternalAccountService;
 mod upstream_usage;
 pub use credential_models::{
     CredentialModelError, CredentialModelFuture, CredentialModelItem, CredentialModelService,

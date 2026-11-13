@@ -2940,6 +2940,22 @@ impl Bootstrap<Supervised> {
             Some(http_extensions),
             Some(payment_webhook_routes),
         );
+        let external_account_repository = af_db::ExternalAccountConnectionRepository::new(
+            self.stage.infrastructure.infrastructure.database.clone(),
+            Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+        );
+        let external_account_service: Arc<dyn af_admin::UserExternalAccountService> = Arc::new(
+            af_admin::DatabaseUserExternalAccountService::new(
+                external_account_repository,
+                self.stage.infrastructure.system_secret_cipher.clone(),
+                self.stage.upstream_clients.clone(),
+            )
+            .expect("内置平台账户连接器必须有效"),
+        );
+        let router = router.merge(af_http::build_user_external_account_router(
+            external_account_service,
+            Arc::clone(&self.stage.infrastructure.session_authenticator),
+        ));
         let public_status = af_db::PublicServiceStatusRepository::new(
             self.stage.infrastructure.infrastructure.database.clone(),
             Duration::from_secs(self.config.auth().lookup_timeout_secs()),

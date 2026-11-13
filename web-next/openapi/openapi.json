@@ -5476,6 +5476,463 @@
         ]
       }
     },
+    "/api/account/external-connectors": {
+      "get": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "列出可绑定的外部账户连接器",
+        "operationId": "listUserExternalConnectors",
+        "responses": {
+          "200": {
+            "description": "内置只读连接器目录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserExternalConnectorResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "external_accounts:read"
+        ]
+      }
+    },
+    "/api/account/external-accounts": {
+      "get": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "读取当前用户绑定的外部账户",
+        "operationId": "listUserExternalAccounts",
+        "responses": {
+          "200": {
+            "description": "当前用户外部账户绑定",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserExternalAccountListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "外部账户存储暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "external_accounts:read"
+        ]
+      },
+      "post": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "验证并绑定外部平台账户",
+        "operationId": "linkUserExternalAccount",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserExternalAccountLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "外部账户已验证并绑定",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserExternalAccountResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求字段无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效或外部凭据被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "外部账户已绑定",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "连接器或能力不受支持",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "平台连接器繁忙或已达到绑定上限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "外部平台暂时不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "external_accounts:write"
+        ]
+      }
+    },
+    "/api/account/external-accounts/{id}/refresh": {
+      "post": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "刷新外部账户资料和余额快照",
+        "operationId": "refreshUserExternalAccount",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "当前用户外部账户连接 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "新的外部余额快照",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserExternalAccountResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效或外部凭据已失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "外部账户不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "平台连接器当前繁忙",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "外部平台暂时不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "external_accounts:write"
+        ]
+      }
+    },
+    "/api/account/external-accounts/{id}": {
+      "delete": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "解除当前用户的外部账户绑定",
+        "operationId": "unlinkUserExternalAccount",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "当前用户外部账户连接 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "外部账户已解除绑定"
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "外部账户不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "外部账户存储暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "external_accounts:write"
+        ]
+      }
+    },
+    "/api/account/external-accounts/{id}/balances": {
+      "get": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "读取外部平台原生单位余额历史",
+        "operationId": "listUserExternalAccountBalances",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "当前用户外部账户连接 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "返回记录数，默认 20，最大 100",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "余额观测历史，不影响 AnyFlows 钱包",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserExternalAccountBalanceHistoryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "外部账户不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "外部账户存储暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "external_accounts:read"
+        ]
+      }
+    },
     "/api/account/wallet": {
       "get": {
         "tags": [
@@ -43488,6 +43945,20 @@
           "suffix"
         ]
       },
+      "BalanceHistoryQuery": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "ClientProfileBehaviorSchema": {
         "type": "string",
         "enum": [
@@ -44634,6 +45105,14 @@
               "merchant_service_watch_not_found",
               "merchant_service_watch_limit_reached",
               "merchant_service_watch_unavailable",
+              "external_account_invalid_request",
+              "external_account_unsupported",
+              "external_account_conflict",
+              "external_account_not_found",
+              "external_account_authentication_required",
+              "external_account_unavailable",
+              "external_account_rate_limited",
+              "external_account_limit_reached",
               "user_conflict",
               "organization_not_found",
               "organization_credit_invalid_request",
@@ -51202,6 +51681,174 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserExternalAccountBalanceHistoryResponse": {
+        "type": "object",
+        "required": [
+          "connectionId",
+          "items"
+        ],
+        "properties": {
+          "connectionId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserExternalAccountBalanceResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserExternalAccountBalanceResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "observedAt"
+        ],
+        "properties": {
+          "amount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "observedAt": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix epoch milliseconds."
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserExternalAccountLinkRequest": {
+        "type": "object",
+        "required": [
+          "connector_id",
+          "base_url",
+          "credential"
+        ],
+        "properties": {
+          "connector_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 3
+          },
+          "base_url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 9
+          },
+          "credential": {
+            "type": "string",
+            "writeOnly": true,
+            "maxLength": 8192,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserExternalAccountListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserExternalAccountResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserExternalAccountResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "connectorId",
+          "externalSubject",
+          "baseUrl",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "connectorId": {
+            "type": "string"
+          },
+          "externalSubject": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix epoch seconds."
+          },
+          "updatedAt": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix epoch seconds."
+          },
+          "latestBalance": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UserExternalAccountBalanceResponse"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserExternalConnectorResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "displayName",
+          "authenticationModes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "authenticationModes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": false

@@ -181,6 +181,16 @@ mod email_settings;
 mod email_settings_tests;
 mod entity;
 mod error;
+mod external_account_connection;
+#[cfg(test)]
+mod external_account_connection_tests;
+pub use external_account_connection::{
+    ExternalAccountBalanceSnapshotRecord, ExternalAccountBalanceSnapshotWrite,
+    ExternalAccountConnectionCreate, ExternalAccountConnectionRecord,
+    ExternalAccountConnectionRepository, ExternalAccountInitialBalanceSnapshot,
+    ExternalAccountRepositoryError, ExternalAccountSecretRecord, ExternalBalanceStatus,
+    MAX_EXTERNAL_ACCOUNT_CONNECTIONS, MAX_EXTERNAL_BALANCE_SNAPSHOTS,
+};
 mod group_key_access;
 #[cfg(test)]
 mod group_key_access_tests;

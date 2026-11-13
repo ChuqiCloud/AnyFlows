@@ -7952,8 +7952,49 @@
     "subtitle": "管理账户信息、登录方式和邮件通知。",
     "sections": {
       "account": "账户",
+      "externalAccounts": "外部平台账户",
       "security": "登录安全",
       "notifications": "通知"
+    },
+    "externalAccounts": {
+      "title": "已关联的平台账户",
+      "subtitle": "验证并只读查看你在其他平台的账户资料与余额记录，每个关联账户保留最近 100 条余额快照。",
+      "walletHint": "平台余额仅作为独立快照展示，不会并入 AnyFlows 钱包，也不会触发跨平台扣款或充值。",
+      "platform": "平台",
+      "baseUrl": "平台地址",
+      "credential": "账户访问令牌",
+      "safetyHint": "NewAPI 令牌需具备 profile:read 权限；Sub2API 使用已授权的 Bearer 令牌。不要填写模型 API Key 或账户密码。令牌会加密保存，只用于验证身份和读取平台资料与余额。",
+      "link": "验证并关联",
+      "linked": "平台账户已关联。",
+      "empty": "尚未关联平台账户。",
+      "noConnectors": "当前没有可用的平台连接器。",
+      "connectorsError": "无法读取可用平台列表。",
+      "accountsError": "无法读取关联的平台账户。",
+      "noBalance": "暂无余额快照",
+      "linkedAt": "关联于 {{value}}",
+      "observedAt": "余额读取时间：{{value}}",
+      "refresh": "刷新快照",
+      "showHistory": "查看余额记录",
+      "hideHistory": "收起记录",
+      "history": "余额快照历史",
+      "historyError": "无法读取余额记录。",
+      "noHistory": "暂无历史快照。",
+      "unlink": "解除关联",
+      "unlinkConfirm": "解除后将停止读取此平台账户。已记录的余额快照会保留。",
+      "balanceStatus": {
+        "available": "可用",
+        "unavailable": "暂不可用",
+        "authentication_required": "令牌需更新"
+      },
+      "errors": {
+        "authentication": "平台拒绝了该令牌，请检查令牌是否有效且具有读取账户资料的权限。",
+        "conflict": "此平台账户已关联，或令牌对应的账户已发生变化。",
+        "unavailable": "平台暂时无法访问，请稍后重试。",
+        "rateLimited": "连接器当前繁忙，请稍后重试。",
+        "limitReached": "已达到外部平台账户绑定数量上限。",
+        "unsupported": "此平台或所需读取能力当前不可用。",
+        "generic": "操作未能完成，请检查平台地址和访问令牌后重试。"
+      }
     },
     "profile": {
       "title": "个人资料",

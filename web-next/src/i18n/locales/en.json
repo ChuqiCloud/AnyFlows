@@ -7954,8 +7954,49 @@
     "subtitle": "Manage your account details, sign-in credentials, and email notification preferences.",
     "sections": {
       "account": "Account",
+      "externalAccounts": "External platform accounts",
       "security": "Sign-in security",
       "notifications": "Notifications"
+    },
+    "externalAccounts": {
+      "title": "Linked platform accounts",
+      "subtitle": "Verify and view your profile and balance records on other platforms. The latest 100 balance snapshots are retained per linked account.",
+      "walletHint": "Platform balances are independent snapshots. They are not added to your AnyFlows wallet and do not trigger cross-platform charges or top-ups.",
+      "platform": "Platform",
+      "baseUrl": "Platform URL",
+      "credential": "Account access token",
+      "safetyHint": "NewAPI tokens need the profile:read permission; for Sub2API, use an already authorized bearer token. Never enter a model API key or account password. The token is encrypted at rest and only used to verify your identity and read platform profile and balance data.",
+      "link": "Verify and link",
+      "linked": "Platform account linked.",
+      "empty": "No platform accounts are linked.",
+      "noConnectors": "No platform connectors are currently available.",
+      "connectorsError": "Available platforms could not be loaded.",
+      "accountsError": "Linked platform accounts could not be loaded.",
+      "noBalance": "No balance snapshot",
+      "linkedAt": "Linked {{value}}",
+      "observedAt": "Balance read {{value}}",
+      "refresh": "Refresh snapshot",
+      "showHistory": "View balance history",
+      "hideHistory": "Hide history",
+      "history": "Balance snapshot history",
+      "historyError": "Balance history could not be loaded.",
+      "noHistory": "No historical snapshots yet.",
+      "unlink": "Unlink",
+      "unlinkConfirm": "Unlinking stops reads from this platform account. Existing balance snapshots are retained.",
+      "balanceStatus": {
+        "available": "Available",
+        "unavailable": "Temporarily unavailable",
+        "authentication_required": "Token needs updating"
+      },
+      "errors": {
+        "authentication": "The platform rejected this token. Check that it is valid and can read account profile data.",
+        "conflict": "This platform account is already linked, or the token now identifies a different account.",
+        "unavailable": "The platform is temporarily unreachable. Try again shortly.",
+        "rateLimited": "The platform connector is busy. Try again shortly.",
+        "limitReached": "The maximum number of linked platform accounts has been reached.",
+        "unsupported": "This platform or the required read capability is currently unavailable.",
+        "generic": "The operation could not be completed. Check the platform URL and access token, then try again."
+      }
     },
     "profile": {
       "title": "Profile",

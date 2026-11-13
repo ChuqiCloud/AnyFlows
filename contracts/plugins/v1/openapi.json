@@ -370,6 +370,11 @@
           "contractRange": {
             "$ref": "#/components/schemas/ContractVersionRange"
           },
+          "displayName": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
           "limits": {
             "$ref": "#/components/schemas/ConnectorLimits"
           },
