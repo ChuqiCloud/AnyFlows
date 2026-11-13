@@ -6,7 +6,7 @@ use af_plugin_contract::{
     ExternalBalanceSnapshot, PluginId, PluginManifest, PluginVersion, SideEffectClass,
 };
 use async_trait::async_trait;
-use serde_json::{Number, Value};
+use serde_json::Value;
 
 use crate::{
     ACCOUNT_BALANCE_READ, ACCOUNT_PROFILE_READ, ConnectorInvocation, ConnectorRegistration,

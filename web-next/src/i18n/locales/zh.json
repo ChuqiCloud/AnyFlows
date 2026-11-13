@@ -7963,7 +7963,7 @@
       "platform": "平台",
       "baseUrl": "平台地址",
       "credential": "账户访问令牌",
-      "safetyHint": "使用有账户资料读取权限的平台访问令牌，不要填写模型 API Key 或账户密码。令牌会加密保存，只用于验证身份和读取平台资料与余额。",
+      "safetyHint": "NewAPI 令牌需具备 profile:read 权限；Sub2API 使用已授权的 Bearer 令牌。不要填写模型 API Key 或账户密码。令牌会加密保存，只用于验证身份和读取平台资料与余额。",
       "link": "验证并关联",
       "linked": "平台账户已关联。",
       "empty": "尚未关联平台账户。",

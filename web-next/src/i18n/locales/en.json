@@ -7965,7 +7965,7 @@
       "platform": "Platform",
       "baseUrl": "Platform URL",
       "credential": "Account access token",
-      "safetyHint": "Use a platform access token with permission to read account profile data. Never enter a model API key or account password. The token is encrypted at rest and only used to verify your identity and read platform profile and balance data.",
+      "safetyHint": "NewAPI tokens need the profile:read permission; for Sub2API, use an already authorized bearer token. Never enter a model API key or account password. The token is encrypted at rest and only used to verify your identity and read platform profile and balance data.",
       "link": "Verify and link",
       "linked": "Platform account linked.",
       "empty": "No platform accounts are linked.",

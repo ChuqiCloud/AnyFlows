@@ -7,9 +7,9 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use af_httpclient::{HeaderMap, HeaderValue, Method, PooledClient, StatusCode};
 use af_plugin_contract::{
-    CapabilityDeclaration, CapabilityId, CapabilityRequirement, ConnectorError, ContractVersion,
-    ExternalAccountProfile, ExternalBalanceSnapshot, InvocationMetadata, PluginId, PluginManifest,
-    PluginVersion,
+    CapabilityDeclaration, CapabilityId, CapabilityRequirement, ConnectorError, ConnectorErrorCode,
+    ContractVersion, ExternalAccountProfile, ExternalBalanceSnapshot, InvocationMetadata, PluginId,
+    PluginManifest, PluginVersion,
 };
 use async_trait::async_trait;
 use serde_json::Value;
