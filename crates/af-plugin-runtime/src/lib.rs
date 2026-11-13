@@ -3,21 +3,33 @@
 //! This crate is not a sandbox or dynamic plugin loader. Only reviewed
 //! implementations shipped with the host may be registered here.
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    io::{self, Write},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use af_httpclient::{HeaderMap, HeaderValue, Method, PooledClient, StatusCode};
 use af_plugin_contract::{
-    CapabilityDeclaration, CapabilityId, CapabilityRequirement, ConnectorError, ConnectorErrorCode,
-    ContractVersion, ExternalAccountProfile, ExternalBalanceSnapshot, InvocationMetadata, PluginId,
-    PluginManifest, PluginVersion,
+    CapabilityAccess, CapabilityDeclaration, CapabilityId, CapabilityInvocation,
+    CapabilityRequirement, CapabilityResult, ConnectorError, ConnectorErrorCode, ContractVersion,
+    ExternalAccountProfile, ExternalBalanceSnapshot, InvocationMetadata, PluginId, PluginManifest,
+    PluginVersion, SideEffectClass,
 };
 use async_trait::async_trait;
 use serde_json::Value;
-use tokio::sync::Semaphore;
+use tokio::{sync::Semaphore, time::timeout};
 use zeroize::Zeroizing;
 
 mod new_api;
+mod schema;
 mod sub2api;
+
+use crate::schema::CompiledJsonSchema;
 
 pub use new_api::{NewApiConnector, new_api_registration};
 pub use sub2api::{Sub2ApiConnector, sub2api_registration};
@@ -48,6 +60,101 @@ pub struct ConnectorInvocation {
     client: PooledClient,
 }
 
+/// Host-supplied context for a generic JSON capability. It has no URL, HTTP
+/// client, or credential fields, so pure and local capabilities need no URL.
+#[derive(Clone)]
+pub struct CapabilityExecutionContext {
+    connection_id: String,
+    metadata: InvocationMetadata,
+    public_config: Value,
+    max_response_bytes: u32,
+}
+
+impl CapabilityExecutionContext {
+    pub fn new(
+        connection_id: String,
+        metadata: InvocationMetadata,
+        public_config: Value,
+        max_response_bytes: u32,
+    ) -> Result<Self, ConnectorOperationError> {
+        if connection_id.is_empty()
+            || connection_id.len() > 128
+            || metadata.validate().is_err()
+            || !public_config.is_object()
+            || max_response_bytes == 0
+            || max_response_bytes > 16 * 1024 * 1024
+        {
+            return Err(ConnectorOperationError::InvalidInvocation);
+        }
+        Ok(Self {
+            connection_id,
+            metadata,
+            public_config,
+            max_response_bytes,
+        })
+    }
+}
+
+impl std::fmt::Debug for CapabilityExecutionContext {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CapabilityExecutionContext")
+            .field("connection_id", &self.connection_id)
+            .field("metadata", &self.metadata)
+            .field("public_config", &"<redacted>")
+            .field("max_response_bytes", &self.max_response_bytes)
+            .finish()
+    }
+}
+
+/// Least-authority context exposed to generic capability handlers.
+///
+/// This type intentionally exposes no credential, HTTP client, database handle,
+/// or host service. Generic handlers are trusted in-process transformations;
+/// this is not yet a process-isolation boundary.
+#[derive(Clone)]
+pub struct CapabilityContext<'a> {
+    connection_id: &'a str,
+    metadata: &'a InvocationMetadata,
+    public_config: &'a Value,
+}
+
+impl<'a> CapabilityContext<'a> {
+    fn from_execution_context(invocation: &'a CapabilityExecutionContext) -> Self {
+        Self {
+            connection_id: &invocation.connection_id,
+            metadata: &invocation.metadata,
+            public_config: &invocation.public_config,
+        }
+    }
+
+    #[must_use]
+    pub fn connection_id(&self) -> &str {
+        self.connection_id
+    }
+
+    #[must_use]
+    pub fn metadata(&self) -> &InvocationMetadata {
+        self.metadata
+    }
+
+    #[must_use]
+    pub fn public_config(&self) -> &Value {
+        self.public_config
+    }
+}
+
+impl std::fmt::Debug for CapabilityContext<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CapabilityContext")
+            .field("connection_id", &self.connection_id)
+            .field("metadata", &self.metadata)
+            .field("public_config", &"<redacted>")
+            .finish()
+    }
+}
+
 impl std::fmt::Debug for ConnectorInvocation {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -74,6 +181,7 @@ impl ConnectorInvocation {
             || connection_id.len() > 128
             || metadata.validate().is_err()
             || !public_config.is_object()
+            || public_config.get("baseUrl").and_then(Value::as_str) != Some(base_url.as_str())
             || !valid_public_base_url(&base_url)
             || max_response_bytes == 0
             || max_response_bytes > 16 * 1024 * 1024
@@ -196,12 +304,29 @@ pub trait ExternalBalanceReader: Send + Sync {
     ) -> Result<ExternalBalanceSnapshot, ConnectorError>;
 }
 
+/// Handler for an explicitly declared, host-authorized read capability.
+///
+/// Generic handlers receive JSON data only: they cannot access host services,
+/// credentials, or the HTTP client. Capabilities with external writes must use
+/// a dedicated host-controlled workflow instead.
+#[async_trait]
+pub trait CapabilityHandler: Send + Sync {
+    fn capability_id(&self) -> &CapabilityId;
+
+    async fn invoke(
+        &self,
+        invocation: &CapabilityContext<'_>,
+        input: Value,
+    ) -> Result<Value, ConnectorError>;
+}
+
 /// Implementations supplied only for capabilities advertised by the connector.
 pub struct ConnectorRegistration {
     connector: Arc<dyn PlatformConnector>,
     authenticator: Option<Arc<dyn ExternalAccountAuthenticator>>,
     account_profile_reader: Option<Arc<dyn ExternalAccountProfileReader>>,
     balance_reader: Option<Arc<dyn ExternalBalanceReader>>,
+    capability_handlers: Vec<Arc<dyn CapabilityHandler>>,
 }
 
 impl ConnectorRegistration {
@@ -212,6 +337,7 @@ impl ConnectorRegistration {
             authenticator: None,
             account_profile_reader: None,
             balance_reader: None,
+            capability_handlers: Vec::new(),
         }
     }
 
@@ -238,26 +364,45 @@ impl ConnectorRegistration {
         self.balance_reader = Some(reader);
         self
     }
+
+    #[must_use]
+    pub fn with_capability_handler(mut self, handler: Arc<dyn CapabilityHandler>) -> Self {
+        self.capability_handlers.push(handler);
+        self
+    }
 }
 
 struct RegisteredConnector {
     connector: Arc<dyn PlatformConnector>,
+    config_validator: CompiledJsonSchema,
+    capability_validators: BTreeMap<CapabilityId, (CompiledJsonSchema, CompiledJsonSchema)>,
     concurrency: Arc<Semaphore>,
     authenticator: Option<Arc<dyn ExternalAccountAuthenticator>>,
     account_profile_reader: Option<Arc<dyn ExternalAccountProfileReader>>,
     balance_reader: Option<Arc<dyn ExternalBalanceReader>>,
+    capability_handlers: BTreeMap<CapabilityId, Arc<dyn CapabilityHandler>>,
+    enabled: AtomicBool,
 }
 
 /// Startup registry for compile-time registered connectors.
-#[derive(Default)]
 pub struct ConnectorRegistry {
     connectors: BTreeMap<PluginId, RegisteredConnector>,
+    identity: Arc<()>,
+}
+
+impl Default for ConnectorRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ConnectorRegistry {
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            connectors: BTreeMap::new(),
+            identity: Arc::new(()),
+        }
     }
 
     pub fn register(
@@ -271,6 +416,8 @@ impl ConnectorRegistry {
         if self.connectors.contains_key(&manifest.plugin_id) {
             return Err(ConnectorRegistryError::DuplicatePlugin);
         }
+        let config_validator = CompiledJsonSchema::compile(&manifest.config_schema)
+            .map_err(|_| ConnectorRegistryError::InvalidManifest)?;
 
         let declares_profile = manifest
             .capabilities
@@ -296,15 +443,85 @@ impl ConnectorRegistry {
             });
         }
 
+        let mut capability_handlers = BTreeMap::new();
+        let mut capability_validators = BTreeMap::new();
+        for handler in registration.capability_handlers {
+            let capability_id = handler.capability_id().clone();
+            if matches!(
+                capability_id.as_str(),
+                ACCOUNT_PROFILE_READ | ACCOUNT_BALANCE_READ
+            ) || !manifest
+                .capabilities
+                .iter()
+                .any(|capability| capability.id == capability_id)
+            {
+                return Err(ConnectorRegistryError::CapabilityHandlerMismatch {
+                    capability: capability_id.clone(),
+                });
+            }
+            let declaration = manifest
+                .capabilities
+                .iter()
+                .find(|capability| capability.id == capability_id)
+                .expect("manifest capability was checked above");
+            if declaration.input_schema.is_none()
+                || declaration.output_schema.is_none()
+                || declaration.access != CapabilityAccess::Read
+                || declaration.side_effect == SideEffectClass::ExternalWrite
+            {
+                return Err(ConnectorRegistryError::CapabilityHandlerMismatch {
+                    capability: capability_id,
+                });
+            }
+            let input_validator = CompiledJsonSchema::compile(
+                declaration.input_schema.as_ref().expect("checked above"),
+            )
+            .map_err(|_| ConnectorRegistryError::InvalidManifest)?;
+            let output_validator = CompiledJsonSchema::compile(
+                declaration.output_schema.as_ref().expect("checked above"),
+            )
+            .map_err(|_| ConnectorRegistryError::InvalidManifest)?;
+            capability_validators
+                .insert(capability_id.clone(), (input_validator, output_validator));
+            if capability_handlers
+                .insert(capability_id.clone(), handler)
+                .is_some()
+            {
+                return Err(ConnectorRegistryError::CapabilityHandlerMismatch {
+                    capability: capability_id,
+                });
+            }
+        }
+
+        for declaration in &manifest.capabilities {
+            let implemented = match declaration.id.as_str() {
+                ACCOUNT_PROFILE_READ => {
+                    registration.authenticator.is_some()
+                        && registration.account_profile_reader.is_some()
+                }
+                ACCOUNT_BALANCE_READ => registration.balance_reader.is_some(),
+                _ => capability_handlers.contains_key(&declaration.id),
+            };
+            if !implemented {
+                return Err(ConnectorRegistryError::CapabilityHandlerMismatch {
+                    capability: declaration.id.clone(),
+                });
+            }
+        }
+
         let max_concurrency = manifest.limits.max_concurrency;
         self.connectors.insert(
             manifest.plugin_id.clone(),
             RegisteredConnector {
                 connector: registration.connector,
+                config_validator,
+                capability_validators,
                 concurrency: Arc::new(Semaphore::new(usize::from(max_concurrency))),
                 authenticator: registration.authenticator,
                 account_profile_reader: registration.account_profile_reader,
                 balance_reader: registration.balance_reader,
+                capability_handlers,
+                enabled: AtomicBool::new(true),
             },
         );
         Ok(())
@@ -327,6 +544,28 @@ impl ConnectorRegistry {
             .ok_or(ConnectorRegistryError::NotFound)
     }
 
+    /// Change the activation state of a registered connector. This affects
+    /// future operations immediately and does not mutate its immutable manifest.
+    pub fn set_enabled(
+        &self,
+        plugin_id: &PluginId,
+        enabled: bool,
+    ) -> Result<(), ConnectorRegistryError> {
+        let connector = self
+            .connectors
+            .get(plugin_id)
+            .ok_or(ConnectorRegistryError::NotFound)?;
+        connector.enabled.store(enabled, Ordering::Release);
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn is_enabled(&self, plugin_id: &PluginId) -> bool {
+        self.connectors
+            .get(plugin_id)
+            .is_some_and(|connector| connector.enabled.load(Ordering::Acquire))
+    }
+
     #[must_use]
     pub fn manifests(&self) -> Vec<PluginManifest> {
         self.connectors
@@ -335,6 +574,8 @@ impl ConnectorRegistry {
             .collect()
     }
 
+    /// Negotiate runtime compatibility for the capabilities selected by the
+    /// trusted host. This does not authorize a user or connection by itself.
     pub fn negotiate(
         &self,
         plugin_id: &PluginId,
@@ -345,6 +586,7 @@ impl ConnectorRegistry {
             .connectors
             .get(plugin_id)
             .ok_or(ConnectorRegistryError::NotFound)?;
+        ensure_enabled(registration)?;
         let manifest = registration.connector.manifest();
         if !manifest.contract_range.contains(host_contract) {
             return Err(ConnectorRegistryError::IncompatibleContract);
@@ -352,15 +594,17 @@ impl ConnectorRegistry {
 
         let mut capabilities = Vec::with_capacity(requirements.len());
         let mut skipped_optional = Vec::new();
+        let mut requested_ids = BTreeSet::new();
         for requirement in requirements {
+            if !requested_ids.insert(requirement.id().clone()) {
+                return Err(ConnectorRegistryError::DuplicateCapabilityRequirement {
+                    capability: requirement.id().clone(),
+                });
+            }
             let declaration = manifest.capabilities.iter().find(|capability| {
                 capability.id == *requirement.id() && requirement.accepts(capability.version)
             });
-            let executable = match requirement.id().as_str() {
-                ACCOUNT_PROFILE_READ => registration.account_profile_reader.is_some(),
-                ACCOUNT_BALANCE_READ => registration.balance_reader.is_some(),
-                _ => false,
-            };
+            let executable = capability_is_executable(registration, requirement.id().as_str());
             let Some(declaration) = declaration.filter(|_| executable) else {
                 if requirement.required() {
                     return Err(ConnectorRegistryError::MissingCapability {
@@ -374,6 +618,7 @@ impl ConnectorRegistry {
         }
 
         Ok(NegotiatedConnector {
+            registry_identity: Arc::clone(&self.identity),
             plugin_id: manifest.plugin_id.clone(),
             plugin_version: manifest.plugin_version.clone(),
             contract_version: host_contract,
@@ -387,9 +632,15 @@ impl ConnectorRegistry {
         plugin_id: &PluginId,
         config: &Value,
     ) -> Result<(), ConnectorRegistryError> {
-        self.connectors
+        let connector = self
+            .connectors
             .get(plugin_id)
-            .ok_or(ConnectorRegistryError::NotFound)?
+            .ok_or(ConnectorRegistryError::NotFound)?;
+        connector
+            .config_validator
+            .validate(config)
+            .map_err(|_| ConnectorRegistryError::InvalidConfiguration)?;
+        connector
             .connector
             .validate_config(config)
             .map_err(ConnectorRegistryError::Configuration)
@@ -402,7 +653,7 @@ impl ConnectorRegistry {
         external_subject: &str,
         credential: &ExternalPlatformCredential,
     ) -> Result<ExternalAccountProfile, ConnectorOperationError> {
-        require_negotiated_capability(negotiated, ACCOUNT_PROFILE_READ)?;
+        require_negotiated_capability(self, negotiated, ACCOUNT_PROFILE_READ)?;
         let connector = self
             .connectors
             .get(&negotiated.plugin_id)
@@ -412,14 +663,22 @@ impl ConnectorRegistry {
             .clone()
             .try_acquire_owned()
             .map_err(|_| rate_limited_connector_error())?;
+        ensure_enabled_for_operation(connector)?;
+        validate_invocation(connector, invocation)?;
         let reader = connector
             .account_profile_reader
             .as_ref()
             .ok_or(ConnectorOperationError::NotRegistered)?;
-        let profile = reader
-            .read_profile(invocation, external_subject, credential)
-            .await
-            .map_err(ConnectorOperationError::Connector)?;
+        let profile = timeout(
+            operation_timeout(
+                invocation,
+                connector.connector.manifest().limits.request_timeout_ms,
+            )?,
+            reader.read_profile(invocation, external_subject, credential),
+        )
+        .await
+        .map_err(|_| operation_timeout_error(false))?
+        .map_err(ConnectorOperationError::Connector)?;
         profile
             .validate()
             .map_err(|_| ConnectorOperationError::InvalidResponse)?;
@@ -432,7 +691,7 @@ impl ConnectorRegistry {
         invocation: &ConnectorInvocation,
         credential: &ExternalPlatformCredential,
     ) -> Result<ExternalAccountProfile, ConnectorOperationError> {
-        require_negotiated_capability(negotiated, ACCOUNT_PROFILE_READ)?;
+        require_negotiated_capability(self, negotiated, ACCOUNT_PROFILE_READ)?;
         let connector = self
             .connectors
             .get(&negotiated.plugin_id)
@@ -442,14 +701,22 @@ impl ConnectorRegistry {
             .clone()
             .try_acquire_owned()
             .map_err(|_| rate_limited_connector_error())?;
+        ensure_enabled_for_operation(connector)?;
+        validate_invocation(connector, invocation)?;
         let authenticator = connector
             .authenticator
             .as_ref()
             .ok_or(ConnectorOperationError::NotRegistered)?;
-        let profile = authenticator
-            .authenticate(invocation, credential)
-            .await
-            .map_err(ConnectorOperationError::Connector)?;
+        let profile = timeout(
+            operation_timeout(
+                invocation,
+                connector.connector.manifest().limits.request_timeout_ms,
+            )?,
+            authenticator.authenticate(invocation, credential),
+        )
+        .await
+        .map_err(|_| operation_timeout_error(false))?
+        .map_err(ConnectorOperationError::Connector)?;
         profile
             .validate()
             .map_err(|_| ConnectorOperationError::InvalidResponse)?;
@@ -463,7 +730,7 @@ impl ConnectorRegistry {
         external_subject: &str,
         credential: &ExternalPlatformCredential,
     ) -> Result<ExternalBalanceSnapshot, ConnectorOperationError> {
-        require_negotiated_capability(negotiated, ACCOUNT_BALANCE_READ)?;
+        require_negotiated_capability(self, negotiated, ACCOUNT_BALANCE_READ)?;
         let connector = self
             .connectors
             .get(&negotiated.plugin_id)
@@ -473,18 +740,103 @@ impl ConnectorRegistry {
             .clone()
             .try_acquire_owned()
             .map_err(|_| rate_limited_connector_error())?;
+        ensure_enabled_for_operation(connector)?;
+        validate_invocation(connector, invocation)?;
         let reader = connector
             .balance_reader
             .as_ref()
             .ok_or(ConnectorOperationError::NotRegistered)?;
-        let snapshot = reader
-            .read_balance(invocation, external_subject, credential)
-            .await
-            .map_err(ConnectorOperationError::Connector)?;
+        let snapshot = timeout(
+            operation_timeout(
+                invocation,
+                connector.connector.manifest().limits.request_timeout_ms,
+            )?,
+            reader.read_balance(invocation, external_subject, credential),
+        )
+        .await
+        .map_err(|_| operation_timeout_error(false))?
+        .map_err(ConnectorOperationError::Connector)?;
         snapshot
             .validate()
             .map_err(|_| ConnectorOperationError::InvalidResponse)?;
         Ok(snapshot)
+    }
+
+    /// Invoke a negotiated generic capability after bounding input, execution,
+    /// and output at the host boundary. Mutating capabilities are denied here.
+    /// Callers must derive requirements from host authorization policy; a
+    /// manifest declaration alone never grants access. Do not include secrets
+    /// in the generic request payload.
+    pub async fn invoke_capability(
+        &self,
+        negotiated: &NegotiatedConnector,
+        invocation: &CapabilityExecutionContext,
+        capability_id: &CapabilityId,
+        request: CapabilityInvocation,
+    ) -> Result<CapabilityResult, ConnectorOperationError> {
+        require_negotiated_capability(self, negotiated, capability_id.as_str())?;
+        request
+            .validate()
+            .map_err(|_| ConnectorOperationError::InvalidInvocation)?;
+        let connector = self
+            .connectors
+            .get(&negotiated.plugin_id)
+            .ok_or(ConnectorOperationError::NotRegistered)?;
+        let _permit = connector
+            .concurrency
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| rate_limited_connector_error())?;
+        ensure_enabled_for_operation(connector)?;
+        validate_capability_invocation(connector, invocation)?;
+        let declaration = negotiated
+            .capabilities
+            .iter()
+            .find(|capability| capability.id == *capability_id)
+            .ok_or(ConnectorOperationError::CapabilityNotNegotiated)?;
+        if declaration.access != CapabilityAccess::Read
+            || declaration.side_effect == SideEffectClass::ExternalWrite
+        {
+            return Err(ConnectorOperationError::WriteCapabilityRequiresHostWorkflow);
+        }
+        if request.capability_version != declaration.version {
+            return Err(ConnectorOperationError::CapabilityNotNegotiated);
+        }
+        let manifest = connector.connector.manifest();
+        let payload_limit = manifest
+            .limits
+            .max_response_bytes
+            .min(invocation.max_response_bytes);
+        ensure_json_payload_within_limit(&request.input, payload_limit as usize)?;
+        let (input_validator, output_validator) = connector
+            .capability_validators
+            .get(capability_id)
+            .ok_or(ConnectorOperationError::CapabilitySchemaMissing)?;
+        input_validator
+            .validate(&request.input)
+            .map_err(|_| ConnectorOperationError::InvalidInvocation)?;
+        let handler = connector
+            .capability_handlers
+            .get(capability_id)
+            .ok_or(ConnectorOperationError::NotRegistered)?;
+        let output = timeout(
+            operation_timeout_for_metadata(
+                &invocation.metadata,
+                manifest.limits.request_timeout_ms,
+            )?,
+            handler.invoke(
+                &CapabilityContext::from_execution_context(invocation),
+                request.input,
+            ),
+        )
+        .await
+        .map_err(|_| operation_timeout_error(false))?
+        .map_err(ConnectorOperationError::Connector)?;
+        ensure_json_payload_within_limit(&output, payload_limit as usize)?;
+        output_validator
+            .validate(&output)
+            .map_err(|_| ConnectorOperationError::InvalidResponse)?;
+        Ok(CapabilityResult { output })
     }
 
     pub fn plugin_ids(&self) -> impl Iterator<Item = &PluginId> {
@@ -496,14 +848,100 @@ fn rate_limited_connector_error() -> ConnectorOperationError {
     ConnectorOperationError::Connector(ConnectorError::rate_limited(250))
 }
 
+struct PayloadSizeWriter {
+    limit: usize,
+    written: usize,
+}
+
+impl Write for PayloadSizeWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if bytes.len() > self.limit.saturating_sub(self.written) {
+            return Err(io::Error::other("connector payload exceeds its limit"));
+        }
+        self.written += bytes.len();
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn ensure_json_payload_within_limit(
+    value: &Value,
+    max_bytes: usize,
+) -> Result<(), ConnectorOperationError> {
+    let mut writer = PayloadSizeWriter {
+        limit: max_bytes,
+        written: 0,
+    };
+    serde_json::to_writer(&mut writer, value)
+        .map_err(|_| ConnectorOperationError::PayloadTooLarge)?;
+    Ok(())
+}
+
+fn ensure_enabled(connector: &RegisteredConnector) -> Result<(), ConnectorRegistryError> {
+    if connector.enabled.load(Ordering::Acquire) {
+        Ok(())
+    } else {
+        Err(ConnectorRegistryError::Disabled)
+    }
+}
+
+fn ensure_enabled_for_operation(
+    connector: &RegisteredConnector,
+) -> Result<(), ConnectorOperationError> {
+    if connector.enabled.load(Ordering::Acquire) {
+        Ok(())
+    } else {
+        Err(ConnectorOperationError::Disabled)
+    }
+}
+
 fn require_negotiated_capability(
+    registry: &ConnectorRegistry,
     negotiated: &NegotiatedConnector,
     capability: &str,
 ) -> Result<(), ConnectorOperationError> {
-    if negotiated
-        .capabilities
-        .iter()
-        .any(|declared| declared.id.as_str() == capability)
+    let registered = registry
+        .connectors
+        .get(&negotiated.plugin_id)
+        .ok_or(ConnectorOperationError::NotRegistered)?;
+    ensure_enabled_for_operation(registered)?;
+    let manifest = registered.connector.manifest();
+    let binding_is_valid = Arc::ptr_eq(&registry.identity, &negotiated.registry_identity)
+        && negotiated.plugin_id == manifest.plugin_id
+        && negotiated.plugin_version == manifest.plugin_version
+        && manifest
+            .contract_range
+            .contains(negotiated.contract_version)
+        && negotiated.capabilities.iter().all(|selected| {
+            manifest
+                .capabilities
+                .iter()
+                .any(|declared| declared == selected)
+                && capability_is_executable(registered, selected.id.as_str())
+        })
+        && negotiated
+            .capabilities
+            .iter()
+            .enumerate()
+            .all(|(index, selected)| {
+                negotiated.capabilities[..index]
+                    .iter()
+                    .all(|previous| previous.id != selected.id)
+            })
+        && negotiated.skipped_optional.iter().all(|skipped| {
+            !negotiated
+                .capabilities
+                .iter()
+                .any(|selected| selected.id == *skipped)
+        });
+    if binding_is_valid
+        && negotiated
+            .capabilities
+            .iter()
+            .any(|declared| declared.id.as_str() == capability)
     {
         Ok(())
     } else {
@@ -511,14 +949,164 @@ fn require_negotiated_capability(
     }
 }
 
+fn capability_is_executable(connector: &RegisteredConnector, capability: &str) -> bool {
+    match capability {
+        ACCOUNT_PROFILE_READ => {
+            connector.authenticator.is_some() && connector.account_profile_reader.is_some()
+        }
+        ACCOUNT_BALANCE_READ => connector.balance_reader.is_some(),
+        _ => CapabilityId::new(capability.to_owned())
+            .is_ok_and(|id| connector.capability_handlers.contains_key(&id)),
+    }
+}
+
+fn validate_invocation(
+    connector: &RegisteredConnector,
+    invocation: &ConnectorInvocation,
+) -> Result<(), ConnectorOperationError> {
+    if invocation.max_response_bytes > connector.connector.manifest().limits.max_response_bytes {
+        return Err(ConnectorOperationError::InvalidInvocation);
+    }
+    connector
+        .config_validator
+        .validate(&invocation.public_config)
+        .map_err(|_| ConnectorOperationError::InvalidInvocation)?;
+    connector
+        .connector
+        .validate_config(&invocation.public_config)
+        .map_err(ConnectorOperationError::Connector)?;
+    operation_timeout(
+        invocation,
+        connector.connector.manifest().limits.request_timeout_ms,
+    )?;
+    Ok(())
+}
+
+fn validate_capability_invocation(
+    connector: &RegisteredConnector,
+    invocation: &CapabilityExecutionContext,
+) -> Result<(), ConnectorOperationError> {
+    if invocation.max_response_bytes > connector.connector.manifest().limits.max_response_bytes {
+        return Err(ConnectorOperationError::InvalidInvocation);
+    }
+    connector
+        .config_validator
+        .validate(&invocation.public_config)
+        .map_err(|_| ConnectorOperationError::InvalidInvocation)?;
+    connector
+        .connector
+        .validate_config(&invocation.public_config)
+        .map_err(ConnectorOperationError::Connector)?;
+    operation_timeout_for_metadata(
+        &invocation.metadata,
+        connector.connector.manifest().limits.request_timeout_ms,
+    )?;
+    Ok(())
+}
+
+fn operation_timeout(
+    invocation: &ConnectorInvocation,
+    manifest_timeout_ms: u32,
+) -> Result<Duration, ConnectorOperationError> {
+    operation_timeout_for_metadata(invocation.metadata(), manifest_timeout_ms)
+}
+
+fn operation_timeout_for_metadata(
+    metadata: &InvocationMetadata,
+    manifest_timeout_ms: u32,
+) -> Result<Duration, ConnectorOperationError> {
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| u64::try_from(duration.as_millis()).ok())
+        .ok_or(ConnectorOperationError::InvalidInvocation)?;
+    let remaining_ms = metadata
+        .deadline_unix_ms
+        .checked_sub(now_ms)
+        .filter(|remaining| *remaining > 0)
+        .ok_or_else(|| operation_timeout_error(false))?;
+    Ok(Duration::from_millis(
+        remaining_ms.min(u64::from(manifest_timeout_ms)),
+    ))
+}
+
+fn operation_timeout_error(is_write: bool) -> ConnectorOperationError {
+    ConnectorOperationError::Connector(ConnectorError::new(
+        if is_write {
+            ConnectorErrorCode::OutcomeUnknown
+        } else {
+            ConnectorErrorCode::TemporarilyUnavailable
+        },
+        if is_write {
+            af_plugin_contract::OperationOutcome::Unknown
+        } else {
+            af_plugin_contract::OperationOutcome::NotApplied
+        },
+    ))
+}
+
 /// Result of negotiating the host and adapter contract versions/capabilities.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone)]
 pub struct NegotiatedConnector {
-    pub plugin_id: PluginId,
-    pub plugin_version: PluginVersion,
-    pub contract_version: ContractVersion,
-    pub capabilities: Vec<CapabilityDeclaration>,
-    pub skipped_optional: Vec<CapabilityId>,
+    registry_identity: Arc<()>,
+    plugin_id: PluginId,
+    plugin_version: PluginVersion,
+    contract_version: ContractVersion,
+    capabilities: Vec<CapabilityDeclaration>,
+    skipped_optional: Vec<CapabilityId>,
+}
+
+impl NegotiatedConnector {
+    #[must_use]
+    pub fn plugin_id(&self) -> &PluginId {
+        &self.plugin_id
+    }
+
+    #[must_use]
+    pub fn plugin_version(&self) -> &PluginVersion {
+        &self.plugin_version
+    }
+
+    #[must_use]
+    pub const fn contract_version(&self) -> ContractVersion {
+        self.contract_version
+    }
+
+    #[must_use]
+    pub fn capabilities(&self) -> &[CapabilityDeclaration] {
+        &self.capabilities
+    }
+
+    #[must_use]
+    pub fn skipped_optional(&self) -> &[CapabilityId] {
+        &self.skipped_optional
+    }
+}
+
+impl PartialEq for NegotiatedConnector {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.registry_identity, &other.registry_identity)
+            && self.plugin_id == other.plugin_id
+            && self.plugin_version == other.plugin_version
+            && self.contract_version == other.contract_version
+            && self.capabilities == other.capabilities
+            && self.skipped_optional == other.skipped_optional
+    }
+}
+
+impl Eq for NegotiatedConnector {}
+
+impl std::fmt::Debug for NegotiatedConnector {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("NegotiatedConnector")
+            .field("plugin_id", &self.plugin_id)
+            .field("plugin_version", &self.plugin_version)
+            .field("contract_version", &self.contract_version)
+            .field("capabilities", &self.capabilities)
+            .field("skipped_optional", &self.skipped_optional)
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -529,6 +1117,8 @@ pub enum ConnectorRegistryError {
     DuplicatePlugin,
     #[error("connector is not registered")]
     NotFound,
+    #[error("connector is disabled")]
+    Disabled,
     #[error("connector contract version is incompatible")]
     IncompatibleContract,
     #[error("required connector capability is unavailable")]
@@ -537,6 +1127,10 @@ pub enum ConnectorRegistryError {
     CapabilityHandlerMismatch { capability: CapabilityId },
     #[error("connector configuration is invalid")]
     Configuration(ConnectorError),
+    #[error("connector configuration does not match its declared schema")]
+    InvalidConfiguration,
+    #[error("the same capability was requested more than once")]
+    DuplicateCapabilityRequirement { capability: CapabilityId },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -545,10 +1139,18 @@ pub enum ConnectorOperationError {
     CapabilityNotNegotiated,
     #[error("connector capability implementation is unavailable")]
     NotRegistered,
+    #[error("connector is disabled")]
+    Disabled,
     #[error("connector invocation context is invalid")]
     InvalidInvocation,
     #[error("connector response does not match the contract")]
     InvalidResponse,
+    #[error("generic capability invocation cannot perform writes")]
+    WriteCapabilityRequiresHostWorkflow,
+    #[error("connector payload exceeds the manifest limit")]
+    PayloadTooLarge,
+    #[error("generic capability is missing an input or output schema")]
+    CapabilitySchemaMissing,
     #[error("connector operation failed")]
     Connector(ConnectorError),
 }
@@ -681,6 +1283,110 @@ mod tests {
         }
     }
 
+    struct GenericConnector {
+        manifest: PluginManifest,
+    }
+
+    impl PlatformConnector for GenericConnector {
+        fn manifest(&self) -> &PluginManifest {
+            &self.manifest
+        }
+
+        fn validate_config(&self, _config: &Value) -> Result<(), ConnectorError> {
+            Ok(())
+        }
+    }
+
+    struct EchoCapability {
+        id: CapabilityId,
+        invalid_output: bool,
+        delay: Duration,
+    }
+
+    #[async_trait]
+    impl CapabilityHandler for EchoCapability {
+        fn capability_id(&self) -> &CapabilityId {
+            &self.id
+        }
+
+        async fn invoke(
+            &self,
+            invocation: &CapabilityContext<'_>,
+            input: Value,
+        ) -> Result<Value, ConnectorError> {
+            tokio::time::sleep(self.delay).await;
+            assert_eq!(invocation.connection_id(), "connection-1");
+            assert_eq!(invocation.public_config()["scope"], "catalog");
+            if self.invalid_output {
+                Ok(serde_json::json!({ "unexpected": "value" }))
+            } else {
+                Ok(serde_json::json!({ "items": [input["query"].clone()] }))
+            }
+        }
+    }
+
+    fn generic_registration(plugin_id: &str, invalid_output: bool) -> ConnectorRegistration {
+        generic_registration_with_limits(plugin_id, invalid_output, 1_000, Duration::ZERO)
+    }
+
+    fn generic_registration_with_limits(
+        plugin_id: &str,
+        invalid_output: bool,
+        request_timeout_ms: u32,
+        delay: Duration,
+    ) -> ConnectorRegistration {
+        let capability_id = CapabilityId::new("catalog.models.search").unwrap();
+        let manifest = PluginManifest {
+            plugin_id: PluginId::new(plugin_id).unwrap(),
+            display_name: "Generic catalog connector".to_owned(),
+            plugin_version: PluginVersion::new("1.0.0").unwrap(),
+            contract_range: ContractVersionRange::new(
+                ContractVersion::new(1, 0),
+                ContractVersion::new(1, 2),
+            )
+            .unwrap(),
+            capabilities: vec![CapabilityDeclaration {
+                id: capability_id.clone(),
+                version: 2,
+                access: CapabilityAccess::Read,
+                side_effect: SideEffectClass::ExternalRead,
+                write_semantics: None,
+                input_schema: Some(serde_json::json!({
+                    "type": "object",
+                    "properties": { "query": { "type": "string", "minLength": 1, "maxLength": 64 } },
+                    "required": ["query"],
+                    "additionalProperties": false
+                })),
+                output_schema: Some(serde_json::json!({
+                    "type": "object",
+                    "properties": { "items": { "type": "array", "items": { "type": "string" } } },
+                    "required": ["items"],
+                    "additionalProperties": false
+                })),
+            }],
+            authentication_modes: vec!["none".to_owned()],
+            limits: ConnectorLimits {
+                max_concurrency: 2,
+                request_timeout_ms,
+                max_response_bytes: 1_048_576,
+                max_page_size: 50,
+            },
+            config_schema: serde_json::json!({
+                "type": "object",
+                "properties": { "scope": { "type": "string" } },
+                "required": ["scope"],
+                "additionalProperties": false
+            }),
+        };
+        ConnectorRegistration::new(Arc::new(GenericConnector { manifest })).with_capability_handler(
+            Arc::new(EchoCapability {
+                id: capability_id,
+                invalid_output,
+                delay,
+            }),
+        )
+    }
+
     #[async_trait]
     impl ExternalAccountAuthenticator for MockConnector {
         async fn authenticate(
@@ -741,6 +1447,8 @@ mod tests {
             access: CapabilityAccess::Read,
             side_effect: SideEffectClass::ExternalRead,
             write_semantics: None,
+            input_schema: None,
+            output_schema: None,
         }];
         if include_profile_capability {
             capabilities.push(CapabilityDeclaration {
@@ -749,6 +1457,8 @@ mod tests {
                 access: CapabilityAccess::Read,
                 side_effect: SideEffectClass::ExternalRead,
                 write_semantics: None,
+                input_schema: None,
+                output_schema: None,
             });
         }
         let connector = Arc::new(MockConnector {
@@ -789,11 +1499,19 @@ mod tests {
     }
 
     fn call_context() -> ConnectorInvocation {
+        let now_ms = u64::try_from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+        )
+        .unwrap();
+        let deadline_unix_ms = now_ms + 60_000;
         ConnectorInvocation::new(
             "connection-1".to_owned(),
             InvocationMetadata {
                 request_id: "request-1".to_owned(),
-                deadline_unix_ms: 1_800_000_001_000,
+                deadline_unix_ms,
             },
             serde_json::json!({ "baseUrl": "https://example.test" }),
             "https://example.test".to_owned(),
@@ -806,8 +1524,39 @@ mod tests {
         .unwrap()
     }
 
+    fn capability_call_context() -> CapabilityExecutionContext {
+        let now_ms = u64::try_from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+        )
+        .unwrap();
+        CapabilityExecutionContext::new(
+            "connection-1".to_owned(),
+            InvocationMetadata {
+                request_id: "request-1".to_owned(),
+                deadline_unix_ms: now_ms + 60_000,
+            },
+            serde_json::json!({ "scope": "catalog" }),
+            1_048_576,
+        )
+        .unwrap()
+    }
+
     fn required(id: &str) -> CapabilityRequirement {
-        CapabilityRequirement::new(CapabilityId::new(id).unwrap(), 1, 1, true).unwrap()
+        required_version(id, 1)
+    }
+
+    fn required_version(id: &str, version: u16) -> CapabilityRequirement {
+        CapabilityRequirement::new(CapabilityId::new(id).unwrap(), version, version, true).unwrap()
+    }
+
+    fn capability_request(input: Value) -> CapabilityInvocation {
+        CapabilityInvocation {
+            capability_version: 2,
+            input,
+        }
     }
 
     #[tokio::test]
@@ -894,6 +1643,161 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn generic_capability_validates_declared_schemas_and_returns_typed_json() {
+        let mut registry = ConnectorRegistry::new();
+        registry
+            .register(generic_registration("org.example.generic", false))
+            .unwrap();
+        let plugin_id = PluginId::new("org.example.generic").unwrap();
+        let capability_id = CapabilityId::new("catalog.models.search").unwrap();
+        let negotiated = registry
+            .negotiate(
+                &plugin_id,
+                ContractVersion::new(1, 1),
+                &[required_version("catalog.models.search", 2)],
+            )
+            .unwrap();
+        let invocation = capability_call_context();
+
+        assert_eq!(
+            registry
+                .invoke_capability(
+                    &negotiated,
+                    &invocation,
+                    &capability_id,
+                    capability_request(serde_json::json!({ "query": "deepseek" })),
+                )
+                .await
+                .unwrap()
+                .output,
+            serde_json::json!({ "items": ["deepseek"] })
+        );
+        let wrong_version = CapabilityInvocation {
+            capability_version: 1,
+            input: serde_json::json!({ "query": "deepseek" }),
+        };
+        assert_eq!(
+            registry
+                .invoke_capability(&negotiated, &invocation, &capability_id, wrong_version)
+                .await,
+            Err(ConnectorOperationError::CapabilityNotNegotiated)
+        );
+        assert_eq!(
+            registry
+                .invoke_capability(
+                    &negotiated,
+                    &invocation,
+                    &capability_id,
+                    capability_request(serde_json::json!({ "unexpected": "private-canary" })),
+                )
+                .await,
+            Err(ConnectorOperationError::InvalidInvocation)
+        );
+    }
+
+    #[tokio::test]
+    async fn generic_capability_rejects_invalid_output_and_foreign_negotiation() {
+        let mut registry = ConnectorRegistry::new();
+        registry
+            .register(generic_registration("org.example.generic", true))
+            .unwrap();
+        let plugin_id = PluginId::new("org.example.generic").unwrap();
+        let capability_id = CapabilityId::new("catalog.models.search").unwrap();
+        let negotiated = registry
+            .negotiate(
+                &plugin_id,
+                ContractVersion::new(1, 1),
+                &[required_version("catalog.models.search", 2)],
+            )
+            .unwrap();
+        let invocation = capability_call_context();
+        assert_eq!(
+            registry
+                .invoke_capability(
+                    &negotiated,
+                    &invocation,
+                    &capability_id,
+                    capability_request(serde_json::json!({ "query": "deepseek" })),
+                )
+                .await,
+            Err(ConnectorOperationError::InvalidResponse)
+        );
+
+        let mut other_registry = ConnectorRegistry::new();
+        other_registry
+            .register(generic_registration("org.example.generic", false))
+            .unwrap();
+        assert_eq!(
+            other_registry
+                .invoke_capability(
+                    &negotiated,
+                    &invocation,
+                    &capability_id,
+                    capability_request(serde_json::json!({ "query": "deepseek" })),
+                )
+                .await,
+            Err(ConnectorOperationError::CapabilityNotNegotiated)
+        );
+    }
+
+    #[tokio::test]
+    async fn manifest_deadline_and_activation_state_are_enforced() {
+        let mut registry = ConnectorRegistry::new();
+        registry
+            .register(generic_registration_with_limits(
+                "org.example.deadline",
+                false,
+                5,
+                Duration::from_millis(100),
+            ))
+            .unwrap();
+        let plugin_id = PluginId::new("org.example.deadline").unwrap();
+        let capability_id = CapabilityId::new("catalog.models.search").unwrap();
+        let negotiated = registry
+            .negotiate(
+                &plugin_id,
+                ContractVersion::new(1, 1),
+                &[required_version("catalog.models.search", 2)],
+            )
+            .unwrap();
+        let invocation = capability_call_context();
+        assert!(matches!(
+            registry
+                .invoke_capability(
+                    &negotiated,
+                    &invocation,
+                    &capability_id,
+                    capability_request(serde_json::json!({ "query": "slow" })),
+                )
+                .await,
+            Err(ConnectorOperationError::Connector(ConnectorError {
+                code: ConnectorErrorCode::TemporarilyUnavailable,
+                ..
+            }))
+        ));
+
+        registry.set_enabled(&plugin_id, false).unwrap();
+        assert!(!registry.is_enabled(&plugin_id));
+        assert_eq!(
+            registry.negotiate(&plugin_id, ContractVersion::new(1, 1), &[]),
+            Err(ConnectorRegistryError::Disabled)
+        );
+        assert_eq!(
+            registry
+                .invoke_capability(
+                    &negotiated,
+                    &invocation,
+                    &capability_id,
+                    capability_request(serde_json::json!({ "query": "disabled" })),
+                )
+                .await,
+            Err(ConnectorOperationError::Disabled)
+        );
+        registry.set_enabled(&plugin_id, true).unwrap();
+        assert!(registry.is_enabled(&plugin_id));
+    }
+
     #[test]
     fn registry_rejects_duplicate_ids_and_manifest_handler_mismatches() {
         let mut registry = ConnectorRegistry::new();
@@ -921,6 +1825,8 @@ mod tests {
                     access: CapabilityAccess::Read,
                     side_effect: SideEffectClass::ExternalRead,
                     write_semantics: None,
+                    input_schema: None,
+                    output_schema: None,
                 }],
                 authentication_modes: vec!["api_key".to_owned()],
                 limits: ConnectorLimits {

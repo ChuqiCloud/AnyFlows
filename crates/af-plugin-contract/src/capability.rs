@@ -1,4 +1,5 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::Value;
 
 use crate::ContractValidationError;
 
@@ -103,6 +104,12 @@ pub struct CapabilityDeclaration {
     pub side_effect: SideEffectClass,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub write_semantics: Option<ExternalWriteSemantics>,
+    /// Optional JSON Schema for generic capability request data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_schema: Option<Value>,
+    /// Optional JSON Schema for generic capability response data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<Value>,
 }
 
 impl CapabilityDeclaration {
@@ -114,8 +121,22 @@ impl CapabilityDeclaration {
                 && self.write_semantics.is_none())
             || (self.side_effect != SideEffectClass::ExternalWrite
                 && self.write_semantics.is_some())
+            || self.input_schema.is_some() != self.output_schema.is_some()
         {
             return Err(ContractValidationError::InvalidCapabilityVersion);
+        }
+        for schema in [&self.input_schema, &self.output_schema]
+            .into_iter()
+            .flatten()
+        {
+            if !schema.is_object()
+                || serde_json::to_vec(schema)
+                    .map_err(|_| ContractValidationError::InvalidJsonSchema)?
+                    .len()
+                    > 64 * 1024
+            {
+                return Err(ContractValidationError::InvalidJsonSchema);
+            }
         }
         Ok(())
     }
@@ -187,6 +208,8 @@ mod tests {
             access: CapabilityAccess::Read,
             side_effect: SideEffectClass::ExternalRead,
             write_semantics: None,
+            input_schema: None,
+            output_schema: None,
         };
 
         let value = serde_json::to_value(declaration).unwrap();
@@ -203,6 +226,8 @@ mod tests {
             access: CapabilityAccess::Read,
             side_effect: SideEffectClass::ExternalWrite,
             write_semantics: None,
+            input_schema: None,
+            output_schema: None,
         };
 
         assert_eq!(
@@ -219,6 +244,8 @@ mod tests {
             access: CapabilityAccess::Write,
             side_effect: SideEffectClass::ExternalWrite,
             write_semantics: None,
+            input_schema: None,
+            output_schema: None,
         };
         assert_eq!(
             declaration.validate(),
@@ -236,6 +263,28 @@ mod tests {
                 .write_semantics
                 .unwrap()
                 .retry_after_unknown_outcome_is_safe()
+        );
+    }
+
+    #[test]
+    fn generic_capability_schemas_must_be_a_valid_pair_of_object_schemas() {
+        let mut declaration = CapabilityDeclaration {
+            id: CapabilityId::new("catalog.models.search").unwrap(),
+            version: 1,
+            access: CapabilityAccess::Read,
+            side_effect: SideEffectClass::ExternalRead,
+            write_semantics: None,
+            input_schema: Some(serde_json::json!({ "type": "object" })),
+            output_schema: None,
+        };
+        assert_eq!(
+            declaration.validate(),
+            Err(ContractValidationError::InvalidCapabilityVersion)
+        );
+        declaration.output_schema = Some(serde_json::json!(true));
+        assert_eq!(
+            declaration.validate(),
+            Err(ContractValidationError::InvalidJsonSchema)
         );
     }
 }
