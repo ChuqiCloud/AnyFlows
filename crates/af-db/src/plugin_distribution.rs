@@ -642,15 +642,37 @@ impl PluginDistributionRepository {
                         "error_code",
                         "updated_at",
                     ]
-                    .map(Alias::new),
+                    .map(|column| (Alias::new("plugin_runtime_states"), Alias::new(column))),
                 )
-                .from(Alias::new("plugin_runtime_states"));
+                .expr_as(
+                    Expr::col((Alias::new("plugin_runtime_nodes"), Alias::new("updated_at"))),
+                    Alias::new("node_last_seen_at"),
+                )
+                .expr_as(
+                    Expr::col((Alias::new("plugin_runtime_nodes"), Alias::new("retired_at"))),
+                    Alias::new("node_retired_at"),
+                )
+                .from(Alias::new("plugin_runtime_states"))
+                .inner_join(
+                    Alias::new("plugin_runtime_nodes"),
+                    Expr::col((Alias::new("plugin_runtime_states"), Alias::new("node_id")))
+                        .equals((Alias::new("plugin_runtime_nodes"), Alias::new("node_id"))),
+                );
             if let Some(plugin_id) = plugin_id {
-                query.and_where(Expr::col(Alias::new("plugin_id")).eq(plugin_id));
+                query.and_where(
+                    Expr::col((Alias::new("plugin_runtime_states"), Alias::new("plugin_id")))
+                        .eq(plugin_id),
+                );
             }
             query
-                .order_by(Alias::new("plugin_id"), Order::Asc)
-                .order_by(Alias::new("node_id"), Order::Asc)
+                .order_by(
+                    (Alias::new("plugin_runtime_states"), Alias::new("plugin_id")),
+                    Order::Asc,
+                )
+                .order_by(
+                    (Alias::new("plugin_runtime_states"), Alias::new("node_id")),
+                    Order::Asc,
+                )
                 .limit(MAX_RUNTIME_ROWS + 1);
             let rows = self
                 .pool
@@ -659,19 +681,14 @@ impl PluginDistributionRepository {
                 .await
                 .map_err(map_db)?;
             ensure_row_limit(rows.len())?;
-            let nodes = self
-                .list_nodes(now)
-                .await?
-                .into_iter()
-                .map(|node| (node.node_id, (node.last_seen_at, node.live)))
-                .collect::<std::collections::BTreeMap<_, _>>();
             let cutoff = now.saturating_sub(PLUGIN_NODE_LEASE_SECONDS);
             rows.into_iter()
                 .map(|row| {
                     let node_id: String = row.try_get("", "node_id").map_err(map_db)?;
-                    let (node_last_seen_at, node_is_live) = *nodes
-                        .get(&node_id)
-                        .ok_or(PluginDistributionError::Invariant)?;
+                    let node_last_seen_at = row.try_get("", "node_last_seen_at").map_err(map_db)?;
+                    let node_retired_at: Option<i64> =
+                        row.try_get("", "node_retired_at").map_err(map_db)?;
+                    let node_is_live = node_last_seen_at >= cutoff && node_retired_at.is_none();
                     let updated_at = row.try_get("", "updated_at").map_err(map_db)?;
                     let status: String = row.try_get("", "status").map_err(map_db)?;
                     let stored_status = PluginRuntimeStatus::parse(&status)?;
