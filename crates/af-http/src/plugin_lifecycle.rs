@@ -7,8 +7,8 @@ use af_admin::{
     AdminPluginArtifactRevocation, AdminPluginCapabilityGrant, AdminPluginDeployment,
     AdminPluginDeploymentPage, AdminPluginLifecycleError, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
     DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
-    PluginArtifactRegistrationCommand, PluginDeploymentCommand, PluginPackageUpload,
-    SessionAuthentication, SessionAuthenticator,
+    PluginArtifactRegistrationCommand, PluginCatalogExtensionQuery, PluginDeploymentCommand,
+    PluginPackageUpload, SessionAuthentication, SessionAuthenticator,
 };
 use af_telemetry::RequestId;
 use axum::{
@@ -154,6 +154,7 @@ pub(crate) struct PluginArtifactResponse {
     manifest: Value,
     source_kind: String,
     signer_key_id: String,
+    official: bool,
     created_at: i64,
     approval: Option<PluginArtifactApprovalResponse>,
     revocation: Option<PluginArtifactRevocationResponse>,
@@ -169,6 +170,7 @@ impl From<AdminPluginArtifact> for PluginArtifactResponse {
             manifest: value.manifest().clone(),
             source_kind: value.source_kind().to_owned(),
             signer_key_id: value.signer_key_id().to_owned(),
+            official: value.is_official(),
             created_at: value.created_at(),
             approval: value.approval().cloned().map(Into::into),
             revocation: value.revocation().cloned().map(Into::into),
@@ -309,6 +311,118 @@ pub(crate) struct PluginActionResponse {
     request_id: String,
 }
 
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PluginRuntimeOverviewResponse {
+    local_node_id: Option<String>,
+    isolation: String,
+    nodes: Vec<PluginRuntimeNodeResponse>,
+    states: Vec<PluginRuntimeStateResponse>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PluginRuntimeNodeResponse {
+    node_id: String,
+    host_label: String,
+    last_seen_at: i64,
+    live: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PluginRuntimeStateResponse {
+    node_id: String,
+    plugin_id: String,
+    generation: i64,
+    digest: String,
+    status: String,
+    isolation: String,
+    error_code: Option<String>,
+    updated_at: i64,
+    node_last_seen_at: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PluginUninstallResponse {
+    plugin_id: String,
+    generation: i64,
+    pending_nodes: u32,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PluginArtifactCleanupResponse {
+    artifact_id: i64,
+    archive_removed: bool,
+    local_files_removed: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PluginCatalogListQuery {
+    q: Option<String>,
+    cursor: Option<String>,
+    limit: Option<u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PluginCatalogSourceQuery {
+    cursor: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PluginCatalogSourceResponse {
+    plugin_id: String,
+    display_name: String,
+    plugin_version: String,
+    generation: i64,
+    supports_search: bool,
+}
+
+impl From<af_admin::PluginCatalogSource> for PluginCatalogSourceResponse {
+    fn from(value: af_admin::PluginCatalogSource) -> Self {
+        Self {
+            plugin_id: value.plugin_id,
+            display_name: value.display_name,
+            plugin_version: value.plugin_version,
+            generation: value.generation,
+            supports_search: value.supports_search,
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PluginCatalogSourcePageResponse {
+    sources: Vec<PluginCatalogSourceResponse>,
+    next_cursor: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PluginCatalogModelResponse {
+    id: String,
+    display_name: String,
+    provider: String,
+    description: Option<String>,
+    context_window: Option<u32>,
+    input_modalities: Vec<String>,
+    output_modalities: Vec<String>,
+    tags: Vec<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PluginCatalogModelPageResponse {
+    source: PluginCatalogSourceResponse,
+    models: Vec<PluginCatalogModelResponse>,
+    next_cursor: Option<String>,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ArtifactListQuery {
@@ -333,7 +447,7 @@ pub fn build_plugin_lifecycle_router(
         ManagementAuthenticationState::new(authenticator),
         authenticate_management_session,
     );
-    Router::new()
+    let admin = Router::new()
         .route(
             "/api/admin/plugins/install",
             post(install_package).layer(DefaultBodyLimit::max(
@@ -366,11 +480,167 @@ pub fn build_plugin_lifecycle_router(
             "/api/admin/plugins/{plugin_id}/rollback",
             post(rollback_deployment),
         )
-        .route_layer(middleware::from_fn(authorize_management_admin))
+        .route("/api/admin/plugins/runtime", get(runtime_overview))
+        .route(
+            "/api/admin/plugins/{plugin_id}/uninstall",
+            post(uninstall_plugin),
+        )
+        .route(
+            "/api/admin/plugins/artifacts/{artifact_id}/cleanup",
+            post(cleanup_artifact),
+        )
+        .route_layer(middleware::from_fn(authorize_management_admin));
+    Router::new()
+        .merge(admin)
+        .route("/api/account/plugin-models/sources", get(catalog_sources))
+        .route(
+            "/api/account/plugin-models/{plugin_id}",
+            get(catalog_models),
+        )
         .route_layer(authentication)
         .layer(middleware::from_fn(ensure_request_id))
         .layer(middleware::from_fn(add_no_store))
         .with_state(PluginLifecycleHttpState { service })
+}
+
+async fn runtime_overview(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    let overview = state
+        .service
+        .runtime_overview(authentication.principal())
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(PluginRuntimeOverviewResponse {
+        local_node_id: overview.local_node_id,
+        isolation: overview.isolation,
+        nodes: overview
+            .nodes
+            .into_iter()
+            .map(|node| PluginRuntimeNodeResponse {
+                node_id: node.node_id,
+                host_label: node.host_label,
+                last_seen_at: node.last_seen_at,
+                live: node.live,
+            })
+            .collect(),
+        states: overview
+            .states
+            .into_iter()
+            .map(|item| PluginRuntimeStateResponse {
+                node_id: item.node_id,
+                plugin_id: item.plugin_id,
+                generation: item.generation,
+                digest: item.digest,
+                status: item.status,
+                isolation: item.isolation,
+                error_code: item.error_code,
+                updated_at: item.updated_at,
+                node_last_seen_at: item.node_last_seen_at,
+            })
+            .collect(),
+    }))
+}
+
+async fn uninstall_plugin(
+    State(state): State<PluginLifecycleHttpState>,
+    PathParam(plugin_id): PathParam<String>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    request: Result<Json<PluginDeploymentDisableRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
+    let result = state
+        .service
+        .uninstall(
+            authentication.principal(),
+            &plugin_id,
+            request.expected_generation,
+            request_id.as_str(),
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(PluginUninstallResponse {
+        plugin_id: result.plugin_id,
+        generation: result.generation,
+        pending_nodes: result.pending_nodes,
+    }))
+}
+
+async fn cleanup_artifact(
+    State(state): State<PluginLifecycleHttpState>,
+    PathParam(artifact_id): PathParam<i64>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+) -> Result<Response, ManagementError> {
+    let result = state
+        .service
+        .cleanup_artifact(authentication.principal(), artifact_id, request_id.as_str())
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(PluginArtifactCleanupResponse {
+        artifact_id: result.artifact_id,
+        archive_removed: result.archive_removed,
+        local_files_removed: result.local_files_removed,
+    }))
+}
+
+async fn catalog_sources(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    query: Result<Query<PluginCatalogSourceQuery>, QueryRejection>,
+) -> Result<Response, ManagementError> {
+    let Query(query) = query.map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
+    let result = state
+        .service
+        .catalog_sources(authentication.principal(), query.cursor)
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(PluginCatalogSourcePageResponse {
+        sources: result.sources.into_iter().map(Into::into).collect(),
+        next_cursor: result.next_cursor,
+    }))
+}
+
+async fn catalog_models(
+    State(state): State<PluginLifecycleHttpState>,
+    PathParam(plugin_id): PathParam<String>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    query: Result<Query<PluginCatalogListQuery>, QueryRejection>,
+) -> Result<Response, ManagementError> {
+    let Query(query) = query.map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
+    let query = PluginCatalogExtensionQuery::new(query.q, query.cursor, query.limit.unwrap_or(24))
+        .map_err(map_service_error)?;
+    let result = state
+        .service
+        .catalog_models(
+            authentication.principal(),
+            &plugin_id,
+            query,
+            request_id.as_str(),
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(PluginCatalogModelPageResponse {
+        source: result.source.into(),
+        next_cursor: result.next_cursor,
+        models: result
+            .models
+            .into_iter()
+            .map(|item| PluginCatalogModelResponse {
+                id: item.id,
+                display_name: item.display_name,
+                provider: item.provider,
+                description: item.description,
+                context_window: item.context_window,
+                input_modalities: item.input_modalities,
+                output_modalities: item.output_modalities,
+                tags: item.tags,
+            })
+            .collect(),
+    }))
 }
 
 async fn install_package(

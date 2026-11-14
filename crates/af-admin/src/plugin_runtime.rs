@@ -1,7 +1,7 @@
 //! Host-side reconciliation between durable plugin deployments and sidecar processes.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fmt,
     future::Future,
     path::{Component, Path, PathBuf},
@@ -15,8 +15,8 @@ use af_db::{
 };
 use af_plugin_contract::{CapabilityId, CapabilityResult, PluginId, PluginManifest, PluginVersion};
 use af_plugin_runtime::{
-    CapabilityExecutionContext, PluginArtifactDescriptor, SidecarError, SidecarLimits,
-    SidecarSupervisor, TrustedPluginKey, VerifiedPluginArtifact,
+    CapabilityExecutionContext, PluginArtifactDescriptor, SidecarError, SidecarIsolationPolicy,
+    SidecarLimits, SidecarSupervisor, TrustedPluginKey, VerifiedPluginArtifact,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::Deserialize;
@@ -28,9 +28,16 @@ use crate::AdminPluginLifecycleError;
 /// The artifact root and publisher keys come from host configuration. Nothing
 /// in the database can add a signer or choose an absolute executable path.
 pub struct AdminPluginSidecarRuntime {
-    artifact_root: PathBuf,
-    trusted_signers: BTreeMap<String, TrustedPluginKey>,
-    supervisor: Arc<SidecarSupervisor>,
+    pub(crate) artifact_root: PathBuf,
+    pub(crate) trusted_signers: BTreeMap<String, TrustedPluginKey>,
+    pub(crate) supervisor: Arc<SidecarSupervisor>,
+    pub(crate) official_signers: BTreeSet<String>,
+    pub(crate) node_id: String,
+    pub(crate) host_label: String,
+    pub(crate) isolation_policy: SidecarIsolationPolicy,
+    pub(crate) cache_operations: tokio::sync::Mutex<()>,
+    pub(crate) cleaned_uninstalls: tokio::sync::Mutex<BTreeMap<String, i64>>,
+    pub(crate) collected_artifacts: tokio::sync::Mutex<BTreeSet<i64>>,
     installation_slots: Arc<tokio::sync::Semaphore>,
 }
 
@@ -69,6 +76,13 @@ impl AdminPluginSidecarRuntime {
             trusted_signers,
             supervisor: Arc::new(SidecarSupervisor::default()),
             installation_slots: Arc::new(tokio::sync::Semaphore::new(2)),
+            official_signers: BTreeSet::new(),
+            node_id: uuid::Uuid::new_v4().to_string(),
+            host_label: crate::plugin_distribution_runtime::runtime_host_label(),
+            isolation_policy: SidecarIsolationPolicy::Auto,
+            cache_operations: tokio::sync::Mutex::new(()),
+            cleaned_uninstalls: tokio::sync::Mutex::new(BTreeMap::new()),
+            collected_artifacts: tokio::sync::Mutex::new(BTreeSet::new()),
         })
     }
 
@@ -233,6 +247,18 @@ impl AdminPluginSidecarRuntime {
         repository: &PluginCatalogRepository,
         deployment: &PluginDeploymentRecord,
     ) -> Result<(), AdminPluginLifecycleError> {
+        self.heartbeat(repository).await?;
+        let result = self.apply_inner(repository, deployment).await;
+        self.record_apply_result(repository, deployment, result.as_ref().err())
+            .await?;
+        result
+    }
+
+    async fn apply_inner(
+        &self,
+        repository: &PluginCatalogRepository,
+        deployment: &PluginDeploymentRecord,
+    ) -> Result<(), AdminPluginLifecycleError> {
         let plugin_id = PluginId::new(deployment.plugin_id.clone())
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         if !deployment_is_current(repository, deployment).await? {
@@ -270,7 +296,25 @@ impl AdminPluginSidecarRuntime {
                 .stop_generation(&plugin_id, generation)
                 .await;
         }
+        let cache_guard = self.cache_operations.lock().await;
+        self.report_state(
+            repository,
+            deployment,
+            af_db::PluginRuntimeStatus::Downloading,
+            None,
+        )
+        .await?;
+        self.ensure_materialized(repository, &deployment.artifact)
+            .await?;
+        self.report_state(
+            repository,
+            deployment,
+            af_db::PluginRuntimeStatus::Starting,
+            None,
+        )
+        .await?;
         let artifact = self.verify_artifact(&deployment.artifact).await?;
+        drop(cache_guard);
         artifact
             .validate_configuration(&deployment.config)
             .map_err(map_sidecar_error)?;
@@ -278,12 +322,13 @@ impl AdminPluginSidecarRuntime {
             return Err(AdminPluginLifecycleError::Conflict);
         }
         self.supervisor
-            .activate(
+            .activate_with_policy(
                 artifact,
                 generation,
                 grants,
                 deployment.config.clone(),
                 SidecarLimits::default(),
+                self.isolation_policy,
             )
             .await
             .map_err(map_sidecar_error)?;
@@ -451,6 +496,12 @@ impl AdminPluginSidecarRuntime {
     /// traffic. A bad or unavailable artifact leaves that plugin stopped and
     /// does not prevent unrelated plugins or the core service from starting.
     pub async fn reconcile(&self, repository: &PluginCatalogRepository) {
+        if self.heartbeat(repository).await.is_err() {
+            return;
+        }
+        if let Err(error) = self.reconcile_cleanup(repository).await {
+            tracing::warn!(error_kind = ?error, "plugin cache cleanup could not be reconciled");
+        }
         let mut before_plugin_id = None;
         loop {
             let query = match PluginDeploymentQuery::new(
@@ -780,7 +831,7 @@ fn canonical_relative_path(
     Ok(value)
 }
 
-fn base64_signature_from_hex(value: &str) -> Result<String, AdminPluginLifecycleError> {
+pub(crate) fn base64_signature_from_hex(value: &str) -> Result<String, AdminPluginLifecycleError> {
     if value.len() != 128 {
         return Err(AdminPluginLifecycleError::InvalidInput);
     }
@@ -811,6 +862,7 @@ fn map_sidecar_error(error: SidecarError) -> AdminPluginLifecycleError {
         | SidecarError::ProtocolViolation
         | SidecarError::ProcessExited
         | SidecarError::TimedOut
+        | SidecarError::IsolationUnavailable
         | SidecarError::OperationFailed => AdminPluginLifecycleError::RuntimeUnavailable,
     }
 }

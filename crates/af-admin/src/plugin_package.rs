@@ -11,6 +11,7 @@ use af_plugin_contract::PluginManifest;
 use af_plugin_runtime::plugin_package_digest;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use zip::{CompressionMethod, ZipArchive};
 
 use crate::{AdminPluginLifecycleError, plugin_lifecycle::MAX_PLUGIN_PACKAGE_UPLOAD_BYTES};
@@ -109,14 +110,35 @@ pub(crate) async fn extract_plugin_package(
     upload: PathBuf,
     artifact_root: PathBuf,
 ) -> Result<ImportedPluginPackage, AdminPluginLifecycleError> {
-    tokio::task::spawn_blocking(move || extract_package(&upload, &artifact_root))
-        .await
-        .map_err(|_| AdminPluginLifecycleError::Internal)?
+    extract_plugin_package_at(upload, artifact_root, None).await
 }
 
+/// Restore an archive to its immutable catalog locator. Legacy digest-only
+/// locators remain accepted; new imports also bind the public manifest.
+pub(crate) async fn extract_plugin_package_at(
+    upload: PathBuf,
+    artifact_root: PathBuf,
+    expected_package_path: Option<String>,
+) -> Result<ImportedPluginPackage, AdminPluginLifecycleError> {
+    tokio::task::spawn_blocking(move || {
+        extract_package_at(&upload, &artifact_root, expected_package_path.as_deref())
+    })
+    .await
+    .map_err(|_| AdminPluginLifecycleError::Internal)?
+}
+
+#[cfg(test)]
 fn extract_package(
     upload: &Path,
     artifact_root: &Path,
+) -> Result<ImportedPluginPackage, AdminPluginLifecycleError> {
+    extract_package_at(upload, artifact_root, None)
+}
+
+fn extract_package_at(
+    upload: &Path,
+    artifact_root: &Path,
+    expected_package_path: Option<&str>,
 ) -> Result<ImportedPluginPackage, AdminPluginLifecycleError> {
     let root = controlled_directory(artifact_root)?;
     let uploads = controlled_directory(&root.join(".uploads"))?;
@@ -293,7 +315,14 @@ fn extract_package(
         .map_err(|_| AdminPluginLifecycleError::Internal)?;
     set_file_permissions(&directory.path().join("import.json"), false)?;
 
-    let final_directory = packages.join(&digest);
+    let identity = format!("{digest}-{:x}", Sha256::digest(&receipt_bytes));
+    let package_key = match expected_package_path {
+        Some(path) if path == format!("packages/{digest}/payload") => digest.clone(),
+        Some(path) if path == format!("packages/{identity}/payload") => identity,
+        Some(_) => return Err(invalid()),
+        None => identity,
+    };
+    let final_directory = packages.join(&package_key);
     let (package_directory, created_final_directory) = match fs::symlink_metadata(&final_directory)
     {
         Ok(_) => {
@@ -339,7 +368,7 @@ fn extract_package(
         plugin_id,
         plugin_version,
         manifest,
-        package_path: format!("packages/{digest}/payload"),
+        package_path: format!("packages/{package_key}/payload"),
         executable_path: envelope.executable_path,
         digest,
         signer_key_id,
