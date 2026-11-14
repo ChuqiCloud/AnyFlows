@@ -9,9 +9,9 @@ use crate::{
         PluginActionResponse, PluginArtifactApprovalResponse, PluginArtifactPageResponse,
         PluginArtifactRegistrationRequest, PluginArtifactResponse,
         PluginArtifactRevocationResponse, PluginArtifactRevokeRequest,
-        PluginCapabilityGrantResponse, PluginDeploymentDisableRequest,
-        PluginDeploymentPageResponse, PluginDeploymentRequest, PluginDeploymentResponse,
-        PluginDeploymentRollbackRequest,
+        PluginCapabilityGrantRequest, PluginCapabilityGrantResponse,
+        PluginDeploymentDisableRequest, PluginDeploymentPageResponse, PluginDeploymentRequest,
+        PluginDeploymentResponse, PluginDeploymentRollbackRequest,
     },
 };
 
