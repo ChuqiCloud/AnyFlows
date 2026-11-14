@@ -660,7 +660,10 @@ impl DatabaseAdminPluginLifecycleService {
             return Ok(());
         };
         if let Err(error) = self.apply_runtime(&deployment).await {
-            if let Some(runtime) = &self.sidecar_runtime {
+            if !deployment.enabled
+                && deployment.artifact.digest == artifact.digest
+                && let Some(runtime) = &self.sidecar_runtime
+            {
                 let _ = runtime
                     .stop_through_generation(&deployment.plugin_id, deployment.generation)
                     .await;

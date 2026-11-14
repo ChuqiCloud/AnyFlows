@@ -110,6 +110,7 @@ export const systemSectionItems = [
   'accountVerificationSettings',
   'keys',
   'runtimeStatus',
+  'pluginLifecycle',
   'debugTraces',
 ] as const satisfies readonly NavKey[]
 
