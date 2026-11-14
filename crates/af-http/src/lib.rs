@@ -203,9 +203,7 @@ pub use operations::{
     VERSION_ALIAS_PATH, VERSION_PATH, VersionInfo,
 };
 pub use payment_webhook::{PaymentWebhookProcessorRegistry, build_payment_webhook_router};
-pub use plugin_lifecycle::{
-    PluginArtifactTrust, PluginArtifactTrustError, build_plugin_lifecycle_router,
-};
+pub use plugin_lifecycle::build_plugin_lifecycle_router;
 pub use refund_webhook::{RefundReceiptProcessorRegistry, build_refund_receipt_webhook_router};
 pub use rerank_service::{RerankService, RerankServiceFuture};
 pub use responses_compact_service::{ResponsesCompactService, ResponsesCompactServiceFuture};

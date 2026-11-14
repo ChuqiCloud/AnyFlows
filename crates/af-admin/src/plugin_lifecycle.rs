@@ -324,6 +324,13 @@ impl From<PluginCapabilityGrant> for AdminPluginCapabilityGrant {
 }
 
 impl AdminPluginCapabilityGrant {
+    pub fn new(id: String, version: u16) -> Result<Self, AdminPluginLifecycleError> {
+        if id.is_empty() || id.len() > 128 || version == 0 {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        Ok(Self { id, version })
+    }
+
     #[must_use]
     pub fn id(&self) -> &str {
         &self.id
@@ -379,8 +386,82 @@ pub struct PluginDeploymentCommand {
     artifact_digest: String,
     expected_generation: Option<i64>,
     enabled: bool,
-    granted_capabilities: Vec<PluginCapabilityGrant>,
+    granted_capabilities: Vec<AdminPluginCapabilityGrant>,
     config: Value,
+}
+
+/// Administrator supplied artifact locator and signed metadata. The package is
+/// verified against host-owned root/key configuration before persistence.
+#[derive(Clone)]
+pub struct PluginArtifactRegistrationCommand {
+    plugin_id: String,
+    plugin_version: String,
+    manifest: Value,
+    package_path: String,
+    executable_path: String,
+    sha256: String,
+    signer_key_id: String,
+    signature_base64: String,
+}
+
+impl PluginArtifactRegistrationCommand {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        plugin_id: String,
+        plugin_version: String,
+        manifest: Value,
+        package_path: String,
+        executable_path: String,
+        sha256: String,
+        signer_key_id: String,
+        signature_base64: String,
+    ) -> Result<Self, AdminPluginLifecycleError> {
+        if plugin_id.is_empty()
+            || plugin_id.len() > 128
+            || plugin_version.is_empty()
+            || plugin_version.len() > 128
+            || !manifest.is_object()
+            || package_path.is_empty()
+            || package_path.len() > 900
+            || executable_path.is_empty()
+            || executable_path.len() > 900
+            || sha256.len() != 64
+            || !sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            || signer_key_id.is_empty()
+            || signer_key_id.len() > 128
+            || signature_base64.len() != 88
+        {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        Ok(Self {
+            plugin_id,
+            plugin_version,
+            manifest,
+            package_path,
+            executable_path,
+            sha256,
+            signer_key_id,
+            signature_base64,
+        })
+    }
+}
+
+impl fmt::Debug for PluginArtifactRegistrationCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PluginArtifactRegistrationCommand")
+            .field("plugin_id", &self.plugin_id)
+            .field("plugin_version", &self.plugin_version)
+            .field("manifest", &"<redacted>")
+            .field("package_path", &"<relative path>")
+            .field("executable_path", &"<relative path>")
+            .field("sha256", &self.sha256)
+            .field("signer_key_id", &self.signer_key_id)
+            .field("signature_base64", &"<redacted>")
+            .finish()
+    }
 }
 
 impl PluginDeploymentCommand {
@@ -390,7 +471,7 @@ impl PluginDeploymentCommand {
         artifact_digest: String,
         expected_generation: Option<i64>,
         enabled: bool,
-        granted_capabilities: Vec<PluginCapabilityGrant>,
+        granted_capabilities: Vec<AdminPluginCapabilityGrant>,
         config: Value,
     ) -> Result<Self, AdminPluginLifecycleError> {
         if plugin_id.is_empty()
@@ -403,6 +484,13 @@ impl PluginDeploymentCommand {
             || !config.is_object()
             || granted_capabilities.len() > af_db::MAX_PLUGIN_CAPABILITIES
             || (enabled && granted_capabilities.is_empty())
+        {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        if granted_capabilities
+            .iter()
+            .any(|grant| !seen.insert(grant.id.clone()))
         {
             return Err(AdminPluginLifecycleError::InvalidInput);
         }
@@ -720,37 +808,59 @@ impl DatabaseAdminPluginLifecycleService {
         let plugin_id = artifact.plugin_id().as_str().to_owned();
         let plugin_version = artifact.plugin_version().as_str().to_owned();
         let digest = artifact.sha256().to_owned();
+        let result = self.persist_verified_artifact(artifact).await;
+        self.finish_mutation(
+            principal,
+            request_id,
+            "/admin/plugins/artifacts",
+            "register",
+            "plugin_artifact",
+            Some(plugin_id),
+            None,
+            Some(json!({ "pluginVersion": plugin_version, "digest": digest })),
+            result,
+        )
+        .await
+    }
+
+    /// Verify a candidate using host-owned filesystem/key configuration, then
+    /// persist it in the durable catalog under admin session and audit controls.
+    pub async fn register_artifact_candidate(
+        &self,
+        principal: SessionPrincipal,
+        command: PluginArtifactRegistrationCommand,
+        request_id: &str,
+    ) -> Result<AdminPluginArtifact, AdminPluginLifecycleError> {
+        self.authorize_mutation(
+            principal,
+            request_id,
+            "/admin/plugins/artifacts",
+            "register",
+            "plugin_artifact",
+            None,
+        )
+        .await?;
+        let plugin_id = command.plugin_id.clone();
+        let plugin_version = command.plugin_version.clone();
+        let digest = command.sha256.clone();
         let result = async {
-            let source_kind = match artifact.source_kind() {
-                "builtin" => PluginArtifactSourceKind::Builtin,
-                "local_process" => PluginArtifactSourceKind::LocalProcess,
-                _ => return Err(AdminPluginLifecycleError::InvalidInput),
-            };
-            let manifest = serde_json::to_value(artifact.manifest())
-                .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-            let signature_base64 = artifact.signature_base64();
-            let signature = BASE64
-                .decode(signature_base64.as_bytes())
-                .map_err(|_| AdminPluginLifecycleError::InvalidInput)?
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>();
-            let input = PluginArtifactCreate {
-                plugin_id: plugin_id.clone(),
-                plugin_version: plugin_version.clone(),
-                digest: digest.clone(),
-                manifest,
-                source_kind,
-                source_reference: artifact.source_reference().to_owned(),
-                signer_key_id: artifact.signer_key_id().to_owned(),
-                signature,
-                created_at: current_timestamp()?,
-            };
-            self.repository
-                .register_artifact(input)
-                .await
-                .map(AdminPluginArtifact::from_record)
-                .map_err(map_catalog_error)
+            let runtime = self
+                .sidecar_runtime
+                .as_ref()
+                .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
+            let artifact = runtime
+                .verify_candidate(
+                    command.plugin_id,
+                    command.plugin_version,
+                    command.manifest,
+                    command.package_path,
+                    command.executable_path,
+                    command.sha256,
+                    command.signer_key_id,
+                    command.signature_base64,
+                )
+                .await?;
+            self.persist_verified_artifact(artifact).await
         }
         .await;
         self.finish_mutation(
@@ -765,6 +875,40 @@ impl DatabaseAdminPluginLifecycleService {
             result,
         )
         .await
+    }
+
+    async fn persist_verified_artifact(
+        &self,
+        artifact: VerifiedPluginArtifact,
+    ) -> Result<AdminPluginArtifact, AdminPluginLifecycleError> {
+        let source_kind = match artifact.source_kind() {
+            "builtin" => PluginArtifactSourceKind::Builtin,
+            "local_process" => PluginArtifactSourceKind::LocalProcess,
+            _ => return Err(AdminPluginLifecycleError::InvalidInput),
+        };
+        let signature = BASE64
+            .decode(artifact.signature_base64().as_bytes())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let input = PluginArtifactCreate {
+            plugin_id: artifact.plugin_id().as_str().to_owned(),
+            plugin_version: artifact.plugin_version().as_str().to_owned(),
+            digest: artifact.sha256().to_owned(),
+            manifest: serde_json::to_value(artifact.manifest())
+                .map_err(|_| AdminPluginLifecycleError::InvalidInput)?,
+            source_kind,
+            source_reference: artifact.source_reference().to_owned(),
+            signer_key_id: artifact.signer_key_id().to_owned(),
+            signature,
+            created_at: current_timestamp()?,
+        };
+        self.repository
+            .register_artifact(input)
+            .await
+            .map(AdminPluginArtifact::from_record)
+            .map_err(map_catalog_error)
     }
 
     pub async fn approve_artifact(
@@ -933,7 +1077,14 @@ impl DatabaseAdminPluginLifecycleService {
                         artifact_digest: command.artifact_digest.clone(),
                         expected_generation: command.expected_generation,
                         enabled: command.enabled,
-                        granted_capabilities: command.granted_capabilities.clone(),
+                        granted_capabilities: command
+                            .granted_capabilities
+                            .iter()
+                            .map(|grant| PluginCapabilityGrant {
+                                id: grant.id.clone(),
+                                version: grant.version,
+                            })
+                            .collect(),
                         config: command.config.clone(),
                         updated_by: principal.user_id(),
                         updated_at,
@@ -1259,7 +1410,7 @@ mod tests {
             "a".repeat(64),
             None,
             true,
-            Vec::new(),
+            vec![AdminPluginCapabilityGrant::new("catalog.models.read".to_owned(), 1).unwrap()],
             json!({ "credential": "sensitive-value" }),
         )
         .unwrap();

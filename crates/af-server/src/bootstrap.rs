@@ -2805,11 +2805,6 @@ impl Bootstrap<Supervised> {
             )
             .with_sidecar_runtime(self.stage.plugin_sidecar_runtime.clone()),
         );
-        let plugin_artifact_trust = af_http::PluginArtifactTrust::from_config(
-            self.config.server().plugin_artifact_directory(),
-            self.config.server().plugin_trusted_signers(),
-        )
-        .expect("插件信任配置已在应用配置校验阶段验证");
         let probe =
             DatabaseReadinessProbe::new(self.stage.infrastructure.infrastructure.database.clone());
         let readiness = ReadinessHandle::new(probe);
@@ -3185,7 +3180,6 @@ impl Bootstrap<Supervised> {
             .merge(af_http::build_plugin_lifecycle_router(
                 Arc::clone(&plugin_lifecycle_service),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
-                plugin_artifact_trust,
             ));
         let Bootstrap {
             config,

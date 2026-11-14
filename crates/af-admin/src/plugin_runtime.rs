@@ -70,6 +70,91 @@ impl AdminPluginSidecarRuntime {
         })
     }
 
+    /// Verify an administrator-selected package under the host-owned trust root.
+    pub async fn verify_candidate(
+        &self,
+        plugin_id: String,
+        plugin_version: String,
+        manifest: serde_json::Value,
+        package_path: String,
+        executable_path: String,
+        sha256: String,
+        signer_key_id: String,
+        signature_base64: String,
+    ) -> Result<VerifiedPluginArtifact, AdminPluginLifecycleError> {
+        let package_relative = safe_posix_relative_path(&package_path)?;
+        let executable_relative = safe_posix_relative_path(&executable_path)?;
+        let plugin_id =
+            PluginId::new(plugin_id).map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let plugin_version = PluginVersion::new(plugin_version)
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let manifest: PluginManifest = serde_json::from_value(manifest)
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        manifest
+            .validate()
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        if manifest.plugin_id != plugin_id || manifest.plugin_version != plugin_version {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        let key = self
+            .trusted_signers
+            .get(&signer_key_id)
+            .ok_or(AdminPluginLifecycleError::InvalidInput)?;
+        let working_directory = std::env::current_dir()
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .canonicalize()
+            .map_err(|_| AdminPluginLifecycleError::Internal)?;
+        let artifact_root = working_directory
+            .join(&self.artifact_root)
+            .canonicalize()
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+        if !artifact_root.is_dir() || !artifact_root.starts_with(&working_directory) {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        let package_root = artifact_root
+            .join(package_relative)
+            .canonicalize()
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        if !package_root.starts_with(&artifact_root) {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        let executable = package_root
+            .join(executable_relative)
+            .canonicalize()
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        if !executable.starts_with(&package_root)
+            || !tokio::fs::metadata(&executable)
+                .await
+                .is_ok_and(|metadata| metadata.is_file())
+        {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        let source_reference = serde_json::to_string(&serde_json::json!({
+            "packagePath": canonical_relative_path(&artifact_root, &package_root)?,
+            "executablePath": canonical_relative_path(&package_root, &executable)?,
+        }))
+        .map_err(|_| AdminPluginLifecycleError::Internal)?;
+        if source_reference.len() > 2048 {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        let descriptor = PluginArtifactDescriptor::new(
+            plugin_id,
+            plugin_version,
+            manifest,
+            executable,
+            package_root,
+            sha256,
+            signer_key_id,
+            &signature_base64,
+            "local_process".to_owned(),
+            source_reference,
+        )
+        .map_err(map_sidecar_error)?;
+        VerifiedPluginArtifact::verify(descriptor, key)
+            .await
+            .map_err(map_sidecar_error)
+    }
+
     /// Start a committed enabled generation or stop a committed disabled one.
     pub async fn apply(
         &self,
@@ -319,7 +404,13 @@ fn safe_relative_path(value: &str) -> Result<PathBuf, AdminPluginLifecycleError>
     let path = Path::new(value);
     if value.is_empty()
         || value.len() > 2048
+        || value.starts_with('/')
+        || value.contains('\\')
+        || value.contains(':')
         || value.chars().any(char::is_control)
+        || value
+            .split('/')
+            .any(|component| component.is_empty() || component == "." || component == "..")
         || !path
             .components()
             .all(|component| matches!(component, Component::Normal(_)))
@@ -327,6 +418,49 @@ fn safe_relative_path(value: &str) -> Result<PathBuf, AdminPluginLifecycleError>
         return Err(AdminPluginLifecycleError::InvalidInput);
     }
     Ok(path.to_path_buf())
+}
+
+fn safe_posix_relative_path(value: &str) -> Result<PathBuf, AdminPluginLifecycleError> {
+    if value.is_empty()
+        || value.len() > 900
+        || value.starts_with('/')
+        || value.contains('\\')
+        || value.contains(':')
+        || value.chars().any(char::is_control)
+        || value.split('/').any(|component| {
+            component.is_empty() || component == "." || component == ".." || component.len() > 255
+        })
+    {
+        return Err(AdminPluginLifecycleError::InvalidInput);
+    }
+    Ok(PathBuf::from(value))
+}
+
+fn canonical_relative_path(
+    base: &Path,
+    target: &Path,
+) -> Result<String, AdminPluginLifecycleError> {
+    let relative = target
+        .strip_prefix(base)
+        .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+    let components = relative
+        .components()
+        .map(|component| match component {
+            Component::Normal(value) => value
+                .to_str()
+                .map(str::to_owned)
+                .ok_or(AdminPluginLifecycleError::InvalidInput),
+            _ => Err(AdminPluginLifecycleError::InvalidInput),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if components.is_empty() {
+        return Err(AdminPluginLifecycleError::InvalidInput);
+    }
+    let value = components.join("/");
+    if value.len() > 900 || value.chars().any(char::is_control) {
+        return Err(AdminPluginLifecycleError::InvalidInput);
+    }
+    Ok(value)
 }
 
 fn base64_signature_from_hex(value: &str) -> Result<String, AdminPluginLifecycleError> {
@@ -366,13 +500,24 @@ fn map_sidecar_error(error: SidecarError) -> AdminPluginLifecycleError {
 
 #[cfg(test)]
 mod tests {
-    use super::{base64_signature_from_hex, safe_relative_path};
+    use super::{base64_signature_from_hex, safe_posix_relative_path, safe_relative_path};
 
     #[test]
     fn artifact_paths_must_be_relative_and_traversal_free() {
         assert!(safe_relative_path("packages/plugin-a").is_ok());
+        assert!(safe_posix_relative_path("packages/plugin-a").is_ok());
         for value in ["", "../outside", ".", "/absolute/path", "C:\\outside"] {
             assert!(safe_relative_path(value).is_err(), "{value}");
+        }
+        for value in [
+            "",
+            "../outside",
+            ".",
+            "/absolute/path",
+            "C:/outside",
+            "a//b",
+        ] {
+            assert!(safe_posix_relative_path(value).is_err(), "{value}");
         }
     }
 

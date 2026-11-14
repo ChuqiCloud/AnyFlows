@@ -1,24 +1,13 @@
 //! Admin HTTP API for signed plugin artifact and deployment lifecycle.
 
-use std::{
-    collections::BTreeMap,
-    fmt,
-    path::{Component, Path, PathBuf},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use af_admin::{
     AdminPluginArtifact, AdminPluginArtifactApproval, AdminPluginArtifactPage,
     AdminPluginArtifactRevocation, AdminPluginCapabilityGrant, AdminPluginDeployment,
     AdminPluginDeploymentPage, AdminPluginLifecycleError, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
-    DatabaseAdminPluginLifecycleService, PluginDeploymentCommand, SessionAuthentication,
-    SessionAuthenticator,
-};
-use af_config::PluginTrustedSigner;
-use af_db::PluginCapabilityGrant as DbPluginCapabilityGrant;
-use af_plugin_contract::{PluginId, PluginManifest, PluginVersion};
-use af_plugin_runtime::{
-    PluginArtifactDescriptor, SidecarError, TrustedPluginKey, VerifiedPluginArtifact,
+    DatabaseAdminPluginLifecycleService, PluginArtifactRegistrationCommand,
+    PluginDeploymentCommand, SessionAuthentication, SessionAuthenticator,
 };
 use af_telemetry::RequestId;
 use axum::{
@@ -32,11 +21,9 @@ use axum::{
     response::Response,
     routing::{get, post},
 };
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use http::{HeaderValue, header::CACHE_CONTROL};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use thiserror::Error;
 use utoipa::ToSchema;
 
 use crate::{
@@ -50,64 +37,6 @@ use crate::{
 #[derive(Clone)]
 struct PluginLifecycleHttpState {
     service: Arc<DatabaseAdminPluginLifecycleService>,
-    trust: PluginArtifactTrust,
-}
-
-/// Host-owned root and public signing keys used to verify HTTP-registered packages.
-/// The root and keys are never returned by an endpoint or included in Debug output.
-#[derive(Clone)]
-pub struct PluginArtifactTrust {
-    artifact_root: Option<PathBuf>,
-    trusted_keys: BTreeMap<String, TrustedPluginKey>,
-}
-
-impl PluginArtifactTrust {
-    /// Build verification state from already validated server configuration.
-    pub fn from_config(
-        artifact_root: Option<&Path>,
-        signers: &[PluginTrustedSigner],
-    ) -> Result<Self, PluginArtifactTrustError> {
-        let mut trusted_keys = BTreeMap::new();
-        for signer in signers {
-            let bytes = BASE64
-                .decode(signer.public_key_base64().as_bytes())
-                .map_err(|_| PluginArtifactTrustError::InvalidConfiguration)?;
-            let public_key: [u8; 32] = bytes
-                .try_into()
-                .map_err(|_| PluginArtifactTrustError::InvalidConfiguration)?;
-            let key = TrustedPluginKey::new(signer.key_id().to_owned(), public_key)
-                .map_err(|_| PluginArtifactTrustError::InvalidConfiguration)?;
-            if trusted_keys
-                .insert(signer.key_id().to_owned(), key)
-                .is_some()
-            {
-                return Err(PluginArtifactTrustError::InvalidConfiguration);
-            }
-        }
-        Ok(Self {
-            artifact_root: artifact_root.map(Path::to_path_buf),
-            trusted_keys,
-        })
-    }
-}
-
-impl fmt::Debug for PluginArtifactTrust {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("PluginArtifactTrust")
-            .field(
-                "artifact_root",
-                &self.artifact_root.as_ref().map(|_| "<configured>"),
-            )
-            .field("trusted_key_count", &self.trusted_keys.len())
-            .finish()
-    }
-}
-
-#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
-pub enum PluginArtifactTrustError {
-    #[error("plugin artifact trust configuration is invalid")]
-    InvalidConfiguration,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -378,7 +307,6 @@ struct DeploymentListQuery {
 pub fn build_plugin_lifecycle_router(
     service: Arc<DatabaseAdminPluginLifecycleService>,
     authenticator: Arc<dyn SessionAuthenticator>,
-    trust: PluginArtifactTrust,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(authenticator),
@@ -415,7 +343,7 @@ pub fn build_plugin_lifecycle_router(
         .route_layer(authentication)
         .layer(middleware::from_fn(ensure_request_id))
         .layer(middleware::from_fn(add_no_store))
-        .with_state(PluginLifecycleHttpState { service, trust })
+        .with_state(PluginLifecycleHttpState { service })
 }
 
 async fn add_no_store(request: Request, next: Next) -> Response {
@@ -497,10 +425,20 @@ async fn register_artifact(
     request: Result<Json<PluginArtifactRegistrationRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
-    let artifact = verify_artifact_request(&state.trust, request).await?;
+    let command = PluginArtifactRegistrationCommand::new(
+        request.plugin_id,
+        request.plugin_version,
+        request.manifest,
+        request.package_path,
+        request.executable_path,
+        request.sha256,
+        request.signer_key_id,
+        request.signature_base64,
+    )
+    .map_err(map_service_error)?;
     let registered = state
         .service
-        .register_verified_artifact(authentication.principal(), artifact, request_id.as_str())
+        .register_artifact_candidate(authentication.principal(), command, request_id.as_str())
         .await
         .map_err(map_service_error)?;
     Ok(no_store_json(PluginArtifactResponse::from(registered)))
@@ -561,11 +499,9 @@ async fn deploy(
     let grants = request
         .granted_capabilities
         .into_iter()
-        .map(|grant| DbPluginCapabilityGrant {
-            id: grant.id,
-            version: grant.version,
-        })
-        .collect();
+        .map(|grant| AdminPluginCapabilityGrant::new(grant.id, grant.version))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(map_service_error)?;
     let command = PluginDeploymentCommand::new(
         plugin_id,
         request.artifact_digest,
@@ -626,144 +562,6 @@ async fn rollback_deployment(
     Ok(no_store_json(PluginDeploymentResponse::from(result)))
 }
 
-async fn verify_artifact_request(
-    trust: &PluginArtifactTrust,
-    request: PluginArtifactRegistrationRequest,
-) -> Result<VerifiedPluginArtifact, ManagementError> {
-    let artifact_root = trust
-        .artifact_root
-        .as_deref()
-        .ok_or(ManagementError::PluginLifecycleUnavailable)?;
-    if trust.trusted_keys.is_empty() {
-        return Err(ManagementError::PluginLifecycleUnavailable);
-    }
-    let package_relative = parse_relative_package_path(&request.package_path)?;
-    let executable_relative = parse_relative_package_path(&request.executable_path)?;
-    let plugin_id = PluginId::new(request.plugin_id)
-        .map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
-    let plugin_version = PluginVersion::new(request.plugin_version)
-        .map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
-    let manifest: PluginManifest = serde_json::from_value(request.manifest)
-        .map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
-    manifest
-        .validate()
-        .map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
-    if manifest.plugin_id != plugin_id || manifest.plugin_version != plugin_version {
-        return Err(ManagementError::PluginLifecycleInvalidRequest);
-    }
-
-    let key = trust
-        .trusted_keys
-        .get(&request.signer_key_id)
-        .ok_or(ManagementError::PluginLifecycleInvalidRequest)?;
-    let canonical_root = tokio::fs::canonicalize(artifact_root)
-        .await
-        .map_err(|_| ManagementError::PluginLifecycleUnavailable)?;
-    let working_directory =
-        tokio::fs::canonicalize(std::env::current_dir().map_err(|_| ManagementError::Internal)?)
-            .await
-            .map_err(|_| ManagementError::Internal)?;
-    if !canonical_root.starts_with(&working_directory) {
-        return Err(ManagementError::PluginLifecycleInvalidRequest);
-    }
-    let package_root = tokio::fs::canonicalize(canonical_root.join(&package_relative))
-        .await
-        .map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
-    if !package_root.starts_with(&canonical_root) {
-        return Err(ManagementError::PluginLifecycleInvalidRequest);
-    }
-    let executable = tokio::fs::canonicalize(package_root.join(&executable_relative))
-        .await
-        .map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
-    if !executable.starts_with(&package_root)
-        || !tokio::fs::metadata(&executable)
-            .await
-            .is_ok_and(|metadata| metadata.is_file())
-    {
-        return Err(ManagementError::PluginLifecycleInvalidRequest);
-    }
-
-    // The stored reference is a relative locator for reconciliation, never a local absolute path.
-    let canonical_package_path = canonical_relative_path(&canonical_root, &package_root)?;
-    let canonical_executable_path = canonical_relative_path(&package_root, &executable)?;
-    let source_reference = serde_json::to_string(&json!({
-        "packagePath": canonical_package_path,
-        "executablePath": canonical_executable_path,
-    }))
-    .map_err(|_| ManagementError::Internal)?;
-    if source_reference.len() > 2048 {
-        return Err(ManagementError::PluginLifecycleInvalidRequest);
-    }
-    let descriptor = PluginArtifactDescriptor::new(
-        plugin_id,
-        plugin_version,
-        manifest,
-        executable,
-        package_root,
-        request.sha256,
-        request.signer_key_id,
-        &request.signature_base64,
-        "local_process".to_owned(),
-        source_reference,
-    )
-    .map_err(map_artifact_verification_error)?;
-    VerifiedPluginArtifact::verify(descriptor, key)
-        .await
-        .map_err(map_artifact_verification_error)
-}
-
-fn canonical_relative_path(base: &Path, target: &Path) -> Result<String, ManagementError> {
-    let relative = target
-        .strip_prefix(base)
-        .map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
-    let components = relative
-        .components()
-        .map(|component| match component {
-            Component::Normal(value) => value
-                .to_str()
-                .map(str::to_owned)
-                .ok_or(ManagementError::PluginLifecycleInvalidRequest),
-            _ => Err(ManagementError::PluginLifecycleInvalidRequest),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    if components.is_empty() {
-        return Err(ManagementError::PluginLifecycleInvalidRequest);
-    }
-    let value = components.join("/");
-    if value.len() > 900 || value.chars().any(char::is_control) {
-        return Err(ManagementError::PluginLifecycleInvalidRequest);
-    }
-    Ok(value)
-}
-
-fn parse_relative_package_path(value: &str) -> Result<PathBuf, ManagementError> {
-    if value.is_empty()
-        || value.len() > 900
-        || value.starts_with('/')
-        || value.contains('\\')
-        || value.contains(':')
-        || value.chars().any(char::is_control)
-    {
-        return Err(ManagementError::PluginLifecycleInvalidRequest);
-    }
-    let path = Path::new(value);
-    if path.is_absolute()
-        || path
-            .components()
-            .any(|component| !matches!(component, Component::Normal(_)))
-        || value
-            .split('/')
-            .any(|component| component.is_empty() || component.len() > 255)
-    {
-        return Err(ManagementError::PluginLifecycleInvalidRequest);
-    }
-    Ok(path.to_path_buf())
-}
-
-fn map_artifact_verification_error(_: SidecarError) -> ManagementError {
-    ManagementError::PluginLifecycleInvalidRequest
-}
-
 fn contains_sensitive_config_fields(value: &Value) -> bool {
     match value {
         Value::Object(fields) => fields.iter().any(|(name, value)| {
@@ -815,41 +613,6 @@ fn map_service_error(error: AdminPluginLifecycleError) -> ManagementError {
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn artifact_paths_must_be_normalized_relative_paths() {
-        assert!(parse_relative_package_path("publishers/acme/plugin").is_ok());
-        for unsafe_path in [
-            "",
-            "/etc/plugin",
-            "../plugin",
-            "packages/../../outside",
-            "C:/plugins/example",
-            "packages\\plugin",
-            "packages//plugin",
-            "packages/./plugin",
-        ] {
-            assert!(
-                parse_relative_package_path(unsafe_path).is_err(),
-                "{unsafe_path}"
-            );
-        }
-    }
-
-    #[test]
-    fn trust_debug_does_not_reveal_root_path_or_key_material() {
-        let key = TrustedPluginKey::new("publisher", [0xa5; 32]).unwrap();
-        let mut trusted_keys = BTreeMap::new();
-        trusted_keys.insert("publisher".to_owned(), key);
-        let trust = PluginArtifactTrust {
-            artifact_root: Some(PathBuf::from("private/artifact/root")),
-            trusted_keys,
-        };
-        let debug = format!("{trust:?}");
-        assert!(!debug.contains("private/artifact/root"));
-        assert!(!debug.contains("a5a5a5"));
-        assert!(debug.contains("<configured>"));
-    }
 
     #[test]
     fn deployment_config_rejects_credential_like_field_names() {

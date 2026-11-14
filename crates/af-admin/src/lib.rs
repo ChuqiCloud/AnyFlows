@@ -396,7 +396,8 @@ pub use plugin_lifecycle::{
     AdminPluginArtifact, AdminPluginArtifactApproval, AdminPluginArtifactPage,
     AdminPluginArtifactRevocation, AdminPluginCapabilityGrant, AdminPluginDeployment,
     AdminPluginDeploymentPage, AdminPluginLifecycleError, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
-    DatabaseAdminPluginLifecycleService, PluginDeploymentCommand,
+    DatabaseAdminPluginLifecycleService, PluginArtifactRegistrationCommand,
+    PluginDeploymentCommand,
 };
 pub use plugin_runtime::AdminPluginSidecarRuntime;
 pub use redemption::{
