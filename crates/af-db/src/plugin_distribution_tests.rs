@@ -584,7 +584,7 @@ async fn package_reads_reject_corrupted_or_missing_chunks() -> Result<(), Box<dy
         .await?;
     let query = Query::update()
         .table(Alias::new("plugin_package_chunks"))
-        .value(Alias::new("content"), vec![14; PLUGIN_PACKAGE_CHUNK_BYTES])
+        .value(Alias::new("content"), vec![14_u8; PLUGIN_PACKAGE_CHUNK_BYTES])
         .and_where(Expr::col(Alias::new("artifact_id")).eq(fixture.artifact_id))
         .and_where(Expr::col(Alias::new("chunk_index")).eq(0))
         .to_owned();
