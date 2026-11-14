@@ -4,9 +4,9 @@
 use std::{error::Error, io::Write, path::Path, sync::Arc, time::Duration};
 
 use af_db::{
-    AdminUserCreateRecord, AdminUserRepository, DatabaseOptions, DatabasePool, InitialSetupOutcome,
-    InitialSetupRecord, InitialSetupRepository, MigrationOptions, PlatformAuditRepository,
-    PluginCatalogRepository,
+    AdminUserCreateRecord, AdminUserLookupOutcome, AdminUserRepository, DatabaseOptions,
+    DatabasePool, InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
+    MigrationOptions, PlatformAuditRepository, PluginCatalogRepository,
 };
 use serde_json::json;
 use zip::{ZipWriter, write::SimpleFileOptions};
@@ -55,10 +55,9 @@ impl Fixture {
             return Err("fresh integration database was already initialized".into());
         };
         let users = AdminUserRepository::new(pool.clone(), Duration::from_secs(10))?;
-        let operator = users
-            .get(user_id)
-            .await?
-            .ok_or("initial administrator is missing")?;
+        let AdminUserLookupOutcome::Found(operator) = users.get(user_id).await? else {
+            return Err("initial administrator is missing".into());
+        };
         let mut principals = vec![SessionPrincipal::new(user_id, SessionRole::Admin)];
         for index in 1..3 {
             let user = users
@@ -113,6 +112,12 @@ fn service(
 }
 
 fn example_package() -> Result<Vec<u8>, Box<dyn Error>> {
+    example_package_with_entry(include_bytes!(
+        "../../../tools/plugins/examples/catalog/plugin.py"
+    ))
+}
+
+fn example_package_with_entry(entry: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
     let manifest: serde_json::Value = serde_json::from_str(include_str!(
         "../../../tools/plugins/examples/catalog/manifest.json"
     ))?;
@@ -127,9 +132,7 @@ fn example_package() -> Result<Vec<u8>, Box<dyn Error>> {
     }))?)?;
     writer.add_directory("payload/", file.unix_permissions(0o755))?;
     writer.start_file("payload/plugin.py", file.unix_permissions(0o755))?;
-    writer.write_all(include_bytes!(
-        "../../../tools/plugins/examples/catalog/plugin.py"
-    ))?;
+    writer.write_all(entry)?;
     writer.start_file("payload/manifest.json", file)?;
     writer.write_all(include_bytes!(
         "../../../tools/plugins/examples/catalog/manifest.json"
@@ -143,6 +146,183 @@ fn example_package() -> Result<Vec<u8>, Box<dyn Error>> {
         "../../../tools/plugins/sdk/python/anyflows_plugin.py"
     ))?;
     Ok(writer.finish()?.into_inner())
+}
+
+#[tokio::test]
+async fn concurrent_apply_of_the_same_generation_keeps_the_winning_session_healthy()
+-> Result<(), Box<dyn Error>> {
+    if !Path::new("/usr/bin/python3").is_file() {
+        eprintln!("Skipping real Python catalog fixture: /usr/bin/python3 is unavailable");
+        return Ok(());
+    }
+    let fixture = Fixture::new().await?;
+    let repository = PluginCatalogRepository::new(fixture.pool.clone());
+    let mut upload = fixture
+        .first
+        .begin_package_upload(fixture.operator, "concurrent-upload")
+        .await?;
+    upload.write_chunk(&example_package()?).await?;
+    let installed = fixture
+        .first
+        .install_package(
+            fixture.operator,
+            upload,
+            json!({}),
+            None,
+            "concurrent-install",
+        )
+        .await?;
+    let deployment = repository
+        .get_deployment(PLUGIN_ID)
+        .await?
+        .ok_or("deployment is missing")?;
+    let runtime = fixture
+        .second
+        .capability_runtime()
+        .ok_or("runtime is missing")?;
+
+    // HTTP activation, reconciliation and a lazy capability request can all
+    // observe a missing session before any of them finishes the handshake.
+    let (first, second, third) = tokio::time::timeout(Duration::from_secs(30), async {
+        tokio::join!(
+            runtime.apply(&repository, &deployment),
+            runtime.apply(&repository, &deployment),
+            runtime.apply(&repository, &deployment),
+        )
+    })
+    .await?;
+    first?;
+    second?;
+    third?;
+
+    let overview = fixture.first.runtime_overview(fixture.operator).await?;
+    let state = overview
+        .states
+        .iter()
+        .find(|state| state.node_id == runtime.node_id() && state.plugin_id == PLUGIN_ID)
+        .ok_or("second node did not report its runtime state")?;
+    assert_eq!(state.generation, installed.generation());
+    assert_eq!(state.digest, installed.artifact().digest());
+    assert_eq!(state.status, "ready");
+    let catalog = fixture
+        .second
+        .catalog_models(
+            fixture.second_reader,
+            PLUGIN_ID,
+            PluginCatalogExtensionQuery::new(None, None, 24)?,
+            "concurrent-catalog",
+        )
+        .await?;
+    assert_eq!(catalog.models.len(), 2);
+    let current = repository
+        .get_deployment(PLUGIN_ID)
+        .await?
+        .ok_or("deployment is missing")?;
+    assert!(current.enabled);
+    assert_eq!(current.generation, installed.generation());
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn shared_package_recovers_after_a_transient_start_failure_without_a_new_generation()
+-> Result<(), Box<dyn Error>> {
+    if !Path::new("/usr/bin/python3").is_file() {
+        eprintln!("Skipping real Python catalog fixture: /usr/bin/python3 is unavailable");
+        return Ok(());
+    }
+    let fixture = Fixture::new().await?;
+    let repository = PluginCatalogRepository::new(fixture.pool.clone());
+    let marker = fixture.root.path().join("failed-first-start");
+    // The package itself is immutable. Only this fixture-owned marker outside
+    // its tree changes, causing exactly the first real sidecar process to exit.
+    let entry = format!(
+        concat!(
+            "#!/usr/bin/python3\n",
+            "from pathlib import Path\n",
+            "marker = Path({})\n",
+            "if not marker.exists():\n",
+            "    marker.write_text('failed-once', encoding='utf-8')\n",
+            "    raise SystemExit(1)\n",
+            "exec(compile({}, __file__, 'exec'))\n",
+        ),
+        serde_json::to_string(marker.to_str().ok_or("marker path is not UTF-8")?)?,
+        serde_json::to_string(include_str!(
+            "../../../tools/plugins/examples/catalog/plugin.py"
+        ))?,
+    );
+    let mut upload = fixture
+        .first
+        .begin_package_upload(fixture.operator, "recovery-upload")
+        .await?;
+    upload
+        .write_chunk(&example_package_with_entry(entry.as_bytes())?)
+        .await?;
+    let failed = fixture
+        .first
+        .install_package(
+            fixture.operator,
+            upload,
+            json!({}),
+            None,
+            "recovery-install",
+        )
+        .await;
+    assert!(failed.is_err(), "the first sidecar handshake must fail");
+    assert!(marker.is_file(), "the sidecar ran the failing first launch");
+    let desired = repository
+        .get_deployment(PLUGIN_ID)
+        .await?
+        .ok_or("failed activation lost the desired deployment")?;
+    assert!(desired.enabled, "one node failure preserves shared intent");
+    assert!(
+        repository
+            .distribution_repository()
+            .load_package(desired.artifact.id)
+            .await?
+            .is_some()
+    );
+    let runtime = fixture
+        .first
+        .capability_runtime()
+        .ok_or("runtime is missing")?;
+    let failed_overview = fixture.first.runtime_overview(fixture.operator).await?;
+    assert!(failed_overview.states.iter().any(|state| {
+        state.node_id == runtime.node_id()
+            && state.plugin_id == PLUGIN_ID
+            && state.generation == desired.generation
+            && state.status == "failed"
+    }));
+
+    // Reuse the same runtime and supervisor, so a poisoned stopped-through
+    // generation cannot be hidden by constructing a fresh service.
+    tokio::time::timeout(Duration::from_secs(30), fixture.first.reconcile_runtime()).await?;
+    let recovered = repository
+        .get_deployment(PLUGIN_ID)
+        .await?
+        .ok_or("deployment is missing after reconciliation")?;
+    assert!(recovered.enabled);
+    assert_eq!(recovered.generation, desired.generation);
+    let overview = fixture.first.runtime_overview(fixture.operator).await?;
+    assert!(overview.states.iter().any(|state| {
+        state.node_id == runtime.node_id()
+            && state.plugin_id == PLUGIN_ID
+            && state.generation == desired.generation
+            && state.digest == desired.artifact.digest
+            && state.status == "ready"
+    }));
+    let catalog = fixture
+        .first
+        .catalog_models(
+            fixture.first_reader,
+            PLUGIN_ID,
+            PluginCatalogExtensionQuery::new(None, None, 24)?,
+            "recovery-catalog",
+        )
+        .await?;
+    assert_eq!(catalog.models.len(), 2);
+    fixture.close().await?;
+    Ok(())
 }
 
 #[tokio::test]

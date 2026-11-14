@@ -5,7 +5,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::{Mutex, OnceLock},
+    sync::Mutex,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -142,7 +142,9 @@ impl DatabaseAdminPluginLifecycleService {
         request_id: &str,
     ) -> Result<PluginCatalogModelPage, AdminPluginLifecycleError> {
         PluginId::new(plugin_id).map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-        let _permit = catalog_concurrency()
+        let _permit = self
+            .catalog_admission
+            .slots
             .try_acquire()
             .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
         tokio::time::timeout(CALL_BUDGET, async {
@@ -158,7 +160,8 @@ impl DatabaseAdminPluginLifecycleService {
             if let Some(cursor) = &query.cursor {
                 query.cursor = Some(decode_cursor(cursor, &deployment, query.search.as_deref())?);
             }
-            admit_user(principal.user_id().get())?;
+            self.catalog_admission
+                .admit_user(principal.user_id().get())?;
             let declared_page_size = deployment
                 .artifact
                 .manifest
@@ -387,37 +390,59 @@ fn valid_text(value: &str, max_bytes: usize) -> bool {
         && !value.chars().any(char::is_control)
 }
 
-fn catalog_concurrency() -> &'static Semaphore {
-    static CONCURRENCY: OnceLock<Semaphore> = OnceLock::new();
-    CONCURRENCY.get_or_init(|| Semaphore::new(8))
+pub(crate) struct PluginCatalogAdmission {
+    slots: Semaphore,
+    recent: Mutex<BTreeMap<i64, Instant>>,
 }
 
-fn admit_user(user_id: i64) -> Result<(), AdminPluginLifecycleError> {
-    static RECENT: OnceLock<Mutex<BTreeMap<i64, Instant>>> = OnceLock::new();
-    let mut recent = RECENT
-        .get_or_init(|| Mutex::new(BTreeMap::new()))
-        .lock()
-        .map_err(|_| AdminPluginLifecycleError::Internal)?;
-    let now = Instant::now();
-    if recent
-        .get(&user_id)
-        .is_some_and(|last| now.duration_since(*last) < MIN_USER_INTERVAL)
-    {
-        return Err(AdminPluginLifecycleError::RuntimeUnavailable);
-    }
-    if recent.len() >= 4_096 {
-        recent.retain(|_, last| now.duration_since(*last) < MIN_USER_INTERVAL);
-        if recent.len() >= 4_096 {
-            return Err(AdminPluginLifecycleError::RuntimeUnavailable);
+impl Default for PluginCatalogAdmission {
+    fn default() -> Self {
+        Self {
+            slots: Semaphore::new(8),
+            recent: Mutex::new(BTreeMap::new()),
         }
     }
-    recent.insert(user_id, now);
-    Ok(())
+}
+
+impl PluginCatalogAdmission {
+    fn admit_user(&self, user_id: i64) -> Result<(), AdminPluginLifecycleError> {
+        let mut recent = self
+            .recent
+            .lock()
+            .map_err(|_| AdminPluginLifecycleError::Internal)?;
+        let now = Instant::now();
+        if recent
+            .get(&user_id)
+            .is_some_and(|last| now.duration_since(*last) < MIN_USER_INTERVAL)
+        {
+            return Err(AdminPluginLifecycleError::RuntimeUnavailable);
+        }
+        if recent.len() >= 4_096 {
+            recent.retain(|_, last| now.duration_since(*last) < MIN_USER_INTERVAL);
+            if recent.len() >= 4_096 {
+                return Err(AdminPluginLifecycleError::RuntimeUnavailable);
+            }
+        }
+        recent.insert(user_id, now);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rate_admission_is_bounded_per_host_service_not_process_global_user_ids() {
+        let first = PluginCatalogAdmission::default();
+        let second = PluginCatalogAdmission::default();
+        assert!(first.admit_user(1).is_ok());
+        assert!(matches!(
+            first.admit_user(1),
+            Err(AdminPluginLifecycleError::RuntimeUnavailable)
+        ));
+        assert!(second.admit_user(1).is_ok());
+    }
 
     fn deployment() -> PluginDeploymentRecord {
         let user = af_domain::UserId::new(1).unwrap();

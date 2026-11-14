@@ -5,7 +5,7 @@ use std::{
     fmt,
     future::Future,
     path::{Component, Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Weak},
 };
 
 use af_config::PluginTrustedSigner;
@@ -38,6 +38,7 @@ pub struct AdminPluginSidecarRuntime {
     pub(crate) cache_operations: tokio::sync::Mutex<()>,
     pub(crate) cleaned_uninstalls: tokio::sync::Mutex<BTreeMap<String, i64>>,
     pub(crate) collected_artifacts: tokio::sync::Mutex<BTreeSet<i64>>,
+    application_slots: tokio::sync::Mutex<BTreeMap<String, Weak<tokio::sync::Mutex<()>>>>,
     installation_slots: Arc<tokio::sync::Semaphore>,
 }
 
@@ -83,6 +84,7 @@ impl AdminPluginSidecarRuntime {
             cache_operations: tokio::sync::Mutex::new(()),
             cleaned_uninstalls: tokio::sync::Mutex::new(BTreeMap::new()),
             collected_artifacts: tokio::sync::Mutex::new(BTreeSet::new()),
+            application_slots: tokio::sync::Mutex::new(BTreeMap::new()),
         })
     }
 
@@ -247,6 +249,22 @@ impl AdminPluginSidecarRuntime {
         repository: &PluginCatalogRepository,
         deployment: &PluginDeploymentRecord,
     ) -> Result<(), AdminPluginLifecycleError> {
+        // HTTP deployment, periodic reconciliation and a lazy business call can
+        // all observe the same missing generation. Serialize the entire apply
+        // operation so a losing handshake cannot replace or stop its winner.
+        let slot = {
+            let mut slots = self.application_slots.lock().await;
+            slots.retain(|_, slot| slot.strong_count() > 0);
+            match slots.get(&deployment.plugin_id).and_then(Weak::upgrade) {
+                Some(slot) => slot,
+                None => {
+                    let slot = Arc::new(tokio::sync::Mutex::new(()));
+                    slots.insert(deployment.plugin_id.clone(), Arc::downgrade(&slot));
+                    slot
+                }
+            }
+        };
+        let _application_guard = slot.lock().await;
         self.heartbeat(repository).await?;
         let result = self.apply_inner(repository, deployment).await;
         self.record_apply_result(repository, deployment, result.as_ref().err())

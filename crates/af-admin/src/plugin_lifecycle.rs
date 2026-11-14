@@ -589,6 +589,7 @@ pub struct DatabaseAdminPluginLifecycleService {
     repository: PluginCatalogRepository,
     audit: Arc<dyn PlatformAuditService>,
     sidecar_runtime: Option<Arc<AdminPluginSidecarRuntime>>,
+    pub(crate) catalog_admission: crate::plugin_catalog_extension::PluginCatalogAdmission,
 }
 
 impl DatabaseAdminPluginLifecycleService {
@@ -621,6 +622,7 @@ impl DatabaseAdminPluginLifecycleService {
             repository,
             audit,
             sidecar_runtime: None,
+            catalog_admission: crate::plugin_catalog_extension::PluginCatalogAdmission::default(),
         }
     }
 
@@ -1038,11 +1040,6 @@ impl DatabaseAdminPluginLifecycleService {
         principal: SessionPrincipal,
         request_id: &str,
     ) {
-        if let Some(runtime) = &self.sidecar_runtime {
-            let _ = runtime
-                .stop_through_generation(&deployment.plugin_id, deployment.generation)
-                .await;
-        }
         // A local node failure must not disable the shared desired generation
         // on every healthy node. Its failed observation remains visible and the
         // coordinator retries that node. Legacy manual installs retain compensation.
@@ -1054,6 +1051,11 @@ impl DatabaseAdminPluginLifecycleService {
             .is_ok_and(|package| package.is_none())
         {
             return;
+        }
+        if let Some(runtime) = &self.sidecar_runtime {
+            let _ = runtime
+                .stop_through_generation(&deployment.plugin_id, deployment.generation)
+                .await;
         }
         let Some(updated_at) = current_timestamp().ok() else {
             return;

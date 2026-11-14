@@ -363,6 +363,9 @@ impl AdminPluginSidecarRuntime {
         repository: &PluginCatalogRepository,
         artifact: &PluginArtifactRecord,
     ) -> Result<bool, Error> {
+        if artifact.source_kind != af_db::PluginArtifactSourceKind::LocalProcess {
+            return Ok(false);
+        }
         let _cache_guard = self.cache_operations.lock().await;
         let source: Source =
             serde_json::from_str(&artifact.source_reference).map_err(|_| Error::InvalidInput)?;
