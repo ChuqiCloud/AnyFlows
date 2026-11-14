@@ -1057,7 +1057,7 @@ fn validate_grants(
                 && capability.get("version").and_then(Value::as_u64)
                     == Some(u64::from(grant.version))
                 && capability.get("access").and_then(Value::as_str) == Some("read")
-                && capability.get("sideEffect").and_then(Value::as_str) != Some("external_write")
+                && capability.get("sideEffect").and_then(Value::as_str) == Some("none")
         });
         if !matches {
             return Err(PluginCatalogError::InvalidInput);

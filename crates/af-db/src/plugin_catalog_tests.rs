@@ -68,7 +68,7 @@ fn artifact(digest: &str) -> PluginArtifactCreate {
             "authenticationModes": ["none"],
             "limits": { "maxConcurrency": 2, "requestTimeoutMs": 1000, "maxResponseBytes": 4096, "maxPageSize": 20 },
             "capabilities": [
-                { "id": "catalog.models.read", "version": 1, "access": "read", "sideEffect": "external_read" },
+                { "id": "catalog.models.read", "version": 1, "access": "read", "sideEffect": "none" },
                 { "id": "catalog.models.write", "version": 1, "access": "write", "sideEffect": "external_write" }
             ]
         }),
