@@ -230,11 +230,6 @@ impl ExternalAccountConnectionRepository {
             }
 
             let active_existing_query = connection_query()
-                .columns([
-                    Alias::new("secret_key_id"),
-                    Alias::new("secret_nonce"),
-                    Alias::new("secret_ciphertext"),
-                ])
                 .and_where(Expr::col(Alias::new("user_id")).eq(input.user_id.get()))
                 .and_where(Expr::col(Alias::new("connector_id")).eq(&input.connector_id))
                 .and_where(Expr::col(Alias::new("base_url")).eq(&canonical_issuer))
@@ -287,12 +282,6 @@ impl ExternalAccountConnectionRepository {
             }
 
             let existing_query = connection_query()
-                .columns([
-                    Alias::new("secret_key_id"),
-                    Alias::new("secret_nonce"),
-                    Alias::new("secret_ciphertext"),
-                    Alias::new("active"),
-                ])
                 .and_where(Expr::col(Alias::new("user_id")).eq(input.user_id.get()))
                 .and_where(Expr::col(Alias::new("connector_id")).eq(&input.connector_id))
                 .and_where(Expr::col(Alias::new("base_url")).eq(&canonical_issuer))
