@@ -144,6 +144,8 @@ mod playground_conversation;
 mod playground_share;
 mod playground_share_snapshot;
 mod playground_share_token;
+mod plugin_lifecycle;
+mod plugin_runtime;
 mod redemption;
 mod refund;
 mod registration;
@@ -390,6 +392,14 @@ pub use playground_share_token::{
     IssuedPlaygroundShareToken, PlaygroundShareTokenDigest, PlaygroundShareTokenError,
     PresentedPlaygroundShareToken,
 };
+pub use plugin_lifecycle::{
+    AdminPluginArtifact, AdminPluginArtifactApproval, AdminPluginArtifactPage,
+    AdminPluginArtifactRevocation, AdminPluginCapabilityGrant, AdminPluginDeployment,
+    AdminPluginDeploymentPage, AdminPluginLifecycleError, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
+    DatabaseAdminPluginLifecycleService, PluginArtifactRegistrationCommand,
+    PluginDeploymentCommand,
+};
+pub use plugin_runtime::AdminPluginSidecarRuntime;
 pub use redemption::{
     AdminRedemptionAuditBatch, AdminRedemptionAuditPage, AdminRedemptionAuditQuery,
     AdminRedemptionAuditStatus, AdminRedemptionAuditSummary, AdminRedemptionBatch,

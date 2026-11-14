@@ -14,7 +14,10 @@ pub fn schema_document() -> Value {
             { "$ref": "#/$defs/ConnectorHealth" },
             { "$ref": "#/$defs/ConnectorError" },
             { "$ref": "#/$defs/CapabilityInvocation" },
-            { "$ref": "#/$defs/CapabilityResult" }
+            { "$ref": "#/$defs/CapabilityResult" },
+            { "$ref": "#/$defs/PluginHostRequest" },
+            { "$ref": "#/$defs/PluginHostResponse" },
+            { "$ref": "#/$defs/PluginHostProtocol" }
         ],
         "$defs": {
             "ContractVersion": {
@@ -102,6 +105,73 @@ pub fn schema_document() -> Value {
                 "additionalProperties": false,
                 "required": ["output"],
                 "properties": { "output": {} }
+            },
+            "PluginHostOperation": {
+                "oneOf": [
+                    { "type": "object", "additionalProperties": false, "required": ["operation"], "properties": { "operation": { "const": "manifest" } } },
+                    { "type": "object", "additionalProperties": false, "required": ["operation"], "properties": { "operation": { "const": "health" } } },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["operation", "connectionId", "publicConfig", "capabilityId", "capabilityVersion", "input"],
+                        "properties": {
+                            "operation": { "const": "invoke_capability" },
+                            "connectionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+                            "publicConfig": { "type": "object" },
+                            "capabilityId": { "type": "string", "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$", "minLength": 1, "maxLength": 128 },
+                            "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                            "input": {}
+                        }
+                    }
+                ]
+            },
+            "PluginHostRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["protocolVersion", "pluginId", "pluginVersion", "artifactSha256", "deploymentGeneration", "requestId", "deadlineUnixMs", "operation"],
+                "properties": {
+                    "protocolVersion": { "const": 1 },
+                    "pluginId": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$", "maxLength": 128 },
+                    "pluginVersion": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$", "maxLength": 128 },
+                    "artifactSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                    "deploymentGeneration": { "type": "integer", "minimum": 1 },
+                    "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+                    "deadlineUnixMs": { "type": "integer", "minimum": 1 },
+                    "operation": { "$ref": "#/$defs/PluginHostOperation" }
+                }
+            },
+            "PluginHostResult": {
+                "oneOf": [
+                    { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "manifest" }, "value": { "$ref": "#/$defs/PluginManifest" } } },
+                    { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "health" }, "value": { "$ref": "#/$defs/ConnectorHealth" } } },
+                    { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "capability" }, "value": { "$ref": "#/$defs/CapabilityResult" } } },
+                    { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "error" }, "value": { "$ref": "#/$defs/ConnectorError" } } }
+                ]
+            },
+            "PluginHostResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["protocolVersion", "pluginId", "pluginVersion", "artifactSha256", "deploymentGeneration", "requestId", "result"],
+                "properties": {
+                    "protocolVersion": { "const": 1 },
+                    "pluginId": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$", "maxLength": 128 },
+                    "pluginVersion": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$", "maxLength": 128 },
+                    "artifactSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                    "deploymentGeneration": { "type": "integer", "minimum": 1 },
+                    "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+                    "result": { "$ref": "#/$defs/PluginHostResult" }
+                }
+            },
+            "PluginHostProtocol": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["encoding", "framing", "maxFrameBytes", "operations"],
+                "properties": {
+                    "encoding": { "const": "utf-8-json" },
+                    "framing": { "const": "one-json-object-per-line" },
+                    "maxFrameBytes": { "type": "integer", "minimum": 1, "maximum": 16777216 },
+                    "operations": { "const": ["manifest", "health", "invoke_capability"] }
+                }
             },
             "ConnectorLimits": {
                 "type": "object",
@@ -198,7 +268,7 @@ pub fn openapi_document() -> Value {
         "info": {
             "title": "AnyFlows Platform Connector Contract",
             "version": "1.0.0",
-            "description": "Language-neutral connector control-plane contract. The host capability token is short-lived and connection-scoped; platform secrets, wallet authority, and database access are not part of this contract."
+            "description": "Language-neutral connector contract. Sidecars use bounded UTF-8 JSON Lines over host-managed stdin/stdout; platform secrets, wallet authority, and database access are not part of this contract."
         },
         "security": [{ "HostCapabilityToken": [] }],
         "paths": {
@@ -333,8 +403,9 @@ mod tests {
     use crate::{
         CapabilityAccess, CapabilityDeclaration, CapabilityId, CapabilityInvocation,
         CapabilityResult, ConnectorError, ConnectorErrorCode, ContractVersion,
-        ContractVersionRange, ExternalAccountProfile, ExternalBalanceSnapshot, PluginId,
-        PluginManifest, PluginVersion, SideEffectClass,
+        ContractVersionRange, ExternalAccountProfile, ExternalBalanceSnapshot, PluginHostOperation,
+        PluginHostRequest, PluginHostResponse, PluginHostResult, PluginId, PluginManifest,
+        PluginVersion, SideEffectClass,
     };
 
     #[test]
@@ -398,6 +469,31 @@ mod tests {
         let result = CapabilityResult {
             output: json!({ "items": ["sample"] }),
         };
+        let host_request = PluginHostRequest {
+            protocol_version: 1,
+            plugin_id: manifest.plugin_id.clone(),
+            plugin_version: manifest.plugin_version.clone(),
+            artifact_sha256: "a".repeat(64),
+            deployment_generation: 4,
+            request_id: "request-1".to_owned(),
+            deadline_unix_ms: 1_800_000_000_000,
+            operation: PluginHostOperation::InvokeCapability {
+                connection_id: "connection-1".to_owned(),
+                public_config: json!({ "scope": "catalog" }),
+                capability_id: "catalog.models.search".to_owned(),
+                capability_version: 1,
+                input: json!({ "query": "sample" }),
+            },
+        };
+        let host_response = PluginHostResponse {
+            protocol_version: 1,
+            plugin_id: manifest.plugin_id.clone(),
+            plugin_version: manifest.plugin_version.clone(),
+            artifact_sha256: "a".repeat(64),
+            deployment_generation: 4,
+            request_id: "request-1".to_owned(),
+            result: PluginHostResult::Manifest(manifest.clone()),
+        };
         let schema = schema_document();
 
         assert_schema_fields(
@@ -430,6 +526,31 @@ mod tests {
             "CapabilityResult",
             &serde_json::to_value(result).unwrap(),
         );
+        assert_schema_fields(
+            &schema,
+            "PluginHostRequest",
+            &serde_json::to_value(host_request).unwrap(),
+        );
+        assert_schema_fields(
+            &schema,
+            "PluginHostResponse",
+            &serde_json::to_value(host_response).unwrap(),
+        );
+        assert!(schema["$defs"]["PluginHostProtocol"].is_object());
+        assert_eq!(
+            PluginHostRequest {
+                protocol_version: 2,
+                plugin_id: manifest.plugin_id.clone(),
+                plugin_version: manifest.plugin_version.clone(),
+                artifact_sha256: "a".repeat(64),
+                deployment_generation: 4,
+                request_id: "request-1".to_owned(),
+                deadline_unix_ms: 1_800_000_000_000,
+                operation: PluginHostOperation::Health,
+            }
+            .validate(),
+            Err(crate::ContractValidationError::InvalidExternalValue)
+        );
         assert_eq!(
             schema["$defs"]["CapabilityDeclaration"]["dependentRequired"]["inputSchema"],
             json!(["outputSchema"])
@@ -448,6 +569,7 @@ mod tests {
         assert!(openapi["paths"]["/v1/manifest"]["get"].is_object());
         assert!(openapi["paths"]["/v1/accounts/{subject}/balance"]["get"].is_object());
         assert!(openapi["paths"]["/v1/capabilities/{capabilityId}"]["post"].is_object());
+        assert!(schema["$defs"]["PluginHostProtocol"].is_object());
         assert_openapi_refs_resolve(&openapi, &openapi);
         assert!(account.validate().is_ok());
         assert!(balance.validate().is_ok());

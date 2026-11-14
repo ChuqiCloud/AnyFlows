@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::ContractValidationError;
+use crate::{ConnectorError, ContractValidationError};
 
 /// Correlation and time budget supplied for one host-to-connector invocation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -32,6 +32,79 @@ impl CapabilityInvocation {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CapabilityResult {
     pub output: serde_json::Value,
+}
+
+/// Request frame for the language-neutral newline-delimited sidecar protocol.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginHostRequest {
+    pub protocol_version: u16,
+    pub plugin_id: crate::PluginId,
+    pub plugin_version: crate::PluginVersion,
+    pub artifact_sha256: String,
+    pub deployment_generation: u64,
+    pub request_id: String,
+    pub deadline_unix_ms: u64,
+    pub operation: PluginHostOperation,
+}
+
+impl PluginHostRequest {
+    pub fn validate(&self) -> Result<(), ContractValidationError> {
+        if self.protocol_version != 1
+            || self.artifact_sha256.len() != 64
+            || !self
+                .artifact_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            || self.deployment_generation == 0
+            || self.request_id.is_empty()
+            || self.request_id.len() > 128
+            || self.request_id.trim() != self.request_id
+            || self.deadline_unix_ms == 0
+        {
+            return Err(ContractValidationError::InvalidExternalValue);
+        }
+        Ok(())
+    }
+}
+
+/// Supported sidecar operations. These DTOs have no credential, HTTP-client,
+/// database, or wallet authority fields; host policy must validate JSON values.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PluginHostOperation {
+    Manifest,
+    Health,
+    InvokeCapability {
+        connection_id: String,
+        public_config: serde_json::Value,
+        capability_id: String,
+        capability_version: u16,
+        input: serde_json::Value,
+    },
+}
+
+/// Response frame for the language-neutral newline-delimited sidecar protocol.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginHostResponse {
+    pub protocol_version: u16,
+    pub plugin_id: crate::PluginId,
+    pub plugin_version: crate::PluginVersion,
+    pub artifact_sha256: String,
+    pub deployment_generation: u64,
+    pub request_id: String,
+    pub result: PluginHostResult,
+}
+
+/// Typed result of one sidecar operation.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum PluginHostResult {
+    Manifest(crate::PluginManifest),
+    Health(ConnectorHealth),
+    Capability(CapabilityResult),
+    Error(ConnectorError),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

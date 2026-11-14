@@ -383,6 +383,262 @@
         ],
         "type": "object"
       },
+      "PluginHostOperation": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "operation": {
+                "const": "manifest"
+              }
+            },
+            "required": [
+              "operation"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "operation": {
+                "const": "health"
+              }
+            },
+            "required": [
+              "operation"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "capabilityId": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+                "type": "string"
+              },
+              "capabilityVersion": {
+                "maximum": 65535,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "connectionId": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "input": {},
+              "operation": {
+                "const": "invoke_capability"
+              },
+              "publicConfig": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "operation",
+              "connectionId",
+              "publicConfig",
+              "capabilityId",
+              "capabilityVersion",
+              "input"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "PluginHostProtocol": {
+        "additionalProperties": false,
+        "properties": {
+          "encoding": {
+            "const": "utf-8-json"
+          },
+          "framing": {
+            "const": "one-json-object-per-line"
+          },
+          "maxFrameBytes": {
+            "maximum": 16777216,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "operations": {
+            "const": [
+              "manifest",
+              "health",
+              "invoke_capability"
+            ]
+          }
+        },
+        "required": [
+          "encoding",
+          "framing",
+          "maxFrameBytes",
+          "operations"
+        ],
+        "type": "object"
+      },
+      "PluginHostRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "artifactSha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "deadlineUnixMs": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "deploymentGeneration": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/PluginHostOperation"
+          },
+          "pluginId": {
+            "maxLength": 128,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
+            "type": "string"
+          },
+          "pluginVersion": {
+            "maxLength": 128,
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+            "type": "string"
+          },
+          "protocolVersion": {
+            "const": 1
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "pluginId",
+          "pluginVersion",
+          "artifactSha256",
+          "deploymentGeneration",
+          "requestId",
+          "deadlineUnixMs",
+          "operation"
+        ],
+        "type": "object"
+      },
+      "PluginHostResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "artifactSha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "deploymentGeneration": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "pluginId": {
+            "maxLength": 128,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
+            "type": "string"
+          },
+          "pluginVersion": {
+            "maxLength": 128,
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+            "type": "string"
+          },
+          "protocolVersion": {
+            "const": 1
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "result": {
+            "$ref": "#/components/schemas/PluginHostResult"
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "pluginId",
+          "pluginVersion",
+          "artifactSha256",
+          "deploymentGeneration",
+          "requestId",
+          "result"
+        ],
+        "type": "object"
+      },
+      "PluginHostResult": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "manifest"
+              },
+              "value": {
+                "$ref": "#/components/schemas/PluginManifest"
+              }
+            },
+            "required": [
+              "kind",
+              "value"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "health"
+              },
+              "value": {
+                "$ref": "#/components/schemas/ConnectorHealth"
+              }
+            },
+            "required": [
+              "kind",
+              "value"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "capability"
+              },
+              "value": {
+                "$ref": "#/components/schemas/CapabilityResult"
+              }
+            },
+            "required": [
+              "kind",
+              "value"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "error"
+              },
+              "value": {
+                "$ref": "#/components/schemas/ConnectorError"
+              }
+            },
+            "required": [
+              "kind",
+              "value"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "PluginManifest": {
         "additionalProperties": true,
         "properties": {
@@ -451,7 +707,7 @@
     }
   },
   "info": {
-    "description": "Language-neutral connector control-plane contract. The host capability token is short-lived and connection-scoped; platform secrets, wallet authority, and database access are not part of this contract.",
+    "description": "Language-neutral connector contract. Sidecars use bounded UTF-8 JSON Lines over host-managed stdin/stdout; platform secrets, wallet authority, and database access are not part of this contract.",
     "title": "AnyFlows Platform Connector Contract",
     "version": "1.0.0"
   },

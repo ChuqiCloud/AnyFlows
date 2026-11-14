@@ -42,6 +42,15 @@ impl CompiledJsonSchema {
     }
 }
 
+/// Validate plugin-owned configuration with the host's bounded JSON Schema
+/// implementation. Errors contain no submitted configuration values.
+pub fn validate_plugin_configuration(
+    schema: &Value,
+    configuration: &Value,
+) -> Result<(), ContractValidationError> {
+    CompiledJsonSchema::compile(schema)?.validate(configuration)
+}
+
 /// Restrict schema patterns to Rust's linear-time regex subset before the
 /// validator compiles them, avoiding unbounded backtracking from manifests.
 fn schema_patterns_are_bounded(schema: &Value) -> bool {
@@ -148,7 +157,7 @@ fn schema_uses_unsupported_references(schema: &Value) -> bool {
 mod tests {
     use serde_json::{Value, json};
 
-    use super::CompiledJsonSchema;
+    use super::{CompiledJsonSchema, validate_plugin_configuration};
     use af_plugin_contract::ContractValidationError;
 
     #[test]
@@ -163,6 +172,24 @@ mod tests {
         assert_eq!(validator.validate(&json!([7, "safe"])), Ok(()));
         let error = validator
             .validate(&json!([7, "private-token", true]))
+            .unwrap_err();
+        assert_eq!(error, ContractValidationError::InvalidConfiguration);
+        assert!(!error.to_string().contains("private-token"));
+    }
+
+    #[test]
+    fn validates_deployment_configuration_without_exposing_values() {
+        let schema = json!({
+            "type": "object",
+            "properties": { "region": { "type": "string", "enum": ["east", "west"] } },
+            "required": ["region"],
+            "additionalProperties": false
+        });
+        assert_eq!(
+            validate_plugin_configuration(&schema, &json!({ "region": "east" })),
+            Ok(())
+        );
+        let error = validate_plugin_configuration(&schema, &json!({ "region": "private-token" }))
             .unwrap_err();
         assert_eq!(error, ContractValidationError::InvalidConfiguration);
         assert!(!error.to_string().contains("private-token"));

@@ -41,6 +41,7 @@ mod platform_audit;
 mod playground_conversations;
 mod playground_image_history;
 mod playground_shares;
+mod plugin_lifecycle;
 mod proxy_pools;
 mod public_service_status;
 mod redemptions;
@@ -174,6 +175,7 @@ pub(crate) fn raw_openapi_document() -> OpenApi {
     document.merge(verification_settings::document());
     document.merge(passkey_auth::document());
     document.merge(platform_audit::document());
+    document.merge(plugin_lifecycle::document());
     document.merge(runtime_status::document());
     document.merge(public_service_status::document());
     document.merge(software_updates::document());
@@ -204,6 +206,7 @@ pub(crate) fn raw_openapi_document() -> OpenApi {
         Tag::new("OAuth 登录"),
         Tag::new("Passkey 登录"),
         Tag::new("平台管理审计"),
+        Tag::new("插件生命周期"),
         Tag::new("运行状态"),
         Tag::new("客户端档案"),
         Tag::new("余额预警"),

@@ -343,6 +343,7 @@ pub struct Supervised {
     debug_trace_runtime: DebugTraceRuntime,
     analytics_export_control: Option<Arc<dyn af_analytics::AnalyticsExportControl>>,
     runtime_monitor: Arc<RuntimeMonitor>,
+    plugin_sidecar_runtime: Option<Arc<af_admin::AdminPluginSidecarRuntime>>,
     supervisor: BackgroundTaskSupervisor,
 }
 
@@ -351,6 +352,7 @@ pub struct RouterReady {
     runtime: Supervised,
     router: HttpRouter,
     readiness: ReadinessHandle,
+    plugin_lifecycle_service: Arc<af_admin::DatabaseAdminPluginLifecycleService>,
 }
 
 /// HTTP 监听器已绑定，可以读取实际地址并开始服务。
@@ -359,6 +361,7 @@ pub struct ListenerReady {
     router: HttpRouter,
     listener: HttpListener,
     readiness: ReadinessHandle,
+    plugin_lifecycle_service: Arc<af_admin::DatabaseAdminPluginLifecycleService>,
 }
 
 /// 分阶段服务构建器；每个转换消费前一阶段，禁止跳过初始化顺序。
@@ -2466,6 +2469,18 @@ impl Bootstrap<BillingReady> {
                 probe,
             );
         }
+        let plugin_sidecar_runtime = config
+            .server()
+            .plugin_artifact_directory()
+            .map(|directory| {
+                Arc::new(
+                    af_admin::AdminPluginSidecarRuntime::new(
+                        directory,
+                        config.server().plugin_trusted_signers(),
+                    )
+                    .expect("插件信任配置已在应用配置校验阶段验证"),
+                )
+            });
         Bootstrap {
             config,
             shutdown_timeout,
@@ -2504,6 +2519,7 @@ impl Bootstrap<BillingReady> {
                 debug_trace_runtime,
                 analytics_export_control,
                 runtime_monitor,
+                plugin_sidecar_runtime,
                 supervisor,
             },
         }
@@ -2779,7 +2795,35 @@ fn encrypt_legacy_payment_secret(
 impl Bootstrap<Supervised> {
     /// 构建完整 HTTP Router；此后只允许进入监听阶段。
     #[must_use]
-    pub fn build_router(self) -> Bootstrap<RouterReady> {
+    pub fn build_router(mut self) -> Bootstrap<RouterReady> {
+        let plugin_lifecycle_service = Arc::new(
+            af_admin::DatabaseAdminPluginLifecycleService::new(
+                af_db::PluginCatalogRepository::new(
+                    self.stage.infrastructure.infrastructure.database.clone(),
+                ),
+                Arc::clone(&self.stage.infrastructure.platform_audit_service),
+            )
+            .with_sidecar_runtime(self.stage.plugin_sidecar_runtime.clone()),
+        );
+        if plugin_lifecycle_service.capability_runtime().is_some() {
+            let service = Arc::clone(&plugin_lifecycle_service);
+            self.stage
+                .supervisor
+                .spawn("plugin-sidecar-reconcile", move |shutdown| {
+                    let service = Arc::clone(&service);
+                    async move {
+                        let mut interval = tokio::time::interval(Duration::from_secs(30));
+                        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                        interval.tick().await;
+                        loop {
+                            tokio::select! {
+                                () = shutdown.cancelled() => return,
+                                _ = interval.tick() => service.reconcile_runtime().await,
+                            }
+                        }
+                    }
+                });
+        }
         let probe =
             DatabaseReadinessProbe::new(self.stage.infrastructure.infrastructure.database.clone());
         let readiness = ReadinessHandle::new(probe);
@@ -2833,6 +2877,7 @@ impl Bootstrap<Supervised> {
                 session_authenticator: &self.stage.infrastructure.session_authenticator,
                 user_topup_service: &user_topup_service,
                 upstream_clients: &self.stage.upstream_clients,
+                plugin_capability_runtime: plugin_lifecycle_service.capability_runtime(),
             }));
         }
         if let Some(authenticator) = self
@@ -3150,6 +3195,10 @@ impl Bootstrap<Supervised> {
                     ),
                 )),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+            .merge(af_http::build_plugin_lifecycle_router(
+                Arc::clone(&plugin_lifecycle_service),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
             ));
         let Bootstrap {
             config,
@@ -3169,6 +3218,7 @@ impl Bootstrap<Supervised> {
                 runtime: stage,
                 router,
                 readiness,
+                plugin_lifecycle_service,
             },
         }
     }
@@ -3191,6 +3241,7 @@ impl Bootstrap<RouterReady> {
             runtime,
             router,
             readiness,
+            plugin_lifecycle_service,
         } = stage;
         readiness.mark_ready();
         if matches!(af_launcher::ManagedContext::from_env(), Ok(Some(_))) {
@@ -3215,6 +3266,7 @@ impl Bootstrap<RouterReady> {
                 router,
                 listener,
                 readiness,
+                plugin_lifecycle_service,
             },
         })
     }
@@ -3250,6 +3302,7 @@ impl Bootstrap<ListenerReady> {
             router,
             listener,
             readiness,
+            plugin_lifecycle_service,
         } = stage;
         let Supervised {
             infrastructure,
@@ -3283,8 +3336,10 @@ impl Bootstrap<ListenerReady> {
             debug_trace_runtime: _,
             analytics_export_control: _,
             runtime_monitor: _,
+            plugin_sidecar_runtime: _,
             video_task: _,
         } = runtime;
+        plugin_lifecycle_service.reconcile_runtime().await;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);
         let http =
             serve_with_graceful_shutdown(listener, router, shutdown_signal, shutdown_timeout);
@@ -3298,6 +3353,7 @@ impl Bootstrap<ListenerReady> {
                 usage_record_queue,
                 refund_signal_queue,
                 database: infrastructure.infrastructure.database,
+                plugin_lifecycle_service: Some(plugin_lifecycle_service),
             },
             shutdown_timeout,
             billing_flush_timeout,
@@ -3322,6 +3378,7 @@ struct RuntimeShutdownResources {
     usage_record_queue: UsageRecordQueue,
     refund_signal_queue: RefundSignalQueue,
     database: DatabasePool,
+    plugin_lifecycle_service: Option<Arc<af_admin::DatabaseAdminPluginLifecycleService>>,
 }
 
 async fn run_http_and_shutdown<H>(
@@ -3340,8 +3397,12 @@ where
         usage_record_queue,
         refund_signal_queue,
         database,
+        plugin_lifecycle_service,
     } = resources;
     let http_result = http.await;
+    if let Some(plugin_lifecycle_service) = plugin_lifecycle_service {
+        plugin_lifecycle_service.shutdown_runtime().await;
+    }
 
     // HTTP 排空后不再有新的 lifecycle 完成回调；先封闭两个入口，让消费者可靠排空已接收事实。
     usage_record_queue.close();
@@ -4399,6 +4460,7 @@ mod tests {
                 usage_record_queue,
                 refund_signal_queue,
                 database,
+                plugin_lifecycle_service: None,
             },
             Duration::from_secs(1),
             Duration::from_secs(1),
@@ -4452,6 +4514,7 @@ mod tests {
                 usage_record_queue,
                 refund_signal_queue,
                 database,
+                plugin_lifecycle_service: None,
             },
             Duration::from_secs(1),
             Duration::from_secs(1),
@@ -4540,6 +4603,7 @@ mod tests {
                 usage_record_queue,
                 refund_signal_queue,
                 database,
+                plugin_lifecycle_service: None,
             },
             Duration::from_secs(1),
             Duration::from_secs(1),
@@ -4618,6 +4682,7 @@ mod tests {
                 usage_record_queue,
                 refund_signal_queue,
                 database,
+                plugin_lifecycle_service: None,
             },
             Duration::from_secs(1),
             Duration::from_secs(1),

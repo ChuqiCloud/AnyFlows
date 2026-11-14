@@ -36,6 +36,9 @@ pub struct RuntimeHttpContext<'a> {
     pub session_authenticator: &'a Arc<dyn SessionAuthenticator>,
     pub user_topup_service: &'a Arc<dyn UserTopupService>,
     pub upstream_clients: &'a HttpClientProvider,
+    /// Read-only, generation-bound sidecar capability calls for trusted host
+    /// extensions. This does not bypass extension-owned authentication.
+    pub plugin_capability_runtime: Option<Arc<af_admin::AdminPluginSidecarRuntime>>,
 }
 
 pub type BackgroundTaskRegistrar =
