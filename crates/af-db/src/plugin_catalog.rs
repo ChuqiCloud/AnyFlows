@@ -399,6 +399,12 @@ pub struct PluginCatalogRepository {
 }
 
 impl PluginCatalogRepository {
+    /// Shared plugin distribution state uses the same database and transaction
+    /// dialect as the durable catalog without exposing its raw pool to callers.
+    #[must_use]
+    pub fn distribution_repository(&self) -> crate::PluginDistributionRepository {
+        crate::PluginDistributionRepository::new(self.pool.clone())
+    }
     #[must_use]
     pub fn new(pool: DatabasePool) -> Self {
         Self {
@@ -812,16 +818,62 @@ impl PluginCatalogRepository {
         &self,
         input: PluginDeploymentWrite,
     ) -> Result<PluginDeploymentRecord, PluginCatalogError> {
+        self.deploy_inner(input, false).await
+    }
+
+    /// Disable the exact current generation and persist node cleanup intent in
+    /// the same transaction as its immutable deployment revision and audit.
+    pub async fn uninstall(
+        &self,
+        input: PluginDeploymentWrite,
+    ) -> Result<PluginDeploymentRecord, PluginCatalogError> {
+        if input.enabled || input.expected_generation.is_none() {
+            return Err(PluginCatalogError::InvalidInput);
+        }
+        self.deploy_inner(input, true).await
+    }
+
+    async fn deploy_inner(
+        &self,
+        input: PluginDeploymentWrite,
+        uninstall: bool,
+    ) -> Result<PluginDeploymentRecord, PluginCatalogError> {
         input.validate()?;
         let operation = async {
             let txn = self.pool.connection().begin().await.map_err(map_db)?;
-            let (artifact_id, manifest) =
-                approved_artifact(&txn, &input.plugin_id, &input.artifact_digest).await?;
+            let (artifact_id, manifest) = if uninstall {
+                uninstall_artifact(&txn, &input.plugin_id, &input.artifact_digest).await?
+            } else {
+                approved_artifact(&txn, &input.plugin_id, &input.artifact_digest).await?
+            };
             validate_grants(&manifest, &input.granted_capabilities)?;
             let current = plugin_deployments::Entity::find_by_id(input.plugin_id.clone())
                 .one(&txn)
                 .await
                 .map_err(map_db)?;
+            if uninstall {
+                let current = current.as_ref().ok_or(PluginCatalogError::NotFound)?;
+                if current.artifact_id != artifact_id {
+                    return Err(PluginCatalogError::Conflict);
+                }
+                if !current.enabled
+                    && input
+                        .expected_generation
+                        .and_then(|value| value.checked_add(1))
+                        == Some(current.generation)
+                    && current.request_id == input.request_id
+                    && current.updated_by == input.updated_by.get()
+                    && current.capability_grants == grants_json(&input.granted_capabilities)
+                    && current.config == input.config
+                {
+                    write_uninstall_intent(&txn, &input, current.generation).await?;
+                    txn.commit().await.map_err(map_db)?;
+                    return self
+                        .get_deployment(&input.plugin_id)
+                        .await?
+                        .ok_or(PluginCatalogError::Invariant);
+                }
+            }
             let next_generation = match current.as_ref() {
                 None if input.expected_generation.is_none() => 1,
                 None => return Err(PluginCatalogError::Conflict),
@@ -877,6 +929,9 @@ impl PluginCatalogRepository {
                         return Err(PluginCatalogError::Conflict);
                     }
                 }
+            }
+            if uninstall {
+                write_uninstall_intent(&txn, &input, next_generation).await?;
             }
             txn.commit().await.map_err(map_db)?;
             self.get_deployment(&input.plugin_id)
@@ -1019,6 +1074,58 @@ impl PluginCatalogRepository {
             Err(_) => Err(PluginCatalogError::Timeout),
         }
     }
+}
+
+async fn uninstall_artifact(
+    txn: &DatabaseTransaction,
+    plugin_id: &str,
+    digest: &str,
+) -> Result<(i64, Value), PluginCatalogError> {
+    let mut query = Query::select();
+    query
+        .columns([Alias::new("id"), Alias::new("manifest")])
+        .from(Alias::new(ARTIFACTS))
+        .and_where(Expr::col(Alias::new("plugin_id")).eq(plugin_id))
+        .and_where(Expr::col(Alias::new("digest")).eq(digest));
+    if txn.get_database_backend() != DbBackend::Sqlite {
+        query.lock(LockType::Update);
+    }
+    let row = txn
+        .query_one(txn.get_database_backend().build(&query))
+        .await
+        .map_err(map_db)?
+        .ok_or(PluginCatalogError::NotFound)?;
+    Ok((
+        row.try_get("", "id").map_err(map_db)?,
+        row.try_get::<Json>("", "manifest").map_err(map_db)?,
+    ))
+}
+
+async fn write_uninstall_intent(
+    txn: &DatabaseTransaction,
+    input: &PluginDeploymentWrite,
+    generation: i64,
+) -> Result<(), PluginCatalogError> {
+    crate::plugin_distribution::write_uninstall_in_transaction(
+        txn,
+        crate::PluginUninstallRequest {
+            plugin_id: input.plugin_id.clone(),
+            generation,
+            requested_by: input.updated_by,
+            requested_at: input.updated_at,
+            request_id: input.request_id.clone(),
+        },
+    )
+    .await
+    .map(|_| ())
+    .map_err(|error| match error {
+        crate::PluginDistributionError::InvalidInput => PluginCatalogError::InvalidInput,
+        crate::PluginDistributionError::NotFound => PluginCatalogError::NotFound,
+        crate::PluginDistributionError::Conflict => PluginCatalogError::Conflict,
+        crate::PluginDistributionError::Invariant => PluginCatalogError::Invariant,
+        crate::PluginDistributionError::Unavailable
+        | crate::PluginDistributionError::LimitReached => PluginCatalogError::Unavailable,
+    })
 }
 
 async fn approved_artifact(

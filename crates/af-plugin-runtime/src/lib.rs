@@ -28,6 +28,7 @@ use zeroize::Zeroizing;
 mod new_api;
 mod schema;
 mod sidecar;
+mod sidecar_isolation;
 mod sub2api;
 
 use crate::schema::CompiledJsonSchema;
@@ -39,6 +40,7 @@ pub use sidecar::{
     VerifiedPluginArtifact, plugin_artifact_signature_payload, plugin_package_digest,
     validate_public_plugin_configuration,
 };
+pub use sidecar_isolation::{SidecarIsolationLevel, SidecarIsolationPolicy};
 pub use sub2api::{Sub2ApiConnector, sub2api_registration};
 
 const ACCOUNT_PROFILE_READ: &str = "external.account.profile.read";

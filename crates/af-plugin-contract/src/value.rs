@@ -76,9 +76,13 @@ pub enum PluginHostOperation {
     Manifest,
     Health,
     InvokeCapability {
+        #[serde(rename = "connectionId", alias = "connection_id")]
         connection_id: String,
+        #[serde(rename = "publicConfig", alias = "public_config")]
         public_config: serde_json::Value,
+        #[serde(rename = "capabilityId", alias = "capability_id")]
         capability_id: String,
+        #[serde(rename = "capabilityVersion", alias = "capability_version")]
         capability_version: u16,
         input: serde_json::Value,
     },
@@ -219,7 +223,104 @@ impl ExternalBalanceSnapshot {
 
 #[cfg(test)]
 mod tests {
-    use super::{CapabilityInvocation, CapabilityResult};
+    use super::{
+        CapabilityInvocation, CapabilityResult, PluginHostOperation, PluginHostRequest,
+        PluginHostResponse, PluginHostResult,
+    };
+
+    fn catalogue_request() -> PluginHostRequest {
+        PluginHostRequest {
+            protocol_version: 1,
+            plugin_id: crate::PluginId::new("org.anyflows.example-catalog").unwrap(),
+            plugin_version: crate::PluginVersion::new("1.0.0").unwrap(),
+            artifact_sha256: "a".repeat(64),
+            deployment_generation: 7,
+            request_id: "wire-test-1".to_owned(),
+            deadline_unix_ms: 2000,
+            operation: PluginHostOperation::InvokeCapability {
+                connection_id: "catalogue".to_owned(),
+                public_config: serde_json::json!({}),
+                capability_id: "catalog.models.read".to_owned(),
+                capability_version: 1,
+                input: serde_json::json!({"query":null,"cursor":null,"limit":20}),
+            },
+        }
+    }
+
+    #[test]
+    fn sidecar_invocation_uses_documented_camel_case_and_reads_legacy_fields() {
+        let request = catalogue_request();
+        let mut wire = serde_json::to_value(&request).unwrap();
+        assert_eq!(
+            wire["operation"],
+            serde_json::json!({
+                "operation":"invoke_capability", "connectionId":"catalogue", "publicConfig":{},
+                "capabilityId":"catalog.models.read", "capabilityVersion":1,
+                "input":{"query":null,"cursor":null,"limit":20}
+            })
+        );
+        let operation = wire["operation"].as_object_mut().unwrap();
+        for (current, legacy) in [
+            ("connectionId", "connection_id"),
+            ("publicConfig", "public_config"),
+            ("capabilityId", "capability_id"),
+            ("capabilityVersion", "capability_version"),
+        ] {
+            let value = operation.remove(current).unwrap();
+            operation.insert(legacy.to_owned(), value);
+        }
+        assert_eq!(
+            serde_json::from_value::<PluginHostRequest>(wire).unwrap(),
+            request
+        );
+    }
+
+    #[test]
+    fn real_host_frame_round_trips_through_the_python_sidecar_sdk() {
+        use std::{
+            io::Write as _,
+            process::{Command, Stdio},
+        };
+
+        let sdk = include_str!("../../../tools/plugins/sdk/python/anyflows_plugin.py");
+        let manifest = include_str!("../../../tools/plugins/examples/catalog/manifest.json");
+        let code = format!(
+            "{sdk}\nmanifest = json.loads(sys.argv[1])\nrequest = json.load(sys.stdin)\nplugin = Plugin(manifest, lambda *args: {{'models': [], 'nextCursor': None}}, clock_ms=lambda: 1000)\nprint(json.dumps(plugin.respond(request), allow_nan=False))\n"
+        );
+        let python = if cfg!(windows) { "python" } else { "python3" };
+        let mut child = Command::new(python)
+            .args(["-c", &code, manifest])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Python 3 is required for the cross-language contract check");
+        let request = catalogue_request();
+        {
+            let mut input = child.stdin.take().unwrap();
+            input
+                .write_all(&serde_json::to_vec(&request).unwrap())
+                .unwrap();
+        }
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "Python SDK failed to decode the Rust host frame"
+        );
+        let response: PluginHostResponse = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(response.request_id, request.request_id);
+        assert_eq!(
+            response.deployment_generation,
+            request.deployment_generation
+        );
+        assert_eq!(response.artifact_sha256, request.artifact_sha256);
+        assert_eq!(
+            response.result,
+            PluginHostResult::Capability(CapabilityResult {
+                output: serde_json::json!({"models":[],"nextCursor":null})
+            })
+        );
+    }
 
     #[test]
     fn capability_wire_envelopes_reject_unknown_fields() {

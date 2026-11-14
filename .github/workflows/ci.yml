@@ -132,9 +132,9 @@ jobs:
           }
 
           {
-            echo "frontend=$(matches '^(web-next/|tools/ci/(frontend-about-smoke|frontend-navigation-smoke|frontend-user-routes-smoke|frontend-merchant-pool-smoke|frontend-merchant-service-watch-smoke|frontend-channel-monitor-smoke|frontend-key-capabilities-smoke|frontend-oauth-invitation-smoke|frontend-access-tokens-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend=$(matches '^(web-next/|tools/ci/(frontend-about-smoke|frontend-navigation-smoke|frontend-user-routes-smoke|frontend-merchant-pool-smoke|frontend-merchant-service-watch-smoke|frontend-channel-monitor-smoke|frontend-key-capabilities-smoke|frontend-oauth-invitation-smoke|frontend-access-tokens-smoke|frontend-plugin-smoke)\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_about=$(matches '^(web-next/src/features/(about/|site-settings/software-(update-(panel|api)|release-notes)\.tsx?$)|tools/ci/frontend-about-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
-            echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-(navigation|user-routes|merchant-pool|merchant-service-watch|channel-monitor|key-capabilities|oauth-invitation|access-tokens)-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
+            echo "frontend_navigation=$(matches '^(web-next/|tools/ci/frontend-(navigation|user-routes|merchant-pool|merchant-service-watch|channel-monitor|key-capabilities|oauth-invitation|access-tokens|plugin)-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "frontend_verification=$(matches '^(web-next/src/features/(account-verification|wallet|api-keys|playground)/|tools/ci/frontend-verification-smoke\.mjs$|\.github/workflows/ci\.yml$)')"
             echo "rust=$(matches '^(crates/|tools/xtask/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$|\.github/workflows/ci\.yml$)')"
             echo "database=$(matches '^(crates/af-db/|tools/ci/(run-db-migration-test|container-test-runner)\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
@@ -532,7 +532,7 @@ jobs:
         shell: bash
         run: |
           failed=0
-          for smoke in navigation user-routes merchant-pool merchant-service-watch channel-monitor key-capabilities oauth-invitation access-tokens; do
+          for smoke in navigation user-routes merchant-pool merchant-service-watch channel-monitor key-capabilities oauth-invitation access-tokens plugin; do
             if ! PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node "tools/ci/frontend-${smoke}-smoke.mjs"; then
               failed=1
             fi
@@ -594,6 +594,7 @@ jobs:
             ${{ runner.temp }}/merchant-pool-screenshots-web-next/*.png
             ${{ runner.temp }}/key-capabilities-screenshots-web-next/*.png
             ${{ runner.temp }}/access-tokens-screenshots-web-next/*.png
+            ${{ runner.temp }}/plugin-screenshots-web-next/*.png
           retention-days: 7
           if-no-files-found: ignore
 
@@ -607,6 +608,7 @@ jobs:
             ${{ runner.temp }}/merchant-pool-screenshots-web-next/*.png
             ${{ runner.temp }}/key-capabilities-screenshots-web-next/*.png
             ${{ runner.temp }}/access-tokens-screenshots-web-next/*.png
+            ${{ runner.temp }}/plugin-screenshots-web-next/*.png
           retention-days: 7
           if-no-files-found: ignore
 
@@ -712,6 +714,9 @@ jobs:
       - name: Check plugin contract schema
         run: cargo run --locked --package af-plugin-contract --example export_contract -- check
 
+      - name: Check plugin developer SDK and package tooling
+        run: python3 -m unittest discover -s tools/plugins/tests
+
       - name: Check OpenAPI contract
         run: |
           if cargo run --locked --package xtask -- openapi check; then
@@ -774,6 +779,7 @@ jobs:
           cargo test --locked -p af-plugin-contract --lib
           cargo test --locked -p af-plugin-runtime --lib
           cargo test --locked -p af-db --lib plugin_catalog
+          cargo test --locked -p af-db --lib plugin_distribution_tests
           cargo test --locked -p af-admin --lib plugin_
           cargo test --locked -p af-http --lib plugin_lifecycle
 
@@ -852,6 +858,49 @@ jobs:
       - name: Run documentation tests
         if: needs.changes.outputs.full == 'true'
         run: cargo test --workspace --all-features --doc --locked
+
+  plugin-linux-sandbox:
+    name: Plugin Linux sandbox isolation
+    needs: changes
+    if: ${{ github.server_url == 'https://github.com' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.full == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Prepare sandbox verification environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          if test -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - name: Verify actual filesystem and network isolation
+        env:
+          ANYFLOWS_PLUGIN_SANDBOX_TEST: "1"
+        run: cargo test --locked -p af-plugin-runtime --lib sidecar_isolation
+
+  plugin-windows:
+    name: Plugin Windows process containment
+    needs: changes
+    if: ${{ github.server_url == 'https://github.com' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.full == 'true') }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install pinned Rust toolchain
+        shell: pwsh
+        run: |
+          $channel = ((Get-Content rust-toolchain.toml | Select-String '^channel\s*=').Line -split '"')[1]
+          rustup toolchain install $channel --profile minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compile Windows plugin runtime
+        run: cargo check --locked -p af-plugin-runtime --all-targets
+      - name: Check Windows process containment
+        run: cargo test --locked -p af-plugin-runtime --lib sidecar_isolation
+      - name: Check portable developer SDK
+        run: python -m unittest discover -s tools/plugins/tests
 
   clickhouse-integration:
     name: ClickHouse integration

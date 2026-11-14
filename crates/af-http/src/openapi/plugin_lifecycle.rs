@@ -6,12 +6,16 @@ use utoipa::OpenApi;
 use crate::{
     management_error::ManagementErrorBody,
     plugin_lifecycle::{
-        PluginActionResponse, PluginArtifactApprovalResponse, PluginArtifactPageResponse,
-        PluginArtifactRegistrationRequest, PluginArtifactResponse,
+        PluginActionResponse, PluginArtifactApprovalResponse, PluginArtifactCleanupResponse,
+        PluginArtifactPageResponse, PluginArtifactRegistrationRequest, PluginArtifactResponse,
         PluginArtifactRevocationResponse, PluginArtifactRevokeRequest,
         PluginCapabilityGrantRequest, PluginCapabilityGrantResponse,
+        PluginCatalogModelPageResponse, PluginCatalogModelResponse,
+        PluginCatalogSourcePageResponse, PluginCatalogSourceResponse,
         PluginDeploymentDisableRequest, PluginDeploymentPageResponse, PluginDeploymentRequest,
         PluginDeploymentResponse, PluginDeploymentRollbackRequest, PluginPackageInstallRequest,
+        PluginRuntimeNodeResponse, PluginRuntimeOverviewResponse, PluginRuntimeStateResponse,
+        PluginUninstallResponse,
     },
 };
 
@@ -214,6 +218,105 @@ fn disable_admin_plugin_deployment() {}
 )]
 fn rollback_admin_plugin_deployment() {}
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/plugins/runtime",
+    operation_id = "getAdminPluginRuntimeOverview",
+    tag = "插件生命周期",
+    summary = "读取插件分发与逐节点真实运行状态",
+    responses(
+        (status = 200, description = "节点心跳、代次与运行状态；启用状态不等于所有节点就绪", body = PluginRuntimeOverviewResponse),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "缺少插件管理权限", body = ManagementErrorBody),
+        (status = 500, description = "内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn get_admin_plugin_runtime_overview() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/plugins/{plugin_id}/uninstall",
+    operation_id = "uninstallAdminPlugin",
+    tag = "插件生命周期",
+    summary = "停止插件并安排各节点回收运行文件，保留部署历史",
+    params(("plugin_id" = String, Path)),
+    request_body = PluginDeploymentDisableRequest,
+    responses(
+        (status = 200, description = "卸载已受理；其他节点通过协调完成清理", body = PluginUninstallResponse),
+        (status = 400, description = "请求无效", body = ManagementErrorBody),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "缺少插件管理权限", body = ManagementErrorBody),
+        (status = 404, description = "插件不存在", body = ManagementErrorBody),
+        (status = 409, description = "部署代次已变更", body = ManagementErrorBody),
+        (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn uninstall_admin_plugin() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/plugins/artifacts/{artifact_id}/cleanup",
+    operation_id = "cleanupAdminPluginArtifact",
+    tag = "插件生命周期",
+    summary = "回收已撤销且不再启用的插件归档与本机文件",
+    params(("artifact_id" = i64, Path, minimum = 1)),
+    responses(
+        (status = 200, description = "制品内容清理结果；审计与历史元数据仍保留", body = PluginArtifactCleanupResponse),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "缺少插件管理权限", body = ManagementErrorBody),
+        (status = 404, description = "制品不存在", body = ManagementErrorBody),
+        (status = 409, description = "制品未撤销或仍被启用部署引用", body = ManagementErrorBody),
+        (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn cleanup_admin_plugin_artifact() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/account/plugin-models/sources",
+    operation_id = "listPluginModelCatalogSources",
+    tag = "模型目录",
+    summary = "读取已启用并获得公开目录能力授权的插件来源",
+    params(("cursor" = Option<String>, Query, max_length = 128)),
+    responses(
+        (status = 200, description = "公开模型资料来源；不含配置与凭据", body = PluginCatalogSourcePageResponse),
+        (status = 400, description = "游标无效", body = ManagementErrorBody),
+        (status = 401, description = "需要登录", body = ManagementErrorBody),
+        (status = 500, description = "内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_plugin_model_catalog_sources() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/account/plugin-models/{plugin_id}",
+    operation_id = "listPluginCatalogModels",
+    tag = "模型目录",
+    summary = "查询插件提供的模型资料目录",
+    description = "仅调用已授权的 catalog.models.read/search v1。结果为参考资料，不创建平台模型、价格、调用权限或计费规则。",
+    params(
+        ("plugin_id" = String, Path),
+        ("q" = Option<String>, Query, max_length = 128),
+        ("cursor" = Option<String>, Query, max_length = 2048),
+        ("limit" = Option<u32>, Query, minimum = 1, maximum = 50)
+    ),
+    responses(
+        (status = 200, description = "经过宿主校验的模型资料页", body = PluginCatalogModelPageResponse),
+        (status = 400, description = "查询参数无效", body = ManagementErrorBody),
+        (status = 401, description = "需要登录", body = ManagementErrorBody),
+        (status = 403, description = "插件未启用或目录能力未获授权", body = ManagementErrorBody),
+        (status = 404, description = "来源不存在", body = ManagementErrorBody),
+        (status = 409, description = "插件部署已变更，请重新查询", body = ManagementErrorBody),
+        (status = 503, description = "查询繁忙或插件响应无效", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_plugin_catalog_models() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -226,7 +329,12 @@ fn rollback_admin_plugin_deployment() {}
         revoke_admin_plugin_artifact,
         deploy_admin_plugin_artifact,
         disable_admin_plugin_deployment,
-        rollback_admin_plugin_deployment
+        rollback_admin_plugin_deployment,
+        get_admin_plugin_runtime_overview,
+        uninstall_admin_plugin,
+        cleanup_admin_plugin_artifact,
+        list_plugin_model_catalog_sources,
+        list_plugin_catalog_models
     ),
     components(schemas(
         PluginPackageInstallRequest,
@@ -244,6 +352,15 @@ fn rollback_admin_plugin_deployment() {}
         PluginDeploymentRequest,
         PluginDeploymentResponse,
         PluginDeploymentRollbackRequest,
+        PluginRuntimeOverviewResponse,
+        PluginRuntimeNodeResponse,
+        PluginRuntimeStateResponse,
+        PluginUninstallResponse,
+        PluginArtifactCleanupResponse,
+        PluginCatalogSourceResponse,
+        PluginCatalogSourcePageResponse,
+        PluginCatalogModelResponse,
+        PluginCatalogModelPageResponse,
         ManagementErrorBody
     ))
 )]
