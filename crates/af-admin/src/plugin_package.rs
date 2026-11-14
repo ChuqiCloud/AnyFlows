@@ -11,6 +11,7 @@ use af_plugin_contract::PluginManifest;
 use af_plugin_runtime::plugin_package_digest;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use zip::{CompressionMethod, ZipArchive};
 
 use crate::{AdminPluginLifecycleError, plugin_lifecycle::MAX_PLUGIN_PACKAGE_UPLOAD_BYTES};
@@ -109,14 +110,27 @@ pub(crate) async fn extract_plugin_package(
     upload: PathBuf,
     artifact_root: PathBuf,
 ) -> Result<ImportedPluginPackage, AdminPluginLifecycleError> {
-    tokio::task::spawn_blocking(move || extract_package(&upload, &artifact_root))
-        .await
-        .map_err(|_| AdminPluginLifecycleError::Internal)?
+    extract_plugin_package_at(upload, artifact_root, None).await
 }
 
-fn extract_package(
+/// Restore an archive to its immutable catalog locator. Legacy digest-only
+/// locators remain accepted; new imports also bind the public manifest.
+pub(crate) async fn extract_plugin_package_at(
+    upload: PathBuf,
+    artifact_root: PathBuf,
+    expected_package_path: Option<String>,
+) -> Result<ImportedPluginPackage, AdminPluginLifecycleError> {
+    tokio::task::spawn_blocking(move || {
+        extract_package_at(&upload, &artifact_root, expected_package_path.as_deref())
+    })
+    .await
+    .map_err(|_| AdminPluginLifecycleError::Internal)?
+}
+
+fn extract_package_at(
     upload: &Path,
     artifact_root: &Path,
+    expected_package_path: Option<&str>,
 ) -> Result<ImportedPluginPackage, AdminPluginLifecycleError> {
     let root = controlled_directory(artifact_root)?;
     let uploads = controlled_directory(&root.join(".uploads"))?;
@@ -293,7 +307,14 @@ fn extract_package(
         .map_err(|_| AdminPluginLifecycleError::Internal)?;
     set_file_permissions(&directory.path().join("import.json"), false)?;
 
-    let final_directory = packages.join(&digest);
+    let identity = format!("{digest}-{:x}", Sha256::digest(&receipt_bytes));
+    let package_key = match expected_package_path {
+        Some(path) if path == format!("packages/{digest}/payload") => digest.clone(),
+        Some(path) if path == format!("packages/{identity}/payload") => identity,
+        Some(_) => return Err(invalid()),
+        None => identity,
+    };
+    let final_directory = packages.join(&package_key);
     let (package_directory, created_final_directory) = match fs::symlink_metadata(&final_directory)
     {
         Ok(_) => {
@@ -339,7 +360,7 @@ fn extract_package(
         plugin_id,
         plugin_version,
         manifest,
-        package_path: format!("packages/{digest}/payload"),
+        package_path: format!("packages/{package_key}/payload"),
         executable_path: envelope.executable_path,
         digest,
         signer_key_id,
@@ -906,7 +927,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn identical_imports_reuse_digest_path_and_conflicting_metadata_is_rejected()
+    async fn identical_imports_reuse_path_and_distinct_metadata_uses_separate_receipts()
     -> Result<(), Box<dyn Error>> {
         let root = tempfile::tempdir()?;
         let metadata = serde_json::to_vec(&envelope())?;
@@ -916,6 +937,8 @@ mod tests {
         )?;
         let first = extract_plugin_package(first_upload, root.path().to_path_buf()).await?;
         let expected_path = first.package_path.clone();
+        let expected_digest = first.digest.clone();
+        let expected_manifest = first.manifest.clone();
         first.retain();
 
         let second_upload = write_upload(
@@ -938,11 +961,26 @@ mod tests {
                 CompressionMethod::Stored,
             )?,
         )?;
-        assert!(matches!(
-            extract_plugin_package(upload, root.path().to_path_buf()).await,
-            Err(AdminPluginLifecycleError::Conflict)
-        ));
-        assert_eq!(fs::read_dir(root.path().join("packages"))?.count(), 1);
+        let distinct = extract_plugin_package(upload, root.path().to_path_buf()).await?;
+        assert_ne!(distinct.package_path, expected_path);
+        assert_eq!(distinct.digest, expected_digest);
+        assert_eq!(distinct.manifest, conflicting["manifest"]);
+        distinct.retain();
+        assert!(
+            root.path()
+                .join(&expected_path)
+                .join("bin/plugin")
+                .is_file()
+        );
+        let original_receipt: Value = serde_json::from_slice(&fs::read(
+            root.path()
+                .join(&expected_path)
+                .parent()
+                .ok_or("missing receipt directory")?
+                .join("import.json"),
+        )?)?;
+        assert_eq!(original_receipt["manifest"], expected_manifest);
+        assert_eq!(fs::read_dir(root.path().join("packages"))?.count(), 2);
         Ok(())
     }
 

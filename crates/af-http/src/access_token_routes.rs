@@ -505,7 +505,10 @@ fn user_scopes(method: &str, path: &str) -> &'static [&'static str] {
         "/api/account/external-accounts/{id}/refresh" => &["external_accounts:write"],
         "/api/account/external-accounts/{id}" => &["external_accounts:write"],
         "/api/access-token/self" => &["account:read"],
-        "/api/models" | "/api/model-providers" => &["models:read"],
+        "/api/models"
+        | "/api/model-providers"
+        | "/api/account/plugin-models/sources"
+        | "/api/account/plugin-models/{plugin_id}" => &["models:read"],
         "/api/token-groups" => &["api_keys:read"],
         "/api/tokens" | "/api/tokens/{id}" => {
             if read {

@@ -126,7 +126,8 @@
       "enabled": "Enabled",
       "disabled": "Disabled",
       "unverified": "Administrator-installed · publisher unverified",
-      "signed": "Publisher signature verified"
+      "signed": "Publisher signature verified",
+      "official": "Official plugin"
     },
     "artifacts": {
       "title": "Registered plugin packages",
@@ -152,6 +153,45 @@
       "loadDeployments": "Could not load plugin deployments.",
       "loadHistory": "Could not load deployment history. Refresh and retry.",
       "manifestJson": "Manifest must be a valid JSON object."
+    },
+    "runtime": {
+      "title": "Node runtime status",
+      "description": "Package delivery and actual readiness are reported by each node. A deployment is ready only after the current version is running on that node.",
+      "error": "Could not load node status.",
+      "liveNodes": "Active nodes: {{count}}",
+      "isolation": "Local execution policy: {{mode}}",
+      "noNodes": "No node heartbeat has been recorded.",
+      "online": "Online",
+      "stale": "Heartbeat expired",
+      "lastSeen": "Last seen: {{time}}",
+      "readyNodes": "Ready on {{ready}} of {{total}} active nodes",
+      "states": {
+        "pending": "Waiting for node confirmation",
+        "downloading": "Downloading package",
+        "starting": "Starting",
+        "ready": "Ready",
+        "stopped": "Stopped",
+        "failed": "Failed",
+        "stale": "Heartbeat expired",
+        "uninstalled": "Uninstalled"
+      },
+      "isolationModes": {
+        "process": "Process boundary",
+        "resource_limited": "Resource limits applied",
+        "sandboxed": "OS sandbox",
+        "job_object": "Windows Job Object",
+        "unknown": "Not reported"
+      }
+    },
+    "removal": {
+      "uninstall": "Uninstall",
+      "cleanup": "Remove package files",
+      "uninstallTitle": "Uninstall {{plugin}}",
+      "cleanupTitle": "Remove stored package for {{plugin}}",
+      "uninstallHint": "The plugin will stop on all nodes, and each node will remove its local runtime files. Deployment history and the stored archive are retained for reinstallation. Offline nodes complete the request when they reconnect.",
+      "cleanupHint": "This permanently removes the stored package content for this revoked artifact. Audit metadata is retained, but this version can no longer be restored without uploading its package again. Enabled artifacts cannot be removed.",
+      "accepted": "Uninstall requested. Nodes still awaiting confirmation: {{count}}.",
+      "cleaned": "Package cleanup completed. Other nodes remove their cached copy during reconciliation."
     }
   },
   "brand": {
@@ -9151,5 +9191,22 @@
     "poolCleanupHint": "Pools bound to credentials, channels, or global routing and pools with running tasks are protected. Pool deletion keeps the nodes in the dedicated proxy directory.",
     "nodeCleanupHint": "Nodes used by credentials or other pools are protected. Unchecked nodes are not failures. The next subscription update may import deleted nodes again.",
     "cleanupStale": "The list, selection, or version changed. Preview again before confirming deletion."
+  },
+  "pluginCatalog": {
+    "title": "Plugin model references",
+    "description": "Browse model information supplied by installed catalog plugins. Availability and prices are determined by the platform model catalog.",
+    "source": "Catalog source",
+    "chooseSource": "Choose a source",
+    "sourceLabel": "Source: {{source}} · deployment {{generation}}",
+    "noSources": "No catalog plugin is available.",
+    "sourceError": "Could not load catalog sources.",
+    "modelsError": "This source could not return a valid model page. Retry shortly or choose another source.",
+    "search": "Search this source",
+    "refresh": "Refresh",
+    "retry": "Retry",
+    "moreSources": "Load more sources",
+    "moreModels": "Load more models",
+    "context": "Context window: {{count}} tokens",
+    "empty": "No matching model references."
   }
 }

@@ -296,6 +296,10 @@ pub struct ServerConfig {
     plugin_artifact_directory: Option<PathBuf>,
     /// 可选的插件发布者 Ed25519 公钥；管理员自行管理的插件不要求签名。
     plugin_trusted_signers: Vec<PluginTrustedSigner>,
+    /// 运营方配置的官方插件签名根，与普通受信发布者分开管理。
+    plugin_official_signers: Vec<PluginTrustedSigner>,
+    /// auto/trusted/restricted/require_sandbox；不改变插件包安装流程。
+    plugin_isolation: String,
 }
 
 /// 插件制品发布者的可信 Ed25519 公钥。此处只保存公钥，不包含签名私钥。
@@ -384,6 +388,16 @@ impl ServerConfig {
         &self.plugin_trusted_signers
     }
 
+    #[must_use]
+    pub fn plugin_official_signers(&self) -> &[PluginTrustedSigner] {
+        &self.plugin_official_signers
+    }
+
+    #[must_use]
+    pub fn plugin_isolation(&self) -> &str {
+        &self.plugin_isolation
+    }
+
     /// 替换业务路由 CORS 白名单，供嵌入式启动与测试构造使用。
     #[must_use]
     pub fn with_cors_allowed_origins(
@@ -429,6 +443,21 @@ impl ServerConfig {
         self.plugin_trusted_signers = signers.into_iter().collect();
         self
     }
+
+    #[must_use]
+    pub fn with_plugin_official_signers(
+        mut self,
+        signers: impl IntoIterator<Item = PluginTrustedSigner>,
+    ) -> Self {
+        self.plugin_official_signers = signers.into_iter().collect();
+        self
+    }
+
+    #[must_use]
+    pub fn with_plugin_isolation(mut self, policy: impl Into<String>) -> Self {
+        self.plugin_isolation = policy.into();
+        self
+    }
 }
 
 impl Default for ServerConfig {
@@ -444,6 +473,8 @@ impl Default for ServerConfig {
             frontend_template_directory: PathBuf::from("public/templates"),
             plugin_artifact_directory: Some(PathBuf::from("data/plugins")),
             plugin_trusted_signers: Vec::new(),
+            plugin_official_signers: Vec::new(),
+            plugin_isolation: "auto".to_owned(),
         }
     }
 }
@@ -1663,13 +1694,20 @@ impl AppConfig {
                 field: "server.plugin_artifact_directory",
             });
         }
-        if self.server.plugin_trusted_signers.len() > MAX_PLUGIN_TRUSTED_SIGNERS {
+        if self.server.plugin_trusted_signers.len() + self.server.plugin_official_signers.len()
+            > MAX_PLUGIN_TRUSTED_SIGNERS
+        {
             return Err(ConfigError::OutOfRange {
                 field: "server.plugin_trusted_signers",
             });
         }
         let mut plugin_signer_ids = std::collections::BTreeSet::new();
-        for signer in &self.server.plugin_trusted_signers {
+        for signer in self
+            .server
+            .plugin_trusted_signers
+            .iter()
+            .chain(&self.server.plugin_official_signers)
+        {
             if !valid_plugin_trusted_signer(signer, &mut plugin_signer_ids) {
                 return Err(ConfigError::InvalidField {
                     field: "server.plugin_trusted_signers",
@@ -1677,10 +1715,19 @@ impl AppConfig {
             }
         }
         if self.server.plugin_artifact_directory.is_none()
-            && !self.server.plugin_trusted_signers.is_empty()
+            && (!self.server.plugin_trusted_signers.is_empty()
+                || !self.server.plugin_official_signers.is_empty())
         {
             return Err(ConfigError::InvalidField {
                 field: "server.plugin_trusted_signers",
+            });
+        }
+        if !matches!(
+            self.server.plugin_isolation.as_str(),
+            "auto" | "trusted" | "restricted" | "require_sandbox"
+        ) {
+            return Err(ConfigError::InvalidField {
+                field: "server.plugin_isolation",
             });
         }
         if self.server.trusted_proxy_cidrs.len() > MAX_TRUSTED_PROXY_CIDRS {
@@ -2747,6 +2794,46 @@ mod tests {
                 field: "server.plugin_trusted_signers"
             })
         );
+    }
+
+    #[test]
+    fn official_and_custom_signers_cannot_share_an_identity() {
+        use figment::providers::Format as _;
+        let mut config: AppConfig = figment::Figment::from(figment::providers::Toml::string(
+            "[database]\nurl = 'sqlite::memory:'\n",
+        ))
+        .extract()
+        .unwrap();
+        let signer = PluginTrustedSigner::new(
+            "publisher".to_owned(),
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned(),
+        )
+        .unwrap();
+        config.server = config.server.with_plugin_official_signers([signer.clone()]);
+        assert!(config.validate().is_ok());
+        config.server = config.server.with_plugin_trusted_signers([signer]);
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn plugin_isolation_rejects_unknown_policies_without_exec_fallback() {
+        use figment::providers::Format as _;
+        let mut config: AppConfig = figment::Figment::from(figment::providers::Toml::string(
+            "[database]\nurl = 'sqlite::memory:'\n",
+        ))
+        .extract()
+        .unwrap();
+        for policy in ["auto", "trusted", "restricted", "require_sandbox"] {
+            config.server = config.server.with_plugin_isolation(policy);
+            assert!(config.validate().is_ok());
+        }
+        config.server = config.server.with_plugin_isolation("arbitrary-executable");
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidField {
+                field: "server.plugin_isolation"
+            })
+        ));
     }
 
     #[test]

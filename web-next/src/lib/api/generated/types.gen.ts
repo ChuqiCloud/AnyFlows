@@ -2677,6 +2677,11 @@ export type PluginArtifactApprovalResponse = {
     approvedAt: number;
     requestId: string;
 };
+export type PluginArtifactCleanupResponse = {
+    artifactId: number;
+    archiveRemoved: boolean;
+    localFilesRemoved: boolean;
+};
 export type PluginArtifactPageResponse = {
     artifacts: Array<PluginArtifactResponse>;
     nextBeforeId?: number | null;
@@ -2699,6 +2704,7 @@ export type PluginArtifactResponse = {
     };
     sourceKind: string;
     signerKeyId: string;
+    official: boolean;
     createdAt: number;
     approval?: null | PluginArtifactApprovalResponse;
     revocation?: null | PluginArtifactRevocationResponse;
@@ -2718,6 +2724,32 @@ export type PluginCapabilityGrantRequest = {
 export type PluginCapabilityGrantResponse = {
     id: string;
     version: number;
+};
+export type PluginCatalogModelPageResponse = {
+    source: PluginCatalogSourceResponse;
+    models: Array<PluginCatalogModelResponse>;
+    nextCursor?: string | null;
+};
+export type PluginCatalogModelResponse = {
+    id: string;
+    displayName: string;
+    provider: string;
+    description?: string | null;
+    contextWindow?: number | null;
+    inputModalities: Array<string>;
+    outputModalities: Array<string>;
+    tags: Array<string>;
+};
+export type PluginCatalogSourcePageResponse = {
+    sources: Array<PluginCatalogSourceResponse>;
+    nextCursor?: string | null;
+};
+export type PluginCatalogSourceResponse = {
+    pluginId: string;
+    displayName: string;
+    pluginVersion: string;
+    generation: number;
+    supportsSearch: boolean;
 };
 export type PluginDeploymentDisableRequest = {
     expected_generation: number;
@@ -2750,6 +2782,34 @@ export type PluginPackageInstallRequest = {
     package: Blob | File;
     config?: string | null;
     expected_generation?: number | null;
+};
+export type PluginRuntimeNodeResponse = {
+    nodeId: string;
+    hostLabel: string;
+    lastSeenAt: number;
+    live: boolean;
+};
+export type PluginRuntimeOverviewResponse = {
+    localNodeId?: string | null;
+    isolation: string;
+    nodes: Array<PluginRuntimeNodeResponse>;
+    states: Array<PluginRuntimeStateResponse>;
+};
+export type PluginRuntimeStateResponse = {
+    nodeId: string;
+    pluginId: string;
+    generation: number;
+    digest: string;
+    status: string;
+    isolation: string;
+    errorCode?: string | null;
+    updatedAt: number;
+    nodeLastSeenAt: number;
+};
+export type PluginUninstallResponse = {
+    pluginId: string;
+    generation: number;
+    pendingNodes: number;
 };
 export type PublicAuthenticationCapabilities = {
     password_login_enabled: boolean;
@@ -11543,6 +11603,106 @@ export type RollbackAdminPluginDeploymentResponses = {
     200: PluginDeploymentResponse;
 };
 export type RollbackAdminPluginDeploymentResponse = RollbackAdminPluginDeploymentResponses[keyof RollbackAdminPluginDeploymentResponses];
+export type GetAdminPluginRuntimeOverviewData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/plugins/runtime';
+};
+export type GetAdminPluginRuntimeOverviewErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminPluginRuntimeOverviewError = GetAdminPluginRuntimeOverviewErrors[keyof GetAdminPluginRuntimeOverviewErrors];
+export type GetAdminPluginRuntimeOverviewResponses = {
+    200: PluginRuntimeOverviewResponse;
+};
+export type GetAdminPluginRuntimeOverviewResponse = GetAdminPluginRuntimeOverviewResponses[keyof GetAdminPluginRuntimeOverviewResponses];
+export type UninstallAdminPluginData = {
+    body: PluginDeploymentDisableRequest;
+    path: {
+        plugin_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/uninstall';
+};
+export type UninstallAdminPluginErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type UninstallAdminPluginError = UninstallAdminPluginErrors[keyof UninstallAdminPluginErrors];
+export type UninstallAdminPluginResponses = {
+    200: PluginUninstallResponse;
+};
+export type UninstallAdminPluginResponse = UninstallAdminPluginResponses[keyof UninstallAdminPluginResponses];
+export type CleanupAdminPluginArtifactData = {
+    body?: never;
+    path: {
+        artifact_id: number;
+    };
+    query?: never;
+    url: '/api/admin/plugins/artifacts/{artifact_id}/cleanup';
+};
+export type CleanupAdminPluginArtifactErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type CleanupAdminPluginArtifactError = CleanupAdminPluginArtifactErrors[keyof CleanupAdminPluginArtifactErrors];
+export type CleanupAdminPluginArtifactResponses = {
+    200: PluginArtifactCleanupResponse;
+};
+export type CleanupAdminPluginArtifactResponse = CleanupAdminPluginArtifactResponses[keyof CleanupAdminPluginArtifactResponses];
+export type ListPluginModelCatalogSourcesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        cursor?: string;
+    };
+    url: '/api/account/plugin-models/sources';
+};
+export type ListPluginModelCatalogSourcesErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListPluginModelCatalogSourcesError = ListPluginModelCatalogSourcesErrors[keyof ListPluginModelCatalogSourcesErrors];
+export type ListPluginModelCatalogSourcesResponses = {
+    200: PluginCatalogSourcePageResponse;
+};
+export type ListPluginModelCatalogSourcesResponse = ListPluginModelCatalogSourcesResponses[keyof ListPluginModelCatalogSourcesResponses];
+export type ListPluginCatalogModelsData = {
+    body?: never;
+    path: {
+        plugin_id: string;
+    };
+    query?: {
+        q?: string;
+        cursor?: string;
+        limit?: number;
+    };
+    url: '/api/account/plugin-models/{plugin_id}';
+};
+export type ListPluginCatalogModelsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type ListPluginCatalogModelsError = ListPluginCatalogModelsErrors[keyof ListPluginCatalogModelsErrors];
+export type ListPluginCatalogModelsResponses = {
+    200: PluginCatalogModelPageResponse;
+};
+export type ListPluginCatalogModelsResponse = ListPluginCatalogModelsResponses[keyof ListPluginCatalogModelsResponses];
 export type GetAdminRuntimeStatusData = {
     body?: never;
     path?: never;

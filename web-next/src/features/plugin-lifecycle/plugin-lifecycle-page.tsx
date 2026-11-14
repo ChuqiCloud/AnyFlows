@@ -6,6 +6,7 @@ import type { TFunction } from 'i18next'
 
 import type { PluginArtifactResponse, PluginDeploymentResponse } from '@/lib/api/generated/types.gen'
 import { PluginInstallPanel } from './plugin-install-panel'
+import { PluginRuntimePanel } from './plugin-runtime-panel'
 import {
   useApprovePluginArtifact,
   useDeployPluginArtifact,
@@ -16,6 +17,8 @@ import {
   useRegisterPluginArtifact,
   useRevokePluginArtifact,
   useRollbackPluginDeployment,
+  useUninstallPlugin,
+  useCleanupPluginArtifact,
 } from './plugin-lifecycle-api'
 
 type ArtifactRegistrationDraft = {
@@ -74,6 +77,8 @@ export function PluginLifecyclePage() {
   const deploy = useDeployPluginArtifact()
   const disable = useDisablePluginDeployment()
   const rollback = useRollbackPluginDeployment()
+  const uninstall = useUninstallPlugin()
+  const cleanup = useCleanupPluginArtifact()
   const [draft, setDraft] = useState(emptyRegistration)
   const [registrationOpen, setRegistrationOpen] = useState(false)
   const [registrationError, setRegistrationError] = useState(false)
@@ -85,15 +90,21 @@ export function PluginLifecyclePage() {
   const [historyPlugin, setHistoryPlugin] = useState<string>()
   const [generationRefresh, setGenerationRefresh] = useState(0)
   const [installing, setInstalling] = useState(false)
+  const [confirmation, setConfirmation] = useState<
+    { action: 'uninstall'; pluginId: string; generation: number }
+    | { action: 'cleanup'; artifactId: number; pluginId: string }
+  >()
+  const [uninstallNotice, setUninstallNotice] = useState<number>()
+  const [cleanupNotice, setCleanupNotice] = useState(false)
   const history = usePluginDeploymentHistory(historyPlugin)
   const deploymentHistory = usePluginDeploymentHistory(grantTarget?.pluginId, generationRefresh)
   const artifactList = artifacts.data?.pages.flatMap((page) => page.artifacts) ?? []
   const deploymentList = deployments.data?.pages.flatMap((page) => page.deployments) ?? []
   const generationKnown = deploymentHistory.isSuccess && !deploymentHistory.isFetching
   const currentGeneration = deploymentHistory.data?.reduce<number | null>((latest, entry) => Math.max(latest ?? 0, entry.generation), null) ?? null
-  const busy = installing || register.isPending || approve.isPending || revoke.isPending || deploy.isPending || disable.isPending || rollback.isPending
+  const busy = installing || register.isPending || approve.isPending || revoke.isPending || deploy.isPending || disable.isPending || rollback.isPending || uninstall.isPending || cleanup.isPending
   const locale = i18n.resolvedLanguage?.startsWith('zh') ? 'zh-CN' : 'en-US'
-  const mutationError = register.error || approve.error || revoke.error || deploy.error || disable.error || rollback.error
+  const mutationError = register.error || approve.error || revoke.error || deploy.error || disable.error || rollback.error || uninstall.error || cleanup.error
 
   const mutationText = useMemo(() => {
     if (!mutationError) return undefined
@@ -143,6 +154,17 @@ export function PluginLifecyclePage() {
     }, { onSuccess: () => setGrantTarget(undefined) })
   }
 
+  const confirmRemoval = () => {
+    if (!confirmation) return
+    if (confirmation.action === 'uninstall') {
+      uninstall.mutate({ pluginId: confirmation.pluginId, generation: confirmation.generation }, {
+        onSuccess: (result) => { setCleanupNotice(false); setUninstallNotice(result.pendingNodes); setConfirmation(undefined) },
+      })
+    } else {
+      cleanup.mutate(confirmation.artifactId, { onSuccess: () => { setUninstallNotice(undefined); setCleanupNotice(true); setConfirmation(undefined) } })
+    }
+  }
+
   return <main className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4 sm:p-6">
     <header className="flex flex-wrap items-start justify-between gap-3">
       <div><p className="flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground"><Box size={15} />{t('pluginLifecycle.eyebrow')}</p><h1 className="mt-1 text-2xl font-semibold">{t('pluginLifecycle.title')}</h1><p className="mt-1 max-w-3xl text-sm text-muted-foreground">{t('pluginLifecycle.subtitle')}</p></div>
@@ -154,6 +176,9 @@ export function PluginLifecyclePage() {
     {registrationError ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.errors.manifestJson')}</p> : null}
 
     <PluginInstallPanel disabled={busy} onInstallingChange={setInstalling} />
+    {uninstallNotice !== undefined ? <p role="status" className="rounded-lg border border-[var(--hairline)] p-3 text-sm text-muted-foreground">{t('pluginLifecycle.removal.accepted', { count: uninstallNotice })}</p> : null}
+    {cleanupNotice ? <p role="status" className="rounded-lg border border-[var(--hairline)] p-3 text-sm text-muted-foreground">{t('pluginLifecycle.removal.cleaned')}</p> : null}
+    <PluginRuntimePanel deployments={deploymentList} />
 
     <details className="rounded-xl border border-[var(--hairline)] bg-card">
       <summary className="cursor-pointer px-5 py-4 text-sm font-medium">{t('pluginLifecycle.advanced')}</summary>
@@ -175,8 +200,8 @@ export function PluginLifecyclePage() {
       </CardBody> : null}
       <CardBody className="space-y-3 p-5 pt-0">
         {artifacts.isPending ? <Skeleton className="h-24 rounded-lg" /> : artifactList.length ? artifactList.map((artifact) => <article key={artifact.id} className="rounded-lg border border-[var(--hairline)] p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{artifact.pluginId}</strong><Chip size="sm" variant="flat">{artifact.pluginVersion}</Chip><Chip size="sm" color={artifact.revocation ? 'danger' : artifact.approval ? 'success' : 'warning'} variant="flat">{artifact.revocation ? t('pluginLifecycle.status.revoked') : artifact.approval ? t('pluginLifecycle.status.approved') : t('pluginLifecycle.status.pending')}</Chip><Chip size="sm" variant="flat">{t(artifact.signerKeyId ? 'pluginLifecycle.status.signed' : 'pluginLifecycle.status.unverified')}</Chip></div><p className="mt-1 break-all font-mono text-xs text-muted-foreground">{artifact.digest}</p><p className="mt-1 text-xs text-muted-foreground">{artifact.signerKeyId ? `${artifact.signerKeyId} · ` : ''}{prettyDate(artifact.createdAt, locale)}</p><p className="mt-2 text-xs">{t('pluginLifecycle.artifacts.capabilities')}: {capabilities(artifact).map((item) => item.id).join(', ') || '—'}</p></div>
-            <div className="flex flex-wrap gap-2">{!artifact.approval && !artifact.revocation ? <Button size="sm" variant="flat" color="success" isDisabled={busy} onPress={() => approve.mutate(artifact.id)}><Check size={14} />{t('pluginLifecycle.artifacts.approve')}</Button> : null}{artifact.approval && !artifact.revocation ? <Button size="sm" variant="bordered" isDisabled={busy} onPress={() => openGrant(artifact)}>{t('pluginLifecycle.deploy')}</Button> : null}{!artifact.revocation ? <Button size="sm" variant="bordered" color="danger" isDisabled={busy} onPress={() => { setRevocationTarget(artifact.id); setRevocationReason('') }}>{t('pluginLifecycle.artifacts.revoke')}</Button> : null}</div>
+          <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{artifact.pluginId}</strong><Chip size="sm" variant="flat">{artifact.pluginVersion}</Chip><Chip size="sm" color={artifact.revocation ? 'danger' : artifact.approval ? 'success' : 'warning'} variant="flat">{artifact.revocation ? t('pluginLifecycle.status.revoked') : artifact.approval ? t('pluginLifecycle.status.approved') : t('pluginLifecycle.status.pending')}</Chip><Chip size="sm" variant="flat">{t('official' in artifact && artifact.official === true ? 'pluginLifecycle.status.official' : artifact.signerKeyId ? 'pluginLifecycle.status.signed' : 'pluginLifecycle.status.unverified')}</Chip></div><p className="mt-1 break-all font-mono text-xs text-muted-foreground">{artifact.digest}</p><p className="mt-1 text-xs text-muted-foreground">{artifact.signerKeyId ? `${artifact.signerKeyId} · ` : ''}{prettyDate(artifact.createdAt, locale)}</p><p className="mt-2 text-xs">{t('pluginLifecycle.artifacts.capabilities')}: {capabilities(artifact).map((item) => item.id).join(', ') || '—'}</p></div>
+            <div className="flex flex-wrap gap-2">{!artifact.approval && !artifact.revocation ? <Button size="sm" variant="flat" color="success" isDisabled={busy} onPress={() => approve.mutate(artifact.id)}><Check size={14} />{t('pluginLifecycle.artifacts.approve')}</Button> : null}{artifact.approval && !artifact.revocation ? <Button size="sm" variant="bordered" isDisabled={busy} onPress={() => openGrant(artifact)}>{t('pluginLifecycle.deploy')}</Button> : null}{!artifact.revocation ? <Button size="sm" variant="bordered" color="danger" isDisabled={busy} onPress={() => { setRevocationTarget(artifact.id); setRevocationReason('') }}>{t('pluginLifecycle.artifacts.revoke')}</Button> : null}{artifact.revocation ? <Button size="sm" variant="bordered" color="danger" isDisabled={busy} onPress={() => setConfirmation({ action: 'cleanup', artifactId: artifact.id, pluginId: artifact.pluginId })}>{t('pluginLifecycle.removal.cleanup')}</Button> : null}</div>
           </div>
           {revocationTarget === artifact.id ? <div className="mt-3 flex flex-wrap items-end gap-2"><label className="min-w-56 flex-1 text-xs font-medium">{t('pluginLifecycle.artifacts.revokeReason')}<Input size="sm" maxLength={512} value={revocationReason} onChange={(event) => setRevocationReason(event.target.value)} /></label><Button size="sm" color="danger" isDisabled={busy || !revocationReason.trim()} onPress={() => revoke.mutate({ artifactId: artifact.id, reason: revocationReason.trim() }, { onSuccess: () => setRevocationTarget(undefined) })}>{t('pluginLifecycle.confirm')}</Button><Button size="sm" variant="light" onPress={() => setRevocationTarget(undefined)}>{t('pluginLifecycle.cancel')}</Button></div> : null}
         </article>) : artifacts.isError ? null : <Empty text={t('pluginLifecycle.artifacts.empty')} />}
@@ -190,11 +215,19 @@ export function PluginLifecyclePage() {
     <Card shadow="none" className="rounded-xl border border-[var(--hairline)] bg-card">
       <CardHeader className="p-5"><div><h2 className="text-base font-semibold">{t('pluginLifecycle.deployments.title')}</h2><p className="mt-1 text-sm text-muted-foreground">{t('pluginLifecycle.deployments.description')}</p></div></CardHeader>
       <CardBody className="space-y-3 p-5 pt-0">
-        {deployments.isPending ? <Skeleton className="h-24 rounded-lg" /> : deploymentList.length ? deploymentList.map((deployment) => <DeploymentCard key={deployment.pluginId} deployment={deployment} historyOpen={historyPlugin === deployment.pluginId} onToggleHistory={() => setHistoryPlugin(historyPlugin === deployment.pluginId ? undefined : deployment.pluginId)} history={historyPlugin === deployment.pluginId ? history.data ?? [] : []} historyLoading={historyPlugin === deployment.pluginId && history.isFetching} historyError={historyPlugin === deployment.pluginId && history.isError} onRetryHistory={() => void history.refetch()} onDisable={() => disable.mutate({ pluginId: deployment.pluginId, generation: deployment.generation })} onRollback={(targetGeneration) => rollback.mutate({ pluginId: deployment.pluginId, generation: deployment.generation, targetGeneration })} busy={busy} locale={locale} t={t} />) : deployments.isError ? null : <Empty text={t('pluginLifecycle.deployments.empty')} />}
+        {deployments.isPending ? <Skeleton className="h-24 rounded-lg" /> : deploymentList.length ? deploymentList.map((deployment) => <DeploymentCard key={deployment.pluginId} deployment={deployment} historyOpen={historyPlugin === deployment.pluginId} onToggleHistory={() => setHistoryPlugin(historyPlugin === deployment.pluginId ? undefined : deployment.pluginId)} history={historyPlugin === deployment.pluginId ? history.data ?? [] : []} historyLoading={historyPlugin === deployment.pluginId && history.isFetching} historyError={historyPlugin === deployment.pluginId && history.isError} onRetryHistory={() => void history.refetch()} onDisable={() => disable.mutate({ pluginId: deployment.pluginId, generation: deployment.generation })} onUninstall={() => setConfirmation({ action: 'uninstall', pluginId: deployment.pluginId, generation: deployment.generation })} onRollback={(targetGeneration) => rollback.mutate({ pluginId: deployment.pluginId, generation: deployment.generation, targetGeneration })} busy={busy} locale={locale} t={t} />) : deployments.isError ? null : <Empty text={t('pluginLifecycle.deployments.empty')} />}
         {deployments.isError ? <ErrorBox onRetry={() => { if (deployments.isFetchNextPageError) void deployments.fetchNextPage(); else void deployments.refetch() }} text={t('pluginLifecycle.errors.loadDeployments')} retry={t('pluginLifecycle.refresh')} /> : null}
         {deployments.hasNextPage ? <div className="flex justify-center"><Button size="sm" variant="bordered" isDisabled={deployments.isFetching} onPress={() => void deployments.fetchNextPage()}>{t(deployments.isFetchingNextPage ? 'pluginLifecycle.loading' : 'pluginLifecycle.loadMore')}</Button></div> : null}
       </CardBody>
     </Card>
+
+    <Modal isOpen={confirmation !== undefined} isDismissable={!busy} isKeyboardDismissDisabled={busy} onOpenChange={(open) => { if (!open && !busy) setConfirmation(undefined) }}>
+      <ModalContent>
+        <ModalHeader>{t(confirmation?.action === 'cleanup' ? 'pluginLifecycle.removal.cleanupTitle' : 'pluginLifecycle.removal.uninstallTitle', { plugin: confirmation?.pluginId })}</ModalHeader>
+        <ModalBody><p className="text-sm leading-6">{t(confirmation?.action === 'cleanup' ? 'pluginLifecycle.removal.cleanupHint' : 'pluginLifecycle.removal.uninstallHint')}</p>{uninstall.isError || cleanup.isError ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.errors.action')}</p> : null}</ModalBody>
+        <ModalFooter><Button variant="light" isDisabled={busy} onPress={() => setConfirmation(undefined)}>{t('pluginLifecycle.cancel')}</Button><Button color="danger" isDisabled={busy} onPress={confirmRemoval}>{t(busy ? 'pluginLifecycle.saving' : 'pluginLifecycle.confirm')}</Button></ModalFooter>
+      </ModalContent>
+    </Modal>
 
     <Modal isOpen={grantTarget !== undefined} size="2xl" scrollBehavior="inside" isDismissable={!busy} isKeyboardDismissDisabled={busy} onOpenChange={(open) => { if (!open && !busy) setGrantTarget(undefined) }}>
       <ModalContent>
@@ -213,7 +246,7 @@ export function PluginLifecyclePage() {
   </main>
 }
 
-function DeploymentCard({ deployment, history, historyOpen, historyLoading, historyError, onRetryHistory, onToggleHistory, onDisable, onRollback, busy, locale, t }: {
+function DeploymentCard({ deployment, history, historyOpen, historyLoading, historyError, onRetryHistory, onToggleHistory, onDisable, onUninstall, onRollback, busy, locale, t }: {
   deployment: PluginDeploymentResponse
   history: PluginDeploymentResponse[]
   historyOpen: boolean
@@ -222,12 +255,13 @@ function DeploymentCard({ deployment, history, historyOpen, historyLoading, hist
   onRetryHistory: () => void
   onToggleHistory: () => void
   onDisable: () => void
+  onUninstall: () => void
   onRollback: (targetGeneration: number) => void
   busy: boolean
   locale: string
   t: TFunction
 }) {
-  return <article className="rounded-lg border border-[var(--hairline)] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{deployment.pluginId}</strong><Chip size="sm" variant="flat">g{deployment.generation}</Chip><Chip size="sm" color={deployment.enabled ? 'success' : 'default'} variant="flat">{deployment.enabled ? t('pluginLifecycle.status.enabled') : t('pluginLifecycle.status.disabled')}</Chip><Chip size="sm" variant="flat">{t(deployment.artifact.signerKeyId ? 'pluginLifecycle.status.signed' : 'pluginLifecycle.status.unverified')}</Chip></div><p className="mt-1 text-xs text-muted-foreground">{deployment.artifact.pluginVersion} · {deployment.artifact.digest.slice(0, 16)}… · {prettyDate(deployment.updatedAt, locale)}</p><p className="mt-2 text-xs">{t('pluginLifecycle.deployments.grants')}: {deployment.grantedCapabilities.map(({ id, version }) => `${id}@${version}`).join(', ') || '—'}</p></div><div className="flex flex-wrap gap-2">{deployment.enabled ? <Button size="sm" variant="bordered" color="danger" isDisabled={busy} onPress={onDisable}>{t('pluginLifecycle.disable')}</Button> : null}<Button size="sm" variant="light" isDisabled={historyLoading} onPress={onToggleHistory}><Clock3 size={14} />{t('pluginLifecycle.deployments.history')}</Button></div></div>
+  return <article className="rounded-lg border border-[var(--hairline)] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{deployment.pluginId}</strong><Chip size="sm" variant="flat">g{deployment.generation}</Chip><Chip size="sm" color={deployment.enabled ? 'success' : 'default'} variant="flat">{deployment.enabled ? t('pluginLifecycle.status.enabled') : t('pluginLifecycle.status.disabled')}</Chip><Chip size="sm" variant="flat">{t('official' in deployment.artifact && deployment.artifact.official === true ? 'pluginLifecycle.status.official' : deployment.artifact.signerKeyId ? 'pluginLifecycle.status.signed' : 'pluginLifecycle.status.unverified')}</Chip></div><p className="mt-1 text-xs text-muted-foreground">{deployment.artifact.pluginVersion} · {deployment.artifact.digest.slice(0, 16)}… · {prettyDate(deployment.updatedAt, locale)}</p><p className="mt-2 text-xs">{t('pluginLifecycle.deployments.grants')}: {deployment.grantedCapabilities.map(({ id, version }) => `${id}@${version}`).join(', ') || '—'}</p></div><div className="flex flex-wrap gap-2">{deployment.enabled ? <Button size="sm" variant="bordered" color="danger" isDisabled={busy} onPress={onDisable}>{t('pluginLifecycle.disable')}</Button> : null}<Button size="sm" variant="bordered" color="danger" isDisabled={busy} onPress={onUninstall}>{t('pluginLifecycle.removal.uninstall')}</Button><Button size="sm" variant="light" isDisabled={historyLoading} onPress={onToggleHistory}><Clock3 size={14} />{t('pluginLifecycle.deployments.history')}</Button></div></div>
     {historyOpen ? <div className="mt-3 border-t border-[var(--hairline)] pt-3">{historyLoading ? <Skeleton className="h-10 rounded" /> : historyError ? <ErrorBox text={t('pluginLifecycle.errors.loadHistory')} retry={t('pluginLifecycle.refresh')} onRetry={onRetryHistory} /> : <div className="space-y-2">{history.map((entry) => <div key={entry.generation} className="flex flex-wrap items-center justify-between gap-2 text-xs"><span>g{entry.generation} · {entry.artifact.pluginVersion} · {entry.enabled ? t('pluginLifecycle.status.enabled') : t('pluginLifecycle.status.disabled')} · {prettyDate(entry.updatedAt, locale)}</span>{entry.generation < deployment.generation && entry.enabled ? <Button size="sm" variant="flat" isDisabled={busy} onPress={() => onRollback(entry.generation)}>{t('pluginLifecycle.rollback')}</Button> : null}</div>)}</div>}</div> : null}
   </article>
 }
