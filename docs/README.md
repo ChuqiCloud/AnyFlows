@@ -12,6 +12,7 @@
 | [升级与备份](migrations-and-release.md) | 数据备份、迁移、升级和回退 |
 | [账号与 API](authentication-and-access.md) | 登录、API Key、主体认证和接口调试 |
 | [系统 API Token](personal-access-tokens.md) | 脚本认证、权限、有效期和应急撤销 |
+| [插件 Sidecar 协议](plugin-sidecars.md) | 已签名本地插件包、受限 JSONL 进程协议和当前信任边界 |
 | [渠道配置](channels.md) | 客户端档案、代理池和 NVIDIA 上游 |
 | [渠道质量评分](channel-routing.md) | 成功率与延迟、模型隔离、软避让和可选上游价值配置 |
 | [对话协议](conversation-compatibility.md) | 四类协议转换、历史回放和兼容范围 |

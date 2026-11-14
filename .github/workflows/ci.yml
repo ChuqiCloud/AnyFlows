@@ -766,6 +766,16 @@ jobs:
           cargo test --locked -p af-admin --lib platform_rbac
           cargo test --locked -p af-db --lib platform_audit
 
+      - name: Run plugin lifecycle and contract regressions
+        if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
+        run: |
+          set -euo pipefail
+          cargo test --locked -p af-plugin-contract --lib
+          cargo test --locked -p af-plugin-runtime --lib
+          cargo test --locked -p af-db --lib plugin_catalog
+          cargo test --locked -p af-admin --lib plugin_
+          cargo test --locked -p af-http --lib plugin_lifecycle
+
       - name: Run focused Passkey compatibility tests
         if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
         run: |

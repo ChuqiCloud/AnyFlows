@@ -20,7 +20,8 @@ pub use manifest::{ConnectorLimits, PluginId, PluginManifest};
 pub use schema::{openapi_document, schema_document};
 pub use value::{
     CapabilityInvocation, CapabilityResult, ConnectorHealth, ConnectorHealthStatus,
-    ExternalAccountProfile, ExternalBalanceSnapshot, InvocationMetadata,
+    ExternalAccountProfile, ExternalBalanceSnapshot, InvocationMetadata, PluginHostOperation,
+    PluginHostRequest, PluginHostResponse, PluginHostResult,
 };
 pub use version::{ContractVersion, ContractVersionRange, PluginVersion};
 

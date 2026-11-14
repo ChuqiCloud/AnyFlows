@@ -42,6 +42,7 @@ export type NavKey =
   | 'usage'
   | 'debugTraces'
   | 'runtimeStatus'
+  | 'pluginLifecycle'
 
 /** 工作台向登录用户开放，系统管理仅向管理员开放。 */
 export type NavigationSectionKey = 'workspace' | 'system'
@@ -109,13 +110,14 @@ export const systemSectionItems = [
   'accountVerificationSettings',
   'keys',
   'runtimeStatus',
+  'pluginLifecycle',
   'debugTraces',
 ] as const satisfies readonly NavKey[]
 
 /** 系统入口按用途折叠，路由命中时自动展开所在分组；顺序即侧栏展示顺序：业务 → 渠道 → 费用 → 站点 → 开发。 */
 export type SystemNavigationGroupKey = 'users' | 'gateway' | 'commerce' | 'site'
 
-export const systemPinnedItems = ['keys', 'runtimeStatus', 'debugTraces'] as const satisfies readonly NavKey[]
+export const systemPinnedItems = ['keys', 'runtimeStatus', 'pluginLifecycle', 'debugTraces'] as const satisfies readonly NavKey[]
 
 export const systemNavigationGroups = {
   users: ['users', 'accountVerificationReviews', 'invitationSettings'],

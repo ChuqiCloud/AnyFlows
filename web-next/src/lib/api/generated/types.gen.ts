@@ -1886,7 +1886,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'turnstile_rejected' | 'turnstile_unavailable' | 'invalid_session' | 'forbidden' | 'account_verification_required' | 'setup_conflict' | 'site_settings_conflict' | 'announcement_invalid_request' | 'announcement_not_found' | 'announcement_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'group_unavailable' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'custom_oauth2_provider_not_found' | 'custom_oauth2_provider_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'image_history_not_found' | 'image_history_limit_reached' | 'image_history_unavailable' | 'merchant_service_watch_not_found' | 'merchant_service_watch_limit_reached' | 'merchant_service_watch_unavailable' | 'external_account_invalid_request' | 'external_account_unsupported' | 'external_account_conflict' | 'external_account_not_found' | 'external_account_authentication_required' | 'external_account_unavailable' | 'external_account_rate_limited' | 'external_account_limit_reached' | 'user_conflict' | 'organization_not_found' | 'organization_credit_invalid_request' | 'organization_credit_not_found' | 'organization_credit_interval_conflict' | 'organization_credit_conflict' | 'organization_credit_transition_invalid' | 'organization_approval_not_found' | 'organization_approval_conflict' | 'organization_approval_expired' | 'organization_contract_price_not_found' | 'organization_contract_price_interval_conflict' | 'organization_contract_price_conflict' | 'organization_contract_price_transition_invalid' | 'organization_plan_not_found' | 'organization_plan_conflict' | 'organization_sso_provider_not_found' | 'organization_sso_provider_conflict' | 'organization_sso_provider_transition_invalid' | 'organization_sso_identity_binding_rejected' | 'organization_sso_identity_binding_conflict' | 'organization_sso_recovery_rejected' | 'organization_sso_recovery_conflict' | 'organization_sso_recovery_unavailable' | 'organization_sso_domain_not_found' | 'organization_sso_domain_conflict' | 'organization_sso_domain_transition_invalid' | 'organization_sso_domain_verification_failed' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'refund_not_found' | 'refund_conflict' | 'refund_unavailable' | 'refund_auto_submit_failed' | 'refund_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'turnstile_rejected' | 'turnstile_unavailable' | 'invalid_session' | 'forbidden' | 'account_verification_required' | 'setup_conflict' | 'site_settings_conflict' | 'announcement_invalid_request' | 'announcement_not_found' | 'announcement_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'group_unavailable' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'custom_oauth2_provider_not_found' | 'custom_oauth2_provider_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'image_history_not_found' | 'image_history_limit_reached' | 'image_history_unavailable' | 'merchant_service_watch_not_found' | 'merchant_service_watch_limit_reached' | 'merchant_service_watch_unavailable' | 'external_account_invalid_request' | 'external_account_unsupported' | 'external_account_conflict' | 'external_account_not_found' | 'external_account_authentication_required' | 'external_account_unavailable' | 'external_account_rate_limited' | 'external_account_limit_reached' | 'plugin_lifecycle_invalid_request' | 'plugin_lifecycle_not_found' | 'plugin_lifecycle_conflict' | 'plugin_lifecycle_unavailable' | 'user_conflict' | 'organization_not_found' | 'organization_credit_invalid_request' | 'organization_credit_not_found' | 'organization_credit_interval_conflict' | 'organization_credit_conflict' | 'organization_credit_transition_invalid' | 'organization_approval_not_found' | 'organization_approval_conflict' | 'organization_approval_expired' | 'organization_contract_price_not_found' | 'organization_contract_price_interval_conflict' | 'organization_contract_price_conflict' | 'organization_contract_price_transition_invalid' | 'organization_plan_not_found' | 'organization_plan_conflict' | 'organization_sso_provider_not_found' | 'organization_sso_provider_conflict' | 'organization_sso_provider_transition_invalid' | 'organization_sso_identity_binding_rejected' | 'organization_sso_identity_binding_conflict' | 'organization_sso_recovery_rejected' | 'organization_sso_recovery_conflict' | 'organization_sso_recovery_unavailable' | 'organization_sso_domain_not_found' | 'organization_sso_domain_conflict' | 'organization_sso_domain_transition_invalid' | 'organization_sso_domain_verification_failed' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'refund_not_found' | 'refund_conflict' | 'refund_unavailable' | 'refund_auto_submit_failed' | 'refund_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
 };
 export type MerchantApplicationRequest = {
@@ -2667,6 +2667,84 @@ export type PlaygroundShareReadResponse = {
 export type PlaygroundShareSession = {
     model: string;
     messages: Array<PlaygroundShareMessage>;
+};
+export type PluginActionResponse = {
+    completed: boolean;
+    requestId: string;
+};
+export type PluginArtifactApprovalResponse = {
+    approvedBy: number;
+    approvedAt: number;
+    requestId: string;
+};
+export type PluginArtifactPageResponse = {
+    artifacts: Array<PluginArtifactResponse>;
+    nextBeforeId?: number | null;
+};
+export type PluginArtifactRegistrationRequest = {
+    plugin_id: string;
+    plugin_version: string;
+    package_path: string;
+    executable_path: string;
+    sha256: string;
+    signer_key_id: string;
+};
+export type PluginArtifactResponse = {
+    id: number;
+    pluginId: string;
+    pluginVersion: string;
+    digest: string;
+    manifest: {
+        [key: string]: unknown;
+    };
+    sourceKind: string;
+    signerKeyId: string;
+    createdAt: number;
+    approval?: null | PluginArtifactApprovalResponse;
+    revocation?: null | PluginArtifactRevocationResponse;
+};
+export type PluginArtifactRevocationResponse = {
+    revokedBy: number;
+    revokedAt: number;
+    requestId: string;
+};
+export type PluginArtifactRevokeRequest = {
+    reason: string;
+};
+export type PluginCapabilityGrantRequest = {
+    id: string;
+    version: number;
+};
+export type PluginCapabilityGrantResponse = {
+    id: string;
+    version: number;
+};
+export type PluginDeploymentDisableRequest = {
+    expected_generation: number;
+};
+export type PluginDeploymentPageResponse = {
+    deployments: Array<PluginDeploymentResponse>;
+    nextCursor?: string | null;
+};
+export type PluginDeploymentRequest = {
+    artifact_digest: string;
+    expected_generation?: number | null;
+    enabled: boolean;
+    granted_capabilities: Array<PluginCapabilityGrantRequest>;
+};
+export type PluginDeploymentResponse = {
+    pluginId: string;
+    generation: number;
+    artifact: PluginArtifactResponse;
+    enabled: boolean;
+    grantedCapabilities: Array<PluginCapabilityGrantResponse>;
+    updatedBy: number;
+    updatedAt: number;
+    requestId: string;
+};
+export type PluginDeploymentRollbackRequest = {
+    expected_generation: number;
+    target_generation: number;
 };
 export type PublicAuthenticationCapabilities = {
     password_login_enabled: boolean;
@@ -3798,6 +3876,27 @@ export type PersonalAccessTokenWriteRequestWritable = {
     enabled?: boolean | null;
     version?: number | null;
     proof?: string | null;
+};
+export type PluginArtifactRegistrationRequestWritable = {
+    plugin_id: string;
+    plugin_version: string;
+    manifest: {
+        [key: string]: unknown;
+    };
+    package_path: string;
+    executable_path: string;
+    sha256: string;
+    signer_key_id: string;
+    signature_base64: string;
+};
+export type PluginDeploymentRequestWritable = {
+    artifact_digest: string;
+    expected_generation?: number | null;
+    enabled: boolean;
+    granted_capabilities: Array<PluginCapabilityGrantRequest>;
+    config: {
+        [key: string]: unknown;
+    };
 };
 export type RegistrationEmailVerificationRequestWritable = {
     email: string;
@@ -11235,6 +11334,190 @@ export type ListSelfPlatformAuditLogsResponses = {
     200: PlatformAuditLogListResponse;
 };
 export type ListSelfPlatformAuditLogsResponse = ListSelfPlatformAuditLogsResponses[keyof ListSelfPlatformAuditLogsResponses];
+export type ListAdminPluginArtifactsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before_id?: number;
+        limit?: number;
+    };
+    url: '/api/admin/plugins/artifacts';
+};
+export type ListAdminPluginArtifactsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminPluginArtifactsError = ListAdminPluginArtifactsErrors[keyof ListAdminPluginArtifactsErrors];
+export type ListAdminPluginArtifactsResponses = {
+    200: PluginArtifactPageResponse;
+};
+export type ListAdminPluginArtifactsResponse = ListAdminPluginArtifactsResponses[keyof ListAdminPluginArtifactsResponses];
+export type RegisterAdminVerifiedPluginArtifactData = {
+    body: PluginArtifactRegistrationRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/api/admin/plugins/artifacts';
+};
+export type RegisterAdminVerifiedPluginArtifactErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type RegisterAdminVerifiedPluginArtifactError = RegisterAdminVerifiedPluginArtifactErrors[keyof RegisterAdminVerifiedPluginArtifactErrors];
+export type RegisterAdminVerifiedPluginArtifactResponses = {
+    200: PluginArtifactResponse;
+};
+export type RegisterAdminVerifiedPluginArtifactResponse = RegisterAdminVerifiedPluginArtifactResponses[keyof RegisterAdminVerifiedPluginArtifactResponses];
+export type ListAdminPluginDeploymentsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        cursor?: string;
+        limit?: number;
+    };
+    url: '/api/admin/plugins/deployments';
+};
+export type ListAdminPluginDeploymentsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminPluginDeploymentsError = ListAdminPluginDeploymentsErrors[keyof ListAdminPluginDeploymentsErrors];
+export type ListAdminPluginDeploymentsResponses = {
+    200: PluginDeploymentPageResponse;
+};
+export type ListAdminPluginDeploymentsResponse = ListAdminPluginDeploymentsResponses[keyof ListAdminPluginDeploymentsResponses];
+export type ListAdminPluginDeploymentHistoryData = {
+    body?: never;
+    path: {
+        plugin_id: string;
+    };
+    query?: {
+        limit?: number;
+    };
+    url: '/api/admin/plugins/{plugin_id}/deployment/history';
+};
+export type ListAdminPluginDeploymentHistoryErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminPluginDeploymentHistoryError = ListAdminPluginDeploymentHistoryErrors[keyof ListAdminPluginDeploymentHistoryErrors];
+export type ListAdminPluginDeploymentHistoryResponses = {
+    200: Array<PluginDeploymentResponse>;
+};
+export type ListAdminPluginDeploymentHistoryResponse = ListAdminPluginDeploymentHistoryResponses[keyof ListAdminPluginDeploymentHistoryResponses];
+export type ApproveAdminPluginArtifactData = {
+    body?: never;
+    path: {
+        artifact_id: number;
+    };
+    query?: never;
+    url: '/api/admin/plugins/artifacts/{artifact_id}/approve';
+};
+export type ApproveAdminPluginArtifactErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ApproveAdminPluginArtifactError = ApproveAdminPluginArtifactErrors[keyof ApproveAdminPluginArtifactErrors];
+export type ApproveAdminPluginArtifactResponses = {
+    200: PluginActionResponse;
+};
+export type ApproveAdminPluginArtifactResponse = ApproveAdminPluginArtifactResponses[keyof ApproveAdminPluginArtifactResponses];
+export type RevokeAdminPluginArtifactData = {
+    body: PluginArtifactRevokeRequest;
+    path: {
+        artifact_id: number;
+    };
+    query?: never;
+    url: '/api/admin/plugins/artifacts/{artifact_id}/revoke';
+};
+export type RevokeAdminPluginArtifactErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type RevokeAdminPluginArtifactError = RevokeAdminPluginArtifactErrors[keyof RevokeAdminPluginArtifactErrors];
+export type RevokeAdminPluginArtifactResponses = {
+    200: PluginActionResponse;
+};
+export type RevokeAdminPluginArtifactResponse = RevokeAdminPluginArtifactResponses[keyof RevokeAdminPluginArtifactResponses];
+export type DeployAdminPluginArtifactData = {
+    body: PluginDeploymentRequestWritable;
+    path: {
+        plugin_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/deployment';
+};
+export type DeployAdminPluginArtifactErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type DeployAdminPluginArtifactError = DeployAdminPluginArtifactErrors[keyof DeployAdminPluginArtifactErrors];
+export type DeployAdminPluginArtifactResponses = {
+    200: PluginDeploymentResponse;
+};
+export type DeployAdminPluginArtifactResponse = DeployAdminPluginArtifactResponses[keyof DeployAdminPluginArtifactResponses];
+export type DisableAdminPluginDeploymentData = {
+    body: PluginDeploymentDisableRequest;
+    path: {
+        plugin_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/disable';
+};
+export type DisableAdminPluginDeploymentErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type DisableAdminPluginDeploymentError = DisableAdminPluginDeploymentErrors[keyof DisableAdminPluginDeploymentErrors];
+export type DisableAdminPluginDeploymentResponses = {
+    200: PluginDeploymentResponse;
+};
+export type DisableAdminPluginDeploymentResponse = DisableAdminPluginDeploymentResponses[keyof DisableAdminPluginDeploymentResponses];
+export type RollbackAdminPluginDeploymentData = {
+    body: PluginDeploymentRollbackRequest;
+    path: {
+        plugin_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/rollback';
+};
+export type RollbackAdminPluginDeploymentErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type RollbackAdminPluginDeploymentError = RollbackAdminPluginDeploymentErrors[keyof RollbackAdminPluginDeploymentErrors];
+export type RollbackAdminPluginDeploymentResponses = {
+    200: PluginDeploymentResponse;
+};
+export type RollbackAdminPluginDeploymentResponse = RollbackAdminPluginDeploymentResponses[keyof RollbackAdminPluginDeploymentResponses];
 export type GetAdminRuntimeStatusData = {
     body?: never;
     path?: never;

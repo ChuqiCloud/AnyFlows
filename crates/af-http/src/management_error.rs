@@ -316,6 +316,14 @@ pub(crate) enum ManagementError {
     ModelProviderConflict,
     ClientProfileNotFound,
     ClientProfileConflict,
+    /// 插件制品、部署或目录请求字段无效。
+    PluginLifecycleInvalidRequest,
+    /// 插件制品或部署记录不存在。
+    PluginLifecycleNotFound,
+    /// 插件审批或部署 generation 已由其他请求推进。
+    PluginLifecycleConflict,
+    /// 插件制品信任配置或目录暂不可用。
+    PluginLifecycleUnavailable,
     /// 实名认证设置版本已被其他管理员推进。
     AccountVerificationSettingsConflict,
     /// 目标 OAuth 凭据已经绑定其他 provider。
@@ -1502,6 +1510,34 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "client_profile_conflict",
                     message: "Client profile changed, protected, disabled or in use",
+                },
+            ),
+            Self::PluginLifecycleInvalidRequest => (
+                StatusCode::BAD_REQUEST,
+                ManagementErrorBody {
+                    code: "plugin_lifecycle_invalid_request",
+                    message: "Plugin lifecycle request is invalid",
+                },
+            ),
+            Self::PluginLifecycleNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "plugin_lifecycle_not_found",
+                    message: "Plugin lifecycle record not found",
+                },
+            ),
+            Self::PluginLifecycleConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "plugin_lifecycle_conflict",
+                    message: "Plugin lifecycle state changed",
+                },
+            ),
+            Self::PluginLifecycleUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "plugin_lifecycle_unavailable",
+                    message: "Plugin lifecycle service is temporarily unavailable",
                 },
             ),
             Self::ModelProviderConflict => (

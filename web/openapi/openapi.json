@@ -31984,6 +31984,935 @@
         ]
       }
     },
+    "/api/admin/plugins/artifacts": {
+      "get": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "列出已验证与待审批的插件制品",
+        "operationId": "listAdminPluginArtifacts",
+        "parameters": [
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "插件制品安全投影；不包含本地路径或签名",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginArtifactPageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_plugin_artifacts:execute"
+        ]
+      },
+      "post": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "登记并验签 artifact root 下的插件制品",
+        "description": "只接受相对于服务器配置制品根目录的路径；信任公钥来自服务器配置。服务端会校验签名、包 digest 和清单身份。",
+        "operationId": "registerAdminVerifiedPluginArtifact",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginArtifactRegistrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "已登记的制品安全投影",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginArtifactResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "相对路径、清单、签名或 digest 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "同一制品身份冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "制品根目录或可信签名者未配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:register_admin_verified_plugin_artifact:execute"
+        ]
+      }
+    },
+    "/api/admin/plugins/deployments": {
+      "get": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "列出当前插件部署状态",
+        "operationId": "listAdminPluginDeployments",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "插件部署安全投影；不包含插件配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginDeploymentPageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_plugin_deployments:execute"
+        ]
+      }
+    },
+    "/api/admin/plugins/{plugin_id}/deployment/history": {
+      "get": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "读取插件不可变部署历史",
+        "operationId": "listAdminPluginDeploymentHistory",
+        "parameters": [
+          {
+            "name": "plugin_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "部署历史；不包含插件配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PluginDeploymentResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "插件标识或分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_plugin_deployment_history:execute"
+        ]
+      }
+    },
+    "/api/admin/plugins/artifacts/{artifact_id}/approve": {
+      "post": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "批准已登记的插件制品",
+        "operationId": "approveAdminPluginArtifact",
+        "parameters": [
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "审批完成",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginActionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "制品不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "制品状态冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:approve_admin_plugin_artifact:execute"
+        ]
+      }
+    },
+    "/api/admin/plugins/artifacts/{artifact_id}/revoke": {
+      "post": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "撤销插件制品审批并停用其当前部署",
+        "operationId": "revokeAdminPluginArtifact",
+        "parameters": [
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginArtifactRevokeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "撤销完成",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginActionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "撤销原因无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "制品不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "制品状态冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:revoke_admin_plugin_artifact:execute"
+        ]
+      }
+    },
+    "/api/admin/plugins/{plugin_id}/deployment": {
+      "post": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "创建或推进插件部署 generation",
+        "operationId": "deployAdminPluginArtifact",
+        "parameters": [
+          {
+            "name": "plugin_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginDeploymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "新部署状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginDeploymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "部署配置或授权能力无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "制品不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "generation 或审批状态冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:deploy_admin_plugin_artifact:execute"
+        ]
+      }
+    },
+    "/api/admin/plugins/{plugin_id}/disable": {
+      "post": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "按预期 generation 停用插件部署",
+        "operationId": "disableAdminPluginDeployment",
+        "parameters": [
+          {
+            "name": "plugin_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginDeploymentDisableRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "停用后的部署状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginDeploymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "部署不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "generation 冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:disable_admin_plugin_deployment:execute"
+        ]
+      }
+    },
+    "/api/admin/plugins/{plugin_id}/rollback": {
+      "post": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "将历史 generation 作为新的部署 generation 恢复",
+        "operationId": "rollbackAdminPluginDeployment",
+        "parameters": [
+          {
+            "name": "plugin_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginDeploymentRollbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "恢复后的部署状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginDeploymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "generation 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "历史部署不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "generation 或审批状态冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:rollback_admin_plugin_deployment:execute"
+        ]
+      }
+    },
     "/api/admin/runtime-status": {
       "get": {
         "tags": [
@@ -45113,6 +46042,10 @@
               "external_account_unavailable",
               "external_account_rate_limited",
               "external_account_limit_reached",
+              "plugin_lifecycle_invalid_request",
+              "plugin_lifecycle_not_found",
+              "plugin_lifecycle_conflict",
+              "plugin_lifecycle_unavailable",
               "user_conflict",
               "organization_not_found",
               "organization_credit_invalid_request",
@@ -49395,6 +50328,401 @@
             },
             "maxItems": 256,
             "minItems": 2
+          }
+        },
+        "additionalProperties": false
+      },
+      "PluginActionResponse": {
+        "type": "object",
+        "required": [
+          "completed",
+          "requestId"
+        ],
+        "properties": {
+          "completed": {
+            "type": "boolean"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        }
+      },
+      "PluginArtifactApprovalResponse": {
+        "type": "object",
+        "required": [
+          "approvedBy",
+          "approvedAt",
+          "requestId"
+        ],
+        "properties": {
+          "approvedBy": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "approvedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        }
+      },
+      "PluginArtifactPageResponse": {
+        "type": "object",
+        "required": [
+          "artifacts"
+        ],
+        "properties": {
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginArtifactResponse"
+            }
+          },
+          "nextBeforeId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "PluginArtifactRegistrationRequest": {
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "plugin_version",
+          "manifest",
+          "package_path",
+          "executable_path",
+          "sha256",
+          "signer_key_id",
+          "signature_base64"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 3,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+          },
+          "plugin_version": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 5
+          },
+          "manifest": {
+            "type": "object",
+            "additionalProperties": true,
+            "writeOnly": true
+          },
+          "package_path": {
+            "type": "string",
+            "description": "POSIX-style path relative to the host-configured artifact root.",
+            "example": "publishers/acme/catalog-1.0.0",
+            "maxLength": 900,
+            "minLength": 1
+          },
+          "executable_path": {
+            "type": "string",
+            "description": "POSIX-style executable path relative to `package_path`.",
+            "example": "bin/catalog-plugin",
+            "maxLength": 900,
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "signer_key_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "signature_base64": {
+            "type": "string",
+            "writeOnly": true,
+            "maxLength": 88,
+            "minLength": 88
+          }
+        },
+        "additionalProperties": false
+      },
+      "PluginArtifactResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "pluginId",
+          "pluginVersion",
+          "digest",
+          "manifest",
+          "sourceKind",
+          "signerKeyId",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pluginId": {
+            "type": "string"
+          },
+          "pluginVersion": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "manifest": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "sourceKind": {
+            "type": "string"
+          },
+          "signerKeyId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "approval": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PluginArtifactApprovalResponse"
+              }
+            ]
+          },
+          "revocation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PluginArtifactRevocationResponse"
+              }
+            ]
+          }
+        }
+      },
+      "PluginArtifactRevocationResponse": {
+        "type": "object",
+        "required": [
+          "revokedBy",
+          "revokedAt",
+          "requestId"
+        ],
+        "properties": {
+          "revokedBy": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "revokedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        }
+      },
+      "PluginArtifactRevokeRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "PluginCapabilityGrantRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "version"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 3
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 65535,
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "PluginCapabilityGrantResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "version"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "PluginDeploymentDisableRequest": {
+        "type": "object",
+        "required": [
+          "expected_generation"
+        ],
+        "properties": {
+          "expected_generation": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "PluginDeploymentPageResponse": {
+        "type": "object",
+        "required": [
+          "deployments"
+        ],
+        "properties": {
+          "deployments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginDeploymentResponse"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PluginDeploymentRequest": {
+        "type": "object",
+        "required": [
+          "artifact_digest",
+          "enabled",
+          "granted_capabilities",
+          "config"
+        ],
+        "properties": {
+          "artifact_digest": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "expected_generation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "granted_capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginCapabilityGrantRequest"
+            },
+            "maxItems": 128
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": true,
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "PluginDeploymentResponse": {
+        "type": "object",
+        "required": [
+          "pluginId",
+          "generation",
+          "artifact",
+          "enabled",
+          "grantedCapabilities",
+          "updatedBy",
+          "updatedAt",
+          "requestId"
+        ],
+        "properties": {
+          "pluginId": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "artifact": {
+            "$ref": "#/components/schemas/PluginArtifactResponse"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "grantedCapabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginCapabilityGrantResponse"
+            }
+          },
+          "updatedBy": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updatedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        }
+      },
+      "PluginDeploymentRollbackRequest": {
+        "type": "object",
+        "required": [
+          "expected_generation",
+          "target_generation"
+        ],
+        "properties": {
+          "expected_generation": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "target_generation": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
           }
         },
         "additionalProperties": false
@@ -54331,6 +55659,9 @@
     },
     {
       "name": "平台管理审计"
+    },
+    {
+      "name": "插件生命周期"
     },
     {
       "name": "运行状态"
