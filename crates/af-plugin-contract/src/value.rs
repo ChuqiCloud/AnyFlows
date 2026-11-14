@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::ContractValidationError;
+use crate::{ConnectorError, ContractValidationError};
 
 /// Correlation and time budget supplied for one host-to-connector invocation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
