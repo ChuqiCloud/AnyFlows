@@ -23,7 +23,7 @@ use axum::{
 };
 use http::{HeaderValue, header::CACHE_CONTROL};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 use utoipa::ToSchema;
 
 use crate::{

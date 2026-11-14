@@ -649,13 +649,13 @@
       "$ref": "#/$defs/CapabilityResult"
     },
     {
-      "$ref": "#/$defs/PluginHostOperation"
+      "$ref": "#/$defs/PluginHostRequest"
     },
     {
-      "$ref": "#/$defs/PluginHostOperation"
+      "$ref": "#/$defs/PluginHostResponse"
     },
     {
-      "$ref": "#/$defs/PluginHostOperation"
+      "$ref": "#/$defs/PluginHostProtocol"
     }
   ],
   "title": "AnyFlows Plugin Contract v1"
