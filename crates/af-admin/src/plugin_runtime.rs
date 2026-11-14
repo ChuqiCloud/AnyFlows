@@ -3,6 +3,7 @@
 use std::{
     collections::BTreeMap,
     fmt,
+    future::Future,
     path::{Component, Path, PathBuf},
     sync::Arc,
 };
@@ -218,13 +219,13 @@ impl AdminPluginSidecarRuntime {
             )
             .await
             .map_err(map_sidecar_error)?;
-        if !deployment_is_current(repository, deployment).await? {
+        let current = deployment_is_current(repository, deployment).await;
+        ensure_deployment_current_after_activation(current, || async {
             self.supervisor
                 .stop_generation(&plugin_id, generation)
                 .await;
-            return Err(AdminPluginLifecycleError::Conflict);
-        }
-        Ok(())
+        })
+        .await
     }
 
     /// Stop an active or failed process no newer than the committed generation.
@@ -463,11 +464,21 @@ impl AdminPluginSidecarRuntime {
                                 .await;
                         }
                     }
-                    Err(error) => tracing::warn!(
-                        plugin_id = deployment.plugin_id,
-                        error_kind = ?error,
-                        "plugin deployment could not be reloaded after reconciliation"
-                    ),
+                    Err(error) => {
+                        tracing::warn!(
+                            plugin_id = deployment.plugin_id,
+                            error_kind = ?error,
+                            "plugin deployment could not be reloaded after reconciliation"
+                        );
+                        if let (Ok(plugin_id), Ok(generation)) = (
+                            PluginId::new(deployment.plugin_id.clone()),
+                            u64::try_from(deployment.generation),
+                        ) {
+                            self.supervisor
+                                .stop_generation(&plugin_id, generation)
+                                .await;
+                        }
+                    }
                 }
             }
             if !page_is_full {
@@ -568,6 +579,27 @@ async fn deployment_is_current(
                 && current.enabled == deployment.enabled
                 && current.artifact.digest == deployment.artifact.digest
         }))
+}
+
+async fn ensure_deployment_current_after_activation<F, Fut>(
+    current: Result<bool, AdminPluginLifecycleError>,
+    stop_generation: F,
+) -> Result<(), AdminPluginLifecycleError>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = ()>,
+{
+    match current {
+        Ok(true) => Ok(()),
+        Ok(false) => {
+            stop_generation().await;
+            Err(AdminPluginLifecycleError::Conflict)
+        }
+        Err(error) => {
+            stop_generation().await;
+            Err(error)
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -706,7 +738,14 @@ fn map_sidecar_error(error: SidecarError) -> AdminPluginLifecycleError {
 
 #[cfg(test)]
 mod tests {
-    use super::{base64_signature_from_hex, safe_posix_relative_path, safe_relative_path};
+    use super::{
+        AdminPluginLifecycleError, base64_signature_from_hex,
+        ensure_deployment_current_after_activation, safe_posix_relative_path, safe_relative_path,
+    };
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
 
     #[test]
     fn artifact_paths_must_be_relative_and_traversal_free() {
@@ -732,5 +771,22 @@ mod tests {
         assert!(base64_signature_from_hex(&"a1".repeat(64)).is_ok());
         assert!(base64_signature_from_hex(&"a1".repeat(63)).is_err());
         assert!(base64_signature_from_hex(&"zz".repeat(64)).is_err());
+    }
+
+    #[tokio::test]
+    async fn failed_post_activation_database_check_stops_generation_and_preserves_error() {
+        let stopped = Arc::new(AtomicBool::new(false));
+        let stopped_by_callback = Arc::clone(&stopped);
+
+        let result = ensure_deployment_current_after_activation(
+            Err(AdminPluginLifecycleError::Internal),
+            || async move {
+                stopped_by_callback.store(true, Ordering::SeqCst);
+            },
+        )
+        .await;
+
+        assert_eq!(result, Err(AdminPluginLifecycleError::Internal));
+        assert!(stopped.load(Ordering::SeqCst));
     }
 }

@@ -71,7 +71,17 @@ fn artifact(digest: &str) -> PluginArtifactCreate {
             "limits": { "maxConcurrency": 2, "requestTimeoutMs": 1000, "maxResponseBytes": 4096, "maxPageSize": 20 },
             "capabilities": [
                 { "id": "catalog.models.read", "version": 1, "access": "read", "sideEffect": "none" },
-                { "id": "catalog.models.write", "version": 1, "access": "write", "sideEffect": "external_write" }
+                {
+                    "id": "catalog.models.write",
+                    "version": 1,
+                    "access": "write",
+                    "sideEffect": "external_write",
+                    "writeSemantics": {
+                        "nativeIdempotencyKey": true,
+                        "resultLookup": "by_request_id",
+                        "reconciliation": true
+                    }
+                }
             ]
         }),
         source_kind: PluginArtifactSourceKind::LocalProcess,

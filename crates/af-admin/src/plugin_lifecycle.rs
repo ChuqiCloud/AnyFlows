@@ -627,12 +627,21 @@ impl DatabaseAdminPluginLifecycleService {
             }
             runtime.apply(&self.repository, deployment).await?;
             if deployment.enabled {
-                let latest = self
-                    .repository
-                    .get_deployment(&deployment.plugin_id)
-                    .await
-                    .map_err(map_catalog_error)?
-                    .ok_or(AdminPluginLifecycleError::NotFound)?;
+                let latest = match self.repository.get_deployment(&deployment.plugin_id).await {
+                    Ok(Some(latest)) => latest,
+                    Ok(None) => {
+                        let _ = runtime
+                            .stop_generation(&deployment.plugin_id, deployment.generation)
+                            .await;
+                        return Err(AdminPluginLifecycleError::NotFound);
+                    }
+                    Err(error) => {
+                        let _ = runtime
+                            .stop_generation(&deployment.plugin_id, deployment.generation)
+                            .await;
+                        return Err(map_catalog_error(error));
+                    }
+                };
                 if !latest.enabled || latest.generation != deployment.generation {
                     let _ = runtime
                         .stop_generation(&deployment.plugin_id, deployment.generation)
