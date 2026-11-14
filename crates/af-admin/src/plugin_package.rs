@@ -127,14 +127,6 @@ pub(crate) async fn extract_plugin_package_at(
     .map_err(|_| AdminPluginLifecycleError::Internal)?
 }
 
-#[cfg(test)]
-fn extract_package(
-    upload: &Path,
-    artifact_root: &Path,
-) -> Result<ImportedPluginPackage, AdminPluginLifecycleError> {
-    extract_package_at(upload, artifact_root, None)
-}
-
 fn extract_package_at(
     upload: &Path,
     artifact_root: &Path,
