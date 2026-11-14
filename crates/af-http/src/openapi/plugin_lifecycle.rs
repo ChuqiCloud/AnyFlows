@@ -11,9 +11,30 @@ use crate::{
         PluginArtifactRevocationResponse, PluginArtifactRevokeRequest,
         PluginCapabilityGrantRequest, PluginCapabilityGrantResponse,
         PluginDeploymentDisableRequest, PluginDeploymentPageResponse, PluginDeploymentRequest,
-        PluginDeploymentResponse, PluginDeploymentRollbackRequest,
+        PluginDeploymentResponse, PluginDeploymentRollbackRequest, PluginPackageInstallRequest,
     },
 };
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/plugins/install",
+    operation_id = "installAdminPluginPackage",
+    tag = "插件生命周期",
+    summary = "上传插件包并安装启用；自有插件无需签名",
+    request_body(content = PluginPackageInstallRequest, content_type = "multipart/form-data"),
+    responses(
+        (status = 200, description = "已安装并启用", body = PluginDeploymentResponse),
+        (status = 400, description = "插件包、配置或签名无效", body = ManagementErrorBody),
+        (status = 422, description = "插件需要在高级部署中显式授权能力", body = ManagementErrorBody),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "缺少插件管理权限", body = ManagementErrorBody),
+        (status = 409, description = "已安装或部署代次冲突", body = ManagementErrorBody),
+        (status = 413, description = "请求或压缩包超过大小上限", body = ManagementErrorBody),
+        (status = 503, description = "安装并发已满或插件运行时未启用", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn install_admin_plugin_package() {}
 
 #[utoipa::path(
     get,
@@ -196,6 +217,7 @@ fn rollback_admin_plugin_deployment() {}
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        install_admin_plugin_package,
         list_admin_plugin_artifacts,
         list_admin_plugin_deployments,
         list_admin_plugin_deployment_history,
@@ -207,6 +229,7 @@ fn rollback_admin_plugin_deployment() {}
         rollback_admin_plugin_deployment
     ),
     components(schemas(
+        PluginPackageInstallRequest,
         PluginActionResponse,
         PluginArtifactApprovalResponse,
         PluginArtifactPageResponse,

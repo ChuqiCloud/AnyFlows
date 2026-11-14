@@ -66,10 +66,33 @@
     }
   },
   "pluginLifecycle": {
-    "eyebrow": "插件运行与发布",
-    "title": "插件生命周期",
-    "subtitle": "登记签名制品、审批发布者、按需授权只读能力，并以版本号控制部署和回滚。",
-    "trustWarning": "插件是服务端本地进程，运行时仍拥有 AnyFlows 服务账号权限。签名用于验证来源与完整性，不提供操作系统沙箱或网络隔离；只部署你信任的发布者制品。",
+    "eyebrow": "插件",
+    "title": "插件管理",
+    "subtitle": "上传插件包即可安装并启用，也可管理配置、停用和版本回滚。",
+    "trustWarning": "插件会以 AnyFlows 服务账号运行，请仅安装你信任的插件。",
+    "advanced": "高级管理：手动登记与部署",
+    "signatureDetails": "发布者签名（选填）",
+    "signatureHint": "自己的插件无需签名。匹配已配置发布者公钥的签名会显示为已验证；其他插件仍可由管理员确认安装。",
+    "install": {
+      "title": "安装插件",
+      "description": "选择插件包即可安装，无需单独登记或审批。默认只授予公开模型目录的只读能力。",
+      "package": "插件包",
+      "packageHint": "支持 .afplugin 或 ZIP 格式。系统自动读取插件信息；默认只启用 catalog.models.read/search。",
+      "configure": "可选配置",
+      "submit": "安装并启用",
+      "installing": "正在安装…",
+      "success": "{{plugin}} {{version}} 已安装并启用。",
+      "errors": {
+        "packageType": "请选择 .afplugin 或 ZIP 插件包。",
+        "configJson": "配置必须是有效的 JSON 对象。",
+        "conflict": "安装期间部署状态发生变化。请刷新后重试，避免覆盖并发更新。",
+        "needsReview": "该插件声明了简易安装默认不会授权的能力。请到高级管理中查看并明确授予所需能力。",
+        "tooLarge": "插件包超过服务允许的大小，请检查包内容。",
+        "invalidPackage": "插件包或配置未通过校验，请检查包格式、兼容版本和必填配置。",
+        "forbidden": "当前账号没有安装插件的权限。",
+        "failed": "安装未完成。请稍后重试；若仍失败，请检查插件包和服务日志。"
+      }
+    },
     "refresh": "刷新",
     "cancel": "取消",
     "confirm": "确认",
@@ -90,8 +113,8 @@
       "packagePath": "制品目录相对路径",
       "executablePath": "包内可执行文件相对路径",
       "digest": "SHA-256 包摘要（小写 64 位十六进制）",
-      "signer": "可信签名者 ID",
-      "manifest": "签名绑定的 Manifest（JSON）",
+      "signer": "发布者签名者 ID",
+      "manifest": "Manifest（JSON）",
       "signature": "Ed25519 签名（Base64）",
       "config": "公开配置（JSON 对象）",
       "configSchema": "查看配置 Schema"
@@ -101,11 +124,13 @@
       "approved": "已审批",
       "revoked": "已撤销",
       "enabled": "已启用",
-      "disabled": "已停用"
+      "disabled": "已停用",
+      "unverified": "管理员安装 · 发布者未验证",
+      "signed": "发布者签名已验证"
     },
     "artifacts": {
-      "title": "已验证制品",
-      "description": "制品路径相对于服务端配置目录；提交后由服务端校验摘要和签名。",
+      "title": "已登记插件包",
+      "description": "供已有服务端制品或自定义部署使用；常规安装请直接上传插件包。",
       "register": "登记制品",
       "registerHint": "文件必须已由运维人员放置在服务端受控制品目录中。登记不会自动批准或启用制品。",
       "approve": "批准",
@@ -116,13 +141,13 @@
     },
     "deployments": {
       "title": "当前部署",
-      "description": "部署变更使用 generation 比较并交换；服务重启后从数据库恢复启用状态。",
+      "description": "查看已安装的插件；服务重启后自动恢复启用状态。",
       "grants": "已授权能力",
       "history": "查看历史",
       "empty": "当前没有插件部署。"
     },
     "errors": {
-      "action": "操作失败。检查签名、制品目录配置、审批状态和当前 generation 后重试。",
+      "action": "操作未完成。请刷新当前状态后重试，或检查服务日志。",
       "loadArtifacts": "无法读取插件制品。",
       "loadDeployments": "无法读取插件部署。",
       "loadHistory": "无法读取部署历史。请刷新后重试。",

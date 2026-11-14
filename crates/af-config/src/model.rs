@@ -292,9 +292,9 @@ pub struct ServerConfig {
     shutdown_timeout_secs: u64,
     /// 运行目录下可选的外部前端模板目录。
     frontend_template_directory: PathBuf,
-    /// 插件制品的受控根目录；未设置时禁用本地制品登记。
+    /// 插件制品的受控根目录；默认 data/plugins，显式设为 None 时禁用本地制品登记。
     plugin_artifact_directory: Option<PathBuf>,
-    /// 可用于验证插件 Ed25519 签名的可信公钥。
+    /// 可选的插件发布者 Ed25519 公钥；管理员自行管理的插件不要求签名。
     plugin_trusted_signers: Vec<PluginTrustedSigner>,
 }
 
@@ -442,7 +442,7 @@ impl Default for ServerConfig {
             trusted_proxy_cidrs: Vec::new(),
             shutdown_timeout_secs: DEFAULT_SHUTDOWN_TIMEOUT_SECS,
             frontend_template_directory: PathBuf::from("public/templates"),
-            plugin_artifact_directory: None,
+            plugin_artifact_directory: Some(PathBuf::from("data/plugins")),
             plugin_trusted_signers: Vec::new(),
         }
     }
@@ -1676,8 +1676,8 @@ impl AppConfig {
                 });
             }
         }
-        if self.server.plugin_artifact_directory.is_some()
-            != !self.server.plugin_trusted_signers.is_empty()
+        if self.server.plugin_artifact_directory.is_none()
+            && !self.server.plugin_trusted_signers.is_empty()
         {
             return Err(ConfigError::InvalidField {
                 field: "server.plugin_trusted_signers",
@@ -2717,6 +2717,36 @@ mod tests {
             },
             &mut std::collections::BTreeSet::new()
         ));
+    }
+
+    #[test]
+    fn disabled_plugin_directory_rejects_configured_signers() {
+        use figment::providers::Format as _;
+
+        let mut config: AppConfig = figment::Figment::from(figment::providers::Toml::string(
+            "[database]\nurl = 'sqlite::memory:'\n",
+        ))
+        .extract()
+        .unwrap();
+        assert_eq!(
+            config.server.plugin_artifact_directory(),
+            Some(Path::new("data/plugins"))
+        );
+        config.server = config.server.with_plugin_artifact_directory(None);
+        assert!(config.validate().is_ok());
+        config.server = config
+            .server
+            .with_plugin_trusted_signers([PluginTrustedSigner::new(
+                "publisher-main".to_owned(),
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned(),
+            )
+            .unwrap()]);
+        assert_eq!(
+            config.validate(),
+            Err(ConfigError::InvalidField {
+                field: "server.plugin_trusted_signers"
+            })
+        );
     }
 
     #[test]

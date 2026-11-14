@@ -126,7 +126,7 @@ impl PluginArtifactDescriptor {
             || !sha256
                 .bytes()
                 .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-            || signer_key_id.is_empty()
+            || signer_key_id.is_empty() != signature_base64.is_empty()
             || signer_key_id.len() > 128
             || signer_key_id.chars().any(char::is_control)
             || signature_base64.len() > 128
@@ -145,7 +145,7 @@ impl PluginArtifactDescriptor {
         let signature = BASE64
             .decode(signature_base64)
             .map_err(|_| SidecarError::InvalidArtifact)?;
-        if signature.len() != MAX_SIGNATURE_BYTES {
+        if !signature.is_empty() && signature.len() != MAX_SIGNATURE_BYTES {
             return Err(SidecarError::InvalidArtifact);
         }
         Ok(Self {
@@ -234,7 +234,7 @@ impl fmt::Debug for PluginArtifactDescriptor {
             .debug_struct("PluginArtifactDescriptor")
             .field("plugin_id", &self.plugin_id)
             .field("plugin_version", &self.plugin_version)
-            .field("manifest", &"<signed>")
+            .field("manifest", &"<redacted>")
             .field("executable", &"<approved local path>")
             .field("package_root", &"<approved local path>")
             .field("sha256", &self.sha256)
@@ -244,7 +244,9 @@ impl fmt::Debug for PluginArtifactDescriptor {
     }
 }
 
-/// Host-approved artifact after digest and signature verification.
+/// Host-approved artifact after package verification. Publisher-managed
+/// artifacts additionally carry a verified signature; operator-managed ones
+/// have an empty signer identity and signature.
 pub struct VerifiedPluginArtifact {
     plugin_id: PluginId,
     plugin_version: PluginVersion,
@@ -271,6 +273,25 @@ impl VerifiedPluginArtifact {
         if descriptor.signer_key_id != trusted_key.key_id {
             return Err(SidecarError::UntrustedSigner);
         }
+        Self::verify_package(descriptor, Some(trusted_key)).await
+    }
+
+    /// Verify an artifact explicitly selected and managed by the host operator.
+    /// This verifies package integrity, manifest and staging, but does not
+    /// assert a publisher identity or accept a supplied publisher signature.
+    pub async fn verify_operator_managed(
+        descriptor: PluginArtifactDescriptor,
+    ) -> Result<Self, SidecarError> {
+        if !descriptor.signer_key_id.is_empty() || !descriptor.signature.is_empty() {
+            return Err(SidecarError::InvalidArtifact);
+        }
+        Self::verify_package(descriptor, None).await
+    }
+
+    async fn verify_package(
+        descriptor: PluginArtifactDescriptor,
+        trusted_key: Option<&TrustedPluginKey>,
+    ) -> Result<Self, SidecarError> {
         let config_validator = CompiledJsonSchema::compile(&descriptor.manifest.config_schema)
             .map_err(|_| SidecarError::InvalidArtifact)?;
         let package_root = tokio::fs::canonicalize(&descriptor.package_root)
@@ -315,16 +336,18 @@ impl VerifiedPluginArtifact {
         {
             return Err(SidecarError::InvalidArtifact);
         }
-        let signed_message = plugin_artifact_signature_payload(
-            &descriptor.plugin_id,
-            &descriptor.plugin_version,
-            &actual_digest,
-            &executable_relative_path,
-            &descriptor.manifest,
-        )?;
-        UnparsedPublicKey::new(&ED25519, trusted_key.public_key)
-            .verify(&signed_message, &descriptor.signature)
-            .map_err(|_| SidecarError::InvalidArtifactSignature)?;
+        if let Some(trusted_key) = trusted_key {
+            let signed_message = plugin_artifact_signature_payload(
+                &descriptor.plugin_id,
+                &descriptor.plugin_version,
+                &actual_digest,
+                &executable_relative_path,
+                &descriptor.manifest,
+            )?;
+            UnparsedPublicKey::new(&ED25519, trusted_key.public_key)
+                .verify(&signed_message, &descriptor.signature)
+                .map_err(|_| SidecarError::InvalidArtifactSignature)?;
+        }
 
         // Copy into a host-created private directory and verify the copied
         // bytes before execution. This prevents a writer outside the service
@@ -381,8 +404,9 @@ impl VerifiedPluginArtifact {
         &self.signer_key_id
     }
 
-    /// Return the already verified Ed25519 signature for immutable catalog
-    /// persistence. Debug output and public HTTP projections remain redacted.
+    /// Return the verified Ed25519 signature for immutable catalog persistence,
+    /// or an empty string for operator-managed artifacts. Debug output and
+    /// public HTTP projections remain redacted.
     #[must_use]
     pub fn signature_base64(&self) -> String {
         BASE64.encode(&self.signature)
@@ -404,7 +428,7 @@ impl VerifiedPluginArtifact {
     }
 
     /// Validate operator-supplied deployment configuration against the
-    /// signature-bound manifest before launching the sidecar.
+    /// verified manifest before launching the sidecar.
     pub fn validate_configuration(&self, configuration: &Value) -> Result<(), SidecarError> {
         self.config_validator
             .validate(configuration)
@@ -1798,6 +1822,94 @@ mod tests {
         )
         .unwrap();
         (package, descriptor, key)
+    }
+
+    fn with_trust_metadata(
+        descriptor: PluginArtifactDescriptor,
+        signer_key_id: &str,
+        signature_base64: &str,
+    ) -> Result<PluginArtifactDescriptor, SidecarError> {
+        PluginArtifactDescriptor::new(
+            descriptor.plugin_id,
+            descriptor.plugin_version,
+            descriptor.manifest,
+            descriptor.executable,
+            descriptor.package_root,
+            descriptor.sha256,
+            signer_key_id.to_owned(),
+            signature_base64,
+            descriptor.source_kind,
+            descriptor.source_reference,
+        )
+    }
+
+    #[test]
+    fn artifact_trust_metadata_must_be_empty_or_a_complete_signature_pair() {
+        let (_package, descriptor, _key) = signed_fixture("bin/catalog-plugin");
+        assert!(with_trust_metadata(descriptor, "", "").is_ok());
+        let (_package, descriptor, _key) = signed_fixture("bin/catalog-plugin");
+        let signature = descriptor.signature_base64();
+        assert!(with_trust_metadata(descriptor, "", &signature).is_err());
+        let (_package, descriptor, _key) = signed_fixture("bin/catalog-plugin");
+        assert!(with_trust_metadata(descriptor, "test-publisher", "").is_err());
+        let (_package, descriptor, _key) = signed_fixture("bin/catalog-plugin");
+        assert!(with_trust_metadata(descriptor, "test-publisher", "not-base64").is_err());
+    }
+
+    #[tokio::test]
+    async fn operator_managed_verification_preserves_staging_and_configuration_checks() {
+        let (package, descriptor, _key) = signed_fixture("bin/catalog-plugin");
+        let descriptor = with_trust_metadata(descriptor, "", "").unwrap();
+        let verified = VerifiedPluginArtifact::verify_operator_managed(descriptor)
+            .await
+            .unwrap();
+        assert!(verified.signer_key_id().is_empty());
+        assert!(verified.signature_base64().is_empty());
+        assert!(verified.validate_configuration(&json!({})).is_ok());
+        assert!(
+            verified
+                .validate_configuration(&json!("wrong type"))
+                .is_err()
+        );
+        std::fs::write(package.path().join("bin/catalog-plugin"), b"replacement").unwrap();
+        assert_eq!(
+            std::fs::read(&verified.executable).unwrap(),
+            b"catalog-plugin"
+        );
+        assert_eq!(
+            plugin_package_digest(&verified.package_root, &verified.executable).unwrap(),
+            verified.sha256
+        );
+    }
+
+    #[tokio::test]
+    async fn operator_managed_verification_rejects_modified_package_bytes() {
+        let (package, descriptor, _key) = signed_fixture("bin/catalog-plugin");
+        let descriptor = with_trust_metadata(descriptor, "", "").unwrap();
+        std::fs::write(package.path().join("bin/catalog-plugin"), b"replacement").unwrap();
+        assert_eq!(
+            VerifiedPluginArtifact::verify_operator_managed(descriptor)
+                .await
+                .err(),
+            Some(SidecarError::ArtifactDigestMismatch),
+        );
+    }
+
+    #[tokio::test]
+    async fn signed_and_operator_managed_verification_cannot_bypass_each_other() {
+        let (_package, descriptor, _key) = signed_fixture("bin/catalog-plugin");
+        assert_eq!(
+            VerifiedPluginArtifact::verify_operator_managed(descriptor)
+                .await
+                .err(),
+            Some(SidecarError::InvalidArtifact),
+        );
+        let (_package, descriptor, key) = signed_fixture("bin/catalog-plugin");
+        let descriptor = with_trust_metadata(descriptor, "", "").unwrap();
+        assert_eq!(
+            VerifiedPluginArtifact::verify(descriptor, &key).await.err(),
+            Some(SidecarError::UntrustedSigner),
+        );
     }
 
     #[tokio::test]

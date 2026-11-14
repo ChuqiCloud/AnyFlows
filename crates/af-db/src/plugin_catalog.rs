@@ -1,7 +1,7 @@
 //! Persistent trust approvals and generation-checked plugin deployments.
 //!
 //! This repository stores host approval and deployment facts only. It does not
-//! execute a plugin, verify a signature, or convert a manifest declaration into
+//! execute a plugin, verify a publisher signature, or convert a manifest declaration into
 //! authorization; callers must verify provenance and supply host-approved grants.
 
 use std::{collections::BTreeSet, time::Duration};
@@ -63,8 +63,9 @@ impl PluginArtifactSourceKind {
     }
 }
 
-/// Immutable candidate artifact metadata. Signature verification is performed by the host before
+/// Immutable candidate artifact metadata. Package verification is performed by the host before
 /// this record is inserted; administrative approval is a separate immutable operation.
+/// An empty signer/signature pair identifies an operator-managed artifact.
 #[derive(Clone, PartialEq)]
 pub struct PluginArtifactCreate {
     pub plugin_id: String,
@@ -129,13 +130,13 @@ impl PluginArtifactCreate {
             || self.source_reference.len() > 2048
             || self.source_reference.chars().any(char::is_control)
             || !valid_source_reference(self.source_kind, &self.source_reference)
-            || self.signer_key_id.is_empty()
+            || self.signer_key_id.is_empty() != self.signature.is_empty()
             || self.signer_key_id.len() > 128
             || !self
                 .signer_key_id
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
-            || !is_lower_hex(&self.signature, 128)
+            || (!self.signature.is_empty() && !is_lower_hex(&self.signature, 128))
             || self.created_at <= 0
         {
             return Err(PluginCatalogError::InvalidInput);
@@ -406,8 +407,9 @@ impl PluginCatalogRepository {
         }
     }
 
-    /// Register immutable metadata for a signature-verified artifact. Repeating the same digest
-    /// and content is idempotent; reusing the digest with different metadata is rejected.
+    /// Register immutable metadata for a digest-verified artifact, optionally carrying a verified
+    /// publisher signature. Repeating the same digest and content is idempotent; reusing the digest
+    /// with different metadata is rejected.
     pub async fn register_artifact(
         &self,
         input: PluginArtifactCreate,
