@@ -11,7 +11,6 @@ use af_plugin_contract::PluginManifest;
 use af_plugin_runtime::plugin_package_digest;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tempfile::TempDir;
 use zip::{CompressionMethod, ZipArchive};
 
 use crate::{AdminPluginLifecycleError, plugin_lifecycle::MAX_PLUGIN_PACKAGE_UPLOAD_BYTES};
@@ -63,19 +62,18 @@ impl PackageDirectoryGuard {
 
 impl Drop for PackageDirectoryGuard {
     fn drop(&mut self) {
-        if self.remove_on_drop {
-            if fs::symlink_metadata(&self.path)
+        if self.remove_on_drop
+            && fs::symlink_metadata(&self.path)
                 .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
-                && self
-                    .path
-                    .canonicalize()
-                    .ok()
-                    .as_deref()
-                    .and_then(Path::parent)
-                    == Some(self.parent.as_path())
-            {
-                let _ = fs::remove_dir_all(&self.path);
-            }
+            && self
+                .path
+                .canonicalize()
+                .ok()
+                .as_deref()
+                .and_then(Path::parent)
+                == Some(self.parent.as_path())
+        {
+            let _ = fs::remove_dir_all(&self.path);
         }
     }
 }
