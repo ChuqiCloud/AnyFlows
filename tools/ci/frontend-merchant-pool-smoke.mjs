@@ -361,8 +361,14 @@ try {
     await page.getByRole('region', { name: label('catalogTable'), exact: true }).getByText(model, { exact: true }).waitFor()
     assert.deepEqual(JSON.parse(catalogRequests.at(-1).provider), [name], 'Legal manufacturer names cannot collide with separators or the unclassified choice')
   }
-  await providerFilter.getByRole('button', { name: label('market.allProviders'), exact: true }).click()
+  if (new URL(page.url()).searchParams.has('provider')) {
+    await providerFilter.getByRole('button', { name: label('market.allProviders'), exact: true }).click()
+  }
   assert.equal(new URL(page.url()).searchParams.has('provider'), false, 'All manufacturers clears the URL filter')
+  await page.getByRole('region', { name: label('catalogTable'), exact: true })
+    .getByRole('row')
+    .filter({ hasText: `${publicService.merchant_name}/${publicService.name}` })
+    .waitFor()
   await page.getByRole('textbox', { name: label('model'), exact: true }).fill('gpt-fixture')
   await page.getByText('90.0%', { exact: true }).waitFor()
   await page.getByText(label('lowSamples'), { exact: true }).waitFor()

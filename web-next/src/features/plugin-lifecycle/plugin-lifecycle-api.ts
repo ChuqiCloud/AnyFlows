@@ -14,6 +14,7 @@ import {
 } from '@/lib/api/generated/sdk.gen'
 import type {
   PluginArtifactRegistrationRequestWritable,
+  PluginDeploymentResponse,
   PluginDeploymentRequestWritable,
 } from '@/lib/api/generated/types.gen'
 
@@ -64,6 +65,30 @@ export function usePluginDeploymentHistory(pluginId: string | undefined, refresh
 
 function invalidate(client: ReturnType<typeof useQueryClient>) {
   return client.invalidateQueries({ queryKey: root })
+}
+
+export function useInstallPlugin() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ packageFile, config }: { packageFile: File; config: Record<string, unknown> }) => {
+      const body = new FormData()
+      body.append('package', packageFile, packageFile.name)
+      body.append('config', JSON.stringify(config))
+      const result = await apiClient.post<PluginDeploymentResponse>({
+        url: '/api/admin/plugins/install',
+        body,
+        bodySerializer: null,
+        headers: { 'Content-Type': null },
+        security: [
+          { key: 'bearerAuth', scheme: 'bearer', type: 'http' },
+          { key: 'personalAccessTokenBearer', scheme: 'bearer', type: 'http' },
+        ],
+      }) as unknown as { data: PluginDeploymentResponse }
+      return result.data
+    },
+    onSuccess: () => invalidate(client),
+    onError: () => invalidate(client),
+  })
 }
 
 export function useRegisterPluginArtifact() {

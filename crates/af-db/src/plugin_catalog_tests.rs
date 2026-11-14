@@ -190,6 +190,59 @@ async fn plugin_artifacts_are_immutable_and_require_explicit_approval_before_dep
 }
 
 #[tokio::test]
+async fn operator_managed_artifact_retains_empty_trust_metadata() -> Result<(), Box<dyn Error>> {
+    let fixture = Fixture::new().await?;
+    let mut input = artifact(&"de".repeat(32));
+    input.signer_key_id.clear();
+    input.signature.clear();
+    let registered = fixture
+        .repo
+        .register_artifact_audited(input.clone(), fixture.operator, "operator-register")
+        .await?;
+    assert!(registered.signer_key_id.is_empty());
+    assert!(registered.signature.is_empty());
+    assert_eq!(
+        fixture.repo.register_artifact(input).await?.id,
+        registered.id
+    );
+    let reloaded = fixture
+        .repo
+        .get_artifact(registered.id)
+        .await?
+        .ok_or("operator-managed artifact must exist")?;
+    assert!(reloaded.signer_key_id.is_empty());
+    assert!(reloaded.signature.is_empty());
+    assert_eq!(
+        fixture
+            .repo
+            .register_artifact(artifact(&registered.digest))
+            .await,
+        Err(PluginCatalogError::Conflict)
+    );
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn artifact_registration_rejects_partial_trust_metadata() -> Result<(), Box<dyn Error>> {
+    let fixture = Fixture::new().await?;
+    let mut signer_missing = artifact(&"de".repeat(32));
+    signer_missing.signer_key_id.clear();
+    assert_eq!(
+        fixture.repo.register_artifact(signer_missing).await,
+        Err(PluginCatalogError::InvalidInput)
+    );
+    let mut signature_missing = artifact(&"de".repeat(32));
+    signature_missing.signature.clear();
+    assert_eq!(
+        fixture.repo.register_artifact(signature_missing).await,
+        Err(PluginCatalogError::InvalidInput)
+    );
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn concurrent_identical_artifact_registration_is_idempotent() -> Result<(), Box<dyn Error>> {
     let fixture = Fixture::new().await?;
     let input = artifact(&"ef".repeat(32));

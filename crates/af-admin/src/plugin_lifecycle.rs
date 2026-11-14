@@ -4,7 +4,11 @@
 //! attribution. Runtime activation is deliberately handled by a separate host
 //! runtime coordinator.
 
-use std::{fmt, sync::Arc, time::SystemTime};
+use std::{
+    fmt,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use af_db::{
     MAX_PLUGIN_DEPLOYMENT_HISTORY, PlatformAuditOutcome, PluginArtifactApproval,
@@ -27,6 +31,34 @@ use crate::{
 
 pub const DEFAULT_PLUGIN_CATALOG_PAGE_SIZE: u32 = 50;
 const PLUGIN_PERMISSION: PlatformPermission = PlatformPermission::PluginsManage;
+const SIMPLE_INSTALL_DEFAULT_CAPABILITIES: &[&str] =
+    &["catalog.models.read", "catalog.models.search"];
+pub const MAX_PLUGIN_PACKAGE_UPLOAD_BYTES: usize = 128 * 1024 * 1024;
+const STALE_PLUGIN_UPLOAD_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// A bounded upload in host-owned storage. Dropping it removes unfinished data.
+pub struct PluginPackageUpload {
+    file: tokio::fs::File,
+    temporary: tempfile::NamedTempFile,
+    artifact_root: std::path::PathBuf,
+    uploaded: usize,
+    _permit: tokio::sync::OwnedSemaphorePermit,
+}
+
+impl PluginPackageUpload {
+    pub async fn write_chunk(&mut self, bytes: &[u8]) -> Result<(), AdminPluginLifecycleError> {
+        use tokio::io::AsyncWriteExt as _;
+        self.uploaded = self
+            .uploaded
+            .checked_add(bytes.len())
+            .filter(|total| *total <= MAX_PLUGIN_PACKAGE_UPLOAD_BYTES)
+            .ok_or(AdminPluginLifecycleError::PayloadTooLarge)?;
+        self.file
+            .write_all(bytes)
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)
+    }
+}
 
 /// A safe artifact view. The source reference and signature are intentionally
 /// not represented here, so future HTTP adapters cannot accidentally serialize them.
@@ -391,8 +423,8 @@ pub struct PluginDeploymentCommand {
     config: Value,
 }
 
-/// Administrator supplied artifact locator and signed metadata. The package is
-/// verified against host-owned root/key configuration before persistence.
+/// Administrator supplied artifact locator and optional publisher signature.
+/// Integrity is always checked; configured publisher keys enable signature verification.
 #[derive(Clone)]
 pub struct PluginArtifactRegistrationCommand {
     plugin_id: String,
@@ -430,9 +462,9 @@ impl PluginArtifactRegistrationCommand {
             || !sha256
                 .bytes()
                 .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-            || signer_key_id.is_empty()
             || signer_key_id.len() > 128
-            || signature_base64.len() != 88
+            || signer_key_id.is_empty() != signature_base64.is_empty()
+            || (!signature_base64.is_empty() && signature_base64.len() != 88)
         {
             return Err(AdminPluginLifecycleError::InvalidInput);
         }
@@ -531,6 +563,10 @@ pub enum AdminPluginLifecycleError {
     Forbidden,
     #[error("plugin lifecycle request is invalid")]
     InvalidInput,
+    #[error("the simple installer only grants the standard public catalog capabilities")]
+    CapabilityReviewRequired,
+    #[error("plugin package upload exceeds the size limit")]
+    PayloadTooLarge,
     #[error("plugin lifecycle record was not found")]
     NotFound,
     #[error("plugin lifecycle state conflicts with the request")]
@@ -569,6 +605,241 @@ impl DatabaseAdminPluginLifecycleService {
     #[must_use]
     pub fn capability_runtime(&self) -> Option<Arc<AdminPluginSidecarRuntime>> {
         self.sidecar_runtime.clone()
+    }
+
+    /// Authorize before accepting package bytes, and reserve a bounded upload slot.
+    pub async fn begin_package_upload(
+        &self,
+        principal: SessionPrincipal,
+        request_id: &str,
+    ) -> Result<PluginPackageUpload, AdminPluginLifecycleError> {
+        self.authorize_mutation(
+            principal,
+            request_id,
+            "/admin/plugins/install",
+            "install",
+            "plugin",
+            None,
+        )
+        .await?;
+        let runtime = self
+            .sidecar_runtime
+            .as_ref()
+            .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
+        let permit = runtime.acquire_installation_slot()?;
+        let artifact_root = runtime.installation_root()?;
+        let upload_directory = artifact_root.join(".uploads");
+        match std::fs::create_dir(&upload_directory) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                let metadata = std::fs::symlink_metadata(&upload_directory)
+                    .map_err(|_| AdminPluginLifecycleError::Internal)?;
+                if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                    return Err(AdminPluginLifecycleError::InvalidInput);
+                }
+            }
+            Err(_) => return Err(AdminPluginLifecycleError::Internal),
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&upload_directory, std::fs::Permissions::from_mode(0o700))
+                .map_err(|_| AdminPluginLifecycleError::Internal)?;
+        }
+        cleanup_stale_plugin_uploads(&upload_directory);
+        let temporary = tempfile::Builder::new()
+            .prefix(".plugin-upload-")
+            .tempfile_in(&upload_directory)
+            .map_err(|_| AdminPluginLifecycleError::Internal)?;
+        let file = tokio::fs::File::from_std(
+            temporary
+                .reopen()
+                .map_err(|_| AdminPluginLifecycleError::Internal)?,
+        );
+        Ok(PluginPackageUpload {
+            file,
+            temporary,
+            artifact_root,
+            uploaded: 0,
+            _permit: permit,
+        })
+    }
+
+    /// One administrator action imports, authorizes and activates a package.
+    pub async fn install_package(
+        &self,
+        principal: SessionPrincipal,
+        upload: PluginPackageUpload,
+        config: Value,
+        expected_generation: Option<i64>,
+        request_id: &str,
+    ) -> Result<AdminPluginDeployment, AdminPluginLifecycleError> {
+        self.authorize_mutation(
+            principal,
+            request_id,
+            "/admin/plugins/install",
+            "install",
+            "plugin",
+            None,
+        )
+        .await?;
+        let result = self
+            .install_package_authorized(principal, upload, config, expected_generation, request_id)
+            .await;
+        self.finish_mutation(
+            principal,
+            request_id,
+            "/admin/plugins/install",
+            "install",
+            "plugin",
+            None,
+            None,
+            result.as_ref().ok().map(|deployment| {
+                json!({
+                    "pluginId": deployment.plugin_id(),
+                    "generation": deployment.generation(),
+                    "digest": deployment.artifact().digest(),
+                })
+            }),
+            result,
+        )
+        .await
+    }
+
+    async fn install_package_authorized(
+        &self,
+        principal: SessionPrincipal,
+        mut upload: PluginPackageUpload,
+        config: Value,
+        expected_generation: Option<i64>,
+        request_id: &str,
+    ) -> Result<AdminPluginDeployment, AdminPluginLifecycleError> {
+        use tokio::io::AsyncWriteExt as _;
+        if upload.uploaded == 0
+            || !config.is_object()
+            || serde_json::to_vec(&config)
+                .map_err(|_| AdminPluginLifecycleError::InvalidInput)?
+                .len()
+                > af_db::MAX_PLUGIN_CONFIG_BYTES
+            || expected_generation.is_some_and(|generation| generation <= 0)
+        {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        upload
+            .file
+            .flush()
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?;
+        let imported = crate::plugin_package::extract_plugin_package(
+            upload.temporary.path().to_path_buf(),
+            upload.artifact_root.clone(),
+        )
+        .await?;
+        let manifest: PluginManifest = serde_json::from_value(imported.manifest.clone())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        validate_public_plugin_configuration(&manifest.config_schema, &config)
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let grants = manifest
+            .capabilities
+            .iter()
+            .filter(|capability| {
+                capability.access == af_plugin_contract::CapabilityAccess::Read
+                    && capability.side_effect == af_plugin_contract::SideEffectClass::None
+                    && SIMPLE_INSTALL_DEFAULT_CAPABILITIES.contains(&capability.id.as_str())
+            })
+            .map(|capability| {
+                AdminPluginCapabilityGrant::new(
+                    capability.id.as_str().to_owned(),
+                    capability.version,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let requires_capability_review = grants.is_empty()
+            || manifest.capabilities.iter().any(|capability| {
+                !SIMPLE_INSTALL_DEFAULT_CAPABILITIES.contains(&capability.id.as_str())
+            });
+        let current = self
+            .repository
+            .get_deployment(&imported.plugin_id)
+            .await
+            .map_err(map_catalog_error)?;
+        let current_generation = current.as_ref().map(|deployment| deployment.generation);
+        if expected_generation.is_some_and(|expected| Some(expected) != current_generation) {
+            return Err(AdminPluginLifecycleError::Conflict);
+        }
+        // Upload and Install is an explicit operator action. When replacing an
+        // existing version, bind it to the generation just read so concurrent
+        // installs still fail compare-and-swap rather than silently racing.
+        let deployment_expected_generation = expected_generation.or(current_generation);
+        let runtime = self
+            .sidecar_runtime
+            .as_ref()
+            .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
+        // A publisher unknown to this host is not a reason to block an
+        // administrator-owned package, but it must never acquire a verified badge.
+        let (signer_key_id, signature_base64) = if imported.signer_key_id.is_empty() {
+            (String::new(), String::new())
+        } else if runtime.recognizes_publisher(&imported.signer_key_id) {
+            (
+                imported.signer_key_id.clone(),
+                imported.signature_base64.clone(),
+            )
+        } else {
+            // Unknown publisher metadata does not block an explicit admin
+            // upload, but the host records it as unverified rather than
+            // presenting it as a trusted publisher.
+            (String::new(), String::new())
+        };
+        let command = PluginArtifactRegistrationCommand::new(
+            imported.plugin_id.clone(),
+            imported.plugin_version.clone(),
+            imported.manifest.clone(),
+            imported.package_path.clone(),
+            imported.executable_path.clone(),
+            imported.digest.clone(),
+            signer_key_id,
+            signature_base64,
+        )?;
+        let artifact = self
+            .register_artifact_candidate(principal, command, request_id)
+            .await?;
+        // The catalog now owns the source locator even if a later activation fails.
+        imported.retain();
+        if artifact.approval().is_none() {
+            match self
+                .approve_artifact(principal, artifact.id(), request_id)
+                .await
+            {
+                Ok(()) => {}
+                Err(AdminPluginLifecycleError::Conflict) => {
+                    // Concurrent identical uploads can race to create the
+                    // single durable approval row. Continue only if the
+                    // winner approved the same artifact and it is not revoked.
+                    let latest = self
+                        .repository
+                        .get_artifact(artifact.id())
+                        .await
+                        .map_err(map_catalog_error)?
+                        .ok_or(AdminPluginLifecycleError::NotFound)?;
+                    if latest.approval.is_none() || latest.revocation.is_some() {
+                        return Err(AdminPluginLifecycleError::Conflict);
+                    }
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        if requires_capability_review {
+            return Err(AdminPluginLifecycleError::CapabilityReviewRequired);
+        }
+        let command = PluginDeploymentCommand::new(
+            artifact.plugin_id().to_owned(),
+            artifact.digest().to_owned(),
+            deployment_expected_generation,
+            true,
+            grants,
+            config,
+        )?;
+        self.deploy(principal, command, request_id).await
     }
 
     /// Reconcile durable enabled deployments before the host accepts traffic.
@@ -1396,6 +1667,36 @@ impl DatabaseAdminPluginLifecycleService {
             );
         }
         result
+    }
+}
+
+fn cleanup_stale_plugin_uploads(directory: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return;
+    };
+    let now = SystemTime::now();
+    for entry in entries.flatten().take(10_000) {
+        if !entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".plugin-upload-")
+        {
+            continue;
+        }
+        let Ok(metadata) = std::fs::symlink_metadata(entry.path()) else {
+            continue;
+        };
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            continue;
+        }
+        if metadata
+            .modified()
+            .ok()
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age >= STALE_PLUGIN_UPLOAD_AGE)
+        {
+            let _ = std::fs::remove_file(entry.path());
+        }
     }
 }
 

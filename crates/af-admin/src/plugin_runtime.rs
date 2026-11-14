@@ -23,7 +23,7 @@ use serde::Deserialize;
 
 use crate::AdminPluginLifecycleError;
 
-/// Runtime owner for the optional, signed local-process plugin feature.
+/// Runtime owner for administrator-installed local-process plugins.
 ///
 /// The artifact root and publisher keys come from host configuration. Nothing
 /// in the database can add a signer or choose an absolute executable path.
@@ -31,6 +31,7 @@ pub struct AdminPluginSidecarRuntime {
     artifact_root: PathBuf,
     trusted_signers: BTreeMap<String, TrustedPluginKey>,
     supervisor: Arc<SidecarSupervisor>,
+    installation_slots: Arc<tokio::sync::Semaphore>,
 }
 
 impl AdminPluginSidecarRuntime {
@@ -39,8 +40,7 @@ impl AdminPluginSidecarRuntime {
         artifact_directory: &Path,
         signers: &[PluginTrustedSigner],
     ) -> Result<Self, AdminPluginLifecycleError> {
-        if signers.is_empty()
-            || artifact_directory.is_absolute()
+        if artifact_directory.is_absolute()
             || artifact_directory
                 .components()
                 .any(|component| !matches!(component, Component::Normal(_) | Component::CurDir))
@@ -68,7 +68,68 @@ impl AdminPluginSidecarRuntime {
             artifact_root: artifact_directory.to_path_buf(),
             trusted_signers,
             supervisor: Arc::new(SidecarSupervisor::default()),
+            installation_slots: Arc::new(tokio::sync::Semaphore::new(2)),
         })
+    }
+
+    pub(crate) fn installation_root(&self) -> Result<PathBuf, AdminPluginLifecycleError> {
+        let working_directory = std::env::current_dir()
+            .and_then(|directory| directory.canonicalize())
+            .map_err(|_| AdminPluginLifecycleError::Internal)?;
+        let mut directory = working_directory.clone();
+        for component in self.artifact_root.components() {
+            if matches!(component, Component::CurDir) {
+                continue;
+            }
+            directory.push(component.as_os_str());
+            match std::fs::symlink_metadata(&directory) {
+                Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+                Ok(_) => return Err(AdminPluginLifecycleError::InvalidInput),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    match std::fs::create_dir(&directory) {
+                        Ok(()) => {
+                            #[cfg(unix)]
+                            {
+                                use std::os::unix::fs::PermissionsExt;
+                                std::fs::set_permissions(
+                                    &directory,
+                                    std::fs::Permissions::from_mode(0o700),
+                                )
+                                .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+                            }
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                            let metadata = std::fs::symlink_metadata(&directory)
+                                .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+                            if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                                return Err(AdminPluginLifecycleError::InvalidInput);
+                            }
+                        }
+                        Err(_) => return Err(AdminPluginLifecycleError::RuntimeUnavailable),
+                    }
+                }
+                Err(_) => return Err(AdminPluginLifecycleError::RuntimeUnavailable),
+            }
+        }
+        let directory = directory
+            .canonicalize()
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+        if !directory.starts_with(&working_directory) {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        Ok(directory)
+    }
+
+    pub(crate) fn acquire_installation_slot(
+        &self,
+    ) -> Result<tokio::sync::OwnedSemaphorePermit, AdminPluginLifecycleError> {
+        Arc::clone(&self.installation_slots)
+            .try_acquire_owned()
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)
+    }
+
+    pub(crate) fn recognizes_publisher(&self, key_id: &str) -> bool {
+        self.trusted_signers.contains_key(key_id)
     }
 
     /// Verify an administrator-selected package under the host-owned trust root.
@@ -98,10 +159,15 @@ impl AdminPluginSidecarRuntime {
         if manifest.plugin_id != plugin_id || manifest.plugin_version != plugin_version {
             return Err(AdminPluginLifecycleError::InvalidInput);
         }
-        let key = self
-            .trusted_signers
-            .get(&signer_key_id)
-            .ok_or(AdminPluginLifecycleError::InvalidInput)?;
+        let key = if signer_key_id.is_empty() && signature_base64.is_empty() {
+            None
+        } else {
+            Some(
+                self.trusted_signers
+                    .get(&signer_key_id)
+                    .ok_or(AdminPluginLifecycleError::InvalidInput)?,
+            )
+        };
         let working_directory = std::env::current_dir()
             .map_err(|_| AdminPluginLifecycleError::Internal)?
             .canonicalize()
@@ -154,9 +220,11 @@ impl AdminPluginSidecarRuntime {
         )
         .and_then(|descriptor| descriptor.with_staging_parent(artifact_root.join(".runtime")))
         .map_err(map_sidecar_error)?;
-        VerifiedPluginArtifact::verify(descriptor, key)
-            .await
-            .map_err(map_sidecar_error)
+        match key {
+            Some(key) => VerifiedPluginArtifact::verify(descriptor, key).await,
+            None => VerifiedPluginArtifact::verify_operator_managed(descriptor).await,
+        }
+        .map_err(map_sidecar_error)
     }
 
     /// Start a committed enabled generation or stop a committed disabled one.
@@ -529,17 +597,26 @@ impl AdminPluginSidecarRuntime {
         if !executable.starts_with(&package_root) {
             return Err(AdminPluginLifecycleError::InvalidInput);
         }
-        let key = self
-            .trusted_signers
-            .get(&record.signer_key_id)
-            .ok_or(AdminPluginLifecycleError::Forbidden)?;
+        let key = if record.signer_key_id.is_empty() && record.signature.is_empty() {
+            None
+        } else {
+            Some(
+                self.trusted_signers
+                    .get(&record.signer_key_id)
+                    .ok_or(AdminPluginLifecycleError::Forbidden)?,
+            )
+        };
         let manifest: PluginManifest = serde_json::from_value(record.manifest.clone())
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         let plugin_id = PluginId::new(record.plugin_id.clone())
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         let plugin_version = PluginVersion::new(record.plugin_version.clone())
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-        let signature = base64_signature_from_hex(&record.signature)?;
+        let signature = if record.signature.is_empty() {
+            String::new()
+        } else {
+            base64_signature_from_hex(&record.signature)?
+        };
         let descriptor = PluginArtifactDescriptor::new(
             plugin_id,
             plugin_version,
@@ -554,9 +631,11 @@ impl AdminPluginSidecarRuntime {
         )
         .and_then(|descriptor| descriptor.with_staging_parent(artifact_root.join(".runtime")))
         .map_err(map_sidecar_error)?;
-        VerifiedPluginArtifact::verify(descriptor, key)
-            .await
-            .map_err(map_sidecar_error)
+        match key {
+            Some(key) => VerifiedPluginArtifact::verify(descriptor, key).await,
+            None => VerifiedPluginArtifact::verify_operator_managed(descriptor).await,
+        }
+        .map_err(map_sidecar_error)
     }
 }
 

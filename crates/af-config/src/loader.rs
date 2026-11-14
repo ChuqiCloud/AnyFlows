@@ -481,7 +481,10 @@ mod tests {
             );
             assert_eq!(config.server().client_ip_source(), ClientIpSource::Peer);
             assert!(config.server().trusted_proxy_cidrs().is_empty());
-            assert!(config.server().plugin_artifact_directory().is_none());
+            assert_eq!(
+                config.server().plugin_artifact_directory(),
+                Some(Path::new("data/plugins"))
+            );
             assert!(config.server().plugin_trusted_signers().is_empty());
             assert_eq!(config.telemetry().level(), LogLevel::Info);
             assert_eq!(config.database().migration_timeout_secs(), None);
@@ -1034,7 +1037,7 @@ mod tests {
     }
 
     #[test]
-    fn plugin_trust_settings_are_optional_and_validate_as_a_pair() {
+    fn plugin_signers_are_optional_but_require_an_artifact_directory() {
         with_clean_env(|_| {
             let valid = temp_file(
                 "[server]\nplugin_artifact_directory = 'data/plugins'\n[[server.plugin_trusted_signers]]\nkey_id = 'publisher-main'\npublic_key_base64 = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='\n[database]\nurl = 'sqlite::memory:'\n",
@@ -1051,23 +1054,39 @@ mod tests {
                 "publisher-main"
             );
 
-            for server in [
-                "plugin_artifact_directory = 'data/plugins'",
-                "[[plugin_trusted_signers]]\nkey_id = 'publisher-main'\npublic_key_base64 = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='",
-                "plugin_artifact_directory = 'data/plugins'\n[[plugin_trusted_signers]]\nkey_id = 'publisher-main'\npublic_key_base64 = 'not-a-key'",
-            ] {
-                let path = temp_file(&format!(
-                    "[server]\n{server}\n[database]\nurl = 'sqlite::memory:'\n"
-                ));
-                let error = load_from(&path).unwrap_err();
-                let _ = fs::remove_file(path);
-                assert_eq!(
-                    error,
-                    ConfigError::InvalidField {
-                        field: "server.plugin_trusted_signers"
-                    }
-                );
-            }
+            let operator_managed = temp_file(
+                "[server]\nplugin_artifact_directory = 'data/plugins'\n[database]\nurl = 'sqlite::memory:'\n",
+            );
+            let config = load_from(&operator_managed).unwrap();
+            let _ = fs::remove_file(operator_managed);
+            assert_eq!(
+                config.server().plugin_artifact_directory(),
+                Some(Path::new("data/plugins"))
+            );
+            assert!(config.server().plugin_trusted_signers().is_empty());
+
+            let default_directory = temp_file(
+                "[server]\n[[server.plugin_trusted_signers]]\nkey_id = 'publisher-main'\npublic_key_base64 = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='\n[database]\nurl = 'sqlite::memory:'\n",
+            );
+            let config = load_from(&default_directory).unwrap();
+            let _ = fs::remove_file(default_directory);
+            assert_eq!(
+                config.server().plugin_artifact_directory(),
+                Some(Path::new("data/plugins"))
+            );
+            assert_eq!(config.server().plugin_trusted_signers().len(), 1);
+
+            let invalid_key = temp_file(
+                "[server]\nplugin_artifact_directory = 'data/plugins'\n[[server.plugin_trusted_signers]]\nkey_id = 'publisher-main'\npublic_key_base64 = 'not-a-key'\n[database]\nurl = 'sqlite::memory:'\n",
+            );
+            let error = load_from(&invalid_key).unwrap_err();
+            let _ = fs::remove_file(invalid_key);
+            assert_eq!(
+                error,
+                ConfigError::InvalidField {
+                    field: "server.plugin_trusted_signers"
+                }
+            );
         });
     }
 

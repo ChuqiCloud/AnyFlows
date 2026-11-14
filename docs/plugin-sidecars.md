@@ -1,44 +1,138 @@
-# AnyFlows 插件 Sidecar 协议
+# AnyFlows 插件安装与 Sidecar 协议
 
-本文记录 `af-plugin-runtime` 当前进程外连接器基础。协议采用版本化 JSON Lines：标准输入每行一个 UTF-8 JSON `PluginHostRequest`，标准输出每行一个 JSON `PluginHostResponse`；标准错误不进入协议。每帧大小、启动时间、调用期限与结果大小由宿主限制。
+插件以独立进程运行，通过版本化 JSON Lines 与 AnyFlows 通信。常规安装只需上传插件包并点击“安装并启用”，无需填写摘要、签名、公钥或单独审批。
 
-## 制品信任
+## 安装插件
 
-插件包必须由管理员预先放置于本地受控目录，不由服务在线下载。目录树中不允许符号链接；总文件大小上限为 512 MiB，文件与目录合计最多 100,000 项，相对路径须为 UTF-8。V2 包摘要以 `ANYFLOWS_PLUGIN_PACKAGE_V2\0` 开头，所有条目按相对路径排序；每个条目依次写入类型字节（目录 `0`、普通文件 `1`）、UTF-8 路径长度（little-endian u64）及路径字节，文件条目再写入文件长度（little-endian u64）及文件内容，对完整序列计算 SHA-256。空目录也纳入摘要。可执行文件必须在包根目录内；Unix 上原入口须有执行位，staging 副本的入口权限固定为 `0500`、其他文件固定为 `0400`，不继承 setuid 或组/其他用户写权限。
+在控制台的“插件管理”中选择 .afplugin 或 ZIP 文件，然后点击“安装并启用”。系统会读取插件信息、检查包内容、计算摘要、保存安装记录并启动插件。仅当插件需要公开配置时，才展开“可选配置”填写 JSON 对象；默认是 {}。配置不得包含密钥、口令、Cookie 或其他凭据。
 
-Ed25519 签名对以下字节签署：`ANYFLOWS_PLUGIN_ARTIFACT_V2\0`、plugin ID、换行、语义化版本、换行、64 位小写十六进制包摘要、换行、相对包根目录的 POSIX 可执行入口、换行、manifest 的紧凑 UTF-8 JSON 字节。入口路径在签名内，不能通过改数据库定位启动包内另一个程序。签名前按对象键的 UTF-8 字节字典序递归排序，数组顺序保持不变；不添加空格，并使用 serde_json 的字符串转义方式。`signer_key_id` 必须命中宿主配置的可信公钥；签名本身不授予能力。验签后管理运行时将包复制到制品根目录下 `.runtime` 中的私有随机 staging 目录，对副本再次计算摘要，再从该副本启动；`.runtime` 在 Unix 上必须仅服务账号可访问，所在文件系统须允许执行。外部修改原始包不能替换该副本。宿主与 sidecar 仍运行于同一个 OS 账号，不能隔离恶意插件或同账号进程。V1 签名不再接受，发布者需按 V2 重新生成摘要和签名。
+制品目录默认为运行目录下的 data/plugins，服务自动创建所需目录，不要求预先配置发布者公钥。需要改变位置时，可设置相对于服务运行目录的路径：
 
-## 帧与调用
+    [server]
+    plugin_artifact_directory = "data/plugins"
 
-每个请求包含协议版本、插件 ID/版本、制品摘要、单调递增部署 generation、request ID、Unix 毫秒 deadline 与操作。启动时宿主先请求 manifest，再请求无副作用 health；只有身份、版本、摘要和 manifest 完全一致且 health 为 healthy 才视为可用。
+服务账号需要能创建、读写和执行该目录中的插件文件。系统不从任意 URL 下载插件，不提供在线插件市场；管理员应从可信来源取得插件包。
 
-`invoke_capability` 只接受 `access=read` 且 `sideEffect=none`、并由宿主单独批准的能力，调用前后分别校验该能力的 JSON Schema。管理员部署配置在启动前按签名 manifest 的 `configSchema` 校验，保存于部署 generation；每次调用由宿主从该部署读取配置，不采纳调用方自行传入的替代值。调用帧只含连接标识、部署配置、能力 ID/版本和输入 JSON；宿主还会递归拒绝键名包含密码、凭据、密钥、Cookie、Authorization 或访问令牌等标记的字段。该检查是防误传措施，不是秘密内容识别器；部署配置与能力输入仅适合公开非敏感数据，字段名检查不能识别伪装成普通值的秘密。当前协议没有凭据代理、钱包权限或数据库句柄。写能力由宿主业务工作流处理，不通过通用 sidecar 调用。
+上传压缩包最大为 128 MiB，展开后的文件和元数据合计最大为 512 MiB，最多 100,000 个 ZIP 条目。系统拒绝链接、特殊文件、重复或仅大小写不同的路径、越界路径和不受支持的 ZIP 特性。入口文件必须在 payload/ 内。宿主还会校验版本、配置 Schema、能力声明、启动握手与健康检查。
 
-宿主清空子进程环境，除 Windows 运行所需的系统变量外不继承变量；工作目录固定在 staging 副本，直接执行批准的绝对文件路径，不经 shell。每个进程的请求串行执行，排队和处理共同受 deadline 限制；时间与输入/输出大小取宿主、签名清单和调用方限制的交集。启动握手、健康检查失败，或协议格式、身份、输出 Schema 校验失败时终止进程。取消在途调用也会终止进程，避免半帧或未读响应污染后续请求。正常 capability 业务错误不会自动退出进程。Unix 使用独立进程组，停用、撤销、超时和析构会清理该组；主动脱离进程组的子进程仍需 OS 策略约束。Windows 当前只清理直接子进程，部署时须通过服务管理器或 Job Object 约束后代。stderr 丢弃，协议错误不回显上游数据。
+安装接口为 POST /api/admin/plugins/install，使用 multipart/form-data：
 
-## 当前限制
+| 字段 | 内容 |
+| --- | --- |
+| package | 必填，.afplugin 或 ZIP 插件包 |
+| config | 可选，JSON 对象字符串，默认 {} |
+| expected_generation | 可选；新装不传，升级可显式传当前部署的 generation |
 
-这里实现的是可信签名制品的生命周期与消息边界。子进程仍使用 AnyFlows 服务账号的操作系统权限；当前没有 seccomp、namespace、独立低权限账户或 cgroup，也没有凭据/出站网络 broker，只适合无需私密凭据和外部网络访问的通用只读 capability。签名方必须是运营方信任的发布者，审批不强制双人复核。制品目录、staging 及服务账号应由管理员维护。对不可信第三方代码开放安装前，仍需接入独立执行身份、资源与网络隔离策略。
+常规安装不需读取 generation；如果插件 ID 已部署，服务端读取当前 generation 并用 compare-and-swap 更新，因此并发部署仍会返回冲突。高级管理保留显式 generation 字段供自定义部署使用。启用、停用和回滚保留版本历史与操作者审计。
 
-## 管理与生命周期
+## 插件包格式
 
-默认不启用外部制品。管理员需在服务配置中同时设置受控制品目录和至少一个发布者公钥：
+.afplugin 是 ZIP 文件，根目录结构固定：
 
-```toml
-[server]
-plugin_artifact_directory = "data/plugins"
+    example.afplugin
+    ├── anyflows-plugin.json
+    └── payload/
+        ├── bin/
+        │   └── example-plugin
+        └── assets/
+            └── catalog.json
 
-[[server.plugin_trusted_signers]]
-key_id = "publisher-example"
-public_key_base64 = "<发布者的 Ed25519 公钥，Base64 编码的 32 字节>"
-```
+anyflows-plugin.json 包含公开的 PluginManifest 和入口定位信息。executablePath 相对于 payload/，不要写 payload/ 前缀：
 
-目录路径必须是运行目录下的相对路径；不配置目录和公钥时，服务不会接受制品登记或启用侧车。管理员把制品放入目录后，可通过管理 API 登记路径、清单、摘要、签名者 ID 和签名。请求路径必须是 POSIX 相对路径；服务端规范化路径，拒绝越过根目录或包目录的路径。数据库只保存规范化相对定位信息，不保存绝对服务器路径。
+    {
+      "manifest": {
+        "pluginId": "org.example.catalog",
+        "displayName": "Example catalog",
+        "pluginVersion": "1.0.0",
+        "contractRange": {
+          "minimum": { "major": 1, "minor": 0 },
+          "maximum": { "major": 1, "minor": 0 }
+        },
+        "capabilities": [
+          {
+            "id": "catalog.models.read",
+            "version": 1,
+            "access": "read",
+            "sideEffect": "none",
+            "inputSchema": { "type": "object" },
+            "outputSchema": { "type": "object" }
+          }
+        ],
+        "authenticationModes": ["none"],
+        "limits": {
+          "maxConcurrency": 1,
+          "requestTimeoutMs": 1000,
+          "maxResponseBytes": 1048576,
+          "maxPageSize": 100
+        },
+        "configSchema": { "type": "object", "additionalProperties": false }
+      },
+      "executablePath": "bin/example-plugin"
+    }
 
-管理 API 和控制台提供制品登记/审批/撤销、部署/停用、能力授权、配置、版本历史与回滚。登记与审批分离；撤销是只追加的永久事实，同时会以新 generation 停用正在使用该制品的部署。部署以 compare-and-swap generation 写入不可变历史。所有状态变更记录操作者、结果和同一请求 ID。启用或回滚会在持久化后验签、校验配置并启动新进程；启动失败时宿主保持进程停止并尝试写入补偿停用记录。服务启动时从数据库恢复启用的本地 sidecar，关闭时在关闭数据库前停止所有子进程。
+包内不得包含私钥、访问令牌、.env、用户数据或本地运行配置。为目标操作系统与 CPU 架构打包可执行文件；服务不会把其他架构的程序自动转换为当前架构。
 
-可信宿主业务扩展可通过 `RuntimeHttpContext.plugin_capability_runtime` 调用获批的只读 capability。该端口不提供公共调用 API，也不会替扩展做业务授权；调用方仍需校验自己的用户、租户与资源权限。
+### 打包工具
 
-生命周期审批、能力 grants、generation 与操作审计由宿主控制，不能由插件 manifest 自我授权。登记、审批、撤销和每次部署 revision 的 `catalog_*` 审计事实与目录变更处于同一个数据库事务；审计插入失败会回滚状态。运行进程启用后的结果另行记录，失败时可能追加补偿停用 revision。停用 generation 保留运行时水位，阻止并发中的旧部署完成握手后重新启用已停用的版本。
+仓库提供仅使用 Python 标准库的工具 tools/plugins/package-plugin.py，需要 Python 3.10 或更新版本。准备一个仅含分发文件的目录，将上例中的 manifest 对象单独保存为 manifest.json，执行：
 
-后台每 30 秒检查启用部署并重启故障进程；sidecar 退出或调用超时后，请求返回稳定不可用错误，也会在下一次能力调用前按仍启用的 generation 恢复进程，不重放触发故障的请求。服务启动时同样协调启用部署。宿主业务扩展需要自行记录最终用户、租户、能力和调用结果；通用运行时不替代业务审计。这里不提供在线下载、自动更新、远程 HTTP 执行、WASM 或任意代码插件市场。
+    python tools/plugins/package-plugin.py build/example-plugin manifest.json bin/example-plugin dist/example.afplugin
+
+四个位置参数依次是分发目录、Manifest JSON 文件、目录内的 POSIX 入口路径和输出文件。输出必须放在分发目录外，并使用尚不存在的 .afplugin 或 .zip 路径。工具写入固定时间戳和普通文件/目录标识，入口标记为可执行；不保留原目录的所有者、扩展属性或 setuid 权限。目录中的普通文件会全部打包，发布者应先清理分发目录。工具不读取或生成签名私钥，也不能自动识别文件内容中的秘密。
+
+已有发布者签名时，可以附加现有签名文件：
+
+    python tools/plugins/package-plugin.py build/example-plugin manifest.json bin/example-plugin dist/example-signed.afplugin --signer-key-id publisher-example --signature-file signature.base64
+
+signature.base64 只能包含对应此包、入口和 Manifest 的 Base64 Ed25519 签名。工具只是装入既有签名，不生成密钥、不签名，也不会因为填写了签名者 ID 就使插件成为已验证来源。
+
+## 来源标识与可选签名
+
+管理员上传的未签名插件默认可以安装，界面标记为“管理员安装 · 发布者未验证”。这表示系统无法验证发布者身份，不表示插件代码已审核。
+
+需要验证特定发布者时，运营方可选配其 Ed25519 公钥：
+
+    [[server.plugin_trusted_signers]]
+    key_id = "publisher-example"
+    public_key_base64 = "<发布者的 Ed25519 公钥，Base64 编码的 32 字节>"
+
+签名包在 anyflows-plugin.json 根对象中附加：
+
+    {
+      "signature": {
+        "signerKeyId": "publisher-example",
+        "signatureBase64": "<Base64 编码的 64 字节 Ed25519 签名>"
+      }
+    }
+
+只有签名者 ID 命中宿主配置、且签名验证成功，才显示“发布者签名已验证”。这不等同于“官方插件”，也不自动授予额外能力。自建插件无需签名；未配置的签名者按未验证来源处理，匹配受信公钥但签名无效时安装失败。普通安装默认只授予 `catalog.models.read` 和 `catalog.models.search` 中由清单声明的只读、无副作用能力；声明了其他能力的插件仍可安装登记，但须在高级管理中逐项确认授权后部署。高级手动登记的签名字段可留空或成对填写。
+
+签名只验证发布者与包内容，不能证明插件行为安全。所有插件仍以 AnyFlows 服务账号运行，安装者应信任插件代码及其发布者。
+
+### V2 摘要与签名
+
+V2 包摘要以 ANYFLOWS_PLUGIN_PACKAGE_V2\0 开头，对 payload/ 下所有条目按相对路径排序；摘要路径相对 payload 根目录，不包含 payload/ 前缀。每个条目依次写入类型字节（目录 0、普通文件 1）、UTF-8 路径长度（little-endian u64）及路径字节，文件条目再写入文件长度（little-endian u64）及文件内容，对完整序列计算 SHA-256。空目录也纳入摘要，根目录自身与 anyflows-plugin.json 不在该树摘要内。入口与 Manifest 由签名的其他字段绑定。
+
+Ed25519 签名按顺序覆盖以下字节：ANYFLOWS_PLUGIN_ARTIFACT_V2\0、plugin ID、换行、语义化版本、换行、64 位小写十六进制包摘要、换行、相对 payload/ 的 POSIX 可执行入口、换行、Manifest 的紧凑 UTF-8 JSON。Manifest 使用宿主契约类型序列化后的值；对象键按 UTF-8 字节字典序递归排序，数组顺序不变，不加空格，并使用 serde_json 的字符串转义方式。V1 签名不再接受。
+
+安装后，宿主将已校验的包复制到制品目录 .runtime 中的私有随机 staging 目录，对副本再次计算摘要并从副本启动。Unix 上入口权限固定为 0500，其他文件固定为 0400，不继承 setuid 或组/其他用户写权限；.runtime 只应由服务账号访问，所在文件系统须允许执行。
+
+## 多节点范围
+
+当前上传只保存到处理该请求的节点，尚未实现统一制品存储、节点分发或集群安装确认。共享数据库中的启用状态不代表每台节点都有对应插件文件。其他节点每 30 秒协调期望部署，但缺少同一制品、签名配置或执行环境时仍无法启动插件。
+
+因此，当前简易上传安装适用于单节点。已有多节点部署需由运维将同一制品放到每个运行节点的对应相对路径，使用一致的发布者配置，并逐节点确认插件就绪后再承接相关流量。现有 /readyz 不能作为插件集群就绪证明。没有完成统一分发前，不应把“上传成功”视为“全节点安装完成”。
+
+## 调用与运行边界
+
+标准输入每行一个 UTF-8 JSON PluginHostRequest，标准输出每行一个 JSON PluginHostResponse，标准错误不进入协议。请求包含协议版本、插件 ID/版本、制品摘要、单调递增部署 generation、request ID、Unix 毫秒 deadline 与操作。启动时宿主先读取 Manifest，再请求无副作用 health；身份、版本、摘要和 Manifest 必须一致，且 health 为 healthy 才可调用。
+
+通用调用只接受 access=read、sideEffect=none 且具有输入/输出 Schema 的能力；外部账户资料和余额能力不在此通用路径内。简易安装仅自动授权固定的公开目录只读能力；其他能力需要管理员在高级部署中明确选择。输入、输出和公开配置仍分别按声明的 JSON Schema 校验。写能力、身份关联、钱包和其他资金行为保留在宿主业务工作流中；插件不能直接持有数据库句柄或钱包权限。
+
+每个进程的请求串行执行，排队与处理共同受 deadline 约束；时间和输入/输出大小采用宿主、Manifest 与调用方限制的交集。握手、健康检查、协议格式、身份或输出校验失败时终止进程。取消、超时或异常会清理进程，避免未读响应污染后续请求；正常 capability 业务错误不会自动退出进程。宿主不把调用失败的请求自动重放到恢复进程。
+
+宿主清空子进程环境，仅保留 Windows 运行所需的系统变量，工作目录固定为 staging 副本，直接执行批准的绝对文件路径。Unix 使用独立进程组，停用、撤销、超时和析构会清理该组；主动脱离进程组的后代仍需操作系统策略约束。Windows 当前只清理直接子进程，后代进程应通过服务管理器或 Job Object 约束。
+
+后台每 30 秒恢复仍启用的故障进程；服务启动时同样协调启用部署。停用 generation 保留运行时水位，旧部署不能在完成握手后重新覆盖新状态。登记、批准、撤销和部署 revision 的 catalog_* 审计与相应目录变更处于同一数据库事务；运行时结果单独记录，启动失败可能追加补偿停用 revision。
+
+当前运行时不提供操作系统沙箱、独立低权限执行身份、网络或资源隔离，也没有凭据代理。适用范围仍是运营方信任的本地插件。可信宿主业务扩展通过 RuntimeHttpContext.plugin_capability_runtime 调用获授的能力时，仍需自行执行用户、租户、资源授权与业务审计；该端口不是公共调用 API。
