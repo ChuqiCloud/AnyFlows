@@ -221,13 +221,12 @@ fn prepare_linux_launch(
         }
         // A service installed below a runtime-library directory must not expose its
         // own working directory through that system mount.
-        if let Ok(host_directory) = std::env::current_dir().and_then(|path| path.canonicalize()) {
-            if runtime_directories
+        if let Ok(host_directory) = std::env::current_dir().and_then(|path| path.canonicalize())
+            && runtime_directories
                 .iter()
                 .any(|directory| host_directory.starts_with(directory))
-            {
-                command.arg("--tmpfs").arg(host_directory);
-            }
+        {
+            command.arg("--tmpfs").arg(host_directory);
         }
         command.args(["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]);
         command.arg("--ro-bind").arg(package_root).arg("/plugin");

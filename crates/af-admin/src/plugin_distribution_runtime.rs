@@ -1,9 +1,6 @@
 //! Node-local materialization of shared archives and generation-aware observations.
 
-use std::{
-    collections::BTreeSet,
-    path::{Component, Path, PathBuf},
-};
+use std::path::{Component, Path, PathBuf};
 
 use af_config::PluginTrustedSigner;
 use af_db::{

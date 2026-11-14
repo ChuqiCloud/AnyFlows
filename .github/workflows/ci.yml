@@ -532,7 +532,7 @@ jobs:
         shell: bash
         run: |
           failed=0
-          for smoke in navigation user-routes merchant-pool merchant-service-watch channel-monitor key-capabilities oauth-invitation access-tokens; do
+          for smoke in navigation user-routes merchant-pool merchant-service-watch channel-monitor key-capabilities oauth-invitation access-tokens plugin; do
             if ! PLAYWRIGHT_PACKAGE_ROOT="$RUNNER_TEMP/anyflows-playwright" node "tools/ci/frontend-${smoke}-smoke.mjs"; then
               failed=1
             fi

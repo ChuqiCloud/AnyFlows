@@ -1031,7 +1031,147 @@ fn map_service_error(error: AdminPluginLifecycleError) -> ManagementError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use af_admin::{
+        LoginCredentials, SessionAuthenticationError, SessionAuthenticationFuture,
+        SessionLoginFuture, SessionPrincipal, SessionRole,
+    };
+    use af_domain::{GroupId, UserId};
+    use axum::body::Body;
+    use http::{Request as HttpRequest, StatusCode, header::AUTHORIZATION};
     use serde_json::json;
+    use tower::ServiceExt;
+
+    struct FixtureAuthenticator;
+
+    impl SessionAuthenticator for FixtureAuthenticator {
+        fn login<'a>(&'a self, _credentials: &'a LoginCredentials) -> SessionLoginFuture<'a> {
+            Box::pin(async { Err(SessionAuthenticationError::InvalidCredentials) })
+        }
+
+        fn authenticate<'a>(&'a self, token: &'a str) -> SessionAuthenticationFuture<'a> {
+            Box::pin(async move {
+                let role = match token {
+                    "plugin-admin-fixture" => SessionRole::Admin,
+                    "plugin-user-fixture" => SessionRole::User,
+                    _ => return Err(SessionAuthenticationError::InvalidSession),
+                };
+                Ok(SessionAuthentication::new(
+                    SessionPrincipal::new(UserId::new(1).unwrap(), role),
+                    GroupId::new(1).unwrap(),
+                    u64::MAX,
+                ))
+            })
+        }
+    }
+
+    fn authorization_fixture() -> Router {
+        let admin = Router::new()
+            .route(
+                "/api/admin/plugins/runtime",
+                get(|| async { StatusCode::OK }),
+            )
+            .route(
+                "/api/admin/plugins/{plugin_id}/uninstall",
+                post(|| async { StatusCode::OK }),
+            )
+            .route(
+                "/api/admin/plugins/artifacts/{artifact_id}/cleanup",
+                post(|| async { StatusCode::OK }),
+            )
+            .route_layer(middleware::from_fn(authorize_management_admin));
+        Router::new()
+            .merge(admin)
+            .route(
+                "/api/account/plugin-models/sources",
+                get(|| async { StatusCode::OK }),
+            )
+            .route(
+                "/api/account/plugin-models/{plugin_id}",
+                get(|| async { StatusCode::OK }),
+            )
+            .route_layer(middleware::from_fn_with_state(
+                ManagementAuthenticationState::new(Arc::new(FixtureAuthenticator)),
+                authenticate_management_session,
+            ))
+    }
+
+    #[tokio::test]
+    async fn plugin_admin_operations_require_admin_but_catalog_accepts_authenticated_users() {
+        for (method, path) in [
+            ("GET", "/api/admin/plugins/runtime"),
+            ("POST", "/api/admin/plugins/org.example.catalog/uninstall"),
+            ("POST", "/api/admin/plugins/artifacts/1/cleanup"),
+        ] {
+            for (token, expected) in [
+                (None, StatusCode::UNAUTHORIZED),
+                (Some("plugin-user-fixture"), StatusCode::FORBIDDEN),
+                (Some("plugin-admin-fixture"), StatusCode::OK),
+            ] {
+                let mut request = HttpRequest::builder().method(method).uri(path);
+                if let Some(token) = token {
+                    request = request.header(AUTHORIZATION, format!("Bearer {token}"));
+                }
+                let response = authorization_fixture()
+                    .oneshot(request.body(Body::empty()).unwrap())
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), expected, "{method} {path}");
+            }
+        }
+        for path in [
+            "/api/account/plugin-models/sources",
+            "/api/account/plugin-models/org.example.catalog",
+        ] {
+            let response = authorization_fixture()
+                .oneshot(
+                    HttpRequest::builder()
+                        .uri(path)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            let response = authorization_fixture()
+                .oneshot(
+                    HttpRequest::builder()
+                        .uri(path)
+                        .header(AUTHORIZATION, "Bearer plugin-user-fixture")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+    }
+
+    #[test]
+    fn plugin_catalog_pat_scopes_are_model_read_only_and_admin_actions_are_distinct() {
+        for path in [
+            "/api/account/plugin-models/sources",
+            "/api/account/plugin-models/{plugin_id}",
+        ] {
+            let policy = crate::access_token_routes::policy("GET", path).unwrap();
+            assert_eq!(policy.required_scopes, ["models:read"]);
+            assert!(!policy.admin_only && !policy.session_only);
+        }
+        let policies = [
+            ("GET", "/api/admin/plugins/runtime"),
+            ("POST", "/api/admin/plugins/{plugin_id}/uninstall"),
+            ("POST", "/api/admin/plugins/artifacts/{artifact_id}/cleanup"),
+        ]
+        .into_iter()
+        .map(|(method, path)| crate::access_token_routes::policy(method, path).unwrap())
+        .collect::<Vec<_>>();
+        let mut grants = std::collections::BTreeSet::new();
+        for policy in policies {
+            assert!(policy.admin_only && !policy.session_only);
+            assert_eq!(policy.required_scopes.len(), 1);
+            assert!(policy.required_scopes[0].starts_with("admin:"));
+            assert!(grants.insert(policy.required_scopes[0].clone()));
+        }
+    }
 
     #[test]
     fn deployment_config_rejects_credential_like_field_names() {

@@ -1861,6 +1861,7 @@ mod tests {
     #[test]
     fn artifact_projection_never_serializes_storage_reference_or_signature() {
         let artifact = AdminPluginArtifact {
+            official: false,
             id: 7,
             plugin_id: "org.example.catalog".to_owned(),
             plugin_version: "1.0.0".to_owned(),

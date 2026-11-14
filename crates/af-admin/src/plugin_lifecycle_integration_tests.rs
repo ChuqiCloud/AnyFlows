@@ -1,15 +1,13 @@
 //! End-to-end coverage of the shared archive, real sidecar and user catalog path.
 #![cfg(unix)]
 
-use std::{error::Error, io::Write, path::Path, sync::Arc};
+use std::{error::Error, io::Write, path::Path, sync::Arc, time::Duration};
 
 use af_db::{
-    DatabaseOptions, DatabasePool, MigrationOptions, PlatformAuditRepository,
+    AdminUserCreateRecord, AdminUserRepository, DatabaseOptions, DatabasePool, InitialSetupOutcome,
+    InitialSetupRecord, InitialSetupRepository, MigrationOptions, PlatformAuditRepository,
     PluginCatalogRepository,
-    entity::{groups, users},
 };
-use af_domain::UserId;
-use sea_orm::{ActiveModelTrait, Set};
 use serde_json::json;
 use zip::{ZipWriter, write::SimpleFileOptions};
 
@@ -46,33 +44,37 @@ impl Fixture {
             MigrationOptions::default(),
         )
         .await?;
-        let group = groups::ActiveModel {
-            name: Set("plugin-integration".to_owned()),
-            display_name: Set("Plugin integration".to_owned()),
-            flags: Set(json!({})),
-            ..Default::default()
-        }
-        .insert(pool.connection())
-        .await?;
-        let mut principals = Vec::new();
-        for index in 0..3 {
-            let role = if index == 0 {
-                SessionRole::Admin
-            } else {
-                SessionRole::User
-            };
-            let user = users::ActiveModel {
-                username: Set(format!("plugin-integration-{index}")),
-                role: Set(role.to_database()),
-                status: Set(1),
-                default_group_id: Set(group.id),
-                aff_code: Set(format!("plugin-integration-aff-{index}")),
-                settings: Set(json!({})),
-                ..Default::default()
-            }
-            .insert(pool.connection())
-            .await?;
-            principals.push(SessionPrincipal::new(UserId::new(user.id)?, role));
+        let setup = InitialSetupRepository::new(pool.clone(), Duration::from_secs(10))?;
+        let InitialSetupOutcome::Initialized { user_id } = setup
+            .initialize(InitialSetupRecord::new(
+                "plugin-integration-admin".to_owned(),
+                "integration-fixture-password".to_owned(),
+            ))
+            .await?
+        else {
+            return Err("fresh integration database was already initialized".into());
+        };
+        let users = AdminUserRepository::new(pool.clone(), Duration::from_secs(10))?;
+        let operator = users
+            .get(user_id)
+            .await?
+            .ok_or("initial administrator is missing")?;
+        let mut principals = vec![SessionPrincipal::new(user_id, SessionRole::Admin)];
+        for index in 1..3 {
+            let user = users
+                .create(AdminUserCreateRecord::new(
+                    format!("plugin-integration-{index}"),
+                    None,
+                    None,
+                    SessionRole::User.to_database(),
+                    1,
+                    operator.default_group_id(),
+                    0,
+                    None,
+                    None,
+                ))
+                .await?;
+            principals.push(SessionPrincipal::new(user.user_id(), SessionRole::User));
         }
         let first = service(&pool, first_relative)?;
         let second = service(&pool, second_relative)?;
