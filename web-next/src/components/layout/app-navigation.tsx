@@ -86,6 +86,7 @@ const navItems = {
   keys: { key: 'keys', icon: 'solar:shield-check-linear', href: '/console/tokens' },
   usage: { key: 'usage', icon: 'solar:document-text-linear', href: '/console/usage-logs' },
   runtimeStatus: { key: 'runtimeStatus', icon: 'solar:server-minimalistic-linear', href: '/console/runtime-status' },
+  pluginLifecycle: { key: 'pluginLifecycle', icon: 'solar:box-linear', href: '/console/plugin-lifecycle' },
   debugTraces: { key: 'debugTraces', icon: 'solar:bug-linear', href: '/console/debug-traces' },
 } as const satisfies Record<NavKey, NavItem>
 

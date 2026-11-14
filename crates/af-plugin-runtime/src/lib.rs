@@ -27,11 +27,18 @@ use zeroize::Zeroizing;
 
 mod new_api;
 mod schema;
+mod sidecar;
 mod sub2api;
 
 use crate::schema::CompiledJsonSchema;
+pub use crate::schema::validate_plugin_configuration;
 
 pub use new_api::{NewApiConnector, new_api_registration};
+pub use sidecar::{
+    PluginArtifactDescriptor, SidecarError, SidecarLimits, SidecarSupervisor, TrustedPluginKey,
+    VerifiedPluginArtifact, plugin_artifact_signature_payload, plugin_package_digest,
+    validate_public_plugin_configuration,
+};
 pub use sub2api::{Sub2ApiConnector, sub2api_registration};
 
 const ACCOUNT_PROFILE_READ: &str = "external.account.profile.read";
@@ -92,6 +99,26 @@ impl CapabilityExecutionContext {
             public_config,
             max_response_bytes,
         })
+    }
+
+    /// Return a copy with host-owned plugin configuration substituted for any
+    /// caller-provided value. Lifecycle adapters use this to bind each call to
+    /// the configuration persisted with the active deployment generation.
+    pub fn with_public_config(
+        &self,
+        public_config: Value,
+    ) -> Result<Self, ConnectorOperationError> {
+        if !public_config.is_object() {
+            return Err(ConnectorOperationError::InvalidInvocation);
+        }
+        let mut invocation = self.clone();
+        invocation.public_config = public_config;
+        Ok(invocation)
+    }
+
+    /// Remaining host-call budget, including deployment lookup or recovery.
+    pub fn remaining_timeout(&self) -> Result<Duration, ConnectorOperationError> {
+        operation_timeout_for_metadata(&self.metadata, 300_000)
     }
 }
 

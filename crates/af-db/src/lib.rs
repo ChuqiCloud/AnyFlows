@@ -252,6 +252,9 @@ mod playground_conversation_tests;
 mod playground_share;
 #[cfg(test)]
 mod playground_share_tests;
+mod plugin_catalog;
+#[cfg(test)]
+mod plugin_catalog_tests;
 mod quota;
 #[cfg(test)]
 mod quota_group_window_tests;
@@ -632,6 +635,13 @@ pub use playground_share::{
     PlaygroundShareCreatedRecord, PlaygroundShareRecord, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, PlaygroundShareRepositoryError,
     PlaygroundShareRevokeOutcome, PlaygroundShareWrite,
+};
+pub use plugin_catalog::{
+    MAX_PLUGIN_CAPABILITIES, MAX_PLUGIN_CONFIG_BYTES, MAX_PLUGIN_DEPLOYMENT_HISTORY,
+    MAX_PLUGIN_MANIFEST_BYTES, PluginArtifactApproval, PluginArtifactCreate, PluginArtifactQuery,
+    PluginArtifactRecord, PluginArtifactRevocation, PluginArtifactSourceKind,
+    PluginCapabilityGrant, PluginCatalogError, PluginCatalogRepository, PluginDeploymentQuery,
+    PluginDeploymentRecord, PluginDeploymentWrite,
 };
 pub use quota::{
     QuotaExtension, QuotaExtensionFuture, QuotaFundingContext, QuotaFundingExtension,
