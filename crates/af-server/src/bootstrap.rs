@@ -2795,7 +2795,7 @@ fn encrypt_legacy_payment_secret(
 impl Bootstrap<Supervised> {
     /// 构建完整 HTTP Router；此后只允许进入监听阶段。
     #[must_use]
-    pub fn build_router(self) -> Bootstrap<RouterReady> {
+    pub fn build_router(mut self) -> Bootstrap<RouterReady> {
         let plugin_lifecycle_service = Arc::new(
             af_admin::DatabaseAdminPluginLifecycleService::new(
                 af_db::PluginCatalogRepository::new(
@@ -2805,6 +2805,25 @@ impl Bootstrap<Supervised> {
             )
             .with_sidecar_runtime(self.stage.plugin_sidecar_runtime.clone()),
         );
+        if plugin_lifecycle_service.capability_runtime().is_some() {
+            let service = Arc::clone(&plugin_lifecycle_service);
+            self.stage
+                .supervisor
+                .spawn("plugin-sidecar-reconcile", move |shutdown| {
+                    let service = Arc::clone(&service);
+                    async move {
+                        let mut interval = tokio::time::interval(Duration::from_secs(30));
+                        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                        interval.tick().await;
+                        loop {
+                            tokio::select! {
+                                () = shutdown.cancelled() => return,
+                                _ = interval.tick() => service.reconcile_runtime().await,
+                            }
+                        }
+                    }
+                });
+        }
         let probe =
             DatabaseReadinessProbe::new(self.stage.infrastructure.infrastructure.database.clone());
         let readiness = ReadinessHandle::new(probe);

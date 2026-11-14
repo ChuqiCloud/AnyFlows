@@ -51,7 +51,7 @@ pub(crate) struct PluginArtifactRegistrationRequest {
     plugin_id: String,
     #[schema(min_length = 5, max_length = 128)]
     plugin_version: String,
-    #[schema(value_type = Object)]
+    #[schema(schema_with = crate::openapi::schema::sensitive_free_form_object_schema)]
     manifest: Value,
     /// POSIX-style path relative to the host-configured artifact root.
     #[schema(
@@ -90,7 +90,7 @@ pub(crate) struct PluginDeploymentRequest {
     enabled: bool,
     #[schema(max_items = 128)]
     granted_capabilities: Vec<PluginCapabilityGrantRequest>,
-    #[schema(value_type = Object, write_only)]
+    #[schema(schema_with = crate::openapi::schema::sensitive_free_form_object_schema)]
     config: Value,
 }
 
@@ -129,7 +129,7 @@ pub(crate) struct PluginArtifactResponse {
     plugin_id: String,
     plugin_version: String,
     digest: String,
-    #[schema(value_type = Object)]
+    #[schema(schema_with = crate::openapi::schema::free_form_object_schema)]
     manifest: Value,
     source_kind: String,
     signer_key_id: String,

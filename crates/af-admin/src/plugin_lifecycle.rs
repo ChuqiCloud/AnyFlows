@@ -13,7 +13,8 @@ use af_db::{
     PluginDeploymentQuery, PluginDeploymentRecord, PluginDeploymentWrite,
 };
 use af_domain::PlatformPermission;
-use af_plugin_runtime::VerifiedPluginArtifact;
+use af_plugin_contract::PluginManifest;
+use af_plugin_runtime::{VerifiedPluginArtifact, validate_public_plugin_configuration};
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -613,7 +614,32 @@ impl DatabaseAdminPluginLifecycleService {
             return Err(AdminPluginLifecycleError::RuntimeUnavailable);
         }
         if let Some(runtime) = &self.sidecar_runtime {
+            if deployment.enabled {
+                let latest = self
+                    .repository
+                    .get_deployment(&deployment.plugin_id)
+                    .await
+                    .map_err(map_catalog_error)?
+                    .ok_or(AdminPluginLifecycleError::NotFound)?;
+                if !latest.enabled || latest.generation != deployment.generation {
+                    return Err(AdminPluginLifecycleError::Conflict);
+                }
+            }
             runtime.apply(deployment).await?;
+            if deployment.enabled {
+                let latest = self
+                    .repository
+                    .get_deployment(&deployment.plugin_id)
+                    .await
+                    .map_err(map_catalog_error)?
+                    .ok_or(AdminPluginLifecycleError::NotFound)?;
+                if !latest.enabled || latest.generation != deployment.generation {
+                    let _ = runtime
+                        .stop_generation(&deployment.plugin_id, deployment.generation)
+                        .await;
+                    return Err(AdminPluginLifecycleError::Conflict);
+                }
+            }
         }
         Ok(())
     }
@@ -633,7 +659,15 @@ impl DatabaseAdminPluginLifecycleService {
         else {
             return Ok(());
         };
-        self.apply_runtime(&deployment).await
+        if let Err(error) = self.apply_runtime(&deployment).await {
+            if let Some(runtime) = &self.sidecar_runtime {
+                let _ = runtime
+                    .stop_through_generation(&deployment.plugin_id, deployment.generation)
+                    .await;
+            }
+            return Err(error);
+        }
+        Ok(())
     }
 
     async fn disable_after_activation_failure(
@@ -808,7 +842,9 @@ impl DatabaseAdminPluginLifecycleService {
         let plugin_id = artifact.plugin_id().as_str().to_owned();
         let plugin_version = artifact.plugin_version().as_str().to_owned();
         let digest = artifact.sha256().to_owned();
-        let result = self.persist_verified_artifact(artifact).await;
+        let result = self
+            .persist_verified_artifact(artifact, principal.user_id(), request_id)
+            .await;
         self.finish_mutation(
             principal,
             request_id,
@@ -860,7 +896,8 @@ impl DatabaseAdminPluginLifecycleService {
                     command.signature_base64,
                 )
                 .await?;
-            self.persist_verified_artifact(artifact).await
+            self.persist_verified_artifact(artifact, principal.user_id(), request_id)
+                .await
         }
         .await;
         self.finish_mutation(
@@ -880,6 +917,8 @@ impl DatabaseAdminPluginLifecycleService {
     async fn persist_verified_artifact(
         &self,
         artifact: VerifiedPluginArtifact,
+        operator: af_domain::UserId,
+        request_id: &str,
     ) -> Result<AdminPluginArtifact, AdminPluginLifecycleError> {
         let source_kind = match artifact.source_kind() {
             "builtin" => PluginArtifactSourceKind::Builtin,
@@ -905,7 +944,7 @@ impl DatabaseAdminPluginLifecycleService {
             created_at: current_timestamp()?,
         };
         self.repository
-            .register_artifact(input)
+            .register_artifact_audited(input, operator, request_id)
             .await
             .map(AdminPluginArtifact::from_record)
             .map_err(map_catalog_error)
@@ -1027,9 +1066,6 @@ impl DatabaseAdminPluginLifecycleService {
         if result.is_ok()
             && let Err(error) = self.reconcile_revocation_runtime(&artifact).await
         {
-            if let Some(runtime) = &self.sidecar_runtime {
-                let _ = runtime.stop(&artifact.plugin_id).await;
-            }
             tracing::warn!(
                 plugin_id = artifact.plugin_id,
                 error_kind = ?error,
@@ -1066,8 +1102,29 @@ impl DatabaseAdminPluginLifecycleService {
             Some(&plugin_id),
         )
         .await?;
+        let config_validation = async {
+            if !command.enabled {
+                return Ok(());
+            }
+            let artifact = self
+                .repository
+                .get_artifact_by_digest(&command.plugin_id, &command.artifact_digest)
+                .await
+                .map_err(map_catalog_error)?
+                .ok_or(AdminPluginLifecycleError::NotFound)?;
+            let manifest: PluginManifest = serde_json::from_value(artifact.manifest)
+                .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+            manifest
+                .validate()
+                .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+            validate_public_plugin_configuration(&manifest.config_schema, &command.config)
+                .map_err(|_| AdminPluginLifecycleError::InvalidInput)
+        }
+        .await;
         let result = if command.enabled && self.sidecar_runtime.is_none() {
             Err(AdminPluginLifecycleError::RuntimeUnavailable)
+        } else if let Err(error) = config_validation {
+            Err(error)
         } else {
             match current_timestamp() {
                 Ok(updated_at) => match self
@@ -1298,7 +1355,9 @@ impl DatabaseAdminPluginLifecycleService {
         } else {
             PlatformAuditOutcome::Failed
         };
-        let entry = audit_entry(
+        // Catalog facts commit atomically with mutations. A failure in this
+        // additional outcome log must not mask success or a runtime failure.
+        let audit = audit_entry(
             principal,
             request_id,
             route,
@@ -1308,8 +1367,22 @@ impl DatabaseAdminPluginLifecycleService {
             outcome,
             before,
             if succeeded { after } else { None },
-        )?;
-        self.audit.record(entry).await.map_err(map_audit_error)?;
+        );
+        let audit_result = match audit {
+            Ok(entry) => self.audit.record(entry).await.map_err(map_audit_error),
+            Err(error) => Err(error),
+        };
+        if let Err(error) = audit_result {
+            tracing::warn!(
+                request_id,
+                route,
+                operation,
+                resource,
+                succeeded,
+                error_kind = ?error,
+                "plugin lifecycle outcome audit failed; preserving the operation result"
+            );
+        }
         result
     }
 }

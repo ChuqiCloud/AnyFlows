@@ -50414,7 +50414,9 @@
             "minLength": 5
           },
           "manifest": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": true,
+            "writeOnly": true
           },
           "package_path": {
             "type": "string",
@@ -50477,7 +50479,8 @@
             "type": "string"
           },
           "manifest": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": true
           },
           "sourceKind": {
             "type": "string"
@@ -50652,7 +50655,9 @@
             "maxItems": 128
           },
           "config": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": true,
+            "writeOnly": true
           }
         },
         "additionalProperties": false

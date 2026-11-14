@@ -65,6 +65,70 @@
       "capacity_reached": "Node limit reached"
     }
   },
+  "pluginLifecycle": {
+    "eyebrow": "PLUGIN OPERATIONS",
+    "title": "Plugin lifecycle",
+    "subtitle": "Register signed artifacts, approve publishers, grant only needed read capabilities, and manage deployment versions and rollback.",
+    "trustWarning": "Plugins run as local server processes and retain the AnyFlows service account's operating-system permissions. Signatures verify publisher and integrity; they do not provide an OS sandbox or network isolation. Deploy artifacts only from publishers you trust.",
+    "refresh": "Refresh",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "saving": "Working…",
+    "loadMore": "Load more",
+    "loading": "Loading…",
+    "checkingGeneration": "Checking the current deployment generation…",
+    "currentGeneration": "Current deployment generation: {{generation}}",
+    "deploy": "Configure deployment",
+    "deployTitle": "Deploy {{plugin}}",
+    "disable": "Disable",
+    "rollback": "Roll back to this version",
+    "grantsHint": "Select only the read capabilities required for this deployment. Grants are recorded as a separate deployment fact.",
+    "configHint": "Configuration must be a JSON object. Do not enter keys, passwords, or other credentials.",
+    "fields": {
+      "pluginId": "Plugin ID",
+      "version": "Version",
+      "packagePath": "Artifact directory relative path",
+      "executablePath": "Executable relative path inside package",
+      "digest": "SHA-256 package digest (64 lowercase hex characters)",
+      "signer": "Trusted signer ID",
+      "manifest": "Manifest bound by the signature (JSON)",
+      "signature": "Ed25519 signature (Base64)",
+      "config": "Public configuration (JSON object)",
+      "configSchema": "View configuration schema"
+    },
+    "status": {
+      "pending": "Pending approval",
+      "approved": "Approved",
+      "revoked": "Revoked",
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "artifacts": {
+      "title": "Verified artifacts",
+      "description": "Artifact paths are relative to the server-configured directory; the server verifies digest and signature.",
+      "register": "Register artifact",
+      "registerHint": "Operations must place files in the server's controlled artifact directory first. Registration does not approve or enable an artifact.",
+      "approve": "Approve",
+      "revoke": "Revoke",
+      "revokeReason": "Revocation reason",
+      "capabilities": "Declared capabilities",
+      "empty": "No artifacts have been registered."
+    },
+    "deployments": {
+      "title": "Current deployments",
+      "description": "Deployment changes use generation compare-and-swap. Enabled deployments are restored from the database after restart.",
+      "grants": "Granted capabilities",
+      "history": "View history",
+      "empty": "There are no plugin deployments."
+    },
+    "errors": {
+      "action": "The operation failed. Check the signature, artifact directory configuration, approval state, and current generation, then retry.",
+      "loadArtifacts": "Could not load plugin artifacts.",
+      "loadDeployments": "Could not load plugin deployments.",
+      "loadHistory": "Could not load deployment history. Refresh and retry.",
+      "manifestJson": "Manifest must be a valid JSON object."
+    }
+  },
   "brand": {
     "name": "AnyFlows",
     "scope": "Gateway"
@@ -143,6 +207,7 @@
   },
   "nav": {
     "runtimeStatus": "Runtime status",
+    "pluginLifecycle": "Plugin lifecycle",
     "label": "Primary navigation",
     "customLinks": "Custom links",
     "sectionSwitcher": "Switch section",

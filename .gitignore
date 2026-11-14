@@ -5,6 +5,7 @@ design/
 
 /target/
 /release/
+/data/plugins/.runtime/
 .env
 .env.*
 !.env.example

@@ -2731,9 +2731,6 @@ export type PluginDeploymentRequest = {
     expected_generation?: number | null;
     enabled: boolean;
     granted_capabilities: Array<PluginCapabilityGrantRequest>;
-    config: {
-        [key: string]: unknown;
-    };
 };
 export type PluginDeploymentResponse = {
     pluginId: string;
@@ -3883,11 +3880,23 @@ export type PersonalAccessTokenWriteRequestWritable = {
 export type PluginArtifactRegistrationRequestWritable = {
     plugin_id: string;
     plugin_version: string;
+    manifest: {
+        [key: string]: unknown;
+    };
     package_path: string;
     executable_path: string;
     sha256: string;
     signer_key_id: string;
     signature_base64: string;
+};
+export type PluginDeploymentRequestWritable = {
+    artifact_digest: string;
+    expected_generation?: number | null;
+    enabled: boolean;
+    granted_capabilities: Array<PluginCapabilityGrantRequest>;
+    config: {
+        [key: string]: unknown;
+    };
 };
 export type RegistrationEmailVerificationRequestWritable = {
     email: string;
@@ -11447,7 +11456,7 @@ export type RevokeAdminPluginArtifactResponses = {
 };
 export type RevokeAdminPluginArtifactResponse = RevokeAdminPluginArtifactResponses[keyof RevokeAdminPluginArtifactResponses];
 export type DeployAdminPluginArtifactData = {
-    body: PluginDeploymentRequest;
+    body: PluginDeploymentRequestWritable;
     path: {
         plugin_id: string;
     };

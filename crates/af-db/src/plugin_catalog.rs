@@ -6,7 +6,7 @@
 
 use std::{collections::BTreeSet, time::Duration};
 
-use af_domain::UserId;
+use af_domain::{PlatformPermission, UserId};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
     QueryFilter, QueryOrder, QuerySelect, Set, SqlErr, TransactionTrait,
@@ -19,10 +19,10 @@ use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    DatabasePool,
+    DatabasePool, PlatformAuditOutcome,
     entity::{
-        plugin_artifact_approvals, plugin_artifact_revocations, plugin_artifacts,
-        plugin_deployment_revisions, plugin_deployments,
+        platform_audit_logs, plugin_artifact_approvals, plugin_artifact_revocations,
+        plugin_artifacts, plugin_deployment_revisions, plugin_deployments,
     },
 };
 
@@ -464,6 +464,88 @@ impl PluginCatalogRepository {
         self.bounded(operation).await
     }
 
+    /// Register a verified candidate and its actor-attributed audit fact in one
+    /// transaction. Matching retries preserve the artifact identity and audit
+    /// fact; a reused request ID with different metadata or actor conflicts.
+    pub async fn register_artifact_audited(
+        &self,
+        input: PluginArtifactCreate,
+        operator: UserId,
+        request_id: &str,
+    ) -> Result<PluginArtifactRecord, PluginCatalogError> {
+        input.validate()?;
+        if !valid_request_id(request_id) {
+            return Err(PluginCatalogError::InvalidInput);
+        }
+        let operation = async {
+            let txn = self.pool.connection().begin().await.map_err(map_db)?;
+            // A savepoint keeps PostgreSQL usable after a concurrent unique
+            // collision. Inserting before reading also avoids a stale SQLite
+            // read snapshot when two identical registrations race.
+            let insertion = txn.begin().await.map_err(map_db)?;
+            let inserted = plugin_artifacts::ActiveModel {
+                plugin_id: Set(input.plugin_id.clone()),
+                plugin_version: Set(input.plugin_version.clone()),
+                digest: Set(input.digest.clone()),
+                manifest: Set(input.manifest.clone()),
+                source_kind: Set(input.source_kind.as_str().to_owned()),
+                source_reference: Set(input.source_reference.clone()),
+                signer_key_id: Set(input.signer_key_id.clone()),
+                signature: Set(input.signature.clone()),
+                created_at: Set(input.created_at),
+                ..Default::default()
+            }
+            .insert(&insertion)
+            .await;
+            let artifact = match inserted {
+                Ok(row) => {
+                    insertion.commit().await.map_err(map_db)?;
+                    artifact_from_model(row, None, None)?
+                }
+                Err(error)
+                    if matches!(error.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) =>
+                {
+                    insertion.rollback().await.map_err(map_db)?;
+                    let existing = plugin_artifacts::Entity::find()
+                        .filter(plugin_artifacts::Column::PluginId.eq(&input.plugin_id))
+                        .filter(plugin_artifacts::Column::Digest.eq(&input.digest))
+                        .one(&txn)
+                        .await
+                        .map_err(map_db)?
+                        .ok_or(PluginCatalogError::Conflict)?;
+                    let existing = load_artifact_on(&txn, existing.id).await?;
+                    if !artifact_matches(&existing, &input) {
+                        return Err(PluginCatalogError::Conflict);
+                    }
+                    existing
+                }
+                Err(error) => {
+                    insertion.rollback().await.map_err(map_db)?;
+                    return Err(map_db(error));
+                }
+            };
+            write_catalog_audit(
+                &txn,
+                operator,
+                request_id,
+                "/admin/plugins/artifacts",
+                "catalog_register",
+                "plugin_artifact",
+                artifact.id.to_string(),
+                serde_json::json!({
+                    "artifactId": artifact.id,
+                    "pluginId": artifact.plugin_id,
+                    "artifactDigest": artifact.digest,
+                    "pluginVersion": artifact.plugin_version
+                }),
+            )
+            .await?;
+            txn.commit().await.map_err(map_db)?;
+            Ok(artifact)
+        };
+        self.bounded(operation).await
+    }
+
     /// Add a one-time explicit human approval. The immutable approval is the prerequisite for
     /// any deployment; manifest declarations alone never authorize capabilities.
     pub async fn approve_artifact(
@@ -477,9 +559,11 @@ impl PluginCatalogRepository {
             if txn.get_database_backend() != DbBackend::Sqlite {
                 artifact_query = artifact_query.lock(LockType::Update);
             }
-            if artifact_query.one(&txn).await.map_err(map_db)?.is_none() {
-                return Err(PluginCatalogError::NotFound);
-            }
+            let artifact = artifact_query
+                .one(&txn)
+                .await
+                .map_err(map_db)?
+                .ok_or(PluginCatalogError::NotFound)?;
             if plugin_artifact_revocations::Entity::find_by_id(input.artifact_id)
                 .one(&txn)
                 .await
@@ -504,11 +588,27 @@ impl PluginCatalogRepository {
                 artifact_id: Set(input.artifact_id),
                 approved_by: Set(input.approved_by.get()),
                 approved_at: Set(input.approved_at),
-                request_id: Set(input.request_id),
+                request_id: Set(input.request_id.clone()),
             }
             .insert(&txn)
             .await
             .map_err(map_db)?;
+            write_catalog_audit(
+                &txn,
+                input.approved_by,
+                &input.request_id,
+                "/admin/plugins/artifacts/{artifactId}/approve",
+                "catalog_approve",
+                "plugin_artifact",
+                artifact.id.to_string(),
+                serde_json::json!({
+                    "artifactId": artifact.id,
+                    "pluginId": artifact.plugin_id,
+                    "artifactDigest": artifact.digest,
+                    "approved": true
+                }),
+            )
+            .await?;
             txn.commit().await.map_err(map_db)?;
             Ok(())
         };
@@ -609,6 +709,22 @@ impl PluginCatalogRepository {
                             return Err(PluginCatalogError::Conflict);
                         }
                     }
+                    write_catalog_audit(
+                        &txn,
+                        input.revoked_by,
+                        &input.request_id,
+                        "/admin/plugins/artifacts/{artifactId}/revoke",
+                        "catalog_revoke",
+                        "plugin_artifact",
+                        artifact.id.to_string(),
+                        serde_json::json!({
+                            "artifactId": artifact.id,
+                            "pluginId": artifact.plugin_id,
+                            "artifactDigest": artifact.digest,
+                            "revoked": true
+                        }),
+                    )
+                    .await?;
                     txn.commit().await.map_err(map_db)?;
                     Ok(())
                 }
@@ -651,6 +767,32 @@ impl PluginCatalogRepository {
         }
         let operation = async {
             match plugin_artifacts::Entity::find_by_id(artifact_id)
+                .one(self.pool.connection())
+                .await
+                .map_err(map_db)?
+            {
+                Some(row) => load_artifact(&self.pool, row.id).await.map(Some),
+                None => Ok(None),
+            }
+        };
+        self.bounded(operation).await
+    }
+
+    /// Fetch an immutable artifact by its plugin identity and content digest.
+    /// This is used for preflight validation before writing a deployment
+    /// generation; deploy() repeats approval checks transactionally.
+    pub async fn get_artifact_by_digest(
+        &self,
+        plugin_id: &str,
+        digest: &str,
+    ) -> Result<Option<PluginArtifactRecord>, PluginCatalogError> {
+        if !valid_plugin_id(plugin_id) || !is_lower_hex(digest, 64) {
+            return Err(PluginCatalogError::InvalidInput);
+        }
+        let operation = async {
+            match plugin_artifacts::Entity::find()
+                .filter(plugin_artifacts::Column::PluginId.eq(plugin_id))
+                .filter(plugin_artifacts::Column::Digest.eq(digest))
                 .one(self.pool.connection())
                 .await
                 .map_err(map_db)?
@@ -941,7 +1083,94 @@ async fn write_revision(
     .insert(txn)
     .await
     .map_err(map_db)?;
-    Ok(())
+    write_catalog_audit(
+        txn,
+        input.updated_by,
+        &input.request_id,
+        "/admin/plugins/{pluginId}/deployment",
+        "catalog_deploy",
+        "plugin_deployment",
+        input.plugin_id.clone(),
+        serde_json::json!({
+            "artifactId": artifact_id,
+            "artifactDigest": input.artifact_digest,
+            "generation": generation,
+            "enabled": input.enabled,
+            "grantedCapabilityCount": input.granted_capabilities.len()
+        }),
+    )
+    .await
+}
+
+/// Append the committed catalog fact within the state-changing transaction.
+/// Service outcome audits remain separate because runtime activation can fail
+/// after commit. Only host-selected, non-sensitive identifiers are accepted at
+/// these private call sites; configuration, sources and signatures are omitted.
+#[allow(clippy::too_many_arguments)]
+async fn write_catalog_audit(
+    txn: &DatabaseTransaction,
+    operator: UserId,
+    request_id: &str,
+    route: &str,
+    operation: &str,
+    resource: &str,
+    resource_id: String,
+    after: Value,
+) -> Result<(), PluginCatalogError> {
+    let after_value = serde_json::to_string(&after).map_err(|_| PluginCatalogError::Invariant)?;
+    let insertion = txn.begin().await.map_err(map_db)?;
+    let inserted = platform_audit_logs::ActiveModel {
+        operator_user_id: Set(operator.get()),
+        actor_credential_kind: Set(None),
+        actor_credential_id: Set(None),
+        permission_code: Set(PlatformPermission::PluginsManage.code().to_owned()),
+        route: Set(route.to_owned()),
+        operation: Set(operation.to_owned()),
+        resource: Set(resource.to_owned()),
+        resource_id: Set(Some(resource_id.clone())),
+        outcome: Set(PlatformAuditOutcome::Succeeded as i16),
+        before_value: Set(None),
+        after_value: Set(Some(after_value.clone())),
+        audit_info: Set(None),
+        request_id: Set(request_id.to_owned()),
+        created_at: Set(time::OffsetDateTime::now_utc()),
+        ..Default::default()
+    }
+    .insert(&insertion)
+    .await;
+    match inserted {
+        Ok(_) => insertion.commit().await.map_err(map_db),
+        Err(error) if matches!(error.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) => {
+            insertion.rollback().await.map_err(map_db)?;
+            let existing = platform_audit_logs::Entity::find()
+                .filter(platform_audit_logs::Column::RequestId.eq(request_id))
+                .filter(platform_audit_logs::Column::Route.eq(route))
+                .filter(platform_audit_logs::Column::Operation.eq(operation))
+                .one(txn)
+                .await
+                .map_err(map_db)?
+                .ok_or(PluginCatalogError::Conflict)?;
+            if existing.operator_user_id == operator.get()
+                && existing.actor_credential_kind.is_none()
+                && existing.actor_credential_id.is_none()
+                && existing.permission_code == PlatformPermission::PluginsManage.code()
+                && existing.resource == resource
+                && existing.resource_id.as_deref() == Some(resource_id.as_str())
+                && existing.outcome == PlatformAuditOutcome::Succeeded as i16
+                && existing.before_value.is_none()
+                && existing.after_value.as_deref() == Some(after_value.as_str())
+                && existing.audit_info.is_none()
+            {
+                Ok(())
+            } else {
+                Err(PluginCatalogError::Conflict)
+            }
+        }
+        Err(error) => {
+            insertion.rollback().await.map_err(map_db)?;
+            Err(map_db(error))
+        }
+    }
 }
 
 async fn deployment_from_model(
@@ -984,13 +1213,20 @@ async fn load_artifact(
     pool: &DatabasePool,
     id: i64,
 ) -> Result<PluginArtifactRecord, PluginCatalogError> {
+    load_artifact_on(pool.connection(), id).await
+}
+
+async fn load_artifact_on<C: ConnectionTrait>(
+    connection: &C,
+    id: i64,
+) -> Result<PluginArtifactRecord, PluginCatalogError> {
     let artifact = plugin_artifacts::Entity::find_by_id(id)
-        .one(pool.connection())
+        .one(connection)
         .await
         .map_err(map_db)?
         .ok_or(PluginCatalogError::Invariant)?;
     let approval = plugin_artifact_approvals::Entity::find_by_id(id)
-        .one(pool.connection())
+        .one(connection)
         .await
         .map_err(map_db)?;
     let approval = approval
@@ -1005,7 +1241,7 @@ async fn load_artifact(
         })
         .transpose()?;
     let revocation = plugin_artifact_revocations::Entity::find_by_id(id)
-        .one(pool.connection())
+        .one(connection)
         .await
         .map_err(map_db)?
         .map(|row| {

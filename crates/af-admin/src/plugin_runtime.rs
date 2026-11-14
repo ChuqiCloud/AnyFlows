@@ -112,6 +112,7 @@ impl AdminPluginSidecarRuntime {
         if !artifact_root.is_dir() || !artifact_root.starts_with(&working_directory) {
             return Err(AdminPluginLifecycleError::InvalidInput);
         }
+        prepare_staging_parent(&artifact_root)?;
         let package_root = artifact_root
             .join(package_relative)
             .canonicalize()
@@ -150,6 +151,7 @@ impl AdminPluginSidecarRuntime {
             "local_process".to_owned(),
             source_reference,
         )
+        .and_then(|descriptor| descriptor.with_staging_parent(artifact_root.join(".runtime")))
         .map_err(map_sidecar_error)?;
         VerifiedPluginArtifact::verify(descriptor, key)
             .await
@@ -174,7 +176,6 @@ impl AdminPluginSidecarRuntime {
         if deployment.granted_capabilities.is_empty() {
             return Err(AdminPluginLifecycleError::InvalidInput);
         }
-        let artifact = self.verify_artifact(&deployment.artifact).await?;
         let grants = deployment
             .granted_capabilities
             .iter()
@@ -192,20 +193,24 @@ impl AdminPluginSidecarRuntime {
             }) {
                 return Ok(());
             }
-            self.supervisor.stop(&plugin_id).await;
+            self.supervisor
+                .stop_generation(&plugin_id, generation)
+                .await;
         }
+        let artifact = self.verify_artifact(&deployment.artifact).await?;
+        artifact
+            .validate_configuration(&deployment.config)
+            .map_err(map_sidecar_error)?;
         self.supervisor
-            .activate(artifact, generation, grants, SidecarLimits::default())
+            .activate(
+                artifact,
+                generation,
+                grants,
+                deployment.config.clone(),
+                SidecarLimits::default(),
+            )
             .await
             .map_err(map_sidecar_error)?;
-        Ok(())
-    }
-
-    /// Stop the currently active process after a committed revocation or failed activation.
-    pub async fn stop(&self, plugin_id: &str) -> Result<(), AdminPluginLifecycleError> {
-        let plugin_id = PluginId::new(plugin_id.to_owned())
-            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-        self.supervisor.stop(&plugin_id).await;
         Ok(())
     }
 
@@ -225,10 +230,56 @@ impl AdminPluginSidecarRuntime {
         Ok(())
     }
 
+    /// Stop an exact failed process generation without marking that desired
+    /// generation disabled; a later reconciliation may retry it.
+    pub async fn stop_generation(
+        &self,
+        plugin_id: &str,
+        generation: i64,
+    ) -> Result<(), AdminPluginLifecycleError> {
+        let plugin_id = PluginId::new(plugin_id.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let generation =
+            u64::try_from(generation).map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        self.supervisor
+            .stop_generation(&plugin_id, generation)
+            .await;
+        Ok(())
+    }
+
     /// Invoke one capability from a trusted host workflow. This deliberately
     /// has no HTTP route; call sites must first authenticate and authorize their
     /// own platform-specific operation.
     pub async fn invoke_capability(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        capability_id: &str,
+        capability_version: u16,
+        input: serde_json::Value,
+    ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
+        let remaining = invocation
+            .remaining_timeout()
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+        tokio::time::timeout(
+            remaining,
+            self.invoke_capability_inner(
+                repository,
+                plugin_id,
+                generation,
+                invocation,
+                capability_id,
+                capability_version,
+                input,
+            ),
+        )
+        .await
+        .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?
+    }
+
+    async fn invoke_capability_inner(
         &self,
         repository: &PluginCatalogRepository,
         plugin_id: &str,
@@ -253,6 +304,8 @@ impl AdminPluginSidecarRuntime {
             .ok_or(AdminPluginLifecycleError::NotFound)?;
         if !deployment.enabled
             || deployment.generation != requested_generation
+            || deployment.artifact.revocation.is_some()
+            || deployment.artifact.approval.is_none()
             || deployment.artifact.source_kind != PluginArtifactSourceKind::LocalProcess
             || !deployment.granted_capabilities.iter().any(|grant| {
                 grant.id == capability_id.as_str() && grant.version == capability_version
@@ -260,15 +313,40 @@ impl AdminPluginSidecarRuntime {
         {
             return Err(AdminPluginLifecycleError::Forbidden);
         }
+        let current_session = self.supervisor.session(&plugin_id, generation).await;
+        let session_is_running = match current_session {
+            Ok(session) => session
+                .is_process_running(generation)
+                .await
+                .unwrap_or(false),
+            Err(_) => false,
+        };
+        if !session_is_running {
+            self.apply(&deployment).await?;
+            let latest = repository
+                .get_deployment(plugin_id.as_str())
+                .await
+                .map_err(|_| AdminPluginLifecycleError::Internal)?
+                .ok_or(AdminPluginLifecycleError::NotFound)?;
+            if !latest.enabled || latest.generation != requested_generation {
+                self.supervisor
+                    .stop_generation(&plugin_id, generation)
+                    .await;
+                return Err(AdminPluginLifecycleError::Forbidden);
+            }
+        }
         let session = self
             .supervisor
             .session(&plugin_id, generation)
             .await
             .map_err(map_sidecar_error)?;
+        let invocation = invocation
+            .with_public_config(deployment.config)
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         session
             .invoke_host_capability(
                 generation,
-                invocation,
+                &invocation,
                 &capability_id,
                 capability_version,
                 input,
@@ -300,14 +378,12 @@ impl AdminPluginSidecarRuntime {
             let page_is_full = deployments.len() == MAX_PLUGIN_DEPLOYMENT_HISTORY as usize;
             for deployment in deployments {
                 before_plugin_id = Some(deployment.plugin_id.clone());
-                if deployment.enabled
-                    && let Err(error) = self.apply(&deployment).await
-                {
+                if let Err(error) = self.apply(&deployment).await {
                     tracing::warn!(
                         plugin_id = deployment.plugin_id,
                         generation = deployment.generation,
                         error_kind = ?error,
-                        "enabled plugin deployment could not be restored"
+                        "plugin deployment could not be reconciled"
                     );
                 }
             }
@@ -344,6 +420,7 @@ impl AdminPluginSidecarRuntime {
         if !artifact_root.is_dir() || !artifact_root.starts_with(&working_directory) {
             return Err(AdminPluginLifecycleError::InvalidInput);
         }
+        prepare_staging_parent(&artifact_root)?;
         let package_root = artifact_root
             .join(package_relative)
             .canonicalize()
@@ -381,6 +458,7 @@ impl AdminPluginSidecarRuntime {
             "local_process".to_owned(),
             record.source_reference.clone(),
         )
+        .and_then(|descriptor| descriptor.with_staging_parent(artifact_root.join(".runtime")))
         .map_err(map_sidecar_error)?;
         VerifiedPluginArtifact::verify(descriptor, key)
             .await
@@ -399,6 +477,35 @@ impl fmt::Debug for AdminPluginSidecarRuntime {
 struct LocalArtifactSource {
     package_path: String,
     executable_path: String,
+}
+
+fn prepare_staging_parent(artifact_root: &Path) -> Result<(), AdminPluginLifecycleError> {
+    let path = artifact_root.join(".runtime");
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    if let Err(error) = builder.create(&path)
+        && error.kind() != std::io::ErrorKind::AlreadyExists
+    {
+        return Err(AdminPluginLifecycleError::RuntimeUnavailable);
+    }
+    let metadata = std::fs::symlink_metadata(&path)
+        .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(AdminPluginLifecycleError::InvalidInput);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+    }
+    Ok(())
 }
 
 fn safe_relative_path(value: &str) -> Result<PathBuf, AdminPluginLifecycleError> {
