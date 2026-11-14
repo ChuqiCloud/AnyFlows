@@ -968,6 +968,15 @@ async fn bounded<T>(
 }
 
 fn map_db(error: sea_orm::DbErr) -> ExternalAccountRepositoryError {
+    #[cfg(test)]
+    if std::thread::current()
+        .name()
+        .is_some_and(|name| {
+            name.contains("same_connector_subject_can_be_bound_to_distinct_canonical_issuers")
+        })
+    {
+        eprintln!("canonical issuer test database error: {error}");
+    }
     if matches!(error.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) {
         ExternalAccountRepositoryError::Conflict
     } else {
