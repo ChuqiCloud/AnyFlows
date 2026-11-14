@@ -625,7 +625,7 @@ impl DatabaseAdminPluginLifecycleService {
                     return Err(AdminPluginLifecycleError::Conflict);
                 }
             }
-            runtime.apply(deployment).await?;
+            runtime.apply(&self.repository, deployment).await?;
             if deployment.enabled {
                 let latest = self
                     .repository

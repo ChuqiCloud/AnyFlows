@@ -161,10 +161,14 @@ impl AdminPluginSidecarRuntime {
     /// Start a committed enabled generation or stop a committed disabled one.
     pub async fn apply(
         &self,
+        repository: &PluginCatalogRepository,
         deployment: &PluginDeploymentRecord,
     ) -> Result<(), AdminPluginLifecycleError> {
         let plugin_id = PluginId::new(deployment.plugin_id.clone())
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        if !deployment_is_current(repository, deployment).await? {
+            return Err(AdminPluginLifecycleError::Conflict);
+        }
         if !deployment.enabled {
             let generation = u64::try_from(deployment.generation)
                 .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
@@ -201,6 +205,9 @@ impl AdminPluginSidecarRuntime {
         artifact
             .validate_configuration(&deployment.config)
             .map_err(map_sidecar_error)?;
+        if !deployment_is_current(repository, deployment).await? {
+            return Err(AdminPluginLifecycleError::Conflict);
+        }
         self.supervisor
             .activate(
                 artifact,
@@ -211,6 +218,12 @@ impl AdminPluginSidecarRuntime {
             )
             .await
             .map_err(map_sidecar_error)?;
+        if !deployment_is_current(repository, deployment).await? {
+            self.supervisor
+                .stop_generation(&plugin_id, generation)
+                .await;
+            return Err(AdminPluginLifecycleError::Conflict);
+        }
         Ok(())
     }
 
@@ -322,18 +335,28 @@ impl AdminPluginSidecarRuntime {
             Err(_) => false,
         };
         if !session_is_running {
-            self.apply(&deployment).await?;
-            let latest = repository
-                .get_deployment(plugin_id.as_str())
-                .await
-                .map_err(|_| AdminPluginLifecycleError::Internal)?
-                .ok_or(AdminPluginLifecycleError::NotFound)?;
-            if !latest.enabled || latest.generation != requested_generation {
+            self.apply(repository, &deployment).await?;
+        }
+        let latest = repository
+            .get_deployment(plugin_id.as_str())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if !latest.enabled || latest.generation != requested_generation {
+            if latest.enabled {
                 self.supervisor
                     .stop_generation(&plugin_id, generation)
                     .await;
-                return Err(AdminPluginLifecycleError::Forbidden);
+            } else {
+                self.supervisor
+                    .stop_through_generation(
+                        &plugin_id,
+                        u64::try_from(latest.generation)
+                            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?,
+                    )
+                    .await;
             }
+            return Err(AdminPluginLifecycleError::Forbidden);
         }
         let session = self
             .supervisor
@@ -376,15 +399,75 @@ impl AdminPluginSidecarRuntime {
                 }
             };
             let page_is_full = deployments.len() == MAX_PLUGIN_DEPLOYMENT_HISTORY as usize;
-            for deployment in deployments {
-                before_plugin_id = Some(deployment.plugin_id.clone());
-                if let Err(error) = self.apply(&deployment).await {
+            for listed in deployments {
+                before_plugin_id = Some(listed.plugin_id.clone());
+                let deployment = match repository.get_deployment(&listed.plugin_id).await {
+                    Ok(Some(deployment)) => deployment,
+                    Ok(None) => {
+                        if let Ok(plugin_id) = PluginId::new(listed.plugin_id.clone()) {
+                            self.supervisor
+                                .stop_through_generation(
+                                    &plugin_id,
+                                    u64::try_from(listed.generation).unwrap_or_default(),
+                                )
+                                .await;
+                        }
+                        continue;
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            plugin_id = listed.plugin_id,
+                            error_kind = ?error,
+                            "plugin deployment could not be reloaded before reconciliation"
+                        );
+                        continue;
+                    }
+                };
+                if let Err(error) = self.apply(repository, &deployment).await {
                     tracing::warn!(
                         plugin_id = deployment.plugin_id,
                         generation = deployment.generation,
                         error_kind = ?error,
                         "plugin deployment could not be reconciled"
                     );
+                }
+                match repository.get_deployment(&deployment.plugin_id).await {
+                    Ok(Some(latest))
+                        if latest.generation == deployment.generation
+                            && latest.enabled == deployment.enabled => {}
+                    Ok(Some(latest)) => {
+                        let generation = u64::try_from(deployment.generation).unwrap_or_default();
+                        let plugin_id = PluginId::new(deployment.plugin_id.clone());
+                        if let Ok(plugin_id) = plugin_id {
+                            if !latest.enabled {
+                                self.supervisor
+                                    .stop_through_generation(
+                                        &plugin_id,
+                                        u64::try_from(latest.generation).unwrap_or_default(),
+                                    )
+                                    .await;
+                            } else if deployment.enabled {
+                                self.supervisor
+                                    .stop_generation(&plugin_id, generation)
+                                    .await;
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        if let Ok(plugin_id) = PluginId::new(deployment.plugin_id.clone()) {
+                            self.supervisor
+                                .stop_through_generation(
+                                    &plugin_id,
+                                    u64::try_from(deployment.generation).unwrap_or_default(),
+                                )
+                                .await;
+                        }
+                    }
+                    Err(error) => tracing::warn!(
+                        plugin_id = deployment.plugin_id,
+                        error_kind = ?error,
+                        "plugin deployment could not be reloaded after reconciliation"
+                    ),
                 }
             }
             if !page_is_full {
@@ -470,6 +553,21 @@ impl fmt::Debug for AdminPluginSidecarRuntime {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("AdminPluginSidecarRuntime(<trusted paths and keys redacted>)")
     }
+}
+
+async fn deployment_is_current(
+    repository: &PluginCatalogRepository,
+    deployment: &PluginDeploymentRecord,
+) -> Result<bool, AdminPluginLifecycleError> {
+    Ok(repository
+        .get_deployment(&deployment.plugin_id)
+        .await
+        .map_err(|_| AdminPluginLifecycleError::Internal)?
+        .is_some_and(|current| {
+            current.generation == deployment.generation
+                && current.enabled == deployment.enabled
+                && current.artifact.digest == deployment.artifact.digest
+        }))
 }
 
 #[derive(Deserialize)]
