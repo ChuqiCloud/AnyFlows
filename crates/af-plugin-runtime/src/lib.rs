@@ -27,11 +27,16 @@ use zeroize::Zeroizing;
 
 mod new_api;
 mod schema;
+mod sidecar;
 mod sub2api;
 
 use crate::schema::CompiledJsonSchema;
 
 pub use new_api::{NewApiConnector, new_api_registration};
+pub use sidecar::{
+    PluginArtifactDescriptor, SidecarError, SidecarLimits, SidecarSupervisor, TrustedPluginKey,
+    VerifiedPluginArtifact,
+};
 pub use sub2api::{Sub2ApiConnector, sub2api_registration};
 
 const ACCOUNT_PROFILE_READ: &str = "external.account.profile.read";

@@ -6,7 +6,10 @@ use std::{
 };
 
 use af_domain::{IpCidr, MAX_MODEL_NAME_BYTES};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{
+    Engine as _,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+};
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use url::Url;
 use zeroize::Zeroize as _;
@@ -17,6 +20,8 @@ use crate::{ConfigError, CorsOriginError, SecretString};
 pub const DEFAULT_SHUTDOWN_TIMEOUT_SECS: u64 = 30;
 /// 服务优雅关闭允许配置的硬上限。
 pub const MAX_SHUTDOWN_TIMEOUT_SECS: u64 = 300;
+/// 插件制品目录中可信签名者的最大数量。
+pub const MAX_PLUGIN_TRUSTED_SIGNERS: usize = 64;
 /// 数据库健康检查允许配置的硬上限。
 pub const MAX_DATABASE_HEALTH_CHECK_TIMEOUT_SECS: u64 = 30;
 /// 令牌认证仓储查询的默认超时时间。
@@ -287,6 +292,47 @@ pub struct ServerConfig {
     shutdown_timeout_secs: u64,
     /// 运行目录下可选的外部前端模板目录。
     frontend_template_directory: PathBuf,
+    /// 插件制品的受控根目录；未设置时禁用本地制品登记。
+    plugin_artifact_directory: Option<PathBuf>,
+    /// 可用于验证插件 Ed25519 签名的可信公钥。
+    plugin_trusted_signers: Vec<PluginTrustedSigner>,
+}
+
+/// 插件制品发布者的可信 Ed25519 公钥。此处只保存公钥，不包含签名私钥。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginTrustedSigner {
+    key_id: String,
+    public_key_base64: String,
+}
+
+impl PluginTrustedSigner {
+    /// Construct a trusted signer definition from a Base64-encoded Ed25519 public key.
+    pub fn new(key_id: String, public_key_base64: String) -> Result<Self, ConfigError> {
+        let signer = Self {
+            key_id,
+            public_key_base64,
+        };
+        if valid_plugin_trusted_signer(&signer, &mut std::collections::BTreeSet::new()) {
+            Ok(signer)
+        } else {
+            Err(ConfigError::InvalidField {
+                field: "server.plugin_trusted_signers",
+            })
+        }
+    }
+
+    /// 返回签名者的稳定配置标识。
+    #[must_use]
+    pub fn key_id(&self) -> &str {
+        &self.key_id
+    }
+
+    /// 返回 Base64 编码的 32 字节 Ed25519 公钥。
+    #[must_use]
+    pub fn public_key_base64(&self) -> &str {
+        &self.public_key_base64
+    }
 }
 
 impl ServerConfig {
@@ -326,6 +372,18 @@ impl ServerConfig {
         &self.frontend_template_directory
     }
 
+    /// 返回本地插件制品根目录；未配置时制品登记不可用。
+    #[must_use]
+    pub fn plugin_artifact_directory(&self) -> Option<&Path> {
+        self.plugin_artifact_directory.as_deref()
+    }
+
+    /// 返回启动时配置的插件签名信任根。
+    #[must_use]
+    pub fn plugin_trusted_signers(&self) -> &[PluginTrustedSigner] {
+        &self.plugin_trusted_signers
+    }
+
     /// 替换业务路由 CORS 白名单，供嵌入式启动与测试构造使用。
     #[must_use]
     pub fn with_cors_allowed_origins(
@@ -354,6 +412,23 @@ impl ServerConfig {
         self.frontend_template_directory = directory.into();
         self
     }
+
+    /// 配置相对运行目录的本地插件制品根目录。
+    #[must_use]
+    pub fn with_plugin_artifact_directory(mut self, directory: Option<PathBuf>) -> Self {
+        self.plugin_artifact_directory = directory;
+        self
+    }
+
+    /// 配置允许验证插件包的签名公钥。
+    #[must_use]
+    pub fn with_plugin_trusted_signers(
+        mut self,
+        signers: impl IntoIterator<Item = PluginTrustedSigner>,
+    ) -> Self {
+        self.plugin_trusted_signers = signers.into_iter().collect();
+        self
+    }
 }
 
 impl Default for ServerConfig {
@@ -367,6 +442,8 @@ impl Default for ServerConfig {
             trusted_proxy_cidrs: Vec::new(),
             shutdown_timeout_secs: DEFAULT_SHUTDOWN_TIMEOUT_SECS,
             frontend_template_directory: PathBuf::from("public/templates"),
+            plugin_artifact_directory: None,
+            plugin_trusted_signers: Vec::new(),
         }
     }
 }
@@ -1576,6 +1653,36 @@ impl AppConfig {
                 field: "server.frontend_template_directory",
             });
         }
+        if self
+            .server
+            .plugin_artifact_directory
+            .as_deref()
+            .is_some_and(|path| !valid_plugin_artifact_directory(path))
+        {
+            return Err(ConfigError::InvalidField {
+                field: "server.plugin_artifact_directory",
+            });
+        }
+        if self.server.plugin_trusted_signers.len() > MAX_PLUGIN_TRUSTED_SIGNERS {
+            return Err(ConfigError::OutOfRange {
+                field: "server.plugin_trusted_signers",
+            });
+        }
+        let mut plugin_signer_ids = std::collections::BTreeSet::new();
+        for signer in &self.server.plugin_trusted_signers {
+            if !valid_plugin_trusted_signer(signer, &mut plugin_signer_ids) {
+                return Err(ConfigError::InvalidField {
+                    field: "server.plugin_trusted_signers",
+                });
+            }
+        }
+        if self.server.plugin_artifact_directory.is_some()
+            != !self.server.plugin_trusted_signers.is_empty()
+        {
+            return Err(ConfigError::InvalidField {
+                field: "server.plugin_trusted_signers",
+            });
+        }
         if self.server.trusted_proxy_cidrs.len() > MAX_TRUSTED_PROXY_CIDRS {
             return Err(ConfigError::OutOfRange {
                 field: "server.trusted_proxy_cidrs",
@@ -2490,6 +2597,47 @@ fn valid_frontend_template_directory(path: &Path) -> bool {
     has_normal
 }
 
+/// Validate a configured plugin root as a non-empty path below the runtime directory.
+fn valid_plugin_artifact_directory(path: &Path) -> bool {
+    let Some(value) = path.to_str() else {
+        return false;
+    };
+    if value.is_empty()
+        || value.len() > 512
+        || value.trim() != value
+        || value.chars().any(char::is_control)
+        || path.is_absolute()
+    {
+        return false;
+    }
+    let mut has_normal = false;
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(_) => has_normal = true,
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => return false,
+        }
+    }
+    has_normal
+}
+
+fn valid_plugin_trusted_signer(
+    signer: &PluginTrustedSigner,
+    seen_ids: &mut std::collections::BTreeSet<String>,
+) -> bool {
+    let decoded_key = STANDARD.decode(signer.public_key_base64.as_bytes());
+    !signer.key_id.is_empty()
+        && signer.key_id.len() <= 128
+        && signer
+            .key_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+        && seen_ids.insert(signer.key_id.clone())
+        && matches!(decoded_key, Ok(key) if key.len() == 32)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2530,6 +2678,45 @@ mod tests {
                 "{value}"
             );
         }
+    }
+
+    #[test]
+    fn plugin_artifact_directory_stays_below_runtime_directory() {
+        assert!(valid_plugin_artifact_directory(Path::new("data/plugins")));
+        assert!(valid_plugin_artifact_directory(Path::new("./plugins")));
+        for value in [
+            "",
+            "/var/lib/anyflows/plugins",
+            "../plugins",
+            "data/../plugins",
+            " plugins",
+        ] {
+            assert!(
+                !valid_plugin_artifact_directory(Path::new(value)),
+                "{value}"
+            );
+        }
+    }
+
+    #[test]
+    fn plugin_trusted_signer_requires_a_unique_id_and_ed25519_public_key() {
+        let signer = PluginTrustedSigner::new(
+            "publisher-main".to_owned(),
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned(),
+        )
+        .unwrap();
+        assert_eq!(signer.key_id(), "publisher-main");
+        assert_eq!(signer.public_key_base64().len(), 44);
+        let mut ids = std::collections::BTreeSet::new();
+        assert!(valid_plugin_trusted_signer(&signer, &mut ids));
+        assert!(!valid_plugin_trusted_signer(&signer, &mut ids));
+        assert!(!valid_plugin_trusted_signer(
+            &PluginTrustedSigner {
+                key_id: "publisher-main".to_owned(),
+                public_key_base64: "not-a-key".to_owned(),
+            },
+            &mut std::collections::BTreeSet::new()
+        ));
     }
 
     #[test]

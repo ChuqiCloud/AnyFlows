@@ -13,6 +13,7 @@ pub enum PlatformPermission {
     AccountVerificationsReadAll,
     AccountVerificationsManage,
     GroupKeyPoliciesManage,
+    PluginsManage,
 }
 
 impl PlatformPermission {
@@ -32,6 +33,7 @@ impl PlatformPermission {
             Self::AccountVerificationsReadAll => "platform.account_verifications.read_all",
             Self::AccountVerificationsManage => "platform.account_verifications.manage",
             Self::GroupKeyPoliciesManage => "platform.group_key_policies.manage",
+            Self::PluginsManage => "platform.plugins.manage",
         }
     }
 }
