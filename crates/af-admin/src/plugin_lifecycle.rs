@@ -781,7 +781,8 @@ impl DatabaseAdminPluginLifecycleService {
             .await
             .map_err(map_catalog_error)?
         {
-            if existing.plugin_version != imported.plugin_version
+            if existing.revocation.is_some()
+                || existing.plugin_version != imported.plugin_version
                 || existing.manifest != imported.manifest
             {
                 return Err(AdminPluginLifecycleError::Conflict);

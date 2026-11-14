@@ -623,6 +623,37 @@ async fn installed_catalog_distributes_to_another_node_and_obeys_disable_revoke_
         repository.get_artifact(artifact_id).await?.is_some(),
         "cleanup preserves audit identity"
     );
+    fixture.first.reconcile_runtime().await;
+    let mut reupload = fixture
+        .first
+        .begin_package_upload(fixture.operator, "cluster-revoked-reupload")
+        .await?;
+    reupload.write_chunk(&example_package()?).await?;
+    assert!(matches!(
+        fixture
+            .first
+            .install_package(
+                fixture.operator,
+                reupload,
+                json!({}),
+                Some(removed.generation),
+                "cluster-revoked-reinstall",
+            )
+            .await,
+        Err(AdminPluginLifecycleError::Conflict)
+    ));
+    assert!(
+        !first_package.exists(),
+        "reuploading a revoked artifact cannot resurrect its collected cache"
+    );
+    assert!(
+        repository
+            .distribution_repository()
+            .load_package(artifact_id)
+            .await?
+            .is_none(),
+        "a rejected reupload preserves the archive cleanup tombstone"
+    );
     assert!(
         repository.deployment_history(PLUGIN_ID, 100).await?.len() >= 3,
         "uninstall preserves immutable history"
