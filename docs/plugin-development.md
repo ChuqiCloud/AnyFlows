@@ -99,7 +99,7 @@ plugin_isolation = "auto"
 | --- | --- | --- |
 | `auto` | 系统提供可信的 `setpriv` 和 `prlimit` 时启用 no-new-privileges、禁用 core dump，并收紧文件大小和打开文件数；缺少工具时保留进程管理 | Windows 使用 Job Object 管理整个进程树；其他系统保留进程管理 |
 | `trusted` | 使用运营方信任的宿主账户权限运行 | Windows 仍保留 Job Object 进程树清理 |
-| `restricted` | 要求上述工具，并额外将地址空间限制为不超过 4 GiB、累计 CPU 时间不超过 300 秒 | 当前不支持，启动会明确失败 |
+| `restricted` | 要求上述工具，并额外将每个进程的地址空间限制为不超过 4 GiB、累计 CPU 时间不超过 300 秒 | 当前不支持，启动会明确失败 |
 | `require_sandbox` | 要求 `setpriv`、`prlimit`、Bubblewrap 和内核命名空间支持，在资源限制外隔离文件系统、网络和进程命名空间 | 当前不支持，启动会明确失败 |
 
 所有资源上限只会收紧已有宿主限制，不会提高服务账户的软、硬限制。`auto` 不设置地址空间限制，以兼容预留较大虚拟地址空间的运行时；显式 `restricted` 和 `require_sandbox` 可能不适合这类运行时。需要超过当前固定资源上限的插件，应由管理员评估后选择合适的执行策略。

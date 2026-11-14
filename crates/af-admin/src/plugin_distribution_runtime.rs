@@ -327,6 +327,38 @@ impl AdminPluginSidecarRuntime {
         Ok(())
     }
 
+    /// Called only under cache_operations after verification failed. A damaged
+    /// importer-owned replica can be recreated once from its immutable archive;
+    /// manually registered operator directories are never removed here.
+    pub(crate) async fn repair_materialized(
+        &self,
+        repository: &PluginCatalogRepository,
+        artifact: &PluginArtifactRecord,
+    ) -> Result<bool, Error> {
+        let source: Source =
+            serde_json::from_str(&artifact.source_reference).map_err(|_| Error::InvalidInput)?;
+        let Some(key) = managed_package_key(&source.package_path) else {
+            return Ok(false);
+        };
+        if repository
+            .distribution_repository()
+            .package_metadata(artifact.id)
+            .await
+            .map_err(map_distribution_error)?
+            .is_none()
+        {
+            return Ok(false);
+        }
+        let root = self.installation_root()?;
+        let packages = root.join("packages");
+        let target = packages.join(key);
+        tokio::task::spawn_blocking(move || remove_managed_package(&root, &packages, &target))
+            .await
+            .map_err(|_| Error::Internal)??;
+        self.ensure_materialized(repository, artifact).await?;
+        Ok(true)
+    }
+
     /// Remove only importer-owned cache directories. Manual registrations never
     /// authorize deleting arbitrary operator-provided paths.
     pub(crate) async fn cleanup_materialized(

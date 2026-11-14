@@ -244,6 +244,33 @@ async fn installed_catalog_distributes_to_another_node_and_obeys_disable_revoke_
         2
     );
 
+    // A damaged node-local cache must be restored from the immutable archive,
+    // rather than leaving an otherwise enabled deployment permanently failed.
+    let second_runtime = fixture
+        .second
+        .capability_runtime()
+        .ok_or("runtime is missing")?;
+    second_runtime
+        .stop_generation(PLUGIN_ID, installed.generation())
+        .await?;
+    let damaged = second_package.join("models.json");
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&damaged, std::fs::Permissions::from_mode(0o600))?;
+    }
+    std::fs::write(&damaged, b"damaged replica")?;
+    fixture.second.reconcile_runtime().await;
+    assert_eq!(
+        std::fs::read(&damaged)?,
+        include_bytes!("../../../tools/plugins/examples/catalog/models.json")
+    );
+    assert!(
+        repository
+            .get_deployment(PLUGIN_ID)
+            .await?
+            .is_some_and(|deployment| deployment.enabled)
+    );
+
     let disabled = fixture
         .first
         .disable(

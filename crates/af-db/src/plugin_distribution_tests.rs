@@ -191,8 +191,12 @@ async fn shared_package_round_trips_chunks_and_preserves_artifact_identity()
                 &altered_archive,
                 NOW + 2
             )
-            .await,
-        Err(PluginDistributionError::Conflict)
+            .await?,
+        record
+    );
+    assert_eq!(
+        other_node.load_package(fixture.artifact_id).await?,
+        Some(archive.clone())
     );
 
     // Payload digest alone is insufficient to identify a ZIP with a different manifest.
@@ -266,6 +270,35 @@ async fn package_write_is_atomic_and_wrong_artifact_digest_is_rejected()
 }
 
 #[tokio::test]
+async fn repacked_verified_upload_reuses_the_first_archive_without_overwriting_it()
+-> Result<(), Box<dyn Error>> {
+    let fixture = Fixture::new().await?;
+    // The installer verifies payload/manifest identity before these opaque bytes
+    // are published. Different ZIP encoding sizes must not change archive identity.
+    let first_archive = b"verified artifact in first ZIP encoding";
+    let first = fixture
+        .distribution
+        .store_package(fixture.artifact_id, &fixture.digest, first_archive, NOW)
+        .await?;
+    let repacked = vec![42; PLUGIN_PACKAGE_CHUNK_BYTES + 5];
+    let repeated = fixture
+        .distribution
+        .store_package(fixture.artifact_id, &fixture.digest, &repacked, NOW + 60)
+        .await?;
+    assert_eq!(repeated, first);
+    assert_eq!(repeated.chunk_count, 1);
+    assert_eq!(repeated.created_at, NOW);
+    assert_eq!(
+        fixture
+            .distribution
+            .load_package(fixture.artifact_id)
+            .await?,
+        Some(first_archive.to_vec())
+    );
+    fixture.close().await
+}
+
+#[tokio::test]
 async fn package_reads_reject_corrupted_or_missing_chunks() -> Result<(), Box<dyn Error>> {
     let fixture = Fixture::new().await?;
     let archive = vec![13; PLUGIN_PACKAGE_CHUNK_BYTES + 3];
@@ -292,6 +325,18 @@ async fn package_reads_reject_corrupted_or_missing_chunks() -> Result<(), Box<dy
         .await?;
     assert_eq!(
         fixture.distribution.load_package(fixture.artifact_id).await,
+        Err(PluginDistributionError::Invariant)
+    );
+    assert_eq!(
+        fixture
+            .distribution
+            .store_package(
+                fixture.artifact_id,
+                &fixture.digest,
+                b"another verified encoding",
+                NOW + 1
+            )
+            .await,
         Err(PluginDistributionError::Invariant)
     );
     let query = Query::delete()

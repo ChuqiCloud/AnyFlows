@@ -235,13 +235,12 @@ impl PluginDistributionRepository {
                 return Err(PluginDistributionError::Conflict);
             }
             if let Some(existing) = package_metadata(&txn, artifact_id).await? {
-                if existing.digest != digest
-                    || existing.archive_sha256 != archive_sha256
-                    || existing.total_bytes != archive.len()
-                    || existing.chunk_count != chunk_count
-                {
+                if existing.digest != digest {
                     return Err(PluginDistributionError::Conflict);
                 }
+                // The host verified this upload against the immutable manifest and
+                // payload. ZIP timestamps/compression are not artifact identity;
+                // retain and revalidate the first publication without overwriting it.
                 drop(read_archive(&txn, &existing).await?);
                 txn.commit().await.map_err(map_db)?;
                 return Ok(existing);

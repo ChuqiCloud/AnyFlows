@@ -313,7 +313,20 @@ impl AdminPluginSidecarRuntime {
             None,
         )
         .await?;
-        let artifact = self.verify_artifact(&deployment.artifact).await?;
+        let artifact = match self.verify_artifact(&deployment.artifact).await {
+            Ok(artifact) => artifact,
+            Err(error)
+                if matches!(
+                    error,
+                    AdminPluginLifecycleError::InvalidInput | AdminPluginLifecycleError::NotFound
+                ) && self
+                    .repair_materialized(repository, &deployment.artifact)
+                    .await? =>
+            {
+                self.verify_artifact(&deployment.artifact).await?
+            }
+            Err(error) => return Err(error),
+        };
         drop(cache_guard);
         artifact
             .validate_configuration(&deployment.config)
