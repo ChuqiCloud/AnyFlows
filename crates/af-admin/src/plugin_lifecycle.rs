@@ -669,7 +669,7 @@ impl DatabaseAdminPluginLifecycleService {
     pub async fn install_package(
         &self,
         principal: SessionPrincipal,
-        mut upload: PluginPackageUpload,
+        upload: PluginPackageUpload,
         config: Value,
         expected_generation: Option<i64>,
         request_id: &str,
@@ -709,7 +709,7 @@ impl DatabaseAdminPluginLifecycleService {
     async fn install_package_authorized(
         &self,
         principal: SessionPrincipal,
-        upload: PluginPackageUpload,
+        mut upload: PluginPackageUpload,
         config: Value,
         expected_generation: Option<i64>,
         request_id: &str,
