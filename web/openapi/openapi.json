@@ -31984,6 +31984,118 @@
         ]
       }
     },
+    "/api/admin/plugins/install": {
+      "post": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "上传插件包并安装启用；自有插件无需签名",
+        "operationId": "installAdminPluginPackage",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginPackageInstallRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "已安装并启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginDeploymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "插件包、配置或签名无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "缺少插件管理权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "已安装或部署代次冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求或压缩包超过大小上限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "插件需要在高级部署中显式授权能力",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "安装并发已满或插件运行时未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:install_admin_plugin_package:execute"
+        ]
+      }
+    },
     "/api/admin/plugins/artifacts": {
       "get": {
         "tags": [
@@ -50397,9 +50509,7 @@
           "manifest",
           "package_path",
           "executable_path",
-          "sha256",
-          "signer_key_id",
-          "signature_base64"
+          "sha256"
         ],
         "properties": {
           "plugin_id": {
@@ -50440,14 +50550,12 @@
           },
           "signer_key_id": {
             "type": "string",
-            "maxLength": 128,
-            "minLength": 1
+            "maxLength": 128
           },
           "signature_base64": {
             "type": "string",
             "writeOnly": true,
-            "maxLength": 88,
-            "minLength": 88
+            "maxLength": 88
           }
         },
         "additionalProperties": false
@@ -50726,6 +50834,35 @@
           }
         },
         "additionalProperties": false
+      },
+      "PluginPackageInstallRequest": {
+        "type": "object",
+        "required": [
+          "package"
+        ],
+        "properties": {
+          "package": {
+            "type": "string",
+            "format": "binary",
+            "description": "ZIP/.afplugin archive containing anyflows-plugin.json and payload/."
+          },
+          "config": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Public JSON configuration, defaults to {}."
+          },
+          "expected_generation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Required for an explicit update of an existing deployment.",
+            "minimum": 1
+          }
+        }
       },
       "PublicAuthenticationCapabilities": {
         "type": "object",

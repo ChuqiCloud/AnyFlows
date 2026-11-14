@@ -2687,7 +2687,7 @@ export type PluginArtifactRegistrationRequest = {
     package_path: string;
     executable_path: string;
     sha256: string;
-    signer_key_id: string;
+    signer_key_id?: string;
 };
 export type PluginArtifactResponse = {
     id: number;
@@ -2745,6 +2745,11 @@ export type PluginDeploymentResponse = {
 export type PluginDeploymentRollbackRequest = {
     expected_generation: number;
     target_generation: number;
+};
+export type PluginPackageInstallRequest = {
+    package: Blob | File;
+    config?: string | null;
+    expected_generation?: number | null;
 };
 export type PublicAuthenticationCapabilities = {
     password_login_enabled: boolean;
@@ -3886,8 +3891,8 @@ export type PluginArtifactRegistrationRequestWritable = {
     package_path: string;
     executable_path: string;
     sha256: string;
-    signer_key_id: string;
-    signature_base64: string;
+    signer_key_id?: string;
+    signature_base64?: string;
 };
 export type PluginDeploymentRequestWritable = {
     artifact_digest: string;
@@ -11334,6 +11339,26 @@ export type ListSelfPlatformAuditLogsResponses = {
     200: PlatformAuditLogListResponse;
 };
 export type ListSelfPlatformAuditLogsResponse = ListSelfPlatformAuditLogsResponses[keyof ListSelfPlatformAuditLogsResponses];
+export type InstallAdminPluginPackageData = {
+    body: PluginPackageInstallRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/plugins/install';
+};
+export type InstallAdminPluginPackageErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    413: ManagementError;
+    422: ManagementError;
+    503: ManagementError;
+};
+export type InstallAdminPluginPackageError = InstallAdminPluginPackageErrors[keyof InstallAdminPluginPackageErrors];
+export type InstallAdminPluginPackageResponses = {
+    200: PluginDeploymentResponse;
+};
+export type InstallAdminPluginPackageResponse = InstallAdminPluginPackageResponses[keyof InstallAdminPluginPackageResponses];
 export type ListAdminPluginArtifactsData = {
     body?: never;
     path?: never;

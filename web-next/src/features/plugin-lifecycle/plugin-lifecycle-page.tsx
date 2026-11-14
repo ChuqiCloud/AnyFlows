@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 
 import type { PluginArtifactResponse, PluginDeploymentResponse } from '@/lib/api/generated/types.gen'
+import { PluginInstallPanel } from './plugin-install-panel'
 import {
   useApprovePluginArtifact,
   useDeployPluginArtifact,
@@ -83,13 +84,14 @@ export function PluginLifecyclePage() {
   const [revocationReason, setRevocationReason] = useState('')
   const [historyPlugin, setHistoryPlugin] = useState<string>()
   const [generationRefresh, setGenerationRefresh] = useState(0)
+  const [installing, setInstalling] = useState(false)
   const history = usePluginDeploymentHistory(historyPlugin)
   const deploymentHistory = usePluginDeploymentHistory(grantTarget?.pluginId, generationRefresh)
   const artifactList = artifacts.data?.pages.flatMap((page) => page.artifacts) ?? []
   const deploymentList = deployments.data?.pages.flatMap((page) => page.deployments) ?? []
   const generationKnown = deploymentHistory.isSuccess && !deploymentHistory.isFetching
   const currentGeneration = deploymentHistory.data?.reduce<number | null>((latest, entry) => Math.max(latest ?? 0, entry.generation), null) ?? null
-  const busy = register.isPending || approve.isPending || revoke.isPending || deploy.isPending || disable.isPending || rollback.isPending
+  const busy = installing || register.isPending || approve.isPending || revoke.isPending || deploy.isPending || disable.isPending || rollback.isPending
   const locale = i18n.resolvedLanguage?.startsWith('zh') ? 'zh-CN' : 'en-US'
   const mutationError = register.error || approve.error || revoke.error || deploy.error || disable.error || rollback.error
 
@@ -151,6 +153,11 @@ export function PluginLifecyclePage() {
     {mutationText ? <p role="alert" className="rounded-lg border border-danger/40 bg-danger/5 px-3 py-2 text-sm text-danger">{mutationText}</p> : null}
     {registrationError ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.errors.manifestJson')}</p> : null}
 
+    <PluginInstallPanel disabled={busy} onInstallingChange={setInstalling} />
+
+    <details className="rounded-xl border border-[var(--hairline)] bg-card">
+      <summary className="cursor-pointer px-5 py-4 text-sm font-medium">{t('pluginLifecycle.advanced')}</summary>
+      <div className="px-4 pb-4">
     <Card shadow="none" className="rounded-xl border border-[var(--hairline)] bg-card">
       <CardHeader className="flex items-start justify-between gap-3 p-5"><div><h2 className="text-base font-semibold">{t('pluginLifecycle.artifacts.title')}</h2><p className="mt-1 text-sm text-muted-foreground">{t('pluginLifecycle.artifacts.description')}</p></div><Button size="sm" color="primary" onPress={() => setRegistrationOpen(!registrationOpen)}><Upload size={15} />{registrationOpen ? t('pluginLifecycle.cancel') : t('pluginLifecycle.artifacts.register')}</Button></CardHeader>
       {registrationOpen ? <CardBody className="grid gap-3 border-t border-[var(--hairline)] p-5">
@@ -161,15 +168,14 @@ export function PluginLifecyclePage() {
           <Field label={t('pluginLifecycle.fields.packagePath')} value={draft.package_path} onChange={(package_path) => setDraft({ ...draft, package_path })} />
           <Field label={t('pluginLifecycle.fields.executablePath')} value={draft.executable_path} onChange={(executable_path) => setDraft({ ...draft, executable_path })} />
           <Field label={t('pluginLifecycle.fields.digest')} value={draft.sha256} onChange={(sha256) => setDraft({ ...draft, sha256 })} />
-          <Field label={t('pluginLifecycle.fields.signer')} value={draft.signer_key_id} onChange={(signer_key_id) => setDraft({ ...draft, signer_key_id })} />
         </div>
         <Textarea label={t('pluginLifecycle.fields.manifest')} minRows={7} value={draft.manifest} onValueChange={(manifest) => { setDraft({ ...draft, manifest }); setRegistrationError(false) }} classNames={{ input: 'font-mono text-xs' }} />
-        <Textarea label={t('pluginLifecycle.fields.signature')} minRows={2} value={draft.signature_base64} onValueChange={(signature_base64) => setDraft({ ...draft, signature_base64 })} classNames={{ input: 'font-mono text-xs' }} />
-        <div className="flex justify-end"><Button color="primary" isDisabled={busy || !draft.plugin_id || !draft.plugin_version || !draft.package_path || !draft.executable_path || !draft.sha256 || !draft.signer_key_id || !validObjectJson(draft.manifest) || !draft.signature_base64} onPress={() => void submitRegistration()}>{register.isPending ? t('pluginLifecycle.saving') : t('pluginLifecycle.artifacts.register')}</Button></div>
+        <details className="text-sm"><summary className="cursor-pointer font-medium">{t('pluginLifecycle.signatureDetails')}</summary><div className="grid gap-3 pt-3"><p className="text-xs text-muted-foreground">{t('pluginLifecycle.signatureHint')}</p><Field label={t('pluginLifecycle.fields.signer')} value={draft.signer_key_id} onChange={(signer_key_id) => setDraft({ ...draft, signer_key_id })} /><Textarea label={t('pluginLifecycle.fields.signature')} minRows={2} value={draft.signature_base64} onValueChange={(signature_base64) => setDraft({ ...draft, signature_base64 })} classNames={{ input: 'font-mono text-xs' }} /></div></details>
+        <div className="flex justify-end"><Button color="primary" isDisabled={busy || !draft.plugin_id || !draft.plugin_version || !draft.package_path || !draft.executable_path || !draft.sha256 || !validObjectJson(draft.manifest) || Boolean(draft.signer_key_id.trim()) !== Boolean(draft.signature_base64.trim())} onPress={() => void submitRegistration()}>{register.isPending ? t('pluginLifecycle.saving') : t('pluginLifecycle.artifacts.register')}</Button></div>
       </CardBody> : null}
       <CardBody className="space-y-3 p-5 pt-0">
         {artifacts.isPending ? <Skeleton className="h-24 rounded-lg" /> : artifactList.length ? artifactList.map((artifact) => <article key={artifact.id} className="rounded-lg border border-[var(--hairline)] p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{artifact.pluginId}</strong><Chip size="sm" variant="flat">{artifact.pluginVersion}</Chip><Chip size="sm" color={artifact.revocation ? 'danger' : artifact.approval ? 'success' : 'warning'} variant="flat">{artifact.revocation ? t('pluginLifecycle.status.revoked') : artifact.approval ? t('pluginLifecycle.status.approved') : t('pluginLifecycle.status.pending')}</Chip></div><p className="mt-1 break-all font-mono text-xs text-muted-foreground">{artifact.digest}</p><p className="mt-1 text-xs text-muted-foreground">{t('pluginLifecycle.fields.signer')}: {artifact.signerKeyId} · {prettyDate(artifact.createdAt, locale)}</p><p className="mt-2 text-xs">{t('pluginLifecycle.artifacts.capabilities')}: {capabilities(artifact).map((item) => item.id).join(', ') || '—'}</p></div>
+          <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{artifact.pluginId}</strong><Chip size="sm" variant="flat">{artifact.pluginVersion}</Chip><Chip size="sm" color={artifact.revocation ? 'danger' : artifact.approval ? 'success' : 'warning'} variant="flat">{artifact.revocation ? t('pluginLifecycle.status.revoked') : artifact.approval ? t('pluginLifecycle.status.approved') : t('pluginLifecycle.status.pending')}</Chip><Chip size="sm" variant="flat">{t(artifact.signerKeyId ? 'pluginLifecycle.status.signed' : 'pluginLifecycle.status.unverified')}</Chip></div><p className="mt-1 break-all font-mono text-xs text-muted-foreground">{artifact.digest}</p><p className="mt-1 text-xs text-muted-foreground">{artifact.signerKeyId ? `${artifact.signerKeyId} · ` : ''}{prettyDate(artifact.createdAt, locale)}</p><p className="mt-2 text-xs">{t('pluginLifecycle.artifacts.capabilities')}: {capabilities(artifact).map((item) => item.id).join(', ') || '—'}</p></div>
             <div className="flex flex-wrap gap-2">{!artifact.approval && !artifact.revocation ? <Button size="sm" variant="flat" color="success" isDisabled={busy} onPress={() => approve.mutate(artifact.id)}><Check size={14} />{t('pluginLifecycle.artifacts.approve')}</Button> : null}{artifact.approval && !artifact.revocation ? <Button size="sm" variant="bordered" isDisabled={busy} onPress={() => openGrant(artifact)}>{t('pluginLifecycle.deploy')}</Button> : null}{!artifact.revocation ? <Button size="sm" variant="bordered" color="danger" isDisabled={busy} onPress={() => { setRevocationTarget(artifact.id); setRevocationReason('') }}>{t('pluginLifecycle.artifacts.revoke')}</Button> : null}</div>
           </div>
           {revocationTarget === artifact.id ? <div className="mt-3 flex flex-wrap items-end gap-2"><label className="min-w-56 flex-1 text-xs font-medium">{t('pluginLifecycle.artifacts.revokeReason')}<Input size="sm" maxLength={512} value={revocationReason} onChange={(event) => setRevocationReason(event.target.value)} /></label><Button size="sm" color="danger" isDisabled={busy || !revocationReason.trim()} onPress={() => revoke.mutate({ artifactId: artifact.id, reason: revocationReason.trim() }, { onSuccess: () => setRevocationTarget(undefined) })}>{t('pluginLifecycle.confirm')}</Button><Button size="sm" variant="light" onPress={() => setRevocationTarget(undefined)}>{t('pluginLifecycle.cancel')}</Button></div> : null}
@@ -178,6 +184,8 @@ export function PluginLifecyclePage() {
         {artifacts.hasNextPage ? <div className="flex justify-center"><Button size="sm" variant="bordered" isDisabled={artifacts.isFetching} onPress={() => void artifacts.fetchNextPage()}>{t(artifacts.isFetchingNextPage ? 'pluginLifecycle.loading' : 'pluginLifecycle.loadMore')}</Button></div> : null}
       </CardBody>
     </Card>
+      </div>
+    </details>
 
     <Card shadow="none" className="rounded-xl border border-[var(--hairline)] bg-card">
       <CardHeader className="p-5"><div><h2 className="text-base font-semibold">{t('pluginLifecycle.deployments.title')}</h2><p className="mt-1 text-sm text-muted-foreground">{t('pluginLifecycle.deployments.description')}</p></div></CardHeader>
@@ -219,7 +227,7 @@ function DeploymentCard({ deployment, history, historyOpen, historyLoading, hist
   locale: string
   t: TFunction
 }) {
-  return <article className="rounded-lg border border-[var(--hairline)] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{deployment.pluginId}</strong><Chip size="sm" variant="flat">g{deployment.generation}</Chip><Chip size="sm" color={deployment.enabled ? 'success' : 'default'} variant="flat">{deployment.enabled ? t('pluginLifecycle.status.enabled') : t('pluginLifecycle.status.disabled')}</Chip></div><p className="mt-1 text-xs text-muted-foreground">{deployment.artifact.pluginVersion} · {deployment.artifact.digest.slice(0, 16)}… · {prettyDate(deployment.updatedAt, locale)}</p><p className="mt-2 text-xs">{t('pluginLifecycle.deployments.grants')}: {deployment.grantedCapabilities.map(({ id, version }) => `${id}@${version}`).join(', ') || '—'}</p></div><div className="flex flex-wrap gap-2">{deployment.enabled ? <Button size="sm" variant="bordered" color="danger" isDisabled={busy} onPress={onDisable}>{t('pluginLifecycle.disable')}</Button> : null}<Button size="sm" variant="light" isDisabled={historyLoading} onPress={onToggleHistory}><Clock3 size={14} />{t('pluginLifecycle.deployments.history')}</Button></div></div>
+  return <article className="rounded-lg border border-[var(--hairline)] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{deployment.pluginId}</strong><Chip size="sm" variant="flat">g{deployment.generation}</Chip><Chip size="sm" color={deployment.enabled ? 'success' : 'default'} variant="flat">{deployment.enabled ? t('pluginLifecycle.status.enabled') : t('pluginLifecycle.status.disabled')}</Chip><Chip size="sm" variant="flat">{t(deployment.artifact.signerKeyId ? 'pluginLifecycle.status.signed' : 'pluginLifecycle.status.unverified')}</Chip></div><p className="mt-1 text-xs text-muted-foreground">{deployment.artifact.pluginVersion} · {deployment.artifact.digest.slice(0, 16)}… · {prettyDate(deployment.updatedAt, locale)}</p><p className="mt-2 text-xs">{t('pluginLifecycle.deployments.grants')}: {deployment.grantedCapabilities.map(({ id, version }) => `${id}@${version}`).join(', ') || '—'}</p></div><div className="flex flex-wrap gap-2">{deployment.enabled ? <Button size="sm" variant="bordered" color="danger" isDisabled={busy} onPress={onDisable}>{t('pluginLifecycle.disable')}</Button> : null}<Button size="sm" variant="light" isDisabled={historyLoading} onPress={onToggleHistory}><Clock3 size={14} />{t('pluginLifecycle.deployments.history')}</Button></div></div>
     {historyOpen ? <div className="mt-3 border-t border-[var(--hairline)] pt-3">{historyLoading ? <Skeleton className="h-10 rounded" /> : historyError ? <ErrorBox text={t('pluginLifecycle.errors.loadHistory')} retry={t('pluginLifecycle.refresh')} onRetry={onRetryHistory} /> : <div className="space-y-2">{history.map((entry) => <div key={entry.generation} className="flex flex-wrap items-center justify-between gap-2 text-xs"><span>g{entry.generation} · {entry.artifact.pluginVersion} · {entry.enabled ? t('pluginLifecycle.status.enabled') : t('pluginLifecycle.status.disabled')} · {prettyDate(entry.updatedAt, locale)}</span>{entry.generation < deployment.generation && entry.enabled ? <Button size="sm" variant="flat" isDisabled={busy} onPress={() => onRollback(entry.generation)}>{t('pluginLifecycle.rollback')}</Button> : null}</div>)}</div>}</div> : null}
   </article>
 }

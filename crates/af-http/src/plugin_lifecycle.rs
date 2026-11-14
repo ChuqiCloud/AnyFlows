@@ -1,4 +1,4 @@
-//! Admin HTTP API for signed plugin artifact and deployment lifecycle.
+//! Admin HTTP API for plugin installation and deployment lifecycle.
 
 use std::sync::Arc;
 
@@ -6,15 +6,17 @@ use af_admin::{
     AdminPluginArtifact, AdminPluginArtifactApproval, AdminPluginArtifactPage,
     AdminPluginArtifactRevocation, AdminPluginCapabilityGrant, AdminPluginDeployment,
     AdminPluginDeploymentPage, AdminPluginLifecycleError, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
-    DatabaseAdminPluginLifecycleService, PluginArtifactRegistrationCommand,
-    PluginDeploymentCommand, SessionAuthentication, SessionAuthenticator,
+    DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
+    PluginArtifactRegistrationCommand, PluginDeploymentCommand, PluginPackageUpload,
+    SessionAuthentication, SessionAuthenticator,
 };
 use af_telemetry::RequestId;
 use axum::{
     Extension, Json, Router,
     extract::Request,
     extract::{
-        Path as PathParam, Query, State, rejection::JsonRejection, rejection::QueryRejection,
+        DefaultBodyLimit, Multipart, Path as PathParam, Query, State,
+        multipart::MultipartRejection, rejection::JsonRejection, rejection::QueryRejection,
     },
     middleware,
     middleware::Next,
@@ -65,10 +67,29 @@ pub(crate) struct PluginArtifactRegistrationRequest {
     executable_path: String,
     #[schema(min_length = 64, max_length = 64, pattern = "^[a-f0-9]{64}$")]
     sha256: String,
-    #[schema(min_length = 1, max_length = 128)]
+    #[serde(default)]
+    #[schema(max_length = 128)]
     signer_key_id: String,
-    #[schema(min_length = 88, max_length = 88, write_only)]
+    #[serde(default)]
+    #[schema(max_length = 88, write_only)]
     signature_base64: String,
+}
+
+#[derive(ToSchema)]
+#[allow(
+    dead_code,
+    reason = "Multipart schema is consumed by the OpenAPI generator"
+)]
+#[schema(as = PluginPackageInstallRequest)]
+pub(crate) struct PluginPackageInstallRequest {
+    /// ZIP/.afplugin archive containing anyflows-plugin.json and payload/.
+    #[schema(value_type = String, format = Binary)]
+    package: String,
+    /// Public JSON configuration, defaults to {}.
+    config: Option<String>,
+    /// Required for an explicit update of an existing deployment.
+    #[schema(minimum = 1)]
+    expected_generation: Option<i64>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -314,6 +335,12 @@ pub fn build_plugin_lifecycle_router(
     );
     Router::new()
         .route(
+            "/api/admin/plugins/install",
+            post(install_package).layer(DefaultBodyLimit::max(
+                MAX_PLUGIN_PACKAGE_UPLOAD_BYTES + 256 * 1024,
+            )),
+        )
+        .route(
             "/api/admin/plugins/artifacts",
             get(list_artifacts).post(register_artifact),
         )
@@ -344,6 +371,122 @@ pub fn build_plugin_lifecycle_router(
         .layer(middleware::from_fn(ensure_request_id))
         .layer(middleware::from_fn(add_no_store))
         .with_state(PluginLifecycleHttpState { service })
+}
+
+async fn install_package(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    multipart: Result<Multipart, MultipartRejection>,
+) -> Result<Response, ManagementError> {
+    let multipart = multipart.map_err(|rejection| {
+        if rejection.status() == http::StatusCode::PAYLOAD_TOO_LARGE {
+            ManagementError::PluginLifecyclePayloadTooLarge
+        } else {
+            ManagementError::PluginLifecycleInvalidRequest
+        }
+    })?;
+    let upload = state
+        .service
+        .begin_package_upload(authentication.principal(), request_id.as_str())
+        .await
+        .map_err(map_service_error)?;
+    let parsed = tokio::time::timeout(
+        std::time::Duration::from_secs(120),
+        parse_package_upload(multipart, upload),
+    )
+    .await
+    .map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
+    let (upload, config, expected_generation) = match parsed {
+        Ok(parsed) => parsed,
+        Err(ManagementError::PluginLifecycleInvalidRequest) => {
+            return Err(ManagementError::PluginLifecycleInvalidRequest);
+        }
+        Err(error) => return Err(error),
+    };
+    let deployment = state
+        .service
+        .install_package(
+            authentication.principal(),
+            upload,
+            config,
+            expected_generation,
+            request_id.as_str(),
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(PluginDeploymentResponse::from(deployment)))
+}
+
+async fn parse_package_upload(
+    mut multipart: Multipart,
+    mut upload: PluginPackageUpload,
+) -> Result<(PluginPackageUpload, Value, Option<i64>), ManagementError> {
+    let invalid = || ManagementError::PluginLifecycleInvalidRequest;
+    let mut package_seen = false;
+    let mut config = None;
+    let mut generation = None;
+    while let Some(mut field) = multipart.next_field().await.map_err(map_multipart_error)? {
+        match field.name().ok_or_else(invalid)? {
+            "package" if !package_seen => {
+                package_seen = true;
+                while let Some(bytes) = field.chunk().await.map_err(map_multipart_error)? {
+                    upload
+                        .write_chunk(&bytes)
+                        .await
+                        .map_err(map_service_error)?;
+                }
+            }
+            "config" if config.is_none() => {
+                let mut bytes = Vec::new();
+                while let Some(chunk) = field.chunk().await.map_err(map_multipart_error)? {
+                    if bytes.len().saturating_add(chunk.len()) > 65_536 {
+                        return Err(invalid());
+                    }
+                    bytes.extend_from_slice(&chunk);
+                }
+                let value: Value = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
+                if !value.is_object() || contains_sensitive_config_fields(&value) {
+                    return Err(invalid());
+                }
+                config = Some(value);
+            }
+            "expected_generation" if generation.is_none() => {
+                let mut bytes = Vec::new();
+                while let Some(chunk) = field.chunk().await.map_err(map_multipart_error)? {
+                    if bytes.len().saturating_add(chunk.len()) > 20 {
+                        return Err(invalid());
+                    }
+                    bytes.extend_from_slice(&chunk);
+                }
+                let value = std::str::from_utf8(&bytes)
+                    .map_err(|_| invalid())?
+                    .parse::<i64>()
+                    .map_err(|_| invalid())?;
+                if value <= 0 {
+                    return Err(invalid());
+                }
+                generation = Some(value);
+            }
+            _ => return Err(invalid()),
+        }
+    }
+    if !package_seen {
+        return Err(invalid());
+    }
+    Ok((
+        upload,
+        config.unwrap_or_else(|| serde_json::json!({})),
+        generation,
+    ))
+}
+
+fn map_multipart_error(error: axum::extract::multipart::MultipartError) -> ManagementError {
+    if error.status() == http::StatusCode::PAYLOAD_TOO_LARGE {
+        ManagementError::PluginLifecyclePayloadTooLarge
+    } else {
+        ManagementError::PluginLifecycleInvalidRequest
+    }
 }
 
 async fn add_no_store(request: Request, next: Next) -> Response {
@@ -600,6 +743,12 @@ fn map_service_error(error: AdminPluginLifecycleError) -> ManagementError {
     match error {
         AdminPluginLifecycleError::Forbidden => ManagementError::Forbidden,
         AdminPluginLifecycleError::InvalidInput => ManagementError::PluginLifecycleInvalidRequest,
+        AdminPluginLifecycleError::CapabilityReviewRequired => {
+            ManagementError::PluginLifecycleCapabilityReviewRequired
+        }
+        AdminPluginLifecycleError::PayloadTooLarge => {
+            ManagementError::PluginLifecyclePayloadTooLarge
+        }
         AdminPluginLifecycleError::NotFound => ManagementError::PluginLifecycleNotFound,
         AdminPluginLifecycleError::Conflict => ManagementError::PluginLifecycleConflict,
         AdminPluginLifecycleError::RuntimeUnavailable => {
