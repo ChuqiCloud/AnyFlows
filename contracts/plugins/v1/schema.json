@@ -351,7 +351,10 @@
           "additionalProperties": false,
           "properties": {
             "capabilityId": {
-              "$ref": "#/$defs/CapabilityDeclaration/properties/id"
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+              "type": "string"
             },
             "capabilityVersion": {
               "maximum": 65535,
@@ -432,10 +435,14 @@
           "$ref": "#/$defs/PluginHostOperation"
         },
         "pluginId": {
-          "$ref": "#/$defs/PluginManifest/properties/pluginId"
+          "maxLength": 128,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
+          "type": "string"
         },
         "pluginVersion": {
-          "$ref": "#/$defs/PluginManifest/properties/pluginVersion"
+          "maxLength": 128,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+          "type": "string"
         },
         "protocolVersion": {
           "const": 1
@@ -470,10 +477,14 @@
           "type": "integer"
         },
         "pluginId": {
-          "$ref": "#/$defs/PluginManifest/properties/pluginId"
+          "maxLength": 128,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
+          "type": "string"
         },
         "pluginVersion": {
-          "$ref": "#/$defs/PluginManifest/properties/pluginVersion"
+          "maxLength": 128,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+          "type": "string"
         },
         "protocolVersion": {
           "const": 1
