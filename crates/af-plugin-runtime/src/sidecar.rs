@@ -208,6 +208,7 @@ pub struct VerifiedPluginArtifact {
     package_root: PathBuf,
     sha256: String,
     signer_key_id: String,
+    signature: Vec<u8>,
     source_kind: String,
     source_reference: String,
 }
@@ -264,6 +265,7 @@ impl VerifiedPluginArtifact {
             package_root,
             sha256: actual_digest,
             signer_key_id: descriptor.signer_key_id,
+            signature: descriptor.signature,
             source_kind: descriptor.source_kind,
             source_reference: descriptor.source_reference,
         })
@@ -287,6 +289,13 @@ impl VerifiedPluginArtifact {
     #[must_use]
     pub fn signer_key_id(&self) -> &str {
         &self.signer_key_id
+    }
+
+    /// Return the already verified Ed25519 signature for immutable catalog
+    /// persistence. Debug output and public HTTP projections remain redacted.
+    #[must_use]
+    pub fn signature_base64(&self) -> String {
+        BASE64.encode(&self.signature)
     }
 
     #[must_use]
