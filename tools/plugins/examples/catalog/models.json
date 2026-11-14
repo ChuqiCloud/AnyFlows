@@ -1,0 +1,22 @@
+[
+  {
+    "id": "example-text-small",
+    "displayName": "Example Text Small",
+    "provider": "example",
+    "description": "Development catalogue entry; installing this example does not provide model inference.",
+    "contextWindow": 32768,
+    "inputModalities": ["text"],
+    "outputModalities": ["text"],
+    "tags": ["example"]
+  },
+  {
+    "id": "example-vision",
+    "displayName": "Example Vision",
+    "provider": "example",
+    "description": "Development catalogue entry with text and image input.",
+    "contextWindow": 65536,
+    "inputModalities": ["text", "image"],
+    "outputModalities": ["text"],
+    "tags": ["example", "vision"]
+  }
+]

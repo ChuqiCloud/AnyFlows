@@ -1,7 +1,4 @@
-//! Trusted, signed, process-isolated sidecar transport.
-//!
-//! This supervisor isolates process lifetime and framing. It does not claim an
-//! OS sandbox: approved sidecars run with the host account's OS permissions.
+//! Administrator-managed sidecar transport with host-selected process containment.
 
 use std::{
     collections::BTreeMap,
@@ -12,9 +9,13 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(windows)]
+use crate::sidecar_isolation::spawn_windows_sidecar;
 use crate::{
     CapabilityContext, CapabilityExecutionContext, CapabilityHandler, ConnectorRegistration,
-    PlatformConnector, schema::CompiledJsonSchema,
+    PlatformConnector,
+    schema::CompiledJsonSchema,
+    sidecar_isolation::{SidecarIsolationLevel, SidecarIsolationPolicy, prepare_sidecar_launch},
 };
 use af_plugin_contract::{
     CapabilityAccess, CapabilityId, CapabilityResult, ConnectorError, ConnectorErrorCode,
@@ -32,12 +33,19 @@ use nix::{
 use ring::signature::{ED25519, UnparsedPublicKey};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+#[cfg(not(windows))]
+use tokio::process::Child;
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::{Child, ChildStdin, ChildStdout, Command},
+    process::{ChildStdin, ChildStdout},
     sync::Mutex,
     time::timeout,
 };
+
+#[cfg(windows)]
+type SidecarChild = Box<dyn process_wrap::tokio::ChildWrapper>;
+#[cfg(not(windows))]
+type SidecarChild = Child;
 
 const SIDE_CAR_PROTOCOL_VERSION: u16 = 1;
 const MAX_SIGNATURE_BYTES: usize = 64;
@@ -226,6 +234,43 @@ impl PluginArtifactDescriptor {
     pub fn source_reference(&self) -> &str {
         &self.source_reference
     }
+
+    /// Verify publisher identity against immutable metadata without opening the
+    /// artifact. This does not validate the package bytes or authorize execution.
+    pub fn verify_publisher_signature(
+        &self,
+        trusted_key: &TrustedPluginKey,
+    ) -> Result<(), SidecarError> {
+        let executable_relative_path = self
+            .executable
+            .strip_prefix(&self.package_root)
+            .map_err(|_| SidecarError::InvalidArtifact)?
+            .to_str()
+            .ok_or(SidecarError::InvalidArtifact)?
+            .replace('\\', "/");
+        self.verify_publisher_signature_at(trusted_key, &self.sha256, &executable_relative_path)
+    }
+
+    fn verify_publisher_signature_at(
+        &self,
+        trusted_key: &TrustedPluginKey,
+        digest: &str,
+        executable_relative_path: &str,
+    ) -> Result<(), SidecarError> {
+        if self.signer_key_id != trusted_key.key_id {
+            return Err(SidecarError::UntrustedSigner);
+        }
+        let message = plugin_artifact_signature_payload(
+            &self.plugin_id,
+            &self.plugin_version,
+            digest,
+            executable_relative_path,
+            &self.manifest,
+        )?;
+        UnparsedPublicKey::new(&ED25519, trusted_key.public_key)
+            .verify(&message, &self.signature)
+            .map_err(|_| SidecarError::InvalidArtifactSignature)
+    }
 }
 
 impl fmt::Debug for PluginArtifactDescriptor {
@@ -337,16 +382,11 @@ impl VerifiedPluginArtifact {
             return Err(SidecarError::InvalidArtifact);
         }
         if let Some(trusted_key) = trusted_key {
-            let signed_message = plugin_artifact_signature_payload(
-                &descriptor.plugin_id,
-                &descriptor.plugin_version,
+            descriptor.verify_publisher_signature_at(
+                trusted_key,
                 &actual_digest,
                 &executable_relative_path,
-                &descriptor.manifest,
             )?;
-            UnparsedPublicKey::new(&ED25519, trusted_key.public_key)
-                .verify(&signed_message, &descriptor.signature)
-                .map_err(|_| SidecarError::InvalidArtifactSignature)?;
         }
 
         // Copy into a host-created private directory and verify the copied
@@ -742,7 +782,7 @@ impl SidecarLimits {
 }
 
 struct SidecarProcess {
-    child: Child,
+    child: SidecarChild,
     process_group_id: Option<i32>,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
@@ -762,7 +802,7 @@ impl SidecarProcess {
 
     async fn terminate(&mut self) {
         self.kill_process_group();
-        let _ = self.child.kill().await;
+        let _ = self.child.start_kill();
         let _ = self.child.wait().await;
     }
 }
@@ -790,15 +830,16 @@ impl Drop for InFlightSidecarExchange<'_> {
     }
 }
 
-/// One trusted, signed sidecar process. All requests are serialized on its
+/// One administrator-managed sidecar process. All requests are serialized on its
 /// stdio stream; frame size, timeout, identity and capability schemas are
-/// validated by the host. This is process fault isolation, not an OS sandbox.
+/// validated by the host. `effective_isolation` reports its actual OS containment.
 pub struct SidecarSession {
     manifest: PluginManifest,
     deployment_generation: u64,
     granted_capabilities: BTreeMap<CapabilityId, u16>,
     public_config: Value,
     limits: SidecarLimits,
+    isolation: SidecarIsolationLevel,
     process: Mutex<SidecarProcess>,
     // Drop the child process before removing its staged executable directory.
     artifact: Arc<VerifiedPluginArtifact>,
@@ -847,12 +888,34 @@ impl SidecarSupervisor {
         public_config: Value,
         limits: SidecarLimits,
     ) -> Result<Arc<SidecarSession>, SidecarError> {
-        let session = SidecarSession::start(
+        self.activate_with_policy(
             artifact,
             generation,
             granted_capabilities,
             public_config,
             limits,
+            SidecarIsolationPolicy::Auto,
+        )
+        .await
+    }
+
+    /// Start a generation with an administrator-selected containment policy.
+    pub async fn activate_with_policy(
+        &self,
+        artifact: VerifiedPluginArtifact,
+        generation: u64,
+        granted_capabilities: Vec<(CapabilityId, u16)>,
+        public_config: Value,
+        limits: SidecarLimits,
+        policy: SidecarIsolationPolicy,
+    ) -> Result<Arc<SidecarSession>, SidecarError> {
+        let session = SidecarSession::start_with_policy(
+            artifact,
+            generation,
+            granted_capabilities,
+            public_config,
+            limits,
+            policy,
         )
         .await?;
         if session.registration().is_err() {
@@ -1020,6 +1083,26 @@ impl SidecarSession {
         public_config: Value,
         limits: SidecarLimits,
     ) -> Result<Arc<Self>, SidecarError> {
+        Self::start_with_policy(
+            artifact,
+            deployment_generation,
+            granted_capabilities,
+            public_config,
+            limits,
+            SidecarIsolationPolicy::Auto,
+        )
+        .await
+    }
+
+    /// Start a sidecar with an explicit host containment policy.
+    pub async fn start_with_policy(
+        artifact: VerifiedPluginArtifact,
+        deployment_generation: u64,
+        granted_capabilities: Vec<(CapabilityId, u16)>,
+        public_config: Value,
+        limits: SidecarLimits,
+        policy: SidecarIsolationPolicy,
+    ) -> Result<Arc<Self>, SidecarError> {
         let mut limits = limits.validate()?;
         limits.request_timeout = limits.request_timeout.min(Duration::from_millis(u64::from(
             artifact.manifest.limits.request_timeout_ms,
@@ -1083,7 +1166,10 @@ impl SidecarSession {
         }
         let initial_manifest = artifact.manifest.clone();
         let artifact = Arc::new(artifact);
-        let mut command = Command::new(&artifact.executable);
+        let prepared =
+            prepare_sidecar_launch(&artifact.executable, &artifact.package_root, policy)?;
+        let isolation = prepared.isolation;
+        let mut command = prepared.command;
         command
             .current_dir(&artifact.package_root)
             .env_clear()
@@ -1100,16 +1186,24 @@ impl SidecarSession {
             }
         }
 
+        #[cfg(not(windows))]
         let mut child = command.spawn().map_err(|_| SidecarError::StartFailed)?;
+        #[cfg(windows)]
+        let mut child = spawn_windows_sidecar(command)?;
         #[cfg(unix)]
         let process_group_id = child.id().and_then(|id| i32::try_from(id).ok());
         #[cfg(not(unix))]
         let process_group_id = None;
-        let stdin = child.stdin.take().ok_or(SidecarError::StartFailed)?;
-        let stdout = child.stdout.take().ok_or(SidecarError::StartFailed)?;
+        #[cfg(not(windows))]
+        let (stdin, stdout) = (child.stdin.take(), child.stdout.take());
+        #[cfg(windows)]
+        let (stdin, stdout) = (child.stdin().take(), child.stdout().take());
+        let stdin = stdin.ok_or(SidecarError::StartFailed)?;
+        let stdout = stdout.ok_or(SidecarError::StartFailed)?;
         let session = Arc::new(Self {
             manifest: initial_manifest,
             limits,
+            isolation,
             deployment_generation,
             granted_capabilities: granted_capabilities.into_iter().collect(),
             public_config,
@@ -1161,6 +1255,11 @@ impl SidecarSession {
     #[must_use]
     pub fn manifest(&self) -> &PluginManifest {
         &self.manifest
+    }
+
+    #[must_use]
+    pub const fn effective_isolation(&self) -> SidecarIsolationLevel {
+        self.isolation
     }
 
     /// Check child liveness without adding an extra protocol round trip to
@@ -1702,6 +1801,8 @@ pub enum SidecarError {
     InvalidConfiguration,
     #[error("sidecar process could not be started")]
     StartFailed,
+    #[error("requested plugin isolation is unavailable on this host")]
+    IsolationUnavailable,
     #[error("sidecar handshake failed")]
     InvalidHandshake,
     #[error("sidecar protocol frame is too large")]
@@ -1841,6 +1942,47 @@ mod tests {
             descriptor.source_kind,
             descriptor.source_reference,
         )
+    }
+
+    #[test]
+    fn publisher_metadata_signature_verification_does_not_require_local_files() {
+        let manifest = signing_test_manifest();
+        let signer = Ed25519KeyPair::from_seed_unchecked(&[37_u8; 32]).unwrap();
+        let key = TrustedPluginKey::new(
+            "metadata-publisher",
+            signer.public_key().as_ref().try_into().unwrap(),
+        )
+        .unwrap();
+        let digest = "a".repeat(64);
+        let payload = plugin_artifact_signature_payload(
+            &manifest.plugin_id,
+            &manifest.plugin_version,
+            &digest,
+            "bin/plugin",
+            &manifest,
+        )
+        .unwrap();
+        let signature = super::BASE64.encode(signer.sign(&payload).as_ref());
+        let root = std::env::temp_dir().join("anyflows-metadata-signature-no-local-package");
+        let mut descriptor = PluginArtifactDescriptor::new(
+            manifest.plugin_id.clone(),
+            manifest.plugin_version.clone(),
+            manifest,
+            root.join("bin").join("plugin"),
+            root,
+            digest,
+            "metadata-publisher".to_owned(),
+            &signature,
+            "local_process".to_owned(),
+            "metadata-only".to_owned(),
+        )
+        .unwrap();
+        assert_eq!(descriptor.verify_publisher_signature(&key), Ok(()));
+        descriptor.manifest.display_name = "Tampered display name".to_owned();
+        assert_eq!(
+            descriptor.verify_publisher_signature(&key),
+            Err(SidecarError::InvalidArtifactSignature)
+        );
     }
 
     #[test]

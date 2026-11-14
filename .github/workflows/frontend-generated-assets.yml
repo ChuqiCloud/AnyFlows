@@ -59,6 +59,7 @@ jobs:
           corepack pnpm@10.33.0 --dir web-next install --lockfile-only --ignore-scripts
           corepack pnpm@10.33.0 --dir web install --lockfile-only --ignore-scripts
           cargo fmt --all
+          cargo run --package af-plugin-contract --example export_contract -- export
           cargo run --package xtask -- openapi export
           corepack pnpm@10.33.0 --dir web-next install --frozen-lockfile
           corepack pnpm@10.33.0 --dir web-next exec openapi-ts --no-log-file
@@ -71,7 +72,7 @@ jobs:
           set -euo pipefail
           if test -f web-next/pnpm-lock.yaml; then git add -N -- web-next/pnpm-lock.yaml; fi
           echo 'ANYFLOWS_GENERATED_PATCH_BEGIN'
-          git diff --binary -- Cargo.lock crates tools/xtask web web-next | gzip -9 | base64 -w120
+          git diff --binary -- Cargo.lock contracts crates tools/xtask web web-next | gzip -9 | base64 -w120
           echo
           echo 'ANYFLOWS_GENERATED_PATCH_END'
-          git diff --stat -- Cargo.lock crates tools/xtask web web-next
+          git diff --stat -- Cargo.lock contracts crates tools/xtask web web-next

@@ -144,7 +144,12 @@ mod playground_conversation;
 mod playground_share;
 mod playground_share_snapshot;
 mod playground_share_token;
+mod plugin_catalog_extension;
+mod plugin_distribution_runtime;
 mod plugin_lifecycle;
+#[cfg(test)]
+mod plugin_lifecycle_integration_tests;
+mod plugin_operations;
 mod plugin_package;
 mod plugin_runtime;
 mod redemption;
@@ -393,12 +398,20 @@ pub use playground_share_token::{
     IssuedPlaygroundShareToken, PlaygroundShareTokenDigest, PlaygroundShareTokenError,
     PresentedPlaygroundShareToken,
 };
+pub use plugin_catalog_extension::{
+    PluginCatalogExtensionQuery, PluginCatalogModel, PluginCatalogModelPage, PluginCatalogSource,
+    PluginCatalogSourcePage,
+};
 pub use plugin_lifecycle::{
     AdminPluginArtifact, AdminPluginArtifactApproval, AdminPluginArtifactPage,
     AdminPluginArtifactRevocation, AdminPluginCapabilityGrant, AdminPluginDeployment,
     AdminPluginDeploymentPage, AdminPluginLifecycleError, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
     DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
     PluginArtifactRegistrationCommand, PluginDeploymentCommand, PluginPackageUpload,
+};
+pub use plugin_operations::{
+    AdminPluginArtifactCleanup, AdminPluginRuntimeNode, AdminPluginRuntimeOverview,
+    AdminPluginRuntimeState, AdminPluginUninstallResult,
 };
 pub use plugin_runtime::AdminPluginSidecarRuntime;
 pub use redemption::{

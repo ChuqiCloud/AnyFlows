@@ -126,7 +126,8 @@
       "enabled": "已启用",
       "disabled": "已停用",
       "unverified": "管理员安装 · 发布者未验证",
-      "signed": "发布者签名已验证"
+      "signed": "发布者签名已验证",
+      "official": "官方插件"
     },
     "artifacts": {
       "title": "已登记插件包",
@@ -152,6 +153,45 @@
       "loadDeployments": "无法读取插件部署。",
       "loadHistory": "无法读取部署历史。请刷新后重试。",
       "manifestJson": "Manifest 必须是有效的 JSON 对象。"
+    },
+    "runtime": {
+      "title": "节点运行状态",
+      "description": "各节点分别上报包分发与实际就绪状态，当前版本在节点运行后才会显示就绪。",
+      "error": "节点状态加载失败。",
+      "liveNodes": "在线节点：{{count}}",
+      "isolation": "本机执行策略：{{mode}}",
+      "noNodes": "尚未收到节点心跳。",
+      "online": "在线",
+      "stale": "心跳已过期",
+      "lastSeen": "最近心跳：{{time}}",
+      "readyNodes": "在线节点就绪：{{ready}} / {{total}}",
+      "states": {
+        "pending": "等待节点确认",
+        "downloading": "正在拉取插件包",
+        "starting": "启动中",
+        "ready": "已就绪",
+        "stopped": "已停止",
+        "failed": "运行失败",
+        "stale": "心跳已过期",
+        "uninstalled": "已卸载"
+      },
+      "isolationModes": {
+        "process": "独立进程",
+        "resource_limited": "已应用资源限制",
+        "sandboxed": "操作系统沙箱",
+        "job_object": "Windows 作业对象",
+        "unknown": "未上报"
+      }
+    },
+    "removal": {
+      "uninstall": "卸载",
+      "cleanup": "清理制品文件",
+      "uninstallTitle": "卸载 {{plugin}}",
+      "cleanupTitle": "清理 {{plugin}} 的制品文件",
+      "uninstallHint": "插件将在各节点停止运行并清理本地运行文件。部署历史和归档仍保留，后续可以重新安装。离线节点会在重新连接后处理卸载。",
+      "cleanupHint": "这将永久移除该已撤销制品的归档内容。审计元数据保留，但恢复此版本需要重新上传插件包。正在启用的制品不能清理。",
+      "accepted": "已提交卸载，仍待确认的节点：{{count}}。",
+      "cleaned": "制品清理已完成，其他节点将在协调时清理缓存副本。"
     }
   },
   "brand": {
@@ -9149,5 +9189,22 @@
     "poolCleanupHint": "被凭据、渠道或全局绑定的池及正在运行的池会保留。删除池后，节点仍保留在专属代理目录。",
     "nodeCleanupHint": "仍被凭据或其他代理池使用的节点会保留。待检测节点不会视为检测失败；订阅下次更新可能重新导入已清理节点。",
     "cleanupStale": "列表、选择或版本已变化，请重新预览后再确认删除。"
+  },
+  "pluginCatalog": {
+    "title": "插件模型资料",
+    "description": "浏览已安装目录插件提供的模型资料。模型是否可调用及其价格，以平台模型目录为准。",
+    "source": "目录来源",
+    "chooseSource": "选择目录来源",
+    "sourceLabel": "来源：{{source}} · 部署代次 {{generation}}",
+    "noSources": "暂无可用的模型目录插件。",
+    "sourceError": "目录来源加载失败。",
+    "modelsError": "该来源未返回有效的模型资料，请稍后重试或切换来源。",
+    "search": "搜索此来源",
+    "refresh": "刷新",
+    "retry": "重试",
+    "moreSources": "加载更多来源",
+    "moreModels": "加载更多模型",
+    "context": "上下文窗口：{{count}} tokens",
+    "empty": "未找到匹配的模型资料。"
   }
 }

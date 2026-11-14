@@ -33025,6 +33025,479 @@
         ]
       }
     },
+    "/api/admin/plugins/runtime": {
+      "get": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "读取插件分发与逐节点真实运行状态",
+        "operationId": "getAdminPluginRuntimeOverview",
+        "responses": {
+          "200": {
+            "description": "节点心跳、代次与运行状态；启用状态不等于所有节点就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginRuntimeOverviewResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "缺少插件管理权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_plugin_runtime_overview:execute"
+        ]
+      }
+    },
+    "/api/admin/plugins/{plugin_id}/uninstall": {
+      "post": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "停止插件并安排各节点回收运行文件，保留部署历史",
+        "operationId": "uninstallAdminPlugin",
+        "parameters": [
+          {
+            "name": "plugin_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginDeploymentDisableRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "卸载已受理；其他节点通过协调完成清理",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginUninstallResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "缺少插件管理权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "插件不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "部署代次已变更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "插件运行时不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:uninstall_admin_plugin:execute"
+        ]
+      }
+    },
+    "/api/admin/plugins/artifacts/{artifact_id}/cleanup": {
+      "post": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "回收已撤销且不再启用的插件归档与本机文件",
+        "operationId": "cleanupAdminPluginArtifact",
+        "parameters": [
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "制品内容清理结果；审计与历史元数据仍保留",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginArtifactCleanupResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "缺少插件管理权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "制品不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "制品未撤销或仍被启用部署引用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "插件运行时不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:cleanup_admin_plugin_artifact:execute"
+        ]
+      }
+    },
+    "/api/account/plugin-models/sources": {
+      "get": {
+        "tags": [
+          "模型目录"
+        ],
+        "summary": "读取已启用并获得公开目录能力授权的插件来源",
+        "operationId": "listPluginModelCatalogSources",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "公开模型资料来源；不含配置与凭据",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginCatalogSourcePageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "游标无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "models:read"
+        ]
+      }
+    },
+    "/api/account/plugin-models/{plugin_id}": {
+      "get": {
+        "tags": [
+          "模型目录"
+        ],
+        "summary": "查询插件提供的模型资料目录",
+        "description": "仅调用已授权的 catalog.models.read/search v1。结果为参考资料，不创建平台模型、价格、调用权限或计费规则。",
+        "operationId": "listPluginCatalogModels",
+        "parameters": [
+          {
+            "name": "plugin_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 2048
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 50,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "经过宿主校验的模型资料页",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginCatalogModelPageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "查询参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "插件未启用或目录能力未获授权",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "来源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "插件部署已变更，请重新查询",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "查询繁忙或插件响应无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "models:read"
+        ]
+      }
+    },
     "/api/admin/runtime-status": {
       "get": {
         "tags": [
@@ -50480,6 +50953,26 @@
           }
         }
       },
+      "PluginArtifactCleanupResponse": {
+        "type": "object",
+        "required": [
+          "artifactId",
+          "archiveRemoved",
+          "localFilesRemoved"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "archiveRemoved": {
+            "type": "boolean"
+          },
+          "localFilesRemoved": {
+            "type": "boolean"
+          }
+        }
+      },
       "PluginArtifactPageResponse": {
         "type": "object",
         "required": [
@@ -50570,6 +51063,7 @@
           "manifest",
           "sourceKind",
           "signerKeyId",
+          "official",
           "createdAt"
         ],
         "properties": {
@@ -50595,6 +51089,9 @@
           },
           "signerKeyId": {
             "type": "string"
+          },
+          "official": {
+            "type": "boolean"
           },
           "createdAt": {
             "type": "integer",
@@ -50692,6 +51189,132 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "PluginCatalogModelPageResponse": {
+        "type": "object",
+        "required": [
+          "source",
+          "models"
+        ],
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/PluginCatalogSourceResponse"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginCatalogModelResponse"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PluginCatalogModelResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "displayName",
+          "provider",
+          "inputModalities",
+          "outputModalities",
+          "tags"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contextWindow": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "inputModalities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outputModalities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PluginCatalogSourcePageResponse": {
+        "type": "object",
+        "required": [
+          "sources"
+        ],
+        "properties": {
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginCatalogSourceResponse"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PluginCatalogSourceResponse": {
+        "type": "object",
+        "required": [
+          "pluginId",
+          "displayName",
+          "pluginVersion",
+          "generation",
+          "supportsSearch"
+        ],
+        "properties": {
+          "pluginId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "pluginVersion": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "supportsSearch": {
+            "type": "boolean"
           }
         }
       },
@@ -50861,6 +51484,131 @@
             "format": "int64",
             "description": "Required for an explicit update of an existing deployment.",
             "minimum": 1
+          }
+        }
+      },
+      "PluginRuntimeNodeResponse": {
+        "type": "object",
+        "required": [
+          "nodeId",
+          "hostLabel",
+          "lastSeenAt",
+          "live"
+        ],
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          },
+          "hostLabel": {
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "live": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PluginRuntimeOverviewResponse": {
+        "type": "object",
+        "required": [
+          "isolation",
+          "nodes",
+          "states"
+        ],
+        "properties": {
+          "localNodeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "isolation": {
+            "type": "string"
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginRuntimeNodeResponse"
+            }
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginRuntimeStateResponse"
+            }
+          }
+        }
+      },
+      "PluginRuntimeStateResponse": {
+        "type": "object",
+        "required": [
+          "nodeId",
+          "pluginId",
+          "generation",
+          "digest",
+          "status",
+          "isolation",
+          "updatedAt",
+          "nodeLastSeenAt"
+        ],
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          },
+          "pluginId": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "isolation": {
+            "type": "string"
+          },
+          "errorCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "nodeLastSeenAt": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "PluginUninstallResponse": {
+        "type": "object",
+        "required": [
+          "pluginId",
+          "generation",
+          "pendingNodes"
+        ],
+        "properties": {
+          "pluginId": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pendingNodes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },

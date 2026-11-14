@@ -2478,7 +2478,12 @@ impl Bootstrap<BillingReady> {
                         directory,
                         config.server().plugin_trusted_signers(),
                     )
-                    .expect("插件信任配置已在应用配置校验阶段验证"),
+                    .and_then(|runtime| {
+                        runtime.with_official_signers(config.server().plugin_official_signers())
+                    })
+                    .expect("插件信任配置已在应用配置校验阶段验证")
+                    .with_configured_isolation(config.server().plugin_isolation())
+                    .expect("插件隔离策略已在应用配置校验阶段验证"),
                 )
             });
         Bootstrap {

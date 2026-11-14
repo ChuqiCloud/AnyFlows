@@ -255,6 +255,9 @@ mod playground_share_tests;
 mod plugin_catalog;
 #[cfg(test)]
 mod plugin_catalog_tests;
+mod plugin_distribution;
+#[cfg(test)]
+mod plugin_distribution_tests;
 mod quota;
 #[cfg(test)]
 mod quota_group_window_tests;
@@ -642,6 +645,12 @@ pub use plugin_catalog::{
     PluginArtifactRecord, PluginArtifactRevocation, PluginArtifactSourceKind,
     PluginCapabilityGrant, PluginCatalogError, PluginCatalogRepository, PluginDeploymentQuery,
     PluginDeploymentRecord, PluginDeploymentWrite,
+};
+pub use plugin_distribution::{
+    MAX_PLUGIN_ARCHIVE_BYTES, PLUGIN_NODE_LEASE_SECONDS, PLUGIN_PACKAGE_CHUNK_BYTES,
+    PluginArtifactCleanupRequest, PluginDistributionError, PluginDistributionRepository,
+    PluginPackageRecord, PluginRuntimeErrorCode, PluginRuntimeNode, PluginRuntimeState,
+    PluginRuntimeStateWrite, PluginRuntimeStatus, PluginUninstallRequest,
 };
 pub use quota::{
     QuotaExtension, QuotaExtensionFuture, QuotaFundingContext, QuotaFundingExtension,
