@@ -365,7 +365,10 @@ try {
     await providerFilter.getByRole('button', { name: label('market.allProviders'), exact: true }).click()
   }
   assert.equal(new URL(page.url()).searchParams.has('provider'), false, 'All manufacturers clears the URL filter')
-  await page.getByRole('region', { name: label('catalogTable'), exact: true }).getByText(publicService.name, { exact: true }).waitFor()
+  await page.getByRole('region', { name: label('catalogTable'), exact: true })
+    .getByRole('row')
+    .filter({ hasText: `${publicService.merchant_name}/${publicService.name}` })
+    .waitFor()
   await page.getByRole('textbox', { name: label('model'), exact: true }).fill('gpt-fixture')
   await page.getByText('90.0%', { exact: true }).waitFor()
   await page.getByText(label('lowSamples'), { exact: true }).waitFor()
