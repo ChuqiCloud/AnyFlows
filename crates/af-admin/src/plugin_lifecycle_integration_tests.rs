@@ -149,6 +149,57 @@ fn example_package_with_entry(entry: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
 }
 
 #[tokio::test]
+async fn package_registration_waits_for_cache_collection_before_importing()
+-> Result<(), Box<dyn Error>> {
+    let fixture = Fixture::new().await?;
+    let runtime = fixture
+        .first
+        .capability_runtime()
+        .ok_or("runtime is missing")?;
+    let mut upload = fixture
+        .first
+        .begin_package_upload(fixture.operator, "cache-ownership-upload")
+        .await?;
+    upload.write_chunk(&example_package()?).await?;
+    {
+        // Cache collection and recovery own this lock while changing a replica.
+        // An install must not publish a temporary directory that another import
+        // could retain before the original owner's failure removes it.
+        let collection = runtime.cache_operations.lock().await;
+        let installation = fixture.first.install_package(
+            fixture.operator,
+            upload,
+            json!({ "unsupportedSetting": true }),
+            None,
+            "cache-ownership-install",
+        );
+        tokio::pin!(installation);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(250), &mut installation)
+                .await
+                .is_err(),
+            "installation must wait until cache collection releases the replica"
+        );
+        assert!(
+            !fixture.root.path().join("first/packages").exists(),
+            "a blocked install must not expose a temporary package"
+        );
+        drop(collection);
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(10), &mut installation).await?,
+            Err(AdminPluginLifecycleError::InvalidInput)
+        ));
+    }
+    assert_eq!(
+        std::fs::read_dir(fixture.root.path().join("first/packages"))?.count(),
+        0,
+        "rejected configuration must release its unregistered cache directory"
+    );
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn concurrent_apply_of_the_same_generation_keeps_the_winning_session_healthy()
 -> Result<(), Box<dyn Error>> {
     if !Path::new("/usr/bin/python3").is_file() {

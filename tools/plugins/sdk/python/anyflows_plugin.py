@@ -44,7 +44,10 @@ class Plugin:
         self.manifest = copy.deepcopy(manifest)
         self.handler = handler
         self.clock_ms = clock_ms or (lambda: time.time_ns() // 1_000_000)
-        self.max_frame_bytes = min(manifest["limits"]["maxResponseBytes"], 1_048_576)
+        # The wire envelope has an independent host limit. maxResponseBytes
+        # limits capability values, not Manifest/health or correlation metadata.
+        self.max_frame_bytes = 1_048_576
+        self.max_response_bytes = manifest["limits"]["maxResponseBytes"]
         self.declarations = {item["id"]: item for item in manifest["capabilities"]}
 
     def respond(self, request: Any) -> dict[str, Any]:
@@ -75,6 +78,8 @@ class Plugin:
                 ):
                     raise PluginError("unsupported")
                 output = self.handler(operation["capabilityId"], operation["publicConfig"], operation["input"])
+                if self._json_size(output) > self.max_response_bytes:
+                    raise PluginError("invalid_response")
                 if request["deadlineUnixMs"] <= self.clock_ms():
                     raise PluginError("temporarily_unavailable")
                 result = {"kind": "capability", "value": {"output": output}}
@@ -89,6 +94,10 @@ class Plugin:
     @staticmethod
     def _error(code: str) -> dict[str, Any]:
         return {"kind": "error", "value": {"code": code, "outcome": "not_applied"}}
+
+    @staticmethod
+    def _json_size(value: Any) -> int:
+        return len(json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8"))
 
     @staticmethod
     def _normalize_legacy_request(request: Any) -> Any:
@@ -143,6 +152,8 @@ class Plugin:
             or not 1 <= operation["capabilityVersion"] <= 65535
         ):
             raise ProtocolError("invalid capability fields")
+        if self._json_size(operation["input"]) > self.max_response_bytes:
+            raise ProtocolError("capability input exceeds advertised limit")
 
     def serve(self, source: BinaryIO | None = None, target: BinaryIO | None = None) -> int:
         source = source or sys.stdin.buffer

@@ -90,6 +90,36 @@ class PluginSdkTests(unittest.TestCase):
         self.assertEqual(responses[0]["result"]["value"]["code"], "unsupported")
         self.assertEqual(responses[1]["result"]["kind"], "health")
 
+    def test_small_capability_limit_does_not_limit_handshake_or_wire_metadata(self):
+        manifest = copy.deepcopy(MANIFEST)
+        manifest["limits"]["maxResponseBytes"] = 64
+        output = {"value": "x" * 50}
+        plugin = Plugin(manifest, lambda *args: output, clock_ms=lambda: 1000)
+        operations = [
+            {"operation": "manifest"},
+            {"operation": "health"},
+            {"operation": "invoke_capability", "connectionId": "catalog", "publicConfig": {}, "capabilityId": "catalog.models.read", "capabilityVersion": 1, "input": {"limit": 20}},
+        ]
+        source = io.BytesIO("".join(json.dumps(request(operation)) + "\n" for operation in operations).encode())
+        target = io.BytesIO()
+        self.assertEqual(plugin.serve(source, target), 0)
+        responses = [json.loads(line) for line in target.getvalue().splitlines()]
+        self.assertEqual([response["result"]["kind"] for response in responses], ["manifest", "health", "capability"])
+        self.assertEqual(responses[0]["result"]["value"], manifest)
+        self.assertEqual(responses[2]["result"]["value"]["output"], output)
+        self.assertTrue(all(len(line) > 64 for line in target.getvalue().splitlines()))
+
+    def test_capability_values_remain_bounded_independently_of_wire_frames(self):
+        manifest = copy.deepcopy(MANIFEST)
+        manifest["limits"]["maxResponseBytes"] = 64
+        plugin = Plugin(manifest, lambda *args: {"value": "x" * 100}, clock_ms=lambda: 1000)
+        envelope = request({"operation": "invoke_capability", "connectionId": "catalog", "publicConfig": {}, "capabilityId": "catalog.models.read", "capabilityVersion": 1, "input": {"limit": 20}})
+        self.assertEqual(plugin.respond(envelope)["result"]["value"]["code"], "invalid_response")
+        envelope["operation"]["input"] = {"value": "x" * 100}
+        with self.assertRaises(ProtocolError):
+            plugin.respond(envelope)
+        self.assertEqual(plugin.serve(io.BytesIO(b" " * (1_048_576 + 1) + b"\n"), io.BytesIO()), 1)
+
     def test_catalogue_example_searches_and_paginates_public_data(self):
         spec = importlib.util.spec_from_file_location("catalogue_example", ROOT / "examples" / "catalog" / "plugin.py")
         module = importlib.util.module_from_spec(spec)

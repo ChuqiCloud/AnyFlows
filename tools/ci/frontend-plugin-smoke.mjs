@@ -164,7 +164,8 @@ try {
   await runtimePanel.getByText(label('pluginLifecycle.runtime.stale'), { exact: true }).waitFor()
   await runtimePanel.getByText(`${label('pluginLifecycle.runtime.states.failed')} · ${label('pluginLifecycle.runtime.isolationModes.unknown')} · startup_failed`, { exact: true }).waitFor()
   assert.equal(await runtimePanel.getByText(label('pluginLifecycle.runtime.readyNodes').replace('{{ready}}', '3').replace('{{total}}', '3'), { exact: true }).count(), 0, 'An old generation or failed process cannot count as ready')
-  await page.getByText(label('pluginLifecycle.status.official'), { exact: true }).first().waitFor()
+  const deploymentCard = page.locator('article').filter({ has: page.getByRole('button', { name: label('pluginLifecycle.removal.uninstall'), exact: true }) })
+  await deploymentCard.getByText(label('pluginLifecycle.status.official'), { exact: true }).waitFor()
   const advanced = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: label('pluginLifecycle.advanced') }) })
   assert.equal(await advanced.getAttribute('open'), null, 'Normal installation keeps manual fields folded')
 
@@ -217,6 +218,11 @@ try {
   await catalog.getByRole('button', { name: label('pluginCatalog.moreModels'), exact: true }).click()
   await catalog.getByRole('heading', { name: 'Fixture second page', exact: true }).waitFor()
   assert.ok(catalogCalls.some(call => call.cursor === 'opaque-generation-bound-cursor'))
+  const beforeRefresh = catalogCalls.length
+  await catalog.getByRole('button', { name: label('pluginCatalog.refresh'), exact: true }).click()
+  await waitUntil(() => catalogCalls.length >= beforeRefresh + 2, 'Refreshing a paginated catalog reloads both pages')
+  await catalog.getByRole('heading', { name: 'Fixture text model', exact: true }).waitFor()
+  await catalog.getByRole('heading', { name: 'Fixture second page', exact: true }).waitFor()
   await catalog.getByLabel(label('pluginCatalog.search'), { exact: true }).fill('vision')
   await catalog.getByRole('heading', { name: 'Fixture vision search', exact: true }).waitFor()
   assert.ok(catalogCalls.some(call => call.q === 'vision' && !call.cursor), 'A new search discards prior pagination')

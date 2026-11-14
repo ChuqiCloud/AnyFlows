@@ -24,7 +24,10 @@ const CATALOG_SEARCH: &str = "catalog.models.search";
 const MAX_PAGE_SIZE: u32 = 50;
 const MAX_CATALOG_BYTES: u32 = 256 * 1024;
 const CALL_BUDGET: Duration = Duration::from_secs(5);
-const MIN_USER_INTERVAL: Duration = Duration::from_millis(500);
+const USER_REFILL_INTERVAL: Duration = Duration::from_millis(500);
+const USER_BURST: u32 = 8;
+const USER_BUCKET_CAPACITY: Duration = USER_REFILL_INTERVAL.saturating_mul(USER_BURST);
+const MAX_TRACKED_USERS: usize = 4_096;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -161,7 +164,8 @@ impl DatabaseAdminPluginLifecycleService {
                 query.cursor = Some(decode_cursor(cursor, &deployment, query.search.as_deref())?);
             }
             self.catalog_admission
-                .admit_user(principal.user_id().get())?;
+                .admit_user(principal.user_id().get())
+                .await?;
             let declared_page_size = deployment
                 .artifact
                 .manifest
@@ -392,7 +396,12 @@ fn valid_text(value: &str, max_bytes: usize) -> bool {
 
 pub(crate) struct PluginCatalogAdmission {
     slots: Semaphore,
-    recent: Mutex<BTreeMap<i64, Instant>>,
+    recent: Mutex<BTreeMap<i64, UserCatalogBucket>>,
+}
+
+struct UserCatalogBucket {
+    available: Duration,
+    updated_at: Instant,
 }
 
 impl Default for PluginCatalogAdmission {
@@ -405,26 +414,56 @@ impl Default for PluginCatalogAdmission {
 }
 
 impl PluginCatalogAdmission {
-    fn admit_user(&self, user_id: i64) -> Result<(), AdminPluginLifecycleError> {
+    async fn admit_user(&self, user_id: i64) -> Result<(), AdminPluginLifecycleError> {
+        loop {
+            let wait = self.user_wait_at(user_id, Instant::now())?;
+            if wait.is_zero() {
+                return Ok(());
+            }
+            // A paginated refresh may request consecutive pages immediately.
+            // Allow a small burst, then pace further calls within CALL_BUDGET.
+            // The caller holds one of the eight global slots while waiting.
+            tokio::time::sleep(wait).await;
+        }
+    }
+
+    fn user_wait_at(
+        &self,
+        user_id: i64,
+        now: Instant,
+    ) -> Result<Duration, AdminPluginLifecycleError> {
         let mut recent = self
             .recent
             .lock()
             .map_err(|_| AdminPluginLifecycleError::Internal)?;
-        let now = Instant::now();
-        if recent
-            .get(&user_id)
-            .is_some_and(|last| now.duration_since(*last) < MIN_USER_INTERVAL)
-        {
-            return Err(AdminPluginLifecycleError::RuntimeUnavailable);
-        }
-        if recent.len() >= 4_096 {
-            recent.retain(|_, last| now.duration_since(*last) < MIN_USER_INTERVAL);
-            if recent.len() >= 4_096 {
+        if recent.len() >= MAX_TRACKED_USERS && !recent.contains_key(&user_id) {
+            // Only fully refilled idle buckets can be forgotten. Evicting an
+            // exhausted user would let account churn reset its rate limit.
+            recent.retain(|_, bucket| {
+                bucket
+                    .available
+                    .saturating_add(now.saturating_duration_since(bucket.updated_at))
+                    < USER_BUCKET_CAPACITY
+            });
+            if recent.len() >= MAX_TRACKED_USERS {
                 return Err(AdminPluginLifecycleError::RuntimeUnavailable);
             }
         }
-        recent.insert(user_id, now);
-        Ok(())
+        let bucket = recent.entry(user_id).or_insert(UserCatalogBucket {
+            available: USER_BUCKET_CAPACITY,
+            updated_at: now,
+        });
+        bucket.available = bucket
+            .available
+            .saturating_add(now.saturating_duration_since(bucket.updated_at))
+            .min(USER_BUCKET_CAPACITY);
+        bucket.updated_at = now;
+        if bucket.available >= USER_REFILL_INTERVAL {
+            bucket.available -= USER_REFILL_INTERVAL;
+            Ok(Duration::ZERO)
+        } else {
+            Ok(USER_REFILL_INTERVAL - bucket.available)
+        }
     }
 }
 
@@ -436,12 +475,94 @@ mod tests {
     fn rate_admission_is_bounded_per_host_service_not_process_global_user_ids() {
         let first = PluginCatalogAdmission::default();
         let second = PluginCatalogAdmission::default();
-        assert!(first.admit_user(1).is_ok());
+        let now = Instant::now();
+        for _ in 0..USER_BURST {
+            assert_eq!(first.user_wait_at(1, now).unwrap(), Duration::ZERO);
+        }
+        assert_eq!(first.user_wait_at(1, now).unwrap(), USER_REFILL_INTERVAL);
+        assert_eq!(first.user_wait_at(2, now).unwrap(), Duration::ZERO);
+        assert_eq!(second.user_wait_at(1, now).unwrap(), Duration::ZERO);
+        assert_eq!(first.slots.available_permits(), 8);
+    }
+
+    #[test]
+    fn pagination_bursts_are_paced_with_exact_partial_refill_and_bounded_idle_credit() {
+        let admission = PluginCatalogAdmission::default();
+        let now = Instant::now();
+        for _ in 0..USER_BURST {
+            assert_eq!(admission.user_wait_at(1, now).unwrap(), Duration::ZERO);
+        }
+        assert_eq!(
+            admission.user_wait_at(1, now).unwrap(),
+            USER_REFILL_INTERVAL
+        );
+        assert_eq!(
+            admission
+                .user_wait_at(1, now + Duration::from_millis(200))
+                .unwrap(),
+            Duration::from_millis(300)
+        );
+        assert_eq!(
+            admission
+                .user_wait_at(1, now + USER_REFILL_INTERVAL)
+                .unwrap(),
+            Duration::ZERO
+        );
+        assert_eq!(
+            admission
+                .user_wait_at(1, now + USER_REFILL_INTERVAL)
+                .unwrap(),
+            USER_REFILL_INTERVAL
+        );
+        let later = now + Duration::from_secs(60);
+        for _ in 0..USER_BURST {
+            assert_eq!(admission.user_wait_at(1, later).unwrap(), Duration::ZERO);
+        }
+        assert_eq!(
+            admission.user_wait_at(1, later).unwrap(),
+            USER_REFILL_INTERVAL
+        );
+    }
+
+    #[test]
+    fn tracked_users_are_bounded_and_only_fully_refilled_buckets_are_evicted() {
+        let admission = PluginCatalogAdmission::default();
+        let now = Instant::now();
+        for user_id in 0..i64::try_from(MAX_TRACKED_USERS).unwrap() {
+            assert_eq!(
+                admission.user_wait_at(user_id, now).unwrap(),
+                Duration::ZERO
+            );
+        }
+        let newcomer = i64::try_from(MAX_TRACKED_USERS).unwrap();
         assert!(matches!(
-            first.admit_user(1),
+            admission.user_wait_at(newcomer, now),
             Err(AdminPluginLifecycleError::RuntimeUnavailable)
         ));
-        assert!(second.admit_user(1).is_ok());
+        for _ in 1..USER_BURST {
+            assert_eq!(admission.user_wait_at(0, now).unwrap(), Duration::ZERO);
+        }
+        assert_eq!(
+            admission.user_wait_at(0, now).unwrap(),
+            USER_REFILL_INTERVAL
+        );
+        let partially_refilled = now + USER_REFILL_INTERVAL;
+        assert_eq!(
+            admission
+                .user_wait_at(newcomer, partially_refilled)
+                .unwrap(),
+            Duration::ZERO
+        );
+        assert_eq!(admission.recent.lock().unwrap().len(), 2);
+        // The exhausted user's bucket survived pruning and has only one token.
+        assert_eq!(
+            admission.user_wait_at(0, partially_refilled).unwrap(),
+            Duration::ZERO
+        );
+        assert_eq!(
+            admission.user_wait_at(0, partially_refilled).unwrap(),
+            USER_REFILL_INTERVAL
+        );
     }
 
     fn deployment() -> PluginDeploymentRecord {

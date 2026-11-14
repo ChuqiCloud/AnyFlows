@@ -762,6 +762,14 @@ impl DatabaseAdminPluginLifecycleService {
             .flush()
             .await
             .map_err(|_| AdminPluginLifecycleError::Internal)?;
+        let runtime = self
+            .sidecar_runtime
+            .as_ref()
+            .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
+        // A newly published cache directory is still owned by its import guard
+        // until registration commits. Keep other imports, repair and cleanup
+        // from reusing or deleting it before that ownership is transferred.
+        let cache_guard = runtime.cache_operations.lock().await;
         let mut imported = crate::plugin_package::extract_plugin_package(
             upload.temporary.path().to_path_buf(),
             upload.artifact_root.clone(),
@@ -829,10 +837,6 @@ impl DatabaseAdminPluginLifecycleService {
         // existing version, bind it to the generation just read so concurrent
         // installs still fail compare-and-swap rather than silently racing.
         let deployment_expected_generation = expected_generation.or(current_generation);
-        let runtime = self
-            .sidecar_runtime
-            .as_ref()
-            .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
         // A publisher unknown to this host is not a reason to block an
         // administrator-owned package, but it must never acquire a verified badge.
         let (signer_key_id, signature_base64) = if imported.signer_key_id.is_empty() {
@@ -864,6 +868,8 @@ impl DatabaseAdminPluginLifecycleService {
         // The catalog now owns the source locator even if archive publication
         // or a later activation fails. A retry can safely resume this import.
         imported.retain();
+        // Activation takes the same cache lock to restore and verify a replica.
+        drop(cache_guard);
         // Publish the complete immutable archive before a shared deployment can
         // refer to it. Other nodes restore exactly this registered artifact.
         let archive = tokio::fs::read(upload.temporary.path())

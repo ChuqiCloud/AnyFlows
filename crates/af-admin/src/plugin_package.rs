@@ -935,7 +935,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn identical_imports_reuse_digest_path_and_conflicting_metadata_is_rejected()
+    async fn identical_imports_reuse_path_and_distinct_metadata_uses_separate_receipts()
     -> Result<(), Box<dyn Error>> {
         let root = tempfile::tempdir()?;
         let metadata = serde_json::to_vec(&envelope())?;
@@ -945,6 +945,8 @@ mod tests {
         )?;
         let first = extract_plugin_package(first_upload, root.path().to_path_buf()).await?;
         let expected_path = first.package_path.clone();
+        let expected_digest = first.digest.clone();
+        let expected_manifest = first.manifest.clone();
         first.retain();
 
         let second_upload = write_upload(
@@ -967,11 +969,26 @@ mod tests {
                 CompressionMethod::Stored,
             )?,
         )?;
-        assert!(matches!(
-            extract_plugin_package(upload, root.path().to_path_buf()).await,
-            Err(AdminPluginLifecycleError::Conflict)
-        ));
-        assert_eq!(fs::read_dir(root.path().join("packages"))?.count(), 1);
+        let distinct = extract_plugin_package(upload, root.path().to_path_buf()).await?;
+        assert_ne!(distinct.package_path, expected_path);
+        assert_eq!(distinct.digest, expected_digest);
+        assert_eq!(distinct.manifest, conflicting["manifest"]);
+        distinct.retain();
+        assert!(
+            root.path()
+                .join(&expected_path)
+                .join("bin/plugin")
+                .is_file()
+        );
+        let original_receipt: Value = serde_json::from_slice(&fs::read(
+            root.path()
+                .join(&expected_path)
+                .parent()
+                .ok_or("missing receipt directory")?
+                .join("import.json"),
+        )?)?;
+        assert_eq!(original_receipt["manifest"], expected_manifest);
+        assert_eq!(fs::read_dir(root.path().join("packages"))?.count(), 2);
         Ok(())
     }
 

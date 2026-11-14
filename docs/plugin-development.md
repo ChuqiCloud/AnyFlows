@@ -55,6 +55,8 @@ raise SystemExit(Plugin(manifest, handle).serve())
 
 SDK 负责 Manifest 与健康响应、请求身份和版本检查、部署 generation 与请求 ID 回传、deadline 检查、JSON 行帧大小限制及固定错误投影。异常文本、路径和处理函数中的值不会作为错误详情返回给宿主。SDK 同时接受旧版本宿主使用的 snake_case 调用字段，输出协议保持当前公开契约的 camelCase 字段。
 
+SDK 的完整协议帧上限为 1 MiB；Manifest 的 `maxResponseBytes` 单独限制能力输入、输出值的紧凑 UTF-8 JSON 大小，不包含协议元数据，也不限制 Manifest 或健康响应。两类限制同时生效。
+
 处理函数仍应检查自己的业务输入，并按 Manifest 中的 `inputSchema`、`outputSchema` 和 `configSchema` 设计数据。宿主会独立执行 Schema 和能力授权检查。不要通过公开配置传递密码、令牌、Cookie 或其他凭据，也不要向标准输出打印日志；标准输出仅用于协议帧。
 
 ## 模型资料能力
