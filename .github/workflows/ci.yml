@@ -731,6 +731,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --locked -p af-db --lib channel_monitor_tests
+          cargo test --locked -p af-db --lib external_account_connection_tests::same_connector_subject_can_be_bound_to_distinct_canonical_issuers -- --exact
           cargo test --locked -p af-http --lib openapi::proxy_pools::tests
 
       - name: Run routing health and value scoring regressions

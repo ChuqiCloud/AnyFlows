@@ -127,7 +127,8 @@ async fn same_connector_subject_can_be_bound_to_distinct_canonical_issuers()
             "https://panel-a.example/",
             1,
         )?)
-        .await?;
+        .await
+        .map_err(|error| format!("first canonical-issuer connection failed: {error}"))?;
     let second = fixture
         .repository
         .create(link(
@@ -136,7 +137,8 @@ async fn same_connector_subject_can_be_bound_to_distinct_canonical_issuers()
             "https://panel-b.example",
             2,
         )?)
-        .await?;
+        .await
+        .map_err(|error| format!("second canonical-issuer connection failed: {error}"))?;
 
     assert_ne!(first.id, second.id);
     assert_ne!(first.issuer_hash, second.issuer_hash);

@@ -318,6 +318,10 @@ pub(crate) enum ManagementError {
     ClientProfileConflict,
     /// 插件制品、部署或目录请求字段无效。
     PluginLifecycleInvalidRequest,
+    /// 简易安装器不会自动授予未列入公开只读默认集的能力。
+    PluginLifecycleCapabilityReviewRequired,
+    /// 插件上传超过允许的请求或归档大小。
+    PluginLifecyclePayloadTooLarge,
     /// 插件制品或部署记录不存在。
     PluginLifecycleNotFound,
     /// 插件审批或部署 generation 已由其他请求推进。
@@ -1517,6 +1521,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "plugin_lifecycle_invalid_request",
                     message: "Plugin lifecycle request is invalid",
+                },
+            ),
+            Self::PluginLifecycleCapabilityReviewRequired => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                ManagementErrorBody {
+                    code: "plugin_lifecycle_capability_review_required",
+                    message: "The plugin requires capabilities that must be granted in advanced deployment settings",
+                },
+            ),
+            Self::PluginLifecyclePayloadTooLarge => (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                ManagementErrorBody {
+                    code: "plugin_lifecycle_payload_too_large",
+                    message: "The plugin upload exceeds the allowed size",
                 },
             ),
             Self::PluginLifecycleNotFound => (

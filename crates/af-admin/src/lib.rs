@@ -145,6 +145,7 @@ mod playground_share;
 mod playground_share_snapshot;
 mod playground_share_token;
 mod plugin_lifecycle;
+mod plugin_package;
 mod plugin_runtime;
 mod redemption;
 mod refund;
@@ -396,8 +397,8 @@ pub use plugin_lifecycle::{
     AdminPluginArtifact, AdminPluginArtifactApproval, AdminPluginArtifactPage,
     AdminPluginArtifactRevocation, AdminPluginCapabilityGrant, AdminPluginDeployment,
     AdminPluginDeploymentPage, AdminPluginLifecycleError, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
-    DatabaseAdminPluginLifecycleService, PluginArtifactRegistrationCommand,
-    PluginDeploymentCommand,
+    DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
+    PluginArtifactRegistrationCommand, PluginDeploymentCommand, PluginPackageUpload,
 };
 pub use plugin_runtime::AdminPluginSidecarRuntime;
 pub use redemption::{
