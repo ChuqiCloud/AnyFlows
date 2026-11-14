@@ -1115,14 +1115,13 @@ fn validate_manifest_shell(manifest: &Value) -> Result<(), PluginCatalogError> {
     {
         return Err(PluginCatalogError::InvalidInput);
     }
-    if let Some(display_name) = manifest.get("displayName") {
-        if !display_name.is_string()
+    if let Some(display_name) = manifest.get("displayName")
+        && (!display_name.is_string()
             || display_name
                 .as_str()
-                .is_some_and(|value| value.len() > 128 || value.chars().any(char::is_control))
-        {
-            return Err(PluginCatalogError::InvalidInput);
-        }
+                .is_some_and(|value| value.len() > 128 || value.chars().any(char::is_control)))
+    {
+        return Err(PluginCatalogError::InvalidInput);
     }
     let auth_modes = manifest
         .get("authenticationModes")
