@@ -71,6 +71,7 @@ impl AdminPluginSidecarRuntime {
     }
 
     /// Verify an administrator-selected package under the host-owned trust root.
+    #[allow(clippy::too_many_arguments)]
     pub async fn verify_candidate(
         &self,
         plugin_id: String,
@@ -299,15 +300,15 @@ impl AdminPluginSidecarRuntime {
             let page_is_full = deployments.len() == MAX_PLUGIN_DEPLOYMENT_HISTORY as usize;
             for deployment in deployments {
                 before_plugin_id = Some(deployment.plugin_id.clone());
-                if deployment.enabled {
-                    if let Err(error) = self.apply(&deployment).await {
-                        tracing::warn!(
-                            plugin_id = deployment.plugin_id,
-                            generation = deployment.generation,
-                            error_kind = ?error,
-                            "enabled plugin deployment could not be restored"
-                        );
-                    }
+                if deployment.enabled
+                    && let Err(error) = self.apply(&deployment).await
+                {
+                    tracing::warn!(
+                        plugin_id = deployment.plugin_id,
+                        generation = deployment.generation,
+                        error_kind = ?error,
+                        "enabled plugin deployment could not be restored"
+                    );
                 }
             }
             if !page_is_full {

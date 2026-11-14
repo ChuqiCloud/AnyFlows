@@ -1024,17 +1024,17 @@ impl DatabaseAdminPluginLifecycleService {
                 .map_err(map_catalog_error),
             Err(error) => Err(error),
         };
-        if result.is_ok() {
-            if let Err(error) = self.reconcile_revocation_runtime(&artifact).await {
-                if let Some(runtime) = &self.sidecar_runtime {
-                    let _ = runtime.stop(&artifact.plugin_id).await;
-                }
-                tracing::warn!(
-                    plugin_id = artifact.plugin_id,
-                    error_kind = ?error,
-                    "plugin runtime stopped after revocation reconciliation failed"
-                );
+        if result.is_ok()
+            && let Err(error) = self.reconcile_revocation_runtime(&artifact).await
+        {
+            if let Some(runtime) = &self.sidecar_runtime {
+                let _ = runtime.stop(&artifact.plugin_id).await;
             }
+            tracing::warn!(
+                plugin_id = artifact.plugin_id,
+                error_kind = ?error,
+                "plugin runtime stopped after revocation reconciliation failed"
+            );
         }
         self.finish_mutation(
             principal,
@@ -1279,6 +1279,7 @@ impl DatabaseAdminPluginLifecycleService {
         Err(AdminPluginLifecycleError::Forbidden)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn finish_mutation<T>(
         &self,
         principal: SessionPrincipal,
@@ -1319,6 +1320,7 @@ impl fmt::Debug for DatabaseAdminPluginLifecycleService {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn audit_entry(
     principal: SessionPrincipal,
     request_id: &str,
