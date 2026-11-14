@@ -238,10 +238,11 @@ impl VerifiedPluginArtifact {
         }
         let root_for_hash = package_root.clone();
         let executable_for_hash = executable.clone();
-        let actual_digest =
-            tokio::task::spawn_blocking(move || hash_package(&root_for_hash, &executable_for_hash))
-                .await
-                .map_err(|_| SidecarError::InvalidArtifact)??;
+        let actual_digest = tokio::task::spawn_blocking(move || {
+            plugin_package_digest(&root_for_hash, &executable_for_hash)
+        })
+        .await
+        .map_err(|_| SidecarError::InvalidArtifact)??;
         if actual_digest != descriptor.sha256 {
             return Err(SidecarError::ArtifactDigestMismatch);
         }
