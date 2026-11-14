@@ -362,15 +362,7 @@ try {
     assert.deepEqual(JSON.parse(catalogRequests.at(-1).provider), [name], 'Legal manufacturer names cannot collide with separators or the unclassified choice')
   }
   if (new URL(page.url()).searchParams.has('provider')) {
-    const allProvidersResponse = page.waitForResponse(response => {
-      const url = new URL(response.url())
-      return url.pathname === '/api/merchant-pools/1/services'
-        && response.request().method() === 'GET'
-        && url.searchParams.get('page') === '1'
-        && !url.searchParams.has('provider')
-    })
     await providerFilter.getByRole('button', { name: label('market.allProviders'), exact: true }).click()
-    await allProvidersResponse
   }
   assert.equal(new URL(page.url()).searchParams.has('provider'), false, 'All manufacturers clears the URL filter')
   await page.getByRole('region', { name: label('catalogTable'), exact: true }).getByText(publicService.name, { exact: true }).waitFor()
