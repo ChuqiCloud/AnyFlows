@@ -501,6 +501,7 @@ impl ExternalAccountConnectionRepository {
                     Alias::new("id"),
                     Alias::new("user_id"),
                     Alias::new("connector_id"),
+                    Alias::new("issuer_hash"),
                     Alias::new("external_subject"),
                     Alias::new("display_name"),
                     Alias::new("base_url"),
