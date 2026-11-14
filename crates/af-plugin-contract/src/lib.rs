@@ -19,8 +19,8 @@ pub use error::{ConnectorError, ConnectorErrorCode, OperationOutcome};
 pub use manifest::{ConnectorLimits, PluginId, PluginManifest};
 pub use schema::{openapi_document, schema_document};
 pub use value::{
-    ConnectorHealth, ConnectorHealthStatus, ExternalAccountProfile, ExternalBalanceSnapshot,
-    InvocationMetadata,
+    CapabilityInvocation, CapabilityResult, ConnectorHealth, ConnectorHealthStatus,
+    ExternalAccountProfile, ExternalBalanceSnapshot, InvocationMetadata,
 };
 pub use version::{ContractVersion, ContractVersionRange, PluginVersion};
 
@@ -39,6 +39,10 @@ pub enum ContractValidationError {
     InvalidManifest,
     #[error("manifest contains duplicate capabilities")]
     DuplicateCapability,
+    #[error("JSON Schema has an invalid shape")]
+    InvalidJsonSchema,
+    #[error("configuration does not match its JSON Schema")]
+    InvalidConfiguration,
     #[error("external value is invalid")]
     InvalidExternalValue,
 }

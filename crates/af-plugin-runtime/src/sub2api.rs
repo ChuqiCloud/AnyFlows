@@ -195,6 +195,8 @@ fn capability(id: &str) -> CapabilityDeclaration {
         access: CapabilityAccess::Read,
         side_effect: SideEffectClass::ExternalRead,
         write_semantics: None,
+        input_schema: None,
+        output_schema: None,
     }
 }
 

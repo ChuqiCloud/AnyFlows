@@ -48,6 +48,14 @@
           }
         }
       ],
+      "dependentRequired": {
+        "inputSchema": [
+          "outputSchema"
+        ],
+        "outputSchema": [
+          "inputSchema"
+        ]
+      },
       "properties": {
         "access": {
           "enum": [
@@ -59,6 +67,12 @@
           "maxLength": 128,
           "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
           "type": "string"
+        },
+        "inputSchema": {
+          "type": "object"
+        },
+        "outputSchema": {
+          "type": "object"
         },
         "sideEffect": {
           "enum": [
@@ -81,6 +95,32 @@
         "version",
         "access",
         "sideEffect"
+      ],
+      "type": "object"
+    },
+    "CapabilityInvocation": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilityVersion": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "input": {}
+      },
+      "required": [
+        "capabilityVersion",
+        "input"
+      ],
+      "type": "object"
+    },
+    "CapabilityResult": {
+      "additionalProperties": false,
+      "properties": {
+        "output": {}
+      },
+      "required": [
+        "output"
       ],
       "type": "object"
     },
@@ -299,6 +339,7 @@
           "items": {
             "$ref": "#/$defs/CapabilityDeclaration"
           },
+          "maxItems": 128,
           "minItems": 1,
           "type": "array"
         },
@@ -310,7 +351,6 @@
         },
         "displayName": {
           "maxLength": 128,
-          "minLength": 1,
           "type": "string"
         },
         "limits": {
@@ -356,6 +396,12 @@
     },
     {
       "$ref": "#/$defs/ConnectorError"
+    },
+    {
+      "$ref": "#/$defs/CapabilityInvocation"
+    },
+    {
+      "$ref": "#/$defs/CapabilityResult"
     }
   ],
   "title": "AnyFlows Plugin Contract v1"

@@ -10,6 +10,30 @@ pub struct InvocationMetadata {
     pub deadline_unix_ms: u64,
 }
 
+/// Versioned input envelope for one generic plugin capability invocation.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CapabilityInvocation {
+    pub capability_version: u16,
+    pub input: serde_json::Value,
+}
+
+impl CapabilityInvocation {
+    pub fn validate(&self) -> Result<(), ContractValidationError> {
+        if self.capability_version == 0 {
+            return Err(ContractValidationError::InvalidExternalValue);
+        }
+        Ok(())
+    }
+}
+
+/// JSON result envelope returned by a generic plugin capability.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CapabilityResult {
+    pub output: serde_json::Value,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConnectorHealthStatus {
@@ -117,5 +141,29 @@ impl ExternalBalanceSnapshot {
             return Err(ContractValidationError::InvalidExternalValue);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CapabilityInvocation, CapabilityResult};
+
+    #[test]
+    fn capability_wire_envelopes_reject_unknown_fields() {
+        assert!(
+            serde_json::from_value::<CapabilityInvocation>(serde_json::json!({
+                "capabilityVersion": 1,
+                "input": {},
+                "unexpected": true
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<CapabilityResult>(serde_json::json!({
+                "output": {},
+                "unexpected": true
+            }))
+            .is_err()
+        );
     }
 }
