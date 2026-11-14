@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
+import { PluginCatalogPanel } from '@/features/plugin-lifecycle/plugin-catalog-panel'
 import { ModelCatalogDesktopFilters, ModelCatalogMobileFilters, countModelCatalogFilters } from './model-catalog-filters'
 import { ModelCatalogList } from './model-catalog-list'
 import { EMPTY_MODEL_CATALOG_FILTERS, useModelCatalog, useModelCatalogProviders } from './model-api'
@@ -150,6 +151,7 @@ export function ModelPage({ authenticated, admin = false, standalone = false }: 
           ) : null}
         </section>
       </div>
+      {authenticated ? <PluginCatalogPanel /> : null}
     </div>
   )
 }

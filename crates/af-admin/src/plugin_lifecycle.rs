@@ -72,6 +72,7 @@ pub struct AdminPluginArtifact {
     manifest: Value,
     source_kind: &'static str,
     signer_key_id: String,
+    official: bool,
     created_at: i64,
     approval: Option<AdminPluginArtifactApproval>,
     revocation: Option<AdminPluginArtifactRevocation>,
@@ -92,6 +93,7 @@ impl AdminPluginArtifact {
             manifest: record.manifest,
             source_kind,
             signer_key_id: record.signer_key_id,
+            official: false,
             created_at: record.created_at,
             approval: record.approval.map(AdminPluginArtifactApproval::from),
             revocation: record.revocation.map(AdminPluginArtifactRevocation::from),
@@ -131,6 +133,11 @@ impl AdminPluginArtifact {
     #[must_use]
     pub fn signer_key_id(&self) -> &str {
         &self.signer_key_id
+    }
+
+    #[must_use]
+    pub const fn is_official(&self) -> bool {
+        self.official
     }
 
     #[must_use]
@@ -582,15 +589,40 @@ pub struct DatabaseAdminPluginLifecycleService {
     repository: PluginCatalogRepository,
     audit: Arc<dyn PlatformAuditService>,
     sidecar_runtime: Option<Arc<AdminPluginSidecarRuntime>>,
+    pub(crate) catalog_admission: crate::plugin_catalog_extension::PluginCatalogAdmission,
 }
 
 impl DatabaseAdminPluginLifecycleService {
+    pub(crate) fn catalog_repository(&self) -> &PluginCatalogRepository {
+        &self.repository
+    }
+
+    fn artifact_view(&self, record: PluginArtifactRecord) -> AdminPluginArtifact {
+        let official = self
+            .sidecar_runtime
+            .as_ref()
+            .is_some_and(|runtime| runtime.is_official_artifact(&record));
+        let mut view = AdminPluginArtifact::from_record(record);
+        view.official = official;
+        view
+    }
+
+    fn deployment_view(&self, record: PluginDeploymentRecord) -> AdminPluginDeployment {
+        let official = self
+            .sidecar_runtime
+            .as_ref()
+            .is_some_and(|runtime| runtime.is_official_artifact(&record.artifact));
+        let mut view = AdminPluginDeployment::from_record(record);
+        view.artifact.official = official;
+        view
+    }
     #[must_use]
     pub fn new(repository: PluginCatalogRepository, audit: Arc<dyn PlatformAuditService>) -> Self {
         Self {
             repository,
             audit,
             sidecar_runtime: None,
+            catalog_admission: crate::plugin_catalog_extension::PluginCatalogAdmission::default(),
         }
     }
 
@@ -730,11 +762,46 @@ impl DatabaseAdminPluginLifecycleService {
             .flush()
             .await
             .map_err(|_| AdminPluginLifecycleError::Internal)?;
-        let imported = crate::plugin_package::extract_plugin_package(
+        let runtime = self
+            .sidecar_runtime
+            .as_ref()
+            .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
+        // A newly published cache directory is still owned by its import guard
+        // until registration commits. Keep other imports, repair and cleanup
+        // from reusing or deleting it before that ownership is transferred.
+        let cache_guard = runtime.cache_operations.lock().await;
+        let mut imported = crate::plugin_package::extract_plugin_package(
             upload.temporary.path().to_path_buf(),
             upload.artifact_root.clone(),
         )
         .await?;
+        if let Some(existing) = self
+            .repository
+            .get_artifact_by_digest(&imported.plugin_id, &imported.digest)
+            .await
+            .map_err(map_catalog_error)?
+        {
+            if existing.revocation.is_some()
+                || existing.plugin_version != imported.plugin_version
+                || existing.manifest != imported.manifest
+            {
+                return Err(AdminPluginLifecycleError::Conflict);
+            }
+            let source: Value = serde_json::from_str(&existing.source_reference)
+                .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+            let expected_path = source
+                .get("packagePath")
+                .and_then(Value::as_str)
+                .ok_or(AdminPluginLifecycleError::InvalidInput)?;
+            if expected_path != imported.package_path {
+                imported = crate::plugin_package::extract_plugin_package_at(
+                    upload.temporary.path().to_path_buf(),
+                    upload.artifact_root.clone(),
+                    Some(expected_path.to_owned()),
+                )
+                .await?;
+            }
+        }
         let manifest: PluginManifest = serde_json::from_value(imported.manifest.clone())
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         validate_public_plugin_configuration(&manifest.config_schema, &config)
@@ -771,10 +838,6 @@ impl DatabaseAdminPluginLifecycleService {
         // existing version, bind it to the generation just read so concurrent
         // installs still fail compare-and-swap rather than silently racing.
         let deployment_expected_generation = expected_generation.or(current_generation);
-        let runtime = self
-            .sidecar_runtime
-            .as_ref()
-            .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
         // A publisher unknown to this host is not a reason to block an
         // administrator-owned package, but it must never acquire a verified badge.
         let (signer_key_id, signature_base64) = if imported.signer_key_id.is_empty() {
@@ -803,8 +866,26 @@ impl DatabaseAdminPluginLifecycleService {
         let artifact = self
             .register_artifact_candidate(principal, command, request_id)
             .await?;
-        // The catalog now owns the source locator even if a later activation fails.
+        // The catalog now owns the source locator even if archive publication
+        // or a later activation fails. A retry can safely resume this import.
         imported.retain();
+        // Activation takes the same cache lock to restore and verify a replica.
+        drop(cache_guard);
+        // Publish the complete immutable archive before a shared deployment can
+        // refer to it. Other nodes restore exactly this registered artifact.
+        let archive = tokio::fs::read(upload.temporary.path())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?;
+        self.repository
+            .distribution_repository()
+            .store_package(
+                artifact.id(),
+                artifact.digest(),
+                &archive,
+                current_timestamp()?,
+            )
+            .await
+            .map_err(crate::plugin_operations::map_distribution_error)?;
         if artifact.approval().is_none() {
             match self
                 .approve_artifact(principal, artifact.id(), request_id)
@@ -867,6 +948,13 @@ impl DatabaseAdminPluginLifecycleService {
     pub async fn shutdown_runtime(&self) {
         if let Some(runtime) = &self.sidecar_runtime {
             runtime.shutdown().await;
+            if let Ok(now) = current_timestamp() {
+                let _ = self
+                    .repository
+                    .distribution_repository()
+                    .retire_node(runtime.node_id(), now)
+                    .await;
+            }
         }
     }
 
@@ -959,6 +1047,18 @@ impl DatabaseAdminPluginLifecycleService {
         principal: SessionPrincipal,
         request_id: &str,
     ) {
+        // A local node failure must not disable the shared desired generation
+        // on every healthy node. Its failed observation remains visible and the
+        // coordinator retries that node. Legacy manual installs retain compensation.
+        if !self
+            .repository
+            .distribution_repository()
+            .package_metadata(deployment.artifact.id)
+            .await
+            .is_ok_and(|package| package.is_none())
+        {
+            return;
+        }
         if let Some(runtime) = &self.sidecar_runtime {
             let _ = runtime
                 .stop_through_generation(&deployment.plugin_id, deployment.generation)
@@ -1040,7 +1140,7 @@ impl DatabaseAdminPluginLifecycleService {
         Ok(AdminPluginArtifactPage {
             artifacts: records
                 .into_iter()
-                .map(AdminPluginArtifact::from_record)
+                .map(|record| self.artifact_view(record))
                 .collect(),
             next_before_id,
         })
@@ -1066,7 +1166,7 @@ impl DatabaseAdminPluginLifecycleService {
         Ok(AdminPluginDeploymentPage {
             deployments: records
                 .into_iter()
-                .map(AdminPluginDeployment::from_record)
+                .map(|record| self.deployment_view(record))
                 .collect(),
             next_before_plugin_id,
         })
@@ -1086,7 +1186,7 @@ impl DatabaseAdminPluginLifecycleService {
             .map(|records| {
                 records
                     .into_iter()
-                    .map(AdminPluginDeployment::from_record)
+                    .map(|record| self.deployment_view(record))
                     .collect()
             })
             .map_err(map_catalog_error)
@@ -1101,7 +1201,7 @@ impl DatabaseAdminPluginLifecycleService {
         self.repository
             .get_deployment(plugin_id)
             .await
-            .map(|record| record.map(AdminPluginDeployment::from_record))
+            .map(|record| record.map(|record| self.deployment_view(record)))
             .map_err(map_catalog_error)
     }
 
@@ -1229,7 +1329,7 @@ impl DatabaseAdminPluginLifecycleService {
         self.repository
             .register_artifact_audited(input, operator, request_id)
             .await
-            .map(AdminPluginArtifact::from_record)
+            .map(|record| self.artifact_view(record))
             .map_err(map_catalog_error)
     }
 
@@ -1434,7 +1534,7 @@ impl DatabaseAdminPluginLifecycleService {
                     .map_err(map_catalog_error)
                 {
                     Ok(record) => match self.apply_runtime(&record).await {
-                        Ok(()) => Ok(AdminPluginDeployment::from_record(record)),
+                        Ok(()) => Ok(self.deployment_view(record)),
                         Err(error) => {
                             if record.enabled {
                                 self.disable_after_activation_failure(
@@ -1483,7 +1583,7 @@ impl DatabaseAdminPluginLifecycleService {
             }
             if !current.enabled {
                 self.apply_runtime(&current).await?;
-                return Ok(AdminPluginDeployment::from_record(current));
+                return Ok(self.deployment_view(current));
             }
             let record = self
                 .repository
@@ -1501,7 +1601,7 @@ impl DatabaseAdminPluginLifecycleService {
                 .await
                 .map_err(map_catalog_error)?;
             self.apply_runtime(&record).await?;
-            Ok(AdminPluginDeployment::from_record(record))
+            Ok(self.deployment_view(record))
         }
         .await;
         self.finish_mutation(
@@ -1551,7 +1651,7 @@ impl DatabaseAdminPluginLifecycleService {
                 .map_err(map_catalog_error)
             {
                 Ok(record) => match self.apply_runtime(&record).await {
-                    Ok(()) => Ok(AdminPluginDeployment::from_record(record)),
+                    Ok(()) => Ok(self.deployment_view(record)),
                     Err(error) => {
                         if record.enabled {
                             self.disable_after_activation_failure(&record, principal, request_id)
@@ -1568,7 +1668,7 @@ impl DatabaseAdminPluginLifecycleService {
             Some(json!({ "expectedGeneration": expected_generation, "targetGeneration": target_generation })), result).await
     }
 
-    async fn authorize(
+    pub(crate) async fn authorize(
         &self,
         principal: SessionPrincipal,
     ) -> Result<(), AdminPluginLifecycleError> {
@@ -1579,7 +1679,7 @@ impl DatabaseAdminPluginLifecycleService {
         }
     }
 
-    async fn authorize_mutation(
+    pub(crate) async fn authorize_mutation(
         &self,
         principal: SessionPrincipal,
         request_id: &str,
@@ -1620,7 +1720,7 @@ impl DatabaseAdminPluginLifecycleService {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn finish_mutation<T>(
+    pub(crate) async fn finish_mutation<T>(
         &self,
         principal: SessionPrincipal,
         request_id: &str,
@@ -1734,7 +1834,7 @@ fn audit_entry(
     .map_err(map_audit_error)
 }
 
-fn current_timestamp() -> Result<i64, AdminPluginLifecycleError> {
+pub(crate) fn current_timestamp() -> Result<i64, AdminPluginLifecycleError> {
     i64::try_from(
         SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1744,7 +1844,7 @@ fn current_timestamp() -> Result<i64, AdminPluginLifecycleError> {
     .map_err(|_| AdminPluginLifecycleError::Internal)
 }
 
-fn map_catalog_error(error: PluginCatalogError) -> AdminPluginLifecycleError {
+pub(crate) fn map_catalog_error(error: PluginCatalogError) -> AdminPluginLifecycleError {
     match error {
         PluginCatalogError::InvalidInput => AdminPluginLifecycleError::InvalidInput,
         PluginCatalogError::NotFound => AdminPluginLifecycleError::NotFound,
@@ -1770,6 +1870,7 @@ mod tests {
     #[test]
     fn artifact_projection_never_serializes_storage_reference_or_signature() {
         let artifact = AdminPluginArtifact {
+            official: false,
             id: 7,
             plugin_id: "org.example.catalog".to_owned(),
             plugin_version: "1.0.0".to_owned(),

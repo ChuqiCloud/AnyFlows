@@ -298,6 +298,12 @@ fn known_field(path: &str) -> Option<&'static str> {
         "server.shutdown_timeout_secs" => "server.shutdown_timeout_secs",
         "server.frontend_template_directory" => "server.frontend_template_directory",
         "server.plugin_artifact_directory" => "server.plugin_artifact_directory",
+        "server.plugin_isolation" => "server.plugin_isolation",
+        path if path == "server.plugin_official_signers"
+            || path.starts_with("server.plugin_official_signers.") =>
+        {
+            "server.plugin_official_signers"
+        }
         path if path == "server.plugin_trusted_signers"
             || path.starts_with("server.plugin_trusted_signers.") =>
         {
