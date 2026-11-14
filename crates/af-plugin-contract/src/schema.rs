@@ -118,7 +118,7 @@ pub fn schema_document() -> Value {
                             "operation": { "const": "invoke_capability" },
                             "connectionId": { "type": "string", "minLength": 1, "maxLength": 128 },
                             "publicConfig": { "type": "object" },
-                            "capabilityId": { "$ref": "#/$defs/CapabilityDeclaration/properties/id" },
+                            "capabilityId": { "type": "string", "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$", "minLength": 1, "maxLength": 128 },
                             "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
                             "input": {}
                         }
@@ -131,8 +131,8 @@ pub fn schema_document() -> Value {
                 "required": ["protocolVersion", "pluginId", "pluginVersion", "artifactSha256", "deploymentGeneration", "requestId", "deadlineUnixMs", "operation"],
                 "properties": {
                     "protocolVersion": { "const": 1 },
-                    "pluginId": { "$ref": "#/$defs/PluginManifest/properties/pluginId" },
-                    "pluginVersion": { "$ref": "#/$defs/PluginManifest/properties/pluginVersion" },
+                    "pluginId": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$", "maxLength": 128 },
+                    "pluginVersion": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$", "maxLength": 128 },
                     "artifactSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
                     "deploymentGeneration": { "type": "integer", "minimum": 1 },
                     "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
@@ -154,8 +154,8 @@ pub fn schema_document() -> Value {
                 "required": ["protocolVersion", "pluginId", "pluginVersion", "artifactSha256", "deploymentGeneration", "requestId", "result"],
                 "properties": {
                     "protocolVersion": { "const": 1 },
-                    "pluginId": { "$ref": "#/$defs/PluginManifest/properties/pluginId" },
-                    "pluginVersion": { "$ref": "#/$defs/PluginManifest/properties/pluginVersion" },
+                    "pluginId": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$", "maxLength": 128 },
+                    "pluginVersion": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$", "maxLength": 128 },
                     "artifactSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
                     "deploymentGeneration": { "type": "integer", "minimum": 1 },
                     "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
