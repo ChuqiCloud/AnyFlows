@@ -128,6 +128,7 @@ pub(crate) fn raw_openapi_document() -> OpenApi {
     document.merge(merchant_service_policy::document());
     document.merge(merchant_service_watch::document());
     document.merge(crate::active_channel_monitor_openapi_document());
+    document.merge(crate::channel_model_mapping_plugin_review_openapi_document());
     document.merge(email_settings::document());
     document.merge(extensions::document());
     document.merge(network_settings::document());

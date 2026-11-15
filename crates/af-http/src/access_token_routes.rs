@@ -831,6 +831,31 @@ mod tests {
     }
 
     #[test]
+    fn channel_model_mapping_plugin_review_is_admin_only_with_exact_operation_scopes() {
+        let list = policy("GET", "/api/admin/channel-model-mapping/plugin-reviewers").unwrap();
+        assert!(list.admin_only && !list.session_only);
+        assert_eq!(
+            list.required_scopes,
+            ["admin:list_admin_channel_model_mapping_plugin_reviewers:execute"]
+        );
+
+        let review = policy(
+            "POST",
+            "/api/admin/channels/{channel_id}/model-mapping/plugin-review",
+        )
+        .unwrap();
+        assert!(review.admin_only && !review.session_only);
+        assert_eq!(
+            review.required_scopes,
+            ["admin:review_admin_channel_model_mapping_with_plugin:execute"]
+        );
+        let user_scopes = scope_catalog(SessionRole::User);
+        assert!(user_scopes.iter().all(|scope| {
+            scope.scope != list.required_scopes[0] && scope.scope != review.required_scopes[0]
+        }));
+    }
+
+    #[test]
     fn path_parameter_names_do_not_change_exact_route_identity() {
         assert_eq!(
             route_key("get", "/api/tokens/{id}"),
