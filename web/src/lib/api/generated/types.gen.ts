@@ -2132,6 +2132,32 @@ export type MerchantPayoutSettingsCommand = {
     daily_limit_minor: number;
     clear_signing_key?: boolean | null;
 };
+export type MerchantPluginReview = {
+    checks: Array<MerchantPluginReviewCheck>;
+    display_name: string;
+    plugin_id: string;
+    plugin_version: string;
+    service_revision: number;
+    summary: string;
+};
+export type MerchantPluginReviewCheck = {
+    code: string;
+    message: string;
+    recommendation: string | null;
+    status: 'pass' | 'info' | 'warning' | 'fail';
+    title: string;
+};
+export type MerchantPluginReviewRequest = {
+    plugin_id: string;
+};
+export type MerchantPluginReviewer = {
+    display_name: string;
+    plugin_id: string;
+    plugin_version: string;
+};
+export type MerchantPluginReviewerSummary = {
+    plugins: Array<MerchantPluginReviewer>;
+};
 export type MerchantPool = {
     commission_bps: number;
     commission_inherit_global: boolean;
@@ -6145,6 +6171,37 @@ export type ListMerchantAvailablePoolsResponses = {
     200: MerchantPoolPage;
 };
 export type ListMerchantAvailablePoolsResponse = ListMerchantAvailablePoolsResponses[keyof ListMerchantAvailablePoolsResponses];
+export type ListMerchantPluginReviewersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/merchant/plugin-reviewers';
+};
+export type ListMerchantPluginReviewersErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ListMerchantPluginReviewersError = ListMerchantPluginReviewersErrors[keyof ListMerchantPluginReviewersErrors];
+export type ListMerchantPluginReviewersResponses = {
+    200: MerchantPluginReviewerSummary;
+};
+export type ListMerchantPluginReviewersResponse = ListMerchantPluginReviewersResponses[keyof ListMerchantPluginReviewersResponses];
 export type GetMerchantProfileData = {
     body?: never;
     path?: never;
@@ -6414,6 +6471,39 @@ export type PauseMerchantServiceResponses = {
     200: MerchantOwnedService;
 };
 export type PauseMerchantServiceResponse = PauseMerchantServiceResponses[keyof PauseMerchantServiceResponses];
+export type ReviewMerchantServiceWithPluginData = {
+    body: MerchantPluginReviewRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}/plugin-review';
+};
+export type ReviewMerchantServiceWithPluginErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type ReviewMerchantServiceWithPluginError = ReviewMerchantServiceWithPluginErrors[keyof ReviewMerchantServiceWithPluginErrors];
+export type ReviewMerchantServiceWithPluginResponses = {
+    200: MerchantPluginReview;
+};
+export type ReviewMerchantServiceWithPluginResponse = ReviewMerchantServiceWithPluginResponses[keyof ReviewMerchantServiceWithPluginResponses];
 export type SubmitMerchantServiceData = {
     body?: never;
     path: {

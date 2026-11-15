@@ -1,0 +1,90 @@
+{
+  "pluginId": "org.anyflows.example-merchant-review",
+  "displayName": "Example merchant service review",
+  "pluginVersion": "1.0.0",
+  "contractRange": {
+    "minimum": {"major": 1, "minor": 0},
+    "maximum": {"major": 1, "minor": 0}
+  },
+  "capabilities": [
+    {
+      "id": "merchant.service.review.read",
+      "version": 1,
+      "access": "read",
+      "sideEffect": "none",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["service"],
+        "properties": {
+          "service": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "description", "protocol", "models"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1, "maxLength": 256},
+              "description": {"type": "string", "maxLength": 4096},
+              "protocol": {"type": "string", "minLength": 1, "maxLength": 64},
+              "models": {
+                "type": "array",
+                "maxItems": 128,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "model",
+                    "context_window",
+                    "max_output_tokens",
+                    "supports_streaming",
+                    "supports_tools",
+                    "supports_vision"
+                  ],
+                  "properties": {
+                    "model": {"type": "string", "minLength": 1, "maxLength": 256},
+                    "context_window": {"type": ["integer", "null"], "minimum": 1},
+                    "max_output_tokens": {"type": ["integer", "null"], "minimum": 1},
+                    "supports_streaming": {"type": "boolean"},
+                    "supports_tools": {"type": "boolean"},
+                    "supports_vision": {"type": "boolean"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["summary", "checks"],
+        "properties": {
+          "summary": {"type": "string", "minLength": 1, "maxLength": 2048},
+          "checks": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "title", "status", "message", "recommendation"],
+              "properties": {
+                "code": {"type": "string", "minLength": 1, "maxLength": 64},
+                "title": {"type": "string", "minLength": 1, "maxLength": 128},
+                "status": {"type": "string", "enum": ["pass", "info", "warning", "fail"]},
+                "message": {"type": "string", "minLength": 1, "maxLength": 2048},
+                "recommendation": {"type": ["string", "null"], "minLength": 1, "maxLength": 2048}
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "authenticationModes": ["none"],
+  "limits": {
+    "maxConcurrency": 1,
+    "requestTimeoutMs": 5000,
+    "maxResponseBytes": 65536,
+    "maxPageSize": 1
+  },
+  "configSchema": {"type": "object", "additionalProperties": false}
+}
