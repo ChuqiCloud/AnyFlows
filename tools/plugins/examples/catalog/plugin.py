@@ -41,7 +41,7 @@ def read_catalog(capability_id: str, public_config: dict, value: object) -> dict
     cursor = value.get("cursor")
     # 模型页会发送 limit；默认值 20 只是方便开发者单独调用这个普通函数。
     limit = value.get("limit", 20)
-    if query is not None and (not isinstance(query, str) or len(query) > 200):
+    if query is not None and (not isinstance(query, str) or len(query.encode("utf-8")) > 128):
         raise PluginError("invalid_configuration")
     if cursor is not None and (
         not isinstance(cursor, str)
