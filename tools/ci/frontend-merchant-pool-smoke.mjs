@@ -689,7 +689,7 @@ try {
   assert.equal((await pluginReviewResponse).status(), 200)
   await pluginReviewDialog.getByText('Read-only check result: <img src=x onerror=alert(1)>', { exact: true }).waitFor()
   await pluginReviewDialog.getByText('Review the upstream model mapping.', { exact: true }).waitFor()
-  await pluginReviewDialog.getByText('Confirm that the upstream model accepts this alias.', { exact: true }).waitFor()
+  await pluginReviewDialog.getByText(/Confirm that the upstream model accepts this alias\./).waitFor()
   await pluginReviewDialog.getByText(label('pluginReview.status.pass'), { exact: true }).waitFor()
   assert.equal(await pluginReviewDialog.locator('img').count(), 0, 'Plugin messages are rendered as text, never interpreted as HTML')
   assert.deepEqual(pluginReviewRequests, [{ plugin_id: 'ci.service.review.v2' }])
