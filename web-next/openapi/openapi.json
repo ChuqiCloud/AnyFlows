@@ -35958,6 +35958,376 @@
           }
         }
       },
+      "ActiveChannelMonitorEventKindResponse": {
+        "type": "string",
+        "enum": [
+          "down",
+          "recovered"
+        ]
+      },
+      "ActiveChannelMonitorEventResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "target_id",
+          "kind",
+          "occurred_epoch_seconds"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "target_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ActiveChannelMonitorEventKindResponse"
+          },
+          "latency_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "occurred_epoch_seconds": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ActiveChannelMonitorPluginReviewCheckResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "title",
+          "status",
+          "message",
+          "recommendation"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewStatusResponse"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1
+          },
+          "recommendation": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048,
+            "minLength": 1
+          }
+        }
+      },
+      "ActiveChannelMonitorPluginReviewRequest": {
+        "type": "object",
+        "required": [
+          "plugin_id"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActiveChannelMonitorPluginReviewResponse": {
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "display_name",
+          "plugin_version",
+          "event_count",
+          "summary",
+          "checks"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "plugin_version": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "event_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewCheckResponse"
+            },
+            "maxItems": 64
+          }
+        }
+      },
+      "ActiveChannelMonitorPluginReviewStatusResponse": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "info",
+          "warning",
+          "fail"
+        ]
+      },
+      "ActiveChannelMonitorPluginReviewerListResponse": {
+        "type": "object",
+        "required": [
+          "plugins"
+        ],
+        "properties": {
+          "plugins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewerResponse"
+            },
+            "maxItems": 100
+          }
+        }
+      },
+      "ActiveChannelMonitorPluginReviewerResponse": {
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "display_name",
+          "plugin_version"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "plugin_version": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          }
+        }
+      },
+      "ActiveChannelMonitorSettingsRequest": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "global_daily_budget"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "global_daily_budget": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActiveChannelMonitorSettingsResponse": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "global_daily_budget"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "global_daily_budget": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ActiveChannelMonitorTargetRequest": {
+        "type": "object",
+        "required": [
+          "channel_id",
+          "credential_id",
+          "model",
+          "enabled",
+          "interval_secs",
+          "daily_budget",
+          "timeout_secs",
+          "alert_after_secs"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "credential_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "model": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "interval_secs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "daily_budget": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "timeout_secs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "alert_after_secs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "muted_until_epoch_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActiveChannelMonitorTargetResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "channel_id",
+          "credential_id",
+          "model",
+          "enabled",
+          "interval_secs",
+          "daily_budget",
+          "timeout_secs",
+          "alert_after_secs",
+          "daily_used",
+          "alert_active"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "channel_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "credential_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "model": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "interval_secs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "daily_budget": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "timeout_secs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "alert_after_secs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "daily_used": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "last_attempt_epoch_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "last_success_epoch_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "failure_since_epoch_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "alert_active": {
+            "type": "boolean"
+          },
+          "muted_until_epoch_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
       "AdminAuthenticationSettings": {
         "type": "object",
         "required": [
@@ -45618,6 +45988,158 @@
         },
         "additionalProperties": false
       },
+      "ChannelModelMappingPluginReviewCheckResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "title",
+          "status",
+          "message",
+          "recommendation"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/ChannelModelMappingPluginReviewStatusResponse"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1
+          },
+          "recommendation": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048,
+            "minLength": 1
+          }
+        }
+      },
+      "ChannelModelMappingPluginReviewRequest": {
+        "type": "object",
+        "required": [
+          "plugin_id"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "ChannelModelMappingPluginReviewResponse": {
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "display_name",
+          "plugin_version",
+          "model_count",
+          "mapping_count",
+          "summary",
+          "checks"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "plugin_version": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "model_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "mapping_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelModelMappingPluginReviewCheckResponse"
+            },
+            "maxItems": 64
+          }
+        }
+      },
+      "ChannelModelMappingPluginReviewStatusResponse": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "info",
+          "warning",
+          "fail"
+        ]
+      },
+      "ChannelModelMappingPluginReviewerListResponse": {
+        "type": "object",
+        "required": [
+          "plugins"
+        ],
+        "properties": {
+          "plugins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelModelMappingPluginReviewerResponse"
+            },
+            "maxItems": 100
+          }
+        }
+      },
+      "ChannelModelMappingPluginReviewerResponse": {
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "display_name",
+          "plugin_version"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "plugin_version": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          }
+        }
+      },
       "ClientProfileBehaviorSchema": {
         "type": "string",
         "enum": [
@@ -45626,22 +46148,6 @@
           "codex_v1",
           "open_code_v1"
         ]
-      },
-      "ClientProfileBindingSchema": {
-        "type": "object",
-        "required": [
-          "key",
-          "revision"
-        ],
-        "properties": {
-          "key": {
-            "type": "string"
-          },
-          "revision": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
       },
       "ClientProfileBindRequest": {
         "type": "object",
@@ -45660,6 +46166,22 @@
           }
         },
         "additionalProperties": false
+      },
+      "ClientProfileBindingSchema": {
+        "type": "object",
+        "required": [
+          "key",
+          "revision"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
       },
       "ClientProfileCapabilitiesSchema": {
         "type": "object",
@@ -48215,6 +48737,20 @@
         },
         "additionalProperties": false
       },
+      "MerchantPluginReviewRequest": {
+        "type": "object",
+        "required": [
+          "plugin_id"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "MerchantPluginReviewer": {
         "type": "object",
         "required": [
@@ -48253,20 +48789,6 @@
               "$ref": "#/components/schemas/MerchantPluginReviewer"
             },
             "maxItems": 100
-          }
-        },
-        "additionalProperties": false
-      },
-      "MerchantPluginReviewRequest": {
-        "type": "object",
-        "required": [
-          "plugin_id"
-        ],
-        "properties": {
-          "plugin_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
           }
         },
         "additionalProperties": false
@@ -56747,528 +57269,6 @@
           "done",
           "expired",
           "failed"
-        ]
-      },
-      "ActiveChannelMonitorEventKindResponse": {
-        "type": "string",
-        "enum": [
-          "down",
-          "recovered"
-        ]
-      },
-      "ActiveChannelMonitorEventResponse": {
-        "type": "object",
-        "required": [
-          "id",
-          "target_id",
-          "kind",
-          "occurred_epoch_seconds"
-        ],
-        "properties": {
-          "id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "target_id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/ActiveChannelMonitorEventKindResponse"
-          },
-          "latency_ms": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64"
-          },
-          "occurred_epoch_seconds": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
-      },
-      "ActiveChannelMonitorPluginReviewCheckResponse": {
-        "type": "object",
-        "required": [
-          "code",
-          "title",
-          "status",
-          "message",
-          "recommendation"
-        ],
-        "properties": {
-          "code": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 1
-          },
-          "title": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          },
-          "status": {
-            "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewStatusResponse"
-          },
-          "message": {
-            "type": "string",
-            "maxLength": 2048,
-            "minLength": 1
-          },
-          "recommendation": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 2048,
-            "minLength": 1
-          }
-        }
-      },
-      "ActiveChannelMonitorPluginReviewRequest": {
-        "type": "object",
-        "required": [
-          "plugin_id"
-        ],
-        "properties": {
-          "plugin_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          }
-        },
-        "additionalProperties": false
-      },
-      "ActiveChannelMonitorPluginReviewResponse": {
-        "type": "object",
-        "required": [
-          "plugin_id",
-          "display_name",
-          "plugin_version",
-          "event_count",
-          "summary",
-          "checks"
-        ],
-        "properties": {
-          "plugin_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          },
-          "display_name": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          },
-          "plugin_version": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 1
-          },
-          "event_count": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "summary": {
-            "type": "string",
-            "maxLength": 2048,
-            "minLength": 1
-          },
-          "checks": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewCheckResponse"
-            },
-            "maxItems": 64
-          }
-        }
-      },
-      "ActiveChannelMonitorPluginReviewStatusResponse": {
-        "type": "string",
-        "enum": [
-          "pass",
-          "info",
-          "warning",
-          "fail"
-        ]
-      },
-      "ActiveChannelMonitorPluginReviewerListResponse": {
-        "type": "object",
-        "required": [
-          "plugins"
-        ],
-        "properties": {
-          "plugins": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewerResponse"
-            },
-            "maxItems": 100
-          }
-        }
-      },
-      "ActiveChannelMonitorPluginReviewerResponse": {
-        "type": "object",
-        "required": [
-          "plugin_id",
-          "display_name",
-          "plugin_version"
-        ],
-        "properties": {
-          "plugin_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          },
-          "display_name": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          },
-          "plugin_version": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 1
-          }
-        }
-      },
-      "ActiveChannelMonitorSettingsRequest": {
-        "type": "object",
-        "required": [
-          "enabled",
-          "global_daily_budget"
-        ],
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          },
-          "global_daily_budget": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          }
-        },
-        "additionalProperties": false
-      },
-      "ActiveChannelMonitorSettingsResponse": {
-        "type": "object",
-        "required": [
-          "enabled",
-          "global_daily_budget"
-        ],
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          },
-          "global_daily_budget": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          }
-        }
-      },
-      "ActiveChannelMonitorTargetRequest": {
-        "type": "object",
-        "required": [
-          "channel_id",
-          "credential_id",
-          "model",
-          "enabled",
-          "interval_secs",
-          "daily_budget",
-          "timeout_secs",
-          "alert_after_secs"
-        ],
-        "properties": {
-          "channel_id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "credential_id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "model": {
-            "type": "string"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "interval_secs": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "daily_budget": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "timeout_secs": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "alert_after_secs": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "muted_until_epoch_seconds": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64"
-          }
-        },
-        "additionalProperties": false
-      },
-      "ActiveChannelMonitorTargetResponse": {
-        "type": "object",
-        "required": [
-          "id",
-          "channel_id",
-          "credential_id",
-          "model",
-          "enabled",
-          "interval_secs",
-          "daily_budget",
-          "timeout_secs",
-          "alert_after_secs",
-          "daily_used",
-          "alert_active"
-        ],
-        "properties": {
-          "id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "channel_id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "credential_id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "model": {
-            "type": "string"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "interval_secs": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "daily_budget": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "timeout_secs": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "alert_after_secs": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "daily_used": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "last_attempt_epoch_seconds": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64"
-          },
-          "last_success_epoch_seconds": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64"
-          },
-          "failure_since_epoch_seconds": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64"
-          },
-          "alert_active": {
-            "type": "boolean"
-          },
-          "muted_until_epoch_seconds": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64"
-          }
-        }
-      },
-      "ChannelModelMappingPluginReviewCheckResponse": {
-        "type": "object",
-        "required": [
-          "code",
-          "title",
-          "status",
-          "message",
-          "recommendation"
-        ],
-        "properties": {
-          "code": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 1
-          },
-          "title": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          },
-          "status": {
-            "$ref": "#/components/schemas/ChannelModelMappingPluginReviewStatusResponse"
-          },
-          "message": {
-            "type": "string",
-            "maxLength": 2048,
-            "minLength": 1
-          },
-          "recommendation": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 2048,
-            "minLength": 1
-          }
-        }
-      },
-      "ChannelModelMappingPluginReviewRequest": {
-        "type": "object",
-        "required": [
-          "plugin_id"
-        ],
-        "properties": {
-          "plugin_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          }
-        },
-        "additionalProperties": false
-      },
-      "ChannelModelMappingPluginReviewResponse": {
-        "type": "object",
-        "required": [
-          "plugin_id",
-          "display_name",
-          "plugin_version",
-          "model_count",
-          "mapping_count",
-          "summary",
-          "checks"
-        ],
-        "properties": {
-          "plugin_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          },
-          "display_name": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          },
-          "plugin_version": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 1
-          },
-          "model_count": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "mapping_count": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "summary": {
-            "type": "string",
-            "maxLength": 2048,
-            "minLength": 1
-          },
-          "checks": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ChannelModelMappingPluginReviewCheckResponse"
-            },
-            "maxItems": 64
-          }
-        }
-      },
-      "ChannelModelMappingPluginReviewerListResponse": {
-        "type": "object",
-        "required": [
-          "plugins"
-        ],
-        "properties": {
-          "plugins": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ChannelModelMappingPluginReviewerResponse"
-            },
-            "maxItems": 100
-          }
-        }
-      },
-      "ChannelModelMappingPluginReviewerResponse": {
-        "type": "object",
-        "required": [
-          "plugin_id",
-          "display_name",
-          "plugin_version"
-        ],
-        "properties": {
-          "plugin_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          },
-          "display_name": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          },
-          "plugin_version": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 1
-          }
-        }
-      },
-      "ChannelModelMappingPluginReviewStatusResponse": {
-        "type": "string",
-        "enum": [
-          "pass",
-          "info",
-          "warning",
-          "fail"
         ]
       }
     },
