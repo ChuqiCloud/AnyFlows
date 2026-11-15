@@ -3021,6 +3021,20 @@ impl Bootstrap<Supervised> {
             self.stage.credential_model_service.clone(),
             Arc::clone(&self.stage.infrastructure.session_authenticator),
         ));
+        let active_channel_monitor_service: Arc<dyn af_admin::ActiveChannelMonitorService> =
+            Arc::new(DatabaseActiveChannelMonitorService::new(
+                ActiveChannelMonitorRepository::new(
+                    self.stage.infrastructure.infrastructure.database.clone(),
+                ),
+            ));
+        let active_channel_monitor_plugin_review_service: Arc<
+            dyn af_admin::ActiveChannelMonitorPluginReviewService,
+        > = Arc::new(
+            af_admin::DatabaseActiveChannelMonitorPluginReviewService::new(
+                Arc::clone(&active_channel_monitor_service),
+                Arc::clone(&plugin_lifecycle_service),
+            ),
+        );
         let router = router.merge(af_http::build_upstream_usage_router(
             self.stage.upstream_usage_service.clone(),
             self.stage.upstream_usage_service.clone(),
@@ -3146,11 +3160,8 @@ impl Bootstrap<Supervised> {
             ))
             .merge(af_http::build_active_channel_monitor_router(
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
-                Arc::new(DatabaseActiveChannelMonitorService::new(
-                    ActiveChannelMonitorRepository::new(
-                        self.stage.infrastructure.infrastructure.database.clone(),
-                    ),
-                )),
+                active_channel_monitor_service,
+                active_channel_monitor_plugin_review_service,
             ))
             .merge(af_http::build_account_verification_router(
                 Arc::new(

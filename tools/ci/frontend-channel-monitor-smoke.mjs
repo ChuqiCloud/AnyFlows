@@ -37,6 +37,7 @@ const events = [
 ]
 const requests = []
 const targetWrites = []
+const pluginReviewRequests = []
 const errors = []
 let server, browser, page, serverOutput = ''
 
@@ -86,6 +87,26 @@ try {
       return respond({ ...target, ...request.postDataJSON(), id: 72 })
     }
     if (path === '/api/admin/channel-monitor/targets/71/events' && method === 'GET') return respond(events)
+    if (path === '/api/admin/channel-monitor/plugin-reviewers' && method === 'GET') return respond({ plugins: [{ plugin_id: 'ci.monitor.review', display_name: 'CI monitor reviewer', plugin_version: '1.0.0' }] })
+    if (path === '/api/admin/channel-monitor/targets/71/plugin-review' && method === 'POST') {
+      const body = request.postDataJSON()
+      pluginReviewRequests.push(body)
+      assert.deepEqual(body, { plugin_id: 'ci.monitor.review' }, 'Monitor analysis sends only the selected plugin ID')
+      return respond({
+        plugin_id: body.plugin_id,
+        display_name: 'CI monitor reviewer',
+        plugin_version: '1.0.0',
+        event_count: 2,
+        summary: 'Read-only incident review: <img src=x onerror=alert(1)>',
+        checks: [{
+          code: 'monitor.recovered',
+          title: 'Target recovered',
+          status: 'pass',
+          message: 'A recovery event followed the outage.',
+          recommendation: 'Continue monitoring the next scheduled probes.',
+        }],
+      })
+    }
     if (path === '/api/admin/channels' && method === 'GET') return respond({ channels, next_cursor: null })
     if (path === '/api/admin/channels/11/credentials' && method === 'GET') return respond({ credentials, next_cursor: null })
     errors.push(`Unexpected request: ${method} ${path}`)
@@ -109,6 +130,18 @@ try {
   const eventEntries = details.locator('div.mt-2.flex.flex-wrap.gap-2 > span')
   await eventEntries.filter({ hasText: label('channels.activeMonitor.events.down') }).waitFor()
   await eventEntries.filter({ hasText: label('channels.activeMonitor.events.recovered') }).waitFor()
+  await details.getByRole('button', { name: label('channels.activeMonitor.pluginReview.open'), exact: true }).click()
+  const pluginPicker = details.getByRole('combobox', { name: label('channels.activeMonitor.pluginReview.plugin'), exact: true })
+  await pluginPicker.selectOption('ci.monitor.review')
+  const pluginReviewResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/admin/channel-monitor/targets/71/plugin-review' && response.request().method() === 'POST')
+  await details.getByRole('button', { name: label('channels.activeMonitor.pluginReview.run'), exact: true }).click()
+  assert.equal((await pluginReviewResponse).status(), 200)
+  await details.getByText('Read-only incident review: <img src=x onerror=alert(1)>', { exact: true }).waitFor()
+  await details.getByText('A recovery event followed the outage.', { exact: true }).waitFor()
+  await details.getByText('Continue monitoring the next scheduled probes.', { exact: false }).waitFor()
+  await details.getByText(label('channels.activeMonitor.pluginReview.status.pass'), { exact: true }).waitFor()
+  assert.equal(await details.locator('img').count(), 0, 'Plugin output is rendered as text, not HTML')
+  assert.deepEqual(pluginReviewRequests, [{ plugin_id: 'ci.monitor.review' }])
 
   await details.locator('fieldset label').filter({ hasText: label('channels.activeMonitor.channel') }).locator('select').selectOption('11')
   await details.locator('fieldset label').filter({ hasText: label('channels.activeMonitor.credential') }).locator('select').selectOption('12')

@@ -80,6 +80,33 @@ export type ActiveChannelMonitorEventResponse = {
     latency_ms?: number | null;
     occurred_epoch_seconds: number;
 };
+export type ActiveChannelMonitorPluginReviewCheckResponse = {
+    code: string;
+    title: string;
+    status: ActiveChannelMonitorPluginReviewStatusResponse;
+    message: string;
+    recommendation: string | null;
+};
+export type ActiveChannelMonitorPluginReviewRequest = {
+    plugin_id: string;
+};
+export type ActiveChannelMonitorPluginReviewResponse = {
+    plugin_id: string;
+    display_name: string;
+    plugin_version: string;
+    event_count: number;
+    summary: string;
+    checks: Array<ActiveChannelMonitorPluginReviewCheckResponse>;
+};
+export type ActiveChannelMonitorPluginReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
+export type ActiveChannelMonitorPluginReviewerListResponse = {
+    plugins: Array<ActiveChannelMonitorPluginReviewerResponse>;
+};
+export type ActiveChannelMonitorPluginReviewerResponse = {
+    plugin_id: string;
+    display_name: string;
+    plugin_version: string;
+};
 export type ActiveChannelMonitorSettingsRequest = {
     enabled: boolean;
     global_daily_budget: number;
@@ -7387,6 +7414,16 @@ export type WatchMerchantServiceResponses = {
     200: MerchantServiceWatch;
 };
 export type WatchMerchantServiceResponse = WatchMerchantServiceResponses[keyof WatchMerchantServiceResponses];
+export type ListAdminChannelMonitorPluginReviewersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/channel-monitor/plugin-reviewers';
+};
+export type ListAdminChannelMonitorPluginReviewersResponses = {
+    200: ActiveChannelMonitorPluginReviewerListResponse;
+};
+export type ListAdminChannelMonitorPluginReviewersResponse = ListAdminChannelMonitorPluginReviewersResponses[keyof ListAdminChannelMonitorPluginReviewersResponses];
 export type GetSettingsData = {
     body?: never;
     path?: never;
@@ -7451,6 +7488,18 @@ export type ListEventsResponses = {
     200: Array<ActiveChannelMonitorEventResponse>;
 };
 export type ListEventsResponse = ListEventsResponses[keyof ListEventsResponses];
+export type ReviewAdminChannelMonitorTargetWithPluginData = {
+    body: ActiveChannelMonitorPluginReviewRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/channel-monitor/targets/{id}/plugin-review';
+};
+export type ReviewAdminChannelMonitorTargetWithPluginResponses = {
+    200: ActiveChannelMonitorPluginReviewResponse;
+};
+export type ReviewAdminChannelMonitorTargetWithPluginResponse = ReviewAdminChannelMonitorTargetWithPluginResponses[keyof ReviewAdminChannelMonitorTargetWithPluginResponses];
 export type GetAdminEmailSettingsData = {
     body?: never;
     path?: never;

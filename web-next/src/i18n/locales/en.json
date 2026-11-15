@@ -762,7 +762,23 @@
       "loadingEvents": "Loading event history…",
       "noEvents": "No outage or recovery events recorded.",
       "eventsUnavailable": "Event history is temporarily unavailable",
-      "events": { "down": "Down", "recovered": "Recovered" }
+      "events": { "down": "Down", "recovered": "Recovered" },
+      "pluginReview": {
+        "open": "Analyze events with a plugin",
+        "close": "Hide plugin analysis",
+        "title": "Read-only event analysis",
+        "hint": "The plugin receives only the latest recorded down/recovered events. It cannot probe channels or change monitoring or routing settings.",
+        "plugin": "Analysis plugin",
+        "run": "Analyze events",
+        "loadingPlugins": "Loading available analysis plugins…",
+        "pluginsError": "Could not load analysis plugins.",
+        "noPlugins": "No channel-monitor analysis plugins are available.",
+        "runError": "Event analysis failed. You can retry.",
+        "eventCount": "Analyzed {{count}} events",
+        "noChecks": "The plugin returned no analysis items.",
+        "recommendation": "Recommendation",
+        "status": { "pass": "Pass", "info": "Info", "warning": "Warning", "fail": "Failed" }
+      }
     },
     "scope": "Native OpenAI, Anthropic, Gemini, Jina, Cohere, and xAI protocols",
     "count_one": "{{count}} channel",

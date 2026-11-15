@@ -13654,6 +13654,36 @@
         ]
       }
     },
+    "/api/admin/channel-monitor/plugin-reviewers": {
+      "get": {
+        "summary": "列出渠道监控分析插件",
+        "operationId": "listAdminChannelMonitorPluginReviewers",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewerListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_channel_monitor_plugin_reviewers:execute"
+        ]
+      }
+    },
     "/api/admin/channel-monitor/settings": {
       "get": {
         "tags": [],
@@ -13864,6 +13894,57 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_events:execute"
+        ]
+      }
+    },
+    "/api/admin/channel-monitor/targets/{id}/plugin-review": {
+      "post": {
+        "summary": "分析渠道监控事件",
+        "operationId": "reviewAdminChannelMonitorTargetWithPlugin",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:review_admin_channel_monitor_target_with_plugin:execute"
         ]
       }
     },
@@ -35833,6 +35914,160 @@
             "format": "int64"
           }
         }
+      },
+      "ActiveChannelMonitorPluginReviewCheckResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "title",
+          "status",
+          "message",
+          "recommendation"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewStatusResponse"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActiveChannelMonitorPluginReviewRequest": {
+        "type": "object",
+        "required": [
+          "plugin_id"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActiveChannelMonitorPluginReviewResponse": {
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "display_name",
+          "plugin_version",
+          "event_count",
+          "summary",
+          "checks"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "plugin_version": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "event_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewCheckResponse"
+            },
+            "maxItems": 64
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActiveChannelMonitorPluginReviewStatusResponse": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "info",
+          "warning",
+          "fail"
+        ]
+      },
+      "ActiveChannelMonitorPluginReviewerListResponse": {
+        "type": "object",
+        "required": [
+          "plugins"
+        ],
+        "properties": {
+          "plugins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewerResponse"
+            },
+            "maxItems": 100
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActiveChannelMonitorPluginReviewerResponse": {
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "display_name",
+          "plugin_version"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "plugin_version": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
       },
       "ActiveChannelMonitorSettingsRequest": {
         "type": "object",
