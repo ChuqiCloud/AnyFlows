@@ -9,7 +9,8 @@ AnyFlows 的 `.afplugin` 插件是一个独立程序。宿主通过标准输入�
 | 要做的事 | 当前接入方式 |
 | --- | --- |
 | 在模型页提供模型资料、搜索和分页 | 已有入口。实现 `catalog.models.read` 或 `catalog.models.search` v1，上传后即可使用 |
-| 给商户、渠道、运营等模块增加只读查询或计算 | 可以自定义能力；需要在宿主增加调用接口，有页面需求时还要接前端 |
+| 检查商户服务公开资料 | 已有入口。实现 `merchant.service.review.read` v1，可在商户服务列表中运行只读检查 |
+| 给其他模块增加只读查询或计算 | 可以自定义能力；需要在宿主增加调用接口，有页面需求时还要接前端 |
 | 增加 HTTP 接口、Webhook、定时任务 | 通过宿主源码扩展并重新构建；上传插件包不能注册这些入口 |
 | 增加控制台页面、菜单、翻译或登录表单 | 使用前端 `ConsoleExtension` 并重新构建 Next；整站替换使用静态模板 |
 | 增加模型推理协议、渠道适配器、路由策略 | 修改对应 Rust 模块；当前没有上传包替换这些模块的接口 |
@@ -155,9 +156,25 @@ GET /api/account/plugin-models/{plugin_id}?q=vision&limit=20
 
 需要登录会话，或具备 `models:read` 的系统 API Token；模型调用 API Key 不能用于这两个接口。翻页时把接口响应的 `nextCursor` 原样作为 `cursor` 参数传回。搜索词或部署版本改变后，从第一页开始，不能复用旧游标。
 
+## 商户服务资料检查示例
+
+[`tools/plugins/examples/merchant-service-review/`](../tools/plugins/examples/merchant-service-review/) 展示了 `merchant.service.review.read` v1 的调用方式。它接收服务名称、说明、协议、公开模型 ID 和模型能力，返回文字摘要及检查项。插件只提供建议，不会修改服务、价格或资金数据。
+
+从仓库根目录打包：
+
+```bash
+python tools/plugins/package-plugin.py tools/plugins/examples/merchant-service-review tools/plugins/examples/merchant-service-review/manifest.json plugin.py dist/merchant-service-review.afplugin
+```
+
+管理员在插件管理中上传并启用包，授予 `merchant.service.review.read`。商户进入自己的服务列表，打开“插件检查”后选择已启用的插件并运行。`GET /api/merchant/plugin-reviewers` 用于列出可用插件；`POST /api/merchant/services/{id}/plugin-review` 运行检查，请求体只包含 `plugin_id`。使用系统 API Token 时，读取列表需要 `merchant_plugins:read`，执行检查需要 `merchant_plugins:execute`。
+
+宿主只会把服务公开资料和模型能力传给插件，不提供用户或商户标识、上游地址、上游模型映射、API Key、价格或财务信息。宿主检查服务归属与版本，调用固定能力并校验结果；插件输出以纯文本显示，检查结果仅供参考。
+
+此能力当前不使用插件部署配置；部署的 `publicConfig` 必须为空对象。这样本次业务调用只包含上面的固定输入字段。
+
 ## 针对其他模块开发
 
-例如，要给商户页增加“供给说明”，可以约定 `merchant.supply.notes.read` v1。这个名称是接入示例，当前没有现成接口。Manifest 没有 `targetModule`、路由或事件钩子字段，不能靠命名把插件挂到商户页。
+其他模块可以按实际业务定义自己的 capability，例如为渠道运营提供只读健康摘要。Manifest 没有 `targetModule`、路由或事件钩子字段，不能靠命名把插件自动挂到某个模块。
 
 需要完成以下工作：
 

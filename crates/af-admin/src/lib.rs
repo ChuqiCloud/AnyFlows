@@ -78,6 +78,12 @@ mod channel_read;
 mod channel_write;
 mod merchant_pool;
 pub use merchant_pool::{DatabaseMerchantPoolService, MerchantFuture, MerchantPoolService};
+mod merchant_plugin_review;
+pub use merchant_plugin_review::{
+    DatabaseMerchantPluginReviewService, MerchantPluginReview, MerchantPluginReviewCheck,
+    MerchantPluginReviewFuture, MerchantPluginReviewService, MerchantPluginReviewStatus,
+    MerchantPluginReviewer, MerchantPluginReviewerSummary,
+};
 mod merchant_service_watch;
 pub use af_db::{MerchantServiceWatch, MerchantServiceWatchPage};
 pub use merchant_service_watch::{

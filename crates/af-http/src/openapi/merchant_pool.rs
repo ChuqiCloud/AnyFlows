@@ -175,6 +175,91 @@ pub(super) fn document() -> OpenApi {
         ),
     );
     schemas.insert(
+        "MerchantPluginReviewer".to_owned(),
+        object(
+            &[
+                (
+                    "plugin_id",
+                    json!({"type":"string","minLength":1,"maxLength":128}),
+                ),
+                (
+                    "display_name",
+                    json!({"type":"string","minLength":1,"maxLength":128}),
+                ),
+                (
+                    "plugin_version",
+                    json!({"type":"string","minLength":1,"maxLength":64}),
+                ),
+            ],
+            &[],
+        ),
+    );
+    schemas.insert(
+        "MerchantPluginReviewerSummary".to_owned(),
+        object(
+            &[(
+                "plugins",
+                json!({"type":"array","maxItems":100,"items":reference("MerchantPluginReviewer")}),
+            )],
+            &[],
+        ),
+    );
+    schemas.insert(
+        "MerchantPluginReviewRequest".to_owned(),
+        object(
+            &[(
+                "plugin_id",
+                json!({"type":"string","minLength":1,"maxLength":128}),
+            )],
+            &[],
+        ),
+    );
+    schemas.insert(
+        "MerchantPluginReviewCheck".to_owned(),
+        object(
+            &[
+                ("code", json!({"type":"string","minLength":1,"maxLength":64})),
+                ("title", json!({"type":"string","minLength":1,"maxLength":128})),
+                ("status", enumeration(&["pass", "info", "warning", "fail"])),
+                ("message", json!({"type":"string","minLength":1,"maxLength":2048})),
+                ("recommendation", json!({"anyOf":[{"type":"string","minLength":1,"maxLength":2048},{"type":"null"}]})),
+            ],
+            &[],
+        ),
+    );
+    schemas.insert(
+        "MerchantPluginReview".to_owned(),
+        object(
+            &[
+                (
+                    "plugin_id",
+                    json!({"type":"string","minLength":1,"maxLength":128}),
+                ),
+                (
+                    "display_name",
+                    json!({"type":"string","minLength":1,"maxLength":128}),
+                ),
+                (
+                    "plugin_version",
+                    json!({"type":"string","minLength":1,"maxLength":64}),
+                ),
+                (
+                    "service_revision",
+                    json!({"type":"integer","format":"int64","minimum":1}),
+                ),
+                (
+                    "summary",
+                    json!({"type":"string","minLength":1,"maxLength":2048}),
+                ),
+                (
+                    "checks",
+                    json!({"type":"array","maxItems":64,"items":reference("MerchantPluginReviewCheck")}),
+                ),
+            ],
+            &[],
+        ),
+    );
+    schemas.insert(
         "MerchantQuoteRequest".to_owned(),
         object(
             &[
@@ -401,6 +486,14 @@ pub(super) fn document() -> OpenApi {
             200,
         ),
         (
+            "get",
+            "/api/merchant/plugin-reviewers",
+            "listMerchantPluginReviewers",
+            None,
+            "MerchantPluginReviewerSummary",
+            200,
+        ),
+        (
             "post",
             "/api/merchant/apply",
             "applyMerchant",
@@ -446,6 +539,14 @@ pub(super) fn document() -> OpenApi {
             "getOwnedMerchantService",
             None,
             "MerchantOwnedService",
+            200,
+        ),
+        (
+            "post",
+            "/api/merchant/services/{id}/plugin-review",
+            "reviewMerchantServiceWithPlugin",
+            Some("MerchantPluginReviewRequest"),
+            "MerchantPluginReview",
             200,
         ),
         (
@@ -721,5 +822,45 @@ mod tests {
             assert!(!delete["responses"]["403"].is_null());
             assert!(!delete["responses"]["409"].is_null());
         }
+    }
+
+    #[test]
+    fn merchant_plugin_review_contract_is_typed_and_separately_authorized() {
+        let value = serde_json::to_value(super::document()).unwrap();
+        let schemas = &value["components"]["schemas"];
+        let list = &value["paths"]["/api/merchant/plugin-reviewers"]["get"];
+        assert_eq!(list["operationId"], "listMerchantPluginReviewers");
+        assert_eq!(list["security"], serde_json::json!([{"bearerAuth":[]} ]));
+        assert_eq!(
+            schemas["MerchantPluginReviewerSummary"]["properties"]["plugins"]["items"]["$ref"],
+            "#/components/schemas/MerchantPluginReviewer"
+        );
+        let review = &value["paths"]["/api/merchant/services/{id}/plugin-review"]["post"];
+        assert_eq!(review["operationId"], "reviewMerchantServiceWithPlugin");
+        assert_eq!(review["security"], serde_json::json!([{"bearerAuth":[]} ]));
+        assert_eq!(
+            review["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/MerchantPluginReviewRequest"
+        );
+        assert_eq!(
+            review["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/MerchantPluginReview"
+        );
+        assert_eq!(
+            schemas["MerchantPluginReviewCheck"]["properties"]["status"]["enum"],
+            serde_json::json!(["pass", "info", "warning", "fail"])
+        );
+        assert_eq!(
+            schemas["MerchantPluginReview"]["properties"]["service_revision"]["type"],
+            "integer"
+        );
+        assert_eq!(
+            schemas["MerchantPluginReview"]["properties"]["checks"]["maxItems"],
+            64
+        );
+        assert_eq!(
+            schemas["MerchantPluginReviewerSummary"]["properties"]["plugins"]["maxItems"],
+            100
+        );
     }
 }
