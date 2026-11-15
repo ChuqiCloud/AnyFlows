@@ -1,119 +1,202 @@
-# 插件开发与运行隔离
+# 插件开发
 
-AnyFlows 通过版本化 JSON Lines 协议调用独立插件进程。插件可以使用 Python、Go、Rust 或其他能够读写标准输入输出的语言；宿主不依赖 Rust 动态库 ABI。
+AnyFlows 的 `.afplugin` 插件是一个独立程序。宿主通过标准输入、输出发送 JSON 请求，不限制开发语言。目前提供 Python SDK；Go、Rust 等语言可以按同一协议实现。
 
-安装包格式、可选签名和安装操作见 [插件安装与 Sidecar 协议](plugin-sidecars.md)。
+先确认要扩展的功能是否已有调用入口，再开始写插件。安装包中的 Manifest 声明能力，宿主模块负责调用；能力名称本身不会创建页面、注册接口或替换现有逻辑。
 
-## 运行完整示例
+## 支持范围
 
-仓库包含一个无网络、无凭据、无外部写入的模型资料插件：
+| 要做的事 | 当前接入方式 |
+| --- | --- |
+| 在模型页提供模型资料、搜索和分页 | 已有入口。实现 `catalog.models.read` 或 `catalog.models.search` v1，上传后即可使用 |
+| 给商户、渠道、运营等模块增加只读查询或计算 | 可以自定义能力；需要在宿主增加调用接口，有页面需求时还要接前端 |
+| 增加 HTTP 接口、Webhook、定时任务 | 通过宿主源码扩展并重新构建；上传插件包不能注册这些入口 |
+| 增加控制台页面、菜单、翻译或登录表单 | 使用前端 `ConsoleExtension` 并重新构建 Next；整站替换使用静态模板 |
+| 增加模型推理协议、渠道适配器、路由策略 | 修改对应 Rust 模块；当前没有上传包替换这些模块的接口 |
+| 接入外部账号认证、账户资料或余额 | 使用宿主的类型化连接器接口；当前通用进程插件不提供这些能力 |
+| 修改价格、计费、钱包、结算、身份权限或数据库结构 | 由宿主业务代码和迁移处理，没有通用插件写入接口 |
 
-```text
-tools/plugins/
-├── sdk/python/anyflows_plugin.py
-├── examples/catalog/
-│   ├── manifest.json
-│   ├── models.json
-│   └── plugin.py
-├── package-example.py
-└── package-plugin.py
-```
+前端扩展见[前端模板与扩展](frontend-template-development.md)。`RuntimeExtensions` 是编译进服务的 Rust 扩展接口，和上传安装的 `.afplugin` 是两套机制。
 
-在开发环境中使用 Python 3.10 或更新版本打包：
+通用进程插件只接受 `access: "read"`、`sideEffect: "none"`，并且必须同时提供输入、输出 Schema。协议中虽有写能力和外部操作的类型定义，当前运行时不会因此开放这些操作。
+
+插件接收公开配置和本次调用输入。宿主不向它提供数据库连接、用户登录会话、渠道密钥、托管 HTTP 客户端或持久存储接口。不要把密码、Token 放进 `publicConfig` 或安装包。普通进程仍受服务账号的操作系统权限影响，应安装可信代码；各隔离策略见[安装与运维](plugin-sidecars.md#选择隔离策略)。
+
+## 先跑通模型目录示例
+
+示例位于 [`tools/plugins/examples/catalog/`](../tools/plugins/examples/catalog/)，包含两个模型的资料，支持搜索和分页。
+
+在仓库根目录执行：
 
 ```bash
 python tools/plugins/package-example.py dist/catalog-example.afplugin
 ```
 
-该命令将示例和 SDK 复制到临时分发目录，再调用通用打包工具；输出文件必须尚不存在。生成的包没有发布者签名，可以直接上传安装。示例的 Linux 入口使用 `/usr/bin/python3`，部署节点需要提供这个解释器。Windows 部署应将插件及其运行时打包为 Windows 可执行文件，不能直接使用这个 Linux 脚本入口。
+打包需要 Python 3.10 或更新版本。输出文件必须尚不存在。打包工具会自动加入 SDK，不需要配置签名。
 
-安装后，在登录后的模型广场进入“插件模型资料”，选择 Example model catalogue，搜索 `vision` 或翻页。也可以使用登录会话或具备 `models:read` 权限的管理 API Token 调用：
+1. 管理员打开「插件管理」，上传生成的包，点击「安装并启用」。示例不需要配置，保留 `{}`。
+2. 登录后进入模型页的「插件模型资料」，选择 `Example model catalogue`。
+3. 搜索 `vision`，应看到 `Example Vision`。
+
+这个示例用于 Linux，入口是 `/usr/bin/python3`。每个运行节点都要有该解释器。Windows 需要单独打包 Windows 可执行文件及其依赖，不能直接运行这个 Linux 入口。宿主不会自动安装依赖或转换目标平台。
+
+目录中的模型只用于展示资料。安装示例不会新增可调用模型、渠道或价卡。
+
+## 改成自己的模型目录
+
+先沿用示例结构，修改数据；跑通后再替换查询逻辑：
 
 ```text
-GET /api/account/plugin-models/sources
-GET /api/account/plugin-models/org.anyflows.example-catalog?q=vision&limit=20
+my-catalog/
+├── manifest.json       # 从示例复制，修改插件 ID、名称和版本
+├── plugin.py           # 从示例复制，负责读取、搜索和分页
+├── models.json         # 自己的模型资料
+└── anyflows_plugin.py  # 从 sdk/python/ 复制
 ```
 
-这些接口返回插件提供的模型资料。示例中的模型是开发数据，安装示例不会创建推理渠道、生成价卡或提供模型调用能力。模型调用 API Key 与上述管理接口的认证体系保持独立。
+四个文件均放在同一目录。`manifest.json` 的 `pluginId` 建议使用自己的命名空间，例如 `com.example.catalog`；不要沿用示例 ID，以免覆盖示例部署。修改插件内容后也应更新 `pluginVersion`。
 
-## 使用 Python SDK
-
-SDK 只使用 Python 标准库。分发自己的插件时，将 `anyflows_plugin.py` 放在入口能够导入的位置，传入完整 Manifest 和只读处理函数：
-
-```python
-from anyflows_plugin import Plugin, PluginError
-
-
-def handle(capability_id, public_config, value):
-    if capability_id != "catalog.models.read":
-        raise PluginError("unsupported")
-    return {"models": [], "nextCursor": None}
-
-
-raise SystemExit(Plugin(manifest, handle).serve())
-```
-
-SDK 负责 Manifest 与健康响应、请求身份和版本检查、部署 generation 与请求 ID 回传、deadline 检查、JSON 行帧大小限制及固定错误投影。异常文本、路径和处理函数中的值不会作为错误详情返回给宿主。SDK 同时接受旧版本宿主使用的 snake_case 调用字段，输出协议保持当前公开契约的 camelCase 字段。
-
-SDK 的完整协议帧上限为 1 MiB；Manifest 的 `maxResponseBytes` 单独限制能力输入、输出值的紧凑 UTF-8 JSON 大小，不包含协议元数据，也不限制 Manifest 或健康响应。两类限制同时生效。
-
-处理函数仍应检查自己的业务输入，并按 Manifest 中的 `inputSchema`、`outputSchema` 和 `configSchema` 设计数据。宿主会独立执行 Schema 和能力授权检查。不要通过公开配置传递密码、令牌、Cookie 或其他凭据，也不要向标准输出打印日志；标准输出仅用于协议帧。
-
-## 模型资料能力
-
-模型资料入口只调用已授权的 `catalog.models.read` 或 `catalog.models.search` v1 能力。输入为：
+`models.json` 是数组。一个模型的最小记录是：
 
 ```json
-{"query":null,"cursor":null,"limit":20}
+[
+  {
+    "id": "example-text",
+    "displayName": "Example Text",
+    "provider": "example"
+  }
+]
 ```
 
-处理函数返回 `CapabilityResult.output` 的内容：
+打包时分别指定分发目录、Manifest、目录内入口和输出路径：
+
+```bash
+python tools/plugins/package-plugin.py my-catalog my-catalog/manifest.json plugin.py dist/my-catalog.afplugin
+```
+
+输出文件应在分发目录外。工具会把分发目录内的普通文件一并打包，先清理缓存、凭据和无关文件。示例 Manifest 中的 `configSchema` 只接受空对象；如果插件需要配置，同时修改 Schema 和处理函数。
+
+### 处理函数负责什么
+
+SDK 的入口是 `Plugin(manifest, handler).serve()`。`manifest` 从随包的 `manifest.json` 读取；`handler` 接收三个参数：
+
+| 参数 | 内容 |
+| --- | --- |
+| `capability_id` | 本次调用的能力名，例如 `catalog.models.read` |
+| `public_config` | 管理员为当前部署保存的公开配置 |
+| `value` | 宿主传入的业务输入 |
+
+处理函数返回业务 JSON，不需要自己拼协议外层。SDK 负责握手、健康响应、请求关联、截止时间和错误码。完整入口可直接参考 [`plugin.py`](../tools/plugins/examples/catalog/plugin.py)。
+
+预期的业务失败使用固定错误码，例如：
+
+```python
+raise PluginError("unsupported")
+```
+
+错误码列表见 [SDK](../tools/plugins/sdk/python/anyflows_plugin.py)。不要将异常信息作为结果返回，也不要向标准输出打印日志；标准输出只能写协议帧，日志写标准错误。
+
+## 模型目录的输入和输出
+
+`catalog.models.read` 用于浏览，`catalog.models.search` 表示支持搜索。目录入口有搜索词时优先调用搜索能力，否则优先调用浏览能力；缺少对应能力时会使用另一个已授权能力。因此只实现浏览能力时，也要能接收 `query` 字段。
+
+插件收到的输入：
+
+```json
+{"query":"vision","cursor":null,"limit":20}
+```
+
+| 字段 | 约定 |
+| --- | --- |
+| `query` | 搜索词或 `null`；宿主最多接受 128 字节，插件决定匹配规则 |
+| `cursor` | 插件上一页返回的游标，第一页为 `null`；宿主封装、校验后再交回插件 |
+| `limit` | 本页最多返回多少条，范围 1–50，同时受 Manifest 的 `maxPageSize` 限制 |
+
+处理函数返回：
 
 ```json
 {
   "models": [
     {
-      "id": "example-text-small",
-      "displayName": "Example Text Small",
+      "id": "example-vision",
+      "displayName": "Example Vision",
       "provider": "example",
+      "description": "支持文本和图片输入",
       "contextWindow": 32768,
-      "inputModalities": ["text"],
+      "inputModalities": ["text", "image"],
       "outputModalities": ["text"],
-      "tags": ["example"]
+      "tags": ["vision"]
     }
   ],
   "nextCursor": null
 }
 ```
 
-`limit` 范围为 1–50。每页模型 ID 必须唯一；模型信息只包含公开资料，不接受价格、路由、账号或任意附加字段。宿主提供来源标识，插件不能冒充平台价卡或其他来源。分页游标由插件解释，宿主限制其长度和传输范围。
+必填模型字段为 `id`、`displayName`、`provider`。其余字段可省略；不要返回价格、渠道地址、密钥或额外字段。
 
-## 宿主隔离策略
+| 字段 | 宿主限制 |
+| --- | --- |
+| `id` | 非空，最多 256 字节，同页不能重复 |
+| `displayName` / `provider` | 非空，分别最多 128 / 64 字节 |
+| `description` | 有值时非空，最多 4096 字节 |
+| `contextWindow` | 正整数，最大 2147483647 |
+| `inputModalities` / `outputModalities` | 仅 `text`、`image`、`audio`、`video`，各项不能重复 |
+| `tags` | 最多 32 项，每项非空且最多 64 字节，不能重复 |
+| `nextCursor` | 无下一页时为 `null`；否则为最多 512 字节的非空字符串，不能与当前游标相同 |
 
-隔离策略由服务配置选择，插件包无法放宽：
+文本不能包含控制字符或首尾空白。插件自己的 Schema 可以更严格；上表是宿主的最终检查。每页条数不得超过输入的 `limit`，输出最多 256 KiB。
 
-```toml
-[server]
-plugin_isolation = "auto"
+对外接口是：
+
+```text
+GET /api/account/plugin-models/sources
+GET /api/account/plugin-models/{plugin_id}?q=vision&limit=20
 ```
 
-| 策略 | Linux 行为 | 其他平台行为 |
-| --- | --- | --- |
-| `auto` | 系统提供可信的 `setpriv` 和 `prlimit` 时启用 no-new-privileges、禁用 core dump，并收紧文件大小和打开文件数；缺少工具时保留进程管理 | Windows 使用 Job Object 管理整个进程树；其他系统保留进程管理 |
-| `trusted` | 使用运营方信任的宿主账户权限运行 | Windows 仍保留 Job Object 进程树清理 |
-| `restricted` | 要求上述工具，并额外将每个进程的地址空间限制为不超过 4 GiB、累计 CPU 时间不超过 300 秒 | 当前不支持，启动会明确失败 |
-| `require_sandbox` | 要求 `setpriv`、`prlimit`、Bubblewrap 和内核命名空间支持，在资源限制外隔离文件系统、网络和进程命名空间 | 当前不支持，启动会明确失败 |
+需要登录会话，或具备 `models:read` 的系统 API Token；模型调用 API Key 不能用于这两个接口。翻页时把接口响应的 `nextCursor` 原样作为 `cursor` 参数传回。搜索词或部署版本改变后，从第一页开始，不能复用旧游标。
 
-所有资源上限只会收紧已有宿主限制，不会提高服务账户的软、硬限制。`auto` 不设置地址空间限制，以兼容预留较大虚拟地址空间的运行时；显式 `restricted` 和 `require_sandbox` 可能不适合这类运行时。需要超过当前固定资源上限的插件，应由管理员评估后选择合适的执行策略。
+## 针对其他模块开发
 
-Linux 只从固定系统目录查找 root 所有、不可被组或其他用户修改的工具，不使用插件提供的 `PATH`。强隔离仅挂载系统运行库、系统解释器和校验后的插件副本，使用只读根文件系统及独立的 `/tmp`；不挂载宿主用户目录和服务工作目录。网络命名空间独立，插件不能直接访问外部网络。强隔离缺少依赖或内核不支持时会失败，不会回退为普通进程并显示“已隔离”。
+例如，要给商户页增加“供给说明”，可以约定 `merchant.supply.notes.read` v1。这个名称是接入示例，当前没有现成接口。Manifest 没有 `targetModule`、路由或事件钩子字段，不能靠命名把插件挂到商户页。
 
-Windows 在子进程恢复执行前将其放入 Job Object，停用、异常终止或句柄释放会清理后代进程。Job Object 的进程树管理不等于文件系统或网络沙箱，界面会显示实际采用的隔离级别。
+需要完成以下工作：
 
-节点插件状态中的 `isolation` 表示实际运行模式：`process`、`resource_limited`、`sandboxed` 或 `job_object`，尚未启动时可能为 `unknown`；概览顶层的 `isolation` 表示本节点配置的期望策略。应结合节点健康、部署 generation 和更新时间判断插件是否已经就绪。
+1. **确定数据边界。** 商户模块定义输入、输出 Schema。只把当前用户有权读取的必要数据交给插件，不传登录会话或凭据。
+2. **实现能力。** 插件按约定返回数据，声明 `read`、`none` 和两个 Schema。
+3. **增加宿主接口。** 在商户模块校验用户、角色、资源归属和业务权限后，读取指定插件的当前部署及 `generation`。插件选择、能力名和版本由宿主控制，不直接采用客户端传来的任意值。
+4. **调用插件。** 设置请求 ID、截止时间和输出大小上限，调用 `AdminPluginSidecarRuntime::invoke_capability`。
+5. **处理结果。** 将返回 JSON 转成模块自己的类型；返回用户前复核部署代次、授权和撤销状态。定义超时、插件不可用时的页面行为。
+6. **接入页面。** 在商户页调用这个宿主接口。需要新页面或菜单时，按前端扩展机制接入。
+7. **授权并部署。** 上传包后，在高级管理中明确选择能力及配置，再部署。自定义能力不会走目录插件的自动启用流程。
 
-## 契约与验证
+宿主调用形状如下。此片段放在已经完成业务鉴权的 handler 或服务中，变量由该模块准备：
 
-跨语言契约位于 `contracts/plugins/v1/`。变更协议字段时，应同步 Rust DTO、Schema 和 SDK，并覆盖真实宿主请求到插件响应的完整往返。当前回归包含 Rust 序列化调用经 Python SDK 处理后再反序列化，以及 SDK 错误帧、超时、分页和 Windows 后代进程清理检查。
+```rust
+let result = runtime
+    .invoke_capability(
+        &repository,
+        plugin_id,
+        generation,
+        &context,
+        "merchant.supply.notes.read",
+        1,
+        input,
+    )
+    .await?;
+```
 
-此项目的构建和测试通过远端流水线执行。插件开发应保留当前协议版本和 Manifest 身份检查，不应通过兼容处理跳过包摘要、能力授权或部署 generation 校验。
+`repository` 是 `PluginCatalogRepository`；`context` 是 `CapabilityExecutionContext`，包含本次请求 ID、截止时间、输出上限等信息。运行时会使用数据库中该部署的配置，不能由客户端替换。可通过 `DatabaseAdminPluginLifecycleService::capability_runtime()` 获取运行时；宿主 HTTP 扩展也可使用 `RuntimeHttpContext::plugin_capability_runtime`。
+
+完整接入范例见 [`plugin_catalog_extension.rs`](../crates/af-admin/src/plugin_catalog_extension.rs)，调用实现见 [`plugin_runtime.rs`](../crates/af-admin/src/plugin_runtime.rs)。当前没有“客户端指定任意能力名并直接调用”的通用 HTTP 接口。
+
+新增宿主接口或前端接线需要重新构建、部署 AnyFlows。入口完成后，同一契约内替换插件实现才只需上传新包。不要用插件返回的数据直接改写权限、价卡或资金状态。
+
+## 发布前核对
+
+- Manifest 中的 ID、版本和能力声明与程序握手响应一致，输入、输出、配置符合 Schema。
+- 正常结果、空结果、分页、错误输入、超时和缺少权限都有明确处理。
+- 包含目标平台所需依赖；每个节点具备相同运行条件。
+- 包内文件只读，工作目录是启动副本。持久数据由宿主接口管理，不能依赖修改包内文件保存状态。
+- 标准输出无调试信息；签名可选，更新内容后重新打包。
+
+安装、升级和多节点排障见[插件安装与运维](plugin-sidecars.md)。Manifest 字段、协议帧、资源限制和签名算法见[协议参考](plugin-protocol-reference.md)。

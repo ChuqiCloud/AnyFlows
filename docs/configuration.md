@@ -41,6 +41,26 @@
 
 生图目录可使用相对或绝对路径；相对路径以进程工作目录为基准。部署时建议显式配置绝对路径，并确保服务账号有读写权限。多节点部署必须让所有节点使用指向同一共享可写目录的配置，详见[多节点部署](multi-node-deployment.md)。
 
+## 插件
+
+插件安装默认可用，无需配置签名公钥。以下参数属于启动配置，修改后重启服务：
+
+| 配置 | 默认值 | 用途 |
+| --- | --- | --- |
+| `server.plugin_artifact_directory` | `data/plugins` | 当前节点的插件缓存目录，只接受运行目录内的相对路径 |
+| `server.plugin_isolation` | `auto` | `auto`、`trusted`、`restricted` 或 `require_sandbox`，由宿主选择隔离策略 |
+| `server.plugin_trusted_signers` | 空列表 | 可选的发布者公钥，用于验证包来源 |
+| `server.plugin_official_signers` | 空列表 | 独立的官方发布者公钥，验证成功才显示官方标识 |
+
+目录和隔离策略可通过环境变量设置：
+
+```dotenv
+AF_SERVER__PLUGIN_ARTIFACT_DIRECTORY=data/plugins
+AF_SERVER__PLUGIN_ISOLATION=auto
+```
+
+公钥列表建议在 TOML 中配置，示例见[插件安装与运维](plugin-sidecars.md)。多个节点使用一致的信任根和兼容的运行环境；缓存目录可以不同，上传归档通过共享数据库分发。`auto` 不等于文件系统和网络沙箱；需要 Linux 强隔离时选择 `require_sandbox` 并准备相应系统工具。
+
 ## 密钥与备份
 
 会话签名密钥和凭据加密密钥分别使用独立的 32 字节随机值，以 Base64URL 无填充格式保存。生成方式与文件权限见 [二进制安装](deployment-and-configuration.md#3-安装并启动)。多节点使用相同的签名密钥和加密密钥。
