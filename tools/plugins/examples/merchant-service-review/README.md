@@ -19,11 +19,23 @@ tools/plugins/examples/merchant-service-review/
 └── README.md       # 本说明
 ```
 
-打包工具会把 SDK 自动复制到临时分发目录，因此无需自己下载依赖或改 Python 导入路径。
+使用仓库内置的 `package-example.py` 验证原始示例时，脚本会把 SDK 自动复制到临时分发目录。自定义插件打包时需要把 SDK 文件复制到自己的分发目录，步骤见第 5 节。
 
 ## 2. 先打包并安装示例
 
-在仓库根目录运行：
+在仓库根目录打开终端。若还没有 `dist` 文件夹，先创建：
+
+```bash
+mkdir -p dist
+```
+
+Windows PowerShell 使用：
+
+```powershell
+New-Item -ItemType Directory -Force dist
+```
+
+然后运行示例打包命令：
 
 ```bash
 python tools/plugins/package-example.py dist/merchant-service-review.afplugin --example merchant-service-review
@@ -144,7 +156,21 @@ if not streaming_models:
 2. 把 `manifest.json` 中的 `pluginId` 改成自己的唯一名称，例如 `com.example.merchant-review`。不要和示例或已安装插件使用相同 ID。
 3. 改 `displayName` 作为管理员和商户看到的插件名称；每次发布新包时更新 `pluginVersion`。
 4. 根据检查规则调整 `plugin.py`，保持输入输出字段不变；若要更改字段或限制，则要让 Manifest、插件代码和 AnyFlows 宿主契约同步兼容。
-5. 用第 2 节的打包命令生成新包，上传后在高级管理中明确授予 `merchant.service.review.read`。
+5. 将 SDK 文件复制到自己的分发目录，并用通用打包器生成新包：
+
+   ```bash
+   cp tools/plugins/sdk/python/anyflows_plugin.py my-merchant-review/anyflows_plugin.py
+   python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/manifest.json plugin.py dist/my-merchant-review.afplugin
+   ```
+
+   Windows PowerShell 可用：
+
+   ```powershell
+   Copy-Item tools/plugins/sdk/python/anyflows_plugin.py my-merchant-review/anyflows_plugin.py
+   python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/manifest.json plugin.py dist/my-merchant-review.afplugin
+   ```
+
+   `package_root` 是只包含待发布文件的分发目录；`manifest_file` 是清单路径；`plugin.py` 是相对分发目录的入口路径；最后一个参数是尚不存在的输出包。该目录需包含 `manifest.json`、`plugin.py` 和 `anyflows_plugin.py`。上传后在高级管理中明确授予 `merchant.service.review.read`。
 
 运行规则不要放在模块顶层的协议循环里。保持 `review_service()` 为一个接收资料并返回字典的普通函数，SDK 会负责和宿主的通信。
 
@@ -160,7 +186,7 @@ if not streaming_models:
 
 上传 `.afplugin` 不会自动创建页面、菜单、HTTP 接口或后台任务。新增业务入口需要 AnyFlows 开发者在宿主增加固定 capability 和调用代码，确定调用者与数据边界，校验插件输出，再按需要增加界面和 API 文档。完成宿主接入后，插件作者才可以使用对应契约开发插件。
 
-不用了解 AnyFlows 内部代码也可以按已有示例开发“商户服务资料检查”或“公开模型资料目录”。若要新增别的模块，先请 AnyFlows 维护者提供该模块的输入字段、输出 Schema、授权方式和安装/测试入口；不要猜 capability 名称或复制一个看似相近的接口。具体宿主接入方式参见 [`docs/plugin-development.md`](../../../../docs/plugin-development.md) 的“针对其他模块开发”。
+不用了解 AnyFlows 内部代码也可以按已有示例开发“商户服务资料检查”或“公开模型资料目录”。若要新增别的模块，先请 AnyFlows 维护者提供该模块的输入字段、输出 Schema、授权方式和安装/测试入口；不要猜 capability 名称或复制一个看似相近的接口。具体宿主接入方式参见 [`docs/plugin-development.md`](../../../../docs/plugin-development.md) 的“想给新模块加插件入口”。
 
 目前通用插件只开放 `read` + `none` 的无副作用能力。任何影响模型定价、渠道凭据、钱包、余额、结算、登录身份、数据库或核心权限的操作都由宿主控制，不可以通过插件输出建议或自行调用外网来替代宿主授权。
 

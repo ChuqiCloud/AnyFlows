@@ -11,13 +11,27 @@
 
 ## 打包、安装、运行
 
-在 AnyFlows 仓库根目录执行：
+在 AnyFlows 仓库根目录打开终端。若还没有 `dist` 文件夹，先创建：
+
+```bash
+mkdir -p dist
+```
+
+Windows PowerShell 使用：
+
+```powershell
+New-Item -ItemType Directory -Force dist
+```
+
+再运行打包命令：
 
 ```bash
 python tools/plugins/package-example.py dist/catalog-example.afplugin
 ```
 
-输出包必须尚不存在。随后管理员在“插件管理”上传并安装；示例能力属于简单安装器可直接授予的公共模型资料能力。登录后进入模型页的“插件模型资料”，选中 `Example model catalogue`，输入 `vision` 搜索示例结果。
+输出包必须尚不存在。命令会复制示例文件和 Python SDK，再生成 `.afplugin` 文件；它只负责打包，不会安装服务器依赖或启动 AnyFlows。
+
+随后管理员在“插件管理”上传并安装。模型资料目录属于公开只读能力，使用简单安装流程即可部署。登录后进入模型页的“插件模型资料”，选中 `Example model catalogue`，输入 `vision` 搜索示例结果。清空搜索词可以查看全部目录；继续翻页时，宿主会把插件上次返回的 `nextCursor` 传回来。
 
 ## 文件说明
 
@@ -33,20 +47,39 @@ catalog/
 
 ## 输入和输出
 
+宿主每次调用都会传入 `limit`。`query` 和 `cursor` 是可选字段；第一页通常没有 `cursor`，不搜索时可以省略 `query`。
+
 插件收到的输入形如：
 
 ```json
 {"query":"vision","cursor":null,"limit":20}
 ```
 
-- `query` 为搜索词或 `null`；插件按 ID、显示名和提供商名称进行不区分大小写的查找。
-- `cursor` 在第一页为 `null`；本示例将返回的数字字符串当作下一页偏移量。
-- `limit` 为 1–50 的页大小。
+- `query` 是搜索词或 `null`；插件按模型 ID、显示名和提供商名称进行不区分大小写的查找。不传搜索词时返回未过滤的目录。
+- `cursor` 在第一页省略或为 `null`；本示例把返回的数字字符串当作下一页偏移量。其他插件可以改用数据源提供的不透明游标，但必须遵守已发布 Schema 的长度限制。
+- `limit` 是必填页大小，范围为 1–50；实际调用还会受插件 Manifest 中 `maxPageSize` 上限约束。
 
 插件返回 `models` 数组和 `nextCursor`。模型最少要有 `id`、`displayName`、`provider`；其他允许字段及最大长度由宿主契约检查。宿主不接受价格、上游地址、密钥或额外字段。
+
+返回值必须包含 `models` 和 `nextCursor` 两个字段。没有下一页时使用 `null`；有下一页时返回一个游标字符串。宿主会检查每页数量、重复 ID、字段长度、支持的输入/输出模态、标签数量和游标是否有效。字段不符合契约时，宿主会拒绝整页结果。
+
+## 跟着代码走一遍
+
+打开 `plugin.py`，可以按这个顺序阅读：
+
+1. 文件顶部导入 Python 标准库及 AnyFlows Python SDK；SDK 负责插件通信，不需要导入 AnyFlows 的 Rust 包。
+2. `ROOT` 定位示例目录。这样无论 AnyFlows 从哪个当前工作目录启动，代码都能找到 `models.json` 和 `manifest.json`。
+3. `read_catalog()` 是本例的业务函数。它先确认宿主调用的是已声明能力，再校验配置和输入字段。
+4. 函数读取随包附带的 `models.json`，根据可选搜索词过滤，再用 `cursor` 和 `limit` 截取当前页。
+5. 最后返回 `models` 与 `nextCursor`。宿主还会按自己的固定契约重新检查结果；插件不能靠 Manifest 放宽宿主上限。
+6. `main()` 读取 Manifest 并调用 `Plugin(...).serve()`。不要自己读取标准输入或向标准输出写日志，因为标准输出只用于 JSON Lines 协议帧。
+
+代码中的中文注释解释了每一步为什么存在。你可以先只修改 `models.json` 看资料变化，再改搜索条件，最后再尝试新增一个模型展示字段。每次新增或改变字段时，都要确认宿主的输出契约允许它；插件端 Schema 不能自行扩展宿主接口。
 
 ## 修改示例
 
 可以先在 `models.json` 增加、改写展示数据，再修改 `plugin.py` 的过滤规则。保持 Manifest 输入输出 Schema 与处理函数结构相符。将 `pluginId` 改为自己的命名空间，修改内容后递增 `pluginVersion`，然后打包成新制品；不要用相同 ID 覆盖已登记制品。
 
-完整契约、对外 API、游标规则和新增模块接线说明见 [插件开发入门](../../../../docs/plugin-development.md#模型资料目录)。
+常见修改顺序：先添加一条带有 `id`、`displayName` 和 `provider` 的模型资料；再用搜索词确认它能被找到；最后多次翻页确认 `nextCursor` 能继续前进并在末页变成 `null`。如果需要新的展示字段，先向宿主维护者确认输出 Schema 已支持该字段，再同时修改 Manifest、代码和数据。
+
+完整字段约束、对外 API 和游标规则见[模型资料目录契约](../../../../docs/plugin-development.md#模型资料目录)。想在其他业务模块增加插件入口时，先阅读[新模块接入流程](../../../../docs/plugin-development.md#想给新模块加插件入口)。
