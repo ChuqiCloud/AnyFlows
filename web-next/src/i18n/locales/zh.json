@@ -762,7 +762,23 @@
       "loadingEvents": "正在加载事件历史…",
       "noEvents": "尚无故障或恢复事件。",
       "eventsUnavailable": "事件历史暂不可用",
-      "events": { "down": "故障", "recovered": "已恢复" }
+      "events": { "down": "故障", "recovered": "已恢复" },
+      "pluginReview": {
+        "open": "用插件分析事件",
+        "close": "收起插件分析",
+        "title": "只读事件分析",
+        "hint": "插件只会收到最近记录的故障和恢复事件，不会探测渠道，也不能更改监控或路由设置。",
+        "plugin": "分析插件",
+        "run": "分析事件",
+        "loadingPlugins": "正在加载可用分析插件…",
+        "pluginsError": "无法读取分析插件列表。",
+        "noPlugins": "当前没有可用的渠道监控分析插件。",
+        "runError": "事件分析失败，可以重试。",
+        "eventCount": "已分析 {{count}} 条事件",
+        "noChecks": "插件没有返回分析项。",
+        "recommendation": "建议",
+        "status": { "pass": "通过", "info": "提示", "warning": "警告", "fail": "未通过" }
+      }
     },
     "scope": "支持 OpenAI、Anthropic、Gemini、Jina、Cohere 与 xAI 原生协议",
     "count_one": "共 {{count}} 个渠道",
