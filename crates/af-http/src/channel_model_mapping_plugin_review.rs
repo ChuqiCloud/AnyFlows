@@ -212,7 +212,9 @@ async fn review_admin_channel_model_mapping_with_plugin(
         )
         .await
         .map_err(map_plugin_review_error)?;
-    Ok(no_store_json(review.into()))
+    Ok(no_store_json(ChannelModelMappingPluginReviewResponse::from(
+        review,
+    )))
 }
 
 #[derive(OpenApi)]
