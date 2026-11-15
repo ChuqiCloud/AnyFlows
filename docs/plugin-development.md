@@ -118,6 +118,8 @@ SDK 负责 JSON Lines 握手、健康响应、请求关联、截止时间和错�
 
 Manifest 的输入 Schema 必须声明 `query`、`cursor`、`limit` 三个属性，其中 `limit` 必填，`query` 和 `cursor` 不要放进 `required`。模型页会始终发送这三个字段；未填写搜索词或第一页游标时，值为 `null`。`limit` 范围是 1–50，并受 Manifest `maxPageSize` 限制。没有搜索词时返回未过滤的目录。`catalog.models.search` 表示该插件同时声明搜索能力；它和 `catalog.models.read` 使用相同的输入输出格式。
 
+宿主对搜索词最多接受 128 字节、对请求游标最多接受 2048 字节。示例 Manifest 可以设置更严格的长度，但不能放宽宿主限制；JSON Schema 的 `maxLength` 按字符计算，宿主列出的上限按 UTF-8 字节计算。
+
 插件返回一个模型列表和 nextCursor：
 
     {
@@ -148,7 +150,7 @@ id、displayName、provider 必填。宿主最多返回 50 项，并校验字段
 | tags | 最多 32 项，每项非空且最多 64 字节，不能重复 |
 | nextCursor | 无下一页为 null；有下一页时最多 512 字节，不能与当前游标相同 |
 
-文本不能包含控制字符或首尾空白。插件自己的 Schema 可以更严格；宿主仍会做最后校验。输出最多 256 KiB。
+文本不能包含控制字符或首尾空白。插件自己的 Schema 可以更严格；宿主仍会做最后校验。宿主最多接受 256 KiB 输出。示例 Manifest 把模型字段和下一页游标设得更短，例如 `nextCursor` 最多 8 个字符；若数据源需要更长游标，应在宿主允许的上限内同步调整 Manifest 和处理函数的校验。
 
 对外接口：
 
