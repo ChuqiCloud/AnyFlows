@@ -1,35 +1,25 @@
 //! Read-only merchant service review through an explicitly granted plugin capability.
 
-use std::{
-    collections::BTreeSet,
-    future::Future,
-    pin::Pin,
-    sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
-use af_db::{PluginDeploymentQuery, PluginDeploymentRecord};
 use af_domain::{MerchantOwnedService, MerchantPoolError};
-use af_plugin_contract::{
-    CapabilityAccess, InvocationMetadata, PluginId, PluginManifest, SideEffectClass,
-};
-use af_plugin_runtime::CapabilityExecutionContext;
+use af_plugin_contract::PluginId;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::sync::Semaphore;
 
 use crate::{
-    AdminPluginLifecycleError, DatabaseAdminPluginLifecycleService, MerchantPoolService,
-    SessionPrincipal,
+    DatabaseAdminPluginLifecycleService, MerchantPoolService, SessionPrincipal,
+    readonly_plugin_review::{
+        MAX_REVIEW_CHECKS, ReadOnlyPluginReviewCheck, ReadOnlyPluginReviewContract,
+        ReadOnlyPluginReviewError, ReadOnlyPluginReviewStatus, invoke_read_only_review,
+        list_read_only_reviewers, read_only_review_output_schema,
+    },
 };
 
 const REVIEW_CAPABILITY: &str = "merchant.service.review.read";
 const REVIEW_BUDGET: Duration = Duration::from_secs(5);
 const MAX_REVIEW_INPUT_BYTES: u32 = 64 * 1024;
-const MAX_REVIEW_OUTPUT_BYTES: u32 = 16 * 1024;
-const MAX_REVIEW_CHECKS: usize = 64;
-const MAX_REVIEWER_DEPLOYMENTS: u32 = 100;
-const MAX_REVIEWER_SCAN_PAGES: usize = 11;
 
 /// A plugin that is enabled and granted the fixed merchant review capability.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -54,6 +44,17 @@ pub enum MerchantPluginReviewStatus {
     Fail,
 }
 
+impl From<ReadOnlyPluginReviewStatus> for MerchantPluginReviewStatus {
+    fn from(value: ReadOnlyPluginReviewStatus) -> Self {
+        match value {
+            ReadOnlyPluginReviewStatus::Pass => Self::Pass,
+            ReadOnlyPluginReviewStatus::Info => Self::Info,
+            ReadOnlyPluginReviewStatus::Warning => Self::Warning,
+            ReadOnlyPluginReviewStatus::Fail => Self::Fail,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MerchantPluginReviewCheck {
@@ -63,6 +64,18 @@ pub struct MerchantPluginReviewCheck {
     pub message: String,
     #[serde(default)]
     pub recommendation: Option<String>,
+}
+
+impl From<ReadOnlyPluginReviewCheck> for MerchantPluginReviewCheck {
+    fn from(value: ReadOnlyPluginReviewCheck) -> Self {
+        Self {
+            code: value.code,
+            title: value.title,
+            status: value.status.into(),
+            message: value.message,
+            recommendation: value.recommendation,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -121,48 +134,21 @@ impl MerchantPluginReviewService for DatabaseMerchantPluginReviewService {
         _principal: SessionPrincipal,
     ) -> MerchantPluginReviewFuture<'_, MerchantPluginReviewerSummary> {
         Box::pin(async move {
-            if self.plugins.capability_runtime().is_none() {
-                return Ok(MerchantPluginReviewerSummary {
-                    plugins: Vec::new(),
-                });
-            }
-            tokio::time::timeout(REVIEW_BUDGET, async {
-                let repository = self.plugins.catalog_repository();
-                let mut cursor = None;
-                let mut plugins = Vec::new();
-                for page_index in 0..MAX_REVIEWER_SCAN_PAGES {
-                    let deployments = repository
-                        .list_deployments(
-                            PluginDeploymentQuery::new(cursor.clone(), MAX_REVIEWER_DEPLOYMENTS)
-                                .map_err(|_| MerchantPoolError::Unavailable)?,
-                        )
-                        .await
-                        .map_err(|_| MerchantPoolError::Unavailable)?;
-                    let page_is_full = deployments.len() == MAX_REVIEWER_DEPLOYMENTS as usize;
-                    if let Some(last) = deployments.last() {
-                        cursor = Some(last.plugin_id.clone());
-                    }
-                    plugins.extend(
-                        deployments
-                            .iter()
-                            .filter(|deployment| review_capability(deployment).is_some())
-                            .map(reviewer),
-                    );
-                    if plugins.len() >= MAX_REVIEWER_DEPLOYMENTS as usize {
-                        plugins.truncate(MAX_REVIEWER_DEPLOYMENTS as usize);
-                        break;
-                    }
-                    if !page_is_full {
-                        break;
-                    }
-                    if page_index + 1 == MAX_REVIEWER_SCAN_PAGES {
-                        return Err(MerchantPoolError::Unavailable);
-                    }
-                }
-                Ok(MerchantPluginReviewerSummary { plugins })
-            })
-            .await
-            .map_err(|_| MerchantPoolError::Unavailable)?
+            let input_schema = review_input_schema();
+            let output_schema = read_only_review_output_schema();
+            let public_config = json!({});
+            let contract = review_contract(&input_schema, &output_schema, &public_config);
+            let plugins = list_read_only_reviewers(&self.plugins, &contract, REVIEW_BUDGET)
+                .await
+                .map_err(map_review_error)?
+                .into_iter()
+                .map(|plugin| MerchantPluginReviewer {
+                    plugin_id: plugin.plugin_id,
+                    display_name: plugin.display_name,
+                    plugin_version: plugin.plugin_version,
+                })
+                .collect();
+            Ok(MerchantPluginReviewerSummary { plugins })
         })
     }
 
@@ -187,55 +173,19 @@ impl MerchantPluginReviewService for DatabaseMerchantPluginReviewService {
                 let service = self.merchants.service(principal, service_id).await?;
                 let revision = review_revision(&service).ok_or(MerchantPoolError::NotFound)?;
                 let input = review_input(revision).map_err(|_| MerchantPoolError::InvalidInput)?;
-                let input_bytes =
-                    serde_json::to_vec(&input).map_err(|_| MerchantPoolError::Unavailable)?;
-                if input_bytes.len() > MAX_REVIEW_INPUT_BYTES as usize {
-                    return Err(MerchantPoolError::InvalidInput);
-                }
-
-                let repository = self.plugins.catalog_repository();
-                let deployment = repository
-                    .get_deployment(&plugin_id)
-                    .await
-                    .map_err(|_| MerchantPoolError::Unavailable)?
-                    .ok_or(MerchantPoolError::NotFound)?;
-                if review_capability(&deployment).is_none() {
-                    return Err(MerchantPoolError::Forbidden);
-                }
-                let runtime = self
-                    .plugins
-                    .capability_runtime()
-                    .ok_or(MerchantPoolError::Unavailable)?;
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map_err(|_| MerchantPoolError::Unavailable)?;
-                let deadline_unix_ms = u64::try_from(now.as_millis())
-                    .ok()
-                    .and_then(|now| now.checked_add(u64::try_from(REVIEW_BUDGET.as_millis()).ok()?))
-                    .ok_or(MerchantPoolError::Unavailable)?;
-                let context = CapabilityExecutionContext::new(
-                    format!("merchant-service-review:{}", deployment.artifact.digest),
-                    InvocationMetadata {
-                        request_id: request_id.clone(),
-                        deadline_unix_ms,
-                    },
-                    json!({}),
-                    MAX_REVIEW_INPUT_BYTES,
+                let input_schema = review_input_schema();
+                let output_schema = read_only_review_output_schema();
+                let public_config = json!({});
+                let contract = review_contract(&input_schema, &output_schema, &public_config);
+                let output = invoke_read_only_review(
+                    &self.plugins,
+                    &contract,
+                    &plugin_id,
+                    &request_id,
+                    input,
                 )
-                .map_err(|_| MerchantPoolError::InvalidInput)?;
-                let response = runtime
-                    .invoke_capability(
-                        repository,
-                        &plugin_id,
-                        deployment.generation,
-                        &context,
-                        REVIEW_CAPABILITY,
-                        1,
-                        input,
-                    )
-                    .await
-                    .map_err(map_plugin_error)?;
-                let output = decode_review(response.output)?;
+                .await
+                .map_err(map_review_error)?;
 
                 // A concurrent service edit, ownership change, or plugin permission change
                 // invalidates the advice before it is returned to the caller.
@@ -245,25 +195,13 @@ impl MerchantPluginReviewService for DatabaseMerchantPluginReviewService {
                 if latest_revision.revision != revision.revision {
                     return Err(MerchantPoolError::Conflict);
                 }
-                let latest_deployment = repository
-                    .get_deployment(&plugin_id)
-                    .await
-                    .map_err(|_| MerchantPoolError::Unavailable)?
-                    .ok_or(MerchantPoolError::NotFound)?;
-                if latest_deployment.generation != deployment.generation
-                    || review_capability(&latest_deployment).is_none()
-                {
-                    return Err(MerchantPoolError::Conflict);
-                }
-
-                let source = reviewer(&deployment);
                 Ok(MerchantPluginReview {
-                    plugin_id: source.plugin_id,
-                    display_name: source.display_name,
-                    plugin_version: source.plugin_version,
+                    plugin_id: output.reviewer.plugin_id,
+                    display_name: output.reviewer.display_name,
+                    plugin_version: output.reviewer.plugin_version,
                     service_revision: revision.revision,
                     summary: output.summary,
-                    checks: output.checks,
+                    checks: output.checks.into_iter().map(Into::into).collect(),
                 })
             })
             .await
@@ -272,38 +210,22 @@ impl MerchantPluginReviewService for DatabaseMerchantPluginReviewService {
     }
 }
 
-fn review_capability(deployment: &PluginDeploymentRecord) -> Option<&'static str> {
-    if !deployment.enabled
-        || deployment.artifact.approval.is_none()
-        || deployment.artifact.revocation.is_some()
-        || deployment.artifact.source_kind != af_db::PluginArtifactSourceKind::LocalProcess
-        // This first business integration passes no plugin config; all input is the
-        // explicit service projection below, never operator-supplied configuration.
-        || deployment.config != json!({})
-        || !deployment
-            .granted_capabilities
-            .iter()
-            .any(|grant| grant.id == REVIEW_CAPABILITY && grant.version == 1)
-    {
-        return None;
+fn review_contract<'a>(
+    input_schema: &'a Value,
+    output_schema: &'a Value,
+    public_config: &'a Value,
+) -> ReadOnlyPluginReviewContract<'a> {
+    ReadOnlyPluginReviewContract {
+        capability_id: REVIEW_CAPABILITY,
+        capability_version: 1,
+        input_schema,
+        output_schema,
+        public_config,
+        max_input_bytes: MAX_REVIEW_INPUT_BYTES,
+        max_output_bytes: 16 * 1024,
+        max_checks: MAX_REVIEW_CHECKS,
+        budget: REVIEW_BUDGET,
     }
-    let manifest: PluginManifest =
-        serde_json::from_value(deployment.artifact.manifest.clone()).ok()?;
-    if manifest.limits.max_response_bytes < MAX_REVIEW_INPUT_BYTES {
-        return None;
-    }
-    manifest
-        .capabilities
-        .iter()
-        .any(|capability| {
-            capability.id.as_str() == REVIEW_CAPABILITY
-                && capability.version == 1
-                && capability.access == CapabilityAccess::Read
-                && capability.side_effect == SideEffectClass::None
-                && capability.input_schema.as_ref() == Some(&review_input_schema())
-                && capability.output_schema.as_ref() == Some(&review_output_schema())
-        })
-        .then_some(REVIEW_CAPABILITY)
 }
 
 fn review_input_schema() -> Value {
@@ -339,47 +261,6 @@ fn review_input_schema() -> Value {
     })
 }
 
-fn review_output_schema() -> Value {
-    json!({
-        "type":"object",
-        "additionalProperties":false,
-        "required":["summary","checks"],
-        "properties":{
-            "summary":{"type":"string","minLength":1,"maxLength":2048},
-            "checks":{
-                "type":"array","maxItems":MAX_REVIEW_CHECKS,
-                "items":{
-                    "type":"object","additionalProperties":false,
-                    "required":["code","title","status","message","recommendation"],
-                    "properties":{
-                        "code":{"type":"string","minLength":1,"maxLength":64},
-                        "title":{"type":"string","minLength":1,"maxLength":128},
-                        "status":{"type":"string","enum":["pass","info","warning","fail"]},
-                        "message":{"type":"string","minLength":1,"maxLength":2048},
-                        "recommendation":{"type":["string","null"],"minLength":1,"maxLength":2048}
-                    }
-                }
-            }
-        }
-    })
-}
-
-fn reviewer(deployment: &PluginDeploymentRecord) -> MerchantPluginReviewer {
-    let display_name = deployment
-        .artifact
-        .manifest
-        .get("displayName")
-        .and_then(serde_json::Value::as_str)
-        .filter(|value| valid_text(value, 128))
-        .unwrap_or(&deployment.plugin_id)
-        .to_owned();
-    MerchantPluginReviewer {
-        plugin_id: deployment.plugin_id.clone(),
-        display_name,
-        plugin_version: deployment.artifact.plugin_version.clone(),
-    }
-}
-
 fn review_revision(service: &MerchantOwnedService) -> Option<&af_domain::MerchantRevision> {
     service.draft.as_ref().or(service.published.as_ref())
 }
@@ -413,56 +294,13 @@ fn review_input(revision: &af_domain::MerchantRevision) -> Result<serde_json::Va
     Ok(value)
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ReviewOutput {
-    summary: String,
-    checks: Vec<MerchantPluginReviewCheck>,
-}
-
-fn decode_review(output: serde_json::Value) -> Result<ReviewOutput, MerchantPoolError> {
-    let encoded = serde_json::to_vec(&output).map_err(|_| MerchantPoolError::Unavailable)?;
-    if encoded.len() > MAX_REVIEW_OUTPUT_BYTES as usize {
-        return Err(MerchantPoolError::Unavailable);
-    }
-    let parsed: ReviewOutput =
-        serde_json::from_value(output).map_err(|_| MerchantPoolError::Unavailable)?;
-    let mut codes = BTreeSet::new();
-    if !valid_text(&parsed.summary, 2_048)
-        || parsed.checks.len() > MAX_REVIEW_CHECKS
-        || parsed.checks.iter().any(|check| {
-            !valid_text(&check.code, 64)
-                || !codes.insert(check.code.as_str())
-                || !valid_text(&check.title, 128)
-                || !valid_text(&check.message, 2_048)
-                || check
-                    .recommendation
-                    .as_deref()
-                    .is_some_and(|value| !valid_text(value, 2_048))
-        })
-    {
-        return Err(MerchantPoolError::Unavailable);
-    }
-    Ok(parsed)
-}
-
-fn valid_text(value: &str, max_bytes: usize) -> bool {
-    !value.trim().is_empty()
-        && value.len() <= max_bytes
-        && value.trim() == value
-        && !value.chars().any(char::is_control)
-}
-
-fn map_plugin_error(error: AdminPluginLifecycleError) -> MerchantPoolError {
+fn map_review_error(error: ReadOnlyPluginReviewError) -> MerchantPoolError {
     match error {
-        AdminPluginLifecycleError::Forbidden => MerchantPoolError::Forbidden,
-        AdminPluginLifecycleError::InvalidInput => MerchantPoolError::InvalidInput,
-        AdminPluginLifecycleError::NotFound => MerchantPoolError::NotFound,
-        AdminPluginLifecycleError::Conflict => MerchantPoolError::Conflict,
-        AdminPluginLifecycleError::CapabilityReviewRequired
-        | AdminPluginLifecycleError::PayloadTooLarge
-        | AdminPluginLifecycleError::RuntimeUnavailable
-        | AdminPluginLifecycleError::Internal => MerchantPoolError::Unavailable,
+        ReadOnlyPluginReviewError::Forbidden => MerchantPoolError::Forbidden,
+        ReadOnlyPluginReviewError::InvalidInput => MerchantPoolError::InvalidInput,
+        ReadOnlyPluginReviewError::NotFound => MerchantPoolError::NotFound,
+        ReadOnlyPluginReviewError::Conflict => MerchantPoolError::Conflict,
+        ReadOnlyPluginReviewError::Unavailable => MerchantPoolError::Unavailable,
     }
 }
 
@@ -522,20 +360,5 @@ mod tests {
         assert!(!text.contains("api_key"));
         assert!(!text.contains("ratio_micros"));
         assert!(!text.contains("merchant_id"));
-    }
-
-    #[test]
-    fn review_output_rejects_duplicate_codes_oversize_and_unknown_fields() {
-        assert!(
-            decode_review(json!({
-                "summary":"ok",
-                "checks":[
-                    {"code":"same","title":"one","status":"pass","message":"ok"},
-                    {"code":"same","title":"two","status":"info","message":"ok"}
-                ]
-            }))
-            .is_err()
-        );
-        assert!(decode_review(json!({"summary":"ok","checks":[],"extra":"no"})).is_err());
     }
 }
