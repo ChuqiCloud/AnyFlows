@@ -72,105 +72,6 @@ export type AccountVerificationResponse = {
     created_at: number;
     updated_at: number;
 };
-export type ActiveChannelMonitorEventKindResponse = 'down' | 'recovered';
-export type ActiveChannelMonitorEventResponse = {
-    id: number;
-    target_id: number;
-    kind: ActiveChannelMonitorEventKindResponse;
-    latency_ms?: number | null;
-    occurred_epoch_seconds: number;
-};
-export type ActiveChannelMonitorPluginReviewCheckResponse = {
-    code: string;
-    title: string;
-    status: ActiveChannelMonitorPluginReviewStatusResponse;
-    message: string;
-    recommendation: string | null;
-};
-export type ActiveChannelMonitorPluginReviewRequest = {
-    plugin_id: string;
-};
-export type ActiveChannelMonitorPluginReviewResponse = {
-    plugin_id: string;
-    display_name: string;
-    plugin_version: string;
-    event_count: number;
-    summary: string;
-    checks: Array<ActiveChannelMonitorPluginReviewCheckResponse>;
-};
-export type ActiveChannelMonitorPluginReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
-export type ActiveChannelMonitorPluginReviewerListResponse = {
-    plugins: Array<ActiveChannelMonitorPluginReviewerResponse>;
-};
-export type ActiveChannelMonitorPluginReviewerResponse = {
-    plugin_id: string;
-    display_name: string;
-    plugin_version: string;
-};
-export type ActiveChannelMonitorSettingsRequest = {
-    enabled: boolean;
-    global_daily_budget: number;
-};
-export type ActiveChannelMonitorSettingsResponse = {
-    enabled: boolean;
-    global_daily_budget: number;
-};
-export type ActiveChannelMonitorTargetRequest = {
-    channel_id: number;
-    credential_id: number;
-    model: string;
-    enabled: boolean;
-    interval_secs: number;
-    daily_budget: number;
-    timeout_secs: number;
-    alert_after_secs: number;
-    muted_until_epoch_seconds?: number | null;
-};
-export type ActiveChannelMonitorTargetResponse = {
-    id: number;
-    channel_id: number;
-    credential_id: number;
-    model: string;
-    enabled: boolean;
-    interval_secs: number;
-    daily_budget: number;
-    timeout_secs: number;
-    alert_after_secs: number;
-    daily_used: number;
-    last_attempt_epoch_seconds?: number | null;
-    last_success_epoch_seconds?: number | null;
-    failure_since_epoch_seconds?: number | null;
-    alert_active: boolean;
-    muted_until_epoch_seconds?: number | null;
-};
-export type ChannelModelMappingPluginReviewCheckResponse = {
-    code: string;
-    title: string;
-    status: ChannelModelMappingPluginReviewStatusResponse;
-    message: string;
-    recommendation: string | null;
-};
-export type ChannelModelMappingPluginReviewRequest = {
-    plugin_id: string;
-};
-export type ChannelModelMappingPluginReviewResponse = {
-    plugin_id: string;
-    display_name: string;
-    plugin_version: string;
-    model_count: number;
-    mapping_count: number;
-    summary: string;
-    checks: Array<ChannelModelMappingPluginReviewCheckResponse>;
-};
-export type ChannelModelMappingPluginReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
-export type ChannelModelMappingPluginReviewerListResponse = {
-    plugins: Array<ChannelModelMappingPluginReviewerResponse>;
-};
-export type ChannelModelMappingPluginReviewerResponse = {
-    plugin_id: string;
-    display_name: string;
-    plugin_version: string;
-};
 export type AdminAuthenticationSettings = {
     password_login_enabled: boolean;
     registration_enabled: boolean;
@@ -3736,6 +3637,105 @@ export type VideoTaskListResponse = {
     next_cursor: string | null;
 };
 export type VideoTaskStatus = 'pending' | 'done' | 'expired' | 'failed';
+export type ActiveChannelMonitorEventKindResponse = 'down' | 'recovered';
+export type ActiveChannelMonitorEventResponse = {
+    id: number;
+    target_id: number;
+    kind: ActiveChannelMonitorEventKindResponse;
+    latency_ms?: number | null;
+    occurred_epoch_seconds: number;
+};
+export type ActiveChannelMonitorPluginReviewCheckResponse = {
+    code: string;
+    title: string;
+    status: ActiveChannelMonitorPluginReviewStatusResponse;
+    message: string;
+    recommendation: string | null;
+};
+export type ActiveChannelMonitorPluginReviewRequest = {
+    plugin_id: string;
+};
+export type ActiveChannelMonitorPluginReviewResponse = {
+    plugin_id: string;
+    display_name: string;
+    plugin_version: string;
+    event_count: number;
+    summary: string;
+    checks: Array<ActiveChannelMonitorPluginReviewCheckResponse>;
+};
+export type ActiveChannelMonitorPluginReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
+export type ActiveChannelMonitorPluginReviewerListResponse = {
+    plugins: Array<ActiveChannelMonitorPluginReviewerResponse>;
+};
+export type ActiveChannelMonitorPluginReviewerResponse = {
+    plugin_id: string;
+    display_name: string;
+    plugin_version: string;
+};
+export type ActiveChannelMonitorSettingsRequest = {
+    enabled: boolean;
+    global_daily_budget: number;
+};
+export type ActiveChannelMonitorSettingsResponse = {
+    enabled: boolean;
+    global_daily_budget: number;
+};
+export type ActiveChannelMonitorTargetRequest = {
+    channel_id: number;
+    credential_id: number;
+    model: string;
+    enabled: boolean;
+    interval_secs: number;
+    daily_budget: number;
+    timeout_secs: number;
+    alert_after_secs: number;
+    muted_until_epoch_seconds?: number | null;
+};
+export type ActiveChannelMonitorTargetResponse = {
+    id: number;
+    channel_id: number;
+    credential_id: number;
+    model: string;
+    enabled: boolean;
+    interval_secs: number;
+    daily_budget: number;
+    timeout_secs: number;
+    alert_after_secs: number;
+    daily_used: number;
+    last_attempt_epoch_seconds?: number | null;
+    last_success_epoch_seconds?: number | null;
+    failure_since_epoch_seconds?: number | null;
+    alert_active: boolean;
+    muted_until_epoch_seconds?: number | null;
+};
+export type ChannelModelMappingPluginReviewCheckResponse = {
+    code: string;
+    title: string;
+    status: ChannelModelMappingPluginReviewStatusResponse;
+    message: string;
+    recommendation: string | null;
+};
+export type ChannelModelMappingPluginReviewRequest = {
+    plugin_id: string;
+};
+export type ChannelModelMappingPluginReviewResponse = {
+    plugin_id: string;
+    display_name: string;
+    plugin_version: string;
+    model_count: number;
+    mapping_count: number;
+    summary: string;
+    checks: Array<ChannelModelMappingPluginReviewCheckResponse>;
+};
+export type ChannelModelMappingPluginReviewerListResponse = {
+    plugins: Array<ChannelModelMappingPluginReviewerResponse>;
+};
+export type ChannelModelMappingPluginReviewerResponse = {
+    plugin_id: string;
+    display_name: string;
+    plugin_version: string;
+};
+export type ChannelModelMappingPluginReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
 export type AdminChannelCreateRequestWritable = {
     provider?: string | null;
     name: string;
