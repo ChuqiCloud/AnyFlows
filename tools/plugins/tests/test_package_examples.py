@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -69,7 +70,41 @@ class ExamplePackageTests(unittest.TestCase):
                 "org.anyflows.example-catalog",
             )
             self.assertIn("payload/anyflows_plugin.py", package["names"])
+    def test_catalog_query_uses_a_safe_utf8_byte_limit(self):
+        with tempfile.TemporaryDirectory(prefix="anyflows-example-test-") as temporary:
+            output = Path(temporary) / "catalog.afplugin"
+            package = self.package(output)
+            query_limits = [
+                capability["inputSchema"]["properties"]["query"]["maxLength"]
+                for capability in package["metadata"]["manifest"]["capabilities"]
+            ]
+            self.assertEqual(query_limits, [128, 128])
 
+        catalog = ROOT / "examples" / "catalog"
+        spec = importlib.util.spec_from_file_location(
+            "anyflows_catalog_example", catalog / "plugin.py"
+        )
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        sys.path.insert(0, str(catalog))
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            sys.path.pop(0)
+
+        with self.assertRaises(module.PluginError):
+            module.read_catalog(
+                "catalog.models.search", {}, {"query": "🙂" * 33, "limit": 10}
+            )
+        self.assertEqual(
+            module.read_catalog(
+                "catalog.models.search", {}, {"query": "🙂" * 32, "limit": 10}
+            )["models"],
+            [],
+        )
+
+if __name__ == "__main__":
 
 if __name__ == "__main__":
     unittest.main()
