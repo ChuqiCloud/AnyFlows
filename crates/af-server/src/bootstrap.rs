@@ -3045,6 +3045,32 @@ impl Bootstrap<Supervised> {
             self.stage.infrastructure.infrastructure.database.clone(),
             Duration::from_secs(self.config.auth().lookup_timeout_secs()),
         );
+        let merchant_pool_service: Arc<dyn af_admin::MerchantPoolService> = Arc::new(
+            af_admin::DatabaseMerchantPoolService::new(
+                merchant_repository.clone(),
+                CredentialEncryptor::new(self.config.credential_encryption())
+                    .expect("凭据加密配置已在基础设施初始化时校验"),
+                CredentialDecryptor::new(self.config.credential_encryption())
+                    .expect("凭据解密配置已在基础设施初始化时校验"),
+            )
+            .with_blocked_hosts(
+                self.config
+                    .server()
+                    .cors_allowed_origins()
+                    .iter()
+                    .filter_map(|origin| {
+                        url::Url::parse(origin.as_str())
+                            .ok()
+                            .and_then(|url| url.host_str().map(str::to_owned))
+                    })
+                    .collect(),
+            ),
+        );
+        let merchant_plugin_review_service: Arc<dyn af_admin::MerchantPluginReviewService> =
+            Arc::new(af_admin::DatabaseMerchantPluginReviewService::new(
+                Arc::clone(&merchant_pool_service),
+                Arc::clone(&plugin_lifecycle_service),
+            ));
         let router = router
             .merge(af_http::build_merchant_service_policy_router(
                 Arc::new(af_admin::DatabaseMerchantServicePolicy::new(
@@ -3071,27 +3097,8 @@ impl Bootstrap<Supervised> {
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))
             .merge(af_http::build_merchant_pool_router(
-                Arc::new(
-                    af_admin::DatabaseMerchantPoolService::new(
-                        merchant_repository.clone(),
-                        CredentialEncryptor::new(self.config.credential_encryption())
-                            .expect("凭据加密配置已在基础设施初始化时校验"),
-                        CredentialDecryptor::new(self.config.credential_encryption())
-                            .expect("凭据解密配置已在基础设施初始化时校验"),
-                    )
-                    .with_blocked_hosts(
-                        self.config
-                            .server()
-                            .cors_allowed_origins()
-                            .iter()
-                            .filter_map(|origin| {
-                                url::Url::parse(origin.as_str())
-                                    .ok()
-                                    .and_then(|url| url.host_str().map(str::to_owned))
-                            })
-                            .collect(),
-                    ),
-                ),
+                merchant_pool_service,
+                merchant_plugin_review_service,
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))
             .merge(af_http::build_merchant_route_router(

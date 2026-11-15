@@ -9172,6 +9172,98 @@
         ]
       }
     },
+    "/api/merchant/plugin-reviewers": {
+      "get": {
+        "tags": [
+          "商户共享池"
+        ],
+        "operationId": "listMerchantPluginReviewers",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Merchant pool operation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantPluginReviewerSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant_plugins:read"
+        ]
+      }
+    },
     "/api/merchant/profile": {
       "get": {
         "tags": [
@@ -10113,6 +10205,119 @@
         ],
         "x-anyflows-pat-scopes": [
           "merchant:write"
+        ]
+      }
+    },
+    "/api/merchant/services/{id}/plugin-review": {
+      "post": {
+        "tags": [
+          "商户共享池"
+        ],
+        "operationId": "reviewMerchantServiceWithPlugin",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MerchantPluginReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Merchant pool operation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantPluginReview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant_plugins:execute"
         ]
       }
     },
@@ -47974,6 +48179,157 @@
             ]
           }
         }
+      },
+      "MerchantPluginReview": {
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "display_name",
+          "plugin_version",
+          "service_revision",
+          "summary",
+          "checks"
+        ],
+        "properties": {
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MerchantPluginReviewCheck"
+            },
+            "maxItems": 64
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "plugin_version": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "service_revision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "MerchantPluginReviewCheck": {
+        "type": "object",
+        "required": [
+          "code",
+          "title",
+          "status",
+          "message",
+          "recommendation"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "info",
+              "warning",
+              "fail"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "MerchantPluginReviewRequest": {
+        "type": "object",
+        "required": [
+          "plugin_id"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "MerchantPluginReviewer": {
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "display_name",
+          "plugin_version"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "plugin_version": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "MerchantPluginReviewerSummary": {
+        "type": "object",
+        "required": [
+          "plugins"
+        ],
+        "properties": {
+          "plugins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MerchantPluginReviewer"
+            },
+            "maxItems": 100
+          }
+        },
+        "additionalProperties": false
       },
       "MerchantPool": {
         "type": "object",
