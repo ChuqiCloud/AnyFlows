@@ -780,6 +780,25 @@
         "status": { "pass": "Pass", "info": "Info", "warning": "Warning", "fail": "Failed" }
       }
     },
+    "modelMappingPluginReview": {
+      "title": "Model mapping review",
+      "summary": "Analyze public model names and mappings",
+      "description": "The selected plugin receives only this channel's model names and mapping pairs. It cannot read channel addresses or credentials, contact the upstream, or change the configuration.",
+      "channel": "Channel",
+      "plugin": "Review plugin",
+      "run": "Review mappings",
+      "retry": "Retry",
+      "loadingPlugins": "Loading mapping review plugins…",
+      "pluginsError": "Could not load mapping review plugins.",
+      "noChannels": "No channels are available on this page.",
+      "noPlugins": "No channel model mapping review plugins are available.",
+      "forbidden": "Your administrator token does not have permission to run this review.",
+      "runError": "Model mapping review failed. You can retry.",
+      "counts": "{{models}} models · {{mappings}} mappings",
+      "noChecks": "The plugin returned no review items.",
+      "recommendation": "Recommendation",
+      "status": { "pass": "Pass", "info": "Info", "warning": "Warning", "fail": "Failed" }
+    },
     "scope": "Native OpenAI, Anthropic, Gemini, Jina, Cohere, and xAI protocols",
     "count_one": "{{count}} channel",
     "count_other": "{{count}} channels",

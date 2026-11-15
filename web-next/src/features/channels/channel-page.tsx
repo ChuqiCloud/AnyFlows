@@ -13,6 +13,7 @@ import { useAdminChannels, useProbeAdminChannel } from './channel-api'
 import { ChannelEditorSheet } from './channel-editor-sheet'
 import { ChannelTable, type ProbeDisplay } from './channel-table'
 import { ActiveChannelMonitorPanel } from './active-channel-monitor-panel'
+import { ChannelModelMappingPluginReviewPanel } from './channel-model-mapping-plugin-review-panel'
 
 type EditorState = AdminChannel | 'create' | undefined
 
@@ -75,6 +76,7 @@ export function ChannelPage() {
       </div>
 
       <ActiveChannelMonitorPanel />
+      <ChannelModelMappingPluginReviewPanel channels={channels} />
 
       {channelsQuery.isPending ? (
         <div className="grid gap-2" aria-label={t('channels.loading')}>

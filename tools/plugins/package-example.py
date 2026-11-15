@@ -13,6 +13,7 @@ import tempfile
 
 EXAMPLES = {
     "catalog": "catalog",
+    "channel-model-mapping-review": "channel-model-mapping-review",
     "channel-monitor-review": "channel-monitor-review",
     "merchant-service-review": "merchant-service-review",
 }

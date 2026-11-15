@@ -9,6 +9,7 @@
 | 在模型页提供资料、搜索和分页 | 已支持：catalog.models.read / catalog.models.search v1 | 返回展示用的模型资料，不会新增可调用模型、渠道或价卡 |
 | 检查商户自己的服务资料 | 已支持：merchant.service.review.read v1 | 阅读公开服务说明和模型能力，返回文字建议 |
 | 总结管理员配置的渠道监控事件 | 已支持：channel.monitor.events.review.read v1 | 阅读最多 100 条 down / recovered 事件，返回摘要和建议 |
+| 静态检查管理员配置的渠道模型映射 | 已支持：channel.model_mapping.review.read v1 | 阅读公开模型名称和映射关系，返回摘要与建议，不连接上游或修改渠道 |
 | 给其他模块增加只读查询或计算 | 需要宿主新增入口 | 入口发布后，插件按该入口的固定 Schema 返回数据 |
 | 增加 HTTP API、Webhook、后台任务 | 上传插件不支持 | 修改宿主代码并重新构建、部署 |
 | 增加控制台页面、菜单、翻译或登录表单 | 上传插件不支持 | 使用 ConsoleExtension 并重建前端 |
@@ -35,6 +36,7 @@
     python tools/plugins/package-example.py dist/catalog-example.afplugin
     python tools/plugins/package-example.py dist/merchant-review.afplugin --example merchant-service-review
     python tools/plugins/package-example.py dist/channel-monitor-review.afplugin --example channel-monitor-review
+    python tools/plugins/package-example.py dist/channel-model-mapping-review.afplugin --example channel-model-mapping-review
 
 这些命令会从仓库复制示例、自动加入 Python SDK，再生成 .afplugin。输出文件必须尚不存在。
 
@@ -108,7 +110,7 @@ SDK 负责 JSON Lines 握手、健康响应、请求关联、截止时间和错�
 
 协议帧走标准输入和标准输出。不要向标准输出打印日志；调试日志写标准错误。各语言都可以实现插件，但必须与[协议参考](plugin-protocol-reference.md)中的 JSON Lines 协议、字段类型和错误码一致。
 
-## 当前已接入的三个业务入口
+## 当前已接入的四个业务入口
 
 ### 模型资料目录
 
@@ -159,7 +161,7 @@ id、displayName、provider 必填。宿主最多返回 50 项，并校验字段
 
 这些接口需要登录会话或 models:read 系统 API Token；模型调用 API Key 不能用于管理接口。翻页时把 nextCursor 原样传回，搜索词或插件部署版本改变后从第一页开始。
 
-三个现有入口的单次调用预算最多 5 秒；目录数据最多 256 KiB，商户和监控检查的输入最多 64 KiB、宿主接受的输出最多 16 KiB。对应 Manifest 的 maxResponseBytes 必须足够接收输入，但不能提高宿主的输出限制。商户和监控检查当前要求空 publicConfig；模型目录按各插件的 configSchema 处理公开配置。
+四个现有入口的单次调用预算最多 5 秒；目录输出最多 256 KiB，商户和监控检查的输入最多 64 KiB、宿主接受的输出最多 16 KiB，模型映射检查最多接收 512 KiB、输出最多 16 KiB。对应 Manifest 的 `maxResponseBytes` 必须足够接收输入，但不能提高宿主的输出限制。商户、监控和模型映射检查要求空 `publicConfig`；模型目录按各插件的 `configSchema` 处理公开配置。
 
 ### 商户服务资料检查
 
@@ -186,6 +188,25 @@ id、displayName、provider 必填。宿主最多返回 50 项，并校验字段
     POST /api/admin/channel-monitor/targets/{id}/plugin-review
 
 这是管理员接口。PAT 权限也仅授予管理员，分别为 admin:list_admin_channel_monitor_plugin_reviewers:execute 和 admin:review_admin_channel_monitor_target_with_plugin:execute。普通用户 PAT 不能调用。
+
+### 渠道模型映射静态检查
+
+完整逐步示例见 [channel-model-mapping-review/README.md](../tools/plugins/examples/channel-model-mapping-review/README.md)。固定能力为 `channel.model_mapping.review.read` v1，只供管理员对指定渠道执行静态分析。
+
+输入只包含渠道公开模型名列表和精确模型映射，例如：
+
+    {"models":["gpt-4o"],"mappings":[{"model":"gpt-4o","upstreamModel":"vendor-chat-large"}]}
+
+模型列表和映射列表各最多 512 项；每个模型名最多 256 个 UTF-8 字节。宿主会先确认渠道存在并且调用者是管理员，再构造不超过 512 KiB 的最小数据投影。渠道 ID、名称、上游地址、凭据、请求头、参数覆盖、余额和运行日志都不会传给插件。插件只返回摘要与建议，不会连接上游、修改模型清单或映射。
+
+接口为：
+
+    GET  /api/admin/channel-model-mapping/plugin-reviewers
+    POST /api/admin/channels/{channel_id}/model-mapping/plugin-review
+
+部署必须明确授予 `channel.model_mapping.review.read` v1，且 `publicConfig` 必须为空对象。管理员 PAT 分别需要 `admin:list_admin_channel_model_mapping_plugin_reviewers:execute` 和 `admin:review_admin_channel_model_mapping_with_plugin:execute`。完整输入输出 Schema、安装步骤和可修改规则见示例 README。
+
+该入口最多允许 5 秒调用、512 KiB 输入和 16 KiB 输出。Manifest 的 `maxResponseBytes` 至少要为 512 KiB；插件处理过程仍应快速返回，不应执行外部网络或长时间任务。
 
 ## 想给新模块加插件入口
 
@@ -217,7 +238,7 @@ id、displayName、provider 必填。宿主最多返回 50 项，并校验字段
 | --- | --- | --- | --- |
 | 模型广场 | 读取、搜索插件提供的公开模型资料 | 提供商类别、能力标签或兼容性资料筛选 | 插件只给资料；模型是否可调用、提供商 Logo 和来源可信度由宿主管理 |
 | 商户工作台 | 检查本人服务的公开说明和模型能力 | 服务发布资料、公开模型 ID 与能力声明检查 | 只投影当前商户有权查看的字段；建议由商户确认，不自动提交或改变审核状态 |
-| 渠道管理 | 分析已记录的监控事件 | 静态配置诊断、脱敏健康历史说明、模型映射建议 | 不提供 API Key、渠道凭据或上游地址；不执行探测、不参与实时路由、不改健康分 |
+| 渠道管理 | 分析已记录的监控事件；静态检查模型映射 | 静态配置诊断、脱敏健康历史说明 | 不提供 API Key、渠道凭据或上游地址；不执行探测、不参与实时路由、不改健康分 |
 | 管理与运营 | 暂无通用插件入口 | 对人工填写内容或脱敏汇总数据做检查和报告 | 由宿主决定可见数据、管理员权限和审计范围；原始日志需先去除密钥及个人资料 |
 | 账号、钱包和结算 | 不由通用 Sidecar 接入 | 如需第三方平台连接，使用类型化的宿主连接器并单独设计授权 | 插件不得读取用户会话、账户余额或账本，也不得发起扣款、退款、提现或结算 |
 | 定时任务和通知 | 上传插件没有通用后台任务钩子 | 由宿主提供有范围的事件/任务契约，再评估插件处理 | 需要宿主管理触发条件、幂等、重试、撤销和审计；不能靠插件进程常驻或自行访问网络 |

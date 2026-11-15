@@ -8,7 +8,7 @@
 - 服务账号能读写、执行插件缓存目录；默认是运行目录下的 `data/plugins`。
 - 插件来自你信任的开发者。未签名插件可以安装，签名也不代表代码经过审核。
 
-目前仓库中有三个上传式插件业务入口：模型资料目录 `catalog.models.read/search` v1、商户服务只读检查 `merchant.service.review.read` v1，以及管理员监控事件分析 `channel.monitor.events.review.read` v1。模型目录可以按既定授权流程使用；商户检查和监控事件分析均需要管理员在部署的高级管理中明确授予能力。它们提供资料或建议，不会创建模型调用渠道、价格、资金写操作或实时路由规则。
+目前仓库中有四个上传式插件业务入口：模型资料目录 `catalog.models.read/search` v1、商户服务只读检查 `merchant.service.review.read` v1、管理员监控事件分析 `channel.monitor.events.review.read` v1，以及渠道模型映射静态检查 `channel.model_mapping.review.read` v1。模型目录可以按既定授权流程使用；其他入口均需要管理员在部署的高级管理中明确授予能力。它们提供资料或建议，不会创建模型调用渠道、价格、资金写操作或实时路由规则。
 
 新增模块仍需先由宿主提供固定入口、Schema、权限和页面接线，不能只靠清单声明生效，详见[插件开发支持范围](plugin-development.md#先看支持范围)。
 

@@ -38,6 +38,7 @@ const events = [
 const requests = []
 const targetWrites = []
 const pluginReviewRequests = []
+const modelMappingPluginReviewRequests = []
 const errors = []
 let server, browser, page, serverOutput = ''
 
@@ -53,8 +54,10 @@ try {
     import './src/index.css'; import './src/i18n';
     import { useSiteTheme } from './src/shared/components/use-site-theme';
     import { ActiveChannelMonitorPanel } from './src/features/channels/active-channel-monitor-panel';
+    import { ChannelModelMappingPluginReviewPanel } from './src/features/channels/channel-model-mapping-plugin-review-panel';
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false }, mutations: { retry: false } } });
-    function App() { useSiteTheme(); return <HeroUIProvider><QueryClientProvider client={client}><main style={{ padding: 16, maxWidth: 960, margin: 'auto' }}><ActiveChannelMonitorPanel /></main></QueryClientProvider></HeroUIProvider> }
+    const channels = [{ id: 11, name: 'CI channel', type: 'openai', status: 'enabled', protocol: 'openai_chat', models: ['chat-fixture'] }];
+    function App() { useSiteTheme(); return <HeroUIProvider><QueryClientProvider client={client}><main style={{ padding: 16, maxWidth: 960, margin: 'auto' }}><ActiveChannelMonitorPanel /><ChannelModelMappingPluginReviewPanel channels={channels} /></main></QueryClientProvider></HeroUIProvider> }
     createRoot(document.getElementById('root')).render(<BrowserRouter><App /></BrowserRouter>);
   `)
   server = spawn(process.execPath, [resolve(directory, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', '4184', '--strictPort'], { cwd: directory, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -104,6 +107,29 @@ try {
           status: 'pass',
           message: 'A recovery event followed the outage.',
           recommendation: 'Continue monitoring the next scheduled probes.',
+        }],
+      })
+    }
+    if (path === '/api/admin/channel-model-mapping/plugin-reviewers' && method === 'GET') {
+      return respond({ plugins: [{ plugin_id: 'ci.channel.mapping.review', display_name: 'CI mapping reviewer', plugin_version: '1.0.0' }] })
+    }
+    if (path === '/api/admin/channels/11/model-mapping/plugin-review' && method === 'POST') {
+      const body = request.postDataJSON()
+      modelMappingPluginReviewRequests.push(body)
+      assert.deepEqual(body, { plugin_id: 'ci.channel.mapping.review' }, 'Mapping review sends only the selected plugin ID')
+      return respond({
+        plugin_id: body.plugin_id,
+        display_name: 'CI mapping reviewer',
+        plugin_version: '1.0.0',
+        model_count: 1,
+        mapping_count: 1,
+        summary: 'Static mapping review: <img src=x onerror=alert(1)>',
+        checks: [{
+          code: 'mapping.source-listed',
+          title: 'Mapping source is listed',
+          status: 'pass',
+          message: 'The mapped model is in the channel model list.',
+          recommendation: null,
         }],
       })
     }
@@ -162,8 +188,23 @@ try {
     muted_until_epoch_seconds: null,
   })
 
+  const mappingDetails = page.locator('details').filter({ hasText: label('channels.modelMappingPluginReview.title') })
+  await mappingDetails.locator('summary').click()
+  await mappingDetails.getByRole('combobox', { name: label('channels.modelMappingPluginReview.channel'), exact: true }).selectOption('11')
+  const mappingPluginPicker = mappingDetails.getByRole('combobox', { name: label('channels.modelMappingPluginReview.plugin'), exact: true })
+  await mappingPluginPicker.selectOption('ci.channel.mapping.review')
+  const mappingReviewResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/admin/channels/11/model-mapping/plugin-review' && response.request().method() === 'POST')
+  await mappingDetails.getByRole('button', { name: label('channels.modelMappingPluginReview.run'), exact: true }).click()
+  assert.equal((await mappingReviewResponse).status(), 200)
+  await mappingDetails.getByText('Static mapping review: <img src=x onerror=alert(1)>', { exact: true }).waitFor()
+  await mappingDetails.getByText('1 个模型 · 1 条映射', { exact: true }).waitFor()
+  await mappingDetails.getByText('The mapped model is in the channel model list.', { exact: true }).waitFor()
+  await mappingDetails.getByText(label('channels.modelMappingPluginReview.status.pass'), { exact: true }).waitFor()
+  assert.equal(await mappingDetails.locator('img').count(), 0, 'Mapping plugin output is rendered as text, not HTML')
+  assert.deepEqual(modelMappingPluginReviewRequests, [{ plugin_id: 'ci.channel.mapping.review' }])
+
   assert.deepEqual(errors, [])
-  assert.ok(requests.every(({ path }) => path.startsWith('/api/admin/channel-monitor/') || path === '/api/admin/channels' || path.startsWith('/api/admin/channels/')))
+  assert.ok(requests.every(({ path }) => path.startsWith('/api/admin/channel-monitor/') || path === '/api/admin/channel-model-mapping/plugin-reviewers' || path === '/api/admin/channels' || path.startsWith('/api/admin/channels/')))
   console.log('Channel monitor browser regression passed; all API calls were mocked')
 } catch (error) {
   if (page) await page.screenshot({ path: resolve(process.env.RUNNER_TEMP, 'channel-monitor-failure.png'), fullPage: true }).catch(() => {})

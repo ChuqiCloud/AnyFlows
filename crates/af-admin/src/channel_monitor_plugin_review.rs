@@ -1,38 +1,27 @@
 //! Read-only plugin analysis of already-collected active channel monitor events.
 
-use std::{
-    collections::BTreeSet,
-    future::Future,
-    pin::Pin,
-    sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
-use af_db::{PluginDeploymentQuery, PluginDeploymentRecord};
-use af_plugin_contract::{
-    CapabilityAccess, InvocationMetadata, PluginId, PluginManifest, SideEffectClass,
-};
-use af_plugin_runtime::CapabilityExecutionContext;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::sync::Semaphore;
 
 use crate::{
     ActiveChannelMonitorEvent, ActiveChannelMonitorEventKind, ActiveChannelMonitorService,
-    ActiveChannelMonitorServiceError, AdminPluginLifecycleError,
-    DatabaseAdminPluginLifecycleService,
+    ActiveChannelMonitorServiceError, DatabaseAdminPluginLifecycleService,
+    readonly_plugin_review::{
+        MAX_REVIEW_CHECKS, ReadOnlyPluginReviewContract, ReadOnlyPluginReviewError,
+        invoke_read_only_review, list_read_only_reviewers, read_only_review_output_schema,
+    },
 };
 
 const REVIEW_CAPABILITY: &str = "channel.monitor.events.review.read";
 const REVIEW_BUDGET: Duration = Duration::from_secs(5);
 const MAX_REVIEW_INPUT_BYTES: u32 = 64 * 1024;
 const MAX_REVIEW_OUTPUT_BYTES: u32 = 16 * 1024;
-const MAX_REVIEW_CHECKS: usize = 64;
-const MAX_REVIEWER_DEPLOYMENTS: u32 = 100;
-const MAX_REVIEWER_SCAN_PAGES: usize = 11;
 const MAX_REVIEW_EVENTS: usize = 100;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ActiveChannelMonitorPluginReviewStatus {
     Pass,
@@ -41,14 +30,12 @@ pub enum ActiveChannelMonitorPluginReviewStatus {
     Fail,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ActiveChannelMonitorPluginReviewCheck {
     pub code: String,
     pub title: String,
     pub status: ActiveChannelMonitorPluginReviewStatus,
     pub message: String,
-    #[serde(default)]
     pub recommendation: Option<String>,
 }
 
@@ -130,48 +117,21 @@ impl ActiveChannelMonitorPluginReviewService for DatabaseActiveChannelMonitorPlu
         &self,
     ) -> ActiveChannelMonitorPluginReviewFuture<'_, ActiveChannelMonitorPluginReviewerList> {
         Box::pin(async move {
-            if self.plugins.capability_runtime().is_none() {
-                return Ok(ActiveChannelMonitorPluginReviewerList {
-                    plugins: Vec::new(),
-                });
-            }
-            tokio::time::timeout(REVIEW_BUDGET, async {
-                let repository = self.plugins.catalog_repository();
-                let mut cursor = None;
-                let mut plugins = Vec::new();
-                for page_index in 0..MAX_REVIEWER_SCAN_PAGES {
-                    let deployments = repository
-                        .list_deployments(
-                            PluginDeploymentQuery::new(cursor.clone(), MAX_REVIEWER_DEPLOYMENTS)
-                                .map_err(|_| ActiveChannelMonitorPluginReviewError::Unavailable)?,
-                        )
-                        .await
-                        .map_err(|_| ActiveChannelMonitorPluginReviewError::Unavailable)?;
-                    let page_is_full = deployments.len() == MAX_REVIEWER_DEPLOYMENTS as usize;
-                    if let Some(last) = deployments.last() {
-                        cursor = Some(last.plugin_id.clone());
-                    }
-                    plugins.extend(
-                        deployments
-                            .iter()
-                            .filter(|deployment| review_capability(deployment).is_some())
-                            .map(reviewer),
-                    );
-                    if plugins.len() >= MAX_REVIEWER_DEPLOYMENTS as usize {
-                        plugins.truncate(MAX_REVIEWER_DEPLOYMENTS as usize);
-                        break;
-                    }
-                    if !page_is_full {
-                        break;
-                    }
-                    if page_index + 1 == MAX_REVIEWER_SCAN_PAGES {
-                        return Err(ActiveChannelMonitorPluginReviewError::Unavailable);
-                    }
-                }
-                Ok(ActiveChannelMonitorPluginReviewerList { plugins })
-            })
-            .await
-            .map_err(|_| ActiveChannelMonitorPluginReviewError::Unavailable)?
+            let input_schema = review_input_schema();
+            let output_schema = read_only_review_output_schema();
+            let public_config = json!({});
+            let contract = review_contract(&input_schema, &output_schema, &public_config);
+            let plugins = list_read_only_reviewers(&self.plugins, &contract, REVIEW_BUDGET)
+                .await
+                .map_err(map_review_error)?
+                .into_iter()
+                .map(|plugin| ActiveChannelMonitorPluginReviewer {
+                    plugin_id: plugin.plugin_id,
+                    display_name: plugin.display_name,
+                    plugin_version: plugin.plugin_version,
+                })
+                .collect();
+            Ok(ActiveChannelMonitorPluginReviewerList { plugins })
         })
     }
 
@@ -185,8 +145,6 @@ impl ActiveChannelMonitorPluginReviewService for DatabaseActiveChannelMonitorPlu
             if target_id <= 0 || request_id.is_empty() || request_id.len() > 64 {
                 return Err(ActiveChannelMonitorPluginReviewError::InvalidInput);
             }
-            PluginId::new(plugin_id.clone())
-                .map_err(|_| ActiveChannelMonitorPluginReviewError::InvalidInput)?;
             let _permit = self
                 .slots
                 .try_acquire()
@@ -203,55 +161,19 @@ impl ActiveChannelMonitorPluginReviewService for DatabaseActiveChannelMonitorPlu
                     return Err(ActiveChannelMonitorPluginReviewError::Unavailable);
                 }
                 let input = review_input(&events)?;
-                let input_bytes = serde_json::to_vec(&input)
-                    .map_err(|_| ActiveChannelMonitorPluginReviewError::Unavailable)?;
-                if input_bytes.len() > MAX_REVIEW_INPUT_BYTES as usize {
-                    return Err(ActiveChannelMonitorPluginReviewError::InvalidInput);
-                }
-
-                let repository = self.plugins.catalog_repository();
-                let deployment = repository
-                    .get_deployment(&plugin_id)
-                    .await
-                    .map_err(|_| ActiveChannelMonitorPluginReviewError::Unavailable)?
-                    .ok_or(ActiveChannelMonitorPluginReviewError::NotFound)?;
-                if review_capability(&deployment).is_none() {
-                    return Err(ActiveChannelMonitorPluginReviewError::Forbidden);
-                }
-                let runtime = self
-                    .plugins
-                    .capability_runtime()
-                    .ok_or(ActiveChannelMonitorPluginReviewError::Unavailable)?;
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map_err(|_| ActiveChannelMonitorPluginReviewError::Unavailable)?;
-                let deadline_unix_ms = u64::try_from(now.as_millis())
-                    .ok()
-                    .and_then(|now| now.checked_add(u64::try_from(REVIEW_BUDGET.as_millis()).ok()?))
-                    .ok_or(ActiveChannelMonitorPluginReviewError::Unavailable)?;
-                let context = CapabilityExecutionContext::new(
-                    format!("channel-monitor-review:{}", deployment.artifact.digest),
-                    InvocationMetadata {
-                        request_id: request_id.clone(),
-                        deadline_unix_ms,
-                    },
-                    json!({}),
-                    MAX_REVIEW_INPUT_BYTES,
+                let input_schema = review_input_schema();
+                let output_schema = read_only_review_output_schema();
+                let public_config = json!({});
+                let contract = review_contract(&input_schema, &output_schema, &public_config);
+                let result = invoke_read_only_review(
+                    &self.plugins,
+                    &contract,
+                    &plugin_id,
+                    &request_id,
+                    input,
                 )
-                .map_err(|_| ActiveChannelMonitorPluginReviewError::InvalidInput)?;
-                let response = runtime
-                    .invoke_capability(
-                        repository,
-                        &plugin_id,
-                        deployment.generation,
-                        &context,
-                        REVIEW_CAPABILITY,
-                        1,
-                        input,
-                    )
-                    .await
-                    .map_err(map_plugin_error)?;
-                let output = decode_review(response.output)?;
+                .await
+                .map_err(map_review_error)?;
 
                 // New events or a target deletion make the analysis stale; never return advice
                 // that no longer describes the current event history.
@@ -263,26 +185,14 @@ impl ActiveChannelMonitorPluginReviewService for DatabaseActiveChannelMonitorPlu
                 if latest_events != events {
                     return Err(ActiveChannelMonitorPluginReviewError::Conflict);
                 }
-                let latest_deployment = repository
-                    .get_deployment(&plugin_id)
-                    .await
-                    .map_err(|_| ActiveChannelMonitorPluginReviewError::Unavailable)?
-                    .ok_or(ActiveChannelMonitorPluginReviewError::NotFound)?;
-                if latest_deployment.generation != deployment.generation
-                    || review_capability(&latest_deployment).is_none()
-                {
-                    return Err(ActiveChannelMonitorPluginReviewError::Conflict);
-                }
-
-                let source = reviewer(&deployment);
                 Ok(ActiveChannelMonitorPluginReview {
-                    plugin_id: source.plugin_id,
-                    display_name: source.display_name,
-                    plugin_version: source.plugin_version,
+                    plugin_id: result.reviewer.plugin_id,
+                    display_name: result.reviewer.display_name,
+                    plugin_version: result.reviewer.plugin_version,
                     event_count: u32::try_from(events.len())
                         .map_err(|_| ActiveChannelMonitorPluginReviewError::Unavailable)?,
-                    summary: output.summary,
-                    checks: output.checks,
+                    summary: result.summary,
+                    checks: result.checks.into_iter().map(map_review_check).collect(),
                 })
             })
             .await
@@ -307,51 +217,36 @@ fn map_monitor_error(
     }
 }
 
-fn map_plugin_error(error: AdminPluginLifecycleError) -> ActiveChannelMonitorPluginReviewError {
+fn map_review_error(error: ReadOnlyPluginReviewError) -> ActiveChannelMonitorPluginReviewError {
     match error {
-        AdminPluginLifecycleError::Forbidden => ActiveChannelMonitorPluginReviewError::Forbidden,
-        AdminPluginLifecycleError::InvalidInput => {
+        ReadOnlyPluginReviewError::Forbidden => ActiveChannelMonitorPluginReviewError::Forbidden,
+        ReadOnlyPluginReviewError::InvalidInput => {
             ActiveChannelMonitorPluginReviewError::InvalidInput
         }
-        AdminPluginLifecycleError::NotFound => ActiveChannelMonitorPluginReviewError::NotFound,
-        AdminPluginLifecycleError::Conflict => ActiveChannelMonitorPluginReviewError::Conflict,
-        AdminPluginLifecycleError::CapabilityReviewRequired
-        | AdminPluginLifecycleError::PayloadTooLarge
-        | AdminPluginLifecycleError::RuntimeUnavailable
-        | AdminPluginLifecycleError::Internal => ActiveChannelMonitorPluginReviewError::Unavailable,
+        ReadOnlyPluginReviewError::NotFound => ActiveChannelMonitorPluginReviewError::NotFound,
+        ReadOnlyPluginReviewError::Conflict => ActiveChannelMonitorPluginReviewError::Conflict,
+        ReadOnlyPluginReviewError::Unavailable => {
+            ActiveChannelMonitorPluginReviewError::Unavailable
+        }
     }
 }
 
-fn review_capability(deployment: &PluginDeploymentRecord) -> Option<&'static str> {
-    if !deployment.enabled
-        || deployment.artifact.approval.is_none()
-        || deployment.artifact.revocation.is_some()
-        || deployment.artifact.source_kind != af_db::PluginArtifactSourceKind::LocalProcess
-        || deployment.config != json!({})
-        || !deployment
-            .granted_capabilities
-            .iter()
-            .any(|grant| grant.id == REVIEW_CAPABILITY && grant.version == 1)
-    {
-        return None;
+fn review_contract<'a>(
+    input_schema: &'a Value,
+    output_schema: &'a Value,
+    public_config: &'a Value,
+) -> ReadOnlyPluginReviewContract<'a> {
+    ReadOnlyPluginReviewContract {
+        capability_id: REVIEW_CAPABILITY,
+        capability_version: 1,
+        input_schema,
+        output_schema,
+        public_config,
+        max_input_bytes: MAX_REVIEW_INPUT_BYTES,
+        max_output_bytes: MAX_REVIEW_OUTPUT_BYTES,
+        max_checks: MAX_REVIEW_CHECKS,
+        budget: REVIEW_BUDGET,
     }
-    let manifest: PluginManifest =
-        serde_json::from_value(deployment.artifact.manifest.clone()).ok()?;
-    if manifest.limits.max_response_bytes < MAX_REVIEW_INPUT_BYTES {
-        return None;
-    }
-    manifest
-        .capabilities
-        .iter()
-        .any(|capability| {
-            capability.id.as_str() == REVIEW_CAPABILITY
-                && capability.version == 1
-                && capability.access == CapabilityAccess::Read
-                && capability.side_effect == SideEffectClass::None
-                && capability.input_schema.as_ref() == Some(&review_input_schema())
-                && capability.output_schema.as_ref() == Some(&review_output_schema())
-        })
-        .then_some(REVIEW_CAPABILITY)
 }
 
 fn review_input_schema() -> Value {
@@ -372,47 +267,6 @@ fn review_input_schema() -> Value {
             }
         }}
     })
-}
-
-fn review_output_schema() -> Value {
-    json!({
-        "type":"object",
-        "additionalProperties":false,
-        "required":["summary","checks"],
-        "properties":{
-            "summary":{"type":"string","minLength":1,"maxLength":2048},
-            "checks":{
-                "type":"array","maxItems":MAX_REVIEW_CHECKS,
-                "items":{
-                    "type":"object","additionalProperties":false,
-                    "required":["code","title","status","message","recommendation"],
-                    "properties":{
-                        "code":{"type":"string","minLength":1,"maxLength":64},
-                        "title":{"type":"string","minLength":1,"maxLength":128},
-                        "status":{"type":"string","enum":["pass","info","warning","fail"]},
-                        "message":{"type":"string","minLength":1,"maxLength":2048},
-                        "recommendation":{"type":["string","null"],"minLength":1,"maxLength":2048}
-                    }
-                }
-            }
-        }
-    })
-}
-
-fn reviewer(deployment: &PluginDeploymentRecord) -> ActiveChannelMonitorPluginReviewer {
-    let display_name = deployment
-        .artifact
-        .manifest
-        .get("displayName")
-        .and_then(serde_json::Value::as_str)
-        .filter(|value| valid_text(value, 128))
-        .unwrap_or(&deployment.plugin_id)
-        .to_owned();
-    ActiveChannelMonitorPluginReviewer {
-        plugin_id: deployment.plugin_id.clone(),
-        display_name,
-        plugin_version: deployment.artifact.plugin_version.clone(),
-    }
 }
 
 fn review_input(
@@ -442,47 +296,29 @@ fn review_input(
     Ok(input)
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ReviewOutput {
-    summary: String,
-    checks: Vec<ActiveChannelMonitorPluginReviewCheck>,
-}
-
-fn decode_review(output: Value) -> Result<ReviewOutput, ActiveChannelMonitorPluginReviewError> {
-    if serde_json::to_vec(&output)
-        .map_err(|_| ActiveChannelMonitorPluginReviewError::Unavailable)?
-        .len()
-        > MAX_REVIEW_OUTPUT_BYTES as usize
-    {
-        return Err(ActiveChannelMonitorPluginReviewError::Unavailable);
+fn map_review_check(
+    check: crate::readonly_plugin_review::ReadOnlyPluginReviewCheck,
+) -> ActiveChannelMonitorPluginReviewCheck {
+    ActiveChannelMonitorPluginReviewCheck {
+        code: check.code,
+        title: check.title,
+        status: match check.status {
+            crate::readonly_plugin_review::ReadOnlyPluginReviewStatus::Pass => {
+                ActiveChannelMonitorPluginReviewStatus::Pass
+            }
+            crate::readonly_plugin_review::ReadOnlyPluginReviewStatus::Info => {
+                ActiveChannelMonitorPluginReviewStatus::Info
+            }
+            crate::readonly_plugin_review::ReadOnlyPluginReviewStatus::Warning => {
+                ActiveChannelMonitorPluginReviewStatus::Warning
+            }
+            crate::readonly_plugin_review::ReadOnlyPluginReviewStatus::Fail => {
+                ActiveChannelMonitorPluginReviewStatus::Fail
+            }
+        },
+        message: check.message,
+        recommendation: check.recommendation,
     }
-    let parsed: ReviewOutput = serde_json::from_value(output)
-        .map_err(|_| ActiveChannelMonitorPluginReviewError::Unavailable)?;
-    let mut codes = BTreeSet::new();
-    if !valid_text(&parsed.summary, 2_048)
-        || parsed.checks.len() > MAX_REVIEW_CHECKS
-        || parsed.checks.iter().any(|check| {
-            !valid_text(&check.code, 64)
-                || !codes.insert(check.code.as_str())
-                || !valid_text(&check.title, 128)
-                || !valid_text(&check.message, 2_048)
-                || check
-                    .recommendation
-                    .as_deref()
-                    .is_some_and(|value| !valid_text(value, 2_048))
-        })
-    {
-        return Err(ActiveChannelMonitorPluginReviewError::Unavailable);
-    }
-    Ok(parsed)
-}
-
-fn valid_text(value: &str, max_bytes: usize) -> bool {
-    !value.trim().is_empty()
-        && value.len() <= max_bytes
-        && value.trim() == value
-        && !value.chars().any(char::is_control)
 }
 
 #[cfg(test)]
@@ -507,17 +343,5 @@ mod tests {
         assert!(!text.contains("channel_id"));
         assert!(!text.contains("credential_id"));
         assert!(!text.contains("model"));
-    }
-
-    #[test]
-    fn monitor_review_output_rejects_duplicate_codes_and_unknown_fields() {
-        assert!(decode_review(json!({
-            "summary":"ok",
-            "checks":[
-                {"code":"same","title":"one","status":"pass","message":"ok","recommendation":null},
-                {"code":"same","title":"two","status":"info","message":"ok","recommendation":null}
-            ]
-        })).is_err());
-        assert!(decode_review(json!({"summary":"ok","checks":[],"extra":"no"})).is_err());
     }
 }

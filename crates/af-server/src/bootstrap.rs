@@ -3035,6 +3035,14 @@ impl Bootstrap<Supervised> {
                 Arc::clone(&plugin_lifecycle_service),
             ),
         );
+        let channel_model_mapping_plugin_review_service: Arc<
+            dyn af_admin::ChannelModelMappingPluginReviewService,
+        > = Arc::new(
+            af_admin::DatabaseChannelModelMappingPluginReviewService::new(
+                Arc::clone(&self.stage.infrastructure.admin_channel_reader),
+                Arc::clone(&plugin_lifecycle_service),
+            ),
+        );
         let router = router.merge(af_http::build_upstream_usage_router(
             self.stage.upstream_usage_service.clone(),
             self.stage.upstream_usage_service.clone(),
@@ -3162,6 +3170,10 @@ impl Bootstrap<Supervised> {
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
                 active_channel_monitor_service,
                 active_channel_monitor_plugin_review_service,
+            ))
+            .merge(af_http::build_channel_model_mapping_plugin_review_router(
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+                channel_model_mapping_plugin_review_service,
             ))
             .merge(af_http::build_account_verification_router(
                 Arc::new(
