@@ -70,6 +70,7 @@ class ExamplePackageTests(unittest.TestCase):
                 "org.anyflows.example-catalog",
             )
             self.assertIn("payload/anyflows_plugin.py", package["names"])
+
     def test_catalog_query_uses_a_safe_utf8_byte_limit(self):
         with tempfile.TemporaryDirectory(prefix="anyflows-example-test-") as temporary:
             output = Path(temporary) / "catalog.afplugin"
@@ -104,7 +105,6 @@ class ExamplePackageTests(unittest.TestCase):
             [],
         )
 
-if __name__ == "__main__":
 
 if __name__ == "__main__":
     unittest.main()
