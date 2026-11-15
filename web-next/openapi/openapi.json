@@ -13656,9 +13656,9 @@
     },
     "/api/admin/channel-monitor/plugin-reviewers": {
       "get": {
+        "tags": [],
         "summary": "列出渠道监控分析插件",
         "operationId": "listAdminChannelMonitorPluginReviewers",
-        "parameters": [],
         "responses": {
           "200": {
             "description": "",
@@ -13899,6 +13899,7 @@
     },
     "/api/admin/channel-monitor/targets/{id}/plugin-review": {
       "post": {
+        "tags": [],
         "summary": "分析渠道监控事件",
         "operationId": "reviewAdminChannelMonitorTargetWithPlugin",
         "parameters": [
@@ -35955,8 +35956,7 @@
               }
             ]
           }
-        },
-        "additionalProperties": false
+        }
       },
       "ActiveChannelMonitorPluginReviewRequest": {
         "type": "object",
@@ -36015,8 +36015,7 @@
             },
             "maxItems": 64
           }
-        },
-        "additionalProperties": false
+        }
       },
       "ActiveChannelMonitorPluginReviewStatusResponse": {
         "type": "string",
@@ -36040,8 +36039,7 @@
             },
             "maxItems": 100
           }
-        },
-        "additionalProperties": false
+        }
       },
       "ActiveChannelMonitorPluginReviewerResponse": {
         "type": "object",
@@ -36066,8 +36064,7 @@
             "maxLength": 64,
             "minLength": 1
           }
-        },
-        "additionalProperties": false
+        }
       },
       "ActiveChannelMonitorSettingsRequest": {
         "type": "object",
