@@ -87,6 +87,14 @@ export type ActiveChannelMonitorPluginReviewCheckResponse = {
     message: string;
     recommendation: string | null;
 };
+export type ActiveChannelMonitorPluginReviewerListResponse = {
+    plugins: Array<ActiveChannelMonitorPluginReviewerResponse>;
+};
+export type ActiveChannelMonitorPluginReviewerResponse = {
+    plugin_id: string;
+    display_name: string;
+    plugin_version: string;
+};
 export type ActiveChannelMonitorPluginReviewRequest = {
     plugin_id: string;
 };
@@ -99,14 +107,6 @@ export type ActiveChannelMonitorPluginReviewResponse = {
     checks: Array<ActiveChannelMonitorPluginReviewCheckResponse>;
 };
 export type ActiveChannelMonitorPluginReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
-export type ActiveChannelMonitorPluginReviewerListResponse = {
-    plugins: Array<ActiveChannelMonitorPluginReviewerResponse>;
-};
-export type ActiveChannelMonitorPluginReviewerResponse = {
-    plugin_id: string;
-    display_name: string;
-    plugin_version: string;
-};
 export type ActiveChannelMonitorSettingsRequest = {
     enabled: boolean;
     global_daily_budget: number;
@@ -143,34 +143,6 @@ export type ActiveChannelMonitorTargetResponse = {
     alert_active: boolean;
     muted_until_epoch_seconds?: number | null;
 };
-export type ChannelModelMappingPluginReviewCheckResponse = {
-    code: string;
-    title: string;
-    status: ChannelModelMappingPluginReviewStatusResponse;
-    message: string;
-    recommendation: string | null;
-};
-export type ChannelModelMappingPluginReviewRequest = {
-    plugin_id: string;
-};
-export type ChannelModelMappingPluginReviewResponse = {
-    plugin_id: string;
-    display_name: string;
-    plugin_version: string;
-    model_count: number;
-    mapping_count: number;
-    summary: string;
-    checks: Array<ChannelModelMappingPluginReviewCheckResponse>;
-};
-export type ChannelModelMappingPluginReviewerListResponse = {
-    plugins: Array<ChannelModelMappingPluginReviewerResponse>;
-};
-export type ChannelModelMappingPluginReviewerResponse = {
-    plugin_id: string;
-    display_name: string;
-    plugin_version: string;
-};
-export type ChannelModelMappingPluginReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
 export type AdminAuthenticationSettings = {
     password_login_enabled: boolean;
     registration_enabled: boolean;
@@ -1728,14 +1700,42 @@ export type BalanceDisplaySymbolPosition = 'prefix' | 'suffix';
 export type BalanceHistoryQuery = {
     limit?: number | null;
 };
-export type ClientProfileBehaviorSchema = 'standard' | 'claude_utc_date_v1' | 'codex_v1' | 'open_code_v1';
-export type ClientProfileBindRequest = {
-    binding: ClientProfileBindingSchema;
-    expected_version: number;
+export type ChannelModelMappingPluginReviewCheckResponse = {
+    code: string;
+    title: string;
+    status: ChannelModelMappingPluginReviewStatusResponse;
+    message: string;
+    recommendation: string | null;
 };
+export type ChannelModelMappingPluginReviewerListResponse = {
+    plugins: Array<ChannelModelMappingPluginReviewerResponse>;
+};
+export type ChannelModelMappingPluginReviewerResponse = {
+    plugin_id: string;
+    display_name: string;
+    plugin_version: string;
+};
+export type ChannelModelMappingPluginReviewRequest = {
+    plugin_id: string;
+};
+export type ChannelModelMappingPluginReviewResponse = {
+    plugin_id: string;
+    display_name: string;
+    plugin_version: string;
+    model_count: number;
+    mapping_count: number;
+    summary: string;
+    checks: Array<ChannelModelMappingPluginReviewCheckResponse>;
+};
+export type ChannelModelMappingPluginReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
+export type ClientProfileBehaviorSchema = 'standard' | 'claude_utc_date_v1' | 'codex_v1' | 'open_code_v1';
 export type ClientProfileBindingSchema = {
     key: string;
     revision: number;
+};
+export type ClientProfileBindRequest = {
+    binding: ClientProfileBindingSchema;
+    expected_version: number;
 };
 export type ClientProfileCapabilitiesSchema = {
     templates: Array<ClientProfileDefinitionSchema>;
@@ -2202,9 +2202,6 @@ export type MerchantPluginReviewCheck = {
     status: 'pass' | 'info' | 'warning' | 'fail';
     title: string;
 };
-export type MerchantPluginReviewRequest = {
-    plugin_id: string;
-};
 export type MerchantPluginReviewer = {
     display_name: string;
     plugin_id: string;
@@ -2212,6 +2209,9 @@ export type MerchantPluginReviewer = {
 };
 export type MerchantPluginReviewerSummary = {
     plugins: Array<MerchantPluginReviewer>;
+};
+export type MerchantPluginReviewRequest = {
+    plugin_id: string;
 };
 export type MerchantPool = {
     commission_bps: number;
