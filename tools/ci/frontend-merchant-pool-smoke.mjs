@@ -72,6 +72,7 @@ const catalogRequests = []
 const poolRequests = []
 const serviceRequests = []
 const serviceSubmitRequests = []
+const pluginReviewRequests = []
 const platformModelRequests = []
 let platformModelFailures = 1
 let serviceSaveFailures = 1
@@ -176,6 +177,7 @@ try {
     if (path === '/api/merchant-pools/1/statistics') return respond({ items: [{ service_id: 51, merchant_id: 6, sample_count: 10, success_count: 9, failure_count: 1, success_rate: 90, ttft_p50_ms: 123, ttft_p95_ms: 400, latency_p50_ms: 300, latency_p95_ms: 900, status: 'normal', updated_at: now }], as_of: now, window_seconds: 86400 })
     if (path === '/api/merchant-pools/1/timeline') return respond({ items: [{ service_id: 51, merchant_id: 6, buckets: timelineBuckets }], as_of: now, window_seconds: 86400 })
     if (path === '/api/merchant/profile' && method === 'GET') return respond(activeProfile)
+    if (path === '/api/merchant/plugin-reviewers' && method === 'GET') return respond({ plugins: [{ plugin_id: 'ci.service.review.v1', display_name: 'CI reviewer', plugin_version: '1.2.3' }, { plugin_id: 'ci.service.review.v2', display_name: 'CI reviewer (second)', plugin_version: '2.0.0' }] })
     if (path === '/api/merchant/apply' && method === 'POST') {
       const body = request.postDataJSON(); applicationRequests.push(body)
       activeProfile = { ...profile, name: body.name, description: body.description, status: 'pending' }
@@ -213,6 +215,12 @@ try {
       assert.equal(services[0].draft.models[0].model, 'manual-unpriced-fixture')
       services[0] = { ...services[0], status: 'pending', draft: { ...services[0].draft, status: 'pending' } }
       return respond(services[0])
+    }
+    if (path === '/api/merchant/services/88/plugin-review' && method === 'POST') {
+      const body = request.postDataJSON()
+      pluginReviewRequests.push(body)
+      assert.deepEqual(body, { plugin_id: 'ci.service.review.v2' }, 'A plugin check sends only the selected plugin identifier')
+      return respond({ plugin_id: body.plugin_id, display_name: 'CI reviewer (second)', plugin_version: '2.0.0', service_revision: 1, summary: 'Read-only check result: <img src=x onerror=alert(1)>', checks: [{ code: 'model.mapping', title: 'Model mapping needs review', status: 'warning', message: 'Review the upstream model mapping.', recommendation: 'Confirm that the upstream model accepts this alias.' }, { code: 'endpoint.tls', title: 'Endpoint transport', status: 'pass', message: 'The configured endpoint uses HTTPS.', recommendation: null }] })
     }
     if (path === '/api/merchant/quote' && method === 'POST') {
       const body = request.postDataJSON(); quoteRequests.push(body)
@@ -670,6 +678,23 @@ try {
   assert.equal((await submitUnpricedResponse).status(), 200, 'A merchant can submit an unpriced manual model for administrator review')
   await ownedServicesTable.getByText(label('status.pending'), { exact: true }).waitFor()
   assert.equal(serviceSubmitRequests.length, 1)
+  const reviewerListResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/merchant/plugin-reviewers' && response.request().method() === 'GET')
+  await ownedServicesTable.getByRole('button', { name: label('pluginReview.open'), exact: true }).click()
+  await reviewerListResponse
+  const pluginReviewDialog = page.getByRole('dialog')
+  const pluginPicker = pluginReviewDialog.getByRole('combobox', { name: label('pluginReview.plugin'), exact: true })
+  await pluginPicker.selectOption('ci.service.review.v2')
+  const pluginReviewResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/merchant/services/88/plugin-review' && response.request().method() === 'POST')
+  await pluginReviewDialog.getByRole('button', { name: label('pluginReview.run'), exact: true }).click()
+  assert.equal((await pluginReviewResponse).status(), 200)
+  await pluginReviewDialog.getByText('Read-only check result: <img src=x onerror=alert(1)>', { exact: true }).waitFor()
+  await pluginReviewDialog.getByText('Review the upstream model mapping.', { exact: true }).waitFor()
+  await pluginReviewDialog.getByText(/Confirm that the upstream model accepts this alias\./).waitFor()
+  await pluginReviewDialog.getByText(label('pluginReview.status.pass'), { exact: true }).waitFor()
+  assert.equal(await pluginReviewDialog.locator('img').count(), 0, 'Plugin messages are rendered as text, never interpreted as HTML')
+  assert.deepEqual(pluginReviewRequests, [{ plugin_id: 'ci.service.review.v2' }])
+  await pluginReviewDialog.getByRole('button', { name: label('close'), exact: true }).last().click()
+  await pluginReviewDialog.waitFor({ state: 'hidden' })
   await page.screenshot({ path: resolve(screenshots, 'merchant-workspace.png'), fullPage: true, animations: 'disabled' })
   assert.equal(await page.evaluate(() => [...Object.values(sessionStorage), ...Object.values(localStorage)].some(value => value.includes('ci-upstream-private-key'))), false)
   const workspaceTabs = page.getByRole('group', { name: label('workspace'), exact: true })

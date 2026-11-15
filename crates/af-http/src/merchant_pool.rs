@@ -2,7 +2,9 @@ use crate::{
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_session::{no_store_empty, no_store_json},
 };
-use af_admin::{MerchantPoolService, SessionAuthentication, SessionAuthenticator};
+use af_admin::{
+    MerchantPluginReviewService, MerchantPoolService, SessionAuthentication, SessionAuthenticator,
+};
 use af_domain::{
     MerchantApplication, MerchantListQuery, MerchantPoolError, MerchantPoolSettings,
     MerchantPoolTerms, MerchantPoolWrite, MerchantReview, MerchantServiceWrite,
@@ -22,11 +24,13 @@ use tower_http::limit::RequestBodyLimitLayer;
 #[derive(Clone)]
 struct MerchantHttpState {
     service: Arc<dyn MerchantPoolService>,
+    plugin_review: Arc<dyn MerchantPluginReviewService>,
 }
 
 /// Every operation is authenticated; role and ownership are checked in the service.
 pub fn build_merchant_pool_router(
     service: Arc<dyn MerchantPoolService>,
+    plugin_review: Arc<dyn MerchantPluginReviewService>,
     authenticator: Arc<dyn SessionAuthenticator>,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
@@ -45,6 +49,7 @@ pub fn build_merchant_pool_router(
             get(catalog_service),
         )
         .route("/api/merchant/profile", get(profile))
+        .route("/api/merchant/plugin-reviewers", get(plugin_reviewers))
         .route("/api/merchant/apply", axum::routing::post(apply))
         .route("/api/merchant/quote", axum::routing::post(quote))
         .route("/api/merchant/available-pools", get(available_pools))
@@ -59,6 +64,10 @@ pub fn build_merchant_pool_router(
         .route(
             "/api/merchant/services/{id}/submit",
             axum::routing::post(submit),
+        )
+        .route(
+            "/api/merchant/services/{id}/plugin-review",
+            axum::routing::post(review_service_with_plugin),
         )
         .route(
             "/api/merchant/services/{id}/pause",
@@ -106,7 +115,10 @@ pub fn build_merchant_pool_router(
         .layer(DefaultBodyLimit::max(256 * 1024))
         .layer(RequestBodyLimitLayer::new(256 * 1024))
         .layer(authentication)
-        .with_state(MerchantHttpState { service })
+        .with_state(MerchantHttpState {
+            service,
+            plugin_review,
+        })
 }
 
 #[derive(Deserialize)]
@@ -118,6 +130,11 @@ struct PauseWrite {
 #[serde(deny_unknown_fields)]
 struct KeyWrite {
     api_key: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PluginReviewWrite {
+    plugin_id: String,
 }
 
 pub(crate) struct MerchantHttpError(MerchantPoolError);
@@ -215,6 +232,33 @@ async fn profile(
     Extension(auth): Extension<SessionAuthentication>,
 ) -> Result<Response, MerchantHttpError> {
     Ok(no_store_json(s.service.profile(auth.principal()).await?))
+}
+async fn plugin_reviewers(
+    State(s): State<MerchantHttpState>,
+    Extension(auth): Extension<SessionAuthentication>,
+) -> Result<Response, MerchantHttpError> {
+    Ok(no_store_json(
+        s.plugin_review.reviewers(auth.principal()).await?,
+    ))
+}
+async fn review_service_with_plugin(
+    State(s): State<MerchantHttpState>,
+    Extension(auth): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<af_telemetry::RequestId>,
+    Path(service): Path<i64>,
+    request: Result<Json<PluginReviewWrite>, JsonRejection>,
+) -> Result<Response, MerchantHttpError> {
+    let request = body(request)?;
+    Ok(no_store_json(
+        s.plugin_review
+            .review_service(
+                auth.principal(),
+                id(service)?,
+                request.plugin_id,
+                request_id.as_str().to_owned(),
+            )
+            .await?,
+    ))
 }
 async fn apply(
     State(s): State<MerchantHttpState>,

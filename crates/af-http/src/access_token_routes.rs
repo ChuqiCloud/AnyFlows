@@ -278,6 +278,11 @@ pub(crate) fn scope_presets_with_overlay(
             "商户运营",
             &["merchant:read", "merchant:write", "merchant_finance:read"][..],
         ),
+        (
+            "merchant_plugin_review",
+            "商户插件检查",
+            &["merchant_plugins:read", "merchant_plugins:execute"][..],
+        ),
     ] {
         presets.push(AccessTokenPresetResponse {
             id: id.to_owned(),
@@ -492,6 +497,8 @@ fn is_session_only(path: &str) -> bool {
 fn user_scopes(method: &str, path: &str) -> &'static [&'static str] {
     let read = method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD");
     match path {
+        "/api/merchant/plugin-reviewers" => &["merchant_plugins:read"],
+        "/api/merchant/services/{id}/plugin-review" => &["merchant_plugins:execute"],
         "/api/account/external-connectors" | "/api/account/external-accounts/{id}/balances" => {
             &["external_accounts:read"]
         }
@@ -689,6 +696,8 @@ fn scope_label(scope: &str) -> &str {
         "billing:write" => "管理本人充值与兑换",
         "merchant:read" => "读取本人商户服务",
         "merchant:write" => "管理本人商户服务",
+        "merchant_plugins:read" => "读取可用的商户检查插件",
+        "merchant_plugins:execute" => "运行商户服务资料检查",
         "merchant_secrets:write" => "写入本人商户上游凭据",
         "merchant_finance:read" => "读取本人商户财务",
         "merchant_finance:write" => "管理本人商户提现",
@@ -761,6 +770,37 @@ mod tests {
                 .unwrap()
                 .required_scopes,
             ["external_accounts:write"]
+        );
+    }
+
+    #[test]
+    fn merchant_plugin_review_uses_dedicated_read_and_execute_scopes() {
+        let list = policy("GET", "/api/merchant/plugin-reviewers").unwrap();
+        assert_eq!(list.required_scopes, ["merchant_plugins:read"]);
+        assert!(!list.admin_only && !list.session_only);
+
+        let review = policy("POST", "/api/merchant/services/{id}/plugin-review").unwrap();
+        assert_eq!(review.required_scopes, ["merchant_plugins:execute"]);
+        assert!(!review.admin_only && !review.session_only);
+
+        let catalog = scope_catalog(SessionRole::User);
+        assert!(
+            catalog
+                .iter()
+                .any(|scope| { scope.scope == "merchant_plugins:read" && !scope.admin_only })
+        );
+        assert!(
+            catalog
+                .iter()
+                .any(|scope| { scope.scope == "merchant_plugins:execute" && !scope.admin_only })
+        );
+        assert!(
+            scope_presets(SessionRole::User)
+                .iter()
+                .find(|preset| preset.id == "merchant_plugin_review")
+                .is_some_and(|preset| {
+                    preset.scopes == ["merchant_plugins:read", "merchant_plugins:execute"]
+                })
         );
     }
 
