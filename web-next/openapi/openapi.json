@@ -35998,69 +35998,6 @@
           }
         }
       },
-      "ActiveChannelMonitorPluginReviewRequest": {
-        "type": "object",
-        "required": [
-          "plugin_id"
-        ],
-        "properties": {
-          "plugin_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          }
-        },
-        "additionalProperties": false
-      },
-      "ActiveChannelMonitorPluginReviewerResponse": {
-        "type": "object",
-        "required": [
-          "plugin_id",
-          "display_name",
-          "plugin_version"
-        ],
-        "properties": {
-          "plugin_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          },
-          "display_name": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          },
-          "plugin_version": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 1
-          }
-        }
-      },
-      "ActiveChannelMonitorPluginReviewerListResponse": {
-        "type": "object",
-        "required": [
-          "plugins"
-        ],
-        "properties": {
-          "plugins": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewerResponse"
-            },
-            "maxItems": 100
-          }
-        }
-      },
-      "ActiveChannelMonitorPluginReviewStatusResponse": {
-        "type": "string",
-        "enum": [
-          "pass",
-          "info",
-          "warning",
-          "fail"
-        ]
-      },
       "ActiveChannelMonitorPluginReviewCheckResponse": {
         "type": "object",
         "required": [
@@ -36098,6 +36035,20 @@
             "minLength": 1
           }
         }
+      },
+      "ActiveChannelMonitorPluginReviewRequest": {
+        "type": "object",
+        "required": [
+          "plugin_id"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
       },
       "ActiveChannelMonitorPluginReviewResponse": {
         "type": "object",
@@ -36141,6 +36092,55 @@
               "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewCheckResponse"
             },
             "maxItems": 64
+          }
+        }
+      },
+      "ActiveChannelMonitorPluginReviewStatusResponse": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "info",
+          "warning",
+          "fail"
+        ]
+      },
+      "ActiveChannelMonitorPluginReviewerListResponse": {
+        "type": "object",
+        "required": [
+          "plugins"
+        ],
+        "properties": {
+          "plugins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewerResponse"
+            },
+            "maxItems": 100
+          }
+        }
+      },
+      "ActiveChannelMonitorPluginReviewerResponse": {
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "display_name",
+          "plugin_version"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "plugin_version": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
           }
         }
       },
@@ -36328,69 +36328,6 @@
           }
         }
       },
-      "ChannelModelMappingPluginReviewRequest": {
-        "type": "object",
-        "required": [
-          "plugin_id"
-        ],
-        "properties": {
-          "plugin_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          }
-        },
-        "additionalProperties": false
-      },
-      "ChannelModelMappingPluginReviewerResponse": {
-        "type": "object",
-        "required": [
-          "plugin_id",
-          "display_name",
-          "plugin_version"
-        ],
-        "properties": {
-          "plugin_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          },
-          "display_name": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          },
-          "plugin_version": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 1
-          }
-        }
-      },
-      "ChannelModelMappingPluginReviewerListResponse": {
-        "type": "object",
-        "required": [
-          "plugins"
-        ],
-        "properties": {
-          "plugins": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ChannelModelMappingPluginReviewerResponse"
-            },
-            "maxItems": 100
-          }
-        }
-      },
-      "ChannelModelMappingPluginReviewStatusResponse": {
-        "type": "string",
-        "enum": [
-          "pass",
-          "info",
-          "warning",
-          "fail"
-        ]
-      },
       "ChannelModelMappingPluginReviewCheckResponse": {
         "type": "object",
         "required": [
@@ -36428,6 +36365,20 @@
             "minLength": 1
           }
         }
+      },
+      "ChannelModelMappingPluginReviewRequest": {
+        "type": "object",
+        "required": [
+          "plugin_id"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
       },
       "ChannelModelMappingPluginReviewResponse": {
         "type": "object",
@@ -36477,6 +36428,55 @@
               "$ref": "#/components/schemas/ChannelModelMappingPluginReviewCheckResponse"
             },
             "maxItems": 64
+          }
+        }
+      },
+      "ChannelModelMappingPluginReviewStatusResponse": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "info",
+          "warning",
+          "fail"
+        ]
+      },
+      "ChannelModelMappingPluginReviewerListResponse": {
+        "type": "object",
+        "required": [
+          "plugins"
+        ],
+        "properties": {
+          "plugins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelModelMappingPluginReviewerResponse"
+            },
+            "maxItems": 100
+          }
+        }
+      },
+      "ChannelModelMappingPluginReviewerResponse": {
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "display_name",
+          "plugin_version"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "plugin_version": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
           }
         }
       },

@@ -80,24 +80,15 @@ export type ActiveChannelMonitorEventResponse = {
     latency_ms?: number | null;
     occurred_epoch_seconds: number;
 };
-export type ActiveChannelMonitorPluginReviewRequest = {
-    plugin_id: string;
-};
-export type ActiveChannelMonitorPluginReviewerResponse = {
-    plugin_id: string;
-    display_name: string;
-    plugin_version: string;
-};
-export type ActiveChannelMonitorPluginReviewerListResponse = {
-    plugins: Array<ActiveChannelMonitorPluginReviewerResponse>;
-};
-export type ActiveChannelMonitorPluginReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
 export type ActiveChannelMonitorPluginReviewCheckResponse = {
     code: string;
     title: string;
     status: ActiveChannelMonitorPluginReviewStatusResponse;
     message: string;
     recommendation: string | null;
+};
+export type ActiveChannelMonitorPluginReviewRequest = {
+    plugin_id: string;
 };
 export type ActiveChannelMonitorPluginReviewResponse = {
     plugin_id: string;
@@ -106,6 +97,15 @@ export type ActiveChannelMonitorPluginReviewResponse = {
     event_count: number;
     summary: string;
     checks: Array<ActiveChannelMonitorPluginReviewCheckResponse>;
+};
+export type ActiveChannelMonitorPluginReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
+export type ActiveChannelMonitorPluginReviewerListResponse = {
+    plugins: Array<ActiveChannelMonitorPluginReviewerResponse>;
+};
+export type ActiveChannelMonitorPluginReviewerResponse = {
+    plugin_id: string;
+    display_name: string;
+    plugin_version: string;
 };
 export type ActiveChannelMonitorSettingsRequest = {
     enabled: boolean;
@@ -143,24 +143,15 @@ export type ActiveChannelMonitorTargetResponse = {
     alert_active: boolean;
     muted_until_epoch_seconds?: number | null;
 };
-export type ChannelModelMappingPluginReviewRequest = {
-    plugin_id: string;
-};
-export type ChannelModelMappingPluginReviewerResponse = {
-    plugin_id: string;
-    display_name: string;
-    plugin_version: string;
-};
-export type ChannelModelMappingPluginReviewerListResponse = {
-    plugins: Array<ChannelModelMappingPluginReviewerResponse>;
-};
-export type ChannelModelMappingPluginReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
 export type ChannelModelMappingPluginReviewCheckResponse = {
     code: string;
     title: string;
     status: ChannelModelMappingPluginReviewStatusResponse;
     message: string;
     recommendation: string | null;
+};
+export type ChannelModelMappingPluginReviewRequest = {
+    plugin_id: string;
 };
 export type ChannelModelMappingPluginReviewResponse = {
     plugin_id: string;
@@ -170,6 +161,15 @@ export type ChannelModelMappingPluginReviewResponse = {
     mapping_count: number;
     summary: string;
     checks: Array<ChannelModelMappingPluginReviewCheckResponse>;
+};
+export type ChannelModelMappingPluginReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
+export type ChannelModelMappingPluginReviewerListResponse = {
+    plugins: Array<ChannelModelMappingPluginReviewerResponse>;
+};
+export type ChannelModelMappingPluginReviewerResponse = {
+    plugin_id: string;
+    display_name: string;
+    plugin_version: string;
 };
 export type AdminAuthenticationSettings = {
     password_login_enabled: boolean;
