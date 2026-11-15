@@ -1952,19 +1952,6 @@ export const watchMerchantService = <ThrowOnError extends boolean = true>(option
     url: '/api/merchant-pools/{pool}/services/{service}/watch',
     ...options
 });
-export const listAdminChannelMonitorPluginReviewers = <ThrowOnError extends boolean = true>(options?: Options<ListAdminChannelMonitorPluginReviewersData, ThrowOnError>): RequestResult<ListAdminChannelMonitorPluginReviewersResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListAdminChannelMonitorPluginReviewersResponses, unknown, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
-            key: 'personalAccessTokenBearer',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/admin/channel-monitor/plugin-reviewers',
-    ...options
-});
 export const getSettings = <ThrowOnError extends boolean = true>(options?: Options<GetSettingsData, ThrowOnError>): RequestResult<GetSettingsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetSettingsResponses, unknown, ThrowOnError>({
     security: [{
             key: 'bearerAuth',
@@ -2049,6 +2036,19 @@ export const listEvents = <ThrowOnError extends boolean = true>(options: Options
             type: 'http'
         }],
     url: '/api/admin/channel-monitor/targets/{id}/events',
+    ...options
+});
+export const listAdminChannelMonitorPluginReviewers = <ThrowOnError extends boolean = true>(options?: Options<ListAdminChannelMonitorPluginReviewersData, ThrowOnError>): RequestResult<ListAdminChannelMonitorPluginReviewersResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListAdminChannelMonitorPluginReviewersResponses, unknown, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }, {
+            key: 'personalAccessTokenBearer',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/channel-monitor/plugin-reviewers',
     ...options
 });
 export const reviewAdminChannelMonitorTargetWithPlugin = <ThrowOnError extends boolean = true>(options: Options<ReviewAdminChannelMonitorTargetWithPluginData, ThrowOnError>): RequestResult<ReviewAdminChannelMonitorTargetWithPluginResponses, unknown, ThrowOnError> => (options.client ?? client).post<ReviewAdminChannelMonitorTargetWithPluginResponses, unknown, ThrowOnError>({

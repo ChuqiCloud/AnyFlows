@@ -7414,16 +7414,6 @@ export type WatchMerchantServiceResponses = {
     200: MerchantServiceWatch;
 };
 export type WatchMerchantServiceResponse = WatchMerchantServiceResponses[keyof WatchMerchantServiceResponses];
-export type ListAdminChannelMonitorPluginReviewersData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/admin/channel-monitor/plugin-reviewers';
-};
-export type ListAdminChannelMonitorPluginReviewersResponses = {
-    200: ActiveChannelMonitorPluginReviewerListResponse;
-};
-export type ListAdminChannelMonitorPluginReviewersResponse = ListAdminChannelMonitorPluginReviewersResponses[keyof ListAdminChannelMonitorPluginReviewersResponses];
 export type GetSettingsData = {
     body?: never;
     path?: never;
@@ -7488,6 +7478,16 @@ export type ListEventsResponses = {
     200: Array<ActiveChannelMonitorEventResponse>;
 };
 export type ListEventsResponse = ListEventsResponses[keyof ListEventsResponses];
+export type ListAdminChannelMonitorPluginReviewersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/channel-monitor/plugin-reviewers';
+};
+export type ListAdminChannelMonitorPluginReviewersResponses = {
+    200: ActiveChannelMonitorPluginReviewerListResponse;
+};
+export type ListAdminChannelMonitorPluginReviewersResponse = ListAdminChannelMonitorPluginReviewersResponses[keyof ListAdminChannelMonitorPluginReviewersResponses];
 export type ReviewAdminChannelMonitorTargetWithPluginData = {
     body: ActiveChannelMonitorPluginReviewRequest;
     path: {

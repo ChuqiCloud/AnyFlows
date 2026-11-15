@@ -2445,19 +2445,6 @@ export const watchMerchantServiceMutation = (options?: Partial<Options<WatchMerc
     };
     return mutationOptions;
 };
-export const listAdminChannelMonitorPluginReviewersQueryKey = (options?: Options<ListAdminChannelMonitorPluginReviewersData>) => createQueryKey('listAdminChannelMonitorPluginReviewers', options);
-export const listAdminChannelMonitorPluginReviewersOptions = (options?: Options<ListAdminChannelMonitorPluginReviewersData>) => queryOptions<ListAdminChannelMonitorPluginReviewersResponse, DefaultError, ListAdminChannelMonitorPluginReviewersResponse, ReturnType<typeof listAdminChannelMonitorPluginReviewersQueryKey>>({
-    queryFn: async ({ queryKey, signal }) => {
-        const { data } = await listAdminChannelMonitorPluginReviewers({
-            ...options,
-            ...queryKey[0],
-            signal,
-            throwOnError: true
-        });
-        return data;
-    },
-    queryKey: listAdminChannelMonitorPluginReviewersQueryKey(options)
-});
 export const getSettingsQueryKey = (options?: Options<GetSettingsData>) => createQueryKey('getSettings', options);
 export const getSettingsOptions = (options?: Options<GetSettingsData>) => queryOptions<GetSettingsResponse, DefaultError, GetSettingsResponse, ReturnType<typeof getSettingsQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -2535,6 +2522,19 @@ export const listEventsOptions = (options: Options<ListEventsData>) => queryOpti
         return data;
     },
     queryKey: listEventsQueryKey(options)
+});
+export const listAdminChannelMonitorPluginReviewersQueryKey = (options?: Options<ListAdminChannelMonitorPluginReviewersData>) => createQueryKey('listAdminChannelMonitorPluginReviewers', options);
+export const listAdminChannelMonitorPluginReviewersOptions = (options?: Options<ListAdminChannelMonitorPluginReviewersData>) => queryOptions<ListAdminChannelMonitorPluginReviewersResponse, DefaultError, ListAdminChannelMonitorPluginReviewersResponse, ReturnType<typeof listAdminChannelMonitorPluginReviewersQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listAdminChannelMonitorPluginReviewers({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listAdminChannelMonitorPluginReviewersQueryKey(options)
 });
 export const reviewAdminChannelMonitorTargetWithPluginMutation = (options?: Partial<Options<ReviewAdminChannelMonitorTargetWithPluginData>>): UseMutationOptions<ReviewAdminChannelMonitorTargetWithPluginResponse, DefaultError, Options<ReviewAdminChannelMonitorTargetWithPluginData>> => {
     const mutationOptions: UseMutationOptions<ReviewAdminChannelMonitorTargetWithPluginResponse, DefaultError, Options<ReviewAdminChannelMonitorTargetWithPluginData>> = {

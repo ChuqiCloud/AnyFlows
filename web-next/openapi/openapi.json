@@ -13654,36 +13654,6 @@
         ]
       }
     },
-    "/api/admin/channel-monitor/plugin-reviewers": {
-      "get": {
-        "tags": [],
-        "summary": "列出渠道监控分析插件",
-        "operationId": "listAdminChannelMonitorPluginReviewers",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewerListResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          },
-          {
-            "personalAccessTokenBearer": []
-          }
-        ],
-        "x-anyflows-pat-scopes": [
-          "admin:list_admin_channel_monitor_plugin_reviewers:execute"
-        ]
-      }
-    },
     "/api/admin/channel-monitor/settings": {
       "get": {
         "tags": [],
@@ -13894,6 +13864,36 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:list_events:execute"
+        ]
+      }
+    },
+    "/api/admin/channel-monitor/plugin-reviewers": {
+      "get": {
+        "tags": [],
+        "summary": "列出渠道监控分析插件",
+        "operationId": "listAdminChannelMonitorPluginReviewers",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewerListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_channel_monitor_plugin_reviewers:execute"
         ]
       }
     },
@@ -35945,16 +35945,12 @@
             "minLength": 1
           },
           "recommendation": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2048,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048,
+            "minLength": 1
           }
         }
       },
