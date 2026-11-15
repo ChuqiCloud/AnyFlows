@@ -7,7 +7,7 @@ import { useAdminChannels } from './channel-api'
 import { useAdminChannelCredentials } from '@/features/credentials/credential-api'
 import type { AdminChannel } from '@/lib/api/generated/types.gen'
 import { ApiError } from '@/lib/api'
-import { type ActiveMonitorTarget, type ActiveMonitorTargetWrite, useActiveMonitorEvents, useActiveMonitorMutation, useActiveMonitorSettings, useActiveMonitorTargets } from './active-channel-monitor-api'
+import { type ActiveMonitorPluginReviewCheck, type ActiveMonitorTarget, type ActiveMonitorTargetWrite, useActiveMonitorEvents, useActiveMonitorMutation, useActiveMonitorPluginReviewers, useActiveMonitorSettings, useActiveMonitorTargets, useReviewActiveMonitorEvents } from './active-channel-monitor-api'
 import { PoolError } from '@/features/merchant-pool/merchant-pool-ui'
 
 const lowCostProbeProtocols = new Set<AdminChannel['protocol']>([
@@ -46,11 +46,81 @@ function targetWrite(target: ActiveMonitorTarget): ActiveMonitorTargetWrite {
   }
 }
 
+function reviewCheckStyle(status: ActiveMonitorPluginReviewCheck['status']) {
+  if (status === 'fail') return 'border-danger/25 bg-danger/5'
+  if (status === 'warning') return 'border-warning/25 bg-warning/5'
+  if (status === 'pass') return 'border-success/25 bg-success/5'
+  return 'border-[var(--hairline)] bg-surface-2/40'
+}
+
+function MonitorEventPluginReview({ targetId, t }: {
+  targetId: number
+  t: (key: string, values?: Record<string, unknown>) => string
+}) {
+  const reviewers = useActiveMonitorPluginReviewers(true)
+  const review = useReviewActiveMonitorEvents()
+  const [selectedPluginId, setSelectedPluginId] = useState('')
+  const plugins = reviewers.data?.plugins ?? []
+  const pluginId = plugins.some((plugin) => plugin.plugin_id === selectedPluginId)
+    ? selectedPluginId
+    : plugins[0]?.plugin_id ?? ''
+  const runReview = async () => {
+    if (!pluginId) return
+    try {
+      await review.mutateAsync({ targetId, pluginId })
+    } catch {
+      // Keep the selection so an administrator can retry the same analysis.
+    }
+  }
+
+  if (reviewers.isPending) {
+    return <p role="status" className="mt-2 text-xs text-muted-foreground">{t('channels.activeMonitor.pluginReview.loadingPlugins')}</p>
+  }
+  if (reviewers.isError) {
+    return <div className="mt-2"><PoolError message={t('channels.activeMonitor.pluginReview.pluginsError')} onRetry={() => void reviewers.refetch()} /></div>
+  }
+  if (plugins.length === 0) {
+    return <p className="mt-2 text-xs text-muted-foreground">{t('channels.activeMonitor.pluginReview.noPlugins')}</p>
+  }
+
+  return <section className="mt-2 grid gap-2 rounded-lg border border-[var(--hairline)] p-3" aria-label={t('channels.activeMonitor.pluginReview.title')}>
+    <p className="text-[11px] leading-4 text-muted-foreground">{t('channels.activeMonitor.pluginReview.hint')}</p>
+    <div className="flex flex-wrap items-end gap-2">
+      <label className="grid min-w-48 flex-1 gap-1 text-xs">{t('channels.activeMonitor.pluginReview.plugin')}
+        <select className="h-9 min-w-0 rounded-lg border border-[var(--hairline)] bg-background px-3" aria-label={t('channels.activeMonitor.pluginReview.plugin')} value={pluginId} disabled={review.isPending} onChange={(event) => { setSelectedPluginId(event.target.value); review.reset() }}>
+          {plugins.map((plugin) => <option key={plugin.plugin_id} value={plugin.plugin_id}>{plugin.display_name} · {plugin.plugin_version}</option>)}
+        </select>
+      </label>
+      <Button size="sm" color="primary" isDisabled={!pluginId || review.isPending} isLoading={review.isPending} onPress={() => void runReview()}>{t('channels.activeMonitor.pluginReview.run')}</Button>
+    </div>
+    {review.isError ? <PoolError message={t('channels.activeMonitor.pluginReview.runError')} onRetry={() => void runReview()} /> : null}
+    {review.data ? <div className="grid gap-2" aria-live="polite">
+      <div className="rounded-md border border-[var(--hairline)] p-2">
+        <div className="flex flex-wrap items-center justify-between gap-1 text-[10px] text-muted-foreground">
+          <span>{review.data.display_name} · {review.data.plugin_version}</span>
+          <span>{t('channels.activeMonitor.pluginReview.eventCount', { count: review.data.event_count })}</span>
+        </div>
+        <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5">{review.data.summary}</p>
+      </div>
+      {review.data.checks.length ? <ul className="grid gap-1.5">{review.data.checks.map((check, index) => <li key={`${check.code}-${index}`} className={`grid gap-1 rounded-md border p-2 ${reviewCheckStyle(check.status)}`}>
+        <div className="flex flex-wrap items-center gap-2 text-[10px]">
+          <span>{t(`channels.activeMonitor.pluginReview.status.${check.status}`, { defaultValue: check.status })}</span>
+          <code className="break-all text-muted-foreground">{check.code}</code>
+        </div>
+        <strong className="text-[11px]">{check.title}</strong>
+        <p className="whitespace-pre-wrap break-words text-[11px] leading-4">{check.message}</p>
+        {check.recommendation ? <p className="whitespace-pre-wrap break-words text-[11px] leading-4 text-muted-foreground">{t('channels.activeMonitor.pluginReview.recommendation')}: {check.recommendation}</p> : null}
+      </li>)}</ul> : <p className="text-[11px] text-muted-foreground">{t('channels.activeMonitor.pluginReview.noChecks')}</p>}
+    </div> : null}
+  </section>
+}
+
 function MonitorTargetRow({ target, onDelete, onToggle, onMute, loading, t }: {
   target: ActiveMonitorTarget
   onDelete: (id: number) => void; onToggle: (target: ActiveMonitorTarget) => void; onMute: (target: ActiveMonitorTarget, muted: boolean) => void; loading: boolean; t: (key: string, values?: Record<string, unknown>) => string
 }) {
   const [eventsOpen, setEventsOpen] = useState(false)
+  const [pluginReviewOpen, setPluginReviewOpen] = useState(false)
   const events = useActiveMonitorEvents(target.id, eventsOpen)
   return <article className="grid gap-2 border-t border-[var(--hairline)] py-3 sm:grid-cols-[minmax(0,1fr)_auto]">
     <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong className="truncate text-xs">{target.model}</strong><span className="text-[11px] text-muted-foreground">{t('channels.activeMonitor.targetSummary', { channel: target.channel_id, credential: target.credential_id })}</span><span className={`rounded px-1.5 py-0.5 text-[10px] ${target.enabled ? 'bg-success/10 text-success' : 'bg-default/10 text-muted-foreground'}`}>{t(target.enabled ? 'channels.activeMonitor.targetEnabledStatus' : 'channels.activeMonitor.targetDisabledStatus')}</span>{target.alert_active ? <span className="inline-flex items-center gap-1 rounded bg-danger/10 px-1.5 py-0.5 text-[10px] text-danger"><Bell className="size-3" aria-hidden="true" />{t('channels.activeMonitor.alerting')}</span> : null}{target.alert_active && target.is_muted && target.muted_until_epoch_seconds ? <span className="rounded bg-warning/10 px-1.5 py-0.5 text-[10px] text-warning">{t('channels.activeMonitor.mutedUntil', { value: new Date(target.muted_until_epoch_seconds * 1000).toLocaleString() })}</span> : null}</div>
@@ -58,8 +128,13 @@ function MonitorTargetRow({ target, onDelete, onToggle, onMute, loading, t }: {
       <p className="mt-1 text-[11px] text-muted-foreground">{t('channels.activeMonitor.lastProbe', { value: target.last_attempt_epoch_seconds ? new Date(target.last_attempt_epoch_seconds * 1000).toLocaleString() : t('channels.activeMonitor.neverProbed') })} · {t('channels.activeMonitor.lastSuccess', { value: target.last_success_epoch_seconds ? new Date(target.last_success_epoch_seconds * 1000).toLocaleString() : t('channels.activeMonitor.noSuccessfulProbe') })}</p>
       <div className="mt-1"><Button size="sm" variant="light" aria-expanded={eventsOpen} onPress={() => setEventsOpen((open) => !open)}><History className="size-3.5" aria-hidden="true" /><span>{t(eventsOpen ? 'channels.activeMonitor.hideEvents' : 'channels.activeMonitor.showEvents')}</span><ChevronDown className={`size-3.5 transition-transform ${eventsOpen ? 'rotate-180' : ''}`} aria-hidden="true" /></Button></div>
       {eventsOpen && events.isPending ? <span role="status" className="mt-1 block text-[10px] text-muted-foreground">{t('channels.activeMonitor.loadingEvents')}</span> : null}
-      {eventsOpen && events.data?.length ? <div className="mt-2 flex flex-wrap gap-2">{events.data.slice(0, 4).map((event) => <span key={event.id} className={`rounded px-1.5 py-0.5 text-[10px] ${event.kind === 'down' ? 'bg-danger/10 text-danger' : 'bg-success/10 text-success'}`}>{t(`channels.activeMonitor.events.${event.kind}`)} · {new Date(event.occurred_epoch_seconds * 1000).toLocaleString()}</span>)}</div> : null}
-      {eventsOpen && events.data?.length === 0 ? <span className="mt-1 block text-[10px] text-muted-foreground">{t('channels.activeMonitor.noEvents')}</span> : null}
+      {eventsOpen && events.data ? <>
+        {events.data.length ? <div className="mt-2 flex flex-wrap gap-2">{events.data.slice(0, 4).map((event) => <span key={event.id} className={`rounded px-1.5 py-0.5 text-[10px] ${event.kind === 'down' ? 'bg-danger/10 text-danger' : 'bg-success/10 text-success'}`}>{t(`channels.activeMonitor.events.${event.kind}`)} · {new Date(event.occurred_epoch_seconds * 1000).toLocaleString()}</span>)}</div> : <span className="mt-1 block text-[10px] text-muted-foreground">{t('channels.activeMonitor.noEvents')}</span>}
+        <div className="mt-2">
+          <Button size="sm" variant="bordered" onPress={() => setPluginReviewOpen((open) => !open)}>{t(pluginReviewOpen ? 'channels.activeMonitor.pluginReview.close' : 'channels.activeMonitor.pluginReview.open')}</Button>
+          {pluginReviewOpen ? <MonitorEventPluginReview targetId={target.id} t={t} /> : null}
+        </div>
+      </> : null}
       {eventsOpen && events.isError ? <span className="mt-1 block text-[10px] text-muted-foreground">{t('channels.activeMonitor.eventsUnavailable')}</span> : null}
     </div>
     <div className="flex flex-wrap items-center justify-end gap-2"><Switch size="sm" isSelected={target.enabled} isDisabled={loading} aria-label={t('channels.activeMonitor.targetEnabled')} onValueChange={(enabled) => onToggle({ ...target, enabled })} />{target.alert_active ? <Button size="sm" variant="flat" isDisabled={loading} onPress={() => onMute({ ...target }, !target.is_muted)}>{target.is_muted ? t('channels.activeMonitor.unmute') : t('channels.activeMonitor.muteOneHour')}</Button> : null}<Button size="sm" variant="light" color="danger" isDisabled={loading} onPress={() => onDelete(target.id)}>{t('channels.activeMonitor.remove')}</Button></div>
