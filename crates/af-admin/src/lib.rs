@@ -70,6 +70,14 @@ pub use active_channel_monitor::{
     ActiveChannelMonitorWorker, ActiveChannelProbe, ActiveChannelProbeFuture,
     ActiveChannelProbeResult, DatabaseActiveChannelMonitorService,
 };
+mod channel_monitor_plugin_review;
+pub use channel_monitor_plugin_review::{
+    ActiveChannelMonitorPluginReview, ActiveChannelMonitorPluginReviewCheck,
+    ActiveChannelMonitorPluginReviewError, ActiveChannelMonitorPluginReviewFuture,
+    ActiveChannelMonitorPluginReviewService, ActiveChannelMonitorPluginReviewStatus,
+    ActiveChannelMonitorPluginReviewer, ActiveChannelMonitorPluginReviewerList,
+    DatabaseActiveChannelMonitorPluginReviewService,
+};
 mod balance_alert_settings;
 mod balance_alert_task;
 #[cfg(test)]

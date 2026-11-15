@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use af_admin::{
     ActiveChannelMonitorConfig, ActiveChannelMonitorEvent, ActiveChannelMonitorEventKind,
+    ActiveChannelMonitorPluginReviewCheck, ActiveChannelMonitorPluginReviewError,
+    ActiveChannelMonitorPluginReviewService, ActiveChannelMonitorPluginReviewStatus,
     ActiveChannelMonitorService, ActiveChannelMonitorServiceError, ActiveChannelMonitorTarget,
     ActiveChannelMonitorTargetInput, SessionAuthentication, SessionAuthenticator,
 };
@@ -27,6 +29,7 @@ use crate::{
 #[derive(Clone)]
 struct ActiveChannelMonitorState {
     service: Arc<dyn ActiveChannelMonitorService>,
+    plugin_review: Arc<dyn ActiveChannelMonitorPluginReviewService>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -125,6 +128,92 @@ pub struct ActiveChannelMonitorEventResponse {
     pub occurred_epoch_seconds: i64,
 }
 
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ActiveChannelMonitorPluginReviewRequest {
+    #[schema(min_length = 1, max_length = 128)]
+    pub plugin_id: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ActiveChannelMonitorPluginReviewerResponse {
+    #[schema(min_length = 1, max_length = 128)]
+    pub plugin_id: String,
+    #[schema(min_length = 1, max_length = 128)]
+    pub display_name: String,
+    #[schema(min_length = 1, max_length = 64)]
+    pub plugin_version: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ActiveChannelMonitorPluginReviewerListResponse {
+    #[schema(max_items = 100)]
+    pub plugins: Vec<ActiveChannelMonitorPluginReviewerResponse>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ActiveChannelMonitorPluginReviewStatusResponse {
+    Pass,
+    Info,
+    Warning,
+    Fail,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ActiveChannelMonitorPluginReviewCheckResponse {
+    #[schema(min_length = 1, max_length = 64)]
+    pub code: String,
+    #[schema(min_length = 1, max_length = 128)]
+    pub title: String,
+    pub status: ActiveChannelMonitorPluginReviewStatusResponse,
+    #[schema(min_length = 1, max_length = 2048)]
+    pub message: String,
+    #[schema(required = true, min_length = 1, max_length = 2048)]
+    pub recommendation: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ActiveChannelMonitorPluginReviewResponse {
+    #[schema(min_length = 1, max_length = 128)]
+    pub plugin_id: String,
+    #[schema(min_length = 1, max_length = 128)]
+    pub display_name: String,
+    #[schema(min_length = 1, max_length = 64)]
+    pub plugin_version: String,
+    #[schema(minimum = 0)]
+    pub event_count: u32,
+    #[schema(min_length = 1, max_length = 2048)]
+    pub summary: String,
+    #[schema(max_items = 64)]
+    pub checks: Vec<ActiveChannelMonitorPluginReviewCheckResponse>,
+}
+
+impl From<ActiveChannelMonitorPluginReviewCheck> for ActiveChannelMonitorPluginReviewCheckResponse {
+    fn from(value: ActiveChannelMonitorPluginReviewCheck) -> Self {
+        Self {
+            code: value.code,
+            title: value.title,
+            status: match value.status {
+                ActiveChannelMonitorPluginReviewStatus::Pass => {
+                    ActiveChannelMonitorPluginReviewStatusResponse::Pass
+                }
+                ActiveChannelMonitorPluginReviewStatus::Info => {
+                    ActiveChannelMonitorPluginReviewStatusResponse::Info
+                }
+                ActiveChannelMonitorPluginReviewStatus::Warning => {
+                    ActiveChannelMonitorPluginReviewStatusResponse::Warning
+                }
+                ActiveChannelMonitorPluginReviewStatus::Fail => {
+                    ActiveChannelMonitorPluginReviewStatusResponse::Fail
+                }
+            },
+            message: value.message,
+            recommendation: value.recommendation,
+        }
+    }
+}
+
 impl From<ActiveChannelMonitorEvent> for ActiveChannelMonitorEventResponse {
     fn from(v: ActiveChannelMonitorEvent) -> Self {
         Self {
@@ -161,6 +250,7 @@ impl From<ActiveChannelMonitorConfig> for ActiveChannelMonitorSettingsResponse {
 pub fn build_active_channel_monitor_router(
     auth: Arc<dyn SessionAuthenticator>,
     service: Arc<dyn ActiveChannelMonitorService>,
+    plugin_review: Arc<dyn ActiveChannelMonitorPluginReviewService>,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(auth),
@@ -183,9 +273,20 @@ pub fn build_active_channel_monitor_router(
             "/api/admin/channel-monitor/targets/{id}/events",
             get(list_events),
         )
+        .route(
+            "/api/admin/channel-monitor/plugin-reviewers",
+            get(list_plugin_reviewers),
+        )
+        .route(
+            "/api/admin/channel-monitor/targets/{id}/plugin-review",
+            axum::routing::post(review_monitor_events),
+        )
         .route_layer(middleware::from_fn(authorize_management_admin))
         .route_layer(authentication)
-        .with_state(ActiveChannelMonitorState { service })
+        .with_state(ActiveChannelMonitorState {
+            service,
+            plugin_review,
+        })
 }
 
 fn map_error(error: ActiveChannelMonitorServiceError) -> ManagementError {
@@ -193,6 +294,20 @@ fn map_error(error: ActiveChannelMonitorServiceError) -> ManagementError {
         ActiveChannelMonitorServiceError::InvalidInput => ManagementError::InvalidRequest,
         ActiveChannelMonitorServiceError::NotFound => ManagementError::ChannelNotFound,
         ActiveChannelMonitorServiceError::Unavailable => ManagementError::ProbeUnavailable,
+    }
+}
+
+fn map_plugin_review_error(error: ActiveChannelMonitorPluginReviewError) -> ManagementError {
+    match error {
+        ActiveChannelMonitorPluginReviewError::InvalidInput => {
+            ManagementError::PluginLifecycleInvalidRequest
+        }
+        ActiveChannelMonitorPluginReviewError::NotFound => ManagementError::PluginLifecycleNotFound,
+        ActiveChannelMonitorPluginReviewError::Forbidden => ManagementError::Forbidden,
+        ActiveChannelMonitorPluginReviewError::Conflict => ManagementError::PluginLifecycleConflict,
+        ActiveChannelMonitorPluginReviewError::Unavailable => {
+            ManagementError::PluginLifecycleUnavailable
+        }
     }
 }
 
@@ -288,6 +403,56 @@ async fn list_events(
     Ok(no_store_json(rows))
 }
 
+#[utoipa::path(get,path="/api/admin/channel-monitor/plugin-reviewers",operation_id="listAdminChannelMonitorPluginReviewers",summary="列出渠道监控分析插件",responses((status=200,body=ActiveChannelMonitorPluginReviewerListResponse)),security(("bearerAuth" = []))) ]
+async fn list_plugin_reviewers(
+    State(s): State<ActiveChannelMonitorState>,
+    Extension(_): Extension<SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    let plugins = s
+        .plugin_review
+        .reviewers()
+        .await
+        .map_err(map_plugin_review_error)?
+        .plugins
+        .into_iter()
+        .map(|value| ActiveChannelMonitorPluginReviewerResponse {
+            plugin_id: value.plugin_id,
+            display_name: value.display_name,
+            plugin_version: value.plugin_version,
+        })
+        .collect();
+    Ok(no_store_json(
+        ActiveChannelMonitorPluginReviewerListResponse { plugins },
+    ))
+}
+
+#[utoipa::path(post,path="/api/admin/channel-monitor/targets/{id}/plugin-review",operation_id="reviewAdminChannelMonitorTargetWithPlugin",summary="分析渠道监控事件",params(("id"=i64,Path,minimum=1)),request_body=ActiveChannelMonitorPluginReviewRequest,responses((status=200,body=ActiveChannelMonitorPluginReviewResponse)),security(("bearerAuth" = []))) ]
+async fn review_monitor_events(
+    State(s): State<ActiveChannelMonitorState>,
+    Path(id): Path<i64>,
+    Extension(request_id): Extension<af_telemetry::RequestId>,
+    Extension(_): Extension<SessionAuthentication>,
+    request: Result<Json<ActiveChannelMonitorPluginReviewRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    if id <= 0 {
+        return Err(ManagementError::InvalidRequest);
+    }
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let review = s
+        .plugin_review
+        .review_events(id, request.plugin_id, request_id.as_str().to_owned())
+        .await
+        .map_err(map_plugin_review_error)?;
+    Ok(no_store_json(ActiveChannelMonitorPluginReviewResponse {
+        plugin_id: review.plugin_id,
+        display_name: review.display_name,
+        plugin_version: review.plugin_version,
+        event_count: review.event_count,
+        summary: review.summary,
+        checks: review.checks.into_iter().map(Into::into).collect(),
+    }))
+}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -296,7 +461,9 @@ async fn list_events(
         list_targets,
         upsert_target,
         delete_target,
-        list_events
+        list_events,
+        list_plugin_reviewers,
+        review_monitor_events
     ),
     components(schemas(
         ActiveChannelMonitorSettingsRequest,
@@ -304,7 +471,13 @@ async fn list_events(
         ActiveChannelMonitorTargetRequest,
         ActiveChannelMonitorTargetResponse,
         ActiveChannelMonitorEventResponse,
-        ActiveChannelMonitorEventKindResponse
+        ActiveChannelMonitorEventKindResponse,
+        ActiveChannelMonitorPluginReviewRequest,
+        ActiveChannelMonitorPluginReviewerResponse,
+        ActiveChannelMonitorPluginReviewerListResponse,
+        ActiveChannelMonitorPluginReviewStatusResponse,
+        ActiveChannelMonitorPluginReviewCheckResponse,
+        ActiveChannelMonitorPluginReviewResponse
     ))
 )]
 pub struct ActiveChannelMonitorApiDoc;
@@ -321,7 +494,7 @@ mod tests {
     fn every_active_monitor_endpoint_declares_bearer_authentication() {
         let document = serde_json::to_value(active_channel_monitor_openapi_document()).unwrap();
         let paths = document["paths"].as_object().unwrap();
-        assert_eq!(paths.len(), 4);
+        assert_eq!(paths.len(), 6);
         for path in paths.values() {
             for operation in path.as_object().unwrap().values() {
                 assert_eq!(
@@ -330,5 +503,36 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn monitor_plugin_review_routes_are_explicitly_admin_only_and_typed() {
+        let document = serde_json::to_value(active_channel_monitor_openapi_document()).unwrap();
+        let list = &document["paths"]["/api/admin/channel-monitor/plugin-reviewers"]["get"];
+        assert_eq!(
+            list["operationId"],
+            "listAdminChannelMonitorPluginReviewers"
+        );
+        assert_eq!(list["summary"], "列出渠道监控分析插件");
+        assert_eq!(list["security"], serde_json::json!([{"bearerAuth": []}]));
+
+        let review =
+            &document["paths"]["/api/admin/channel-monitor/targets/{id}/plugin-review"]["post"];
+        assert_eq!(
+            review["operationId"],
+            "reviewAdminChannelMonitorTargetWithPlugin"
+        );
+        assert_eq!(
+            review["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ActiveChannelMonitorPluginReviewRequest"
+        );
+        let request_schema =
+            &document["components"]["schemas"]["ActiveChannelMonitorPluginReviewRequest"];
+        assert_eq!(request_schema["required"], serde_json::json!(["plugin_id"]));
+        assert!(request_schema["properties"].get("capability_id").is_none());
+        assert_eq!(
+            document["components"]["schemas"]["ActiveChannelMonitorPluginReviewStatusResponse"]["enum"],
+            serde_json::json!(["pass", "info", "warning", "fail"])
+        );
     }
 }

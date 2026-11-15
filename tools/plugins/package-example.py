@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create the unsigned Linux/Python catalogue example package."""
+"""Create an unsigned Linux/Python example package with the bundled SDK."""
 
 from __future__ import annotations
 
@@ -11,14 +11,31 @@ import sys
 import tempfile
 
 
+EXAMPLES = {
+    "catalog": "catalog",
+    "channel-monitor-review": "channel-monitor-review",
+    "merchant-service-review": "merchant-service-review",
+}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path, help="new .afplugin path")
+    parser.add_argument(
+        "--example",
+        choices=EXAMPLES,
+        default="catalog",
+        help="example to package (default: catalog)",
+    )
     args = parser.parse_args()
     root = Path(__file__).resolve().parent
-    with tempfile.TemporaryDirectory(prefix="anyflows-catalog-example-") as temporary:
-        distribution = Path(temporary) / "catalog"
-        shutil.copytree(root / "examples" / "catalog", distribution, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    with tempfile.TemporaryDirectory(prefix=f"anyflows-{args.example}-example-") as temporary:
+        distribution = Path(temporary) / args.example
+        shutil.copytree(
+            root / "examples" / EXAMPLES[args.example],
+            distribution,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
         shutil.copyfile(root / "sdk" / "python" / "anyflows_plugin.py", distribution / "anyflows_plugin.py")
         return subprocess.run([
             sys.executable, str(root / "package-plugin.py"), str(distribution),
