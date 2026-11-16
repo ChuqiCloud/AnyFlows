@@ -283,7 +283,7 @@ fn valid_query_key(value: &str) -> bool {
         }
     }
     let compact = normalized.replace(['_', '-', '.'], "");
-    compact.contains("apikey")
+    !(compact.contains("apikey")
         || normalized.split(['_', '-', '.']).any(|part| {
             [
                 "authorization",
@@ -298,7 +298,7 @@ fn valid_query_key(value: &str) -> bool {
                 "token",
             ]
             .contains(&part)
-        })
+        }))
 }
 
 /// Request frame for the language-neutral newline-delimited sidecar protocol.
