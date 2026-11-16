@@ -430,4 +430,3 @@ async fn concurrent_administrator_confirmations_change_the_target_only_once()
     fixture.close().await?;
     Ok(())
 }
-
