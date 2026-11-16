@@ -31,7 +31,7 @@ New-Item -ItemType Directory -Force dist
 ## 安装和使用
 
 1. 管理员打开 AnyFlows 的“插件管理”，上传生成的 `.afplugin` 包并安装。
-2. 普通上传安装会完成制品登记。对手工登记的制品，先在插件管理中审批该制品。然后在部署的“高级管理”中明确授予 `channel.monitor.events.review.read` v1，再启用部署。插件的 `publicConfig` 必须保留为空对象 `{}`。
+2. 普通上传安装会完成制品登记。对手工登记的制品，先审批再部署。授予 channel.monitor.events.review.read v1 并启用部署；publicConfig 必须是空对象。要允许本示例返回监控启停建议，还需额外授予 channel.monitor.target.action-propose.read v1。
 3. 管理员进入“渠道”页面，展开“主动渠道监控”。在目标的已记录事件区域中选择插件并运行检查。
 4. 页面显示摘要和检查项。插件本身不执行探测或更改设置。若安装的插件另行声明并获授 channel.monitor.target.action-propose.read@1，它还可以建议暂停或恢复当前监控目标；页面会显示目标和启停变化，管理员必须再次勾选确认后，宿主才会执行。
 
@@ -46,7 +46,8 @@ New-Item -ItemType Directory -Force dist
   "events": [
     {"kind": "down", "latency_ms": null, "occurred_epoch_seconds": 1794700000},
     {"kind": "recovered", "latency_ms": 850, "occurred_epoch_seconds": 1794700300}
-  ]
+  ],
+  "targetEnabled": false
 }
 ```
 
@@ -55,6 +56,7 @@ New-Item -ItemType Directory -Force dist
 | `kind` | `down` 表示监控记录到故障，`recovered` 表示监控记录到恢复 |
 | `latency_ms` | 以毫秒表示的恢复探测延迟；没有采集到时为 `null` |
 | `occurred_epoch_seconds` | Unix 时间戳，单位为秒 |
+| `targetEnabled` | 当前目标是否启用；不含目标 ID、渠道、凭据或模型信息 |
 
 数据库按时间倒序返回事件。示例插件会先按时间排序再统计。输入为空时插件会说明“暂无历史”，不会将此情况解释为渠道健康。
 
