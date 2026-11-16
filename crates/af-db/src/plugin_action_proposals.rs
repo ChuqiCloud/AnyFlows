@@ -3,8 +3,8 @@
 use std::{fmt, time::Duration};
 
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter,
-    QuerySelect, Set, TransactionTrait, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect, Set,
+    TransactionTrait, sea_query::Expr,
 };
 use serde_json::{Value, json};
 use thiserror::Error;
