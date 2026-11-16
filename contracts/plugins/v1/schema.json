@@ -321,6 +321,58 @@
       ],
       "type": "object"
     },
+    "HostHttpMethod": {
+      "enum": [
+        "GET",
+        "HEAD"
+      ],
+      "type": "string"
+    },
+    "HostHttpRequestProposal": {
+      "additionalProperties": false,
+      "properties": {
+        "endpointId": {
+          "maxLength": 128,
+          "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+          "type": "string"
+        },
+        "method": {
+          "$ref": "#/$defs/HostHttpMethod"
+        },
+        "query": {
+          "additionalProperties": {
+            "maxLength": 512,
+            "type": "string"
+          },
+          "maxProperties": 32,
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "endpointId",
+        "method"
+      ],
+      "type": "object"
+    },
+    "HostHttpResponseProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {},
+        "statusCode": {
+          "maximum": 299,
+          "minimum": 200,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "statusCode",
+        "payload"
+      ],
+      "type": "object"
+    },
     "PluginHostOperation": {
       "oneOf": [
         {
@@ -633,6 +685,177 @@
         "configSchema"
       ],
       "type": "object"
+    },
+    "PluginProxyError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "authentication_required",
+            "forbidden",
+            "rate_limited",
+            "temporarily_unavailable",
+            "unsupported",
+            "invalid_response"
+          ]
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "type": "object"
+    },
+    "PluginProxyRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "artifactSha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "capabilityId": {
+          "maxLength": 128,
+          "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+          "type": "string"
+        },
+        "capabilityVersion": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "deploymentGeneration": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "pluginId": {
+          "maxLength": 128,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
+          "type": "string"
+        },
+        "pluginVersion": {
+          "$ref": "#/$defs/PluginManifest/properties/pluginVersion"
+        },
+        "protocolVersion": {
+          "const": 1
+        },
+        "proxyRequestId": {
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/HostHttpRequestProposal"
+        },
+        "requestId": {
+          "pattern": "^[A-Za-z0-9_.-]{1,128}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "pluginId",
+        "pluginVersion",
+        "artifactSha256",
+        "deploymentGeneration",
+        "requestId",
+        "capabilityId",
+        "capabilityVersion",
+        "proxyRequestId",
+        "request"
+      ],
+      "type": "object"
+    },
+    "PluginProxyResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "artifactSha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "capabilityId": {
+          "maxLength": 128,
+          "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+          "type": "string"
+        },
+        "capabilityVersion": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "deploymentGeneration": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "pluginId": {
+          "maxLength": 128,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
+          "type": "string"
+        },
+        "pluginVersion": {
+          "$ref": "#/$defs/PluginManifest/properties/pluginVersion"
+        },
+        "protocolVersion": {
+          "const": 1
+        },
+        "proxyRequestId": {
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+          "type": "string"
+        },
+        "requestId": {
+          "pattern": "^[A-Za-z0-9_.-]{1,128}$",
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/PluginProxyResult"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "pluginId",
+        "pluginVersion",
+        "artifactSha256",
+        "deploymentGeneration",
+        "requestId",
+        "capabilityId",
+        "capabilityVersion",
+        "proxyRequestId",
+        "result"
+      ],
+      "type": "object"
+    },
+    "PluginProxyResult": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "response"
+            },
+            "value": {
+              "$ref": "#/$defs/HostHttpResponseProjection"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "error"
+            },
+            "value": {
+              "$ref": "#/$defs/PluginProxyError"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
     }
   },
   "$id": "urn:anyflows:plugin-contract:v1",
@@ -658,6 +881,12 @@
     },
     {
       "$ref": "#/$defs/CapabilityResult"
+    },
+    {
+      "$ref": "#/$defs/PluginProxyRequest"
+    },
+    {
+      "$ref": "#/$defs/PluginProxyResponse"
     },
     {
       "$ref": "#/$defs/PluginHostRequest"

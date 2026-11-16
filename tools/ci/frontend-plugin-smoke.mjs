@@ -28,7 +28,19 @@ const now = Math.floor(Date.now() / 1000)
 const digest = 'ab'.repeat(32)
 const artifact = {
   id: 1, pluginId: 'org.example.catalog', pluginVersion: '1.0.0', digest,
-  manifest: { pluginId: 'org.example.catalog', pluginVersion: '1.0.0', displayName: 'CI model directory', capabilities: [{ id: 'catalog.models.read', version: 1, access: 'read', sideEffect: 'none' }], configSchema: { type: 'object' } },
+  manifest: {
+    pluginId: 'org.example.catalog', pluginVersion: '1.0.0', displayName: 'CI model directory',
+    capabilities: [{ id: 'catalog.models.read', version: 1, access: 'read', sideEffect: 'none' }],
+    configSchema: {
+      type: 'object', additionalProperties: false, required: ['displayName'],
+      properties: {
+        displayName: { type: 'string', title: { en: 'Public label', zh: '公开标签' }, maxLength: 40 },
+        layout: { type: 'string', title: { en: 'Layout', zh: '布局' }, enum: ['compact', 'expanded'] },
+        apiKey: { type: 'string', title: { en: 'API key', zh: 'API 密钥' } },
+        password: { type: 'string', title: { en: 'Password', zh: '密码' } },
+      },
+    },
+  },
   sourceKind: 'local_process', signerKeyId: 'ci-official-root', official: true,
   createdAt: now, approval: { approvedBy: 1, approvedAt: now, requestId: 'ci-approved' }, revocation: null,
 }
@@ -168,6 +180,18 @@ try {
   await deploymentCard.getByText(label('pluginLifecycle.status.official'), { exact: true }).waitFor()
   const advanced = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: label('pluginLifecycle.advanced') }) })
   assert.equal(await advanced.getAttribute('open'), null, 'Normal installation keeps manual fields folded')
+  await page.getByRole('button', { name: label('pluginLifecycle.deploy'), exact: true }).first().click()
+  const configDialog = page.getByRole('dialog')
+  await configDialog.getByRole('textbox', { name: /公开标签/ }).waitFor()
+  const layout = configDialog.getByLabel(/布局/)
+  await layout.selectOption('"compact"')
+  assert.equal(await layout.inputValue(), '"compact"', 'JSON Schema enum values render as safe host-owned options')
+  assert.equal(await configDialog.getByLabel(/API 密钥/).count(), 0, 'Credential-like fields are never rendered as form controls')
+  assert.equal(await configDialog.getByLabel(/密码/).count(), 0, 'Password fields are never rendered as form controls')
+  await configDialog.locator('details').filter({ has: configDialog.locator('summary').filter({ hasText: label('pluginLifecycle.configEditor.advanced') }) }).locator('summary').click()
+  await configDialog.getByText(label('pluginLifecycle.configEditor.hint'), { exact: true }).waitFor()
+  await configDialog.getByRole('button', { name: label('pluginLifecycle.cancel'), exact: true }).click()
+  await configDialog.waitFor({ state: 'hidden' })
 
   await page.locator('input[type="file"]').setInputFiles({ name: 'invalid.txt', mimeType: 'text/plain', buffer: Buffer.from('not a plugin') })
   await page.getByRole('button', { name: label('pluginLifecycle.install.submit'), exact: true }).click()

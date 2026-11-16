@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 
 import type { PluginArtifactResponse, PluginDeploymentResponse } from '@/lib/api/generated/types.gen'
+import { PluginConfigEditor } from './plugin-config-editor'
 import { PluginInstallPanel } from './plugin-install-panel'
 import { PluginRuntimePanel } from './plugin-runtime-panel'
 import {
@@ -236,7 +237,8 @@ export function PluginLifecyclePage() {
           <p className="text-sm text-muted-foreground">{t('pluginLifecycle.grantsHint')}</p>
           {deploymentHistory.isError ? <ErrorBox text={t('pluginLifecycle.errors.loadHistory')} retry={t('pluginLifecycle.refresh')} onRetry={() => void deploymentHistory.refetch()} /> : !generationKnown ? <p role="status" className="text-xs text-muted-foreground">{t('pluginLifecycle.checkingGeneration')}</p> : <div className="flex items-center justify-between gap-2"><p className="text-xs text-muted-foreground">{t('pluginLifecycle.currentGeneration', { generation: currentGeneration ?? '—' })}</p><Button size="sm" variant="light" isDisabled={busy} onPress={() => void deploymentHistory.refetch()}>{t('pluginLifecycle.refresh')}</Button></div>}
           <div className="space-y-2">{grantTarget ? grantableCapabilities(grantTarget).map((item) => <label key={item.id} className="flex items-start gap-2 rounded-lg border border-[var(--hairline)] p-3 text-sm"><input type="checkbox" disabled={busy} checked={grants.includes(item.id)} onChange={(event) => setGrants(event.target.checked ? [...grants, item.id] : grants.filter((id) => id !== item.id))} /><span><strong>{item.id}</strong><small className="ml-2 text-muted-foreground">v{item.version}</small></span></label>) : null}</div>
-          <Textarea label={t('pluginLifecycle.fields.config')} description={t('pluginLifecycle.configHint')} minRows={5} value={config} onValueChange={setConfig} isDisabled={busy} classNames={{ input: 'font-mono text-xs' }} />
+          {grantTarget ? <PluginConfigEditor schema={grantTarget.manifest.configSchema} value={config} onChange={setConfig} locale={i18n.resolvedLanguage ?? 'en'} /> : null}
+          <p className="text-xs text-muted-foreground">{t('pluginLifecycle.configHint')}</p>
           {grantTarget ? <details className="text-xs"><summary className="cursor-pointer font-medium">{t('pluginLifecycle.fields.configSchema')}</summary><pre className="mt-2 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-2 p-3 font-mono">{configurationSchema(grantTarget)}</pre></details> : null}
           {deploy.isError ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.errors.action')}</p> : null}
         </ModalBody>

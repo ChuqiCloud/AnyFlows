@@ -7,6 +7,7 @@
 mod capability;
 mod error;
 mod manifest;
+mod proposal;
 mod schema;
 mod value;
 mod version;
@@ -17,11 +18,14 @@ pub use capability::{
 };
 pub use error::{ConnectorError, ConnectorErrorCode, OperationOutcome};
 pub use manifest::{ConnectorLimits, PluginId, PluginManifest};
+pub use proposal::HostActionProposal;
 pub use schema::{openapi_document, schema_document};
 pub use value::{
     CapabilityInvocation, CapabilityResult, ConnectorHealth, ConnectorHealthStatus,
-    ExternalAccountProfile, ExternalBalanceSnapshot, InvocationMetadata, PluginHostOperation,
-    PluginHostRequest, PluginHostResponse, PluginHostResult,
+    ExternalAccountProfile, ExternalBalanceSnapshot, HostHttpMethod, HostHttpRequestProposal,
+    HostHttpResponseProjection, InvocationMetadata, PluginHostOperation, PluginHostRequest,
+    PluginHostResponse, PluginHostResult, PluginProxyError, PluginProxyErrorCode,
+    PluginProxyRequest, PluginProxyResponse, PluginProxyResult,
 };
 pub use version::{ContractVersion, ContractVersionRange, PluginVersion};
 

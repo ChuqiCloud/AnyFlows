@@ -258,6 +258,16 @@ mod plugin_catalog_tests;
 mod plugin_distribution;
 #[cfg(test)]
 mod plugin_distribution_tests;
+mod plugin_event_delivery;
+#[cfg(test)]
+mod plugin_event_delivery_tests;
+pub use plugin_event_delivery::{
+    PluginEventDeliveryClaimOutcome, PluginEventDeliveryCompletionOutcome,
+    PluginEventDeliveryCreate, PluginEventDeliveryEnqueueOutcome, PluginEventDeliveryInputError,
+    PluginEventDeliveryLease, PluginEventDeliveryRepository,
+    PluginEventDeliveryRepositoryConfigError, PluginEventDeliveryRepositoryError,
+    PluginEventFailureKind, PluginEventKind, enqueue_plugin_event_delivery,
+};
 mod quota;
 #[cfg(test)]
 mod quota_group_window_tests;

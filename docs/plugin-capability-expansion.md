@@ -144,4 +144,13 @@
 
 ## 当前支持状态
 
-本设计文档定义的是目标接口和分期，不是现有运行能力的承诺。当前上传式业务入口与 sidecar 限制以[开发指南](plugin-development.md#先看支持范围)和[协议参考](plugin-protocol-reference.md)为准。每个阶段进入实现后，须在对应文档中把状态从“设计中”改为“已支持”，并提供可运行示例和 CI 证据。
+本设计文档定义的是目标接口和分期，不是现有运行能力的承诺。当前底层已有几个原型，但尚未接成完整产品流程：
+
+| 原型 | 已有 | 尚未完成 |
+| --- | --- | --- |
+| 插件设置表单 | 从公开 `configSchema` 使用宿主内置控件渲染受限字段，危险字段在控件列表中隐藏，并提供带警告的 JSON 编辑入口 | 插件贡献菜单、业务页面入口、结果卡片及运行时 UI action |
+| 受控操作 | `HostActionProposal` 固定 DTO；只能表示 action ID、版本和有界输入，不带确认或执行字段 | 宿主 action 注册表、授权/确认服务、实际业务操作和审计持久化 |
+| 外部只读代理 | `PluginProxyRequest/Response` 语言中立 DTO 和 JSON Schema/OpenAPI 定义；请求不含 URL、凭据、header 或 body，限制在 host endpoint ID 与 GET/HEAD 查询参数 | Sidecar 双向 callback 帧、运行时 endpoint 注册、凭据注入、host HTTP 代理和外部账户连接器接线 |
+| 持久事件投递 | 独立事件表、封闭类型投影、部署/授权绑定、幂等键、claim lease、重试和死信仓储 | 业务事务生产者、受监督 worker、执行中的部署状态复核、Sidecar 调用和管理员重放接口 |
+
+因此，只有设置表单可用于当前插件部署的配置体验。其余三项是 contract 或持久层底座，不会令插件现在就能运行外部连接器、写业务数据或接收事件。当前上传式业务入口与 sidecar 限制以[开发指南](plugin-development.md#先看支持范围)和[协议参考](plugin-protocol-reference.md)为准。只有补齐表格右侧的宿主接线，并通过远程验证，能力才可标为已支持。

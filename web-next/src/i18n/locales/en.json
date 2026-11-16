@@ -107,6 +107,10 @@
     "rollback": "Roll back to this version",
     "grantsHint": "Select only the read capabilities required for this deployment. Grants are recorded as a separate deployment fact.",
     "configHint": "Configuration must be a JSON object. Do not enter keys, passwords, or other credentials.",
+    "configEditor": {
+      "advanced": "Advanced JSON",
+      "hint": "This configuration is sent to the plugin. Never enter passwords, API keys, tokens, cookies, or other credentials."
+    },
     "fields": {
       "pluginId": "Plugin ID",
       "version": "Version",

@@ -107,6 +107,10 @@
     "rollback": "回滚到此版本",
     "grantsHint": "只勾选本次部署所需的只读能力。能力授权会作为独立部署事实保存。",
     "configHint": "配置必须是 JSON 对象；不要填写密钥、口令或其他凭据。",
+    "configEditor": {
+      "advanced": "高级 JSON 配置",
+      "hint": "这些配置会发送给插件。请勿填写密码、API Key、令牌、Cookie 或其他凭据。"
+    },
     "fields": {
       "pluginId": "插件 ID",
       "version": "版本",

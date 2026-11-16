@@ -15,6 +15,8 @@ pub fn schema_document() -> Value {
             { "$ref": "#/$defs/ConnectorError" },
             { "$ref": "#/$defs/CapabilityInvocation" },
             { "$ref": "#/$defs/CapabilityResult" },
+            { "$ref": "#/$defs/PluginProxyRequest" },
+            { "$ref": "#/$defs/PluginProxyResponse" },
             { "$ref": "#/$defs/PluginHostRequest" },
             { "$ref": "#/$defs/PluginHostResponse" },
             { "$ref": "#/$defs/PluginHostProtocol" }
@@ -89,6 +91,67 @@ pub fn schema_document() -> Value {
                     "authenticationModes": { "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*$", "maxLength": 128 } },
                     "limits": { "$ref": "#/$defs/ConnectorLimits" },
                     "configSchema": { "type": "object" }
+                }
+            },
+            "HostHttpMethod": { "type": "string", "enum": ["GET", "HEAD"] },
+            "HostHttpRequestProposal": {
+                "type": "object", "additionalProperties": false,
+                "required": ["endpointId", "method"],
+                "properties": {
+                    "endpointId": { "type": "string", "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$", "maxLength": 128 },
+                    "method": { "$ref": "#/$defs/HostHttpMethod" },
+                    "query": { "type": "object", "maxProperties": 32, "propertyNames": { "pattern": "^[A-Za-z0-9_.-]{1,64}$" }, "additionalProperties": { "type": "string", "maxLength": 512 } }
+                }
+            },
+            "HostHttpResponseProjection": {
+                "type": "object", "additionalProperties": false,
+                "required": ["statusCode", "payload"],
+                "properties": {
+                    "statusCode": { "type": "integer", "minimum": 200, "maximum": 299 },
+                    "payload": {}
+                }
+            },
+            "PluginProxyRequest": {
+                "type": "object", "additionalProperties": false,
+                "required": ["protocolVersion", "pluginId", "pluginVersion", "artifactSha256", "deploymentGeneration", "requestId", "capabilityId", "capabilityVersion", "proxyRequestId", "request"],
+                "properties": {
+                    "protocolVersion": { "const": 1 },
+                    "pluginId": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$", "maxLength": 128 },
+                    "pluginVersion": { "$ref": "#/$defs/PluginManifest/properties/pluginVersion" },
+                    "artifactSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                    "deploymentGeneration": { "type": "integer", "minimum": 1 },
+                    "requestId": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$" },
+                    "capabilityId": { "type": "string", "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$", "maxLength": 128 },
+                    "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                    "proxyRequestId": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,64}$" },
+                    "request": { "$ref": "#/$defs/HostHttpRequestProposal" }
+                }
+            },
+            "PluginProxyError": {
+                "type": "object", "additionalProperties": false,
+                "required": ["code"],
+                "properties": { "code": { "enum": ["authentication_required", "forbidden", "rate_limited", "temporarily_unavailable", "unsupported", "invalid_response"] } }
+            },
+            "PluginProxyResult": {
+                "oneOf": [
+                    { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "response" }, "value": { "$ref": "#/$defs/HostHttpResponseProjection" } } },
+                    { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "error" }, "value": { "$ref": "#/$defs/PluginProxyError" } } }
+                ]
+            },
+            "PluginProxyResponse": {
+                "type": "object", "additionalProperties": false,
+                "required": ["protocolVersion", "pluginId", "pluginVersion", "artifactSha256", "deploymentGeneration", "requestId", "capabilityId", "capabilityVersion", "proxyRequestId", "result"],
+                "properties": {
+                    "protocolVersion": { "const": 1 },
+                    "pluginId": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$", "maxLength": 128 },
+                    "pluginVersion": { "$ref": "#/$defs/PluginManifest/properties/pluginVersion" },
+                    "artifactSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                    "deploymentGeneration": { "type": "integer", "minimum": 1 },
+                    "requestId": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$" },
+                    "capabilityId": { "type": "string", "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$", "maxLength": 128 },
+                    "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                    "proxyRequestId": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,64}$" },
+                    "result": { "$ref": "#/$defs/PluginProxyResult" }
                 }
             },
             "CapabilityInvocation": {
@@ -403,9 +466,11 @@ mod tests {
     use crate::{
         CapabilityAccess, CapabilityDeclaration, CapabilityId, CapabilityInvocation,
         CapabilityResult, ConnectorError, ConnectorErrorCode, ContractVersion,
-        ContractVersionRange, ExternalAccountProfile, ExternalBalanceSnapshot, PluginHostOperation,
+        ContractVersionRange, ExternalAccountProfile, ExternalBalanceSnapshot, HostHttpMethod,
+        HostHttpRequestProposal, HostHttpResponseProjection, PluginHostOperation,
         PluginHostRequest, PluginHostResponse, PluginHostResult, PluginId, PluginManifest,
-        PluginVersion, SideEffectClass,
+        PluginProxyError, PluginProxyErrorCode, PluginProxyRequest, PluginProxyResponse,
+        PluginProxyResult, PluginVersion, SideEffectClass,
     };
 
     #[test]
@@ -494,6 +559,36 @@ mod tests {
             request_id: "request-1".to_owned(),
             result: PluginHostResult::Manifest(manifest.clone()),
         };
+        let proxy_request = PluginProxyRequest {
+            protocol_version: 1,
+            plugin_id: manifest.plugin_id.clone(),
+            plugin_version: manifest.plugin_version.clone(),
+            artifact_sha256: "a".repeat(64),
+            deployment_generation: 4,
+            request_id: "request-1".to_owned(),
+            capability_id: CapabilityId::new("external.account.profile.read").unwrap(),
+            capability_version: 1,
+            proxy_request_id: "proxy-1".to_owned(),
+            request: HostHttpRequestProposal {
+                endpoint_id: "external.account.self.read".to_owned(),
+                method: HostHttpMethod::Get,
+                query: Default::default(),
+            },
+        };
+        let proxy_response = PluginProxyResponse {
+            protocol_version: 1,
+            plugin_id: manifest.plugin_id.clone(),
+            plugin_version: manifest.plugin_version.clone(),
+            artifact_sha256: "a".repeat(64),
+            deployment_generation: 4,
+            request_id: "request-1".to_owned(),
+            capability_id: CapabilityId::new("external.account.profile.read").unwrap(),
+            capability_version: 1,
+            proxy_request_id: "proxy-1".to_owned(),
+            result: PluginProxyResult::Error(PluginProxyError {
+                code: PluginProxyErrorCode::AuthenticationRequired,
+            }),
+        };
         let schema = schema_document();
 
         assert_schema_fields(
@@ -535,6 +630,16 @@ mod tests {
             &schema,
             "PluginHostResponse",
             &serde_json::to_value(host_response).unwrap(),
+        );
+        assert_schema_fields(
+            &schema,
+            "PluginProxyRequest",
+            &serde_json::to_value(proxy_request).unwrap(),
+        );
+        assert_schema_fields(
+            &schema,
+            "PluginProxyResponse",
+            &serde_json::to_value(proxy_response).unwrap(),
         );
         assert!(schema["$defs"]["PluginHostProtocol"].is_object());
         assert_eq!(
