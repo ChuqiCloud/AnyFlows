@@ -944,7 +944,8 @@ fn map_plugin_event_delivery(
             ActiveChannelMonitorError::Timeout
         }
         crate::plugin_event_delivery::PluginEventDeliveryRepositoryError::Invariant
-        | crate::plugin_event_delivery::PluginEventDeliveryRepositoryError::Conflict => {
+        | crate::plugin_event_delivery::PluginEventDeliveryRepositoryError::Conflict
+        | crate::plugin_event_delivery::PluginEventDeliveryRepositoryError::InvalidResult => {
             ActiveChannelMonitorError::Invariant
         }
     }
