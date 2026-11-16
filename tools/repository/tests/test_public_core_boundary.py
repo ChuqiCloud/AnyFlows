@@ -36,6 +36,7 @@ class PublicBoundaryTests(unittest.TestCase):
         )
         self.assertEqual(manifest["publicRepository"], "https://github.com/ChuqiCloud/AnyFlows.git")
         self.assertTrue(manifest["excludedPaths"])
+        self.assertIn("docs/plugin-capability-expansion.md", manifest["export"]["excludedPaths"])
         self.assertIsNone(DOC_BOUNDARY.search(MANIFEST.read_text(encoding="utf-8")))
         self.assertFalse((ROOT / "docs/public-core-extraction.json").exists())
 

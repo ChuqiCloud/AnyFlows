@@ -71,7 +71,6 @@
     "crates/af-http/src/openapi/platform_organization*",
     "crates/af-http/src/openapi/organizations.rs",
     "crates/af-http/src/openapi/scim.rs",
-    "docs/plugin-capability-expansion.md",
     "web/src/features/organization*",
     "web/src/features/platform-organizations",
     "web/src/features/auth/organization-sso*",
@@ -81,6 +80,9 @@
   ],
   "export": {
     "metadataPath": "docs/public-core-source.json",
+    "excludedPaths": [
+      "docs/plugin-capability-expansion.md"
+    ],
     "preservePaths": [
       "LICENSE"
     ],

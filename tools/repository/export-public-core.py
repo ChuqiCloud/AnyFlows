@@ -145,7 +145,12 @@ def remove_tracked_files(destination: Path, preserve_paths: set[str]) -> None:
             pass
 
 
-def export_archive(source: Path, destination: Path, commit: str) -> None:
+def export_archive(
+    source: Path,
+    destination: Path,
+    commit: str,
+    excluded_paths: Sequence[str] = (),
+) -> None:
     process = subprocess.Popen(
         ["git", "-C", str(source), "archive", "--format=tar", "--worktree-attributes", commit],
         stdout=subprocess.PIPE,
@@ -155,6 +160,8 @@ def export_archive(source: Path, destination: Path, commit: str) -> None:
     try:
         with tarfile.open(fileobj=process.stdout, mode="r|") as archive:
             for member in archive:
+                if any(PurePosixPath(member.name).match(pattern) for pattern in excluded_paths):
+                    continue
                 target = safe_member_path(destination, member.name)
                 if member.isdir():
                     target.mkdir(parents=True, exist_ok=True)
@@ -445,6 +452,11 @@ def main() -> int:
             isinstance(item, str) and item for item in preserve_paths_value
         ):
             raise ExportError("export.preservePaths must be an array of non-empty strings")
+        excluded_paths = export_config.get("excludedPaths", [])
+        if not isinstance(excluded_paths, list) or not all(
+            isinstance(item, str) and item for item in excluded_paths
+        ):
+            raise ExportError("export.excludedPaths must be an array of non-empty strings")
         preserve_paths = set(preserve_paths_value)
         for path in preserve_paths:
             safe_member_path(destination, path)
@@ -458,7 +470,7 @@ def main() -> int:
 
         verify_public_sync(source, destination, commit, metadata_path, preserve_paths)
         remove_tracked_files(destination, preserve_paths)
-        export_archive(source, destination, commit)
+        export_archive(source, destination, commit, excluded_paths)
         write_metadata(destination, metadata_path, repository, commit)
         print(f"exported public core {commit} to {destination}")
         print(f"source metadata: {metadata_path}")
