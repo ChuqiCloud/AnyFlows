@@ -232,6 +232,8 @@ fn review_contract<'a>(
         max_output_bytes: MAX_REVIEW_OUTPUT_BYTES,
         max_checks: MAX_REVIEW_CHECKS,
         budget: REVIEW_BUDGET,
+        action_proposal_capability: None,
+        action_proposal_capability: None,
     }
 }
 

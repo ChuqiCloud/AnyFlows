@@ -19,7 +19,7 @@ use crate::{
     PlatformPolicy, SessionPrincipal,
     readonly_plugin_review::{
         MAX_REVIEW_CHECKS, ReadOnlyPluginReviewContract, ReadOnlyPluginReviewError,
-        invoke_read_only_review, list_read_only_reviewers,
+        invoke_read_only_review, list_read_only_reviewers, read_only_review_output_schema,
         read_only_review_output_schema_with_action,
     },
 };
