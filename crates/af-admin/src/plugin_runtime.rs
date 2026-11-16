@@ -24,6 +24,20 @@ use serde::Deserialize;
 
 use crate::AdminPluginLifecycleError;
 
+/// All inputs for a single host-authorized Sidecar capability invocation.
+/// Keeping the proxy dispatcher on the request makes its lifetime explicitly
+/// per invocation rather than part of the plugin deployment or runtime state.
+pub(crate) struct PluginCapabilityInvocation<'a> {
+    pub(crate) repository: &'a PluginCatalogRepository,
+    pub(crate) plugin_id: &'a str,
+    pub(crate) generation: i64,
+    pub(crate) invocation: &'a CapabilityExecutionContext,
+    pub(crate) capability_id: &'a str,
+    pub(crate) capability_version: u16,
+    pub(crate) input: serde_json::Value,
+    pub(crate) proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
+}
+
 /// Runtime owner for administrator-installed local-process plugins.
 ///
 /// The artifact root and publisher keys come from host configuration. Nothing
@@ -420,37 +434,7 @@ impl AdminPluginSidecarRuntime {
         input: serde_json::Value,
     ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
         self.invoke_capability_with_proxy(
-            repository,
-            plugin_id,
-            generation,
-            invocation,
-            capability_id,
-            capability_version,
-            input,
-            None,
-        )
-        .await
-    }
-
-    /// Invoke a host capability with a request-scoped external read dispatcher.
-    /// The dispatcher is never stored in the deployment or sent to the sidecar.
-    pub async fn invoke_capability_with_proxy(
-        &self,
-        repository: &PluginCatalogRepository,
-        plugin_id: &str,
-        generation: i64,
-        invocation: &CapabilityExecutionContext,
-        capability_id: &str,
-        capability_version: u16,
-        input: serde_json::Value,
-        proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
-    ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
-        let remaining = invocation
-            .remaining_timeout()
-            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
-        tokio::time::timeout(
-            remaining,
-            self.invoke_capability_inner(
+            PluginCapabilityInvocation {
                 repository,
                 plugin_id,
                 generation,
@@ -458,8 +442,25 @@ impl AdminPluginSidecarRuntime {
                 capability_id,
                 capability_version,
                 input,
-                proxy_dispatcher,
-            ),
+                proxy_dispatcher: None,
+            },
+        )
+        .await
+    }
+
+    /// Invoke a host capability with a request-scoped external read dispatcher.
+    /// The dispatcher is never stored in the deployment or sent to the sidecar.
+    pub(crate) async fn invoke_capability_with_proxy(
+        &self,
+        request: PluginCapabilityInvocation<'_>,
+    ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
+        let remaining = request
+            .invocation
+            .remaining_timeout()
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+        tokio::time::timeout(
+            remaining,
+            self.invoke_capability_inner(request),
         )
         .await
         .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?
@@ -467,15 +468,18 @@ impl AdminPluginSidecarRuntime {
 
     async fn invoke_capability_inner(
         &self,
-        repository: &PluginCatalogRepository,
-        plugin_id: &str,
-        generation: i64,
-        invocation: &CapabilityExecutionContext,
-        capability_id: &str,
-        capability_version: u16,
-        input: serde_json::Value,
-        proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
+        request: PluginCapabilityInvocation<'_>,
     ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
+        let PluginCapabilityInvocation {
+            repository,
+            plugin_id,
+            generation,
+            invocation,
+            capability_id,
+            capability_version,
+            input,
+            proxy_dispatcher,
+        } = request;
         let plugin_id = PluginId::new(plugin_id.to_owned())
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         let generation =

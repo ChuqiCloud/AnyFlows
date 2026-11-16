@@ -1046,8 +1046,20 @@ jobs:
 
   sqlite-migration:
     name: SQLite migration smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
+    # Migration jobs each link the large af-db test binary. Wait for the other
+    # Rust and frontend builds, then serialize the three backends below to
+    # avoid concurrent linker memory spikes on the shared self-hosted runner.
+    needs:
+      - changes
+      - openapi-contract
+      - release-package
+      - frontend-quality
+      - rust-quality
+      - plugin-linux-sandbox
+      - clickhouse-integration
+      - msrv
+      - cache-redis
+    if: ${{ always() && !cancelled() && needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -1110,8 +1122,8 @@ jobs:
 
   postgres-migration:
     name: PostgreSQL migration smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
+    needs: [changes, sqlite-migration]
+    if: ${{ always() && !cancelled() && needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -1173,8 +1185,8 @@ jobs:
 
   mysql-migration:
     name: MySQL migration smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
+    needs: [changes, postgres-migration]
+    if: ${{ always() && !cancelled() && needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:

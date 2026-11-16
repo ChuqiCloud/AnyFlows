@@ -27,7 +27,7 @@
 
 插件没有通用 HTTP 代理。外部账户分析模块提供两个宿主固定端点：`account.balance` 返回已过滤的余额字段；`account.profile` 返回显示名称，只有插件另行声明并获授 `external.account.profile.read@1` 时才可请求。页面默认不勾选；用户每次运行前单独同意后，宿主才会读取本人当前绑定的上游账户。余额读取会写入一条新的本地余额快照，后续账务仍由 AnyFlows 自己的余额与账本规则处理。凭据、用户 ID、账户 ID、上游 URL 和请求头都不会发给插件。随仓库提供的实时余额示例只声明余额端点，见 `tools/plugins/examples/account-balance-live-review/`。
 
-代理回调要求另外授予 `external.account.balance.read@1`，同时满足 `account.balance.snapshot.live-review.read@1` 的模块入口授权。回调只接受 `GET` 和空查询参数；插件不能选择 URL、路径、请求体或凭据。每次调用最多四次回调，并共享同一 deadline。协议校验和字段见[协议参考](plugin-protocol-reference.md#sidecar-代理回调)。受控操作目前只支持管理员确认启停主动监控目标这一项固定动作，流程和限制见[宿主确认的插件动作](plugin-actions.md)。渠道健康、商户服务事件和其他扩展边界见[插件能力扩展设计](plugin-capability-expansion.md)。
+代理回调要求另外授予 `external.account.balance.read@1`，同时满足 `account.balance.snapshot.live-review.read@1` 的模块入口授权。回调只接受 `GET` 和空查询参数；插件不能选择 URL、路径、请求体或凭据。每次调用最多四次回调，并共享同一 deadline。协议校验和字段见[协议参考](plugin-protocol-reference.md#sidecar-代理回调)。受控操作目前只支持管理员确认启停主动监控目标这一项固定动作，流程和限制见[宿主确认的插件动作](plugin-actions.md)。渠道健康和商户服务事件的投递说明见本指南上文。
 
 通用 Sidecar 只执行管理员明确授予的只读能力，并要求每项能力都有输入和输出 JSON Schema。`sideEffect=external_read` 仅对宿主登记的外部账户读取能力开放，并且还要通过前述单次用户同意；其他能力使用 `sideEffect=none`。插件没有数据库句柄、用户会话、渠道密钥、通用 HTTP 客户端或通用数据库持久化接口；它只能处理宿主给出的本次输入和已配置的 publicConfig。宿主控制实际调用的插件、能力名、版本、用户权限及数据范围。没有“客户端任意选择 capability 并直接调用”的通用接口。
 

@@ -223,7 +223,7 @@ try {
     return respond({ error: { code: 'not_found' } }, 404)
   })
 
-  await page.goto(`${origin}/.plugin-smoke.html`)
+  await page.goto(`${origin}/.plugin-smoke.html`, { waitUntil: 'domcontentloaded' })
   await page.getByRole('heading', { name: label('pluginLifecycle.title'), exact: true }).waitFor()
   const runtimePanel = page.getByRole('region', { name: label('pluginLifecycle.runtime.title') })
   await runtimePanel.getByText('CI node A', { exact: true }).first().waitFor()

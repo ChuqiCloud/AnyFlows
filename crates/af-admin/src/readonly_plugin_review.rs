@@ -18,7 +18,10 @@ use af_plugin_runtime::{CapabilityExecutionContext, PluginProxyDispatcher};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{AdminPluginLifecycleError, DatabaseAdminPluginLifecycleService};
+use crate::{
+    AdminPluginLifecycleError, DatabaseAdminPluginLifecycleService,
+    plugin_runtime::PluginCapabilityInvocation,
+};
 
 const MAX_REVIEWER_DEPLOYMENTS: u32 = 100;
 const MAX_REVIEWER_SCAN_PAGES: usize = 11;
@@ -402,14 +405,16 @@ pub(crate) async fn invoke_read_only_review_with_proxy(
         let started_at = Instant::now();
         let response = runtime
             .invoke_capability_with_proxy(
-                repository,
-                plugin_id,
-                deployment.generation,
-                &context,
-                contract.capability_id,
-                contract.capability_version,
-                input,
-                proxy_dispatcher,
+                PluginCapabilityInvocation {
+                    repository,
+                    plugin_id,
+                    generation: deployment.generation,
+                    invocation: &context,
+                    capability_id: contract.capability_id,
+                    capability_version: contract.capability_version,
+                    input,
+                    proxy_dispatcher,
+                },
             )
             .await;
         let response = match response {
