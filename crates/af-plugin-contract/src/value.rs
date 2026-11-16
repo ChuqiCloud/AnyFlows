@@ -282,24 +282,21 @@ fn valid_query_key(value: &str) -> bool {
             normalized.push('_');
         }
     }
-    !normalized
-        .split(|character| matches!(character, '_' | '-' | '.'))
-        .any(|part| {
-            [
-                "authorization",
-                "auth",
-                "code",
-                "cookie",
-                "credential",
-                "key",
-                "password",
-                "secret",
-                "signature",
-                "token",
-            ]
-            .iter()
-            .any(|sensitive| part == *sensitive)
-        })
+    !normalized.split(['_', '-', '.']).any(|part| {
+        [
+            "authorization",
+            "auth",
+            "code",
+            "cookie",
+            "credential",
+            "key",
+            "password",
+            "secret",
+            "signature",
+            "token",
+        ]
+        .contains(&part)
+    })
 }
 
 /// Request frame for the language-neutral newline-delimited sidecar protocol.
