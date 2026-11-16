@@ -16,7 +16,6 @@ use af_db::{
     PluginEventDeliveryEnqueueOutcome, PluginEventDeliveryRepository,
     PluginEventDeliveryResultQuery, PluginEventKind,
 };
-use sea_orm::TransactionTrait;
 use serde_json::json;
 use zip::{ZipWriter, write::SimpleFileOptions};
 
@@ -335,12 +334,11 @@ async fn event_delivery_uses_the_active_deployment_public_configuration()
         created_at: now,
         expires_at: now + 60,
     };
-    let transaction = fixture.pool.extension_connection().begin().await?;
+    let connection = fixture.pool.extension_connection();
     assert!(matches!(
-        af_db::enqueue_plugin_event_delivery(&transaction, event).await?,
+        af_db::enqueue_plugin_event_delivery(connection, event).await?,
         PluginEventDeliveryEnqueueOutcome::Enqueued(_)
     ));
-    transaction.commit().await?;
 
     let worker_root = fixture.root.path().join("event-worker");
     let worker_relative = worker_root.strip_prefix(std::env::current_dir()?)?;

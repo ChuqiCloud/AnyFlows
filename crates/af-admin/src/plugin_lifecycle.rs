@@ -2152,7 +2152,7 @@ fn safe_event_result_summary(value: &str) -> bool {
 
 #[cfg(test)]
 mod event_result_tests {
-    use super::safe_event_result_summary;
+    use super::{MAX_PLUGIN_EVENT_RESULT_SUMMARY_BYTES, safe_event_result_summary};
 
     #[test]
     fn result_summaries_are_bounded_plain_text_without_urls_or_controls() {
