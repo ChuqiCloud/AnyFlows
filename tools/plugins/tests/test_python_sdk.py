@@ -207,7 +207,7 @@ class PluginSdkTests(unittest.TestCase):
         self.assertEqual(len(frames), 2)
         self.assertEqual(frames[0]["proxyRequestId"], "proxy-1")
         self.assertEqual(frames[0]["request"], {
-            "endpointId": "external.account.profile",
+            "endpointId": "account.profile",
             "method": "GET",
             "query": {},
         })
@@ -217,7 +217,11 @@ class PluginSdkTests(unittest.TestCase):
 
     def test_external_read_capability_without_host_context_is_rejected(self):
         manifest = external_profile_manifest()
-        plugin = Plugin(manifest, lambda capability_id, config, value: {"profile": {}})
+        plugin = Plugin(
+            manifest,
+            lambda capability_id, config, value: {"profile": {}},
+            clock_ms=lambda: 1000,
+        )
         envelope = request(
             {
                 "operation": "invoke_capability",
