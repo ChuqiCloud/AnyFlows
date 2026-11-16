@@ -84,7 +84,8 @@ impl MigrationTrait for Migration {
                 vec!["status", "expires_at", "id"],
             ),
         ] {
-            let mut index = Index::create()
+            let mut index = Index::create();
+            index
                 .name(name)
                 .table(Alias::new("plugin_action_proposals"));
             for column in columns {

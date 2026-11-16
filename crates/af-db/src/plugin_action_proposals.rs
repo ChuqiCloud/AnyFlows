@@ -26,7 +26,7 @@ const CAPABILITY_ID: &str = "channel.monitor.target.action-propose.read";
 const MAX_INPUT_BYTES: usize = 4 * 1024;
 const DEFAULT_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct PluginActionProposalCreate {
     pub proposal_key: String,
     pub idempotency_key: String,
@@ -464,7 +464,8 @@ async fn deployment_is_current(
         || !has_capability_grant(
             &deployment.capability_grants,
             &proposal.capability_id,
-            proposal.capability_version,
+            u16::try_from(proposal.capability_version)
+                .map_err(|_| PluginActionProposalRepositoryError::Invariant)?,
         )
     {
         return Ok(false);
