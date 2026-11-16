@@ -126,6 +126,7 @@ try {
     assert.equal(request.headers().authorization, 'Bearer ci-plugin', `${method} ${path} must use the current session`)
     if (path === '/api/admin/plugins/artifacts' && method === 'GET') return respond({ artifacts: [artifact, revoked], nextBeforeId: null })
     if (path === '/api/admin/plugins/deployments' && method === 'GET') { deploymentRequests += 1; return respond({ deployments: [deployment], nextCursor: null }) }
+    if (path === `/api/admin/plugins/${artifact.pluginId}/deployment/history` && method === 'GET') return respond([])
     if (path === '/api/admin/plugins/runtime' && method === 'GET') {
       runtimeRequests += 1
       return runtimeFailure ? respond({ error: { code: 'internal' } }, 500) : respond(runtime())
@@ -189,7 +190,7 @@ try {
   assert.equal(await layout.inputValue(), '"compact"', 'JSON Schema enum values render as safe host-owned options')
   assert.equal(await configDialog.getByLabel(/API 密钥/).count(), 0, 'Credential-like fields are never rendered as form controls')
   assert.equal(await configDialog.getByLabel(/密码/).count(), 0, 'Password fields are never rendered as form controls')
-  await configDialog.locator('details').filter({ has: configDialog.locator('summary').filter({ hasText: label('pluginLifecycle.configEditor.advanced') }) }).locator('summary').click()
+  await configDialog.getByText(label('pluginLifecycle.configEditor.advanced'), { exact: true }).click()
   await configDialog.getByText(label('pluginLifecycle.configEditor.hint'), { exact: true }).waitFor()
   await configDialog.getByRole('button', { name: label('pluginLifecycle.cancel'), exact: true }).click()
   await configDialog.waitFor({ state: 'hidden' })
