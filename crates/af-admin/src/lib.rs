@@ -1,5 +1,8 @@
 //! 登录用户与管理域应用服务。
 
+pub use af_db::{PluginActionProposalRecord, PluginActionProposalStatus};
+pub use af_plugin_contract::HostActionProposal;
+
 mod alipay_verification;
 mod verification_access;
 pub use verification_access::{

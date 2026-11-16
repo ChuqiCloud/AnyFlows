@@ -6,11 +6,10 @@ use af_admin::{
     ActiveChannelMonitorPluginReviewCheck, ActiveChannelMonitorPluginReviewError,
     ActiveChannelMonitorPluginReviewService, ActiveChannelMonitorPluginReviewStatus,
     ActiveChannelMonitorService, ActiveChannelMonitorServiceError, ActiveChannelMonitorTarget,
-    ActiveChannelMonitorTargetInput, SessionAuthentication, SessionAuthenticator,
+    ActiveChannelMonitorTargetInput, HostActionProposal, PluginActionProposalRecord,
+    PluginActionProposalStatus, SessionAuthentication, SessionAuthenticator,
 };
-use af_db::{PluginActionProposalRecord, PluginActionProposalStatus};
 use af_domain::{ChannelId, CredentialId};
-use af_plugin_contract::HostActionProposal;
 use axum::{
     Extension, Json, Router,
     extract::{Path, State, rejection::JsonRejection},

@@ -27,7 +27,6 @@ use crate::{
 const REVIEW_CAPABILITY: &str = "channel.monitor.events.review.read";
 const ACTION_PROPOSAL_CAPABILITY: &str = "channel.monitor.target.action-propose.read";
 const ACTION_PROPOSAL_CAPABILITY_VERSION: u16 = 1;
-const ACTION_ID: &str = "active-channel-monitor.target.set-enabled";
 const ACTION_PROPOSAL_TTL_SECONDS: i64 = 5 * 60;
 const REVIEW_BUDGET: Duration = Duration::from_secs(5);
 const MAX_REVIEW_INPUT_BYTES: u32 = 64 * 1024;
