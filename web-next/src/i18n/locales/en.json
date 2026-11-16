@@ -155,6 +155,17 @@
       "section": "Plugin information",
       "scope": "Static text rendered by AnyFlows; this area does not run plugin code or actions."
     },
+    "events": {
+      "title": "Plugin event results",
+      "description": "Read-only reports returned by installed plugins. Results expire after 30 days.",
+      "error": "Could not load plugin event results.",
+      "empty": "No completed plugin event results are available.",
+      "delivered": "Completed",
+      "completedAt": "Completed {{time}}",
+      "attempts": "Attempts: {{count}}",
+      "result": "View result JSON",
+      "more": "Load more results"
+    },
     "errors": {
       "action": "The operation did not complete. Refresh the current state and retry, or check the service logs.",
       "loadArtifacts": "Could not load plugin artifacts.",

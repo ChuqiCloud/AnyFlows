@@ -25,7 +25,7 @@
 
 通用 Sidecar 目前只执行管理员明确授予的 access=read、sideEffect=none 能力，并要求每项能力都有输入和输出 JSON Schema。插件没有数据库句柄、用户会话、渠道密钥、托管 HTTP 客户端或持久化接口；它只能处理宿主给出的本次输入和公开配置。宿主控制实际调用的插件、能力名、版本、用户权限及数据范围。没有“客户端任意选择 capability 并直接调用”的通用接口。
 
-持久事件目前只生产渠道 `down` 与 `recovered` 转换。处理结果保存在宿主队列中，有效期为 30 天；管理员可通过 `GET /api/admin/plugins/events/results?before_id=<deliveryId>&limit=20` 查看。结果页 PAT 权限为 `admin:list_admin_plugin_event_results:execute`，普通用户不能读取。插件输出限制为 16 KiB JSON，不作为命令、通知或业务写操作执行。
+持久事件目前只生产渠道 `down` 与 `recovered` 转换。处理结果保存在宿主队列中，有效期为 30 天；管理员可在“插件管理”的事件结果区域查看，也可调用 `GET /api/admin/plugins/events/results?before_id=<deliveryId>&limit=20` 分页查询。PAT 权限为 `admin:list_admin_plugin_event_results:execute`，普通用户不能读取。插件输出限制为 16 KiB JSON，不作为命令、通知或业务写操作执行。
 
 ## 从零制作第一个插件
 

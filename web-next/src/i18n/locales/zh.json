@@ -155,6 +155,17 @@
       "section": "插件信息",
       "scope": "由 AnyFlows 展示的静态文本；此处不会运行插件代码或操作。"
     },
+    "events": {
+      "title": "插件事件结果",
+      "description": "已安装插件返回的只读报告，结果保留 30 天。",
+      "error": "插件事件结果加载失败。",
+      "empty": "暂无已完成的插件事件结果。",
+      "delivered": "已完成",
+      "completedAt": "完成于 {{time}}",
+      "attempts": "尝试次数：{{count}}",
+      "result": "查看结果 JSON",
+      "more": "加载更多结果"
+    },
     "errors": {
       "action": "操作未完成。请刷新当前状态后重试，或检查服务日志。",
       "loadArtifacts": "无法读取插件制品。",

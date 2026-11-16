@@ -141,6 +141,7 @@ try {
     assert.equal(request.headers().authorization, 'Bearer ci-plugin', `${method} ${path} must use the current session`)
     if (path === '/api/admin/plugins/artifacts' && method === 'GET') return respond({ artifacts: [artifact, revoked], nextBeforeId: null })
     if (path === '/api/admin/plugins/deployments' && method === 'GET') { deploymentRequests += 1; return respond({ deployments: [deployment], nextCursor: null }) }
+    if (path === '/api/admin/plugins/events/results' && method === 'GET') return respond({ results: [{ deliveryId: 31, pluginId: 'org.example.events', eventKind: 'channel.health.changed', deploymentGeneration: 4, capabilityId: 'events.channel-health.changed.consume', capabilityVersion: 1, attemptCount: 1, status: 'delivered', completedAt: now, summary: 'Channel 12 recovered.', result: { summary: 'Channel 12 recovered.', status: 'info' } }], nextBeforeId: null })
     if (path === `/api/admin/plugins/${artifact.pluginId}/deployment/history` && method === 'GET') return respond([])
     if (path === '/api/admin/plugins/runtime' && method === 'GET') {
       runtimeRequests += 1
@@ -192,6 +193,8 @@ try {
   await runtimePanel.getByText(label('pluginLifecycle.runtime.stale'), { exact: true }).waitFor()
   await runtimePanel.getByText(`${label('pluginLifecycle.runtime.states.failed')} · ${label('pluginLifecycle.runtime.isolationModes.unknown')} · startup_failed`, { exact: true }).waitFor()
   assert.equal(await runtimePanel.getByText(label('pluginLifecycle.runtime.readyNodes').replace('{{ready}}', '3').replace('{{total}}', '3'), { exact: true }).count(), 0, 'An old generation or failed process cannot count as ready')
+  await page.getByRole('heading', { name: label('pluginLifecycle.events.title'), exact: true }).waitFor()
+  await page.getByText('Channel 12 recovered.', { exact: true }).waitFor()
   const deploymentCard = page.locator('article').filter({ has: page.getByRole('button', { name: label('pluginLifecycle.removal.uninstall'), exact: true }) })
   await deploymentCard.getByText(label('pluginLifecycle.status.official'), { exact: true }).waitFor()
   const contributionSection = deploymentCard.getByRole('region', { name: label('pluginLifecycle.ui.section'), exact: true })

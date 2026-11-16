@@ -15,6 +15,7 @@ import {
   usePluginArtifacts,
   usePluginDeploymentHistory,
   usePluginDeployments,
+  usePluginEventResults,
   useRegisterPluginArtifact,
   useRevokePluginArtifact,
   useRollbackPluginDeployment,
@@ -109,6 +110,30 @@ function pluginUiCards(deployment: PluginDeploymentResponse, locale: string): Pl
     if (!title || (item.description !== undefined && !description)) return []
     return [{ id: item.id, title, ...(description ? { description } : {}) }]
   })
+}
+
+function PluginEventResultsPanel() {
+  const { t, i18n } = useTranslation()
+  const results = usePluginEventResults()
+  const entries = results.data?.pages.flatMap((page) => page.results) ?? []
+  const locale = i18n.resolvedLanguage?.startsWith('zh') ? 'zh-CN' : 'en-US'
+  return <Card shadow="none" className="rounded-xl border border-[var(--hairline)] bg-card">
+    <CardHeader className="flex items-start justify-between gap-3 p-5">
+      <div><h2 className="text-base font-semibold">{t('pluginLifecycle.events.title')}</h2><p className="mt-1 text-sm text-muted-foreground">{t('pluginLifecycle.events.description')}</p></div>
+      <Button size="sm" variant="bordered" isDisabled={results.isFetching} onPress={() => { void results.refetch() }}><RefreshCw size={15} className={results.isFetching ? 'animate-spin' : undefined} />{t('pluginLifecycle.refresh')}</Button>
+    </CardHeader>
+    <CardBody className="space-y-3 p-5 pt-0">
+      {results.isPending ? <Skeleton className="h-20 rounded-lg" /> : null}
+      {results.isError ? <ErrorBox text={t('pluginLifecycle.events.error')} retry={t('pluginLifecycle.refresh')} onRetry={() => { if (results.isFetchNextPageError) void results.fetchNextPage(); else void results.refetch() }} /> : null}
+      {results.isSuccess && entries.length === 0 ? <Empty text={t('pluginLifecycle.events.empty')} /> : null}
+      {entries.map((entry) => <article key={entry.deliveryId} className="rounded-lg border border-[var(--hairline)] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-2"><div><strong className="text-sm">{entry.summary}</strong><p className="mt-1 break-all text-xs text-muted-foreground">#{entry.deliveryId} · {entry.pluginId} · {entry.eventKind} · g{entry.deploymentGeneration}</p></div><Chip size="sm" color="success" variant="flat">{t('pluginLifecycle.events.delivered')}</Chip></div>
+        <p className="mt-2 text-xs text-muted-foreground">{t('pluginLifecycle.events.completedAt', { time: new Date(entry.completedAt * 1_000).toLocaleString(locale) })} · {t('pluginLifecycle.events.attempts', { count: entry.attemptCount })}</p>
+        <details className="mt-3 text-xs"><summary className="cursor-pointer font-medium">{t('pluginLifecycle.events.result')}</summary><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all rounded bg-content1/50 p-3 font-mono">{JSON.stringify(entry.result, null, 2)}</pre></details>
+      </article>)}
+      {results.hasNextPage ? <div className="flex justify-center"><Button size="sm" variant="bordered" isDisabled={results.isFetching} onPress={() => void results.fetchNextPage()}>{t(results.isFetchingNextPage ? 'pluginLifecycle.loading' : 'pluginLifecycle.events.more')}</Button></div> : null}
+    </CardBody>
+  </Card>
 }
 
 export function PluginLifecyclePage() {
@@ -223,6 +248,7 @@ export function PluginLifecyclePage() {
     {uninstallNotice !== undefined ? <p role="status" className="rounded-lg border border-[var(--hairline)] p-3 text-sm text-muted-foreground">{t('pluginLifecycle.removal.accepted', { count: uninstallNotice })}</p> : null}
     {cleanupNotice ? <p role="status" className="rounded-lg border border-[var(--hairline)] p-3 text-sm text-muted-foreground">{t('pluginLifecycle.removal.cleaned')}</p> : null}
     <PluginRuntimePanel deployments={deploymentList} />
+    <PluginEventResultsPanel />
 
     <details className="rounded-xl border border-[var(--hairline)] bg-card">
       <summary className="cursor-pointer px-5 py-4 text-sm font-medium">{t('pluginLifecycle.advanced')}</summary>

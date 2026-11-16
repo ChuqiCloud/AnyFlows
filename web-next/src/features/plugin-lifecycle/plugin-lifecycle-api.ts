@@ -48,6 +48,44 @@ export type PluginRuntimeOverview = {
   states: PluginRuntimeState[]
 }
 
+export type PluginEventResult = {
+  deliveryId: number
+  pluginId: string
+  eventKind: string
+  deploymentGeneration: number
+  capabilityId: string
+  capabilityVersion: number
+  attemptCount: number
+  status: string
+  completedAt: number
+  summary: string
+  result: Record<string, unknown>
+}
+
+type PluginEventResultPage = {
+  results: PluginEventResult[]
+  nextBeforeId: number | null
+}
+
+export function usePluginEventResults() {
+  return useInfiniteQuery({
+    queryKey: [...root, 'event-results'],
+    initialPageParam: undefined as number | undefined,
+    queryFn: async ({ pageParam, signal }) => {
+      const response = await apiClient.get<PluginEventResultPage>({
+        url: '/api/admin/plugins/events/results',
+        query: { before_id: pageParam, limit: 20 },
+        signal,
+        security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }],
+      }) as unknown as { data: PluginEventResultPage }
+      return response.data
+    },
+    getNextPageParam: (page) => page.nextBeforeId ?? undefined,
+    staleTime: 15_000,
+    retry: false,
+  })
+}
+
 export function usePluginRuntimeOverview() {
   return useQuery({
     queryKey: [...root, 'runtime'],
