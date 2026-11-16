@@ -52438,11 +52438,13 @@
           },
           "capabilityVersion": {
             "type": "integer",
-            "format": "int32"
+            "format": "int32",
+            "minimum": 0
           },
           "attemptCount": {
             "type": "integer",
-            "format": "int32"
+            "format": "int32",
+            "minimum": 0
           },
           "status": {
             "type": "string"

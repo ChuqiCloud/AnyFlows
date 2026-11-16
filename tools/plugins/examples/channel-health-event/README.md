@@ -27,7 +27,7 @@
 python tools/plugins/package-example.py dist/channel-health-event.afplugin --example channel-health-event
 ```
 
-上传包后，管理员需启用部署并明确授予 `events.channel-health.changed.consume@1`。没有精确授权、制品未审核/已撤销或部署代次不匹配时，事件不会投递。已受理的事件会使用持久队列，失败后按有界退避重试；到达次数或保留期限后进入死信。
+普通上传安装会完成制品登记。管理员仍需启用部署并明确授予 `events.channel-health.changed.consume@1`；手工登记的制品须先审批。未启用、未获得精确授权、已撤销或部署代次不匹配时，事件不会投递。已受理的事件会使用持久队列，失败后按有界退避重试；到达次数或保留期限后进入死信。
 
 管理员可调用 `GET /api/admin/plugins/events/results?before_id=<deliveryId>&limit=20` 分页读取未过期结果；所需 PAT scope 为 `admin:list_admin_plugin_event_results:execute`。普通用户不能读取。结果仅是文本数据，不影响健康分、实时路由、钱包或用户通知。
 

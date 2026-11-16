@@ -2859,6 +2859,25 @@ export type PluginDeploymentRollbackRequest = {
     expected_generation: number;
     target_generation: number;
 };
+export type PluginEventResultPageResponse = {
+    results: Array<PluginEventResultResponse>;
+    nextBeforeId?: number | null;
+};
+export type PluginEventResultResponse = {
+    deliveryId: number;
+    pluginId: string;
+    eventKind: string;
+    deploymentGeneration: number;
+    capabilityId: string;
+    capabilityVersion: number;
+    attemptCount: number;
+    status: string;
+    completedAt: number;
+    summary: string;
+    result: {
+        [key: string]: unknown;
+    };
+};
 export type PluginPackageInstallRequest = {
     package: Blob | File;
     config?: string | null;
@@ -11667,6 +11686,27 @@ export type ListAdminPluginDeploymentsResponses = {
     200: PluginDeploymentPageResponse;
 };
 export type ListAdminPluginDeploymentsResponse = ListAdminPluginDeploymentsResponses[keyof ListAdminPluginDeploymentsResponses];
+export type ListAdminPluginEventResultsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before_id?: number;
+        limit?: number;
+    };
+    url: '/api/admin/plugins/events/results';
+};
+export type ListAdminPluginEventResultsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type ListAdminPluginEventResultsError = ListAdminPluginEventResultsErrors[keyof ListAdminPluginEventResultsErrors];
+export type ListAdminPluginEventResultsResponses = {
+    200: PluginEventResultPageResponse;
+};
+export type ListAdminPluginEventResultsResponse = ListAdminPluginEventResultsResponses[keyof ListAdminPluginEventResultsResponses];
 export type ListAdminPluginDeploymentHistoryData = {
     body?: never;
     path: {
