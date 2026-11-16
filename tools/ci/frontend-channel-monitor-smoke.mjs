@@ -204,7 +204,7 @@ try {
   assert.deepEqual(pluginReviewRequests, [{ plugin_id: 'ci.monitor.review' }])
   await details.getByRole('button', { name: label('channels.activeMonitor.pluginReview.action.prepare'), exact: true }).click()
   await details.getByText(label('channels.activeMonitor.pluginReview.action.confirmTitle'), { exact: true }).waitFor()
-  await details.getByText(label('channels.activeMonitor.pluginReview.action.target', { id: 71 }), { exact: true }).waitFor()
+  await details.getByText(label('channels.activeMonitor.pluginReview.action.target').replace('{{id}}', '71'), { exact: true }).waitFor()
   await details.getByRole('checkbox').check()
   const actionConfirmed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/admin/channel-monitor/action-proposals/proposal-71/confirm' && response.request().method() === 'POST')
   await details.getByRole('button', { name: label('channels.activeMonitor.pluginReview.action.confirm'), exact: true }).click()
