@@ -8,14 +8,15 @@ use sea_orm::{
 };
 
 use crate::{
-    ActiveChannelMonitorRepository, ActiveChannelMonitorTargetInput, ChannelBaseUrl,
-    DatabaseOptions, EncryptedJson, HeaderOverrides, MigrationOptions, PluginActionProposalCreate,
-    PluginActionProposalRepository, PluginActionProposalStatus, PluginArtifactApproval,
-    PluginArtifactCreate, PluginArtifactSourceKind, PluginCapabilityGrant, PluginCatalogRepository,
-    PluginDeploymentWrite, SensitiveJson,
+    ActiveChannelMonitorRepository, ActiveChannelMonitorTargetInput, DatabaseOptions,
+    MigrationOptions, PluginActionProposalCreate, PluginActionProposalRepository,
+    PluginActionProposalStatus, PluginArtifactApproval, PluginArtifactCreate,
+    PluginArtifactSourceKind, PluginCapabilityGrant, PluginCatalogRepository,
+    PluginDeploymentWrite,
     entity::{
-        channel_models, channel_monitor_targets, channels, credentials, groups,
-        plugin_artifact_revocations, plugin_deployments, users,
+        ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, channel_models,
+        channel_monitor_targets, channels, credentials, groups, plugin_artifact_revocations,
+        plugin_deployments, users,
     },
 };
 
