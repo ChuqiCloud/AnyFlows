@@ -358,7 +358,7 @@ try {
   await page.setViewportSize({ width: 1280, height: 1000 })
   await page.getByRole('navigation', { name: 'CI views' }).getByRole('button', { name: 'account-review', exact: true }).click()
   await page.getByRole('button', { name: 'open-account-review', exact: true }).click()
-  await page.getByRole('combobox', { name: label('profile.externalAccounts.pluginReview.plugin'), exact: true }).click()
+  await page.getByRole('button', { name: label('profile.externalAccounts.pluginReview.plugin'), exact: true }).click()
   await page.getByRole('option', { name: /CI live review/ }).click()
   const externalReadConsent = page.getByRole('checkbox', { name: label('profile.externalAccounts.pluginReview.allowExternalReads'), exact: true })
   await externalReadConsent.check()
