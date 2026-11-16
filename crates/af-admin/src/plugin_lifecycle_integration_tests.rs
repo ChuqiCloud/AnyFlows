@@ -1,22 +1,33 @@
 //! End-to-end coverage of the shared archive, real sidecar and user catalog path.
 #![cfg(unix)]
 
-use std::{error::Error, io::Write, path::Path, sync::Arc, time::Duration};
+use std::{
+    error::Error,
+    io::Write,
+    path::Path,
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use af_db::{
     AdminUserCreateRecord, AdminUserLookupOutcome, AdminUserRepository, DatabaseOptions,
     DatabasePool, InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
-    MigrationOptions, PlatformAuditRepository, PluginCatalogRepository,
+    MigrationOptions, PlatformAuditRepository, PluginCatalogRepository, PluginEventDeliveryCreate,
+    PluginEventDeliveryEnqueueOutcome, PluginEventDeliveryRepository,
+    PluginEventDeliveryResultQuery, PluginEventKind,
 };
+use sea_orm::TransactionTrait;
 use serde_json::json;
 use zip::{ZipWriter, write::SimpleFileOptions};
 
 use crate::{
-    AdminPluginLifecycleError, AdminPluginSidecarRuntime, DatabaseAdminPluginLifecycleService,
-    DatabasePlatformAuditService, PluginCatalogExtensionQuery, SessionPrincipal, SessionRole,
+    AdminPluginCapabilityGrant, AdminPluginLifecycleError, AdminPluginSidecarRuntime,
+    DatabaseAdminPluginLifecycleService, DatabasePlatformAuditService, PluginCatalogExtensionQuery,
+    PluginDeploymentCommand, PluginEventDeliveryWorker, SessionPrincipal, SessionRole,
 };
 
 const PLUGIN_ID: &str = "org.anyflows.example-catalog";
+const EVENT_PLUGIN_ID: &str = "org.anyflows.integration-event-config";
 
 struct Fixture {
     pool: DatabasePool,
@@ -146,6 +157,217 @@ fn example_package_with_entry(entry: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
         "../../../tools/plugins/sdk/python/anyflows_plugin.py"
     ))?;
     Ok(writer.finish()?.into_inner())
+}
+
+fn event_config_package() -> Result<Vec<u8>, Box<dyn Error>> {
+    let manifest = json!({
+        "pluginId": EVENT_PLUGIN_ID,
+        "displayName": "Event config integration fixture",
+        "pluginVersion": "1.0.0",
+        "contractRange": {
+            "minimum": {"major": 1, "minor": 0},
+            "maximum": {"major": 1, "minor": 2}
+        },
+        "capabilities": [{
+            "id": "events.channel-health.changed.consume",
+            "version": 1,
+            "access": "read",
+            "sideEffect": "none",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["targetId", "channelId", "status", "observedAt"],
+                "properties": {
+                    "targetId": {"type": "integer", "minimum": 1},
+                    "channelId": {"type": "integer", "minimum": 1},
+                    "status": {"type": "string", "enum": ["down", "recovered"]},
+                    "observedAt": {"type": "integer", "minimum": 1}
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["summary", "status", "recommendation"],
+                "properties": {
+                    "summary": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "status": {"type": "string", "enum": ["info", "warning"]},
+                    "recommendation": {"type": "string", "minLength": 1, "maxLength": 1024}
+                }
+            }
+        }],
+        "authenticationModes": ["none"],
+        "limits": {
+            "maxConcurrency": 1,
+            "requestTimeoutMs": 5000,
+            "maxResponseBytes": 32768,
+            "maxPageSize": 1
+        },
+        "configSchema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["marker"],
+            "properties": {"marker": {"type": "string", "minLength": 1, "maxLength": 64}}
+        },
+        "uiContributions": []
+    });
+    let entry = br#"#!/usr/bin/python3
+import json
+from pathlib import Path
+import sys
+from anyflows_plugin import Plugin, PluginError
+
+ROOT = Path(__file__).resolve().parent
+CAPABILITY = "events.channel-health.changed.consume"
+
+def handle(capability_id, public_config, value):
+    if capability_id != CAPABILITY or public_config.get("marker") != "event-config":
+        raise PluginError("missing_public_config")
+    if not isinstance(value, dict) or value.get("status") not in {"down", "recovered"}:
+        raise PluginError("invalid_event")
+    return {
+        "summary": "event configuration was delivered",
+        "status": "info",
+        "recommendation": "configuration reached the event sidecar"
+    }
+
+def main():
+    manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
+    return Plugin(manifest, handle).serve()
+
+if __name__ == "__main__":
+    sys.exit(main())
+"#;
+    let mut writer = ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let file = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .unix_permissions(0o644);
+    writer.start_file("anyflows-plugin.json", file)?;
+    writer.write_all(&serde_json::to_vec(&json!({
+        "manifest": manifest,
+        "executablePath": "plugin.py"
+    }))?)?;
+    writer.add_directory("payload/", file.unix_permissions(0o755))?;
+    writer.start_file("payload/plugin.py", file.unix_permissions(0o755))?;
+    writer.write_all(entry)?;
+    writer.start_file("payload/manifest.json", file)?;
+    writer.write_all(&serde_json::to_vec(&manifest)?)?;
+    writer.start_file("payload/anyflows_plugin.py", file)?;
+    writer.write_all(include_bytes!(
+        "../../../tools/plugins/sdk/python/anyflows_plugin.py"
+    ))?;
+    Ok(writer.finish()?.into_inner())
+}
+
+#[tokio::test]
+async fn event_delivery_uses_the_active_deployment_public_configuration()
+-> Result<(), Box<dyn Error>> {
+    if !Path::new("/usr/bin/python3").is_file() {
+        eprintln!("Skipping real Python event fixture: /usr/bin/python3 is unavailable");
+        return Ok(());
+    }
+    let fixture = Fixture::new().await?;
+    let mut upload = fixture
+        .first
+        .begin_package_upload(fixture.operator, "event-config-upload")
+        .await?;
+    upload.write_chunk(&event_config_package()?).await?;
+    assert!(matches!(
+        fixture
+            .first
+            .install_package(
+                fixture.operator,
+                upload,
+                json!({"marker":"event-config"}),
+                None,
+                "event-config-install",
+            )
+            .await,
+        Err(AdminPluginLifecycleError::CapabilityReviewRequired)
+    ));
+
+    let artifact_page = fixture
+        .first
+        .list_artifacts(fixture.operator, None, 20)
+        .await?;
+    let artifact = artifact_page
+        .artifacts()
+        .iter()
+        .find(|artifact| artifact.plugin_id() == EVENT_PLUGIN_ID)
+        .ok_or("event artifact was not registered")?;
+    assert!(artifact.approval().is_some());
+    let config = json!({"marker":"event-config"});
+    let deployment = fixture
+        .first
+        .deploy(
+            fixture.operator,
+            PluginDeploymentCommand::new(
+                EVENT_PLUGIN_ID.to_owned(),
+                artifact.digest().to_owned(),
+                None,
+                true,
+                vec![AdminPluginCapabilityGrant::new(
+                    "events.channel-health.changed.consume".to_owned(),
+                    1,
+                )?],
+                config,
+            )?,
+            "event-config-deploy",
+        )
+        .await?;
+
+    let now = i64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())?;
+    let event = PluginEventDeliveryCreate {
+        plugin_id: EVENT_PLUGIN_ID.to_owned(),
+        event_key: "event-config-regression-1".to_owned(),
+        event_kind: PluginEventKind::ChannelHealthChanged,
+        artifact_id: deployment.artifact().id(),
+        artifact_digest: deployment.artifact().digest().to_owned(),
+        deployment_generation: deployment.generation(),
+        capability_id: "events.channel-health.changed.consume".to_owned(),
+        capability_version: 1,
+        payload: json!({
+            "targetId": 1,
+            "channelId": 1,
+            "status": "down",
+            "observedAt": now
+        }),
+        max_attempts: 3,
+        created_at: now,
+        expires_at: now + 60,
+    };
+    let transaction = fixture.pool.extension_connection().begin().await?;
+    assert!(matches!(
+        af_db::enqueue_plugin_event_delivery(&transaction, event).await?,
+        PluginEventDeliveryEnqueueOutcome::Enqueued(_)
+    ));
+    transaction.commit().await?;
+
+    let worker_root = fixture.root.path().join("event-worker");
+    let worker_relative = worker_root.strip_prefix(std::env::current_dir()?)?;
+    let worker_lifecycle = Arc::new(service(&fixture.pool, worker_relative)?);
+    let event_repository =
+        PluginEventDeliveryRepository::new(fixture.pool.clone(), Duration::from_secs(10))?;
+    let worker = PluginEventDeliveryWorker::new(event_repository.clone(), worker_lifecycle.clone());
+    let worker_task = tokio::spawn(async move {
+        worker.run_until(std::future::pending::<()>()).await;
+    });
+    let result = tokio::time::timeout(Duration::from_secs(12), async {
+        loop {
+            let page = event_repository
+                .list_results(PluginEventDeliveryResultQuery::new(None, 20)?, now + 1)
+                .await?;
+            if let Some(result) = page.results.first() {
+                return Ok::<_, Box<dyn Error>>(result.result.clone());
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await??;
+    worker_task.abort();
+    worker_lifecycle.shutdown_runtime().await;
+    assert_eq!(result["summary"], "event configuration was delivered");
+    fixture.close().await?;
+    Ok(())
 }
 
 #[tokio::test]

@@ -1,6 +1,6 @@
 # 插件能力扩展设计
 
-本文定义 AnyFlows 上传式插件后续扩展到业务查询、平台连接器、受控操作、事件任务和声明式界面的目标边界。它是宿主开发设计，不表示下文提到的能力已经能由 `.afplugin` 使用。当前可安装插件实际支持范围见[插件开发指南](plugin-development.md#先看支持范围)。
+本文定义 AnyFlows 上传式插件扩展到业务查询、平台连接器、受控操作、事件任务和声明式界面的边界与实施顺序。它是宿主开发设计，不表示下文提到的能力已经能由 `.afplugin` 使用。当前可安装插件实际支持范围见[插件开发指南](plugin-development.md#先看支持范围)。
 
 ## 目标
 
@@ -116,7 +116,7 @@
 
 ## 交付顺序
 
-扩展按可独立验证的版本交付，每阶段都有实际宿主入口、示例、文档和远程流水线覆盖：
+扩展按可独立验证的版本交付，每阶段都需要实际宿主入口、示例、文档和远程流水线覆盖：
 
 1. **业务只读目录**：补齐运维、路由、任务、用量等安全投影和可执行示例。
 2. **连接器能力**：为账户资料、余额快照和外部目录定义专用凭据/出网契约，把第三方实现接入类型化连接器端口；验证加密、主体绑定、撤销、SSRF 和 snapshot provenance。
@@ -153,4 +153,4 @@
 | 外部只读代理 | `PluginProxyRequest/Response` 语言中立 DTO 和 JSON Schema/OpenAPI 定义；请求不含 URL、凭据、header 或 body，限制在 host endpoint ID 与 GET/HEAD 查询参数 | Sidecar 双向 callback 帧、运行时 endpoint 注册、凭据注入、host HTTP 代理和外部账户连接器接线 |
 | 持久事件投递 | 独立事件表、封闭类型投影、同事务渠道健康事件生产者、受监督 worker、部署/授权/制品复核、Sidecar 调用、lease、退避重试、死信，以及 16 KiB 有界结果保存和管理员分页查询 | 目前只有 `channel.health.changed` 有生产入口；商户服务和报告事件仍未接入。结果是只读 JSON，不会执行操作或创建通知 |
 
-因此，当前部署可用的是配置表单、插件管理页静态信息卡、渠道健康事件只读处理和管理员事件结果页 `GET /api/admin/plugins/events/results`。该接口只列未过期的成功投递，响应不包含原始事件 payload、event key、宿主管理的连接 URL 或凭据；结果 JSON 最多 16 KiB，并拒绝含敏感字段名的对象。PAT 调用需 `admin:list_admin_plugin_event_results:execute`。这是受信任插件提供的文本数据，调用方应作为文本显示，不执行或自动链接。队列也不会执行插件建议或直接创建通知。商户服务和报告事件尚无 producer；受控操作仍是数据结构而非写入能力，外部代理仍是合约草案。外部账号和余额读取继续由现有内置连接器负责。当前上传式业务入口与 Sidecar 限制以[开发指南](plugin-development.md#先看支持范围)和[协议参考](plugin-protocol-reference.md)为准。
+因此，当前已可用的功能包括部署配置表单、插件管理页静态信息卡、渠道健康事件的只读处理和管理员事件结果页 `GET /api/admin/plugins/events/results`。该接口只列未过期的成功投递，响应不包含原始事件 payload、event key、宿主管理的连接 URL 或凭据；结果 JSON 最多 16 KiB，并拒绝含敏感字段名的对象。PAT 调用需 `admin:list_admin_plugin_event_results:execute`。这是受信任插件提供的文本数据，调用方应作为文本显示，不执行或自动链接。队列也不会执行插件建议或直接创建通知。商户服务和报告事件尚无 producer；受控操作仍是数据结构而非写入能力，外部代理仍是合约草案，插件 UI 暂不提供业务模块自定义页面和交互。外部账号和余额读取继续由现有内置连接器负责。当前上传式业务入口与 Sidecar 限制以[开发指南](plugin-development.md#先看支持范围)和[协议参考](plugin-protocol-reference.md)为准。

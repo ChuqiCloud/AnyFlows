@@ -1,6 +1,6 @@
 //! Shared execution boundary for host-owned, read-only plugin reviews.
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use af_db::{
     PluginArtifactSourceKind, PluginCatalogError, PluginDeploymentQuery, PluginDeploymentRecord,
@@ -214,6 +214,7 @@ pub(crate) async fn invoke_read_only_review(
             contract.max_input_bytes.max(contract.max_output_bytes),
         )
         .map_err(|_| ReadOnlyPluginReviewError::InvalidInput)?;
+        let started_at = Instant::now();
         let response = runtime
             .invoke_capability(
                 repository,
@@ -224,9 +225,53 @@ pub(crate) async fn invoke_read_only_review(
                 contract.capability_version,
                 input,
             )
-            .await
-            .map_err(map_lifecycle_error)?;
-        let output = decode_output(response.output, contract)?;
+            .await;
+        let response = match response {
+            Ok(response) => response,
+            Err(error) => {
+                tracing::warn!(
+                    target: "anyflows_plugin",
+                    plugin_id,
+                    capability_id = contract.capability_id,
+                    capability_version = contract.capability_version,
+                    deployment_generation = deployment.generation,
+                    request_id,
+                    outcome = "failed",
+                    failure_kind = ?error,
+                    elapsed_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+                    "plugin read-only capability invocation failed"
+                );
+                return Err(map_lifecycle_error(error));
+            }
+        };
+        let output = match decode_output(response.output, contract) {
+            Ok(output) => output,
+            Err(error) => {
+                tracing::warn!(
+                    target: "anyflows_plugin",
+                    plugin_id,
+                    capability_id = contract.capability_id,
+                    capability_version = contract.capability_version,
+                    deployment_generation = deployment.generation,
+                    request_id,
+                    outcome = "invalid_output",
+                    elapsed_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+                    "plugin read-only capability returned invalid output"
+                );
+                return Err(error);
+            }
+        };
+        tracing::info!(
+            target: "anyflows_plugin",
+            plugin_id,
+            capability_id = contract.capability_id,
+            capability_version = contract.capability_version,
+            deployment_generation = deployment.generation,
+            request_id,
+            outcome = "success",
+            elapsed_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+            "plugin read-only capability invocation completed"
+        );
 
         let latest = repository
             .get_deployment(plugin_id)

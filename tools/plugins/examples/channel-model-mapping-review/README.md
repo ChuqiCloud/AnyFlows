@@ -33,10 +33,10 @@ python tools/plugins/package-example.py dist/channel-model-mapping-review.afplug
 ## 3. 安装并运行
 
 1. 管理员进入 AnyFlows“插件管理”，上传 `dist/channel-model-mapping-review.afplugin` 并安装。
-2. 在部署的“高级管理”中明确授予 `channel.model_mapping.review.read` v1，然后启用部署。部署 `publicConfig` 必须保持空对象 `{}`。
+2. 普通上传安装会完成制品登记。对手工登记的制品，先在插件管理中审批该制品。然后在部署的“高级管理”中明确授予 `channel.model_mapping.review.read` v1，再启用部署。部署 `publicConfig` 必须保持空对象 `{}`。
 3. 等待插件节点状态显示就绪。
 4. 管理员进入渠道页，选择一个渠道运行模型映射检查。
-5. 页面只显示摘要和建议；它不会替管理员改写渠道模型或映射。
+5. 页面只显示摘要和建议；它不会替管理员改写渠道模型或映射。所选渠道的模型名和映射值会发送给插件，请只安装你信任的代码，并检查渠道中没有不应向插件披露的自定义文本。
 
 本能力是管理员渠道管理入口。调用 API 时必须使用管理员会话，或持有对应权限的管理员 PAT：读取可选插件需要 `admin:list_admin_channel_model_mapping_plugin_reviewers:execute`，运行检查需要 `admin:review_admin_channel_model_mapping_with_plugin:execute`。模型调用 API Key 不用于管理接口。
 

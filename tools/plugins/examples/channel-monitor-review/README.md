@@ -31,7 +31,7 @@ New-Item -ItemType Directory -Force dist
 ## 安装和使用
 
 1. 管理员打开 AnyFlows 的“插件管理”，上传生成的 `.afplugin` 包并安装。
-2. 在该插件部署的“高级管理”中，明确授予 `channel.monitor.events.review.read` v1，然后启用部署。插件的 `publicConfig` 必须保留为空对象 `{}`。
+2. 普通上传安装会完成制品登记。对手工登记的制品，先在插件管理中审批该制品。然后在部署的“高级管理”中明确授予 `channel.monitor.events.review.read` v1，再启用部署。插件的 `publicConfig` 必须保留为空对象 `{}`。
 3. 管理员进入“渠道”页面，展开“主动渠道监控”。在目标的已记录事件区域中选择插件并运行检查。
 4. 页面显示摘要和检查项。结果是参考意见，不会替管理员执行探测或更改设置。
 

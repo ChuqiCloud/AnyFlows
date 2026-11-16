@@ -282,21 +282,23 @@ fn valid_query_key(value: &str) -> bool {
             normalized.push('_');
         }
     }
-    !normalized.split(['_', '-', '.']).any(|part| {
-        [
-            "authorization",
-            "auth",
-            "code",
-            "cookie",
-            "credential",
-            "key",
-            "password",
-            "secret",
-            "signature",
-            "token",
-        ]
-        .contains(&part)
-    })
+    let compact = normalized.replace(['_', '-', '.'], "");
+    compact.contains("apikey")
+        || normalized.split(['_', '-', '.']).any(|part| {
+            [
+                "authorization",
+                "auth",
+                "code",
+                "cookie",
+                "credential",
+                "key",
+                "password",
+                "secret",
+                "signature",
+                "token",
+            ]
+            .contains(&part)
+        })
 }
 
 /// Request frame for the language-neutral newline-delimited sidecar protocol.
@@ -629,6 +631,16 @@ mod tests {
             .query
             .insert("access_token".to_owned(), "must-not-pass".to_owned());
         assert!(credential_query.validate().is_err());
+        for name in ["apikey", "api_key", "api-key", "api.key", "APIKey"] {
+            let mut secret_query = request.clone();
+            secret_query
+                .query
+                .insert(name.to_owned(), "must-not-pass".to_owned());
+            assert!(
+                secret_query.validate().is_err(),
+                "accepted query key: {name}"
+            );
+        }
         let mut secretish_query = request.clone();
         secretish_query
             .query

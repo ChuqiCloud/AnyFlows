@@ -7,10 +7,10 @@
 | 目标 | 当前支持 | 插件能做什么 |
 | --- | --- | --- |
 | 在模型页提供资料、搜索和分页 | 已支持：catalog.models.read / catalog.models.search v1 | 返回展示用的模型资料，不会新增可调用模型、渠道或价卡 |
-| 检查商户自己的服务资料 | 已支持：merchant.service.review.read v1 | 阅读公开服务说明和模型能力，返回文字建议 |
+| 检查商户自己的服务资料 | 已支持：merchant.service.review.read v1 | 阅读商户服务说明和模型能力，返回文字建议；这些由商户填写的字段会发送给所选插件，安装前应确认信任该插件 |
 | 总结管理员配置的渠道监控历史 | 已支持：channel.monitor.events.review.read v1 | 阅读最多 100 条历史事件，管理员在当前请求中查看摘要和建议 |
 | 处理持久渠道健康事件 | 已支持：events.channel-health.changed.consume v1 | 消费 down / recovered 状态变化并返回有界结果；管理员可在插件管理 API 查询结果，插件建议不触发其他操作 |
-| 静态检查管理员配置的渠道模型映射 | 已支持：channel.model_mapping.review.read v1 | 阅读公开模型名称和映射关系，返回摘要与建议，不连接上游或修改渠道 |
+| 静态检查管理员配置的渠道模型映射 | 已支持：channel.model_mapping.review.read v1 | 阅读所选渠道的模型名和映射值，返回摘要与建议；这些是管理员填写的数据，会发送给所选插件，不连接上游或修改渠道 |
 | 给其他模块增加只读查询或计算 | 逐模块接入 | 宿主提供固定入口、数据投影、Schema、权限和结果展示 |
 | 增加 HTTP API、Webhook、后台任务 | 只有渠道健康事件消费已接入 | 宿主通过固定事件生产者、持久队列和 Sidecar worker 处理事件；通用 Webhook、插件自建计划任务仍不支持 |
 | 声明插件管理页静态信息卡 | 已支持：`plugin_management` 的 `info_card` | Manifest 最多声明 16 个中英文纯文本卡片，不支持菜单、链接、按钮或动态页面 |
@@ -23,9 +23,9 @@
 
 外部平台连接器和受控写操作仍处于设计阶段。已接入的渠道健康事件处理和插件管理静态卡片见[插件能力扩展设计](plugin-capability-expansion.md)及 `tools/plugins/examples/channel-health-event/` 示例。
 
-通用 Sidecar 目前只执行管理员明确授予的 access=read、sideEffect=none 能力，并要求每项能力都有输入和输出 JSON Schema。插件没有数据库句柄、用户会话、渠道密钥、托管 HTTP 客户端或持久化接口；它只能处理宿主给出的本次输入和公开配置。宿主控制实际调用的插件、能力名、版本、用户权限及数据范围。没有“客户端任意选择 capability 并直接调用”的通用接口。
+通用 Sidecar 目前只执行管理员明确授予的 access=read、sideEffect=none 能力，并要求每项能力都有输入和输出 JSON Schema。插件没有数据库句柄、用户会话、渠道密钥、托管 HTTP 客户端或通用数据库持久化接口；它只能处理宿主给出的本次输入和已配置的 publicConfig。宿主控制实际调用的插件、能力名、版本、用户权限及数据范围。没有“客户端任意选择 capability 并直接调用”的通用接口。
 
-持久事件目前只生产渠道 `down` 与 `recovered` 转换。处理结果保存在宿主队列中，有效期为 30 天；管理员可在“插件管理”的事件结果区域查看，也可调用 `GET /api/admin/plugins/events/results?before_id=<deliveryId>&limit=20` 分页查询。PAT 权限为 `admin:list_admin_plugin_event_results:execute`，普通用户不能读取。插件输出限制为 16 KiB JSON，不作为命令、通知或业务写操作执行。
+持久事件目前只生产渠道 `down` 与 `recovered` 转换。处理结果保存在宿主队列中，有效期为 30 天；管理员可在“插件管理”的事件结果区域查看，也可调用 `GET /api/admin/plugins/events/results?before_id=<deliveryId>&limit=20` 分页查询。PAT 权限为 `admin:list_admin_plugin_event_results:execute`，普通用户不能读取。插件输出限制为 16 KiB JSON，不作为命令、通知或业务写操作执行。管理员上传的普通插件包会随安装流程完成制品登记；手工登记的制品需要先通过制品审批，再部署并授予精确能力。
 
 ## 从零制作第一个插件
 

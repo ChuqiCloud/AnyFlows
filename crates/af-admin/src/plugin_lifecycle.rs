@@ -7,7 +7,7 @@
 use std::{
     fmt,
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::{Instant, SystemTime},
 };
 
 use af_db::{
@@ -1106,11 +1106,12 @@ impl DatabaseAdminPluginLifecycleService {
                 request_id: format!("plugin-event-{}-{}", lease.id(), lease.attempt_count()),
                 deadline_unix_ms,
             },
-            json!({}),
+            deployment.config.clone(),
             PLUGIN_EVENT_MAX_BYTES,
         )
         .map_err(|_| PluginEventFailureKind::Permanent)?;
-        let result = match runtime
+        let started_at = Instant::now();
+        let invoked = runtime
             .invoke_capability(
                 &self.repository,
                 lease.plugin_id(),
@@ -1120,8 +1121,8 @@ impl DatabaseAdminPluginLifecycleService {
                 lease.capability_version(),
                 lease.payload().clone(),
             )
-            .await
-        {
+            .await;
+        let result = match invoked {
             Ok(result) => result,
             Err(
                 AdminPluginLifecycleError::Forbidden
@@ -1131,14 +1132,55 @@ impl DatabaseAdminPluginLifecycleService {
                 | AdminPluginLifecycleError::NotFound
                 | AdminPluginLifecycleError::Conflict,
             ) => {
+                tracing::warn!(
+                    target: "anyflows_plugin",
+                    event_id = lease.id(),
+                    event_kind = lease.event_kind(),
+                    plugin_id = lease.plugin_id(),
+                    capability_id = lease.capability_id(),
+                    capability_version = lease.capability_version(),
+                    deployment_generation = lease.deployment_generation(),
+                    attempt = lease.attempt_count(),
+                    outcome = "failed",
+                    failure_kind = "permanent",
+                    elapsed_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+                    "plugin event capability invocation failed"
+                );
                 return Err(PluginEventFailureKind::Permanent);
             }
             Err(
                 AdminPluginLifecycleError::RuntimeUnavailable | AdminPluginLifecycleError::Internal,
             ) => {
+                tracing::warn!(
+                    target: "anyflows_plugin",
+                    event_id = lease.id(),
+                    event_kind = lease.event_kind(),
+                    plugin_id = lease.plugin_id(),
+                    capability_id = lease.capability_id(),
+                    capability_version = lease.capability_version(),
+                    deployment_generation = lease.deployment_generation(),
+                    attempt = lease.attempt_count(),
+                    outcome = "failed",
+                    failure_kind = "transient",
+                    elapsed_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+                    "plugin event capability invocation failed"
+                );
                 return Err(PluginEventFailureKind::Transient);
             }
         };
+        tracing::info!(
+            target: "anyflows_plugin",
+            event_id = lease.id(),
+            event_kind = lease.event_kind(),
+            plugin_id = lease.plugin_id(),
+            capability_id = lease.capability_id(),
+            capability_version = lease.capability_version(),
+            deployment_generation = lease.deployment_generation(),
+            attempt = lease.attempt_count(),
+            outcome = "success",
+            elapsed_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+            "plugin event capability invocation completed"
+        );
 
         // A disable, upgrade, grant change, or revocation during execution makes this
         // delivery stale. Do not report it as delivered to the currently active deployment.
