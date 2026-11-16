@@ -69,8 +69,14 @@ pub struct PluginEventDeliveryResultQuery {
 }
 
 impl PluginEventDeliveryResultQuery {
-    pub fn new(before_id: Option<i64>, limit: u32) -> Result<Self, PluginEventDeliveryRepositoryError> {
-        if before_id.is_some_and(|id| id <= 0) || limit == 0 || limit > MAX_PLUGIN_EVENT_RESULT_PAGE_SIZE {
+    pub fn new(
+        before_id: Option<i64>,
+        limit: u32,
+    ) -> Result<Self, PluginEventDeliveryRepositoryError> {
+        if before_id.is_some_and(|id| id <= 0)
+            || limit == 0
+            || limit > MAX_PLUGIN_EVENT_RESULT_PAGE_SIZE
+        {
             return Err(PluginEventDeliveryRepositoryError::Invariant);
         }
         Ok(Self { before_id, limit })
@@ -304,10 +310,7 @@ impl PluginEventDeliveryRepository {
 
     /// Remove unleased delivery rows after their TTL so queue retention does not block artifact
     /// collection. Expired leases are first retired by the normal lease lifecycle.
-    pub async fn purge_expired(
-        &self,
-        now: i64,
-    ) -> Result<u64, PluginEventDeliveryRepositoryError> {
+    pub async fn purge_expired(&self, now: i64) -> Result<u64, PluginEventDeliveryRepositoryError> {
         if now <= 0 {
             return Err(PluginEventDeliveryRepositoryError::Invariant);
         }

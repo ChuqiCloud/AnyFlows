@@ -13,8 +13,8 @@ use crate::{
         PluginCatalogModelPageResponse, PluginCatalogModelResponse,
         PluginCatalogSourcePageResponse, PluginCatalogSourceResponse,
         PluginDeploymentDisableRequest, PluginDeploymentPageResponse, PluginDeploymentRequest,
-        PluginDeploymentResponse, PluginDeploymentRollbackRequest, PluginPackageInstallRequest,
-        PluginEventResultPageResponse, PluginEventResultResponse, PluginRuntimeNodeResponse,
+        PluginDeploymentResponse, PluginDeploymentRollbackRequest, PluginEventResultPageResponse,
+        PluginEventResultResponse, PluginPackageInstallRequest, PluginRuntimeNodeResponse,
         PluginRuntimeOverviewResponse, PluginRuntimeStateResponse, PluginUninstallResponse,
     },
 };

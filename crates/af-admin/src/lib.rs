@@ -428,10 +428,11 @@ pub use plugin_catalog_extension::{
 pub use plugin_lifecycle::{
     AdminPluginArtifact, AdminPluginArtifactApproval, AdminPluginArtifactPage,
     AdminPluginArtifactRevocation, AdminPluginCapabilityGrant, AdminPluginDeployment,
-    AdminPluginDeploymentPage, AdminPluginLifecycleError, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
+    AdminPluginDeploymentPage, AdminPluginEventResult, AdminPluginEventResultPage,
+    AdminPluginLifecycleError, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
     DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
-    AdminPluginEventResult, AdminPluginEventResultPage, PluginArtifactRegistrationCommand,
-    PluginDeploymentCommand, PluginEventDeliveryWorker, PluginPackageUpload,
+    PluginArtifactRegistrationCommand, PluginDeploymentCommand, PluginEventDeliveryWorker,
+    PluginPackageUpload,
 };
 pub use plugin_operations::{
     AdminPluginArtifactCleanup, AdminPluginRuntimeNode, AdminPluginRuntimeOverview,

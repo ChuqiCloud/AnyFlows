@@ -262,13 +262,13 @@ mod plugin_event_delivery;
 #[cfg(test)]
 mod plugin_event_delivery_tests;
 pub use plugin_event_delivery::{
-    PluginEventDeliveryClaimOutcome, PluginEventDeliveryCompletionOutcome,
-    PluginEventDeliveryCreate, PluginEventDeliveryEnqueueOutcome, PluginEventDeliveryInputError,
-    PluginEventDeliveryLease, PluginEventDeliveryRepository,
-    PluginEventDeliveryRepositoryConfigError, PluginEventDeliveryRepositoryError,
-    PluginEventDeliveryResultPage, PluginEventDeliveryResultQuery,
-    PluginEventDeliveryResultRecord, PluginEventFailureKind, PluginEventKind,
-    MAX_PLUGIN_EVENT_RESULT_PAGE_SIZE, enqueue_plugin_event_delivery,
+    MAX_PLUGIN_EVENT_RESULT_PAGE_SIZE, PluginEventDeliveryClaimOutcome,
+    PluginEventDeliveryCompletionOutcome, PluginEventDeliveryCreate,
+    PluginEventDeliveryEnqueueOutcome, PluginEventDeliveryInputError, PluginEventDeliveryLease,
+    PluginEventDeliveryRepository, PluginEventDeliveryRepositoryConfigError,
+    PluginEventDeliveryRepositoryError, PluginEventDeliveryResultPage,
+    PluginEventDeliveryResultQuery, PluginEventDeliveryResultRecord, PluginEventFailureKind,
+    PluginEventKind, enqueue_plugin_event_delivery,
 };
 mod quota;
 #[cfg(test)]

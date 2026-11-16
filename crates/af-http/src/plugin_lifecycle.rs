@@ -520,10 +520,7 @@ pub fn build_plugin_lifecycle_router(
             get(list_artifacts).post(register_artifact),
         )
         .route("/api/admin/plugins/deployments", get(list_deployments))
-        .route(
-            "/api/admin/plugins/events/results",
-            get(list_event_results),
-        )
+        .route("/api/admin/plugins/events/results", get(list_event_results))
         .route(
             "/api/admin/plugins/artifacts/{artifact_id}/approve",
             post(approve_artifact),
@@ -1260,11 +1257,8 @@ mod tests {
             assert!(policy.required_scopes[0].starts_with("admin:"));
             assert!(grants.insert(policy.required_scopes[0].clone()));
         }
-        let event_results = crate::access_token_routes::policy(
-            "GET",
-            "/api/admin/plugins/events/results",
-        )
-        .unwrap();
+        let event_results =
+            crate::access_token_routes::policy("GET", "/api/admin/plugins/events/results").unwrap();
         assert_eq!(
             event_results.required_scopes,
             ["admin:list_admin_plugin_event_results:execute"]

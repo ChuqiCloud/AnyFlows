@@ -109,11 +109,12 @@ pub struct PluginUiText {
 
 impl PluginUiText {
     fn validate(&self) -> bool {
-        [&self.en, &self.zh].into_iter().any(|value| {
-            value.as_deref().is_some_and(|text| valid_ui_text(text))
-        }) && [&self.en, &self.zh].into_iter().all(|value| {
-            value.as_deref().is_none_or(valid_ui_text)
-        })
+        [&self.en, &self.zh]
+            .into_iter()
+            .any(|value| value.as_deref().is_some_and(|text| valid_ui_text(text)))
+            && [&self.en, &self.zh]
+                .into_iter()
+                .all(|value| value.as_deref().is_none_or(valid_ui_text))
     }
 }
 
@@ -124,9 +125,16 @@ fn valid_ui_text(text: &str) -> bool {
         && !text.chars().any(char::is_control)
         && !text.contains('<')
         && !text.contains('>')
-        && !["http://", "https://", "javascript:", "data:", "mailto:", "www."]
-            .iter()
-            .any(|marker| lower.contains(marker))
+        && ![
+            "http://",
+            "https://",
+            "javascript:",
+            "data:",
+            "mailto:",
+            "www.",
+        ]
+        .iter()
+        .any(|marker| lower.contains(marker))
 }
 
 impl PluginManifest {
@@ -313,7 +321,9 @@ mod tests {
         assert!(value.validate().is_ok());
 
         let mut duplicate = value.clone();
-        duplicate.ui_contributions.push(duplicate.ui_contributions[0].clone());
+        duplicate
+            .ui_contributions
+            .push(duplicate.ui_contributions[0].clone());
         assert_eq!(
             duplicate.validate(),
             Err(ContractValidationError::InvalidManifest)

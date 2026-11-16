@@ -19,11 +19,12 @@ use crate::entity::plugin_event_deliveries;
 mod repository;
 
 pub use repository::{
-    PluginEventDeliveryClaimOutcome, PluginEventDeliveryCompletionOutcome,
-    PluginEventDeliveryEnqueueOutcome, PluginEventDeliveryLease, PluginEventDeliveryRepository,
+    MAX_PLUGIN_EVENT_RESULT_PAGE_SIZE, PluginEventDeliveryClaimOutcome,
+    PluginEventDeliveryCompletionOutcome, PluginEventDeliveryEnqueueOutcome,
+    PluginEventDeliveryLease, PluginEventDeliveryRepository,
     PluginEventDeliveryRepositoryConfigError, PluginEventDeliveryRepositoryError,
-    PluginEventDeliveryResultPage, PluginEventDeliveryResultQuery,
-    PluginEventDeliveryResultRecord, PluginEventFailureKind, MAX_PLUGIN_EVENT_RESULT_PAGE_SIZE,
+    PluginEventDeliveryResultPage, PluginEventDeliveryResultQuery, PluginEventDeliveryResultRecord,
+    PluginEventFailureKind,
 };
 
 const STATUS_PENDING: i16 = 1;
@@ -725,11 +726,29 @@ mod tests {
 
     #[test]
     fn event_results_require_a_bounded_object_without_sensitive_field_names() {
-        assert!(repository::serialize_event_result(&json!({ "summary": "checked", "checks": [] })).is_ok());
-        assert!(repository::serialize_event_result(&json!({ "summary": "checked", "apiKey": "secret" })).is_err());
-        assert!(repository::serialize_event_result(&json!({ "details": [{ "access_token": "secret" }] })).is_err());
+        assert!(
+            repository::serialize_event_result(&json!({ "summary": "checked", "checks": [] }))
+                .is_ok()
+        );
+        assert!(
+            repository::serialize_event_result(
+                &json!({ "summary": "checked", "apiKey": "secret" })
+            )
+            .is_err()
+        );
+        assert!(
+            repository::serialize_event_result(
+                &json!({ "details": [{ "access_token": "secret" }] })
+            )
+            .is_err()
+        );
         assert!(repository::serialize_event_result(&json!({ "sessionToken": "secret" })).is_err());
-        assert!(repository::serialize_event_result(&json!({ "summary": "x".repeat(MAX_EVENT_RESULT_BYTES) })).is_err());
+        assert!(
+            repository::serialize_event_result(
+                &json!({ "summary": "x".repeat(MAX_EVENT_RESULT_BYTES) })
+            )
+            .is_err()
+        );
         assert!(repository::serialize_event_result(&json!(["not-an-object"])).is_err());
     }
 

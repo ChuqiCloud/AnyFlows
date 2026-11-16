@@ -16,8 +16,8 @@ use af_db::{
     PluginArtifactSourceKind, PluginCapabilityGrant, PluginCatalogError, PluginCatalogRepository,
     PluginDeploymentQuery, PluginDeploymentRecord, PluginDeploymentWrite,
     PluginEventDeliveryClaimOutcome, PluginEventDeliveryCompletionOutcome,
-    PluginEventDeliveryLease, PluginEventDeliveryRepository, PluginEventFailureKind,
-    PluginEventDeliveryResultQuery,
+    PluginEventDeliveryLease, PluginEventDeliveryRepository, PluginEventDeliveryResultQuery,
+    PluginEventFailureKind,
 };
 use af_domain::PlatformPermission;
 use af_plugin_contract::{InvocationMetadata, PluginManifest};
@@ -1138,7 +1138,7 @@ impl DatabaseAdminPluginLifecycleService {
             ) => {
                 return Err(PluginEventFailureKind::Transient);
             }
-        }
+        };
 
         // A disable, upgrade, grant change, or revocation during execution makes this
         // delivery stale. Do not report it as delivered to the currently active deployment.
@@ -2096,9 +2096,16 @@ fn safe_event_result_summary(value: &str) -> bool {
         return false;
     }
     let normalized = value.to_ascii_lowercase();
-    !["http://", "https://", "javascript:", "data:", "mailto:", "://"]
-        .iter()
-        .any(|marker| normalized.contains(marker))
+    ![
+        "http://",
+        "https://",
+        "javascript:",
+        "data:",
+        "mailto:",
+        "://",
+    ]
+    .iter()
+    .any(|marker| normalized.contains(marker))
 }
 
 #[cfg(test)]
@@ -2113,7 +2120,9 @@ mod event_result_tests {
         assert!(!safe_event_result_summary("See https://example.invalid"));
         assert!(!safe_event_result_summary("javascript:alert(1)"));
         assert!(!safe_event_result_summary("line\nbreak"));
-        assert!(!safe_event_result_summary(&"x".repeat(MAX_PLUGIN_EVENT_RESULT_SUMMARY_BYTES + 1)));
+        assert!(!safe_event_result_summary(
+            &"x".repeat(MAX_PLUGIN_EVENT_RESULT_SUMMARY_BYTES + 1)
+        ));
     }
 }
 
