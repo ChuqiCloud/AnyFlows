@@ -3,6 +3,130 @@ use af_domain::MerchantMaintenanceWrite;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 use std::error::Error;
 
+async fn enable_merchant_event_plugin(fixture: &Fixture) -> Result<(), Box<dyn Error>> {
+    let operator = UserId::new(3)?;
+    let plugin_id = "org.example.merchant-events";
+    let capability_id = "events.merchant-service.changed.consume";
+    let repository = crate::PluginCatalogRepository::new(fixture.pool.clone());
+    let digest = "cd".repeat(32);
+    let artifact = repository
+        .register_artifact(crate::PluginArtifactCreate {
+            plugin_id: plugin_id.to_owned(),
+            plugin_version: "1.0.0".to_owned(),
+            digest: digest.clone(),
+            manifest: serde_json::json!({
+                "pluginId": plugin_id,
+                "pluginVersion": "1.0.0",
+                "configSchema": {"type":"object", "additionalProperties":false},
+                "contractRange": {"minimum":{"major":1,"minor":0},"maximum":{"major":1,"minor":2}},
+                "authenticationModes": ["none"],
+                "limits": {"maxConcurrency":1,"requestTimeoutMs":1000,"maxResponseBytes":4096,"maxPageSize":20},
+                "capabilities": [{"id":capability_id,"version":1,"access":"read","sideEffect":"none"}]
+            }),
+            source_kind: crate::PluginArtifactSourceKind::LocalProcess,
+            source_reference: "/opt/anyflows/plugins/merchant-events".to_owned(),
+            signer_key_id: String::new(),
+            signature: String::new(),
+            created_at: 1_800_000_000,
+        })
+        .await?;
+    repository
+        .approve_artifact(crate::PluginArtifactApproval {
+            artifact_id: artifact.id,
+            approved_by: operator,
+            approved_at: 1_800_000_001,
+            request_id: "merchant-event-approval".to_owned(),
+        })
+        .await?;
+    repository
+        .deploy(crate::PluginDeploymentWrite {
+            plugin_id: plugin_id.to_owned(),
+            artifact_digest: digest,
+            expected_generation: None,
+            enabled: true,
+            granted_capabilities: vec![crate::PluginCapabilityGrant {
+                id: capability_id.to_owned(),
+                version: 1,
+            }],
+            config: serde_json::json!({}),
+            updated_by: operator,
+            updated_at: 1_800_000_002,
+            request_id: "merchant-event-deploy".to_owned(),
+        })
+        .await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn public_service_lifecycle_events_are_queued_without_watchers() -> Result<(), Box<dyn Error>>
+{
+    let fixture = fixture().await?;
+    enable_merchant_event_plugin(&fixture).await?;
+
+    let service = publish(&fixture).await?;
+    let deliveries = crate::entity::plugin_event_deliveries::Entity::find()
+        .all(fixture.pool.connection())
+        .await?;
+    assert_eq!(
+        deliveries.len(),
+        1,
+        "publishing must queue without watchers"
+    );
+    assert_eq!(deliveries[0].event_kind, "merchant.service.changed");
+    let publication: serde_json::Value = serde_json::from_str(&deliveries[0].payload_json)?;
+    assert_eq!(publication["serviceId"], service.id);
+    assert_eq!(publication["revision"], 1);
+    assert_eq!(publication["status"], "active");
+    assert!(publication["observedAt"].as_i64().is_some());
+    assert_eq!(publication.as_object().unwrap().len(), 4);
+
+    let observed_at = publication["observedAt"].as_i64().unwrap();
+    crate::plugin_event_delivery::enqueue_merchant_service_changed(
+        fixture.pool.connection(),
+        service.id,
+        1,
+        &deliveries[0].event_key,
+        "active",
+        observed_at,
+    )
+    .await?;
+    assert_eq!(
+        crate::entity::plugin_event_deliveries::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        1,
+        "replaying the same transition must be idempotent"
+    );
+
+    fixture
+        .repository
+        .pause_service(UserId::new(1)?, service.id, true)
+        .await?;
+    fixture
+        .repository
+        .pause_service(UserId::new(1)?, service.id, true)
+        .await?;
+    let deliveries = crate::entity::plugin_event_deliveries::Entity::find()
+        .all(fixture.pool.connection())
+        .await?;
+    assert_eq!(deliveries.len(), 2);
+    let pause = deliveries
+        .iter()
+        .find(|delivery| {
+            serde_json::from_str::<serde_json::Value>(&delivery.payload_json)
+                .is_ok_and(|payload| payload["status"] == "paused")
+        })
+        .expect("pause transition delivery");
+    let payload: serde_json::Value = serde_json::from_str(&pause.payload_json)?;
+    assert_eq!(payload["serviceId"], service.id);
+    assert_eq!(payload["revision"], 1);
+    assert_eq!(payload["status"], "paused");
+    assert_eq!(payload.as_object().unwrap().len(), 4);
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
 #[tokio::test]
 async fn published_service_updates_notify_once_and_draft_edits_stay_private()
 -> Result<(), Box<dyn Error>> {

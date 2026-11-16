@@ -111,7 +111,7 @@ impl PluginUiText {
     fn validate(&self) -> bool {
         [&self.en, &self.zh]
             .into_iter()
-            .any(|value| value.as_deref().is_some_and(|text| valid_ui_text(text)))
+            .any(|value| value.as_deref().is_some_and(valid_ui_text))
             && [&self.en, &self.zh]
                 .into_iter()
                 .all(|value| value.as_deref().is_none_or(valid_ui_text))

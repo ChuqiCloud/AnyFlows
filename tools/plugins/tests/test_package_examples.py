@@ -65,6 +65,17 @@ class ExamplePackageTests(unittest.TestCase):
                 "plugin_management",
             )
 
+    def test_durable_merchant_service_event_example_contains_the_python_sdk(self):
+        with tempfile.TemporaryDirectory(prefix="anyflows-example-test-") as temporary:
+            output = Path(temporary) / "merchant-service-event.afplugin"
+            package = self.package(output, "merchant-service-event")
+            self.assertIn("payload/anyflows_plugin.py", package["names"])
+            self.assertIn("payload/plugin.py", package["names"])
+            self.assertEqual(
+                package["metadata"]["manifest"]["capabilities"][0]["id"],
+                "events.merchant-service.changed.consume",
+            )
+
     def test_channel_model_mapping_review_example_contains_the_python_sdk(self):
         with tempfile.TemporaryDirectory(prefix="anyflows-example-test-") as temporary:
             output = Path(temporary) / "channel-model-mapping-review.afplugin"

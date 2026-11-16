@@ -113,12 +113,7 @@ impl PluginEventKind {
                     && object
                         .get("status")
                         .and_then(Value::as_str)
-                        .is_some_and(|status| {
-                            matches!(
-                                status,
-                                "draft" | "pending" | "active" | "paused" | "rejected"
-                            )
-                        })
+                        .is_some_and(|status| matches!(status, "active" | "paused"))
             }
             Self::ReportRequested => {
                 only_keys(object, &["requestId", "reportKind", "requestedAt"])
@@ -339,6 +334,126 @@ where
                 artifact_digest: artifact.digest.clone(),
                 deployment_generation: deployment.generation,
                 capability_id: PluginEventKind::ChannelHealthChanged
+                    .required_capability()
+                    .to_owned(),
+                capability_version: 1,
+                payload: payload.clone(),
+                max_attempts: MAX_EVENT_ATTEMPTS,
+                created_at: observed_at,
+                expires_at,
+            };
+            enqueue_plugin_event_delivery(connection, input).await?;
+        }
+        if !is_full_page {
+            break;
+        }
+        after_plugin_id = deployments
+            .last()
+            .map(|deployment| deployment.plugin_id.clone());
+        if after_plugin_id.is_none() {
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// Persist the minimal public lifecycle projection for a merchant service. The producer is
+/// called from the service transaction, so an event can never describe a committed state that
+/// the database did not commit. Service descriptions, URLs, models, prices and owner identities
+/// are deliberately excluded from this event.
+pub(crate) async fn enqueue_merchant_service_changed<C>(
+    connection: &C,
+    service_id: i64,
+    revision: i64,
+    event_key: &str,
+    status: &str,
+    observed_at: i64,
+) -> Result<(), PluginEventDeliveryRepositoryError>
+where
+    C: ConnectionTrait,
+{
+    if service_id <= 0
+        || revision <= 0
+        || !valid_event_key(event_key)
+        || observed_at <= 0
+        || !matches!(status, "active" | "paused")
+    {
+        return Err(PluginEventDeliveryRepositoryError::Invariant);
+    }
+
+    let expires_at = observed_at
+        .checked_add(MAX_EVENT_TTL_SECONDS)
+        .ok_or(PluginEventDeliveryRepositoryError::Invariant)?;
+    let payload = json!({
+        "serviceId": service_id,
+        "revision": revision,
+        "status": status,
+        "observedAt": observed_at,
+    });
+    let mut after_plugin_id: Option<String> = None;
+    loop {
+        let mut query = crate::entity::plugin_deployments::Entity::find()
+            .filter(crate::entity::plugin_deployments::Column::Enabled.eq(true))
+            .order_by_asc(crate::entity::plugin_deployments::Column::PluginId)
+            .limit(crate::MAX_PLUGIN_DEPLOYMENT_HISTORY as u64);
+        if let Some(cursor) = after_plugin_id.as_ref() {
+            query = query
+                .filter(crate::entity::plugin_deployments::Column::PluginId.gt(cursor.clone()));
+        }
+        let deployments = query
+            .all(connection)
+            .await
+            .map_err(|_| PluginEventDeliveryRepositoryError::Query)?;
+        let is_full_page = deployments.len() == crate::MAX_PLUGIN_DEPLOYMENT_HISTORY as usize;
+        for deployment in &deployments {
+            if !has_grant(
+                &deployment.capability_grants,
+                PluginEventKind::MerchantServiceChanged.required_capability(),
+                1,
+            ) {
+                continue;
+            }
+            let artifact =
+                crate::entity::plugin_artifacts::Entity::find_by_id(deployment.artifact_id)
+                    .one(connection)
+                    .await
+                    .map_err(|_| PluginEventDeliveryRepositoryError::Query)?;
+            let Some(artifact) = artifact else {
+                continue;
+            };
+            if artifact.plugin_id != deployment.plugin_id
+                || artifact.source_kind != "local_process"
+                || !artifact_declares_event_capability(
+                    &artifact.manifest,
+                    PluginEventKind::MerchantServiceChanged.required_capability(),
+                    1,
+                )
+            {
+                continue;
+            }
+            let approved =
+                crate::entity::plugin_artifact_approvals::Entity::find_by_id(artifact.id)
+                    .one(connection)
+                    .await
+                    .map_err(|_| PluginEventDeliveryRepositoryError::Query)?
+                    .is_some();
+            let revoked =
+                crate::entity::plugin_artifact_revocations::Entity::find_by_id(artifact.id)
+                    .one(connection)
+                    .await
+                    .map_err(|_| PluginEventDeliveryRepositoryError::Query)?
+                    .is_some();
+            if !approved || revoked {
+                continue;
+            }
+            let input = PluginEventDeliveryCreate {
+                plugin_id: deployment.plugin_id.clone(),
+                event_key: event_key.to_owned(),
+                event_kind: PluginEventKind::MerchantServiceChanged,
+                artifact_id: artifact.id,
+                artifact_digest: artifact.digest.clone(),
+                deployment_generation: deployment.generation,
+                capability_id: PluginEventKind::MerchantServiceChanged
                     .required_capability()
                     .to_owned(),
                 capability_version: 1,
@@ -701,6 +816,40 @@ mod tests {
     }
 
     #[test]
+    fn merchant_service_event_projection_contains_only_public_lifecycle_facts() {
+        let capability = PluginEventKind::MerchantServiceChanged.required_capability();
+        for status in ["active", "paused"] {
+            assert!(
+                delivery(
+                    PluginEventKind::MerchantServiceChanged,
+                    json!({"serviceId":8,"revision":3,"status":status,"observedAt":100}),
+                    capability,
+                )
+                .validate()
+                .is_ok()
+            );
+        }
+        for status in ["draft", "pending", "rejected", "suspended"] {
+            assert!(
+                delivery(
+                    PluginEventKind::MerchantServiceChanged,
+                    json!({"serviceId":8,"revision":3,"status":status,"observedAt":100}),
+                    capability,
+                )
+                .validate()
+                .is_err()
+            );
+        }
+        assert!(delivery(
+            PluginEventKind::MerchantServiceChanged,
+            json!({"serviceId":8,"revision":3,"status":"active","observedAt":100,"baseUrl":"https://private.invalid"}),
+            capability,
+        )
+        .validate()
+        .is_err());
+    }
+
+    #[test]
     fn report_requests_reject_unrecognized_fields_and_overlong_retention() {
         let mut input = delivery(
             PluginEventKind::ReportRequested,
@@ -787,6 +936,7 @@ mod tests {
         let operator = UserId::new(user.id).unwrap();
         let plugin_id = "org.example.channel-events";
         let capability_id = PluginEventKind::ChannelHealthChanged.required_capability();
+        let merchant_capability_id = PluginEventKind::MerchantServiceChanged.required_capability();
         let digest = "ab".repeat(32);
         let repository = crate::PluginCatalogRepository::new(pool.clone());
         let artifact = repository
@@ -801,7 +951,10 @@ mod tests {
                     "contractRange": { "minimum": { "major": 1, "minor": 0 }, "maximum": { "major": 1, "minor": 2 } },
                     "authenticationModes": ["none"],
                     "limits": { "maxConcurrency": 1, "requestTimeoutMs": 1000, "maxResponseBytes": 4096, "maxPageSize": 20 },
-                    "capabilities": [{ "id": capability_id, "version": 1, "access": "read", "sideEffect": "none" }]
+                    "capabilities": [
+                        { "id": capability_id, "version": 1, "access": "read", "sideEffect": "none" },
+                        { "id": merchant_capability_id, "version": 1, "access": "read", "sideEffect": "none" }
+                    ]
                 }),
                 source_kind: crate::PluginArtifactSourceKind::LocalProcess,
                 source_reference: "/opt/anyflows/plugins/channel-events".to_owned(),
@@ -826,10 +979,16 @@ mod tests {
                 artifact_digest: digest.clone(),
                 expected_generation,
                 enabled,
-                granted_capabilities: vec![crate::PluginCapabilityGrant {
-                    id: capability_id.to_owned(),
-                    version: 1,
-                }],
+                granted_capabilities: vec![
+                    crate::PluginCapabilityGrant {
+                        id: capability_id.to_owned(),
+                        version: 1,
+                    },
+                    crate::PluginCapabilityGrant {
+                        id: merchant_capability_id.to_owned(),
+                        version: 1,
+                    },
+                ],
                 config: json!({}),
                 updated_by: operator,
                 updated_at: 1_800_000_002,
@@ -940,6 +1099,43 @@ mod tests {
                 .await
                 .unwrap(),
             0
+        );
+        repository
+            .deploy(write_deployment(Some(2), true, "merchant-event-enable"))
+            .await
+            .unwrap();
+        enqueue_merchant_service_changed(
+            pool.connection(),
+            88,
+            7,
+            "service:88:service_restored:resume:88:1800000020000000000",
+            "active",
+            1_800_000_020,
+        )
+        .await
+        .unwrap();
+        enqueue_merchant_service_changed(
+            pool.connection(),
+            88,
+            7,
+            "service:88:service_restored:resume:88:1800000020000000000",
+            "active",
+            1_800_000_020,
+        )
+        .await
+        .unwrap();
+        let merchant_deliveries = plugin_event_deliveries::Entity::find()
+            .all(pool.connection())
+            .await
+            .unwrap();
+        assert_eq!(merchant_deliveries.len(), 1);
+        assert_eq!(
+            merchant_deliveries[0].event_key,
+            "service:88:service_restored:resume:88:1800000020000000000"
+        );
+        assert_eq!(
+            serde_json::from_str::<Value>(&merchant_deliveries[0].payload_json).unwrap(),
+            json!({ "serviceId": 88, "revision": 7, "status": "active", "observedAt": 1_800_000_020 })
         );
         pool.close().await.unwrap();
     }
