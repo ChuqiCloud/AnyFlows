@@ -23,9 +23,9 @@ use time::OffsetDateTime;
 use crate::{
     ExternalAccount, ExternalAccountBalancePage, ExternalAccountBalanceSnapshot,
     ExternalAccountBalanceStatus, ExternalAccountCredential, ExternalAccountError,
-    ExternalAccountFuture, ExternalAccountLinkCommand, ExternalAccountProxyEndpoint,
-    SessionPrincipal, SupportedExternalConnector, UserExternalAccountService,
-    external_account_proxy_endpoint,
+    ExternalAccountFuture, ExternalAccountLinkCommand, SessionPrincipal,
+    SupportedExternalConnector, UserExternalAccountService,
+    external_account::{ExternalAccountProxyEndpoint, external_account_proxy_endpoint},
 };
 
 const EXTERNAL_PROFILE_CAPABILITY: &str = "external.account.profile.read";

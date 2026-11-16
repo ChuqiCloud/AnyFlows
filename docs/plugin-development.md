@@ -25,7 +25,7 @@
 
 上传安装的 `.afplugin`、编译进服务的 Rust `RuntimeExtensions`、编译进前端的 `ConsoleExtension` 是三种不同机制。`.afplugin` 可从插件管理上传安装；`RuntimeExtensions` 要改 Rust 并重建服务；`ConsoleExtension` 要改 Next 源码并重新构建前端。插件 Manifest 可声明 `uiContributions` 和 `uiViews`，宿主只在注册好的固定位置渲染静态纯文本组件。插件不能注册菜单、路由、接口、按钮动作或后台任务。
 
-插件没有通用 HTTP 代理。当前只有外部账户分析模块提供两个宿主固定端点：`account.profile` 返回显示名称，`account.balance` 返回已过滤的余额字段。页面默认不勾选；用户每次运行前单独同意后，宿主才会读取本人当前绑定的上游账户。余额读取会写入一条新的本地余额快照，后续账务仍由 AnyFlows 自己的余额与账本规则处理。凭据、用户 ID、账户 ID、上游 URL 和请求头都不会发给插件。可运行示例位于 `tools/plugins/examples/account-balance-live-review/`。
+插件没有通用 HTTP 代理。外部账户分析模块提供两个宿主固定端点：`account.balance` 返回已过滤的余额字段；`account.profile` 返回显示名称，只有插件另行声明并获授 `external.account.profile.read@1` 时才可请求。页面默认不勾选；用户每次运行前单独同意后，宿主才会读取本人当前绑定的上游账户。余额读取会写入一条新的本地余额快照，后续账务仍由 AnyFlows 自己的余额与账本规则处理。凭据、用户 ID、账户 ID、上游 URL 和请求头都不会发给插件。随仓库提供的实时余额示例只声明余额端点，见 `tools/plugins/examples/account-balance-live-review/`。
 
 代理回调要求另外授予 `external.account.balance.read@1`，同时满足 `account.balance.snapshot.live-review.read@1` 的模块入口授权。回调只接受 `GET` 和空查询参数；插件不能选择 URL、路径、请求体或凭据。每次调用最多四次回调，并共享同一 deadline。协议校验和字段见[协议参考](plugin-protocol-reference.md#sidecar-代理回调)。受控操作目前只支持管理员确认启停主动监控目标这一项固定动作，流程和限制见[宿主确认的插件动作](plugin-actions.md)。渠道健康、商户服务事件和其他扩展边界见[插件能力扩展设计](plugin-capability-expansion.md)。
 
@@ -227,7 +227,7 @@ id、displayName、provider 必填。宿主最多返回 50 项，并校验字段
 
 静态示例 [account-balance-snapshot-review](../tools/plugins/examples/account-balance-snapshot-review/README.md) 只分析已保存的余额记录，不访问上游。固定能力 `account.balance.snapshot.review.read` v1 接收最多 20 条快照，每条只包含 `amount`、`unit`、`status` 和 `observedAt`，不包含 AnyFlows 用户 ID、连接 ID、外部主体、平台 URL 或凭据。
 
-如插件确实需要当前余额，可另外声明 `account.balance.snapshot.live-review.read` v1 和单独的外部读取 capability。可运行实现见 [account-balance-live-review](../tools/plugins/examples/account-balance-live-review/README.md)。用户在个人资料页逐次勾选同意后，宿主才为本次调用提供固定的 `account.balance` 回调；该回调由现有 NewAPI/Sub2API 连接器读取本人当前选中的账户，在 AnyFlows 保存新的余额快照，再只返回金额、单位、状态和时间。`account.profile` 返回显示名称。它们都要求 GET 和空查询参数。插件不能提供 URL、路径、请求头、请求体或账户 ID，也不能读取钱包、改动账户绑定或消费本地余额。
+如插件确实需要当前余额，可另外声明 `account.balance.snapshot.live-review.read` v1 和单独的外部读取 capability。可运行实现见 [account-balance-live-review](../tools/plugins/examples/account-balance-live-review/README.md)。用户在个人资料页逐次勾选同意后，宿主才为本次调用提供固定的 `account.balance` 回调；该回调由现有 NewAPI/Sub2API 连接器读取本人当前选中的账户，在 AnyFlows 保存新的余额快照，再只返回金额、单位、状态和时间。若插件还需 `account.profile`，须在 Manifest 中增加 `external.account.profile.read@1` 并由管理员授予；该端点也返回固定字段且要求 GET 和空查询参数。当前示例没有声明资料读取能力。插件不能提供 URL、路径、请求头、请求体或账户 ID，也不能读取钱包、改动账户绑定或消费本地余额。
 
 回调 capability 与分析入口分开授权：分析需要 `account.balance.snapshot.live-review.read@1`，余额回调需要 `external.account.balance.read@1`。管理员必须同时为插件部署授予对应能力；用户 PAT 还必须同时具有 `external_accounts:read` 和独立的 `external_accounts:live_read` scope 才能通过 API 请求实时读取。默认 `account_read` PAT preset 不包含 `external_accounts:live_read`；可在签发时选择“外部账户实时只读”权限。无论会话还是 PAT，每次实时读取都必须在请求中单独同意。
 

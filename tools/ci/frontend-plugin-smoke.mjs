@@ -81,6 +81,7 @@ let deployment = { pluginId: artifact.pluginId, generation: 4, artifact, enabled
 let source = { pluginId: artifact.pluginId, pluginVersion: '1.0.0', displayName: 'CI model directory', generation: 4, supportsSearch: true }
 const model = { id: 'fixture-text', displayName: 'Fixture text model', provider: 'example', description: 'Plugin reference entry', contextWindow: 32768, inputModalities: ['text'], outputModalities: ['text'], tags: ['fixture'] }
 const catalogCalls = [], installs = [], uninstalls = [], cleanups = [], requests = [], errors = []
+const snapshotReviews = []
 let modelFailure = false, sourceFailure = false, runtimeFailure = false
 let runtimeRequests = 0, deploymentRequests = 0, catalogRequests = 0
 let server, browser, page, serverOutput = ''
@@ -125,11 +126,13 @@ try {
     import { PluginLifecyclePage } from './src/features/plugin-lifecycle/plugin-lifecycle-page';
     import { PluginUiViewsRenderer } from './src/features/plugin-lifecycle/plugin-ui-views';
     import { ModelPage } from './src/features/models/model-page';
+    import { ExternalAccountSnapshotPluginReview } from './src/features/profile/external-account-snapshot-plugin-review';
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false }, mutations: { retry: false } } });
     function App() {
       useSiteTheme();
       const [view, setView] = useState('plugins');
-      return <HeroUIProvider><QueryClientProvider client={client}><main style={{ padding: 16, maxWidth: 1200, margin: 'auto' }}><nav aria-label="CI views">{['plugins','module-ui','models','guest'].map(value => <button key={value} onClick={() => setView(value)}>{value}</button>)}</nav>{view === 'plugins' ? <PluginLifecyclePage /> : view === 'module-ui' ? <div>{['channel_monitor','channel_model_mapping','merchant_service','external_account'].map(slot => <PluginUiViewsRenderer key={slot} manifest={{ uiViews: [{ id: slot, schemaVersion: 1, slot, blocks: [{ type: 'text', text: { en: slot, zh: slot } }] }] }} slot={slot} locale="zh-CN" />)}</div> : <ModelPage key={view} authenticated={view === 'models'} standalone />}</main></QueryClientProvider></HeroUIProvider>;
+      const [reviewOpen, setReviewOpen] = useState(false);
+      return <HeroUIProvider><QueryClientProvider client={client}><main style={{ padding: 16, maxWidth: 1200, margin: 'auto' }}><nav aria-label="CI views">{['plugins','module-ui','models','guest','account-review'].map(value => <button key={value} onClick={() => setView(value)}>{value}</button>)}</nav>{view === 'plugins' ? <PluginLifecyclePage /> : view === 'module-ui' ? <div>{['channel_monitor','channel_model_mapping','merchant_service','external_account'].map(slot => <PluginUiViewsRenderer key={slot} manifest={{ uiViews: [{ id: slot, schemaVersion: 1, slot, blocks: [{ type: 'text', text: { en: slot, zh: slot } }] }] }} slot={slot} locale="zh-CN" />)}</div> : view === 'account-review' ? <><button onClick={() => setReviewOpen(true)}>open-account-review</button><ExternalAccountSnapshotPluginReview open={reviewOpen} connectionId={42} onClose={() => setReviewOpen(false)} /></> : <ModelPage key={view} authenticated={view === 'models'} standalone />}</main></QueryClientProvider></HeroUIProvider>;
     }
     createRoot(document.getElementById('root')).render(<BrowserRouter><App /></BrowserRouter>);
   `)
@@ -197,6 +200,24 @@ try {
       if (url.searchParams.get('q')) return respond({ source, models: [{ ...model, id: 'fixture-vision', displayName: 'Fixture vision search' }], nextCursor: null })
       if (url.searchParams.get('cursor')) return respond({ source, models: [{ ...model, id: 'fixture-second', displayName: 'Fixture second page' }], nextCursor: null })
       return respond({ source, models: [model], nextCursor: 'opaque-generation-bound-cursor' })
+    }
+    if (path === '/api/account/external-accounts/plugin-reviewers' && method === 'GET') {
+      return respond({ plugins: [{ pluginId: 'org.example.live-review', displayName: 'CI live review', pluginVersion: '1.0.0', supportsExternalReads: true }] })
+    }
+    if (path === '/api/account/external-accounts/42/plugin-review' && method === 'POST') {
+      const body = request.postDataJSON()
+      snapshotReviews.push(body)
+      return respond({
+        pluginId: body.plugin_id,
+        displayName: 'CI live review',
+        pluginVersion: '1.0.0',
+        snapshotCount: 1,
+        firstObservedAt: now,
+        lastObservedAt: now,
+        summary: `Review ${snapshotReviews.length} completed.`,
+        checks: [],
+        uiViews: [],
+      })
     }
     errors.push(`Unexpected request: ${method} ${path}`)
     return respond({ error: { code: 'not_found' } }, 404)
@@ -333,6 +354,25 @@ try {
   await page.getByRole('button', { name: label('pluginCatalog.retry'), exact: true }).click()
   await page.locator('section').filter({ has: page.getByRole('heading', { name: label('pluginCatalog.title'), exact: true }) }).locator('select').selectOption(artifact.pluginId)
   await page.getByRole('heading', { name: 'Fixture text model', exact: true }).waitFor()
+
+  await page.setViewportSize({ width: 1280, height: 1000 })
+  await page.getByRole('navigation', { name: 'CI views' }).getByRole('button', { name: 'account-review', exact: true }).click()
+  await page.getByRole('button', { name: 'open-account-review', exact: true }).click()
+  await page.getByRole('combobox', { name: label('profile.externalAccounts.pluginReview.plugin'), exact: true }).click()
+  await page.getByRole('option', { name: /CI live review/ }).click()
+  const externalReadConsent = page.getByRole('checkbox', { name: label('profile.externalAccounts.pluginReview.allowExternalReads'), exact: true })
+  await externalReadConsent.check()
+  const firstSnapshotReview = page.waitForResponse(response => new URL(response.url()).pathname === '/api/account/external-accounts/42/plugin-review' && response.request().method() === 'POST')
+  await page.getByRole('button', { name: label('profile.externalAccounts.pluginReview.run'), exact: true }).click()
+  await firstSnapshotReview
+  await page.getByText('Review 1 completed.', { exact: true }).waitFor()
+  assert.equal(snapshotReviews[0]?.allow_external_reads, true, 'The checked consent applies to this request')
+  assert.equal(await externalReadConsent.isChecked(), false, 'Consent resets after the request completes')
+  const secondSnapshotReview = page.waitForResponse(response => new URL(response.url()).pathname === '/api/account/external-accounts/42/plugin-review' && response.request().method() === 'POST')
+  await page.getByRole('button', { name: label('profile.externalAccounts.pluginReview.run'), exact: true }).click()
+  await secondSnapshotReview
+  await page.getByText('Review 2 completed.', { exact: true }).waitFor()
+  assert.equal(snapshotReviews[1]?.allow_external_reads, false, 'A new request cannot reuse prior consent')
 
   assert.deepEqual(errors, [])
   console.log('Plugin lifecycle and user catalog browser regressions passed; all API calls were mocked')

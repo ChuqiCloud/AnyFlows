@@ -44,6 +44,8 @@ export function ExternalAccountSnapshotPluginReview({ open, connectionId, onClos
       })
     } catch {
       // Keep the selected plugin so the user can retry after reviewing the error.
+    } finally {
+      setAllowExternalReads(false)
     }
   }
 
