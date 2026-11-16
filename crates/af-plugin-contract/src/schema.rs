@@ -467,10 +467,9 @@ mod tests {
         CapabilityAccess, CapabilityDeclaration, CapabilityId, CapabilityInvocation,
         CapabilityResult, ConnectorError, ConnectorErrorCode, ContractVersion,
         ContractVersionRange, ExternalAccountProfile, ExternalBalanceSnapshot, HostHttpMethod,
-        HostHttpRequestProposal, HostHttpResponseProjection, PluginHostOperation,
-        PluginHostRequest, PluginHostResponse, PluginHostResult, PluginId, PluginManifest,
-        PluginProxyError, PluginProxyErrorCode, PluginProxyRequest, PluginProxyResponse,
-        PluginProxyResult, PluginVersion, SideEffectClass,
+        HostHttpRequestProposal, PluginHostOperation, PluginHostRequest, PluginHostResponse,
+        PluginHostResult, PluginId, PluginManifest, PluginProxyError, PluginProxyErrorCode,
+        PluginProxyRequest, PluginProxyResponse, PluginProxyResult, PluginVersion, SideEffectClass,
     };
 
     #[test]

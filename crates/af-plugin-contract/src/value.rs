@@ -638,11 +638,6 @@ mod tests {
         let mut arbitrary_url = request.clone();
         arbitrary_url.endpoint_id = "https://attacker.example/private".to_owned();
         assert!(arbitrary_url.validate().is_err());
-
-        let mut generic_capability = request;
-        generic_capability.capability_id =
-            crate::CapabilityId::new("catalog.models.search").unwrap();
-        assert!(generic_capability.validate().is_err());
     }
 
     #[test]
@@ -700,6 +695,10 @@ mod tests {
             },
         };
         request.validate().unwrap();
+        let mut arbitrary_capability = request.clone();
+        arbitrary_capability.capability_id =
+            crate::CapabilityId::new("catalog.models.search").unwrap();
+        assert!(arbitrary_capability.validate().is_err());
         let response = PluginProxyResponse {
             protocol_version: request.protocol_version,
             plugin_id: request.plugin_id.clone(),
