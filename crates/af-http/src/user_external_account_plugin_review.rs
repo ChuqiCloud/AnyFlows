@@ -37,9 +37,6 @@ pub struct ReviewRequest {
     /// Explicit, per-request permission for this plugin to read the linked
     /// upstream account through the host's fixed, read-only connector endpoints.
     /// PAT requests also need the separate `external_accounts:live_read` scope.
-    #[schema(
-        description = "Explicit consent for this request to read the selected upstream account through fixed host endpoints. PAT calls also require external_accounts:live_read."
-    )]
     #[serde(default)]
     pub allow_external_reads: bool,
 }
