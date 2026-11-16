@@ -180,6 +180,7 @@ try {
   await deploymentCard.getByText(label('pluginLifecycle.status.official'), { exact: true }).waitFor()
   const advanced = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: label('pluginLifecycle.advanced') }) })
   assert.equal(await advanced.getAttribute('open'), null, 'Normal installation keeps manual fields folded')
+  await advanced.locator('summary').first().click()
   await page.getByRole('button', { name: label('pluginLifecycle.deploy'), exact: true }).first().click()
   const configDialog = page.getByRole('dialog')
   await configDialog.getByRole('textbox', { name: /公开标签/ }).waitFor()
@@ -192,6 +193,7 @@ try {
   await configDialog.getByText(label('pluginLifecycle.configEditor.hint'), { exact: true }).waitFor()
   await configDialog.getByRole('button', { name: label('pluginLifecycle.cancel'), exact: true }).click()
   await configDialog.waitFor({ state: 'hidden' })
+  await advanced.locator('summary').first().click()
 
   await page.locator('input[type="file"]').setInputFiles({ name: 'invalid.txt', mimeType: 'text/plain', buffer: Buffer.from('not a plugin') })
   await page.getByRole('button', { name: label('pluginLifecycle.install.submit'), exact: true }).click()

@@ -23,6 +23,7 @@ pub use repository::{
     PluginEventDeliveryClaimOutcome, PluginEventDeliveryCompletionOutcome,
     PluginEventDeliveryEnqueueOutcome, PluginEventDeliveryLease, PluginEventDeliveryRepository,
     PluginEventDeliveryRepositoryConfigError, PluginEventDeliveryRepositoryError,
+    PluginEventFailureKind,
 };
 
 const STATUS_PENDING: i16 = 1;
