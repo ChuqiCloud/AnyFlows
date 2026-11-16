@@ -349,8 +349,18 @@ jobs:
 
   release-package:
     name: Linux amd64 release package
-    needs: changes
-    if: ${{ needs.changes.outputs.release == 'true' || (needs.changes.outputs.full == 'true' && needs.changes.outputs.rust == 'true') }}
+    # This job builds the frontend and release binaries from scratch; keep it
+    # behind other heavyweight checks on the shared runner to limit disk peaks.
+    needs:
+      - changes
+      - openapi-contract
+      - frontend-quality
+      - rust-quality
+      - plugin-linux-sandbox
+      - clickhouse-integration
+      - msrv
+      - cache-redis
+    if: ${{ always() && !cancelled() && (needs.changes.outputs.release == 'true' || (needs.changes.outputs.full == 'true' && needs.changes.outputs.rust == 'true')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:

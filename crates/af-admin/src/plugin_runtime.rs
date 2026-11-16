@@ -433,18 +433,16 @@ impl AdminPluginSidecarRuntime {
         capability_version: u16,
         input: serde_json::Value,
     ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
-        self.invoke_capability_with_proxy(
-            PluginCapabilityInvocation {
-                repository,
-                plugin_id,
-                generation,
-                invocation,
-                capability_id,
-                capability_version,
-                input,
-                proxy_dispatcher: None,
-            },
-        )
+        self.invoke_capability_with_proxy(PluginCapabilityInvocation {
+            repository,
+            plugin_id,
+            generation,
+            invocation,
+            capability_id,
+            capability_version,
+            input,
+            proxy_dispatcher: None,
+        })
         .await
     }
 
@@ -458,12 +456,9 @@ impl AdminPluginSidecarRuntime {
             .invocation
             .remaining_timeout()
             .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
-        tokio::time::timeout(
-            remaining,
-            self.invoke_capability_inner(request),
-        )
-        .await
-        .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?
+        tokio::time::timeout(remaining, self.invoke_capability_inner(request))
+            .await
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?
     }
 
     async fn invoke_capability_inner(

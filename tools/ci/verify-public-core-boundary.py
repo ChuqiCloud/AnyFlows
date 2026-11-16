@@ -30,9 +30,9 @@ def main() -> int:
     )
     parser.add_argument(
         "--mode",
-        choices=("inventory", "public"),
+        choices=("inventory", "public", "source"),
         default="inventory",
-        help="inventory reports matched paths; public fails when any are present",
+        help="inventory reports matched paths; source/public enforce their export boundary",
     )
     args = parser.parse_args()
     root = args.root.resolve()
@@ -51,6 +51,19 @@ def main() -> int:
     ):
         print("boundary manifest excludedPaths must be an array of non-empty strings", file=sys.stderr)
         return 2
+    patterns = list(patterns)
+    if args.mode == "public":
+        export = manifest.get("export", {})
+        if not isinstance(export, dict):
+            print("boundary manifest export must be an object", file=sys.stderr)
+            return 2
+        export_patterns = export.get("excludedPaths", [])
+        if not isinstance(export_patterns, list) or not all(
+            isinstance(pattern, str) and pattern for pattern in export_patterns
+        ):
+            print("boundary manifest export.excludedPaths must be an array of non-empty strings", file=sys.stderr)
+            return 2
+        patterns.extend(export_patterns)
     matches = sorted({
         path.relative_to(root).as_posix()
         for pattern in patterns

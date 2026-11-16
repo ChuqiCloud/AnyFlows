@@ -62,7 +62,7 @@ def load_manifest(source: Path, manifest_path: Path) -> dict:
     return value
 
 
-def run_boundary_check(source: Path, manifest_path: Path) -> None:
+def run_boundary_check(source: Path, manifest_path: Path, mode: str) -> None:
     verifier = source / "tools" / "ci" / "verify-public-core-boundary.py"
     if not verifier.is_file():
         raise ExportError(f"boundary verifier is missing: {verifier}")
@@ -75,7 +75,7 @@ def run_boundary_check(source: Path, manifest_path: Path) -> None:
             "--manifest",
             str(manifest_path),
             "--mode",
-            "public",
+            mode,
         ],
         check=False,
     )
@@ -442,7 +442,7 @@ def main() -> int:
                 "source checkout must be at the requested commit; use a separate worktree for older revisions"
             )
         manifest = load_manifest(source, manifest_path)
-        run_boundary_check(source, manifest_path)
+        run_boundary_check(source, manifest_path, "source")
         paths = tracked_paths(source, commit)
         export_config = manifest.get("export", {})
         if not isinstance(export_config, dict):
@@ -472,6 +472,7 @@ def main() -> int:
         remove_tracked_files(destination, preserve_paths)
         export_archive(source, destination, commit, excluded_paths)
         write_metadata(destination, metadata_path, repository, commit)
+        run_boundary_check(destination, manifest_path, "public")
         print(f"exported public core {commit} to {destination}")
         print(f"source metadata: {metadata_path}")
         return 0
