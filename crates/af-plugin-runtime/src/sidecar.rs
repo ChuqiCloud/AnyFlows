@@ -21,8 +21,8 @@ use af_plugin_contract::{
     CapabilityAccess, CapabilityId, CapabilityResult, ConnectorError, ConnectorErrorCode,
     ConnectorHealth, ConnectorHealthStatus, ContractValidationError, ContractVersion,
     InvocationMetadata, PluginHostOperation, PluginHostRequest, PluginHostResponse,
-    PluginHostResult, PluginId, PluginManifest, PluginProxyRequest, PluginProxyResponse,
-    PluginProxyResult, PluginVersion, SideEffectClass,
+    PluginHostResult, PluginId, PluginManifest, PluginProxyRequest, PluginProxyResult,
+    PluginVersion, SideEffectClass,
 };
 use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
