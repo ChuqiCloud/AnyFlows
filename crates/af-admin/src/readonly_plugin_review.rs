@@ -106,12 +106,16 @@ impl DeploymentGuardedProxyDispatcher {
                 request.capability_id.as_str(),
                 request.capability_version,
             )
-            && self.expected_manifest.capabilities.iter().any(|capability| {
-                capability.id == request.capability_id
-                    && capability.version == request.capability_version
-                    && capability.access == CapabilityAccess::Read
-                    && capability.side_effect == SideEffectClass::ExternalRead
-            })
+            && self
+                .expected_manifest
+                .capabilities
+                .iter()
+                .any(|capability| {
+                    capability.id == request.capability_id
+                        && capability.version == request.capability_version
+                        && capability.access == CapabilityAccess::Read
+                        && capability.side_effect == SideEffectClass::ExternalRead
+                })
     }
 }
 
@@ -316,15 +320,7 @@ pub(crate) async fn invoke_read_only_review(
     request_id: &str,
     input: Value,
 ) -> Result<ReadOnlyPluginReviewResult, ReadOnlyPluginReviewError> {
-    invoke_read_only_review_with_proxy(
-        plugins,
-        contract,
-        plugin_id,
-        request_id,
-        input,
-        None,
-    )
-    .await
+    invoke_read_only_review_with_proxy(plugins, contract, plugin_id, request_id, input, None).await
 }
 
 /// Invoke a fixed module capability, optionally with a per-request host-managed
@@ -572,20 +568,22 @@ fn reviewer(deployment: &PluginDeploymentRecord) -> ReadOnlyPluginReviewer {
                 && capability.side_effect == SideEffectClass::None
         })
     });
-    let proxy_grant = EXTERNAL_ACCOUNT_PROXY_CAPABILITIES.iter().any(|capability_id| {
-        deployment.granted_capabilities.iter().any(|grant| {
-            grant.id == *capability_id
-                && grant.version == 1
-                && manifest.as_ref().is_some_and(|manifest| {
-                    manifest.capabilities.iter().any(|capability| {
-                        capability.id.as_str() == *capability_id
-                            && capability.version == 1
-                            && capability.access == CapabilityAccess::Read
-                            && capability.side_effect == SideEffectClass::ExternalRead
+    let proxy_grant = EXTERNAL_ACCOUNT_PROXY_CAPABILITIES
+        .iter()
+        .any(|capability_id| {
+            deployment.granted_capabilities.iter().any(|grant| {
+                grant.id == *capability_id
+                    && grant.version == 1
+                    && manifest.as_ref().is_some_and(|manifest| {
+                        manifest.capabilities.iter().any(|capability| {
+                            capability.id.as_str() == *capability_id
+                                && capability.version == 1
+                                && capability.access == CapabilityAccess::Read
+                                && capability.side_effect == SideEffectClass::ExternalRead
+                        })
                     })
-                })
-        })
-    });
+            })
+        });
     ReadOnlyPluginReviewer {
         plugin_id: deployment.plugin_id.clone(),
         display_name,

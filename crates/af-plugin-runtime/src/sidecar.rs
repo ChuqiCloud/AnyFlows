@@ -1249,7 +1249,12 @@ impl SidecarSession {
             artifact,
         });
         let response = match session
-            .exchange(PluginHostOperation::Manifest, limits.startup_timeout, None, None)
+            .exchange(
+                PluginHostOperation::Manifest,
+                limits.startup_timeout,
+                None,
+                None,
+            )
             .await
         {
             Ok(response) => response,
@@ -1835,17 +1840,14 @@ fn proxy_request_matches_host_request(
             ..
         } if capability_id == "account.balance.snapshot.live-review.read"
             && *capability_version == 1
-    )
-        && granted_capabilities.iter().any(|(id, version)| {
-            id.as_str() == "account.balance.snapshot.live-review.read" && *version == 1
-        })
-        && manifest.capabilities.iter().any(|capability| {
-            capability.id.as_str() == "account.balance.snapshot.live-review.read"
-                && capability.version == 1
-                && capability.access == CapabilityAccess::Read
-                && capability.side_effect == SideEffectClass::None
-        })
-        && granted_capabilities.get(&proxy.capability_id) == Some(&proxy.capability_version)
+    ) && granted_capabilities.iter().any(|(id, version)| {
+        id.as_str() == "account.balance.snapshot.live-review.read" && *version == 1
+    }) && manifest.capabilities.iter().any(|capability| {
+        capability.id.as_str() == "account.balance.snapshot.live-review.read"
+            && capability.version == 1
+            && capability.access == CapabilityAccess::Read
+            && capability.side_effect == SideEffectClass::None
+    }) && granted_capabilities.get(&proxy.capability_id) == Some(&proxy.capability_version)
         && manifest.capabilities.iter().any(|capability| {
             capability.id == proxy.capability_id
                 && capability.version == proxy.capability_version
@@ -2051,8 +2053,8 @@ pub enum SidecarError {
 #[cfg(test)]
 mod tests {
     use af_plugin_contract::{
-        CapabilityAccess, CapabilityDeclaration, CapabilityId, ConnectorLimits, ContractVersion,
-        ConnectorError, ConnectorErrorCode, ContractVersionRange, HostHttpMethod,
+        CapabilityAccess, CapabilityDeclaration, CapabilityId, ConnectorError, ConnectorErrorCode,
+        ConnectorLimits, ContractVersion, ContractVersionRange, HostHttpMethod,
         HostHttpRequestProposal, OperationOutcome, PluginHostOperation, PluginHostRequest,
         PluginHostResponse, PluginHostResult, PluginId, PluginManifest, PluginProxyRequest,
         PluginVersion, SideEffectClass,
@@ -2063,9 +2065,9 @@ mod tests {
 
     use super::{
         PluginArtifactDescriptor, SidecarError, SidecarOutputFrame, SidecarSession,
-        TrustedPluginKey, VerifiedPluginArtifact,
-        can_publish_generation, canonicalize_json, contains_sensitive_fields, default_request_id,
-        is_sensitive_field_name, plugin_artifact_signature_payload, plugin_package_digest,
+        TrustedPluginKey, VerifiedPluginArtifact, can_publish_generation, canonicalize_json,
+        contains_sensitive_fields, default_request_id, is_sensitive_field_name,
+        plugin_artifact_signature_payload, plugin_package_digest,
         proxy_request_matches_host_request, validate_public_plugin_configuration,
     };
     use std::collections::BTreeMap;
@@ -2166,7 +2168,10 @@ mod tests {
             },
         };
         let grants = BTreeMap::from([
-            (CapabilityId::new("account.balance.snapshot.live-review.read").unwrap(), 1),
+            (
+                CapabilityId::new("account.balance.snapshot.live-review.read").unwrap(),
+                1,
+            ),
             (external_capability.clone(), 1),
         ]);
         assert!(proxy_request_matches_host_request(
@@ -2202,8 +2207,10 @@ mod tests {
             7,
             &grants,
         ));
-        let without_external_grant =
-            BTreeMap::from([(CapabilityId::new("account.balance.snapshot.live-review.read").unwrap(), 1)]);
+        let without_external_grant = BTreeMap::from([(
+            CapabilityId::new("account.balance.snapshot.live-review.read").unwrap(),
+            1,
+        )]);
         assert!(!proxy_request_matches_host_request(
             &proxy_request,
             &host_request,

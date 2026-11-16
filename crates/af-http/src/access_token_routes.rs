@@ -782,25 +782,30 @@ mod tests {
             ["external_accounts:read"]
         );
         let live_read_scopes = scope_catalog(SessionRole::User);
-        assert!(live_read_scopes.iter().any(|scope| {
-            scope.scope == "external_accounts:live_read" && !scope.admin_only
-        }));
+        assert!(
+            live_read_scopes
+                .iter()
+                .any(|scope| { scope.scope == "external_accounts:live_read" && !scope.admin_only })
+        );
         let presets = scope_presets(SessionRole::User);
-        assert!(presets
-            .iter()
-            .find(|preset| preset.id == "account_read")
-            .is_some_and(|preset| {
-                !preset
-                    .scopes
-                    .contains(&"external_accounts:live_read".to_owned())
-            }));
-        assert!(presets
-            .iter()
-            .find(|preset| preset.id == "external_account_live_read")
-            .is_some_and(|preset| {
-                preset.scopes
-                    == ["external_accounts:read", "external_accounts:live_read"]
-            }));
+        assert!(
+            presets
+                .iter()
+                .find(|preset| preset.id == "account_read")
+                .is_some_and(|preset| {
+                    !preset
+                        .scopes
+                        .contains(&"external_accounts:live_read".to_owned())
+                })
+        );
+        assert!(
+            presets
+                .iter()
+                .find(|preset| preset.id == "external_account_live_read")
+                .is_some_and(|preset| {
+                    preset.scopes == ["external_accounts:read", "external_accounts:live_read"]
+                })
+        );
         assert_eq!(
             policy("POST", "/api/account/external-accounts")
                 .unwrap()

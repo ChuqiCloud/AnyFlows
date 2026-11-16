@@ -10,8 +10,7 @@ use af_plugin_runtime::PluginProxyDispatcher;
 use async_trait::async_trait;
 
 use crate::{
-    SessionPrincipal, UserExternalAccountService,
-    external_account::external_account_proxy_endpoint,
+    SessionPrincipal, UserExternalAccountService, external_account::external_account_proxy_endpoint,
 };
 
 /// Dispatcher bound to one authenticated user and one of that user's linked accounts.
@@ -43,18 +42,15 @@ impl UserExternalAccountProxyDispatcher {
 #[async_trait]
 impl PluginProxyDispatcher for UserExternalAccountProxyDispatcher {
     async fn dispatch(&self, request: PluginProxyRequest) -> PluginProxyResponse {
-        let result = if !proxy_request_is_allowed(
-            self.allow_external_reads,
-            self.connection_id,
-            &request,
-        ) {
-            proxy_error(PluginProxyErrorCode::Forbidden)
-        } else {
-            self.accounts
-                .proxy_read(self.principal, self.connection_id, request.clone())
-                .await
-                .unwrap_or_else(|_| proxy_error(PluginProxyErrorCode::TemporarilyUnavailable))
-        };
+        let result =
+            if !proxy_request_is_allowed(self.allow_external_reads, self.connection_id, &request) {
+                proxy_error(PluginProxyErrorCode::Forbidden)
+            } else {
+                self.accounts
+                    .proxy_read(self.principal, self.connection_id, request.clone())
+                    .await
+                    .unwrap_or_else(|_| proxy_error(PluginProxyErrorCode::TemporarilyUnavailable))
+            };
         let result_is_valid = match &result {
             PluginProxyResult::Response(projection) => projection.validate(16 * 1024).is_ok(),
             PluginProxyResult::Error(_) => true,

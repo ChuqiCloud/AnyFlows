@@ -268,7 +268,8 @@ mod tests {
             "#/components/schemas/ChannelModelMappingPluginReviewRequest"
         );
         assert_eq!(
-            document["components"]["schemas"]["ChannelModelMappingPluginReviewResponse"]["properties"]["ui_views"]["maxItems"],
+            document["components"]["schemas"]["ChannelModelMappingPluginReviewResponse"]["properties"]
+                ["ui_views"]["maxItems"],
             8
         );
     }

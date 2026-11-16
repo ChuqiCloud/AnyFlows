@@ -684,14 +684,20 @@ mod tests {
             "PluginUiView",
             &serde_json::to_value(manifest.ui_views[0].clone()).unwrap(),
         );
-        assert_eq!(schema["$defs"]["PluginUiView"]["properties"]["schemaVersion"]["const"], 1);
-        assert_eq!(schema["$defs"]["PluginUiViewSlot"]["enum"], json!([
-            "plugin_management",
-            "channel_monitor",
-            "channel_model_mapping",
-            "merchant_service",
-            "external_account"
-        ]));
+        assert_eq!(
+            schema["$defs"]["PluginUiView"]["properties"]["schemaVersion"]["const"],
+            1
+        );
+        assert_eq!(
+            schema["$defs"]["PluginUiViewSlot"]["enum"],
+            json!([
+                "plugin_management",
+                "channel_monitor",
+                "channel_model_mapping",
+                "merchant_service",
+                "external_account"
+            ])
+        );
         assert_schema_fields(
             &schema,
             "ExternalAccountProfile",

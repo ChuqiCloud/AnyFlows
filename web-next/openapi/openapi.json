@@ -54028,7 +54028,8 @@
         "required": [
           "pluginId",
           "displayName",
-          "pluginVersion"
+          "pluginVersion",
+          "supportsExternalReads"
         ],
         "properties": {
           "pluginId": {
@@ -54039,6 +54040,9 @@
           },
           "pluginVersion": {
             "type": "string"
+          },
+          "supportsExternalReads": {
+            "type": "boolean"
           }
         }
       },

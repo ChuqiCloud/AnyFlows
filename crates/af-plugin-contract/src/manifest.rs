@@ -190,10 +190,7 @@ impl PluginUiBlock {
                     })
             }
             Self::InfoCard { title, description } => {
-                title.validate()
-                    && description
-                        .as_ref()
-                        .is_none_or(PluginUiText::validate)
+                title.validate() && description.as_ref().is_none_or(PluginUiText::validate)
             }
         }
     }
@@ -545,14 +542,15 @@ mod tests {
         );
 
         let mut too_many_blocks = value.clone();
-        too_many_blocks.ui_views[0]
-            .blocks
-            .resize(MAX_PLUGIN_UI_BLOCKS_PER_VIEW + 1, PluginUiBlock::Text {
+        too_many_blocks.ui_views[0].blocks.resize(
+            MAX_PLUGIN_UI_BLOCKS_PER_VIEW + 1,
+            PluginUiBlock::Text {
                 text: PluginUiText {
                     en: Some("bounded".to_owned()),
                     zh: None,
                 },
-            });
+            },
+        );
         assert_eq!(
             too_many_blocks.validate(),
             Err(ContractValidationError::InvalidManifest)

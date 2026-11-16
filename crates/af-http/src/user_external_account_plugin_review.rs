@@ -222,9 +222,9 @@ async fn review_snapshots(
     }
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
     if request.allow_external_reads
-        && access_token.as_ref().is_some_and(|Extension(token)| {
-            !token_has_live_external_read_scope(token.scopes())
-        })
+        && access_token
+            .as_ref()
+            .is_some_and(|Extension(token)| !token_has_live_external_read_scope(token.scopes()))
     {
         return Err(ManagementError::Forbidden);
     }
@@ -243,7 +243,9 @@ async fn review_snapshots(
 }
 
 fn token_has_live_external_read_scope(scopes: &[String]) -> bool {
-    scopes.iter().any(|scope| scope == "external_accounts:live_read")
+    scopes
+        .iter()
+        .any(|scope| scope == "external_accounts:live_read")
 }
 
 #[derive(OpenApi)]
@@ -270,7 +272,8 @@ mod tests {
 
     #[test]
     fn external_account_plugin_review_contract_exposes_bounded_static_views() {
-        let document = serde_json::to_value(user_external_account_plugin_review_openapi_document()).unwrap();
+        let document =
+            serde_json::to_value(user_external_account_plugin_review_openapi_document()).unwrap();
         assert_eq!(
             document["components"]["schemas"]["ReviewResponse"]["properties"]["uiViews"]["maxItems"],
             8
@@ -280,11 +283,11 @@ mod tests {
             request["properties"]["allow_external_reads"]["type"],
             "boolean"
         );
-        assert!(request["properties"]["allow_external_reads"]["description"]
-            .as_str()
-            .is_some_and(|description| {
-                description.contains("external_accounts:live_read")
-            }));
+        assert!(
+            request["properties"]["allow_external_reads"]["description"]
+                .as_str()
+                .is_some_and(|description| { description.contains("external_accounts:live_read") })
+        );
     }
 
     #[test]

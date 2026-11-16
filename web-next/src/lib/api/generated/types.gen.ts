@@ -3108,8 +3108,8 @@ export type ReviewCheckResponse = {
     recommendation?: string | null;
 };
 export type ReviewRequest = {
-    allow_external_reads?: boolean;
     plugin_id: string;
+    allow_external_reads?: boolean;
 };
 export type ReviewResponse = {
     pluginId: string;
@@ -3130,6 +3130,7 @@ export type ReviewerResponse = {
     pluginId: string;
     displayName: string;
     pluginVersion: string;
+    supportsExternalReads: boolean;
 };
 export type RuntimeDependency = {
     kind: string;

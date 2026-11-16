@@ -705,7 +705,8 @@ mod tests {
             serde_json::json!(["pass", "info", "warning", "fail"])
         );
         assert_eq!(
-            document["components"]["schemas"]["ActiveChannelMonitorPluginReviewResponse"]["properties"]["ui_views"]["maxItems"],
+            document["components"]["schemas"]["ActiveChannelMonitorPluginReviewResponse"]["properties"]
+                ["ui_views"]["maxItems"],
             8
         );
     }

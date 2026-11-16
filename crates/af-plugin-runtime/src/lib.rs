@@ -37,8 +37,8 @@ pub use crate::schema::validate_plugin_configuration;
 pub use new_api::{NewApiConnector, new_api_registration};
 pub use sidecar::{
     PluginArtifactDescriptor, PluginProxyDispatcher, SidecarError, SidecarLimits,
-    SidecarSupervisor, TrustedPluginKey, VerifiedPluginArtifact,
-    plugin_artifact_signature_payload, plugin_package_digest, validate_public_plugin_configuration,
+    SidecarSupervisor, TrustedPluginKey, VerifiedPluginArtifact, plugin_artifact_signature_payload,
+    plugin_package_digest, validate_public_plugin_configuration,
 };
 pub use sidecar_isolation::{SidecarIsolationLevel, SidecarIsolationPolicy};
 pub use sub2api::{Sub2ApiConnector, sub2api_registration};

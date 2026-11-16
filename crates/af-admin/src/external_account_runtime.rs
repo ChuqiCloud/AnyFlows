@@ -279,8 +279,8 @@ impl DatabaseUserExternalAccountService {
         connection_id: i64,
         request: PluginProxyRequest,
     ) -> Result<PluginProxyResult, ExternalAccountError> {
-        let endpoint = external_account_proxy_endpoint(&request)
-            .ok_or(ExternalAccountError::Unsupported)?;
+        let endpoint =
+            external_account_proxy_endpoint(&request).ok_or(ExternalAccountError::Unsupported)?;
         let connection = self
             .repository
             .get(user_id, connection_id)
