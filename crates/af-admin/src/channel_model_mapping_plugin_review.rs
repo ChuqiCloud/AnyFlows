@@ -233,7 +233,6 @@ fn review_contract<'a>(
         max_checks: MAX_REVIEW_CHECKS,
         budget: REVIEW_BUDGET,
         action_proposal_capability: None,
-        action_proposal_capability: None,
     }
 }
 
