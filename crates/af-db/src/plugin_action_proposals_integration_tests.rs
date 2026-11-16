@@ -3,22 +3,20 @@ use std::error::Error;
 use af_domain::{ChannelId, ChannelType, CredentialId, CredentialKind, Protocol, Status, UserId};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set,
-    entity::prelude::Json as DbJson,
+    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, entity::prelude::Json as DbJson,
     sea_query::Expr,
 };
 
 use crate::{
-    ActiveChannelMonitorRepository, ActiveChannelMonitorTargetInput, DatabaseOptions,
-    MigrationOptions, PluginActionProposalCreate, PluginActionProposalRepository,
-    PluginActionProposalStatus, PluginArtifactApproval, PluginArtifactCreate,
-    PluginArtifactSourceKind, PluginCapabilityGrant,
-    PluginCatalogRepository, PluginDeploymentWrite,
+    ActiveChannelMonitorRepository, ActiveChannelMonitorTargetInput, ChannelBaseUrl,
+    DatabaseOptions, EncryptedJson, HeaderOverrides, MigrationOptions, PluginActionProposalCreate,
+    PluginActionProposalRepository, PluginActionProposalStatus, PluginArtifactApproval,
+    PluginArtifactCreate, PluginArtifactSourceKind, PluginCapabilityGrant, PluginCatalogRepository,
+    PluginDeploymentWrite, SensitiveJson,
     entity::{
         channel_models, channel_monitor_targets, channels, credentials, groups,
         plugin_artifact_revocations, plugin_deployments, users,
     },
-    ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson,
 };
 
 const NOW: i64 = 2_000_000_000;
@@ -233,7 +231,10 @@ async fn insert_monitor_channel(
     }
     .insert(pool.connection())
     .await?;
-    Ok((ChannelId::new(channel.id)?, CredentialId::new(credential.id)?))
+    Ok((
+        ChannelId::new(channel.id)?,
+        CredentialId::new(credential.id)?,
+    ))
 }
 
 fn encrypted_credential() -> DbJson {
@@ -281,7 +282,10 @@ async fn confirmed_action_is_idempotent_and_requires_the_same_confirmation_key()
         .confirm(&key, fixture.confirmer.get(), "confirm-once", NOW + 20)
         .await?;
     assert_eq!(confirmed.status, PluginActionProposalStatus::Confirmed);
-    assert_eq!(confirmed.confirmed_by_user_id, Some(fixture.confirmer.get()));
+    assert_eq!(
+        confirmed.confirmed_by_user_id,
+        Some(fixture.confirmer.get())
+    );
     assert_eq!(
         confirmed
             .outcome
@@ -298,7 +302,12 @@ async fn confirmed_action_is_idempotent_and_requires_the_same_confirmation_key()
     assert_eq!(
         fixture
             .proposals
-            .confirm(&key, fixture.requester.get(), "different-confirmation", NOW + 30)
+            .confirm(
+                &key,
+                fixture.requester.get(),
+                "different-confirmation",
+                NOW + 30
+            )
             .await,
         Err(crate::PluginActionProposalRepositoryError::Conflict)
     );
@@ -326,7 +335,10 @@ async fn expired_and_stale_proposals_never_overwrite_monitor_configuration()
 
     let stale_key = fixture.proposal("stale", NOW + 300).await?;
     channel_monitor_targets::Entity::update_many()
-        .col_expr(channel_monitor_targets::Column::ConfigVersion, Expr::value(2))
+        .col_expr(
+            channel_monitor_targets::Column::ConfigVersion,
+            Expr::value(2),
+        )
         .filter(channel_monitor_targets::Column::Id.eq(fixture.target_id))
         .exec(fixture.pool.connection())
         .await?;
@@ -384,7 +396,12 @@ async fn deployment_grant_and_artifact_revocation_invalidate_pending_actions()
         }
         let result = fixture
             .proposals
-            .confirm(&key, fixture.confirmer.get(), "revoked-confirmation", NOW + 20)
+            .confirm(
+                &key,
+                fixture.confirmer.get(),
+                "revoked-confirmation",
+                NOW + 20,
+            )
             .await?;
         assert_eq!(
             result.status,
@@ -403,18 +420,12 @@ async fn concurrent_administrator_confirmations_change_the_target_only_once()
     let fixture = Fixture::new().await?;
     let key = fixture.proposal("concurrent", NOW + 300).await?;
     let (first, second) = tokio::join!(
-        fixture.proposals.confirm(
-            &key,
-            fixture.requester.get(),
-            "administrator-one",
-            NOW + 20
-        ),
-        fixture.proposals.confirm(
-            &key,
-            fixture.confirmer.get(),
-            "administrator-two",
-            NOW + 20
-        )
+        fixture
+            .proposals
+            .confirm(&key, fixture.requester.get(), "administrator-one", NOW + 20),
+        fixture
+            .proposals
+            .confirm(&key, fixture.confirmer.get(), "administrator-two", NOW + 20)
     );
     let confirmed = [first, second]
         .into_iter()
