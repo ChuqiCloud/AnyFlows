@@ -73,7 +73,7 @@ impl PluginActionProposalCreate {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct PluginActionProposalRecord {
     pub id: i64,
     pub proposal_key: String,
