@@ -18,7 +18,7 @@ use af_plugin_contract::{
     CapabilityAccess, CapabilityDeclaration, CapabilityId, CapabilityInvocation,
     CapabilityRequirement, CapabilityResult, ConnectorError, ConnectorErrorCode, ContractVersion,
     ExternalAccountProfile, ExternalBalanceSnapshot, InvocationMetadata, PluginId, PluginManifest,
-    PluginVersion, SideEffectClass,
+    PluginProxyRequest, PluginProxyResponse, PluginVersion, SideEffectClass,
 };
 use async_trait::async_trait;
 use serde_json::Value;
@@ -36,15 +36,24 @@ pub use crate::schema::validate_plugin_configuration;
 
 pub use new_api::{NewApiConnector, new_api_registration};
 pub use sidecar::{
-    PluginArtifactDescriptor, SidecarError, SidecarLimits, SidecarSupervisor, TrustedPluginKey,
-    VerifiedPluginArtifact, plugin_artifact_signature_payload, plugin_package_digest,
-    validate_public_plugin_configuration,
+    PluginArtifactDescriptor, PluginProxyDispatcher, SidecarError, SidecarLimits,
+    SidecarSupervisor, TrustedPluginKey, VerifiedPluginArtifact,
+    plugin_artifact_signature_payload, plugin_package_digest, validate_public_plugin_configuration,
 };
 pub use sidecar_isolation::{SidecarIsolationLevel, SidecarIsolationPolicy};
 pub use sub2api::{Sub2ApiConnector, sub2api_registration};
 
 const ACCOUNT_PROFILE_READ: &str = "external.account.profile.read";
 const ACCOUNT_BALANCE_READ: &str = "external.account.balance.read";
+
+/// Per-invocation host service for a narrowly scoped external read callback.
+/// Implementations must bind the request to the authenticated account and to a
+/// host-owned endpoint policy; they must never forward plugin-supplied URLs or
+/// headers.
+#[async_trait]
+pub trait PluginProxyDispatcher: Send + Sync {
+    async fn dispatch(&self, request: PluginProxyRequest) -> PluginProxyResponse;
+}
 
 /// Reviewed connector implementation compiled into the AnyFlows host.
 pub trait PlatformConnector: Send + Sync {
@@ -1407,6 +1416,7 @@ mod tests {
                 "additionalProperties": false
             }),
             ui_contributions: Vec::new(),
+            ui_views: Vec::new(),
         };
         ConnectorRegistration::new(Arc::new(GenericConnector { manifest })).with_capability_handler(
             Arc::new(EchoCapability {
@@ -1516,6 +1526,7 @@ mod tests {
                     "additionalProperties": false
                 }),
                 ui_contributions: Vec::new(),
+                ui_views: Vec::new(),
             },
             invalid_balance,
         });
@@ -1868,6 +1879,7 @@ mod tests {
                 },
                 config_schema: serde_json::json!({ "type": "object" }),
                 ui_contributions: Vec::new(),
+                ui_views: Vec::new(),
             },
             invalid_balance: false,
         }));

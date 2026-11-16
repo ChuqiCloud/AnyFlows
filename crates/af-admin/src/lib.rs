@@ -52,6 +52,8 @@ pub use external_account_snapshot_plugin_review::{
 };
 mod external_account_runtime;
 pub use external_account_runtime::DatabaseUserExternalAccountService;
+mod external_account_plugin_proxy;
+pub use external_account_plugin_proxy::UserExternalAccountProxyDispatcher;
 mod upstream_usage;
 pub use credential_models::{
     CredentialModelError, CredentialModelFuture, CredentialModelItem, CredentialModelService,

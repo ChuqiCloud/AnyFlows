@@ -10,15 +10,16 @@ use tokio::sync::Semaphore;
 use crate::{
     DatabaseAdminPluginLifecycleService, ExternalAccountBalanceSnapshot,
     ExternalAccountBalanceStatus, ExternalAccountError, SessionPrincipal,
-    UserExternalAccountService,
+    UserExternalAccountProxyDispatcher, UserExternalAccountService,
     readonly_plugin_review::{
         ReadOnlyPluginReviewCheck, ReadOnlyPluginReviewContract, ReadOnlyPluginReviewError,
-        ReadOnlyPluginReviewStatus, invoke_read_only_review, list_read_only_reviewers,
-        read_only_review_output_schema,
+        ReadOnlyPluginReviewStatus, invoke_read_only_review_with_proxy,
+        list_read_only_reviewers, read_only_review_output_schema,
     },
 };
 
 const REVIEW_CAPABILITY: &str = "account.balance.snapshot.review.read";
+const LIVE_REVIEW_CAPABILITY: &str = "account.balance.snapshot.live-review.read";
 const REVIEW_BUDGET: Duration = Duration::from_secs(5);
 const MAX_SNAPSHOTS: u32 = 20;
 const MAX_REVIEW_INPUT_BYTES: u32 = 16 * 1024;
@@ -49,6 +50,7 @@ pub struct ExternalAccountSnapshotPluginReviewer {
     pub plugin_id: String,
     pub display_name: String,
     pub plugin_version: String,
+    pub supports_external_reads: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -111,6 +113,7 @@ pub struct ExternalAccountSnapshotPluginReview {
     pub last_observed_at: i64,
     pub summary: String,
     pub checks: Vec<ExternalAccountSnapshotPluginReviewCheck>,
+    pub ui_views: Vec<af_plugin_contract::PluginUiView>,
 }
 
 /// A session-scoped service. Account ownership is enforced by the existing account service for
@@ -127,6 +130,7 @@ pub trait ExternalAccountSnapshotPluginReviewService: Send + Sync {
         connection_id: i64,
         plugin_id: String,
         request_id: String,
+        allow_external_reads: bool,
     ) -> ExternalAccountSnapshotPluginReviewFuture<'_, ExternalAccountSnapshotPluginReview>;
 }
 
@@ -162,7 +166,7 @@ impl ExternalAccountSnapshotPluginReviewService
             let input_schema = snapshot_input_schema();
             let output_schema = read_only_review_output_schema();
             let public_config = json!({});
-            let contract = review_contract(&input_schema, &output_schema, &public_config);
+            let contract = review_contract(&input_schema, &output_schema, &public_config, false);
             let plugins = list_read_only_reviewers(&self.plugins, &contract, REVIEW_BUDGET)
                 .await
                 .map_err(map_review_error)?
@@ -171,6 +175,7 @@ impl ExternalAccountSnapshotPluginReviewService
                     plugin_id: plugin.plugin_id,
                     display_name: plugin.display_name,
                     plugin_version: plugin.plugin_version,
+                    supports_external_reads: plugin.supports_external_account_reads,
                 })
                 .collect();
             Ok(ExternalAccountSnapshotPluginReviewerList { plugins })
@@ -183,6 +188,7 @@ impl ExternalAccountSnapshotPluginReviewService
         connection_id: i64,
         plugin_id: String,
         request_id: String,
+        allow_external_reads: bool,
     ) -> ExternalAccountSnapshotPluginReviewFuture<'_, ExternalAccountSnapshotPluginReview> {
         Box::pin(async move {
             if connection_id <= 0 || !valid_request_id(&request_id) {
@@ -230,13 +236,27 @@ impl ExternalAccountSnapshotPluginReviewService
                 let input_schema = snapshot_input_schema();
                 let output_schema = read_only_review_output_schema();
                 let public_config = json!({});
-                let contract = review_contract(&input_schema, &output_schema, &public_config);
-                let output = invoke_read_only_review(
+                let contract = review_contract(
+                    &input_schema,
+                    &output_schema,
+                    &public_config,
+                    allow_external_reads,
+                );
+                let proxy_dispatcher = allow_external_reads.then(|| {
+                    Arc::new(UserExternalAccountProxyDispatcher::new(
+                        Arc::clone(&self.accounts),
+                        principal,
+                        connection_id,
+                        true,
+                    )) as Arc<dyn af_plugin_runtime::PluginProxyDispatcher>
+                });
+                let output = invoke_read_only_review_with_proxy(
                     &self.plugins,
                     &contract,
                     &plugin_id,
                     &request_id,
                     input,
+                    proxy_dispatcher,
                 )
                 .await
                 .map_err(map_review_error)?;
@@ -261,6 +281,14 @@ impl ExternalAccountSnapshotPluginReviewService
                     last_observed_at,
                     summary: output.summary,
                     checks: output.checks.into_iter().map(Into::into).collect(),
+                    ui_views: output
+                        .reviewer
+                        .ui_views
+                        .into_iter()
+                        .filter(|view| {
+                            view.slot == af_plugin_contract::PluginUiViewSlot::ExternalAccount
+                        })
+                        .collect(),
                 })
             })
             .await
@@ -310,9 +338,14 @@ fn review_contract<'a>(
     input_schema: &'a Value,
     output_schema: &'a Value,
     public_config: &'a Value,
+    allow_external_reads: bool,
 ) -> ReadOnlyPluginReviewContract<'a> {
     ReadOnlyPluginReviewContract {
-        capability_id: REVIEW_CAPABILITY,
+        capability_id: if allow_external_reads {
+            LIVE_REVIEW_CAPABILITY
+        } else {
+            REVIEW_CAPABILITY
+        },
         capability_version: 1,
         input_schema,
         output_schema,

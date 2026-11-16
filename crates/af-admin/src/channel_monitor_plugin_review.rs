@@ -72,6 +72,7 @@ pub struct ActiveChannelMonitorPluginReview {
     pub target_config_version: i64,
     pub summary: String,
     pub checks: Vec<ActiveChannelMonitorPluginReviewCheck>,
+    pub ui_views: Vec<af_plugin_contract::PluginUiView>,
     pub action_proposal: Option<HostActionProposal>,
 }
 
@@ -277,6 +278,14 @@ impl ActiveChannelMonitorPluginReviewService for DatabaseActiveChannelMonitorPlu
                     target_config_version: target.config_version,
                     summary: result.summary,
                     checks: result.checks.into_iter().map(map_review_check).collect(),
+                    ui_views: result
+                        .reviewer
+                        .ui_views
+                        .into_iter()
+                        .filter(|view| {
+                            view.slot == af_plugin_contract::PluginUiViewSlot::ChannelMonitor
+                        })
+                        .collect(),
                     action_proposal: result.action_proposal,
                 })
             })

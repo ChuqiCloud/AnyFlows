@@ -1,15 +1,20 @@
 //! Shared execution boundary for host-owned, read-only plugin reviews.
 
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
 
 use af_db::{
-    PluginArtifactSourceKind, PluginCatalogError, PluginDeploymentQuery, PluginDeploymentRecord,
+    PluginArtifactSourceKind, PluginCatalogError, PluginCatalogRepository, PluginDeploymentQuery,
+    PluginDeploymentRecord,
 };
 use af_plugin_contract::{
     CapabilityAccess, HostActionProposal, InvocationMetadata, PluginId, PluginManifest,
-    SideEffectClass,
+    PluginProxyError, PluginProxyErrorCode, PluginProxyRequest, PluginProxyResponse,
+    PluginProxyResult, SideEffectClass,
 };
-use af_plugin_runtime::CapabilityExecutionContext;
+use af_plugin_runtime::{CapabilityExecutionContext, PluginProxyDispatcher};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -19,6 +24,119 @@ const MAX_REVIEWER_DEPLOYMENTS: u32 = 100;
 const MAX_REVIEWER_SCAN_PAGES: usize = 11;
 const MAX_REVIEW_TEXT_BYTES: usize = 2_048;
 pub(crate) const MAX_REVIEW_CHECKS: usize = 64;
+const LIVE_EXTERNAL_ACCOUNT_REVIEW_CAPABILITY: &str = "account.balance.snapshot.live-review.read";
+const EXTERNAL_ACCOUNT_PROXY_CAPABILITIES: [&str; 2] = [
+    "external.account.profile.read",
+    "external.account.balance.read",
+];
+
+/// Rechecks durable deployment and capability state before and after every
+/// host callback. A deployment revoked during the upstream request cannot
+/// receive the resulting account projection.
+struct DeploymentGuardedProxyDispatcher {
+    repository: PluginCatalogRepository,
+    inner: Arc<dyn PluginProxyDispatcher>,
+    expected_plugin_id: String,
+    expected_artifact_id: i64,
+    expected_digest: String,
+    expected_generation: i64,
+    expected_request_id: String,
+    expected_config: Value,
+    expected_manifest: PluginManifest,
+    parent_capability_id: String,
+    parent_capability_version: u16,
+}
+
+#[async_trait::async_trait]
+impl PluginProxyDispatcher for DeploymentGuardedProxyDispatcher {
+    async fn dispatch(&self, request: PluginProxyRequest) -> PluginProxyResponse {
+        if !self.request_matches_expected_deployment(&request)
+            || !self.deployment_is_currently_authorized(&request).await
+        {
+            return proxy_denied(request);
+        }
+
+        let response = self.inner.dispatch(request.clone()).await;
+        if !response.matches_request(&request)
+            || !self.deployment_is_currently_authorized(&request).await
+        {
+            return proxy_denied(request);
+        }
+        response
+    }
+}
+
+impl DeploymentGuardedProxyDispatcher {
+    fn request_matches_expected_deployment(&self, request: &PluginProxyRequest) -> bool {
+        request.validate().is_ok()
+            && request.plugin_id.as_str() == self.expected_plugin_id
+            && request.artifact_sha256 == self.expected_digest
+            && i64::try_from(request.deployment_generation).ok() == Some(self.expected_generation)
+            && request.request_id == self.expected_request_id
+            && EXTERNAL_ACCOUNT_PROXY_CAPABILITIES.contains(&request.capability_id.as_str())
+            && request.capability_version == 1
+    }
+
+    async fn deployment_is_currently_authorized(&self, request: &PluginProxyRequest) -> bool {
+        let Ok(Some(current)) = self
+            .repository
+            .get_deployment(&self.expected_plugin_id)
+            .await
+        else {
+            return false;
+        };
+        current.plugin_id == self.expected_plugin_id
+            && current.generation == self.expected_generation
+            && current.artifact.id == self.expected_artifact_id
+            && current.artifact.digest == self.expected_digest
+            && current.artifact.approval.is_some()
+            && current.artifact.revocation.is_none()
+            && current.artifact.source_kind == PluginArtifactSourceKind::LocalProcess
+            && current.enabled
+            && current.config == self.expected_config
+            && serde_json::from_value::<PluginManifest>(current.artifact.manifest)
+                .is_ok_and(|manifest| manifest == self.expected_manifest)
+            && has_exact_grant(
+                &current.granted_capabilities,
+                &self.parent_capability_id,
+                self.parent_capability_version,
+            )
+            && has_exact_grant(
+                &current.granted_capabilities,
+                request.capability_id.as_str(),
+                request.capability_version,
+            )
+            && self.expected_manifest.capabilities.iter().any(|capability| {
+                capability.id == request.capability_id
+                    && capability.version == request.capability_version
+                    && capability.access == CapabilityAccess::Read
+                    && capability.side_effect == SideEffectClass::ExternalRead
+            })
+    }
+}
+
+fn has_exact_grant(grants: &[af_db::PluginCapabilityGrant], id: &str, version: u16) -> bool {
+    grants
+        .iter()
+        .any(|grant| grant.id == id && grant.version == version)
+}
+
+fn proxy_denied(request: PluginProxyRequest) -> PluginProxyResponse {
+    PluginProxyResponse {
+        protocol_version: request.protocol_version,
+        plugin_id: request.plugin_id,
+        plugin_version: request.plugin_version,
+        artifact_sha256: request.artifact_sha256,
+        deployment_generation: request.deployment_generation,
+        request_id: request.request_id,
+        capability_id: request.capability_id,
+        capability_version: request.capability_version,
+        proxy_request_id: request.proxy_request_id,
+        result: PluginProxyResult::Error(PluginProxyError {
+            code: PluginProxyErrorCode::Forbidden,
+        }),
+    }
+}
 
 /// Error classification shared by module-specific review service adapters.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -122,6 +240,8 @@ pub(crate) struct ReadOnlyPluginReviewer {
     pub plugin_id: String,
     pub display_name: String,
     pub plugin_version: String,
+    pub supports_external_account_reads: bool,
+    pub ui_views: Vec<af_plugin_contract::PluginUiView>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -196,8 +316,34 @@ pub(crate) async fn invoke_read_only_review(
     request_id: &str,
     input: Value,
 ) -> Result<ReadOnlyPluginReviewResult, ReadOnlyPluginReviewError> {
+    invoke_read_only_review_with_proxy(
+        plugins,
+        contract,
+        plugin_id,
+        request_id,
+        input,
+        None,
+    )
+    .await
+}
+
+/// Invoke a fixed module capability, optionally with a per-request host-managed
+/// external read dispatcher. Ordinary review callers do not receive one.
+pub(crate) async fn invoke_read_only_review_with_proxy(
+    plugins: &DatabaseAdminPluginLifecycleService,
+    contract: &ReadOnlyPluginReviewContract<'_>,
+    plugin_id: &str,
+    request_id: &str,
+    input: Value,
+    proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
+) -> Result<ReadOnlyPluginReviewResult, ReadOnlyPluginReviewError> {
     if request_id.is_empty() || request_id.len() > 64 || !valid_contract(contract) {
         return Err(ReadOnlyPluginReviewError::InvalidInput);
+    }
+    if proxy_dispatcher.is_some()
+        && contract.capability_id != LIVE_EXTERNAL_ACCOUNT_REVIEW_CAPABILITY
+    {
+        return Err(ReadOnlyPluginReviewError::Forbidden);
     }
     PluginId::new(plugin_id.to_owned()).map_err(|_| ReadOnlyPluginReviewError::InvalidInput)?;
     let input_bytes =
@@ -219,6 +365,27 @@ pub(crate) async fn invoke_read_only_review(
         let runtime = plugins
             .capability_runtime()
             .ok_or(ReadOnlyPluginReviewError::Unavailable)?;
+        let proxy_dispatcher = if let Some(inner) = proxy_dispatcher {
+            let manifest = serde_json::from_value::<PluginManifest>(
+                deployment.artifact.manifest.clone(),
+            )
+            .map_err(|_| ReadOnlyPluginReviewError::Forbidden)?;
+            Some(Arc::new(DeploymentGuardedProxyDispatcher {
+                repository: repository.clone(),
+                inner,
+                expected_plugin_id: deployment.plugin_id.clone(),
+                expected_artifact_id: deployment.artifact.id,
+                expected_digest: deployment.artifact.digest.clone(),
+                expected_generation: deployment.generation,
+                expected_request_id: request_id.to_owned(),
+                expected_config: deployment.config.clone(),
+                expected_manifest: manifest,
+                parent_capability_id: contract.capability_id.to_owned(),
+                parent_capability_version: contract.capability_version,
+            }) as Arc<dyn PluginProxyDispatcher>)
+        } else {
+            None
+        };
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|_| ReadOnlyPluginReviewError::Unavailable)?;
@@ -238,7 +405,7 @@ pub(crate) async fn invoke_read_only_review(
         .map_err(|_| ReadOnlyPluginReviewError::InvalidInput)?;
         let started_at = Instant::now();
         let response = runtime
-            .invoke_capability(
+            .invoke_capability_with_proxy(
                 repository,
                 plugin_id,
                 deployment.generation,
@@ -246,6 +413,7 @@ pub(crate) async fn invoke_read_only_review(
                 contract.capability_id,
                 contract.capability_version,
                 input,
+                proxy_dispatcher,
             )
             .await;
         let response = match response {
@@ -388,18 +556,42 @@ fn valid_contract(contract: &ReadOnlyPluginReviewContract<'_>) -> bool {
 }
 
 fn reviewer(deployment: &PluginDeploymentRecord) -> ReadOnlyPluginReviewer {
-    let display_name = deployment
-        .artifact
-        .manifest
-        .get("displayName")
-        .and_then(Value::as_str)
+    let manifest =
+        serde_json::from_value::<PluginManifest>(deployment.artifact.manifest.clone()).ok();
+    let display_name = manifest
+        .as_ref()
+        .map(|manifest| manifest.display_name.as_str())
         .filter(|value| valid_text(value, 128))
         .unwrap_or(&deployment.plugin_id)
         .to_owned();
+    let declares_live_review = manifest.as_ref().is_some_and(|manifest| {
+        manifest.capabilities.iter().any(|capability| {
+            capability.id.as_str() == LIVE_EXTERNAL_ACCOUNT_REVIEW_CAPABILITY
+                && capability.version == 1
+                && capability.access == CapabilityAccess::Read
+                && capability.side_effect == SideEffectClass::None
+        })
+    });
+    let proxy_grant = EXTERNAL_ACCOUNT_PROXY_CAPABILITIES.iter().any(|capability_id| {
+        deployment.granted_capabilities.iter().any(|grant| {
+            grant.id == *capability_id
+                && grant.version == 1
+                && manifest.as_ref().is_some_and(|manifest| {
+                    manifest.capabilities.iter().any(|capability| {
+                        capability.id.as_str() == *capability_id
+                            && capability.version == 1
+                            && capability.access == CapabilityAccess::Read
+                            && capability.side_effect == SideEffectClass::ExternalRead
+                    })
+                })
+        })
+    });
     ReadOnlyPluginReviewer {
         plugin_id: deployment.plugin_id.clone(),
         display_name,
         plugin_version: deployment.artifact.plugin_version.clone(),
+        supports_external_account_reads: declares_live_review && proxy_grant,
+        ui_views: manifest.map_or_else(Vec::new, |manifest| manifest.ui_views),
     }
 }
 

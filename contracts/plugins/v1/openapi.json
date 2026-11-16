@@ -740,6 +740,13 @@
             },
             "maxItems": 16,
             "type": "array"
+          },
+          "uiViews": {
+            "items": {
+              "$ref": "#/components/schemas/PluginUiView"
+            },
+            "maxItems": 8,
+            "type": "array"
           }
         },
         "required": [
@@ -924,6 +931,119 @@
           }
         ]
       },
+      "PluginUiBlock": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "text": {
+                "$ref": "#/components/schemas/PluginUiText"
+              },
+              "type": {
+                "const": "text"
+              }
+            },
+            "required": [
+              "type",
+              "text"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "$ref": "#/components/schemas/PluginUiText"
+              },
+              "tone": {
+                "$ref": "#/components/schemas/PluginUiTone"
+              },
+              "type": {
+                "const": "badge"
+              }
+            },
+            "required": [
+              "type",
+              "label",
+              "tone"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "$ref": "#/components/schemas/PluginUiText"
+              },
+              "type": {
+                "const": "metric"
+              },
+              "value": {
+                "$ref": "#/components/schemas/PluginUiText"
+              }
+            },
+            "required": [
+              "type",
+              "label",
+              "value"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "columns": {
+                "items": {
+                  "$ref": "#/components/schemas/PluginUiText"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              "rows": {
+                "items": {
+                  "items": {
+                    "$ref": "#/components/schemas/PluginUiText"
+                  },
+                  "maxItems": 8,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "maxItems": 16,
+                "type": "array"
+              },
+              "type": {
+                "const": "table"
+              }
+            },
+            "required": [
+              "type",
+              "columns",
+              "rows"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "$ref": "#/components/schemas/PluginUiText"
+              },
+              "title": {
+                "$ref": "#/components/schemas/PluginUiText"
+              },
+              "type": {
+                "const": "info_card"
+              }
+            },
+            "required": [
+              "type",
+              "title"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "PluginUiContribution": {
         "additionalProperties": false,
         "properties": {
@@ -981,6 +1101,57 @@
           }
         },
         "type": "object"
+      },
+      "PluginUiTone": {
+        "enum": [
+          "neutral",
+          "success",
+          "warning",
+          "danger"
+        ],
+        "type": "string"
+      },
+      "PluginUiView": {
+        "additionalProperties": false,
+        "properties": {
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/PluginUiBlock"
+            },
+            "maxItems": 24,
+            "minItems": 1,
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "slot": {
+            "$ref": "#/components/schemas/PluginUiViewSlot"
+          }
+        },
+        "required": [
+          "id",
+          "schemaVersion",
+          "slot",
+          "blocks"
+        ],
+        "type": "object"
+      },
+      "PluginUiViewSlot": {
+        "enum": [
+          "plugin_management",
+          "channel_monitor",
+          "channel_model_mapping",
+          "merchant_service",
+          "external_account"
+        ],
+        "type": "string"
       },
       "PluginVersion": {
         "maxLength": 128,

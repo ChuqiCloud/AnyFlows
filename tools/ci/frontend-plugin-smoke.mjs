@@ -46,6 +46,23 @@ const artifact = {
         title: { en: 'Unexpected action', zh: '越权操作' }, action: { url: 'javascript:alert(1)' },
       },
     ],
+    uiViews: [
+      {
+        id: 'overview-view', schemaVersion: 1, slot: 'plugin_management',
+        blocks: [
+          { type: 'text', text: { en: 'Declarative snapshot view', zh: '声明式快照视图' } },
+          { type: 'badge', label: { en: 'Available', zh: '可用' }, tone: 'success' },
+          { type: 'metric', label: { en: 'Items', zh: '条目' }, value: { en: '3', zh: '3' } },
+          { type: 'table', columns: [{ en: 'Date', zh: '日期' }, { en: 'Amount', zh: '金额' }], rows: [[{ en: 'Today', zh: '今天' }, { en: '12.50 USD', zh: '12.50 USD' }]] },
+          { type: 'info_card', title: { en: 'Details', zh: '详情' }, description: { en: 'Rendered by fixed host components.', zh: '由宿主固定组件渲染。' } },
+        ],
+      },
+      { id: 'unsafe-text', schemaVersion: 1, slot: 'plugin_management', blocks: [{ type: 'text', text: { en: '<img src=x onerror=alert(1)>', zh: '<img src=x onerror=alert(1)>' } }] },
+      { id: 'unknown-component', schemaVersion: 1, slot: 'plugin_management', blocks: [{ type: 'custom_html', html: '<script>alert(1)</script>' }] },
+      { id: 'arbitrary-action', schemaVersion: 1, slot: 'plugin_management', blocks: [{ type: 'info_card', title: { en: 'Unexpected', zh: '越权' }, action: { route: '/admin', method: 'POST', capability: 'wallet.credit' } }] },
+      { id: 'unregistered-slot', schemaVersion: 1, slot: 'custom_route', blocks: [{ type: 'text', text: { en: 'Hidden', zh: '隐藏' } }] },
+      { id: 'unsupported-version', schemaVersion: 2, slot: 'plugin_management', blocks: [{ type: 'text', text: { en: 'Hidden', zh: '隐藏' } }] },
+    ],
     configSchema: {
       type: 'object', additionalProperties: false, required: ['displayName'],
       properties: {
@@ -106,12 +123,13 @@ try {
     import './src/index.css'; import './src/i18n';
     import { useSiteTheme } from './src/shared/components/use-site-theme';
     import { PluginLifecyclePage } from './src/features/plugin-lifecycle/plugin-lifecycle-page';
+    import { PluginUiViewsRenderer } from './src/features/plugin-lifecycle/plugin-ui-views';
     import { ModelPage } from './src/features/models/model-page';
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false }, mutations: { retry: false } } });
     function App() {
       useSiteTheme();
       const [view, setView] = useState('plugins');
-      return <HeroUIProvider><QueryClientProvider client={client}><main style={{ padding: 16, maxWidth: 1200, margin: 'auto' }}><nav aria-label="CI views">{['plugins','models','guest'].map(value => <button key={value} onClick={() => setView(value)}>{value}</button>)}</nav>{view === 'plugins' ? <PluginLifecyclePage /> : <ModelPage key={view} authenticated={view === 'models'} standalone />}</main></QueryClientProvider></HeroUIProvider>;
+      return <HeroUIProvider><QueryClientProvider client={client}><main style={{ padding: 16, maxWidth: 1200, margin: 'auto' }}><nav aria-label="CI views">{['plugins','module-ui','models','guest'].map(value => <button key={value} onClick={() => setView(value)}>{value}</button>)}</nav>{view === 'plugins' ? <PluginLifecyclePage /> : view === 'module-ui' ? <div>{['channel_monitor','channel_model_mapping','merchant_service','external_account'].map(slot => <PluginUiViewsRenderer key={slot} manifest={{ uiViews: [{ id: slot, schemaVersion: 1, slot, blocks: [{ type: 'text', text: { en: slot, zh: slot } }] }] }} slot={slot} locale="zh-CN" />)}</div> : <ModelPage key={view} authenticated={view === 'models'} standalone />}</main></QueryClientProvider></HeroUIProvider>;
     }
     createRoot(document.getElementById('root')).render(<BrowserRouter><App /></BrowserRouter>);
   `)
@@ -201,7 +219,19 @@ try {
   await contributionSection.getByRole('heading', { name: '插件概览', exact: true }).waitFor()
   await contributionSection.getByText('插件提供的静态说明。', { exact: true }).waitFor()
   assert.equal(await contributionSection.locator('[data-plugin-ui-card]').count(), 1, 'Only schema-valid host-owned card declarations render')
+  const declarativeView = contributionSection.locator('[data-plugin-ui-views="plugin_management"]')
+  await declarativeView.getByText('声明式快照视图', { exact: true }).waitFor()
+  await declarativeView.getByText('可用', { exact: true }).waitFor()
+  await declarativeView.getByText('12.50 USD', { exact: true }).waitFor()
+  await declarativeView.getByRole('columnheader', { name: '日期', exact: true }).waitFor()
+  await declarativeView.getByText('由宿主固定组件渲染。', { exact: true }).waitFor()
+  assert.equal(await declarativeView.locator('[data-plugin-ui-view]').count(), 1, 'Unsafe text, arbitrary actions, unknown blocks, routes and versions are ignored')
   assert.equal(await contributionSection.locator('img, script, a').count(), 0, 'Plugin contributions cannot inject markup or links')
+  await page.getByRole('navigation', { name: 'CI views' }).getByRole('button', { name: 'module-ui', exact: true }).click()
+  for (const slot of ['channel_monitor', 'channel_model_mapping', 'merchant_service', 'external_account']) {
+    await page.locator(`[data-plugin-ui-views="${slot}"]`).getByText(slot, { exact: true }).waitFor()
+  }
+  await page.getByRole('navigation', { name: 'CI views' }).getByRole('button', { name: 'plugins', exact: true }).click()
   const advanced = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: label('pluginLifecycle.advanced') }) })
   assert.equal(await advanced.getAttribute('open'), null, 'Normal installation keeps manual fields folded')
   await advanced.locator('summary').first().click()

@@ -20,8 +20,9 @@ pub use capability::{
 };
 pub use error::{ConnectorError, ConnectorErrorCode, OperationOutcome};
 pub use manifest::{
-    ConnectorLimits, PluginId, PluginManifest, PluginUiComponent, PluginUiContribution,
-    PluginUiSlot, PluginUiText,
+    ConnectorLimits, PluginId, PluginManifest, PluginUiBlock, PluginUiComponent,
+    PluginUiContribution, PluginUiSlot, PluginUiText, PluginUiTone, PluginUiView,
+    PluginUiViewSlot,
 };
 pub use proposal::HostActionProposal;
 pub use schema::{openapi_document, schema_document};

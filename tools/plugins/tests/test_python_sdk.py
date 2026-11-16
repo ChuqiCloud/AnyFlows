@@ -19,16 +19,63 @@ from anyflows_plugin import Plugin, ProtocolError  # noqa: E402
 MANIFEST = json.loads((ROOT / "examples" / "catalog" / "manifest.json").read_text(encoding="utf-8"))
 
 
-def request(operation: dict) -> dict:
+def request(operation: dict, manifest: dict = MANIFEST) -> dict:
     return {
         "protocolVersion": 1,
-        "pluginId": MANIFEST["pluginId"],
-        "pluginVersion": MANIFEST["pluginVersion"],
+        "pluginId": manifest["pluginId"],
+        "pluginVersion": manifest["pluginVersion"],
         "artifactSha256": "a" * 64,
         "deploymentGeneration": 7,
         "requestId": "host-request-1",
         "deadlineUnixMs": 2000,
         "operation": operation,
+    }
+
+
+def external_profile_manifest() -> dict:
+    manifest = copy.deepcopy(MANIFEST)
+    declaration = manifest["capabilities"][0]
+    declaration["id"] = "external.account.profile.read"
+    declaration["sideEffect"] = "external_read"
+    declaration["inputSchema"] = {"type": "object", "additionalProperties": False}
+    declaration["outputSchema"] = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["profile"],
+        "properties": {"profile": {"type": "object"}},
+    }
+    return manifest
+
+
+def live_balance_review_manifest() -> dict:
+    manifest = copy.deepcopy(MANIFEST)
+    declaration = manifest["capabilities"][0]
+    declaration["id"] = "account.balance.snapshot.live-review.read"
+    declaration["inputSchema"] = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["snapshots"],
+        "properties": {"snapshots": {"type": "array", "minItems": 1, "maxItems": 20}},
+    }
+    declaration["outputSchema"] = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["summary", "checks"],
+        "properties": {"summary": {"type": "string"}, "checks": {"type": "array"}},
+    }
+    return manifest
+
+
+def proxy_response(proxy_request: dict, payload: dict) -> dict:
+    return {
+        key: proxy_request[key]
+        for key in (
+            "protocolVersion", "pluginId", "pluginVersion", "artifactSha256",
+            "deploymentGeneration", "requestId", "capabilityId", "capabilityVersion",
+            "proxyRequestId",
+        )
+    } | {
+        "result": {"kind": "response", "value": {"statusCode": 200, "payload": payload}}
     }
 
 
@@ -119,6 +166,198 @@ class PluginSdkTests(unittest.TestCase):
         with self.assertRaises(ProtocolError):
             plugin.respond(envelope)
         self.assertEqual(plugin.serve(io.BytesIO(b" " * (1_048_576 + 1) + b"\n"), io.BytesIO()), 1)
+
+    def test_external_read_handler_uses_correlated_host_proxy_frames(self):
+        manifest = external_profile_manifest()
+
+        def inspect_profile(capability_id, public_config, value, context):
+            self.assertEqual(capability_id, "external.account.profile.read")
+            return {"profile": context.proxy_read("account.profile")}
+
+        plugin = Plugin(manifest, inspect_profile, clock_ms=lambda: 1000)
+        envelope = request(
+            {
+                "operation": "invoke_capability",
+                "connectionId": "host-owned-scope",
+                "publicConfig": {},
+                "capabilityId": "external.account.profile.read",
+                "capabilityVersion": 1,
+                "input": {},
+            },
+            manifest,
+        )
+        continuation = proxy_response(
+            {
+                "protocolVersion": 1,
+                "pluginId": envelope["pluginId"],
+                "pluginVersion": envelope["pluginVersion"],
+                "artifactSha256": envelope["artifactSha256"],
+                "deploymentGeneration": envelope["deploymentGeneration"],
+                "requestId": envelope["requestId"],
+                "capabilityId": "external.account.profile.read",
+                "capabilityVersion": 1,
+                "proxyRequestId": "proxy-1",
+            },
+            {"displayName": "Ada"},
+        )
+        source = io.BytesIO((json.dumps(envelope) + "\n" + json.dumps(continuation) + "\n").encode())
+        target = io.BytesIO()
+        self.assertEqual(plugin.serve(source, target), 0)
+        frames = [json.loads(line) for line in target.getvalue().splitlines()]
+        self.assertEqual(len(frames), 2)
+        self.assertEqual(frames[0]["proxyRequestId"], "proxy-1")
+        self.assertEqual(frames[0]["request"], {
+            "endpointId": "external.account.profile",
+            "method": "GET",
+            "query": {},
+        })
+        self.assertNotIn("connectionId", frames[0])
+        self.assertNotIn("credential", json.dumps(frames[0]).lower())
+        self.assertEqual(frames[1]["result"]["value"]["output"], {"profile": {"displayName": "Ada"}})
+
+    def test_external_read_capability_without_host_context_is_rejected(self):
+        manifest = external_profile_manifest()
+        plugin = Plugin(manifest, lambda capability_id, config, value: {"profile": {}})
+        envelope = request(
+            {
+                "operation": "invoke_capability",
+                "connectionId": "host-owned-scope",
+                "publicConfig": {},
+                "capabilityId": "external.account.profile.read",
+                "capabilityVersion": 1,
+                "input": {},
+            },
+            manifest,
+        )
+        self.assertEqual(plugin.respond(envelope)["result"]["value"]["code"], "unsupported")
+
+    def test_live_review_uses_its_separate_external_balance_grant(self):
+        manifest = live_balance_review_manifest()
+
+        observed = []
+
+        def review(capability_id, config, value, context):
+            observed.append(context.proxy_read("account.balance"))
+            return {"summary": "Reviewed snapshots", "checks": []}
+
+        plugin = Plugin(
+            manifest,
+            review,
+            clock_ms=lambda: 1000,
+        )
+        envelope = request(
+            {
+                "operation": "invoke_capability",
+                "connectionId": "host-owned-scope",
+                "publicConfig": {},
+                "capabilityId": "account.balance.snapshot.live-review.read",
+                "capabilityVersion": 1,
+                "input": {"snapshots": [{"amount": "11.00"}]},
+            },
+            manifest,
+        )
+        callback = proxy_response(
+            {
+                "protocolVersion": 1,
+                "pluginId": envelope["pluginId"],
+                "pluginVersion": envelope["pluginVersion"],
+                "artifactSha256": envelope["artifactSha256"],
+                "deploymentGeneration": envelope["deploymentGeneration"],
+                "requestId": envelope["requestId"],
+                "capabilityId": "external.account.balance.read",
+                "capabilityVersion": 1,
+                "proxyRequestId": "proxy-1",
+            },
+            {"amount": "12.50", "unit": "USD", "status": "available", "observedAt": 1700000000},
+        )
+        source = io.BytesIO((json.dumps(envelope) + "\n" + json.dumps(callback) + "\n").encode())
+        target = io.BytesIO()
+        self.assertEqual(plugin.serve(source, target), 0)
+        frames = [json.loads(line) for line in target.getvalue().splitlines()]
+        self.assertEqual(frames[0]["capabilityId"], "external.account.balance.read")
+        self.assertEqual(frames[0]["request"]["endpointId"], "account.balance")
+        self.assertNotIn("connectionId", frames[0])
+        self.assertEqual(frames[1]["result"]["value"]["output"], {"summary": "Reviewed snapshots", "checks": []})
+        self.assertEqual(observed[0],
+            {"amount": "12.50", "unit": "USD", "status": "available", "observedAt": 1700000000},
+        )
+
+    def test_external_proxy_rejects_mismatched_continuation_and_stops_stream(self):
+        manifest = external_profile_manifest()
+        plugin = Plugin(
+            manifest,
+            lambda capability_id, config, value, context: context.proxy_read("account.profile"),
+            clock_ms=lambda: 1000,
+        )
+        envelope = request(
+            {
+                "operation": "invoke_capability",
+                "connectionId": "host-owned-scope",
+                "publicConfig": {},
+                "capabilityId": "external.account.profile.read",
+                "capabilityVersion": 1,
+                "input": {},
+            },
+            manifest,
+        )
+        bad = proxy_response(
+            {
+                "protocolVersion": 1,
+                "pluginId": envelope["pluginId"],
+                "pluginVersion": envelope["pluginVersion"],
+                "artifactSha256": envelope["artifactSha256"],
+                "deploymentGeneration": envelope["deploymentGeneration"],
+                "requestId": "another-invocation",
+                "capabilityId": "external.account.profile.read",
+                "capabilityVersion": 1,
+                "proxyRequestId": "proxy-1",
+            },
+            {"displayName": "Ada"},
+        )
+        target = io.BytesIO()
+        source = io.BytesIO((json.dumps(envelope) + "\n" + json.dumps(bad) + "\n").encode())
+        self.assertEqual(plugin.serve(source, target), 1)
+
+    def test_external_proxy_caps_callbacks_per_invocation(self):
+        manifest = external_profile_manifest()
+
+        def read_many(capability_id, public_config, value, context):
+            for _ in range(5):
+                context.proxy_read("account.profile")
+            return {"ok": True}
+
+        plugin = Plugin(manifest, read_many, clock_ms=lambda: 1000)
+        envelope = request(
+            {
+                "operation": "invoke_capability",
+                "connectionId": "host-owned-scope",
+                "publicConfig": {},
+                "capabilityId": "external.account.profile.read",
+                "capabilityVersion": 1,
+                "input": {},
+            },
+            manifest,
+        )
+        base_proxy_request = {
+            "protocolVersion": 1,
+            "pluginId": envelope["pluginId"],
+            "pluginVersion": envelope["pluginVersion"],
+            "artifactSha256": envelope["artifactSha256"],
+            "deploymentGeneration": envelope["deploymentGeneration"],
+            "requestId": envelope["requestId"],
+            "capabilityId": "external.account.profile.read",
+            "capabilityVersion": 1,
+        }
+        callbacks = [
+            proxy_response(base_proxy_request | {"proxyRequestId": f"proxy-{index}"}, {"ok": True})
+            for index in range(1, 5)
+        ]
+        source = io.BytesIO(("\n".join(json.dumps(frame) for frame in [envelope, *callbacks]) + "\n").encode())
+        target = io.BytesIO()
+        self.assertEqual(plugin.serve(source, target), 0)
+        frames = [json.loads(line) for line in target.getvalue().splitlines()]
+        self.assertEqual([frame["proxyRequestId"] for frame in frames[:-1]], [f"proxy-{index}" for index in range(1, 5)])
+        self.assertEqual(frames[-1]["result"]["value"]["code"], "rate_limited")
 
     def test_catalogue_example_searches_and_paginates_public_data(self):
         spec = importlib.util.spec_from_file_location("catalogue_example", ROOT / "examples" / "catalog" / "plugin.py")

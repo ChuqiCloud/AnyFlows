@@ -9,6 +9,7 @@ import type { AdminChannel } from '@/lib/api/generated/types.gen'
 import { ApiError } from '@/lib/api'
 import { type ActiveMonitorActionProposal, type ActiveMonitorPluginReviewCheck, type ActiveMonitorTarget, type ActiveMonitorTargetWrite, useActiveMonitorEvents, useActiveMonitorMutation, useActiveMonitorPluginReviewers, useActiveMonitorSettings, useActiveMonitorTargets, useConfirmActiveMonitorAction, useProposeActiveMonitorAction, useReviewActiveMonitorEvents } from './active-channel-monitor-api'
 import { PoolError } from '@/features/merchant-pool/merchant-pool-ui'
+import { PluginUiViewsRenderer } from '@/features/plugin-lifecycle/plugin-ui-views'
 
 const lowCostProbeProtocols = new Set<AdminChannel['protocol']>([
   'openai_chat', 'openai_responses', 'openai_embeddings', 'anthropic', 'gemini', 'jina_rerank', 'cohere_rerank',
@@ -57,6 +58,7 @@ function MonitorEventPluginReview({ targetId, t }: {
   targetId: number
   t: (key: string, values?: Record<string, unknown>) => string
 }) {
+  const { i18n } = useTranslation()
   const reviewers = useActiveMonitorPluginReviewers(true)
   const review = useReviewActiveMonitorEvents()
   const proposeAction = useProposeActiveMonitorAction()
@@ -146,6 +148,7 @@ function MonitorEventPluginReview({ targetId, t }: {
         <p className="whitespace-pre-wrap break-words text-[11px] leading-4">{check.message}</p>
         {check.recommendation ? <p className="whitespace-pre-wrap break-words text-[11px] leading-4 text-muted-foreground">{t('channels.activeMonitor.pluginReview.recommendation')}: {check.recommendation}</p> : null}
       </li>)}</ul> : <p className="text-[11px] text-muted-foreground">{t('channels.activeMonitor.pluginReview.noChecks')}</p>}
+      <PluginUiViewsRenderer manifest={{ uiViews: review.data.ui_views }} slot="channel_monitor" locale={i18n.resolvedLanguage ?? 'en'} />
       {review.data.action_proposal ? <div className="grid gap-2 rounded-md border border-warning/30 bg-warning/5 p-3">
         <p className="text-xs font-medium">{t('channels.activeMonitor.pluginReview.action.suggestion')}</p>
         <p className="text-[11px] text-muted-foreground">{t('channels.activeMonitor.pluginReview.action.suggestionDetail', { enabled: review.data.action_proposal.input.enabled ? t('channels.activeMonitor.targetEnabledStatus') : t('channels.activeMonitor.targetDisabledStatus') })}</p>

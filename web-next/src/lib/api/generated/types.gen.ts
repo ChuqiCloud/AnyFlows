@@ -126,6 +126,7 @@ export type ActiveChannelMonitorPluginReviewResponse = {
     target_config_version: number;
     summary: string;
     checks: Array<ActiveChannelMonitorPluginReviewCheckResponse>;
+    ui_views: Array<unknown>;
     action_proposal?: null | ActiveChannelMonitorPluginActionHintResponse;
 };
 export type ActiveChannelMonitorPluginReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
@@ -1748,6 +1749,7 @@ export type ChannelModelMappingPluginReviewResponse = {
     mapping_count: number;
     summary: string;
     checks: Array<ChannelModelMappingPluginReviewCheckResponse>;
+    ui_views: Array<unknown>;
 };
 export type ChannelModelMappingPluginReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
 export type ChannelModelMappingPluginReviewerListResponse = {
@@ -2224,6 +2226,7 @@ export type MerchantPluginReview = {
     plugin_version: string;
     service_revision: number;
     summary: string;
+    ui_views: Array<unknown>;
 };
 export type MerchantPluginReviewCheck = {
     code: string;
@@ -3105,6 +3108,7 @@ export type ReviewCheckResponse = {
     recommendation?: string | null;
 };
 export type ReviewRequest = {
+    allow_external_reads?: boolean;
     plugin_id: string;
 };
 export type ReviewResponse = {
@@ -3116,6 +3120,7 @@ export type ReviewResponse = {
     lastObservedAt: number;
     summary: string;
     checks: Array<ReviewCheckResponse>;
+    uiViews: Array<unknown>;
 };
 export type ReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
 export type ReviewerListResponse = {

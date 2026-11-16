@@ -19,7 +19,9 @@ pub fn schema_document() -> Value {
             { "$ref": "#/$defs/PluginProxyResponse" },
             { "$ref": "#/$defs/PluginHostRequest" },
             { "$ref": "#/$defs/PluginHostResponse" },
-            { "$ref": "#/$defs/PluginHostProtocol" }
+            { "$ref": "#/$defs/PluginHostProtocol" },
+            { "$ref": "#/$defs/PluginUiView" },
+            { "$ref": "#/$defs/PluginUiBlock" }
         ],
         "$defs": {
             "ContractVersion": {
@@ -96,7 +98,8 @@ pub fn schema_document() -> Value {
                     "authenticationModes": { "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*$", "maxLength": 128 } },
                     "limits": { "$ref": "#/$defs/ConnectorLimits" },
                     "configSchema": { "type": "object" },
-                    "uiContributions": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/PluginUiContribution" } }
+                    "uiContributions": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/PluginUiContribution" } },
+                    "uiViews": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/PluginUiView" } }
                 }
             },
             "PluginUiContribution": {
@@ -120,6 +123,34 @@ pub fn schema_document() -> Value {
                     "en": { "type": "string", "minLength": 1, "maxLength": 512, "not": { "pattern": "[<>]|[Hh][Tt][Tt][Pp][Ss]?://|[Jj][Aa][Vv][Aa][Ss][Cc][Rr][Ii][Pp][Tt]:|[Dd][Aa][Tt][Aa]:|[Mm][Aa][Ii][Ll][Tt][Oo]:|[Ww][Ww][Ww][.]" } },
                     "zh": { "type": "string", "minLength": 1, "maxLength": 512, "not": { "pattern": "[<>]|[Hh][Tt][Tt][Pp][Ss]?://|[Jj][Aa][Vv][Aa][Ss][Cc][Rr][Ii][Pp][Tt]:|[Dd][Aa][Tt][Aa]:|[Mm][Aa][Ii][Ll][Tt][Oo]:|[Ww][Ww][Ww][.]" } }
                 }
+            },
+            "PluginUiViewSlot": {
+                "type": "string",
+                "enum": ["plugin_management", "channel_monitor", "channel_model_mapping", "merchant_service", "external_account"]
+            },
+            "PluginUiTone": {
+                "type": "string",
+                "enum": ["neutral", "success", "warning", "danger"]
+            },
+            "PluginUiView": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "schemaVersion", "slot", "blocks"],
+                "properties": {
+                    "id": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$", "minLength": 1, "maxLength": 64 },
+                    "schemaVersion": { "const": 1 },
+                    "slot": { "$ref": "#/$defs/PluginUiViewSlot" },
+                    "blocks": { "type": "array", "minItems": 1, "maxItems": 24, "items": { "$ref": "#/$defs/PluginUiBlock" } }
+                }
+            },
+            "PluginUiBlock": {
+                "oneOf": [
+                    { "type": "object", "additionalProperties": false, "required": ["type", "text"], "properties": { "type": { "const": "text" }, "text": { "$ref": "#/$defs/PluginUiText" } } },
+                    { "type": "object", "additionalProperties": false, "required": ["type", "label", "tone"], "properties": { "type": { "const": "badge" }, "label": { "$ref": "#/$defs/PluginUiText" }, "tone": { "$ref": "#/$defs/PluginUiTone" } } },
+                    { "type": "object", "additionalProperties": false, "required": ["type", "label", "value"], "properties": { "type": { "const": "metric" }, "label": { "$ref": "#/$defs/PluginUiText" }, "value": { "$ref": "#/$defs/PluginUiText" } } },
+                    { "type": "object", "additionalProperties": false, "required": ["type", "columns", "rows"], "properties": { "type": { "const": "table" }, "columns": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/PluginUiText" } }, "rows": { "type": "array", "maxItems": 16, "items": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/PluginUiText" } } } } },
+                    { "type": "object", "additionalProperties": false, "required": ["type", "title"], "properties": { "type": { "const": "info_card" }, "title": { "$ref": "#/$defs/PluginUiText" }, "description": { "$ref": "#/$defs/PluginUiText" } } }
+                ]
             },
             "HostHttpMethod": { "type": "string", "enum": ["GET", "HEAD"] },
             "HostHttpRequestProposal": {
@@ -553,6 +584,21 @@ mod tests {
                 },
                 description: None,
             }],
+            ui_views: vec![crate::PluginUiView {
+                id: "snapshot-summary".to_owned(),
+                schema_version: 1,
+                slot: crate::PluginUiViewSlot::ExternalAccount,
+                blocks: vec![crate::PluginUiBlock::Metric {
+                    label: crate::PluginUiText {
+                        en: Some("Balance".to_owned()),
+                        zh: None,
+                    },
+                    value: crate::PluginUiText {
+                        en: Some("12.50 USD".to_owned()),
+                        zh: None,
+                    },
+                }],
+            }],
         };
         let account = ExternalAccountProfile {
             subject: "opaque-123".to_owned(),
@@ -633,6 +679,19 @@ mod tests {
             "PluginManifest",
             &serde_json::to_value(manifest.clone()).unwrap(),
         );
+        assert_schema_fields(
+            &schema,
+            "PluginUiView",
+            &serde_json::to_value(manifest.ui_views[0].clone()).unwrap(),
+        );
+        assert_eq!(schema["$defs"]["PluginUiView"]["properties"]["schemaVersion"]["const"], 1);
+        assert_eq!(schema["$defs"]["PluginUiViewSlot"]["enum"], json!([
+            "plugin_management",
+            "channel_monitor",
+            "channel_model_mapping",
+            "merchant_service",
+            "external_account"
+        ]));
         assert_schema_fields(
             &schema,
             "ExternalAccountProfile",

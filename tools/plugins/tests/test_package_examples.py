@@ -98,6 +98,26 @@ class ExamplePackageTests(unittest.TestCase):
                 "account.balance.snapshot.review.read",
             )
 
+    def test_live_balance_review_example_contains_both_scopes_and_the_python_sdk(self):
+        with tempfile.TemporaryDirectory(prefix="anyflows-example-test-") as temporary:
+            output = Path(temporary) / "account-balance-live-review.afplugin"
+            package = self.package(output, "account-balance-live-review")
+            manifest = package["metadata"]["manifest"]
+            self.assertIn("payload/anyflows_plugin.py", package["names"])
+            self.assertIn("payload/plugin.py", package["names"])
+            self.assertEqual(
+                {capability["id"] for capability in manifest["capabilities"]},
+                {
+                    "account.balance.snapshot.review.read",
+                    "account.balance.snapshot.live-review.read",
+                    "external.account.balance.read",
+                },
+            )
+            self.assertEqual(
+                manifest["uiViews"][0]["slot"],
+                "external_account",
+            )
+
     def test_catalog_example_remains_the_default(self):
         with tempfile.TemporaryDirectory(prefix="anyflows-example-test-") as temporary:
             output = Path(temporary) / "catalog.afplugin"

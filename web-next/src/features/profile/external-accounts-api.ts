@@ -39,6 +39,7 @@ export type ExternalAccountSnapshotReviewer = {
   pluginId: string
   displayName: string
   pluginVersion: string
+  supportsExternalReads: boolean
 }
 
 export type ExternalAccountSnapshotReviewCheck = {
@@ -58,6 +59,7 @@ export type ExternalAccountSnapshotReview = {
   lastObservedAt: number
   summary: string
   checks: ExternalAccountSnapshotReviewCheck[]
+  uiViews: unknown[]
 }
 
 const externalAccountKey = ['user-external-accounts'] as const
@@ -137,11 +139,11 @@ export function useExternalAccountSnapshotReviewers(enabled = true) {
 
 export function useReviewExternalAccountSnapshots() {
   return useMutation({
-    mutationFn: async ({ connectionId, pluginId }: { connectionId: number; pluginId: string }) => (await apiClient.post<
+    mutationFn: async ({ connectionId, pluginId, allowExternalReads }: { connectionId: number; pluginId: string; allowExternalReads: boolean }) => (await apiClient.post<
       { 200: ExternalAccountSnapshotReview }, unknown, true
     >({
       url: `/api/account/external-accounts/${connectionId}/plugin-review`,
-      body: { plugin_id: pluginId },
+      body: { plugin_id: pluginId, allow_external_reads: allowExternalReads },
       security,
       headers,
       throwOnError: true,

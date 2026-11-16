@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Button, Chip, Drawer, DrawerBody, DrawerContent, DrawerFooter, DrawerHeader, Select, SelectItem, Skeleton } from '@heroui/react'
+import { Button, Checkbox, Chip, Drawer, DrawerBody, DrawerContent, DrawerFooter, DrawerHeader, Select, SelectItem, Skeleton } from '@heroui/react'
 import { useTranslation } from 'react-i18next'
 
 import type { ExternalAccountSnapshotReviewCheck } from './external-accounts-api'
 import { useExternalAccountSnapshotReviewers, useReviewExternalAccountSnapshots } from './external-accounts-api'
+import { PluginUiViewsRenderer } from '@/features/plugin-lifecycle/plugin-ui-views'
 
 function checkStyle(status: ExternalAccountSnapshotReviewCheck['status']) {
   if (status === 'fail') return 'border-danger/25 bg-danger/5'
@@ -26,22 +27,28 @@ export function ExternalAccountSnapshotPluginReview({ open, connectionId, onClos
   const reviewers = useExternalAccountSnapshotReviewers(open)
   const review = useReviewExternalAccountSnapshots()
   const [selection, setSelection] = useState('')
+  const [allowExternalReads, setAllowExternalReads] = useState(false)
   const plugins = reviewers.data?.plugins ?? []
   const selectedPluginId = useMemo(() =>
     plugins.some((plugin) => plugin.pluginId === selection) ? selection : '',
   [plugins, selection])
+  const selectedPlugin = plugins.find((plugin) => plugin.pluginId === selectedPluginId)
 
   const runReview = async () => {
     if (!selectedPluginId || review.isPending) return
     try {
-      await review.mutateAsync({ connectionId, pluginId: selectedPluginId })
+      await review.mutateAsync({
+        connectionId,
+        pluginId: selectedPluginId,
+        allowExternalReads: allowExternalReads && selectedPlugin?.supportsExternalReads === true,
+      })
     } catch {
       // Keep the selected plugin so the user can retry after reviewing the error.
     }
   }
 
   const locale = i18n.resolvedLanguage?.startsWith('zh') ? 'zh-CN' : 'en-US'
-  return <Drawer isOpen={open} placement="right" size="2xl" scrollBehavior="inside" onOpenChange={(next) => { if (!next && !review.isPending) onClose() }}>
+  return <Drawer isOpen={open} placement="right" size="2xl" scrollBehavior="inside" onOpenChange={(next) => { if (!next && !review.isPending) { setAllowExternalReads(false); onClose() } }}>
     <DrawerContent className="min-w-0 bg-content1 text-foreground sm:max-w-xl">
       <DrawerHeader className="flex-col items-start gap-1">
         <h2>{t('profile.externalAccounts.pluginReview.title')}</h2>
@@ -57,10 +64,13 @@ export function ExternalAccountSnapshotPluginReview({ open, connectionId, onClos
               : <>
                 <div className="grid gap-1.5">
                   <label htmlFor="external-account-snapshot-plugin" className="text-xs font-medium">{t('profile.externalAccounts.pluginReview.plugin')}</label>
-                  <Select id="external-account-snapshot-plugin" aria-label={t('profile.externalAccounts.pluginReview.plugin')} size="sm" selectedKeys={selectedPluginId ? [selectedPluginId] : []} isDisabled={review.isPending} onSelectionChange={(keys) => { if (keys === 'all') return; const [key] = Array.from(keys); if (typeof key === 'string') { setSelection(key); review.reset() } }}>
+                  <Select id="external-account-snapshot-plugin" aria-label={t('profile.externalAccounts.pluginReview.plugin')} size="sm" selectedKeys={selectedPluginId ? [selectedPluginId] : []} isDisabled={review.isPending} onSelectionChange={(keys) => { if (keys === 'all') return; const [key] = Array.from(keys); if (typeof key === 'string') { setSelection(key); setAllowExternalReads(false); review.reset() } }}>
                     {plugins.map((plugin) => <SelectItem key={plugin.pluginId} textValue={`${plugin.displayName} ${plugin.pluginVersion}`}>{plugin.displayName} · {plugin.pluginVersion}</SelectItem>)}
                   </Select>
                 </div>
+                <Checkbox isSelected={allowExternalReads} isDisabled={review.isPending || !selectedPlugin?.supportsExternalReads} onValueChange={setAllowExternalReads}>
+                  <span className="text-xs leading-5">{t('profile.externalAccounts.pluginReview.allowExternalReads')}</span>
+                </Checkbox>
                 <div className="flex justify-end"><Button color="primary" size="sm" isDisabled={!selectedPluginId || review.isPending} isLoading={review.isPending} onPress={() => void runReview()}>{t('profile.externalAccounts.pluginReview.run')}</Button></div>
                 {review.isError ? <div className="flex items-center justify-between gap-2 text-xs text-destructive" role="alert"><span>{t('profile.externalAccounts.pluginReview.runError')}</span><Button size="sm" variant="light" onPress={() => void runReview()}>{t('profile.actions.retry')}</Button></div> : null}
                 {review.data ? <section className="grid gap-3" aria-live="polite">
@@ -82,6 +92,7 @@ export function ExternalAccountSnapshotPluginReview({ open, connectionId, onClos
                       <p className="whitespace-pre-wrap break-words text-xs leading-5">{check.message}</p>
                       {check.recommendation ? <p className="whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">{t('profile.externalAccounts.pluginReview.recommendation')}: {check.recommendation}</p> : null}
                     </li>)}</ul>}
+                  <PluginUiViewsRenderer manifest={{ uiViews: review.data.uiViews }} slot="external_account" locale={i18n.resolvedLanguage ?? 'en'} />
                 </section> : null}
               </>}
       </DrawerBody>

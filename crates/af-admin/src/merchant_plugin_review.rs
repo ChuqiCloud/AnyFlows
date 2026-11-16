@@ -86,6 +86,7 @@ pub struct MerchantPluginReview {
     pub service_revision: i64,
     pub summary: String,
     pub checks: Vec<MerchantPluginReviewCheck>,
+    pub ui_views: Vec<af_plugin_contract::PluginUiView>,
 }
 
 /// Session-authenticated merchant plugin review operations.
@@ -202,6 +203,14 @@ impl MerchantPluginReviewService for DatabaseMerchantPluginReviewService {
                     service_revision: revision.revision,
                     summary: output.summary,
                     checks: output.checks.into_iter().map(Into::into).collect(),
+                    ui_views: output
+                        .reviewer
+                        .ui_views
+                        .into_iter()
+                        .filter(|view| {
+                            view.slot == af_plugin_contract::PluginUiViewSlot::MerchantService
+                        })
+                        .collect(),
                 })
             })
             .await

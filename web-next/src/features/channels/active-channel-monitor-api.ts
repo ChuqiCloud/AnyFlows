@@ -13,7 +13,7 @@ export type ActiveMonitorEvent = { id: number; target_id: number; kind: 'down' |
 export type ActiveMonitorPluginReviewer = { plugin_id: string; display_name: string; plugin_version: string }
 export type ActiveMonitorPluginReviewCheck = { code: string; title: string; status: 'pass' | 'info' | 'warning' | 'fail'; message: string; recommendation: string | null }
 export type HostActionProposal = { actionId: string; actionVersion: number; input: { enabled: boolean } }
-export type ActiveMonitorPluginReview = { plugin_id: string; display_name: string; plugin_version: string; event_count: number; target_config_version: number; summary: string; checks: ActiveMonitorPluginReviewCheck[]; action_proposal: HostActionProposal | null }
+export type ActiveMonitorPluginReview = { plugin_id: string; display_name: string; plugin_version: string; event_count: number; target_config_version: number; summary: string; checks: ActiveMonitorPluginReviewCheck[]; ui_views: unknown[]; action_proposal: HostActionProposal | null }
 export type ActiveMonitorActionProposal = {
   proposal_key: string; plugin_id: string; target_id: number; action_id: string; action_version: number
   expected_enabled: boolean; requested_enabled: boolean; expected_target_version: number

@@ -36566,7 +36566,8 @@
           "event_count",
           "target_config_version",
           "summary",
-          "checks"
+          "checks",
+          "ui_views"
         ],
         "properties": {
           "plugin_id": {
@@ -36614,6 +36615,11 @@
                 "$ref": "#/components/schemas/ActiveChannelMonitorPluginActionHintResponse"
               }
             ]
+          },
+          "ui_views": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {}
           }
         }
       },
@@ -46571,7 +46577,8 @@
           "model_count",
           "mapping_count",
           "summary",
-          "checks"
+          "checks",
+          "ui_views"
         ],
         "properties": {
           "plugin_id": {
@@ -46610,6 +46617,11 @@
               "$ref": "#/components/schemas/ChannelModelMappingPluginReviewCheckResponse"
             },
             "maxItems": 64
+          },
+          "ui_views": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {}
           }
         }
       },
@@ -49172,7 +49184,8 @@
           "plugin_version",
           "service_revision",
           "summary",
-          "checks"
+          "checks",
+          "ui_views"
         ],
         "properties": {
           "checks": {
@@ -49206,6 +49219,11 @@
             "type": "string",
             "maxLength": 2048,
             "minLength": 1
+          },
+          "ui_views": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {}
           }
         },
         "additionalProperties": false
@@ -53922,6 +53940,10 @@
             "type": "string",
             "maxLength": 128,
             "minLength": 1
+          },
+          "allow_external_reads": {
+            "type": "boolean",
+            "description": "Explicit consent for this request to read the selected upstream account through fixed host endpoints. PAT calls also require external_accounts:live_read."
           }
         },
         "additionalProperties": false
@@ -53936,7 +53958,8 @@
           "firstObservedAt",
           "lastObservedAt",
           "summary",
-          "checks"
+          "checks",
+          "uiViews"
         ],
         "properties": {
           "pluginId": {
@@ -53969,6 +53992,11 @@
             "items": {
               "$ref": "#/components/schemas/ReviewCheckResponse"
             }
+          },
+          "uiViews": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {}
           }
         }
       },

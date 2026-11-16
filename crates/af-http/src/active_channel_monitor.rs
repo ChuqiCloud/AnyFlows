@@ -283,6 +283,8 @@ pub struct ActiveChannelMonitorPluginReviewResponse {
     pub summary: String,
     #[schema(max_items = 64)]
     pub checks: Vec<ActiveChannelMonitorPluginReviewCheckResponse>,
+    #[schema(value_type = Vec<serde_json::Value>, max_items = 8)]
+    pub ui_views: Vec<af_plugin_contract::PluginUiView>,
     pub action_proposal: Option<ActiveChannelMonitorPluginActionHintResponse>,
 }
 
@@ -556,6 +558,7 @@ async fn review_monitor_events(
         target_config_version: review.target_config_version,
         summary: review.summary,
         checks: review.checks.into_iter().map(Into::into).collect(),
+        ui_views: review.ui_views,
         action_proposal: review.action_proposal.map(Into::into),
     }))
 }
@@ -700,6 +703,10 @@ mod tests {
         assert_eq!(
             document["components"]["schemas"]["ActiveChannelMonitorPluginReviewStatusResponse"]["enum"],
             serde_json::json!(["pass", "info", "warning", "fail"])
+        );
+        assert_eq!(
+            document["components"]["schemas"]["ActiveChannelMonitorPluginReviewResponse"]["properties"]["ui_views"]["maxItems"],
+            8
         );
     }
 }

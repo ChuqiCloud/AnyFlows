@@ -235,6 +235,15 @@ pub(crate) fn scope_catalog_with_overlay(
                 });
         }
     }
+    scopes
+        .entry("external_accounts:live_read".to_owned())
+        .or_insert_with(|| AccessTokenScopeResponse {
+            scope: "external_accounts:live_read".to_owned(),
+            label: scope_label("external_accounts:live_read").to_owned(),
+            description: "仅在本人发起的插件分析请求中，允许读取本人已绑定外部账户的当前资料或余额"
+                .to_owned(),
+            admin_only: false,
+        });
     scopes.into_values().collect()
 }
 
@@ -262,6 +271,11 @@ pub(crate) fn scope_presets_with_overlay(
                 "usage:read",
                 "billing:read",
             ][..],
+        ),
+        (
+            "external_account_live_read",
+            "外部账户实时只读",
+            &["external_accounts:read", "external_accounts:live_read"][..],
         ),
         (
             "billing_read",
@@ -689,6 +703,7 @@ fn scope_label(scope: &str) -> &str {
         "account:write" => "更新本人资料",
         "external_accounts:read" => "读取本人外部平台账户",
         "external_accounts:write" => "管理本人外部平台账户绑定",
+        "external_accounts:live_read" => "在本人同意后读取本人外部账户当前资料或余额",
         "api_keys:read" => "读取本人模型 Key",
         "api_keys:write" => "管理本人模型 Key",
         "models:read" => "读取模型目录",
@@ -766,6 +781,26 @@ mod tests {
                 .required_scopes,
             ["external_accounts:read"]
         );
+        let live_read_scopes = scope_catalog(SessionRole::User);
+        assert!(live_read_scopes.iter().any(|scope| {
+            scope.scope == "external_accounts:live_read" && !scope.admin_only
+        }));
+        let presets = scope_presets(SessionRole::User);
+        assert!(presets
+            .iter()
+            .find(|preset| preset.id == "account_read")
+            .is_some_and(|preset| {
+                !preset
+                    .scopes
+                    .contains(&"external_accounts:live_read".to_owned())
+            }));
+        assert!(presets
+            .iter()
+            .find(|preset| preset.id == "external_account_live_read")
+            .is_some_and(|preset| {
+                preset.scopes
+                    == ["external_accounts:read", "external_accounts:live_read"]
+            }));
         assert_eq!(
             policy("POST", "/api/account/external-accounts")
                 .unwrap()

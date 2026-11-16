@@ -15,8 +15,9 @@ use af_db::{
 };
 use af_plugin_contract::{CapabilityId, CapabilityResult, PluginId, PluginManifest, PluginVersion};
 use af_plugin_runtime::{
-    CapabilityExecutionContext, PluginArtifactDescriptor, SidecarError, SidecarIsolationPolicy,
-    SidecarLimits, SidecarSupervisor, TrustedPluginKey, VerifiedPluginArtifact,
+    CapabilityExecutionContext, PluginArtifactDescriptor, PluginProxyDispatcher, SidecarError,
+    SidecarIsolationPolicy, SidecarLimits, SidecarSupervisor, TrustedPluginKey,
+    VerifiedPluginArtifact,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::Deserialize;
@@ -418,6 +419,32 @@ impl AdminPluginSidecarRuntime {
         capability_version: u16,
         input: serde_json::Value,
     ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
+        self.invoke_capability_with_proxy(
+            repository,
+            plugin_id,
+            generation,
+            invocation,
+            capability_id,
+            capability_version,
+            input,
+            None,
+        )
+        .await
+    }
+
+    /// Invoke a host capability with a request-scoped external read dispatcher.
+    /// The dispatcher is never stored in the deployment or sent to the sidecar.
+    pub async fn invoke_capability_with_proxy(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        capability_id: &str,
+        capability_version: u16,
+        input: serde_json::Value,
+        proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
+    ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
         let remaining = invocation
             .remaining_timeout()
             .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
@@ -431,6 +458,7 @@ impl AdminPluginSidecarRuntime {
                 capability_id,
                 capability_version,
                 input,
+                proxy_dispatcher,
             ),
         )
         .await
@@ -446,6 +474,7 @@ impl AdminPluginSidecarRuntime {
         capability_id: &str,
         capability_version: u16,
         input: serde_json::Value,
+        proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
     ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
         let plugin_id = PluginId::new(plugin_id.to_owned())
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
@@ -512,12 +541,13 @@ impl AdminPluginSidecarRuntime {
             .with_public_config(deployment.config)
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         session
-            .invoke_host_capability(
+            .invoke_host_capability_with_proxy(
                 generation,
                 &invocation,
                 &capability_id,
                 capability_version,
                 input,
+                proxy_dispatcher,
             )
             .await
             .map_err(map_sidecar_error)

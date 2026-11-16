@@ -186,6 +186,7 @@ fn manifest() -> PluginManifest {
             "properties": { "baseUrl": { "type": "string", "format": "uri", "maxLength": 2048 } }
         }),
         ui_contributions: Vec::new(),
+        ui_views: Vec::new(),
     }
 }
 

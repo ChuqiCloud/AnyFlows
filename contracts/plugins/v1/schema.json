@@ -678,6 +678,13 @@
           },
           "maxItems": 16,
           "type": "array"
+        },
+        "uiViews": {
+          "items": {
+            "$ref": "#/$defs/PluginUiView"
+          },
+          "maxItems": 8,
+          "type": "array"
         }
       },
       "required": [
@@ -862,6 +869,119 @@
         }
       ]
     },
+    "PluginUiBlock": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "type": {
+              "const": "text"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "tone": {
+              "$ref": "#/$defs/PluginUiTone"
+            },
+            "type": {
+              "const": "badge"
+            }
+          },
+          "required": [
+            "type",
+            "label",
+            "tone"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "type": {
+              "const": "metric"
+            },
+            "value": {
+              "$ref": "#/$defs/PluginUiText"
+            }
+          },
+          "required": [
+            "type",
+            "label",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "columns": {
+              "items": {
+                "$ref": "#/$defs/PluginUiText"
+              },
+              "maxItems": 8,
+              "minItems": 1,
+              "type": "array"
+            },
+            "rows": {
+              "items": {
+                "items": {
+                  "$ref": "#/$defs/PluginUiText"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              "maxItems": 16,
+              "type": "array"
+            },
+            "type": {
+              "const": "table"
+            }
+          },
+          "required": [
+            "type",
+            "columns",
+            "rows"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "title": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "type": {
+              "const": "info_card"
+            }
+          },
+          "required": [
+            "type",
+            "title"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "PluginUiContribution": {
       "additionalProperties": false,
       "properties": {
@@ -920,6 +1040,57 @@
       },
       "type": "object"
     },
+    "PluginUiTone": {
+      "enum": [
+        "neutral",
+        "success",
+        "warning",
+        "danger"
+      ],
+      "type": "string"
+    },
+    "PluginUiView": {
+      "additionalProperties": false,
+      "properties": {
+        "blocks": {
+          "items": {
+            "$ref": "#/$defs/PluginUiBlock"
+          },
+          "maxItems": 24,
+          "minItems": 1,
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "slot": {
+          "$ref": "#/$defs/PluginUiViewSlot"
+        }
+      },
+      "required": [
+        "id",
+        "schemaVersion",
+        "slot",
+        "blocks"
+      ],
+      "type": "object"
+    },
+    "PluginUiViewSlot": {
+      "enum": [
+        "plugin_management",
+        "channel_monitor",
+        "channel_model_mapping",
+        "merchant_service",
+        "external_account"
+      ],
+      "type": "string"
+    },
     "PluginVersion": {
       "maxLength": 128,
       "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
@@ -964,6 +1135,12 @@
     },
     {
       "$ref": "#/$defs/PluginHostProtocol"
+    },
+    {
+      "$ref": "#/$defs/PluginUiView"
+    },
+    {
+      "$ref": "#/$defs/PluginUiBlock"
     }
   ],
   "title": "AnyFlows Plugin Contract v1"
