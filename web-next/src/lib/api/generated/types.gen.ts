@@ -2226,7 +2226,9 @@ export type MerchantPluginReview = {
     plugin_version: string;
     service_revision: number;
     summary: string;
-    ui_views: Array<unknown>;
+    ui_views: Array<{
+        [key: string]: unknown;
+    }>;
 };
 export type MerchantPluginReviewCheck = {
     code: string;
