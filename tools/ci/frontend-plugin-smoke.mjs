@@ -360,7 +360,7 @@ try {
   await page.getByRole('button', { name: 'open-account-review', exact: true }).click()
   const reviewerSelector = page.getByRole('button', { name: label('profile.externalAccounts.pluginReview.plugin'), exact: true })
   await reviewerSelector.click()
-  await page.getByRole('option', { name: /CI live review/ }).click()
+  await page.getByText('CI live review · 1.0.0', { exact: true }).click()
   await page.getByRole('listbox').waitFor({ state: 'hidden' })
   const externalReadConsent = page.getByRole('checkbox', { name: label('profile.externalAccounts.pluginReview.allowExternalReads'), exact: true })
   assert.equal(await externalReadConsent.isEnabled(), true, 'Selecting a plugin that supports live reads enables explicit consent')
