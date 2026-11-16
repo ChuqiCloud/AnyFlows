@@ -123,7 +123,7 @@ function RenderBlock({ block }: { block: ViewBlock }) {
     return <Chip size="sm" color={color} variant="flat">{block.label}</Chip>
   }
   if (block.type === 'metric') return <div className="flex flex-wrap items-baseline justify-between gap-2"><dt className="text-xs text-muted-foreground">{block.label}</dt><dd className="m-0 break-words text-sm font-semibold">{block.value}</dd></div>
-  if (block.type === 'table') return <div className="overflow-x-auto"><table className="w-full border-collapse text-left text-xs"><thead><tr>{block.columns.map((column, index) => <th key={index} className="border-b border-[var(--hairline)] px-2 py-1.5 font-medium text-muted-foreground">{column}</th>)}</tr></thead><tbody>{block.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex} className="border-b border-[var(--hairline)] px-2 py-1.5">{cell}</td>)}</tr>)}</tbody></table></div>
+  if (block.type === 'table') return <div className="overflow-x-auto"><table className="w-full border-collapse text-left text-xs"><thead><tr>{block.columns.map((column, index) => <th key={index} scope="col" className="border-b border-[var(--hairline)] px-2 py-1.5 font-medium text-muted-foreground">{column}</th>)}</tr></thead><tbody>{block.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex} className="border-b border-[var(--hairline)] px-2 py-1.5">{cell}</td>)}</tr>)}</tbody></table></div>
   return <div className="rounded-lg border border-[var(--hairline)] bg-content1/40 p-3"><h3 className="text-sm font-medium">{block.title}</h3>{block.description ? <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{block.description}</p> : null}</div>
 }
 
