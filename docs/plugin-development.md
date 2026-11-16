@@ -10,14 +10,16 @@
 | 检查商户自己的服务资料 | 已支持：merchant.service.review.read v1 | 阅读公开服务说明和模型能力，返回文字建议 |
 | 总结管理员配置的渠道监控事件 | 已支持：channel.monitor.events.review.read v1 | 阅读最多 100 条 down / recovered 事件，返回摘要和建议 |
 | 静态检查管理员配置的渠道模型映射 | 已支持：channel.model_mapping.review.read v1 | 阅读公开模型名称和映射关系，返回摘要与建议，不连接上游或修改渠道 |
-| 给其他模块增加只读查询或计算 | 需要宿主新增入口 | 入口发布后，插件按该入口的固定 Schema 返回数据 |
-| 增加 HTTP API、Webhook、后台任务 | 上传插件不支持 | 修改宿主代码并重新构建、部署 |
-| 增加控制台页面、菜单、翻译或登录表单 | 上传插件不支持 | 使用 ConsoleExtension 并重建前端 |
+| 给其他模块增加只读查询或计算 | 逐模块接入 | 宿主提供固定入口、数据投影、Schema、权限和结果展示 |
+| 增加 HTTP API、Webhook、后台任务 | 上传插件不支持 | 由宿主服务定义并实现；事件队列和副作用契约见[扩展设计](plugin-capability-expansion.md) |
+| 增加控制台页面、菜单、翻译或登录表单 | 上传插件不支持 | 源码编译的 ConsoleExtension 随前端构建；上传包动态 UI 仍在设计中 |
 | 替换模型协议、渠道适配器、实时路由策略 | 上传插件不支持 | 由 Rust 宿主实现；上传包不能替换实时请求路径 |
 | 修改价格、计费、钱包、结算、权限或数据库结构 | 上传插件不支持 | 由宿主业务代码处理，插件不能绕过权限与账务规则 |
 | 接入外部账号登录、账户资料或余额 | 不通过通用 Sidecar | 使用宿主提供的类型化连接器 |
 
 上传安装的 `.afplugin`、编译进服务的 Rust `RuntimeExtensions`、编译进前端的 `ConsoleExtension` 是三种不同机制。`.afplugin` 可从插件管理上传安装；`RuntimeExtensions` 要改 Rust 并重建服务；`ConsoleExtension` 要改 Next 源码并重新构建前端。插件包本身不能注册菜单、接口或后台任务。
+
+后续平台连接器、受控操作、事件任务和声明式界面的设计与交付边界见[插件能力扩展设计](plugin-capability-expansion.md)。其中标为设计目标的功能还没有运行时入口；不要根据设计文档中的契约草案打包生产插件。
 
 通用 Sidecar 目前只执行管理员明确授予的 access=read、sideEffect=none 能力，并要求每项能力都有输入和输出 JSON Schema。插件没有数据库句柄、用户会话、渠道密钥、托管 HTTP 客户端或持久化接口；它只能处理宿主给出的本次输入和公开配置。宿主控制实际调用的插件、能力名、版本、用户权限及数据范围。没有“客户端任意选择 capability 并直接调用”的通用接口。
 
