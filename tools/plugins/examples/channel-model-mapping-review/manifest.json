@@ -1,0 +1,74 @@
+{
+  "pluginId": "org.anyflows.example-channel-model-mapping-review",
+  "displayName": "Example channel model mapping review",
+  "pluginVersion": "1.0.0",
+  "contractRange": {
+    "minimum": {"major": 1, "minor": 0},
+    "maximum": {"major": 1, "minor": 0}
+  },
+  "capabilities": [
+    {
+      "id": "channel.model_mapping.review.read",
+      "version": 1,
+      "access": "read",
+      "sideEffect": "none",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["models", "mappings"],
+        "properties": {
+          "models": {
+            "type": "array",
+            "maxItems": 512,
+            "items": {"type": "string", "minLength": 1, "maxLength": 256}
+          },
+          "mappings": {
+            "type": "array",
+            "maxItems": 512,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["model", "upstreamModel"],
+              "properties": {
+                "model": {"type": "string", "minLength": 1, "maxLength": 256},
+                "upstreamModel": {"type": "string", "minLength": 1, "maxLength": 256}
+              }
+            }
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["summary", "checks"],
+        "properties": {
+          "summary": {"type": "string", "minLength": 1, "maxLength": 2048},
+          "checks": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "title", "status", "message", "recommendation"],
+              "properties": {
+                "code": {"type": "string", "minLength": 1, "maxLength": 64},
+                "title": {"type": "string", "minLength": 1, "maxLength": 128},
+                "status": {"type": "string", "enum": ["pass", "info", "warning", "fail"]},
+                "message": {"type": "string", "minLength": 1, "maxLength": 2048},
+                "recommendation": {"type": ["string", "null"], "minLength": 1, "maxLength": 2048}
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "authenticationModes": ["none"],
+  "limits": {
+    "maxConcurrency": 1,
+    "requestTimeoutMs": 5000,
+    "maxResponseBytes": 524288,
+    "maxPageSize": 1
+  },
+  "configSchema": {"type": "object", "additionalProperties": false}
+}

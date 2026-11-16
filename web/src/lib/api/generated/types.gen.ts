@@ -1700,6 +1700,34 @@ export type BalanceDisplaySymbolPosition = 'prefix' | 'suffix';
 export type BalanceHistoryQuery = {
     limit?: number | null;
 };
+export type ChannelModelMappingPluginReviewCheckResponse = {
+    code: string;
+    title: string;
+    status: ChannelModelMappingPluginReviewStatusResponse;
+    message: string;
+    recommendation: string | null;
+};
+export type ChannelModelMappingPluginReviewRequest = {
+    plugin_id: string;
+};
+export type ChannelModelMappingPluginReviewResponse = {
+    plugin_id: string;
+    display_name: string;
+    plugin_version: string;
+    model_count: number;
+    mapping_count: number;
+    summary: string;
+    checks: Array<ChannelModelMappingPluginReviewCheckResponse>;
+};
+export type ChannelModelMappingPluginReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
+export type ChannelModelMappingPluginReviewerListResponse = {
+    plugins: Array<ChannelModelMappingPluginReviewerResponse>;
+};
+export type ChannelModelMappingPluginReviewerResponse = {
+    plugin_id: string;
+    display_name: string;
+    plugin_version: string;
+};
 export type ClientProfileBehaviorSchema = 'standard' | 'claude_utc_date_v1' | 'codex_v1' | 'open_code_v1';
 export type ClientProfileBindRequest = {
     binding: ClientProfileBindingSchema;
@@ -7500,6 +7528,28 @@ export type ReviewAdminChannelMonitorTargetWithPluginResponses = {
     200: ActiveChannelMonitorPluginReviewResponse;
 };
 export type ReviewAdminChannelMonitorTargetWithPluginResponse = ReviewAdminChannelMonitorTargetWithPluginResponses[keyof ReviewAdminChannelMonitorTargetWithPluginResponses];
+export type ListAdminChannelModelMappingPluginReviewersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/channel-model-mapping/plugin-reviewers';
+};
+export type ListAdminChannelModelMappingPluginReviewersResponses = {
+    200: ChannelModelMappingPluginReviewerListResponse;
+};
+export type ListAdminChannelModelMappingPluginReviewersResponse = ListAdminChannelModelMappingPluginReviewersResponses[keyof ListAdminChannelModelMappingPluginReviewersResponses];
+export type ReviewAdminChannelModelMappingWithPluginData = {
+    body: ChannelModelMappingPluginReviewRequest;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/model-mapping/plugin-review';
+};
+export type ReviewAdminChannelModelMappingWithPluginResponses = {
+    200: ChannelModelMappingPluginReviewResponse;
+};
+export type ReviewAdminChannelModelMappingWithPluginResponse = ReviewAdminChannelModelMappingWithPluginResponses[keyof ReviewAdminChannelModelMappingWithPluginResponses];
 export type GetAdminEmailSettingsData = {
     body?: never;
     path?: never;

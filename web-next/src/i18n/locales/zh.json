@@ -780,6 +780,25 @@
         "status": { "pass": "通过", "info": "提示", "warning": "警告", "fail": "未通过" }
       }
     },
+    "modelMappingPluginReview": {
+      "title": "模型映射检查",
+      "summary": "分析公开模型名和映射关系",
+      "description": "所选插件只会收到本渠道的模型名与映射对，不会读取渠道地址或凭据、连接上游，或修改配置。",
+      "channel": "渠道",
+      "plugin": "检查插件",
+      "run": "检查映射",
+      "retry": "重试",
+      "loadingPlugins": "正在加载映射检查插件…",
+      "pluginsError": "无法读取模型映射检查插件。",
+      "noChannels": "当前页没有可用渠道。",
+      "noPlugins": "当前没有可用的渠道模型映射检查插件。",
+      "forbidden": "当前管理员令牌没有运行此检查的权限。",
+      "runError": "模型映射检查失败，可以重试。",
+      "counts": "{{models}} 个模型 · {{mappings}} 条映射",
+      "noChecks": "插件没有返回检查项。",
+      "recommendation": "建议",
+      "status": { "pass": "通过", "info": "提示", "warning": "警告", "fail": "未通过" }
+    },
     "scope": "支持 OpenAI、Anthropic、Gemini、Jina、Cohere 与 xAI 原生协议",
     "count_one": "共 {{count}} 个渠道",
     "count_other": "共 {{count}} 个渠道",

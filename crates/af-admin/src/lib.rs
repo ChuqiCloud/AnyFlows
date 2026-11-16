@@ -78,6 +78,14 @@ pub use channel_monitor_plugin_review::{
     ActiveChannelMonitorPluginReviewer, ActiveChannelMonitorPluginReviewerList,
     DatabaseActiveChannelMonitorPluginReviewService,
 };
+mod channel_model_mapping_plugin_review;
+pub use channel_model_mapping_plugin_review::{
+    ChannelModelMappingPluginReview, ChannelModelMappingPluginReviewCheck,
+    ChannelModelMappingPluginReviewError, ChannelModelMappingPluginReviewFuture,
+    ChannelModelMappingPluginReviewService, ChannelModelMappingPluginReviewStatus,
+    ChannelModelMappingPluginReviewer, ChannelModelMappingPluginReviewerList,
+    DatabaseChannelModelMappingPluginReviewService,
+};
 mod balance_alert_settings;
 mod balance_alert_task;
 #[cfg(test)]
@@ -166,6 +174,7 @@ mod plugin_lifecycle_integration_tests;
 mod plugin_operations;
 mod plugin_package;
 mod plugin_runtime;
+pub(crate) mod readonly_plugin_review;
 mod redemption;
 mod refund;
 mod registration;

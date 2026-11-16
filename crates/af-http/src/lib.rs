@@ -17,6 +17,11 @@ mod announcements;
 pub use active_channel_monitor::{
     active_channel_monitor_openapi_document, build_active_channel_monitor_router,
 };
+mod channel_model_mapping_plugin_review;
+pub use channel_model_mapping_plugin_review::{
+    build_channel_model_mapping_plugin_review_router,
+    channel_model_mapping_plugin_review_openapi_document,
+};
 mod anthropic_messages;
 mod api_explorer;
 mod audio_service;

@@ -13949,6 +13949,88 @@
         ]
       }
     },
+    "/api/admin/channel-model-mapping/plugin-reviewers": {
+      "get": {
+        "tags": [],
+        "summary": "列出渠道模型映射检查插件",
+        "operationId": "listAdminChannelModelMappingPluginReviewers",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelModelMappingPluginReviewerListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_channel_model_mapping_plugin_reviewers:execute"
+        ]
+      }
+    },
+    "/api/admin/channels/{channel_id}/model-mapping/plugin-review": {
+      "post": {
+        "tags": [],
+        "summary": "静态检查渠道模型映射",
+        "operationId": "reviewAdminChannelModelMappingWithPlugin",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelModelMappingPluginReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelModelMappingPluginReviewResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:review_admin_channel_model_mapping_with_plugin:execute"
+        ]
+      }
+    },
     "/api/admin/email-settings": {
       "get": {
         "tags": [
@@ -45905,6 +45987,158 @@
           }
         },
         "additionalProperties": false
+      },
+      "ChannelModelMappingPluginReviewCheckResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "title",
+          "status",
+          "message",
+          "recommendation"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/ChannelModelMappingPluginReviewStatusResponse"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1
+          },
+          "recommendation": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048,
+            "minLength": 1
+          }
+        }
+      },
+      "ChannelModelMappingPluginReviewRequest": {
+        "type": "object",
+        "required": [
+          "plugin_id"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "ChannelModelMappingPluginReviewResponse": {
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "display_name",
+          "plugin_version",
+          "model_count",
+          "mapping_count",
+          "summary",
+          "checks"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "plugin_version": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "model_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "mapping_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelModelMappingPluginReviewCheckResponse"
+            },
+            "maxItems": 64
+          }
+        }
+      },
+      "ChannelModelMappingPluginReviewStatusResponse": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "info",
+          "warning",
+          "fail"
+        ]
+      },
+      "ChannelModelMappingPluginReviewerListResponse": {
+        "type": "object",
+        "required": [
+          "plugins"
+        ],
+        "properties": {
+          "plugins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelModelMappingPluginReviewerResponse"
+            },
+            "maxItems": 100
+          }
+        }
+      },
+      "ChannelModelMappingPluginReviewerResponse": {
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "display_name",
+          "plugin_version"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "plugin_version": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          }
+        }
       },
       "ClientProfileBehaviorSchema": {
         "type": "string",
